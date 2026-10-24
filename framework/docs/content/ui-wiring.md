@@ -167,6 +167,17 @@ Useful options:
   you write yourself must not follow symlinks out of its tree —
   `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
   cannot carry symlinks at all.
+- `host.AssetURL("/logo.svg")`: the URL of a static file with its
+  content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
+  page links a file from the static directory or static FS. A request
+  whose `v` matches the file's current hash is served with
+  `Cache-Control: public, max-age=31536000, immutable`, so browsers and
+  CDNs keep the file until it changes, and a deploy that changes it
+  changes the URL. A plain or stale URL keeps the default revalidating
+  behavior, and `gofastr dev` still serves every static file `no-store`.
+  The hash is cached per file and taken again when its modification
+  time or size changes. A path that is not clean and rooted, or names
+  no file, comes back unchanged.
 - `uihost.WithCustomCSS(css)`: append site CSS (e.g. `@font-face`
   rules) to `app.css`; combine with
   `uihost.ReadCustomCSSFile("static/app.css")` for a file you edit
@@ -274,7 +285,7 @@ The caller owns the decision, and with it the status:
 | Situation | Answer |
 |---|---|
 | Authentication failed on a route that exists | 401 / 403 via `RenderScreen` |
-| Route resolved, resource gone or not found for this caller | 410, or a 404 body with `ScreenStatusCode` on the screen itself |
+| Route resolved, resource gone or not found for this caller | 410, or a 404 body with `ScreenStatusCode` on the screen itself, or `app.SetStatus` from the render that found it missing |
 | No route matches | nothing — the `WithNotFoundScreen` 404 stays truthful |
 
 Render the same recovery screen for a missing and an expired session:

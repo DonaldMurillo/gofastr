@@ -70,7 +70,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 
 	placeholder := cfg.Placeholder
 	if placeholder == "" {
-		placeholder = i18nui.T(ctx, i18nui.KeySearchInputPlaceholder)
+		placeholder = i18nui.SearchInputPlaceholder.Text(ctx)
 	}
 	method := cfg.Method
 	if method == "" {
@@ -92,7 +92,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"id":          cfg.ID,
 		"class":       "fui-search__input",
 		"placeholder": placeholder,
-		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
+		"aria-label":  i18nui.SearchLabel.Text(ctx),
 	}
 	// Extras land on the <input>: SafeExtraAttrs drops every
 	// case-variant of type/name (and id/class/data-cui-*), so a caller
@@ -109,7 +109,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		render.Tag("button", map[string]string{
 			"type":       "button",
 			"class":      "fui-search__clear",
-			"aria-label": i18nui.T(ctx, i18nui.KeySearchClear),
+			"aria-label": i18nui.SearchClear.Text(ctx),
 			"hidden":     "",
 		}, Icon("close", IconConfig{Size: "16"})),
 	}

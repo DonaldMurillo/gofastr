@@ -94,6 +94,16 @@ func TestGateSendsSignedOutToLogin(t *testing.T) {
 	if loc := rr.Header().Get("Location"); rr.Code != http.StatusSeeOther || loc != "/login?next=%2Fadmin%2F_count%2Fposts" {
 		t.Errorf("signed-out count = %d, Location %q", rr.Code, loc)
 	}
+	// A record key holding "/" comes back to its own segment after login,
+	// on a page and on a gate route alike.
+	for p, want := range map[string]string{
+		"/admin/entities/posts/a%2Fb": "/login?next=%2Fadmin%2Fentities%2Fposts%2Fa%252Fb",
+		"/admin/_count/a%2Fb":         "/login?next=%2Fadmin%2F_count%2Fa%252Fb",
+	} {
+		if loc := get(x.as(nil), p).Header().Get("Location"); loc != want {
+			t.Errorf("signed-out %s: Location %q, want %q", p, loc, want)
+		}
+	}
 	if rr := post(x.as(nil), "/admin/queue/_replay/j1", nil); rr.Code != http.StatusUnauthorized {
 		t.Errorf("signed-out post = %d, want 401", rr.Code)
 	}

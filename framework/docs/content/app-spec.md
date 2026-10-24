@@ -222,11 +222,6 @@ entities:
         name: author
         entity: users
         foreign_key: author_id
-    endpoints:
-      - name: publish_post
-        method: POST
-        path: "{id}/publish"
-        handler: publishPost
 
 screens:
   - name: home
@@ -273,10 +268,12 @@ screens:
           data-action-result: true
 
 endpoints:
-  - name: health_check
-    method: GET
-    path: /health
-    handler: healthCheck
+  - name: publish_post
+    entity: posts
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+    description: Publish a draft post.
 
 hooks:
   - id: posts_before_create_validate
@@ -294,6 +291,35 @@ plugins:
 helpers:
   - name: normalize_slug
 ```
+
+### Custom endpoints (`endpoints`)
+
+Each entry is exactly an entry of the `endpoints:` section of
+[`gofastr.settings.yml`](settings.md), the same keys with the same rules:
+`name`, `entity` (required), `method`, `path` (relative to the entity's
+route, so `{id}/publish` serves `POST /api/posts/{id}/publish`), `handler`
+(a link, `entities/<file>.go#<Name>`), `description`, `mcp`, and `public`.
+[Endpoints](endpoints.md) has the full contract.
+
+`generate app` writes, for each endpoint:
+
+- the entry in the `endpoints:` section of `gofastr.settings.yml`, merged
+  into the file so its other sections stay as they are;
+- the linked handler file, with an input struct holding the route's path
+  values and a typed handler that answers 501 Not Implemented until you
+  write it;
+- `entities/endpoints.gen.go`, which registers every endpoint, and a typed
+  call for each in the generated client.
+
+From then on the settings file is where the endpoints live: add, change or
+remove one there and run `gofastr generate`. Two endpoints cannot link the
+same handler, and a handler cannot live in a file `generate app` writes for
+an entity (`entities/posts.go`); link a file of its own.
+
+An entity does not list `endpoints:` under itself, and a path does not
+start with `/`. A route that hangs under no entity (a health check, a
+webhook) is not an app spec endpoint: register it in owned Go with
+`fwApp.Router().Handle`.
 
 ### Lifecycle hooks (`hooks`)
 
@@ -333,13 +359,14 @@ The `access` map (keys `read`, `create`, `update`, `delete`;
 each value a permission string) is emitted as `Access:
 framework.AccessControl{...}` in the generated registration; see
 [entity-declarations](entity-declarations.md) for the semantics and
-[access-control](access-control.md) for wiring roles + policy. Entity-owned endpoints and top-level
-endpoints generate Go handler stubs (in `stubs.go`) plus router registration.
+[access-control](access-control.md) for wiring roles + policy. Custom
+endpoints generate the files listed in
+[Custom endpoints](#custom-endpoints-endpoints).
 
 When `app.module` is present, app spec generation also emits a
 `main.go`: a runnable app entrypoint that opens the configured SQLite
 database, registers generated entities, wires generated
-screens/endpoints/middleware/plugins through `RegisterGenerated` (in
+screens/middleware/plugins through `RegisterGenerated` (in
 `app.go`, same `package main`), mounts the UI host, and serves
 `app.static_dir` through the generated UI host.
 
@@ -379,8 +406,8 @@ aggregated `screens.go`:
   Byte-identical for any screen/entity count. Add a screen by dropping in a new
   `screen_<name>.go`; never edit the seam.
 - `screen_<snake>.go`: one per authored non-CRUD screen (marketing pages,
-  dashboards, auth forms): the screen struct, its `Screen*` methods, `Render`,
-  a `mount<Screen>` func holding the `site.Register`/`site.RegisterScreen`
+  dashboards, auth forms): the screen struct, its `Screen*` methods,
+  `RenderCtx`, a `mount<Screen>` func holding the `site.Register`/`site.RegisterScreen`
   call, and an `init()` that appends one
   `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
 - `screen_<entity>_crud.go`: one per entity with CRUD screens (or referenced
@@ -394,6 +421,49 @@ assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
 and names no screen type. The generated screen order is
 recovered by `gofastr pack` from each file's `screenRegistrar{order: …}`; see
 [Packing](#packing-gofastr-pack-lossy-snapshot-of-the-app-as-an-app-spec).
+
+### Translations (`i18n.go`, `locales/`)
+
+Every word the app spec writes for a reader (a title, a hero line, a
+button label, a nav entry, a footer column, an auth error) is emitted as
+an `i18n.Phrase` declared at the top of the file that says it, and the
+screen reads it with the request's context:
+
+```go
+var (
+	homeScreenTextSeeYourRevenue = i18n.Define("meridian.screens.home.see_your_revenue", "See your revenue.")
+)
+
+func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
+	return ui.Hero(ui.HeroConfig{Title: homeScreenTextSeeYourRevenue.Text(ctx)})
+}
+```
+
+The key is `<app>.screens.<screen>.<slug>` in a screen file,
+`<app>.screens.<entity>_crud.<slug>` in an entity's crud file,
+`<app>.chrome.<slug>` in `app.go` and `<app>.auth.<code>` in
+`auth_hooks.go`. The slug is the English's first four words; the same
+English twice in one file is one phrase. Field labels go through
+`i18nui.FieldLabel` and enum values through `i18nui.FieldValueLabel`, so
+they read the `entity.*` keys the admin reads.
+
+With `app.module` set the generator also writes:
+
+- `i18n.go`: `translatorOption()`, which `main.go` installs. It embeds
+  `locales/`, loads every `<tag>.json` there with `i18n.LoadJSONCatalog`,
+  and adds the `en-XA` pseudo-locale when `GOFASTR_PSEUDO_LOCALE=1`.
+- `i18n_test.go`: `TestCatalogsMatchPhrases` runs `i18n.CheckCatalog`
+  over every `locales/<tag>.json`, so `go test` fails on a key no phrase
+  defines or a translation that drops a `{{placeholder}}`. `entity.*`
+  keys name the app's data and are skipped. Add `i18n.Require("<app>.")`
+  to fail on a phrase a locale has not translated yet.
+- `locales/README.md`: what goes in the directory. It also keeps the
+  directory non-empty, which `go:embed` requires.
+
+The generator never writes a `<tag>.json`, so `generate --force` keeps
+every translation. Add `locales/es.json` keyed like the phrases (dots
+nest) and the browser's `Accept-Language` picks it. See
+[i18n](i18n.md) for the catalog format and `i18n.CheckCatalog`.
 
 
 ## Additive generation (`--add`)
@@ -410,6 +480,14 @@ as plain `generate`.
 # Add two entities to an existing project from a partial yml.
 gofastr generate app additions.yml --add
 ```
+
+A fragment's `endpoints:` merge into the project's `gofastr.settings.yml`;
+an endpoint whose name the project already has keeps the project's entry.
+The derived files `entities/endpoints.gen.go` and `entities/client/client.go`
+are rebuilt from the tree after the merge, not skipped. With `--json` the
+report lists the written files under `files`, the files left alone under
+`skipped_existing`, and the files already there that the run changed (the
+settings file and the rebuilt derived files) under `updated`.
 
 Partial ymls are legal: an entities-only (or screens-only) fragment omits
 `app.module`, so the module is derived from the enclosing `go.mod` exactly as
@@ -452,11 +530,13 @@ exists, so it lands in the skipped list and the existing file is left
 untouched. There is no diffing or merging: `--add` only writes files that
 don't exist.
 
-**The `client.go` caveat.** `entities/client/client.go` is an aggregate over
-*all* entities. When it already exists and `--add` introduces new entities,
-the generated client was not updated and does not include them. `--add` prints
-a warning naming the stale file; regenerate it from a full app spec with
-`--force`, or extend it by hand.
+**`client.go` follows the entities.** `entities/client/client.go` is an
+aggregate over *all* entities, so `--add` rebuilds it to cover the new ones.
+It is derived: `gofastr generate client`, plain `gofastr generate`, and
+`gofastr build` rebuild it from `entities/*.go` whenever it exists. Keep your
+own client code in another file of package `client`. A `client.go` from
+before v0.93.0 that you edited is left alone with a warning; move the edits
+out, then run `gofastr generate client --force` once.
 
 **Pre-0.15 layouts.** `--add` requires the per-piece layout on both sides: the
 per-entity `entities/` files and the per-screen `screen_<name>.go` files. If
@@ -598,6 +678,11 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+Pack reads a phrase as its English: `homeScreenTextWelcome.Text(ctx)`
+becomes the text its `i18n.Define` in the same file gives, and an
+`i18nui.FieldLabel` call becomes its English argument. The packed spec
+holds the English only; translations stay in `locales/`.
+
 Pack then checks its own result. It regenerates the app from the packed
 spec in memory and compares each Go file at the app root and directly
 under `entities/` with the file on disk, ignoring
@@ -626,6 +711,13 @@ reports three kinds of file, on stderr when the spec goes to stdout:
 Tests and files another generator marked are skipped. The check writes
 nothing, fetches nothing, and leaves the exit code alone.
 
+The JWT secret, the database URL and the admin seed password live in the
+app's `.env`, not its source, and pack reads them back from there. A
+checkout without that `.env` packs a spec with no `seed_password`, so the
+spec seeds no admin. Pack says so before the check names `app.go` and
+`main.go`; add `seed_password` under `app.admin` before generating from
+it.
+
 The synthesized `/create` screen is dropped (it wasn't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for an app spec of those
@@ -635,12 +727,8 @@ fails.
 
 The serializer half of that invariant is stronger: `parse(yml)` ≡
 `parse(encode(parse(yml)))` holds for every construct the grammar can
-declare — including `endpoints`, `middleware`, `plugins`, and `helpers` —
-with one deliberate, tested exception: entity-level `endpoints` re-serialize
-through the top-level `endpoints` stubs that carry their authoring form
-(entity, handler, `mcp`); the derived per-entity runtime copy does not
-re-materialize on re-parse, and emitting it back under the entity would
-duplicate every endpoint. For the list constructs (entities, screens,
+declare, including `endpoints`, `middleware`, `plugins`, and `helpers`. For
+the list constructs (entities, screens,
 blocks, nav, seed, endpoints, stubs, and their nested lists), the guards
 also cover every field *inside* each element — the omission class this
 catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
@@ -665,17 +753,20 @@ overwrite code the generator never wrote; `examples/meridian/doc.go` says so,
 and `--force` there is a mistake, not a refresh. Two of its trees are the
 exception: `entities/` and `cmd/meridian/` are generator-owned, and
 `TestGeneratedTreesMatchGenerator` regenerates them into a scratch package
-and fails on any byte of drift (`custom.go`, the dev-owned CLI seam, is
+(the CLI through the `cli` entry in Meridian's `gofastr.settings.yml`) and
+fails on any byte of drift (`custom.go`, the dev-owned CLI seam, is
 excluded). `examples/ecommerce` regenerates in place as a whole, because its
 app spec sets `output_dir: app` and the generator owns that directory
 outright.
 
-`endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
-pack: the generator emits them as `stubs.go` signatures you fill with your own
-Go, and pack cannot reverse a hand-written handler body back into an app spec
-declaration. If your `gofastr.yml` declares any of these, keep the YAML; pack
-reconstructs the rest of the app around your owned stub code but will not
-re-emit their declarations.
+Pack recovers `hooks`, `middleware`, `plugins`, and `helpers` from their
+wiring (the `Use`, `RegisterPlugin` and `RegisterHook` calls) and the names
+and descriptions in `stubs.go`, so a stub whose body you have since written
+still packs. It reads `endpoints` back from the `endpoints:` section of
+`gofastr.settings.yml`. A linked handler file is yours once you write its
+body, so the check counts it as hand-written rather than comparing it.
+`examples/ecommerce/app` packs with nothing unrecovered, and a test holds it
+there.
 
 ### Data blocks (`entity_list`, `entity_form`, `entity_detail`)
 
@@ -720,6 +811,14 @@ partial and keeps the shell).
   (enum → `<select>` of values; relation → `<select>` populated from the
   related entity) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
+- `entity_form` with `mode: edit` on an `{id}` route renders the record
+  page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
+  loads the record into its form, keeps the key read-only, and Save PUTs
+  it. `fields:` keeps the listed fields and passes the rest to
+  `.Omit(...)`. A `text:` title is not drawn: the page heads itself with
+  the record's title. On a route that continues past `{id}`
+  (`/posts/{id}/edit`), the screen passes `.Base(...)` the route up to
+  `{id}`, so Save lands on `/posts/<id>`.
 
 **Removed screen keys.** `filters:`, `transitions:`, `island:`, `widget:`
 and `search:` are no longer block keys; the decoder refuses each with the
@@ -831,6 +930,63 @@ thread, follow
 a hand-written island, end to end" (it covers the traps: the posted JSON
 key is the input's `name`, the two route-param syntaxes, and manual route
 registration) and "Themed confirmation (`ui.ConfirmAction`)".
+
+#### Composite keys (`primary_key`)
+
+`primary_key:` names an entity's key columns in order. Leave it out for
+the usual generated `id`. A join table keys on the rows it joins:
+
+```yaml
+entities:
+  - name: enrollments
+    crud: true
+    primary_key: [student_id, course_id]
+    fields:
+      - {name: student_id, type: string, required: true}
+      - {name: course_id, type: string, required: true}
+      - {name: grade, type: string}
+```
+
+The rules are `EntityConfig.PrimaryKey`'s
+([Record ids](entity-declarations.md#record-ids)). On a record screen
+(`entity_detail`, or an `entity_form` with `mode: edit`), `{id}` stands
+for the whole key: `/enrollments/{id}` mounts as
+`/enrollments/:student_id/:course_id`, one segment per key column, the
+path entityui links records at. The screen's `SetParams` joins the
+values with `framework.JoinKey`. Validation refuses another route param
+named after a key column; rename it. The generated `e2e_test.go` reads
+every key column out of the create response to address the record, and
+`gofastr pack` folds the expanded route back to `{id}`.
+
+A relation to a composite-keyed entity names one foreign-key column per
+key column, in key order, as a list:
+
+```yaml
+  - name: lines
+    crud: true
+    fields:
+      - {name: order_store, type: string}
+      - {name: order_no, type: int}
+      - {name: sku, type: string}
+    relations:
+      - type: belongs_to
+        name: order
+        entity: orders
+        foreign_key: [order_store, order_no]
+```
+
+Each listed column is a declared field of the entity that holds it (the
+`belongs_to` side here, the child for a `has_many`), typed like the key
+column it references. Loading refuses a list whose length differs from
+the referenced key, a repeated or undeclared column, a column typed
+unlike its key column (an `int` column for a `string` or `uuid` key
+column, say; the text types `string`, `text`, `uuid`, `enum`, `image`
+and `file` all join each other), a column the entity's `states`
+transitions write, and a
+`many_to_many` with a composite end; link the last through a join entity
+that belongs to both sides. A one-element list is the plain
+`foreign_key: order_no` spelling. The rules are those of
+[`Relation.ForeignKey`](entity-declarations.md#relations-and-composite-keys).
 
 #### RBAC for writable APIs
 
@@ -1026,6 +1182,14 @@ startup with the entity named in the error. The idempotency check would
 otherwise mark a partially-seeded entity as done, so a silently dropped row
 would never retry; the app would report ready with bootstrap data missing.
 
+A relation value written as `"@currencies.label=Euro"` is a reference: the
+seed looks up the first `currencies` row whose `label` is `Euro` and stores
+that row's key, the target's `primary_key` column when it declares one and
+`id` otherwise. A relation's target has a one-column key, since boot
+refuses a relation to an entity keyed on several columns (see
+[Relations and composite keys](entity-declarations.md#relations-and-composite-keys)),
+so a reference always stores one value.
+
 When any entity declares `owner_field` (per-user scoping) **and** an admin
 account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed
 runs *as that admin*: the generated hook looks the admin up and stamps every
@@ -1068,6 +1232,17 @@ system/auto-generated columns alone. For entities with a **required** relation,
 use explicit `rows:` (with `@entity.field=value` refs) instead; a generated
 row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
+
+Generated rows never repeat a `primary_key`: an integer key column counts
+up from 1001, or, when the column sets bounds, from `min` but never below
+2 (the generated e2e test creates 1), and a uuid key takes one value per
+row. A key made only of enums has as many keys as distinct value
+combinations, less the one the e2e test creates. The generator refuses a
+`count` that would run past those combinations or an integer key's bounds,
+generate a key an explicit row already holds, or leave a key column empty:
+a relation, file or image key, or a declared `id` without `auto_generate`,
+takes explicit `rows:`. A key the server fills (`auto_generate`, or the
+`id` the entity adds) is the server's to make unique.
 
 ### Auth (`app.auth`)
 
@@ -1306,6 +1481,23 @@ screen and its data shape: useful for AI agents in trusted environments,
 schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
 enabling one never emits the other.
 
+### Locale in the URL (`app.locale_prefixes`)
+
+```yaml
+app:
+  locale_prefixes: true
+```
+
+Emits `framework.WithLocalePrefixes()`. English keeps the plain paths and
+each `locales/<tag>.json` is served under `/<tag>/`: `/es/pricing` is the
+pricing screen in Spanish, with `hreflang` alternates on every page, a sitemap
+entry per locale, and robots rules repeated under each prefix. A marketing
+footer gets `ui.LanguageMenu` in its `Language` slot, so a reader can switch
+from any page. Off by default,
+because it pins the plain paths to English: without it the browser's
+`Accept-Language` picks the locale. The [i18n guide](i18n.md#locale-in-the-url)
+covers the routing rules and the language switcher.
+
 ### app.module and the enclosing go.mod
 
 Generated imports are `<app.module>/<output-dir>`. By default the output
@@ -1425,7 +1617,10 @@ The generator rejects:
 - unsupported HTTP methods or screen types
 - unsupported UI action events, duplicate action names, duplicate action events
   on one block, unreachable combined click actions, or missing `client_js`
-- custom endpoint MCP declarations without Go MCP handlers
+- endpoints whose `entity` the app spec does not declare, two endpoints
+  linking one handler, or a handler in a file `generate app` writes
+- an entity that lists `endpoints:` under itself (move each to the
+  top-level list)
 - scalar posture fields given a list or map shape: `access:`
   permissions, `owner_field`, `tenant_field`, `cross_owner_read`,
   `screens[].access.role`, and `app.admin.role` each name one value;

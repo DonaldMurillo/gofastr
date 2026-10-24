@@ -16,7 +16,7 @@ import (
 )
 
 func TestValidationError_Error(t *testing.T) {
-	ve := &ValidationError{fields: map[string][]string{"name": {"required"}}}
+	ve := &ValidationError{fields: map[string][]schema.Violation{"name": {{Reason: schema.ReasonRequired}}}}
 	if ve.Error() != "validation failed" {
 		t.Errorf("ValidationError.Error() = %q", ve.Error())
 	}
@@ -30,22 +30,24 @@ func TestTenantMissingError_Error(t *testing.T) {
 }
 
 func TestClassifyDoErr_AllBranches(t *testing.T) {
-	ve := &ValidationError{fields: map[string][]string{"a": {"x"}}}
-	if msg, fields := classifyDoErr(ve); msg != "validation failed" || fields == nil {
-		t.Errorf("validation classify = %q, %v", msg, fields)
+	ctx := context.Background()
+	ve := &ValidationError{fields: map[string][]schema.Violation{"a": {{Reason: schema.ReasonRequired}}}}
+	if res := classifyDoErr(ctx, 0, ve); res.Error != "validation failed" || res.Reason != "validation_failed" ||
+		res.Fields["a"][0] != "is required" || res.FieldReasons["a"][0] != "required" {
+		t.Errorf("validation classify = %+v", res)
 	}
 	bhe := &beforeHookError{err: errors.New("hook said no")}
-	if msg, _ := classifyDoErr(bhe); msg != "hook said no" {
-		t.Errorf("hook classify = %q", msg)
+	if res := classifyDoErr(ctx, 0, bhe); res.Error != "hook said no" || res.Reason != "" {
+		t.Errorf("hook classify = %+v", res)
 	}
-	if msg, _ := classifyDoErr(errNotFound); msg != "not found" {
-		t.Errorf("notfound classify = %q", msg)
+	if res := classifyDoErr(ctx, 0, errNotFound); res.Error != "not found" || res.Reason != "not_found" {
+		t.Errorf("notfound classify = %+v", res)
 	}
-	if msg, _ := classifyDoErr(errNoFieldsToUpdate); msg != "no fields to update" {
-		t.Errorf("nofields classify = %q", msg)
+	if res := classifyDoErr(ctx, 0, errNoFieldsToUpdate); res.Error != "no fields to update" {
+		t.Errorf("nofields classify = %+v", res)
 	}
-	if msg, _ := classifyDoErr(errors.New("driver boom")); msg != "internal error" {
-		t.Errorf("generic classify = %q", msg)
+	if res := classifyDoErr(ctx, 3, errors.New("driver boom")); res.Error != "internal server error" || res.Index != 3 {
+		t.Errorf("generic classify = %+v", res)
 	}
 }
 

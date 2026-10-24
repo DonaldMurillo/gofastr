@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -68,6 +69,11 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		resourcePath = ent.Version + resourcePath
 	}
 	fmt.Fprintf(&b, "Resource: `%s`\n\n", resourcePath)
+	keyCols := ent.KeyColumns()
+	recordPath := resourcePath + KeyPath(keyCols)
+	if len(keyCols) > 1 {
+		fmt.Fprintf(&b, "Records are keyed on (`%s`): a record's path takes one segment per key column, each value path-escaped, and a batch id joins the escaped values with `/`.\n\n", strings.Join(keyCols, "`, `"))
+	}
 	if opt.ReadOnly {
 		b.WriteString("This resource is served read-only: only the list, get-by-ID and `_events` endpoints are mounted. There are no create, update, delete or batch routes.\n\n")
 	}
@@ -139,7 +145,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("| Name | Type | Target | Key |\n")
 		b.WriteString("|------|------|--------|-----|\n")
 		for _, rel := range ent.Config.Relations {
-			fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` |\n", rel.Name, relationTypeLabel(rel.Type), rel.Entity, rel.ForeignKey)
+			fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` |\n", rel.Name, relationTypeLabel(rel.Type), rel.Entity, strings.Join(rel.ForeignKey, ", "))
 		}
 		b.WriteString("\n")
 		b.WriteString("Examples:\n")
@@ -227,11 +233,17 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("}\n```\n\n")
 
 	// GET /{table}/{id}
-	fmt.Fprintf(&b, "### GET %s/{id}\n\n", resourcePath)
+	fmt.Fprintf(&b, "### GET %s\n\n", recordPath)
 	b.WriteString("Retrieve a single record by ID.\n\n")
 	b.WriteString("| Parameter | Location | Description |\n")
 	b.WriteString("|-----------|----------|-------------|\n")
-	b.WriteString("| `id` | path | Record primary key |\n")
+	if len(keyCols) > 1 {
+		for i, c := range keyCols {
+			fmt.Fprintf(&b, "| `%s` | path | Primary-key column %d of %d |\n", c, i+1, len(keyCols))
+		}
+	} else {
+		b.WriteString("| `id` | path | Record primary key |\n")
+	}
 	b.WriteString("| `include` | query | Comma-separated relations to eager-load |\n")
 	b.WriteString("\n")
 	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
@@ -263,21 +275,21 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("**Error:** `400` with validation errors.\n\n")
 
 		// PUT /{table}/{id}
-		fmt.Fprintf(&b, "### PUT %s/{id}\n\n", resourcePath)
+		fmt.Fprintf(&b, "### PUT %s\n\n", recordPath)
 		b.WriteString("Update an existing record.\n\n")
 		b.WriteString("**Request body:** JSON object with fields to update.\n")
 		b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 		b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
 		// PATCH /{table}/{id}
-		fmt.Fprintf(&b, "### PATCH %s/{id}\n\n", resourcePath)
+		fmt.Fprintf(&b, "### PATCH %s\n\n", recordPath)
 		b.WriteString("Sparsely update an existing record. Only fields present in the JSON body are validated and changed.\n\n")
 		b.WriteString("**Request body:** JSON object with one or more fields to update.\n")
 		b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 		b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
 		// DELETE /{table}/{id}
-		fmt.Fprintf(&b, "### DELETE %s/{id}\n\n", resourcePath)
+		fmt.Fprintf(&b, "### DELETE %s\n\n", recordPath)
 		b.WriteString("Delete a record.\n\n")
 		if ent.Config.Scope.SoftDelete {
 			b.WriteString("**Note:** This entity uses soft-delete: sets `deleted_at` instead of removing the row.\n\n")
@@ -292,8 +304,12 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString(fmt.Sprintf("Maximum %d items per batch.\n\n", MaxBatchSize))
 
 		fmt.Fprintf(&b, "### PATCH %s/_batch\n\n", resourcePath)
-		b.WriteString("Batch update (atomic). Each item must include `id` plus fields to update.\n\n")
-		b.WriteString("```json\n{\n  \"items\": [ {\"id\": \"...\", \"...\": \"...\"} ]\n}\n```\n\n")
+		fmt.Fprintf(&b, "Batch update (atomic). Each item must include `%s` plus fields to update.\n\n", strings.Join(keyCols, "`, `"))
+		itemKeys := make([]string, len(keyCols))
+		for i, c := range keyCols {
+			itemKeys[i] = fmt.Sprintf("%q: \"...\"", c)
+		}
+		fmt.Fprintf(&b, "```json\n{\n  \"items\": [ {%s, \"...\": \"...\"} ]\n}\n```\n\n", strings.Join(itemKeys, ", "))
 
 		fmt.Fprintf(&b, "### DELETE %s/_batch\n\n", resourcePath)
 		b.WriteString("Batch delete (atomic).\n\n")
@@ -326,8 +342,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 				if t.Stamp != "" {
 					stamp = "`" + t.Stamp + "`"
 				}
-				fmt.Fprintf(&b, "| %s | `POST %s/{id}/transitions/%s` | `%s` → `%s` | %s |\n",
-					move, resourcePath, t.Key, strings.Join(t.From, "`, `"), t.To, stamp)
+				fmt.Fprintf(&b, "| %s | `POST %s/transitions/%s` | `%s` → `%s` | %s |\n",
+					move, recordPath, t.Key, strings.Join(t.From, "`, `"), t.To, stamp)
 			}
 			b.WriteString("\n")
 			if !st.Advisory {
@@ -517,7 +533,7 @@ func LLMMDHandler(ent *entity.Entity, opts ...LLMMDOptions) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := handler.GetUser(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -562,7 +578,7 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount fu
 		w.Header().Set("Cache-Control", "no-store")
 		ctx := r.Context()
 		if _, ok := handler.GetUser(ctx); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return
 		}
 		md := registryLLMMD(registry, appName, func(ent *entity.Entity) bool {

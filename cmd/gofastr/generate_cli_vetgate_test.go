@@ -27,7 +27,7 @@ import (
 // Three legs:
 //
 //   - the control-bytes leg: a spec summary carrying terminal-control
-//     bytes must be refused at spec build (the buildCLISpec Selection
+//     bytes must be refused at spec build (the buildCLISpec --api-prefix
 //     guard's sibling) or scrubbed — never emitted live where the shared
 //     printUsage scaffold prints it to the operator's terminal. Today the
 //     hostile summary lands verbatim in operations.go, so this leg fails.
@@ -54,12 +54,12 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	spec, err := buildOpenAPICLISpec(cliGateSpecDoc(hostile), cliGateOptions(), "example.com/app/cli/internal/client")
 	if err != nil {
 		// Refused at spec build is exactly the asserted fix direction
-		// (the buildCLISpec Selection guard's sibling).
+		// (the buildCLISpec --api-prefix guard's sibling).
 		t.Logf("spec build refused the control-byte summary (the fix): %v", err)
 	} else {
 		for _, f := range renderCLIFiles(spec) {
 			if strings.Contains(f.content, "pwned") || strings.Contains(f.content, "EVIL") {
-				t.Errorf("SECURITY: [cli-summary-c0] %s carries the terminal-control summary live (%q) — the shared printUsage/groupUsage scaffold prints command.summary raw, so ESC/OSC/CR from a URL-fetched spec rewrite the help text the operator reads to decide what to run; refuse control-byte summaries at spec build (next to the Selection guard) or scrub them before storage", f.name, hostile)
+				t.Errorf("SECURITY: [cli-summary-c0] %s carries the terminal-control summary live (%q) — the shared printUsage/groupUsage scaffold prints command.summary raw, so ESC/OSC/CR from a URL-fetched spec rewrite the help text the operator reads to decide what to run; refuse control-byte summaries at spec build (next to the --api-prefix guard) or scrub them before storage", f.name, hostile)
 			}
 		}
 	}
@@ -80,7 +80,7 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	files := renderCLIFiles(spec)
 	selfClient := false
 	for _, f := range files {
-		if f.name == "internal/client/client.go" {
+		if f.name == "internal/client/client.gen.go" {
 			selfClient = true
 		}
 	}

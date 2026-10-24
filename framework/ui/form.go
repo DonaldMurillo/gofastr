@@ -167,9 +167,9 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if !cfg.HideSubmit {
 		submitLabel := cfg.SubmitLabel
 		if submitLabel == "" {
-			submitLabel = i18nui.T(ctx, i18nui.KeyFormSave)
+			submitLabel = i18nui.FormSave.Text(ctx)
 		}
-		actions = headless.Own(Button(ButtonConfig{Label: submitLabel, Type: "submit"}))
+		actions = headless.Own(Button(ButtonConfig{Ctx: ctx, Label: submitLabel, Type: "submit"}))
 	}
 
 	// The summary, when there is one, renders above the body and marks
@@ -185,7 +185,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		}
 		general := cfg.Summary
 		if general == "" {
-			general = i18nui.T(ctx, i18nui.KeyFormErrorsSummary)
+			general = i18nui.FormErrorsSummary.Text(ctx)
 		}
 		errorsHTML = ValidationSummary(ValidationSummaryConfig{
 			ID:          cfg.ID + "-errors",
@@ -194,7 +194,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			FieldLabels: cfg.FieldLabels,
 			FieldIDs:    cfg.FieldIDs,
 			FieldOrder:  cfg.FieldOrder,
-			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
+			Title:       i18nui.FormHasErrors.Text(ctx),
 			Ctx:         ctx,
 		})
 		// headless.Form takes Errors as slot content; this summary is
@@ -396,13 +396,14 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 
 	titleText := cfg.Title
 	if titleText == "" {
-		titleText = i18nui.T(ctx, i18nui.KeyValidationSummaryTitle)
+		titleText = i18nui.ValidationSummaryTitle.Text(ctx)
 	}
 	return validationSummaryStyle.WrapHTML(headless.ValidationSummary(headless.ValidationSummaryProps{
-		Title:  titleText,
-		Level:  2,
-		Errors: errs,
-		ID:     cfg.ID,
+		Title:   titleText,
+		Level:   2,
+		Errors:  errs,
+		ID:      cfg.ID,
+		Strings: StringsFor(ctx),
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs,
 			"role", "tabindex", "aria-labelledby"),
 	}, withRootClass(validationSummaryClasses, cfg.Class)))
@@ -435,7 +436,7 @@ func validationSummaryCSS(_ style.Theme) string {
 }
 .fui-validation-summary__list {
   margin: 0;
-  padding-left: var(--spacing-lg, 16px);
+  padding-inline-start: var(--spacing-lg, 16px);
   list-style: disc;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #09090B);

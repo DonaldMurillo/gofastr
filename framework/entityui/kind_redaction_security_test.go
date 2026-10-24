@@ -13,7 +13,7 @@ import (
 // the way a careless custom renderer would.
 func echoKind() Extensions {
 	echo := func(c CellContext) render.HTML {
-		return render.Text("[" + cell(c.Value) + "|" + cell(rowValue(c.Row, "token")) + "]")
+		return render.Text("[" + cell(c.Value) + "|" + cell((&meta{}).rowValue(c.Row, "token")) + "]")
 	}
 	return Extensions{Kinds: map[string]Kind{"echo": {Cell: echo, Detail: echo}}}
 }

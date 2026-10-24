@@ -27,8 +27,10 @@ type Match struct {
 // newMatch builds a Match with its own copy of params, so later
 // mutation of the source map cannot change what a holder already read.
 // Resolve returns a fresh map per call, but the copy keeps the
-// immutability contract from depending on that fact.
+// immutability contract from depending on that fact. path is in
+// routing form and is kept decoded.
 func newMatch(screenID, path string, params map[string]string) Match {
+	path = decodeRouteSeg(path)
 	if len(params) == 0 {
 		return Match{screenID: screenID, path: path}
 	}

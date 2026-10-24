@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -19,11 +21,6 @@ import (
 // childHandlerFor builds a tx-bound CrudHandler for the relation target.
 func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 	child := NewCrudHandler(target, ch.DB).WithJSONCase(ch.JSONCase)
-	pk := target.PrimaryKey
-	if pk == "" {
-		pk = "id"
-	}
-	child.PrimaryKey = pk
 	child.Registry = ch.Registry
 	child.Storage = ch.Storage
 	child.ImageDeriver = ch.ImageDeriver
@@ -38,16 +35,42 @@ func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 	return child
 }
 
+// linkWrite reads the pivot row a ManyToMany cascade inserts: it writes
+// the two link columns, and every other column holds its DDL default, or
+// nothing known for an AutoIncrement one. A link column is keyed by the
+// pivot field it names: the INSERT's unquoted identifier reaches that
+// column in any case, so "POST_ID" over a field post_id is post_id.
+func (ch *CrudHandler) linkWrite(cols map[string]any) fkWrite {
+	link := make(map[string]any, len(cols))
+	for c, v := range cols {
+		if i := slices.IndexFunc(ch.Entity.GetFields(), func(f schema.Field) bool { return strings.EqualFold(f.Name, c) }); i >= 0 {
+			c = ch.Entity.GetFields()[i].Name
+		}
+		link[c] = v
+	}
+	return fkWrite{
+		body: link,
+		sets: func(f schema.Field) bool {
+			_, ok := link[f.Name]
+			return ok
+		},
+		holds: func(c string) (any, bool) {
+			f := ch.fieldByName(c)
+			return f.Default, f.AutoGenerate != schema.AutoIncrement
+		},
+	}
+}
+
 // coerceLinkPK validates and coerces an ID for ManyToMany linking.
 // If the target entity's primary key is schema.Int, float64 / float-based json.Number values
 // that are at or beyond ±2^53 (or not exact integers) are rejected with a ValidationError,
 // preventing silent precision loss.
-func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, val any) (any, error) {
+func coerceLinkPK(reg entity.Registry, target *entity.Entity, targetPK string, fieldPrefix string, val any) (any, error) {
 	if target == nil || val == nil {
 		return val, nil
 	}
 	isPKInt := false
-	for _, f := range target.GetFields() {
+	for _, f := range entity.ValueFields(reg, target) {
 		if f.Name == targetPK && f.Type == schema.Int {
 			isPKInt = true
 			break
@@ -63,25 +86,17 @@ func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, va
 			return i, nil
 		}
 		if x == math.Trunc(x) && !math.IsNaN(x) && !math.IsInf(x, 0) {
-			return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-				"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-			}}}
+			return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: reasonBeyondPrecision}}}}
 		}
-		return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-			"must be an integer",
-		}}}
+		return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: schema.ReasonNotInteger}}}}
 	case float32:
 		if i, ok := exactFloatInt64(float64(x)); ok {
 			return i, nil
 		}
 		if float64(x) == math.Trunc(float64(x)) {
-			return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-				"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-			}}}
+			return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: reasonBeyondPrecision}}}}
 		}
-		return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-			"must be an integer",
-		}}}
+		return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: schema.ReasonNotInteger}}}}
 	case json.Number:
 		if i, err := x.Int64(); err == nil {
 			return i, nil
@@ -92,25 +107,21 @@ func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, va
 				return i, nil
 			}
 			if fl == math.Trunc(fl) {
-				return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: reasonBeyondPrecision}}}}
 			}
 		}
-		return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-			"must be an integer",
-		}}}
+		return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: schema.ReasonNotInteger}}}}
 	}
 	return val, nil
 }
 
 // coercePKValue coerces a value into an integer type if the entity's primary key (or FK) is an integer schema type.
 // This prevents PostgreSQL strict type errors (e.g. integer = double precision or integer = text).
-func coercePKValue(ent *entity.Entity, colName string, val any) any {
+func coercePKValue(reg entity.Registry, ent *entity.Entity, colName string, val any) any {
 	if ent == nil || val == nil {
 		return val
 	}
-	for _, f := range ent.GetFields() {
+	for _, f := range entity.ValueFields(reg, ent) {
 		if f.Name == colName {
 			switch f.Type {
 			case schema.Int:
@@ -190,8 +201,12 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, target *entity.E
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
-	coercedChildID := coercePKValue(target, targetPK, childIDVal)
-	coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return err
+	}
+	coercedChildID := coercePKValue(ch.Registry, target, targetPK, childIDVal)
+	coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
 	allArgs := append([]any{coercedChildID, coercedParentID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var belongs int
@@ -238,7 +253,11 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *enti
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
-	coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return nil, err
+	}
+	coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
 	allArgs := append([]any{coercedParentID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var existingID any
@@ -288,7 +307,7 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
-	coercedID := coercePKValue(target, targetPK, idVal)
+	coercedID := coercePKValue(ch.Registry, target, targetPK, idVal)
 	allArgs := append([]any{coercedID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var hit any
@@ -301,8 +320,8 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 	return nil
 }
 
-func prefixValidationErrors(prefix string, fields map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(fields))
+func prefixValidationErrors(prefix string, fields map[string][]schema.Violation) map[string][]schema.Violation {
+	out := make(map[string][]schema.Violation, len(fields))
 	for k, msgs := range fields {
 		out[prefix+"."+k] = msgs
 	}
@@ -358,7 +377,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		}
 		childMap, ok := rawVal.(map[string]any)
 		if !ok {
-			return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an object"}}}
+			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotObject}}}}
 		}
 
 		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
@@ -371,9 +390,9 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 
 		childHandler := ch.childHandlerFor(target)
 		childMap = childHandler.unconvertMapKeys(childMap)
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
+		targetPK, err := target.KeyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
 		}
 
 		var childResult map[string]any
@@ -410,7 +429,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		if childPKVal == nil {
 			childPKVal = childResult[ch.convertKey(targetPK)]
 		}
-		body[rel.ForeignKey] = childPKVal
+		body[oneFK(rel)] = childPKVal
 		attached[ch.convertKey(rel.Name)] = childResult
 	}
 	return attached, nil
@@ -440,19 +459,23 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
 		childHandler := ch.childHandlerFor(target)
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
+		parentPK, err := ch.keyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
+		}
+		targetPK, err := target.KeyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
 		}
 
 		switch rel.Type {
 		case entity.RelHasOne:
 			childMap, ok := rawVal.(map[string]any)
 			if !ok {
-				return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an object"}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotObject}}}}
 			}
 			childMap = childHandler.unconvertMapKeys(childMap)
-			childMap[rel.ForeignKey] = parentID
+			childMap[oneFK(rel)] = parentID
 
 			var childResult map[string]any
 			childIDVal, hasChildID := childMap[targetPK]
@@ -461,7 +484,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			}
 			if isUpdate {
 				if hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, target, targetPK, rel.ForeignKey, childIDVal, parentID); err != nil {
+					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
 					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
@@ -472,7 +495,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
-					existingID, scanErr := ch.findExistingHasOneChild(ctx, target, targetPK, rel.ForeignKey, parentID)
+					existingID, scanErr := ch.findExistingHasOneChild(ctx, target, targetPK, oneFK(rel), parentID)
 					if scanErr != nil {
 						return nil, scanErr
 					}
@@ -515,16 +538,16 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		case entity.RelHasMany:
 			slice, ok := rawVal.([]any)
 			if !ok {
-				return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an array"}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotArray}}}}
 			}
 			childResults := make([]map[string]any, 0, len(slice))
 			for idx, item := range slice {
 				childMap, ok := item.(map[string]any)
 				if !ok {
-					return nil, &ValidationError{fields: map[string][]string{fmt.Sprintf("%s.%d", rel.Name, idx): {"must be an object"}}}
+					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObject}}}}
 				}
 				childMap = childHandler.unconvertMapKeys(childMap)
-				childMap[rel.ForeignKey] = parentID
+				childMap[oneFK(rel)] = parentID
 
 				var childResult map[string]any
 				childIDVal, hasChildID := childMap[targetPK]
@@ -532,7 +555,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					childIDVal, hasChildID = childMap[ch.convertKey(targetPK)]
 				}
 				if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, target, targetPK, rel.ForeignKey, childIDVal, parentID); err != nil {
+					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
 					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
@@ -565,7 +588,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		case entity.RelManyToMany:
 			slice, ok := rawVal.([]any)
 			if !ok {
-				return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an array"}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotArray}}}}
 			}
 			childResults := make([]map[string]any, 0, len(slice))
 			through, err := query.SafeIdent(rel.Through)
@@ -580,6 +603,14 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			if err != nil {
 				return nil, fmt.Errorf("relation %q foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
 			}
+			pivot, err := entity.PivotEntity(ch.Registry, ch.Entity, rel.Through)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
+			}
+			var pivotHandler *CrudHandler
+			if pivot != nil {
+				pivotHandler = ch.childHandlerFor(pivot)
+			}
 			for idx, item := range slice {
 				var childID any
 				var childResult map[string]any
@@ -593,7 +624,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						idVal, hasID = childMap[ch.convertKey(targetPK)]
 					}
 					if hasID {
-						coerced, err := coerceLinkPK(target, targetPK, fieldPrefix, idVal)
+						coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, idVal)
 						if err != nil {
 							return nil, err
 						}
@@ -638,7 +669,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						}
 					}
 				case string, int, int64, int32, uint, uint64, float64:
-					coerced, err := coerceLinkPK(target, targetPK, fieldPrefix, it)
+					coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, it)
 					if err != nil {
 						return nil, err
 					}
@@ -648,7 +679,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				case json.Number:
-					coerced, err := coerceLinkPK(target, targetPK, fieldPrefix, it)
+					coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, it)
 					if err != nil {
 						return nil, err
 					}
@@ -658,11 +689,11 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				default:
-					return nil, &ValidationError{fields: map[string][]string{fmt.Sprintf("%s.%d", rel.Name, idx): {"must be an object or ID"}}}
+					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObjectOrID}}}}
 				}
 
-				coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)
-				coercedChildID := coercePKValue(target, targetPK, childID)
+				coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
+				coercedChildID := coercePKValue(ch.Registry, target, targetPK, childID)
 
 				var exists int
 				checkQ := fmt.Sprintf("SELECT 1 FROM %s WHERE %s = $1 AND %s = $2",
@@ -670,6 +701,16 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				err := ch.DB.QueryRowContext(ctx, checkQ, coercedParentID, coercedChildID).Scan(&exists)
 				if err != nil {
 					if errors.Is(err, sql.ErrNoRows) {
+						if pivotHandler != nil {
+							link := map[string]any{rel.LocalKey: coercedParentID, rel.ForeignKeyTarget: coercedChildID}
+							if err := pivotHandler.checkBelongsToScope(ctx, pivotHandler.linkWrite(link)); err != nil {
+								var ve *ValidationError
+								if errors.As(err, &ve) {
+									return nil, &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
+								}
+								return nil, fmt.Errorf("%s: %w", fieldPrefix, err)
+							}
+						}
 						insQ := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)",
 							through, localKey, fkTarget)
 						if _, insErr := ch.DB.ExecContext(ctx, insQ, coercedParentID, coercedChildID); insErr != nil {

@@ -26,6 +26,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -116,7 +117,15 @@ var Catalog = []Entry{
 	}},
 	{"themepicker", "ThemePicker", "Buttons & links", "Switches the whole page to a registered theme override and remembers the choice.", func() render.HTML {
 		return row(
-			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: "Square", Theme: squareTheme}}}),
+			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: squareName, Theme: squareTheme}}}),
+		)
+	}},
+	{"languagemenu", "LanguageMenu", "Buttons & links", "Links the current page in each of the app's languages, each named in itself.", func() render.HTML {
+		// The showcase routes by no locale, so the tile hands the menu a
+		// locale set of its own; in an app the request context carries it.
+		set := i18n.PathLocales{Default: "en", Prefixed: []string{"es", "pt-BR"}}
+		return row(
+			ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: i18n.WithPathLocale(context.Background(), set, "en"), ID: "gallery-language"}),
 		)
 	}},
 

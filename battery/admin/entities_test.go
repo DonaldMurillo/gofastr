@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // lockedPosts is posts behind permissions the admin's roles do not hold:
@@ -125,6 +127,29 @@ func TestAllEntitiesSkipsCRUDOff(t *testing.T) {
 	}
 }
 
+// A raw App.Table is registered for migration only: AllEntities leaves
+// it out, and naming one whose key reads case-insensitively (a Postgres
+// UUID) fails boot, since two ids would reach one record.
+func TestRawTableNotServed(t *testing.T) {
+	claims := migrate.Table{Name: "claims", Columns: []migrate.Column{
+		{Name: "room", Type: schema.UUID, RawType: "UUID", PrimaryKey: true},
+		{Name: "slot", Type: schema.String, PrimaryKey: true},
+		{Name: "label", Type: schema.String},
+	}}
+	addRaw := func(x *env, _ *Config) { x.app.Table(claims) }
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{AllEntities: true}, addRaw)
+	if rr := get(x.as(theAdmin), "/admin/entities/posts"); rr.Code != http.StatusOK {
+		t.Fatalf("a CRUD entity under AllEntities = %d, so the raw table's 404 proves nothing", rr.Code)
+	}
+	if rr := get(x.as(theAdmin), "/admin/entities/claims"); rr.Code != http.StatusNotFound {
+		t.Errorf("SECURITY: a raw table under AllEntities = %d, want 404", rr.Code)
+	}
+	_, _, err := trySetup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts", "claims"}}, addRaw)
+	if err == nil || !strings.Contains(err.Error(), "more than one spelling") {
+		t.Errorf("naming a raw table keyed on a UUID column: Init = %v, want the key refusal", err)
+	}
+}
+
 func TestEntityListEscapesValues(t *testing.T) {
 	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
 	x.insert("posts", map[string]any{"id": "p1", "title": "<script>alert(1)</script>", "status": "draft"})
@@ -232,14 +257,17 @@ func TestEntityCountReadsAndFormats(t *testing.T) {
 		t.Fatalf("the card lacks its newest write's age:\n%s", body)
 	}
 	ctx := context.Background()
-	if got := countText(ctx, "12,345"); got != "10k+" {
-		t.Errorf("countText(12,345) = %q", got)
+	if got := countText(ctx, 12345, true); got != "10,000+" {
+		t.Errorf("countText(12345) = %q", got)
 	}
-	if got := countText(ctx, "9,999"); got != "9,999" {
-		t.Errorf("countText(9,999) = %q", got)
+	if got := countText(ctx, 9999, true); got != "9,999" {
+		t.Errorf("countText(9999) = %q", got)
 	}
-	if got := countText(ctx, "—"); got != "—" {
-		t.Errorf("countText(—) = %q", got)
+	if got := countText(i18n.WithContext(ctx, i18n.Locale{Tag: "fr"}), 9999, true); got != "9\u202f999" {
+		t.Errorf("French countText(9999) = %q", got)
+	}
+	if got := countText(ctx, 3, false); got != "—" {
+		t.Errorf("a refused count = %q", got)
 	}
 }
 

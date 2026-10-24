@@ -2,34 +2,14 @@ package i18nui
 
 import (
 	"context"
-	"reflect"
+	"regexp"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
-
-func TestStringsReplaceAllNoInfiniteLoop(t *testing.T) {
-	// Pins the substitution path used by TranslateValidation, confirms
-	// strings.ReplaceAll terminates even when the replacement contains
-	// the placeholder it just consumed. (Stdlib guarantees this; we
-	// keep the test as a regression net for the substitution call site.)
-	done := make(chan string, 1)
-	go func() {
-		done <- strings.ReplaceAll("{x}", "{x}", "{x}_evil")
-	}()
-	select {
-	case got := <-done:
-		if got != "{x}_evil" {
-			t.Fatalf("ReplaceAll = %q, want %q", got, "{x}_evil")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("strings.ReplaceAll hung on self-containing replacement")
-	}
-}
 
 func TestHumanizeMultibyte(t *testing.T) {
 	got := humanize("naïveCount")
@@ -41,13 +21,27 @@ func TestHumanizeMultibyte(t *testing.T) {
 	}
 }
 
-func TestTNilReturnsDefault(t *testing.T) {
-	ctx := context.Background()
-	for key, expected := range Defaults {
-		got := T(ctx, key)
-		if got != expected {
-			t.Errorf("T(nil, %q) = %q, want %q", key, got, expected)
+// Every ui.* phrase writes its placeholders as {{name}}: one spelling a
+// translator learns once, which the catalog check and the runtime fill
+// both read. A printf verb or a single-brace token is the old split.
+func TestUIPhrasesUseNamedPlaceholders(t *testing.T) {
+	verb := regexp.MustCompile(`%[-+# 0-9.]*[a-zA-Z]`)
+	single := regexp.MustCompile(`(^|[^{])\{[A-Za-z_][A-Za-z0-9_]*\}($|[^}])`)
+	n := 0
+	for key, en := range i18n.Phrases() {
+		if !strings.HasPrefix(key, "ui.") {
+			continue
 		}
+		n++
+		if verb.MatchString(en) {
+			t.Errorf("%s = %q carries a printf verb; write {{name}}", key, en)
+		}
+		if single.MatchString(en) {
+			t.Errorf("%s = %q carries a {name} token; write {{name}}", key, en)
+		}
+	}
+	if n < 500 {
+		t.Fatalf("only %d ui.* phrases defined; the package's vars did not register", n)
 	}
 }
 
@@ -57,24 +51,13 @@ func TestTCtxLocale(t *testing.T) {
 	cat.Set("fr", "ui.pagination.next", i18n.Message{Text: "Suivant"})
 	tr := i18n.NewTranslator(cat, "en")
 
-	ctxFr := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), tr)
-	if got := T(ctxFr, KeyPaginationNext); got != "Suivant" {
+	ctxFr := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), tr)
+	if got := PaginationNext.Text(ctxFr); got != "Suivant" {
 		t.Fatalf("T fr = %q, want Suivant", got)
 	}
-	ctxEn := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en"}), tr)
-	if got := T(ctxEn, KeyPaginationNext); got != "Next" {
+	ctxEn := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en"}), tr)
+	if got := PaginationNext.Text(ctxEn); got != "Next" {
 		t.Fatalf("T en = %q, want Next", got)
-	}
-}
-
-func TestValidationErrorCtxLocale(t *testing.T) {
-	cat := i18n.NewMapCatalog()
-	cat.Set("fr", "ui.validation.required", i18n.Message{Text: "Champ obligatoire"})
-	tr := i18n.NewTranslator(cat, "en")
-	ctxFr := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	got := TranslateValidation(ctxFr, tr, "required", nil)
-	if got != "Champ obligatoire" {
-		t.Fatalf("TranslateValidation fr = %q, want Champ obligatoire", got)
 	}
 }
 
@@ -89,9 +72,9 @@ func TestFieldLabelCtxLocale(t *testing.T) {
 }
 
 func TestTReturnsDefault(t *testing.T) {
-	got := T(context.Background(), KeyPaginationNext)
+	got := PaginationNext.Text(context.Background())
 	if got != "Next" {
-		t.Fatalf("T(KeyPaginationNext) = %q, want %q", got, "Next")
+		t.Fatalf("T(PaginationNext) = %q, want %q", got, "Next")
 	}
 }
 
@@ -100,97 +83,44 @@ func TestTUsesCtxTranslator(t *testing.T) {
 	cat.Set("fr", "ui.pagination.next", i18n.Message{Text: "Suivant"})
 	tr := i18n.NewTranslator(cat, "en")
 	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	ctx = WithTranslator(ctx, tr)
-	if got := T(ctx, KeyPaginationNext); got != "Suivant" {
-		t.Fatalf("T(ctx, KeyPaginationNext) = %q, want Suivant", got)
+	ctx = i18n.WithTranslator(ctx, tr)
+	if got := PaginationNext.Text(ctx); got != "Suivant" {
+		t.Fatalf("PaginationNext.Text(ctx) = %q, want Suivant", got)
 	}
 }
 
-// TVars falls back to the English default when the ctx translator is
+// Text falls back to the English default when the ctx translator is
 // present but the catalog has no ui.* entry (the miss case, an app
 // catalog won't contain ui.* keys unless the app overrides them).
-func TestTVarsMissFallsBackToDefault(t *testing.T) {
+func TestTextMissFallsBackToDefault(t *testing.T) {
 	cat := i18n.NewMapCatalog() // no ui.* entries
 	tr := i18n.NewTranslator(cat, "en")
-	ctx := WithTranslator(context.Background(), tr)
-	got := TVars(ctx, KeyTableSortBy, map[string]string{"column": "name"})
+	ctx := i18n.WithTranslator(context.Background(), tr)
+	got := TableSortBy.Text(ctx, map[string]any{"column": "name"})
 	if got != "Sort by name" {
-		t.Fatalf("TVars miss = %q, want %q", got, "Sort by name")
+		t.Fatalf("Text miss = %q, want %q", got, "Sort by name")
 	}
 }
 
-// TVars uses the translator's value (with interpolation) when the
+// Text uses the translator's value (with interpolation) when the
 // catalog DOES contain the key for the locale.
-func TestTVarsTranslatorHitWins(t *testing.T) {
+func TestTextTranslatorHitWins(t *testing.T) {
 	cat := i18n.NewMapCatalog()
-	cat.Set("fr", "ui.table.sortBy", i18n.Message{Text: "Trier par {column}"})
+	cat.Set("fr", "ui.table.sortBy", i18n.Message{Text: "Trier par {{column}}"})
 	tr := i18n.NewTranslator(cat, "en")
 	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	ctx = WithTranslator(ctx, tr)
-	got := TVars(ctx, KeyTableSortBy, map[string]string{"column": "nom"})
+	ctx = i18n.WithTranslator(ctx, tr)
+	got := TableSortBy.Text(ctx, map[string]any{"column": "nom"})
 	if got != "Trier par nom" {
-		t.Fatalf("TVars hit = %q, want %q", got, "Trier par nom")
+		t.Fatalf("Text hit = %q, want %q", got, "Trier par nom")
 	}
 }
 
-// TVars without a translator returns the English default interpolated.
-func TestTVarsNilCtxEnglishDefault(t *testing.T) {
-	got := TVars(nil, KeyCarouselGoTo, map[string]string{"slide": "3"})
+// Text without a translator returns the English default interpolated.
+func TestTextNilCtxEnglishDefault(t *testing.T) {
+	got := CarouselGoTo.Text(nil, map[string]any{"slide": "3"})
 	if got != "Go to slide 3" {
-		t.Fatalf("TVars nil ctx = %q, want %q", got, "Go to slide 3")
-	}
-}
-
-func TestTUnknownKeyReturnsKeyString(t *testing.T) {
-	key := Key("ui.nonexistent.key")
-	got := T(context.Background(), key)
-	if got != string(key) {
-		t.Fatalf("T(%q) = %q, want %q", key, got, key)
-	}
-}
-
-func TestValidationError(t *testing.T) {
-	got := TranslateValidation(context.Background(), nil, "required", nil)
-	if got != "This field is required" {
-		t.Fatalf("TranslateValidation(required) = %q", got)
-	}
-}
-
-func TestValidationErrorWithVars(t *testing.T) {
-	got := TranslateValidation(context.Background(), nil, "min", map[string]string{"min": "5"})
-	if got != "Must be at least 5" {
-		t.Fatalf("TranslateValidation(min, {min:5}) = %q", got)
-	}
-}
-
-func TestValidationErrorMinLength(t *testing.T) {
-	got := TranslateValidation(context.Background(), nil, "minLength", map[string]string{"min": "3"})
-	if !strings.Contains(got, "3") {
-		t.Fatalf("expected '3' in %q", got)
-	}
-	if !strings.Contains(got, "characters") {
-		t.Fatalf("expected 'characters' in %q", got)
-	}
-}
-
-func TestValidationErrorBracesInValue(t *testing.T) {
-	// Regression: a var value containing { / } must not cause runaway
-	// substitution. The {min} token must be replaced with the literal
-	// string "user{name}" exactly once.
-	done := make(chan string, 1)
-	go func() {
-		done <- TranslateValidation(context.Background(), nil, "min", map[string]string{"min": "user{name}"})
-	}()
-	select {
-	case got := <-done:
-		if !strings.Contains(got, "user{name}") {
-			t.Fatalf("ValidationError = %q, want literal user{name}", got)
-		}
-		if strings.Count(got, "user{name}") != 1 {
-			t.Fatalf("expected single substitution, got %q", got)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("ValidationError hung on brace-containing value")
+		t.Fatalf("Text nil ctx = %q, want %q", got, "Go to slide 3")
 	}
 }
 
@@ -219,51 +149,6 @@ func TestFieldLabelSnakeCase(t *testing.T) {
 	}
 }
 
-func TestAllKeysHaveDefaults(t *testing.T) {
-	// Discover every exported Key constant via reflection on
-	// AllKeys(). Guarantees a newly added key without a default is
-	// caught immediately, not only when someone updates this test.
-	keys := AllKeys()
-	if len(keys) == 0 {
-		t.Fatal("AllKeys() returned no keys")
-	}
-	for _, k := range keys {
-		got := T(context.Background(), k)
-		if got == "" {
-			t.Errorf("key %q resolved to empty string", k)
-		}
-		if got == string(k) {
-			t.Errorf("key %q has no default (resolver fell through to bare key)", k)
-		}
-	}
-}
-
-func TestAllKeysCoversAllPackageConstants(t *testing.T) {
-	// Belt-and-suspenders: package-declared constants of type Key (as
-	// exposed via Defaults) must match AllKeys() exactly. If they
-	// diverge, AllKeys is stale.
-	allSet := map[Key]struct{}{}
-	for _, k := range AllKeys() {
-		allSet[k] = struct{}{}
-	}
-	for k := range Defaults {
-		if _, ok := allSet[k]; !ok {
-			t.Errorf("Defaults has %q but AllKeys() does not", k)
-		}
-	}
-	// Also reject duplicates in AllKeys().
-	seen := map[Key]int{}
-	for _, k := range AllKeys() {
-		seen[k]++
-	}
-	for k, n := range seen {
-		if n > 1 {
-			t.Errorf("AllKeys() lists %q %d times", k, n)
-		}
-	}
-	_ = reflect.TypeFor[Key]()
-}
-
 func TestHumanize(t *testing.T) {
 	tests := []struct {
 		input, want string
@@ -282,21 +167,21 @@ func TestHumanize(t *testing.T) {
 	}
 }
 
-// TVarsHTML escapes the translated text, drops markup values into their
-// placeholders in one pass (a value holding "{verb}" stays as written),
+// HTML escapes the translated text, drops markup values into their
+// placeholders in one pass (a value holding "{{verb}}" stays as written),
 // and leaves an unknown placeholder as text.
-func TestTVarsHTMLEscapesTextNotValues(t *testing.T) {
+func TestHTMLEscapesTextNotValues(t *testing.T) {
 	cat := i18n.NewMapCatalog()
-	cat.Set("fr", string(KeyAdminActivityLine), i18n.Message{Text: "<i>{actor}</i> a {verb} {record} {nope} {x {verb} <u>"})
-	ctx := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), i18n.NewTranslator(cat, "en"))
-	got := TVarsHTML(ctx, KeyAdminActivityLine, map[string]render.HTML{
-		"actor": "<b>{verb}</b>", "verb": render.Text("créé & co"), "record": `<a href="/r/1">INV-1</a>`,
+	cat.Set("fr", AdminActivityLine.Key(), i18n.Message{Text: "<i>{{actor}}</i> a {{verb}} {{record}} {{nope}} {{x {{verb}} <u>"})
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), i18n.NewTranslator(cat, "en"))
+	got := HTML(ctx, AdminActivityLine, map[string]render.HTML{
+		"actor": "<b>{{verb}}</b>", "verb": render.Text("créé & co"), "record": `<a href="/r/1">INV-1</a>`,
 	})
-	want := `&lt;i&gt;<b>{verb}</b>&lt;/i&gt; a créé &amp; co <a href="/r/1">INV-1</a> {nope} {x créé &amp; co &lt;u&gt;`
+	want := `&lt;i&gt;<b>{{verb}}</b>&lt;/i&gt; a créé &amp; co <a href="/r/1">INV-1</a> {{nope}} {{x créé &amp; co &lt;u&gt;`
 	if string(got) != want {
-		t.Fatalf("TVarsHTML = %q\nwant        %q", got, want)
+		t.Fatalf("HTML = %q\nwant        %q", got, want)
 	}
-	if got := TVarsHTML(nil, KeyAdminActivityLine, map[string]render.HTML{"actor": "a", "verb": "v", "record": "r"}); got != "a v r" {
+	if got := HTML(nil, AdminActivityLine, map[string]render.HTML{"actor": "a", "verb": "v", "record": "r"}); got != "a v r" {
 		t.Fatalf("English default = %q", got)
 	}
 }

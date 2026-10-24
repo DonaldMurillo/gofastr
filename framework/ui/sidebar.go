@@ -208,6 +208,12 @@ type SidebarItem struct {
 
 // SidebarConfig describes a navigation sidebar.
 type SidebarConfig struct {
+	// Ctx carries the per-request context a standalone
+	// SidebarDrawerTrigger writes its default label in. When nil,
+	// English applies. The mounted sidebar and drawer speak each
+	// request's language without it.
+	Ctx context.Context
+
 	// Title is rendered as the sidebar's top heading. Empty omits it.
 	Title string
 
@@ -418,7 +424,7 @@ func SidebarDrawerTrigger(cfg SidebarConfig) render.HTML {
 	if cfg.DrawerBreakpoint == StackBelowLG {
 		classes[headless.PartRoot] += " fui-sidebar__hamburger--drawer-below-lg"
 	}
-	drawerLabel := "Open navigation"
+	drawerLabel := i18nui.SidebarOpenDrawer.Text(cfg.Ctx)
 	if cfg.Compact {
 		drawerLabel = cfg.navLabel()
 		classes[headless.PartRoot] += " fui-sidebar__hamburger--labelled"
@@ -526,7 +532,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// documented default (Sidebar() normalizes it to persistent).
 	cfg := s.cfg
 	classes := sidebarClasses(cfg.Variant)
-	drawerLabel := "Open navigation"
+	drawerLabel := i18nui.SidebarOpenDrawer.Text(ctx)
 	if cfg.SectionLabels {
 		classes[headless.PartRoot] += " fui-sidebar--section-labels"
 	}
@@ -586,15 +592,15 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// client-side toggle can re-say.
 	collapseLabel := cfg.CollapseLabel
 	if collapseLabel == "" {
-		collapseLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarCollapse)
+		collapseLabel = i18nui.HuiSidebarCollapse.Text(ctx)
 	}
 	expandLabel := cfg.ExpandLabel
 	if expandLabel == "" {
-		expandLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarExpand)
+		expandLabel = i18nui.HuiSidebarExpand.Text(ctx)
 	}
 	collapseText := cfg.CollapseText
 	if collapseText == "" {
-		collapseText = i18nui.T(ctx, i18nui.KeyHuiSidebarCollapseText)
+		collapseText = i18nui.HuiSidebarCollapseText.Text(ctx)
 	}
 
 	out := headless.Sidebar(headless.SidebarProps{
@@ -848,14 +854,14 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 		label = h.resolve(ctx).DrawerCloseLabel
 	}
 	if label == "" {
-		label = "Close navigation"
+		label = i18nui.SidebarCloseDrawer.Text(ctx)
 	}
 	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
 	// pulls this sheet too — the header slot sits in the widget
 	// chrome, beside (not inside) the body's marked region.
 	return sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
 		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
-		Button(ButtonConfig{Label: label, Icon: "close", IconOnly: true,
+		Button(ButtonConfig{Ctx: ctx, Label: label, Icon: "close", IconOnly: true,
 			Variant: ButtonGhost, Class: "fui-sidebar__drawer-close",
 			ExtraAttrs: html.Attrs{"data-cui-action": "close"}}),
 	))

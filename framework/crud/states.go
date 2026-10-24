@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -78,22 +81,26 @@ type StateError struct {
 	hidden  bool // the caller's ReadScope hides the record: no state named
 }
 
-func (e *StateError) Error() string { return e.message() }
+func (e *StateError) Error() string {
+	p, params := e.Phrased()
+	return p.Format(params)
+}
 
-func (e *StateError) message() string {
+// Phrased implements i18n.Phrased.
+func (e *StateError) Phrased() (i18n.Phrase, map[string]any) {
 	if e.create {
 		if e.Initial == nil {
-			return fmt.Sprintf("%s is set by a move, not on create", e.Field)
+			return reasonStateSetByMove, map[string]any{"field": e.Field}
 		}
-		return fmt.Sprintf("a new record starts at %s", strings.Join(e.Initial, " or "))
+		return reasonStateInitial, map[string]any{"initial": strings.Join(e.Initial, " or ")}
 	}
 	if e.hidden {
-		return fmt.Sprintf("%s changes only through a move", e.Field)
+		return reasonStateMoveOnly, map[string]any{"field": e.Field}
 	}
 	if len(e.Moves) == 0 {
-		return fmt.Sprintf("%s changes only through a move, and none is open from %q", e.Field, e.Current)
+		return reasonStateNoMoves, map[string]any{"field": e.Field, "current": strconv.Quote(e.Current)}
 	}
-	return fmt.Sprintf("%s changes only through a move; open from %q: %s", e.Field, e.Current, strings.Join(e.Moves, ", "))
+	return reasonStateMovesOpen, map[string]any{"field": e.Field, "current": strconv.Quote(e.Current), "moves": strings.Join(e.Moves, ", ")}
 }
 
 // TransitionConflictError refuses a move whose From does not hold the
@@ -107,13 +114,19 @@ type TransitionConflictError struct {
 }
 
 func (e *TransitionConflictError) Error() string {
+	p, params := e.Phrased()
+	return p.Format(params)
+}
+
+// Phrased implements i18n.Phrased.
+func (e *TransitionConflictError) Phrased() (i18n.Phrase, map[string]any) {
 	if e.hidden {
-		return fmt.Sprintf("move %q is not open", e.Key)
+		return reasonMoveNotOpen, map[string]any{"key": strconv.Quote(e.Key)}
 	}
 	if len(e.Moves) == 0 {
-		return fmt.Sprintf("move %q is not open from %q, and no move is", e.Key, e.Current)
+		return reasonMoveNoneOpen, map[string]any{"key": strconv.Quote(e.Key), "current": strconv.Quote(e.Current)}
 	}
-	return fmt.Sprintf("move %q is not open from %q; open: %s", e.Key, e.Current, strings.Join(e.Moves, ", "))
+	return reasonMoveOthersOpen, map[string]any{"key": strconv.Quote(e.Key), "current": strconv.Quote(e.Current), "moves": strings.Join(e.Moves, ", ")}
 }
 
 type stateOverrideKey struct{}
@@ -309,8 +322,8 @@ func (ch *CrudHandler) checkStateUpsert(ctx context.Context, r *http.Request, bo
 	if ch.enforcedStates() == nil {
 		return ctx, nil
 	}
-	if id, ok := body[ch.PrimaryKey]; ok && id != nil {
-		next, err := ch.checkStateUpdate(ctx, r, fmt.Sprint(id), body)
+	if id, ok := entity.RowKey(body, ch.keyCols(), nil); ok {
+		next, err := ch.checkStateUpdate(ctx, r, id, body)
 		if !errors.Is(err, errNotFound) {
 			return next, err
 		}
@@ -508,7 +521,12 @@ func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[s
 type transitionDeniedError struct{ perm string }
 
 func (e *transitionDeniedError) Error() string {
-	return "access denied: missing permission " + e.perm
+	return handler.ReasonMissingPermission.Format(map[string]any{"permission": e.perm})
+}
+
+// Phrased implements i18n.Phrased.
+func (e *transitionDeniedError) Phrased() (i18n.Phrase, map[string]any) {
+	return handler.ReasonMissingPermission, map[string]any{"permission": e.perm}
 }
 
 // doTransition runs the move inside the caller's transaction; see
@@ -565,7 +583,8 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	if col := autoUpdatedAtColumn(ch.Entity); col != "" {
 		ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 	}
-	ub.Where(ch.PrimaryKey+" = $1", id)
+	kc, ka := ch.keyWhere(id)
+	ub.Where(kc, ka...)
 	placeholders := make([]string, len(t.From))
 	from := make([]any, len(t.From))
 	for i, v := range t.From {
@@ -579,9 +598,9 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		ub.Where("deleted_at IS NULL")
 	}
 	visFields := ch.visibleFields()
-	ub.Returning(visFields...)
+	ub.Returning(ch.keyedCols(visFields)...)
 	sqlStr, args := ub.Build()
-	result, err := ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), visFields)
+	result, err := ch.writeOwn(ctx, id, visFields, sqlStr, args)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Another write moved the record (or removed it) between the read
 		// and this statement. Re-read to name where it stands now.
@@ -598,7 +617,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		return nil, fmt.Errorf("transition %s: %w", t.Key, err)
 	}
 	if ch.Hooks != nil {
-		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
+		if err := ch.afterRow(ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -611,16 +630,17 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 // selectMoveTarget reads cols of row id under the move's WHERE (tenant,
 // owner-write scope, deleted_at IS NULL); absent answers errNotFound.
 func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id string, cols []string) (map[string]any, error) {
-	qb := query.Select(cols...).
+	kc, ka := ch.keyWhere(id)
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	applyOwnerScope(ch, qb, r, false)
 	if ch.Entity.Config.Scope.SoftDelete {
 		qb.Where("deleted_at IS NULL")
 	}
 	sqlStr, args := qb.Build()
-	row, err := ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+	row, err := ch.scanOwn(ctx, id, cols, sqlStr, args)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -633,7 +653,7 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 // may write but not read a record learns nothing of its state from a 409
 // or 422.
 func (ch *CrudHandler) refusalState(ctx context.Context, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
-	if hidden, err := ch.readScopeHidesRow(ctx, map[string]any{ch.PrimaryKey: id}); hidden || err != nil {
+	if hidden, err := ch.readScopeHidesRow(ctx, ch.keyPayload(id)); hidden || err != nil {
 		return "", nil, true
 	}
 	return current, openMoves(st, current), false
@@ -666,20 +686,20 @@ func (ch *CrudHandler) Transition() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {
 			return
 		}
-		id, key := r.PathValue("id"), r.PathValue("key")
+		id, key := ch.pathID(r), r.PathValue(transitionParam(ch.keyCols()))
 		if t, ok := ch.Entity.Config.States.Transition(key); !ok || t.System {
-			writeJSONError(w, http.StatusNotFound, "not found")
+			writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		result, err := ch.RunTransition(WithAuditRequest(r.Context(), r), id, key)
 		if err != nil {
-			writeCRUDError(w, err)
+			writeCRUDError(w, r, err)
 			return
 		}
 		// The move is committed; a read-scope probe that fails hides the

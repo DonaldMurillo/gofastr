@@ -455,9 +455,7 @@ screens:
         level: 1
         text: Post Details
       - kind: entity_detail
-        text: Post
         entity: posts
-        fields: [title, slug, status, category, featured, published_at]
 
   - name: project_new
     route: /new-project
@@ -488,16 +486,16 @@ screens:
         fields: [name, email, phone, company, subject, message, source]
 endpoints:
   - name: submit_contact
-    method: POST
-    path: /contacts/submit
     entity: contacts
-    handler: submitContact
+    method: POST
+    path: "submit"
+    handler: entities/contacts_endpoints.go#SubmitContact
     description: Submit a contact form inquiry
   - name: approve_testimonial
-    method: POST
-    path: /testimonials/{id}/approve
     entity: testimonials
-    handler: approveTestimonial
+    method: POST
+    path: "{id}/approve"
+    handler: entities/testimonials_endpoints.go#ApproveTestimonial
     description: Approve a testimonial for display
 
 middleware:

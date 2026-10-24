@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -36,6 +37,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
@@ -46,11 +48,16 @@ type AppSpec struct {
 	Screens    []AppSpecScreen
 	Nav        []AppSpecNavItem
 	Seed       []AppSpecSeedEntity
-	Endpoints  []AppSpecEndpoint
+	Endpoints  []settings.Endpoint
 	Hooks      []AppSpecHook
 	Middleware []AppSpecNamedStub
 	Plugins    []AppSpecNamedStub
 	Helpers    []AppSpecNamedStub
+
+	// phrases collects the reader-facing text of the file being
+	// emitted (appSpecTx). Each file renderer sets it on its own copy;
+	// nil outside one, where text is emitted as a literal.
+	phrases *appSpecPhrases
 }
 
 // AppSpecSeedEntity holds seed data for one entity.
@@ -103,6 +110,11 @@ type AppSpecApp struct {
 	// Independent of PWA. A screen inventory is schema disclosure, so
 	// it never rides along with another feature.
 	LLMMD bool
+	// LocalePrefixes emits framework.WithLocalePrefixes()
+	// (app.locale_prefixes): every locales/<tag>.json is served under
+	// /<tag>/, with hreflang, sitemap and robots entries. English keeps
+	// the plain paths.
+	LocalePrefixes bool
 }
 
 // AppSpecPWA configures the generated app's installable-PWA surface
@@ -184,19 +196,9 @@ type AppSpecAction struct {
 	ClientJS string
 }
 
-type AppSpecEndpoint struct {
-	Name        string
-	Method      string
-	Path        string
-	Entity      string
-	Handler     string
-	Description string
-	MCP         bool
-}
-
 // AppSpecHook is one entity lifecycle hook carried through
-// graduation. Like AppSpecEndpoint it declares a surface the generated
-// app must implement in owned Go: the app spec records WHICH hook runs
+// graduation. It declares a surface the generated app must implement in
+// owned Go: the app spec records WHICH hook runs
 // WHERE, and Handler names the func to write.
 //
 // It exists because kiln's freeze dropped hooks entirely. A world's hooks
@@ -444,12 +446,11 @@ func decodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 		bp.App = app
 	}
 	if child := m["entities"]; child != nil {
-		entities, endpoints, err := decodeAppSpecEntities(child)
+		entities, err := decodeAppSpecEntities(child)
 		if err != nil {
 			return AppSpec{}, err
 		}
 		bp.Entities = entities
-		bp.Endpoints = append(bp.Endpoints, endpoints...)
 	}
 	if child := m["screens"]; child != nil {
 		screens, err := decodeAppSpecScreens(child)
@@ -473,11 +474,11 @@ func decodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 		bp.Seed = seed
 	}
 	if child := m["endpoints"]; child != nil {
-		endpoints, err := decodeAppSpecEndpoints(child)
+		endpoints, err := settings.DecodeEndpoints(child, "app spec: endpoints")
 		if err != nil {
 			return AppSpec{}, err
 		}
-		bp.Endpoints = append(bp.Endpoints, endpoints...)
+		bp.Endpoints = endpoints
 	}
 	if child := m["hooks"]; child != nil {
 		hooks, err := decodeAppSpecHooks(child)
@@ -568,7 +569,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	if err != nil {
 		return AppSpecApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true}
+	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true, "locale_prefixes": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return AppSpecApp{}, err
 	}
@@ -645,6 +646,9 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	}
 	if v, ok := m["llm_md"]; ok {
 		app.LLMMD = boolValue(v)
+	}
+	if v, ok := m["locale_prefixes"]; ok {
+		app.LocalePrefixes = boolValue(v)
 	}
 	return app, nil
 }
@@ -770,18 +774,17 @@ func decodeappTheme(node *coreyaml.Node) (light, dark map[string]string, err err
 	return light, dark, nil
 }
 
-func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, []AppSpecEndpoint, error) {
+func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, error) {
 	list, err := expectList(node, "entities")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	out := make([]framework.EntityDeclaration, 0, len(list))
-	var endpointStubs []AppSpecEndpoint
 	for i, item := range list {
 		context := fmt.Sprintf("entities[%d]", i)
 		m, err := expectMap(item, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		allowed := map[string]bool{
 			"name": true, "table": true, "fields": true, "relations": true,
@@ -792,10 +795,10 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			"mcp": true, "cursor_field": true, "cursor_fields": true,
 			"max_list_limit": true, "indices": true, "properties": true,
 			"renames": true, "read_scope": true,
-			"display": true, "states": true,
+			"display": true, "states": true, "primary_key": true,
 		}
 		if err := rejectUnknownKeys(m, allowed, context); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl := framework.EntityDeclaration{
 			Name:         stringValue(m["name"]),
@@ -804,6 +807,12 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			Properties:   mapValue(m["properties"]),
 			Renames:      stringStringMapValue(m["renames"]),
 		}
+		if node := m["primary_key"]; node != nil {
+			if node.Kind != coreyaml.List || len(node.List) == 0 {
+				return nil, fmt.Errorf("%s.primary_key: want a non-empty list of field names", context)
+			}
+			decl.PrimaryKey = stringListValue(node)
+		}
 		if m["timestamps"] != nil {
 			v := boolValue(m["timestamps"])
 			decl.Timestamps = &v
@@ -811,40 +820,40 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 
 		scope, err := decodeEntityScope(m["scope"], context+".scope")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Scope, err = mergeEntityScopeDeclaration(decl.Name, m, scope, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		pagination, err := decodeEntityPagination(m["pagination"], context+".pagination")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Pagination, err = mergeEntityPaginationDeclaration(decl.Name, m, pagination, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		flatAccess, err := decodeEntityAccess(m["access"], context+".access")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		flatReadScope, err := decodeEntityReadScope(m["read_scope"], context+".read_scope")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		exposure, err := decodeEntityExposure(m["exposure"], context+".exposure")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Exposure, err = mergeEntityExposureDeclaration(decl.Name, m, exposure, flatAccess, flatReadScope, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		fields, err := decodeFields(m["fields"])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Fields = fields
 		// owner_field names a per-row owner column. Auto-inject it as a hidden
@@ -861,7 +870,7 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 		}
 		// cross_owner_read only applies to an owner-scoped entity.
 		if decl.Scope != nil && decl.Scope.CrossOwnerRead != "" && decl.Scope.OwnerField == "" {
-			return nil, nil, fmt.Errorf(
+			return nil, fmt.Errorf(
 				"app spec: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)",
 				decl.Name, decl.Scope.CrossOwnerRead,
 			)
@@ -875,16 +884,16 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 				}
 			}
 			if found == nil {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q is not a declared field", decl.Name, sf)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q is not a declared field", decl.Name, sf)
 			}
 			if found.Hidden {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q is Hidden (search would disclose its values)", decl.Name, sf)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q is Hidden (search would disclose its values)", decl.Name, sf)
 			}
 			if found.NoQuery {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q is no_query (?q= would match on the stored value)", decl.Name, sf)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q is no_query (?q= would match on the stored value)", decl.Name, sf)
 			}
 			if found.Type != "string" && found.Type != "text" {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
 			}
 		}
 		// read_scope fields are checked here for the same reason search_fields
@@ -901,10 +910,10 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 					}
 				}
 				if found == nil {
-					return nil, nil, fmt.Errorf("app spec: entity %q read_scope field %q is not a declared field", decl.Name, p.Field)
+					return nil, fmt.Errorf("app spec: entity %q read_scope field %q is not a declared field", decl.Name, p.Field)
 				}
 				if found.Hidden {
-					return nil, nil, fmt.Errorf("app spec: entity %q read_scope field %q is Hidden (a predicate on a masked column leaks its values through the row set)", decl.Name, p.Field)
+					return nil, fmt.Errorf("app spec: entity %q read_scope field %q is Hidden (a predicate on a masked column leaks its values through the row set)", decl.Name, p.Field)
 				}
 			}
 		}
@@ -919,47 +928,44 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			}
 			found, ok := appSpecColumn(decl, cf)
 			if !ok {
-				return nil, nil, fmt.Errorf("app spec: entity %q cursor field %q is not a declared field", decl.Name, cf)
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is not a declared field", decl.Name, cf)
 			}
 			if found == nil {
 				continue
 			}
 			if found.Hidden {
-				return nil, nil, fmt.Errorf("app spec: entity %q cursor field %q is Hidden (it is not in the projection, so paging cannot read it)", decl.Name, cf)
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is Hidden (it is not in the projection, so paging cannot read it)", decl.Name, cf)
 			}
 			if found.NoQuery {
-				return nil, nil, fmt.Errorf("app spec: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
 			}
 		}
 		relations, err := decodeRelations(m["relations"])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Relations = relations
 		indices, err := decodeIndices(m["indices"])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Indices = indices
 		display, err := decodeDisplayDeclaration(m["display"], context+".display")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Display = display
 		states, err := decodeStatesDeclaration(m["states"], context+".states")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.States = states
-		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
-		if err != nil {
-			return nil, nil, err
+		if m["endpoints"] != nil {
+			return nil, fmt.Errorf("%s: an entity no longer lists endpoints; move each to the top-level endpoints: list with entity: %s and a handler link (entities/<file>.go#<Name>)", context, decl.Name)
 		}
-		decl.Endpoints = endpoints
-		endpointStubs = append(endpointStubs, stubs...)
 		out = append(out, decl)
 	}
-	return out, endpointStubs, nil
+	return out, nil
 }
 
 // decodeDisplayDeclaration decodes an entity's display: group through the
@@ -1743,11 +1749,22 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			}
 		}
 		cascadeWrite := boolValue(m["cascade_write"])
+		// foreign_key is one column, or a list of one column per key
+		// column of a composite key it references.
+		var foreignKey []string
+		if node := m["foreign_key"]; node != nil && node.Kind == coreyaml.List {
+			foreignKey = stringListValue(node)
+			if len(foreignKey) == 0 || slices.Contains(foreignKey, "") {
+				return nil, fmt.Errorf("relations[%d].foreign_key: want a column name or a non-empty list of them", i)
+			}
+		} else if fk := stringValue(m["foreign_key"]); fk != "" {
+			foreignKey = []string{fk}
+		}
 		out = append(out, framework.Relation{
 			Type:             relType,
 			Name:             stringValue(m["name"]),
 			Entity:           stringValue(m["entity"]),
-			ForeignKey:       stringValue(m["foreign_key"]),
+			ForeignKey:       foreignKey,
 			Through:          stringValue(m["through"]),
 			LocalKey:         stringValue(m["local_key"]),
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
@@ -1756,46 +1773,6 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 		})
 	}
 	return out, nil
-}
-
-func decodeEntityEndpoints(entityName string, node *coreyaml.Node) ([]framework.Endpoint, []AppSpecEndpoint, error) {
-	if node == nil {
-		return nil, nil, nil
-	}
-	list, err := expectList(node, "endpoints")
-	if err != nil {
-		return nil, nil, err
-	}
-	out := make([]framework.Endpoint, 0, len(list))
-	stubs := make([]AppSpecEndpoint, 0, len(list))
-	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("endpoints[%d]", i))
-		if err != nil {
-			return nil, nil, err
-		}
-		allowed := map[string]bool{"method": true, "path": true, "name": true, "description": true, "mcp": true, "handler": true}
-		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("endpoints[%d]", i)); err != nil {
-			return nil, nil, err
-		}
-		handler := stringValue(m["handler"])
-		out = append(out, framework.Endpoint{
-			Method:      stringValue(m["method"]),
-			Path:        stringValue(m["path"]),
-			Name:        stringValue(m["name"]),
-			Description: stringValue(m["description"]),
-			MCP:         false,
-		})
-		stubs = append(stubs, AppSpecEndpoint{
-			Name:        stringValue(m["name"]),
-			Method:      stringValue(m["method"]),
-			Path:        stringValue(m["path"]),
-			Entity:      entityName,
-			Handler:     handler,
-			Description: stringValue(m["description"]),
-			MCP:         boolValue(m["mcp"]),
-		})
-	}
-	return out, stubs, nil
 }
 
 func decodeAppSpecScreens(node *coreyaml.Node) ([]AppSpecScreen, error) {
@@ -2051,22 +2028,38 @@ func appSpecGenerateSeedRows(decl framework.EntityDeclaration, n int, weights ma
 			dist[f.Name] = appSpecEnumDistribution(decl.Name, f.Name, f.Values, weights[f.Name], n)
 		}
 	}
+	// A key made only of enums takes one combination per row instead,
+	// counted from the second: the e2e create sends the first.
+	enumKey := appSpecSeedEnumKey(decl)
+	for _, f := range enumKey {
+		delete(dist, f.Name)
+	}
 	singular := singularize(toDisplayName(decl.Name))
 	rows := make([]map[string]any, 0, n)
 	for r := 0; r < n; r++ {
 		row := map[string]any{}
+		for i, rest := len(enumKey)-1, r+1; i >= 0; i-- {
+			vals := enumKey[i].Values
+			row[enumKey[i].Name] = vals[rest%len(vals)]
+			rest /= len(vals)
+		}
 		for _, f := range decl.Fields {
-			if appSpecFieldSystem(f.Name) || f.Hidden || f.ReadOnly || f.AutoGenerate != "" {
+			if appSpecFieldSystem(f.Name) || f.Hidden || f.ReadOnly || fieldAutoGenerated(f) {
 				continue
 			}
-			switch strings.ToLower(f.Type) {
+			switch strings.ToLower(strings.TrimSpace(f.Type)) {
 			case "enum":
 				if seq := dist[f.Name]; len(seq) == n {
 					row[f.Name] = seq[r]
 				}
-			case "string", "text":
+			case "", "string", "text":
 				row[f.Name] = appSpecSeedStringValue(f, singular, r)
 			case "int", "integer", "bigint":
+				// A key column needs one value per row.
+				if slices.Contains(decl.PrimaryKey, f.Name) {
+					row[f.Name] = appSpecSeedIntKeyStart(f) + r
+					continue
+				}
 				// A gently-skewed spread rather than 1..n so charts summing a
 				// numeric column show variation.
 				row[f.Name] = 10 + int(appSpecSeedHash(decl.Name+f.Name+strconv.Itoa(r))%90)
@@ -2076,6 +2069,13 @@ func appSpecGenerateSeedRows(decl framework.EntityDeclaration, n int, weights ma
 			case "bool", "boolean":
 				// Skew towards true so demos look "active".
 				row[f.Name] = appSpecSeedHash(decl.Name+f.Name+strconv.Itoa(r))%4 != 0
+			case "uuid":
+				// A key column the server does not fill is never null:
+				// one value per row, in a block apart from the e2e
+				// create's 8000 so the test's insert never collides.
+				if slices.Contains(decl.PrimaryKey, f.Name) {
+					row[f.Name] = fmt.Sprintf("00000000-0000-4000-9000-%012d", r+1)
+				}
 			default:
 				// date/timestamp/uuid/relation/json: leave to auto-generation
 				// or nullable columns.
@@ -2084,6 +2084,130 @@ func appSpecGenerateSeedRows(decl framework.EntityDeclaration, n int, weights ma
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// appSpecSeedEnumKey returns the key columns of an entity keyed only on
+// enums, in key order, each with its values once; nil when any key column
+// is another type. Seed rows for such a key can repeat only once they run
+// out of combinations.
+func appSpecSeedEnumKey(decl framework.EntityDeclaration) []framework.FieldDeclaration {
+	if declKeyIsID(decl) {
+		return nil
+	}
+	cols := make([]framework.FieldDeclaration, 0, len(decl.PrimaryKey))
+	for _, name := range decl.PrimaryKey {
+		i := slices.IndexFunc(decl.Fields, func(f framework.FieldDeclaration) bool { return f.Name == name })
+		if i < 0 || !strings.EqualFold(strings.TrimSpace(decl.Fields[i].Type), "enum") || len(decl.Fields[i].Values) == 0 {
+			return nil
+		}
+		f := decl.Fields[i]
+		f.Values = nil
+		for _, v := range decl.Fields[i].Values {
+			if !slices.Contains(f.Values, v) {
+				f.Values = append(f.Values, v)
+			}
+		}
+		cols = append(cols, f)
+	}
+	return cols
+}
+
+// appSpecSeedIntKeyStart is the value count seeding gives an integer key
+// column's first row: 1001 for an unbounded column, else the lowest value
+// min allows above the 1 the e2e create sends.
+func appSpecSeedIntKeyStart(f framework.FieldDeclaration) int {
+	if f.Min == nil && f.Max == nil {
+		return 1001
+	}
+	if f.Min != nil && *f.Min > 2 {
+		return int(math.Ceil(math.Min(*f.Min, 1<<62)))
+	}
+	return 2
+}
+
+// appSpecCheckSeedKeys builds the rows a seed count generates and refuses
+// one that would abort startup on its key: a key column count seeding
+// cannot fill, an integer key outside the column's bounds, or a key an
+// explicit row or an earlier generated row already holds. A key column the
+// server fills (auto_generate, or the id the entity injects) never
+// repeats, so a key holding one is not checked.
+func appSpecCheckSeedKeys(decl framework.EntityDeclaration, seed AppSpecSeedEntity) error {
+	keyCols := decl.PrimaryKey
+	if declKeyIsID(decl) {
+		keyCols = []string{"id"}
+	}
+	cols := make([]framework.FieldDeclaration, 0, len(keyCols))
+	for _, c := range keyCols {
+		i := slices.IndexFunc(decl.Fields, func(f framework.FieldDeclaration) bool { return f.Name == c })
+		if i < 0 || fieldAutoGenerated(decl.Fields[i]) {
+			return nil
+		}
+		cols = append(cols, decl.Fields[i])
+	}
+	keyOf := func(row map[string]any) (key, missing string) {
+		parts := make([]string, len(cols))
+		for i, f := range cols {
+			v, ok := row[f.Name]
+			if !ok || v == nil {
+				return "", f.Name
+			}
+			text := fmt.Sprint(v)
+			// The store reads "01001", 1001.0 and 1001 as one integer.
+			if appSpecIntType(f.Type) {
+				switch n := v.(type) {
+				case float64:
+					if n == math.Trunc(n) && math.Abs(n) < 1<<63 {
+						text = strconv.FormatInt(int64(n), 10)
+					}
+				case string:
+					if i, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64); err == nil {
+						text = strconv.FormatInt(i, 10)
+					}
+				}
+			}
+			parts[i] = strconv.Quote(text)
+		}
+		return strings.Join(parts, ", "), ""
+	}
+	held := map[string]bool{}
+	for _, row := range seed.Rows {
+		if k, missing := keyOf(row); missing == "" {
+			held[k] = true
+		}
+	}
+	for r, row := range appSpecGenerateSeedRows(decl, seed.Count, seed.Weights) {
+		k, missing := keyOf(row)
+		if missing != "" {
+			return fmt.Errorf("app spec: seed count for entity %q cannot fill the key column %q: every generated row would lack it and abort startup. Seed explicit rows instead, or let the server fill it with auto_generate", seed.Entity, missing)
+		}
+		if held[k] {
+			return fmt.Errorf("app spec: seed count for entity %q generates the key (%s) a seeded row already holds: the repeated insert aborts startup. Change that explicit row's key or lower the count", seed.Entity, k)
+		}
+		held[k] = true
+		for _, f := range cols {
+			// The boot validator judges the value, bounds compared the
+			// way startup compares them. The generator's ints are the
+			// int64 the generated code stores.
+			val := row[f.Name]
+			switch n := val.(type) {
+			case int:
+				val = int64(n)
+			}
+			if msg := seedConstraintRejection(f, val); msg != "" {
+				return fmt.Errorf("app spec: seed count %d for entity %q gives key %q the value %v on row %d, which startup refuses (%s), aborting it. Lower the count or widen the bounds", seed.Count, seed.Entity, f.Name, row[f.Name], r+1, msg)
+			}
+		}
+	}
+	return nil
+}
+
+// appSpecIntType reports whether a declared field type is an integer.
+func appSpecIntType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "int", "integer", "bigint":
+		return true
+	}
+	return false
 }
 
 // appSpecSeedStringValue produces a plausible value for a scalar text column
@@ -2321,34 +2445,6 @@ func decodeActions(node *coreyaml.Node) ([]AppSpecAction, error) {
 			Name:     stringValue(m["name"]),
 			Event:    stringValue(m["event"]),
 			ClientJS: stringValue(m["client_js"]),
-		})
-	}
-	return out, nil
-}
-
-func decodeAppSpecEndpoints(node *coreyaml.Node) ([]AppSpecEndpoint, error) {
-	list, err := expectList(node, "endpoints")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]AppSpecEndpoint, 0, len(list))
-	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("endpoints[%d]", i))
-		if err != nil {
-			return nil, err
-		}
-		allowed := map[string]bool{"name": true, "method": true, "path": true, "entity": true, "handler": true, "description": true, "mcp": true}
-		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("endpoints[%d]", i)); err != nil {
-			return nil, err
-		}
-		out = append(out, AppSpecEndpoint{
-			Name:        stringValue(m["name"]),
-			Method:      stringValue(m["method"]),
-			Path:        stringValue(m["path"]),
-			Entity:      stringValue(m["entity"]),
-			Handler:     stringValue(m["handler"]),
-			Description: stringValue(m["description"]),
-			MCP:         boolValue(m["mcp"]),
 		})
 	}
 	return out, nil
@@ -2609,11 +2705,6 @@ func validateAppSpec(bp AppSpec) error {
 		if _, err := decl.Config(); err != nil {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 		}
-		for _, endpoint := range decl.Endpoints {
-			if endpoint.MCP {
-				errs.add(fmt.Errorf("app spec: entity %q endpoint %q cannot set mcp=true without Go MCP handler", decl.Name, endpoint.Path))
-			}
-		}
 	}
 	for _, decl := range bp.Entities {
 		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
@@ -2691,6 +2782,8 @@ func validateAppSpec(bp AppSpec) error {
 			}
 			if !entityNames[rel.Entity] {
 				errs.add(fmt.Errorf("app spec: entity %q relation %q targets unknown entity %q: declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity))
+			} else if target, ok := entitiesByName[rel.Entity]; ok {
+				errs.add(appSpecRelationKeys(decl, rel, target))
 			}
 		}
 	}
@@ -2699,7 +2792,28 @@ func validateAppSpec(bp AppSpec) error {
 	errs.add(validateAppSpecSeedTypes(bp, entitiesByName))
 	errs.add(validateAppSpecSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
-	screenFiles := map[string]string{} // file name → declaring screen
+	screenFiles := map[string]string{} // file name → what writes it
+	screenTypes := map[string]string{} // generated type name → screen name
+	routesOf := map[string]string{}    // screen name → its route, for the error
+	// Two writers of one generated file emit it twice; the second write
+	// silently replaces the first and its routes never mount. A
+	// standalone screen writes screen_<name>.go, and an entity's screens
+	// share screen_<entity>_crud.go, so a screen named "Posts Crud"
+	// collides with the posts screens.
+	claimFile := func(screen AppSpecScreen) {
+		file, owner := screenFileName(screen.Name), fmt.Sprintf("screen %q", screen.Name)
+		if e, ok := screenEntityRef(screen); ok {
+			file, owner = screenFileName(e+"_crud"), fmt.Sprintf("the %s entity's screens", e)
+		}
+		if file == "" {
+			return
+		}
+		if prev, dup := screenFiles[file]; dup && prev != owner {
+			errs.add(fmt.Errorf("app spec: %s and %s both write the screen file %s: the second write would replace the first and its routes would never mount; rename the screen", prev, owner, file))
+		} else {
+			screenFiles[file] = owner
+		}
+	}
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
 			errs.add(fmt.Errorf("app spec: screen name is required"))
@@ -2718,15 +2832,15 @@ func validateAppSpec(bp AppSpec) error {
 			continue
 		}
 		routes[screen.Route] = true
-		// Two screens whose names normalize to the same file name would
-		// emit one screen_<snake>.go twice; the second write silently
-		// replaces the first and its route never mounts.
-		if file := screenFileName(screen.Name); file != "" {
-			if prev, dup := screenFiles[file]; dup {
-				errs.add(fmt.Errorf("app spec: screens %q and %q both normalize to the screen file %s: the second write would replace the first and its route would never mount; rename one", prev, screen.Name, file))
-			} else {
-				screenFiles[file] = screen.Name
-			}
+		claimFile(screen)
+		// Every screen declares <Name>Screen and mount<Name>Screen in one
+		// package, whichever file it lands in, so the name is the app's.
+		typeName := toCamelCase(screen.Name) + "Screen"
+		if prev, dup := screenTypes[typeName]; dup {
+			errs.add(fmt.Errorf("app spec: screens %q (%s) and %q (%s) both generate the type %s, so the app would not build; rename one", prev, routesOf[prev], screen.Name, screen.Route, typeName))
+		} else {
+			screenTypes[typeName] = screen.Name
+			routesOf[screen.Name] = screen.Route
 		}
 		if _, err := screenTypeConst(screen.Type); err != nil {
 			errs.add(err)
@@ -2759,65 +2873,29 @@ func validateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: screen %q has an %s block but its route %q has no {id} parameter: add {id} (e.g. %s/{id}) so the record id is in the URL", screen.Name, what, screen.Route, strings.TrimRight(screen.Route, "/")))
 			}
 		}
+		// A composite-key record screen mounts its record param as one
+		// segment per key column, named after the columns: another param
+		// of the same name would be read for the key.
+		if keys := screenRecordKeys(bp, screen); keys != nil {
+			param := screenParamName(screen)
+			for _, n := range routeParamNames(screen.Route) {
+				if n != param && slices.Contains(keys, n) {
+					errs.add(fmt.Errorf("app spec: screen %q route %q has a {%s} parameter, but %s is a key column of the record it shows and {%s} expands to one segment per key column: rename the parameter", screen.Name, screen.Route, n, n, param))
+				}
+			}
+		}
 		errs.add(validateAppSpecActions(screen.Name, screen.Body))
 	}
-	endpointNames := map[string]bool{}
-	endpointHandlers := map[string]bool{}
-	endpointRoutes := map[string]bool{}
-	crudRoutes := appSpecCRUDRoutes(bp.Entities)
-	for _, endpoint := range bp.Endpoints {
-		if endpoint.Name == "" {
-			errs.add(fmt.Errorf("app spec: endpoint name is required"))
-			continue
-		}
-		if endpointNames[endpoint.Name] {
-			errs.add(fmt.Errorf("app spec: duplicate endpoint %q", endpoint.Name))
-			continue
-		}
-		endpointNames[endpoint.Name] = true
-		if endpoint.Handler == "" {
-			errs.add(fmt.Errorf("app spec: endpoint %q handler is required", endpoint.Name))
-			continue
-		}
-		handlerName := toCamelCase(endpoint.Handler)
-		if !isGoIdentifier(handlerName) {
-			errs.add(fmt.Errorf("app spec: endpoint %q handler %q does not produce a valid Go identifier", endpoint.Name, endpoint.Handler))
-			continue
-		}
-		if endpointHandlers[handlerName] {
-			errs.add(fmt.Errorf("app spec: duplicate endpoint handler %q", endpoint.Handler))
-			continue
-		}
-		endpointHandlers[handlerName] = true
-		if endpoint.Path == "" {
-			errs.add(fmt.Errorf("app spec: endpoint %q path is required", endpoint.Name))
-			continue
-		}
-		method := strings.ToUpper(endpoint.Method)
-		if method == "" {
-			errs.add(fmt.Errorf("app spec: endpoint %q method is required", endpoint.Name))
-			continue
-		}
-		if _, ok := validHTTPMethods[method]; !ok {
-			errs.add(fmt.Errorf("app spec: endpoint %q method %q is not supported", endpoint.Name, endpoint.Method))
-			continue
-		}
-		if endpoint.Entity != "" && !entityNames[endpoint.Entity] {
-			errs.add(fmt.Errorf("app spec: endpoint %q targets unknown entity %q", endpoint.Name, endpoint.Entity))
-		}
-		routeKey := method + " " + appSpecEndpointPath(endpoint)
-		if endpointRoutes[routeKey] {
-			errs.add(fmt.Errorf("app spec: duplicate endpoint route %q", routeKey))
-			continue
-		}
-		endpointRoutes[routeKey] = true
-		if crudRoutes[routeKey] {
-			errs.add(fmt.Errorf("app spec: endpoint %q collides with generated CRUD route %q", endpoint.Name, routeKey))
-		}
-		if endpoint.MCP {
-			errs.add(fmt.Errorf("app spec: endpoint %q cannot set mcp=true without Go MCP handler", endpoint.Name))
+	// The render adds a create screen per writable list; its file and its
+	// type join the same package as the authored ones.
+	for _, screen := range appSpecSynthesizeCRUDScreens(bp).Screens[len(bp.Screens):] {
+		claimFile(screen)
+		typeName := toCamelCase(screen.Name) + "Screen"
+		if prev, dup := screenTypes[typeName]; dup {
+			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))
 		}
 	}
+	errs.add(validateAppSpecEndpoints(bp))
 	// Hooks are the sibling construct of endpoints: a surface the generated
 	// app must implement in owned Go (the handler stub) and the registry
 	// wiring. They get the same boundary checks endpoints get: a handler
@@ -2979,9 +3057,37 @@ func validateAppSpecSeedStructure(bp AppSpec, entitiesByName map[string]framewor
 		// leaves every fabricated row failing CreateOne's required check —
 		// and a failed seed row aborts startup.
 		if seed.Count > 0 {
+			keyCols := appSpecKeyColNames(decl)
+			fits := true
 			for _, f := range decl.Fields {
-				if strings.EqualFold(strings.TrimSpace(f.Type), "relation") && f.Required {
+				isKey := slices.Contains(keyCols, f.Name)
+				if isKey && strings.EqualFold(strings.TrimSpace(f.Type), "relation") {
+					fits = false
+				}
+				if strings.EqualFold(strings.TrimSpace(f.Type), "relation") && (f.Required || isKey) {
 					errs.add(fmt.Errorf("app spec: seed count for entity %q cannot fabricate the required relation %q: every generated row would lack it and fail CreateOne's required check, aborting startup. Seed explicit rows instead (reference a row seeded earlier with %q)", seed.Entity, f.Name, "@"+strings.TrimSpace(f.To)+"."+appSpecSeedRefFieldHint(entitiesByName, f.To)+"=<value>"))
+				}
+			}
+			// An enum-only key has a fixed number of combinations, and
+			// the e2e create takes the first: a row past the rest
+			// repeats a key, and the failed insert aborts startup.
+			if key := appSpecSeedEnumKey(decl); key != nil {
+				combos, enough := 1, false
+				for _, f := range key {
+					if combos > seed.Count/len(f.Values) {
+						enough = true // more combinations than rows
+						break
+					}
+					combos *= len(f.Values)
+				}
+				if !enough && seed.Count > combos-1 {
+					fits = false
+					errs.add(fmt.Errorf("app spec: seed count %d for entity %q exceeds its key: (%s) has %d values, one of them kept for the generated e2e test, so a generated row would repeat a key and abort startup. Lower the count to %d or seed explicit rows", seed.Count, seed.Entity, strings.Join(decl.PrimaryKey, ", "), combos, combos-1))
+				}
+			}
+			if fits {
+				if err := appSpecCheckSeedKeys(decl, seed); err != nil {
+					errs.add(err)
 				}
 			}
 		}
@@ -3240,34 +3346,6 @@ func seedValueInFinalForm(f schema.Field, value any) bool {
 	}
 }
 
-func appSpecCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool {
-	out := map[string]bool{}
-	for _, decl := range entities {
-		if !entityDeclarationCRUDEnabled(decl) {
-			continue
-		}
-		root := "/" + appSpecEntityTable(decl)
-		for _, route := range []struct {
-			method string
-			path   string
-		}{
-			{http.MethodGet, root},
-			{http.MethodGet, root + "/{id}"},
-			{http.MethodPost, root},
-			{http.MethodPut, root + "/{id}"},
-			{http.MethodPatch, root + "/{id}"},
-			{http.MethodDelete, root + "/{id}"},
-			{http.MethodPost, root + "/_batch"},
-			{http.MethodPatch, root + "/_batch"},
-			{http.MethodDelete, root + "/_batch"},
-			{http.MethodGet, root + "/_events"},
-		} {
-			out[route.method+" "+route.path] = true
-		}
-	}
-	return out
-}
-
 func appSpecEntityTable(decl framework.EntityDeclaration) string {
 	if decl.Table != "" {
 		return strings.Trim(decl.Table, "/")
@@ -3381,6 +3459,11 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		}
 		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("app spec: screen %q entity_detail target %q must enable crud", screenName, block.Entity)
+		}
+		// The record page draws from the entity's own display: block, so
+		// a text: or fields: here would be accepted and then never render.
+		if block.Text != "" || len(block.Fields) > 0 {
+			return fmt.Errorf("app spec: screen %q entity_detail takes no text or fields: the record page draws the entity's display: block, so name the record with display.title_fields and lay out its fields with display.form", screenName)
 		}
 	case "entity_create":
 		return fmt.Errorf("app spec: screen %q uses entity_create, which is no longer a block kind: the list's create: synthesizes the create screen at <list>/create", screenName)
@@ -3689,11 +3772,6 @@ func isGoIdentifier(value string) bool {
 	return true
 }
 
-var validHTTPMethods = map[string]bool{
-	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true,
-	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
-}
-
 // appSpecSynthesizeCRUDScreens appends the create screen that makes an
 // app-side list writable: <home list>/create for every entity with an
 // entity_list flagged `create: true`, where the home list is the one every
@@ -3763,6 +3841,12 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 	var files []generatedFile
 	if bp.App.Module != "" {
 		files = append(files, generatedFile{name: "main.go", content: renderAppSpecMain(bp)})
+		// The translator main.go installs, and the directory its
+		// catalog embeds. The generator never writes a <tag>.json, so
+		// a regenerate keeps every translation.
+		files = append(files, generatedFile{name: "i18n.go", content: appSpecI18nGo})
+		files = append(files, generatedFile{name: "i18n_test.go", content: appSpecI18nTestGo})
+		files = append(files, generatedFile{name: "locales/README.md", content: strings.Replace(appSpecLocalesReadme, "{{pick}}", appSpecLocalesPick(bp), 1)})
 	}
 	if len(bp.Entities) > 0 {
 		decls := make([]framework.EntityDeclaration, len(bp.Entities))
@@ -3774,9 +3858,28 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		if err != nil {
 			return nil, err
 		}
+		endpointFiles, client, err := renderAppSpecEndpoints(bp, decls, entityFiles)
+		if err != nil {
+			return nil, err
+		}
 		for _, file := range entityFiles {
+			if client != "" && filepath.ToSlash(file.name) == "client/client.go" {
+				file.content = client
+			}
 			files = append(files, generatedFile{name: filepath.Join("entities", file.name), content: file.content})
 		}
+		if len(endpointFiles) > 0 {
+			files = append(files, endpointFiles...)
+			// An input type a stub declares meets the entities' own names
+			// in one package.
+			if err := refuseDuplicateDecls(slices.DeleteFunc(slices.Clone(files), func(f generatedFile) bool {
+				return path.Dir(filepath.ToSlash(f.name)) != "entities"
+			})); err != nil {
+				return nil, fmt.Errorf("app spec: %w", err)
+			}
+		}
+	} else if len(bp.Endpoints) > 0 {
+		return nil, fmt.Errorf("app spec: endpoints hang under entities, and the app spec declares none")
 	} else if bp.App.Module != "" {
 		// No entities yet, but main.go imports the entities package and
 		// calls entities.RegisterAll unconditionally. Emit the empty seam
@@ -3785,7 +3888,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		// no edit to any owned file.
 		files = append(files, generatedFile{name: filepath.Join("entities", "register.go"), content: renderRegisterSeam()})
 	}
-	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || appSpecHasTheme(bp.App) || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
+	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || appSpecHasTheme(bp.App) || len(bp.Screens) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
 	// Per-screen layout: the fixed screens_register.go seam + one file per
 	// authored screen + one per-entity crud file (list/record/create screens).
 	files = append(files, appSpecScreenFiles(bp, screenOrderOffset)...)
@@ -3800,7 +3903,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		// wire RBAC into admin.Config without editing generated files.
 		files = append(files, generatedFile{name: "admin_register.go", content: appSpecAdminRegisterGo})
 	}
-	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 || len(bp.Hooks) > 0 {
+	if len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 || len(bp.Hooks) > 0 {
 		files = append(files, generatedFile{name: "stubs.go", content: renderAppSpecStubs(bp)})
 	}
 	if emitsApp {
@@ -3835,7 +3938,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		files = append(files, generatedFile{name: "extensions.go", content: appSpecExtensionsGo})
 	}
 	if appSpecNeedsAuthHooks(bp) {
-		files = append(files, generatedFile{name: "auth_hooks.go", content: appSpecAuthHooksGo})
+		files = append(files, generatedFile{name: "auth_hooks.go", content: appSpecAuthHooksGo(bp)})
 	}
 	if bp.App.Module != "" && len(bp.Screens) > 0 {
 		files = append(files, generatedFile{name: "e2e_test.go", content: renderAppSpecE2ETest(bp)})
@@ -4039,13 +4142,14 @@ func appSpecE2EScreenRoutes(bp AppSpec) (public, gated []string) {
 // create→read→update→delete lifecycle.
 type appSpecCRUDTarget struct {
 	entity      string
-	apiPath     string // /api/<entity>
-	newRoute    string // /app/<entity>/create
-	detailBase  string // /app/<entity>  (detail = detailBase + "/" + id), "" if no detail screen
-	createJSON  string // a valid create payload
-	updateJSON  string // a payload mutating one field
-	probe       string // a value present in the created record (to find in record HTML)
-	accessGated bool   // entity is access- or owner-scoped → anonymous writes must be refused
+	apiPath     string   // /api/<entity>
+	newRoute    string   // /app/<entity>/create
+	detailBase  string   // /app/<entity>  (detail = detailBase + "/" + id), "" if no detail screen
+	createJSON  string   // a valid create payload
+	updateJSON  string   // a payload mutating one field
+	probe       string   // a value present in the created record (to find in record HTML)
+	accessGated bool     // entity is access- or owner-scoped → anonymous writes must be refused
+	keys        []string // wire names of the key columns; nil for the generated id
 }
 
 // appSpecE2EWritableTarget picks an entity to lifecycle-test: one whose list
@@ -4077,7 +4181,7 @@ func appSpecE2EWritableTarget(bp AppSpec) (appSpecCRUDTarget, bool) {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	for _, e := range names {
 		decl, ok := entityMap[e]
-		if !ok || appSpecHasRequiredRelation(decl) {
+		if !ok || appSpecUnfillableRelation(decl) {
 			continue
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
@@ -4088,6 +4192,11 @@ func appSpecE2EWritableTarget(bp AppSpec) (appSpecCRUDTarget, bool) {
 			updateJSON:  updateJSON,
 			probe:       probe,
 			accessGated: entityDeclarationExposure(decl).Access != nil || entityDeclarationScope(decl).OwnerField != "",
+		}
+		if !declKeyIsID(decl) {
+			for _, k := range decl.PrimaryKey {
+				t.keys = append(t.keys, toCamelJSON(k))
+			}
 		}
 		if dr, ok := detailOf[e]; ok {
 			r := dr
@@ -4101,9 +4210,23 @@ func appSpecE2EWritableTarget(bp AppSpec) (appSpecCRUDTarget, bool) {
 	return appSpecCRUDTarget{}, false
 }
 
-func appSpecHasRequiredRelation(decl framework.EntityDeclaration) bool {
+// appSpecKeyColNames lists the columns the record's id is made of: the
+// declared primary key, or "id" for an entity keyed on id alone (which
+// a declared id field, a relation included, fills).
+func appSpecKeyColNames(decl framework.EntityDeclaration) []string {
+	if declKeyIsID(decl) {
+		return []string{"id"}
+	}
+	return decl.PrimaryKey
+}
+
+// appSpecUnfillableRelation reports a relation the e2e create body cannot
+// fill (it sends no relation) and the record cannot do without: a
+// required one, or one in the declared key, which the id is made of.
+func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
+	keyCols := appSpecKeyColNames(decl)
 	for _, f := range decl.Fields {
-		if f.Required && strings.EqualFold(f.Type, "relation") {
+		if (f.Required || slices.Contains(keyCols, f.Name)) && strings.EqualFold(strings.TrimSpace(f.Type), "relation") {
 			return true
 		}
 	}
@@ -4120,7 +4243,11 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 	var parts []string
 	probeField := ""
 	for _, f := range decl.Fields {
-		if appSpecFieldSystem(f.Name) || f.Hidden || !f.Required {
+		// A declared key's columns are sent whether required or not:
+		// the record has no id without them. The update never changes
+		// one, since that would move the record off the path it names.
+		isKey := !declKeyIsID(decl) && slices.Contains(decl.PrimaryKey, f.Name)
+		if appSpecFieldSystem(f.Name) || f.Hidden || (!f.Required && !isKey) {
 			continue
 		}
 		var v string
@@ -4130,8 +4257,17 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 				continue
 			}
 			v = `"` + f.Values[0] + `"`
-		case "relation", "uuid":
-			continue // required relations disqualify the entity upstream; uuids auto-fill
+		case "relation":
+			// The create sends no relation: one the record needs (a
+			// required or key relation) disqualifies the entity upstream.
+			continue
+		case "uuid":
+			// The server fills only an auto_generate uuid: any other is
+			// sent, one value per field.
+			if fieldAutoGenerated(f) {
+				continue
+			}
+			v = fmt.Sprintf(`"00000000-0000-4000-8000-%012d"`, len(parts)+1)
 		case "bool", "boolean":
 			v = "true"
 		case "int", "integer":
@@ -4154,7 +4290,7 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 			} else {
 				val := "e2e-" + f.Name
 				v = `"` + val + `"`
-				if probeField == "" {
+				if probeField == "" && !isKey {
 					probeField, probe = f.Name, val
 				}
 			}
@@ -4519,7 +4655,10 @@ func renderAppSpecE2ETest(bp AppSpec) string {
 	if needsAuthClient {
 		imports = append(imports, "net/http/cookiejar", "net/url")
 	}
-	if crud {
+	switch {
+	case crud && len(target.keys) > 0:
+		imports = append(imports, "encoding/json", "fmt", "net/url")
+	case crud:
 		imports = append(imports, "regexp")
 	}
 	seen := map[string]bool{}
@@ -4722,7 +4861,14 @@ func renderAppSpecE2ETest(bp AppSpec) string {
 	b.WriteString("\tdefer r.Body.Close()\n")
 	b.WriteString("\tbb, _ := io.ReadAll(r.Body)\n")
 	b.WriteString("\treturn r.StatusCode, string(bb)\n}\n")
-	if crud {
+	if crud && len(target.keys) > 0 {
+		// A declared key's record path is each key value path-escaped and
+		// joined with "/", the path the API and the detail screen take.
+		// The values come from the decoded response, so a comma, quote or
+		// number in a key value reads whole.
+		b.WriteString("\nvar e2eKeyCols = " + goSlice(target.keys) + "\n\n")
+		b.WriteString("func e2eExtractID(body string) string {\n\tvar env struct{ Data map[string]any `json:\"data\"` }\n\td := json.NewDecoder(strings.NewReader(body))\n\td.UseNumber()\n\tif d.Decode(&env) != nil { return \"\" }\n\tparts := make([]string, len(e2eKeyCols))\n\tfor i, k := range e2eKeyCols {\n\t\tv, ok := env.Data[k]\n\t\tif !ok || v == nil { return \"\" }\n\t\tparts[i] = url.PathEscape(fmt.Sprint(v))\n\t}\n\treturn strings.Join(parts, \"/\")\n}\n")
+	} else if crud {
 		b.WriteString("\nvar e2eIDRe = regexp.MustCompile(`\"id\"\\s*:\\s*\"([^\"]+)\"`)\n\n")
 		b.WriteString("func e2eExtractID(body string) string {\n\tif m := e2eIDRe.FindStringSubmatch(body); len(m) == 2 { return m[1] }\n\treturn \"\"\n}\n")
 	}
@@ -4760,6 +4906,120 @@ func renderAppSpecE2ETest(bp AppSpec) string {
 	return b.String()
 }
 
+// appSpecI18nGo installs the generated app's translator. The screens and
+// app.go declare their words as phrases (i18n.Define); this file loads
+// the catalog that translates them.
+const appSpecI18nGo = `package main
+
+import (
+	"embed"
+	"log"
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+)
+
+// localeFS holds the app's translations: one locales/<tag>.json per
+// language (es.json, pt-br.json), keyed like the phrases the screens
+// declare. English is the phrases themselves and needs no file.
+//
+//go:embed locales
+var localeFS embed.FS
+
+// pseudoLocale is the tag GOFASTR_PSEUDO_LOCALE=1 adds: every phrase
+// accented and lengthened, for finding layouts that cannot take longer
+// words. A browser asking for en-XA gets it, or /en-xa/ under
+// app.locale_prefixes (the catalog stores tags lowercase).
+const pseudoLocale = "en-XA"
+
+// translatorOption installs the app's translator.
+func translatorOption() framework.AppOption {
+	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
+	if err != nil {
+		log.Fatalf("locales: %v", err)
+	}
+	if os.Getenv("GOFASTR_PSEUDO_LOCALE") == "1" {
+		i18nui.AddPseudo(c, pseudoLocale)
+	}
+	return framework.WithI18n(i18n.NewTranslator(c, "en"))
+}
+`
+
+// appSpecI18nTestGo checks each locale file against the phrases the
+// app links in. It lives in package main, which wires the whole app, so
+// i18n.Phrases() knows every screen's words and the framework's.
+const appSpecI18nTestGo = `package main
+
+import (
+	"io/fs"
+	"path"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+)
+
+// Each locales/<tag>.json names only phrases the app and the framework
+// define, and keeps every {{placeholder}} of a phrase's English. Entity
+// keys name the app's data rather than a defined phrase, so the check
+// leaves them alone. Pass i18n.Require("<app>.") to also fail on a
+// phrase a locale does not translate yet.
+func TestCatalogsMatchPhrases(t *testing.T) {
+	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := fs.Glob(localeFS, "locales/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		tag := strings.TrimSuffix(path.Base(name), ".json")
+		for _, is := range i18n.CheckCatalog(c, tag, i18n.Skip("entity.")) {
+			t.Errorf("%s: %s: %s (English %q, translation %q)", tag, is.Key, is.Problem, is.English, is.Text)
+		}
+	}
+}
+`
+
+// appSpecLocalesReadme says what goes in locales/. It is also the file
+// that keeps the directory non-empty, which go:embed requires.
+const appSpecLocalesReadme = `# Translations
+
+Add one JSON file per language, named by its tag: ` + "`es.json`" + `,
+` + "`pt-br.json`" + `. Each key is a phrase key. The screens declare theirs at
+the top of each screen file (` + "`i18n.Define(\"<key>\", \"<English>\")`" + `).
+` + "`i18n.Phrases()`" + ` returns every key the app knows with its English,
+the framework's own words (form buttons, table headers, the admin)
+included. Dots nest:
+
+` + "```json" + `
+{
+  "shop": {"screens": {"home": {"welcome": "Bienvenido"}}},
+  "entity": {"orders": {"name": "Pedidos"}}
+}
+` + "```" + `
+
+A key with no translation renders its English. {{pick}}
+`
+
+// appSpecLocalesPick is the README's line on how a reader gets a
+// locale: the browser's Accept-Language, or the path under
+// app.locale_prefixes.
+func appSpecLocalesPick(bp AppSpec) string {
+	if bp.App.LocalePrefixes {
+		return "Each language lives under its own\n" +
+			"path: `/es/` serves es.json, and English keeps the plain paths. Run\n" +
+			"with `GOFASTR_PSEUDO_LOCALE=1` and open `/en-xa/` to see every phrase\n" +
+			"accented and lengthened."
+	}
+	return "The browser's\n" +
+		"Accept-Language picks the locale. Run with `GOFASTR_PSEUDO_LOCALE=1` and\n" +
+		"ask for `en-XA` to see every phrase accented and lengthened."
+}
+
 // appSpecNeedsAuthHooks reports whether generated screens render an auth
 // form, whose error copy lives in the owned auth_hooks.go seam.
 func appSpecNeedsAuthHooks(bp AppSpec) bool {
@@ -4773,32 +5033,51 @@ func appSpecNeedsAuthHooks(bp AppSpec) bool {
 
 // appSpecAuthHooksGo is the thin owned seam for the auth screens' error
 // copy. Edit the hook when the app needs different copy or extra codes.
-const appSpecAuthHooksGo = `package main
+// The copy is phrases under <app>.auth, so the app's catalog translates
+// it like every other word the app says.
+func appSpecAuthHooksGo(bp AppSpec) string {
+	return strings.ReplaceAll(appSpecAuthHooksTemplate, "{{app}}", appSpecPhraseApp(bp.App.Name))
+}
+
+const appSpecAuthHooksTemplate = `package main
 
 import (
 	"context"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+// The auth screens' error copy, in English. The app's catalog
+// (locales/*.json) translates it by key.
+var (
+	authErrInvalidCredentials = i18n.Define("{{app}}.auth.invalid_credentials", "Invalid email or password.")
+	authErrCredentialsMissing = i18n.Define("{{app}}.auth.credentials_required", "Enter your email and password.")
+	authErrRateLimit          = i18n.Define("{{app}}.auth.rate_limit", "Too many attempts. Please wait a moment and try again.")
+	authErrEmailTaken         = i18n.Define("{{app}}.auth.email_taken", "That email is already registered.")
+	authErrUnknown            = i18n.Define("{{app}}.auth.unknown", "Sorry, something went wrong. Please try again.")
 )
 
 // authError maps auth redirect codes to the alert rendered by generated auth
 // screens. Edit this hook when the app needs different copy or extra codes.
 func authError(ctx context.Context) render.HTML {
+	var p i18n.Phrase
 	switch appui.QueryFromContext(ctx).Get("error") {
 	case "":
 		return ""
 	case "invalid_credentials":
-		return render.Text("Invalid email or password.")
+		p = authErrInvalidCredentials
 	case "credentials_required":
-		return render.Text("Enter your email and password.")
+		p = authErrCredentialsMissing
 	case "rate_limit":
-		return render.Text("Too many attempts. Please wait a moment and try again.")
+		p = authErrRateLimit
 	case "email_taken", "user_exists", "duplicate":
-		return render.Text("That email is already registered.")
+		p = authErrEmailTaken
 	default:
-		return render.Text("Sorry, something went wrong. Please try again.")
+		p = authErrUnknown
 	}
+	return render.Text(p.Text(ctx))
 }
 `
 
@@ -4983,6 +5262,14 @@ func renderAppSpecMain(bp AppSpec) string {
 	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
 	sb.WriteString("\toptions := []framework.AppOption{\n")
 	sb.WriteString("\t\tframework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),\n")
+	sb.WriteString("\t\t// The app's translations (i18n.go): locales/<tag>.json, picked\n")
+	sb.WriteString("\t\t// by the browser's Accept-Language.\n")
+	sb.WriteString("\t\ttranslatorOption(),\n")
+	if bp.App.LocalePrefixes {
+		sb.WriteString("\t\t// Each locale under its own path (/es/pricing), with hreflang,\n")
+		sb.WriteString("\t\t// sitemap and robots entries; English keeps the plain paths.\n")
+		sb.WriteString("\t\tframework.WithLocalePrefixes(),\n")
+	}
 	sb.WriteString("\t\t// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +\n")
 	sb.WriteString("\t\t// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);\n")
 	sb.WriteString("\t\t// WithMCPIntrospection adds read-only orientation tools\n")
@@ -5255,7 +5542,9 @@ func renderAppSpecMain(bp AppSpec) string {
 		sb.WriteString("\t\tif err != nil {\n\t\t\tcontinue\n\t\t}\n")
 		sb.WriteString("\t\trows, err := ch.ListAll(ctx, framework.ListOptions{Filters: []filter.ParsedFilter{{Field: field, Op: filter.OpEq, Value: val}}, Limit: 1})\n")
 		sb.WriteString("\t\tif err != nil || len(rows) == 0 {\n\t\t\tcontinue\n\t\t}\n")
-		sb.WriteString("\t\tif id, ok := rows[0][\"id\"]; ok {\n\t\t\trow[k] = id\n\t\t}\n")
+		sb.WriteString("\t\tpk, err := ch.Entity.KeyColumn()\n")
+		sb.WriteString("\t\tif err != nil {\n\t\t\tcontinue\n\t\t}\n")
+		sb.WriteString("\t\tif id, ok := rows[0][ch.WireKey(pk)]; ok {\n\t\t\trow[k] = id\n\t\t}\n")
 		sb.WriteString("\t}\n")
 		sb.WriteString("}\n")
 		sb.WriteString("\n// seedCreateError renders a failed seed insert with the per-field detail\n")
@@ -5339,31 +5628,21 @@ func renderAppSpecScreens(bp AppSpec) string {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	bp.phrases = appSpecScreenPhrases(bp.App.Name, "screens")
 	var bodies strings.Builder
 	for _, screen := range bp.Screens {
 		bodies.WriteString(appSpecScreenBody(bp, screen, entityMap, apiBase))
 	}
 	needs := appSpecScreenImports(bp)
-	needs.html = emitsHTMLRef(bodies.String())
-	anyCtx := screensNeedCtx(bp.Screens)
-	writeScreenImportBlock(&sb, needs, anyCtx, false, true)
+	needs.readCode(bodies.String(), bp.phrases)
+	writeScreenImportBlock(&sb, needs, false, true)
+	sb.WriteString(bp.phrases.block())
 	if needs.node {
 		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
 		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }\n\n")
 	}
 	sb.WriteString(bodies.String())
 	return sb.String()
-}
-
-// screensNeedCtx reports whether any screen in the set needs a request
-// context (RenderCtx). That drives the context + component.ContextOnly imports.
-func screensNeedCtx(screens []AppSpecScreen) bool {
-	for _, s := range screens {
-		if screenNeedsCtx(s) {
-			return true
-		}
-	}
-	return false
 }
 
 // appSpecScreenStackOpen opens the ui.Stack a screen's blocks sit in.
@@ -5379,7 +5658,11 @@ const appSpecScreenStackOpen = "ui.Stack(ui.StackConfig{Gap: ui.GapXL},"
 // screen root stopped being an html.Div that pulled the import in for
 // everyone. The code is tokenized, so a string literal or comment that
 // mentions html.Div (a callout's copy) does not count as a call.
-func emitsHTMLRef(code string) bool {
+func emitsHTMLRef(code string) bool { return emitsPkgRef(code, "html") }
+
+// emitsPkgRef reports whether code selects an exported name from the
+// package named pkg, read the way emitsHTMLRef reads html.
+func emitsPkgRef(code, pkg string) bool {
 	type tokLit struct {
 		tok token.Token
 		lit string
@@ -5396,7 +5679,7 @@ func emitsHTMLRef(code string) bool {
 		if tok == token.EOF {
 			return false
 		}
-		if last[0].tok != token.PERIOD && last[1].tok == token.IDENT && last[1].lit == "html" &&
+		if last[0].tok != token.PERIOD && last[1].tok == token.IDENT && last[1].lit == pkg &&
 			last[2].tok == token.PERIOD && tok == token.IDENT && lit[0] >= 'A' && lit[0] <= 'Z' {
 			return true
 		}
@@ -5408,16 +5691,21 @@ func emitsHTMLRef(code string) bool {
 // When withMount is true, database/sql + framework are added (per-screen files
 // carry a mount func with that signature); the aggregated test-facing emitter
 // passes false to stay byte-compatible with the pre-per-screen screens.go.
-func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx, withMount, hasScreens bool) {
+func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMount, hasScreens bool) {
 	sb.WriteString("import (\n")
-	if hasScreens && anyCtx {
-		sb.WriteString("\t\"context\"\n\n")
+	// Every screen takes a context: ScreenTitle(ctx) is always emitted.
+	if hasScreens {
+		sb.WriteString("\t\"context\"\n")
+		if needs.url {
+			sb.WriteString("\t\"net/url\"\n")
+		}
+		sb.WriteString("\n")
 	}
 	if withMount {
 		sb.WriteString("\t\"database/sql\"\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
-	if hasScreens && (needs.component || anyCtx) {
+	if hasScreens {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/component\"\n")
 	}
 	if hasScreens && needs.island {
@@ -5429,11 +5717,17 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if hasScreens && needs.interactive {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/interactive\"\n")
 	}
+	if hasScreens && needs.i18n {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/i18n\"\n")
+	}
 	if hasScreens {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
 	}
 	if hasScreens && needs.ui {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
+	}
+	if hasScreens && needs.i18nui {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/i18nui\"\n")
 	}
 	if hasScreens && needs.headless {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/headless\"\n")
@@ -5449,7 +5743,7 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 		sb.WriteString("\tnoderender \"github.com/DonaldMurillo/gofastr/core-ui/noderender\"\n")
 		sb.WriteString("\tuinode \"github.com/DonaldMurillo/gofastr/core-ui/node\"\n")
 	}
-	if withMount {
+	if withMount || needs.framework {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 	}
 	sb.WriteString(")\n\n")
@@ -5461,35 +5755,30 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	var sb strings.Builder
 	typeName := toCamelCase(screen.Name) + "Screen"
-	ctxScreen := screenNeedsCtx(screen)
-	needParams := screenNeedsParams(screen)
 	hasActions := screenHasActions(screen, entityMap, apiBase)
-	if ctxScreen {
-		if needParams {
-			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
-			sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[%q] }\n", typeName, screenParamName(screen)))
-		} else {
-			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
-		}
-	} else if needParams {
-		// A dynamic route without context still MUST accept its params;
-		// the router fails loudly at registration for any dynamic screen
-		// lacking SetParams (silently dropped params were a bug class).
-		sb.WriteString(fmt.Sprintf("type %s struct{ id string }\n\n", typeName))
-		sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[%q] }\n", typeName, screenParamName(screen)))
+	// Every screen renders with the request ctx: its words are phrases
+	// the request's locale translates. A dynamic route MUST accept its
+	// params; the router fails loudly at registration for any dynamic
+	// screen lacking SetParams (silently dropped params were a bug class).
+	if screenRecordBase(bp, screen) != "" {
+		sb.WriteString(fmt.Sprintf("type %s struct {\n\tcomponent.ContextOnly\n\tid, base string\n}\n\n", typeName))
+		sb.WriteString(screenSetParams(bp, screen, typeName))
+	} else if screenNeedsParams(screen) {
+		sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
+		sb.WriteString(screenSetParams(bp, screen, typeName))
 	} else {
-		sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", typeName))
+		sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
 	}
-	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle() string { return %q }\n", typeName, screen.TitleOrName()))
+	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle(ctx context.Context) string { return %s }\n", typeName, appSpecTx(bp, screen.TitleOrName())))
 	if screen.Description != "" {
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription() string { return %q }\n", typeName, screen.Description))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription(ctx context.Context) string { return %s }\n", typeName, appSpecTx(bp, screen.Description)))
 	} else {
 		// No description in the app spec. A zero-value ScreenSEO is the
 		// framework's documented "deliberately no per-page SEO" opt-out,
 		// which keeps uihost strict mode passing without inventing filler
 		// copy. Replace with a real ScreenDescription when the page has
 		// something to say.
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO() uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the app spec or replace with real copy\n", typeName))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO(ctx context.Context) uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the app spec or replace with real copy\n", typeName))
 	}
 	typeConst, _ := screenTypeConst(screen.Type)
 	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenType() app.ScreenType { return %s }\n", typeName, typeConst))
@@ -5502,11 +5791,7 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 		sb.WriteString("}\n")
 	}
 	sb.WriteString("\n")
-	renderMethod := "Render() render.HTML"
-	if ctxScreen {
-		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
-	}
-	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
+	sb.WriteString(fmt.Sprintf("func (s *%s) RenderCtx(ctx context.Context) render.HTML {\n", typeName))
 	// A screen with blocks stacks them in a ui.Stack at the xl gap, so a
 	// page header, a stat grid, a chart card and a table get the design
 	// system's vertical rhythm instead of touching (a bare div gave them
@@ -5519,7 +5804,7 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 		divCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
 	}
 	if len(screen.Body) == 0 {
-		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", divCfg, screen.TitleOrName()))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%s)))\n", divCfg, appSpecTx(bp, screen.TitleOrName())))
 	} else {
 		closer := "\t)\n"
 		if hasActions {
@@ -5534,7 +5819,7 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 			case isEntityListBlock(block):
 				expr = appSpecEntityListExpr(bp, screen, block)
 			case isEntityDetailBlock(block):
-				expr = appSpecDetailExpr(block)
+				expr = appSpecDetailExpr(bp, screen, block)
 			case isEntityCreateBlock(block):
 				expr = appSpecCreateExpr(bp, block)
 			default:
@@ -5714,7 +5999,7 @@ func appSpecScreenLayoutExpr(screen AppSpecScreen, bp AppSpec) string {
 // the record from the list slides it over, while a hard load or a shared
 // link still renders the full page.
 func appSpecScreenMountStmt(screen AppSpecScreen, bp AppSpec) string {
-	route := appSpecScreenRoutePath(screen.Route)
+	route := appSpecScreenPattern(bp, screen)
 	typeName := toCamelCase(screen.Name) + "Screen"
 	layoutExpr := appSpecScreenLayoutExpr(screen, bp)
 	guestRedirect := bp.App.Auth.Enabled && appSpecHasAuthFormScreen(bp)
@@ -5824,10 +6109,12 @@ func renderAppSpecStandaloneScreenFile(screen AppSpecScreen, bp AppSpec, entityM
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	bp.phrases = appSpecScreenPhrases(bp.App.Name, screen.Name)
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
 	needs := appSpecScreensImportNeeds(bp, []AppSpecScreen{screen}, entityMap, apiBase)
-	needs.html = emitsHTMLRef(body)
-	writeScreenImportBlock(&sb, needs, screenNeedsCtx(screen), true, true)
+	needs.readCode(body, bp.phrases)
+	writeScreenImportBlock(&sb, needs, true, true)
+	sb.WriteString(bp.phrases.block())
 	sb.WriteString(body)
 	mountName := "mount" + toCamelCase(screen.Name) + "Screen"
 	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, appSpecScreenMountStmt(screen, bp)))
@@ -5863,13 +6150,15 @@ func renderAppSpecCrudFile(entity string, screens []AppSpecScreen, bp AppSpec, e
 		}
 	}
 	screens = kept
+	bp.phrases = appSpecCrudPhrases(bp.App.Name, entity)
 	var bodies strings.Builder
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
 	}
 	needs := appSpecScreensImportNeeds(bp, screens, entityMap, apiBase)
-	needs.html = emitsHTMLRef(bodies.String())
-	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
+	needs.readCode(bodies.String(), bp.phrases)
+	writeScreenImportBlock(&sb, needs, true, len(screens) > 0)
+	sb.WriteString(bp.phrases.block())
 	sb.WriteString(bodies.String())
 	// Mount funcs in authored (declaration) order.
 	ordered := append([]AppSpecScreen(nil), screens...)
@@ -5985,6 +6274,92 @@ func humanizeFieldLabel(name string) string {
 	return toDisplayName(s)
 }
 
+// appSpecRelationKeys refuses at load the relation shapes
+// entity.CheckRelationKeys refuses when the generated app boots: a
+// foreign key needs one column per column of the key it references, in
+// key order, and a key of several columns names each one as a declared
+// field of the entity holding it. A many_to_many links two one-column
+// keys; a composite end goes through a join entity instead.
+func appSpecRelationKeys(decl framework.EntityDeclaration, rel framework.Relation, target framework.EntityDeclaration) error {
+	keyOf := func(d framework.EntityDeclaration) []string {
+		if declKeyIsID(d) {
+			return []string{"id"}
+		}
+		return d.PrimaryKey
+	}
+	holder, ref := decl, target
+	switch rel.Type {
+	case fwentity.RelManyToMany:
+		if len(keyOf(decl)) > 1 || len(keyOf(target)) > 1 {
+			return fmt.Errorf("app spec: entity %q relation %q is many_to_many, and a many_to_many links two one-column keys: declare a join entity that belongs to both sides instead", decl.Name, rel.Name)
+		}
+		return nil
+	case fwentity.RelHasOne, fwentity.RelHasMany:
+		holder, ref = target, decl
+	}
+	fks, key := rel.ForeignKey, keyOf(ref)
+	if len(fks) == 0 {
+		return nil
+	}
+	if len(fks) != len(key) {
+		return fmt.Errorf("app spec: entity %q relation %q names foreign key (%s), and %q is keyed on (%s): name one foreign-key column per key column, in key order", decl.Name, rel.Name, strings.Join(fks, ", "), ref.Name, strings.Join(key, ", "))
+	}
+	if len(fks) == 1 {
+		return nil
+	}
+	for i, c := range fks {
+		if slices.ContainsFunc(fks[:i], func(p string) bool { return strings.EqualFold(p, c) }) {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q twice", decl.Name, rel.Name, c)
+		}
+		if !slices.ContainsFunc(holder.Fields, func(f framework.FieldDeclaration) bool { return f.Name == c }) {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, which is not a declared field of %q: declare each column of a multi-column foreign key", decl.Name, rel.Name, c, holder.Name)
+		}
+		if st := holder.States; st != nil && (st.Field == c || slices.ContainsFunc(st.Transitions, func(t fwentity.Transition) bool { return t.Stamp == c })) {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, which %q's transitions write: a move would change the reference with no check, so keep state fields out of multi-column foreign keys", decl.Name, rel.Name, c, holder.Name)
+		}
+	}
+	// The migrator refuses an integer column against a text key column
+	// and the reverse; refuse it here, before the app is generated.
+	for i, c := range fks {
+		f, _ := appSpecColumn(holder, c)
+		k, _ := appSpecColumn(ref, key[i])
+		if f == nil || k == nil {
+			continue
+		}
+		if ft, kt := appSpecTypeFamily(f), appSpecTypeFamily(k); ft != "" && kt != "" && ft != kt {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, typed %s, for key column %q of %q, typed %s: type each column like the key column it references", decl.Name, rel.Name, c, f.Type, key[i], ref.Name, k.Type)
+		}
+	}
+	return nil
+}
+
+// appSpecTypeFamily groups a declared field by the Postgres column the
+// migrator gives it, as its foreign-key type check does: every integer
+// width is one family, text of any length (uuid, enum, image and file
+// among it) another, and any other type its own. A relation holds its
+// target's key, and a type the loader refuses elsewhere has no column,
+// so both are "" and the check skips them.
+func appSpecTypeFamily(f *framework.FieldDeclaration) string {
+	if appSpecIntType(f.Type) {
+		return "integer"
+	}
+	sf, err := f.Field()
+	if err != nil || sf.Type == schema.Relation {
+		return ""
+	}
+	t := fwmigrate.SQLType(sf, fwmigrate.DialectPostgres)
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = t[:i]
+	}
+	switch strings.ToUpper(t) {
+	case "SMALLINT", "INTEGER", "INT", "BIGINT", "SERIAL", "BIGSERIAL":
+		return "integer"
+	case "TEXT", "VARCHAR", "CHAR", "CHARACTER VARYING":
+		return "text"
+	}
+	return strings.ToLower(t)
+}
+
 // appSpecEntityRelations maps each belongs_to FK column → target entity.
 func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string {
 	out := map[string]string{}
@@ -5994,8 +6369,10 @@ func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string 
 		}
 	}
 	for _, r := range decl.Relations {
-		if r.Type == fwentity.RelManyToOne && r.ForeignKey != "" && r.Entity != "" {
-			out[r.ForeignKey] = r.Entity
+		if r.Type == fwentity.RelManyToOne && r.Entity != "" {
+			for _, c := range r.ForeignKey {
+				out[c] = r.Entity
+			}
 		}
 	}
 	return out
@@ -6022,35 +6399,6 @@ func appSpecDisplayField(decl framework.EntityDeclaration) string {
 // shared with the admin battery so both spell "Category" the same way.
 func singularize(s string) string { return inflect.Singular(s) }
 
-// screenNeedsCtx reports whether a screen renders any request-time, server-side
-// data block (top-level entity_list/entity_detail, or any data-bound widget with
-// a `source:` anywhere in the tree) and so must implement RenderCtx.
-func screenNeedsCtx(screen AppSpecScreen) bool {
-	var walk func([]AppSpecBlock, bool) bool
-	walk = func(blocks []AppSpecBlock, top bool) bool {
-		for _, b := range blocks {
-			// Any entity list/detail/form, at any nesting level, is
-			// server-rendered via the resource engine, which needs the request ctx.
-			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) {
-				return true
-			}
-			// Auth forms read ?error= from the request to surface a failed-login
-			// message inline, so they render with the request ctx too.
-			if isLoginFormBlock(b) || isSignupFormBlock(b) {
-				return true
-			}
-			if appSpecBlockHasSource(b) || appSpecBlocksHaveCustomForm([]AppSpecBlock{b}) {
-				return true
-			}
-			if walk(b.Children, false) {
-				return true
-			}
-		}
-		return false
-	}
-	return walk(screen.Body, true)
-}
-
 // appSpecBlockHasSource reports whether a block binds to live entity data.
 func appSpecBlockHasSource(b AppSpecBlock) bool {
 	_, ok := b.Props["source"].(map[string]any)
@@ -6064,21 +6412,67 @@ func appSpecBlockHasSource(b AppSpecBlock) bool {
 func routeParamNames(route string) []string {
 	var names []string
 	for _, seg := range strings.Split(route, "/") {
-		var name string
-		switch {
-		case len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}':
-			name = strings.TrimSuffix(seg[1:len(seg)-1], "...")
-		case strings.HasPrefix(seg, ":") && len(seg) > 1:
-			name = strings.TrimSuffix(seg[1:], "*")
-		default:
-			continue
+		if name, ok := routeSegParam(seg); ok {
+			names = append(names, name)
 		}
-		if i := strings.IndexByte(name, ':'); i >= 0 {
-			name = name[:i] // strip a typed constraint suffix
-		}
-		names = append(names, name)
 	}
 	return names
+}
+
+// routeSegParam returns the param a route segment declares, in either
+// supported syntax, and whether it declares one.
+func routeSegParam(seg string) (string, bool) {
+	var name string
+	switch {
+	case len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}':
+		name = strings.TrimSuffix(seg[1:len(seg)-1], "...")
+	case strings.HasPrefix(seg, ":") && len(seg) > 1:
+		name = strings.TrimSuffix(seg[1:], "*")
+	default:
+		return "", false
+	}
+	if i := strings.IndexByte(name, ':'); i >= 0 {
+		name = name[:i] // strip a typed constraint suffix
+	}
+	return name, true
+}
+
+// screenRecordBase returns the Go expression, over SetParams' p, for the
+// base a record screen's page sits under when route segments follow its
+// record param, else "". The record page otherwise takes its base from
+// the request path less one segment per key column, which on
+// /posts/{id}/edit is /posts/1, and saving there lands on /posts/1/1.
+// The base is the route up to the record param, its params escaped the
+// way the record page links: one segment per value.
+func screenRecordBase(bp AppSpec, screen AppSpecScreen) string {
+	if detail, edit := screenNeedsRouteID(screen); !detail && !edit {
+		return ""
+	}
+	segs := strings.Split(strings.Trim(screen.Route, "/"), "/")
+	at := -1
+	for i, seg := range segs {
+		if name, ok := routeSegParam(seg); ok && name == screenParamName(screen) {
+			at = i
+		}
+	}
+	if at < 0 || at == len(segs)-1 {
+		return ""
+	}
+	// A record param first in the route (/{id}/edit) bases at the root.
+	if at == 0 {
+		return `"/"`
+	}
+	// Each segment escapes on its own: router params arrive decoded, and
+	// a "?" or "/" in one must stay inside its segment of the base.
+	parts := make([]string, at)
+	for i, seg := range segs[:at] {
+		if name, ok := routeSegParam(seg); ok {
+			parts[i] = fmt.Sprintf(`"/" + url.PathEscape(p[%q])`, name)
+		} else {
+			parts[i] = fmt.Sprintf("%q", "/"+url.PathEscape(seg))
+		}
+	}
+	return strings.Join(parts, " + ")
 }
 
 // screenParamName returns the param key the generated SetParams reads:
@@ -6100,6 +6494,68 @@ func screenParamName(screen AppSpecScreen) string {
 	return "id"
 }
 
+// screenRecordKeys returns the key columns of the record a screen shows
+// when that record's entity keys on more than one column, else nil. The
+// record is the screen's first entity_detail, else its first edit form.
+// Such a screen's {id} stands for the whole key: it mounts with one
+// segment per key column, the record path entityui links to.
+func screenRecordKeys(bp AppSpec, screen AppSpecScreen) []string {
+	entity := ""
+	for _, b := range appSpecBlocksDeep(screen.Body) {
+		if isEntityDetailBlock(b) {
+			entity = strings.Trim(b.Entity, "/")
+			break
+		}
+		if entity == "" && isEditFormBlock(b) {
+			entity = strings.Trim(b.Entity, "/")
+		}
+	}
+	for _, d := range bp.Entities {
+		if d.Name == entity && len(d.PrimaryKey) > 1 {
+			return d.PrimaryKey
+		}
+	}
+	return nil
+}
+
+// appSpecScreenPattern is the pattern a screen mounts at: its route in
+// the screen router's colon style, with the record param expanded to one
+// segment per key column when the record has a composite key.
+func appSpecScreenPattern(bp AppSpec, screen AppSpecScreen) string {
+	route := appSpecScreenRoutePath(screen.Route)
+	keys := screenRecordKeys(bp, screen)
+	if keys == nil {
+		return route
+	}
+	param := screenParamName(screen)
+	segs := strings.Split(route, "/")
+	for i, seg := range segs {
+		if names := routeParamNames(seg); len(names) == 1 && names[0] == param {
+			segs[i] = ":" + strings.Join(keys, "/:")
+			break
+		}
+	}
+	return strings.Join(segs, "/")
+}
+
+// screenSetParams emits the SetParams a dynamic screen declares: s.id is
+// the record param, or for a composite-key record the record id joined
+// from one param per key column.
+func screenSetParams(bp AppSpec, screen AppSpecScreen, typeName string) string {
+	id := fmt.Sprintf("p[%q]", screenParamName(screen))
+	if keys := screenRecordKeys(bp, screen); keys != nil {
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = fmt.Sprintf("p[%q]", k)
+		}
+		id = fmt.Sprintf("framework.JoinKey([]string{%s})", strings.Join(parts, ", "))
+	}
+	if base := screenRecordBase(bp, screen); base != "" {
+		return fmt.Sprintf("func (s *%s) SetParams(p map[string]string) {\n\ts.id = %s\n\ts.base = %s\n}\n", typeName, id, base)
+	}
+	return fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = %s }\n", typeName, id)
+}
+
 // screenNeedsParams reports whether a screen reads a route param (either
 // supported syntax). An entity_detail or edit form at any depth needs one
 // too, and validation refuses such a screen whose route has no {id}, so
@@ -6117,7 +6573,7 @@ func screenNeedsRouteID(screen AppSpecScreen) (detail, editForm bool) {
 		if isEntityDetailBlock(b) {
 			detail = true
 		}
-		if isEntityFormBlock(b) && strings.EqualFold(strings.TrimSpace(b.Mode), "edit") {
+		if isEditFormBlock(b) {
 			editForm = true
 		}
 	}
@@ -6129,9 +6585,43 @@ func screenNeedsRouteID(screen AppSpecScreen) (detail, editForm bool) {
 // buttons come from the entity's states, so there is nothing to configure
 // here beyond turning on the two record actions a generated CRUD screen
 // wants: delete and duplicate (off by default on app pages).
-func appSpecDetailExpr(block AppSpecBlock) string {
+func appSpecDetailExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock) string {
 	entity := strings.Trim(block.Entity, "/")
-	return fmt.Sprintf("appUI.Record(%q, s.id).Delete().Duplicate().RenderCtx(ctx)", entity)
+	return fmt.Sprintf("appUI.Record(%q, s.id)%s.Delete().Duplicate().RenderCtx(ctx)", entity, recordBaseCall(bp, screen))
+}
+
+// recordBaseCall is the .Base(s.base) a record screen passes when its
+// route continues past the record param (screenRecordBase), else "".
+func recordBaseCall(bp AppSpec, screen AppSpecScreen) string {
+	if screenRecordBase(bp, screen) == "" {
+		return ""
+	}
+	return ".Base(s.base)"
+}
+
+// appSpecEditExpr emits an edit form's render expression: the record
+// page, which loads the record the route names into its form and saves
+// it back, read-only on its key. A fields allowlist omits the rest.
+func appSpecEditExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, entityMap map[string]framework.EntityDeclaration) string {
+	entity := strings.Trim(block.Entity, "/")
+	expr := fmt.Sprintf("appUI.Record(%q, s.id)%s", entity, recordBaseCall(bp, screen))
+	if len(block.Fields) > 0 {
+		var omit []string
+		for _, f := range entityMap[entity].Fields {
+			if !slices.Contains(block.Fields, f.Name) {
+				omit = append(omit, fmt.Sprintf("%q", f.Name))
+			}
+		}
+		if len(omit) > 0 {
+			expr += ".Omit(" + strings.Join(omit, ", ") + ")"
+		}
+	}
+	return expr + ".RenderCtx(ctx)"
+}
+
+// isEditFormBlock reports whether block is an entity_form in edit mode.
+func isEditFormBlock(block AppSpecBlock) bool {
+	return isEntityFormBlock(block) && strings.EqualFold(strings.TrimSpace(block.Mode), "edit")
 }
 
 // appSpecCreateExpr emits the create screen's render expression: the
@@ -6270,10 +6760,10 @@ func appSpecEntityListExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock)
 		if h1, _ := appSpecH1Before(screen.Body, entity); h1 {
 			level = 2
 		}
-		expr += fmt.Sprintf(".Heading(%q, %d)", block.Text, level)
+		expr += fmt.Sprintf(".Heading(%s, %d)", appSpecTx(bp, block.Text), level)
 	}
 	if block.EmptyText != "" {
-		expr += fmt.Sprintf(".Empty(%q)", block.EmptyText)
+		expr += fmt.Sprintf(".Empty(%s)", appSpecTx(bp, block.EmptyText))
 	}
 	// Off the entity's home screen the rows still link to the home list,
 	// where the detail and create screens sit; the default base is the
@@ -6312,6 +6802,26 @@ type screenImportNeeds struct {
 	// uihost: any screen without an app spec description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
+	// i18n: the file declares phrases. i18nui: the code reads the
+	// framework's own phrases or catalog lookups (form labels, auth
+	// fields).
+	i18n   bool
+	i18nui bool
+	// framework: a composite-key record screen joins its key params.
+	framework bool
+	// url: a record screen escapes the route params of its base.
+	url bool
+}
+
+// readCode sets the needs the emitted code itself decides: which block
+// emitters reached for html.*, i18nui.*, and whether the file says any
+// phrase.
+func (n *screenImportNeeds) readCode(code string, p *appSpecPhrases) {
+	n.html = emitsHTMLRef(code)
+	n.i18nui = emitsPkgRef(code, "i18nui")
+	n.framework = emitsPkgRef(code, "framework")
+	n.url = emitsPkgRef(code, "url")
+	n.i18n = p.used()
 }
 
 // appSpecCatalogKind reports whether a block kind maps to a framework/ui
@@ -6377,6 +6887,9 @@ func appSpecScreensImportNeeds(bp AppSpec, screens []AppSpecScreen, entityMap ma
 					needs.headless = true
 					continue
 				}
+				if isEditFormBlock(block) {
+					continue
+				}
 				if isEntityFormBlock(block) {
 					// Entity forms compose ui.Form with the typed fields,
 					// with the data-cui-rpc wiring built via
@@ -6433,7 +6946,7 @@ func screenActions(screen AppSpecScreen, entityMap map[string]framework.EntityDe
 			blockPath := append(append([]int(nil), path...), i)
 			actions = append(actions, block.Actions...)
 			switch {
-			case isEntityListBlock(block), isEntityDetailBlock(block):
+			case isEntityListBlock(block), isEntityDetailBlock(block), isEditFormBlock(block):
 				// Entity lists/details are server-rendered via the resource
 				// engine at every nesting level, no client island, no action.
 			case isEntityFormBlock(block):
@@ -6634,6 +7147,7 @@ func appSpecSectionChildrenAreCards(children []AppSpecBlock) bool {
 // (expr, true) when handled; ("", false) to fall through to other paths.
 func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) (string, bool) {
 	kind := strings.ToLower(strings.TrimSpace(block.Kind))
+	tx := func(s string) string { return appSpecTx(bp, s) }
 	childExprs := func() string {
 		parts := make([]string, 0, len(block.Children))
 		for i, ch := range block.Children {
@@ -6648,7 +7162,7 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			cp := append(append([]int(nil), path...), i)
 			children = append(children, renderAppSpecBlockForScreen(bp, screen, ch, cp, entityMap, apiBase))
 		}
-		return renderAppSpecControlBlock(block, children)
+		return renderAppSpecControlBlock(bp, block, children)
 	}
 	switch kind {
 	case "stack":
@@ -6681,16 +7195,16 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		}
 		return "ui.Grid(" + cfg + ", " + children + ")", true
 	case "page_header":
-		cfg := fmt.Sprintf("ui.PageHeaderConfig{Title: %q, Subtitle: %q, Eyebrow: %q}", appSpecProp(block, "title"), appSpecProp(block, "subtitle"), appSpecProp(block, "eyebrow"))
+		cfg := fmt.Sprintf("ui.PageHeaderConfig{Title: %s, Subtitle: %s, Eyebrow: %s}", tx(appSpecProp(block, "title")), tx(appSpecProp(block, "subtitle")), tx(appSpecProp(block, "eyebrow")))
 		return "ui.PageHeader(" + cfg + ")", true
 	case "hero":
 		title := appSpecProp(block, "title")
 		var ctas []string
 		if t := appSpecProp(block, "cta_text"); t != "" {
-			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %q, Href: %q, Variant: ui.ButtonPrimary})", t, appSpecProp(block, "cta_href")))
+			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonPrimary})", tx(t), appSpecProp(block, "cta_href")))
 		}
 		if t := appSpecProp(block, "secondary_text"); t != "" {
-			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %q, Href: %q, Variant: ui.ButtonSecondary})", t, appSpecProp(block, "secondary_href")))
+			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonSecondary})", tx(t), appSpecProp(block, "secondary_href")))
 		}
 		actions := ""
 		if len(ctas) > 0 {
@@ -6702,11 +7216,11 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		}
 		media := ""
 		if image != "" {
-			media = fmt.Sprintf(", Media: html.Image(html.ImageConfig{Src: %q, Alt: %q})", image, title)
+			media = fmt.Sprintf(", Media: html.Image(html.ImageConfig{Src: %q, Alt: %s})", image, tx(title))
 		}
-		return fmt.Sprintf("ui.Hero(ui.HeroConfig{Eyebrow: %q, Title: %q, Subtitle: %q%s%s})", appSpecProp(block, "eyebrow"), title, appSpecProp(block, "subtitle"), actions, media), true
+		return fmt.Sprintf("ui.Hero(ui.HeroConfig{Eyebrow: %s, Title: %s, Subtitle: %s%s%s})", tx(appSpecProp(block, "eyebrow")), tx(title), tx(appSpecProp(block, "subtitle")), actions, media), true
 	case "section":
-		cfg := fmt.Sprintf("ui.SectionConfig{Heading: %q, Eyebrow: %q, Description: %q, Label: %q, Class: %q, ID: %q}", appSpecProp(block, "heading"), appSpecProp(block, "eyebrow"), appSpecProp(block, "description"), appSpecProp(block, "label"), appSpecProp(block, "class"), appSpecProp(block, "id"))
+		cfg := fmt.Sprintf("ui.SectionConfig{Heading: %s, Eyebrow: %s, Description: %s, Label: %s, Class: %q, ID: %q}", tx(appSpecProp(block, "heading")), tx(appSpecProp(block, "eyebrow")), tx(appSpecProp(block, "description")), tx(appSpecProp(block, "label")), appSpecProp(block, "class"), appSpecProp(block, "id"))
 		if len(block.Children) > 0 {
 			// Card-like children flow in a responsive ui.Grid; anything else
 			// (a CTA button, prose) flows in a left-aligned ui.Stack so it keeps
@@ -6719,7 +7233,7 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		}
 		return "ui.Section(" + cfg + ")", true
 	case "card":
-		cfg := fmt.Sprintf("ui.CardConfig{Heading: %q, Description: %q%s}", appSpecProp(block, "heading"), appSpecProp(block, "text"), appSpecCardHeadingLevel(screen, path))
+		cfg := fmt.Sprintf("ui.CardConfig{Heading: %s, Description: %s%s}", tx(appSpecProp(block, "heading")), tx(appSpecProp(block, "text")), appSpecCardHeadingLevel(screen, path))
 		if len(block.Children) > 0 {
 			return "ui.Card(" + cfg + ", " + childExprs() + ")", true
 		}
@@ -6734,9 +7248,9 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			field, _ := src["field"].(string)
 			filter, _ := src["filter"].(string)
 			format := appSpecProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", tx(label), entity, agg, field, filter, format), true
 		}
-		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: %q})", label, appSpecProp(block, "value")), true
+		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: %q})", tx(label), appSpecProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":
 		title := appSpecProp(block, "title")
 		if src, ok := block.Props["source"].(map[string]any); ok {
@@ -6745,16 +7259,16 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			var chart string
 			switch kind {
 			case "pie_chart":
-				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: appUI.GroupSlices(ctx, %q, %q)})", entity, groupBy)
+				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Ctx: ctx, Slices: appUI.GroupSlices(ctx, %q, %q)})", entity, groupBy)
 			case "line_chart":
 				chart = fmt.Sprintf("appUI.LineChart(ctx, %q, %q)", entity, groupBy)
 			default:
-				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
+				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: appUI.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
 			}
 			// A titled chart is a Card with a heading; design-system
 			// composition, zero bespoke classes (Hard rule 7).
 			if title != "" {
-				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %q%s}, %s)", title, appSpecCardHeadingLevel(screen, path), chart), true
+				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %s%s}, %s)", tx(title), appSpecCardHeadingLevel(screen, path), chart), true
 			}
 			return chart, true
 		}
@@ -6767,19 +7281,19 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		case "ghost":
 			v = "ui.ButtonGhost"
 		}
-		return fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %q, Href: %q, Variant: %s})", appSpecProp(block, "label"), appSpecProp(block, "href"), v), true
+		return fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: %s})", tx(appSpecProp(block, "label")), appSpecProp(block, "href"), v), true
 	case "callout":
-		return fmt.Sprintf("ui.Callout(ui.CalloutConfig{Title: %q}, render.Text(%q))", appSpecProp(block, "title"), block.Text), true
+		return fmt.Sprintf("ui.Callout(ui.CalloutConfig{Title: %s}, render.Text(%s))", tx(appSpecProp(block, "title")), tx(block.Text)), true
 	case "divider":
 		return "ui.Divider(ui.DividerConfig{})", true
 	case "markdown":
-		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %q, Measure: true})", block.Text), true
+		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %s, Measure: true})", tx(block.Text)), true
 	case "pricing":
 		plans, _ := block.Props["plans"].([]any)
 		cards := make([]string, 0, len(plans))
 		for _, p := range plans {
 			if pm, ok := p.(map[string]any); ok {
-				cards = append(cards, appSpecPricingCardExpr(pm))
+				cards = append(cards, appSpecPricingCardExpr(bp, pm))
 			}
 		}
 		return "ui.Grid(ui.GridConfig{Min: \"16rem\"}, " + strings.Join(cards, ", ") + ")", true
@@ -6788,14 +7302,15 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 }
 
 // appSpecPricingCardExpr emits a ui.PricingCard call from a plan map.
-func appSpecPricingCardExpr(p map[string]any) string {
+func appSpecPricingCardExpr(bp AppSpec, p map[string]any) string {
 	s := func(k string) string { v, _ := p[k].(string); return v }
+	tx := func(k string) string { return appSpecTx(bp, s(k)) }
 	feats := ""
 	if fl, ok := p["features"].([]any); ok && len(fl) > 0 {
 		qs := make([]string, 0, len(fl))
 		for _, f := range fl {
 			if fs, ok := f.(string); ok {
-				qs = append(qs, fmt.Sprintf("%q", fs))
+				qs = append(qs, appSpecTx(bp, fs))
 			}
 		}
 		feats = ", Features: []string{" + strings.Join(qs, ", ") + "}"
@@ -6804,8 +7319,8 @@ func appSpecPricingCardExpr(p map[string]any) string {
 	if b, _ := p["featured"].(bool); b {
 		featured = ", Featured: true"
 	}
-	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Name: %q, Price: %q, Period: %q, Description: %q%s, CTALabel: %q, CTAHref: %q%s})",
-		s("name"), s("price"), s("period"), s("description"), feats, s("cta_text"), s("cta_href"), featured)
+	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Name: %s, Price: %q, Period: %s, Description: %s%s, CTALabel: %s, CTAHref: %q%s})",
+		tx("name"), s("price"), tx("period"), tx("description"), feats, tx("cta_text"), s("cta_href"), featured)
 }
 
 func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
@@ -6815,15 +7330,19 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "login_form":
-		return renderAppSpecLoginFormExpr(block)
+		return renderAppSpecLoginFormExpr(bp, block)
 	case "signup_form":
-		return renderAppSpecSignupFormExpr(block)
+		return renderAppSpecSignupFormExpr(bp, block)
 	case "entity_form":
-		// Island form composed from framework components (no ctx needed).
-		return appSpecEntityFormExpr(screen, block, path, entityMap, apiBase)
+		if isEditFormBlock(block) {
+			return appSpecEditExpr(bp, screen, block, entityMap)
+		}
+		// Island form composed from framework components; its labels
+		// translate through the request ctx.
+		return appSpecEntityFormExpr(bp, screen, block, path, entityMap, apiBase)
 	case "entity_detail":
 		// Server-rendered via the resource engine (s.id from the route param).
-		return appSpecDetailExpr(block)
+		return appSpecDetailExpr(bp, screen, block)
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
@@ -6833,7 +7352,7 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 		return expr
 	}
 	if appSpecBlockUsesNodeRenderer(block) {
-		expr := renderAppSpecNodeExpressionForScreen(screen, block, path, entityMap, apiBase)
+		expr := renderAppSpecNodeExpressionForScreen(bp, screen, block, path, entityMap, apiBase)
 		if block.Island != "" {
 			return fmt.Sprintf("island.NewIsland(%q, nodeComponent{node: %s}).Render()", block.Island, expr)
 		}
@@ -6848,7 +7367,7 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 	}
 	switch strings.ToLower(block.Type) {
 	case "", "text", "p", "paragraph":
-		return fmt.Sprintf("html.Paragraph(html.TextConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
+		return fmt.Sprintf("html.Paragraph(html.TextConfig{Class: %q}, render.Text(%s))", block.Class, appSpecTx(bp, block.Text))
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
 		level := block.Level
 		if level == 0 {
@@ -6867,36 +7386,43 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 				level = 1
 			}
 		}
-		return fmt.Sprintf("html.Heading(html.HeadingConfig{Level: %d, Class: %q}, render.Text(%q))", level, block.Class, block.Text)
+		return fmt.Sprintf("html.Heading(html.HeadingConfig{Level: %d, Class: %q}, render.Text(%s))", level, block.Class, appSpecTx(bp, block.Text))
 	case "link":
 		// ui.Link is the design system's anchor: the same unsafe-scheme
 		// guard html.Link applies, plus the link styling a bare <a> lacks.
 		// It refuses empty text, so a text-less link reads as its href.
-		text := block.Text
-		if text == "" {
-			text = block.Href
+		text := appSpecTx(bp, block.Text)
+		if block.Text == "" {
+			text = strconv.Quote(block.Href)
 		}
-		return fmt.Sprintf("ui.Link(ui.LinkConfig{Href: %q, Text: %q, Class: %q})", block.Href, text, block.Class)
+		return fmt.Sprintf("ui.Link(ui.LinkConfig{Href: %q, Text: %s, Class: %q})", block.Href, text, block.Class)
 	case "section":
-		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%q))", attrs, block.Text)
+		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%s))", attrs, appSpecTx(bp, block.Text))
 	default:
-		return fmt.Sprintf("html.Div(html.DivConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
+		return fmt.Sprintf("html.Div(html.DivConfig{Class: %q}, render.Text(%s))", block.Class, appSpecTx(bp, block.Text))
 	}
 }
 
 func renderAppSpecNodeExpression(block AppSpecBlock) string {
-	return renderAppSpecNodeExpressionForScreen(AppSpecScreen{}, block, nil, nil, "")
+	return renderAppSpecNodeExpressionForScreen(AppSpec{}, AppSpecScreen{}, block, nil, nil, "")
+}
+
+// appSpecNodeTextProps are the node props a reader sees or hears: the
+// node renderer's text and the attributes assistive technology reads.
+var appSpecNodeTextProps = map[string]bool{
+	"text": true, "label": true, "title": true, "alt": true,
+	"placeholder": true, "aria-label": true,
 }
 
 // appSpecChildNodeExpr returns the uinode.Node literal for a child block.
 // Entity blocks (list/detail/form) are framework UI components, not nodes, so
 // they're rendered by renderAppSpecBlockForScreen (in ui-component containers
 // like ui.Section), never inside a raw node tree.
-func appSpecChildNodeExpr(screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
-	return renderAppSpecNodeExpressionForScreen(screen, block, path, entityMap, apiBase)
+func appSpecChildNodeExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	return renderAppSpecNodeExpressionForScreen(bp, screen, block, path, entityMap, apiBase)
 }
 
-func renderAppSpecNodeExpressionForScreen(screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func renderAppSpecNodeExpressionForScreen(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	kind := block.Kind
 	if kind == "" {
 		kind = block.Type
@@ -6941,6 +7467,13 @@ func renderAppSpecNodeExpressionForScreen(screen AppSpecScreen, block AppSpecBlo
 			}
 		}
 	}
+	if bp.phrases != nil {
+		for k, v := range props {
+			if s, ok := v.(string); ok && s != "" && appSpecNodeTextProps[k] {
+				props[k] = goExpr(appSpecTx(bp, s))
+			}
+		}
+	}
 	var sb strings.Builder
 	sb.WriteString("uinode.Node{")
 	sb.WriteString(fmt.Sprintf("Kind: %q", kind))
@@ -6957,7 +7490,7 @@ func renderAppSpecNodeExpressionForScreen(screen AppSpecScreen, block AppSpecBlo
 				sb.WriteString(", ")
 			}
 			childPath := append(append([]int(nil), path...), i)
-			sb.WriteString(appSpecChildNodeExpr(screen, child, childPath, entityMap, apiBase))
+			sb.WriteString(appSpecChildNodeExpr(bp, screen, child, childPath, entityMap, apiBase))
 		}
 		sb.WriteString("}")
 	}
@@ -7037,24 +7570,24 @@ func isSignupFormBlock(block AppSpecBlock) bool {
 // The fields are built through FormField's builder with ui.Control, so the
 // label association and any future description wiring arrive by construction
 // rather than by raw input strings.
-func appSpecAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
+func appSpecAuthFormExpr(bp AppSpec, heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
 	// html.Input, NOT a hand-rolled <input> string through render.Raw:
 	// the generator ships zero raw markup (hard rule 7), and the
 	// primitive is the same one every other control in the emitted app
 	// goes through. gofastr pack reads this expression back —
 	// reverseAuthCard knows exactly this shape.
 	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
-	emailField := `ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,` +
+	emailField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true,` +
 		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`
 	minLen := ""
 	if pwMinLength > 0 {
 		minLen = fmt.Sprintf(", MinLength: %d", pwMinLength)
 	}
-	pwField := `ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,` +
+	pwField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true,` +
 		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, SubmitFullWidth: true}, %s, %s, %s)",
-		action, submitLabel, hidden, emailField, pwField)
+		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %s, SubmitFullWidth: true}, %s, %s, %s)",
+		action, appSpecTx(bp, submitLabel), hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
 		// ui.Link, NOT a hand-rolled <a> inside render.Raw. render.Raw is what
@@ -7068,16 +7601,16 @@ func appSpecAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete stri
 		// generator already goes through that guard or ui.LinkButton's
 		// isUnsafeScheme. Emitting the component also satisfies Hard rule 7,
 		// no hand-rolled structural markup.
-		footer = fmt.Sprintf(", Footer: ui.Link(ui.LinkConfig{Href: %q, Text: %q})", footerHref, footerText)
+		footer = fmt.Sprintf(", Footer: ui.Link(ui.LinkConfig{Href: %q, Text: %s})", footerHref, appSpecTx(bp, footerText))
 	}
 	// Auth screens render with the request ctx (screenNeedsCtx), so the card
 	// surfaces a failed-login / duplicate-email message inline from ?error=.
-	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %q, Alert: authError(ctx), Body: %s%s})", heading, form, footer)
+	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %s, Alert: authError(ctx), Body: %s%s})", appSpecTx(bp, heading), form, footer)
 }
 
 // renderAppSpecSignupFormExpr emits the registration form (posts to the auth
 // battery's register endpoint, 303-redirects to ?next= on success).
-func renderAppSpecSignupFormExpr(block AppSpecBlock) string {
+func renderAppSpecSignupFormExpr(bp AppSpec, block AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
@@ -7091,12 +7624,12 @@ func renderAppSpecSignupFormExpr(block AppSpecBlock) string {
 	if heading == "" {
 		heading = "Create your account"
 	}
-	return appSpecAuthFormExpr(heading, action, next, "Create account", "new-password", 8, propStr("login_href"), "Already have an account? Sign in")
+	return appSpecAuthFormExpr(bp, heading, action, next, "Create account", "new-password", 8, propStr("login_href"), "Already have an account? Sign in")
 }
 
 // renderAppSpecLoginFormExpr emits the login form. props: action (default
 // /auth/login), next (post-login redirect, default /), register_href (optional).
-func renderAppSpecLoginFormExpr(block AppSpecBlock) string {
+func renderAppSpecLoginFormExpr(bp AppSpec, block AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
@@ -7110,7 +7643,7 @@ func renderAppSpecLoginFormExpr(block AppSpecBlock) string {
 	if heading == "" {
 		heading = "Sign in"
 	}
-	return appSpecAuthFormExpr(heading, action, next, "Sign in", "current-password", 0, propStr("register_href"), "Create an account")
+	return appSpecAuthFormExpr(bp, heading, action, next, "Sign in", "current-password", 0, propStr("register_href"), "Create an account")
 }
 
 func appSpecBlockKindIs(block AppSpecBlock, want string) bool {
@@ -7165,12 +7698,13 @@ func appSpecFormInputType(fieldType string) string {
 	}
 }
 
-// appSpecEntityFormExpr emits a ui.Form for a create/edit form, composing
+// appSpecEntityFormExpr emits a ui.Form for a create form, composing
 // ui.FormField per entity field. The framework owns the form/field CSS, so this
 // ships no bespoke styling. The form is an island: data-cui-rpc-* (on the form
 // via ExtraAttrs) makes the runtime JSON-encode the body to the CRUD endpoint;
-// relation <select>s are populated on mount via data-action-mount.
-func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+// relation <select>s are populated on mount via data-action-mount. An edit
+// form is the record page instead (appSpecEditExpr): it loads the record.
+func appSpecEntityFormExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	entity := strings.Trim(block.Entity, "/")
 	decl, ok := entityMap[entity]
 	if !ok {
@@ -7180,16 +7714,7 @@ func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int,
 	if title == "" {
 		title = "New " + toDisplayName(entity)
 	}
-	mode := strings.ToLower(strings.TrimSpace(block.Mode))
-	if mode == "" {
-		mode = "create"
-	}
 	rpcPath := apiBase + "/" + entity
-	submitLabel := "Create"
-	if mode == "edit" {
-		rpcPath = apiBase + "/" + entity + "/{id}"
-		submitLabel = "Update"
-	}
 	// The form carries entity-form markers (data-entity-form/mode, plus
 	// data-action-mount when relation selects need populating) alongside
 	// the RPC wiring. Build the RPC attrs via the typed interactive layer
@@ -7198,18 +7723,13 @@ func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int,
 	// same <form> the raw data-cui-rpc map produced before.
 	markerParts := []string{
 		fmt.Sprintf("\"data-entity-form\": %q", entity),
-		fmt.Sprintf("\"data-entity-mode\": %q", mode),
+		`"data-entity-mode": "create"`,
 	}
 	if appSpecFormHasRelation(block, entityMap) {
 		markerParts = append(markerParts, fmt.Sprintf("\"data-action-mount\": %q", appSpecEntityFormActionName(screen, block, path)))
 	}
 	markers := "html.Attrs{" + strings.Join(markerParts, ", ") + "}"
-	var actionExpr string
-	if mode == "edit" {
-		actionExpr = fmt.Sprintf("interactive.Put(%q)", rpcPath)
-	} else {
-		actionExpr = fmt.Sprintf("interactive.Post(%q).OnSuccess(interactive.ResetForm())", rpcPath)
-	}
+	actionExpr := fmt.Sprintf("interactive.Post(%q).OnSuccess(interactive.ResetForm())", rpcPath)
 	extraAttrs := "html.MergeAttrs(" + markers + ", " + actionExpr + ".Attrs())"
 
 	var fields []string
@@ -7220,8 +7740,11 @@ func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int,
 		// field.Name is constrained to a Go identifier by
 		// validateAppSpec, so %q here is stable and escaped once (the
 		// components' own renderers escape again at the value level,
-		// never double-escaping the identifier).
-		label := toDisplayName(field.Name)
+		// never double-escaping the identifier). The label is the
+		// catalog's entity.<entity>.fields.<field>.label, the derived
+		// display name when the catalog has none: the same lookup the
+		// entityui forms make.
+		label := fmt.Sprintf("i18nui.FieldLabel(ctx, nil, %q, %q, %q)", entity, field.Name, toDisplayName(field.Name))
 		fieldID := "field-" + field.Name
 		req := fmt.Sprintf("%t", field.Required)
 		var expr string
@@ -7230,38 +7753,38 @@ func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int,
 			var opts strings.Builder
 			opts.WriteString("[]ui.SelectOption{")
 			for _, v := range field.Values {
-				fmt.Fprintf(&opts, "{Value: %q, Text: %q},", v, toDisplayName(v))
+				fmt.Fprintf(&opts, "{Value: %q, Text: i18nui.FieldValueLabel(ctx, nil, %q, %q, %q)},", v, entity, field.Name, v)
 			}
 			opts.WriteString("}")
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %q, ID: %q, Placeholder: \"— Select —\", Options: %s, Required: %s})",
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
 				field.Name, label, fieldID, opts.String(), req)
 		case "relation":
 			// The relation select keeps data-rel-entity: the generated
 			// mount hook populates it from the related entity's API.
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %q, ID: %q, Placeholder: \"— Select —\", Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
 				field.Name, label, fieldID, req, field.To)
 		case "text":
-			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "bool", "boolean":
-			expr = fmt.Sprintf("ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "int", "integer", "float", "decimal":
-			expr = fmt.Sprintf("ui.NumberField(ui.NumberFieldConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.NumberField(ui.NumberFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "date":
-			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
-			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %q, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
 				label, fieldID, req, appSpecFormInputType(field.Type), field.Name)
 		}
 		fields = append(fields, expr)
 	}
-	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, ExtraAttrs: %s}, %s)", rpcPath, submitLabel, extraAttrs, strings.Join(fields, ", "))
-	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %q}), %s)", title, form)
+	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %s, ExtraAttrs: %s}, %s)", rpcPath, appSpecTx(bp, "Create"), extraAttrs, strings.Join(fields, ", "))
+	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %s}), %s)", appSpecTx(bp, title), form)
 }
 
 // appSpecFormFieldSkipped reports whether a field is omitted from a
@@ -7272,7 +7795,7 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 	case "id", "created_at", "updated_at", "deleted_at":
 		return true
 	}
-	if field.Hidden || field.AutoGenerate != "" || field.ReadOnly {
+	if field.Hidden || fieldAutoGenerated(field) || field.ReadOnly {
 		return true
 	}
 	if len(filterFields) > 0 {
@@ -7354,22 +7877,6 @@ func toDisplayName(s string) string {
 	return strings.Join(words, " ")
 }
 
-// appSpecEndpointHandlerName returns the Go identifier for an
-// endpoint's handler. It prefers the explicit Handler, falling back to
-// the endpoint Name when Handler is empty. When both are empty it
-// returns "". There is no identifier to emit, and callers skip the
-// endpoint entirely (no stub, no route registration).
-func appSpecEndpointHandlerName(endpoint AppSpecEndpoint) string {
-	source := strings.TrimSpace(endpoint.Handler)
-	if source == "" {
-		source = strings.TrimSpace(endpoint.Name)
-	}
-	if source == "" {
-		return ""
-	}
-	return toCamelCase(source)
-}
-
 // appSpecSeedFieldIsDecimal reports whether the named field on the given
 // entity is a decimal-typed column (which CRUD validates as a decimal string).
 func appSpecSeedFieldIsDecimal(bp AppSpec, entity, field string) bool {
@@ -7407,7 +7914,7 @@ func appSpecDecimalLiteral(v any) string {
 func renderAppSpecStubs(bp AppSpec) string {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	needsHTTP := len(bp.Endpoints) > 0 || len(bp.Middleware) > 0
+	needsHTTP := len(bp.Middleware) > 0
 	needsFramework := len(bp.Plugins) > 0
 	needsJSON := false
 	// Hook stubs take framework.HookFunc's signature (context.Context, any).
@@ -7427,31 +7934,6 @@ func renderAppSpecStubs(bp AppSpec) string {
 			sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 		}
 		sb.WriteString(")\n\n")
-	}
-	for _, endpoint := range bp.Endpoints {
-		handler := appSpecEndpointHandlerName(endpoint)
-		if handler == "" {
-			// No Handler and no Name: nothing to derive a Go identifier
-			// from. Skip emitting a stub; registration skips it too.
-			continue
-		}
-		if !isGoIdentifier(handler) {
-			// validateAppSpec refuses a Handler that does not derive
-			// an identifier, but the Name FALLBACK root has no validator
-			// of its own (toCamelCase transforms, it does not validate),
-			// and renderAppSpecStubs also serves unvalidated renders
-			// (tests, --add fragments). Never emit a non-identifier:
-			// mirroring the hook stubs below. assertAppSpecGoParses is
-			// the backstop, not the guard.
-			continue
-		}
-		label := strings.TrimSpace(endpoint.Handler)
-		if label == "" {
-			label = strings.TrimSpace(endpoint.Name)
-		}
-		sb.WriteString(fmt.Sprintf("func %s(w http.ResponseWriter, r *http.Request) {\n", handler))
-		sb.WriteString(fmt.Sprintf("\thttp.Error(w, %q, http.StatusNotImplemented)\n", "TODO: implement "+label))
-		sb.WriteString("}\n\n")
 	}
 	for _, item := range bp.Middleware {
 		// Same gate as the endpoint arm above: toCamelCase transforms, it
@@ -7607,6 +8089,11 @@ func renderAppSpecApp(bp AppSpec) string {
 		name = "GoFastr"
 	}
 	var sb strings.Builder
+	// The chrome's words (nav labels, the header's auth action, footer
+	// columns) are phrases under <app>.chrome; the brand name stays as
+	// written.
+	bp.phrases = appSpecChromePhrases(bp.App.Name)
+	tx := func(s string) string { return appSpecTx(bp, s) }
 	adminSeed := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
 	hasMarketing := appSpecHasMarketing(bp)
 	hasAccess := false
@@ -7649,9 +8136,6 @@ func renderAppSpecApp(bp AppSpec) string {
 	sb.WriteString("\t\"database/sql\"\n")
 	if adminSeed {
 		sb.WriteString("\t\"fmt\"\n")
-	}
-	if len(bp.Endpoints) > 0 {
-		sb.WriteString("\t\"net/http\"\n")
 	}
 	if hasAccess {
 		sb.WriteString("\t\"net/url\"\n")
@@ -7750,7 +8234,7 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
 		sb.WriteString("\t\t\t\tfor _, r := range rh.GetRoles() { if r == role { return decide.Allow() } }\n")
 		sb.WriteString("\t\t\t}\n")
-		sb.WriteString("\t\t\treturn decide.Block(403, \"Forbidden\")\n")
+		sb.WriteString("\t\t\treturn decide.Block(403)\n")
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\treturn decide.Allow()\n")
 		sb.WriteString("\t})\n")
@@ -7781,7 +8265,7 @@ func renderAppSpecApp(bp AppSpec) string {
 		var navLinks []string
 		for _, l := range chrome {
 			if l.Nav {
-				navLinks = append(navLinks, fmt.Sprintf("{Label: %q, Href: %q}", l.Label, l.Route))
+				navLinks = append(navLinks, fmt.Sprintf("{Label: %s, Href: %q}", tx(l.Label), l.Route))
 			}
 		}
 		// The app declares a dark scheme: surface the toggle as a real
@@ -7799,8 +8283,8 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString(fmt.Sprintf("\tlinks := []siteheader.Link{%s}\n", strings.Join(navLinks, ", ")))
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: \"Dashboard\", Href: %q})\n", appHome))
-			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Next: \"/\"})", themeToggle) + "\n")
+			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: %s, Href: %q})\n", tx("Dashboard"), appHome))
+			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})", themeToggle) + "\n")
 			sb.WriteString("\t} else {\n")
 			// appSpecLoginRoute, not a hardcoded "/login": the app-shell
 			// sidebar had the same literal and it pointed at a route six of
@@ -7808,7 +8292,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			// only because meridian is the sole app spec with both marketing
 			// screens and auth, and it happens to route /login, which is luck,
 			// not design.
-			sb.WriteString("\t\tactions = " + barActions(fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})", appSpecLoginRoute(bp)), themeToggle) + "\n")
+			sb.WriteString("\t\tactions = " + barActions(fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})", tx("Sign in"), appSpecLoginRoute(bp)), themeToggle) + "\n")
 			sb.WriteString("\t}\n")
 			sb.WriteString("\treturn siteheader.Render(siteheader.Config{\n")
 			sb.WriteString("\t\tCtx:     ctx,\n")
@@ -7817,8 +8301,9 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString("\t\tActions: actions,\n")
 			sb.WriteString("\t})\n}\n\n")
 		} else {
-			sb.WriteString("func marketingHeader() render.HTML {\n")
+			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
 			sb.WriteString("\treturn siteheader.Render(siteheader.Config{\n")
+			sb.WriteString("\t\tCtx:  ctx,\n")
 			sb.WriteString("\t\tName: appName,\n")
 			// No Links line when no chrome link survives: an omitted field
 			// renders the brand + actions bar; an empty slice would add noise.
@@ -7826,11 +8311,11 @@ func renderAppSpecApp(bp AppSpec) string {
 				sb.WriteString(fmt.Sprintf("\t\tLinks: []siteheader.Link{%s},\n", strings.Join(navLinks, ", ")))
 			}
 			if themeToggle {
-				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n")
+				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}),\n")
 			}
 			sb.WriteString("\t})\n}\n\n")
 		}
-		sb.WriteString("func marketingFooter() render.HTML {\n")
+		sb.WriteString("func marketingFooter(ctx context.Context) render.HTML {\n")
 		sb.WriteString("\treturn sitefooter.Render(sitefooter.Config{\n")
 		sb.WriteString("\t\tName: appName,\n")
 		// A footer column is emitted only when at least one of its links
@@ -7847,7 +8332,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			if l.Column == "" {
 				continue
 			}
-			expr := fmt.Sprintf("{Label: %q, Href: %q}", l.Label, l.Route)
+			expr := fmt.Sprintf("{Label: %s, Href: %q}", tx(l.Label), l.Route)
 			if i, ok := columnIndex[l.Column]; ok {
 				columns[i].links = append(columns[i].links, expr)
 				continue
@@ -7858,11 +8343,17 @@ func renderAppSpecApp(bp AppSpec) string {
 		if len(columns) > 0 {
 			sb.WriteString("\t\tColumns: []sitefooter.Column{\n")
 			for _, col := range columns {
-				sb.WriteString(fmt.Sprintf("\t\t\t{Title: %q, Links: []sitefooter.Link{%s}},\n", col.title, strings.Join(col.links, ", ")))
+				sb.WriteString(fmt.Sprintf("\t\t\t{Title: %s, Links: []sitefooter.Link{%s}},\n", tx(col.title), strings.Join(col.links, ", ")))
 			}
 			sb.WriteString("\t\t},\n")
 		}
-		sb.WriteString(fmt.Sprintf("\t\tNote: %q,\n", fmt.Sprintf("© %d %s.", time.Now().Year(), name)))
+		// A reader reaches another language from any marketing page.
+		// The footer renders once per page, where the header's actions
+		// render twice (bar and phone menu).
+		if bp.App.LocalePrefixes {
+			sb.WriteString("\t\tLanguage: ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: ctx, Position: ui.MenuTopStart}),\n")
+		}
+		sb.WriteString(fmt.Sprintf("\t\tNote: %s,\n", tx(fmt.Sprintf("© %d %s.", time.Now().Year(), name))))
 		sb.WriteString("\t})\n}\n\n")
 	}
 	if appSpecHasTheme(bp.App) {
@@ -7938,14 +8429,10 @@ func renderAppSpecApp(bp AppSpec) string {
 		// anyone was signed *in*, so the app shell told every first-time visitor
 		// they had a session to end. The marketing header already resolved this
 		// correctly from handler.GetUser(ctx); the app shell now does too.
-		if bp.App.Auth.Enabled {
-			sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
-		} else {
-			sb.WriteString("func sidebarConfig() ui.SidebarConfig {\n")
-		}
+		sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
 		sb.WriteString(fmt.Sprintf("\tcfg := ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
 		for _, item := range bp.Nav {
-			renderNavItemGo(&sb, item, "\t\t")
+			renderNavItemGo(bp, &sb, item, "\t\t")
 		}
 		sb.WriteString("\t}}\n")
 		// The app shell has no top bar, so account/appearance controls live in
@@ -7955,13 +8442,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		// plain Items slice.
 		themeToggle := ""
 		if len(bp.App.ThemeDark) > 0 {
-			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
+			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon})"
 		}
 		switch {
 		case bp.App.Auth.Enabled:
 			sb.WriteString("\tvar authAction render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Next: \"/\"})\n")
+			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})\n")
 			// Only offer Sign in when a screen actually hosts the login form.
 			// Six of the seven shipped app specs never route /login, so an
 			// unconditional button would make the app shell's only auth
@@ -7970,7 +8457,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			// rather than emitted empty.
 			if appSpecHasAuthFormScreen(bp) {
 				sb.WriteString("\t} else {\n")
-				sb.WriteString(fmt.Sprintf("\t\tauthAction = ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})\n", appSpecLoginRoute(bp)))
+				sb.WriteString(fmt.Sprintf("\t\tauthAction = ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})\n", tx("Sign in"), appSpecLoginRoute(bp)))
 			}
 			sb.WriteString("\t}\n")
 			if themeToggle != "" {
@@ -8036,12 +8523,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\tsite.WithTheme(theme.Default().Extend(siteheader.Tokens))\n")
 	}
 	if len(bp.Nav) > 0 {
-		if bp.App.Auth.Enabled {
-			// Per-request sidebar: the footer's auth action depends on the live
-			// session, so the shell resolves it the same way the marketing
-			// header does. The phone drawer renders the same footer, so it is
-			// mounted with the builder (MountSidebarFunc) below, never with a
-			// config built once at startup.
+		{
+			// Per-request sidebar: its labels translate per request and the
+			// footer's auth action depends on the live session, so the shell
+			// resolves it the same way the marketing header does. The phone
+			// drawer renders the same sidebar, so it is mounted with the
+			// builder (MountSidebarFunc) below, never with a config built
+			// once at startup.
 			sb.WriteString("\tsbComponent :=app.NewContextComponent(func(ctx context.Context) render.HTML {\n")
 			// SafeRenderCtx, never Render(): the sidebar component's
 			// ctx-aware path is what filters role-gated nav items, and the
@@ -8053,9 +8541,6 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString("\t\thtml, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))\n")
 			sb.WriteString("\t\treturn html\n")
 			sb.WriteString("\t})\n")
-		} else {
-			sb.WriteString("\tsbCfg := sidebarConfig()\n")
-			sb.WriteString("\tsbComponent := ui.Sidebar(sbCfg)\n")
 		}
 		// No standalone app top bar: the sidebar owns brand + nav + the theme
 		// toggle (in its footer), so content fills from the top with no empty
@@ -8070,20 +8555,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\t\t\tui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))\n")
 		sb.WriteString("\t})\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
-		if bp.App.Auth.Enabled {
-			sb.WriteString("\tui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)\n")
-		} else {
-			sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
-		}
+		sb.WriteString("\tui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)\n")
 	}
 	if hasMarketing {
-		headerExpr := "app.NewStaticComponent(marketingHeader())"
-		if authHeader {
-			// Render per-request so the header reflects the live session.
-			headerExpr = "app.NewContextComponent(marketingHeader)"
-		}
+		// Rendered per request: the header's words translate per request
+		// and its auth action reflects the live session.
 		sb.WriteString("\tmarketingLayout = app.NewLayout(\"marketing\", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {\n")
-		sb.WriteString(fmt.Sprintf("\t\theader, _ := component.SafeRenderCtx(ctx, %s)\n", headerExpr))
+		sb.WriteString("\t\theader, _ := component.SafeRenderCtx(ctx, app.NewContextComponent(marketingHeader))\n")
 		// siteheader / sitefooter render their own <header>/<footer>
 		// landmarks (the scope root of each owned style), so the stack
 		// takes them directly; the header is the direct child of the
@@ -8092,7 +8570,7 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\t\treturn ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},\n")
 		sb.WriteString("\t\t\theader,\n")
 		sb.WriteString("\t\t\tui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()),\n")
-		sb.WriteString("\t\t\tmarketingFooter(),\n")
+		sb.WriteString("\t\t\tmarketingFooter(ctx),\n")
 		sb.WriteString("\t\t)\n")
 		sb.WriteString("\t})\n")
 	}
@@ -8246,16 +8724,6 @@ func renderAppSpecApp(bp AppSpec) string {
 	// appExtensions, the way App.Entity refuses a bad declaration.
 	sb.WriteString("\tappUI = fwApp.EntityUI(appExtensions)\n")
 	sb.WriteString("\tmountGenerated(fwApp, site, db)\n")
-	for _, endpoint := range bp.Endpoints {
-		handler := appSpecEndpointHandlerName(endpoint)
-		if handler == "" {
-			continue
-		}
-		if !isGoIdentifier(handler) {
-			continue // same gate as the stub emitter: never reference a non-identifier
-		}
-		sb.WriteString(fmt.Sprintf("\tfwApp.Router().Handle(%q, %q, http.HandlerFunc(%s))\n", strings.ToUpper(endpoint.Method), appSpecEndpointPath(endpoint), handler))
-	}
 	for _, item := range bp.Middleware {
 		// Same gate as the stub emitter: never reference a name that is
 		// not a Go identifier (the stub was skipped, so referencing it
@@ -8281,9 +8749,8 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("func (m routerMounter) MountWidget(def *widget.Definition) {\n")
 		sb.WriteString("\twidget.Mount(m.r, def)\n")
 		sb.WriteString("}\n")
-		return sb.String()
 	}
-	return sb.String()
+	return appSpecChromeWithPhrases(sb.String(), bp.phrases)
 }
 
 // appSpecBaseCSSFunc emits the appBaseCSS() function. It returns the
@@ -8305,8 +8772,8 @@ func appSpecBaseCSSFunc() string {
 	return sb.String()
 }
 
-func renderNavItemGo(sb *strings.Builder, item AppSpecNavItem, indent string) {
-	sb.WriteString(fmt.Sprintf("%s{Label: %q, Href: %q", indent, item.Label, item.Href))
+func renderNavItemGo(bp AppSpec, sb *strings.Builder, item AppSpecNavItem, indent string) {
+	sb.WriteString(fmt.Sprintf("%s{Label: %s, Href: %q", indent, appSpecTx(bp, item.Label), item.Href))
 	if item.Role != "" {
 		sb.WriteString(fmt.Sprintf(", Roles: []string{%q}", item.Role))
 	}
@@ -8325,7 +8792,7 @@ func renderNavItemGo(sb *strings.Builder, item AppSpecNavItem, indent string) {
 	if len(item.Items) > 0 {
 		sb.WriteString(", Children: []ui.SidebarItem{\n")
 		for _, child := range item.Items {
-			renderNavItemGo(sb, child, indent+"\t")
+			renderNavItemGo(bp, sb, child, indent+"\t")
 		}
 		sb.WriteString(indent + "}")
 	}
@@ -8600,7 +9067,7 @@ func barActions(action string, toggle bool) string {
 	if !toggle {
 		return action
 	}
-	return fmt.Sprintf("render.Join(\n\t\t\t%s,\n\t\t\tui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n\t\t)", action)
+	return fmt.Sprintf("render.Join(\n\t\t\t%s,\n\t\t\tui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}),\n\t\t)", action)
 }
 
 // chromePackageImport returns the import-path base of the app's chrome
@@ -8913,14 +9380,6 @@ func appSpecThemeColorPath(key string) (string, bool) {
 	}
 }
 
-func appSpecEndpointPath(endpoint AppSpecEndpoint) string {
-	path := strings.TrimSpace(endpoint.Path)
-	if path == "" || strings.HasPrefix(path, "/") || endpoint.Entity == "" {
-		return path
-	}
-	return "/" + strings.Trim(strings.TrimSpace(endpoint.Entity), "/") + "/" + strings.TrimLeft(path, "/")
-}
-
 func relationTypeFromString(value string) (framework.RelationType, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "many_to_one", "belongs_to", "belongsto":
@@ -8978,7 +9437,7 @@ var appLevelKeys = map[string]bool{
 	"name": true, "description": true, "base_url": true, "module": true,
 	"db": true, "static_dir": true, "output_dir": true, "api_prefix": true,
 	"public_openapi": true, "theme": true, "auth": true, "admin": true,
-	"pwa": true, "llm_md": true,
+	"pwa": true, "llm_md": true, "locale_prefixes": true,
 }
 
 // topLevelKeys are the app spec's root sections; written under `app:`

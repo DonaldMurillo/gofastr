@@ -55,7 +55,7 @@ func TestBuildExistsSubquery_UnknownRelType(t *testing.T) {
 		Relation: entity.Relation{Type: entity.RelationType(99), Name: "r", Entity: "x"},
 		Field:    "name", Op: filter.OpEq, Value: "v",
 	}
-	if sql, _ := buildExistsSubquery("posts", "id", nf); sql != "1 = 0" {
+	if sql, _ := buildExistsSubquery("posts", []string{"id"}, nf); sql != "1 = 0" {
 		t.Errorf("unknown rel type sql = %q, want '1 = 0'", sql)
 	}
 }

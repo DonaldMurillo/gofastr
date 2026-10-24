@@ -100,8 +100,11 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 			return nil, err
 		}
 		// The value a list read would carry: a bool column reads true or
-		// false, not SQLite's 1 or 0.
+		// false, not SQLite's 1 or 0, and a decimal column its text.
 		g.Value = convertDatabaseValue(g.Value, f.Type == schema.Bool)
+		if f.Type == schema.Decimal {
+			g.Value = decimalText(g.Value)
+		}
 		out = append(out, g)
 	}
 	return out, rows.Err()

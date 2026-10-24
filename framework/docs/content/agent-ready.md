@@ -298,25 +298,32 @@ so a crawler and an LLM see one consistent metadata set per route.
 Screens with no SEO declarations get no front-matter, and the markdown is
 unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
 
-### Dynamic routes get per-URL docs
+### Every URL gets its own doc
 
-A dynamic route's concrete URLs serve real per-page docs, not one shared
-pattern doc: `GET /products/42/llm.md` (or `/docs/getting-started/llm.md`
-on a catch-all route) builds the same per-request instance the page render
-uses, the route match and its resolvers → `SetParams` → DI → `Load`,
-so the markdown carries that page's loaded title and rendered content,
-including a `Load` that reads a route resolver. The static exporter does the same for
-every URL a screen's `StaticPaths` enumerates, and SPA partial responses
-carry the post-`Load` title in `X-Gofastr-Title`, so in-app navigation to
-a dynamic page updates the browser title correctly. All of it sits behind
-the same `WithPublicLLMMD` opt-in as the static per-screen handlers. A
-resolver or `Load` answering `app.ErrNotFound` makes the doc a 404, as
-the page is; any other failure degrades to the pattern-level doc rather
-than erroring.
+Each page's llm.md is built per URL, not from one shared pattern doc:
+`GET /about/llm.md`, `GET /products/42/llm.md` (or
+`/docs/getting-started/llm.md` on a catch-all route) builds the same
+per-request instance the page render uses, the route match and its
+resolvers → `SetParams` → DI → `Load`, so the markdown carries that
+page's loaded title and rendered content, including a `Load` that reads
+a route resolver. The static exporter does the same for every exact
+route and every URL a screen's `StaticPaths` enumerates, and SPA partial
+responses carry the post-`Load` title in `X-Gofastr-Title`, so in-app
+navigation to a dynamic page updates the browser title correctly. All of
+it sits behind the `WithPublicLLMMD` opt-in.
+
+The doc answers 404 wherever the page does: a resolver or `Load`
+answering `app.ErrNotFound` (also when `Load` read the resolver and
+dropped its error), an outlet declared `FallbackNotFound` that nothing
+fills, or a status set with `app.SetStatus` or `ScreenStatusCode`. The
+static exporter writes no llm.md for such a page. Any other failure
+degrades to the pattern-level doc rather than erroring.
 
 Every markdown surface evaluates the screen's policy chain with the live
-request: a non-Allow decision serves a metadata-free "withheld" doc (route
-path and type only: no title, description, SEO front matter, or content),
+request: a non-Allow decision, or a region guard (an outlet's, an area's,
+or a fill's policy) that redirects, serves a metadata-free "withheld" doc
+(route path and type only: no title, description, SEO front matter, or
+content),
 and the `/llm-pages.md` index lists policy-gated screens path-only. An
 authenticated agent whose request passes the policy sees the full docs.
 
@@ -431,8 +438,9 @@ caller.** An `Endpoint` has two front doors for one operation: `Handler`
 inherits the route's middleware chain, `MCPHandler` does not. An endpoint
 behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
 and ungated over MCP. Declare something stricter with
-`Endpoint.MCPGate`, or opt out with `Endpoint.MCPPublic: true` for an
-endpoint that really is anonymous over HTTP too:
+`Endpoint.MCPGate`, or opt out with `Endpoint.Public: true` for an
+endpoint that really is anonymous. `Public` opens the HTTP route too,
+which otherwise answers 401 to a caller with no user:
 
 ```go
 entity.Endpoint{

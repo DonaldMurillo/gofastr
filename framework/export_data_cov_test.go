@@ -360,7 +360,7 @@ func TestRawReadAllQueryError(t *testing.T) {
 	db := openSQLiteMem(t)
 	defer db.Close()
 	if _, err := rawReadAll(context.Background(), db, "nonexistent_table",
-		[]string{"id"}, "id", 10); err == nil {
+		[]string{"id"}, []string{"id"}, 10); err == nil {
 		t.Error("rawReadAll on a missing table should error")
 	}
 }

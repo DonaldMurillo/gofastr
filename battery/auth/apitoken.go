@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
@@ -124,20 +126,20 @@ var ErrInvalidTokenSpec = errors.New("auth: invalid token spec")
 
 func validateTokenSpec(spec TokenSpec) error {
 	if strings.TrimSpace(spec.Name) == "" {
-		return fmt.Errorf("%w: token name is required", ErrInvalidTokenSpec)
+		return invalidTokenSpec(reasonTokenNameRequired, nil)
 	}
 	if spec.OwnerKind != OwnerKindUser && spec.OwnerKind != OwnerKindService {
-		return fmt.Errorf("%w: invalid owner_kind %q (want %q or %q)", ErrInvalidTokenSpec, spec.OwnerKind, OwnerKindUser, OwnerKindService)
+		return invalidTokenSpec(reasonInvalidOwnerKind, map[string]any{"kind": strconv.Quote(spec.OwnerKind)})
 	}
 	if strings.TrimSpace(spec.OwnerID) == "" {
-		return fmt.Errorf("%w: owner_id is required", ErrInvalidTokenSpec)
+		return invalidTokenSpec(reasonOwnerIDRequired, nil)
 	}
 	if len(spec.Scopes) > maxTokenScopes {
-		return fmt.Errorf("%w: too many scopes (%d > %d)", ErrInvalidTokenSpec, len(spec.Scopes), maxTokenScopes)
+		return invalidTokenSpec(reasonTooManyScopes, map[string]any{"count": len(spec.Scopes), "max": maxTokenScopes})
 	}
 	for _, sc := range spec.Scopes {
 		if !scopePattern.MatchString(sc) {
-			return fmt.Errorf("%w: invalid scope %q (want resource:verb)", ErrInvalidTokenSpec, sc)
+			return invalidTokenSpec(reasonInvalidScope, map[string]any{"scope": strconv.Quote(sc)})
 		}
 	}
 	// TTL <= 0 means "no expiry" by construction, so a caller asking for
@@ -145,12 +147,18 @@ func validateTokenSpec(spec TokenSpec) error {
 	// the strongest token the endpoint can mint instead of the weakest.
 	// Absent (zero) still means permanent; a stated negative does not.
 	if spec.TTL < 0 {
-		return fmt.Errorf("%w: token ttl must be positive (got %s); omit it for a token that does not expire", ErrInvalidTokenSpec, spec.TTL)
+		return invalidTokenSpec(reasonNegativeTokenTTL, map[string]any{"ttl": spec.TTL.String()})
 	}
 	if spec.Prefix != "" && !tokenPrefixPattern.MatchString(spec.Prefix) {
-		return fmt.Errorf("%w: invalid token prefix %q (want lowercase alnum starting with a letter, 2-16 chars, trailing underscore, e.g. %q)", ErrInvalidTokenSpec, spec.Prefix, TokenPrefix)
+		return invalidTokenSpec(reasonInvalidTokenPrefix, map[string]any{"prefix": strconv.Quote(spec.Prefix), "example": strconv.Quote(TokenPrefix)})
 	}
 	return nil
+}
+
+// invalidTokenSpec is a spec refusal: it matches ErrInvalidTokenSpec and
+// carries the phrase the handler answers with.
+func invalidTokenSpec(reason i18n.Phrase, params map[string]any) error {
+	return &i18n.Error{Reason: reason, Params: params, Err: ErrInvalidTokenSpec}
 }
 
 // IssueToken mints the plaintext, persists the hashed record, and returns

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
@@ -101,6 +102,11 @@ type Router struct {
 	// Read under r.mu on the request path. Nil = no-op, which is the
 	// production case: nothing installs one outside tests.
 	serveHook func(method, pattern string)
+
+	// preRoute, when set on the ROOT router, runs on every request before
+	// the mux matches it (PreRoute). An atomic pointer, so the request
+	// path pays one load and no lock.
+	preRoute atomic.Pointer[func(*http.Request) (*http.Request, string)]
 }
 
 // RegisteredRoute is the (method, pattern) pair returned by
@@ -690,6 +696,18 @@ func (r *Router) MethodNotAllowed(handler http.Handler) {
 // otherwise it falls through to the custom NotFound handler (if any)
 // or the mux's native 404.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if fn := r.root.preRoute.Load(); fn != nil {
+		next, target := (*fn)(req)
+		if target != "" {
+			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				http.Redirect(w, req, target, http.StatusPermanentRedirect)
+			})).ServeHTTP(w, req)
+			return
+		}
+		if next != nil {
+			req = next
+		}
+	}
 	h, pattern := r.mux.Handler(req)
 
 	if pattern != "" {
@@ -743,8 +761,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// see preflights whose path has no OPTIONS route. Cold path,
 			// so the per-request wrap is fine.
 			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed),
-					http.StatusMethodNotAllowed)
+				i18n.HTTPError(w, req, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			})).ServeHTTP(w, req)
 			return
 		}
@@ -763,6 +780,23 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		})).ServeHTTP(w, req)
 		return
 	}
+}
+
+// PreRoute installs fn to run on every request the tree serves, before
+// the mux matches it. fn returns the request to route, usually with a
+// rewritten URL and context, or nil to route the original. A non-empty
+// target answers 308 Permanent Redirect to it, through the middleware
+// chain, and routes nothing. The framework uses it to read a locale
+// prefix off the path (framework.WithLocalePrefixes): route matching
+// sees "/pricing" for "/es/pricing", and a router served directly, as
+// tests do, behaves like the app. One hook per tree; a second call
+// replaces the first, and nil removes it.
+func (r *Router) PreRoute(fn func(*http.Request) (*http.Request, string)) {
+	if fn == nil {
+		r.root.preRoute.Store(nil)
+		return
+	}
+	r.root.preRoute.Store(&fn)
 }
 
 // gateAllows reports whether the route gate permits the given

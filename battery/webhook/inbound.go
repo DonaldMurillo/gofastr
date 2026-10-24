@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Inbound lifecycle status values for an InboundEnvelope. Prefix avoids
@@ -96,7 +97,9 @@ type InboundVerifier func(r *http.Request, body []byte) error
 
 // errVerifyFailed is the single error the handler surfaces; it deliberately
 // carries no detail so a generic 401 body never leaks which check failed.
-var errVerifyFailed = errors.New("signature verification failed")
+var errVerifyFailed = i18n.NewError(reasonVerifyFailed)
+
+var reasonVerifyFailed = i18n.Define("webhook.verify_failed", "signature verification failed")
 
 // TimestampedVerifier wraps VerifyTimestamped over the X-GoFastr-Signature
 // header (SignatureHeader). It binds the timestamp into the signed material,
@@ -201,7 +204,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 
@@ -211,17 +214,17 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			http.Error(w, "error reading request body", http.StatusBadRequest)
+			i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable)
 			return
 		}
 
 		// Verify BEFORE persisting: an unverified payload must never reach
 		// the store. The body returned to the caller is generic on purpose.
 		if verr := cfg.Verifier(r, body); verr != nil {
-			http.Error(w, errVerifyFailed.Error(), http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, reasonVerifyFailed)
 			return
 		}
 
@@ -235,7 +238,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		if dedupeKey != "" {
 			seen, serr := cfg.Store.SeenDedupeKey(r.Context(), cfg.Source, dedupeKey)
 			if serr != nil {
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+				i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
 			if seen {
@@ -263,7 +266,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			env.DedupeKey = dedupeKey
 		}
 		if perr := cfg.Store.AddEnvelope(r.Context(), env); perr != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 
@@ -287,7 +290,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 				if uerr := cfg.Store.UpdateEnvelope(r.Context(), env); uerr != nil {
 					logf("webhook: envelope %s: marking enqueue failure failed too (row stays received): %v", env.ID, uerr)
 				}
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+				i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
 			// The event is durably queued, register the dedupe key so the

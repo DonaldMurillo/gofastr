@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,7 +30,7 @@ var menuCallback = ffi.NewCallback(func(a *ffi.Args) uintptr {
 })
 
 func (w *linuxWindow) installMenus(box uintptr) {
-	plans, ids := desktop.PlanMenuBar(w.Title(), w.shell.cfg.Menu, w.shell.cfg.Settings != nil)
+	plans, ids := desktop.PlanMenuBar(w.shell.text(), w.Title(), w.shell.cfg.Menu, w.shell.cfg.Settings != nil)
 	bar := call(gtk.Sym.GtkMenuBarNew)
 	group := call(gtk.Sym.GtkAccelGroupNew)
 	call(gtk.Sym.GtkWindowAddAccelGroup, w.handle, group)
@@ -110,16 +111,18 @@ func (a menuAction) activate() {
 		s.Quit()
 	case desktop.RoleSettings:
 		if s.cfg.OnSettings != nil {
-			go s.cfg.OnSettings()
+			go s.cfg.OnSettings(s.text())
 		}
 	case desktop.RoleShow:
 		_ = w.Focus()
 	case desktop.RoleAbout:
 		// A plain informational GTK dialog; no application capability is invoked.
+		title, body := desktop.AboutText(s.text())
 		var dialog uintptr
 		withString("%s", func(format uintptr) {
-			withString(s.cfg.Title, func(title uintptr) { dialog = call(gtk.Sym.GtkMessageDialogNew, w.handle, 2, 0, 2, format, title) })
+			withString(body, func(text uintptr) { dialog = call(gtk.Sym.GtkMessageDialogNew, w.handle, 2, 0, 2, format, text) })
 		})
+		withString(title, func(p uintptr) { call(gtk.Sym.GtkWindowSetTitle, dialog, p) })
 		connect(dialog, "response", aboutResponse, 0)
 		call(gtk.Sym.GtkWidgetShowAll, dialog)
 	default:
@@ -132,6 +135,13 @@ func (a menuAction) activate() {
 			withString(command, func(p uintptr) { call(gtk.Sym.WebkitWebViewExecuteEditingCommand, w.webview, p) })
 		}
 	}
+}
+
+func (s *linuxShell) text() context.Context {
+	if s.textCtx == nil {
+		return context.Background()
+	}
+	return s.textCtx
 }
 
 var aboutResponse = ffi.NewCallback(func(a *ffi.Args) uintptr { call(gtk.Sym.GtkWidgetDestroy, a.Int[0]); return 0 })

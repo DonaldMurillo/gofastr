@@ -64,7 +64,7 @@ func TestRangeSliderShowValueAddsMirror(t *testing.T) {
 	on := string(RangeSlider(RangeSliderConfig{
 		Name: "x", Label: "x", ShowValue: true,
 	}))
-	if !strings.Contains(on, `data-hui-range-slider-output="%s to %s"`) {
+	if !strings.Contains(on, `data-hui-range-slider-output="{{low}} to {{high}}"`) {
 		t.Errorf("ShowValue should emit the output hook carrying the sentence's shape:\n%s", on)
 	}
 	if !strings.Contains(on, ">0 to 100</output>") {

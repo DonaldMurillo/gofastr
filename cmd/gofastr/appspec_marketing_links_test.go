@@ -124,7 +124,7 @@ func TestMarketingChromeLinksMatchRegisteredScreens(t *testing.T) {
 			var appGo string
 			for _, f := range files {
 				if f.name == "app.go" {
-					appGo = f.content
+					appGo = inlinePhrases(f.content)
 				}
 			}
 			if appGo == "" {

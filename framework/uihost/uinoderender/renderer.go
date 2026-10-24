@@ -1,11 +1,13 @@
 package uinoderender
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/uinodev1"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -29,16 +31,21 @@ type ActionResolver func(actionRef string) (rpcURL string, ok bool)
 // is assigned HERE by the trusted mapping. The validated tree carries
 // none of them (that is the whole point of the closed wire type).
 type Renderer struct {
+	ctx     context.Context
 	resolve ActionResolver
 }
 
 // New returns a Renderer that uses resolve to turn ActionRef values into
-// real data-cui-rpc URLs. A nil resolve is permitted: it fails closed on
+// real data-cui-rpc URLs, and says the renderer's own words (an empty
+// state) in ctx's language. A nil resolve is permitted: it fails closed on
 // every ActionRef (every button / action_ref link renders as an error),
 // which is the correct posture for a host that has not yet wired the
 // module's route table.
-func New(resolve ActionResolver) *Renderer {
-	return &Renderer{resolve: resolve}
+func New(ctx context.Context, resolve ActionResolver) *Renderer {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &Renderer{ctx: ctx, resolve: resolve}
 }
 
 // Render converts a validated tree to HTML, satisfying
@@ -196,7 +203,7 @@ func (r *Renderer) renderSection(n uinodev1.Node) (render.HTML, error) {
 		label = p.Subtitle
 	}
 	if label == "" {
-		label = "Section"
+		label = i18nui.Section.Text(r.ctx)
 	}
 	parts := make([]render.HTML, 0, len(children)+1)
 	if p.Title != "" {
@@ -285,8 +292,8 @@ func (r *Renderer) renderDataTable(n uinodev1.Node) (render.HTML, error) {
 	p := n.Props.(uinodev1.DataTableProps)
 	if len(p.Columns) == 0 {
 		return ui.EmptyState(ui.EmptyStateConfig{
-			Title:       "No columns",
-			Description: "This table has no columns to display.",
+			Title:       pageNoColumns.Text(r.ctx),
+			Description: pageNoColumnsBody.Text(r.ctx),
 		}), nil
 	}
 	cols := make([]ui.Column, len(p.Columns))
@@ -307,7 +314,7 @@ func (r *Renderer) renderDataTable(n uinodev1.Node) (render.HTML, error) {
 		}
 		rows[i] = ui.Row{Cells: cells}
 	}
-	return ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows}), nil
+	return ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows, Ctx: r.ctx}), nil
 }
 
 // --- Interactive renderers ----------------------------------------------
@@ -327,6 +334,7 @@ func (r *Renderer) renderButton(n uinodev1.Node) (render.HTML, error) {
 	return ui.Button(ui.ButtonConfig{
 		Label:   p.Label,
 		Variant: variant,
+		Ctx:     r.ctx,
 		ExtraAttrs: html.Attrs{
 			"data-cui-rpc": rpcURL,
 		},

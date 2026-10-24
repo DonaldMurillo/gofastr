@@ -1,7 +1,6 @@
 package headless
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -126,11 +125,11 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		}
 		marker := "✓"
 		if state != "done" {
-			marker = strconv.Itoa(i + 1)
+			marker = w.Number(i + 1)
 		}
 		dots = append(dots, b.El("li", PartStep, attrs,
 			b.El("span", PartStepRow,
-				Attrs(map[string]string{"aria-label": fmt.Sprintf(w.StepName, i+1, st.Heading)}),
+				Attrs(map[string]string{"aria-label": w.fill(w.StepName, "step", i+1, "heading", st.Heading)}),
 				b.El("span", PartMarker, Attrs(map[string]string{"aria-hidden": "true"}),
 					render.Text(marker)),
 				b.El("span", PartStepText, nil, render.Text(st.Heading)),
@@ -144,7 +143,7 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		// generated markers and dots: nothing of the caller's, so the
 		// whole list is the component's own.
 		b.El("ol", PartSteps, Internal(html.Attrs{
-			"aria-label": fmt.Sprintf(w.StepOf, p.Current+1, total),
+			"aria-label": w.fill(w.StepOf, "step", p.Current+1, "total", total),
 		}), dots...),
 	}
 	if p.Errors != "" {
@@ -194,7 +193,7 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                        "status",
 			"data-hui-step-wizard-status": "",
-		}), render.Text(fmt.Sprintf(w.StepOf, p.Current+1, total))),
+		}), render.Text(w.fill(w.StepOf, "step", p.Current+1, "total", total))),
 	)
 
 	own := Merge(Safe(p.ExtraAttrs, "method", "action"), Attrs(map[string]string{

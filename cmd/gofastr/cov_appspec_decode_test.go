@@ -44,8 +44,7 @@ func TestDecodeAppSpecErrorBranches(t *testing.T) {
 	covT_wantDecodeErr(t, "entities:\n  - name: x\n    relations:\n      - bad: 1\n")
 	covT_wantDecodeErr(t, "entities:\n  - name: x\n    indices: not_a_list\n")
 	covT_wantDecodeErr(t, "entities:\n  - name: x\n    indices:\n      - bad: 1\n")
-	covT_wantDecodeErr(t, "entities:\n  - name: x\n    endpoints: not_a_list\n")
-	covT_wantDecodeErr(t, "entities:\n  - name: x\n    endpoints:\n      - bad: 1\n")
+	covT_wantDecodeErr(t, "entities:\n  - name: x\n    endpoints: []\n")
 
 	// screens: bad list / unknown key / bad body / nested children + actions.
 	covT_wantDecodeErr(t, "screens: not_a_list\n")
@@ -56,9 +55,10 @@ func TestDecodeAppSpecErrorBranches(t *testing.T) {
 	covT_wantDecodeErr(t, "screens:\n  - name: s\n    body:\n      - type: p\n        actions: not_a_list\n")
 	covT_wantDecodeErr(t, "screens:\n  - name: s\n    body:\n      - type: p\n        actions:\n          - bad: 1\n")
 
-	// top-level endpoints: bad list / unknown key.
+	// top-level endpoints: bad list / unknown key / missing entity.
 	covT_wantDecodeErr(t, "endpoints: not_a_list\n")
 	covT_wantDecodeErr(t, "endpoints:\n  - name: e\n    bad: 1\n")
+	covT_wantDecodeErr(t, "endpoints:\n  - name: e\n    method: GET\n    path: e\n    handler: entities/e.go#E\n")
 
 	// named stubs (middleware/plugins/helpers): bad list / unknown key.
 	covT_wantDecodeErr(t, "middleware: not_a_list\n")
@@ -110,11 +110,6 @@ entities:
       - name: ix_email
         columns: [email]
         unique: true
-    endpoints:
-      - method: GET
-        path: /ping
-        name: ping
-        handler: PingHandler
 screens:
   - name: home
     route: /
@@ -132,10 +127,11 @@ screens:
           - type: p
             text: child
 endpoints:
-  - name: health
+  - name: ping
+    entity: users
     method: GET
-    path: /health
-    entity: ""
+    path: ping
+    handler: entities/users_endpoints.go#PingHandler
 middleware:
   - logging
   - name: auth
@@ -151,6 +147,9 @@ helpers:
 	}
 	if len(bp.Entities) != 1 || len(bp.Screens) != 1 {
 		t.Fatalf("unexpected shape: %+v", bp)
+	}
+	if len(bp.Endpoints) != 1 || bp.Endpoints[0].Entity != "users" {
+		t.Fatalf("endpoints: %+v", bp.Endpoints)
 	}
 	if len(bp.Middleware) != 2 || bp.Middleware[0].Name != "logging" {
 		t.Fatalf("middleware: %+v", bp.Middleware)

@@ -53,7 +53,7 @@ func TestFilterRowsWriteTheFilter(t *testing.T) {
 	if !strings.Contains(h, "alpha") || !strings.Contains(h, "zeta") {
 		t.Errorf("a refused row narrowed the list:\n%s", h)
 	}
-	if strings.Contains(h, i18nui.Defaults[i18nui.KeyEntityFilterInvalidTitle]) {
+	if strings.Contains(h, i18nui.EntityFilterInvalidTitle.English()) {
 		t.Errorf("a refused row reached the parser:\n%s", h)
 	}
 	// Rows and the box add up: the box keeps the or group.

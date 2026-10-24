@@ -1,6 +1,7 @@
 package print
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -231,15 +233,18 @@ func (b *Battery) serveHTML(doc *Document) http.Handler {
 // forPDF flag switches the app.css href to absolute and drops auto-print.
 func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, forPDF bool) (string, PageConfig, bool) {
 	if pol := b.accessOf(doc); pol != nil {
-		if status, msg := pol(r); status != 0 {
-			http.Error(w, msg, status)
+		if status, reason := pol(r); status != 0 {
+			if reason.IsZero() {
+				reason = i18n.StatusPhrase(status)
+			}
+			i18n.HTTPError(w, r, status, reason)
 			return "", PageConfig{}, false
 		}
 	}
 
 	comp, err := safeBuild(doc, r)
 	if err != nil {
-		writeBuildError(w, err)
+		writeBuildError(w, r, err)
 		return "", PageConfig{}, false
 	}
 
@@ -253,6 +258,7 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 	page := effectivePage(doc.Page, b.cfg.DefaultPage)
 
 	in := shellInput{
+		Lang:         i18n.FromContext(r.Context()).Tag,
 		Title:        title,
 		Body:         body,
 		PageCSS:      pageCSS(page),
@@ -317,27 +323,28 @@ func (b *Battery) baseCSS() string {
 
 // writeBuildError maps a Build error to a clean status page (never a
 // stack trace).
-func writeBuildError(w http.ResponseWriter, err error) {
+func writeBuildError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		http.Error(w, "not found", http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	case errors.Is(err, ErrForbidden):
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 	default:
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 	}
 }
 
 // PrintLink renders an anchor to a print document, opened in a new tab so
 // the host SPA is untouched. params fill the document's {placeholders}.
-// label defaults to "Print". Returns empty HTML for an unknown document.
-func (b *Battery) PrintLink(docName string, params map[string]string, label string) render.HTML {
+// label defaults to "Print" in the language of ctx (nil is English).
+// Returns empty HTML for an unknown document.
+func (b *Battery) PrintLink(ctx context.Context, docName string, params map[string]string, label string) render.HTML {
 	doc, ok := b.byName[docName]
 	if !ok {
 		return ""
 	}
 	if label == "" {
-		label = "Print"
+		label = printLabel.Text(ctx)
 	}
 	path := doc.Path
 	for k, v := range params {

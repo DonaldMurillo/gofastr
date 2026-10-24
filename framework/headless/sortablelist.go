@@ -1,8 +1,6 @@
 package headless
 
 import (
-	"fmt"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -168,7 +166,7 @@ func sortableRows(p SortableListProps, b Box, fragment bool) []render.HTML {
 			// children fails aria-required-children.
 			"role":                 "option",
 			"aria-roledescription": w.SortableItemRole,
-			"aria-label":           fmt.Sprintf(w.SortableDragLabel, scrubControlBytes(it.Label)),
+			"aria-label":           w.fill(w.SortableDragLabel, "label", scrubControlBytes(it.Label)),
 			"data-hui-sort-key":    scrubControlBytes(it.Key),
 		})
 		Mark(attrs, "data-hui-sortable-item")

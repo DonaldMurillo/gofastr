@@ -129,7 +129,7 @@ func Notification(cfg NotificationConfig) render.HTML {
 
 	dismissLabel := cfg.DismissLabel
 	if dismissLabel == "" && cfg.DismissHref != "" {
-		dismissLabel = i18nui.T(ctx, i18nui.KeyNotificationDismiss)
+		dismissLabel = i18nui.NotificationDismiss.Text(ctx)
 	}
 	return notificationStyle.WrapHTML(headless.Toast(headless.ToastProps{
 		Tone: tone,

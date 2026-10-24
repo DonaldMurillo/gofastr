@@ -1,6 +1,10 @@
 package crud
 
 import (
+	"net/http"
+	"slices"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -38,6 +42,63 @@ type CrudRouteOptions struct {
 	// non-system move. RegisterCrudRoutes reads the handler's entity
 	// instead, so it needs no value here.
 	States *entity.StatesConfig
+	// Key is the entity's primary-key columns, read by CrudRoutePatterns
+	// to spell the record routes (KeyPath); nil means "id".
+	// RegisterCrudRoutes reads the handler's key instead.
+	Key []string
+}
+
+// KeyPath is the route tail naming one record of an entity keyed on
+// cols: "/{id}" for one column, and one segment per column for a
+// composite key, each wildcard named after its column, so
+// "/{student_id}/{course_id}" serves /enrollments/s1/c9.
+func KeyPath(cols []string) string {
+	if len(cols) <= 1 {
+		return "/{id}"
+	}
+	var b strings.Builder
+	for _, c := range cols {
+		b.WriteString("/{" + c + "}")
+	}
+	return b.String()
+}
+
+// TransitionPath is the route tail of a move on one record of an entity
+// keyed on cols: KeyPath, then /transitions/{key}, the move's wildcard
+// renamed when a key column holds the name "key".
+func TransitionPath(cols []string) string {
+	return KeyPath(cols) + "/transitions/{" + transitionParam(cols) + "}"
+}
+
+// transitionParam is the wildcard naming the move in
+// <record>/transitions/{key}: "key", unless a key column holds that name.
+func transitionParam(cols []string) string {
+	p := "key"
+	for len(cols) > 1 && slices.Contains(cols, p) {
+		p += "_"
+	}
+	return p
+}
+
+// PathRecordID is the record id a request routed through KeyPath(cols)
+// names, as entity.JoinKey renders it, for a handler mounted beside the
+// CRUD routes (an admin restore, say). It is "" when a key segment is.
+func PathRecordID(r *http.Request, cols []string) string {
+	if len(cols) <= 1 {
+		return r.PathValue("id")
+	}
+	parts := make([]string, len(cols))
+	for i, c := range cols {
+		if parts[i] = r.PathValue(c); parts[i] == "" {
+			return ""
+		}
+	}
+	return entity.JoinKey(parts)
+}
+
+// pathID is PathRecordID under the handler's key.
+func (ch *CrudHandler) pathID(r *http.Request) string {
+	return PathRecordID(r, ch.keyCols())
 }
 
 // CrudRoutePatterns returns the "METHOD /pattern" set RegisterCrudRoutes
@@ -61,22 +122,23 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 		opt = opts[0]
 	}
 
+	rec := path + KeyPath(opt.Key)
 	patterns := []string{
 		"GET " + path,
-		"GET " + path + "/{id}",
+		"GET " + rec,
 	}
 	if !opt.ReadOnly {
 		patterns = append(patterns,
 			"POST "+path,
-			"PUT "+path+"/{id}",
-			"PATCH "+path+"/{id}",
-			"DELETE "+path+"/{id}",
+			"PUT "+rec,
+			"PATCH "+rec,
+			"DELETE "+rec,
 			"POST "+path+"/_batch",
 			"PATCH "+path+"/_batch",
 			"DELETE "+path+"/_batch",
 		)
 		if len(RoutableTransitions(opt.States)) > 0 {
-			patterns = append(patterns, "POST "+path+"/{id}/transitions/{key}")
+			patterns = append(patterns, "POST "+path+TransitionPath(opt.Key))
 		}
 	}
 	patterns = append(patterns, "GET "+path+"/_events")
@@ -101,6 +163,8 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 //	POST   /path/{id}/transitions/{key} → RunTransition (entities whose
 //	                           States hold a non-system move)
 //
+// A composite key spells {id} one segment per key column (KeyPath).
+//
 // The batch routes use a "_batch" segment, which Go 1.22's ServeMux ranks
 // above the wildcard /{id} so they take precedence over Get/Update/Delete
 // on the same prefix.
@@ -112,20 +176,21 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 		opt = opts[0]
 	}
 
+	rec := path + KeyPath(handler.keyCols())
 	r.Get(path, handler.List())
-	r.Get(path+"/{id}", handler.Get())
+	r.Get(rec, handler.Get())
 
 	if !opt.ReadOnly {
 		r.Post(path, handler.Create())
-		r.Put(path+"/{id}", handler.Update())
-		r.Patch(path+"/{id}", handler.Update())
-		r.Delete(path+"/{id}", handler.Delete())
+		r.Put(rec, handler.Update())
+		r.Patch(rec, handler.Update())
+		r.Delete(rec, handler.Delete())
 
 		r.Post(path+"/_batch", handler.BatchCreate())
 		r.Patch(path+"/_batch", handler.BatchUpdate())
 		r.Delete(path+"/_batch", handler.BatchDelete())
 		if len(RoutableTransitions(handler.Entity.Config.States)) > 0 {
-			r.Post(path+"/{id}/transitions/{key}", handler.Transition())
+			r.Post(path+TransitionPath(handler.keyCols()), handler.Transition())
 		}
 	}
 

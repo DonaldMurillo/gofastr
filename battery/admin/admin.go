@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -193,6 +194,11 @@ type Config struct {
 
 	// Commands are extra palette entries that go to a URL.
 	Commands []ui.PaletteCommand
+
+	// EmailPreviews are the mails the Emails page renders with sample
+	// data, so a template can be read before anything sends it. Empty
+	// leaves the page out.
+	EmailPreviews []EmailPreview
 
 	// Logger receives what a handler cannot tell its caller, notably an
 	// audit row that failed to write after its mutation committed.
@@ -365,7 +371,7 @@ func (b *Battery) checkConfig() error {
 		if p.Build == nil {
 			return fmt.Errorf("admin: Pages[%d] (%s) has no Build", i, p.Path)
 		}
-		if p.Title == "" {
+		if p.Title.IsZero() {
 			return fmt.Errorf("admin: Pages[%d] (%s) has no Title", i, p.Path)
 		}
 		if p.Nav != nil {
@@ -383,7 +389,7 @@ func (b *Battery) checkConfig() error {
 			return fmt.Errorf("admin: Cards[%d].Key %q is used twice", i, c.Key)
 		}
 		keys[c.Key] = true
-		if c.Build == nil || c.Title == "" {
+		if c.Build == nil || c.Title.IsZero() {
 			return fmt.Errorf("admin: Cards[%d] (%s) needs a Title and a Build", i, c.Key)
 		}
 		if c.Poll < 0 {
@@ -413,12 +419,15 @@ func (b *Battery) checkConfig() error {
 		}
 	}
 	for i, l := range b.cfg.Links {
-		if l.Label == "" || !strings.HasPrefix(l.Href, "/") || strings.HasPrefix(l.Href, "//") {
+		if l.Label.IsZero() || !strings.HasPrefix(l.Href, "/") || strings.HasPrefix(l.Href, "//") {
 			return fmt.Errorf("admin: Links[%d] needs a Label and a same-origin Href", i)
 		}
-		if err := checkIcon(l.Icon, "link "+l.Label); err != nil {
+		if err := checkIcon(l.Icon, "link "+l.Label.English()); err != nil {
 			return err
 		}
+	}
+	if err := checkEmailPreviews(b.cfg.EmailPreviews); err != nil {
+		return err
 	}
 	if err := b.checkFeatureConfig(); err != nil {
 		return err
@@ -577,10 +586,10 @@ func (b *Battery) gate(next http.Handler) http.Handler {
 		if !b.authorized(r.Context()) {
 			status := b.authzStatus(r.Context())
 			if status == http.StatusUnauthorized && b.cfg.LoginPath != "" && r.Method == http.MethodGet {
-				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.Path), http.StatusSeeOther)
+				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.EscapedPath()), http.StatusSeeOther)
 				return
 			}
-			http.Error(w, http.StatusText(status), status)
+			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -626,7 +635,7 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 		var raw map[string]any
 		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
 			if tooLarge(err) {
-				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return nil, false
 			}
 			b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
@@ -655,7 +664,7 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 	}
 	if err := r.ParseForm(); err != nil {
 		if tooLarge(err) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return nil, false
 		}
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
@@ -668,33 +677,35 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 // succeeded. The names are the only values a page reads from ?result=,
 // so a page never prints request text.
 type result struct {
-	key i18nui.Key
+	key i18n.Phrase
 	ok  bool
 }
 
 var results = map[string]result{
-	"done":               {i18nui.KeyAdminDone, true},
-	"replayed":           {i18nui.KeyAdminReplayed, true},
-	"replayed-all":       {i18nui.KeyAdminReplayedAll, true},
-	"granted":            {i18nui.KeyAdminGranted, true},
-	"permissions-saved":  {i18nui.KeyAdminPermissionsSaved, true},
-	"roles-saved":        {i18nui.KeyAdminRolesSaved, true},
-	"name-saved":         {i18nui.KeyAdminNameSaved, true},
-	"module-enabled":     {i18nui.KeyAdminModuleEnabled, true},
-	"module-disabled":    {i18nui.KeyAdminModuleDisabled, true},
-	"module-bumped":      {i18nui.KeyAdminModuleBumped, true},
-	"module-revoked":     {i18nui.KeyAdminModuleRevoked, true},
-	"refused":            {i18nui.KeyAdminRefused, false},
-	"failed":             {i18nui.KeyAdminFailed, false},
-	"bad-input":          {i18nui.KeyAdminBadInput, false},
-	"grant-refused":      {i18nui.KeyAdminGrantRefused, false},
-	"assign-refused":     {i18nui.KeyAdminAssignRefused, false},
-	"name-refused":       {i18nui.KeyAdminNameRefused, false},
-	"unknown-capability": {i18nui.KeyAdminUnknownCapability, false},
-	"module-failed":      {i18nui.KeyAdminModuleFailed, false},
-	"module-refused":     {i18nui.KeyAdminModuleRefused, false},
-	"queue-load-failed":  {i18nui.KeyAdminQueueLoadFailed, false},
-	"replay-unsupported": {i18nui.KeyAdminFailed, false},
+	"done":               {i18nui.AdminDone, true},
+	"replayed":           {i18nui.AdminReplayed, true},
+	"replayed-all":       {i18nui.AdminReplayedAll, true},
+	"replayed-some":      {i18nui.AdminReplayedSome, true},
+	"granted":            {i18nui.AdminGranted, true},
+	"permissions-saved":  {i18nui.AdminPermissionsSaved, true},
+	"roles-saved":        {i18nui.AdminRolesSaved, true},
+	"name-saved":         {i18nui.AdminNameSaved, true},
+	"module-enabled":     {i18nui.AdminModuleEnabled, true},
+	"module-disabled":    {i18nui.AdminModuleDisabled, true},
+	"module-bumped":      {i18nui.AdminModuleBumped, true},
+	"module-revoked":     {i18nui.AdminModuleRevoked, true},
+	"refused":            {i18nui.AdminRefused, false},
+	"failed":             {i18nui.AdminFailed, false},
+	"bad-input":          {i18nui.AdminBadInput, false},
+	"grant-refused":      {i18nui.AdminGrantRefused, false},
+	"assign-refused":     {i18nui.AdminAssignRefused, false},
+	"name-refused":       {i18nui.AdminNameRefused, false},
+	"unknown-capability": {i18nui.AdminUnknownCapability, false},
+	"module-failed":      {i18nui.AdminModuleFailed, false},
+	"module-refused":     {i18nui.AdminModuleRefused, false},
+	"queue-load-failed":  {i18nui.AdminQueueLoadFailed, false},
+	"replay-unsupported": {i18nui.AdminFailed, false},
+	"replay-duplicate":   {i18nui.AdminReplayDuplicate, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;
@@ -703,7 +714,7 @@ var results = map[string]result{
 func (b *Battery) done(w http.ResponseWriter, r *http.Request, page, name string) {
 	res := results[name]
 	if isRPC(r) {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: i18nui.T(r.Context(), res.key), TTL: 4000})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: res.key.Text(r.Context()), TTL: 4000})
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -719,7 +730,7 @@ func (b *Battery) refuse(w http.ResponseWriter, r *http.Request, page string, st
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": i18nui.T(r.Context(), res.key)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": res.key.Text(r.Context())})
 		return
 	}
 	http.Redirect(w, r, withResult(page, name), http.StatusSeeOther)
@@ -752,5 +763,5 @@ func resultNotice(ctx context.Context) render.HTML {
 	if !res.ok {
 		variant = ui.StatusDanger
 	}
-	return ui.Callout(ui.CalloutConfig{Variant: variant}, render.Text(i18nui.T(ctx, res.key)))
+	return ui.Callout(ui.CalloutConfig{Variant: variant}, render.Text(res.key.Text(ctx)))
 }

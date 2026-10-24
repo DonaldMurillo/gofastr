@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/static"
@@ -455,21 +456,21 @@ func under(path, prefix string) bool {
 func (b *Battery) serveQuery(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if len(q) > maxQueryBytes {
-		http.Error(w, "query too long", http.StatusRequestURITooLong)
+		i18n.HTTPError(w, r, http.StatusRequestURITooLong, reasonQueryTooLong)
 		return
 	}
 	limit := defaultLimit
 	if s := r.URL.Query().Get("limit"); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < 1 {
-			http.Error(w, "bad limit", http.StatusBadRequest)
+			i18n.HTTPError(w, r, http.StatusBadRequest, reasonBadLimit)
 			return
 		}
 		limit = min(n, maxLimit)
 	}
 	idx, err := b.Index(r.Context())
 	if err != nil {
-		http.Error(w, "search index unavailable", http.StatusServiceUnavailable)
+		i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonIndexUnavailable)
 		return
 	}
 	results := idx.Search(q, limit)
@@ -478,7 +479,7 @@ func (b *Battery) serveQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(map[string]any{"results": results}); err != nil {
-		http.Error(w, "encode", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -490,7 +491,7 @@ func (b *Battery) serveFile(w http.ResponseWriter, r *http.Request) {
 	_, files, err := b.current(r.Context())
 	body, ok := files[name]
 	if err != nil {
-		http.Error(w, "search index unavailable", http.StatusServiceUnavailable)
+		i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonIndexUnavailable)
 		return
 	}
 	if !ok {

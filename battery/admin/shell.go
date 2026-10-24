@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -39,30 +40,34 @@ func (b *Battery) mount() {
 	r := b.routes()
 	group := appui.NewScreenGroup(b.cfg.PathPrefix, b.layout(), b.gatePolicy()).Standalone()
 
-	b.screen(group, "", i18nui.KeyAdminDashboard, true, b.renderDashboard)
-	b.screen(group, "/search", i18nui.KeyAdminSearch, true, b.renderSearch)
-	b.screen(group, "/shortcuts", i18nui.KeyShortcutSheetTitle, false, b.renderShortcuts)
-	b.screen(group, "/account", i18nui.KeyAdminAccountSettings, false, b.renderAccount)
+	b.screen(group, "", i18nui.AdminDashboard, true, b.renderDashboard)
+	b.screen(group, "/search", i18nui.AdminSearch, true, b.renderSearch)
+	b.screen(group, "/shortcuts", i18nui.ShortcutSheetTitle, false, b.renderShortcuts)
+	b.screen(group, "/account", i18nui.AdminAccountSettings, false, b.renderAccount)
 	if b.cfg.Queue != nil {
-		b.screen(group, "/queue", i18nui.KeyAdminQueue, false, b.renderQueue)
+		b.screen(group, "/queue", i18nui.AdminQueue, false, b.renderQueue)
 	}
 	if b.db != nil {
-		b.screen(group, "/audit", i18nui.KeyAdminAudit, false, b.renderAudit)
+		b.screen(group, "/audit", i18nui.AdminAudit, false, b.renderAudit)
 	}
 	if b.cfg.Policy != nil {
-		b.screen(group, "/rbac/roles", i18nui.KeyAdminRoles, false, b.renderRoles)
+		b.screen(group, "/rbac/roles", i18nui.AdminRoles, false, b.renderRoles)
 	}
 	if b.cfg.Auth != nil {
-		b.screen(group, "/rbac/users", i18nui.KeyAdminUserRoles, false, b.renderUsers)
+		b.screen(group, "/rbac/users", i18nui.AdminUserRoles, false, b.renderUsers)
 	}
 	if b.cfg.ProcessModules != nil {
-		b.screen(group, "/modules", i18nui.KeyAdminModules, false, b.renderModules)
+		b.screen(group, "/modules", i18nui.AdminModules, false, b.renderModules)
+	}
+	if len(b.cfg.EmailPreviews) > 0 {
+		b.screen(group, "/emails", i18nui.AdminEmails, false, b.renderEmails)
 	}
 	b.mountEntities(group, r)
 	b.mountPages(group)
 	b.host.App.Router.ScreenGroup(group)
 
 	b.mountOps(r)
+	b.mountEmails(r)
 	r.Post(b.cfg.PathPrefix+"/_palette", http.HandlerFunc(b.handlePalette))
 
 	// The drawer and the palette are widgets: each registers its own
@@ -70,9 +75,9 @@ func (b *Battery) mount() {
 	// on admin pages.
 	mounter := adminMounter{r: r, under: b.underPrefix}
 	ui.MountSidebarFunc(mounter, b.sidebar)
-	_, palette := ui.CommandPalette(b.paletteConfig(context.Background()))
+	palette := ui.CommandPaletteFunc(b.paletteConfig)
 	widget.MountBuilder(r, palette.PagesMatch(b.underPrefix))
-	_, keys := ui.ShortcutSheet(b.keysConfig(context.Background()))
+	keys := ui.ShortcutSheetFunc(b.keysConfig)
 	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix))
 }
 
@@ -105,25 +110,25 @@ func (b *Battery) gatePolicy() appui.Policy {
 		if status == http.StatusUnauthorized && b.cfg.LoginPath != "" {
 			next := b.cfg.PathPrefix
 			if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
-				next = r.URL.Path
+				next = r.URL.EscapedPath()
 			}
 			return decide.Redirect(b.cfg.LoginPath + "?next=" + urlQueryEscape(next))
 		}
-		return decide.Block(status, http.StatusText(status))
+		return decide.Block(status)
 	})
 }
 
 // screen registers one admin page. elevate lifts the entity read
 // gates for the admin's own reads (crud.WithElevation); app pages never
 // get it.
-func (b *Battery) screen(group *appui.ScreenGroup, path string, title i18nui.Key, elevate bool,
+func (b *Battery) screen(group *appui.ScreenGroup, path string, title i18n.Phrase, elevate bool,
 	draw func(ctx context.Context, p map[string]string) render.HTML) *appui.Screen {
 	s := appui.NewScreen(b.cfg.PathPrefix+path, &adminScreen{
 		b:       b,
-		title:   func(ctx context.Context, _ map[string]string) string { return i18nui.T(ctx, title) },
+		title:   func(ctx context.Context, _ map[string]string) string { return title.Text(ctx) },
 		draw:    draw,
 		elevate: elevate,
-	}).WithTitle(i18nui.T(context.Background(), title))
+	}).WithTitle(title.Text(context.Background()))
 	group.Screen(s, nil)
 	return s
 }
@@ -150,7 +155,7 @@ func (s *adminScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *adminScreen) ScreenTitle() string { return s.loaded }
+func (s *adminScreen) ScreenTitle(ctx context.Context) string { return s.loaded }
 
 // ctx is the context the page reads with: elevated for the admin's own
 // pages, and only once the caller passed the gate. The screen policy has
@@ -193,7 +198,7 @@ func (b *Battery) layout() *appui.Layout {
 		})
 		nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
 		crumbs := l.RouteArea("crumbs", func(ctx context.Context, m appui.Match) render.HTML {
-			return b.crumbs(ctx, m.Path())
+			return b.crumbs(ctx, m)
 		})
 		trigger, _ := ui.CommandPalette(b.paletteConfig(ctx))
 		keys, _ := ui.ShortcutSheet(b.keysConfig(ctx))
@@ -207,10 +212,11 @@ func (b *Battery) layout() *appui.Layout {
 		)
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 			ui.ContentRow(ui.ContentRowConfig{
+				Ctx:          ctx,
 				Sidebar:      nav,
-				NavLabel:     i18nui.T(ctx, i18nui.KeyAdminSidebar),
+				NavLabel:     i18nui.AdminSidebar.Text(ctx),
 				Toolbar:      toolbar,
-				ToolbarLabel: i18nui.T(ctx, i18nui.KeyAdminToolbar),
+				ToolbarLabel: i18nui.AdminToolbar.Text(ctx),
 				Sticky:       true, PhoneNavFlush: true, Dense: true,
 			}, l.Primary()))
 	})
@@ -222,7 +228,7 @@ func (b *Battery) paletteConfig(ctx context.Context) ui.CommandPaletteConfig {
 	return ui.CommandPaletteConfig{
 		Name:         paletteName,
 		RPCPath:      b.cfg.PathPrefix + "/_palette",
-		Placeholder:  i18nui.T(ctx, i18nui.KeyAdminSearch),
+		Placeholder:  i18nui.AdminSearch.Text(ctx),
 		Trigger:      ui.PaletteTriggerField,
 		FallbackHref: b.cfg.PathPrefix + "/search",
 		Ctx:          ctx,
@@ -252,19 +258,19 @@ func (b *Battery) keysConfig(ctx context.Context) ui.ShortcutSheetConfig {
 // shortcuts are the admin's keys, in the order a reader meets them.
 func (b *Battery) shortcuts(ctx context.Context) []ui.ShortcutItem {
 	return []ui.ShortcutItem{
-		{Chord: "Meta+K", Label: i18nui.T(ctx, i18nui.KeyAdminKeyPalette)},
-		{Chord: "/", Label: i18nui.T(ctx, i18nui.KeyAdminKeySearch)},
-		{Chord: "Mod+S", Label: i18nui.T(ctx, i18nui.KeyAdminKeySave)},
-		{Chord: "Escape", Label: i18nui.T(ctx, i18nui.KeyAdminKeyClose)},
-		{Chord: "?", Label: i18nui.T(ctx, i18nui.KeyAdminKeyHelp)},
+		{Chord: "Meta+K", Label: i18nui.AdminKeyPalette.Text(ctx)},
+		{Chord: "/", Label: i18nui.AdminKeySearch.Text(ctx)},
+		{Chord: "Mod+S", Label: i18nui.AdminKeySave.Text(ctx)},
+		{Chord: "Escape", Label: i18nui.AdminKeyClose.Text(ctx)},
+		{Chord: "?", Label: i18nui.AdminKeyHelp.Text(ctx)},
 	}
 }
 
 // renderShortcuts is the shortcuts page, the help sheet's scriptless twin.
 func (b *Battery) renderShortcuts(ctx context.Context, _ map[string]string) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-		ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.T(ctx, i18nui.KeyShortcutSheetTitle)}),
-		ui.ShortcutList(b.shortcuts(ctx)))
+		ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.ShortcutSheetTitle.Text(ctx)}),
+		ui.ShortcutList(ctx, b.shortcuts(ctx)))
 }
 
 // title is the product name: Config.Title or the localized "Admin".
@@ -272,7 +278,7 @@ func (b *Battery) title(ctx context.Context) string {
 	if b.cfg.Title != "" {
 		return b.cfg.Title
 	}
-	return i18nui.T(ctx, i18nui.KeyAdminTitle)
+	return i18nui.AdminTitle.Text(ctx)
 }
 
 // ----- sidebar ---------------------------------------------------------------
@@ -305,16 +311,17 @@ func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) re
 		path = r.URL.Path
 	}
 	items := []ui.SidebarItem{{
-		Label: i18nui.T(ctx, i18nui.KeyAdminDashboard),
+		Label: i18nui.AdminDashboard.Text(ctx),
 		Href:  b.cfg.PathPrefix,
 		Icon:  ui.Icon("home", ui.IconConfig{}),
 	}}
 	items = append(items, b.navGroups(ctx, count)...)
 	if ops := b.opsItems(ctx); len(ops) > 0 {
-		items = append(items, ui.SidebarItem{Label: i18nui.T(ctx, i18nui.KeyAdminSystemNav), Children: ops, Open: true})
+		items = append(items, ui.SidebarItem{Label: i18nui.AdminSystemNav.Text(ctx), Children: ops, Open: true})
 	}
 	return ui.SidebarConfig{
-		NavLabel:              i18nui.T(ctx, i18nui.KeyAdminNav),
+		Ctx:                   ctx,
+		NavLabel:              i18nui.AdminNav.Text(ctx),
 		Items:                 items,
 		CurrentPath:           path,
 		Variant:               ui.SidebarCollapsible,
@@ -352,11 +359,11 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 		if p.Nav == nil || p.Nav.Hide || !b.pageAllows(ctx, p) {
 			continue
 		}
-		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title,
+		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title.Text(ctx),
 			href: b.cfg.PathPrefix + p.Path, icon: p.Nav.Icon})
 	}
 	for _, l := range b.cfg.Links {
-		all = append(all, navItem{group: l.Group, label: l.Label, href: l.Href, icon: l.Icon})
+		all = append(all, navItem{group: l.Group, label: l.Label.Text(ctx), href: l.Href, icon: l.Icon})
 	}
 	var order []string
 	byGroup := map[string][]navItem{}
@@ -376,7 +383,7 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 		for i, it := range entries {
 			children[i] = ui.SidebarItem{Label: it.label, Href: it.href, MatchPath: it.href, Icon: navIcon(it.icon), Count: it.count}
 		}
-		label := i18nui.T(ctx, i18nui.KeyAdminEntities)
+		label := i18nui.AdminEntities.Text(ctx)
 		if g != "" {
 			label = i18nui.NavGroupLabel(ctx, nil, g, "")
 		}
@@ -389,17 +396,18 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 // has what it needs to draw.
 func (b *Battery) opsItems(ctx context.Context) []ui.SidebarItem {
 	var out []ui.SidebarItem
-	add := func(ok bool, key i18nui.Key, path, icon string) {
+	add := func(ok bool, key i18n.Phrase, path, icon string) {
 		if ok {
 			href := b.cfg.PathPrefix + path
-			out = append(out, ui.SidebarItem{Label: i18nui.T(ctx, key), Href: href, MatchPath: href, Icon: navIcon(icon)})
+			out = append(out, ui.SidebarItem{Label: key.Text(ctx), Href: href, MatchPath: href, Icon: navIcon(icon)})
 		}
 	}
-	add(b.cfg.Queue != nil, i18nui.KeyAdminQueue, "/queue", "layers")
-	add(b.db != nil, i18nui.KeyAdminAudit, "/audit", "activity")
-	add(b.cfg.Policy != nil, i18nui.KeyAdminRoles, "/rbac/roles", "shield")
-	add(b.cfg.Auth != nil, i18nui.KeyAdminUserRoles, "/rbac/users", "users")
-	add(b.cfg.ProcessModules != nil, i18nui.KeyAdminModules, "/modules", "cpu")
+	add(b.cfg.Queue != nil, i18nui.AdminQueue, "/queue", "layers")
+	add(b.db != nil, i18nui.AdminAudit, "/audit", "activity")
+	add(b.cfg.Policy != nil, i18nui.AdminRoles, "/rbac/roles", "shield")
+	add(b.cfg.Auth != nil, i18nui.AdminUserRoles, "/rbac/users", "users")
+	add(b.cfg.ProcessModules != nil, i18nui.AdminModules, "/modules", "cpu")
+	add(len(b.cfg.EmailPreviews) > 0, i18nui.AdminEmails, "/emails", "mail")
 	return out
 }
 
@@ -453,7 +461,7 @@ type brand struct {
 func (s brand) RenderCtx(ctx context.Context) render.HTML {
 	return ui.SidebarBrand(ui.SidebarBrandConfig{
 		Name: s.b.title(ctx),
-		Sub:  i18nui.T(ctx, i18nui.KeyAdminBrandSub),
+		Sub:  i18nui.AdminBrandSub.Text(ctx),
 		Logo: s.b.cfg.Logo,
 	})
 }
@@ -467,6 +475,11 @@ func (s brand) RenderCtx(ctx context.Context) render.HTML {
 // this one holds the theme switches too.
 func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	name := b.displayName(ctx)
+	if name == "" {
+		// No one is signed in, as when the host checks the chrome at
+		// boot: there is no account to show.
+		return ""
+	}
 	var who []string
 	if email := userEmail(ctx); email != "" && email != name {
 		who = append(who, email)
@@ -484,16 +497,16 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	parts := []render.HTML{
 		ui.Stack(ui.StackConfig{Gap: ui.GapNone, ExtraAttrs: html.Attrs{
 			"role":       "group",
-			"aria-label": i18nui.TVars(ctx, i18nui.KeyAdminSignedInAs, map[string]string{"name": name}),
+			"aria-label": i18nui.AdminSignedInAs.Text(ctx, map[string]any{"name": name}),
 		}}, head...),
 		ui.Divider(ui.DividerConfig{}),
-		section(i18nui.T(ctx, i18nui.KeyAdminThemeLabel), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Fill: true, Ctx: ctx})),
+		section(i18nui.AdminThemeLabel.Text(ctx), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Fill: true, Ctx: ctx})),
 	}
 	if look := b.themePicker(ctx, true); look != "" {
-		parts = append(parts, section(i18nui.T(ctx, i18nui.KeyAdminLook), look))
+		parts = append(parts, section(i18nui.AdminLook.Text(ctx), look))
 	}
 	rows := []ui.ActionListItem{{
-		Label: i18nui.T(ctx, i18nui.KeyAdminAccountSettings),
+		Label: i18nui.AdminAccountSettings.Text(ctx),
 		Href:  b.cfg.PathPrefix + "/account",
 		Icon:  "user",
 	}}
@@ -503,11 +516,12 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 			dest = "/"
 		}
 		out := interactive.Post(b.cfg.SignOutPath).OnSuccess(interactive.Navigate(dest))
-		rows = append(rows, ui.ActionListItem{Label: i18nui.T(ctx, i18nui.KeySignOut), Do: &out, Icon: "log-out"})
+		rows = append(rows, ui.ActionListItem{Label: i18nui.SignOut.Text(ctx), Do: &out, Icon: "log-out"})
 	}
 	parts = append(parts, ui.Divider(ui.DividerConfig{}), ui.ActionList(ui.ActionListConfig{Items: rows}))
 	return ui.Dropdown(ui.DropdownConfig{
-		Label:   i18nui.T(ctx, i18nui.KeyAdminAccount),
+		Ctx:     ctx,
+		Label:   i18nui.AdminAccount.Text(ctx),
 		Avatar:  &ui.AvatarConfig{Name: name},
 		Align:   ui.DropdownEnd,
 		Content: ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...),
@@ -529,49 +543,52 @@ func handlerUser(ctx context.Context) any {
 	return u
 }
 
-// crumbs draws the breadcrumbs for path: the product, then where the
-// page sits. A record's crumb is its title, read behind its own gate.
-func (b *Battery) crumbs(ctx context.Context, path string) render.HTML {
+// crumbs draws the breadcrumbs for the page m matched: the product, then
+// where the page sits. A record's crumb is its title, read behind its
+// own gate.
+func (b *Battery) crumbs(ctx context.Context, m appui.Match) render.HTML {
 	items := []ui.Crumb{{Text: b.title(ctx), Href: b.cfg.PathPrefix}}
-	items = append(items, b.trail(ctx, path)...)
+	items = append(items, b.trail(ctx, m)...)
 	items[len(items)-1].Current = true
 	items[len(items)-1].Href = ""
 	return ui.Breadcrumbs(ui.BreadcrumbsConfig{CompactMobile: true, Ctx: ctx}, items...)
 }
 
-// trail is the crumbs after the product for one admin path.
-func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
-	rest := strings.TrimPrefix(path, b.cfg.PathPrefix)
+// trail is the crumbs after the product for one admin page.
+func (b *Battery) trail(ctx context.Context, m appui.Match) []ui.Crumb {
+	rest := strings.TrimPrefix(m.Path(), b.cfg.PathPrefix)
 	switch rest {
 	case "", "/":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminDashboard)}}
+		return []ui.Crumb{{Text: i18nui.AdminDashboard.Text(ctx)}}
 	case "/search":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminSearch)}}
+		return []ui.Crumb{{Text: i18nui.AdminSearch.Text(ctx)}}
 	case "/account":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminAccountSettings)}}
+		return []ui.Crumb{{Text: i18nui.AdminAccountSettings.Text(ctx)}}
 	case "/queue":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminQueue)}}
+		return []ui.Crumb{{Text: i18nui.AdminQueue.Text(ctx)}}
 	case "/audit":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminAudit)}}
+		return []ui.Crumb{{Text: i18nui.AdminAudit.Text(ctx)}}
 	case "/rbac/roles":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminRoles)}}
+		return []ui.Crumb{{Text: i18nui.AdminRoles.Text(ctx)}}
 	case "/rbac/users":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminUserRoles)}}
+		return []ui.Crumb{{Text: i18nui.AdminUserRoles.Text(ctx)}}
 	case "/modules":
-		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminModules)}}
+		return []ui.Crumb{{Text: i18nui.AdminModules.Text(ctx)}}
+	case "/emails":
+		return []ui.Crumb{{Text: i18nui.AdminEmails.Text(ctx)}}
 	}
 	for _, p := range b.cfg.Pages {
 		if rest == p.Path {
-			return []ui.Crumb{{Text: p.Title}}
+			return []ui.Crumb{{Text: p.Title.Text(ctx)}}
 		}
 	}
-	if e, id, ok := b.entityPath(rest); ok {
+	if e, id, ok := b.entityPath(rest, m); ok {
 		list := ui.Crumb{Text: b.plural(ctx, e), Href: b.entityBase(e)}
 		switch id {
 		case "":
 			return []ui.Crumb{list}
 		case "create":
-			return []ui.Crumb{list, {Text: i18nui.TVars(ctx, i18nui.KeyAdminPaletteNew, map[string]string{"entity": b.singular(ctx, e)})}}
+			return []ui.Crumb{list, {Text: i18nui.AdminPaletteNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)})}}
 		}
 		title, ok := "", false
 		if b.authorized(ctx) {

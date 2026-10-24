@@ -43,10 +43,18 @@ func nextE2EPort(t *testing.T) string {
 // dir would outlive every run. Under t.TempDir it goes with the test.
 // Call it before registering the kill cleanup: cleanups run last-in
 // first-out, so the process is dead before its dir is removed.
+//
+// It also gives the child an empty axe-coverage root. Strict mode checks
+// the manifest only under `gofastr dev`, and every example shares the
+// module root's manifest (or the one cmd/affected points outside the
+// module): one example's axe scans, or a run that failed midway, leave a
+// manifest missing another example's screens, and that example's strict
+// boot panics in a test about the dev loop. No manifest is the warn
+// posture.
 func devTempEnv(t *testing.T) []string {
 	t.Helper()
 	dir := t.TempDir()
-	return []string{"TMPDIR=" + dir, "TMP=" + dir, "TEMP=" + dir}
+	return []string{"TMPDIR=" + dir, "TMP=" + dir, "TEMP=" + dir, "GOFASTR_AXE_COVERAGE_DIR=" + t.TempDir()}
 }
 
 // buildGofastrBinary returns the package-wide shared gofastr binary

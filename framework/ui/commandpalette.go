@@ -142,8 +142,31 @@ const (
 
 // CommandPalette returns the trigger button and a Modal preset for
 // the palette. Mount the preset once at startup; render the trigger
-// in your global chrome (Sidebar, top nav, etc).
+// in your global chrome (Sidebar, top nav, etc). The palette's own
+// words (its title, hint chips, loading and empty rows, the default
+// placeholder) follow the reader's locale on each request; the strings
+// a config sets are said as given, so a palette with words of its own
+// to translate mounts CommandPaletteFunc instead.
 func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
+	return commandPalette(cfg, nil)
+}
+
+// CommandPaletteFunc is CommandPalette for a palette built per request:
+// the palette's body calls build with each request's context, so its
+// placeholder and commands are the reader's. Mount the returned preset
+// once, and render the trigger in the chrome with
+// CommandPalette(build(r.Context())). The widget's identity (Name,
+// Shortcut) comes from build(context.Background()).
+func CommandPaletteFunc(build func(ctx context.Context) CommandPaletteConfig) *widget.Builder {
+	if build == nil {
+		panic("ui.CommandPaletteFunc: build is nil")
+	}
+	_, b := commandPalette(build(context.Background()), build)
+	return b
+}
+
+// checkCommandPalette panics on a config no palette can draw.
+func checkCommandPalette(cfg CommandPaletteConfig) {
 	if cfg.RPCPath == "" && len(cfg.Commands) == 0 {
 		panic("ui: CommandPalette requires RPCPath or Commands")
 	}
@@ -169,6 +192,10 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		strings.ContainsRune(cfg.FallbackHref, '\\') {
 		panic("ui: CommandPalette FallbackHref must be same-origin and start with /, not " + cfg.FallbackHref)
 	}
+}
+
+func commandPalette(cfg CommandPaletteConfig, build func(context.Context) CommandPaletteConfig) (render.HTML, *widget.Builder) {
+	checkCommandPalette(cfg)
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -177,21 +204,14 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	if name == "" {
 		name = "command-palette"
 	}
-	placeholder := cfg.Placeholder
-	if placeholder == "" {
-		placeholder = i18nui.T(ctx, i18nui.KeyCommandPalettePlaceholder)
-	}
+	placeholder := palettePlaceholder(ctx, cfg)
 	shortcut := cfg.Shortcut
 	if shortcut == "" {
 		shortcut = "Meta+K"
 	}
-	debounce := cfg.DebounceMs
-	if debounce <= 0 {
-		debounce = 150
-	}
 	triggerLabel := cfg.TriggerLabel
 	if triggerLabel == "" {
-		triggerLabel = i18nui.T(ctx, i18nui.KeyCommandPaletteOpen)
+		triggerLabel = i18nui.CommandPaletteOpen.Text(ctx)
 	}
 
 	// The trigger is an anchor to the fallback: with script the widget
@@ -224,31 +244,53 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		panic("ui: CommandPalette unknown Trigger " + strconv.Quote(string(cfg.Trigger)) + "; use PaletteTriggerHidden or PaletteTriggerField")
 	}
 
-	slot := &commandPaletteSlot{
-		widgetName:    name,
-		rpcPath:       cfg.RPCPath,
-		fallbackHref:  cfg.FallbackHref,
-		placeholder:   placeholder,
-		debounceMs:    debounce,
-		emptyHTML:     cfg.EmptyHTML,
-		search:        cfg.Search,
-		options:       paletteCommandsToOptions(cfg.Commands),
-		title:         i18nui.T(ctx, i18nui.KeyCommandPaletteTitle),
-		navigateLabel: i18nui.T(ctx, i18nui.KeyCommandPaletteNavigate),
-		selectLabel:   i18nui.T(ctx, i18nui.KeyCommandPaletteSelect),
-		closeLabel:    i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
-		loadingLabel:  i18nui.T(ctx, i18nui.KeyHuiComboboxLoading),
-		emptyLabel:    i18nui.T(ctx, i18nui.KeyHuiComboboxNoResults),
-		searchPage:    cfg.SearchPage,
-		allLabel:      i18nui.T(ctx, i18nui.KeySearchResultsAll),
-		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
-	}
+	slot := requestSlot{build: func(ctx context.Context) component.Component {
+		c := cfg
+		if build != nil {
+			c = build(ctx)
+			checkCommandPalette(c)
+		}
+		debounce := c.DebounceMs
+		if debounce <= 0 {
+			debounce = 150
+		}
+		return &commandPaletteSlot{
+			widgetName:    name,
+			rpcPath:       c.RPCPath,
+			fallbackHref:  c.FallbackHref,
+			placeholder:   palettePlaceholder(ctx, c),
+			debounceMs:    debounce,
+			emptyHTML:     c.EmptyHTML,
+			search:        c.Search,
+			options:       paletteCommandsToOptions(c.Commands),
+			title:         i18nui.CommandPaletteTitle.Text(ctx),
+			navigateLabel: i18nui.CommandPaletteNavigate.Text(ctx),
+			selectLabel:   i18nui.CommandPaletteSelect.Text(ctx),
+			closeLabel:    i18nui.CommandPaletteClose.Text(ctx),
+			escKey:        i18nui.KeyEsc.Text(ctx),
+			loadingLabel:  i18nui.HuiComboboxLoading.Text(ctx),
+			emptyLabel:    i18nui.HuiComboboxNoResults.Text(ctx),
+			searchPage:    c.SearchPage,
+			allLabel:      i18nui.SearchResultsAll.Text(ctx),
+			words:         StringsFor(ctx),
+			extraAttrs:    html.SafeExtraAttrs(c.ExtraAttrs),
+		}
+	}}
 	b := preset.Modal(name).
 		Hidden().
 		Role("dialog").
 		LabelledBy(name+"-title").
 		Slot("body", slot)
 	return trigger, b
+}
+
+// palettePlaceholder is the search field's hint: Placeholder, else the
+// phrase.
+func palettePlaceholder(ctx context.Context, cfg CommandPaletteConfig) string {
+	if cfg.Placeholder != "" {
+		return cfg.Placeholder
+	}
+	return i18nui.CommandPalettePlaceholder.Text(ctx)
 }
 
 // shortcutGlyphs spells a chord the way a keycap shows it: "Meta+K"
@@ -282,7 +324,7 @@ func PaletteResults(ctx context.Context, name string, cmds []PaletteCommand, emp
 	}
 	if len(cmds) == 0 {
 		if empty == "" {
-			empty = i18nui.T(ctx, i18nui.KeyHuiComboboxNoResults)
+			empty = i18nui.HuiComboboxNoResults.Text(ctx)
 		}
 		return render.Tag("li", map[string]string{
 			"role":          "option",
@@ -337,10 +379,12 @@ type commandPaletteSlot struct {
 	navigateLabel string
 	selectLabel   string
 	closeLabel    string
-	loadingLabel  string // search: the row shown while results load
-	emptyLabel    string // search: the row shown when nothing matches
-	searchPage    string // search: the search page the last row opens
-	allLabel      string // search: that row's words
+	escKey        string            // the Esc key's name on its hint chip
+	loadingLabel  string            // search: the row shown while results load
+	emptyLabel    string            // search: the row shown when nothing matches
+	searchPage    string            // search: the search page the last row opens
+	allLabel      string            // search: that row's words
+	words         *headless.Strings // the combobox words, in the reader's language; nil is English
 	extraAttrs    html.Attrs
 }
 
@@ -354,13 +398,17 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	// non-empty Label contract holds.
 	title := s.title
 	if title == "" {
-		title = i18nui.T(context.Background(), i18nui.KeyCommandPaletteTitle)
+		title = i18nui.CommandPaletteTitle.Text(context.Background())
 	}
 	// closeLabel is resolved alongside title at CommandPalette() call
 	// time; same direct-construction fallback for slots built in tests.
+	escKey := s.escKey
+	if escKey == "" {
+		escKey = i18nui.KeyEsc.Text(context.Background())
+	}
 	closeLabel := s.closeLabel
 	if closeLabel == "" {
-		closeLabel = i18nui.T(context.Background(), i18nui.KeyCommandPaletteClose)
+		closeLabel = i18nui.CommandPaletteClose.Text(context.Background())
 	}
 
 	srTitle := html.Heading(html.HeadingConfig{
@@ -400,6 +448,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		DebounceMS:     s.debounceMs,
 		Options:        opts,
 		Parts:          parts,
+		Strings:        s.words,
 	}, headless.Classes{
 		headless.PartRoot:            "fui-cmd-palette__field",
 		headless.PartLabel:           "fui-visually-hidden",
@@ -438,7 +487,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	},
 		hintChip("↑↓", s.navigateLabel),
 		hintChip("↵", s.selectLabel),
-		hintChip("Esc", closeLabel),
+		hintChip(escKey, closeLabel),
 	)
 	footer := html.Div(html.DivConfig{Class: "fui-cmd-palette__footer"},
 		closeBtn,

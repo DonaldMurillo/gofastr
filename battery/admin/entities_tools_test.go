@@ -151,7 +151,7 @@ func TestAdminToolsMountTogether(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := saved.Query().Get("saved")
-	rr = serve(h, newPost("/admin/api/posts/_views/_delete/"+url.PathEscape(id), url.Values{"back": {"/admin/entities/posts"}}))
+	rr = serve(h, newPost("/admin/api/posts/_views/_delete?id="+url.QueryEscape(id), url.Values{"back": {"/admin/entities/posts"}}))
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("delete view = %d %s", rr.Code, rr.Body.String())
 	}

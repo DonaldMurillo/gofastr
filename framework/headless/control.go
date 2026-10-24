@@ -7,7 +7,6 @@ package headless
 // to live here; heights, borders and class structure live in the class map.
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -390,12 +389,13 @@ func Color(p ColorProps, s Classes) render.HTML {
 	// A colour in this app's config is not always a colour the OS
 	// picker can show: "var(--color-primary)" is a legitimate value
 	// and type=color would silently rewrite it to #000000 on submit.
+	w := p.Strings.Resolve()
 	swatch := html.Attrs{
 		"data-hui-affix-swatch": "",
 		"type":                  "color",
 		"value":                 value,
 		"tabindex":              "-1",
-		"aria-label":            fmt.Sprintf(p.Strings.Resolve().PickColor, p.Name),
+		"aria-label":            w.fill(w.PickColor, "name", p.Name),
 	}
 	if p.ID != "" {
 		swatch["id"] = p.ID + "-picker"

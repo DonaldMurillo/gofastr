@@ -118,14 +118,14 @@ func (s *listScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *listScreen) ScreenTitle() string {
+func (s *listScreen) ScreenTitle(ctx context.Context) string {
 	if s.page > 1 {
 		return fmt.Sprintf("%s, page %d", s.l.Title, s.page)
 	}
 	return s.l.Title
 }
 
-func (s *listScreen) ScreenDescription() string {
+func (s *listScreen) ScreenDescription(ctx context.Context) string {
 	return s.l.Title + " on " + siteName + ", a sample news reader built with GoFastr."
 }
 
@@ -233,14 +233,14 @@ func (s *itemScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *itemScreen) ScreenTitle() string {
+func (s *itemScreen) ScreenTitle(ctx context.Context) string {
 	if s.story == nil {
 		return "Story"
 	}
 	return s.story.Title
 }
 
-func (s *itemScreen) ScreenDescription() string {
+func (s *itemScreen) ScreenDescription(ctx context.Context) string {
 	if s.story == nil {
 		return ""
 	}
@@ -347,9 +347,11 @@ func (s *userScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *userScreen) ScreenTitle() string { return "Profile: " + s.id }
+func (s *userScreen) ScreenTitle(ctx context.Context) string { return "Profile: " + s.id }
 
-func (s *userScreen) ScreenDescription() string { return s.id + "'s profile on " + siteName + "." }
+func (s *userScreen) ScreenDescription(ctx context.Context) string {
+	return s.id + "'s profile on " + siteName + "."
+}
 
 func (s *userScreen) RenderCtx(ctx context.Context) render.HTML {
 	u := s.user

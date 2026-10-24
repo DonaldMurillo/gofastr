@@ -602,6 +602,15 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
+A relation column is `TEXT`, except on Postgres when the target's key is
+an `int` field: there it is `INTEGER` (`BIGINT` for a `BIGSERIAL` key),
+since Postgres refuses a `TEXT` foreign key to an integer column. A target
+key that is itself a relation column to an `int` key counts the same way,
+however long the chain. SQLite compares the two by affinity, so it keeps
+`TEXT`. Either way a write stores such a reference in canonical decimal:
+`"01"`, `"+1"` and `1.0` are stored as `1`, and a value that names no
+integer (`"owls"`) is a 400 with the reason `not_integer`.
+
 **A BelongsTo FK is a write-side trust boundary too.** A create or
 update whose body sets a BelongsTo FK (an `order_id`, an
 `author_id`) is refused with **404** when the target row exists but
@@ -1088,6 +1097,14 @@ registration: the parser tries the suffix first, so `?status_ne=` would
 filter `status` and the `status_ne` column could never be filtered at
 all. Rename one field or set a `WireName`.
 
+**A wire key names one column.** Two fields resolving to one wire key
+(`WireName`, or a bare column's name and its camelCase form) are refused
+at `Define`. So is a `WireName` that is another field's column name: a
+body names a field by either, and entityui's forms post by column name,
+so `content` would write whichever field publishes as `content`.
+`CrudHandler.WireKey(column)` returns the key a column's value sits under
+in the rows `ListAll` and `GetOne` return.
+
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
 (`filter.MaxINListEntries`) counts the union, and the same cap applies to
@@ -1432,6 +1449,299 @@ translation keys Display's names produce (`entity.<entity>.*`,
 `nav.groups.<key>`) are listed on the
 [Internationalization](i18n.md) page.
 
+## Record ids
+
+`EntityConfig.PrimaryKey` names the primary-key columns in order. Left
+nil, the key is the one column `id`, which `Define` injects as a generated
+UUID unless `Fields` declares it.
+
+A plain join table keeps that `id` and holds its pair unique with an
+index. Every surface then names a row by one value, and another entity
+can belong to it:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    Indices: []entity.Index{{Columns: []string{"student_id", "course_id"}, Unique: true}},
+})
+```
+
+Name more than one column for a composite key when the columns are the
+record's identity: a table an existing schema already keys that way, or
+records the API should address by the pair. The links and the limits
+below follow from it:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    PrimaryKey: []string{"student_id", "course_id"},
+})
+```
+
+`Define` injects no `id` column when `PrimaryKey` leaves it out, and panics
+when a key column is repeated or is not a declared field. A composite key
+column must not be `Hidden` or `NoQuery`: the API names a record by its
+key values, so it has to return and filter on each. Enforce other
+uniqueness with a unique index. Every key column, `id` included, is a
+string, text, image, file, integer, enum, UUID or relation field (an
+image or file column stores its path as text); `Define` panics on
+a float, decimal, bool, date, timestamp or JSON one, whose values have
+more than one spelling (Postgres reads `2024-1-2` as the date
+`2024-01-02`), so one record would answer to several ids. For the same
+reason a key column sets no `RawType`, except an integer type such as
+`BIGINT` on an `Int` column: `CITEXT` or a Postgres `UUID` matches
+either case. A nil `PrimaryKey` means the one `id` column; an
+empty `[]string{}` names no column and also panics. An entity always has
+a key: only a raw `migrate.Table` describes a table without one. The
+table gets
+each key column `NOT NULL` and a `PRIMARY KEY (student_id, course_id)`
+constraint. Changing the key of an existing table is a migration; see
+[Primary-key changes](migrations.md#primary-key-changes).
+
+### Relations and composite keys
+
+A foreign key has one column per column of the key it references, in key
+order, and `Relation.ForeignKey` lists them: `[]string{"author_id"}` for a
+one-column key. The constructors take the columns as arguments:
+
+```go
+app.Entity("orders", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "store", Type: schema.String, Required: true},
+        {Name: "no", Type: schema.Int, Required: true},
+    },
+    PrimaryKey: []string{"store", "no"},
+    Relations:  []entity.Relation{entity.HasMany("lines", "lines", "order_store", "order_no")},
+})
+app.Entity("lines", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "order_store", Type: schema.String},
+        {Name: "order_no", Type: schema.Int},
+        {Name: "sku", Type: schema.String},
+    },
+    Relations: []entity.Relation{entity.BelongsTo("order", "orders", "order_store", "order_no")},
+})
+```
+
+- a `belongs_to` references its target, and its own entity holds the
+  columns;
+- a `has_one` or `has_many` references its own entity, and the target
+  holds the columns;
+- a `many_to_many` links two one-column keys through its pivot. Link a
+  composite-keyed end through a join entity instead (below).
+
+`entity.CheckRelationKeys` applies the rule, and boot, `?include=`,
+nested filters, `EagerLoad` and writes refuse a relation that breaks it:
+one column against a composite key is `entity.ErrCompositeKey`, any
+other mismatch `entity.ErrForeignKeyShape`. The columns of a longer
+foreign key are fields the holding entity declares, spelled as declared
+and each typed like the key column it references; boot refuses a
+repeated column, an undeclared one (`ORDER_NO` over a field `order_no`
+included), a column whose type differs from its key column's (`string`
+against `int`), or a column a transition writes (the `states` field or a
+move's stamp, since a move changes the reference with no check) before
+any DDL runs. The transition rule covers every declaration over the
+table, another version or another entity name sharing it included, and
+registration applies it, so an app that skips migrations gets it too. The migrator emits one constraint,
+`FOREIGN KEY (order_store, order_no) REFERENCES orders(store, no)`, and
+an index on the column tuple.
+
+A write sets a `belongs_to`'s multi-column reference whole or not at
+all. (A reference only the parent's `has_many` declares gets no foreign
+key constraint and no write-side checks, one column or several: declare
+the `belongs_to` on the child to have them.) Among the columns the
+write takes from the body, one that names some and not the others, or
+sets some to null and others to a value, is a 400 carrying
+`validation.partial_foreign_key` on each column, server writes
+included, so a PATCH cannot leave a line pointing half at its old order
+and half at a new one. The check that refuses a reference to a row the
+caller cannot read (404) looks the target up by the whole tuple. A
+tuple with a null column names no row, as a join on it matches none,
+and a blank string is a value.
+
+The check reads each reference as the row will hold it, not as the
+body spells it. A column the write does not take from the body (a key
+column on update, a `ReadOnly` or `Hidden` field, the owner and tenant
+columns) keeps what the row would have without it: a create holds the
+field's default, or the caller's tenant for the tenant column, and a
+PATCH holds the stored value. An `AutoIncrement` column holds nothing
+known until the database assigns it, so a create naming the rest of a
+reference through one is refused. So a line keyed on `(order_store,
+line_id)` keeps its store on every update: a PATCH of `order_no` alone
+moves the line within its stored store, and a PATCH naming both columns
+is checked against the stored store, the reference the row ends up
+with. A reference keyed through the tenant, `(tenant_id, order_no)`,
+reads the caller's tenant. A write that names only columns it does not
+take moves nothing, and each reference is read on its own, so moving
+one leaves another that shares its kept column alone. An upsert
+ends as an insert or a conflict update, so it checks both: the insert
+as a create, and the update, which cannot know what a column it keeps
+holds (it keeps a generated column's stored value). The bulk
+`TypedQuery.UpdateAll` cannot know either, since its rows each hold
+their own. Both do know the tenant and owner columns: every row they
+touch is the caller's and keeps them, so a reference through either
+reads the caller's tenant or owner there too (a bulk update with no
+tenant in its context, or under `owner.AllowCrossOwner`, reaches other
+callers' rows and does not). Otherwise, a body that moves
+part of a reference while the write keeps another of its columns is a
+400 carrying `validation.kept_foreign_key`.
+
+A join table keyed on the pair it links is an entity of its own, with
+a payload: it belongs to each side, each side has many of it, and a
+`many_to_many` can read through it.
+
+```go
+app.Entity("courses", framework.EntityConfig{
+    Fields: []schema.Field{{Name: "title", Type: schema.String}},
+})
+app.Entity("students", framework.EntityConfig{
+    Fields: []schema.Field{{Name: "name", Type: schema.String}},
+    Relations: []entity.Relation{
+        entity.HasMany("enrollments", "enrollments", "student_id"),
+        entity.ManyToMany("courses", "courses", "enrollments", "student_id", "course_id"),
+    },
+})
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    PrimaryKey: []string{"student_id", "course_id"},
+    Relations: []entity.Relation{
+        entity.BelongsTo("student", "students", "student_id"),
+        entity.BelongsTo("course", "courses", "course_id"),
+    },
+})
+```
+
+`GET /enrollments/{student}/{course}?include=student,course`,
+`GET /students/{id}?include=enrollments.course`, `?include=courses`,
+`?enrollments.grade=A` and `?courses.title=Art` all work. A three-way
+association is the same shape with three `belongs_to` and a three-column
+key.
+
+When a registered entity owns a `many_to_many`'s `Through` table, every
+read through the pivot applies that entity's soft delete and its owner,
+tenant and read scopes: a soft-deleted enrollment, or another owner's,
+links nothing. Boot refuses the relation when the entity does not
+declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
+creates no pivot of its own. A `cascade_write` link inserts its pivot
+row through that entity's `belongs_to` checks, reading the row as the
+two link columns (matched to its fields ignoring case, as the database
+matches them) with every other column at its default: a tagging
+that belongs to a grant keyed on its `(post_id, tag_id)` links a tag
+only through the caller's grant.
+
+An `AfterList` hook on a composite-keyed child that replaces rows in an
+include is matched back to them by the whole key. A `cascade_write`
+`has_one` or `has_many` into a composite-keyed child is refused at boot:
+it tells an existing child from a new one by the child's one key column.
+For the same reason a `cascade_write` relation over a multi-column
+foreign key is refused at boot.
+
+The framework names a record by its primary-key columns,
+`Entity.KeyColumns()`, in declared order. Reads, writes, the keyset
+cursor's tiebreak, `UpsertOne`'s conflict target, event payloads, audit
+`record_id`s and hook ids all go through them.
+
+Where an API takes or returns one record id as a string (`GetOne`,
+`OnBeforeDelete`, `hook.GetPayload.ID`, an audit row), that string is
+`entity.JoinKey` of the key values. For a single-column key, the usual
+case, it is the value itself. `entity.SplitKey(id, n)` reverses it and
+refuses an id with the wrong number of values, or a composite id spelled
+other than `JoinKey` spells it (`a/c1` is the id of `a` and `c1`;
+`%61/c1` is refused), with `entity.ErrBadKey`, so a record has exactly
+one id. A one-column id is the value itself, so every string is its own
+spelling.
+`entity.KeyValues(id, cols, fields)` reads an id into the values a lookup
+binds, an integer key column's only in canonical decimal (`1`, never `01`).
+Pass it `entity.ValueFields(reg, e)` rather than `e.GetFields()`: a
+relation column whose target has an `int` key holds an integer, and
+`ValueFields` types it `int` (`entity.RelationHoldsInt` answers it for
+one column). `entity.RowKey` reads the id out of a row.
+
+On an `Unmanaged` entity (a view, or a table created elsewhere) the
+database chose the key column types, and equality may match a second
+spelling: a Postgres `UUID`, `CITEXT` or nondeterministic collation
+matches either case, a SQLite `NOCASE` column too, and a `CHAR(n)`
+matches the value with or without its padding. Each read and write by
+id there reads back the key columns of the row it reached and keeps the
+row only when its own `RowKey` is the id; a write that reached another
+row fails and rolls back. So `GET /claims/550E8400-…/x` is 404 for the
+row keyed in lowercase, and a `CHAR(5)` row answers to its padded id
+(`ab%20%20%20/s`). A SQLite key declared under a stricter collation
+than its column (`PRIMARY KEY (code COLLATE BINARY, scope)` on a
+`NOCASE` column) holds rows the id's equality matches together: a read
+returns the id's own row, and a write that would reach more than one is
+refused with 404. Postgres checks the rows a delete reached through
+`RETURNING`; SQLite, which cannot return rows from a virtual table such
+as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
+owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
+
+### What a composite key cannot do
+
+Boot refuses a declaration that breaks one of the first four rules,
+before any DDL runs:
+
+- A key column is a string, text, integer, enum, UUID or relation field,
+  with no `RawType` but an integer type.
+- A foreign key onto a composite key lists one column per key column;
+  one column is `entity.ErrCompositeKey`.
+- A `many_to_many` links two one-column keys. Link a composite-keyed end
+  through a join entity that belongs to both sides.
+- A `cascade_write` relation has a one-column foreign key, and a
+  `cascade_write` `has_one` or `has_many` needs a child keyed on one
+  column.
+- `Entity.KeyColumn()`, for code that needs one column, returns
+  `entity.ErrCompositeKey`. Read `Entity.KeyColumns()` instead.
+- A record keeps its key: the edit form shows the key columns read-only,
+  and changing the key of a table is a
+  [migration](migrations.md#primary-key-changes).
+
+### Composite keys over HTTP and MCP
+
+A composite-key entity's record routes take one path segment per key
+column, in key order, each value path-escaped:
+
+| Surface | Single key | `PrimaryKey: {"student_id", "course_id"}` |
+|---|---|---|
+| REST record | `/api/enrollments/{id}` | `/api/enrollments/{student_id}/{course_id}` |
+| State move | `.../{id}/transitions/{key}` | `.../{student_id}/{course_id}/transitions/{key}` |
+| OpenAPI path params | `id` | `studentId`, `courseId` (wire names, type string) |
+| MCP get/update/delete/move args | `id` | `student_id`, `course_id` |
+| Batch update item | `{"id": ..., ...}` | `{"studentId": ..., "courseId": ..., ...}` |
+| Batch delete `ids` | the id | `entity.JoinKey` of the values, `"s1/c1"` |
+
+The move's wildcard is `{key}` unless a key column is itself named `key`;
+then it is `{key_}`. `crud.KeyPath(cols)` and `crud.TransitionPath(cols)`
+build these route tails, and `crud.PathRecordID(r, cols)` reads the id
+back off a request, for a handler mounted beside the CRUD routes.
+`/api/llm.md` lists the path parameters per key column.
+
+entityui and the admin draw a composite record at `<base>/<v1>/<v2>`.
+The create form sets every key column; the edit form shows them
+read-only, since a record keeps its key, and a duplicate leaves them
+blank, as it does a unique index's fields. A key value holding `/` is
+escaped in its segment (`/enrollments/a%2Fb/c1`), and its screen
+answers there as REST and MCP do.
+
+The `framework` package re-exports `JoinKey` and `RowKey` for app code
+that builds ids without importing `framework/entity`. The generators
+take the key the same way the routes do: an app spec's
+[`primary_key:`](app-spec.md#composite-keys-primary_key), the
+[typed repository](#the-typed-repository), the [Go and JS SDKs](sdk.md)
+and the [app CLI](app-cli.md) each name a record by one value per key
+column.
+
 ## States (a state machine)
 
 `EntityConfig.States` names the Enum field holding a record's state and the
@@ -1527,10 +1837,19 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   would repeat `PostsStatusValue`), gets no constant: the file lists it
   in a comment, and `PostsStatusValue("N/A")` still works.
 - An entity with `States` gets one `<Entity>Move` constant per move and
-  `Transition(ctx, id, move)`, which runs `CrudHandler.RunTransition`.
+  `Transition(ctx, id, move)` (on a composite key, one argument per key
+  column in place of `id`, as below), which runs
+  `CrudHandler.RunTransition`.
   System moves are included, since the repo is the Go caller they exist
   for. With enforced States, stamps leave both payloads and the state
   field leaves the patch ([States](states.md)).
+- A composite-key entity's record methods take one argument per key
+  column, in key order: `Get(ctx, studentId, courseId)`, and likewise
+  `Update`, `Delete`, `Exists` and `Transition`. The model has no `ID`
+  field; its key columns are ordinary fields. `EnrollmentsID(studentId,
+  courseId)` spells the record id (`framework.JoinKey` of the values)
+  that `BatchUpdate`, `BatchDelete` and the lifecycle subscriptions
+  (`OnEnrollmentsDeleted`'s `id`) use.
 
 Hidden and ReadOnly fields stay in both payloads. The pipeline skips them
 unless ctx carries `crud.WithServerWrites`, the same rule
@@ -1666,7 +1985,10 @@ Lists keep `{"data":[...]}` plus pagination metadata.
 
 Errors are JSON everywhere in the API namespace, whatever missed. A handled
 record miss (e.g. `GET /api/posts/404-nope`) answers
-`application/json` with `{"error":"not found","success":false,"code":404}`.
+`application/json` with
+`{"error":"not found","reason":"not_found","success":false,"code":404}`.
+`reason` is the stable code a client branches on; `error` is the text in
+the request's locale (see [i18n](i18n.md) → "The error contract").
 A write the database refuses on a constraint answers `409 Conflict`, not
 `500`: a UNIQUE violation (a duplicate key) and a FOREIGN KEY violation
 (a create or update that points at a missing row, or a delete of a row that
@@ -1676,7 +1998,7 @@ server log only. When the refused constraint is one the entity declares
 (a `unique` field, a unique column index, a relation's foreign key) the
 body carries the fields the caller sent in the validation shape, so a
 form shows the refusal on the control:
-`{"error":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]}}`.
+`{"error":"conflict","reason":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]},"field_reasons":{"number":["unique_taken"]}}`.
 A relation's message is "refers to a record that does not exist". A
 column the caller did not send (the owner column of a per-account
 index) is not named, and a conflict on a `hidden` or `no_query` field
@@ -1801,12 +2123,17 @@ path: `WithAPIPrefix("/api")` mounts `{id}/publish` on entity `posts` at
 absolute path bypasses the prefix; use it to mount outside the entity's API
 namespace.
 
-Note the auth asymmetry: the HTTP `Handler` runs behind the route
-middleware chain, but the `MCPHandler` twin is invoked directly: no route
-middleware, so no per-caller auth of its own. **The twin therefore defaults
-to requiring an authenticated caller.** Declare something stricter with
-`MCPGate`, or opt out with `MCPPublic` for an endpoint that really is
-anonymous over HTTP too:
+**Both doors require a signed-in caller by default.** The HTTP route
+answers 401 when the request carries no user, sends
+`Cache-Control: no-store` on every response, and refuses a cross-site
+write that a plain HTML form could send (no `Content-Type`, urlencoded,
+multipart or `text/plain`) with 403. A JSON body from another origin
+passes; the browser's CORS preflight already stands in front of it. The
+`MCPHandler` twin is invoked directly, with no route middleware, so it
+carries the same default as its own gate: an authenticated caller.
+Declare something stricter for the twin with `MCPGate`, or set
+`Public: true` for an endpoint that really is anonymous; `Public` opens
+both doors:
 
 ```go
 entity.Endpoint{
@@ -1818,6 +2145,26 @@ entity.Endpoint{
 ```
 
 See [plugins](plugins.md) → MCP tool gating.
+
+### Endpoints from another file
+
+`App.EntityEndpoints` queues endpoints for an entity that a later
+`App.Entity` or `TryEntity` call registers. That call merges them into the
+config's `Endpoints`, so they pass the same route and MCP checks as
+endpoints written in the config. The generated
+`entities/endpoints.gen.go` uses it to attach the
+[settings endpoints](endpoints.md) to entity files it does not own:
+
+```go
+app.EntityEndpoints("posts", framework.Endpoint{
+    Method: http.MethodPost, Path: "{id}/publish", Handler: publishHandler,
+})
+app.Entity("posts", postsConfig)
+```
+
+Calling it after the entity registered panics, and `Start` returns an
+error while endpoints are still queued for a name no `App.Entity` call
+registered, such as a misspelled table.
 
 ### Typed input/output schemas
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -39,22 +40,18 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 	quotedTable := query.QuoteIdent(usersTable)
 
 	step := Step{
-		Name: "Create Admin",
+		Name:  "Create Admin",
+		Title: adminStepTitle,
 		Fields: []Field{
 			{
-				Name:   "ADMIN_EMAIL",
-				Label:  "Admin email",
-				EnvVar: "GOFASTR_ADMIN_EMAIL",
-				Validate: func(v string) error {
-					if v == "" {
-						return fmt.Errorf("email is required")
-					}
-					return nil
-				},
+				Name:     "ADMIN_EMAIL",
+				Label:    adminEmailLabel,
+				EnvVar:   "GOFASTR_ADMIN_EMAIL",
+				Validate: validateAdminEmail,
 			},
 			{
 				Name:   "ADMIN_PASSWORD",
-				Label:  "Admin password",
+				Label:  adminPasswordLabel,
 				EnvVar: "GOFASTR_ADMIN_PASSWORD",
 				Secret: true,
 				Validate: func(v string) error {
@@ -97,6 +94,14 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 	return step, complete
 }
 
+// validateAdminEmail refuses an empty admin address.
+func validateAdminEmail(v string) error {
+	if v == "" {
+		return i18n.NewError(reasonEmailRequired)
+	}
+	return nil
+}
+
 // HealthStep builds a "verify adapters" step with no fields. Its Run
 // executes the app's registered readiness checks via the exported
 // RunReadinessChecks method and fails with a per-check, actionable
@@ -104,6 +109,7 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 func HealthStep(app *framework.App) Step {
 	return Step{
 		Name:   "Verify Adapters",
+		Title:  healthStepTitle,
 		Fields: nil,
 		Run: func(ctx context.Context, _ map[string]string) error {
 			resp := app.RunReadinessChecks(ctx)
@@ -115,8 +121,7 @@ func HealthStep(app *framework.App) Step {
 				}
 			}
 			if len(failures) > 0 {
-				return fmt.Errorf("readiness checks failed:\n  - %s",
-					strings.Join(failures, "\n  - "))
+				return i18n.NewError(reasonNotReady, map[string]any{"failures": strings.Join(failures, "\n  - ")})
 			}
 			return nil
 		},

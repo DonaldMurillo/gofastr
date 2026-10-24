@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── BarChart ───────────────────────────────────────────────────────
@@ -86,12 +88,15 @@ type BarChartConfig struct {
 	// aria-labelledby (use LabelledBy), and aria-hidden. With no Bars
 	// the extras land on the shared zero-data placeholder instead.
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
 	if len(cfg.Bars) == 0 {
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 	w := cfg.Width
 	if w == 0 {
@@ -140,7 +145,11 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	barGap := 8.0
 	provPlotW := float64(w) - axisGutter
 	provBarW := (provPlotW - barGap*float64(n-1)) / float64(n)
-	slotChars := int(math.Floor((provBarW + barGap) / 6.2))
+	// A line gets its slot less 4px of air from its neighbour, at 7px a
+	// rune: 12px text runs 5-6.5px a rune, wider in capitals and accents
+	// (a translated or pseudo-localized label), and a label centred in
+	// the last slot that overruns it is cut off by the plot edge.
+	slotChars := int(math.Floor((provBarW + barGap - 4) / 7))
 	var wrapped [][]string
 	maxLines := 1
 	if cfg.ShowLabels {
@@ -250,7 +259,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ty + 3))
 			sb.WriteString(`" class="fui-bar-chart__axis-label" data-cui-internal="" text-anchor="end">`)
-			sb.WriteString(ftoa(tv))
+			sb.WriteString(chartNumber(cfg.Ctx, tv))
 			sb.WriteString(`</text>`)
 		}
 	}
@@ -306,7 +315,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 		if b.Label != "" {
 			sb.WriteString(`><title>`)
-			sb.WriteString(escapeXML(b.Label + ": " + ftoa(b.Value)))
+			sb.WriteString(escapeXML(i18nui.ChartValue.Text(cfg.Ctx, map[string]any{"label": b.Label, "value": chartNumber(cfg.Ctx, b.Value)})))
 			sb.WriteString(`</title></rect>`)
 		} else {
 			sb.WriteString(`/>`)
@@ -319,7 +328,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(y - 4))
 			sb.WriteString(`" class="fui-bar-chart__value" data-cui-internal="" text-anchor="middle">`)
-			sb.WriteString(escapeXML(ftoa(b.Value)))
+			sb.WriteString(escapeXML(chartNumber(cfg.Ctx, b.Value)))
 			sb.WriteString(`</text>`)
 		}
 
@@ -440,10 +449,12 @@ func plausibleCSSColor(s string) bool {
 
 // wrapChartLabel greedily word-wraps label to at most two lines that each
 // fit within maxChars runes. A single word longer than a line is
-// ellipsized; the full text is preserved by the caller in <title>.
+// ellipsized; the full text is preserved by the caller in <title>. A slot
+// too narrow for any rune still gets one, the ellipsis: a wider floor
+// spilled the label past its slot, and the last one past the plot edge.
 func wrapChartLabel(label string, maxChars int) []string {
-	if maxChars < 4 {
-		maxChars = 4
+	if maxChars < 1 {
+		maxChars = 1
 	}
 	if len([]rune(label)) <= maxChars {
 		return []string{label}

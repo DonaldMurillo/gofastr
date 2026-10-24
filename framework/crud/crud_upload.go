@@ -222,8 +222,14 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 
 	body := make(map[string]any)
 
+	// Only a column the write will set takes a file: the write skips a
+	// read-only or hidden one (bar server writes), and a file stored for
+	// it would be an object no row references.
 	fileFieldNames := make(map[string]schema.FieldType, len(ch.snapshotFields()))
 	for _, f := range ch.snapshotFields() {
+		if (f.ReadOnly || f.Hidden) && !serverWrites(r.Context()) {
+			continue
+		}
 		switch f.Type {
 		case schema.Image, schema.File:
 			fileFieldNames[f.Name] = f.Type
@@ -467,7 +473,7 @@ func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
 	// <img srcset> and reach the same storage delete as the original.
 	for _, m := range ch.bodyMediaRefs(body) {
 		if !isSafeMediaURL(m.ref) {
-			return &ValidationError{fields: map[string][]string{m.field: {"unsafe URL or path"}}}
+			return &ValidationError{fields: map[string][]schema.Violation{m.field: {{Reason: reasonUnsafeURL}}}}
 		}
 	}
 	return nil

@@ -142,7 +142,7 @@ func TestSitemapOmitsPolicyGatedScreens(t *testing.T) {
 	a.Register("/", &plainComp{}, nil)
 	a.RegisterScreen(app.NewScreen("/app/dash", &plainComp{}).WithPolicy(signedIn), nil)
 	a.RegisterScreen(app.NewScreen("/app/blocked", &plainComp{}).
-		WithPolicy(app.PolicyFunc(func(context.Context) app.Decision { return decide.Block(403, "no") })), nil)
+		WithPolicy(app.PolicyFunc(func(context.Context) app.Decision { return decide.Block(403) })), nil)
 	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}))
 
 	for _, user := range []string{"", "u1"} {
@@ -280,7 +280,7 @@ func TestCanonicalLink(t *testing.T) {
 type articleComp struct{}
 
 func (articleComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("post")) }
-func (articleComp) ScreenSchema() []seo.Thing {
+func (articleComp) ScreenSchema(ctx context.Context) []seo.Thing {
 	a := seo.NewArticle()
 	a.Headline = "Hello World"
 	a.URL = "https://example.com/posts/hello"
@@ -308,7 +308,7 @@ func TestScreenSchemaEmitsJSONLD(t *testing.T) {
 type bundleComp struct{}
 
 func (bundleComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (bundleComp) ScreenSEO() SEO {
+func (bundleComp) ScreenSEO(ctx context.Context) SEO {
 	return SEO{
 		Description: "Bundle desc",
 		Canonical:   "https://example.com/c",
@@ -353,8 +353,10 @@ type bundleAndDescriberComp struct{}
 func (bundleAndDescriberComp) Render() render.HTML {
 	return html.Div(html.DivConfig{}, render.Text("hi"))
 }
-func (bundleAndDescriberComp) ScreenDescription() string { return "From describer" }
-func (bundleAndDescriberComp) ScreenSEO() SEO            { return SEO{Description: "From bundle"} }
+func (bundleAndDescriberComp) ScreenDescription(ctx context.Context) string { return "From describer" }
+func (bundleAndDescriberComp) ScreenSEO(ctx context.Context) SEO {
+	return SEO{Description: "From bundle"}
+}
 
 func TestSEOBundleDescriptionOverrides(t *testing.T) {
 	a := app.NewApp("x")
@@ -378,7 +380,7 @@ func TestSEOBundleDescriptionOverrides(t *testing.T) {
 type ogOverrideComp struct{}
 
 func (ogOverrideComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (ogOverrideComp) ScreenSEO() SEO {
+func (ogOverrideComp) ScreenSEO(ctx context.Context) SEO {
 	return SEO{OG: &OG{Title: "Per-page OG title"}}
 }
 
@@ -414,10 +416,10 @@ func TestPerPageOGBeatsGlobal(t *testing.T) {
 // Empty bundle fields fall through to per-concern interfaces.
 type partialBundleComp struct{}
 
-func (partialBundleComp) Render() render.HTML       { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (partialBundleComp) ScreenDescription() string { return "fallback desc" }
-func (partialBundleComp) ScreenCanonical() string   { return "https://example.com/c-fallback" }
-func (partialBundleComp) ScreenSEO() SEO            { return SEO{Robots: "noindex"} } // only robots in bundle
+func (partialBundleComp) Render() render.HTML                          { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (partialBundleComp) ScreenDescription(ctx context.Context) string { return "fallback desc" }
+func (partialBundleComp) ScreenCanonical() string                      { return "https://example.com/c-fallback" }
+func (partialBundleComp) ScreenSEO(ctx context.Context) SEO            { return SEO{Robots: "noindex"} } // only robots in bundle
 
 func TestSEOBundleFallsThroughEmptyFields(t *testing.T) {
 	a := app.NewApp("x")

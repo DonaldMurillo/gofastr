@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/chromedp"
-	"github.com/chromedp/chromedp/kb"
 )
 
 // A picker with more or longer labels than its row holds stays inside
@@ -31,7 +32,7 @@ func TestThemePickerFitsANarrowRow(t *testing.T) {
 		alt.Colors.Primary = style.Color{Name: "primary", Value: fmt.Sprintf("#0%d6a3%d", i, i)}
 		ref := style.RegisterThemeOverride(alt)
 		overrides.WriteString(style.ThemeOverrideCSS(ref.Hash(), alt))
-		choices = append(choices, ui.ThemeChoice{Label: label, Theme: ref})
+		choices = append(choices, ui.ThemeChoice{Label: testPhrase(label), Theme: ref})
 	}
 	var css strings.Builder
 	for _, e := range registry.All() {

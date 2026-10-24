@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,10 @@ import (
 
 // AnimatedCounterConfig configures an AnimatedCounter.
 type AnimatedCounterConfig struct {
+	// Ctx carries the per-request context the counter's digits and
+	// default label are written in. When nil, English applies.
+	Ctx context.Context
+
 	// To is the target value (required).
 	To int
 	// From is the starting value during animation. Default 0.
@@ -82,7 +87,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:      parts,
-		Strings:    StringsFor(nil),
+		Strings:    StringsFor(cfg.Ctx),
 	}, animatedCounterClasses)
 	// headless.Counter's root becomes a nested tag here, never reachable
 	// as one itself, so it is collapsed into a single mark the same way

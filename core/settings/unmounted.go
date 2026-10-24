@@ -123,6 +123,10 @@ func plainVersion(v string) bool {
 	return true
 }
 
+// unmountedHeader is the comment gofastr writes above the unmounted
+// section.
+const unmountedHeader = "# Written by gofastr unmount and gofastr remount."
+
 // SetUnmounted writes entries as the unmounted section of the settings
 // file at p, creating the file when it does not exist. The rest of the
 // file keeps its bytes and comments, trailing blank lines aside; the
@@ -132,16 +136,6 @@ func plainVersion(v string) bool {
 // entries, so a write never leaves a file the readers refuse or a section
 // the rewrite failed to find.
 func SetUnmounted(p string, entries []Unmounted) error {
-	if info, err := os.Lstat(p); err == nil && info.Mode()&fs.ModeSymlink != 0 {
-		return fmt.Errorf("%s is a symlink: gofastr writes the unmounted section into the file itself, so put the file there instead of the link", p)
-	}
-	data, err := os.ReadFile(p)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if os.IsNotExist(err) && len(entries) == 0 {
-		return nil
-	}
 	for _, u := range entries {
 		if err := u.Validate(); err != nil {
 			return err
@@ -151,23 +145,52 @@ func SetUnmounted(p string, entries []Unmounted) error {
 	slices.SortFunc(entries, func(a, b Unmounted) int {
 		return cmp.Or(strings.Compare(a.Source, b.Source), strings.Compare(a.Path, b.Path))
 	})
+	var body strings.Builder
+	if len(entries) > 0 {
+		body.WriteString("unmounted:\n")
+		for _, u := range entries {
+			fmt.Fprintf(&body, "  - source: %s\n    version: %s\n    path: %s\n    date: %s\n",
+				strconv.Quote(u.Source), strconv.Quote(u.Version), strconv.Quote(u.Path), strconv.Quote(u.Date))
+		}
+	}
+	return setSection(p, "unmounted", unmountedHeader, body.String(), func(f File) error {
+		got, err := f.Unmounted()
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(got, entries) {
+			return fmt.Errorf("%s: could not rewrite its unmounted section; write the key as a plain `unmounted:` at the start of a line", p)
+		}
+		return nil
+	})
+}
 
-	kept := withoutSection(string(data), "unmounted")
+// setSection replaces the top-level section name of the settings file at
+// p with body, written under header; an empty body removes the section.
+// check reads the result back before it is written.
+func setSection(p, name, header, body string, check func(File) error) error {
+	if info, err := os.Lstat(p); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symlink: gofastr writes the %s section into the file itself, so put the file there instead of the link", p, name)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if os.IsNotExist(err) && body == "" {
+		return nil
+	}
+	kept := withoutSection(string(data), name, header)
 	var b strings.Builder
 	b.WriteString(kept)
-	if len(entries) > 0 {
+	if body != "" {
 		if kept != "" && !strings.HasSuffix(kept, "\n") {
 			b.WriteString("\n")
 		}
 		if kept != "" && !strings.HasSuffix(kept, "\n\n") {
 			b.WriteString("\n")
 		}
-		b.WriteString("# Written by gofastr unmount and gofastr remount.\n")
-		b.WriteString("unmounted:\n")
-		for _, u := range entries {
-			fmt.Fprintf(&b, "  - source: %s\n    version: %s\n    path: %s\n    date: %s\n",
-				strconv.Quote(u.Source), strconv.Quote(u.Version), strconv.Quote(u.Path), strconv.Quote(u.Date))
-		}
+		b.WriteString(header + "\n")
+		b.WriteString(body)
 	}
 	out := b.String()
 	if out == "" {
@@ -181,12 +204,8 @@ func SetUnmounted(p string, entries []Unmounted) error {
 	if err != nil {
 		return err
 	}
-	got, err := f.Unmounted()
-	if err != nil {
+	if err := check(f); err != nil {
 		return err
-	}
-	if !slices.Equal(got, entries) {
-		return fmt.Errorf("%s: could not rewrite its unmounted section; write the key as a plain `unmounted:` at the start of a line", p)
 	}
 	return replaceFile(p, []byte(out))
 }
@@ -212,11 +231,11 @@ func replaceFile(p string, data []byte) error {
 }
 
 // withoutSection drops a top-level section from a settings document: its
-// key line, every line indented under it, and the comment line gofastr
-// writes above it. A top-level key ends the section, and so does a
+// key line, every line indented under it, and header, the comment line
+// gofastr writes above it. A top-level key ends the section, and so does a
 // column-0 comment unless more of the section's indented lines follow it:
 // a comment between two entries belongs to the section.
-func withoutSection(doc, name string) string {
+func withoutSection(doc, name, header string) string {
 	lines := strings.SplitAfter(doc, "\n")
 	isTop := func(line string) bool {
 		trimmed := strings.TrimRight(line, "\r\n")
@@ -241,7 +260,7 @@ func withoutSection(doc, name string) string {
 		top := isTop(line)
 		if top && strings.HasPrefix(line, name+":") {
 			in = true
-			if n := len(out); n > 0 && out[n-1] == "# Written by gofastr unmount and gofastr remount.\n" {
+			if n := len(out); n > 0 && out[n-1] == header+"\n" {
 				out = out[:n-1]
 			}
 			continue

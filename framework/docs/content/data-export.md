@@ -115,6 +115,10 @@ directory and files receive protected owner-only ACLs instead of Unix modes.
 }
 ```
 
+`primary_key` is the keyset column, or for a composite key the key columns
+joined by commas (`"student_id,course_id"`); the export pages those by
+row value.
+
 `created_at` is **caller-supplied**, not `time.Now`, so an archive is
 reproducible:
 

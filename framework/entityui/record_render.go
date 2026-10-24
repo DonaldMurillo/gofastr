@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"slices"
@@ -13,10 +14,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -35,10 +38,16 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 	// The app's translator rides the context: every chrome string the
 	// screen draws (and every string an extension tab draws through
 	// i18nui.T) resolves through it.
-	ctx = i18nui.WithTranslator(ctx, m.tr)
+	ctx = i18n.WithTranslator(ctx, m.tr)
 	base := b.base
 	if base == "" {
-		base = requestBase(ctx)
+		// The create screen's path ends in one segment, a record's in
+		// one per key column.
+		n := len(m.keys)
+		if b.id == "" {
+			n = 1
+		}
+		base = requestBase(ctx, n)
 	}
 	if b.id == "" {
 		return b.createScreen(ctx, m, base), nil
@@ -94,7 +103,7 @@ func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 	if err != nil {
 		return fmt.Errorf("entityui: record %q: Related: %v", m.name, err)
 	}
-	if _, fk := relationTo(other, m.name); fk == "" {
+	if _, fks := relationTo(other, m.name); len(fks) == 0 {
 		return fmt.Errorf("entityui: record %q: Related entity %q has no relation pointing at %q", m.name, name, m.name)
 	}
 	return nil
@@ -102,25 +111,54 @@ func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 
 // relationTo finds other's relation that points at target: a BelongsTo
 // on the child side or a HasMany/HasOne declared on the parent, both
-// carry the foreign key column on other's table.
-func relationTo(other *entity.Entity, target string) (rel entity.Relation, fk string) {
+// carry the foreign key columns on other's table. A key of several
+// columns has one foreign-key column per key column, in key order.
+func relationTo(other *entity.Entity, target string) (rel entity.Relation, fks []string) {
 	for _, r := range other.Config.Relations {
-		if r.Entity == target && r.ForeignKey != "" {
+		if r.Entity == target && len(r.ForeignKey) > 0 {
 			return r, r.ForeignKey
 		}
 	}
-	return entity.Relation{}, ""
+	return entity.Relation{}, nil
+}
+
+// relatedPins pairs each foreign-key column with its value from the
+// record's id: the id itself for one column, its JoinKey parts for
+// several. An id that does not split into that many parts pins nothing.
+func relatedPins(fks []string, id string) ([]filter.Predicate, bool) {
+	parts, err := entity.SplitKey(id, len(fks))
+	if err != nil {
+		return nil, false
+	}
+	pins := make([]filter.Predicate, len(fks))
+	for i, fk := range fks {
+		pins[i] = filter.Predicate{Field: fk, Op: filter.OpEq, Value: parts[i]}
+	}
+	return pins, true
 }
 
 // requestBase is the record's default base path: the current request
-// path with its last segment removed, so /admin/entities/invoices/42
-// bases at /admin/entities/invoices.
-func requestBase(ctx context.Context) string {
+// path with its last n segments removed, so /admin/entities/invoices/42
+// bases at /admin/entities/invoices, and so does
+// /admin/entities/enrollments/s1/c1 under a two-column key. A trailing
+// slash, which the screen router matches the same, is no segment.
+func requestBase(ctx context.Context, n int) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil || r.URL == nil || r.URL.Path == "" || r.URL.Path == "/" {
 		return "/"
 	}
-	return path.Dir(r.URL.Path)
+	p := path.Clean(r.URL.Path)
+	for range n {
+		p = path.Dir(p)
+	}
+	return p
+}
+
+// under is tail under base. A list or record mounted at the root bases
+// at "/", and base + "/" + tail would start "//", which a browser reads
+// as a host.
+func under(base, tail string) string {
+	return strings.TrimSuffix(base, "/") + "/" + tail
 }
 
 // currentURL is the page's own URL, path and query, the destination a
@@ -187,11 +225,14 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 }
 
 // notFound is the one answer for a missing id and an id the caller may
-// not see: never say which of the two it was.
+// not see: never say which of the two it was. The page answers 404
+// with it (app.SetStatus), so a crawler, a script and the client's
+// screen cache read the body's verdict, not a 200.
 func (m *meta) notFound(ctx context.Context) render.HTML {
+	appui.SetStatus(ctx, http.StatusNotFound)
 	return ui.EmptyState(ui.EmptyStateConfig{
-		Title:        i18nui.T(ctx, i18nui.KeyEntityNotFound),
-		Description:  i18nui.TVars(ctx, i18nui.KeyEntityNotFoundBody, map[string]string{"entity": m.singular(ctx)}),
+		Title:        i18nui.EntityNotFound.Text(ctx),
+		Description:  i18nui.EntityNotFoundBody.Text(ctx, map[string]any{"entity": m.singular(ctx)}),
 		HeadingLevel: 1,
 	})
 }
@@ -205,7 +246,7 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 	title := b.ui.recordTitle(ctx, m, row)
 	cfg := ui.PageHeaderConfig{Title: title, Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
-		if v := cell(rowValue(row, m.states.Field)); v != "" {
+		if v := cell(m.rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
 				Label:   m.valueLabel(ctx, m.states.Field, v),
 				Variant: enumVariant(v),
@@ -246,6 +287,7 @@ func drawerBar(ctx context.Context, prev, next string) render.HTML {
 // and Mod+S clicks it. It reads as idle until the form has edits.
 func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
 	return ui.Button(ui.ButtonConfig{
+		Ctx:             ctx,
 		Label:           submitLabel(ctx, m, create),
 		Type:            "submit",
 		ID:              "eui-" + m.name + "-save",
@@ -265,14 +307,14 @@ func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 	var parts []string
 	for _, s := range []struct {
 		col string
-		key i18nui.Key
-	}{{"created_at", i18nui.KeyEntityCreatedOn}, {"updated_at", i18nui.KeyEntityUpdatedOn}} {
+		key i18n.Phrase
+	}{{"created_at", i18nui.EntityCreatedOn}, {"updated_at", i18nui.EntityUpdatedOn}} {
 		f, ok := m.field(s.col)
 		if !ok || f.Hidden {
 			continue
 		}
-		if t, ok := parseTime(rowValue(row, s.col)); ok {
-			parts = append(parts, i18nui.TVars(ctx, s.key, map[string]string{"date": t.Format(dateLayout)}))
+		if t, ok := parseTime(m.rowValue(row, s.col)); ok {
+			parts = append(parts, s.key.Text(ctx, map[string]any{"date": i18n.Date(ctx, t, i18n.DateMedium)}))
 		}
 	}
 	return strings.Join(parts, " · ")
@@ -287,7 +329,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 	// button: it goes in the menu, above Delete, behind a confirm.
 	var danger []ui.MenuItem
 	if m.states != nil && canUpdate(ctx, m, b.id) {
-		current := cell(rowValue(row, m.states.Field))
+		current := cell(m.rowValue(row, m.states.Field))
 		for _, t := range m.states.Transitions {
 			if t.System || !slices.Contains(t.From, current) {
 				continue
@@ -304,27 +346,27 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			if !ok || variant == "" || (save && variant == ui.ButtonPrimary) {
 				variant = ui.ButtonSecondary
 			}
-			act := interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityMoved, map[string]string{"entity": m.singular(ctx)})).
+			act := interactive.Post(m.api + "/" + m.idPath(b.id) + "/transitions/" + url.PathEscape(t.Key)).
+				OnSuccessToast(i18nui.EntityMoved.Text(ctx, map[string]any{"entity": m.singular(ctx)})).
 				OnSuccess(interactive.Navigate(currentURL(ctx))).
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": strings.ToLower(label)}))
+				OnErrorToast(i18nui.EntityMoveFailed.Text(ctx, map[string]any{"action": strings.ToLower(label)}))
 			if variant == ui.ButtonDanger {
 				act = act.WithConfirmDialog(interactive.Confirm{
-					Title: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirmTitle, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
-					Message: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirm, map[string]string{
+					Title: i18nui.EntityMoveConfirmTitle.Text(ctx, map[string]any{"action": label, "entity": m.noun(ctx, false)}),
+					Message: i18nui.EntityMoveConfirm.Text(ctx, map[string]any{
 						"from": m.valueLabel(ctx, m.states.Field, current),
 						"to":   m.valueLabel(ctx, m.states.Field, t.To),
 					}),
 					// The move's label alone can read as the dismiss
 					// button ("Cancel" beside "Cancel"); naming the
 					// record makes the accept unmistakable.
-					Accept: i18nui.TVars(ctx, i18nui.KeyEntityMoveAccept, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
+					Accept: i18nui.EntityMoveAccept.Text(ctx, map[string]any{"action": label, "entity": m.noun(ctx, false)}),
 					Danger: true,
 				})
 				danger = append(danger, ui.MenuItem{Label: label, Danger: true, Do: &act})
 				continue
 			}
-			out = append(out, ui.Button(ui.ButtonConfig{Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
+			out = append(out, ui.Button(ui.ButtonConfig{Ctx: ctx, Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
 		}
 	}
 	buttons, dangerActs := b.appActions(ctx, m, title, save)
@@ -344,7 +386,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 	if !m.hasAPI {
 		return nil, nil
 	}
-	for _, act := range recordActions(m) {
+	for _, act := range recordActions(ctx, m) {
 		if !mayRun(ctx, m, act, b.id) {
 			continue
 		}
@@ -358,20 +400,20 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 		}
 		name := strings.ToLower(act.label)
 		run := interactive.Post(m.api + "/_bulk").WithBody(string(body)).
-			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
+			OnSuccessToast(i18nui.EntityActionRan.Text(ctx, map[string]any{"action": name})).
 			OnSuccess(interactive.Navigate(currentURL(ctx))).
-			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name}))
+			OnErrorToast(i18nui.EntityMoveFailed.Text(ctx, map[string]any{"action": name}))
 		if variant == ui.ButtonDanger {
 			run = run.WithConfirmDialog(interactive.Confirm{
-				Title:   i18nui.TVars(ctx, i18nui.KeyEntityActionConfirmTitle, map[string]string{"action": act.label}),
-				Message: i18nui.TVars(ctx, i18nui.KeyEntityActionConfirm, map[string]string{"title": title}),
+				Title:   i18nui.EntityActionConfirmTitle.Text(ctx, map[string]any{"action": act.label}),
+				Message: i18nui.EntityActionConfirm.Text(ctx, map[string]any{"title": title}),
 				Accept:  act.label,
 				Danger:  true,
 			})
 			danger = append(danger, ui.MenuItem{Label: act.label, Danger: true, Do: &run})
 			continue
 		}
-		out = append(out, ui.Button(ui.ButtonConfig{Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
+		out = append(out, ui.Button(ui.ButtonConfig{Ctx: ctx, Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
 	}
 	return out, danger
 }
@@ -392,12 +434,12 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 	if createPath := b.ui.createScreenPath(m.e, base); b.dup && createPath != "" && canCreate(ctx, m) {
 		if !m.d.NoDuplicate {
 			items = append(items, ui.MenuItem{
-				Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+				Label: i18nui.EntityDuplicate.Text(ctx),
 				Href:  createPath + "?duplicate=" + url.QueryEscape(b.id),
 			})
 		}
 		items = append(items, ui.MenuItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityCreateAnother),
+			Label: i18nui.EntityCreateAnother.Text(ctx),
 			Href:  createPath,
 		})
 	}
@@ -416,13 +458,13 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 		if len(items) > 0 && len(danger) == 0 {
 			items = append(items, ui.MenuItem{Separator: true})
 		}
-		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeyEntityDelete), Danger: true, Do: &del})
+		items = append(items, ui.MenuItem{Label: i18nui.EntityDelete.Text(ctx), Danger: true, Do: &del})
 	}
 	if len(items) == 0 {
 		return ""
 	}
 	return render.Join(span, ui.Menu(ui.MenuConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
+		Label:    i18nui.EntityRowActions.Text(ctx, map[string]any{"title": title}),
 		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,
@@ -440,7 +482,7 @@ func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuIte
 	}
 	id := "eui-rec-link"
 	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
-		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+		[]ui.MenuItem{{Label: i18nui.EntityCopyLink.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
 // copyAPIURL is the record's REST address on this origin as a hidden
@@ -456,8 +498,8 @@ func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, [
 		return "", nil
 	}
 	id := "eui-rec-api"
-	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+url.PathEscape(b.id))),
-		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyAPIURL), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+under(base, m.idPath(b.id)))),
+		[]ui.MenuItem{{Label: i18nui.EntityCopyAPIURL.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
 // absoluteURL is the request's absolute address without its query:
@@ -503,12 +545,12 @@ type tab struct {
 // active tab's body, and names the active tab. Only the active tab's
 // body is built.
 func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, string, error) {
-	editTab := tab{key: "edit", label: i18nui.T(ctx, i18nui.KeyEntityTabEdit), build: func() (render.HTML, error) {
+	editTab := tab{key: "edit", label: i18nui.EntityTabEdit.Text(ctx), build: func() (render.HTML, error) {
 		return b.editTab(ctx, m, raw, row, masked, base), nil
 	}}
 	tabs := []tab{editTab}
 	if len(b.related) > 0 {
-		tabs = append(tabs, tab{key: "related", label: i18nui.T(ctx, i18nui.KeyEntityTabRelated), count: b.relatedCount(ctx, m), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "related", label: i18nui.EntityTabRelated.Text(ctx), count: b.relatedCount(ctx, m), build: func() (render.HTML, error) {
 			return b.relatedTab(ctx, m, base), nil
 		}})
 	}
@@ -517,9 +559,9 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	// empty tab fails that tab alone, never the page.
 	for _, xt := range slices.Concat(m.ext.Tabs, b.tabs) {
 		key, build := xt.Key, xt.Build
-		label := xt.Label
-		if label == "" {
-			label = key
+		label := key
+		if !xt.Label.IsZero() {
+			label = xt.Label.Text(ctx)
 		}
 		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
 			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {
@@ -536,12 +578,12 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}})
 	}
 	if b.activity && b.ui.host.Audit() != nil {
-		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "activity", label: i18nui.EntityTabActivity.Text(ctx), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
 			return b.activityTab(ctx, m), nil
 		}})
 	}
 	if b.apiTab {
-		tabs = append(tabs, tab{key: "api", label: i18nui.T(ctx, i18nui.KeyEntityTabApi), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "api", label: i18nui.EntityTabApi.Text(ctx), build: func() (render.HTML, error) {
 			return b.apiTabBody(ctx, m, row), nil
 		}})
 	}
@@ -576,7 +618,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	return ui.Stack(ui.StackConfig{},
 		ui.TabNav(ui.TabNavConfig{
 			ID:    "eui-" + m.name + "-tabs",
-			Label: i18nui.T(ctx, i18nui.KeyEntityRecordSections),
+			Label: i18nui.EntityRecordSections.Text(ctx),
 			Items: items,
 		}),
 		body,
@@ -671,17 +713,17 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 // the caller may update, the toast carries Undo: it restores the record
 // and returns to back, and the restore handler's answer is its toast.
 func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
-	vars := map[string]string{"entity": m.singular(ctx)}
-	del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
+	vars := map[string]any{"entity": m.singular(ctx)}
+	del := interactive.Delete(m.api + "/" + m.idPath(id)).
 		WithConfirmDialog(deleteConfirm(ctx, m)).
-		OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, vars)).
+		OnSuccessToast(i18nui.EntityDeleted.Text(ctx, vars)).
 		OnSuccess(interactive.Navigate(back)).
-		OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, vars))
+		OnErrorToast(i18nui.EntityDeleteFailed.Text(ctx, vars))
 	if undo && m.e.Config.Scope.SoftDelete && canUpdate(ctx, m, id) {
-		del = del.OnSuccessToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
-			interactive.Post(m.api+"/"+url.PathEscape(id)+"/_restore").WithBody(`{}`).
+		del = del.OnSuccessToastAction(i18nui.EntityUndo.Text(ctx),
+			interactive.Post(m.api+"/"+m.idPath(id)+"/_restore").WithBody(`{}`).
 				OnSuccess(interactive.Navigate(back)).
-				OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+				OnErrorToast(i18nui.EntityRestoreFailed.Text(ctx)))
 	}
 	return del
 }
@@ -690,15 +732,15 @@ func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) inte
 // whether the delete is final (a soft-deleting entity's record can be
 // restored) and answers in the danger variant.
 func deleteConfirm(ctx context.Context, m *meta) interactive.Confirm {
-	vars := map[string]string{"entity": m.noun(ctx, false)}
-	msg := i18nui.KeyEntityDeleteConfirm
+	vars := map[string]any{"entity": m.noun(ctx, false)}
+	msg := i18nui.EntityDeleteConfirm
 	if m.e.Config.Scope.SoftDelete {
-		msg = i18nui.KeyEntityDeleteSoft
+		msg = i18nui.EntityDeleteSoft
 	}
 	return interactive.Confirm{
-		Title:   i18nui.TVars(ctx, i18nui.KeyEntityDeleteTitle, vars),
-		Message: i18nui.T(ctx, msg),
-		Accept:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+		Title:   i18nui.EntityDeleteTitle.Text(ctx, vars),
+		Message: msg.Text(ctx),
+		Accept:  i18nui.EntityDelete.Text(ctx),
 		Danger:  true,
 	}
 }

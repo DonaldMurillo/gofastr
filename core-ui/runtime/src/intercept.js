@@ -92,7 +92,11 @@
     return segs.length === s.length;
   }
 
-  const routeFor = (path) => routes().find((r) => r.path && matchRoute(r.path, path));
+  // Routes register unprefixed: /es/pricing matches /pricing.
+  const routeFor = (path) => {
+    const p = NS._unlocalize?.(path) ?? path;
+    return routes().find((r) => r.path && matchRoute(r.path, p));
+  };
   const pathOf = (u) => u.split('?')[0].split('#')[0];
   const top = () => layers[layers.length - 1];
   // Does the route's intercept open over the origin route o? Its from
@@ -188,8 +192,16 @@
       // An intercepted response can invalidate regular screens even
       // though the overlay itself is never cached.
       if (r.ok) NS._inval?.(r);
+      // A record that is gone (404/410) is gone as a page too: drop any
+      // cached copy so the fallback navigation fetches the 404 page
+      // instead of replaying the record from before it went. The bare
+      // pathname drops every query variant of the record, and a history
+      // refetch's #fragment, which no cache key carries.
+      else if (r.status === 404 || r.status === 410) NS.invalidate(NS._unlocalize?.(pathOf(path)) ?? pathOf(path));
       const as = r.headers.get('X-Gofastr-Overlay');
-      if (!r.ok || !as || r.headers.get('X-Gofastr-Location')) return null;
+      // A redirect, signalled or followed, falls back to the navigator,
+      // which takes it.
+      if (!r.ok || !as || r.redirected || r.headers.get('X-Gofastr-Location')) return null;
       return r.text().then((html) => Promise.resolve(NS._cssReady && NS._cssReady(html)).then(() => ({ html, as })));
     }).then((v) => n === NS._navEpoch ? v : new Promise(() => {}), (err) => {
       if (n !== NS._navEpoch) return new Promise(() => {});
@@ -364,7 +376,7 @@
     if (d.kind === 'refuse') {
       // Claimed and refused: the stack, the URL and every layer's
       // content stay as they are.
-      NS._toastOrFallback?.({ variant: 'warning', title: MAX_LAYERS + ' panels is the limit', body: 'Open this one as a page, or close a panel first.' });
+      NS._toastOrFallback?.({ variant: 'warning', title: NS.say('runtime.panel_limit', '{{n}} panels is the limit', { n: MAX_LAYERS }), body: NS.say('runtime.panel_limit_hint', 'Open this one as a page, or close a panel first.') });
       return true;
     }
     const trigger = anchor || document.activeElement;
@@ -532,8 +544,14 @@
     panel = null;
     if (!p || location.pathname + location.search !== p.under) return;
     const e = epoch;
+    // A record that will not open over the list (a redirect, a decline)
+    // still opens: as its own page.
     fetchOverlay(p.rec, p.under)
-      .then((res) => { if (e === epoch && res && !layers.length) mountLayer(res, p.rec, '', p.under, null); })
+      .then((res) => {
+        if (e !== epoch || layers.length) return;
+        if (res) mountLayer(res, p.rec, '', p.under, null);
+        else fallbackNav(p.rec, '');
+      })
       .catch(() => {});
   });
 

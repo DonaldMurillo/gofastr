@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -120,10 +121,11 @@ type UIHost struct {
 	staticFS            fs.FS                                // embedded filesystem for static files
 	staticRootOnce      sync.Once                            // guards staticRoot init; staticDir reads are kernel-contained
 	staticRoot          *rootfs.Root                         // os.Root over staticDir: static reads refuse symlinked escapes out of the static tree
+	versions            assetVersions                        // content hashes of static files, for AssetURL and immutable serving
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
-	langFunc            func(path string) string             // WithLangFunc per-route language for host-built shells; LangForPath resolves it
+	langFunc            func(path string) string             // WithLangFunc per-route language for host-built shells; LangFor resolves it
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
@@ -135,6 +137,7 @@ type UIHost struct {
 	pageLoading         component.Component                  // WithPageLoading: rendered once into every full page, shown while a navigation is in flight (replaces the default progress strip)
 	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	pathLocales         *i18n.PathLocales                    // SetPathLocales: the app routes by locale prefix
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
 	pwaConfig           *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
@@ -315,7 +318,7 @@ type ScreenRobots interface {
 //	    seo.NewBreadcrumbList(...),
 //	}
 type ScreenSchema interface {
-	ScreenSchema() []seo.Thing
+	ScreenSchema(ctx context.Context) []seo.Thing
 }
 
 // ScreenStatusCode is an optional screen interface that overrides the
@@ -349,8 +352,11 @@ type SEO struct {
 //
 // Returning a zero-value SEO from ScreenSEO opts out of all per-page
 // emission for the screen (useful for routes you want fully naked).
+//
+// ctx is the request's, as for ScreenTitle: an OG title or a JSON-LD
+// description built from a phrase speaks the reader's language.
 type ScreenSEO interface {
-	ScreenSEO() SEO
+	ScreenSEO(ctx context.Context) SEO
 }
 
 // routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
@@ -468,6 +474,7 @@ func WithLangFunc(fn func(path string) string) Option {
 // layout; pages without their own layout end up with the framework's
 // bare <main>.
 func WithNotFoundScreen(c component.Component) Option {
+	app.RefuseRetiredScreenMethods("not-found screen", c)
 	return func(ds *UIHost) {
 		ds.notFoundScreen = c
 	}
@@ -479,6 +486,7 @@ func WithNotFoundScreen(c component.Component) Option {
 // same chrome every page gets and NO error text of its own — the
 // error is logged by the host, the page is a product surface.
 func WithErrorScreen(c component.Component) Option {
+	app.RefuseRetiredScreenMethods("error screen", c)
 	return func(ds *UIHost) {
 		ds.errorScreen = c
 	}
@@ -871,7 +879,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 }
 .skip-link:focus {
   position: fixed !important;
-  top: var(--spacing-md, 8px); left: var(--spacing-md, 8px);
+  top: var(--spacing-md, 8px); inset-inline-start: var(--spacing-md, 8px);
   width: auto; height: auto;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   margin: 0;
@@ -890,7 +898,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */
 .cui-nav-toast {
   position: fixed;
-  right: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
+  inset-inline-end: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
   z-index: var(--z-toast, 500);
   max-width: calc(100vw - var(--spacing-2xl, 32px));
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
@@ -954,6 +962,8 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   pointer-events: none;
   color: var(--color-primary, #18181B);
 }
+/* The sweep runs in the reading direction. */
+html[aria-busy="true"]:dir(rtl)::after { animation-direction: reverse; }
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
@@ -1459,7 +1469,7 @@ func scrubCtl(s string) string {
 // core/textsafe set: RLO/LRI isolates, zero-widths, BOM) from the text
 // inside the first <title>…</title> element of a rendered page. The page
 // renderer escapes markup but not invisible characters, and dynamic-route
-// titles re-read ScreenTitle() AFTER Load so the tab title is
+// titles re-read ScreenTitle AFTER Load so the tab title is
 // user-data-bearing by design; a title computed from loaded data (a doc
 // title, a display name) would otherwise reorder or salt the browser's
 // tab-title readout. Only the element's text is touched: the surrounding
@@ -1525,7 +1535,7 @@ func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handlePage renders a full page with runtime.js, SSE meta tag, and compiled actions.
 func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	w, r = renderdiag.TestResponse(w, r)
-	path := r.URL.Path
+	path := routePath(r)
 	// A part request (X-Gofastr-Part, is answered
 	// before anything else: it never renders a document, never mints a
 	// session, and every whole-page outcome is its 409 reset — so it
@@ -1584,8 +1594,9 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// Install the per-request signal value bag BEFORE rendering so a
 	// producer's Slice.Seed(ctx, v) during Load (and a consumer's
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
-	// injectSignalSeed resolves below.
+	// injectHeadData resolves below.
 	ctx = store.WithValues(ctx)
+	ctx, recorded := app.TrackStatus(ctx)
 	var res app.RenderResult
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
@@ -1603,28 +1614,39 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	switch res.Kind {
 	case app.DecisionRedirect:
+		// The runtime's whole-page fetch (a navigation across layout
+		// chains) cannot follow a 303 off the origin.
+		if scriptFetch(r) && writeDocumentRedirect(w, res.URL) {
+			return
+		}
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
-		msg := res.Message
-		if msg == "" {
-			msg = http.StatusText(res.Status)
-		}
-		http.Error(w, msg, res.Status)
+		writeBlock(w, r, res)
 		return
 	}
-	// The status, decided once: a 404-outlet outcome outranks the
-	// component's own ScreenStatusCode (Decided 5 — the route's answer
-	// is the not-found page), which otherwise outranks the implicit 200.
-	status := 0
+	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, pageStatus(res, recorded()))
+}
+
+// pageStatus is the status of a rendered page, decided once by the one
+// ranking every page path shares: a 404-outlet outcome (Decided 5: the
+// route's answer is the not-found page), else the component's own
+// ScreenStatusCode, else what the render set through app.SetStatus
+// (a record view that drew its not-found state), else 0, the implicit
+// 200.
+func pageStatus(res app.RenderResult, recorded int) int {
 	if res.NotFoundOutlet {
-		status = http.StatusNotFound
-	} else if sc, ok := res.Component.(ScreenStatusCode); ok {
+		return http.StatusNotFound
+	}
+	if sc, ok := res.Component.(ScreenStatusCode); ok {
 		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
-			status = code
+			return code
 		}
 	}
-	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, status)
+	if recorded == http.StatusOK {
+		return 0
+	}
+	return recorded
 }
 
 // finishPageDocument is the ONE page-finishing tail every document that
@@ -1694,8 +1716,8 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
 	}
-	out = ds.injectChromeDoc(out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
-	out = injectSignalSeed(ctx, out)
+	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = injectHeadData(ctx, out)
 	if widgets != "" {
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
 	}
@@ -1813,15 +1835,15 @@ func replaceChromeMarker(page, marker, replacement, what string) string {
 
 // injectChrome adds links and scripts pointing at the host's served
 // endpoints. pagePath is the route path used for SEOScreen resolution.
-func (ds *UIHost) injectChrome(page, pagePath, sessionID, presenceTopic string) string {
-	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, true, nil)
+func (ds *UIHost) injectChrome(ctx context.Context, page, pagePath, sessionID, presenceTopic string) string {
+	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, nil)
 }
 
 // injectChromeFor is injectChrome with the loaded per-request component,
 // so per-instance metadata (the meta description of a dynamic route)
 // lands in the head. comp may be nil.
-func (ds *UIHost) injectChromeFor(page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
-	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, true, comp)
+func (ds *UIHost) injectChromeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
+	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, comp)
 }
 
 // screenHeadHTML returns per-screen head content. It composes from
@@ -1840,7 +1862,7 @@ func (ds *UIHost) injectChromeFor(page, pagePath, sessionID, presenceTopic strin
 // The per-concern SEO fields are resolved first via resolveScreenSEO
 // (the shared resolution path also used to render the per-screen
 // llm.md front-matter), then rendered to HTML.
-func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) string {
+func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
 	}
@@ -1848,7 +1870,16 @@ func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) stri
 	if !ok {
 		return ""
 	}
-	resolved := resolveScreenSEOFor(screen, comp)
+	resolved := resolveScreenSEOFor(ctx, screen, comp)
+	if len(resolved.Hreflangs) == 0 {
+		resolved.Hreflangs = ds.localeAlternates(pagePath)
+	}
+	resolved.Canonical = ds.localizeURL(ctx, resolved.Canonical)
+	if resolved.OG != nil && resolved.OG.URL != "" {
+		og := *resolved.OG
+		og.URL = ds.localizeURL(ctx, og.URL)
+		resolved.OG = &og
+	}
 
 	var parts []string
 	if resolved.Description != "" {
@@ -1916,8 +1947,8 @@ func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) stri
 // the per-concern interfaces. The returned SEO is the merged value both
 // the HTML head and the per-screen llm.md front-matter render from,
 // keeping the two surfaces in lockstep (#108).
-func resolveScreenSEO(screen *app.Screen) SEO {
-	return resolveScreenSEOFor(screen, nil)
+func resolveScreenSEO(ctx context.Context, screen *app.Screen) SEO {
+	return resolveScreenSEOFor(ctx, screen, nil)
 }
 
 // resolveScreenSEOFor resolves the screen's SEO bundle against the given
@@ -1926,14 +1957,14 @@ func resolveScreenSEO(screen *app.Screen) SEO {
 // only the loaded instance knows the per-URL description/og values (the
 // docs catch-all regression: registration-time description is empty for
 // every dynamic route).
-func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
+func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component.Component) SEO {
 	src := component.Component(screen.Component)
 	if comp != nil {
 		src = comp
 	}
 	var bundle SEO
 	if b, ok := src.(ScreenSEO); ok {
-		bundle = b.ScreenSEO()
+		bundle = b.ScreenSEO(ctx)
 	}
 
 	desc := bundle.Description
@@ -1942,7 +1973,7 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 		// snapshot: screen.Description was read once at Register, before
 		// any params existed.
 		if d, ok := src.(app.ScreenDescriber); ok {
-			desc = d.ScreenDescription()
+			desc = d.ScreenDescription(ctx)
 		}
 	}
 	if desc == "" {
@@ -1969,7 +2000,7 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 	schema := bundle.Schema
 	if len(schema) == 0 {
 		if s, ok := src.(ScreenSchema); ok {
-			schema = s.ScreenSchema()
+			schema = s.ScreenSchema(ctx)
 		}
 	}
 	// An article screen emits Article JSON-LD + og:type=article so a browser
@@ -1991,7 +2022,7 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 	if article {
 		if meta.Headline == "" {
 			if t, ok := src.(app.ScreenTitler); ok {
-				meta.Headline = t.ScreenTitle()
+				meta.Headline = t.ScreenTitle(ctx)
 			}
 		}
 		if meta.Description == "" {
@@ -2069,12 +2100,12 @@ func twitterTags(tc TwitterCard) []string {
 // component instead, used by static export, since static hosts
 // don't typically serve query-parameterized files. Live HTTP mode
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
-func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic string, bundle bool) string {
-	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, bundle, nil)
+func (ds *UIHost) injectChromeMode(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool) string {
+	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, bundle, nil)
 }
 
-func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
-	return ds.injectChromeDoc(page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
+func (ds *UIHost) injectChromeModeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
+	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
 }
 
 // inlineHead is how a live page may inline its head (firstpaint.go).
@@ -2091,7 +2122,7 @@ type inlineHead struct {
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
 // small enough for the first round trip carry its resources. A nil
 // inline, or export mode, links every head resource.
-func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
+func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2145,7 +2176,7 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	// time and serve as sitewide fallbacks. Per-screen SEOScreen data is
 	// per-request.
 	var headParts []string
-	if screenHead := ds.screenHeadHTML(pagePath, comp); screenHead != "" {
+	if screenHead := ds.screenHeadHTML(ctx, pagePath, comp); screenHead != "" {
 		headParts = append(headParts, markScreenHead(screenHead))
 	}
 	// Caller-supplied head HTML (WithHeadHTML) is scrubbed for <script>
@@ -2182,6 +2213,10 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	if !bundle {
 		if routes := routesJSONScript(ds); routes != "" {
 			headClose.WriteString(routes)
+			headClose.WriteByte('\n')
+		}
+		if locales := ds.localesJSONScript(); locales != "" {
+			headClose.WriteString(locales)
 			headClose.WriteByte('\n')
 		}
 	}
@@ -2463,7 +2498,10 @@ func (s *notFoundBodyScreen) Render() render.HTML {
 // link. Composed from design-system elements, zero bespoke CSS. It
 // renders INSIDE the root layout's <main> slot, so it carries no
 // role="main" wrapper of its own.
-type defaultNotFoundScreen struct{ path string }
+type defaultNotFoundScreen struct {
+	component.ContextOnly
+	path string
+}
 
 // backToHomeLink is the default error pages' primary action: a typed
 // anchor dressed in framework/ui's button-link class vocabulary
@@ -2477,29 +2515,29 @@ type defaultNotFoundScreen struct{ path string }
 // every host that links the package. On a host that does not, the
 // anchor degrades to the browser's link look — no sheet exists to
 // fetch, so no marker is emitted either.
-func backToHomeLink() render.HTML {
+func backToHomeLink(ctx context.Context) render.HTML {
 	return html.Link(html.LinkConfig{
 		Href:  "/",
-		Text:  "Back to home",
+		Text:  pageBackHome.Text(ctx),
 		Class: "fui-button fui-button--primary",
 	})
 }
 
-func (s *defaultNotFoundScreen) Render() render.HTML {
+func (s *defaultNotFoundScreen) RenderCtx(ctx context.Context) render.HTML {
 	if s.path == "" {
 		// A static export's 404.html: rendered once at build time, so
 		// there is no request path to name.
 		return render.Join(
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
-			html.Paragraph(html.TextConfig{}, render.Text("This page does not exist.")),
-			html.Paragraph(html.TextConfig{}, backToHomeLink()),
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+			html.Paragraph(html.TextConfig{}, render.Text(pageNotFoundBody.Text(ctx))),
+			html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 		)
 	}
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
-		html.Paragraph(html.TextConfig{}, render.Text("No route matched "),
-			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(s.path))), render.Text(".")),
-		html.Paragraph(html.TextConfig{}, backToHomeLink()),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
+			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(s.path))), nil)),
+		html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 	)
 }
 
@@ -2536,17 +2574,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		// The problem document deliberately omits the request path:
 		// echoing a hostile URL into a machine body is a reflection
 		// vector no error page needs.
-		json.NewEncoder(w).Encode(struct {
-			Type   string `json:"type"`
-			Title  string `json:"title"`
-			Status int    `json:"status"`
-			Detail string `json:"detail"`
-		}{
-			Type:   "about:blank",
-			Title:  "Not Found",
-			Status: http.StatusNotFound,
-			Detail: "No route matches this request.",
-		})
+		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusNotFound, problemNotFound, problemNoRoute))
 		return
 	}
 	// Markdown recovery arm: agent-readable, gated on the same
@@ -2584,11 +2612,22 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
+	ctx := r.Context()
+	writeMinimalPage(w, ds.LangFor(ctx, path), pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName}),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
+			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),
+		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
+	)
+}
+
+// writeMinimalPage writes the bare error document a host with no root
+// layout serves: lang and title escaped, body already rendered HTML.
+func writeMinimalPage(w io.Writer, lang, title string, body ...render.HTML) {
 	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found: %s</title></head>`+
-			`<body><main role="main"><h1>404: Page not found</h1><p>No route matched <code>%s</code>.</p>`+
-			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
+		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><title>%s</title></head>`+
+			`<body><main role="main">%s</main></body></html>`,
+		i18n.Dir(lang), stdhtml.EscapeString(lang), stdhtml.EscapeString(title), render.Join(body...))
 }
 
 // renderNotFoundDocument renders the not-found page as a full document
@@ -2644,13 +2683,13 @@ func (ds *UIHost) serveNotFoundPartial(w http.ResponseWriter, r *http.Request, p
 // one honest sentence, a home link. It deliberately names NO detail of
 // the failure (the resolver's error text is logged, never rendered)
 // and renders inside the root layout's <main> slot.
-type defaultErrorScreen struct{}
+type defaultErrorScreen struct{ component.ContextOnly }
 
-func (s *defaultErrorScreen) Render() render.HTML {
+func (s *defaultErrorScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Something went wrong")),
-		html.Paragraph(html.TextConfig{}, render.Text("This page could not be loaded. Try again in a moment.")),
-		html.Paragraph(html.TextConfig{}, backToHomeLink()),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 	)
 }
 
@@ -2729,11 +2768,12 @@ func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusInternalServerError)
-	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Something went wrong</title></head>`+
-			`<body><main role="main"><h1>Something went wrong</h1><p>This page could not be loaded. Try again in a moment.</p>`+
-			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)))
+	ctx := r.Context()
+	writeMinimalPage(w, ds.LangFor(ctx, path), pageErrorTitle.Text(ctx),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
+	)
 }
 
 // serveServerError writes a bare 500 with no root layout: an RFC 9457
@@ -2749,17 +2789,7 @@ func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path 
 	if acceptsProblemJSON(r) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(struct {
-			Type   string `json:"type"`
-			Title  string `json:"title"`
-			Status int    `json:"status"`
-			Detail string `json:"detail"`
-		}{
-			Type:   "about:blank",
-			Title:  "Internal Server Error",
-			Status: http.StatusInternalServerError,
-			Detail: "The page failed to render.",
-		})
+		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusInternalServerError, problemServerError, problemRenderFailed))
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -2768,11 +2798,12 @@ func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path 
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
-	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Server error: %s</title></head>`+
-			`<body><main role="main"><h1>500: Server error</h1><p>The page failed to render.</p>`+
-			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName))
+	ctx := r.Context()
+	writeMinimalPage(w, ds.LangFor(ctx, path), pageServerErrorDocTitle.Text(ctx, map[string]any{"app": appName}),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageServerErrorTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(problemRenderFailed.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
+	)
 }
 
 // renderErrorDocument is renderNotFoundDocument's 500 twin, finished
@@ -2946,6 +2977,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx) // capture producer-seeded values for the partial seed
+	ctx, recorded := app.TrackStatus(ctx)
 	// Route match for policies/screens on the partial path too, same
 	// as handlePage: RouteMatchMiddleware normally installed it.
 	if _, ok := app.MatchFromContext(ctx); !ok {
@@ -3021,34 +3053,35 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// bearing URL would be fed directly into loadPage(), which
 		// does a fetch with credentials, turning the partial-
 		// redirect signal into a cross-origin XSRF / credential-leak
-		// vector. For unsafe URLs fall back to a hard 303 redirect;
-		// the browser handles those safely (cross-origin redirects
-		// don't propagate cookies, javascript:/data: schemes are
-		// blocked at the navigation layer).
+		// vector. An absolute http(s) URL goes out as
+		// X-Gofastr-Document, which the runtime loads as a page and
+		// never fetches. For other unsafe URLs fall back to a hard 303
+		// redirect; the browser handles those safely (cross-origin
+		// redirects don't propagate cookies, javascript:/data: schemes
+		// are blocked at the navigation layer).
 		if handler.IsSafeRelativePath(res.URL) {
 			w.Header().Set("X-Gofastr-Location", res.URL)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		if writeDocumentRedirect(w, res.URL) {
+			return
+		}
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
-		msg := res.Message
-		if msg == "" {
-			msg = http.StatusText(res.Status)
-		}
-		http.Error(w, msg, res.Status)
+		writeBlock(w, r, res)
 		return
 	}
 
-	ds.writePartialResult(w, r, ctx, path, res, overlay, 0)
+	ds.writePartialResult(w, r, ctx, path, res, overlay, pageStatus(res, recorded()))
 }
 
 // writePartialResult writes a rendered partial-navigation result: the
 // title/swap headers, the envelope or bare body, and status. The
-// success path passes 0 (implicit 200); serveNotFoundPartial passes
-// http.StatusNotFound so a missed navigation answers partial-shaped
-// with the error status.
+// success path passes pageStatus (0 is the implicit 200);
+// serveNotFoundPartial passes http.StatusNotFound so a missed
+// navigation answers partial-shaped with the error status.
 func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
 	// Deploy skew: a runtime that reads another markup generation must
 	// not receive this body (markupskew.go).
@@ -3056,20 +3089,11 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		writeStaleMarkupReload(w, r, path, res.SwapLayer)
 		return
 	}
-	// The status is decided ONCE, here, before any body byte (DESIGN
-	// "Render algorithm"): the 404-outlet outcome (Decided 5), else
-	// the component's own ScreenStatusCode (the same contract the
-	// full-page path honours — a partial that silently answered 200
-	// for a 410 page would cache a wrong-status entry), else the
-	// implicit 200. A serveNotFoundPartial caller that already chose
-	// 404 keeps it.
-	if status == 0 {
-		if res.NotFoundOutlet {
-			status = http.StatusNotFound
-		} else if sc, ok := res.Component.(ScreenStatusCode); ok {
-			status = sc.ScreenStatusCode()
-		}
-	}
+	// The status arrives decided, before any body byte (DESIGN "Render
+	// algorithm"): the success path ranks it through pageStatus, the
+	// same ranking the full-page path runs (a partial that silently
+	// answered 200 for a 410 page would cache a wrong-status entry),
+	// and serveNotFoundPartial's 404 is its own.
 	// Screen title: prefer the post-Load effective title from the render
 	// (dynamic routes register with an empty/generic title; the loaded
 	// instance knows the real one), falling back to the registration-time
@@ -3134,11 +3158,19 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// Carry page-owned metadata inside the cached primary payload. Attribute
 	// escaping keeps authored head HTML inert until the runtime selects safe
 	// meta/link elements; a script is never replayed on navigation.
-	lang := ds.App.LangForPath(path)
+	lang := ds.App.LangFor(ctx, path)
 	if c, ok := res.Component.(app.ScreenLanger); ok && c.ScreenLang() != "" {
 		lang = c.ScreenLang()
 	}
-	res.HTML = render.Join(res.HTML, render.Tag("template", map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(path, res.Component)), "data-cui-lang": lang, "data-cui-skip-label": ds.App.SkipLabelForPath(path)}))
+	head := map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(ctx, path, res.Component)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}
+	// The runtime's own words for the destination's reader: a soft nav
+	// keeps the document, so the #gofastr-strings block in <head> would
+	// otherwise keep speaking the first page's language. Absent means
+	// English, which clears a previous page's table.
+	if strs := runtime.StringsJSON(ctx); strs != nil {
+		head["data-cui-strings"] = string(strs)
+	}
+	res.HTML = render.Join(res.HTML, render.Tag("template", head))
 	// Fills envelope a fills-capable client that
 	// kept layout layers with tree-layout outlets gets the partial as an
 	// envelope — the seed island (scanned over the primary payload AND
@@ -3201,15 +3233,12 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// an ordinary fetch, which the frame's fetch wrapper does put the grant on.
 	// See framework/docs/content/embed.md.
 	if r.Header.Get(embedGrantHeader) != "" {
-		http.Error(w, "embed: SSE cannot be authenticated by a grant: EventSource "+
-			"sends no request headers, so the frame's grant never reaches this "+
-			"endpoint. Use data-cui-poll (or widget Builder.Poll) for live updates "+
-			"inside a frame.", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, reasonEmbedSSE)
 		return
 	}
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
-		http.Error(w, "missing session parameter", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonSessionMissing)
 		return
 	}
 	// The stream id in the URL is public (it's embedded in page chrome),
@@ -3221,7 +3250,7 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// leaked-but-real id and no matching cookie.
 	cookieID, ok := ds.verifySessionToken(readSessionCookie(r))
 	if !ok || cookieID != sessionID {
-		http.Error(w, "unknown session", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, reasonUnknownSession)
 		return
 	}
 
@@ -3275,7 +3304,7 @@ func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	js, err := runtime.ColorSchemeJS()
 	if err != nil {
-		http.Error(w, "color-scheme bootstrap unavailable", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, colorSchemeHash(), false)
@@ -3312,7 +3341,7 @@ const maxMutatingBodyBytes = 64 * 1024
 func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id, ok := ds.verifySessionToken(readSessionCookie(r))
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 		return "", false
 	}
 	return id, true
@@ -3361,7 +3390,7 @@ func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Requ
 		// identity confusion the whole feature strips cookies to prevent, and
 		// the opposite of the rule Host.Middleware states for the same case.
 		if !ds.embedGrantOK(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return false
 		}
 		stripAmbientCredentials(r)
@@ -3384,11 +3413,11 @@ func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return true
 	}
 	if !strings.EqualFold(u.Host, r.Host) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return true
 	}
 	return false
@@ -3405,10 +3434,10 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return false
 		}
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
 	}
 	// handler.UnmarshalStrict: duplicate and case-folded top-level keys
@@ -3416,7 +3445,7 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	// "Action":"danger"} would execute the second action while any
 	// first-read intermediary saw the first. Refuse the ambiguity.
 	if err := handler.UnmarshalStrict(body, dst); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
 	}
 	return true
@@ -3467,7 +3496,7 @@ func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	// caller can still do both requests. It makes the grant confer nothing
 	// extra, which is the actual claim.
 	if r.Header.Get(fembed.GrantHeader) != "" {
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return
 	}
 	sess := ds.CreateSession()
@@ -3482,14 +3511,14 @@ func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 // responds with a JSON result.
 func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 		return
 	}
 	if rejectCrossOrigin(w, r) {
 		return
 	}
 	if r.ContentLength > maxMutatingBodyBytes {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 		return
 	}
 
@@ -3573,7 +3602,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if screen != nil {
 		ctx := app.WithRequest(r.Context(), r)
 		if body.Page != "" {
-			if m, ok := ds.App.Router.MatchFor(body.Page); ok && m.ScreenID() == screen.Path {
+			if m, ok := ds.App.Router.MatchFor(app.RoutePath(body.Page)); ok && m.ScreenID() == screen.Path {
 				ctx = app.WithMatch(ctx, m)
 			}
 		}
@@ -3582,7 +3611,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 			if d.Kind == app.DecisionBlock && d.Status >= 400 && d.Status < 600 {
 				status = d.Status
 			}
-			http.Error(w, http.StatusText(status), status)
+			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 			return
 		}
 	}
@@ -3593,20 +3622,23 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		actionDef.Handler(ctx)
 
 		w.Header().Set("Content-Type", "application/json")
+		// The message is in the caller's locale.
+		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":  "ok",
 			"action":  actionName,
-			"message": "Server action processed",
+			"message": reasonActionProcessed.Text(r.Context()),
 		})
 		return
 	}
 
 	// No Go handler; just acknowledge
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":  "ok",
 		"action":  actionName,
-		"message": "Server action acknowledged (no handler)",
+		"message": reasonActionAcknowledged.Text(r.Context()),
 	})
 }
 
@@ -3629,7 +3661,7 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	ds.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "widget not found: "+widgetID, http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, reasonWidgetNotFound, map[string]any{"id": widgetID})
 		return
 	}
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, hash, true)
@@ -3736,7 +3768,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 			// skipping the per-surface scoping entirely.
 			g, ok := ds.embedGrant(req)
 			if !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				i18n.HTTPError(w, req, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 				return
 			}
 			stripAmbientCredentials(req)
@@ -3901,12 +3933,22 @@ func (ds *UIHost) RoutePatterns() []string {
 	return patterns
 }
 
+// writeBlock answers a DecisionBlock: its reason, or the status's
+// generic phrase, in the request's locale.
+func writeBlock(w http.ResponseWriter, r *http.Request, res app.RenderResult) {
+	reason := res.Reason
+	if reason.IsZero() {
+		reason = i18n.StatusPhrase(res.Status)
+	}
+	i18n.HTTPError(w, r, res.Status, reason, res.Params)
+}
+
 // methodNotAllowed is registered alongside POST-only endpoints so a wrong-
 // method request gets a clear 405 instead of falling through to the UI
 // page handler and getting a misleading 404.
-func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Allow", "POST")
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 }
 
 // mountPageLLMMD registers LLM-friendly documentation routes for every
@@ -3914,8 +3956,9 @@ func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 //   - GET /llm-pages.md: top-level index listing all screens
 //   - GET /{screen-path}/llm.md: per-screen markdown documentation
 //
-// Dynamic routes (e.g. /products/:slug) are documented with their
-// pattern, not concrete values.
+// An exact route's handler serves the per-URL doc (pageLLMMD); a
+// dynamic route's handler sits at its pattern text and serves the
+// pattern doc, while its concrete URLs reach dynamicPageLLMMD.
 func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	coreApp := ds.App
 
@@ -3946,7 +3989,23 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		}
 		// Capture for closure
 		sc := screen
+		base := routePath
+		_, exact := coreApp.Router.Screens()[routePath]
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// An exact route's URL is its pattern: it gets the per-URL doc
+			// the static export writes, and answers 404 where its page
+			// does (a resolver that names no row, an outlet nothing fills).
+			if exact {
+				md, ok := ds.pageLLMMD(req, base, sc)
+				if !ok {
+					ds.handlePage(w, req)
+					return
+				}
+				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Write([]byte(md))
+				return
+			}
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
 			// A screen whose policy chain doesn't Allow this request gets
@@ -3958,7 +4017,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			if app.ResolvePolicy(app.WithRequest(req.Context(), req), sc).Kind != app.DecisionAllow {
 				md = app.ScreenLLMMDWithheld(sc)
 			} else {
-				seo := resolveScreenSEO(sc)
+				seo := resolveScreenSEO(req.Context(), sc)
 				fm := screenSEOFrontMatter(sc.Title, seo)
 				md = app.ScreenLLMMDWithMeta(sc, fm)
 			}
@@ -4052,6 +4111,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		return true
 	}
 	if ds.App != nil {
+		path := routePath(r)
 		if _, _, ok := ds.App.Router.Resolve(path); ok {
 			return true
 		}
@@ -4064,7 +4124,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		// Concrete-URL llm.md for a dynamic route (mirrors
 		// serveOrRender's dynamicPageLLMMD branch, incl. the
 		// WithPublicLLMMD opt-in gate).
-		if ds.llmMDPublic && !ds.App.NoLLMMD && strings.HasSuffix(path, "/llm.md") {
+		if ds.pageDocsOn() && strings.HasSuffix(path, "/llm.md") {
 			base := strings.TrimSuffix(path, "/llm.md")
 			if base == "" {
 				base = "/"
@@ -4101,17 +4161,17 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 
+	rctx := r.Context()
 	children := []render.HTML{
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("405: Method Not Allowed")),
-		html.Paragraph(html.TextConfig{}, render.Text("Method "+r.Method+" is not allowed for "),
-			html.Code(html.TextConfig{}, render.Text(path)), render.Text("."),
-		),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageMethodTitle.Text(rctx))),
+		html.Paragraph(html.TextConfig{}, phraseAround(rctx, pageMethodBody, "path",
+			html.Code(html.TextConfig{}, render.Text(path)), map[string]any{"method": r.Method})),
 	}
 	if allow != "" {
-		children = append(children, html.Paragraph(html.TextConfig{},
-			render.Text("Allowed methods: "), html.Code(html.TextConfig{}, render.Text(allow)), render.Text(".")))
+		children = append(children, html.Paragraph(html.TextConfig{}, phraseAround(rctx, pageMethodAllowed, "methods",
+			html.Code(html.TextConfig{}, render.Text(allow)), nil)))
 	}
-	children = append(children, html.Paragraph(html.TextConfig{}, backToHomeLink()))
+	children = append(children, html.Paragraph(html.TextConfig{}, backToHomeLink(rctx)))
 	body := html.Div(html.DivConfig{Role: "main"}, children...)
 
 	if ds.App != nil && ds.App.Router != nil {
@@ -4129,7 +4189,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	ctx := store.WithValues(app.WithRequest(r.Context(), r))
 	ds.finishPageDocument(w, r, ctx,
 		//gofastr:allow(GOFASTR1403) documentShell HTML-escapes the concatenated title; body is already rendered HTML.
-		render.HTML(ds.documentShell(path, "405: "+appName, string(body))), path, nil, http.StatusMethodNotAllowed)
+		render.HTML(ds.documentShell(ctx, path, "405: "+appName, string(body))), path, nil, http.StatusMethodNotAllowed)
 }
 
 // devStaticNoStore marks a project static response uncacheable while the
@@ -4160,10 +4220,10 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// registered and "/foo" arrives, 301 to the slash form. ServeMux
 	// gives this for free for subtree patterns, but UIHost dispatches
 	// inside handlePage via App.Router.Resolve, so we do it here.
-	if path != "/" && !strings.HasSuffix(path, "/") {
-		if _, _, ok := ds.App.Router.Resolve(path); !ok {
-			if _, _, ok := ds.App.Router.Resolve(path + "/"); ok {
-				target := path + "/"
+	if rp := routePath(r); rp != "/" && !strings.HasSuffix(rp, "/") {
+		if _, _, ok := ds.App.Router.Resolve(rp); !ok {
+			if _, _, ok := ds.App.Router.Resolve(rp + "/"); ok {
+				target := app.EscapeRoutePath(rp) + "/"
 				if r.URL.RawQuery != "" {
 					target += "?" + r.URL.RawQuery
 				}
@@ -4181,6 +4241,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
 					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
 						devStaticNoStore(w)
+						ds.markVersionedStatic(w, r, assetKey{rel: rel}, f)
 						http.ServeContent(w, r, path, info.ModTime(), f)
 						_ = f.Close()
 						return
@@ -4193,8 +4254,18 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 			if cleanPath != "" {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
-					f.Close()
 					devStaticNoStore(w)
+					// A versioned URL is served from the handle it was
+					// hashed from; see markVersionedStatic.
+					if rs, ok := f.(io.ReadSeeker); ok && wantsVersion(r) {
+						if info, err := f.Stat(); err == nil && !info.IsDir() {
+							ds.markVersionedStatic(w, r, assetKey{fromFS: true, rel: cleanPath}, f)
+							http.ServeContent(w, r, path, info.ModTime(), rs)
+							_ = f.Close()
+							return
+						}
+					}
+					_ = f.Close()
 					http.ServeFileFS(w, r, ds.staticFS, cleanPath)
 					return
 				}
@@ -4214,7 +4285,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// /products/42/llm.md) can't be pre-registered, so they land here.
 	// Serve the per-instance doc when the base path resolves to a screen.
 	// Mirrored in resolvesStaticOrScreen. Keep the two in sync.
-	if md, ok := ds.dynamicPageLLMMD(r, path); ok {
+	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Write([]byte(md))
@@ -4233,7 +4304,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	// Same opt-in gate as mountPageLLMMD: per-screen docs are public
 	// only via WithPublicLLMMD (see the security suite's
 	// PageLLMScreenDocDisabledByDefault).
-	if ds.App == nil || !ds.llmMDPublic || ds.App.NoLLMMD || !strings.HasSuffix(path, "/llm.md") {
+	if !ds.pageDocsOn() || !strings.HasSuffix(path, "/llm.md") {
 		return "", false
 	}
 	base := strings.TrimSuffix(path, "/llm.md")
@@ -4244,11 +4315,37 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	if !ok || scr.NoLLMMD {
 		return "", false
 	}
+	return ds.pageLLMMD(r, base, scr)
+}
+
+// pageLLMMD renders the llm.md for the concrete URL base of screen scr.
+// ok is false when the page answers 404 or another status (the caller
+// answers with the page's 404).
+func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (string, bool) {
 	// Same context the page render gets: policies and Load hooks read the
-	// live request (session, headers, query) through app.WithRequest.
-	ctx := app.WithRequest(r.Context(), r)
+	// live request (session, headers, query) through app.WithRequest. It
+	// is the PAGE's request: the /llm.md URL rebased onto the page, so a
+	// screen that builds links off the request path (entityui.List)
+	// points them at the page, not at <page>/llm.md/<id>.
+	// Built from base, the routing form, never by trimming the suffix
+	// off the raw URL: base keeps a key's encoded slash and a page's
+	// trailing slash however the /llm.md suffix was spelled.
+	pr := r.Clone(r.Context())
+	esc := app.EscapeRoutePath(base)
+	decoded, err := url.PathUnescape(esc)
+	if err != nil {
+		decoded = base
+	}
+	pr.URL.Path, pr.URL.RawPath = decoded, esc
+	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), pr))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, base)
 	if !ok {
+		return "", false
+	}
+	// A page that answers another status (app.SetStatus for a missing
+	// record, a ScreenStatusCode) has no doc to serve: answer 404 the
+	// way a Load's ErrNotFound does, never a 200 doc of its not-found body.
+	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
 	md := res.MD
@@ -4261,7 +4358,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 		if title == "" {
 			title = scr.Title
 		}
-		seo := resolveScreenSEOFor(scr, res.Component)
+		seo := resolveScreenSEOFor(ctx, scr, res.Component)
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md
 		}
@@ -4307,6 +4404,21 @@ type NotFoundOutletError struct {
 
 func (e *NotFoundOutletError) Error() string {
 	return fmt.Sprintf("uihost: static render %q: a FallbackNotFound outlet had no fill, the route's answer is 404", e.Path)
+}
+
+// StatusPageError is the static-render form of a page that answers a
+// status other than 200: a component called app.SetStatus while it
+// drew (entityui's Record for a missing row) or the screen declares
+// ScreenStatusCode. The builder skips the route with a warning, like
+// NotFoundOutletError, because the static host would serve the file
+// with a 200.
+type StatusPageError struct {
+	Path   string
+	Status int
+}
+
+func (e *StatusPageError) Error() string {
+	return fmt.Sprintf("uihost: static render %q: the page answers %d, not 200", e.Path, e.Status)
 }
 
 // PolicyBlockedError reports a static render refused by the screen's
@@ -4360,6 +4472,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
+	ctx, recorded := app.TrackStatus(ctx)
 	// RenderPageResult (not RenderPage) so the loaded per-request
 	// component reaches the chrome injection: a dynamic route's meta
 	// description only exists on the loaded instance.
@@ -4381,11 +4494,17 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	if res.NotFoundOutlet {
 		return "", nil, &NotFoundOutletError{Path: path}
 	}
+	// A page that answers another status (app.SetStatus, a
+	// ScreenStatusCode) is skipped the same way: a static host serves
+	// every file 200, so a missing record's page would read as present.
+	if status := pageStatus(res, recorded()); status != 0 && status != http.StatusOK {
+		return "", nil, &StatusPageError{Path: path, Status: status}
+	}
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
-	return injectSignalSeed(ctx, page), res.FillFailures, nil
+	page := ds.injectChromeModeFor(ctx, string(res.HTML), path, "", "", false, res.Component)
+	return injectHeadData(ctx, page), res.FillFailures, nil
 }
 
 // RenderStaticNotFoundPage renders the not-found page as a full static
@@ -4411,8 +4530,8 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 		slog.Warn("uihost: static not-found render failed; exporting no 404.html", "err", err)
 		return "", false
 	}
-	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
-	return injectSignalSeed(ctx, page), true
+	page := ds.injectChromeModeFor(ctx, string(res.HTML), path, "", "", false, res.Component)
+	return injectHeadData(ctx, page), true
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript
@@ -4723,14 +4842,36 @@ func signalsJSONScript(seed map[string]any) string {
 		`</script>`
 }
 
-// injectSignalSeed resolves the signal seed for the rendered page (names
-// referenced in the HTML plus all app-global slices), and splices the
-// JSON block into <head> just before </head> so it is in place before
-// runtime.js (deferred, after parsing) reads it. ctx must carry the request value
-// bag (store.WithValues), so producer-seeded per-request values win over
-// declared defaults. No-op when there is nothing to seed.
-func injectSignalSeed(ctx context.Context, page string) string {
+// runtimeStringsScript is the #gofastr-strings block for ctx's locale, or
+// "" when every runtime string reads as its English.
+func runtimeStringsScript(ctx context.Context) string {
+	strs := runtime.StringsJSON(ctx)
+	if strs == nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-strings">` + escapeJSONForScript(strs) + `</script>`
+}
+
+// injectHeadData splices the page's per-request JSON blocks into <head>
+// just before </head>, so they are in place before runtime.js (deferred,
+// after parsing) reads them:
+//
+//   - #gofastr-signals, the signal seed (names referenced in the HTML
+//     plus all app-global slices). ctx must carry the request value bag
+//     (store.WithValues), so producer-seeded per-request values win over
+//     declared defaults.
+//   - #gofastr-strings, the runtime strings translated for ctx's locale
+//     (runtime.StringsJSON), which the kernel's say() reads.
+//
+// Each block is left out when it has nothing to carry.
+func injectHeadData(ctx context.Context, page string) string {
 	block := signalsJSONScript(store.SeedFor(ctx, page))
+	if strs := runtimeStringsScript(ctx); strs != "" {
+		if block != "" {
+			block += "\n"
+		}
+		block += strs
+	}
 	if block == "" {
 		return page
 	}
@@ -5149,13 +5290,13 @@ func (ds *UIHost) EffectiveLang() string {
 	return "en"
 }
 
-// LangForPath returns the document language for a host-built shell standing in
+// LangFor returns the document language for a host-built shell standing in
 // for path: WithLangFunc ([WithLangFunc]) first, then the app's own LangFunc
 // ([app.App.WithLangFunc]) so a site that configured its languages once on the
-// app gets them here too, then EffectiveLang. An empty path (a shell that
-// belongs to no route, such as the PWA offline page) skips straight to
-// EffectiveLang.
-func (ds *UIHost) LangForPath(path string) string {
+// app gets them here too, then the locale the request negotiated
+// (i18n.FromContext), then EffectiveLang. An empty path (a shell that belongs
+// to no route, such as the PWA offline page) skips the route rules.
+func (ds *UIHost) LangFor(ctx context.Context, path string) string {
 	if path != "" {
 		if ds.langFunc != nil {
 			if lang := strings.TrimSpace(ds.langFunc(path)); lang != "" {
@@ -5167,6 +5308,9 @@ func (ds *UIHost) LangForPath(path string) string {
 				return lang
 			}
 		}
+	}
+	if tag := i18n.FromContext(ctx).Tag; tag != "" {
+		return tag
 	}
 	return ds.EffectiveLang()
 }
@@ -5210,12 +5354,22 @@ func ReadCustomCSSFile(path string) string {
 // do on a registered screen. Title and lang are escaped here; body is
 // already-rendered HTML.
 //
-// path is the route the shell stands in for, and only decides the document
-// language (see LangForPath). Pass "" for a shell that belongs to no route.
-func (ds *UIHost) documentShell(path, title, body string) string {
+// path is the route the shell stands in for, and with ctx's negotiated
+// locale only decides the document language and direction (see LangFor).
+// Pass "" for a shell that belongs to no route.
+func (ds *UIHost) documentShell(ctx context.Context, path, title, body string) string {
+	return ds.documentShellLang(ctx, path, "", title, body)
+}
+
+// documentShellLang is documentShell with the document language named
+// by the caller; "" resolves it for path the way documentShell does.
+func (ds *UIHost) documentShellLang(ctx context.Context, path, lang, title, body string) string {
+	if lang == "" {
+		lang = ds.LangFor(ctx, path)
+	}
 	return fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(title), body)
+		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
+		i18n.Dir(lang), stdhtml.EscapeString(lang), stdhtml.EscapeString(title), body)
 }
 
 var screenMetaTagPrefix = regexp.MustCompile(`(?i)<(meta|link)\b`)

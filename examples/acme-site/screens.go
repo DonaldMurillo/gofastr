@@ -194,7 +194,7 @@ func (s *HelpArticleScreen) Load(ctx context.Context) error {
 }
 
 // ScreenTitle names the tab after the article.
-func (s *HelpArticleScreen) ScreenTitle() string {
+func (s *HelpArticleScreen) ScreenTitle(ctx context.Context) string {
 	return s.art.Title + " — Acme Tracker help"
 }
 

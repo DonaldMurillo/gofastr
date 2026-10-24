@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -53,7 +55,7 @@ const (
 // errIncludeBudget marks an include that exceeded maxIncludeRows. It is a
 // client-caused bound, so the HTTP surfaces render it as 400 (narrow the
 // include or paginate) rather than as a 500.
-var errIncludeBudget = errors.New("include exceeds the maximum number of related rows; narrow the include or reduce the page size")
+var errIncludeBudget = i18n.NewError(reasonIncludeBudget)
 
 // includeBudget is the per-request row allowance, spent by every eager-load
 // as it scans. Threaded rather than stored on CrudHandler because a handler
@@ -107,7 +109,13 @@ type IncludeNode struct {
 	// IN list, OR where the declaration demands AND, and serve the drafts
 	// the scope exists to hide.
 	ReadScopes []filter.ParsedFilter
-	Children   []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
+	// Pivot is the registered entity owning a many_to_many's Through
+	// table, nil when the migrator created it. PivotScopes carries its
+	// owner, tenant and read-scope predicates (applyPivotScope): a link
+	// row the join entity's own route hides links nothing.
+	Pivot       *entity.Entity
+	PivotScopes []filter.ParsedFilter
+	Children    []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
 	// scopedClauses remembers the scoped-filter sets already merged into
 	// this node (or into sibling nodes spawned for it) so a repeated
 	// mention of the same relation with the SAME set is a no-op instead
@@ -170,7 +178,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 		// scoped-filter field allow-list. Serving the include anyway is a
 		// `SELECT *` of a table nobody vouched for, that is how a related
 		// auth table's password_hash reaches a caller. Refuse instead.
-		return nil, fmt.Errorf("include %q requires an entity registry: set CrudHandler.Registry (framework apps do this automatically)", raw)
+		return nil, i18n.NewError(reasonIncludeNoRegistry, map[string]any{"include": strconv.Quote(raw)})
 	}
 
 	var roots []*IncludeNode
@@ -178,7 +186,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 
 	paths := splitIncludeDelim(raw, ',')
 	if len(paths) > maxIncludePaths {
-		return nil, fmt.Errorf("too many include paths: %d (max %d)", len(paths), maxIncludePaths)
+		return nil, i18n.NewError(reasonIncludeTooManyPaths, map[string]any{"count": len(paths), "max": maxIncludePaths})
 	}
 
 	for _, path := range paths {
@@ -187,7 +195,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			continue
 		}
 		if len(segments) > maxIncludeDepth {
-			return nil, fmt.Errorf("include %q is %d relations deep; the maximum is %d", path, len(segments), maxIncludeDepth)
+			return nil, i18n.NewError(reasonIncludeTooDeep, map[string]any{"include": strconv.Quote(path), "depth": len(segments), "max": maxIncludeDepth})
 		}
 
 		siblings := &roots
@@ -199,9 +207,9 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			rel, ok := relationByName(currentEntity, seg)
 			if !ok {
 				if near := includeNearMiss(currentEntity, seg); near != "" {
-					return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q; did you mean %q?)", path, seg, currentEntity.GetName(), near)
+					return nil, i18n.NewError(reasonUnknownIncludeHint, map[string]any{"include": strconv.Quote(path), "segment": strconv.Quote(seg), "entity": strconv.Quote(currentEntity.GetName()), "suggestion": strconv.Quote(near)})
 				}
-				return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q)", path, seg, currentEntity.GetName())
+				return nil, i18n.NewError(reasonUnknownInclude, map[string]any{"include": strconv.Quote(path), "segment": strconv.Quote(seg), "entity": strconv.Quote(currentEntity.GetName())})
 			}
 			// Resolve the target entity. Registration is required for EVERY
 			// segment, leaf included. The leaf used to be exempt, "EagerLoad
@@ -220,7 +228,10 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			// scopes exclude. Ambiguity is an error, never a silent pick.
 			target, err := entity.ResolveTarget(registry, ent, rel.Entity)
 			if err != nil {
-				return nil, fmt.Errorf("include %q: relation %q targets entity %q, which is not registered: %w", path, seg, rel.Entity, err)
+				return nil, i18n.Wrap(reasonIncludeUnregistered, err, map[string]any{"include": strconv.Quote(path), "relation": strconv.Quote(seg), "entity": strconv.Quote(rel.Entity)})
+			}
+			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
+				return nil, i18n.Wrap(reasonIncludeCompositeKey, err, map[string]any{"include": strconv.Quote(path)})
 			}
 			node, exists := siblingMap[seg]
 			if !exists {
@@ -229,6 +240,13 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 					Relation: rel,
 					Target:   target,
 					childMap: map[string]*IncludeNode{},
+				}
+				if rel.Type == entity.RelManyToMany {
+					pivot, err := entity.PivotEntity(registry, currentEntity, rel.Through)
+					if err != nil {
+						return nil, i18n.Wrap(reasonIncludePivot, err, map[string]any{"include": strconv.Quote(path)})
+					}
+					node.Pivot = pivot
 				}
 				siblingMap[seg] = node
 				*siblings = append(*siblings, node)
@@ -258,6 +276,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 						Name:     seg,
 						Relation: rel,
 						Target:   target,
+						Pivot:    node.Pivot,
 						Filters:  parsed,
 						childMap: map[string]*IncludeNode{},
 					}
@@ -387,7 +406,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		eq := strings.IndexByte(kv, '=')
 		if eq < 0 {
-			return nil, fmt.Errorf("include %q: scoped filter %q missing =", pathForErrors, kv)
+			return nil, i18n.NewError(reasonScopedMissingEq, map[string]any{"include": strconv.Quote(pathForErrors), "filter": strconv.Quote(kv)})
 		}
 		key, value := kv[:eq], kv[eq+1:]
 		field := key
@@ -400,10 +419,10 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			}
 		}
 		if noQueryField[field] {
-			return nil, fmt.Errorf("include %q: scoped field %q cannot be filtered", pathForErrors, field)
+			return nil, i18n.NewError(reasonScopedNotFilterable, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
 		}
 		if fields != nil && !knownField[field] {
-			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
+			return nil, i18n.NewError(reasonScopedUnknownField, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
 		}
 		sent := field
 		// Resolve the wire key to its column AFTER the allow-list check:
@@ -414,7 +433,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		if fields != nil {
 			if err := filter.CheckOpType(sent, op, colType[field]); err != nil {
-				return nil, fmt.Errorf("include %q: scoped %w", pathForErrors, err)
+				return nil, i18n.Wrap(reasonScopedFilter, err, map[string]any{"include": strconv.Quote(pathForErrors)})
 			}
 		}
 		if op == filter.OpIn {
@@ -422,7 +441,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			// rejected without materializing it. Same shape as the top-level
 			// ?field_in= path (filter.SplitINValuesBounded).
 			if n := strings.Count(value, "|") + 1; n > maxScopedINEntries {
-				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, n, maxScopedINEntries)
+				return nil, i18n.NewError(reasonScopedInListOverCap, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field), "count": n, "max": maxScopedINEntries})
 			}
 			vals := strings.SplitSeq(value, "|")
 			for v := range vals {
@@ -460,7 +479,7 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 func includeNearMiss(ent *entity.Entity, seg string) string {
 	for _, rel := range ent.Config.Relations {
 		switch seg {
-		case strings.TrimSuffix(rel.Name, "_id"), strings.TrimSuffix(rel.ForeignKey, "_id"),
+		case strings.TrimSuffix(rel.Name, "_id"), strings.TrimSuffix(oneFK(rel), "_id"),
 			rel.Entity, strings.TrimSuffix(rel.Entity, "s"):
 			return rel.Name
 		}
@@ -472,9 +491,9 @@ func includeNearMiss(ent *entity.Entity, seg string) string {
 // the client's doing, it asked for more related rows than one response may
 // carry, so it renders as 400 with an actionable message. Everything else
 // is a server fault and stays an opaque 500 with the detail in the log.
-func writeIncludeError(w http.ResponseWriter, surface string, err error) {
+func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, err error) {
 	if errors.Is(err, errIncludeBudget) {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 		return
 	}
 	if forbidden, ok := errors.AsType[*includeForbiddenError](err); ok {
@@ -485,11 +504,11 @@ func writeIncludeError(w http.ResponseWriter, surface string, err error) {
 		// empty relation where the target's own route answers 401. Nothing
 		// leaks either way, the owner scope matches no row, but the two
 		// status codes differ.
-		writeJSONError(w, http.StatusForbidden, forbidden.Error())
+		writeErrJSON(w, r, http.StatusForbidden, forbidden, i18n.Phrase{})
 		return
 	}
 	log.Printf("crud: %s include failed: %v", surface, err)
-	writeJSONError(w, http.StatusInternalServerError, "internal server error")
+	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 
 // applyIncludeTree eager-loads the include forest onto the parent rows. Top-
@@ -536,8 +555,10 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	if len(rows) == 0 {
 		return nil
 	}
-	pkKey := ch.convertKey(ch.PrimaryKey)
-	ids := collectStringIDs(rows, pkKey)
+	// Rows are named by record id, so a composite-key parent loads the
+	// relations its key allows (see entity.CheckRelationKeys).
+	parentKey := ch.keyCols()
+	ids := collectRowKeys(rows, parentKey, ch.convertKey)
 
 	// Build the result map shape once; loadIncludeNode populates it relation
 	// by relation so scoped filters can be applied per-node.
@@ -550,7 +571,8 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded, budget); err != nil {
+		applyPivotScope(ctx, node)
+		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), parentKey, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
 			}
@@ -561,7 +583,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		// case-convert only at the end of the walk. Without this a JSON
 		// field is an object on GET /children and a string one relation
 		// hop away.
-		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
+		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 
 	if err := ch.recurseIncludeChildren(ctx, nodes, loaded, budget); err != nil {
@@ -573,18 +595,22 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	// converted-map memo is per-response: a BelongsTo attaches the very same
 	// target map to every parent that names it, so without sharing the
 	// conversion the subtree is re-copied once per parent at every level.
+	//
+	// The memo is keyed by map alone, so every map must convert under one
+	// tree: duplicate mentions of a relation share their rows, and so share
+	// one tree merged from all of them.
 	converted := map[uintptr]*convertedSubtree{}
+	trees := ch.includeConvTrees(nodes)
 	for _, row := range rows {
-		idVal, ok := row[pkKey]
-		if !ok || idVal == nil {
+		id, ok := entity.RowKey(row, parentKey, ch.convertKey)
+		if !ok {
 			continue
 		}
-		id := fmt.Sprintf("%v", idVal)
 		bucket := loaded[id]
 		for _, node := range nodes {
 			outKey := ch.convertKey(node.Relation.Name)
 			val, present := bucket[node.Relation.Name]
-			out, err := ch.formatRelationValueDeep(node.Relation, val, present, converted, budget)
+			out, err := ch.formatRelationValueDeep(node.Relation, trees[node.Relation.Name], val, present, converted, budget)
 			if err != nil {
 				return err
 			}
@@ -601,11 +627,8 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 // nested data EagerLoad produced. It re-runs EagerLoad with each child's
 // target relation against those rows, then recurses again.
 func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.Entity, children []*IncludeNode, rawRows []map[string]any, budget *includeBudget) error {
-	pk := target.PrimaryKey
-	if pk == "" {
-		pk = "id"
-	}
-	ids := collectStringIDs(rawRows, pk)
+	key := target.KeyColumns()
+	ids := collectRowKeys(rawRows, key, nil)
 	if len(ids) == 0 {
 		return nil
 	}
@@ -617,13 +640,14 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), pk, node, ids, loaded, budget); err != nil {
+		applyPivotScope(ctx, node)
+		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), key, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
 			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
-		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
+		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 	if err := ch.recurseIncludeChildren(ctx, children, loaded, budget); err != nil {
 		return err
@@ -631,11 +655,10 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 	// Attach onto the raw rows under the raw relation name (no case conversion
 	// here, that happens once at the outermost merge).
 	for _, row := range rawRows {
-		idVal, ok := row[pk]
-		if !ok || idVal == nil {
+		id, ok := rawRowKey(row, key)
+		if !ok {
 			continue
 		}
-		id := fmt.Sprintf("%v", idVal)
 		bucket := loaded[id]
 		for _, node := range children {
 			val, present := bucket[node.Relation.Name]
@@ -701,16 +724,40 @@ func gatherLoadedRows(loaded map[string]map[string]any, relName string) []map[st
 	return out
 }
 
-// collectStringIDs reads pkKey from each row and returns the values as
-// strings. Skips rows without a usable id.
-func collectStringIDs(rows []map[string]any, pkKey string) []string {
+// collectRowKeys returns each row's record id, read from the key columns
+// cols under the names names gives them (see entity.RowKey). Rows without
+// a usable id are skipped.
+func collectRowKeys(rows []map[string]any, cols []string, names func(string) string) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
-		if v, ok := row[pkKey]; ok && v != nil {
-			out = append(out, fmt.Sprintf("%v", v))
+		if names == nil {
+			if id, ok := rawRowKey(row, cols); ok {
+				out = append(out, id)
+			}
+			continue
+		}
+		if id, ok := entity.RowKey(row, cols, names); ok {
+			out = append(out, id)
 		}
 	}
 	return out
+}
+
+// rawRowKey is a raw database row's record id. Postgres reports a
+// mixed-case column under its folded name, so a key column is matched
+// ignoring case when its exact name is absent.
+func rawRowKey(row map[string]any, cols []string) (string, bool) {
+	return entity.RowKey(row, cols, func(c string) string {
+		if _, ok := row[c]; ok {
+			return c
+		}
+		for k := range row {
+			if strings.EqualFold(k, c) {
+				return k
+			}
+		}
+		return c
+	})
 }
 
 // rawRelationValue normalises a relation-attached value while keeping raw DB
@@ -738,17 +785,61 @@ func rawRelationValue(rel entity.Relation, val any, present bool) any {
 	}
 }
 
+// convTree is the wire-key converter for one include hop's rows, and by
+// raw relation name the trees for the hops nested under it.
+type convTree struct {
+	conv     func(string) string
+	children map[string]*convTree
+}
+
+// includeConvTrees builds the converter tree of each relation nodes
+// include, by relation name. Each hop's rows belong to that hop's
+// target, so its keys convert with the target's wire map: posts aliasing
+// body_text->"summary" must not rename comments' body_text, which
+// declares its own alias "content", and neither may rename the
+// enrollments included under a comment's student. A relation mentioned
+// twice with distinct filters is two nodes over one set of rows; their
+// trees merge, at every depth.
+func (ch *CrudHandler) includeConvTrees(nodes []*IncludeNode) map[string]*convTree {
+	out := map[string]*convTree{}
+	for _, node := range nodes {
+		t := &convTree{children: ch.includeConvTrees(node.Children)}
+		if node.Target != nil {
+			t.conv = ch.wireConverterOf(node.Target)
+		} else {
+			t.conv = ch.wireConverterFor(node.Relation.Entity)
+		}
+		if prev, ok := out[node.Relation.Name]; ok {
+			mergeConvTree(prev, t)
+			continue
+		}
+		out[node.Relation.Name] = t
+	}
+	return out
+}
+
+// mergeConvTree adds src's nested trees to dst, merging those both hold.
+func mergeConvTree(dst, src *convTree) {
+	for k, v := range src.children {
+		if d, ok := dst.children[k]; ok {
+			mergeConvTree(d, v)
+			continue
+		}
+		dst.children[k] = v
+	}
+}
+
 // formatRelationValueDeep is like formatRelationValue but recursively
 // converts every nested map's keys to JSON case, including any subtrees
-// previously attached during recurseLoadOnRawRows.
-func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, present bool, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, error) {
-	// Included rows belong to the TARGET entity, so their keys must be
-	// converted with the target's wire map, not this handler's. posts
-	// aliasing body_text->"summary" must not rename comments' body_text,
-	// which declares its own alias "content". Resolution is version-aware
-	// (entity.ResolveTarget) for the same reason the include tree is: a v1
-	// request must not adopt an unversioned declaration's field naming.
-	conv := ch.wireConverterFor(rel.Entity)
+// previously attached during recurseLoadOnRawRows. tree converts each
+// hop with its own target's wire map; nil converts rel's target only.
+// Resolution is version-aware (entity.ResolveTarget) for the same reason
+// the include tree is: a v1 request must not adopt an unversioned
+// declaration's field naming.
+func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, tree *convTree, val any, present bool, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, error) {
+	if tree == nil {
+		tree = &convTree{conv: ch.wireConverterFor(rel.Entity)}
+	}
 	switch rel.Type {
 	case entity.RelHasMany, entity.RelManyToMany:
 		if !present {
@@ -760,7 +851,7 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 		}
 		out := make([]map[string]any, len(slice))
 		for i, m := range slice {
-			c, _, err := ch.deepConvertMap(m, conv, converted, budget)
+			c, _, err := ch.deepConvertMap(m, tree, converted, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -775,7 +866,7 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 		if !ok {
 			return nil, nil
 		}
-		c, _, err := ch.deepConvertMap(m, conv, converted, budget)
+		c, _, err := ch.deepConvertMap(m, tree, converted, budget)
 		if err != nil {
 			return nil, err
 		}
@@ -783,8 +874,10 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 	}
 }
 
-// deepConvertMap walks a value tree, applying ch.convertKey to every map key
-// (including keys inside nested maps and slices). Non-map values pass through
+// deepConvertMap walks a value tree, converting every map key (including
+// keys inside nested maps and slices) with tree's converter, and the
+// value under a nested relation's key with that relation's tree. A nil
+// tree converts with ch.convertKey. Non-map values pass through
 // unchanged.
 //
 // converted memoises by source-map identity, so a subtree reached from many
@@ -797,9 +890,9 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, val any, pre
 // Returns the converted value plus the number of row references it
 // serialises to, so callers can charge a re-referenced subtree its full
 // weight without re-walking it.
-func (ch *CrudHandler) deepConvertMap(v any, conv func(string) string, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, int, error) {
-	if conv == nil {
-		conv = ch.convertKey
+func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, int, error) {
+	if tree == nil || tree.conv == nil {
+		tree = &convTree{conv: ch.convertKey}
 	}
 	switch x := v.(type) {
 	case map[string]any:
@@ -823,12 +916,16 @@ func (ch *CrudHandler) deepConvertMap(v any, conv func(string) string, converted
 		converted[id] = entry
 		total := 1
 		for k, val := range x {
-			c, n, err := ch.deepConvertMap(val, conv, converted, budget)
+			sub := tree
+			if child, ok := tree.children[k]; ok {
+				sub = child
+			}
+			c, n, err := ch.deepConvertMap(val, sub, converted, budget)
 			if err != nil {
 				return nil, 0, err
 			}
 			total += n
-			out[conv(k)] = c
+			out[tree.conv(k)] = c
 		}
 		entry.nodes = total
 		return out, total, nil
@@ -836,7 +933,7 @@ func (ch *CrudHandler) deepConvertMap(v any, conv func(string) string, converted
 		out := make([]map[string]any, len(x))
 		total := 0
 		for i, m := range x {
-			c, n, err := ch.deepConvertMap(m, conv, converted, budget)
+			c, n, err := ch.deepConvertMap(m, tree, converted, budget)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -848,7 +945,7 @@ func (ch *CrudHandler) deepConvertMap(v any, conv func(string) string, converted
 		out := make([]any, len(x))
 		total := 0
 		for i, v := range x {
-			c, n, err := ch.deepConvertMap(v, conv, converted, budget)
+			c, n, err := ch.deepConvertMap(v, tree, converted, budget)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -909,6 +1006,17 @@ func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
 		Op:    filter.OpEq,
 		Value: val,
 	}}, node.Filters...)
+}
+
+// applyPivotScope sets the predicates a many_to_many's join entity puts
+// on its own rows: owner, tenant and read scope, the ones its list route
+// applies. A link the caller cannot see on the join entity does not link
+// the two sides for them either.
+func applyPivotScope(ctx context.Context, node *IncludeNode) {
+	if node == nil || node.Pivot == nil {
+		return
+	}
+	node.PivotScopes = pivotScopes(ctx, node.Pivot)
 }
 
 // applyRelatedTenantScope is the tenant analog of applyRelatedOwnerScope.
@@ -987,6 +1095,12 @@ func (ch *CrudHandler) wireConverterFor(targetName string) func(string) string {
 	if err != nil || target == nil {
 		return ch.convertKey
 	}
+	return ch.wireConverterOf(target)
+}
+
+// wireConverterOf converts target's columns to the keys its included rows
+// carry: a field's WireName, else this handler's JSON case.
+func (ch *CrudHandler) wireConverterOf(target *entity.Entity) func(string) string {
 	// Build the target's wire map once per relation, not per row.
 	wire := make(map[string]string, len(target.GetFields()))
 	for _, f := range target.GetFields() {
@@ -1012,7 +1126,11 @@ func (ch *CrudHandler) wireConverterFor(targetName string) func(string) string {
 type includeForbiddenError struct{ Entity string }
 
 func (e *includeForbiddenError) Error() string {
-	return "access denied: include targets entity " + e.Entity + ", which you may not read"
+	return reasonIncludeForbidden.Format(map[string]any{"entity": e.Entity})
+}
+
+func (e *includeForbiddenError) Phrased() (i18n.Phrase, map[string]any) {
+	return reasonIncludeForbidden, map[string]any{"entity": e.Entity}
 }
 
 // checkIncludeReadable walks the include forest and refuses any node whose

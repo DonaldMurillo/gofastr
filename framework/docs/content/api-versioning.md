@@ -165,7 +165,7 @@ DDL, so it catches every attribute that changes the physical column:
 | `Required` (NOT NULL) | `ReadOnly` (request-body acceptance) |
 | `AutoGenerate` (DEFAULT strategy) | `Min` / `Pattern` / `Values` (validation) |
 | `Default` value | `To` / `Many` (relation metadata) |
-| primary-key-ness (`Name == PrimaryKey`) | field ordering |
+| primary-key-ness (the column is in `KeyColumns()`) | field ordering |
 
 Wire-only and validation-only differences are never conflicts. They
 are the whole point of versioning. `apiversions.ApplyToEntityConfig`
@@ -187,6 +187,10 @@ stale the moment it is written.
   is rejected: the union merges by name and would keep only one table,
   silently dropping the other version's. Use distinct entity names if you
   need distinct tables.
+- **Same primary key.** Two versions of one name MUST declare the same
+  `PrimaryKey` columns in the same order. One table has one key
+  constraint, and a v1 keyed on `id` beside a v2 keyed on
+  `(student_id, course_id)` would read and write rows by different keys.
 - **No mandatory exclusive column.** A `Required` column with no
   `Default` and no `AutoGenerate` that ONE version declares but the other
   does not is rejected: the shared table gains a `NOT NULL` column the
@@ -231,6 +235,16 @@ same FK column, their definitions (columns, expression, uniqueness,
 ordering for indices; target table, key, and relation type for FKs) must
 match. Otherwise the union would keep one and silently violate the
 other's declared invariant.
+
+A relation resolves its target at the source's own version, then the
+unversioned declaration, then the only version registered
+(`entity.ResolveTarget`). A `many_to_many`'s `Through` table resolves
+the same way to the entity that owns it (`entity.PivotEntity`), because
+that entity's owner, tenant, read and soft-delete scopes decide which
+links an include reads. When several versions match and none is the
+source's or unversioned, both refuse rather than pick one, since each
+version can scope its rows differently: an `?include=` across such a
+pivot is refused with the code `include_pivot`.
 
 > **See also:** [migrations](migrations.md) for the full additive-only
 > contract: boot never drops, renames, or retypes; destructive changes

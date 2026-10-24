@@ -15,10 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // interceptStackPage draws the markup the intercept module mounts for

@@ -27,23 +27,21 @@ import (
 // carrying a data-focus-* hook, the same shape desktop-notes' drag
 // handle uses.
 
-// focusUI is the app's entity screen set, built once in buildSite
-// after the entities register. App.EntityUI checks every name the
-// builders read against the declarations.
-var focusUI *entityui.UI
-
 // taskCreateScreen is "/tasks/create": the create form, posting to the
 // entity's REST route and landing on /tasks — the dashboard with the
-// timer, where the new task's Start button is.
+// timer, where the new task's Start button is. ui is the app's entity
+// screen set (buildSite); a field, not a package variable, so a second
+// app built in the same process never swaps in its own database.
 type taskCreateScreen struct {
 	component.ContextOnly
+	ui *entityui.UI
 }
 
-func (s *taskCreateScreen) ScreenTitle() string       { return "New task" }
-func (s *taskCreateScreen) ScreenDescription() string { return "Create a task" }
+func (s *taskCreateScreen) ScreenTitle(ctx context.Context) string       { return "New task" }
+func (s *taskCreateScreen) ScreenDescription(ctx context.Context) string { return "Create a task" }
 
 func (s *taskCreateScreen) RenderCtx(ctx context.Context) render.HTML {
-	return focusUI.Create("tasks").Base("/tasks").RenderCtx(ctx)
+	return s.ui.Create("tasks").Base("/tasks").RenderCtx(ctx)
 }
 
 // taskRecordScreen is "/tasks/{id}": the entityui record page. Its
@@ -56,6 +54,7 @@ func (s *taskCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 type taskRecordScreen struct {
 	component.ContextOnly
 	ch    *crud.CrudHandler
+	ui    *entityui.UI
 	id    string
 	title string
 }
@@ -76,10 +75,10 @@ func (s *taskRecordScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *taskRecordScreen) ScreenTitle() string       { return s.title }
-func (s *taskRecordScreen) ScreenDescription() string { return "A task" }
+func (s *taskRecordScreen) ScreenTitle(ctx context.Context) string       { return s.title }
+func (s *taskRecordScreen) ScreenDescription(ctx context.Context) string { return "A task" }
 func (s *taskRecordScreen) RenderCtx(ctx context.Context) render.HTML {
-	return focusUI.Record("tasks", s.id).Base("/tasks").Delete().RenderCtx(ctx)
+	return s.ui.Record("tasks", s.id).Base("/tasks").Delete().RenderCtx(ctx)
 }
 
 // taskFocusTab is the record page's "Start" tab: what the old task
@@ -149,8 +148,10 @@ type dashboardScreen struct {
 	eng *Engine
 }
 
-func (s *dashboardScreen) ScreenTitle() string       { return "Focus" }
-func (s *dashboardScreen) ScreenDescription() string { return "Pomodoro focus timer" }
+func (s *dashboardScreen) ScreenTitle(ctx context.Context) string { return "Focus" }
+func (s *dashboardScreen) ScreenDescription(ctx context.Context) string {
+	return "Pomodoro focus timer"
+}
 
 func (s *dashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	stats := s.stats(ctx)
@@ -329,8 +330,8 @@ type historyScreen struct {
 	app *framework.App
 }
 
-func (s *historyScreen) ScreenTitle() string       { return "History" }
-func (s *historyScreen) ScreenDescription() string { return "Every focus session" }
+func (s *historyScreen) ScreenTitle(ctx context.Context) string       { return "History" }
+func (s *historyScreen) ScreenDescription(ctx context.Context) string { return "Every focus session" }
 
 func (s *historyScreen) RenderCtx(ctx context.Context) render.HTML {
 	rows, err := s.app.MustCrudHandler("sessions").ListAll(ctx, crud.ListOptions{
@@ -413,8 +414,10 @@ type widgetScreen struct {
 	eng *Engine
 }
 
-func (s *widgetScreen) ScreenTitle() string       { return "Timer" }
-func (s *widgetScreen) ScreenDescription() string { return "The floating focus timer" }
+func (s *widgetScreen) ScreenTitle(ctx context.Context) string { return "Timer" }
+func (s *widgetScreen) ScreenDescription(ctx context.Context) string {
+	return "The floating focus timer"
+}
 
 func (s *widgetScreen) RenderCtx(ctx context.Context) render.HTML {
 	state := s.eng.State(ctx)
@@ -506,9 +509,9 @@ func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App,
 	site.WithTheme(desktopui.Theme())
 	layout := desktopui.Layout(sidebarNav())
 
-	focusUI = app.EntityUI(entityui.Extensions{
+	focusUI := app.EntityUI(entityui.Extensions{
 		Entities: map[string]entityui.Extension{
-			"tasks": {Tabs: []entityui.Tab{{Key: "focus", Label: "Start", Build: taskFocusTab}}},
+			"tasks": {Tabs: []entityui.Tab{{Key: "focus", Label: tabStart, Build: taskFocusTab}}},
 		},
 	})
 	tasks := app.MustCrudHandler("tasks")
@@ -519,8 +522,8 @@ func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App,
 	// first thing a user did landed on a page with no Start button,
 	// and the whole timer looked gone.
 	site.Register("/tasks", &dashboardScreen{app: app, eng: eng}, layout)
-	site.Register("/tasks/create", &taskCreateScreen{}, layout)
-	site.Register("/tasks/{id}", &taskRecordScreen{ch: tasks}, layout)
+	site.Register("/tasks/create", &taskCreateScreen{ui: focusUI}, layout)
+	site.Register("/tasks/{id}", &taskRecordScreen{ch: tasks, ui: focusUI}, layout)
 	site.Register("/history", &historyScreen{app: app}, layout)
 	// The widget window is borderless and transparent: its screen
 	// renders in the chrome-less widget layout, never the desktop

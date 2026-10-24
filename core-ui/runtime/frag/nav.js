@@ -80,7 +80,8 @@
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
   const routeEntry = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+    // Routes register unprefixed: /es/pricing looks up /pricing.
+    const clean = _unlocalize(path.split('?')[0].split('#')[0]);
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
@@ -134,6 +135,9 @@
   // (the rail rejects control characters), so unlike a comma it cannot
   // make two different sets read as one string.
   const crossesDocBoundary = (destPath) => {
+    // Another locale is another document: its lang, its strings table
+    // and every server-rendered word differ, not just the screen.
+    if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
     const srcs = [];
@@ -144,6 +148,35 @@
     srcs.sort();
     return srcs.join('\n') !== dest.join('\n');
   };
+  // A server redirect (X-Gofastr-Location) into another document loads
+  // it in place of the requested URL. Both navigators ask before they
+  // replace the URL: the boundary reads the locale off location.
+  const _docRedirect = (to) => {
+    if (!window.__gofastr._originOK(to) || !crossesDocBoundary(to)) return false;
+    location.replace(to);
+    return true;
+  };
+  window.__gofastr._docRedirect = _docRedirect;
+  // fetch follows a 3xx itself (uihost answers one for any target that
+  // is not a safe relative path), so only the response URL says where
+  // the reader landed. Another origin or another document loads as a
+  // document (null: handled); a page in this document comes back as its
+  // path, for the X-Gofastr-Location leg; '' when nothing redirected.
+  const _followed = (r, path) => {
+    // A policy sending the reader off the app: fetch could not follow
+    // it there, so the server names it and the page goes.
+    const doc = r.headers.get('X-Gofastr-Document');
+    if (doc) {
+      if (!/^https?:\/\//i.test(doc)) throw new Error('HTTP 303');
+      location.replace(doc);
+      return null;
+    }
+    if (!r.redirected || !r.url) return '';
+    if (!window.__gofastr._sameOrigin(r.url)) { location.replace(r.url); return null; }
+    const to = resolvePath(r.url);
+    return to === path ? '' : _docRedirect(to) ? null : to;
+  };
+  window.__gofastr._followed = _followed;
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
@@ -171,6 +204,9 @@
     if (lang) carrier.setAttribute('data-cui-lang', lang);
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
+    // The live document's head block is the first page's: after a soft
+    // nav its words are the table applyDocShell last set.
+    carrier.setAttribute('data-cui-strings', JSON.stringify(source == document ? _says : _json(source.getElementById('gofastr-strings')?.textContent)));
     return carrier.outerHTML;
   };
   window.__gofastr._docCarrier = docCarrier;
@@ -431,6 +467,8 @@
   const applyDocShell = (root) => {
     syncPageHead(root);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
+    // The destination's runtime words; none means English.
+    if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
     const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
       ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (!c) return;
@@ -610,11 +648,12 @@
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
-        let dest = path;
-        // resolvePath keeps the search string, the cache key and the
-        // URL bar must carry a redirect-added query (e.g. ?next=/admin).
-        if (fr.redirected && fr.url) dest = resolvePath(fr.url);
-        if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
+        // The path keeps the search string: the cache key and the URL
+        // bar must carry a redirect-added query (e.g. ?next=/admin).
+        const to = _followed(fr, path);
+        if (to === null) return;
+        const dest = to || path;
+        if (to) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
@@ -626,7 +665,9 @@
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
-          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
+          // The carrier rides <main>, so the cache entry below (and the
+          // whole-main fallback) keeps the page's language and words.
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
           const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -672,14 +713,18 @@
       // outcome. The fetch above won't see a 303 (we deliberately use
       // 200 + header to survive redirect:'follow').
       // (Session rollover already applied above, before the ok-check.)
-      const redirectTo = resp.headers.get('X-Gofastr-Location');
+      // A followed 3xx takes the same leg as the header.
+      const followed = _followed(resp, path);
+      if (followed === null) return;
+      const redirectTo = resp.headers.get('X-Gofastr-Location') || followed;
       if (redirectTo) {
+        _pendingNav.delete(path);
+        if (_docRedirect(redirectTo)) return;
         // pushState was already called by the click handler with the
         // requested path; replace it with the redirect destination so
         // the URL bar matches what we're about to load.
         _pushPub(redirectTo, { replace: true });
         currentPath = redirectTo;
-        _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
         // Keep bypassCache across the redirect: a post-mutation nav
         // must not serve the redirect target from the screen cache,
@@ -725,8 +770,8 @@
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
-        ? 'Could not load ' + path + ' (' + err.message + ')'
-        : 'Could not load ' + path + ' — check your connection');
+        ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
+        : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
       _pushPub(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {
@@ -770,8 +815,7 @@
     if (!root || !root.querySelector) return;
     const el = root.querySelector('#gofastr-signals-partial');
     if (!el) return;
-    let data = null;
-    try { data = JSON.parse(el.textContent || 'null'); } catch (_) { /* ignore */ }
+    const data = _json(el.textContent);
     el.remove();
     if (!data) return;
     const G = window.__gofastr;
@@ -1035,10 +1079,14 @@
       for (const s of sels) {
         if (s === '*') { screenCache.clear(); return; }
         if (!s || s[0] !== '/') continue;
-        if (s.includes('?')) { screenCache.delete(s); continue; }
-        // Queryless selector: evict the pathname and all its query
-        // variants (a stale list is stale on every page/filter of it).
-        for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+        // A selector with "?" is exact; a queryless one evicts the
+        // pathname and all its query variants (a stale list is stale on
+        // every page/filter of it). Cache keys keep the locale prefix;
+        // selectors never carry one.
+        for (const k of screenCache.keys()) {
+          const u = _unlocalize(k);
+          if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
+        }
       }
     },
 

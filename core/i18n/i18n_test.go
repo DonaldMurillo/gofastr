@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,7 +57,7 @@ func TestTranslator_MissingKeyReturnsKey(t *testing.T) {
 // ----- placeholder interpolation -------------------------------------------
 
 func TestInterpolate_LeavesUnknownPlaceholdersIntact(t *testing.T) {
-	got := interpolate("Hello, {{name}}! You are {{role}}.", map[string]any{"name": "Bob"})
+	got := Fill("Hello, {{name}}! You are {{role}}.", map[string]any{"name": "Bob"})
 	if !strings.Contains(got, "Bob") {
 		t.Fatalf("known placeholder unfilled: %q", got)
 	}
@@ -66,7 +67,7 @@ func TestInterpolate_LeavesUnknownPlaceholdersIntact(t *testing.T) {
 }
 
 func TestInterpolate_PreservesUnbalancedBraces(t *testing.T) {
-	got := interpolate("Look at this {{unclosed", map[string]any{"x": 1})
+	got := Fill("Look at this {{unclosed", map[string]any{"x": 1})
 	if got != "Look at this {{unclosed" {
 		t.Fatalf("unbalanced braces mangled: %q", got)
 	}
@@ -99,44 +100,92 @@ func TestTranslator_PluralEnglish(t *testing.T) {
 	}
 }
 
-func TestTranslator_PluralCustomRule(t *testing.T) {
+func TestTranslator_PluralRussianCLDR(t *testing.T) {
 	c := NewMapCatalog()
 	c.Set("ru", "items", Message{Plural: map[string]string{
 		"one":   "{{count}} штука",
 		"few":   "{{count}} штуки",
 		"many":  "{{count}} штук",
-		"other": "{{count}} штук",
+		"other": "{{count}} штуки (дробь)",
 	}})
 	tr := NewTranslator(c, "ru")
-	// Very small Russian plural rule for the test (real one is longer).
-	tr.RegisterPluralRule("ru", func(n int) string {
-		mod10 := n % 10
-		mod100 := n % 100
-		switch {
-		case mod10 == 1 && mod100 != 11:
-			return "one"
-		case mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14):
-			return "few"
-		default:
-			return "many"
-		}
-	})
 	ctx := WithContext(context.Background(), Locale{Tag: "ru"})
 
 	for _, tc := range []struct {
-		n    int
+		n    any
 		want string
 	}{
 		{1, "1 штука"},
 		{2, "2 штуки"},
 		{5, "5 штук"},
+		{11, "11 штук"},
 		{21, "21 штука"},
 		{22, "22 штуки"},
 		{25, "25 штук"},
+		{1.5, "1,5 штуки (дробь)"},
 	} {
 		got := tr.T(ctx, "items", map[string]any{"count": tc.n})
 		if got != tc.want {
-			t.Errorf("n=%d: got %q want %q", tc.n, got, tc.want)
+			t.Errorf("n=%v: got %q want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
+// Every language's rule is CLDR 47's, with no registration: Arabic has
+// six forms, French counts 1.5 as one and a million as many, English
+// counts "1.0" as other, and a count too long for an int keeps its
+// last digits without reading as a small number.
+func TestPluralCategoryCLDR(t *testing.T) {
+	for _, tc := range []struct {
+		tag   string
+		count any
+		want  string
+	}{
+		{"ar", 0, "zero"},
+		{"ar", 1, "one"},
+		{"ar", 2, "two"},
+		{"ar", 3, "few"},
+		{"ar", 11, "many"},
+		{"ar", 100, "other"},
+		{"fr", 1.5, "one"},
+		{"fr", 2, "other"},
+		{"fr", 1_000_000, "many"},
+		{"fr", 2_000_000, "many"},
+		{"fr", 1_000_001, "other"},
+		{"pt", 0, "one"},
+		{"pt-PT", 0, "other"},
+		{"pt-AO", 0, "other"},
+		{"zh-Hant-TW", 1, "other"},
+		{"en", "100000000000000000000000001", "other"},
+		{"en", "000000000000000000000000001", "one"},
+		{"en", 1, "one"},
+		{"en", "1.0", "other"},
+		{"en", -1, "one"},
+		{"en", uint64(1), "one"},
+		{"ja", 1, "other"},
+		{"pl", 22, "few"},
+		{"pl", 25, "many"},
+		{"zz-not-a-tag", 1, "one"},
+		{"ru", "100000000000000000000000021", "one"},
+		{"ru", "100000000000000000000000000", "many"},
+		{"fr", "100000000000000000000000000", "many"},
+	} {
+		ops, ok := countOperands(map[string]any{"count": tc.count})
+		if !ok {
+			t.Fatalf("%s %v: no operands", tc.tag, tc.count)
+		}
+		if got := pluralCategory(tc.tag, ops); got != tc.want {
+			t.Errorf("%s %v: got %q want %q", tc.tag, tc.count, got, tc.want)
+		}
+	}
+}
+
+// A count that is not a number picks no form: NaN, an infinity, or a
+// string that is not a plain decimal.
+func TestCountOperandsRefusesNonNumbers(t *testing.T) {
+	for _, v := range []any{math.NaN(), math.Inf(1), "1e3", "one", "", "1.2.3", true} {
+		if _, ok := countOperands(map[string]any{"count": v}); ok {
+			t.Errorf("%v: read as a count", v)
 		}
 	}
 }

@@ -68,8 +68,7 @@ func (v View) ToEntity() *entity.Entity {
 		return nil
 	}
 	fields := make([]schema.Field, 0, len(v.Columns))
-	pk := ""
-	pkCount := 0
+	var pk []string
 	for _, c := range v.Columns {
 		fields = append(fields, schema.Field{
 			Name:    c.Name,
@@ -77,23 +76,21 @@ func (v View) ToEntity() *entity.Entity {
 			RawType: c.RawType,
 		})
 		if c.PrimaryKey {
-			pk = c.Name
-			pkCount++
+			pk = append(pk, c.Name)
 		}
 	}
-	// A view exposed through the ORM needs exactly one primary-key column so
-	// GET /{view}/{id} resolves; fail loud rather than mounting a broken route.
-	if pk == "" {
-		panic(fmt.Sprintf("migrate: view %q declares Columns but no PrimaryKey column: mark one column PrimaryKey: true (it's the id the ORM reads), or drop Columns to keep the view migration-only", v.Name))
-	}
-	if pkCount > 1 {
-		panic(fmt.Sprintf("migrate: view %q marks %d columns PrimaryKey: exactly one is required", v.Name, pkCount))
+	// A view exposed through the ORM needs a key so GET /{view}/{id}
+	// resolves; fail loud rather than mounting a broken route. Several
+	// marked columns make a composite key, in column order.
+	if len(pk) == 0 {
+		panic(fmt.Sprintf("migrate: view %q declares Columns but no PrimaryKey column: mark its key columns PrimaryKey: true (the id the ORM reads), or drop Columns to keep the view migration-only", v.Name))
 	}
 	timestamps := false
 	ent := &entity.Entity{Config: entity.EntityConfig{
 		Name:       v.Name,
 		Table:      v.Name,
 		Fields:     fields,
+		PrimaryKey: pk,
 		Unmanaged:  true,
 		Timestamps: &timestamps,
 		// Materialized because this constructor bypasses Define()'s
@@ -102,7 +99,6 @@ func (v View) ToEntity() *entity.Entity {
 		Pagination: &entity.PaginationConfig{},
 		Exposure:   &entity.ExposureConfig{},
 	}}
-	ent.PrimaryKey = pk
 	return ent
 }
 

@@ -160,7 +160,7 @@ func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+	ch.EmitEvent(ctx, event.EntityDeleted, ch.keyPayload(id))
 	return nil
 }
 
@@ -174,13 +174,14 @@ func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
 // to ApplyOwnerScopeUpdate. The row doubles as the audit pre-image.
 func (ch *CrudHandler) selectTrashedRow(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := withDeletedAtColumn(ch.visibleFields())
-	qb := query.Select(cols...).
+	kc, ka := ch.keyWhere(id)
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	applyOwnerScope(ch, qb, r, false)
 	sqlStr, args := qb.Build()
-	return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+	return ch.scanOwn(ctx, id, cols, sqlStr, args)
 }
 
 // withDeletedAtColumn appends the soft-delete marker to a projection
@@ -222,9 +223,10 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 		}
 	}
 
+	kc, ka := ch.keyWhere(id)
 	ub := query.Update(ch.Entity.GetTable()).
 		Set("deleted_at", nil).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScopeUpdate(ub, r)
 	ch.ApplyOwnerScopeUpdate(ub, r)
 	// Pin to soft-deleted rows: a concurrent restore or a hard delete
@@ -233,9 +235,9 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 	if col := autoUpdatedAtColumn(ch.Entity); col != "" {
 		ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 	}
-	ub.Returning(ch.visibleFields()...)
+	ub.Returning(ch.keyedCols(ch.visibleFields())...)
 	sqlStr, args := ub.Build()
-	result, err := ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), ch.visibleFields())
+	result, err := ch.writeOwn(ctx, id, ch.visibleFields(), sqlStr, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound
@@ -244,7 +246,7 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 	}
 
 	if ch.Hooks != nil {
-		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
+		if err := ch.afterRow(ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -278,19 +280,21 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 		}
 	}
 
+	kc, ka := ch.keyWhere(id)
 	db := query.Delete(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScopeDelete(db, r)
 	ch.ApplyOwnerScopeDelete(db, r)
 	// Purge never skips the soft delete: the DELETE only matches rows the
 	// soft-delete marker already covers.
 	db.Where("deleted_at IS NOT NULL")
-	sqlStr, args := db.Build()
-	res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+	affected, err := ch.execOwn(ctx, id, db.Matching, func(returning []string) (string, []any) {
+		return db.Returning(returning...).Build()
+	})
 	if err != nil {
 		return fmt.Errorf("purge: %w", err)
 	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
+	if affected == 0 {
 		return errNotFound
 	}
 
@@ -299,7 +303,7 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}
-	if err := ch.StageEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id}); err != nil {
+	if err := ch.StageEvent(ctx, event.EntityDeleted, ch.keyPayload(id)); err != nil {
 		return fmt.Errorf("stage event: %w", err)
 	}
 	return nil

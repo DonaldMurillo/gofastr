@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -20,7 +21,7 @@ func TestRenderPageUsesConfiguredLang(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if !strings.Contains(string(html), `<html lang="fr">`) {
+	if !strings.Contains(string(html), `<html dir="ltr" lang="fr">`) {
 		t.Errorf("configured lang must appear in the <html> tag; got:\n%s", html)
 	}
 }
@@ -33,7 +34,7 @@ func TestRenderPageDefaultsToEnglishLang(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if !strings.Contains(string(html), `<html lang="en">`) {
+	if !strings.Contains(string(html), `<html dir="ltr" lang="en">`) {
 		t.Errorf("absent lang must default to en; got:\n%s", html)
 	}
 }
@@ -76,8 +77,8 @@ func TestLangFuncResolvesPerRoute(t *testing.T) {
 	a.RegisterScreen(NewScreen("/es/docs", &stubComponent{html: render.Raw("<p>hola</p>")}), nil)
 
 	for path, want := range map[string]string{
-		"/docs":    `<html lang="en">`,
-		"/es/docs": `<html lang="es">`,
+		"/docs":    `<html dir="ltr" lang="en">`,
+		"/es/docs": `<html dir="ltr" lang="es">`,
 	} {
 		html, err := a.RenderPage(context.Background(), path)
 		if err != nil {
@@ -97,7 +98,7 @@ func TestLangFuncEmptyResultFallsBackToLang(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if !strings.Contains(string(html), `<html lang="fr">`) {
+	if !strings.Contains(string(html), `<html dir="ltr" lang="fr">`) {
 		t.Errorf("an empty LangFunc answer must fall back to Lang; got:\n%s", html)
 	}
 }
@@ -110,7 +111,7 @@ func TestScreenLangerOverridesLangFunc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if !strings.Contains(string(html), `<html lang="ja">`) {
+	if !strings.Contains(string(html), `<html dir="ltr" lang="ja">`) {
 		t.Errorf("ScreenLanger must win over LangFunc; got:\n%s", html)
 	}
 }
@@ -123,7 +124,7 @@ func TestScreenLangerEmptyFallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if !strings.Contains(string(html), `<html lang="de">`) {
+	if !strings.Contains(string(html), `<html dir="ltr" lang="de">`) {
 		t.Errorf("an empty ScreenLang must fall through to LangFunc; got:\n%s", html)
 	}
 }
@@ -136,7 +137,7 @@ func TestScreenLangerReadAfterLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPage: %v", err)
 	}
-	if !strings.Contains(string(html), `<html lang="pt-BR">`) {
+	if !strings.Contains(string(html), `<html dir="ltr" lang="pt-BR">`) {
 		t.Errorf("ScreenLang must be read after Load; got:\n%s", html)
 	}
 }
@@ -159,9 +160,10 @@ func TestLangIsAttributeEscaped(t *testing.T) {
 	}
 }
 
-func TestLangForPath(t *testing.T) {
+func TestLangFor(t *testing.T) {
+	ctx := context.Background()
 	plain := NewApp("LangApp")
-	if got := plain.LangForPath("/anything"); got != "en" {
+	if got := plain.LangFor(ctx, "/anything"); got != "en" {
 		t.Errorf("unset LangFunc = %q, want en", got)
 	}
 
@@ -171,10 +173,42 @@ func TestLangForPath(t *testing.T) {
 		}
 		return ""
 	})
-	if got := a.LangForPath("/es"); got != "es" {
-		t.Errorf("LangForPath(/es) = %q, want es", got)
+	if got := a.LangFor(ctx, "/es"); got != "es" {
+		t.Errorf("LangFor(/es) = %q, want es", got)
 	}
-	if got := a.LangForPath("/"); got != "en" {
-		t.Errorf("LangForPath(/) = %q, want en", got)
+	if got := a.LangFor(ctx, "/"); got != "en" {
+		t.Errorf("LangFor(/) = %q, want en", got)
+	}
+	// The negotiated locale sits between the route rule and the app's
+	// own Lang: the page's phrases are said in it, so the document
+	// must announce it.
+	ar := i18n.WithContext(ctx, i18n.Locale{Tag: "ar"})
+	if got := a.LangFor(ar, "/"); got != "ar" {
+		t.Errorf("negotiated ar = %q, want ar", got)
+	}
+	if got := a.LangFor(ar, "/es"); got != "es" {
+		t.Errorf("LangFunc lost to the negotiated locale: %q", got)
+	}
+}
+
+// The document says its direction: an Arabic reader's page is rtl on
+// <html> and on the doc markers the runtime copies after a swap.
+func TestDocumentDirFollowsLang(t *testing.T) {
+	a := NewApp("DirApp")
+	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>مرحبا</p>")}), nil)
+	ar := i18n.WithContext(context.Background(), i18n.Locale{Tag: "ar"})
+	out, err := a.RenderPage(ar, "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `<html dir="rtl" lang="ar"`) || !strings.Contains(string(out), `data-cui-dir="rtl"`) {
+		t.Errorf("an Arabic page is not rtl:\n%s", out)
+	}
+	out, err = a.RenderPage(context.Background(), "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `<html dir="ltr" lang="en"`) {
+		t.Errorf("an English page is not ltr:\n%s", out)
 	}
 }

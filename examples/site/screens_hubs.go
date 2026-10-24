@@ -12,6 +12,7 @@ package main
 // doesn't exist.
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -114,9 +115,9 @@ type TeachHubScreen struct {
 	Next     []hubNextLink
 }
 
-func (h *TeachHubScreen) ScreenTitle() string        { return h.Name }
-func (h *TeachHubScreen) ScreenDescription() string  { return h.Desc }
-func (h *TeachHubScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (h *TeachHubScreen) ScreenTitle(ctx context.Context) string       { return h.Name }
+func (h *TeachHubScreen) ScreenDescription(ctx context.Context) string { return h.Desc }
+func (h *TeachHubScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 // Render is the hub body: the hero with the area's pieces named under it,
 // one section per concept, then where to go next. The page frame (reading

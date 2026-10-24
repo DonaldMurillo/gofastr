@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -547,7 +548,7 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 // route, because non-screen routes (/api/*, /healthz, /.well-known/*,
 // …) have no markdown counterpart and would produce dead links.
 func defaultLLMsSections(ds *UIHost) []LLMsTxtSection {
-	if !ds.llmMDPublic {
+	if !ds.pageDocsOn() {
 		return nil
 	}
 	return []LLMsTxtSection{{
@@ -580,7 +581,7 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			// Signing errors name key material and paths. Never the client's.
 			log.Printf("uihost: agent card signing failed: %v", err)
-			http.Error(w, "agent card signing failed", http.StatusInternalServerError)
+			i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		doc["signatures"] = sigs
@@ -811,8 +812,12 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	if ds.agentReady.openAPI != "" {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="service-desc"; type="application/json"`, base, ds.agentReady.openAPI))
 	}
-	if ds.llmMDPublic {
-		links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.Path)))
+	// Only a doc that is served: none for an app or a screen that opts
+	// out with NoLLMMD.
+	if ds.pageDocsOn() {
+		if scr, _, ok := ds.App.Router.Resolve(routePath(req)); ok && !scr.NoLLMMD {
+			links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.Path)))
+		}
 	}
 	if len(links) == 0 {
 		return
@@ -860,13 +865,20 @@ func markdownAlternate(path string) string {
 	return strings.TrimRight(path, "/") + "/llm.md"
 }
 
+// pageDocsOn reports whether the per-screen markdown docs are served:
+// WithPublicLLMMD is on and the app has not opted out with NoLLMMD.
+// Every surface that serves or links a page doc checks it.
+func (ds *UIHost) pageDocsOn() bool {
+	return ds.App != nil && ds.llmMDPublic && !ds.App.NoLLMMD
+}
+
 // serveMarkdownForPage renders the markdown for the requested path via
 // the per-screen LLM doc renderer. Returns false if no screen matches.
 func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) bool {
-	if ds.App == nil {
+	if !ds.pageDocsOn() {
 		return false
 	}
-	screen, _, ok := ds.App.Router.Resolve(r.URL.Path)
+	screen, _, ok := ds.App.Router.Resolve(routePath(r))
 	if !ok || screen.NoLLMMD {
 		return false
 	}
@@ -876,11 +888,15 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	// request: a non-Allow decision degrades to the metadata-free
 	// withheld doc instead of leaking the screen's rendered content,
 	// title, or SEO bundle.
-	ctx := app.WithRequest(r.Context(), r)
-	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, r.URL.Path)
+	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
+	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, routePath(r))
 	if !ok {
 		return false
 	}
+	// The markdown is this URL's other representation, so it carries the
+	// status the HTML would (app.SetStatus, ScreenStatusCode): a missing
+	// record answers 404 in either.
+	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
 	md := res.MD
 	if res.Allowed {
 		title := res.Title
@@ -890,7 +906,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		// SEO resolved against the LOADED instance so the negotiated
 		// markdown's front matter matches the HTML head (llmmd_seo.go's
 		// lockstep contract), not the zero-value registration template.
-		seo := resolveScreenSEOFor(screen, res.Component)
+		seo := resolveScreenSEOFor(ctx, screen, res.Component)
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md
 		}
@@ -898,6 +914,9 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	w.Header().Add("Vary", "Accept")
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	if status != 0 {
+		w.WriteHeader(status)
+	}
 	w.Write([]byte(md))
 	return true
 }

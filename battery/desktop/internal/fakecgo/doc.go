@@ -1,5 +1,5 @@
 // Package fakecgo provides the runtime-support symbols the Go runtime
-// demands once runtime.iscgo is true, without cgo: a darwin port of
+// demands once runtime.iscgo is true, without cgo: a Darwin and Linux port of
 // runtime/cgo's C glue (gcc_unix.c, gcc_libinit_unix.c, pthread_unix.c,
 // gcc_setenv.c, and gcc_arm64.S or gcc_amd64.S) to Go assembly plus
 // cgo_import_dynamic libc references, one assembly file per
@@ -22,7 +22,11 @@
 // ebitengine/purego's internal/fakecgo; any divergence is noted against
 // the C file it came from.
 //
-// Importing this package has three runtime-visible effects:
+// The implementation is built only with !cgo. CGO-enabled desktop
+// consumers use runtime/cgo instead, so the two providers never define
+// the same runtime hooks in one executable.
+//
+// Importing this package without cgo has three runtime-visible effects:
 //
 //   - rt0_go finds _cgo_init non-nil and calls it before any Go code
 //     runs, so g0's stack bounds on the main thread become the real
@@ -40,6 +44,6 @@
 // calling conventions differ (arguments in x0-x7 against rdi, rsi, rdx,
 // cx, r8, r9; symbol references through REGTMP against direct memory
 // operands; a frame-size rule that keeps the stack 16-byte aligned at
-// each call on both). The Linux fake-cgo layer planned in
-// docs/desktop-plan.md is a separate port of the same C sources.
+// each call on both). Linux ports the same C sources with glibc's
+// pthread stack-bound queries and thread-local storage.
 package fakecgo

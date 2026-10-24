@@ -6,13 +6,13 @@ package headless
 // happened. Same harness as behavior_e2e_test.go.
 
 import (
-	"fmt"
 	"net/http"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Enter and comma commit the draft as a chip AND a hidden input; a
@@ -266,7 +266,7 @@ func TestE2E_TagInputDollarValueIsLiteral(t *testing.T) {
 	})`, &got)); err != nil {
 		t.Fatal(err)
 	}
-	want := fmt.Sprintf(DefaultStrings().RemoveLabelled, v)
+	want := DefaultStrings().fill(DefaultStrings().RemoveLabelled, "label", v)
 	if got.Chip != want || got.Button != want {
 		t.Errorf("remove labels expanded the value: chip %q, button %q, want %q", got.Chip, got.Button, want)
 	}

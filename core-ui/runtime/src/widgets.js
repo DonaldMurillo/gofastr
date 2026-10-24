@@ -57,7 +57,7 @@
       // tell the visitor why nothing opened. _fallbackToast is synchronous
       // and already on NS, so no module fetch / async wait.
       if (document.documentElement.hasAttribute('data-cui-static') && NS._fallbackToast) {
-        NS._fallbackToast({ title: 'Needs the Go server.' });
+        NS._fallbackToast({ title: NS.say('runtime.needs_server', 'Needs the Go server.') });
       }
       return;
     }
@@ -122,7 +122,7 @@
             ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx)
             : path;
           if (!NS._originOK?.(url)) throw new Error('cross-origin chrome');
-          const r = await fetch(url);
+          const r = await fetch(NS._lp?.(url) ?? url);
           if (!r.ok) throw new Error('chrome fetch ' + r.status);
           return await r.text();
         } catch (err) {
@@ -141,7 +141,7 @@
           // the toast would deny an open panel.
           console.error('[gofastr] widget chrome fetch failed', err);
           if (cache === NS._chromeCache) {
-            NS._toastOrFallback?.({ variant: 'error', title: 'Could not open that panel.', ttl: 6000 });
+            NS._toastOrFallback?.({ variant: 'error', title: NS.say('runtime.panel_failed', 'Could not open that panel.'), ttl: 6000 });
           }
           throw err;
         }
@@ -343,7 +343,7 @@
     // Initial state hydration, only when the widget declared signals.
     if (cfg.statePath) {
       if (!NS._originOK?.(cfg.statePath)) return;
-      fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+      fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         .then((r) => (r.ok ? r.json() : {}))
         .then((state) => {
           for (const k in state) {

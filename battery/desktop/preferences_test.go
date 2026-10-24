@@ -21,11 +21,11 @@ import (
 func testPreferenceDecls() []Preference {
 	min := func(n int) *int { return &n }
 	return []Preference{
-		{Key: "work_minutes", Label: "Work minutes", Kind: PreferenceInt, Default: 25, Min: min(1), Max: min(180)},
-		{Key: "break_minutes", Label: "Break minutes", Kind: PreferenceInt, Default: 5, Min: min(1), Max: min(60)},
-		{Key: "notify_on_done", Label: "Notify when a session ends", Kind: PreferenceBool, Default: true},
-		{Key: "sound", Label: "Session sound", Kind: PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
-		{Key: "export_folder", Label: "Export folder", Kind: PreferenceString, Default: ""},
+		{Key: "work_minutes", Label: testPhrase("Work minutes"), Kind: PreferenceInt, Default: 25, Min: min(1), Max: min(180)},
+		{Key: "break_minutes", Label: testPhrase("Break minutes"), Kind: PreferenceInt, Default: 5, Min: min(1), Max: min(60)},
+		{Key: "notify_on_done", Label: testPhrase("Notify when a session ends"), Kind: PreferenceBool, Default: true},
+		{Key: "sound", Label: testPhrase("Session sound"), Kind: PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
+		{Key: "export_folder", Label: testPhrase("Export folder"), Kind: PreferenceString, Default: ""},
 	}
 }
 
@@ -52,21 +52,21 @@ func TestNewRejectsBadPreferenceDeclarations(t *testing.T) {
 		decl Preference
 		want string
 	}{
-		{"bad key", Preference{Key: "1x", Label: "L", Kind: PreferenceBool, Default: true}, "must match"},
-		{"dot in key", Preference{Key: "a.b", Label: "L", Kind: PreferenceBool, Default: true}, "must match"},
+		{"bad key", Preference{Key: "1x", Label: testPhrase("L"), Kind: PreferenceBool, Default: true}, "must match"},
+		{"dot in key", Preference{Key: "a.b", Label: testPhrase("L"), Kind: PreferenceBool, Default: true}, "must match"},
 		{"missing label", Preference{Key: "ok_key", Kind: PreferenceBool, Default: true}, "requires Label"},
-		{"unknown kind", Preference{Key: "ok_key", Label: "L", Kind: "float", Default: 1.5}, "unknown kind"},
-		{"bool default mismatch", Preference{Key: "ok_key", Label: "L", Kind: PreferenceBool, Default: 1}, "bool Default"},
-		{"int default mismatch", Preference{Key: "ok_key", Label: "L", Kind: PreferenceInt, Default: "25"}, "int Default"},
-		{"string default mismatch", Preference{Key: "ok_key", Label: "L", Kind: PreferenceString, Default: 5}, "string Default"},
-		{"choice without choices", Preference{Key: "ok_key", Label: "L", Kind: PreferenceChoice, Default: "a"}, "requires Choices"},
-		{"choice default not offered", Preference{Key: "ok_key", Label: "L", Kind: PreferenceChoice, Default: "x", Choices: []string{"a", "b"}}, "not one of Choices"},
-		{"choice default wrong type", Preference{Key: "ok_key", Label: "L", Kind: PreferenceChoice, Default: 1, Choices: []string{"a"}}, "string Default"},
-		{"min above max", Preference{Key: "ok_key", Label: "L", Kind: PreferenceInt, Default: 5, Min: min(10), Max: min(3)}, "greater than Max"},
-		{"default below min", Preference{Key: "ok_key", Label: "L", Kind: PreferenceInt, Default: 0, Min: min(1)}, "below Min"},
-		{"default above max", Preference{Key: "ok_key", Label: "L", Kind: PreferenceInt, Default: 5, Max: min(3)}, "above Max"},
-		{"min on bool", Preference{Key: "ok_key", Label: "L", Kind: PreferenceBool, Default: true, Min: min(1)}, "cannot carry Min or Max"},
-		{"choices on string", Preference{Key: "ok_key", Label: "L", Kind: PreferenceString, Default: "a", Choices: []string{"a"}}, "cannot carry Choices"},
+		{"unknown kind", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: "float", Default: 1.5}, "unknown kind"},
+		{"bool default mismatch", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceBool, Default: 1}, "bool Default"},
+		{"int default mismatch", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceInt, Default: "25"}, "int Default"},
+		{"string default mismatch", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceString, Default: 5}, "string Default"},
+		{"choice without choices", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceChoice, Default: "a"}, "requires Choices"},
+		{"choice default not offered", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceChoice, Default: "x", Choices: []string{"a", "b"}}, "not one of Choices"},
+		{"choice default wrong type", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceChoice, Default: 1, Choices: []string{"a"}}, "string Default"},
+		{"min above max", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceInt, Default: 5, Min: min(10), Max: min(3)}, "greater than Max"},
+		{"default below min", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceInt, Default: 0, Min: min(1)}, "below Min"},
+		{"default above max", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceInt, Default: 5, Max: min(3)}, "above Max"},
+		{"min on bool", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceBool, Default: true, Min: min(1)}, "cannot carry Min or Max"},
+		{"choices on string", Preference{Key: "ok_key", Label: testPhrase("L"), Kind: PreferenceString, Default: "a", Choices: []string{"a"}}, "cannot carry Choices"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestNewRejectsBadPreferenceDeclarations(t *testing.T) {
 		}
 	}()
 	decls := testPreferenceDecls()
-	New(Config{ID: "prefs.unit.test", Preferences: append(decls, Preference{Key: "sound", Label: "Again", Kind: PreferenceBool, Default: false})})
+	New(Config{ID: "prefs.unit.test", Preferences: append(decls, Preference{Key: "sound", Label: testPhrase("Again"), Kind: PreferenceBool, Default: false})})
 }
 
 func TestNewTakesACopyOfDeclarations(t *testing.T) {
@@ -225,8 +225,8 @@ func TestPreferencesSetCoercesAndRefuses(t *testing.T) {
 		if !errors.As(err, &pe) {
 			t.Fatalf("Set(%s, %v) = %v, want a preferenceError", tc.key, tc.val, err)
 		}
-		if !strings.Contains(pe.msg, tc.want) {
-			t.Fatalf("Set(%s, %v) msg = %q, want it to contain %q", tc.key, tc.val, pe.msg, tc.want)
+		if !strings.Contains(pe.reason.Format(pe.params), tc.want) {
+			t.Fatalf("Set(%s, %v) msg = %q, want it to contain %q", tc.key, tc.val, pe.reason.Format(pe.params), tc.want)
 		}
 		if pe.key != tc.key {
 			t.Fatalf("preferenceError key = %q, want %q", pe.key, tc.key)

@@ -508,6 +508,9 @@ func toggleCSS(_ style.Theme) string {
   border-color: var(--color-primary, #18181B);
   background-position: right 0.0625rem center;
 }
+/* The thumb starts and ends on the reading direction's sides. */
+.fui-switch__input:dir(rtl) { background-position: right 0.0625rem center; }
+.fui-switch__input:checked:dir(rtl) { background-position: left 0.0625rem center; }
 .fui-switch__text {
   flex: 1 1 auto;
   font-size: var(--text-sm);
@@ -601,7 +604,7 @@ func tooltipCSS(_ style.Theme) string {
 [data-cui-comp="ui-tooltip"] .fui-tooltip__pop {
   position: absolute;
   inset-block-end: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
-  inset-inline-start: 50%;
+  left: 50%;
   transform: translateX(-50%) translateY(4px);
   background: var(--color-text);
   color: var(--color-surface);
@@ -638,7 +641,7 @@ func tooltipCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--left .fui-tooltip__pop {
   inset-block-end: 50%;
-  inset-inline-start: auto;
+  left: auto;
   inset-inline-end: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
   transform: translateY(50%) translateX(4px);
 }
@@ -648,6 +651,7 @@ func tooltipCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--right .fui-tooltip__pop {
   inset-block-end: 50%;
+  left: auto;
   inset-inline-start: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
   transform: translateY(50%) translateX(-4px);
 }
@@ -921,8 +925,7 @@ func stickyCSS(_ style.Theme) string {
 [data-cui-comp="ui-sticky"]::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline: 0;
   bottom: -1px;
   height: 1px;
   background: var(--color-border, #E4E4E7);
@@ -955,6 +958,13 @@ func aspectRatioCSS(_ style.Theme) string {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+/* An embed fills the box: the browser's inset iframe border gives way to
+   the kit's hairline. */
+[data-cui-comp="ui-aspect-ratio"] > iframe {
+  box-sizing: border-box;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+  border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-aspect-ratio"].fui-ar--1-1  { aspect-ratio: 1 / 1; }
 [data-cui-comp="ui-aspect-ratio"].fui-ar--4-3  { aspect-ratio: 4 / 3; }

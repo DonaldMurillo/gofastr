@@ -312,7 +312,7 @@ func TestSchemaDiff_CreateTableIncludesIndicesAndAutoFKIndex(t *testing.T) {
 				{Name: "idx_posts_title", Columns: []string{"title"}},
 			},
 			Relations: []entity.Relation{
-				{Name: "author", Type: entity.RelManyToOne, Entity: "users", ForeignKey: "author_id"},
+				{Name: "author", Type: entity.RelManyToOne, Entity: "users", ForeignKey: []string{"author_id"}},
 			},
 		}.WithTimestamps(false)))
 

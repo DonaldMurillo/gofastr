@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -115,10 +116,11 @@ func asCaller(ctx context.Context) context.Context {
 	return crud.WithoutElevation(ctx)
 }
 
-// Tab is an extra record tab.
+// Tab is an extra record tab. Label is drawn in the request's language;
+// the zero Phrase shows Key.
 type Tab struct {
 	Key   string
-	Label string
+	Label i18n.Phrase
 	Build func(TabContext) (component.Component, error)
 }
 
@@ -126,10 +128,11 @@ type Tab struct {
 // Build draws its body, as the caller. The column sits inside the
 // record's form, so a panel is read-only or gives its own controls a
 // form attribute naming a form outside it. A panicking or erroring
-// panel fails that panel alone.
+// panel fails that panel alone. Title is drawn in the request's
+// language; the zero Phrase shows Key.
 type SidePanel struct {
 	Key   string
-	Title string
+	Title i18n.Phrase
 	Build func(RecordContext) (component.Component, error)
 }
 
@@ -169,10 +172,11 @@ type RecordContext struct {
 // when set, is checked about each record on top of the entity's update
 // access, with access.CanResourceExact: a Wildcard grant does not
 // satisfy it. Variant is the button's (ui.ButtonSecondary when empty);
-// New refuses one no Button knows.
+// New refuses one no Button knows. Label is drawn in the request's
+// language; the zero Phrase shows Key.
 type Action struct {
 	Key        string
-	Label      string
+	Label      i18n.Phrase
 	Variant    ui.ButtonVariant
 	Permission string
 	// Bulk offers the action on the list's selection as well as on the

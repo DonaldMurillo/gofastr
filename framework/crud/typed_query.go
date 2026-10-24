@@ -90,7 +90,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, e
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return nil, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { qb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { qb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	if q.limit != nil {
 		qb.Limit(*q.limit)
@@ -222,10 +222,7 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 		return nil, sql.ErrNoRows
 	}
 	row := raw[0]
-	id := ""
-	if v, ok := row[q.handler.convertKey(q.handler.PrimaryKey)]; ok {
-		id = fmt.Sprint(v)
-	}
+	id, _ := q.handler.rowID(row)
 	row, err = q.handler.runAfterGet(ctx, req, id, row)
 	if err != nil {
 		return nil, err
@@ -255,7 +252,7 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return 0, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { cb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { cb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScopeCount(cb, req)
@@ -386,29 +383,17 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		return 0, &ValidationError{fields: vr.Errors}
 	}
 
-	if err := q.handler.checkBelongsToScope(ctx, body); err != nil {
+	// The rows it matches can hold different stored values in a column
+	// it keeps, so part of a multi-column reference cannot move here.
+	sets := func(f schema.Field) bool { return q.handler.updateSets(ctx, f, false) }
+	if err := q.handler.checkBelongsToScope(ctx, fkWrite{body: body, sets: sets, holds: q.handler.scopedHeld(ctx)}); err != nil {
 		return 0, err
 	}
 	ub := query.Update(q.handler.Entity.GetTable())
-	ownerField := q.handler.Entity.Config.Scope.OwnerField
-	tenantCol := ""
-	if q.handler.Entity.Config.Scope.MultiTenant {
-		tenantCol = q.handler.Entity.Config.TenantColumn()
-	}
 	anySet := false
 	for _, f := range q.handler.Entity.GetFields() {
-		if f.Name == q.handler.PrimaryKey || f.AutoGenerate != schema.AutoNone {
-			continue
-		}
-		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
-			continue
-		}
-		// Mirror doUpdate: refuse to let callers reassign ownership or
-		// tenant via a bulk update (transfer-by-tamper).
-		if ownerField != "" && f.Name == ownerField {
-			continue
-		}
-		if tenantCol != "" && f.Name == tenantCol {
+		// Mirror doUpdate, owner and tenant included (transfer-by-tamper).
+		if !sets(f) {
 			continue
 		}
 		val, ok := body[f.Name]
@@ -444,7 +429,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return 0, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	// Soft-deleted rows are logically gone, a bulk UPDATE must not reach
 	// them, mirroring the SELECT/Count paths (ApplySoftDeleteFilter).
@@ -485,7 +470,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 			if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 				return 0, err
 			}
-			applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+			applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 		}
 		// Don't re-stamp rows that are already soft-deleted, they're
 		// logically gone, and re-touching them would resurrect their
@@ -514,7 +499,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return 0, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { db.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { db.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)

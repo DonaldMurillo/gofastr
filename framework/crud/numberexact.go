@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // JSON numbers and 64-bit integers disagree above 2^53: encoding/json
@@ -47,6 +49,28 @@ import (
 // only answer that never silently stores a different number than was
 // sent. Callers that need big integers send JSON integer literals or
 // strings, both of which decode exactly.
+// relationIntText renders a reference to an integer key in canonical
+// decimal: "01", "+1", 1.0 and json.Number("1") are all "1". It reports
+// false for a value that names no integer.
+func relationIntText(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		i, err := strconv.ParseInt(x, 10, 64)
+		return strconv.FormatInt(i, 10), err == nil
+	case json.Number:
+		i, err := x.Int64()
+		return strconv.FormatInt(i, 10), err == nil
+	case float64:
+		i, ok := exactFloatInt64(x)
+		return strconv.FormatInt(i, 10), ok
+	case int64:
+		return strconv.FormatInt(x, 10), true
+	case int:
+		return strconv.Itoa(x), true
+	}
+	return "", false
+}
+
 func exactFloatInt64(f float64) (int64, bool) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, false
@@ -118,11 +142,11 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	dec.UseNumber()
 	var body map[string]any
 	if err := dec.Decode(&body); err != nil {
-		return nil, handler.Errorf(400, "invalid JSON: %s", err.Error())
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	norm, err := normalizeJSONNumbers(body)
 	if err != nil {
-		return nil, handler.Errorf(400, "invalid JSON: %s", err.Error())
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	return norm.(map[string]any), nil
 }
@@ -137,7 +161,7 @@ func redecodeUseNumber(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	if err := dec.Decode(v); err != nil {
-		return handler.Errorf(400, "invalid JSON: %s", err.Error())
+		return handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	_, err := normalizeJSONNumbers(v)
 	return err
@@ -194,6 +218,21 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			}
 			continue
 		}
+		if f.Type == schema.Relation && ch.Entity != nil && entity.RelationHoldsInt(ch.Registry, ch.Entity, f.Name) {
+			// A reference to an integer key is stored in canonical
+			// decimal, so a TEXT column on SQLite never holds "01" for
+			// key 1: the canonical id binds 1, which TEXT affinity
+			// compares as "1".
+			if raw == nil || raw == "" {
+				continue
+			}
+			s, ok := relationIntText(raw)
+			if !ok {
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
+			}
+			body[f.Name] = s
+			continue
+		}
 		if f.Type != schema.Int {
 			continue
 		}
@@ -205,16 +244,14 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			}
 			fl, err := x.Float64()
 			if err != nil {
-				return &ValidationError{fields: map[string][]string{f.Name: {"must be an integer"}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
 			}
 			if i, ok := exactFloatInt64(fl); ok {
 				body[f.Name] = i
 				continue
 			}
 			if fl == math.Trunc(fl) {
-				return &ValidationError{fields: map[string][]string{f.Name: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		case float64:
 			if i, ok := exactFloatInt64(x); ok {
@@ -222,9 +259,7 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				continue
 			}
 			if x == math.Trunc(x) {
-				return &ValidationError{fields: map[string][]string{f.Name: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		case float32:
 			if i, ok := exactFloatInt64(float64(x)); ok {
@@ -232,9 +267,7 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				continue
 			}
 			if float64(x) == math.Trunc(float64(x)) {
-				return &ValidationError{fields: map[string][]string{f.Name: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		default:
 			// int64 already exact; strings bind by affinity / parse in

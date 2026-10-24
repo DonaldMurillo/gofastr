@@ -765,7 +765,7 @@ func TestCascadeWrite_CustomPrimaryKey_Child(t *testing.T) {
 				{Name: "size", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		skuEnt.PrimaryKey = "sku_code"
+		skuEnt.Config.PrimaryKey = []string{"sku_code"}
 		app.Registry.Register(skuEnt)
 
 		if err := AutoMigrate(db, app.Registry); err != nil {

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=780cc3d34d55b0bd
+//gofastr:generated generator=app kind=scaffold version=dev sum=eecac0a417a86cf4
 
 package main
 
@@ -7,14 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"net/http"
 )
-
-func ConfirmOrder(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "TODO: implement confirmOrder", http.StatusNotImplemented)
-}
-
-func ShipOrder(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "TODO: implement shipOrder", http.StatusNotImplemented)
-}
 
 func RequestLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

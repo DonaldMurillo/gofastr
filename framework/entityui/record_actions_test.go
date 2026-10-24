@@ -43,7 +43,7 @@ func recordActionBody(t *testing.T, body, label string) (map[string]any, string,
 
 func resendExt(perm string, variant ui.ButtonVariant, ran *[]ActionContext, fail bool) Extensions {
 	return Extensions{Entities: map[string]Extension{"invoices": {Actions: []Action{{
-		Key: "resend", Label: "Resend receipt", Variant: variant, Permission: perm,
+		Key: "resend", Label: testPhrase("Resend receipt"), Variant: variant, Permission: perm,
 		Run: func(_ context.Context, ac ActionContext) error {
 			*ran = append(*ran, ac)
 			if fail {

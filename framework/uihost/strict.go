@@ -523,6 +523,12 @@ func internalRoutePath(href string) (string, bool) {
 // path, and probing the handler to find out would mean executing the
 // app at boot; guessing is worse than the gap.
 func (ds *UIHost) chromeLinkResolves(path string, probe *getProbe) bool {
+	// The router serves /es/pricing as /pricing (SetPathLocales).
+	if ds.pathLocales != nil {
+		if tag, rest := ds.pathLocales.Split(path); tag != "" {
+			path = rest
+		}
+	}
 	if ds.resolvesStaticOrScreen(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: path}}) {
 		return true
 	}

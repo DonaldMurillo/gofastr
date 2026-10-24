@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -35,8 +36,9 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 			lists = append(lists, slotFailed(ctx))
 			continue
 		}
-		_, fk := relationTo(other, m.name)
-		if fk == "" {
+		_, fks := relationTo(other, m.name)
+		pins, ok := relatedPins(fks, b.id)
+		if !ok {
 			lists = append(lists, slotFailed(ctx))
 			continue
 		}
@@ -53,9 +55,11 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 		// record's title.
 		list := b.ui.List(other.GetName()).
 			Key(other.GetName()).
-			Where(fk, b.id).
 			Heading(om.plural(ctx), 2).
 			Embedded()
+		for _, pin := range pins {
+			list = list.Where(pin.Field, pin.Value)
+		}
 		if otherBase == "" {
 			// No screen of its own: rows without links and no New.
 			list = list.NoLinks()
@@ -82,8 +86,9 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta) string {
 		if err != nil {
 			continue
 		}
-		_, fk := relationTo(other, m.name)
-		if fk == "" {
+		_, fks := relationTo(other, m.name)
+		pins, ok := relatedPins(fks, b.id)
+		if !ok {
 			continue
 		}
 		om, err := b.ui.meta(other.GetName())
@@ -91,7 +96,7 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta) string {
 			continue
 		}
 		n, err := om.ch.CountAll(crud.WithReadHooks(ctx), crud.ListOptions{
-			Where: &filter.Predicate{Field: fk, Op: filter.OpEq, Value: b.id},
+			Where: &filter.Predicate{Children: pins},
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "entityui: related count", "entity", om.name, "error", err)
@@ -102,7 +107,7 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta) string {
 	if !any {
 		return ""
 	}
-	return formatNumber(float64(total), 0)
+	return i18n.Number(ctx, total)
 }
 
 // relatedBase derives the related entity's list path from this

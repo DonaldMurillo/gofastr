@@ -40,7 +40,9 @@ type EmailVerificationConfig struct {
 	// BodyTemplate, when non-nil, transforms the verification URL into
 	// the full email body before EmailSender.Send is called. nil means
 	// "send the URL as the entire body" (the historical behavior).
-	BodyTemplate func(url string) string
+	// ctx is the request's, so it carries the reader's locale: render
+	// the body from your phrases with it (i18n.Phrase.Text).
+	BodyTemplate func(ctx context.Context, url string) string
 	// TokenStore persists pending verification tokens. Defaults to in-memory
 	// (does not survive restart / scale), set a durable store
 	// (e.g. NewSQLMagicLinkTokenStore(db)) in production.
@@ -127,7 +129,7 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 	// AuthManager.requestSession).
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "no session")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 		return
 	}
 	// A pending-2FA session has proven the password and nothing else.
@@ -136,23 +138,23 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 	// session able to drive verification-email sends at someone else's
 	// address.
 	if sess.PendingTwoFactor {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return
 	}
 	store := p.mgr.UserStore()
 	if store == nil {
-		writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 		return
 	}
 	user, err := store.FindByID(r.Context(), sess.UserID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
 
 	tok, err := createPurposeToken(r.Context(), p.store, purposeVerify, user.GetID(), p.cfg.TokenTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "token create failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonTokenCreateFailed)
 		return
 	}
 
@@ -163,10 +165,10 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 	case p.cfg.EmailSender != nil:
 		emailBody := verifyURL
 		if p.cfg.BodyTemplate != nil {
-			emailBody = p.cfg.BodyTemplate(verifyURL)
+			emailBody = p.cfg.BodyTemplate(r.Context(), verifyURL)
 		}
 		if err := p.cfg.EmailSender.Send(r.Context(), user.GetEmail(), emailBody); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "email send failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonEmailSendFailed)
 			return
 		}
 	case p.cfg.DevMode:
@@ -180,7 +182,7 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 			"email_hash", hashedIdentifier(user.GetEmail()),
 			"token_hash", hashedIdentifier(tok))
 	default:
-		writeAuthError(w, http.StatusServiceUnavailable, "email delivery not configured")
+		writeAuthError(w, r, http.StatusServiceUnavailable, reasonEmailDeliveryNotConfigured)
 		return
 	}
 
@@ -191,15 +193,14 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	tok := r.URL.Query().Get("token")
 	if tok == "" {
-		writeAuthError(w, http.StatusBadRequest, "token required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonTokenRequired)
 		return
 	}
 	verifier, ok := p.mgr.UserStore().(EmailVerifier)
 	if !ok {
 		// The store doesn't expose MarkEmailVerified, refuse rather
 		// than silently no-op; the operator wired the wrong store.
-		writeAuthError(w, http.StatusInternalServerError,
-			"user store does not implement EmailVerifier")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoEmailVerifier)
 		return
 	}
 	// The link proves the mailbox only to the account that asked for it.
@@ -212,11 +213,11 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 	// leaves the token for the real click.
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "sign in, then open the verification link again")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonVerifySignIn)
 		return
 	}
 	if sess.PendingTwoFactor {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return
 	}
 	// A link opened from another account's session stays redeemable for
@@ -225,25 +226,25 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 	if peeker, ok := p.store.(MagicLinkTokenPeeker); ok {
 		raw, err := peeker.PeekToken(r.Context(), tok)
 		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 			return
 		}
 		if owner, ok := peekPurposePayload(raw, purposeVerify); ok && owner != sess.UserID {
-			writeAuthError(w, http.StatusForbidden, "this verification link belongs to another account")
+			writeAuthError(w, r, http.StatusForbidden, reasonVerifyOtherAccount)
 			return
 		}
 	}
 	userID, err := redeemPurposeToken(r.Context(), p.store, purposeVerify, tok)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 	if userID != sess.UserID {
-		writeAuthError(w, http.StatusForbidden, "this verification link belongs to another account")
+		writeAuthError(w, r, http.StatusForbidden, reasonVerifyOtherAccount)
 		return
 	}
 	if err := verifier.MarkEmailVerified(r.Context(), userID); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "mark verified failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonMarkVerifiedFailed)
 		return
 	}
 	// The trust-bit flip gates OAuth account binding (an unverified email

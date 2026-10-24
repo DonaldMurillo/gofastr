@@ -1,6 +1,7 @@
 package print
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -157,13 +159,26 @@ func TestAutoPrintRouteServesScript(t *testing.T) {
 
 // ----- PrintLink ------------------------------------------------------------
 
+func TestPrintLinkSpeaksCtx(t *testing.T) {
+	b := New(Config{DefaultAccess: Public}).Document(Document{
+		Name: "invoice", Path: "/invoice/{id}", Build: docBuild("x"),
+	})
+	mount(t, b)
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", printLabel.Key(), i18n.Message{Text: "Imprimer"})
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), i18n.NewTranslator(cat, "en"))
+	if got := string(b.PrintLink(ctx, "invoice", map[string]string{"id": "1"}, "")); !strings.Contains(got, ">Imprimer<") {
+		t.Errorf("French default label missing: %q", got)
+	}
+}
+
 func TestPrintLink(t *testing.T) {
 	b := New(Config{DefaultAccess: Public}).Document(Document{
 		Name: "invoice", Path: "/invoice/{id}", Build: docBuild("x"),
 	})
 	mount(t, b)
 
-	got := string(b.PrintLink("invoice", map[string]string{"id": "42"}, "Print invoice"))
+	got := string(b.PrintLink(nil, "invoice", map[string]string{"id": "42"}, "Print invoice"))
 	if !strings.Contains(got, `href="/print/invoice/42"`) {
 		t.Errorf("href wrong: %q", got)
 	}
@@ -175,15 +190,15 @@ func TestPrintLink(t *testing.T) {
 	}
 
 	// Unknown document → empty.
-	if s := b.PrintLink("nope", nil, "x"); s != "" {
+	if s := b.PrintLink(nil, "nope", nil, "x"); s != "" {
 		t.Errorf("unknown doc should yield empty, got %q", s)
 	}
 	// Default label.
-	if s := string(b.PrintLink("invoice", map[string]string{"id": "1"}, "")); !strings.Contains(s, ">Print<") {
+	if s := string(b.PrintLink(nil, "invoice", map[string]string{"id": "1"}, "")); !strings.Contains(s, ">Print<") {
 		t.Errorf("default label missing: %q", s)
 	}
 	// Param value is path-escaped.
-	if s := string(b.PrintLink("invoice", map[string]string{"id": "a/b"}, "x")); strings.Contains(s, "a/b") {
+	if s := string(b.PrintLink(nil, "invoice", map[string]string{"id": "a/b"}, "x")); strings.Contains(s, "a/b") {
 		t.Errorf("param not escaped: %q", s)
 	}
 }

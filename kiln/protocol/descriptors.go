@@ -74,7 +74,7 @@ var descriptors = map[string]Descriptor{
 			"nav": list(navItemSchema()),
 			"endpoints": list(object(map[string]any{
 				"name": str(""), "method": enum("GET", "POST", "PUT", "PATCH", "DELETE"),
-				"path": str(""), "entity": str(""), "handler": str("owned-Go handler name"),
+				"path": str("relative to the entity's route, e.g. {id}/refund"), "entity": str("the entity the endpoint hangs under"), "handler": str("exported owned-Go handler name"),
 				"description": str(""), "mcp": boolean(),
 			}, []string{"method", "path"})),
 			"middleware": list(object(map[string]any{

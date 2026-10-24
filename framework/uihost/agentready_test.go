@@ -482,6 +482,27 @@ func TestMarkdownNegotiation_NoAcceptHeaderIsHTML(t *testing.T) {
 	}
 }
 
+// App.NoLLMMD turns off every page doc, the negotiated one included: the
+// request gets the HTML page.
+func TestNegotiationHonorsAppNoLLMMD(t *testing.T) {
+	a := app.NewApp("md-neg-off")
+	a.NoLLMMD = true
+	a.RegisterScreen(app.NewScreen("/", &mdPageScreen{}).WithTitle("Home"), nil)
+	srv := httptest.NewServer(New(a, WithPublicLLMMD(), WithMarkdownNegotiation()))
+	t.Cleanup(srv.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/", nil)
+	req.Header.Set("Accept", "text/markdown")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("NoLLMMD app, Accept: text/markdown → Content-Type %q, want text/html", ct)
+	}
+}
+
 // ── Gap: default llms.txt section links /llm-pages.md when public ──
 
 func TestDefaultLLMsSections_LLMMDPublic(t *testing.T) {
@@ -500,6 +521,47 @@ func TestDefaultLLMsSections_NoneWhenPrivate(t *testing.T) {
 	out := renderLLMsTxt(&llmsCfg{title: "T", summary: "s"}, ds)
 	if strings.Contains(out, "## ") {
 		t.Errorf("no sections expected without public llm.md:\n%s", out)
+	}
+}
+
+// App.NoLLMMD leaves /llm-pages.md unmounted, so llms.txt never links it.
+func TestLLMsTxtSkipsDisabledIndex(t *testing.T) {
+	a := app.NewApp("llms-off")
+	a.NoLLMMD = true
+	ds := New(a, WithPublicLLMMD(), WithLLMsTxt("T", "s", nil))
+	if out := renderLLMsTxt(&llmsCfg{title: "T", summary: "s"}, ds); strings.Contains(out, "/llm-pages.md") {
+		t.Errorf("NoLLMMD app's llms.txt links the unmounted index:\n%s", out)
+	}
+}
+
+// The markdown alternate in the Link header names a doc that is served:
+// none for an app or a screen that opts out with NoLLMMD.
+func TestLinkAlternateSkipsNoLLMMD(t *testing.T) {
+	link := func(appOff bool, path string) string {
+		a := app.NewApp("link-off")
+		a.NoLLMMD = appOff
+		a.SetDefaultLayout(bareLayout("main"))
+		a.RegisterScreen(app.NewScreen("/on", &plainComp{}).WithTitle("On"), nil)
+		off := app.NewScreen("/off", &plainComp{}).WithTitle("Off")
+		off.NoLLMMD = true
+		a.RegisterScreen(off, nil)
+		host := New(a, WithPublicLLMMD(),
+			WithAgentReady(AgentReadyConfig{AgentCard: &AgentCardConfig{Name: "X", MCPEndpoint: "/mcp"}}))
+		rec := httptest.NewRecorder()
+		host.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("setup: %s answered %d", path, rec.Code)
+		}
+		return rec.Header().Get("Link")
+	}
+	if l := link(false, "/on"); !strings.Contains(l, "/on/llm.md") {
+		t.Fatalf("control: /on should advertise its doc, Link=%q", l)
+	}
+	if l := link(false, "/off"); strings.Contains(l, "llm.md") {
+		t.Errorf("NoLLMMD screen advertises a doc: Link=%q", l)
+	}
+	if l := link(true, "/on"); strings.Contains(l, "llm.md") {
+		t.Errorf("NoLLMMD app advertises a doc: Link=%q", l)
 	}
 }
 

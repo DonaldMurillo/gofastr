@@ -12,10 +12,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // pickerState reads class|primary|checked: the theme class on <html>,
@@ -53,7 +54,7 @@ func TestThemePickerSwitchesThePage(t *testing.T) {
 	// Runs while the body parses, before runtime.js and any module: what
 	// it records is what the first paint drew with.
 	body := `<script>window.__boot = document.documentElement.className;</script>` +
-		string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: "Alt", Theme: ref}, {Label: "Lite", Theme: liteRef}}}))
+		string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: testPhrase("Alt"), Theme: ref}, {Label: testPhrase("Lite"), Theme: liteRef}}}))
 	srv := themeTestPageWithHead(t, head, body)
 
 	ctx := moduleTestCtxURL(t, srv.URL, prefersScheme("light"))
@@ -124,7 +125,7 @@ func TestThemePickerStaleStoreShowsDefault(t *testing.T) {
 	ref := style.RegisterThemeOverride(alt)
 	head := "<style>" + base.CSSCustomProperties() + "\n" + style.ThemeOverrideCSS(ref.Hash(), alt) + "</style>" +
 		colorSchemeScript(t)
-	body := string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: "Alt", Theme: ref}}}))
+	body := string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: testPhrase("Alt"), Theme: ref}}}))
 	srv := themeTestPageWithHead(t, head, body)
 
 	ctx := moduleTestCtxURL(t, srv.URL, prefersScheme("light"))
@@ -158,7 +159,7 @@ func TestThemePickerArrowKeysPick(t *testing.T) {
 	cls := ref.Class()
 	head := "<style>" + base.CSSCustomProperties() + "\n" + style.ThemeOverrideCSS(ref.Hash(), alt) + "</style>" +
 		colorSchemeScript(t)
-	body := string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: "Alt", Theme: ref}}}))
+	body := string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: testPhrase("Alt"), Theme: ref}}}))
 	srv := themeTestPageWithHead(t, head, body)
 
 	ctx := moduleTestCtxURL(t, srv.URL, prefersScheme("light"))

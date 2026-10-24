@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // logSlogWarnDefault routes to slog.Default() so callers passing nil to
@@ -224,7 +226,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 				} else {
 					tok, err := generateSignedCSRFToken(cfg.SecretKey)
 					if err != nil {
-						http.Error(w, "csrf: token generation failed", http.StatusInternalServerError)
+						i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 						return
 					}
 					token = tok
@@ -247,7 +249,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 			// cookie AND signature is valid.
 			cookie, err := r.Cookie(cookieName)
 			if err != nil {
-				http.Error(w, "csrf: missing cookie", http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFMissingCookie)
 				return
 			}
 			submitted := r.Header.Get(cfg.HeaderName)
@@ -258,7 +260,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 				// see the bytes. Over-cap requests return 413 immediately.
 				buf, err := readAndBufferCapped(r, cfg.MaxFormBytes)
 				if err != nil {
-					http.Error(w, "csrf: form body too large", http.StatusRequestEntityTooLarge)
+					i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, reasonCSRFFormTooLarge)
 					return
 				}
 				submitted = parseFormField(buf, r.Header.Get("Content-Type"), cfg.FormField)
@@ -268,7 +270,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 			// read the cookie send it raw. Both unmask to the cookie value.
 			submitted = unmaskCSRFToken(submitted)
 			if submitted == "" || subtle.ConstantTimeCompare([]byte(submitted), []byte(cookie.Value)) != 1 {
-				http.Error(w, "csrf: token mismatch", http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFTokenMismatch)
 				return
 			}
 			if !verifySignedTokenAny(cookie.Value, cfg.SecretKey, cfg.AdditionalKeys) {
@@ -276,7 +278,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 				// an attacker planted both via a subdomain and didn't
 				// have the signing key (and the additional rotation
 				// keys, if any, also rejected). Reject.
-				http.Error(w, "csrf: invalid token signature", http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFBadSignature)
 				return
 			}
 			next.ServeHTTP(w, r)

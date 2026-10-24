@@ -20,6 +20,7 @@ package interactive
 // is followed, and closes it when the viewport grows past the swap.
 
 import (
+	"context"
 	_ "embed"
 	"strings"
 
@@ -190,7 +191,8 @@ func sheetPillCSS(_ style.Theme) string {
   max-inline-size: calc(100vw - 2 * var(--spacing-lg, 16px));
   box-sizing: border-box;
   cursor: pointer;
-  padding: calc(var(--spacing-sm, 4px) * 2.25) calc(var(--spacing-sm, 4px) * 3.5) calc(var(--spacing-sm, 4px) * 2.25) calc(var(--spacing-sm, 4px) * 3);
+  padding-block: calc(var(--spacing-sm, 4px) * 2.25);
+  padding-inline: calc(var(--spacing-sm, 4px) * 3) calc(var(--spacing-sm, 4px) * 3.5);
   border: var(--stroke-thin, 1px) solid var(--color-border-strong, #D4D4D8);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #fff);
@@ -308,15 +310,15 @@ func sheetPillCSS(_ style.Theme) string {
 // dialog through id, and a close button whose attrs say what it closes
 // (a widget's data-cui-action, a popover's popovertarget). The dialog's
 // name says what "Close" closes.
-func sheetHead(title, id string, closeAttrs map[string]string) render.HTML {
-	return sheetHeadWithLabel(title, id, "", closeAttrs)
+func sheetHead(ctx context.Context, title, id string, closeAttrs map[string]string) render.HTML {
+	return sheetHeadWithLabel(ctx, title, id, "", closeAttrs)
 }
 
-func sheetHeadWithLabel(title, id, closeLabel string, closeAttrs map[string]string) render.HTML {
-	if closeLabel == "" {
-		closeLabel = "Close"
+func sheetHeadWithLabel(ctx context.Context, title, id, label string, closeAttrs map[string]string) render.HTML {
+	if label == "" {
+		label = closeLabel.Text(ctx)
 	}
-	attrs := map[string]string{"class": "cui-sheet-head__close", "type": "button", "aria-label": closeLabel}
+	attrs := map[string]string{"class": "cui-sheet-head__close", "type": "button", "aria-label": label}
 	for k, v := range closeAttrs {
 		attrs[k] = v
 	}
@@ -368,9 +370,12 @@ func sheetHeadCSS(_ style.Theme) string {
 
 // PhoneSheetConfig configures a PhoneSheet.
 type PhoneSheetConfig struct {
-	// CloseLabel names the dismiss control in the reader's language.
-	// Empty keeps the default "Close".
+	// CloseLabel names the dismiss control. Empty is "Close" in the
+	// language of Ctx.
 	CloseLabel string
+	// Ctx carries the per-request context the default close label is
+	// written in. When nil, English applies.
+	Ctx context.Context
 	// ID is the sheet's element id, which the pill names to open it.
 	// Unique on the page. Required.
 	ID string
@@ -419,7 +424,7 @@ func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 			"aria-labelledby": titleID,
 		},
 			html.Div(html.DivConfig{Class: "cui-phone-sheet__top"},
-				sheetHeadWithLabel(cfg.Title, titleID, cfg.CloseLabel, map[string]string{
+				sheetHeadWithLabel(cfg.Ctx, cfg.Title, titleID, cfg.CloseLabel, map[string]string{
 					"popovertarget":       cfg.ID,
 					"popovertargetaction": "hide",
 				})),

@@ -1,9 +1,10 @@
 package dsl
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -38,7 +39,7 @@ import (
 // and quote at most a short, control-byte-scrubbed excerpt of the input.
 func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, error) {
 	if len(text) > maxDSLInputSize {
-		return nil, fmt.Errorf("filter: input exceeds %d bytes", maxDSLInputSize)
+		return nil, i18n.NewError(reasonFilterTooLong, map[string]any{"max": maxDSLInputSize})
 	}
 	src := strings.TrimSpace(text)
 	if src == "" {
@@ -51,7 +52,7 @@ func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, erro
 	}
 	p.skipSpace()
 	if p.pos < len(p.src) {
-		return nil, p.errorf("unexpected input after expression")
+		return nil, p.errorf(reasonUnexpectedInput)
 	}
 	// The returned tree is ValidatePredicate's resolved copy: aliases
 	// resolved and Bool markers set, on memory this call owns.
@@ -71,7 +72,7 @@ const maxSortTerms = 16
 // to ASC when omitted. Empty or all-whitespace text returns (nil, nil).
 func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) {
 	if len(text) > maxDSLInputSize {
-		return nil, fmt.Errorf("sort: input exceeds %d bytes", maxDSLInputSize)
+		return nil, i18n.NewError(reasonSortTooLong, map[string]any{"max": maxDSLInputSize})
 	}
 	src := strings.TrimSpace(text)
 	if src == "" {
@@ -79,7 +80,7 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 	}
 	parts := strings.Split(src, ",")
 	if len(parts) > maxSortTerms {
-		return nil, fmt.Errorf("sort: too many sort keys: %d (max %d)", len(parts), maxSortTerms)
+		return nil, i18n.NewError(reasonSortTooMany, map[string]any{"count": len(parts), "max": maxSortTerms})
 	}
 
 	// The allow-list mirrors ParseSortValues: Hidden folds into unknown,
@@ -112,15 +113,15 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
-			return nil, fmt.Errorf("sort: empty sort key")
+			return nil, i18n.NewError(reasonSortEmptyKey)
 		}
 		toks := strings.Fields(part)
 		if len(toks) > 2 {
-			return nil, fmt.Errorf("sort: %q is not `field [ASC|DESC]`", textsafe.SanitizeControlBytes(part))
+			return nil, i18n.NewError(reasonSortBadTerm, map[string]any{"term": strconv.Quote(textsafe.SanitizeControlBytes(part))})
 		}
 		name := toks[0]
 		if !dslIdentRe.MatchString(name) {
-			return nil, fmt.Errorf("sort: invalid field name at %q", textsafe.SanitizeControlBytes(name))
+			return nil, i18n.NewError(reasonSortBadFieldName, map[string]any{"name": strconv.Quote(textsafe.SanitizeControlBytes(name))})
 		}
 		desc := false
 		if len(toks) == 2 {
@@ -129,14 +130,14 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 			case "DESC":
 				desc = true
 			default:
-				return nil, fmt.Errorf("sort: invalid direction %q (want ASC or DESC)", textsafe.SanitizeControlBytes(toks[1]))
+				return nil, i18n.NewError(reasonSortBadDirection, map[string]any{"dir": strconv.Quote(textsafe.SanitizeControlBytes(toks[1]))})
 			}
 		}
 		if noQuery[name] {
-			return nil, fmt.Errorf("field %q cannot be sorted on", name)
+			return nil, i18n.NewError(reasonNotSortable, map[string]any{"field": strconv.Quote(name)})
 		}
 		if !allowed[name] {
-			return nil, fmt.Errorf("invalid sort field %q", name)
+			return nil, i18n.NewError(reasonInvalidSortField, map[string]any{"field": strconv.Quote(name)})
 		}
 		if col, ok := alias[name]; ok {
 			name = col
@@ -167,7 +168,7 @@ func isPredSpace(b byte) bool {
 // excerpt around it. Control bytes are stripped and the quote is capped so
 // a hostile ?filter= cannot forge log lines or dump its payload through
 // the error path.
-func (p *predParser) errorf(msg string) error {
+func (p *predParser) errorf(reason i18n.Phrase) error {
 	lo := p.pos - 16
 	if lo < 0 {
 		lo = 0
@@ -180,7 +181,7 @@ func (p *predParser) errorf(msg string) error {
 	if near == "" {
 		near = "start of input"
 	}
-	return fmt.Errorf("filter: offset %d: %s (near %q)", p.pos, msg, near)
+	return i18n.NewError(reason, map[string]any{"offset": p.pos, "near": strconv.Quote(near)})
 }
 
 // parseExpr implements expr := and_expr ("or" and_expr)*. A chain of ors
@@ -238,12 +239,12 @@ func (p *predParser) parseTerm() (*filter.Predicate, error) {
 		}
 		p.skipSpace()
 		if p.pos >= len(p.src) || p.src[p.pos] != ')' {
-			return nil, p.errorf("expected )")
+			return nil, p.errorf(reasonExpectedParen)
 		}
 		p.pos++
 		return inner, nil
 	}
-	field, err := p.parseIdent("field name")
+	field, err := p.parseIdent(reasonExpectedFieldName)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +268,7 @@ func (p *predParser) parseTerm() (*filter.Predicate, error) {
 
 // parseIdent scans one [A-Za-z_][A-Za-z0-9_]* token, the same allow-list
 // dslIdentRe spells for every other DSL identifier.
-func (p *predParser) parseIdent(what string) (string, error) {
+func (p *predParser) parseIdent(missing i18n.Phrase) (string, error) {
 	p.skipSpace()
 	start := p.pos
 	if p.pos < len(p.src) && (isAlpha(p.src[p.pos]) || p.src[p.pos] == '_') {
@@ -277,7 +278,7 @@ func (p *predParser) parseIdent(what string) (string, error) {
 		}
 	}
 	if p.pos == start {
-		return "", p.errorf("expected " + what)
+		return "", p.errorf(missing)
 	}
 	return p.src[start:p.pos], nil
 }
@@ -318,7 +319,7 @@ func (p *predParser) parseOp() (filter.FilterOp, error) {
 			return kw.op, nil
 		}
 	}
-	return "", p.errorf("expected an operator (=, !=, <, >, <=, >=, contains, in)")
+	return "", p.errorf(reasonExpectedOperator)
 }
 
 // peekKeyword reports whether a case-insensitive keyword starts at pos,
@@ -345,7 +346,7 @@ func (p *predParser) consumeKeyword(kw string) {
 func (p *predParser) parseValue() (string, error) {
 	p.skipSpace()
 	if p.pos >= len(p.src) {
-		return "", p.errorf("expected a value")
+		return "", p.errorf(reasonExpectedValue)
 	}
 	switch b := p.src[p.pos]; {
 	case b == '"':
@@ -354,7 +355,7 @@ func (p *predParser) parseValue() (string, error) {
 		return p.parseNumber()
 	case isAlpha(b) || b == '_':
 		start := p.pos
-		tok, err := p.parseIdent("value")
+		tok, err := p.parseIdent(reasonExpectedValueWord)
 		if err != nil {
 			return "", err
 		}
@@ -365,9 +366,9 @@ func (p *predParser) parseValue() (string, error) {
 			return "false", nil
 		}
 		p.pos = start
-		return "", p.errorf("bare words must be quoted; only numbers, true and false may go unquoted")
+		return "", p.errorf(reasonBareWord)
 	default:
-		return "", p.errorf("expected a value")
+		return "", p.errorf(reasonExpectedValue)
 	}
 }
 
@@ -385,7 +386,7 @@ func (p *predParser) parseQuoted() (string, error) {
 			return sb.String(), nil
 		case '\\':
 			if p.pos+1 >= len(p.src) {
-				return "", p.errorf("unterminated escape in string")
+				return "", p.errorf(reasonUnterminatedEscape)
 			}
 			switch p.src[p.pos+1] {
 			case '"':
@@ -393,17 +394,17 @@ func (p *predParser) parseQuoted() (string, error) {
 			case '\\':
 				sb.WriteByte('\\')
 			default:
-				return "", p.errorf(`only \" and \\ may be escaped`)
+				return "", p.errorf(reasonBadEscape)
 			}
 			p.pos += 2
 		case '\n', '\r':
-			return "", p.errorf("unterminated string")
+			return "", p.errorf(reasonUnterminatedString)
 		default:
 			sb.WriteByte(b)
 			p.pos++
 		}
 	}
-	return "", p.errorf("unterminated string")
+	return "", p.errorf(reasonUnterminatedString)
 }
 
 // parseNumber scans an optionally signed decimal with optional fraction
@@ -424,13 +425,13 @@ func (p *predParser) parseNumber() (string, error) {
 	}
 	if !digits() {
 		p.pos = start
-		return "", p.errorf("expected a number")
+		return "", p.errorf(reasonExpectedNumber)
 	}
 	if p.pos < len(p.src) && p.src[p.pos] == '.' {
 		p.pos++
 		if !digits() {
 			p.pos = start
-			return "", p.errorf("expected digits after the decimal point")
+			return "", p.errorf(reasonExpectedFraction)
 		}
 	}
 	if p.pos < len(p.src) && (p.src[p.pos] == 'e' || p.src[p.pos] == 'E') {
@@ -441,7 +442,7 @@ func (p *predParser) parseNumber() (string, error) {
 		}
 		if !digits() {
 			p.pos = mark
-			return "", p.errorf("expected digits in the exponent")
+			return "", p.errorf(reasonExpectedExponent)
 		}
 	}
 	return p.src[start:p.pos], nil
@@ -452,7 +453,7 @@ func (p *predParser) parseNumber() (string, error) {
 func (p *predParser) parseValueList() ([]string, error) {
 	p.skipSpace()
 	if p.pos >= len(p.src) || p.src[p.pos] != '[' {
-		return nil, p.errorf("in requires a bracketed list like [\"a\", \"b\"]")
+		return nil, p.errorf(reasonInNeedsList)
 	}
 	p.pos++
 	var values []string
@@ -464,7 +465,7 @@ func (p *predParser) parseValueList() ([]string, error) {
 		values = append(values, v)
 		p.skipSpace()
 		if p.pos >= len(p.src) {
-			return nil, p.errorf("unterminated list, expected , or ]")
+			return nil, p.errorf(reasonUnterminatedList)
 		}
 		switch p.src[p.pos] {
 		case ',':
@@ -473,7 +474,7 @@ func (p *predParser) parseValueList() ([]string, error) {
 			p.pos++
 			return values, nil
 		default:
-			return nil, p.errorf("expected , or ] in list")
+			return nil, p.errorf(reasonExpectedListSep)
 		}
 	}
 }

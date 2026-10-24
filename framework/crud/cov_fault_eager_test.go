@@ -80,7 +80,7 @@ func covFaultRelWorld(t *testing.T) (*CrudHandler, *sql.DB, stubRegistry) {
 func TestEagerHasMany_NextErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	rel := entity.HasMany("comments", "comments", "post_id")
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"comments\"" })
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM comments " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("hasMany rows.Err = %v, want injected", err)
@@ -91,7 +91,7 @@ func TestEagerBelongsTo_SrcNextErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	rel := entity.BelongsTo("author", "users", "author_id")
 	// Source query selects from posts; fail iteration of it.
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"posts\"" })
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM posts " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("belongsTo src rows.Err = %v, want injected", err)
@@ -102,7 +102,7 @@ func TestEagerBelongsTo_TgtQueryErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	rel := entity.BelongsTo("author", "users", "author_id")
 	// Source query (posts) runs; target query (users) fails.
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"users\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM users " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("belongsTo tgt query = %v, want injected", err)
@@ -112,7 +112,7 @@ func TestEagerBelongsTo_TgtQueryErr(t *testing.T) {
 func TestEagerBelongsTo_TgtNextErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	rel := entity.BelongsTo("author", "users", "author_id")
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"users\"" })
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM users " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("belongsTo tgt rows.Err = %v, want injected", err)
@@ -122,8 +122,8 @@ func TestEagerBelongsTo_TgtNextErr(t *testing.T) {
 func TestEagerManyToMany_NextErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	m2m := entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")
-	m2m.ForeignKey = "tag_id"
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"tags\"" })
+	m2m.ForeignKey = []string{"tag_id"}
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM tags " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{m2m}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("m2m rows.Err = %v, want injected", err)
@@ -134,7 +134,7 @@ func TestEagerManyToMany_NextErr(t *testing.T) {
 
 func TestFilteredHasMany_NextErr(t *testing.T) {
 	ch, db, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"comments\"" })
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM comments " })
 	_, err := ch.ListAll(context.Background(), ListOptions{Includes: []string{"comments"}})
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered hasMany rows.Err = %v, want injected", err)
@@ -148,8 +148,8 @@ func belongsToAuthorNode() *IncludeNode {
 
 func TestFilteredBelongsTo_SrcQueryErr(t *testing.T) {
 	_, db, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"posts\"" })
-	err := loadIncludeNode(context.Background(), db, "posts", "id", belongsToAuthorNode(), []string{"p1"}, newResult("p1"), newIncludeBudget())
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM posts " })
+	err := loadIncludeNode(context.Background(), db, "posts", []string{"id"}, belongsToAuthorNode(), []string{"p1"}, newResult("p1"), newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered belongsTo src query = %v, want injected", err)
 	}
@@ -157,8 +157,8 @@ func TestFilteredBelongsTo_SrcQueryErr(t *testing.T) {
 
 func TestFilteredBelongsTo_SrcNextErr(t *testing.T) {
 	_, db, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"posts\"" })
-	err := loadIncludeNode(context.Background(), db, "posts", "id", belongsToAuthorNode(), []string{"p1"}, newResult("p1"), newIncludeBudget())
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM posts " })
+	err := loadIncludeNode(context.Background(), db, "posts", []string{"id"}, belongsToAuthorNode(), []string{"p1"}, newResult("p1"), newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered belongsTo src rows.Err = %v, want injected", err)
 	}
@@ -166,7 +166,7 @@ func TestFilteredBelongsTo_SrcNextErr(t *testing.T) {
 
 func TestFilteredBelongsTo_TgtQueryErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"users\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM users " })
 	_, err := ch.ListAll(context.Background(), ListOptions{Includes: []string{"author"}})
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered belongsTo tgt query = %v, want injected", err)
@@ -175,7 +175,7 @@ func TestFilteredBelongsTo_TgtQueryErr(t *testing.T) {
 
 func TestFilteredBelongsTo_TgtNextErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM \"users\"" })
+	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM users " })
 	_, err := ch.ListAll(context.Background(), ListOptions{Includes: []string{"author"}})
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered belongsTo tgt rows.Err = %v, want injected", err)
@@ -202,7 +202,7 @@ func TestFilteredManyToMany_NextErr(t *testing.T) {
 
 func TestFilteredHasMany_QueryErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"comments\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM comments " })
 	_, err := ch.ListAll(context.Background(), ListOptions{Includes: []string{"comments"}})
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("filtered hasMany query = %v, want injected", err)

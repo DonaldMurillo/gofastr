@@ -46,6 +46,10 @@ For `List("deals").Base("/deals")`, the default contract is:
 | Create | `/deals/create` | `appUI.Create("deals").Base("/deals")` |
 | Record | `/deals/{id}` | `appUI.Record("deals", id).Base("/deals")` |
 
+An entity with a composite `PrimaryKey` links its records as one segment
+per key column, `/enrollments/{student_id}/{course_id}`; register that
+screen and pass `entity.JoinKey` of the params as the id.
+
 Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;
@@ -457,6 +461,10 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   `View`), its All tab links `?view=all`, the reserved key. A view with
   neither a `Where` nor a registered func fails at boot, and so does a
   func registered for a key no view declares.
+- A tab's `Label`, a side panel's `Title` and an action's `Label` are
+  `i18n.Phrase` values declared at package level
+  (`i18n.Define("myapp.customers.billing", "Billing")`), drawn in the
+  request's language. The zero Phrase shows the extension's `Key`.
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
   a recover: a panicking tab fails that tab alone.
 - **Side** adds panels to the record's side column on the Edit tab,
@@ -493,7 +501,9 @@ JSON API applies live in the builders themselves:
 - The list runs `CanReadScoped` before any read; the record also runs
   `CanReadRecordScoped`, so a resource-aware Decider that allows the
   listing and denies one row answers not-found, byte-identical to a
-  missing id.
+  missing id. The page answers 404 with that body (`app.SetStatus`),
+  the status the JSON API gives the same caller; a Create duplicating
+  such a row answers the same.
 - Every read of a DIFFERENT entity — relation cell labels (one IN read
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
@@ -643,7 +653,7 @@ _ = list.RenderCtx(ctx)
   revealing nothing. The save form ("Save view", a name; shown once the
   filter or the columns differ from the open view) and the open view's
   delete form post to `POST <write base>/_views` and
-  `POST <write base>/_views/_delete/{id}`, served by
+  `POST <write base>/_views/_delete?id=<id>`, served by
   `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
   and columns against the entity's fields before storing anything;
   owner and tenant come only from the caller's context, which the

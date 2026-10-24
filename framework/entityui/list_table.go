@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -43,7 +44,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 
 	uiRows := make([]ui.Row, 0, len(rows))
 	for i, row := range rows {
-		id := cell(rowValue(row, s.m.pk))
+		id := s.m.rowID(row)
 		cells := map[string]render.HTML{}
 		if lb != nil {
 			cells["_s"] = selectCell(ctx, s, lb, row, i)
@@ -104,17 +105,17 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	}
 	if known && total > 0 && len(rows) > 0 && !b.top {
 		from := (page-1)*s.limit + 1
-		dt.Summary = i18nui.TVars(ctx, i18nui.KeyEntityRange, map[string]string{
-			"from":  formatNumber(float64(from), 0),
-			"to":    formatNumber(float64(from+len(rows)-1), 0),
-			"total": formatNumber(float64(total), 0),
+		dt.Summary = i18nui.EntityRange.Text(ctx, map[string]any{
+			"from":  from,
+			"to":    from + len(rows) - 1,
+			"total": total,
 		})
 		dt.FooterTools = b.perPageMenu(ctx, s, total)
 	}
 	if s.inlineDrawn {
 		// The cells look like values; the line under the rows says they
 		// edit where they stand.
-		dt.Note = i18nui.T(ctx, i18nui.KeyEntityInlineEditHint)
+		dt.Note = i18nui.EntityInlineEditHint.Text(ctx)
 	}
 	return ui.DataTable(dt)
 }
@@ -131,14 +132,14 @@ func (b *ListBuilder) perPageMenu(ctx context.Context, s *listState, total int) 
 	for i, n := range sizes {
 		q := s.carryWithSort(s.p.page, s.p.per)
 		q.Set(s.p.per, strconv.Itoa(n))
-		items[i] = ui.MenuItem{Label: strconv.Itoa(n), Href: listHref(s.path, q)}
+		items[i] = ui.MenuItem{Label: i18n.Number(ctx, n), Href: listHref(s.path, q)}
 	}
-	label := i18nui.T(ctx, i18nui.KeyEntityPageSize)
+	label := i18nui.EntityPageSize.Text(ctx)
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
 		ui.Muted(render.Text(label)),
 		ui.Menu(ui.MenuConfig{
 			ID:       "eui-" + listIDSafe(s.key, s.m.name) + "-per",
-			Label:    strconv.Itoa(s.limit),
+			Label:    i18n.Number(ctx, s.limit),
 			Items:    items,
 			Position: ui.MenuTopEnd,
 		}),
@@ -171,7 +172,7 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 		return ""
 	}
 	raw, ok := s.rawRows[id]
-	if !ok || cell(rowValue(raw, f.Name)) != cell(rowValue(row, f.Name)) {
+	if !ok || cell(s.m.rowValue(raw, f.Name)) != cell(s.m.rowValue(row, f.Name)) {
 		return ""
 	}
 	fb := &formBuilder{b: &RecordBuilder{ui: b.ui, entity: s.m.name, id: id}, m: s.m, row: raw, compact: true}
@@ -180,11 +181,11 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 	control := fb.typedInput(ctx, f, label, "", "eui-ie-"+listIDSafe(s.key, s.m.name)+"-"+strconv.Itoa(i)+"-"+f.Name)
 	return ui.InlineEdit(ui.InlineEditConfig{
 		Display: display,
-		Label:   i18nui.TVars(ctx, i18nui.KeyEntityInlineEdit, map[string]string{"field": label, "title": s.rowTitle(ctx, row)}),
+		Label:   i18nui.EntityInlineEdit.Text(ctx, map[string]any{"field": label, "title": s.rowTitle(ctx, row)}),
 		Control: control,
-		Action:  s.m.api + "/" + url.PathEscape(id),
+		Action:  s.m.api + "/" + s.m.idPath(id),
 		Return:  listHref(s.path, s.q),
-		Saved:   i18nui.T(ctx, i18nui.KeyEntitySaved),
+		Saved:   i18nui.EntitySaved.Text(ctx),
 		Ctx:     ctx,
 	})
 }
@@ -278,7 +279,7 @@ func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[stri
 		}
 		ids := make([]string, 0, len(rows))
 		for _, row := range rows {
-			if v := cell(rowValue(row, name)); v != "" {
+			if v := cell(s.m.rowValue(row, name)); v != "" {
 				ids = append(ids, v)
 			}
 		}
@@ -306,10 +307,10 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		// An app's Cell runs behind a recover: a panicking kind degrades
 		// to a muted value, never a failed list.
 		return contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
+			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
 		})
 	}
-	val := cell(rowValue(row, name))
+	val := cell(m.rowValue(row, name))
 	if f.Type == schema.Relation {
 		// nil labels: the caller may not read the related entity. Muted,
 		// never the raw foreign key — a bare id where a name belongs is
@@ -321,7 +322,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 			// A title the caller read links to its record where the UI
 			// knows the related entity's screens.
 			if base, ok := s.relBase[name]; ok {
-				return ui.Tag(ui.TagConfig{Label: t, Href: base + "/" + url.PathEscape(val)})
+				return ui.Tag(ui.TagConfig{Ctx: ctx, Label: t, Href: under(base, url.PathEscape(val))})
 			}
 			return render.Text(t)
 		}
@@ -333,9 +334,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	switch f.Type {
 	case schema.Bool:
 		if truthy(val) {
-			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyEntityYes), Variant: ui.StatusSuccess})
+			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityYes.Text(ctx), Variant: ui.StatusSuccess})
 		}
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyEntityNo), Variant: ui.StatusNeutral})
+		return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityNo.Text(ctx), Variant: ui.StatusNeutral})
 	case schema.Enum:
 		if val == "" {
 			return muted()
@@ -349,11 +350,13 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	}
 	switch f.Type {
 	case schema.Decimal, schema.Float:
-		return render.Text(decimal(val))
+		return render.Text(decimal(ctx, val))
+	case schema.Int:
+		return render.Text(integer(ctx, val))
 	case schema.Date:
-		return render.Text(formatDate(rowValue(row, name), dateLayout))
+		return render.Text(formatDate(ctx, m.rowValue(row, name), false))
 	case schema.Timestamp:
-		return render.Text(formatDate(rowValue(row, name), timestampLayout))
+		return render.Text(formatDate(ctx, m.rowValue(row, name), true))
 	case schema.Image, schema.File:
 		// A value with no safe address draws the empty mark, never the
 		// stored text.
@@ -376,10 +379,10 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	}
 	if kind, ok := u.kindCell(m, f); ok {
 		return string(contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
+			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
 		}))
 	}
-	raw := rowValue(row, name)
+	raw := m.rowValue(row, name)
 	val := cell(raw)
 	if f.Type == schema.Relation {
 		if val == "" || labels.refused(name) {
@@ -400,11 +403,16 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		if val == "" {
 			return ""
 		}
-		return decimal(val)
+		return decimal(ctx, val)
+	case schema.Int:
+		if val == "" {
+			return ""
+		}
+		return integer(ctx, val)
 	case schema.Date:
-		return formatDate(raw, dateLayout)
+		return formatDate(ctx, raw, false)
 	case schema.Timestamp:
-		return formatDate(raw, timestampLayout)
+		return formatDate(ctx, raw, true)
 	default:
 		// Everything else prints its value as text.
 	}
@@ -453,7 +461,7 @@ func sortDir(desc bool) string {
 // re-fetches the page on success and toasts a refusal.
 func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[string]any, i int) render.HTML {
 	m := s.m
-	id := cell(rowValue(row, m.pk))
+	id := m.rowID(row)
 	href := s.recordHref(id)
 	title := s.rowTitle(ctx, row)
 
@@ -466,25 +474,25 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 	}, render.Text(href))
 
 	items := []ui.MenuItem{
-		{Label: i18nui.T(ctx, i18nui.KeyEntityView), Href: href},
-		{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}},
+		{Label: i18nui.EntityView.Text(ctx), Href: href},
+		{Label: i18nui.EntityCopyLink.Text(ctx), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.CopyCopied.Text(ctx)}},
 	}
 	if b.dup && s.createPath != "" && !m.d.NoDuplicate && canCreate(ctx, m) {
 		items = append(items, ui.MenuItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+			Label: i18nui.EntityDuplicate.Text(ctx),
 			Href:  s.createPath + "?duplicate=" + url.QueryEscape(id),
 		})
 	}
 	if b.delete && canDelete(ctx, m, id) {
 		del := deleteAction(ctx, m, id, listHref(s.path, s.q), b.undo)
 		items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
-			Label:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+			Label:  i18nui.EntityDelete.Text(ctx),
 			Danger: true,
 			Do:     &del,
 		})
 	}
 	return render.Join(urlSpan, ui.Menu(ui.MenuConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
+		Label:    i18nui.EntityRowActions.Text(ctx, map[string]any{"title": title}),
 		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,
@@ -507,11 +515,11 @@ func listIDSafe(key, entity string) string {
 // empty.
 func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStateConfig {
 	var title, desc string
-	noun := map[string]string{"entity": s.m.noun(ctx, true)}
+	noun := map[string]any{"entity": s.m.noun(ctx, true)}
 	if b.embedded {
 		// The section's header already offers Add.
 		return ui.EmptyStateConfig{
-			Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, noun),
+			Title:        i18nui.EntityEmpty.Text(ctx, noun),
 			HeadingLevel: b.headingLevel() + 1,
 			Compact:      true,
 		}
@@ -519,17 +527,17 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 	if s.deletedView {
 		// The trash view's own empty state: nothing is deleted, and
 		// there is no New to offer from inside it.
-		title = i18nui.TVars(ctx, i18nui.KeyEntityDeletedEmpty, noun)
-		desc = i18nui.T(ctx, i18nui.KeyEntityDeletedEmptyBody)
+		title = i18nui.EntityDeletedEmpty.Text(ctx, noun)
+		desc = i18nui.EntityDeletedEmptyBody.Text(ctx)
 		return ui.EmptyStateConfig{Title: title, Description: desc, HeadingLevel: b.headingLevel() + 1}
 	}
 	if s.searchedOrFiltered() {
 		return ui.EmptyStateConfig{
-			Title:        i18nui.TVars(ctx, i18nui.KeyEntityNoMatch, noun),
-			Description:  i18nui.T(ctx, i18nui.KeyEntityNoMatchBody),
+			Title:        i18nui.EntityNoMatch.Text(ctx, noun),
+			Description:  i18nui.EntityNoMatchBody.Text(ctx),
 			HeadingLevel: b.headingLevel() + 1,
 			Action: ui.LinkButton(ui.LinkButtonConfig{
-				Label:   i18nui.T(ctx, i18nui.KeyEntityClearSearch),
+				Label:   i18nui.EntityClearSearch.Text(ctx),
 				Href:    s.clearSearchHref(),
 				Variant: ui.ButtonSecondary,
 			}),
@@ -537,23 +545,23 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 	}
 	if s.viewPred != nil {
 		return ui.EmptyStateConfig{
-			Title:        i18nui.TVars(ctx, i18nui.KeyEntityViewEmpty, noun),
-			Description:  i18nui.T(ctx, i18nui.KeyEntityViewEmptyBody),
+			Title:        i18nui.EntityViewEmpty.Text(ctx, noun),
+			Description:  i18nui.EntityViewEmptyBody.Text(ctx),
 			HeadingLevel: b.headingLevel() + 1,
 		}
 	}
 	desc = b.empty
 	if desc == "" {
-		desc = i18nui.T(ctx, i18nui.KeyEntityEmptyBody)
+		desc = i18nui.EntityEmptyBody.Text(ctx)
 	}
 	cfg := ui.EmptyStateConfig{
-		Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, noun),
+		Title:        i18nui.EntityEmpty.Text(ctx, noun),
 		Description:  desc,
 		HeadingLevel: b.headingLevel() + 1,
 	}
 	if b.mayCreate() && s.createPath != "" && canCreate(ctx, s.m) {
 		cfg.Action = ui.LinkButton(ui.LinkButtonConfig{
-			Label: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": s.m.singular(ctx)}),
+			Label: i18nui.EntityNew.Text(ctx, map[string]any{"entity": s.m.singular(ctx)}),
 			Href:  s.createHref(),
 		})
 	}

@@ -26,7 +26,7 @@ import (
 func TestEagerBelongsTo_SrcQueryErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	rel := entity.BelongsTo("author", "users", "author_id")
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"posts\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM posts " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {
 		t.Fatalf("belongsTo src query = %v, want injected", err)
@@ -142,13 +142,12 @@ func TestApplyIncludeTree_ChildWithZeroRows(t *testing.T) {
 	}
 }
 
-// include.go:362: recurseLoadOnRawRows defaults a blank PrimaryKey to "id".
-// Built directly with a target entity whose PrimaryKey is "" so the guard
-// fires (NOT removed, exercised).
-func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
+// recurseLoadOnRawRows joins children on the target's one key column, so a
+// composite-key target is refused.
+func TestRecurseLoadOnRawRows_CompositeKey(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
-	target := reg.byName["users"]
-	target.PrimaryKey = "" // force the pk=="" guard at line 362
+	target := *reg.byName["users"]
+	target.Config.PrimaryKey = []string{"id", "name"}
 
 	child := &IncludeNode{
 		Name:     "profile",
@@ -156,9 +155,9 @@ func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
 		Target:   reg.byName["profiles"],
 	}
 	rawRows := []map[string]any{{"id": "u1", "name": "alice"}}
-	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget())
-	if err != nil {
-		t.Fatalf("recurseLoadOnRawRows blank-pk: %v", err)
+	err := ch.recurseLoadOnRawRows(context.Background(), &target, []*IncludeNode{child}, rawRows, newIncludeBudget())
+	if !errors.Is(err, entity.ErrCompositeKey) {
+		t.Fatalf("recurseLoadOnRawRows on a composite key: err = %v, want ErrCompositeKey", err)
 	}
 }
 
@@ -218,7 +217,7 @@ func TestRecurseLoadOnRawRows_ChildLoadError(t *testing.T) {
 		Relation: entity.HasMany("profiles", "profiles", "post_id"),
 		Target:   reg.byName["profiles"],
 	}
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"profiles\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM profiles " })
 	rawRows := []map[string]any{{"id": "u1", "name": "alice"}}
 	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {
@@ -240,7 +239,7 @@ func TestApplyIncludeTree_NestedLoadError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build nodes: %v", err)
 	}
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"profiles\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM profiles " })
 	rows := []map[string]any{{"id": "p1", "title": "first", "author_id": "u1"}}
 	if err := ch.applyIncludeTree(context.Background(), rows, nodes); !errors.Is(err, errCovInjected) {
 		t.Fatalf("applyIncludeTree nested-load err = %v, want injected", err)
@@ -265,7 +264,7 @@ func TestRecurseLoadOnRawRows_GrandchildLoadError(t *testing.T) {
 	}
 	// profiles loads fine (p1 has a profile row keyed post_id=p1); the
 	// grandchild comments query faults during the grandchild recursion.
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM \"comments\"" })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM comments " })
 	rawRows := []map[string]any{{"id": "p1", "name": "alice"}}
 	err := ch.recurseLoadOnRawRows(context.Background(), reg.byName["users"], []*IncludeNode{child}, rawRows, newIncludeBudget())
 	if !errors.Is(err, errCovInjected) {

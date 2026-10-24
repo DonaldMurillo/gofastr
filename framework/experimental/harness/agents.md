@@ -3,7 +3,7 @@
 > **Experimental (v0.1).** This subsystem lives under
 > `framework/experimental/` so the stability policy's `/experimental/`
 > exemption applies: APIs here change without notice and without a
-> deprecation window. Consumers must pin a version.
+> `gofastr upgrade` note. Consumers must pin a version.
 
 `gofastr harness` is a from-scratch agent harness shipped as a subcommand
 of the `gofastr` CLI. It runs an agent loop against OpenRouter or ZAI GLM,

@@ -11,6 +11,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -31,7 +32,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// middleware already stashes it on the request ctx, and this bridge
 	// keeps a render outside the middleware (a test, a build) translated.
 	if m.tr != nil {
-		ctx = i18nui.WithTranslator(ctx, m.tr)
+		ctx = i18n.WithTranslator(ctx, m.tr)
 	}
 	// The read gate: the same posture the JSON list route enforces. A
 	// screen for an entity whose GET /api/<entity> answers 401 or 403
@@ -153,13 +154,13 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), listOpts)
 	if err != nil {
 		return ui.Callout(ui.CalloutConfig{
-			Title:   i18nui.TVars(ctx, i18nui.KeyEntityLoadFailed, map[string]string{"entity": m.plural(ctx)}),
+			Title:   i18nui.EntityLoadFailed.Text(ctx, map[string]any{"entity": m.plural(ctx)}),
 			Variant: ui.StatusDanger,
-		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
+		}, render.Text(i18nui.EntitySlotFailedBody.Text(ctx))), nil
 	}
 	b.ui.pageTitles(ctx, s, rows)
 	if len(rows) > 0 && !b.embedded && !b.noLinks && !s.deletedView {
-		b.ui.checkRecordScreen(ctx, m.name, s.base, cell(rowValue(rows[0], m.pk)))
+		b.ui.checkRecordScreen(ctx, m.name, s.base, m.idPath(m.rowID(rows[0])))
 	}
 	if b.inlineEdit && !s.deletedView && !b.top && m.hasAPI {
 		// The same page read without read hooks: an inline editor
@@ -167,7 +168,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		if raw, err := m.ch.ListAll(ctx, listOpts); err == nil {
 			s.rawRows = make(map[string]map[string]any, len(raw))
 			for _, r := range raw {
-				s.rawRows[cell(rowValue(r, m.pk))] = r
+				s.rawRows[m.rowID(r)] = r
 			}
 		}
 	}
@@ -294,10 +295,10 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	subtitle := ""
 	if known && (desc == "" || !tabsCounted) {
 		if total == 1 {
-			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCountOne, map[string]string{"entity": m.noun(ctx, false)})
+			subtitle = i18nui.EntityCountOne.Text(ctx, map[string]any{"entity": m.noun(ctx, false)})
 		} else {
-			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCount, map[string]string{
-				"count":  formatNumber(float64(total), 0),
+			subtitle = i18nui.EntityCount.Text(ctx, map[string]any{
+				"count":  total,
 				"entity": m.noun(ctx, true),
 			})
 		}
@@ -317,7 +318,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	// The trash view creates nothing: there is no New in it.
 	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
+			Label:   i18nui.EntityNew.Text(ctx, map[string]any{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),
 			Variant: ui.ButtonPrimary,
 			Icon:    "plus",
@@ -339,12 +340,12 @@ func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map
 	title := b.title(ctx, m)
 	var count render.HTML
 	if known {
-		count = ui.Muted(render.Text(formatNumber(float64(total), 0)))
+		count = ui.Muted(render.Text(i18n.Number(ctx, total)))
 	}
 	actions := slices.Clone(b.actions)
 	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.TVars(ctx, i18nui.KeyEntityAdd, map[string]string{"entity": m.noun(ctx, false)}),
+			Label:   i18nui.EntityAdd.Text(ctx, map[string]any{"entity": m.noun(ctx, false)}),
 			Href:    s.createHref(),
 			Variant: ui.ButtonSecondary,
 			Size:    ui.ButtonSizeSmall,
@@ -394,12 +395,12 @@ func (b *ListBuilder) facetControls(ctx context.Context, s *listState) []ui.Face
 		// The label sits above the control, so the clear choice is a
 		// plain "All", never "All Customer".
 		facet := ui.Facet{Name: p, Label: m.label(ctx, name), Value: strings.TrimSpace(s.q.Get(p)),
-			AllLabel: i18nui.T(ctx, i18nui.KeyFilterAllPlain)}
+			AllLabel: i18nui.FilterAllPlain.Text(ctx)}
 		switch f.Type {
 		case schema.Bool:
 			facet.Options = []ui.FacetOption{
-				{Label: i18nui.T(ctx, i18nui.KeyEntityYes), Value: "true"},
-				{Label: i18nui.T(ctx, i18nui.KeyEntityNo), Value: "false"},
+				{Label: i18nui.EntityYes.Text(ctx), Value: "true"},
+				{Label: i18nui.EntityNo.Text(ctx), Value: "false"},
 			}
 			facet.Kind = ui.FacetPills
 		case schema.Relation:
@@ -441,7 +442,7 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 	m := s.m
 	var search *ui.FilterSearch
 	if len(m.e.Config.SearchFields) > 0 {
-		placeholder := i18nui.TVars(ctx, i18nui.KeyEntitySearch, map[string]string{"entity": m.plural(ctx)})
+		placeholder := i18nui.EntitySearch.Text(ctx, map[string]any{"entity": m.plural(ctx)})
 		search = &ui.FilterSearch{Name: s.p.q, Value: s.search, Placeholder: placeholder, Label: placeholder}
 		if !b.embedded && !b.top && s.key == "" {
 			// The page's own list takes "/"; an embedded or keyed list
@@ -519,10 +520,10 @@ func (b *ListBuilder) layoutSwitchControl(ctx context.Context, s *listState) ren
 	}
 	cards := s.as == "cards"
 	return ui.SegmentedLinks(ui.SegmentedLinksConfig{
-		Label: i18nui.T(ctx, i18nui.KeyEntityLayout),
+		Label: i18nui.EntityLayout.Text(ctx),
 		Items: []ui.SegmentLink{
-			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutTable), Icon: "list", Href: href("table"), Current: !cards},
-			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutCards), Icon: "grid", Href: href("cards"), Current: cards},
+			{Text: i18nui.EntityLayoutTable.Text(ctx), Icon: "list", Href: href("table"), Current: !cards},
+			{Text: i18nui.EntityLayoutCards.Text(ctx), Icon: "grid", Href: href("cards"), Current: cards},
 		},
 		Ctx: ctx,
 	})
@@ -560,7 +561,8 @@ func (b *ListBuilder) headingLevel() int {
 	panic(fmt.Sprintf("entityui: %s: Heading level %d is out of range — 1 to 5 (0 means 1); the empty state takes the level below", b.entity, b.level))
 }
 
-// recordHref is one record's link: <base>/<id>, the id path-escaped.
+// recordHref is one record's link: <base>/<id>, the id path-escaped
+// (idPath).
 func (s *listState) recordHref(id string) string {
-	return s.base + "/" + url.PathEscape(id)
+	return under(s.base, s.m.idPath(id))
 }

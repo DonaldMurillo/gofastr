@@ -5,10 +5,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -40,24 +40,24 @@ const deletedViewKey = "deleted"
 // delete it. A row neither gate allows draws nothing.
 func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[string]any) render.HTML {
 	m := s.m
-	id := cell(rowValue(row, m.pk))
+	id := m.rowID(row)
 	back := listHref(s.path, s.q)
 	var forms []render.HTML
 	if canUpdate(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
-			m.api+"/"+url.PathEscape(id)+"/_restore",
-			i18nui.T(ctx, i18nui.KeyEntityRestore), ui.ButtonSecondary, interactive.Confirm{},
+			m.api+"/"+m.idPath(id)+"/_restore",
+			i18nui.EntityRestore.Text(ctx), ui.ButtonSecondary, interactive.Confirm{},
 			back,
 		))
 	}
 	if canDelete(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
-			m.api+"/"+url.PathEscape(id)+"/_purge",
-			i18nui.T(ctx, i18nui.KeyEntityPurge), ui.ButtonDanger,
+			m.api+"/"+m.idPath(id)+"/_purge",
+			i18nui.EntityPurge.Text(ctx), ui.ButtonDanger,
 			interactive.Confirm{
-				Title:   i18nui.TVars(ctx, i18nui.KeyEntityPurgeTitle, map[string]string{"entity": m.noun(ctx, false)}),
-				Message: i18nui.T(ctx, i18nui.KeyEntityPurgeConfirm),
-				Accept:  i18nui.T(ctx, i18nui.KeyEntityPurge),
+				Title:   i18nui.EntityPurgeTitle.Text(ctx, map[string]any{"entity": m.noun(ctx, false)}),
+				Message: i18nui.EntityPurgeConfirm.Text(ctx),
+				Accept:  i18nui.EntityPurge.Text(ctx),
 				Danger:  true,
 			},
 			back,
@@ -87,7 +87,7 @@ func deletedWriteForm(ctx context.Context, action, label string, variant ui.Butt
 		ExtraAttrs: rpc.Attrs(),
 	},
 		hiddenInput("back", back),
-		ui.Button(ui.ButtonConfig{Label: label, Type: "submit", Variant: variant}),
+		ui.Button(ui.ButtonConfig{Ctx: ctx, Label: label, Type: "submit", Variant: variant}),
 	)
 }
 
@@ -122,32 +122,32 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
-			writeBulkError(w, http.StatusMethodNotAllowed, "method not allowed")
+			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		// A cross-site form must not reach the write: the forgeable
 		// content types are the ones a form can send without a
 		// preflight, and the one cross-site predicate decides.
 		if handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, http.StatusForbidden, "forbidden")
+			writeBulkError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 			return
 		}
 		ctx := r.Context()
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI || !m.e.Config.Scope.SoftDelete {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if !canRead(ctx, m.ch) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
-		id := r.PathValue("id")
+		id := crud.PathRecordID(r, m.keys)
 		if id == "" {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, deletedBodyLimit)
@@ -160,27 +160,27 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			}
 			if err := handler.DecodeStrict(r.Body, &body); err != nil {
 				if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-					writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+					writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 					return
 				}
-				writeBulkError(w, http.StatusBadRequest, "invalid request body")
+				writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 				return
 			}
 			back, haveBack = scrubBackPath(body.Back)
 		} else {
 			if err := r.ParseForm(); err != nil {
 				if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-					writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+					writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 					return
 				}
-				writeBulkError(w, http.StatusBadRequest, "invalid request body")
+				writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 				return
 			}
 			back, haveBack = scrubBackPath(r.PostFormValue("back"))
 			// A plain post has no script to navigate it home: no valid
 			// return path, no write.
 			if !haveBack {
-				writeBulkError(w, http.StatusBadRequest, "missing return path")
+				writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 				return
 			}
 		}
@@ -193,14 +193,14 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 		if writeErr != nil {
 			switch {
 			case errors.Is(writeErr, crud.ErrForbidden):
-				writeBulkError(w, http.StatusForbidden, "forbidden")
+				writeBulkError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 			case crud.IsNotFound(writeErr), errors.Is(writeErr, crud.ErrNoSoftDelete):
-				writeBulkError(w, http.StatusNotFound, "not found")
+				writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			case errors.Is(writeErr, crud.ErrNotSoftDeleted):
-				writeBulkError(w, http.StatusConflict, "not deleted")
+				writeBulkError(w, r, http.StatusConflict, reasonNotDeleted)
 			default:
 				slog.ErrorContext(ctx, "entityui: trash write", "entity", m.name, "op", op, "error", writeErr)
-				writeBulkError(w, http.StatusInternalServerError, "write failed")
+				writeBulkError(w, r, http.StatusInternalServerError, reasonWriteFailed)
 			}
 			return
 		}
@@ -216,9 +216,9 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 // trashToast is the answer's toast title.
 func trashToast(ctx context.Context, m *meta, op string) string {
 	if op == "restore" {
-		return i18nui.TVars(ctx, i18nui.KeyEntityRestored, map[string]string{"entity": m.singular(ctx)})
+		return i18nui.EntityRestored.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 	}
-	return i18nui.TVars(ctx, i18nui.KeyEntityPurged, map[string]string{"entity": m.singular(ctx)})
+	return i18nui.EntityPurged.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 }
 
 // scrubBackPath validates a form-carried return path: it must name a

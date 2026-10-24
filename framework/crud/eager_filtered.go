@@ -2,7 +2,6 @@ package crud
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -22,7 +21,7 @@ import (
 //
 // Result map keys/values mirror EagerLoad: outer key = parent id, inner map =
 // relation name → loaded row(s).
-func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK string, node *IncludeNode, ids []string, result map[string]map[string]any, budget *includeBudget) error {
+func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, node *IncludeNode, ids []string, result map[string]map[string]any, budget *includeBudget) error {
 	rel := node.Relation
 
 	// Target is resolved by parseIncludeTree for every segment; a nil one
@@ -55,9 +54,18 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid parent table %q: %w", parentTable, err)
 	}
-	safeParentPK, err := query.SafeIdent(parentPK)
-	if err != nil {
-		return fmt.Errorf("eager filtered: invalid parent PK %q: %w", parentPK, err)
+	// The ids are record ids. A has_one or has_many relation matches them
+	// against the child's foreign key, one column per key column; a
+	// many_to_many joins on the parent's one key column; a belongs_to reads
+	// the parent's foreign key by its whole key. parseIncludeTree has
+	// checked each shape (entity.CheckRelationKeys).
+	if rel.Type == entity.RelManyToMany && len(parentKey) != 1 {
+		return fmt.Errorf("eager filtered: relation %q: %w", rel.Name, entity.ErrCompositeKey)
+	}
+	for _, k := range parentKey {
+		if _, err := query.SafeIdent(k); err != nil {
+			return fmt.Errorf("eager filtered: invalid parent PK %q: %w", k, err)
+		}
 	}
 
 	// Validate filter field names up front.
@@ -75,25 +83,34 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 
 	switch rel.Type {
 	case entity.RelHasOne, entity.RelHasMany:
-		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		safeFKs, err := relationFKs(rel)
 		if err != nil {
-			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
+			return fmt.Errorf("eager filtered: %w", err)
 		}
-		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
+		if len(safeFKs) != len(parentKey) {
+			// The same split entity.CheckRelationKeys draws: one column
+			// against a composite key is the composite-key refusal.
+			shape := entity.ErrForeignKeyShape
+			if len(safeFKs) == 1 {
+				shape = entity.ErrCompositeKey
+			}
+			return fmt.Errorf("eager filtered: relation %q: %w: its parent is keyed on (%s)", rel.Name, shape, strings.Join(parentKey, ", "))
+		}
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToOne:
-		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		safeFKs, err := relationFKs(rel)
 		if err != nil {
-			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
+			return fmt.Errorf("eager filtered: %w", err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, safeParentPK, safeEntity, safeFK, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
+		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToMany:
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
 			// The ManyToMany SELECT JOINs target + pivot, so a bare
 			// `deleted_at` would be ambiguous, qualify it with the target.
-			mtmSoftDelete = " AND " + query.QuoteIdent(safeEntity) + ".deleted_at IS NULL"
+			mtmSoftDelete = " AND " + safeEntity + ".deleted_at IS NULL"
 		}
-		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node.Target, node.Filters, node.ReadScopes, ids, result, mtmSoftDelete, served, budget)
+		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node, ids, result, mtmSoftDelete, served, budget)
 	}
 	return nil
 }
@@ -101,10 +118,25 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 // servedCols is the allow-list of columns an eager-loaded row may carry. A nil
 // set keeps every column: that is EagerLoad called with no registry, where the
 // target schema is unknown and the documented contract is the raw row.
+//
+// Names are folded the way Postgres folds the unquoted identifiers the DDL
+// writes, so a declared "Sku" serves the column Postgres reports as "sku".
 type servedCols map[string]bool
 
 // drop reports whether column c must be left out of an eager-loaded row.
-func (s servedCols) drop(c string) bool { return s != nil && !s[c] }
+func (s servedCols) drop(c string) bool { return s != nil && !s[foldIdent(c)] }
+
+// foldIdent lowercases ASCII letters only, as Postgres folds an unquoted
+// identifier; identifiers are SafeIdent-validated ASCII.
+func foldIdent(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
 
 // servedColumns returns the columns an included row may carry: the target's
 // declared, non-Hidden fields plus its primary key. It is the same allow-list
@@ -121,34 +153,30 @@ func servedColumns(target *entity.Entity) servedCols {
 	if target == nil {
 		return nil
 	}
-	pk := target.PrimaryKey
-	if pk == "" {
-		pk = "id"
+	set := servedCols{}
+	for _, k := range target.KeyColumns() {
+		set[foldIdent(k)] = true
 	}
-	set := servedCols{pk: true}
 	for _, f := range target.GetFields() {
 		if !f.Hidden {
-			set[f.Name] = true
+			set[foldIdent(f.Name)] = true
 		}
 	}
 	return set
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
-	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids))
-	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args = append(args, id)
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	where, args, ok, err := keyInClause(safeFKs, ids, 1)
+	if err != nil || !ok {
+		return err
 	}
-
-	extra, extraArgs := filterClause(filters, len(ids)+1)
-	readClause, readArgs := renderReadScope(readScopes, "", len(ids)+len(extraArgs)+1)
+	extra, extraArgs := filterClause(filters, len(args)+1)
+	readClause, readArgs := renderReadScope(readScopes, "", len(args)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s%s%s",
-		query.QuoteIdent(safeEntity), query.QuoteIdent(safeFK), strings.Join(placeholders, ", "), extra, readClause, softDeleteFilter)
+	q := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
+		safeEntity, where, extra, readClause, softDeleteFilter)
 	args = append(args, extraArgs...)
 	args = append(args, readArgs...)
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -175,85 +203,42 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 			return err
 		}
 		row := make(map[string]any, len(cols))
-		var fkVal any
 		for i, c := range cols {
-			if c == safeFK {
-				fkVal = vals[i]
-			}
 			if served.drop(c) {
 				continue
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
-		attachChildRow(rel, fkVal, row, result)
+		if parentID, ok := scannedKey(cols, vals, safeFKs); ok {
+			attachChildRow(rel, parentID, row, result)
+		}
 	}
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, safeParentPK, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
-	}
-	srcQuery := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s IN (%s)",
-		query.QuoteIdent(safeParentPK), query.QuoteIdent(safeFK),
-		query.QuoteIdent(safeParentTable), query.QuoteIdent(safeParentPK),
-		strings.Join(placeholders, ", "))
-
-	rows, err := db.QueryContext(ctx, srcQuery, args...)
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	targetKey, err := safeColumns(target.KeyColumns())
 	if err != nil {
+		return fmt.Errorf("eager filtered: invalid target key: %w", err)
+	}
+	if len(targetKey) != len(safeFKs) {
+		return fmt.Errorf("eager filtered: relation %q: %w: %s is keyed on (%s)", rel.Name, entity.ErrForeignKeyShape, target.GetName(), strings.Join(targetKey, ", "))
+	}
+	sourceToFK, unique, err := belongsToFKs(ctx, db, parentTable, parentKey, safeFKs, ids)
+	if err != nil || len(unique) == 0 {
 		return err
 	}
-	defer rows.Close()
-
-	sourceToFK := map[string]string{}
-	var fks []string
-	for rows.Next() {
-		var srcID string
-		var fk sql.NullString
-		if err := rows.Scan(&srcID, &fk); err != nil {
-			return err
-		}
-		// A nullable FK that is NULL means the optional relation is
-		// absent for this parent; skip it so the parent keeps the
-		// relation unset instead of erroring on NULL→string conversion.
-		if !fk.Valid {
-			continue
-		}
-		sourceToFK[srcID] = fk.String
-		fks = append(fks, fk.String)
-	}
-	if err := rows.Err(); err != nil {
+	where, fkArgs, ok, err := keyInClause(targetKey, unique, 1)
+	if err != nil || !ok {
 		return err
 	}
-	if len(fks) == 0 {
-		return nil
-	}
-
-	seen := map[string]bool{}
-	unique := fks[:0]
-	for _, fk := range fks {
-		if !seen[fk] {
-			seen[fk] = true
-			unique = append(unique, fk)
-		}
-	}
-
-	fkPlaceholders := make([]string, len(unique))
-	fkArgs := make([]any, 0, len(unique))
-	for i, fk := range unique {
-		fkPlaceholders[i] = fmt.Sprintf("$%d", i+1)
-		fkArgs = append(fkArgs, fk)
-	}
-	extra, extraArgs := filterClause(filters, len(unique)+1)
-	readClause, readArgs := renderReadScope(readScopes, "", len(unique)+len(extraArgs)+1)
+	extra, extraArgs := filterClause(filters, len(fkArgs)+1)
+	readClause, readArgs := renderReadScope(readScopes, "", len(fkArgs)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE id IN (%s)%s%s%s",
-		query.QuoteIdent(safeEntity), strings.Join(fkPlaceholders, ", "), extra, readClause, softDeleteFilter)
+	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
+		safeEntity, where, extra, readClause, softDeleteFilter)
 	fkArgs = append(fkArgs, extraArgs...)
 	fkArgs = append(fkArgs, readArgs...)
 
@@ -282,17 +267,15 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 			return err
 		}
 		row := make(map[string]any, len(cols))
-		var idVal any
 		for i, c := range cols {
-			if c == "id" {
-				idVal = vals[i]
-			}
 			if served.drop(c) {
 				continue
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
-		targetByID[fmt.Sprintf("%v", idVal)] = row
+		if id, ok := scannedKey(cols, vals, targetKey); ok {
+			targetByID[id] = row
+		}
 	}
 	if err := tgtRows.Err(); err != nil {
 		return err
@@ -308,7 +291,15 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, node *IncludeNode, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	target, filters, readScopes := node.Target, node.Filters, node.ReadScopes
+	targetPK, err := target.KeyColumn()
+	if err != nil {
+		return err
+	}
+	if targetPK, err = query.SafeIdent(targetPK); err != nil {
+		return fmt.Errorf("eager filtered: invalid target key %q: %w", targetPK, err)
+	}
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid through table %q: %w", rel.Through, err)
@@ -334,20 +325,23 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
+	pivotWhere, pivotArgs := pivotClause(node.Pivot, node.PivotScopes, safeThrough, len(ids)+len(extraArgs)+len(readArgs)+1)
 	q := fmt.Sprintf(
-		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s IN (%s)%s%s%s",
-		query.QuoteIdent(safeEntity),
-		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
-		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough),
-		query.QuoteIdent(safeEntity), query.QuoteIdent(safeThrough), query.QuoteIdent(safeFKTarget),
-		query.QuoteIdent(safeThrough), query.QuoteIdent(safeLocalKey),
+		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s IN (%s)%s%s%s%s",
+		safeEntity,
+		safeThrough, safeLocalKey,
+		safeEntity, safeThrough,
+		safeEntity, targetPK, safeThrough, safeFKTarget,
+		safeThrough, safeLocalKey,
 		strings.Join(placeholders, ", "),
 		extra,
 		readClause,
+		pivotWhere,
 		softDeleteFilter,
 	)
 	args = append(args, extraArgs...)
 	args = append(args, readArgs...)
+	args = append(args, pivotArgs...)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -426,11 +420,22 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 	if len(filters) == 0 {
 		return "", nil
 	}
+	// Identifiers go in unquoted, the way the DDL wrote them, so each is
+	// validated here as well as by the caller; one that fails matches no
+	// row rather than reaching the SQL.
+	if table != "" && !isSafeIdentifier(table) {
+		return " AND 1 = 0", nil
+	}
+	for _, f := range filters {
+		if !isSafeIdentifier(f.Field) {
+			return " AND 1 = 0", nil
+		}
+	}
 	col := func(field string) string {
 		if table != "" {
-			return query.QuoteIdent(table) + "." + query.QuoteIdent(field)
+			return table + "." + field
 		}
-		return query.QuoteIdent(field)
+		return field
 	}
 	var parts []string
 	var args []any

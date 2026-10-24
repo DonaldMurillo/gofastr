@@ -89,6 +89,8 @@ func httpStatusFor(code string) int {
 }
 
 // writeBridgeError writes the fixed-shape error envelope.
+//
+//gofastr:allow(rawtext) the bridge answers the app's own JS: code is the stable Code and message developer detail, never shown to a user
 func writeBridgeError(w http.ResponseWriter, code, message string) {
 	writeBridgeJSON(w, httpStatusFor(code), map[string]any{
 		"ok":    false,
@@ -175,6 +177,7 @@ func (b *Battery) handleCall(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusUnsupportedMediaType)
+		//gofastr:allow(rawtext) the bridge answers the app's own JS: code is the stable Code and message developer detail, never shown to a user
 		io.WriteString(w, `{"ok":false,"error":{"code":"invalid_input","message":"content-type must be application/json"}}`)
 		return
 	}

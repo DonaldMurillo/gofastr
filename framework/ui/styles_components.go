@@ -290,7 +290,8 @@ func codeBlockCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   gap: calc(var(--spacing-sm, 4px) * 2.5);
-  padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px) calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3.5);
+  padding-block: calc(var(--spacing-sm, 4px) * 1.5);
+  padding-inline: calc(var(--spacing-sm, 4px) * 3.5) var(--spacing-md, 8px);
   background: var(--ui-code-block-head-bg, var(--color-code-surface, #18181B));
   border-bottom: var(--stroke-thin, 1px) solid var(--color-code-border, #27272A);
   font-size: var(--text-xs, 12px);
@@ -317,12 +318,14 @@ func codeBlockCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-code-text, #E4E4E7); }
 [data-cui-comp="ui-code-block"] .fui-code-block__meta {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   gap: calc(var(--spacing-sm, 4px) * 2.5);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__body {
+  /* Code reads left to right in every locale. */
+  direction: ltr;
   display: block;
   margin: 0;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
@@ -333,7 +336,7 @@ func codeBlockCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__body {
   counter-reset: ui-cb-ln;
-  padding-left: calc(var(--spacing-lg, 16px) + var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px));
+  padding-inline-start: calc(var(--spacing-lg, 16px) + var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px));
 }
 [data-cui-comp="ui-code-block"].fui-code-block--scroll .fui-code-block__body {
   /* Cap the body so a long file scrolls internally instead of dominating the
@@ -349,10 +352,10 @@ func codeBlockCSS(_ style.Theme) string {
   counter-increment: ui-cb-ln;
   content: counter(ui-cb-ln);
   position: absolute;
-  left: calc((var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px)) * -1);
+  inset-inline-start: calc((var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px)) * -1);
   top: 0;
   width: var(--ui-code-block-gutter-width, 28px);
-  text-align: right;
+  text-align: end;
   /* Derived from the code pair, not the page's text-subtle: the gutter
      sits on the code surface, which a theme may keep dark on a light
      page or re-skin light, and the number must recede on either. */
@@ -393,7 +396,7 @@ func codeBlockCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight::before,
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added::before,
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed::before {
-  left: var(--spacing-lg, 16px);
+  inset-inline-start: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__mark {
   background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #854D0E) 28%, transparent));
@@ -401,10 +404,13 @@ func codeBlockCSS(_ style.Theme) string {
   border-radius: var(--radii-sm, 6px);
 }
 /* Wrap variant: soft-wrap long lines instead of horizontal scrolling.
-   The bare <pre> IS the root; the framed variant's body is the <pre>. */
+   The bare <pre> IS the root; the framed variant's body is the <pre>.
+   overflow-wrap breaks a token longer than the line (a URL, a hash),
+   which pre-wrap alone leaves running past the edge. */
 [data-cui-comp="ui-code-block"].fui-code-block--wrap,
 [data-cui-comp="ui-code-block"].fui-code-block--wrap .fui-code-block__body {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 `
 }
@@ -652,7 +658,7 @@ func formSectionCSS(_ style.Theme) string {
    grid item, so the heading sits inside the card like a card title
    instead of notching the top border. */
 .fui-form-section__heading {
-  float: left;
+  float: inline-start;
   inline-size: 100%;
   margin: 0;
   padding: 0;
@@ -1119,7 +1125,7 @@ func notificationCSS(t style.Theme) string {
   content: "";
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-start: 50%;
+  left: 50%;
   inline-size: max(100%, var(--spacing-touch-target, 44px));
   block-size: var(--spacing-touch-target, 44px);
   transform: translate(-50%, -50%);
@@ -1164,7 +1170,7 @@ func notificationCSS(t style.Theme) string {
   content: "";
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-start: 50%;
+  left: 50%;
   inline-size: var(--spacing-touch-target, 44px);
   block-size: var(--spacing-touch-target, 44px);
   transform: translate(-50%, -50%);
@@ -1185,10 +1191,10 @@ func notificationCSS(t style.Theme) string {
   box-shadow: var(--shadow-lg);
   animation: ui-notification-slide-in var(--duration-toast-enter, 220ms) var(--easing-ease-out, ease-out);
 }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: var(--spacing-lg, 16px); right: var(--spacing-lg, 16px); }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: var(--spacing-lg, 16px); left: var(--spacing-lg, 16px); }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: var(--spacing-lg, 16px); right: var(--spacing-lg, 16px); }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: var(--spacing-lg, 16px); left: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: var(--spacing-lg, 16px); inset-inline-end: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: var(--spacing-lg, 16px); inset-inline-start: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: var(--spacing-lg, 16px); inset-inline-end: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: var(--spacing-lg, 16px); inset-inline-start: var(--spacing-lg, 16px); }
 @keyframes ui-notification-slide-in {
   from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1732,7 +1738,7 @@ func skipLinkCSS(_ style.Theme) string {
   position: absolute;
 ` +
 		//gofastr:allow(GOFASTR1823) off-stage parking offset, not a look value: any far-off-stage length works, and no theme should restyle where the unread skip link waits
-		`  left: -9999px;
+		`  inset-inline-start: -9999px;
   top: auto;
   width: 1px;
   height: 1px;
@@ -1742,7 +1748,7 @@ func skipLinkCSS(_ style.Theme) string {
 :where([data-cui-comp="ui-skip-link"]):focus {
   position: fixed;
   top: var(--spacing-sm, 4px);
-  left: var(--spacing-sm, 4px);
+  inset-inline-start: var(--spacing-sm, 4px);
   width: auto;
   height: auto;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
@@ -1936,19 +1942,19 @@ func backToTopCSS(_ style.Theme) string {
 
 /* ── Positions (defaults to bottom-right) ── */
 .fui-back-to-top--br {
-  right: var(--spacing-lg, 16px);
+  inset-inline-end: var(--spacing-lg, 16px);
   bottom: var(--spacing-lg, 16px);
 }
 .fui-back-to-top--bl {
-  left: var(--spacing-lg, 16px);
+  inset-inline-start: var(--spacing-lg, 16px);
   bottom: var(--spacing-lg, 16px);
 }
 .fui-back-to-top--tr {
-  right: var(--spacing-lg, 16px);
+  inset-inline-end: var(--spacing-lg, 16px);
   top: var(--spacing-lg, 16px);
 }
 .fui-back-to-top--tl {
-  left: var(--spacing-lg, 16px);
+  inset-inline-start: var(--spacing-lg, 16px);
   top: var(--spacing-lg, 16px);
 }
 
@@ -2018,19 +2024,19 @@ func backToTopCSS(_ style.Theme) string {
 :where(.fui-back-to-top--offset-none).fui-back-to-top--br,
 :where(.fui-back-to-top--offset-sm).fui-back-to-top--br,
 :where(.fui-back-to-top--offset-lg).fui-back-to-top--br,
-:where(.fui-back-to-top--offset-xl).fui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--br { inset-inline-end: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
 :where(.fui-back-to-top--offset-none).fui-back-to-top--bl,
 :where(.fui-back-to-top--offset-sm).fui-back-to-top--bl,
 :where(.fui-back-to-top--offset-lg).fui-back-to-top--bl,
-:where(.fui-back-to-top--offset-xl).fui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--bl { inset-inline-start: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
 :where(.fui-back-to-top--offset-none).fui-back-to-top--tr,
 :where(.fui-back-to-top--offset-sm).fui-back-to-top--tr,
 :where(.fui-back-to-top--offset-lg).fui-back-to-top--tr,
-:where(.fui-back-to-top--offset-xl).fui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--tr { inset-inline-end: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
 :where(.fui-back-to-top--offset-none).fui-back-to-top--tl,
 :where(.fui-back-to-top--offset-sm).fui-back-to-top--tl,
 :where(.fui-back-to-top--offset-lg).fui-back-to-top--tl,
-:where(.fui-back-to-top--offset-xl).fui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--tl { inset-inline-start: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
 
 /* Scoped copy of the visually-hidden recipe: the link's accessible
    name must not be seen on a page that loads only this sheet. */

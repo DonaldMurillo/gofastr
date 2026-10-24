@@ -13,7 +13,8 @@
 //
 // Hooks (all data-fui-local-*, all emitted by framework/localentity):
 //   -list="<db>/<store>"  list carrier; -order, -dir, -limit shape it,
-//                         -fail is the words a failed delete toasts,
+//                         -fail is the app's words for a failed delete
+//                         (absent: the localentity.failed phrase),
 //                         -state is set by this module when the
 //                         database could not be read (an error code)
 //   -row / -empty         its two <template>s
@@ -30,6 +31,8 @@
   if (NS.loadedModules && has(NS.loadedModules, NAME)) return;
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
+  // say: the reader's words (localentity.* phrases, localentity.go).
+  const say = NS.say || ((k, en) => en);
 
   const P = 'data-fui-local-';
   const LIST = '[' + P + 'list]';
@@ -176,7 +179,7 @@
     if (hook.matches(DELETE)) {
       db.then((h) => h.delete(t.store, key)).catch(() => {
         if (typeof NS._toastOrFallback === 'function') {
-          NS._toastOrFallback({ variant: 'error', title: list.getAttribute(P + 'fail'), ttl: 6000 });
+          NS._toastOrFallback({ variant: 'error', title: list.getAttribute(P + 'fail') || say('localentity.failed', 'Could not save on this device.'), ttl: 6000 });
         }
       });
       return;

@@ -23,7 +23,7 @@ results, the harness contract) are exempt. The exemption list lives in
   scoping + RBAC → customize in plain Go → deploy.
 - [Comparison](comparison.md): vs PocketBase, Encore, Wasp, and
   hand-rolled Gin+sqlc; weaknesses stated honestly.
-- [API stability](stability.md): compatibility windows, deprecation rules,
+- [API stability](stability.md): how breaking changes ship and upgrade,
   experimental exclusions, and the v1 semantic-versioning promise.
 
 ## Architecture & conventions
@@ -200,8 +200,10 @@ results, the harness contract) are exempt. The exemption list lives in
   first-party through `battery/relay`: bootstrap script, pageviews on
   `gofastr:navigate`, same-origin identity, and a `featureflag.Store`
   adapter for server-side gates.
-- [Internationalization](i18n.md): `core/i18n` translator,
-  JSON catalogs, plurals, `Accept-Language` negotiation.
+- [Internationalization](i18n.md): every framework message as an
+  `i18n.Phrase` with a `reason` code, JSON catalogs, CLDR plurals,
+  numbers and dates, right-to-left pages, locale URL prefixes, and
+  `i18n.CheckCatalog`.
 - [Unified notifications](notifications.md): `battery/notify` sends
   to multiple channels, each with its own template.
 - [Email](email.md): `battery/email`: SMTP and log senders behind one

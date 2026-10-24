@@ -12,17 +12,16 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -123,7 +122,7 @@ type bulkAction struct {
 func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 	var out []bulkAction
 	if m.ch.CanDeleteRecordScoped(ctx, "") {
-		out = append(out, bulkAction{key: "delete", kind: bulkDelete, label: i18nui.T(ctx, i18nui.KeyEntityBulkDelete)})
+		out = append(out, bulkAction{key: "delete", kind: bulkDelete, label: i18nui.EntityBulkDelete.Text(ctx)})
 	}
 	if !m.ch.CanUpdateRecordScoped(ctx, "") {
 		return out
@@ -133,7 +132,7 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 			continue
 		}
 		for _, v := range bulkValues(f) {
-			label := i18nui.TVars(ctx, i18nui.KeyEntityBulkSet, map[string]string{
+			label := i18nui.EntityBulkSet.Text(ctx, map[string]any{
 				"field": m.label(ctx, f.Name),
 				"value": bulkValueLabel(ctx, m, f, v),
 			})
@@ -148,20 +147,17 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		if !holdsExact(ctx, m, t.Permission) {
 			continue
 		}
-		name := t.Label
-		if name == "" {
-			name = t.Key
-		}
+		name := i18nui.TransitionLabel(ctx, m.tr, m.name, t.Key, t.Label)
 		out = append(out, bulkAction{
 			key: "move:" + t.Key, kind: bulkMove, move: t.Key, perm: t.Permission,
-			label: i18nui.TVars(ctx, i18nui.KeyEntityBulkMove, map[string]string{"move": name}),
+			label: i18nui.EntityBulkMove.Text(ctx, map[string]any{"move": name}),
 		})
 	}
 	for _, a := range m.ext.Actions {
 		if !a.Bulk || !holdsExact(ctx, m, a.Permission) {
 			continue
 		}
-		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
+		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(ctx, a), perm: a.Permission, app: a})
 	}
 	return out
 }
@@ -171,10 +167,10 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 // (the record has its own delete and moves). Who may run each is asked
 // about the record itself, by mayRun, so a grant on that one record
 // counts where the collection-level holdsExact would refuse it.
-func recordActions(m *meta) []bulkAction {
+func recordActions(ctx context.Context, m *meta) []bulkAction {
 	var out []bulkAction
 	for _, a := range m.ext.Actions {
-		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
+		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(ctx, a), perm: a.Permission, app: a})
 	}
 	return out
 }
@@ -185,14 +181,16 @@ func restoreActions(ctx context.Context, m *meta) []bulkAction {
 	if !m.e.Config.Scope.SoftDelete {
 		return nil
 	}
-	return []bulkAction{{key: bulkRestoreKey, kind: bulkRestore, label: i18nui.T(ctx, i18nui.KeyEntityRestore)}}
+	return []bulkAction{{key: bulkRestoreKey, kind: bulkRestore, label: i18nui.EntityRestore.Text(ctx)}}
 }
 
-func actionLabel(a Action) string {
-	if a.Label == "" {
+// actionLabel is a's button text in ctx's language, or its Key when it
+// declares none.
+func actionLabel(ctx context.Context, a Action) string {
+	if a.Label.IsZero() {
 		return a.Key
 	}
-	return a.Label
+	return a.Label.Text(ctx)
 }
 
 // holdsExact reports whether ctx holds perm by name on the entity ("" is
@@ -230,9 +228,9 @@ func bulkValues(f schema.Field) []string {
 func bulkValueLabel(ctx context.Context, m *meta, f schema.Field, v string) string {
 	if f.Type == schema.Bool {
 		if v == "true" {
-			return i18nui.T(ctx, i18nui.KeyEntityYes)
+			return i18nui.EntityYes.Text(ctx)
 		}
-		return i18nui.T(ctx, i18nui.KeyEntityNo)
+		return i18nui.EntityNo.Text(ctx)
 	}
 	return m.valueLabel(ctx, f.Name, v)
 }
@@ -285,15 +283,22 @@ type bulkBody struct {
 }
 
 // bulkRefusal is a refusal the caller can act on, drawn from the catalog.
-// Its message never quotes input.
+// Its params never quote input.
 type bulkRefusal struct {
 	status int
-	msg    string
+	reason i18n.Phrase
+	params map[string]any
 }
 
-func (e *bulkRefusal) Error() string { return e.msg }
+func (e *bulkRefusal) Error() string { return e.reason.Format(e.params) }
 
-func refuse(status int, msg string) error { return &bulkRefusal{status: status, msg: msg} }
+func refuse(status int, reason i18n.Phrase, params ...map[string]any) error {
+	ref := &bulkRefusal{status: status, reason: reason}
+	if len(params) > 0 {
+		ref.params = params[0]
+	}
+	return ref
+}
 
 // resolveSelection turns the posted scope into the ids the caller may
 // read, in a stable order. See the package notes on Bulk actions.
@@ -308,24 +313,24 @@ func (u *UI) resolveSelection(ctx context.Context, m *meta, body bulkBody) ([]st
 		return u.everyMatch(ctx, m, body)
 	case bulkScopeRecord:
 		if ids = dedupeIDs(body.IDs); len(ids) != 1 {
-			return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
+			return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadScope)
 		}
 		return u.visibleIDs(ctx, m, ids)
 	case bulkScopeDeleted:
 		ids = dedupeIDs(body.IDs)
 		if len(ids) > InRequestCap {
-			return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
+			return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 		}
 		return u.readIDs(ctx, m, ids, true)
 	default:
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadScope)
 	}
 	ids = dedupeIDs(ids)
 	if len(ids) == 0 {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkNone))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkNone)
 	}
 	if len(ids) > EveryMatchCap {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(EveryMatchCap)}))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": EveryMatchCap})
 	}
 	return u.visibleIDs(ctx, m, ids)
 }
@@ -342,10 +347,8 @@ func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) (
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
-		Where:   &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
-		Fields:  []string{m.pk},
-		Limit:   len(ids),
+	rows, err := m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
+		Fields:  m.keys,
 		Deleted: deleted,
 	})
 	if err != nil {
@@ -353,7 +356,7 @@ func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) (
 	}
 	found := make(map[string]bool, len(rows))
 	for _, row := range rows {
-		found[cell(rowValue(row, m.pk))] = true
+		found[m.rowID(row)] = true
 	}
 	out := make([]string, 0, len(rows))
 	for _, id := range ids {
@@ -373,27 +376,27 @@ func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) (
 func (u *UI) everyMatch(ctx context.Context, m *meta, body bulkBody) ([]string, error) {
 	q, err := url.ParseQuery(body.Query)
 	if err != nil || body.Match == "" {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadScope)
 	}
 	ids, err := u.matchIDs(ctx, m, body.Key, q)
 	if err != nil {
 		return nil, err
 	}
 	if matchDigest(ids) != body.Match {
-		return nil, refuse(http.StatusConflict, i18nui.T(ctx, i18nui.KeyEntityBulkStale))
+		return nil, refuse(http.StatusConflict, reasonBulkStale)
 	}
 	return ids, nil
 }
 
 // matchIDs is matchRows reduced to the primary keys.
 func (u *UI) matchIDs(ctx context.Context, m *meta, key string, q url.Values) ([]string, error) {
-	rows, err := u.matchRows(ctx, m, key, q, []string{m.pk})
+	rows, err := u.matchRows(ctx, m, key, q, m.keys)
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
-		ids = append(ids, cell(rowValue(row, m.pk)))
+		ids = append(ids, m.rowID(row))
 	}
 	return ids, nil
 }
@@ -414,7 +417,7 @@ func matchDigest(ids []string) string {
 // refuse is refused here rather than widening the selection.
 func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, fields []string) ([]map[string]any, error) {
 	if key != "" && !entity.ValidKey(key) {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadScope)
 	}
 	s := &listState{m: m, key: key, p: listParamsFor(key), q: q}
 	b := &ListBuilder{ui: u, entity: m.name}
@@ -422,7 +425,7 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 		return nil, err
 	}
 	if s.filterBad {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadFilter))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadFilter)
 	}
 	where, err := s.predicate(b)
 	if err != nil {
@@ -433,14 +436,14 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 		Filters: s.facetFilters(),
 		Search:  s.search,
 		Fields:  fields,
-		Sorts:   []filter.ParsedSort{{Field: m.pk}},
+		Sorts:   m.keySorts(),
 		Limit:   EveryMatchCap + 1,
 	})
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) > EveryMatchCap {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkEveryOverCap, map[string]string{"cap": strconv.Itoa(EveryMatchCap)}))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkEveryOverCap, map[string]any{"cap": EveryMatchCap})
 	}
 	return rows, nil
 }
@@ -617,64 +620,64 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		ctx := r.Context()
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		// JSON only: a cross-site form can send text/plain with no
 		// preflight, and the strict decoder would read it all the same.
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, bulkBodyLimit)
 		var body bulkBody
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
 			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeBulkError(w, http.StatusBadRequest, "invalid request body")
+			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		record := body.Scope == bulkScopeRecord
 		if !record && !bulkOn(m) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if !canRead(ctx, m.ch) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		offered := u.bulkActions
 		switch body.Scope {
 		case bulkScopeRecord:
-			offered = func(_ context.Context, m *meta) []bulkAction { return recordActions(m) }
+			offered = recordActions
 		case bulkScopeDeleted:
 			offered = restoreActions
 		}
 		act, ok := findBulkAction(offered(ctx, m), body.Action)
 		if !ok {
-			writeBulkError(w, http.StatusForbidden, i18nui.T(ctx, i18nui.KeyEntityBulkUnknown))
+			writeBulkError(w, r, http.StatusForbidden, reasonBulkUnknown)
 			return
 		}
 		ids, err := u.resolveSelection(ctx, m, body)
 		if err == nil && len(ids) == 0 {
-			err = refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkNone))
+			err = refuse(http.StatusUnprocessableEntity, reasonBulkNone)
 		}
 		if err != nil {
 			if ref, ok := errors.AsType[*bulkRefusal](err); ok {
-				writeBulkError(w, ref.status, ref.msg)
+				writeBulkError(w, r, ref.status, ref.reason, ref.params)
 				return
 			}
 			slog.ErrorContext(ctx, "entityui: bulk selection", "entity", m.name, "error", err)
-			writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+			writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 			return
 		}
 		if len(ids) > InRequestCap {
-			u.queueBulk(ctx, w, m, act, body, ids)
+			u.queueBulk(ctx, w, r, m, act, body, ids)
 			return
 		}
 		runID := newRunID()
@@ -699,7 +702,7 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			slog.ErrorContext(ctx, "entityui: bulk audit row", "entity", m.name, "run", runID, "error", err)
 		}
 		if record {
-			answerRecordAction(ctx, w, runID, t)
+			answerRecordAction(w, r, runID, t)
 			return
 		}
 		variant := ui.StatusSuccess
@@ -716,21 +719,21 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 // through says what happened to how many ("2 payments deleted"); one
 // that skipped or failed any, or ran an app action, counts each outcome.
 func bulkToast(ctx context.Context, m *meta, act bulkAction, t bulkTally) string {
-	key := i18nui.KeyEntityBulkUpdated
+	key := i18nui.EntityBulkUpdated
 	switch act.kind {
 	case bulkDelete:
-		key = i18nui.KeyEntityBulkDeleted
+		key = i18nui.EntityBulkDeleted
 	case bulkRestore:
-		key = i18nui.KeyEntityBulkRestored
+		key = i18nui.EntityBulkRestored
 	case bulkRun:
-		key = ""
+		key = i18n.Phrase{}
 	}
-	if key == "" || t.skipped > 0 || t.failed > 0 {
-		return i18nui.TVars(ctx, i18nui.KeyEntityBulkDone, map[string]string{
-			"done": strconv.Itoa(t.done), "skipped": strconv.Itoa(t.skipped), "failed": strconv.Itoa(t.failed),
+	if key.IsZero() || t.skipped > 0 || t.failed > 0 {
+		return i18nui.EntityBulkDone.Text(ctx, map[string]any{
+			"done": t.done, "skipped": t.skipped, "failed": t.failed,
 		})
 	}
-	return i18nui.TVars(ctx, key, map[string]string{"count": strconv.Itoa(t.done), "entity": m.noun(ctx, t.done != 1)})
+	return key.Text(ctx, map[string]any{"count": t.done, "entity": m.noun(ctx, t.done != 1)})
 }
 
 // bulkUndo is a delete's Undo button: a restore of the ids the run
@@ -755,10 +758,10 @@ func bulkUndo(ctx context.Context, m *meta, ids []string, outcomes map[string]st
 	if err != nil {
 		return nil
 	}
-	a := interactive.NewToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
+	a := interactive.NewToastAction(i18nui.EntityUndo.Text(ctx),
 		interactive.Post(m.api+"/_bulk").WithBody(string(body)).
 			OnSuccess(interactive.Navigate(back)).
-			OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+			OnErrorToast(i18nui.EntityRestoreFailed.Text(ctx)))
 	if enc, err := json.Marshal(a); err != nil || len(enc) > undoActionBudget {
 		return nil
 	}
@@ -768,14 +771,14 @@ func bulkUndo(ctx context.Context, m *meta, ids []string, outcomes map[string]st
 // answerRecordAction answers a record action's one outcome: ran (200),
 // skipped by the record's gates (403) or failed (500). The button's own
 // toasts name the action, so the answer carries no toast header.
-func answerRecordAction(ctx context.Context, w http.ResponseWriter, runID string, t bulkTally) {
+func answerRecordAction(w http.ResponseWriter, r *http.Request, runID string, t bulkTally) {
 	switch {
 	case t.done == 1:
 		writeBulkJSON(w, http.StatusOK, map[string]any{"run": runID, "done": 1, "skipped": 0, "failed": 0})
 	case t.skipped == 1:
-		writeBulkError(w, http.StatusForbidden, i18nui.T(ctx, i18nui.KeyEntityBulkUnknown))
+		writeBulkError(w, r, http.StatusForbidden, reasonBulkUnknown)
 	default:
-		writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+		writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 	}
 }
 
@@ -783,16 +786,15 @@ func answerRecordAction(ctx context.Context, w http.ResponseWriter, runID string
 // hands it to the JobRunner, or refuses naming the cap. A second confirm
 // of a run that is still queued answers the queued job rather than
 // queuing it twice.
-func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, m *meta, act bulkAction, body bulkBody, ids []string) {
-	capMsg := i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)})
+func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, r *http.Request, m *meta, act bulkAction, body bulkBody, ids []string) {
 	bh := u.bulkHost()
 	if u.ext.Jobs == nil || bh == nil || bh.BulkStore() == nil {
-		writeBulkError(w, http.StatusUnprocessableEntity, capMsg)
+		writeBulkError(w, r, http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 		return
 	}
 	creator := userID(ctx)
 	if creator == "" {
-		writeBulkError(w, http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkNeedsUser, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
+		writeBulkError(w, r, http.StatusUnprocessableEntity, reasonBulkNeedsUser, map[string]any{"cap": InRequestCap})
 		return
 	}
 	store := bh.BulkStore()
@@ -806,14 +808,14 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, m *meta, act 
 	held, err := store.Create(ctx, job, ids)
 	if err != nil {
 		slog.ErrorContext(ctx, "entityui: bulk snapshot", "entity", m.name, "error", err)
-		writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+		writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 		return
 	}
 	if held.ID == job.ID {
 		if err := u.enqueueJob(ctx, job); err != nil {
 			slog.ErrorContext(ctx, "entityui: bulk enqueue", "entity", m.name, "job", job.ID, "error", err)
 			u.abandonJob(ctx, store, m, job)
-			writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+			writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 			return
 		}
 		// A lost mark leaves the job for ResumeBulkJobs to hand over
@@ -822,8 +824,8 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, m *meta, act 
 			slog.WarnContext(ctx, "entityui: bulk enqueued mark", "entity", m.name, "job", job.ID, "error", err)
 		}
 	}
-	ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusInfo, TTL: 6000, Title: i18nui.TVars(ctx, i18nui.KeyEntityBulkQueued, map[string]string{
-		"count": strconv.Itoa(held.Count), "entity": m.plural(ctx),
+	ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusInfo, TTL: 6000, Title: i18nui.EntityBulkQueued.Text(ctx, map[string]any{
+		"count": held.Count, "entity": m.plural(ctx),
 	})})
 	writeBulkJSON(w, http.StatusAccepted, map[string]any{"job": held.ID, "count": held.Count})
 }
@@ -1045,8 +1047,8 @@ func writeBulkJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-func writeBulkError(w http.ResponseWriter, status int, msg string) {
-	writeBulkJSON(w, status, map[string]string{"error": msg})
+func writeBulkError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params ...map[string]any) {
+	writeBulkJSON(w, status, map[string]string{"error": reason.Text(r.Context(), params...), "reason": reason.Code()})
 }
 
 // enqueueJob is Jobs.Enqueue with a panic turned into an error, so a

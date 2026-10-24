@@ -98,9 +98,9 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 	if id == "" {
 		id = "search"
 	}
-	count := i18nui.T(ctx, i18nui.KeySearchResultsCount)
-	one := i18nui.T(ctx, i18nui.KeySearchResultsOne)
-	none := i18nui.T(ctx, i18nui.KeySearchResultsNone)
+	count := i18nui.SearchResultsCount.Text(ctx)
+	one := i18nui.SearchResultsOne.Text(ctx)
+	none := i18nui.SearchResultsNone.Text(ctx)
 
 	form := SearchInput(SearchInputConfig{
 		Name: searchQueryParam, ID: id, Action: cfg.Action, Ctx: ctx,
@@ -121,7 +121,7 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 	}
 	list := render.Tag("ol", map[string]string{
 		"class": "fui-search-results__list", "data-search-page-list": "",
-		"aria-label": i18nui.T(ctx, i18nui.KeySearchResultsLabel),
+		"aria-label": i18nui.SearchResultsLabel.Text(ctx),
 	}, items...)
 
 	parts := []render.HTML{headless.Own(form), headless.Own(status), headless.Own(list)}
@@ -150,7 +150,7 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 		"data-search-page-count": count,
 		"data-search-page-one":   one,
 		"data-search-page-none":  none,
-		"data-search-page-more":  i18nui.T(ctx, i18nui.KeySearchResultsMore),
+		"data-search-page-more":  i18nui.SearchResultsMore.Text(ctx),
 		"data-search-page-limit": strconv.Itoa(max(cfg.PerPage, 0)),
 	})
 	return searchResultsStyle.WrapHTML(render.Tag("section", attrs, parts...))
@@ -168,7 +168,7 @@ func searchStatus(q string, total int, count, one, none string) string {
 	case 1:
 		f = one
 	}
-	return strings.NewReplacer("{n}", strconv.Itoa(total), "{q}", q).Replace(f)
+	return strings.NewReplacer("{{n}}", strconv.Itoa(total), "{{q}}", q).Replace(f)
 }
 
 func searchResultItem(r SearchResult) render.HTML {

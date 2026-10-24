@@ -406,6 +406,7 @@ func TestStartFromTaskPageAndRow(t *testing.T) {
 	// Start lives on the record page's focus tab, one tab beside Edit.
 	h.Click(`a[href="/tasks/` + taskID + `?tab=focus"]`)
 	h.Wait("the task page's Start", func() bool { return visible(h, `[data-focus-start="`+taskID+`"]`) })
+	h.Click(`[data-focus-start="` + taskID + `"]`)
 	h.Wait("the widget window", func() bool { return len(h.WindowIDs()) == 2 })
 	h.Wait("the session on the task", func() bool {
 		r := h.Get("/api/sessions")

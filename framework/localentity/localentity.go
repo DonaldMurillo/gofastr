@@ -33,7 +33,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 
@@ -87,7 +89,7 @@ type Entity struct {
 	fields []schema.Field
 	index  map[string]bool // fields with an index, built-ins included
 	spec   string          // JSON the form carrier hands the behaviour
-	failed string          // Messages.Failed, for a list's delete
+	failed string          // Messages.Failed, for a list's delete; "" says msgFailed
 }
 
 // Option configures Define.
@@ -114,8 +116,10 @@ func MaxRecords(n int) Option {
 	return func(o *options) { o.max = n }
 }
 
-// WithMessages replaces the validation messages the behaviour shows.
-// Empty fields keep their defaults. {n} is replaced by the bound.
+// WithMessages replaces the validation messages the behaviour shows
+// with the app's own words. Empty fields keep the defaults, which
+// speak the reader's language (the localentity.* phrases). {{n}} is
+// replaced by the bound.
 func WithMessages(m Messages) Option {
 	return func(o *options) { o.messages = m }
 }
@@ -126,34 +130,41 @@ func WithMessages(m Messages) Option {
 // with required/min/max/maxlength/pattern; these cover the rest and a
 // form rendered without them.
 type Messages struct {
-	Required string `json:"required"`
-	Number   string `json:"number"`
-	Integer  string `json:"integer"`
-	Min      string `json:"min"`
-	Max      string `json:"max"`
-	MinLen   string `json:"minlen"`
-	MaxLen   string `json:"maxlen"`
-	Pattern  string `json:"pattern"`
-	Choice   string `json:"choice"`
-	Date     string `json:"date"`
-	Full     string `json:"full"`
-	Failed   string `json:"failed"`
+	Required string `json:"required,omitempty"`
+	Number   string `json:"number,omitempty"`
+	Integer  string `json:"integer,omitempty"`
+	Min      string `json:"min,omitempty"`
+	Max      string `json:"max,omitempty"`
+	MinLen   string `json:"minlen,omitempty"`
+	MaxLen   string `json:"maxlen,omitempty"`
+	Pattern  string `json:"pattern,omitempty"`
+	Choice   string `json:"choice,omitempty"`
+	Date     string `json:"date,omitempty"`
+	Full     string `json:"full,omitempty"`
+	Failed   string `json:"failed,omitempty"`
 }
 
-// DefaultMessages are the English defaults.
-var DefaultMessages = Messages{
-	Required: "This field is required.",
-	Number:   "Enter a number.",
-	Integer:  "Enter a whole number.",
-	Min:      "Must be at least {n}.",
-	Max:      "Must be at most {n}.",
-	MinLen:   "Must be at least {n} characters.",
-	MaxLen:   "Must be at most {n} characters.",
-	Pattern:  "Use the requested format.",
-	Choice:   "Choose one of the listed options.",
-	Date:     "Enter a valid date.",
-	Full:     "This list is full ({n} at most).",
-	Failed:   "Could not save on this device.",
+// The default messages. The behaviours say them through the page's
+// runtime strings (core-ui/runtime.RegisterStrings), so they arrive in
+// the reader's language; a Messages field the app sets replaces one.
+var (
+	msgRequired = i18n.Define("localentity.required", "This field is required.")
+	msgNumber   = i18n.Define("localentity.number", "Enter a number.")
+	msgInteger  = i18n.Define("localentity.integer", "Enter a whole number.")
+	msgMin      = i18n.Define("localentity.min", "Must be at least {{n}}.")
+	msgMax      = i18n.Define("localentity.max", "Must be at most {{n}}.")
+	msgMinLen   = i18n.Define("localentity.minlen", "Must be at least {{n}} characters.")
+	msgMaxLen   = i18n.Define("localentity.maxlen", "Must be at most {{n}} characters.")
+	msgPattern  = i18n.Define("localentity.pattern", "Use the requested format.")
+	msgChoice   = i18n.Define("localentity.choice", "Choose one of the listed options.")
+	msgDate     = i18n.Define("localentity.date", "Enter a valid date.")
+	msgFull     = i18n.Define("localentity.full", "This list is full ({{n}} at most).")
+	msgFailed   = i18n.Define("localentity.failed", "Could not save on this device.")
+)
+
+func init() {
+	runtime.RegisterStrings(msgRequired, msgNumber, msgInteger, msgMin, msgMax, msgMinLen,
+		msgMaxLen, msgPattern, msgChoice, msgDate, msgFull, msgFailed)
 }
 
 // fieldSpec is the per-field wire shape the behaviour validates
@@ -172,7 +183,7 @@ type fieldSpec struct {
 type entitySpec struct {
 	Fields   []fieldSpec `json:"fields"`
 	Max      int         `json:"max,omitempty"`
-	Messages Messages    `json:"msgs"`
+	Messages Messages    `json:"msgs"` // the app's overrides; the rest are phrases
 }
 
 // typeNames maps the core/schema types a local entity accepts to the
@@ -214,7 +225,7 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 	}
 
 	e := &Entity{index: map[string]bool{FieldCreatedAt: true, FieldUpdatedAt: true}}
-	spec := entitySpec{Max: o.max, Messages: mergeMessages(o.messages)}
+	spec := entitySpec{Max: o.max, Messages: o.messages}
 	seen := map[string]bool{}
 	for _, f := range fields {
 		if !validField(f.Name) {
@@ -351,7 +362,9 @@ func (l List) Render(row, empty render.HTML) render.HTML {
 	attrs := html.Attrs{
 		"data-fui-local-list":  l.e.target,
 		"data-fui-local-order": indexName(l.cfg.OrderBy),
-		"data-fui-local-fail":  l.e.failed,
+	}
+	if l.e.failed != "" {
+		attrs["data-fui-local-fail"] = l.e.failed
 	}
 	if l.cfg.Desc {
 		attrs["data-fui-local-dir"] = "prev"
@@ -537,26 +550,4 @@ func validField(s string) bool {
 		}
 	}
 	return true
-}
-
-func mergeMessages(m Messages) Messages {
-	d := DefaultMessages
-	pick := func(dst *string, v string) {
-		if v != "" {
-			*dst = v
-		}
-	}
-	pick(&d.Required, m.Required)
-	pick(&d.Number, m.Number)
-	pick(&d.Integer, m.Integer)
-	pick(&d.Min, m.Min)
-	pick(&d.Max, m.Max)
-	pick(&d.MinLen, m.MinLen)
-	pick(&d.MaxLen, m.MaxLen)
-	pick(&d.Pattern, m.Pattern)
-	pick(&d.Choice, m.Choice)
-	pick(&d.Date, m.Date)
-	pick(&d.Full, m.Full)
-	pick(&d.Failed, m.Failed)
-	return d
 }

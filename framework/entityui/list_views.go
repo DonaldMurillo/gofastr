@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
@@ -160,7 +161,7 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 		case !b.counts:
 			return ""
 		case current && known:
-			return formatNumber(float64(total), 0)
+			return i18n.Number(ctx, total)
 		case current:
 			return ""
 		}
@@ -172,7 +173,7 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 	}
 	allCurrent := builtIn && s.view == ""
 	items := []ui.TabNavItem{{
-		Text:    i18nui.T(ctx, i18nui.KeyEntityViewAll),
+		Text:    i18nui.EntityViewAll.Text(ctx),
 		Href:    listHref(s.path, allQ),
 		Current: allCurrent,
 		Badge:   count(allCurrent, nil, urlFilter, false),
@@ -228,7 +229,7 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 		q.Set(s.p.view, deletedViewKey)
 		current := builtIn && s.deletedView
 		items = append(items, ui.TabNavItem{
-			Text:    i18nui.T(ctx, i18nui.KeyEntityViewDeleted),
+			Text:    i18nui.EntityViewDeleted.Text(ctx),
 			Href:    listHref(s.path, q),
 			Current: current,
 			Badge:   count(current, nil, urlFilter, true),
@@ -240,7 +241,7 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 		return ""
 	}
 	return ui.TabNav(ui.TabNavConfig{
-		Label: i18nui.T(ctx, i18nui.KeyEntityViews),
+		Label: i18nui.EntityViews.Text(ctx),
 		Items: items,
 		End:   end,
 	})
@@ -264,7 +265,7 @@ func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *fi
 		slog.WarnContext(ctx, "entityui: tab count", "entity", s.m.name, "error", err)
 		return ""
 	}
-	return formatNumber(float64(n), 0)
+	return i18n.Number(ctx, n)
 }
 
 // filterChips draws what narrows the list: a chip per facet set
@@ -289,7 +290,7 @@ func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HT
 			Label: text,
 			Href:  listHref(s.path, s.carry(f.Name, s.p.page)),
 			ExtraAttrs: map[string]string{
-				"aria-label": i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": text}),
+				"aria-label": i18nui.FilterChipRemove.Text(ctx, map[string]any{"label": text}),
 			},
 			Ctx: ctx,
 		}))
@@ -303,7 +304,7 @@ func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HT
 			Label: term,
 			Href:  removeFilterHref(s, terms, i),
 			ExtraAttrs: map[string]string{
-				"aria-label": i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": term}),
+				"aria-label": i18nui.FilterChipRemove.Text(ctx, map[string]any{"label": term}),
 			},
 			Ctx: ctx,
 		}))
@@ -320,7 +321,7 @@ func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HT
 		q.Del(s.p.saved)
 	}
 	chips = append(chips, ui.LinkButton(ui.LinkButtonConfig{
-		Label:   i18nui.T(ctx, i18nui.KeyFilterClearAll),
+		Label:   i18nui.FilterClearAll.Text(ctx),
 		Href:    listHref(s.path, q),
 		Variant: ui.ButtonGhost,
 		Size:    ui.ButtonSizeSmall,
@@ -410,7 +411,7 @@ func removeFilterHref(s *listState, terms []string, i int) string {
 // logged, not shown — it carries the raw input.
 func filterWarning(ctx context.Context) render.HTML {
 	return ui.Callout(ui.CalloutConfig{
-		Title:   i18nui.T(ctx, i18nui.KeyEntityFilterInvalidTitle),
+		Title:   i18nui.EntityFilterInvalidTitle.Text(ctx),
 		Variant: ui.StatusWarning,
-	}, render.Text(i18nui.T(ctx, i18nui.KeyEntityFilterInvalidBody)))
+	}, render.Text(i18nui.EntityFilterInvalidBody.Text(ctx)))
 }

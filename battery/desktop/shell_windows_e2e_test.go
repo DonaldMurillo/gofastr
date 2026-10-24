@@ -68,8 +68,8 @@ func buildWindowsE2EApp() (*framework.App, *desktop.Battery, error) {
 		Width: 900, Height: 640, RememberWindows: true,
 		DeepLink: &desktop.DeepLinkConfig{Scheme: windowsE2EScheme},
 		Style:    desktop.WindowStyle{Chrome: desktop.ChromeUnified, Material: desktop.MaterialWindow},
-		Menu:     &desktop.Menu{Items: []desktop.MenuItem{{Title: "Go", Children: []desktop.MenuItem{{Title: "Two", Navigate: "/two"}}}}},
-		Tray:     &desktop.Tray{Title: "WindowsE2E", Tooltip: "Windows WebView2 test", Menu: &desktop.Menu{Items: []desktop.MenuItem{{Title: "Show Window", Role: desktop.RoleShow}}}},
+		Menu:     &desktop.Menu{Items: []desktop.MenuItem{{Title: testPhrase("Go"), Children: []desktop.MenuItem{{Title: testPhrase("Two"), Navigate: "/two"}}}}},
+		Tray:     &desktop.Tray{Title: "WindowsE2E", Tooltip: testPhrase("Windows WebView2 test"), Menu: &desktop.Menu{Items: []desktop.MenuItem{{Title: testPhrase("Show Window"), Role: desktop.RoleShow}}}},
 	})
 	app.RegisterBattery(battery)
 	return app, battery, nil

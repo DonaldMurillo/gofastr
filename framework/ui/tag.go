@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"context"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 
 	"github.com/DonaldMurillo/gofastr/framework/headless"
@@ -123,7 +123,7 @@ func Tag(cfg TagConfig) render.HTML {
 	}
 	dismissLabel := cfg.DismissLabel
 	if dismissLabel == "" && cfg.Dismiss != "" {
-		dismissLabel = fmt.Sprintf(StringsFor(ctx).RemoveLabelled, cfg.Label)
+		dismissLabel = i18n.FillContext(ctx, StringsFor(ctx).RemoveLabelled, map[string]any{"label": cfg.Label})
 	}
 	href := ""
 	if cfg.Href != "" {

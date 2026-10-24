@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // SSEBroker fans out SSE events to multiple HTTP subscribers.
@@ -361,7 +362,7 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	if b.maxSubs > 0 && !replacing && len(b.subscribers) >= b.maxSubs {
 		b.mu.Unlock()
-		http.Error(w, "too many subscribers", http.StatusServiceUnavailable)
+		i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonTooManySubscribers)
 		return
 	}
 	// Per-principal seat cap: the same caller cannot hold unbounded
@@ -375,7 +376,7 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		if seats := seatsFor(b.seatCap); seats > 0 && len(b.seatOrder[sub.principal]) >= seats {
 			if b.seatOverflow != SeatOverflowEvictOldest || len(b.seatOrder[sub.principal]) == 0 {
 				b.mu.Unlock()
-				http.Error(w, "too many concurrent streams for this caller", http.StatusTooManyRequests)
+				i18n.HTTPError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 				return
 			}
 			oldest := b.seatOrder[sub.principal][0]

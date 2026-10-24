@@ -106,14 +106,15 @@ func interceptFullPage(key string) string {
 	body := "FULL " + key
 	if key == "/list" {
 		id = "list-main"
-		body = `<a id="to-a" href="/rec/a">rec a</a><a id="to-s" href="/rec/s">rec s</a>LIST`
+		body = `<a id="to-a" href="/rec/a">rec a</a><a id="to-s" href="/rec/s">rec s</a><a id="to-old" href="/rec/old">rec old</a>LIST`
 	}
 	if key == "/rec/a" {
 		// The record as its own page: Open in panel goes back to the
 		// list with the record in a drawer; the second link names a
 		// route that does not open over /list.
 		body = `<a id="to-panel" href="/list" data-cui-intercept-panel="/rec/a">panel</a>` +
-			`<a id="to-panel-bad" href="/list" data-cui-intercept-panel="/rel/r1">panel</a>FULL /rec/a`
+			`<a id="to-panel-bad" href="/list" data-cui-intercept-panel="/rel/r1">panel</a>` +
+			`<a id="to-panel-old" href="/list" data-cui-intercept-panel="/rec/old">panel</a>FULL /rec/a`
 	}
 	return `<!doctype html><html><head><title>stack</title>` +
 		`<script type="application/json" id="gofastr-routes">` + interceptStackRoutes + `</script>` +
@@ -138,6 +139,9 @@ type interceptStackServer struct {
 	// (500) or "drop" (the connection closes; Chrome retries a dropped
 	// GET twice, so the fetch rejects after about 900 ms).
 	overlayMiss atomic.Value
+	// gone, when set, answers /rec/a 404 on both the overlay and the
+	// page request, the way a record deleted since the last visit does.
+	gone atomic.Bool
 }
 
 func (s *interceptStackServer) overlayFroms() []string {
@@ -176,6 +180,21 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 		key := r.URL.Path
 		if r.URL.RawQuery != "" {
 			key += "?" + r.URL.RawQuery
+		}
+		if r.URL.Path == "/rec/old" {
+			// A moved record: every variant redirects to /rec/a.
+			http.Redirect(w, r, "/rec/a", http.StatusSeeOther)
+			return
+		}
+		if r.URL.Path == "/rec/a" && s.gone.Load() && r.Header.Get("X-Gofastr-Navigate") == "1" {
+			if r.Header.Get("X-Gofastr-Intercept") != "" {
+				w.Header().Set("X-Gofastr-Overlay", "drawer")
+			} else {
+				w.Header().Set("X-Gofastr-Partial", "true")
+			}
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `<p id="gone">GONE</p>`)
+			return
 		}
 		switch {
 		case r.Header.Get("X-Gofastr-Intercept") != "":
@@ -673,6 +692,48 @@ func TestInterceptStacksWithoutLinkFocus(t *testing.T) {
 	snap := readStack(ctx)
 	if len(snap.Layers) != 2 || snap.Main != "list-main" {
 		t.Fatalf("want 2 layers over the list, got %d layers, main %q (%s)", len(snap.Layers), snap.Main, snap.URL)
+	}
+}
+
+// A record whose route redirects: fetch followed the 303 and the overlay
+// of /rec/a mounted under /rec/old's URL. A followed redirect is the
+// navigator's to take, so the address bar ends at /rec/a.
+func TestInterceptRedirectLeavesOverlay(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-old`, chromedp.ByID),
+		chromedp.Click(`#to-old`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('rec-a') || !!document.getElementById('plain-screen')`) {
+		t.Fatal("the redirect target never rendered")
+	}
+	if snap := readStack(ctx); snap.URL != "/rec/a" {
+		t.Errorf("the redirect left the address bar at %q (%d layers), want /rec/a", snap.URL, len(snap.Layers))
+	}
+}
+
+// The panel link's record redirects, so it cannot open over the list;
+// it opens as its own page, where the redirect lands, instead of
+// leaving the reader on the list without it.
+func TestInterceptPanelRedirectOpensPage(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/rec/a"),
+		chromedp.WaitVisible(`#to-panel-old`, chromedp.ByID),
+		chromedp.Evaluate(`window.__mark = 1; document.getElementById('to-panel-old').dataset.stale = '1'`, nil),
+		chromedp.Click("#to-panel-old", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// The page starts on /rec/a too, so it has to be a fresh render of
+	// it, reached without a reload.
+	if !interceptWait(ctx, `location.pathname === '/rec/a' && window.__mark === 1 && (document.getElementById('to-panel-old')||{dataset:{stale:'1'}}).dataset.stale !== '1'`) {
+		t.Fatalf("the redirected record never opened: %+v", readStack(ctx))
 	}
 }
 

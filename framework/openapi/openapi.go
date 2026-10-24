@@ -102,10 +102,12 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 
 	// Add common error response schema
 	s.AddSchema("Error", objectSchemaWith(map[string]any{
-		"error":   map[string]any{"type": "string"},
-		"success": map[string]any{"type": "boolean"},
-		"code":    map[string]any{"type": "integer"},
-		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"error":         map[string]any{"type": "string"},
+		"success":       map[string]any{"type": "boolean"},
+		"code":          map[string]any{"type": "integer"},
+		"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
+		"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
 	}))
 
 	// Offset-mode list envelope
@@ -127,11 +129,13 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 
 	// Per-item shape inside a _batch response
 	s.AddSchema("BatchResult", objectSchemaWith(map[string]any{
-		"index":   map[string]any{"type": "integer"},
-		"data":    map[string]any{"type": "object"},
-		"error":   map[string]any{"type": "string"},
-		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-		"skipped": map[string]any{"type": "boolean"},
+		"index":         map[string]any{"type": "integer"},
+		"data":          map[string]any{"type": "object"},
+		"error":         map[string]any{"type": "string"},
+		"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
+		"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"skipped":       map[string]any{"type": "boolean"},
 	}))
 
 	// Top-level shape for every _batch response
@@ -145,6 +149,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 	s.AddSchema("TransitionConflict", objectSchemaWith(map[string]any{
 		"error":   map[string]any{"type": "string"},
 		"success": map[string]any{"type": "boolean"},
+		"reason":  map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
 		"current": map[string]any{"type": "string", "description": "The record's current state value."},
 		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "The move keys open from the current value."},
 	}))
@@ -153,15 +158,25 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 	// or a stamp outside a move: the field error in the validation shape,
 	// plus the moves the caller can run instead.
 	s.AddSchema("StateError", objectSchemaWith(map[string]any{
-		"error":   map[string]any{"type": "string"},
-		"success": map[string]any{"type": "boolean"},
-		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"error":         map[string]any{"type": "string"},
+		"success":       map[string]any{"type": "boolean"},
+		"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
+		"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"moves":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 	}))
 
 	// Track whether any entity is auth-gated so the shared security
 	// schemes are registered once after the loop, not per entity.
 	anyGated := false
+	// components names every unversioned entity this document emits a
+	// schema for, so an endpoint's Returns can reference it.
+	components := map[string]bool{}
+	for _, ent := range registry.AllSorted() {
+		if (keep == nil || keep(ent)) && ent.Version == "" {
+			components[ent.GetName()] = true
+		}
+	}
 	// Generate schema + paths for each entity. Use AllSorted so the
 	// emitted /openapi.json bytes are stable across restarts,
 	// otherwise the tag array order tracks Go's randomised map
@@ -238,7 +253,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
+			if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) {
+				anyGated = true
+			}
 			continue
 		}
 
@@ -285,6 +302,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		if ent.Version != "" {
 			path = pathPrefix + "/" + tableName
 		}
+		recPath, keyProps, keyReq := recordKey(ent, path)
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -441,7 +459,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			getOp.AddSecurity("cookieAuth", nil)
 		}
 		getOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("GET", path+"/:id", *getOp)
+		s.AddPath("GET", recPath, *getOp)
 
 		// --- PUT /{table}/:id: Update ---
 		updateOp := openapi.NewOperation()
@@ -463,7 +481,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			updateOp.AddSecurity("cookieAuth", nil)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PUT", path+"/:id", *updateOp)
+		s.AddPath("PUT", recPath, *updateOp)
 
 		// --- PATCH /{table}/:id: Sparse update ---
 		patchOp := openapi.NewOperation()
@@ -485,7 +503,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			patchOp.AddSecurity("cookieAuth", nil)
 		}
 		patchOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PATCH", path+"/:id", *patchOp)
+		s.AddPath("PATCH", recPath, *patchOp)
 
 		// --- DELETE /{table}/:id: Delete ---
 		deleteOp := openapi.NewOperation()
@@ -502,7 +520,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			deleteOp.AddSecurity("cookieAuth", nil)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("DELETE", path+"/:id", *deleteOp)
+		s.AddPath("DELETE", recPath, *deleteOp)
 
 		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
 		// The router mounts the transition route when States holds a
@@ -548,7 +566,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				moveOp.AddSecurity("bearerAuth", nil)
 				moveOp.AddSecurity("cookieAuth", nil)
 			}
-			s.AddPath("POST", path+"/:id/transitions/"+t.Key, *moveOp)
+			s.AddPath("POST", recPath+"/transitions/"+t.Key, *moveOp)
 		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
@@ -579,10 +597,24 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		s.AddPath("POST", path+"/_batch", *batchCreateOp)
 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
+		// An item names its record in the body, so each key column takes
+		// its field's own schema (an integer key is a JSON number there),
+		// never the string a path parameter is; readOnly is dropped, since
+		// the item must carry it.
+		entityProps, _ := entitySchema["properties"].(map[string]any)
+		itemKeys := make(map[string]any, len(keyReq))
+		for _, w := range keyReq {
+			itemKeys[w] = keyProps[w]
+			if fp, ok := entityProps[w].(map[string]any); ok {
+				cp := maps.Clone(fp)
+				delete(cp, "readOnly")
+				itemKeys[w] = cp
+			}
+		}
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
 				requestSchema(entitySchema, fields, st, updateSkip, true),
-				map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
+				map[string]any{"type": "object", "properties": itemKeys, "required": keyReq},
 			},
 		}
 		batchUpdateBody := map[string]any{
@@ -637,9 +669,10 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			"type": "object",
 			"properties": map[string]any{
 				"ids": map[string]any{
-					"type":     "array",
-					"maxItems": crud.MaxBatchSize,
-					"items":    map[string]any{"type": "string"},
+					"type":        "array",
+					"maxItems":    crud.MaxBatchSize,
+					"items":       map[string]any{"type": "string"},
+					"description": batchIDsDesc(ent),
 				},
 			},
 			"required": []string{"ids"},
@@ -662,7 +695,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
-		addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
+		if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) {
+			anyGated = true
+		}
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -898,6 +933,42 @@ func wireKeyOf(f schema.Field) string {
 	return casing.ToCamel(f.Name)
 }
 
+// recordKey returns the path naming one record of ent under path, and
+// the properties and required list a batch-update item names it with.
+// A one-column key is the path's {id} and the item's key column; a
+// composite key takes one path segment per column (crud.KeyPath), each
+// named after its column's wire key.
+func recordKey(ent *entity.Entity, path string) (string, map[string]any, []string) {
+	cols := ent.KeyColumns()
+	props := make(map[string]any, len(cols))
+	req := make([]string, 0, len(cols))
+	rec := path
+	for _, c := range cols {
+		w := casing.ToCamel(c)
+		for _, f := range ent.GetFields() {
+			if f.Name == c {
+				w = wireKeyOf(f)
+			}
+		}
+		props[w] = map[string]any{"type": "string"}
+		req = append(req, w)
+		rec += "/:" + w
+	}
+	if len(cols) == 1 {
+		rec = path + "/:id"
+	}
+	return rec, props, req
+}
+
+// batchIDsDesc describes the ids a batch delete names its records by.
+func batchIDsDesc(ent *entity.Entity) string {
+	cols := ent.KeyColumns()
+	if len(cols) == 1 {
+		return "Record ids."
+	}
+	return fmt.Sprintf("Record ids. An id joins the record's %s values, each path-escaped, with \"/\".", strings.Join(cols, ", "))
+}
+
 // hasCustomEndpoints reports whether the entity declares at least one
 // well-formed Endpoint, one that addCustomEndpoints will actually emit.
 func hasCustomEndpoints(ent *entity.Entity) bool {
@@ -912,8 +983,10 @@ func hasCustomEndpoints(ent *entity.Entity) bool {
 // addCustomEndpoints emits an entity's hand-written Endpoints. Split out
 // of the main loop because it runs on both sides of the auto-CRUD
 // opt-out: the router mounts these endpoints regardless of
-// Exposure.CRUD, so the spec advertises them regardless too.
-func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string) {
+// Exposure.CRUD, so the spec advertises them regardless too. It reports
+// whether any operation it emitted requires a caller.
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) bool {
+	gated := false
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method == "" || endpoint.Path == "" {
 			continue
@@ -925,13 +998,53 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		}
 		customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
 		customOp.Tags = []string{tagName}
-		// A typed InputSchema becomes the JSON request body, but only for
-		// methods that carry one (GET/HEAD never do). Unset schemas fall
-		// back to today's shapeless {type:object} response and no body.
-		if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
-			customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
+		// A typed InputSchema splits by where each field travels. A field
+		// named by a {param} segment is a path parameter, typed from its
+		// field. A settings-declared endpoint (SDK) on GET or DELETE reads
+		// the rest from the query string, as its generated clients send
+		// it. Everything else is the JSON body, for methods that carry one
+		// (GET/HEAD never do). Unset schemas fall back to the shapeless
+		// {type:object} response and no body.
+		pathParams := map[string]bool{}
+		for seg := range strings.SplitSeq(endpoint.Path, "/") {
+			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
+				pathParams[seg[1:len(seg)-1]] = true
+			}
 		}
-		customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
+		inQuery := endpoint.SDK && (endpoint.Method == "GET" || endpoint.Method == "DELETE")
+		var body []schema.Field
+		for _, f := range endpoint.InputSchema {
+			switch {
+			case pathParams[f.Name]:
+				customOp.AddParameter(f.Name, "path", "", true, openapi.FieldToSchema(f))
+			case inQuery:
+				customOp.AddParameter(f.Name, "query", "", f.Required, openapi.FieldToSchema(f))
+			default:
+				body = append(body, f)
+			}
+		}
+		if len(body) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
+			customOp.SetRequestBody("application/json", openapi.FieldsToSchema(body), true)
+		}
+		// The route answers 401 without a user unless the endpoint is
+		// Public (App.endpointRoute), so the operation says so.
+		if !endpoint.Public {
+			customOp.AddSecurity("bearerAuth", nil)
+			customOp.AddSecurity("cookieAuth", nil)
+			gated = true
+		}
+		out := EndpointOutputSchema(endpoint)
+		if len(endpoint.OutputSchema) == 0 {
+			name, list := strings.CutPrefix(endpoint.Returns, "[]")
+			if components[name] {
+				out = map[string]any{"$ref": "#/components/schemas/" + name}
+				if list {
+					out = map[string]any{"type": "array", "items": out}
+				}
+			}
+		}
+		customOp.AddResponse(200, "OK", out)
 		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
+	return gated
 }

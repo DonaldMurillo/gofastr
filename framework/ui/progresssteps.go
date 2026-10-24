@@ -106,7 +106,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyProgressLabel)
+		label = i18nui.ProgressLabel.Text(ctx)
 	}
 	navClass := cfg.Class
 	if cfg.Orientation == ProgressStepsVertical {
@@ -168,7 +168,8 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	// caller's either; Steps' own root never self-marks (an owner must
 	// place it), so the mark is spliced on here.
 	list, err := registry.InjectAttribute(headless.Steps(headless.StepsProps{
-		Steps: steps,
+		Steps:   steps,
+		Strings: StringsFor(cfg.Ctx),
 	}, progressStepsClasses), "data-cui-internal", "")
 	if err != nil {
 		panic(err)

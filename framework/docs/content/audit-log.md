@@ -104,6 +104,27 @@ pre-delete row. These snapshots are captured by the CRUD handler inside the
 write transaction; callers that invoke hooks directly without CRUD may have a
 null old image.
 
+`record_id` is the record's id, the same string its URL carries, with
+control bytes stripped. The CRUD handler reads it from its own key
+columns and puts it on the AfterCreate/AfterUpdate hook context; a hook
+of your own reads it with `crud.AuditRecordIDFor(ctx, entityName)`.
+That holds where the row cannot say which key is the key: two API
+versions may give the key and another column each other's wire names.
+Two cases change it:
+
+- With no `Redact`, a key column whose name or wire name the default
+  scrub treats as sensitive (`api_key`, `token`, `secret`, ...) is stored
+  as `sha256:<hex digest>` of the id on every row. The Activity tab
+  hashes the id the same way when it looks the record's rows up. A
+  digest names no live record, so a reader that resolves `record_id` to
+  a record checks `framework.AuditDigestID(recordID)` first; the admin
+  battery's audit page does, and shows such rows without a record link.
+- A `Redact` callback receives `{"id": <record id>}` on delete, and the
+  `"id"` it returns becomes the delete row's `record_id`. A result with
+  no `"id"` keeps the original. Create and update rows keep the raw id,
+  so the delete row of a pseudonymised record does not show in its
+  Activity tab.
+
 ## Transactional behaviour
 
 Audit hooks resolve the active CRUD transaction via

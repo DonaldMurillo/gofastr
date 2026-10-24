@@ -13,7 +13,7 @@
 &nbsp;·&nbsp; [Quickstart](#quickstart)
 &nbsp;·&nbsp; [A GoFastr app in production](https://barcode.donaldmurillo.com/)
 
-GoFastr is a pre-v1 full-stack Go framework. The API can still change between releases, under the [deprecation policy](framework/docs/content/stability.md). Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder. The output is plain Go you can read, edit, and own: no reflection discovers your entities, no generated code you can't open. Auth, background jobs, search, and storage are opt-in packages, and you can drop to `net/http` or `database/sql` at any point.
+GoFastr is a pre-v1 full-stack Go framework. The API can still change between releases, under the [upgrade policy](framework/docs/content/stability.md): each breaking change ships with a changelog entry and a `gofastr upgrade` note. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder. The output is plain Go you can read, edit, and own: no reflection discovers your entities, no generated code you can't open. Auth, background jobs, search, and storage are opt-in packages, and you can drop to `net/http` or `database/sql` at any point.
 
 It is built for both the agentic web and AI-assisted development. The app you ship joins the agentic web: the agents your users bring call your data over MCP, with the same login and permissions your users have. While you build, `gofastr dev` hands your coding agent, Claude Code or Codex, the app's routes, config, and logs over MCP, to help build and debug it.
 
@@ -128,6 +128,7 @@ place, with no React or Vue on the client:
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 
@@ -144,7 +145,7 @@ import (
 // A screen is plain Go: Render returns server-rendered HTML.
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string { return "Notes" }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string { return "Notes" }
 func (s *HomeScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("My notes"))
 }
@@ -296,7 +297,7 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 - **Security scopes live in the declaration, fail-closed.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (403), `multi_tenant` scopes by tenant, and `gofastr validate` flags PII-shaped fields (email, phone, address, …) exposed without any of them. The MCP tools respect the same scopes as the REST routes.
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main`. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
 - **Batteries are separate packages.** Auth, cache, email, queue, search, storage sit behind narrow interfaces; swap any one without forking.
-- **The framework checks whether you're still using it well.** `gofastr verify` runs the 79 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
+- **The framework checks whether you're still using it well.** `gofastr verify` runs the 80 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
 - **The app generator scaffolds the whole app when you want a head start.** One `gofastr.yml` generates the screens and the API in one pass; then it's plain Go you own and edit, and the running app never needs the app spec again ([app spec tutorial](framework/docs/content/tutorial-app-spec.md)).
 
 ## The repo in 60 seconds
@@ -362,7 +363,7 @@ GoFastr is pre-1.0 and explicitly not stable. Pin a version
 
 - The `core/` primitives are usable and tested in isolation.
 - The `framework/` entity layer handles SQLite + Postgres CRUD apps today.
-- `core-ui/` changes fastest. Its exported APIs follow the same [deprecation policy](framework/docs/content/stability.md) as the rest of the tree: deprecate first, keep the old shape for at least one minor release. Expect that window to be exercised more often here than anywhere else before v1.
+- `core-ui/` changes fastest. Its exported APIs follow the same [upgrade policy](framework/docs/content/stability.md) as the rest of the tree: a breaking change ships whole in a minor release, with a `gofastr upgrade` note. Expect more of those here than anywhere else before v1.
 - The CLI binary bundles a pure-Go SQLite driver (`modernc.org/sqlite`, registered as `sqlite3` by `gofastr/sqlite/stdlib`), so it builds with `CGO_ENABLED=0`. To run migrations against Postgres, build a custom binary that imports your driver of choice.
 
 ## Why this exists

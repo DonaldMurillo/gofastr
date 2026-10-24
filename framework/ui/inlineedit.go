@@ -64,10 +64,10 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 	}
 	save, saved := cfg.SaveLabel, cfg.Saved
 	if save == "" {
-		save = i18nui.T(ctx, i18nui.KeyInlineEditSave)
+		save = i18nui.InlineEditSave.Text(ctx)
 	}
 	if saved == "" {
-		saved = i18nui.T(ctx, i18nui.KeyInlineEditSaved)
+		saved = i18nui.InlineEditSaved.Text(ctx)
 	}
 	rpc := interactive.Put(cfg.Action)
 	if strings.EqualFold(cfg.Method, "PATCH") {
@@ -82,7 +82,7 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 		ExtraAttrs: attrs,
 	}, Cluster(ClusterConfig{Gap: GapSM, Align: AlignCenter, NoWrap: true},
 		cfg.Control,
-		headless.Own(Button(ButtonConfig{Label: save, Type: "submit", Variant: ButtonPrimary, Size: ButtonSizeSmall})),
+		headless.Own(Button(ButtonConfig{Ctx: ctx, Label: save, Type: "submit", Variant: ButtonPrimary, Size: ButtonSizeSmall})),
 	))
 	// The value is the caller's; its name is ours.
 	summary := render.Join(

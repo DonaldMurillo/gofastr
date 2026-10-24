@@ -1,6 +1,7 @@
 package freeze_test
 
 import (
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,7 +132,7 @@ func TestHandlerNamesAreGoIdentifiers(t *testing.T) {
 			Action: world.Action{Kind: world.ActionValidate},
 		}}
 		w.Endpoints = []*world.EndpointStub{{
-			Name: id, Entity: "tasks", Method: "GET", Path: "/x",
+			Name: id, Entity: "tasks", Method: "GET", Path: "/tasks/x",
 		}}
 		buf, err := freeze.AppSpecYAML(w)
 		if err != nil {
@@ -153,6 +154,15 @@ func TestHandlerNamesAreGoIdentifiers(t *testing.T) {
 				handler := item.Map["handler"]
 				if handler == nil || handler.Kind != coreyaml.Scalar {
 					t.Errorf("SECURITY: %s: %s entry for id %q carries no handler; the generator has nothing valid to name (empty identifier was compacted away):\n%s", name, surface, id, buf)
+					continue
+				}
+				// An endpoint's handler is a link to an exported func,
+				// entities/<file>.go#<Name>.
+				if surface == "endpoints" {
+					file, ident, _ := strings.Cut(handler.Value.(string), "#")
+					if file != "entities/tasks_endpoints.go" || !token.IsIdentifier(ident) || !token.IsExported(ident) {
+						t.Errorf("%s: endpoint handler %q is not entities/tasks_endpoints.go#<exported Go name>", name, handler.Value)
+					}
 					continue
 				}
 				if !validGoIdent(handler.Value.(string)) {

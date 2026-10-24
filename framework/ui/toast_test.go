@@ -111,7 +111,7 @@ func TestToastTemplateCarriesTheKitSkin(t *testing.T) {
 		t.Fatal("framework/ui registers no toast row template")
 	}
 	for _, want := range []string{
-		`<template data-hui-toast-dismiss-label="Dismiss: %s"`,
+		`<template data-hui-toast-dismiss-label="Dismiss: {{title}}"`,
 		`data-hui-toast-template=""`,
 		`data-hui-toast-glyph-success="✓"`,
 		`data-hui-toast-variant-danger="fui-notification--danger"`,

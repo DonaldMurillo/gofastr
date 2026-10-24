@@ -2,16 +2,17 @@ package app_test
 
 import (
 	"context"
-	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 type suffixTitleComp struct{ Title string }
 
-func (c *suffixTitleComp) Render() render.HTML { return "Help center" }
-func (c *suffixTitleComp) ScreenTitle() string { return c.Title }
+func (c *suffixTitleComp) Render() render.HTML                    { return "Help center" }
+func (c *suffixTitleComp) ScreenTitle(ctx context.Context) string { return c.Title }
 
 func TestPageTitleSuffix(t *testing.T) {
 	for _, fallback := range []bool{false, true} {

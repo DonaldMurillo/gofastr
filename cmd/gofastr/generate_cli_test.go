@@ -75,7 +75,7 @@ func defaultCLIOptions() cliOptions {
 func TestRenderCLI_CommandTreePerEntity(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
 
-	main := files["main.go"]
+	main := files["main.gen.go"]
 	for _, w := range []string{
 		"type command struct",
 		"func customCommands() []command", // referenced, defined in custom.go
@@ -88,11 +88,11 @@ func TestRenderCLI_CommandTreePerEntity(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(files["main.go"], "func groupUsage(") {
+	if !strings.Contains(files["main.gen.go"], "func groupUsage(") {
 		t.Errorf("main.go missing groupUsage helper")
 	}
 
-	posts := files["posts.go"]
+	posts := files["posts.gen.go"]
 	for _, w := range []string{
 		`{name: "posts",`, // bare entity command → group help
 		`{name: "posts list"`,
@@ -112,10 +112,10 @@ func TestRenderCLI_CommandTreePerEntity(t *testing.T) {
 			t.Errorf("posts.go missing %q", w)
 		}
 	}
-	if _, ok := files["documents.go"]; !ok {
+	if _, ok := files["documents.gen.go"]; !ok {
 		t.Errorf("documents.go not rendered")
 	}
-	for _, name := range []string{"config.go", "auth.go", "output.go", "custom.go"} {
+	for _, name := range []string{"config.gen.go", "auth.gen.go", "output.gen.go", "custom.go"} {
 		if _, ok := files[name]; !ok {
 			t.Errorf("%s not rendered", name)
 		}
@@ -130,7 +130,7 @@ func TestRenderCLI_CommandTreePerEntity(t *testing.T) {
 func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
 
-	posts := files["posts.go"]
+	posts := files["posts.gen.go"]
 	for _, w := range []string{
 		`{flag: "title", param: "title"`,
 		`{flag: "views", param: "views"`,
@@ -156,7 +156,7 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 		}
 	}
 
-	verbs := files["verbs.go"]
+	verbs := files["verbs.gen.go"]
 	for _, w := range []string{
 		`fs.String("sort"`,
 		`fs.String("page"`,
@@ -190,15 +190,15 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 		`fs.String(f.flag, "", f.usage)`,
 		`body[f.wire] = *strVals[i]`,
 		`runCreateVerb("posts create", "/posts", postsMutationFields, args)`,
-		`runUpdateVerb("posts update", "/posts", postsMutationFields, args)`,
-		`runPatchVerb("posts patch", "/posts", postsMutationFields, args)`,
+		`runUpdateVerb("posts update", "/posts", []string{"id"}, postsMutationFields, args)`,
+		`runPatchVerb("posts patch", "/posts", []string{"id"}, postsMutationFields, args)`,
 	} {
 		if !strings.Contains(posts, w) && !strings.Contains(verbs, w) {
 			t.Errorf("mutation table wiring missing %q", w)
 		}
 	}
 
-	docs := files["documents.go"]
+	docs := files["documents.gen.go"]
 	for _, w := range []string{
 		`{flag: "q", param: "q"`,
 		`{flag: "trashed", param: "trashed", help: "include soft-deleted rows", isBool: true}`,
@@ -232,12 +232,12 @@ func TestRenderCLI_ReservedFlagCollision(t *testing.T) {
 // bare server URL.
 func TestRenderCLI_BakesAPIPrefix(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
-	if !strings.Contains(files["main.go"], `apiPrefix  = "/api"`) {
+	if !strings.Contains(files["main.gen.go"], `apiPrefix  = "/api"`) {
 		t.Errorf("main.go should bake apiPrefix constant")
 	}
 
 	bare := renderedCLI(t, cliOptions{outDir: "cli", binary: "myapp", apiPrefix: ""})
-	if !strings.Contains(bare["main.go"], `apiPrefix  = ""`) {
+	if !strings.Contains(bare["main.gen.go"], `apiPrefix  = ""`) {
 		t.Errorf("empty --api-prefix should bake an empty prefix")
 	}
 }
@@ -247,18 +247,18 @@ func TestRenderCLI_EntityOnlyExclude(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.only = []string{"posts"}
 	files := renderedCLI(t, opts)
-	if _, ok := files["documents.go"]; ok {
-		t.Errorf("--only=posts must not render documents.go")
+	if _, ok := files["documents.gen.go"]; ok {
+		t.Errorf("--only=posts must not render documents.gen.go")
 	}
 
 	opts = defaultCLIOptions()
 	opts.exclude = []string{"posts"}
 	files = renderedCLI(t, opts)
-	if _, ok := files["posts.go"]; ok {
-		t.Errorf("--exclude=posts must not render posts.go")
+	if _, ok := files["posts.gen.go"]; ok {
+		t.Errorf("--exclude=posts must not render posts.gen.go")
 	}
-	if _, ok := files["documents.go"]; !ok {
-		t.Errorf("--exclude=posts must keep documents.go")
+	if _, ok := files["documents.gen.go"]; !ok {
+		t.Errorf("--exclude=posts must keep documents.gen.go")
 	}
 
 	opts = defaultCLIOptions()
@@ -274,7 +274,7 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.verbs = "list,get"
 	files := renderedCLI(t, opts)
-	posts := files["posts.go"]
+	posts := files["posts.gen.go"]
 	if !strings.Contains(posts, `{name: "posts list"`) || !strings.Contains(posts, `{name: "posts get"`) {
 		t.Errorf("global --verbs should keep list/get")
 	}
@@ -287,10 +287,10 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 	opts = defaultCLIOptions()
 	opts.verbs = "posts=list;documents=*"
 	files = renderedCLI(t, opts)
-	if strings.Contains(files["posts.go"], `{name: "posts get"`) {
+	if strings.Contains(files["posts.gen.go"], `{name: "posts get"`) {
 		t.Errorf("per-entity verbs: posts should only have list")
 	}
-	if !strings.Contains(files["documents.go"], `{name: "documents watch"`) {
+	if !strings.Contains(files["documents.gen.go"], `{name: "documents watch"`) {
 		t.Errorf("per-entity verbs: documents=* should keep watch")
 	}
 
@@ -303,15 +303,15 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 
 // A delete-only (or any narrow) verb selection must still emit code that
 // compiles: the shared delete body lands in verbs.go with its net/http
-// and net/url imports, and the entity file's wrapper needs no imports at
-// all (format.Source cannot add missing imports, so a stray reference
+// import (takeKey, in output.go, escapes the key), and the entity file's
+// wrapper needs no imports at all (format.Source cannot add missing imports, so a stray reference
 // would be a broken file).
 func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.verbs = "delete"
 	files := renderedCLI(t, opts)
-	posts := files["posts.go"]
-	for _, w := range []string{"runPostsDelete(", `runDeleteVerb("posts delete", "/posts", args)`} {
+	posts := files["posts.gen.go"]
+	for _, w := range []string{"runPostsDelete(", `runDeleteVerb("posts delete", "/posts", []string{"id"}, args)`} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("delete-only posts.go missing %q\n%s", w, posts)
 		}
@@ -319,8 +319,8 @@ func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 	if strings.Contains(posts, "import (") {
 		t.Errorf("delete-only posts.go should need no imports:\n%s", posts)
 	}
-	verbs := files["verbs.go"]
-	for _, w := range []string{`"fmt"`, `"net/http"`, `"net/url"`, "url.PathEscape(id)"} {
+	verbs := files["verbs.gen.go"]
+	for _, w := range []string{`"fmt"`, `"net/http"`, "takeKey(cmd, keys, args)"} {
 		if !strings.Contains(verbs, w) {
 			t.Errorf("delete-only verbs.go missing %q\n%s", w, verbs)
 		}
@@ -334,17 +334,17 @@ func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 // the table-driven mutation verbs: the entity file carries just the field
 // table and one-line wrappers (no imports at all: no flag plumbing, no
 // http method identifiers, no path building), while verbs.go gains the
-// encoding/json, fmt, net/http, and net/url its shared body needs.
+// encoding/json, fmt and net/http its shared body needs.
 func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.verbs = "create,update,patch"
 	files := renderedCLI(t, opts)
-	posts := files["posts.go"]
+	posts := files["posts.gen.go"]
 	for _, w := range []string{
 		"var postsMutationFields = []mutationField{",
 		`runCreateVerb("posts create", "/posts", postsMutationFields, args)`,
-		`runUpdateVerb("posts update", "/posts", postsMutationFields, args)`,
-		`runPatchVerb("posts patch", "/posts", postsMutationFields, args)`,
+		`runUpdateVerb("posts update", "/posts", []string{"id"}, postsMutationFields, args)`,
+		`runPatchVerb("posts patch", "/posts", []string{"id"}, postsMutationFields, args)`,
 	} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("mutation-only posts.go missing %q\n%s", w, posts)
@@ -353,8 +353,8 @@ func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 	if strings.Contains(posts, "import (") {
 		t.Errorf("mutation-only posts.go should need no imports:\n%s", posts)
 	}
-	verbs := files["verbs.go"]
-	for _, w := range []string{`"encoding/json"`, `"fmt"`, `"net/http"`, `"net/url"`, "func runMutationVerb("} {
+	verbs := files["verbs.gen.go"]
+	for _, w := range []string{`"encoding/json"`, `"fmt"`, `"net/http"`, "func runMutationVerb("} {
 		if !strings.Contains(verbs, w) {
 			t.Errorf("mutation-only verbs.go missing %q\n%s", w, verbs)
 		}
@@ -369,15 +369,19 @@ func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 // Positional ids are path-escaped in every id-addressed verb, matching the
 // typed client: a '/' or '?' in an id must not rewrite the route. The
 // shared bodies in verbs.go (get, delete, and the mutation with-id form
-// behind update/patch) each escape the id where they build their path;
+// behind update/patch) each take the key through takeKey, which escapes
+// every value as its own segment;
 // the entity files bind only the pre-escaped base path.
 func TestRenderCLI_PathEscapesIDs(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
-	if got := strings.Count(files["posts.go"], "url.PathEscape(id)"); got != 0 {
-		t.Errorf("entity file should bind only the base path, got %d url.PathEscape(id) uses in posts.go", got)
+	if got := strings.Count(files["posts.gen.go"], "url.PathEscape(id)"); got != 0 {
+		t.Errorf("entity file should bind only the base path, got %d url.PathEscape(id) uses in posts.gen.go", got)
 	}
-	if got := strings.Count(files["verbs.go"], "url.PathEscape(id)"); got != 3 { // get + delete + mutation
-		t.Errorf("want 3 url.PathEscape(id) uses in verbs.go (get/delete/mutation), got %d", got)
+	if got := strings.Count(files["verbs.gen.go"], "takeKey("); got != 3 { // get + delete + mutation
+		t.Errorf("want 3 takeKey uses in verbs.go (get/delete/mutation), got %d", got)
+	}
+	if !strings.Contains(files["output.gen.go"], "segs[i] = url.PathEscape(args[i])") {
+		t.Error("takeKey does not escape each key value as its own segment")
 	}
 }
 
@@ -472,7 +476,7 @@ func TestGenerateCLI_BuildsCleanly(t *testing.T) {
 	dir := cliTempModule(t)
 	runGenerateCLI([]string{"--binary=myapp"})
 
-	for _, f := range []string{"main.go", "config.go", "auth.go", "output.go", "custom.go", "posts.go", "documents.go"} {
+	for _, f := range []string{"main.gen.go", "config.gen.go", "auth.gen.go", "output.gen.go", "custom.go", "posts.gen.go", "documents.gen.go"} {
 		if _, err := os.Stat(filepath.Join(dir, "cmd", "myapp", f)); err != nil {
 			t.Fatalf("cmd/myapp/%s not written: %v", f, err)
 		}
@@ -506,6 +510,10 @@ func customCommands() []command {
 			fmt.Println("hello from custom.go")
 			return 0
 		}},
+		{name: "login", summary: "replaced login", run: func(args []string) int {
+			fmt.Println("login from custom.go")
+			return 0
+		}},
 	}
 }
 
@@ -537,6 +545,11 @@ func configureClient(c *client.Client) {}
 	}
 	if !strings.Contains(string(out), "hello from custom.go") {
 		t.Fatalf("custom command not merged into dispatch: %s", out)
+	}
+	// A custom entry named like a built-in replaces it.
+	out, err = exec.Command(bin, "login").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "login from custom.go") {
+		t.Fatalf("custom login did not replace the built-in: %v\n%s", err, out)
 	}
 }
 

@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"sync"
@@ -419,10 +420,13 @@ func bridgeTerminateAfterLastWindow(a *ffi.Args) uintptr {
 func bridgeSettingsAction(a *ffi.Args) uintptr {
 	if s := activeShell.Load(); s != nil {
 		s.mu.Lock()
-		onSettings := s.onSettings
+		onSettings, textCtx := s.onSettings, s.textCtx
 		s.mu.Unlock()
+		if textCtx == nil {
+			textCtx = context.Background()
+		}
 		if onSettings != nil {
-			go onSettings()
+			go onSettings(textCtx)
 		}
 	}
 	return 0
@@ -518,6 +522,7 @@ func (s *darwinShell) buildMenuBar(plans []desktop.MenuPlan) {
 	for _, mp := range plans {
 		top := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSMenuItem"), objc.Sel("alloc"))), objc.Sel("init")))
 		objc.Send(top, objc.Sel("setTitle:"), uintptr(objc.NSString(mp.Title)))
+		s.nameMenuItem(top, mp.English, "")
 		objc.Send(top, objc.Sel("setSubmenu:"), uintptr(s.buildMenu(mp.Items)))
 		objc.Send(mainMenu, objc.Sel("addItem:"), uintptr(top))
 	}
@@ -537,6 +542,7 @@ func (s *darwinShell) buildMenu(rows []desktop.MenuItemPlan) objc.ID {
 		} else {
 			item = objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSMenuItem"), objc.Sel("alloc"))), objc.Sel("init")))
 			objc.Send(item, objc.Sel("setTitle:"), uintptr(objc.NSString(r.Title)))
+			s.nameMenuItem(item, r.English, r.Role)
 			if r.Key != "" {
 				objc.Send(item, objc.Sel("setKeyEquivalent:"), uintptr(objc.NSString(r.Key)))
 				if r.Mask != 0 {
@@ -573,4 +579,19 @@ func (s *darwinShell) buildMenu(rows []desktop.MenuItemPlan) objc.ID {
 		objc.Send(menu, objc.Sel("addItem:"), uintptr(item))
 	}
 	return menu
+}
+
+// menuName is what a native test driver matches a rendered menu item
+// by: its English title, or its role for a role item. The shell draws
+// the titles in the OS language, so the drawn title is no stable name.
+type menuName struct{ english, role string }
+
+// nameMenuItem records item's names for matchMenuItem.
+func (s *darwinShell) nameMenuItem(item objc.ID, english, role string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.menuNames == nil {
+		s.menuNames = map[objc.ID]menuName{}
+	}
+	s.menuNames[item] = menuName{english: english, role: role}
 }

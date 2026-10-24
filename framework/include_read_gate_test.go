@@ -47,7 +47,7 @@ func includeGateApp(t *testing.T) *App {
 			{Name: "owner_id", Type: schema.Relation, To: "owners"},
 		},
 		Relations: []entity.Relation{
-			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
+			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: []string{"owner_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -133,7 +133,7 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 			{Name: "owner_id", Type: schema.Relation, To: "owners"},
 		},
 		Relations: []entity.Relation{
-			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
+			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: []string{"owner_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -191,7 +191,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 	app.Entity("owners", EntityConfig{
 		Fields: []schema.Field{{Name: "email", Type: schema.String}},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasOne, Name: "profile", Entity: "profiles", ForeignKey: "owner_id"},
+			{Type: entity.RelHasOne, Name: "profile", Entity: "profiles", ForeignKey: []string{"owner_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -201,7 +201,7 @@ func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
 			{Name: "owner_id", Type: schema.Relation, To: "owners"},
 		},
 		Relations: []entity.Relation{
-			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: "owner_id"},
+			{Type: entity.RelManyToOne, Name: "owner", Entity: "owners", ForeignKey: []string{"owner_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -333,7 +333,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 	app.Entity("boards", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
+			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: []string{"board_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -436,7 +436,7 @@ func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
 	app.Entity("spubs", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasMany, Name: "snotes", Entity: "snotes", ForeignKey: "pub_id"},
+			{Type: entity.RelHasMany, Name: "snotes", Entity: "snotes", ForeignKey: []string{"pub_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -515,7 +515,7 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 	app.Entity("boards", EntityConfig{
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
+			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: []string{"board_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -626,7 +626,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 			{Name: "author_id", Type: schema.Relation, To: "authors"},
 		},
 		Relations: []entity.Relation{
-			{Type: entity.RelManyToOne, Name: "author", Entity: "authors", ForeignKey: "author_id"},
+			{Type: entity.RelManyToOne, Name: "author", Entity: "authors", ForeignKey: []string{"author_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
@@ -688,7 +688,7 @@ func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
 			{Name: "profile_id", Type: schema.Relation, To: "profiles"},
 		},
 		Relations: []entity.Relation{
-			{Type: entity.RelManyToOne, Name: "profile", Entity: "profiles", ForeignKey: "profile_id"},
+			{Type: entity.RelManyToOne, Name: "profile", Entity: "profiles", ForeignKey: []string{"profile_id"}},
 		},
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})

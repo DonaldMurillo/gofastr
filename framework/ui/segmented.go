@@ -281,7 +281,7 @@ func segmentedCSS(_ style.Theme) string {
   z-index: 0;
   top: var(--spacing-sm, 4px);
   bottom: var(--spacing-sm, 4px);
-  left: var(--spacing-sm, 4px);
+  inset-inline-start: var(--spacing-sm, 4px);
   inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2);
   border-radius: calc(var(--radii-md, 8px) - 4px);
   background: var(--color-surface, #fff);
@@ -297,11 +297,14 @@ func segmentedCSS(_ style.Theme) string {
 [data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 6); }
 
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(100%); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="2"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(200%); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="3"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(300%); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="4"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(400%); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="5"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(500%); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 100%)); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="2"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 200%)); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="3"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 300%)); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="4"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 400%)); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="5"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 500%)); }
+/* Right to left the first option sits on the right, so the indicator
+   steps leftward. */
+[data-cui-comp="ui-segmented"]:dir(rtl) { --fui-segmented-dir: -1; }
 
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-segmented"] .fui-segmented__indicator { transition: none; }

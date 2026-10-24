@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -34,7 +35,7 @@ func (b *RecordBuilder) activityTab(ctx context.Context, m *meta) render.HTML {
 		return slotFailed(ctx)
 	}
 	if len(entries) == 0 {
-		return ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyEntityNoActivity)})
+		return ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.EntityNoActivity.Text(ctx)})
 	}
 	var rows []map[string]any
 	for _, e := range entries {
@@ -62,9 +63,9 @@ func (b *RecordBuilder) activityCount(ctx context.Context, m *meta) string {
 		return ""
 	}
 	if len(entries) > activityCap {
-		return formatNumber(activityCap, 0) + "+"
+		return i18n.Number(ctx, activityCap) + "+"
 	}
-	return formatNumber(float64(len(entries)), 0)
+	return i18n.Number(ctx, len(entries))
 }
 
 // activityEvent draws one audit entry: the headline, how long ago, and
@@ -84,7 +85,7 @@ func (u *UI) activityEvent(ctx context.Context, s *listState, labels labelResolv
 		body = append(body, ui.ChangeList(ui.ChangeListConfig{Changes: changes, Ctx: ctx}))
 	}
 	if e.Reason != "" {
-		body = append(body, html.Paragraph(html.TextConfig{}, render.Text(i18nui.TVars(ctx, i18nui.KeyEntityActivityReason, map[string]string{"reason": e.Reason}))))
+		body = append(body, html.Paragraph(html.TextConfig{}, render.Text(i18nui.EntityActivityReason.Text(ctx, map[string]any{"reason": e.Reason}))))
 	}
 	ev.Body = render.Join(body...)
 	return ev
@@ -101,27 +102,27 @@ func (u *UI) activityLead(ctx context.Context, m *meta, e AuditEntry, changed bo
 		"actor":  html.Strong(html.TextConfig{}, render.Text(u.actorLabel(ctx, e.Actor))),
 		"entity": render.Text(m.noun(ctx, false)),
 	}
-	key := i18nui.KeyEntityActivityOther
+	key := i18nui.EntityActivityOther
 	switch op := e.Operation; {
 	case op == "create":
-		key = i18nui.KeyEntityActivityCreated
+		key = i18nui.EntityActivityCreated
 	case op == "update" && changed:
-		key = i18nui.KeyEntityActivityUpdated
+		key = i18nui.EntityActivityUpdated
 	case op == "update":
-		key = i18nui.KeyEntityActivitySaved
+		key = i18nui.EntityActivitySaved
 	case op == "delete":
-		key = i18nui.KeyEntityActivityDeleted
+		key = i18nui.EntityActivityDeleted
 	case op == "restore":
-		key = i18nui.KeyEntityActivityRestored
+		key = i18nui.EntityActivityRestored
 	case op == "state_override":
-		key = i18nui.KeyEntityActivityOverride
+		key = i18nui.EntityActivityOverride
 	case strings.HasPrefix(op, "transition:"):
-		key = i18nui.KeyEntityActivityMoved
+		key = i18nui.EntityActivityMoved
 		vars["action"] = render.Text(m.transitionLabel(ctx, strings.TrimPrefix(op, "transition:")))
 	default:
 		vars["action"] = render.Text(op)
 	}
-	return i18nui.TVarsHTML(ctx, key, vars)
+	return i18nui.HTML(ctx, key, vars)
 }
 
 // actorLabel names an entry's actor: "System" for a row with no actor,
@@ -129,7 +130,7 @@ func (u *UI) activityLead(ctx context.Context, m *meta, e AuditEntry, changed bo
 // panicking name func degrades to the id, never a failed tab.
 func (u *UI) actorLabel(ctx context.Context, id string) (label string) {
 	if id == "" {
-		return i18nui.T(ctx, i18nui.KeyEntityActivitySystem)
+		return i18nui.EntityActivitySystem.Text(ctx)
 	}
 	if u.actorName == nil {
 		return id
@@ -234,7 +235,7 @@ func (u *UI) changes(ctx context.Context, s *listState, labels labelResolver, be
 // changeValue is one side of a change: the cell the list draws, or ""
 // for an empty value, which the change list draws as the empty mark.
 func (u *UI) changeValue(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any) render.HTML {
-	if cell(rowValue(row, f.Name)) == "" {
+	if cell(s.m.rowValue(row, f.Name)) == "" {
 		return ""
 	}
 	return u.cellHTML(ctx, s, labels, f, row, f.Name)
@@ -249,10 +250,10 @@ func (u *UI) changeValue(ctx context.Context, s *listState, labels labelResolver
 func (m *meta) changeFields(before, after map[string]any) []schema.Field {
 	var out []schema.Field
 	for _, f := range m.fields {
-		if f.Name == m.pk || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) {
+		if m.isKey(f.Name) || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) {
 			continue
 		}
-		if cell(rowValue(before, f.Name)) == cell(rowValue(after, f.Name)) {
+		if cell(m.rowValue(before, f.Name)) == cell(m.rowValue(after, f.Name)) {
 			continue
 		}
 		out = append(out, f)

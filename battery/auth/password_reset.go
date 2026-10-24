@@ -48,7 +48,10 @@ type PasswordResetConfig struct {
 	// BodyTemplate, when non-nil, transforms the reset URL into the
 	// full email body before EmailSender.Send is called. nil means
 	// "send the URL as the entire body" (the historical behavior).
-	BodyTemplate func(url string) string
+	// ctx is the request's (for a reset, a detached copy that keeps its
+	// values), so it carries the reader's locale: render the body from
+	// your phrases with it (i18n.Phrase.Text).
+	BodyTemplate func(ctx context.Context, url string) string
 
 	// DevMode logs the reset URL when EmailSender is nil. NEVER enable in
 	// production, anyone with log read access then resets arbitrary
@@ -178,7 +181,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	{
 		ce, cerr := p.mgr.canonicalizeEmail(body.Email)
 		if cerr != nil {
-			writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
 			return
 		}
 		body.Email = ce
@@ -195,7 +198,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		_ = json.NewEncoder(w).Encode(map[string]any{"sent": true})
 	}()
 
-	if !emailWithinLimit(w, body.Email) {
+	if !emailWithinLimit(w, r, body.Email) {
 		return
 	}
 	store := p.mgr.UserStore()
@@ -368,7 +371,7 @@ func (p *PasswordResetPlugin) sendResetEmail(delivery passwordResetDelivery) {
 
 	body := delivery.resetURL
 	if p.cfg.BodyTemplate != nil {
-		body = p.cfg.BodyTemplate(delivery.resetURL)
+		body = p.cfg.BodyTemplate(ctx, delivery.resetURL)
 	}
 	if err := p.cfg.EmailSender.Send(ctx, delivery.to, body); err != nil {
 		// The client still receives the anti-enumeration 200. Log hashed
@@ -414,11 +417,11 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if body.Token == "" || body.Password == "" {
-		writeAuthError(w, http.StatusBadRequest, "token and password required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonTokenAndPasswordRequired)
 		return
 	}
 	if len(body.Password) > 128 {
-		writeAuthError(w, http.StatusBadRequest, "password too long")
+		writeAuthError(w, r, http.StatusBadRequest, reasonPasswordTooLong)
 		return
 	}
 
@@ -429,33 +432,32 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// immediately before SetPassword.
 	setter, ok := p.mgr.UserStore().(PasswordSetter)
 	if !ok {
-		writeAuthError(w, http.StatusInternalServerError,
-			"user store does not implement PasswordSetter")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoPasswordSetter)
 		return
 	}
 
 	if err := ValidatePasswordStrength(body.Password); err != nil {
-		writeAuthError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		writeAuthError(w, r, http.StatusBadRequest, reasonPasswordTooShort)
 		return
 	}
 
 	hash, err := HashPassword(body.Password)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "hash failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonHashFailed)
 		return
 	}
 
 	userID, err := redeemPurposeToken(r.Context(), p.store, purposeReset, body.Token)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 	if err := setter.SetPassword(r.Context(), userID, hash); err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			writeAuthError(w, http.StatusNotFound, "user not found")
+			writeAuthError(w, r, http.StatusNotFound, reasonUserNotFound)
 			return
 		}
-		writeAuthError(w, http.StatusInternalServerError, "set password failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonSetPasswordFailed)
 		return
 	}
 
@@ -481,11 +483,10 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// account before the reset kept working after it.
 	// A failure answers 500 rather than a reset that looks complete; the
 	// sessions are already gone, so a fresh link retries safely.
-	const resetIncomplete = "password updated, but securing the account failed: request another reset link"
 	if n, supported, err := p.mgr.revokeUserAPITokens(r.Context(), userID); err != nil {
 		slog.Warn("password-reset API token revocation failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		writeAuthError(w, http.StatusInternalServerError, resetIncomplete)
+		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
 		return
 	} else if supported && n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -500,7 +501,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	if n, err := p.mgr.purgeUserPasskeys(r.Context(), userID); err != nil {
 		slog.Warn("password-reset passkey removal failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		writeAuthError(w, http.StatusInternalServerError, resetIncomplete)
+		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
 		return
 	} else if n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -527,7 +528,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Warn("password-reset account claim failed",
 				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-			writeAuthError(w, http.StatusInternalServerError, resetIncomplete)
+			writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
 			return
 		}
 	}

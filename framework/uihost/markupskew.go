@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // staleMarkupClient reports whether a navigation fetch comes from a
@@ -47,13 +48,22 @@ func writeStaleMarkupReload(w http.ResponseWriter, r *http.Request, path, swapLa
 	}
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusConflict)
-	target := (&url.URL{Path: path, RawQuery: r.URL.RawQuery}).RequestURI()
+	// The refresh is no link the page rewriter reads, so the locale
+	// prefix the router stripped goes back on here.
+	// path is in routing form, so a key segment holding "/" goes back
+	// out as %2F.
+	target := i18n.PathPrefix(r.Context()) + app.EscapeRoutePath(path)
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	updated := html.EscapeString(pageAppUpdated.Text(r.Context(), nil))
+	reload := html.EscapeString(pageReloadPage.Text(r.Context(), nil))
 	if !handler.IsSafeRelativePath(target) {
-		fmt.Fprint(w, `<p role="alert">This app was updated. Reload the page.</p>`)
+		fmt.Fprintf(w, `<p role="alert">%s %s</p>`, updated, reload)
 		return
 	}
 	// The refresh URL is single-quoted inside the attribute, so a quote
 	// in the query must not end it early.
 	esc := html.EscapeString(strings.ReplaceAll(target, "'", "%27"))
-	fmt.Fprintf(w, `<meta http-equiv="refresh" content="0; url='%s'"><p role="alert">This app was updated. <a href="%s">Reload the page</a>.</p>`, esc, esc)
+	fmt.Fprintf(w, `<meta http-equiv="refresh" content="0; url='%s'"><p role="alert">%s <a href="%s">%s</a></p>`, esc, updated, esc, reload)
 }

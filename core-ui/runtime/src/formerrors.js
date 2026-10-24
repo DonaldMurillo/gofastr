@@ -107,7 +107,7 @@
       placed++;
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
-      const title = (d && typeof d.error === 'string' && d.error) || ('Request failed (' + status + ')');
+      const title = (d && typeof d.error === 'string' && d.error) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });
       NS._toastOrFallback({ variant: 'error', title, ttl: 6000 });
     }
   }

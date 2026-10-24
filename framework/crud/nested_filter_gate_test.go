@@ -59,7 +59,7 @@ func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
 
 	filterOn := func(target string) []nestedFilter {
 		return []nestedFilter{{
-			Relation: entity.Relation{Type: entity.RelHasMany, Name: target, Entity: target, ForeignKey: "board_id"},
+			Relation: entity.Relation{Type: entity.RelHasMany, Name: target, Entity: target, ForeignKey: []string{"board_id"}},
 			Field:    "body",
 		}}
 	}
@@ -164,7 +164,7 @@ func TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets(t *testing.T) 
 	})
 	ch := &CrudHandler{Entity: parent, Registry: &reg}
 	nf := []nestedFilter{{
-		Relation: entity.Relation{Type: entity.RelHasMany, Name: "secrets", Entity: "secrets", ForeignKey: "board_id"},
+		Relation: entity.Relation{Type: entity.RelHasMany, Name: "secrets", Entity: "secrets", ForeignKey: []string{"board_id"}},
 		Field:    "body",
 	}}
 	err := ch.scopeNestedFiltersForCaller(context.Background(), nf)
@@ -185,9 +185,9 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 		name string
 		rel  entity.Relation
 	}{
-		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: "note_id"}},
-		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"}},
-		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: "board_id"}},
+		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
+		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
+		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
 		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
 	}
 	for _, sh := range shapes {
@@ -199,8 +199,8 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 					{Field: "tenant_id", Op: filter.OpEq, Value: "t1"},
 				},
 			}
-			sql, args := buildExistsSubquery("boards", "id", nf)
-			for _, want := range []string{`"note_rows"."owner_id" = $`, `"note_rows"."tenant_id" = $`} {
+			sql, args := buildExistsSubquery("boards", []string{"id"}, nf)
+			for _, want := range []string{`note_rows.owner_id = $`, `note_rows.tenant_id = $`} {
 				if !strings.Contains(sql, want) {
 					t.Errorf("missing %q — the subquery counts every row:\n%s", want, sql)
 				}
@@ -228,11 +228,11 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 	// A scope column that is not a plain identifier must match nothing rather
 	// than be dropped: dropping it widens the subquery back to every row.
 	nf := nestedFilter{
-		Relation: entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"},
+		Relation: entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}},
 		Field:    "body", Op: filter.OpEq, Value: "x", table: "notes",
 		scopes: []filter.ParsedFilter{{Field: "owner_id; DROP TABLE notes --", Op: filter.OpEq, Value: "u1"}},
 	}
-	if sql, _ := buildExistsSubquery("boards", "id", nf); sql != "1 = 0" {
+	if sql, _ := buildExistsSubquery("boards", []string{"id"}, nf); sql != "1 = 0" {
 		t.Errorf("an unsafe scope column produced %q, want an unconditionally-false predicate", sql)
 	}
 }
@@ -265,15 +265,15 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 		name string
 		rel  entity.Relation
 	}{
-		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: "note_id"}},
-		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"}},
-		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: "board_id"}},
+		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
+		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
+		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
 		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
 	}
 	for _, sh := range shapes {
 		t.Run(sh.name, func(t *testing.T) {
 			nf := nestedFilter{Relation: sh.rel, Field: "body", Op: "eq", Value: "x", softDelete: true, table: "note_rows"}
-			sql, _ := buildExistsSubquery("boards", "id", nf)
+			sql, _ := buildExistsSubquery("boards", []string{"id"}, nf)
 			if !strings.Contains(sql, "note_rows.deleted_at IS NULL") {
 				t.Errorf("no soft-delete predicate on the target table:\n%s", sql)
 			}
@@ -282,7 +282,7 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 			}
 			// And without the flag it must not appear.
 			nf.softDelete = false
-			plain, _ := buildExistsSubquery("boards", "id", nf)
+			plain, _ := buildExistsSubquery("boards", []string{"id"}, nf)
 			if strings.Contains(plain, "deleted_at") {
 				t.Errorf("soft-delete predicate emitted for an entity that does not soft delete:\n%s", plain)
 			}
@@ -390,7 +390,7 @@ func TestWriteIncludeErrorStatusMapping(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			writeIncludeError(rec, "list", tc.err)
+			writeIncludeError(rec, httptest.NewRequest(http.MethodGet, "/", nil), "list", tc.err)
 			if rec.Code != tc.wantStatus {
 				t.Errorf("status = %d, want %d (body %s)", rec.Code, tc.wantStatus, rec.Body.String())
 			}
@@ -440,7 +440,7 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 	parent := gateEntity(t, "boards", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
+			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: []string{"board_id"}},
 		},
 	})
 

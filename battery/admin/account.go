@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
@@ -28,8 +27,8 @@ const (
 func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render.HTML {
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminAccountSettings),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminAccountSub),
+			Title:    i18nui.AdminAccountSettings.Text(ctx),
+			Subtitle: i18nui.AdminAccountSub.Text(ctx),
 		}),
 		b.profileCard(ctx),
 		b.appearanceCard(ctx),
@@ -47,36 +46,36 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	var items []ui.DetailItem
 	// With a name form the form shows the name; a row would repeat it.
 	if name := b.userName(ctx); name != "" && b.nameStore() == nil {
-		items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminName), Value: render.Text(name)})
+		items = append(items, ui.DetailItem{Label: i18nui.AdminName.Text(ctx), Value: render.Text(name)})
 	}
 	if email := userEmail(ctx); email != "" {
 		value := render.Text(email)
 		if verified, known := b.emailVerified(ctx); known {
-			badge := ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminUnverified), Variant: ui.StatusWarning})
+			badge := ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.AdminUnverified.Text(ctx), Variant: ui.StatusWarning})
 			if verified {
-				badge = ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminVerified), Variant: ui.StatusSuccess})
+				badge = ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.AdminVerified.Text(ctx), Variant: ui.StatusSuccess})
 			}
 			value = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, value, badge)
 		}
-		items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminEmail), Value: value})
+		items = append(items, ui.DetailItem{Label: i18nui.AdminEmail.Text(ctx), Value: value})
 	}
-	roles := ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminNoRoles)))
+	roles := ui.Muted(render.Text(i18nui.AdminNoRoles.Text(ctx)))
 	if held := callerHeldRoles(ctx); len(held) > 0 {
 		tags := make([]render.HTML, len(held))
 		for i, r := range held {
-			tags[i] = ui.Tag(ui.TagConfig{Label: r})
+			tags[i] = ui.Tag(ui.TagConfig{Ctx: ctx, Label: r})
 		}
 		roles = ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, tags...)
 	}
-	items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminRoles), Value: roles})
+	items = append(items, ui.DetailItem{Label: i18nui.AdminRoles.Text(ctx), Value: roles})
 	body := []render.HTML{ui.DetailList(ui.DetailListConfig{Items: items})}
 	if b.nameStore() != nil {
 		body = append(body, b.nameForm(ctx))
 	}
 	return ui.Card(ui.CardConfig{
-		Heading:      i18nui.T(ctx, i18nui.KeyAdminProfile),
+		Heading:      i18nui.AdminProfile.Text(ctx),
 		HeadingLevel: 2,
-		Description:  i18nui.T(ctx, i18nui.KeyAdminProfileSub),
+		Description:  i18nui.AdminProfileSub.Text(ctx),
 	}, body...)
 }
 
@@ -86,13 +85,14 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 func (b *Battery) nameForm(ctx context.Context) render.HTML {
 	action := b.cfg.PathPrefix + "/account/_name"
 	return ui.Form(ui.FormConfig{
+		Ctx:         ctx,
 		Action:      action,
 		ID:          nameFormID,
-		SubmitLabel: i18nui.T(ctx, i18nui.KeyAdminSaveName),
+		SubmitLabel: i18nui.AdminSaveName.Text(ctx),
 		ExtraAttrs:  interactive.Post(action).OnSuccess(interactive.Navigate(b.cfg.PathPrefix + "/account")).Attrs(),
 	}, ui.TextField(ui.TextFieldConfig{
-		Name: "name", ID: nameFormID + "-name", Label: i18nui.T(ctx, i18nui.KeyAdminName),
-		Value: b.userName(ctx), Help: i18nui.T(ctx, i18nui.KeyAdminNameHelp),
+		Name: "name", ID: nameFormID + "-name", Label: i18nui.AdminName.Text(ctx),
+		Value: b.userName(ctx), Help: i18nui.AdminNameHelp.Text(ctx),
 		AutoComplete: "name", MaxLength: auth.MaxNameRunes,
 	}))
 }
@@ -137,16 +137,16 @@ func (b *Battery) nameStore() auth.NameStore {
 // the toolbar's toggle uses, and, with Config.Themes, the page's look.
 func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
 	items := []ui.DetailItem{{
-		Label: i18nui.T(ctx, i18nui.KeyAdminThemeLabel),
+		Label: i18nui.AdminThemeLabel.Text(ctx),
 		Value: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Ctx: ctx}),
 	}}
 	if look := b.themePicker(ctx, false); look != "" {
-		items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminLook), Value: look})
+		items = append(items, ui.DetailItem{Label: i18nui.AdminLook.Text(ctx), Value: look})
 	}
 	return ui.Card(ui.CardConfig{
-		Heading:      i18nui.T(ctx, i18nui.KeyAdminAppearance),
+		Heading:      i18nui.AdminAppearance.Text(ctx),
 		HeadingLevel: 2,
-		Description:  i18nui.T(ctx, i18nui.KeyAdminAppearanceSub),
+		Description:  i18nui.AdminAppearanceSub.Text(ctx),
 	}, ui.DetailList(ui.DetailListConfig{Items: items}))
 }
 
@@ -159,13 +159,13 @@ func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
 func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 	card := func(body render.HTML) render.HTML {
 		return ui.Card(ui.CardConfig{
-			Heading:      i18nui.T(ctx, i18nui.KeyAdminSecurity),
+			Heading:      i18nui.AdminSecurity.Text(ctx),
 			HeadingLevel: 2,
-			Description:  i18nui.T(ctx, i18nui.KeyAdminSecuritySub),
+			Description:  i18nui.AdminSecuritySub.Text(ctx),
 		}, body)
 	}
 	if has, known := b.hasPassword(ctx); known && !has {
-		return card(ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo}, render.Text(i18nui.T(ctx, i18nui.KeyAdminNoPassword))))
+		return card(ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo}, render.Text(i18nui.AdminNoPassword.Text(ctx))))
 	}
 	field := func(name, label, help, autocomplete string) render.HTML {
 		id := passwordFormID + "-" + name
@@ -180,19 +180,20 @@ func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 	}
 	action := b.cfg.Auth.Config().BasePath + "/password"
 	return card(ui.Form(ui.FormConfig{
+		Ctx:         ctx,
 		Action:      action,
 		ID:          passwordFormID,
-		SubmitLabel: i18nui.T(ctx, i18nui.KeyAdminChangePassword),
+		SubmitLabel: i18nui.AdminChangePassword.Text(ctx),
 		ExtraAttrs: interactive.Post(action).
-			OnSuccessToast(i18nui.T(ctx, i18nui.KeyAdminPasswordChanged)).
+			OnSuccessToast(i18nui.AdminPasswordChanged.Text(ctx)).
 			OnSuccess(interactive.ResetForm()).
 			Attrs(),
 	},
-		field("current_password", i18nui.T(ctx, i18nui.KeyAdminCurrentPassword), "", "current-password"),
-		field("password", i18nui.T(ctx, i18nui.KeyAdminNewPassword),
-			i18nui.TVars(ctx, i18nui.KeyAdminNewPasswordHelp, map[string]string{"min": strconv.Itoa(auth.RecommendedMinPasswordBytes)}),
+		field("current_password", i18nui.AdminCurrentPassword.Text(ctx), "", "current-password"),
+		field("password", i18nui.AdminNewPassword.Text(ctx),
+			i18nui.AdminNewPasswordHelp.Text(ctx, map[string]any{"min": auth.RecommendedMinPasswordBytes}),
 			"new-password"),
-		field("confirm_password", i18nui.T(ctx, i18nui.KeyAdminConfirmPassword), "", "new-password"),
+		field("confirm_password", i18nui.AdminConfirmPassword.Text(ctx), "", "new-password"),
 	))
 }
 

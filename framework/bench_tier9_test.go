@@ -439,9 +439,9 @@ func BenchmarkT9_UIHostPageRender(b *testing.B) {
 // complexity.
 type benchHomeScreen struct{}
 
-func (s *benchHomeScreen) ScreenTitle() string        { return "Home" }
-func (s *benchHomeScreen) ScreenDescription() string  { return "bench home" }
-func (s *benchHomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *benchHomeScreen) ScreenTitle(ctx context.Context) string       { return "Home" }
+func (s *benchHomeScreen) ScreenDescription(ctx context.Context) string { return "bench home" }
+func (s *benchHomeScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 func (s *benchHomeScreen) Render() render.HTML {
 	return render.Tag("main", nil,
 		render.Tag("h1", nil, render.Text("Home")),
@@ -451,9 +451,9 @@ func (s *benchHomeScreen) Render() render.HTML {
 
 type benchAboutScreen struct{}
 
-func (s *benchAboutScreen) ScreenTitle() string        { return "About" }
-func (s *benchAboutScreen) ScreenDescription() string  { return "bench about" }
-func (s *benchAboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *benchAboutScreen) ScreenTitle(ctx context.Context) string       { return "About" }
+func (s *benchAboutScreen) ScreenDescription(ctx context.Context) string { return "bench about" }
+func (s *benchAboutScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 func (s *benchAboutScreen) Render() render.HTML {
 	rows := make([]render.HTML, 50)
 	for i := range 50 {

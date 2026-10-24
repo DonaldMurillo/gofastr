@@ -742,13 +742,30 @@ func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) 
 	if payload == "" {
 		payload = "null"
 	}
-	_, err := exec.ExecContext(ctx,
+	// A keyed job skips the insert when a live job holds its key. DO
+	// NOTHING rather than a constraint error: on Postgres an error aborts
+	// the caller's transaction, and the scheduler enqueues inside one.
+	onConflict := ""
+	if job.UniqueKey != "" {
+		onConflict = " ON CONFLICT (type, unique_key) WHERE " + liveUniqueKey + " DO NOTHING"
+	}
+	res, err := exec.ExecContext(ctx,
 		fmt.Sprintf(`INSERT INTO %s
 			(id, occurrence_id, type, payload, priority, lane, attempts,
-			 max_attempts, created_at, scheduled_at, status, user_id, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,$12)`, q.qt()),
+			 max_attempts, created_at, scheduled_at, status, user_id, updated_at, unique_key)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,$12,$13)%s`, q.qt(), onConflict),
 		job.ID, job.OccurrenceID, job.Type, payload, job.Priority, job.Lane,
-		job.Attempts, job.MaxAttempts, job.CreatedAt, job.ScheduledAt, job.UserID, now,
+		job.Attempts, job.MaxAttempts, job.CreatedAt, job.ScheduledAt, job.UserID, now, job.UniqueKey,
 	)
-	return err
+	if err != nil || job.UniqueKey == "" {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrDuplicateJob
+	}
+	return nil
 }

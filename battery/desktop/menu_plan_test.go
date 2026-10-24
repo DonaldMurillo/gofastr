@@ -37,7 +37,7 @@ func TestKeyEquivalentSplitting(t *testing.T) {
 }
 
 func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
-	plans, actions := PlanMenuBar("Notes", nil, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", nil, false)
 	if len(actions) != 0 {
 		t.Fatalf("nil menu must produce no actions, got %v", actions)
 	}
@@ -49,9 +49,9 @@ func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
 		t.Fatalf("app menu title = %q, want Notes", app.Title)
 	}
 	want := []MenuItemPlan{
-		{Title: "About Notes", Role: RoleAbout},
+		{Title: "About Notes", English: "About Notes", Role: RoleAbout},
 		{Sep: true},
-		{Title: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
+		{Title: "Quit Notes", English: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
 	}
 	if !reflect.DeepEqual(app.Items, want) {
 		t.Fatalf("app menu items = %+v, want %+v", app.Items, want)
@@ -80,22 +80,22 @@ func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
 
 func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "New", Navigate: "/new", Key: "cmd+n"},
-			{ID: "open", Title: "Open", Navigate: "/open"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("New"), Navigate: "/new", Key: "cmd+n"},
+			{ID: "open", Title: testPhrase("Open"), Navigate: "/open"},
 			{Role: RoleSeparator},
-			{Title: "Bye", Role: RoleQuit},
+			{Title: testPhrase("Bye"), Role: RoleQuit},
 		}},
-		{Title: "Go", Children: []MenuItem{
-			{Title: "Two", Navigate: "/two"},
-			{Title: "Ping", Handler: func(context.Context) error { return nil }},
+		{Title: testPhrase("Go"), Children: []MenuItem{
+			{Title: testPhrase("Two"), Navigate: "/two"},
+			{Title: testPhrase("Ping"), Handler: func(context.Context) error { return nil }},
 		}},
 	}}
 	validated, err := validateMenu(menu)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := PlanMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", validated, false)
 
 	if len(plans) != 4 {
 		t.Fatalf("plans = %d menus, want 4 (app, File, Go, Edit)", len(plans))
@@ -112,10 +112,10 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 	}
 	// New (action, cmd+n), Open (action, no key), separator, Bye (quit role).
 	if !reflect.DeepEqual(file.Items, []MenuItemPlan{
-		{Title: "New", Key: "n", Mask: nsModifierCommand, Action: true, Tag: 0},
-		{Title: "Open", Action: true, Tag: 1},
+		{Title: "New", English: "New", Key: "n", Mask: nsModifierCommand, Action: true, Tag: 0},
+		{Title: "Open", English: "Open", Action: true, Tag: 1},
 		{Sep: true},
-		{Title: "Bye", Role: RoleQuit},
+		{Title: "Bye", English: "Bye", Role: RoleQuit},
 	}) {
 		t.Fatalf("file rows = %+v", file.Items)
 	}
@@ -128,10 +128,10 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 
 func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "Export", Children: []MenuItem{
-				{Title: "PDF", Navigate: "/export/pdf"},
-				{Title: "Markdown", Navigate: "/export/md"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("Export"), Children: []MenuItem{
+				{Title: testPhrase("PDF"), Navigate: "/export/pdf"},
+				{Title: testPhrase("Markdown"), Navigate: "/export/md"},
 			}},
 		}},
 	}}
@@ -139,7 +139,7 @@ func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := PlanMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", validated, false)
 	file := plans[1]
 	if len(file.Items) != 1 || file.Items[0].Title != "Export" || file.Items[0].Action {
 		t.Fatalf("export row = %+v", file.Items)
@@ -155,13 +155,13 @@ func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 
 func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "Standalone", Navigate: "/solo"},
+		{Title: testPhrase("Standalone"), Navigate: "/solo"},
 	}}
 	validated, err := validateMenu(menu)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := PlanMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", validated, false)
 	solo := plans[1]
 	if solo.Title != "Standalone" || len(solo.Items) != 1 {
 		t.Fatalf("solo menu = %+v", solo)
@@ -177,9 +177,9 @@ func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 
 func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},
+		{Title: testPhrase("File"), Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},
 	}}
-	plans, _ := PlanMenuBar("Notes", menu, false)
+	plans, _ := PlanMenuBar(context.Background(), "Notes", menu, false)
 	rows := plans[1].Items
 	if rows[0].Title != "Quit Notes" || rows[0].Role != RoleQuit {
 		t.Fatalf("quit default title = %+v", rows[0])
@@ -191,7 +191,7 @@ func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 
 func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 	// Without Settings: About, separator, Quit.
-	plans, _ := PlanMenuBar("Notes", nil, false)
+	plans, _ := PlanMenuBar(context.Background(), "Notes", nil, false)
 	app := plans[0]
 	for _, r := range app.Items {
 		if r.Role == RoleSettings {
@@ -199,13 +199,13 @@ func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 		}
 	}
 	// With Settings: About, Settings… (cmd+,), separator, Quit.
-	plans, _ = PlanMenuBar("Notes", nil, true)
+	plans, _ = PlanMenuBar(context.Background(), "Notes", nil, true)
 	app = plans[0]
 	want := []MenuItemPlan{
-		{Title: "About Notes", Role: RoleAbout},
-		{Title: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand},
+		{Title: "About Notes", English: "About Notes", Role: RoleAbout},
+		{Title: "Settings…", English: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand},
 		{Sep: true},
-		{Title: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
+		{Title: "Quit Notes", English: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
 	}
 	if !reflect.DeepEqual(app.Items, want) {
 		t.Fatalf("app menu items = %+v, want %+v", app.Items, want)
@@ -214,14 +214,14 @@ func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 
 func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "New", Navigate: "/new", Key: "cmd+n"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("New"), Navigate: "/new", Key: "cmd+n"},
 		}},
 	}}
 	tray := &Menu{Items: []MenuItem{
-		{Title: "Show Notes", Role: RoleShow},
-		{Title: "New", Navigate: "/new"},
-		{Title: "Settings…", Role: RoleSettings},
+		{Title: testPhrase("Show Notes"), Role: RoleShow},
+		{Title: testPhrase("New"), Navigate: "/new"},
+		{Title: testPhrase("Settings…"), Role: RoleSettings},
 		{Role: RoleSeparator},
 		{Role: RoleQuit},
 	}}
@@ -229,8 +229,8 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	// the menu bar and the tray (the shell dispatches both through one
 	// action-id table).
 	b := New(Config{ID: "tray.example.app", Menu: menu, Tray: &Tray{Menu: tray}})
-	plans, actionIDs := PlanMenuBar("Notes", b.runMenu, true)
-	trayRows := PlanTrayMenu(b.tray, "Notes", &actionIDs)
+	plans, actionIDs := PlanMenuBar(context.Background(), "Notes", b.runMenu, true)
+	trayRows := PlanTrayMenu(context.Background(), b.tray, "Notes", &actionIDs)
 
 	if len(plans[1].Items) != 1 || !plans[1].Items[0].Action || plans[1].Items[0].Tag != 0 {
 		t.Fatalf("File menu row lost its tag: %+v", plans[1].Items)
@@ -238,11 +238,11 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	// The tray rows: show (role), new (action, tag 1: the NEXT index in
 	// the shared table), settings (role), separator, quit (role).
 	wantTray := []MenuItemPlan{
-		{Title: "Show Notes", Role: RoleShow},
-		{Title: "New", Action: true, Tag: 1},
-		{Title: "Settings…", Role: RoleSettings},
+		{Title: "Show Notes", English: "Show Notes", Role: RoleShow},
+		{Title: "New", English: "New", Action: true, Tag: 1},
+		{Title: "Settings…", English: "Settings…", Role: RoleSettings},
 		{Sep: true},
-		{Title: "Quit Notes", Role: RoleQuit},
+		{Title: "Quit Notes", English: "Quit Notes", Role: RoleQuit},
 	}
 	if !reflect.DeepEqual(trayRows, wantTray) {
 		t.Fatalf("tray rows = %+v, want %+v", trayRows, wantTray)
@@ -266,7 +266,7 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 
 func TestPlanRowsRoleDefaultsForSettingsAndShow(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "Tray", Children: []MenuItem{
+		{Title: testPhrase("Tray"), Children: []MenuItem{
 			{Role: RoleShow},
 			{Role: RoleSettings},
 		}},
@@ -275,7 +275,7 @@ func TestPlanRowsRoleDefaultsForSettingsAndShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := planRows(validated.Items[0].Children, "Notes", new([]string))
+	rows := planRows(context.Background(), validated.Items[0].Children, "Notes", new([]string))
 	if rows[0].Title != "Show Notes" || rows[0].Role != RoleShow || rows[0].Action {
 		t.Fatalf("show row = %+v", rows[0])
 	}

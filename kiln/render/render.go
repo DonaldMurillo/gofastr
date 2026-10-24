@@ -209,9 +209,13 @@ func entityConfig(e *world.Entity) (framework.EntityConfig, error) {
 		if target == "" {
 			target = r.To // pre-parity journal compatibility
 		}
+		var fk []string
+		if r.ForeignKey != "" {
+			fk = []string{r.ForeignKey}
+		}
 		decl.Relations = append(decl.Relations, framework.Relation{
 			Type: relationType, Name: r.Name, Entity: target,
-			ForeignKey: r.ForeignKey, Through: r.Through, LocalKey: r.LocalKey,
+			ForeignKey: fk, Through: r.Through, LocalKey: r.LocalKey,
 			ForeignKeyTarget: r.ForeignKeyTarget,
 		})
 	}

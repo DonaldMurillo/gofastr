@@ -935,8 +935,8 @@ func TestInclude_CircularRelation(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Relations: []entity.Relation{
-			{Name: "parent", Type: entity.RelManyToOne, Entity: "circular_items", ForeignKey: "parent_id"},
-			{Name: "children", Type: entity.RelHasMany, Entity: "circular_items", ForeignKey: "parent_id"},
+			{Name: "parent", Type: entity.RelManyToOne, Entity: "circular_items", ForeignKey: []string{"parent_id"}},
+			{Name: "children", Type: entity.RelHasMany, Entity: "circular_items", ForeignKey: []string{"parent_id"}},
 		},
 	}.WithTimestamps(false), `CREATE TABLE circular_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, parent_id TEXT)`)
 
@@ -1055,7 +1055,7 @@ func TestNestedFilter_SQLInjection(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Relations: []entity.Relation{
-			{Name: "author", Type: entity.RelManyToOne, Entity: "nf_users", ForeignKey: "author_id"},
+			{Name: "author", Type: entity.RelManyToOne, Entity: "nf_users", ForeignKey: []string{"author_id"}},
 		},
 	}.WithTimestamps(false), `CREATE TABLE nf_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, author_id TEXT);
 	CREATE TABLE nf_users (id TEXT PRIMARY KEY, name TEXT)`)
@@ -1121,7 +1121,7 @@ func TestNestedFilter_NonexistentField(t *testing.T) {
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"}, Relations: []entity.Relation{
-			{Name: "author", Type: entity.RelManyToOne, Entity: "nff_users", ForeignKey: "author_id"},
+			{Name: "author", Type: entity.RelManyToOne, Entity: "nff_users", ForeignKey: []string{"author_id"}},
 		},
 	}.WithTimestamps(false), `CREATE TABLE nff_posts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT, author_id TEXT);
 	CREATE TABLE nff_users (id TEXT PRIMARY KEY, name TEXT)`)

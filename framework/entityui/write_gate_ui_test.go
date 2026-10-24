@@ -49,7 +49,7 @@ func TestWriteControlsFollowWriteAccess(t *testing.T) {
 			t.Errorf("a caller with no write access sees %s", name)
 		}
 	}
-	if !strings.Contains(c, AccessDeniedTitle) {
+	if !strings.Contains(c, AccessDeniedTitle.English()) {
 		t.Errorf("the create screen does not say it is not available:\n%s", c)
 	}
 	l, r, c = draw("writer")

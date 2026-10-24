@@ -78,6 +78,7 @@ var docIntents = []docIntent{
 			{"includes", "Eager loading", "?include=author.profile flattens the N+1."},
 			{"hooks-and-transactions", "Hooks & transactions", "BeforeCreate / AfterUpdate hooks share the parent tx."},
 			{"states", "States", "Named moves change a status field and write an audit row; all but System moves get a route and an MCP tool."},
+			{"endpoints", "Custom endpoints", "Declare a route in gofastr.settings.yml, link a typed handler, and get typed calls in the Go client, JS SDK and CLI."},
 			{"migrations", "Migrations", "Versioned, ordered, reversible, versus the auto-migrate dev mode."},
 			{"multi-tenant", "Multi-tenant scope", "tenant_id column + automatic filter from request context."},
 			{"codegen", "Code generation", "What lands on disk under gen/, and how to read it."},
@@ -344,9 +345,9 @@ func registerDocsGroup(site *app.App) {
 // fills.
 type DocPageScreen struct{ Entry docEntry }
 
-func (s *DocPageScreen) ScreenTitle() string        { return s.Entry.Title }
-func (s *DocPageScreen) ScreenDescription() string  { return s.Entry.Desc }
-func (s *DocPageScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *DocPageScreen) ScreenTitle(ctx context.Context) string       { return s.Entry.Title }
+func (s *DocPageScreen) ScreenDescription(ctx context.Context) string { return s.Entry.Desc }
+func (s *DocPageScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 // SetParams is empty: the slug reaches the screen through the resolver
 // (resolvedDoc), but the router refuses a dynamic route whose screen has

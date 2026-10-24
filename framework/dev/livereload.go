@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/config"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -132,7 +133,7 @@ func RegisterLiveReload(r *router.Router) {
 		w.Header().Set("X-Accel-Buffering", "no")
 		fl, ok := w.(http.Flusher)
 		if !ok {
-			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		if _, err := fmt.Fprintf(w, "event: ready\ndata: %s\n\n", buildID); err != nil {

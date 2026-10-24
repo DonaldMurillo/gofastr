@@ -20,6 +20,7 @@ import (
 	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -233,7 +234,7 @@ type server struct {
 //
 // Belt-and-suspenders cache headers: no-store + no-cache + must-revalidate
 // + Pragma:no-cache + Expires:0 covers every browser quirk.
-func serveRuntime(w http.ResponseWriter, _ *http.Request) {
+func serveRuntime(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
@@ -243,7 +244,7 @@ func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 		// The error names embed paths; the client gets the fact, the
 		// operator gets the cause.
 		log.Printf("widget: runtime unavailable: %v", err)
-		http.Error(w, "runtime unavailable", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonRuntimeUnavailable)
 		return
 	}
 	fmt.Fprint(w, rt)
@@ -396,7 +397,7 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 	// context would silently render chrome for the wrong entity.
 	triggerCtx := r.URL.Query().Get("ctx")
 	if !validChromeContext(triggerCtx) {
-		http.Error(w, "invalid chrome context", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidChrome)
 		return
 	}
 	// Render with the request context so context-aware slots (e.g. a
@@ -630,6 +631,8 @@ func widgetCSS(def Definition) string {
 	// (36rem) size the centered modal panel, --ui-widget-drag-handle-width
 	// (40px) / --ui-widget-drag-handle-height (4px) the sheet drag handle,
 	// and --ui-scrim (rgba(0,0,0,0.45)) the shared backdrop colour.
+	// A corner or edge named left or right is the reading direction's
+	// start or end: right to left, bottom-right sits bottom-left.
 	for _, p := range []struct{ cls, top, right, bottom, left string }{
 		{"cui-pos-bottom-right", "", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)", ""},
 		{"cui-pos-bottom-left", "", "", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)"},
@@ -643,13 +646,13 @@ func widgetCSS(def Definition) string {
 			props = append(props, "top", p.top)
 		}
 		if p.right != "" {
-			props = append(props, "right", p.right)
+			props = append(props, "inset-inline-end", p.right)
 		}
 		if p.bottom != "" {
 			props = append(props, "bottom", p.bottom)
 		}
 		if p.left != "" {
-			props = append(props, "left", p.left)
+			props = append(props, "inset-inline-start", p.left)
 		}
 		ss.Rule("." + p.cls).Set(props...).End()
 	}
@@ -667,7 +670,7 @@ func widgetCSS(def Definition) string {
 	// is visually distinct from the dimmed page below; overflow:auto
 	// lets long content scroll inside the drawer.
 	ss.Rule(".cui-pos-edge-left").
-		Set("top", "0", "left", "0", "bottom", "0",
+		Set("top", "0", "inset-inline-start", "0", "bottom", "0",
 			"width", "min(var(--ui-widget-drawer-width, 360px), 90vw)",
 			"background", "{colors.surface}",
 			"box-shadow", "{shadows.xl}",
@@ -675,7 +678,7 @@ func widgetCSS(def Definition) string {
 		).
 		End()
 	ss.Rule(".cui-pos-edge-right").
-		Set("top", "0", "right", "0", "bottom", "0",
+		Set("top", "0", "inset-inline-end", "0", "bottom", "0",
 			"width", "min(var(--ui-widget-drawer-width, 360px), 90vw)",
 			"background", "{colors.surface}",
 			"box-shadow", "{shadows.xl}",
@@ -719,7 +722,7 @@ func widgetCSS(def Definition) string {
 	// `pointer-events: auto` so the slot content stays interactive.
 	ss.Rule(".cui-pos-center").
 		Set(
-			"top", "0", "left", "0", "right", "0", "bottom", "0",
+			"inset", "0",
 			"display", "flex", "align-items", "center", "justify-content", "center",
 			"padding", "{spacing.lg}",
 			"pointer-events", "none",
@@ -755,6 +758,10 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-pos-edge-right").
 		Set("animation", "cui-edge-right-in {durations.overlay-enter} {easings.ease-out}").
 		End()
+	// Right to left the start drawer sits on the right, so it slides in
+	// from there, and the end drawer from the left.
+	ss.Rule(".cui-pos-edge-left:dir(rtl)").Set("animation-name", "cui-edge-right-in").End()
+	ss.Rule(".cui-pos-edge-right:dir(rtl)").Set("animation-name", "cui-edge-left-in").End()
 	ss.Rule(".cui-pos-bottom").
 		Set("animation", "cui-bottom-in {durations.overlay-enter} {easings.ease-out}").
 		End()
@@ -865,8 +872,13 @@ func widgetCSS(def Definition) string {
 			"max-block-size", "100%",
 			"overflow-y", "auto").
 		End()
+	// The runtime places the popover and its arrow in physical pixels
+	// (left, top, --ui-popover-arrow-x from the left edge), so the arrow
+	// lays out left to right in every document: its logical insets and
+	// borders then name the sides the measurements meant.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side]::before`).
 		Set("content", "''",
+			"direction", "ltr",
 			"position", "absolute",
 			"inline-size", "var(--ui-popover-arrow-size, 12px)",
 			"block-size", "var(--ui-popover-arrow-size, 12px)",

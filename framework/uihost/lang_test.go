@@ -1,12 +1,14 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // The uihost document shells (404, PWA offline, embed) hardcoded
@@ -30,7 +32,7 @@ func TestServeNotFoundUsesConfiguredLang(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
 	ds.serveNotFound(rec, req, "/nope")
-	if !strings.Contains(rec.Body.String(), `<html lang="es">`) {
+	if !strings.Contains(rec.Body.String(), `<html dir="ltr" lang="es">`) {
 		t.Errorf("404 shell must use the configured lang; got:\n%s", rec.Body.String())
 	}
 }
@@ -40,7 +42,7 @@ func TestServeNotFoundUsesConfiguredLang(t *testing.T) {
 // pages had. WithLangFunc resolves it per path, and the host also honours the
 // app's own LangFunc so a site declares its languages in one place.
 
-func TestLangForPathPrecedence(t *testing.T) {
+func TestLangForPrecedence(t *testing.T) {
 	esPrefix := func(path string) string {
 		if strings.HasPrefix(path, "/es/") {
 			return "es"
@@ -49,25 +51,25 @@ func TestLangForPathPrecedence(t *testing.T) {
 	}
 
 	ds := New(app.NewApp("x").WithLang("en"), WithLangFunc(esPrefix))
-	if got := ds.LangForPath("/es/docs"); got != "es" {
+	if got := ds.LangFor(context.Background(), "/es/docs"); got != "es" {
 		t.Errorf("host WithLangFunc = %q, want es", got)
 	}
-	if got := ds.LangForPath("/docs"); got != "en" {
+	if got := ds.LangFor(context.Background(), "/docs"); got != "en" {
 		t.Errorf("an empty answer must fall back to EffectiveLang = %q, want en", got)
 	}
 
 	// A resolver that answers every path, so the pathless case proves the guard
 	// rather than the resolver happening to return "" for "".
 	always := New(app.NewApp("x").WithLang("en"), WithLangFunc(func(string) string { return "fr" }))
-	if got := always.LangForPath(""); got != "en" {
+	if got := always.LangFor(context.Background(), ""); got != "en" {
 		t.Errorf("a pathless shell must skip LangFunc entirely = %q, want en", got)
 	}
-	if got := always.LangForPath("/x"); got != "fr" {
+	if got := always.LangFor(context.Background(), "/x"); got != "fr" {
 		t.Errorf("the same resolver must answer for a real path = %q, want fr", got)
 	}
 
 	fromApp := New(app.NewApp("x").WithLang("en").WithLangFunc(esPrefix))
-	if got := fromApp.LangForPath("/es/docs"); got != "es" {
+	if got := fromApp.LangFor(context.Background(), "/es/docs"); got != "es" {
 		t.Errorf("the app's LangFunc must reach host shells = %q, want es", got)
 	}
 
@@ -75,19 +77,32 @@ func TestLangForPathPrecedence(t *testing.T) {
 	// one has to be present and return "" for this to prove anything.
 	hostDeclines := New(app.NewApp("x").WithLang("en").WithLangFunc(func(string) string { return "pt" }),
 		WithLangFunc(func(string) string { return "" }))
-	if got := hostDeclines.LangForPath("/x"); got != "pt" {
+	if got := hostDeclines.LangFor(context.Background(), "/x"); got != "pt" {
 		t.Errorf("an empty host answer must fall through to the app's LangFunc = %q, want pt", got)
 	}
 
 	hostWins := New(app.NewApp("x").WithLangFunc(func(string) string { return "de" }),
 		WithLangFunc(func(string) string { return "ja" }))
-	if got := hostWins.LangForPath("/x"); got != "ja" {
+	if got := hostWins.LangFor(context.Background(), "/x"); got != "ja" {
 		t.Errorf("host WithLangFunc must override the app's = %q, want ja", got)
 	}
 
 	unset := New(app.NewApp("x").WithLang("de"))
-	if got := unset.LangForPath("/anything"); got != "de" {
+	if got := unset.LangFor(context.Background(), "/anything"); got != "de" {
 		t.Errorf("no LangFunc anywhere must match EffectiveLang = %q, want de", got)
+	}
+
+	// The negotiated locale beats the configured Lang but not a route
+	// rule, and a host-built shell takes its direction from it.
+	ar := i18n.WithContext(context.Background(), i18n.Locale{Tag: "ar"})
+	if got := unset.LangFor(ar, "/anything"); got != "ar" {
+		t.Errorf("the negotiated locale = %q, want ar", got)
+	}
+	if got := hostWins.LangFor(ar, "/x"); got != "ja" {
+		t.Errorf("a route rule lost to the negotiated locale: %q", got)
+	}
+	if shell := unset.documentShell(ar, "/x", "t", ""); !strings.Contains(shell, `<html dir="rtl" lang="ar">`) {
+		t.Errorf("an Arabic reader's shell is not rtl: %s", shell)
 	}
 }
 
@@ -99,8 +114,8 @@ func TestServeNotFoundUsesPerRouteLang(t *testing.T) {
 		return ""
 	}))
 	for path, want := range map[string]string{
-		"/es/nope": `<html lang="es">`,
-		"/nope":    `<html lang="en">`,
+		"/es/nope": `<html dir="ltr" lang="es">`,
+		"/nope":    `<html dir="ltr" lang="en">`,
 	} {
 		rec := httptest.NewRecorder()
 		ds.serveNotFound(rec, httptest.NewRequest(http.MethodGet, path, nil), path)
@@ -123,10 +138,16 @@ func TestShellLangIsAttributeEscaped(t *testing.T) {
 	}
 }
 
-func TestPWAOfflineHTMLUsesConfiguredLang(t *testing.T) {
+// The built-in offline body speaks the phrases, so <html lang> names the
+// language they render in, not a site language the text is not in. An
+// app's own offline screen keeps the configured language.
+func TestPWAOfflineLangMatchesBody(t *testing.T) {
 	ds := New(app.NewApp("x"), WithLang("pt"), WithPWA(PWAConfig{Name: "PWA"}))
-	html := ds.PWAOfflineHTML()
-	if !strings.Contains(html, `<html lang="pt">`) {
-		t.Errorf("PWA offline shell must use the configured lang; got:\n%s", html)
+	if html := ds.PWAOfflineHTML(); !strings.Contains(html, `<html dir="ltr" lang="en">`) {
+		t.Errorf("built-in English offline body must claim lang=en; got:\n%s", html)
+	}
+	ds = New(app.NewApp("x"), WithLang("pt"), WithPWA(PWAConfig{Name: "PWA", OfflineScreen: offlineMarkerComp{}}))
+	if html := ds.PWAOfflineHTML(); !strings.Contains(html, `<html dir="ltr" lang="pt">`) {
+		t.Errorf("an app offline screen keeps the configured lang; got:\n%s", html)
 	}
 }

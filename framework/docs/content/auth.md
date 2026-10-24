@@ -628,9 +628,9 @@ The dispatcher resolves each request as one of four outcomes:
 | Decision     | What happens                                                    |
 |--------------|-----------------------------------------------------------------|
 | Allow        | Normal Load + Render.                                           |
-| Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`.        |
+| Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`. A client-side navigation gets the same destination: a relative path in `X-Gofastr-Location`, an absolute http(s) URL (an identity provider's login) in `X-Gofastr-Document`, which the runtime loads as a page. |
 | RenderAlt    | The alt component takes the screen's place; its Load runs.      |
-| Block        | HTTP status from `WithBlock(status, msg)`, default 401/403.     |
+| Block        | HTTP status from `WithBlock(status)`, default 401/403. The body is the status's phrase, or `WithBlockReason(status, phrase)`'s, in the request's locale. |
 
 ### Option precedence: last-write-wins per call, alt > redirect > block on fail
 
@@ -1453,45 +1453,71 @@ Set `MagicLinkConfig.ConfirmPage` to render the screen with your own
 design system:
 
 ```go
+var (
+    confirmTitle  = i18n.Define("app.confirm_title", "Confirm sign-in")
+    confirmAs     = i18n.Define("app.confirm_as", "Continue as {{email}}?")
+    confirmSubmit = i18n.Define("app.confirm_submit", "Sign in")
+)
+
 auth.MagicLinkConfig{
-    ConfirmPage: func(d auth.ConfirmPageData) []byte {
+    // ctx is the request's, so the phrases answer in the caller's locale.
+    ConfirmPage: func(ctx context.Context, d auth.ConfirmPageData) []byte {
         return render(ui.AuthCard(ui.AuthCardConfig{
-            Title: "Confirm sign-in",
+            Title: confirmTitle.Text(ctx),
             Body: ui.Form(ui.FormConfig{
                 Action:      d.Action,
-                SubmitLabel: "Sign in",
+                SubmitLabel: confirmSubmit.Text(ctx),
             },
                 // Email and Token are escaped, never concatenated into
                 // render.HTML. A magic-link request accepts any address, so
                 // d.Email is caller-supplied: pasting it into trusted HTML
                 // reflects whatever the requester typed into the page.
-                html.Paragraph(html.TextConfig{}, render.Text("Continue as "+d.Email+"?")),
+                html.Paragraph(html.TextConfig{}, render.Text(confirmAs.Text(ctx, map[string]any{"email": d.Email}))),
                 // token is the credential, posted back to d.Action.
                 html.Input(html.InputConfig{
                     Type:  "hidden",
                     Name:  "token",
                     Value: d.Token,
                 }),
-                // CSRFField is required: ConfirmPageData carries no
-                // request, so this is the only way to reach the _csrf
-                // input. Without it the submit 403s under auth.CSRF(),
-                // which WithBFFPosture mounts app-wide.
+                // CSRFField is required: without it the submit 403s
+                // under auth.CSRF(), which WithBFFPosture mounts app-wide.
                 render.HTML(d.CSRFField)),
         }))
     },
 }
 ```
 
-Render `d.CSRFField` inside the form. `ConfirmPageData` carries no
-request and no context, so this is the only way to reach the `_csrf`
-input. Omit it and the submit 403s under `auth.CSRF()`, which
-`WithBFFPosture` mounts app-wide. A custom `ConfirmPage` written before
-this field existed must add it, or passwordless sign-in stops at the
-confirmation step.
+Render `d.CSRFField` inside the form. Omit it and the submit 403s
+under `auth.CSRF()`, which `WithBFFPosture` mounts app-wide, so
+passwordless sign-in stops at the confirmation step. `ctx` is the
+request's context: it carries the caller's locale for your phrases,
+and `i18n.DocLang(ctx)` with `i18n.Dir` give a full document its
+`<html lang dir>`.
 
-Leave it nil and you get an unstyled but correct fallback. The battery
+Leave it nil and you get an unstyled but correct fallback, in the
+caller's language when the app has a translator (the phrases are
+`auth.confirm_title`, `auth.confirm_as`, `auth.confirm_this_account`,
+`auth.confirm_warning` and `auth.confirm_submit`). The battery
 does not import `framework/ui` itself: API-only apps use auth too and
 should not pay for the design system.
+
+The emails follow the same rule. `BodyTemplate` on
+`MagicLinkConfig`, `EmailVerificationConfig` and
+`PasswordResetConfig` is `func(ctx context.Context, url string)
+string`, and `EmailSender.Send` takes a ctx too. Both carry the
+requester's locale (the reset worker gets a detached copy that keeps
+it), so a body or subject rendered from your phrases goes out in the
+language the person asked in:
+
+```go
+var resetBody = i18n.Define("myapp.reset_body", "Reset your password: {{url}}")
+
+auth.PasswordResetConfig{
+    BodyTemplate: func(ctx context.Context, url string) string {
+        return resetBody.Text(ctx, map[string]any{"url": url})
+    },
+}
+```
 
 The screen names the account when the token store implements
 `MagicLinkTokenPeeker` (both shipped stores do). Naming it is the point:

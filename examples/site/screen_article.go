@@ -15,6 +15,8 @@ package main
 // =============================================================================
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -25,8 +27,8 @@ import (
 // switch.
 type ArticleScreen struct{}
 
-func (s *ArticleScreen) ScreenTitle() string { return "Reader-ready pages" }
-func (s *ArticleScreen) ScreenDescription() string {
+func (s *ArticleScreen) ScreenTitle(ctx context.Context) string { return "Reader-ready pages" }
+func (s *ArticleScreen) ScreenDescription(ctx context.Context) string {
 	return "How GoFastr turns a normal screen into an article a browser's Reader Mode detects."
 }
 
@@ -79,6 +81,6 @@ var articleDemoSource = "```go\n" +
 	"\n" +
 	"// PostScreen is an ordinary screen: title + prose, nothing more.\n" +
 	"type PostScreen struct{ post Post }\n" +
-	"func (s *PostScreen) ScreenTitle() string { return s.post.Title }\n" +
+	"func (s *PostScreen) ScreenTitle(ctx context.Context) string { return s.post.Title }\n" +
 	"func (s *PostScreen) Render() render.HTML { /* the post body */ }\n" +
 	"\n```"

@@ -151,7 +151,7 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 		// placeholder is data-shaped — a caller may derive it from a
 		// stored value — so it is scrubbed like the labels.
 		"data-hui-multiselect-placeholder":  scrubControlBytes(placeholder),
-		"data-hui-multiselect-remove-label": w.MultiSelectRemoveLabel,
+		"data-hui-multiselect-remove-label": w.RemoveLabelled,
 	})
 	Mark(chipsAttrs, "data-hui-multiselect-chips")
 	return b.El("div", PartRoot, rootAttrs,

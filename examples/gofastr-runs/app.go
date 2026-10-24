@@ -71,8 +71,8 @@ type runsScreen struct {
 	self *mcpServer
 }
 
-func (s *runsScreen) ScreenTitle() string { return "Runs" }
-func (s *runsScreen) ScreenDescription() string {
+func (s *runsScreen) ScreenTitle(ctx context.Context) string { return "Runs" }
+func (s *runsScreen) ScreenDescription(ctx context.Context) string {
 	return "The gofastr apps running on this machine"
 }
 func (s *runsScreen) RenderCtx(ctx context.Context) render.HTML {
@@ -187,9 +187,9 @@ type runScreen struct {
 	id string
 }
 
-func (s *runScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *runScreen) ScreenTitle() string           { return "Run" }
-func (s *runScreen) ScreenDescription() string     { return "One running gofastr app" }
+func (s *runScreen) SetParams(p map[string]string)                { s.id = p["id"] }
+func (s *runScreen) ScreenTitle(ctx context.Context) string       { return "Run" }
+func (s *runScreen) ScreenDescription(ctx context.Context) string { return "One running gofastr app" }
 func (s *runScreen) RenderCtx(ctx context.Context) render.HTML {
 	back := ui.Link(ui.LinkConfig{Href: "/", Text: "All runs"})
 	r, found, err := findRun(s.id)

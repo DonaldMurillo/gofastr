@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -18,7 +19,7 @@ import (
 // the host beside the entity's write routes:
 //
 //	POST <write base>/_views                  save the current view
-//	POST <write base>/_views/_delete/{id}     delete one of the caller's
+//	POST <write base>/_views/_delete?id=<id>  delete one of the caller's
 //
 // The save form carries a name, the active filter text, the shown
 // columns, the list's key and the list's URL to return to. The filter
@@ -35,52 +36,54 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
-			writeBulkError(w, http.StatusMethodNotAllowed, "method not allowed")
+			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		if handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, http.StatusForbidden, "forbidden")
+			writeBulkError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 			return
 		}
 		ctx := r.Context()
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI || u.views == nil {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if userID(ctx) == "" {
 			// The store refuses a caller with no user; say it here, in
 			// the handler's own status, rather than racing the store.
-			writeBulkError(w, http.StatusForbidden, "sign in to save views")
+			writeBulkError(w, r, http.StatusForbidden, reasonViewSignIn)
 			return
 		}
 		if !canRead(ctx, m.ch) {
 			// A view names a filter over the entity's rows; a caller who
 			// may not list them may not keep one either.
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, savedViewBodyLimit)
 		body, jsonCall, err := decodeSavedViewBody(r)
 		if err != nil {
 			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeBulkError(w, http.StatusBadRequest, "invalid request body")
+			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		back, ok := scrubBackPath(body.Back)
 		if !jsonCall && !ok {
 			// A plain post has no script to navigate it home.
-			writeBulkError(w, http.StatusBadRequest, "missing return path")
+			writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 			return
 		}
-		// The delete route is the one that carries an id.
-		if r.PathValue("id") != "" {
+		// The delete route ends in _delete. Its id rides the query, so the
+		// route stays clear of every record route a composite key draws
+		// (<write base>/{a}/{b}/_restore matches no literal _delete).
+		if strings.HasSuffix(r.URL.Path, "/_views/_delete") {
 			u.deleteSavedView(ctx, w, r, m, body, back, ok, jsonCall)
 			return
 		}
@@ -142,33 +145,33 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 	s := &listState{m: m, key: body.Key, p: listParamsFor(body.Key)}
 	if filter != "" {
 		if _, err := dsl.ParsePredicate(filter, m.e.GetFields()); err != nil {
-			writeBulkError(w, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntitySavedBadFilter))
+			writeBulkError(w, r, http.StatusBadRequest, reasonSavedBadFilter)
 			return
 		}
 	}
 	if len(cols) > 0 && !s.validColsNames(cols) {
-		writeBulkError(w, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntitySavedBadCols))
+		writeBulkError(w, r, http.StatusBadRequest, reasonSavedBadCols)
 		return
 	}
 	v, err := u.views.Create(ctx, SavedView{Entity: m.name, Name: name, Filter: filter, Columns: cols})
 	if err != nil {
-		writeSavedViewError(w, err)
+		writeSavedViewError(w, r, err)
 		return
 	}
 	if jsonCall {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.T(ctx, i18nui.KeyEntitySavedSaved)})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.EntitySavedSaved.Text(ctx)})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"id": v.ID})
 		return
 	}
 	if !backOK {
-		writeBulkError(w, http.StatusBadRequest, "missing return path")
+		writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 		return
 	}
 	// The rebuilt URL is re-scrubbed at the sink: the store's id rides
 	// it, and the sink is what must be clean.
 	loc, locOK := scrubBackPath(withSavedParam(back, body.Key, v.ID))
 	if !locOK {
-		writeBulkError(w, http.StatusBadRequest, "missing return path")
+		writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 		return
 	}
 	http.Redirect(w, r, loc, http.StatusSeeOther)
@@ -177,53 +180,53 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 // deleteSavedView removes one of the caller's views and answers: 303 to
 // the list with no saved view open (plain), or a toast (RPC).
 func (u *UI) deleteSavedView(ctx context.Context, w http.ResponseWriter, r *http.Request, m *meta, body savedViewBody, back string, backOK, jsonCall bool) {
-	id := r.PathValue("id")
+	id := r.URL.Query().Get("id")
 	if id == "" {
-		writeBulkError(w, http.StatusNotFound, "not found")
+		writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 		return
 	}
 	if err := u.views.Delete(ctx, m.name, id); err != nil {
 		if errors.Is(err, ErrSavedViewNotFound) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		slog.ErrorContext(ctx, "entityui: saved view delete", "entity", m.name, "error", err)
-		writeBulkError(w, http.StatusInternalServerError, "delete failed")
+		writeBulkError(w, r, http.StatusInternalServerError, reasonDeleteFailed)
 		return
 	}
 	if jsonCall {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.T(ctx, i18nui.KeyEntitySavedDeleted)})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.EntitySavedDeleted.Text(ctx)})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 	if !backOK {
-		writeBulkError(w, http.StatusBadRequest, "missing return path")
+		writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 		return
 	}
 	// The rebuilt URL is re-scrubbed at the sink, like the save's.
 	loc, locOK := scrubBackPath(withoutSavedParam(back, body.Key))
 	if !locOK {
-		writeBulkError(w, http.StatusBadRequest, "missing return path")
+		writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 		return
 	}
 	http.Redirect(w, r, loc, http.StatusSeeOther)
 }
 
 // writeSavedViewError maps the store's refusals onto statuses.
-func writeSavedViewError(w http.ResponseWriter, err error) {
+func writeSavedViewError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrSavedViewBlank):
-		writeBulkError(w, http.StatusBadRequest, "a saved view needs a name")
+		writeBulkError(w, r, http.StatusBadRequest, reasonViewNameRequired)
 	case errors.Is(err, ErrSavedViewExists):
-		writeBulkError(w, http.StatusConflict, "a saved view with that name exists")
+		writeBulkError(w, r, http.StatusConflict, reasonViewNameTaken)
 	case errors.Is(err, ErrSavedViewCap):
-		writeBulkError(w, http.StatusConflict, "too many saved views")
+		writeBulkError(w, r, http.StatusConflict, reasonTooManySavedViews)
 	case errors.Is(err, ErrSavedViewTooLong):
-		writeBulkError(w, http.StatusBadRequest, "saved view name, filter or columns too long")
+		writeBulkError(w, r, http.StatusBadRequest, reasonViewTooLong)
 	case errors.Is(err, ErrSavedViewNotFound):
-		writeBulkError(w, http.StatusNotFound, "not found")
+		writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	default:
-		writeBulkError(w, http.StatusInternalServerError, "save failed")
+		writeBulkError(w, r, http.StatusInternalServerError, reasonSaveFailed)
 	}
 }
 

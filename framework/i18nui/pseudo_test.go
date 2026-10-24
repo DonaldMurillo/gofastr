@@ -41,14 +41,50 @@ func TestPseudo(t *testing.T) {
 func TestAddPseudoCoversDefaults(t *testing.T) {
 	c := i18n.NewMapCatalog()
 	AddPseudo(c, "en-XA")
-	for k, v := range Defaults {
-		m, ok := c.Get("en-XA", string(k))
+	for k, v := range i18n.Phrases() {
+		m, ok := c.Get("en-XA", k)
 		if !ok || m.Text != Pseudo(v) {
 			t.Fatalf("%s: got %q, %v", k, m.Text, ok)
 		}
 	}
-	ctx := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en-xa"}), i18n.NewTranslator(c, "en"))
-	if got := T(ctx, KeyDialogSave); got != Pseudo(Defaults[KeyDialogSave]) {
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en-xa"}), i18n.NewTranslator(c, "en"))
+	if got := DialogSave.Text(ctx); got != Pseudo(DialogSave.English()) {
 		t.Fatalf("T in the pseudo locale = %q", got)
+	}
+}
+
+// An entity label with no catalog entry falls back to its English, and
+// in the pseudo locale that English is pseudo-localized too: Meridian's
+// column headers, status badges and view tabs stayed plain English under
+// /en-xa/, so the overflow gate never measured them.
+func TestPseudoAccentsLabelFallbacks(t *testing.T) {
+	c := i18n.NewMapCatalog()
+	AddPseudo(c, "en-XA")
+	tr := i18n.NewTranslator(c, "en")
+	at := func(tag string) context.Context {
+		return i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: tag}), tr)
+	}
+	labels := []struct {
+		name string
+		of   func(context.Context) string
+	}{
+		{"field", func(ctx context.Context) string { return FieldLabel(ctx, tr, "invoices", "due_on", "") }},
+		{"field display", func(ctx context.Context) string { return FieldLabel(ctx, tr, "invoices", "amount", "Amount due") }},
+		{"enum value", func(ctx context.Context) string { return FieldValueLabel(ctx, tr, "invoices", "status", "past_due") }},
+		{"view", func(ctx context.Context) string { return ViewLabel(ctx, tr, "invoices", "open", "") }},
+		{"plural", func(ctx context.Context) string { return EntityPlural(ctx, tr, "invoices", "") }},
+		{"noun", func(ctx context.Context) string { return EntityNoun(ctx, tr, "invoices", "", true) }},
+	}
+	for _, l := range labels {
+		english := l.of(at("en"))
+		if got := l.of(at("en-xa")); got != Pseudo(english) {
+			t.Errorf("%s: en-XA = %q, want %q", l.name, got, Pseudo(english))
+		}
+		if got := l.of(at("es")); got != english {
+			t.Errorf("%s: es = %q, want the English %q", l.name, got, english)
+		}
+	}
+	if got := EntityDescription(at("en-xa"), tr, "invoices", ""); got != "" {
+		t.Errorf("an absent description = %q, want empty", got)
 	}
 }

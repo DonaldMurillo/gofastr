@@ -183,7 +183,7 @@ func (h entityUIHost) Audit() entityui.AuditReader {
 	if h.a.auditTable == "" || h.a.DB == nil {
 		return nil
 	}
-	return auditTrail{db: h.a.DB, table: h.a.auditTable}
+	return auditTrail{db: h.a.DB, table: h.a.auditTable, cfg: h.a.auditCfg, reg: h.a.Registry}
 }
 
 // auditTrail reads one record's audit rows for the Activity tab. The
@@ -192,6 +192,8 @@ func (h entityUIHost) Audit() entityui.AuditReader {
 type auditTrail struct {
 	db    *sql.DB
 	table string
+	cfg   *AuditConfig
+	reg   *Registry
 }
 
 func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) ([]entityui.AuditEntry, error) {
@@ -203,6 +205,9 @@ func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) 
 		limit = 200
 	}
 	q := fmt.Sprintf("SELECT op, actor_id, created_at, diff, reason FROM %s WHERE entity = $1 AND record_id = $2", query.QuoteIdent(safe))
+	if t.cfg != nil {
+		recordID = t.cfg.keyID(auditKeyOf(t.reg, ent), recordID)
+	}
 	args := []any{ent, recordID}
 	if tid := tenant.GetTenantID(ctx); tid != "" {
 		q += " AND tenant_id = $3"

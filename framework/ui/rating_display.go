@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -66,7 +67,7 @@ func Rating(cfg RatingDisplayConfig) render.HTML {
 
 	label := cfg.Label
 	if label == "" {
-		label = fmt.Sprintf(StringsFor(cfg.Ctx).RatingChoice, cfg.Value, max)
+		label = i18n.FillContext(cfg.Ctx, StringsFor(cfg.Ctx).RatingChoice, map[string]any{"n": cfg.Value, "max": max})
 	}
 	// The shape and size modifiers are RatingInput's own, so one
 	// --ui-rating-color override recolours both.

@@ -3,14 +3,12 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // flatCatalog reads a locale file as dotted key → text.
@@ -42,38 +40,19 @@ func flatCatalog(t *testing.T, name string) map[string]string {
 	return out
 }
 
-var (
-	bracePlaceholder = regexp.MustCompile(`\{\w+\}`)
-	printfVerb       = regexp.MustCompile(`%[sd]`)
-)
-
-// The Spanish catalog names only keys the framework reads, uses no
-// {placeholder} the English text does not fill, keeps every printf verb
-// in order, and covers every framework string that is words.
-func TestSpanishCatalogMatchesDefaults(t *testing.T) {
-	es := flatCatalog(t, "es.json")
-	for k, v := range es {
-		if strings.HasPrefix(k, "entity.") {
-			continue
-		}
-		en, ok := i18nui.Defaults[i18nui.Key(k)]
-		if !ok {
-			t.Errorf("%s is not a framework key", k)
-			continue
-		}
-		for _, p := range bracePlaceholder.FindAllString(v, -1) {
-			if !strings.Contains(en, p) {
-				t.Errorf("%s: %s is not filled for this key", k, p)
-			}
-		}
-		if !slices.Equal(printfVerb.FindAllString(v, -1), printfVerb.FindAllString(en, -1)) {
-			t.Errorf("%s: printf verbs differ from %q", k, en)
-		}
+// The Spanish catalog names only phrases the framework and the app
+// define, keeps every {{placeholder}} of each phrase's English, and
+// covers every ui.* phrase that is words and every word Meridian says
+// (meridian.*). Entity keys name the app's data rather than a defined
+// phrase (the next test holds those), and ui.json.* are JSON literals
+// that stay as written.
+func TestSpanishCatalogMatchesPhrases(t *testing.T) {
+	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for k, en := range i18nui.Defaults {
-		if _, ok := es[string(k)]; !ok && strings.ContainsAny(en, "abcdefghijklmnopqrstuvwxyz") && !strings.HasPrefix(string(k), "ui.json.") {
-			t.Errorf("%s (%q) has no Spanish", k, en)
-		}
+	for _, is := range i18n.CheckCatalog(c, "es", i18n.Skip("entity.", "ui.json."), i18n.Require("ui.", "meridian.")) {
+		t.Errorf("%s: %s (English %q, Spanish %q)", is.Key, is.Problem, is.English, is.Text)
 	}
 }
 

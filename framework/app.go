@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -26,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 
@@ -51,7 +53,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -142,6 +143,18 @@ type AppConfig struct {
 	// surface), raise WriteTimeout or set it to 0. See the deployment
 	// guide's "HTTP server timeouts" section.
 	HTTPServerTimeouts HTTPServerTimeoutsConfig
+
+	// TLS serves HTTPS on the listen address. Nil (the default) serves
+	// plain HTTP, the shape behind a proxy that terminates TLS. See
+	// [TLSConfig] and [WithTLS].
+	TLS *TLSConfig
+
+	// HTTPProtocols sets the HTTP versions the server speaks, passed to
+	// http.Server.Protocols. Nil keeps net/http's default: HTTP/1.1, plus
+	// HTTP/2 when TLS is on. SetUnencryptedHTTP2 turns on HTTP/2 without
+	// TLS (h2c with prior knowledge, no Upgrade), for a proxy that speaks
+	// h2c to the app. HTTP/3 is not offered. See [WithHTTPProtocols].
+	HTTPProtocols *http.Protocols
 
 	// SecurityHeaders configures the defensive HTTP response headers
 	// (Content-Security-Policy, Referrer-Policy, X-Frame-Options,
@@ -235,8 +248,14 @@ type App struct {
 	// auditActor is WithAuditLog's actor resolver, for audit rows written
 	// outside the CRUD hooks (entityui's bulk runs).
 	auditActor func(context.Context) string
+	// auditCfg is WithAuditLog's config, for the Activity tab to map a
+	// record id to the record_id the audit rows store (AuditConfig.keyID).
+	auditCfg *AuditConfig
 	// entityUI is the UI EntityUI built; a second call is refused.
 	entityUI *entityui.UI
+	// pendingEndpoints holds EntityEndpoints calls until App.Entity
+	// registers the entity they name.
+	pendingEndpoints map[string][]entity.Endpoint
 	// crudMounts records where each entity's write routes mounted: the
 	// router that carries them (a group's sub-router, with its
 	// middleware) and the path on it. EntityUI mounts the bulk and export
@@ -394,6 +413,11 @@ type App struct {
 	// per-user locale (cookie) can win. Only effective with WithI18n.
 	localeResolver func(*http.Request) (string, bool)
 
+	// localePrefixes is set by WithLocalePrefixes; pathLocales is the
+	// locale set NewApp reads from the translator for it.
+	localePrefixes bool
+	pathLocales    i18n.PathLocales
+
 	// Optional metrics. When set (via WithMetrics), the metrics middleware
 	// joins the default chain and a Prometheus /metrics endpoint is mounted.
 	metrics *middleware.Metrics
@@ -515,6 +539,11 @@ type App struct {
 	// serverWrapped latches once Start has applied serverWrappers; a
 	// later WrapServer panics even after Shutdown clears a.server.
 	serverWrapped bool
+
+	// txDialectVal caches the DB's dialect for InTx's read-only path;
+	// txDialectMu guards it. Empty until a probe succeeds.
+	txDialectMu  sync.Mutex
+	txDialectVal migrate.Dialect
 }
 
 // servingHandler wraps an http.Handler so it can be stored in an
@@ -1182,10 +1211,12 @@ func (a *App) SetLogger(l *slog.Logger) {
 // DefaultMiddleware is the framework's standard safety chain in
 // canonical order:
 //
-//	recovery → request-id → [idempotency] → [i18n] → security headers → timeout
+//	recovery → request-id → [i18n] → [compress] → [locale prefix] →
+//	[db] → [tracing] → [metrics] → [idempotency] → security headers →
+//	timeout
 //
 // The optional entries are present when the App was configured with
-// WithIdempotency / WithI18n; the timeout entry is omitted when
+// WithIdempotency / WithI18n / WithLocalePrefixes; the timeout entry is omitted when
 // AppConfig.DisableRequestTimeout is true.
 //
 // Access logging is deliberately NOT in this list. battery/log owns
@@ -1217,10 +1248,28 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		middleware.RecoveryFn(getLogger),
 		middleware.RequestID(),
 	}
+	// Locale and translator go on the context ahead of every middleware
+	// that can refuse a request, so an idempotency or metrics refusal
+	// answers in the caller's language too.
+	if translator != nil {
+		var negOpts []i18n.NegotiateOption
+		if localeResolver != nil {
+			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
+		}
+		// A second recovery inside it answers a handler's panic in the
+		// caller's locale; the outer one still catches a panicking
+		// locale resolver.
+		chain = append(chain, i18n.Middleware(translator, negOpts...), middleware.RecoveryFn(getLogger))
+	}
 	// Compress sits outside the timeout and every handler-facing
 	// middleware, so it sees the final bytes and the timeout's flushes.
 	if a != nil && a.Config.Compression {
 		chain = append(chain, middleware.Compress())
+	}
+	// The locale-prefix rewriter sits inside Compress, so it reads the
+	// handler's plain bytes and Compress encodes what it wrote.
+	if a != nil && a.localePrefixes {
+		chain = append(chain, urlprefix.Middleware())
 	}
 	// Stamp the App's *sql.DB onto each request context so screens and
 	// handlers can reach it via DBFromContext without a package-level
@@ -1236,26 +1285,6 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	}
 	if idempotency != nil {
 		chain = append(chain, middleware.Idempotency(*idempotency))
-	}
-	if translator != nil {
-		var negOpts []i18n.NegotiateOption
-		if localeResolver != nil {
-			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
-		}
-		chain = append(chain, i18n.Middleware(translator, negOpts...))
-		// Bridge: stash the translator on the request ctx so framework/ui
-		// components (DataTable, FilterToolbar, Carousel, …) resolve their
-		// labels via i18nui.T(r.Context(), …) using the caller's locale.
-		// Without this the components silently render English even when a
-		// catalog is wired, because i18n.Middleware only attaches the
-		// Locale, not the translator. Framework may import i18nui; core
-		// may not, which is why this bridge lives here and not in core/i18n.
-		chain = append(chain, func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				ctx := i18nui.WithTranslator(r.Context(), translator)
-				next.ServeHTTP(w, r.WithContext(ctx))
-			})
-		})
 	}
 	shCfg := middleware.SecurityHeadersConfig{}
 	if a != nil {
@@ -1304,6 +1333,14 @@ func (a *App) Mount(m Mountable) *App {
 		}
 	}
 	a.mountables = append(a.mountables, m)
+	// A host that renders pages learns the locale set before it serves
+	// one (WithLocalePrefixes): hreflang, sitemap and the runtime's
+	// locale manifest come from it. Duck-typed, like SetFanout below.
+	if a.localePrefixes {
+		if pl, ok := m.(interface{ SetPathLocales(i18n.PathLocales) }); ok {
+			pl.SetPathLocales(a.pathLocales)
+		}
+	}
 	m.Mount(a.router)
 	// Wire the mountable into the cross-replica fanout (WithFanout) when it
 	// supports it, a mounted UI host forwards to its island manager so
@@ -1583,7 +1620,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 		path := groupEndpointPath(ent, endpoint)
 		if endpoint.Handler != nil {
-			g.Handle(method, path, endpoint.Handler)
+			g.Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -1923,6 +1960,9 @@ func NewApp(opts ...AppOption) *App {
 			"the i18n middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
 	}
+	if a.localePrefixes {
+		a.installLocalePrefixes()
+	}
 	if a.noDefaults && a.metrics != nil {
 		panic("framework: WithMetrics is incompatible with WithoutDefaultMiddleware: " +
 			"mount middleware.MetricsMiddleware + middleware.MetricsHandler in your custom chain instead")
@@ -2024,6 +2064,24 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
+// EntityEndpoints queues endpoints for the entity that a later App.Entity
+// or TryEntity call registers under name. That call merges them into its
+// config's Endpoints, so they pass the same route and MCP checks as
+// endpoints written in the config. It is how a generated
+// entities/endpoints.gen.go attaches endpoints to entity files it does not
+// own. Calling it for an entity already registered panics, and Start fails
+// while endpoints are still queued for a name nothing registered.
+func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
+	if _, err := a.Registry.Get(name); err == nil {
+		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity", name))
+	}
+	if a.pendingEndpoints == nil {
+		a.pendingEndpoints = map[string][]entity.Endpoint{}
+	}
+	a.pendingEndpoints[name] = append(a.pendingEndpoints[name], endpoints...)
+	return a
+}
+
 // TryEntity is the error-returning variant of Entity: it registers an entity
 // and returns an error on any misconfiguration instead of panicking. It also
 // recovers panics from deeper validation (e.g. an invalid TenantField) and
@@ -2051,6 +2109,15 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// silently mark the entity as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
 		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty: point SeedPath at a file within the FS or unset SeedFS", name)
+	}
+
+	// Endpoints queued by EntityEndpoints join the config here, before
+	// Define, so every check below sees them. They leave the queue only
+	// once registration commits: a rejected declaration keeps them for
+	// the corrected retry.
+	queued := a.pendingEndpoints[name]
+	if len(queued) > 0 {
+		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
 	}
 
 	e := entity.Define(name, config)
@@ -2140,6 +2207,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
+	delete(a.pendingEndpoints, name)
 
 	return nil
 }
@@ -2285,6 +2353,10 @@ func (a *App) View(v migrate.View) *App {
 	if ent == nil {
 		return a
 	}
+	// Its read routes name rows by id, and a view skips Define's key check.
+	if err := ent.CheckRecordKey(); err != nil {
+		panic(fmt.Sprintf("framework: view %q: %v", v.Name, err))
+	}
 	if a.DB != nil {
 		ent.SetDB(a.DB)
 	}
@@ -2375,7 +2447,7 @@ func (a *App) entityRouteCollision(ent *entity.Entity, mountPath string) string 
 	// them, better a loud false positive at registration than a panic
 	// halfway through the commit phase.
 	claimed := map[string][]string{}
-	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
+	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 		method, path, _ := strings.Cut(pattern, " ")
 		path = normalizeRoutePattern(path)
 		claimed[path] = append(claimed[path], method)
@@ -2476,7 +2548,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// The CRUD routes are not on the router yet, this runs before
 		// the commit phase, so ask crud for the set it will mount.
 		if crudMount != "" {
-			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
+			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 			}
 		}
@@ -2550,7 +2622,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
-			a.router.Handle(method, path, endpoint.Handler)
+			a.router.Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -2572,17 +2644,41 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 	return nil
 }
 
+// endpointRoute is an Endpoint's Handler behind the gates every endpoint
+// route carries, the ones the CRUD routes apply to their own: a forgeable
+// cross-site request answers 403 on every method but GET and HEAD, and an
+// anonymous caller answers 401 unless the endpoint is Public. Before this,
+// Handler ran with whatever the app's middleware chain happened to hold,
+// so an endpoint on an entity whose CRUD answered 401 served anyone.
+func endpointRoute(ep entity.Endpoint) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
+			handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
+			handler.WriteError(w, r, handler.Fail(http.StatusForbidden, handler.ReasonCrossSiteRefused))
+			return
+		}
+		if !ep.Public {
+			w.Header().Set("Cache-Control", "no-store")
+			if _, ok := handler.GetUser(r.Context()); !ok {
+				handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, handler.ReasonAuthenticationRequired))
+				return
+			}
+		}
+		ep.Handler.ServeHTTP(w, r)
+	})
+}
+
 // endpointMCPOptions returns the registration options for an Endpoint's MCP
 // twin. An Endpoint's two front doors do not get the same protection for
-// free: Handler inherits the route's middleware chain, MCPHandler is
-// registered straight onto the MCP server and sees none of it. So the twin
-// defaults to requiring an authenticated caller, and an endpoint that really
-// is anonymous says so with MCPPublic.
+// free: endpointRoute gates the HTTP route, MCPHandler is registered
+// straight onto the MCP server and sees none of it. So the twin defaults to
+// requiring an authenticated caller, and an endpoint that really is
+// anonymous says so with Public.
 func endpointMCPOptions(ep entity.Endpoint) []mcp.ToolOption {
 	switch {
 	case ep.MCPGate != nil:
 		return []mcp.ToolOption{mcp.WithToolGate(ep.MCPGate)}
-	case ep.MCPPublic:
+	case ep.Public:
 		return nil
 	default:
 		return []mcp.ToolOption{mcp.WithToolGate(MCPRequireUser())}
@@ -3164,6 +3260,10 @@ func (a *App) Start(addr string) error {
 	// No-op in every other process.
 	a.enableSemanticCoverageFromEnv()
 
+	if len(a.pendingEndpoints) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	}
+
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {
 		return fmt.Errorf("resolve isolation: %w", err)
@@ -3516,6 +3616,7 @@ func (a *App) Start(addr string) error {
 	// register routes after Mount. This is the last stop before the
 	// listener binds: the latest point at which a finding can still
 	// refuse to serve. Same panic contract as a Mount-time check.
+	a.checkLocaleRoutes()
 	for _, m := range a.mountables {
 		if bv, ok := m.(BootValidator); ok {
 			bv.ValidateBoot()
@@ -3583,6 +3684,7 @@ func (a *App) Start(addr string) error {
 	for i := len(a.serverWrappers) - 1; i >= 0; i-- {
 		serveHandler = a.serverWrappers[i](serveHandler)
 	}
+	serveHandler = a.serveLocale(serveHandler)
 	a.serverWrapped = true
 	srv := &http.Server{
 		Addr:              addr,
@@ -3627,17 +3729,29 @@ func (a *App) Start(addr string) error {
 			srv.WriteTimeout = 0
 		}
 	}
+	if p := a.Config.HTTPProtocols; p != nil {
+		protos := *p
+		srv.Protocols = &protos
+	}
+	tlsCfg, err := a.serverTLSConfig()
+	if err != nil {
+		a.serverMu.Unlock()
+		return abort(err)
+	}
+	srv.TLSConfig = tlsCfg
 	// A concurrent Shutdown may have run while the pre-listen phases
 	// were still executing (a host tearing down mid-boot, or a test that
 	// observed a seeded row before the server existed). It found no
 	// server to stop and drained what was started; adopting a server NOW
-	// would serve forever with nobody left to stop it. The cancelled
-	// lifecycle context is the durable record of that Shutdown — checked
-	// under the same lock Shutdown holds, so the window is closed, not
-	// narrowed. abort re-drains whatever started after that Shutdown's
-	// sweep (Shutdown is idempotent) and nil keeps the graceful-shutdown
-	// contract: Start reports no error when told to stop.
-	if a.appCtx != nil && a.appCtx.Err() != nil {
+	// would serve forever with nobody left to stop it. The record of that
+	// Shutdown is appCancel cleared beside a live appCtx (the context is
+	// never recreated), written under the lock checked here, so the window
+	// is closed, not narrowed. The cancelled context alone is not enough:
+	// Shutdown cancels it after unlocking. abort re-drains whatever started
+	// after that Shutdown's sweep (Shutdown is idempotent) and nil keeps
+	// the graceful-shutdown contract: Start reports no error when told to
+	// stop.
+	if a.appCtx != nil && (a.appCancel == nil || a.appCtx.Err() != nil) {
 		a.serverMu.Unlock()
 		return abort(nil)
 	}
@@ -3700,7 +3814,7 @@ func (a *App) Start(addr string) error {
 	defer a.registerLocalRun(ln.Addr().String())()
 
 	if setupInteractive {
-		setupURL = a.setup.SetupURL(ln.Addr().String())
+		setupURL = a.setup.SetupURL(a.urlScheme(), ln.Addr().String())
 	}
 	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD, setupURL)
 	for _, fn := range a.readyHooks {
@@ -3708,7 +3822,13 @@ func (a *App) Start(addr string) error {
 			return abort(rerr)
 		}
 	}
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+	serve := srv.Serve
+	if srv.TLSConfig != nil {
+		// ServeTLS adds h2 to the offered protocols and wraps ln; the
+		// certificate comes from TLSConfig, so no files are named here.
+		serve = func(ln net.Listener) error { return srv.ServeTLS(ln, "", "") }
+	}
+	if err := serve(ln); err != nil && err != http.ErrServerClosed {
 		return abort(fmt.Errorf("listen and serve: %w", err))
 	}
 	return nil
@@ -3733,6 +3853,7 @@ func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 // boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
 // the actual port and a bind failure prints nothing.
 func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, setupURL string) {
+	base := a.urlScheme() + "://" + boundAddr
 	w := a.startupOutput
 	if w == nil {
 		w = os.Stdout
@@ -3742,18 +3863,18 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		// API routes here would advertise 404s.
 		fmt.Fprintf(w, "\n  %s %s worker ready\n", bold("GoFastr"), name)
 		fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
-		fmt.Fprintf(w, "  %s Health: http://%s/healthz http://%s/readyz\n", arrow(), boundAddr, boundAddr)
+		fmt.Fprintf(w, "  %s Health: %s/healthz %s/readyz\n", arrow(), base, base)
 		_, _ = fmt.Fprintln(w)
 		return
 	}
 	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
-	fmt.Fprintf(w, "  %s Listening: http://%s\n", arrow(), boundAddr)
+	fmt.Fprintf(w, "  %s Listening: %s\n", arrow(), base)
 	if setupURL != "" {
 		fmt.Fprintf(w, "  %s Setup: %s\n", arrow(), setupURL)
 	}
 	if a.Config.DebugEndpoints {
-		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
+		fmt.Fprintf(w, "  %s Stats: %s/.debug/stats\n", arrow(), base)
 	}
 
 	skipped, gated := 0, 0
@@ -3784,7 +3905,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		} else {
 			gated++
 		}
-		fmt.Fprintf(w, "  %s %-12s http://%s%s%s\n", arrow(), label, boundAddr, mountPath, gate)
+		fmt.Fprintf(w, "  %s %-12s %s%s%s\n", arrow(), label, base, mountPath, gate)
 	}
 	if skipped > 0 {
 		noun := "entities"
@@ -3806,10 +3927,10 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if a.Config.PublicOpenAPI {
 			apiGate = ""
 		}
-		fmt.Fprintf(w, "  %s OpenAPI:     http://%s/openapi.json%s\n", arrow(), boundAddr, apiGate)
-		fmt.Fprintf(w, "  %s API docs:    http://%s/api/docs/%s\n", arrow(), boundAddr, apiGate)
+		fmt.Fprintf(w, "  %s OpenAPI:     %s/openapi.json%s\n", arrow(), base, apiGate)
+		fmt.Fprintf(w, "  %s API docs:    %s/api/docs/%s\n", arrow(), base, apiGate)
 		if hasLLMMD {
-			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md%s\n", arrow(), boundAddr, apiGate)
+			fmt.Fprintf(w, "  %s LLM Docs:    %s/api/llm.md%s\n", arrow(), base, apiGate)
 		}
 	}
 
@@ -3831,7 +3952,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if n := len(a.MCP.ListTools()); n > 0 {
 			mcpNote = fmt.Sprintf("  (%d tools, your app's permissions)", n)
 		}
-		fmt.Fprintf(w, "  %s MCP:         http://%s/mcp%s\n", arrow(), boundAddr, mcpNote)
+		fmt.Fprintf(w, "  %s MCP:         %s/mcp%s\n", arrow(), base, mcpNote)
 	}
 	_, _ = fmt.Fprintln(w)
 }
@@ -3855,7 +3976,7 @@ func (a *App) AuthenticatorNoted() bool { return a.authenticatorNoted.Load() }
 func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 	ctx := r.Context()
 	if u, ok := handler.GetUser(ctx); !ok || u == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 		return false
 	}
 	allowed := false
@@ -3867,7 +3988,7 @@ func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	if !allowed {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 	}
 	return allowed
 }
@@ -3931,7 +4052,7 @@ func (a *App) registerDebugEndpoints() {
 		}
 		p := pprof.Lookup("goroutineleak")
 		if p == nil {
-			http.Error(w, "goroutineleak profile unavailable", http.StatusNotImplemented)
+			i18n.HTTPError(w, r, http.StatusNotImplemented, i18n.StatusPhrase(http.StatusNotImplemented))
 			return
 		}
 		// Leak detection is GC-reachability-based; force a cycle so the

@@ -155,3 +155,36 @@ func TestFailedCreateLeavesNoOrphanUpload(t *testing.T) {
 		}
 	})
 }
+
+// A write never sets a read-only or hidden column, so a file part sent for
+// one must not be stored either: the create succeeds, nothing references
+// the object, and a caller could repeat it to fill the disk.
+func TestUnwritableFilePartIsNotStored(t *testing.T) {
+	for name, photo := range map[string]schema.Field{
+		"read-only": {Name: "photo", Type: schema.Image, ReadOnly: true},
+		"hidden":    {Name: "photo", Type: schema.Image, Hidden: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			db := setupDB(t, `CREATE TABLE orph_media (id TEXT PRIMARY KEY, caption TEXT NOT NULL, photo TEXT, count INTEGER)`)
+			ent := entity.Define("orph_media", entity.EntityConfig{
+				Name:   "orph_media",
+				Table:  "orph_media",
+				Fields: []schema.Field{{Name: "caption", Type: schema.String, Required: true}, photo},
+			}.WithTimestamps(false))
+			ent.SetDB(db)
+			installSecurityOwnerExtractor(t)
+			ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+			ch.Storage = teststorage.New(t, dir)
+
+			rr := httptest.NewRecorder()
+			ch.Create()(rr, orphanMultipartRequest(t, map[string]string{"caption": "ok"}))
+			if rr.Code != http.StatusCreated {
+				t.Fatalf("create = %d (%s)", rr.Code, rr.Body.String())
+			}
+			if n := orphanFiles(t, dir); n != 0 {
+				t.Errorf("SECURITY: [orphan-upload] a file part for a %s column left %d file(s) no row references", name, n)
+			}
+		})
+	}
+}

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // maxMultipartMemory bounds how many bytes of a multipart request are
@@ -99,7 +101,7 @@ type Config struct {
 func Handler(cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 
@@ -120,10 +122,10 @@ func Handler(cfg Config) http.HandlerFunc {
 		// large parts spill predictably; do NOT pass MaxSize here.
 		if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, reasonFileTooLarge)
 				return
 			}
-			http.Error(w, "failed to parse form", http.StatusBadRequest)
+			i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 			return
 		}
 		// Remove any temp files multipart spilled to disk on every return
@@ -137,26 +139,26 @@ func Handler(cfg Config) http.HandlerFunc {
 
 		file, header, err := r.FormFile("file")
 		if err != nil {
-			http.Error(w, "missing file field", http.StatusBadRequest)
+			i18n.HTTPError(w, r, http.StatusBadRequest, reasonMissingFile)
 			return
 		}
 		defer file.Close()
 
 		// Validate extension
 		if err := ValidateExt(header.Filename, cfg.AllowedExts); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			i18n.HTTPErrorFor(w, r, http.StatusBadRequest, err)
 			return
 		}
 
 		// Validate size
 		if err := ValidateSize(header.Size, maxSize); err != nil {
-			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			i18n.HTTPErrorFor(w, r, http.StatusRequestEntityTooLarge, err)
 			return
 		}
 
 		// Validate MIME type
 		if err := ValidateMIME(file, cfg.AllowedTypes); err != nil {
-			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+			i18n.HTTPErrorFor(w, r, http.StatusUnsupportedMediaType, err)
 			return
 		}
 
@@ -168,7 +170,7 @@ func Handler(cfg Config) http.HandlerFunc {
 		// back to downstream consumers.
 		detectedMime, err := sniffContentType(file)
 		if err != nil {
-			http.Error(w, "failed to sniff content", http.StatusBadRequest)
+			i18n.HTTPError(w, r, http.StatusBadRequest, reasonSniffFailed)
 			return
 		}
 
@@ -182,7 +184,7 @@ func Handler(cfg Config) http.HandlerFunc {
 
 		// Save via storage backend
 		if err := cfg.Storage.Save(r.Context(), key, file); err != nil {
-			http.Error(w, "save failed", http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 

@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
@@ -214,7 +216,7 @@ func (ch *CrudHandler) eventStreamReauthInterval() time.Duration {
 func (ch *CrudHandler) EventStream() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if ch.Events == nil {
-			writeJSONError(w, http.StatusServiceUnavailable, "event bus not configured")
+			writeJSONError(w, r, http.StatusServiceUnavailable, reasonEventBusMissing)
 			return
 		}
 		// Real-time event streams are authenticated regardless of
@@ -237,7 +239,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// RequireOwner.
 		if ch.Entity.Config.Scope.OwnerField == "" && !ch.Entity.Config.Exposure.Public {
 			if _, ok := handler.GetUser(r.Context()); !ok {
-				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 				return
 			}
 		}
@@ -270,7 +272,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			ch.EventStreamSeats, ch.EventStreamSeatOverflow)
 		if !admitted {
 			w.Header().Set("Retry-After", "1")
-			writeJSONError(w, http.StatusTooManyRequests, "too many concurrent event streams for this caller")
+			writeJSONError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 			return
 		}
 		defer ch.seatRegistry().release(seat)
@@ -464,10 +466,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 	// are scalars after convertValue, so a nested container only exists when a
 	// write hook injected one; copy it anyway rather than depend on that.
 	clone := deepCopyRecord(row)
-	id := ""
-	if v, ok := clone[ch.convertKey(ch.PrimaryKey)]; ok {
-		id = fmt.Sprint(v)
-	}
+	id, _ := entity.RowKey(clone, ch.keyCols(), ch.convertKey)
 	// The only caller passes the SSE handler's request, so r is non-nil in
 	// production, but a nil here would panic inside the delivery goroutine
 	// and kill the stream, which is a poor trade for one comparison.
@@ -739,7 +738,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	// tenant/owner identity, which will not be valid to read later.
 	data := ch.eventData(ctx, record)
 	table := ch.Entity.GetTable()
-	pk := ch.PrimaryKey
+	pk := ch.keyCols()
 	bus := ch.Events
 	match := ch.comparableColumns(record)
 
@@ -753,7 +752,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 			}
 			if time.Now().After(deadline) {
 				log.Printf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
-					eventType, table, id, ambientTxProbeTimeout)
+					eventType, table, fmt.Sprint(id...), ambientTxProbeTimeout)
 				return
 			}
 			time.Sleep(ambientTxProbeInterval)
@@ -762,7 +761,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 		committed, err := landed(base, eventType, table, pk, id, match)
 		if err != nil {
 			log.Printf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
-				eventType, table, id, err)
+				eventType, table, fmt.Sprint(id...), err)
 			return
 		}
 		if !committed {
@@ -776,12 +775,8 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 // base connection. A delete landed when the row is gone; a create when it is
 // there; an update when it is there AND carries the announced values (match),
 // since the row survives a rollback either way.
-func landed(base *sql.DB, eventType, table, pk string, id any, match map[string]any) (bool, error) {
+func landed(base *sql.DB, eventType, table string, pk []string, id []any, match map[string]any) (bool, error) {
 	safeTable, err := query.SafeIdent(table)
-	if err != nil {
-		return false, err
-	}
-	safePK, err := query.SafeIdent(pk)
 	if err != nil {
 		return false, err
 	}
@@ -789,8 +784,16 @@ func landed(base *sql.DB, eventType, table, pk string, id any, match map[string]
 	// dialect. Postgres rejects `?` outright — with it, this confirm query
 	// failed as `pq: syntax error at end of input` on every ambient-tx
 	// event, and the emission was dropped as unconfirmable.
-	where := []string{query.QuoteIdent(safePK) + " = $1"}
-	args := []any{id}
+	var where []string
+	var args []any
+	for i, col := range pk {
+		safePK, err := query.SafeIdent(col)
+		if err != nil {
+			return false, err
+		}
+		where = append(where, fmt.Sprintf("%s = $%d", query.QuoteIdent(safePK), i+1))
+		args = append(args, id[i])
+	}
 	if eventType == event.EntityUpdated {
 		for _, col := range slices.Sorted(maps.Keys(match)) {
 			safeCol, err := query.SafeIdent(col)
@@ -830,7 +833,7 @@ func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 	out := map[string]any{}
 	for key, v := range m {
 		col := ch.unconvertKeyRaw(key)
-		if col == ch.PrimaryKey || !known[col] || v == nil {
+		if ch.isKeyCol(col) || !known[col] || v == nil {
 			continue
 		}
 		switch v.(type) {
@@ -844,17 +847,12 @@ func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 	return out
 }
 
-// recordPrimaryKey pulls the primary-key value out of an emitted record,
+// recordPrimaryKey pulls the key values out of an emitted record,
 // tolerating either wire casing.
-func (ch *CrudHandler) recordPrimaryKey(record any) (any, bool) {
+func (ch *CrudHandler) recordPrimaryKey(record any) ([]any, bool) {
 	m, ok := record.(map[string]any)
 	if !ok {
 		return nil, false
 	}
-	for _, key := range []string{ch.convertKey(ch.PrimaryKey), ch.PrimaryKey} {
-		if v, ok := m[key]; ok && v != nil {
-			return v, true
-		}
-	}
-	return nil, false
+	return ch.rowKeyVals(m)
 }

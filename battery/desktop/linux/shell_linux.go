@@ -104,6 +104,7 @@ type linuxShell struct {
 	uiThread      atomic.Int64
 	done          chan struct{}
 	cfg           desktop.WindowConfig
+	textCtx       context.Context
 	windows       map[string]*linuxWindow
 	webContext    uintptr
 	inLoop        bool // UI thread only
@@ -143,6 +144,8 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Linux's desktop language preferences come from LANGUAGE/LC_*/LANG.
+	s.textCtx = desktop.ShellContext(ctx, nil)
 	if s.quitting.Load() {
 		return nil
 	}

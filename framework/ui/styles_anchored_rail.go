@@ -70,7 +70,7 @@ func anchoredRailCSS(t style.Theme) string {
 			"font-family", "{fonts.mono}",
 			"font-size", "calc(var(--text-xs, 0.75rem) * 0.833)",
 			"color", "{colors.text-subtle}",
-			"text-align", "right",
+			"text-align", "end",
 		).End().
 		// Active state: the headless-rail module sets BOTH .is-active
 		// and aria-current.

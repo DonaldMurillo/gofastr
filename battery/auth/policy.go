@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // SessionFrom returns the user loaded into ctx by SessionMiddleware (or
@@ -46,7 +47,7 @@ type policyOpts struct {
 	redirect   string
 	altFactory func() component.Component
 	block      int
-	blockMsg   string
+	blockWhy   i18n.Phrase
 	nextPath   bool // when true, append ?next=<request-path> to redirect
 }
 
@@ -103,13 +104,19 @@ func WithRenderAlt(factory func() component.Component) PolicyOption {
 }
 
 // WithBlock sets the failure outcome to an HTTP status (e.g. 401, 403,
-// 404). msg is optional human-readable text the host may include in
-// the body. Default for SessionPolicy when no option is supplied is
+// 404) whose body is the status's generic phrase in the request's
+// locale. Default for SessionPolicy when no option is supplied is
 // Redirect("/login"); for RolePolicy it is Block(403).
-func WithBlock(status int, msg string) PolicyOption {
+func WithBlock(status int) PolicyOption {
+	return WithBlockReason(status, i18n.Phrase{})
+}
+
+// WithBlockReason is WithBlock with the body naming reason, translated
+// per request.
+func WithBlockReason(status int, reason i18n.Phrase) PolicyOption {
 	return func(o *policyOpts) {
 		o.block = status
-		o.blockMsg = msg
+		o.blockWhy = reason
 		o.redirect = ""
 		o.altFactory = nil
 	}
@@ -184,7 +191,7 @@ func Roles(roles ...string) []string {
 // caller authenticated by a scoped API token is refused: roles gate
 // interactive sessions, not bearer credentials.
 func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
-	o := policyOpts{block: 403, blockMsg: "forbidden"}
+	o := policyOpts{block: 403}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -240,11 +247,7 @@ func failureDecision(ctx context.Context, o policyOpts) app.Decision {
 	if status == 0 {
 		status = 401
 	}
-	msg := o.blockMsg
-	if msg == "" {
-		msg = "unauthorized"
-	}
-	return decide.Block(status, msg)
+	return decide.BlockWith(status, o.blockWhy)
 }
 
 func containsQuery(s string) bool {
@@ -258,14 +261,16 @@ func containsQuery(s string) bool {
 
 // requestPathFromCtx pulls the live request path out of ctx if
 // app.WithRequest was called upstream (uihost does this). Returns
-// empty string when no request is attached.
+// empty string when no request is attached. The path is the escaped
+// one the browser sent: a key segment holding "/" (/orders/a%2Fb) has
+// to come back as that one segment, not as /orders/a/b.
 func requestPathFromCtx(ctx context.Context) string {
 	r := app.RequestFromContext(ctx)
 	if r == nil || r.URL == nil {
 		return ""
 	}
 	if r.URL.RawQuery != "" {
-		return r.URL.Path + "?" + r.URL.RawQuery
+		return r.URL.EscapedPath() + "?" + r.URL.RawQuery
 	}
-	return r.URL.Path
+	return r.URL.EscapedPath()
 }

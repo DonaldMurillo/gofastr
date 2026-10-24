@@ -16,7 +16,7 @@ func TestCarouselRendersTrackControlsAndDots(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`aria-label="Featured work" aria-roledescription="carousel"`,
-		`<div data-hui-carousel-status="Slide 1 of 2" data-hui-carousel-status-fmt="Slide {n} of {total}|2" data-hui-carousel-track="" id="feat-track" tabindex="0">`,
+		`<div data-hui-carousel-status="Slide 1 of 2" data-hui-carousel-status-fmt="Slide {{n}} of {{total}}|2" data-hui-carousel-track="" id="feat-track" tabindex="0">`,
 		`<div aria-current="true" aria-label="Slide 1 of 2" aria-roledescription="slide" id="feat-track-slide-0" role="group">`,
 		`<div aria-label="Slide 2 of 2" aria-roledescription="slide" id="feat-track-slide-1" role="group">`,
 		`<a aria-current="true" aria-label="Go to slide 1" data-hui-carousel-goto="0" href="#feat-track-slide-0">`,
@@ -85,7 +85,7 @@ func TestCarouselVisiblePerViewClampsAtEight(t *testing.T) {
 func TestCarouselSlideStatusThroughStrings(t *testing.T) {
 	h := string(Carousel(CarouselProps{Label: "Galerie", ID: "fr", Slides: []CarouselSlide{
 		{Content: render.Text("Un")}, {Content: render.Text("Deux")},
-	}, Strings: &Strings{CarouselSlide: "Diapositive {n} sur {total}", CarouselGoTo: "Aller à la diapositive {n}"}}, nil))
+	}, Strings: &Strings{CarouselSlide: "Diapositive {{n}} sur {{total}}", CarouselGoTo: "Aller à la diapositive {{n}}"}}, nil))
 	for _, want := range []string{
 		`data-hui-carousel-status="Diapositive 1 sur 2"`,
 		`aria-label="Aller à la diapositive 2"`,

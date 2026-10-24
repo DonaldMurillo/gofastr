@@ -261,7 +261,7 @@ func TestGenerateScreenFromA11yBuilds(t *testing.T) {
 	if code != -1 {
 		t.Fatalf("exit %d:\n%s", code, out)
 	}
-	src := readFile(t, dir, "screen_signup.go")
+	src := inlinePhrases(readFile(t, dir, "screen_signup.go"))
 	for _, want := range []string{
 		`ui.PageHeader(ui.PageHeaderConfig{Title: "Create account", Subtitle: "Start your free trial."`,
 		`ui.Form(ui.FormConfig{Action: "/signup"`,
@@ -418,7 +418,7 @@ func TestAppSpecYAMLControlBlocksBuild(t *testing.T) {
           hide_submit: true
 `
 	dir, _ := generateBaseProject(t, yml)
-	src := readFile(t, dir, "screen_about.go")
+	src := inlinePhrases(readFile(t, dir, "screen_about.go"))
 	for _, want := range []string{
 		`ui.Form(ui.FormConfig{Action: "/contact", SubmitLabel: "Send", Ctx: ctx}`,
 		`ui.TextField(ui.TextFieldConfig{Name: "email", Label: "Email", Required: true})`,

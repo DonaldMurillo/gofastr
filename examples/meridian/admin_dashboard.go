@@ -3,18 +3,30 @@ package main
 import (
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+)
+
+// The admin's own words: the dashboard's figures and the theme it
+// offers.
+var (
+	metricMRR             = i18n.Define("meridian.admin.metrics.mrr", "MRR")
+	metricActiveCustomers = i18n.Define("meridian.admin.metrics.active_customers", "Active customers")
+	metricTrialing        = i18n.Define("meridian.admin.metrics.trialing", "trialing")
+	metricPastDue         = i18n.Define("meridian.admin.metrics.past_due_invoices", "Past-due invoices")
+	metricOutstanding     = i18n.Define("meridian.admin.metrics.outstanding", "outstanding")
+	themeBrutal           = i18n.Define("meridian.admin.themes.brutal", "Brutal")
 )
 
 // adminMetrics is the strip at the top of the admin dashboard: the
 // figures a billing team opens the admin to check.
 var adminMetrics = []admin.Metric{
-	{Label: "MRR", Entity: "customers", Agg: "sum", Field: "mrr", Where: `status = "active"`, Format: "money", View: "active"},
-	{Label: "Active customers", Entity: "customers", Where: `status = "active"`, View: "active",
-		Detail: &admin.Metric{Label: "trialing", Where: `status = "trialing"`}},
-	{Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
-		Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount", Where: `status = "past_due"`, Format: "money", Tone: ui.TrendDown}},
+	{Label: metricMRR, Entity: "customers", Agg: "sum", Field: "mrr", Where: `status = "active"`, Format: "money", View: "active"},
+	{Label: metricActiveCustomers, Entity: "customers", Where: `status = "active"`, View: "active",
+		Detail: &admin.Metric{Label: metricTrialing, Where: `status = "trialing"`}},
+	{Label: metricPastDue, Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
+		Detail: &admin.Metric{Label: metricOutstanding, Agg: "sum", Field: "amount", Where: `status = "past_due"`, Format: "money", Tone: ui.TrendDown}},
 }
 
 // adminAttention is the Needs attention panel beside the recent
@@ -30,4 +42,4 @@ var adminAttention = []admin.Watch{
 var brutalTheme = style.RegisterThemeOverride(theme.Brutal())
 
 // adminThemes are the page themes the admin's toolbar offers.
-var adminThemes = []ui.ThemeChoice{{Label: "Brutal", Theme: brutalTheme}}
+var adminThemes = []ui.ThemeChoice{{Label: themeBrutal, Theme: brutalTheme}}

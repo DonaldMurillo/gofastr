@@ -85,9 +85,9 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 // narrowing is not applied, and the list below is the All view.
 func savedGoneWarning(ctx context.Context) render.HTML {
 	return ui.Callout(ui.CalloutConfig{
-		Title:   i18nui.T(ctx, i18nui.KeyEntitySavedGoneTitle),
+		Title:   i18nui.EntitySavedGoneTitle.Text(ctx),
 		Variant: ui.StatusWarning,
-	}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySavedGoneBody)))
+	}, render.Text(i18nui.EntitySavedGoneBody.Text(ctx)))
 }
 
 // savedViewsOn reports whether this caller gets saved views at all. A
@@ -130,7 +130,8 @@ func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTM
 	}
 	m := s.m
 	return ui.Dropdown(ui.DropdownConfig{
-		Label: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
+		Ctx:   ctx,
+		Label: i18nui.EntitySavedSave.Text(ctx),
 		Icon:  "bookmark",
 		Align: ui.DropdownEnd,
 		ID:    "eui-" + listIDSafe(s.key, m.name) + "-saveview-pop",
@@ -138,7 +139,7 @@ func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTM
 			Action:      m.api + "/_views",
 			Method:      "POST",
 			Ctx:         ctx,
-			SubmitLabel: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
+			SubmitLabel: i18nui.EntitySavedSave.Text(ctx),
 		},
 			hiddenInput("back", listHref(s.path, s.q)),
 			hiddenInput("key", s.key),
@@ -147,7 +148,7 @@ func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTM
 			ui.TextField(ui.TextFieldConfig{
 				Name:     "name",
 				ID:       "eui-" + listIDSafe(s.key, m.name) + "-saveview",
-				Label:    i18nui.T(ctx, i18nui.KeyEntitySavedName),
+				Label:    i18nui.EntitySavedName.Text(ctx),
 				Required: true,
 			}),
 		),
@@ -170,15 +171,19 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 		return ""
 	}
 	m := s.m
-	action := m.api + "/_views/_delete/" + url.PathEscape(s.savedID)
+	action := m.api + "/_views/_delete?id=" + url.QueryEscape(s.savedID)
+	back := listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))
+	// The handler's toast header says "View deleted"; the success
+	// navigates to the list without the view, the page a plain post's
+	// 303 lands on.
 	del := interactive.Post(action).
 		WithConfirmDialog(interactive.Confirm{
-			Title:   i18nui.T(ctx, i18nui.KeyEntitySavedDeleteTitle),
-			Message: i18nui.T(ctx, i18nui.KeyEntitySavedDeleteConfirm),
-			Accept:  i18nui.T(ctx, i18nui.KeyEntitySavedDelete),
+			Title:   i18nui.EntitySavedDeleteTitle.Text(ctx),
+			Message: i18nui.EntitySavedDeleteConfirm.Text(ctx),
+			Accept:  i18nui.EntitySavedDelete.Text(ctx),
 			Danger:  true,
 		}).
-		OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySavedDeleted))
+		OnSuccess(interactive.Navigate(back))
 	return ui.Form(ui.FormConfig{
 		Action:     action,
 		Method:     "POST",
@@ -186,10 +191,11 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 		HideSubmit: true,
 		ExtraAttrs: del.Attrs(),
 	},
-		hiddenInput("back", listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))),
+		hiddenInput("back", back),
 		hiddenInput("key", s.key),
 		ui.Button(ui.ButtonConfig{
-			Label:   i18nui.TVars(ctx, i18nui.KeyEntitySavedDelete, map[string]string{"view": name}),
+			Ctx:     ctx,
+			Label:   i18nui.EntitySavedDelete.Text(ctx, map[string]any{"view": name}),
 			Variant: ui.ButtonGhost,
 			Size:    ui.ButtonSizeSmall,
 			Type:    "submit",

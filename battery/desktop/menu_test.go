@@ -14,16 +14,16 @@ import (
 // Group 7: menu validation and activation dispatch.
 
 func TestMenuValidationCases(t *testing.T) {
-	both := MenuItem{Title: "x", Navigate: "/a", Handler: func(context.Context) error { return nil }}
-	badNav := MenuItem{Title: "x", Navigate: "https://evil.example"}
-	badNav2 := MenuItem{Title: "x", Navigate: "/a/../../etc"}
-	badNav3 := MenuItem{Title: "x", Navigate: "//host/path"}
-	badRole := MenuItem{Title: "x", Role: "explody"}
+	both := MenuItem{Title: testPhrase("x"), Navigate: "/a", Handler: func(context.Context) error { return nil }}
+	badNav := MenuItem{Title: testPhrase("x"), Navigate: "https://evil.example"}
+	badNav2 := MenuItem{Title: testPhrase("x"), Navigate: "/a/../../etc"}
+	badNav3 := MenuItem{Title: testPhrase("x"), Navigate: "//host/path"}
+	badRole := MenuItem{Title: testPhrase("x"), Role: "explody"}
 	sepWithNav := MenuItem{Role: RoleSeparator, Navigate: "/a"}
-	badKey := MenuItem{Title: "x", Key: "cmd+n!", Navigate: "/a"}
+	badKey := MenuItem{Title: testPhrase("x"), Key: "cmd+n!", Navigate: "/a"}
 	dup := Menu{Items: []MenuItem{
-		{ID: "same", Title: "a", Navigate: "/a"},
-		{ID: "same", Title: "b", Navigate: "/b"},
+		{ID: "same", Title: testPhrase("a"), Navigate: "/a"},
+		{ID: "same", Title: testPhrase("b"), Navigate: "/b"},
 	}}
 	cases := []struct {
 		name string
@@ -54,11 +54,11 @@ func TestMenuValidationCases(t *testing.T) {
 
 func TestMenuValidationAcceptsValidTreeAndAssignsIDs(t *testing.T) {
 	m := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "New", Navigate: "/new", Key: "cmd+n"},
-			{ID: "custom", Title: "Open", Navigate: "/open"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("New"), Navigate: "/new", Key: "cmd+n"},
+			{ID: "custom", Title: testPhrase("Open"), Navigate: "/open"},
 			{Role: RoleSeparator},
-			{Title: "Quit", Role: RoleQuit},
+			{Title: testPhrase("Quit"), Role: RoleQuit},
 		}},
 	}}
 	out, err := validateMenu(m)
@@ -89,7 +89,7 @@ func TestNewPanicsOnInvalidMenuNavigate(t *testing.T) {
 		}
 	}()
 	New(Config{ID: "x.example.app", Menu: &Menu{Items: []MenuItem{
-		{Title: "bad", Navigate: "https://evil.example"},
+		{Title: testPhrase("bad"), Navigate: "https://evil.example"},
 	}}})
 }
 
@@ -125,7 +125,7 @@ func TestMenuNavigateDispatchEmitsExactEval(t *testing.T) {
 	b.windowMu.Lock()
 	b.window = win
 	b.windowMu.Unlock()
-	b.menu = &Menu{Items: []MenuItem{{ID: "m1", Title: "Go", Navigate: "/x"}}}
+	b.menu = &Menu{Items: []MenuItem{{ID: "m1", Title: testPhrase("Go"), Navigate: "/x"}}}
 	b.dispatchMenu("m1")
 	evals := win.evals()
 	if len(evals) != 1 {
@@ -143,7 +143,7 @@ func TestMenuHandlerRunsAsyncAndErrorsAreLoggedWithID(t *testing.T) {
 	errCh := make(chan error, 1)
 	b.menu = &Menu{Items: []MenuItem{{
 		ID:    "boomitem",
-		Title: "Boom",
+		Title: testPhrase("Boom"),
 		Handler: func(ctx context.Context) error {
 			errCh <- errors.New("handler blew up")
 			return errors.New("handler blew up")

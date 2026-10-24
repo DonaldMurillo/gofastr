@@ -132,6 +132,8 @@ A screen is just a Go type implementing `component.Component`. Add `screens/abou
 package screens
 
 import (
+    "context"
+
     "github.com/DonaldMurillo/gofastr/core-ui/app"
     "github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -145,9 +147,9 @@ func (a *AboutScreen) Render() render.HTML {
     )
 }
 
-func (a *AboutScreen) ScreenTitle() string        { return "About" }
-func (a *AboutScreen) ScreenDescription() string  { return "" }
-func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (a *AboutScreen) ScreenTitle(ctx context.Context) string       { return "About" }
+func (a *AboutScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (a *AboutScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 ```
 
 > **Prefer the typed `core-ui/html` config structs over raw `render.Tag`.**
@@ -173,6 +175,19 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 > Composition intent (a card, a hero, a data table, a form field) lives one
 > layer up in [`framework/ui`](../../../framework/ui); see
 > [ui-composition-recipes](ui-composition-recipes.md).
+
+`html.IFrame` is sandboxed unless told otherwise. `Src` and `Title` are
+required, and the constructor panics without them. An empty `Sandbox`
+renders `sandbox=""`, which applies every restriction (no scripts, no
+forms, a unique origin); name the tokens to lift, such as
+`Sandbox: "allow-scripts"`, or set `Unsandboxed` for a frame of the
+app's own trusted pages. `Src` goes through the resource URL policy, so
+a `javascript:` or other refused URL renders the frame with no `src`.
+`ExtraAttrs` cannot set `src`, `srcdoc`, `sandbox` or `title`.
+
+```go
+html.IFrame(html.IFrameConfig{Src: "/admin/_email/welcome", Title: "Welcome email"})
+```
 
 Register it in `main.go`:
 
@@ -247,6 +262,12 @@ type ProductScreen struct{ slug string }
 func (s *ProductScreen) SetParams(p map[string]string) { s.slug = p["slug"] }
 ```
 
+The value arrives decoded, and the router splits the escaped path, so a
+segment may hold `/`: `/products/a%2Fb` gives `slug` the value `a/b`.
+`app.RoutePath` turns an escaped path into the form `Router.Resolve`
+matches (decoded, with a segment's `/` and `%` still `%2F` and `%25`),
+and `app.EscapeRoutePath` turns it back.
+
 Both `:slug` and `{slug}` are the same route; the framework normalizes the
 brace form to the colon form at registration. If a dynamic route's screen
 does **not** implement `SetParams`, the app panics at startup; the
@@ -315,7 +336,9 @@ on client-side navigation the runtime follows the redirect. Chains
 target must be a relative same-app path (an absolute URL panics;
 open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
-(constraints, trailing catch-all). Substituted parameters arrive
+(constraints, trailing catch-all). A one-segment parameter holding `/`
+or `%` is written back as `%2F` or `%25`, so it stays one segment of
+the target. Substituted parameters arrive
 percent-decoded, so C0/DEL control bytes in the request path are
 percent-encoded back into the `Location` header — a redirect target never
 carries raw control bytes.

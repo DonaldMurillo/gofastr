@@ -54,7 +54,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 	editable := b.cfg.GrantStore != nil
 	page := b.cfg.PathPrefix + "/rbac/roles"
 
-	cols := []ui.Column{{Key: "permission", Header: i18nui.T(ctx, i18nui.KeyAdminPermission)}}
+	cols := []ui.Column{{Key: "permission", Header: i18nui.AdminPermission.Text(ctx)}}
 	for i, role := range roles {
 		cols = append(cols, ui.Column{Key: "role-" + strconv.Itoa(i), Header: role, Align: "center", Fit: true})
 	}
@@ -73,7 +73,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 	for j, perm := range perms {
 		name := []render.HTML{ui.InlineCode(string(perm))}
 		if len(caps) > 0 && !slices.Contains(caps, perm) {
-			name = append(name, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminUndeclared), Variant: ui.StatusDanger}))
+			name = append(name, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.AdminUndeclared.Text(ctx), Variant: ui.StatusDanger}))
 		}
 		cells := map[string]render.HTML{"permission": ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name...)}
 		for i, role := range roles {
@@ -81,13 +81,13 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 				Name:        "grant",
 				ID:          "admin-grant-" + strconv.Itoa(i) + "-" + strconv.Itoa(j),
 				LabelHidden: true,
-				Label:       i18nui.TVars(ctx, i18nui.KeyAdminGrantCell, map[string]string{"permission": string(perm), "role": role}),
+				Label:       i18nui.AdminGrantCell.Text(ctx, map[string]any{"permission": string(perm), "role": role}),
 				Checked:     slices.Contains(p.PermissionsOf(role), perm),
 				Disabled:    col[i] < 0,
 			}
 			if holdsWildcard(p, role) {
 				cell.Checked = true
-				cell.Label = i18nui.TVars(ctx, i18nui.KeyAdminHoldsEvery, map[string]string{"role": role})
+				cell.Label = i18nui.AdminHoldsEvery.Text(ctx, map[string]any{"role": role})
 			}
 			if col[i] >= 0 {
 				cell.Value = strconv.Itoa(col[i]) + ":" + strconv.Itoa(j)
@@ -97,18 +97,18 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		rows[j] = ui.Row{ID: string(perm), Cells: cells}
 	}
 	empty := ui.EmptyStateConfig{
-		Title:        i18nui.T(ctx, i18nui.KeyAdminNoRoles),
-		Description:  i18nui.T(ctx, i18nui.KeyAdminNoRolesDesc),
+		Title:        i18nui.AdminNoRoles.Text(ctx),
+		Description:  i18nui.AdminNoRolesDesc.Text(ctx),
 		HeadingLevel: 2,
 	}
 	if len(roles) > 0 {
-		empty.Title = i18nui.T(ctx, i18nui.KeyAdminNoPermissions)
-		empty.Description = i18nui.T(ctx, i18nui.KeyAdminNoPermissionsDesc)
+		empty.Title = i18nui.AdminNoPermissions.Text(ctx)
+		empty.Description = i18nui.AdminNoPermissionsDesc.Text(ctx)
 	}
 	grid := ui.DataTable(ui.DataTableConfig{
 		Columns:       cols,
 		Rows:          rows,
-		Caption:       i18nui.T(ctx, i18nui.KeyAdminRoles),
+		Caption:       i18nui.AdminRoles.Text(ctx),
 		CaptionHidden: true,
 		// On a phone each permission is a card of role boxes, so no
 		// role hides past the scroll edge.
@@ -118,8 +118,8 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 	})
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminRoles),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminRolesSub),
+			Title:    i18nui.AdminRoles.Text(ctx),
+			Subtitle: i18nui.AdminRolesSub.Text(ctx),
 		}),
 		resultNotice(ctx),
 	}
@@ -135,18 +135,18 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		}
 		parts = append(parts, b.opForm(ctx, opSpec{
 			path: b.cfg.PathPrefix + "/rbac/_permissions", page: page,
-			label: i18nui.T(ctx, i18nui.KeyAdminSavePermissions), variant: ui.ButtonPrimary,
+			label: i18nui.AdminSavePermissions.Text(ctx), variant: ui.ButtonPrimary,
 			body: append(shown, grid),
 			wide: true,
 		}))
 	}
 	if editable {
-		parts = append(parts, ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyAdminAddRole)},
+		parts = append(parts, ui.Section(ui.SectionConfig{Heading: i18nui.AdminAddRole.Text(ctx)},
 			b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
-				label: i18nui.T(ctx, i18nui.KeyAdminGrant), variant: ui.ButtonSecondary,
+				label: i18nui.AdminGrant.Text(ctx), variant: ui.ButtonSecondary,
 				body: []render.HTML{
-					ui.TextField(ui.TextFieldConfig{Name: "role", Label: i18nui.T(ctx, i18nui.KeyAdminNewRole), Required: true}),
+					ui.TextField(ui.TextFieldConfig{Name: "role", Label: i18nui.AdminNewRole.Text(ctx), Required: true}),
 					permissionInput(ctx, caps, ""),
 				},
 			})))
@@ -178,7 +178,7 @@ func holdsWildcard(p *access.RolePolicy, role string) bool {
 // declared capabilities when the app declares them, else free text.
 // suffix keeps each row's field id unique.
 func permissionInput(ctx context.Context, caps []access.Permission, suffix string) render.HTML {
-	label := i18nui.T(ctx, i18nui.KeyAdminPermission)
+	label := i18nui.AdminPermission.Text(ctx)
 	id := "admin-perm"
 	if suffix != "" {
 		id += "-" + suffix
@@ -206,8 +206,8 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 	r := appui.RequestFromContext(ctx)
 	opts, pageNo := listUsersOpts(r)
 	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:    i18nui.T(ctx, i18nui.KeyAdminUserRoles),
-		Subtitle: i18nui.T(ctx, i18nui.KeyAdminUserRolesSub),
+		Title:    i18nui.AdminUserRoles.Text(ctx),
+		Subtitle: i18nui.AdminUserRolesSub.Text(ctx),
 	})
 	users, total, err := b.cfg.Auth.ListUsers(ctx, opts)
 	pages := pageCount(total, opts.Limit)
@@ -220,7 +220,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 	if err != nil {
 		b.logger().Error("admin: list users", "error", err)
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminUsersLoadFailed))))
+			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminUsersLoadFailed.Text(ctx))))
 	}
 	page := b.cfg.PathPrefix + "/rbac/users"
 	if r != nil && r.URL.RawQuery != "" {
@@ -231,9 +231,9 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		known = b.cfg.Policy.Roles()
 	}
 	cols := []ui.Column{
-		{Key: "user", Header: i18nui.T(ctx, i18nui.KeyAdminColUser)},
-		{Key: "roles", Header: i18nui.T(ctx, i18nui.KeyAdminColRoles)},
-		{Key: "set", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end"},
+		{Key: "user", Header: i18nui.AdminColUser.Text(ctx)},
+		{Key: "roles", Header: i18nui.AdminColRoles.Text(ctx)},
+		{Key: "set", Header: i18nui.AdminColActions.Text(ctx), Align: "end"},
 	}
 	rows := make([]ui.Row, len(users))
 	for i, u := range users {
@@ -244,7 +244,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		}
 		held := make([]render.HTML, 0, len(labels))
 		for _, l := range labels {
-			held = append(held, ui.Tag(ui.TagConfig{Label: l}))
+			held = append(held, ui.Tag(ui.TagConfig{Ctx: ctx, Label: l}))
 		}
 		heldCell := ui.Muted(render.Text("—"))
 		if len(held) > 0 {
@@ -254,12 +254,13 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			"user":  render.Text(u.GetEmail()),
 			"roles": heldCell,
 			"set": ui.Dropdown(ui.DropdownConfig{
+				Ctx:   ctx,
 				ID:    "admin-roles-edit-" + u.GetID(),
-				Label: i18nui.T(ctx, i18nui.KeyAdminEditRoles),
+				Label: i18nui.AdminEditRoles.Text(ctx),
 				Align: ui.DropdownEnd,
 				Content: b.opForm(ctx, opSpec{
 					path: b.cfg.PathPrefix + "/rbac/_assign", page: page,
-					label: i18nui.T(ctx, i18nui.KeyAdminSaveRoles), variant: ui.ButtonPrimary,
+					label: i18nui.AdminSaveRoles.Text(ctx), variant: ui.ButtonPrimary,
 					fields:  map[string]string{"user_id": u.GetID()},
 					body:    []render.HTML{rolesInput(ctx, u.GetID(), direct, known)},
 					stacked: true,
@@ -287,12 +288,12 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		ui.DataTable(ui.DataTableConfig{
 			Columns:       cols,
 			Rows:          rows,
-			Caption:       i18nui.T(ctx, i18nui.KeyAdminUserRoles),
+			Caption:       i18nui.AdminUserRoles.Text(ctx),
 			CaptionHidden: true,
 			Responsive:    ui.ResponsiveScroll,
 			Pagination:    pager,
 			Ctx:           ctx,
-			Empty:         ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoUsers), HeadingLevel: 2},
+			Empty:         ui.EmptyStateConfig{Title: i18nui.AdminNoUsers.Text(ctx), HeadingLevel: 2},
 		}),
 	)
 }
@@ -301,7 +302,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 // role with a policy (the user's undeclared roles included, so a save
 // never drops one unseen), comma-separated text without one.
 func rolesInput(ctx context.Context, userID string, direct, known []string) render.HTML {
-	label := i18nui.T(ctx, i18nui.KeyAdminColRoles)
+	label := i18nui.AdminColRoles.Text(ctx)
 	if len(known) == 0 {
 		return ui.TextField(ui.TextFieldConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Value: strings.Join(direct, ", ")})
 	}

@@ -261,7 +261,7 @@ func TestNoTURNNoRefresh(t *testing.T) {
 func TestAuthorizeRefusalReachesSocket(t *testing.T) {
 	s := New(Config{Authorize: func(r *http.Request) (Join, error) {
 		if r.URL.Query().Get("peer") == "gone" {
-			return Join{}, &HTTPError{Status: http.StatusGone, Message: "session ended"}
+			return Join{}, &HTTPError{Status: http.StatusGone, Reason: testReasonSessionEnded}
 		}
 		return Join{}, errors.New("no")
 	}})

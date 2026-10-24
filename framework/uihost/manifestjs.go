@@ -71,6 +71,14 @@ func (ds *UIHost) manifestJS() (body, hash string) {
 			b = append(b, rs...)
 			b = append(b, '\n')
 		}
+		// The locale set of an app that routes by locale prefix: the
+		// runtime reads it to look routes up without the prefix and to
+		// load a document when a link changes the reader's locale.
+		if loc := ds.localesJSON(""); loc != nil {
+			b = append(b, "window.__gofastr_locales="...)
+			b = append(b, loc...)
+			b = append(b, ";\n"...)
+		}
 		ds.manifestBody = string(b)
 		ds.manifestHash = hashStrings(ds.manifestBody)
 	})

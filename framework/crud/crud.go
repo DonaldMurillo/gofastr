@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"uuid"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/stream"
@@ -59,8 +61,11 @@ func IsHookRefusal(err error) bool {
 // the HTTP handler so an orphan row can never be written.
 type tenantMissingError struct{}
 
-func (e *tenantMissingError) Error() string {
-	return "tenant context required for multi-tenant entity"
+func (e *tenantMissingError) Error() string { return reasonTenantRequired.English() }
+
+// Phrased implements i18n.Phrased.
+func (e *tenantMissingError) Phrased() (i18n.Phrase, map[string]any) {
+	return reasonTenantRequired, nil
 }
 
 // DBExecutor is an alias for db.Executor, retained so existing callers keep
@@ -71,7 +76,7 @@ type DBExecutor = db.Executor
 type CrudHandler struct {
 	Entity     *entity.Entity
 	DB         DBExecutor
-	PrimaryKey string             // defaults to "id"
+	PrimaryKey []string           // key columns in order; nil means "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
@@ -150,11 +155,7 @@ type CrudHandler struct {
 // The derived field caches are built here, single-threaded, so the request
 // path never has to fill them (see fieldcache.go).
 func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
-	pk := "id"
-	if ent != nil && ent.PrimaryKey != "" {
-		pk = ent.PrimaryKey
-	}
-	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: pk, JSONCase: CaseCamel, Hooks: nil}
+	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: ent.KeyColumns(), JSONCase: CaseCamel, Hooks: nil}
 	ch.fcache = newFieldCache(ch)
 	ch.seats = newStreamSeatRegistry()
 	return ch
@@ -413,6 +414,13 @@ func (ch *CrudHandler) convertKey(col string) string {
 	return ch.convertKeyRaw(col)
 }
 
+// WireKey is the key a column's value sits under in the rows ListAll,
+// GetOne and the HTTP responses return: its WireName, or the column name
+// in the handler's JSONCase.
+func (ch *CrudHandler) WireKey(col string) string {
+	return ch.convertKey(col)
+}
+
 // convertKeyRaw applies the configured JSON casing to a DB column name,
 // ignoring any WireName override. Used to seed the wire-key map itself
 // (WireName-empty fields) and by callers that explicitly want the derived
@@ -541,13 +549,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// explicit ?offset= beyond maxListOffset is a per-request
 		// deep-skip scan, refused here before any filter or count work
 		// runs.
-		if !ch.requireBoundedOffset(w, q, page, perPage) {
+		if !ch.requireBoundedOffset(w, r, q, page, perPage) {
 			return
 		}
 
 		includes, err := parseIncludeTreeQ(q, ch.Entity, ch.Registry)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
 
@@ -560,7 +568,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		filters, err := filter.ParseFiltersValues(q, ch.snapshotFields(), filterOpts...)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
 			return
 		}
 
@@ -574,7 +582,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// both the count + data queries below.
 		nested, err := parseNestedFiltersValues(q, ch.Entity, ch.Registry)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
 		// Filtering across a relation reads that relation's rows, so its
@@ -585,7 +593,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// in place, and every downstream sink (count, data, cursor, stream)
 		// reads the same slice.
 		if err := ch.scopeNestedFiltersForCaller(r.Context(), nested); err != nil {
-			writeIncludeError(w, "list", err)
+			writeIncludeError(w, r, "list", err)
 			return
 		}
 
@@ -602,7 +610,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// clauses above, a user OR-group can never widen past a scope.
 		treeWheres, err := ch.whereTreeClausesQ(q)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid where: "+err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidWhere)
 			return
 		}
 		searchWheres = append(searchWheres, treeWheres...)
@@ -613,7 +621,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		listPayload := &hook.ListPayload{Request: r}
 		if ch.Hooks != nil {
 			if err := runHooks(ch.Hooks, ctx, hook.BeforeList, listPayload); err != nil {
-				writeJSONError(w, http.StatusBadRequest, err.Error())
+				writeErrJSON(w, r, http.StatusBadRequest, err, i18n.Phrase{})
 				return
 			}
 		}
@@ -633,7 +641,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			// surface refuses it" had an exception reachable by appending one
 			// empty parameter.
 			if _, err := filter.ParseSortValues(q, ch.snapshotFields()); err != nil {
-				writeJSONError(w, http.StatusBadRequest, err.Error())
+				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
 			ch.serveCursorList(ctx, w, r, includes, filters, nested, listPayload.Where)
@@ -642,13 +650,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 
 		sorts, err := filter.ParseSortValues(q, ch.snapshotFields())
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
 
 		cols, err := ch.projectFromRequestQ(q)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
 		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
@@ -669,12 +677,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if explicitStream || perPage >= streamListThreshold {
 			if len(includes) > 0 {
 				if explicitStream {
-					writeJSONError(w, http.StatusBadRequest, "streaming list does not support include; drop ?include= or ?stream=true")
+					writeJSONError(w, r, http.StatusBadRequest, reasonStreamInclude)
 					return
 				}
 			} else if hasAfterList {
 				if explicitStream {
-					writeJSONError(w, http.StatusBadRequest, "streaming list does not support AfterList hooks; drop ?stream=true")
+					writeJSONError(w, r, http.StatusBadRequest, reasonStreamAfterList)
 					return
 				}
 			} else {
@@ -695,7 +703,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		ch.applySoftDeleteFilterCountQ(countQb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
-			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+			ch.Entity.GetTable(), ch.keyCols(), nested,
 		)
 		for _, c := range listPayload.Where {
 			countQb.Where(c.SQL, c.Args...)
@@ -703,7 +711,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		countSQL, countArgs := countQb.Build()
 		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
 			log.Printf("crud: list count failed: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 
@@ -717,7 +725,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		ch.applySoftDeleteFilterQ(qb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
-			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+			ch.Entity.GetTable(), ch.keyCols(), nested,
 		)
 		for _, c := range listPayload.Where {
 			qb.Where(c.SQL, c.Args...)
@@ -740,7 +748,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
 		if err != nil {
 			log.Printf("crud: list query failed: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		defer rows.Close()
@@ -762,15 +770,15 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		if err != nil {
 			log.Printf("crud: list scan failed: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		// This path scans through the keyed/pooled scanners rather than
 		// ch.scanMany, so it decodes its own JSON columns.
-		ch.decodeJSONRows(results)
+		ch.decodeReadRows(results)
 
 		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
-			writeIncludeError(w, "list", err)
+			writeIncludeError(w, r, "list", err)
 			return
 		}
 
@@ -779,7 +787,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			listPayload.Results = results
 			if err := runHooks(ch.Hooks, ctx, hook.AfterList, listPayload); err != nil {
 				log.Printf("crud: after-list hook failed: %v", err)
-				writeJSONError(w, http.StatusInternalServerError, "internal server error")
+				writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
 			results = listPayload.Results
@@ -905,34 +913,35 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		id := r.PathValue("id")
+		id := ch.pathID(r)
 		if id == "" {
-			writeJSONError(w, http.StatusBadRequest, "missing id")
+			writeJSONError(w, r, http.StatusBadRequest, reasonMissingID)
 			return
 		}
 
 		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
 
 		getPayload := &hook.GetPayload{Request: r, ID: id}
 		if ch.Hooks != nil {
 			if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, getPayload); err != nil {
-				writeJSONError(w, http.StatusBadRequest, err.Error())
+				writeErrJSON(w, r, http.StatusBadRequest, err, i18n.Phrase{})
 				return
 			}
 		}
 
 		cols, err := ch.projectFromRequest(r)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
-		qb := query.Select(cols...)
+		qb := query.Select(ch.keyedCols(cols)...)
 		qb.From(ch.Entity.GetTable())
-		qb.Where(ch.PrimaryKey+" = $1", id)
+		kc, ka := ch.keyWhere(id)
+		qb.Where(kc, ka...)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
 		// A row outside the read scope must 404, not 403: the filter lives
@@ -945,21 +954,19 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		}
 
 		sqlStr, args := qb.Build()
-		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-		result, err := ch.scanOne(row, cols)
+		result, err := ch.scanOwn(ctx, id, cols, sqlStr, args)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				writeJSONError(w, http.StatusNotFound, "not found")
+				writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 				return
 			}
 			log.Printf("crud: get query failed: %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 
 		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), []map[string]any{result}, includes); err != nil {
-			writeIncludeError(w, "get", err)
+			writeIncludeError(w, r, "get", err)
 			return
 		}
 
@@ -967,7 +974,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			getPayload.Result = result
 			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {
 				log.Printf("crud: after-get hook failed: %v", err)
-				writeJSONError(w, http.StatusInternalServerError, "internal server error")
+				writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
 			result = getPayload.Result
@@ -996,7 +1003,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		if !ch.requireScope(w, r, opCreate) {
@@ -1012,10 +1019,10 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// them, so compensate now rather than orphan them.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
 			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
 
@@ -1041,7 +1048,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// a caller who can repeat the failure). A successful
 			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, ch.withConstraintFields(err, sent))
+			writeCRUDError(w, r, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1091,15 +1098,15 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {
 			return
 		}
-		id := r.PathValue("id")
+		id := ch.pathID(r)
 		if id == "" {
-			writeJSONError(w, http.StatusBadRequest, "missing id")
+			writeJSONError(w, r, http.StatusBadRequest, reasonMissingID)
 			return
 		}
 
@@ -1108,10 +1115,10 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		if err != nil {
 			ch.deleteSavedUploads(r.Context(), savedFiles)
 			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeJSONError(w, http.StatusBadRequest, err.Error())
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
 
@@ -1134,7 +1141,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			// missing id strands the files unless they are deleted
 			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, ch.withConstraintFields(err, sent))
+			writeCRUDError(w, r, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1182,9 +1189,9 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 		if !ch.requireScope(w, r, opDelete) {
 			return
 		}
-		id := r.PathValue("id")
+		id := ch.pathID(r)
 		if id == "" {
-			writeJSONError(w, http.StatusBadRequest, "missing id")
+			writeJSONError(w, r, http.StatusBadRequest, reasonMissingID)
 			return
 		}
 
@@ -1192,11 +1199,11 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return ch.doDelete(ctx, r, id)
 		})
 		if err != nil {
-			writeCRUDError(w, err)
+			writeCRUDError(w, r, err)
 			return
 		}
 
-		ch.EmitEvent(r.Context(), event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.EmitEvent(r.Context(), event.EntityDeleted, ch.keyPayload(id))
 
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -1211,24 +1218,31 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 //	if errors.As(err, &ve) { ... ve.Fields() ... }
 //
 // The fields map is exposed read-only via Fields; mutating it has no
-// effect on the handler or the wire response.
-type ValidationError struct{ fields map[string][]string }
+// effect on the handler or the wire response. The response renders each
+// violation in the caller's locale under "fields" and its code under
+// "field_reasons".
+type ValidationError struct{ fields map[string][]schema.Violation }
 
 // Error implements the error interface. The string is deliberately
 // generic ("validation failed"); per-field detail lives in Fields().
-func (e *ValidationError) Error() string { return "validation failed" }
+func (e *ValidationError) Error() string { return handler.ReasonValidationFailed.English() }
 
-// Fields returns the per-field validation messages keyed by column name.
+// Fields returns the per-field violations keyed by column name.
 // The returned map is the handler's internal copy; callers MUST treat it
 // as read-only.
-func (e *ValidationError) Fields() map[string][]string { return e.fields }
+func (e *ValidationError) Fields() map[string][]schema.Violation { return e.fields }
 
-// NewValidationError constructs a ValidationError from a field→messages
+// NewValidationError constructs a ValidationError from a field→violations
 // map. Intended for tests and host code that needs to synthesize a
-// validation failure (e.g. from a custom BeforeCreate hook).
-func NewValidationError(fields map[string][]string) *ValidationError {
+// validation failure (e.g. from a custom BeforeCreate hook): define the
+// message once with i18n.Define("validation.<code>", "<English>") and
+// the response translates it like the built-in ones.
+func NewValidationError(fields map[string][]schema.Violation) *ValidationError {
 	return &ValidationError{fields: fields}
 }
+
+// validationFailed heads every validation-shaped refusal.
+var validationFailed = schema.Violation{Reason: handler.ReasonValidationFailed}
 
 // Sentinel errors for CRUD flows.
 var (
@@ -1236,73 +1250,80 @@ var (
 	errNoFieldsToUpdate = errors.New("no fields to update")
 )
 
+// writeFieldsError writes the validation shape: head as "error", the
+// field violations translated under "fields" with their codes under
+// "field_reasons", and any extra keys.
+func writeFieldsError(w http.ResponseWriter, r *http.Request, code int, head schema.Violation, fields map[string][]schema.Violation, extra map[string]any) {
+	messages, codes := handler.ViolationBodies(r.Context(), fields)
+	reason := head.Reason
+	body := map[string]any{
+		"error":         head.Text(r.Context()),
+		"reason":        reason.Code(),
+		"fields":        messages,
+		"field_reasons": codes,
+	}
+	maps.Copy(body, extra)
+	writeErrorBody(w, code, body)
+}
+
 // writeCRUDError maps a CRUD-flow error to the appropriate HTTP response.
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
-func writeCRUDError(w http.ResponseWriter, err error) {
+func writeCRUDError(w http.ResponseWriter, r *http.Request, err error) {
 	// Ahead of the hook arm: a hook that hands back a reentrant move's
 	// refusal fails its write with the conflict, not a 400.
 	if errors.Is(err, ErrReentrantMove) {
-		writeJSONError(w, http.StatusConflict, "conflict")
+		writeJSONError(w, r, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
 		return
 	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
-		writeJSONError(w, http.StatusBadRequest, bhe.Error())
+		// The hook's own wording, or its phrase when it returned one.
+		writeErrJSON(w, r, http.StatusBadRequest, bhe, i18n.Phrase{})
 		return
 	}
 	if ve, ok := errors.AsType[*ValidationError](err); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{
-			"error":   "validation failed",
-			"success": false,
-			"fields":  ve.Fields(),
-		})
+		writeFieldsError(w, r, http.StatusBadRequest, validationFailed, ve.Fields(), nil)
 		return
 	}
 	if se, ok := errors.AsType[*StateError](err); ok {
 		// 422: the body is well-formed, but the state field changes only
 		// through a move. Field errors in the validation shape, so a form
 		// shows the message in place, plus the moves the caller can run.
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		json.NewEncoder(w).Encode(map[string]any{
-			"error":   se.Error(),
-			"success": false,
-			"fields":  map[string][]string{se.Field: {se.Error()}},
-			"moves":   nonNil(se.Moves),
-		})
+		p, params := se.Phrased()
+		v := schema.Violation{Reason: p, Params: params}
+		writeFieldsError(w, r, http.StatusUnprocessableEntity, v,
+			map[string][]schema.Violation{se.Field: {v}},
+			map[string]any{"moves": nonNil(se.Moves)})
 		return
 	}
 	if tce, ok := errors.AsType[*TransitionConflictError](err); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]any{
-			"error":   tce.Error(),
-			"success": false,
+		text, reason := i18n.ErrorText(r.Context(), tce, i18n.Phrase{})
+		writeErrorBody(w, http.StatusConflict, map[string]any{
+			"error":   text,
+			"reason":  reason,
 			"current": tce.Current,
 			"moves":   nonNil(tce.Moves),
 		})
 		return
 	}
 	if tde, ok := errors.AsType[*transitionDeniedError](err); ok {
-		writeJSONError(w, http.StatusForbidden, tde.Error())
+		writeErrJSON(w, r, http.StatusForbidden, tde, i18n.Phrase{})
 		return
 	}
 	if errors.Is(err, ErrUnknownTransition) {
-		writeJSONError(w, http.StatusNotFound, "not found")
+		writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 		return
 	}
 	if tme, ok := errors.AsType[*tenantMissingError](err); ok {
-		writeJSONError(w, http.StatusBadRequest, tme.Error())
+		writeErrJSON(w, r, http.StatusBadRequest, tme, i18n.Phrase{})
 		return
 	}
 	if errors.Is(err, errNotFound) {
-		writeJSONError(w, http.StatusNotFound, "not found")
+		writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 		return
 	}
 	if errors.Is(err, errNoFieldsToUpdate) {
-		writeJSONError(w, http.StatusBadRequest, "no fields to update")
+		writeJSONError(w, r, http.StatusBadRequest, reasonNoFieldsToUpdate)
 		return
 	}
 	if isUniqueViolation(err) {
@@ -1310,7 +1331,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		// distinguish duplicate-key errors from a real server fault.
 		// The driver's text never reaches the body; the declared fields
 		// the caller sent do (conflict_fields.go).
-		writeConflict(w, err, "conflict")
+		writeConflict(w, r, err, i18n.StatusPhrase(http.StatusConflict))
 		return
 	}
 	if isForeignKeyViolation(err) {
@@ -1318,19 +1339,13 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		// other rows still point at, is a state conflict the caller can
 		// resolve, not a server fault. Same no-leak posture as above:
 		// the constraint and table names stay in the server log.
-		writeConflict(w, err, "conflict: the record is referenced by, or references, another record")
+		writeConflict(w, r, err, reasonReferenced)
 		return
 	}
 	if cf, ok := errors.AsType[*constraintFieldsError](err); ok && isNotNullViolation(err) {
 		// A NOT NULL refusal on a declared field is the caller's to
 		// fix: the validation shape, naming it (conflict_fields.go).
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{
-			"error":   "validation failed",
-			"success": false,
-			"fields":  cf.fields,
-		})
+		writeFieldsError(w, r, http.StatusBadRequest, validationFailed, cf.fields, nil)
 		return
 	}
 	// Unrecognised error → 500 with a generic message. Returning
@@ -1341,7 +1356,14 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	// side; the client sees a generic "internal server error" with
 	// the original error remaining matchable via errors.Is in tests.
 	log.Printf("crud: internal error: %v", err)
-	writeJSONError(w, http.StatusInternalServerError, "internal server error")
+	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+}
+
+// writeBatchItemError refuses one batch item: its own message, framed
+// with its index.
+func writeBatchItemError(w http.ResponseWriter, r *http.Request, index int, err error) {
+	detail, _ := i18n.ErrorText(r.Context(), err, i18n.Phrase{})
+	writeJSONError(w, r, http.StatusBadRequest, reasonBatchItem, map[string]any{"index": index, "detail": detail})
 }
 
 // isUniqueViolation reports whether err looks like a UNIQUE-constraint
@@ -1476,7 +1498,7 @@ func (ch *CrudHandler) maxListOffset() int {
 // scan, so both are refused with 400 rather than served as an empty
 // window at full cost. A page within the cap past the last row still
 // returns 200 with no data.
-func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, q url.Values, page, perPage int) bool {
+func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, page, perPage int) bool {
 	offset, ok := explicitOffsetValues(q)
 	if !ok {
 		offset = pagination.OffsetForPage(page, perPage)
@@ -1484,8 +1506,7 @@ func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, q url.Values,
 	if offset <= ch.maxListOffset() {
 		return true
 	}
-	writeJSONError(w, http.StatusBadRequest,
-		fmt.Sprintf("offset %d exceeds the maximum %d", offset, ch.maxListOffset()))
+	writeJSONError(w, r, http.StatusBadRequest, reasonOffsetTooLarge, map[string]any{"offset": offset, "max": ch.maxListOffset()})
 	return false
 }
 
@@ -1673,8 +1694,31 @@ func textIsTrue(s string) bool {
 	return strings.EqualFold(s, "true") || s == "1"
 }
 
-// writeJSONError writes a structured JSON error response.
-func writeJSONError(w http.ResponseWriter, code int, message string) {
+// writeJSONError writes a structured JSON error response: reason
+// translated into r's locale as "error", its code as "reason".
+func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
+	writeErrorBody(w, code, map[string]any{
+		"error":  reason.Text(r.Context(), params...),
+		"reason": reason.Code(),
+	})
+}
+
+// writeErrJSON writes err as a JSON error response. A phrased error in
+// its chain translates; any other error renders inside frame as its
+// {{detail}}, or as written (an app hook's own wording) when frame is
+// zero. See i18n.ErrorText.
+func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, frame i18n.Phrase) {
+	text, reason := i18n.ErrorText(r.Context(), err, frame)
+	body := map[string]any{"error": text}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	writeErrorBody(w, code, body)
+}
+
+// writeErrorBody adds the envelope every crud error shares to body and
+// writes it.
+func writeErrorBody(w http.ResponseWriter, code int, body map[string]any) {
 	// Every crud JSON error shares this choke point; the error arms of
 	// scoped data surfaces are no-store exactly like their 2xx arms
 	// (the handler-top stamp covers them when reached through a handler;
@@ -1682,11 +1726,9 @@ func writeJSONError(w http.ResponseWriter, code int, message string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]any{
-		"error":   message,
-		"success": false,
-		"code":    code,
-	})
+	body["success"] = false
+	body["code"] = code
+	json.NewEncoder(w).Encode(body)
 }
 
 // generateFieldValue creates a value based on the auto-generation strategy.

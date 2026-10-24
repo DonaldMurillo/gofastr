@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // guardLoopback refuses a request that a page on another site could have
@@ -30,11 +32,11 @@ import (
 //     Origin rather than a requirement for it.
 func guardLoopback(w http.ResponseWriter, r *http.Request) bool {
 	if !loopbackHost(r.Host) {
-		http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, reasonNonLoopbackHost)
 		return true
 	}
 	if origin := r.Header.Get("Origin"); origin != "" && !originMatchesHost(origin, r.Host) {
-		http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonOriginRefused)
 		return true
 	}
 	return false

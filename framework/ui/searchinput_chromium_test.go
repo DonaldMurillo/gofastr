@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // Hard rule 9: which box the focus ring paints is layout, invisible to

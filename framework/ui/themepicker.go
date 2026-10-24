@@ -6,16 +6,20 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ThemePicker ────────────────────────────────────────────────────
 
-// ThemeChoice is one theme a ThemePicker offers: the option's label
-// and the override registered with style.RegisterThemeOverride.
+// ThemeChoice is one theme a ThemePicker offers: the option's label,
+// drawn in the request's language, and the override registered with
+// style.RegisterThemeOverride. A choice is usually declared once at
+// package level beside its theme, so the label is a phrase rather than
+// text resolved for one request.
 type ThemeChoice struct {
-	Label string
+	Label i18n.Phrase
 	Theme style.ThemeRef
 }
 
@@ -63,7 +67,7 @@ type ThemePickerConfig struct {
 //	var Brutal = style.RegisterThemeOverride(brutalTheme)
 //
 //	ui.ThemePicker(ui.ThemePickerConfig{
-//	    Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: Brutal}},
+//	    Themes: []ui.ThemeChoice{{Label: brutalName, Theme: Brutal}},
 //	})
 func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	ctx := cfg.Ctx
@@ -72,7 +76,7 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	}
 	defaultLabel := cfg.DefaultLabel
 	if defaultLabel == "" {
-		defaultLabel = i18nui.T(ctx, i18nui.KeyThemeDefault)
+		defaultLabel = i18nui.ThemeDefault.Text(ctx)
 	}
 
 	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
@@ -87,7 +91,7 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	rootAttrs["class"] = strings.TrimSpace("fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class)
 	rootAttrs["data-hui-theme-picker"] = ""
 	rootAttrs["role"] = "radiogroup"
-	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemePicker)
+	rootAttrs["aria-label"] = i18nui.ThemePicker.Text(ctx)
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
 	}
@@ -113,7 +117,7 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	opts := make([]render.HTML, 0, len(cfg.Themes)+1)
 	opts = append(opts, option(defaultLabel, ""))
 	for _, c := range cfg.Themes {
-		opts = append(opts, option(c.Label, c.Theme.Class()))
+		opts = append(opts, option(c.Label.Text(ctx), c.Theme.Class()))
 	}
 	return themeToggleStyle.WrapHTML(render.Tag("div", rootAttrs, opts...))
 }

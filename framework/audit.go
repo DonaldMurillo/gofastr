@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -10,13 +11,16 @@ import (
 	"maps"
 	"net/http"
 
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -59,6 +63,8 @@ type AuditConfig struct {
 	// too. If the callback returns a map with no `id` key the framework
 	// falls back to the original, silently erasing the record_id is
 	// an audit-forensics erasure primitive we don't want to expose.
+	// With Redact nil, a key column the default scrub treats as
+	// sensitive is stored as "sha256:<hex>" of the id instead.
 	//
 	// Returning nil is equivalent to returning an empty map. A panic
 	// inside Redact is recovered: the audit row is still written using
@@ -164,6 +170,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 	}
 	a.auditTable = table
 	a.auditActor = cfg.actor
+	a.auditCfg = &cfg
 
 	want := map[string]bool{}
 	for _, name := range cfg.Entities {
@@ -184,7 +191,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			continue
 		}
 		ent := ent
-		pk := "id"
+		key := auditKeyOf(a.Registry, name)
 		hr := a.HookRegistry(name)
 
 		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
@@ -194,7 +201,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				// audit row keyed on a zero row (silent forensics gap).
 				return fmt.Errorf("audit: AfterCreate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, pk)
+			id := recordIDOf(ctx, ent.GetName(), row, key)
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			// crud.UpsertOne fires AfterCreate for both arms; an override
@@ -204,14 +211,14 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
 				op = auditOp(sanitizeAuditField(o))
 			}
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, cfg.keyID(key, id), cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, ok := data.(map[string]any)
 			if !ok {
 				return fmt.Errorf("audit: AfterUpdate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, pk)
+			id := recordIDOf(ctx, ent.GetName(), row, key)
 			redactedNew := cfg.applyRedact(ent.GetName(), row)
 			var redactedOld map[string]any
 			var originalOld map[string]any
@@ -229,14 +236,14 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
 				op = auditOp(sanitizeAuditField(o))
 			}
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, cfg.keyID(key, id), cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			originalID, ok := data.(string)
 			if !ok {
 				return fmt.Errorf("audit: AfterDelete payload type = %T, want string (framework contract drift?)", data)
 			}
-			recordID := originalID
+			recordID := cfg.keyID(key, originalID)
 			// Let Redact substitute the natural-key record_id for
 			// PHI-bearing tables. Input shape mirrors what the doc
 			// describes: a one-key map the host can transform.
@@ -249,9 +256,8 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if cfg.Redact != nil {
 				redacted := cfg.applyRedact(ent.GetName(), map[string]any{"id": originalID})
 				if v, ok := redacted["id"]; ok {
-					recordID = fmt.Sprintf("%v", v)
+					recordID = sanitizeAuditField(fmt.Sprintf("%v", v))
 				}
-				// else: keep recordID = originalID
 			}
 			// Snapshot the deleted row's pre-image (if doDelete
 			// captured one) so the audit row records WHAT was
@@ -277,6 +283,91 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		})
 	}
 	return a
+}
+
+// auditKey is how the audit hooks find an entity's record id: its key
+// columns and, per registered version, the wire key each one travels
+// under (wires[v][i] names cols[i]) and every wire key that version's
+// rows carry (fields[v]). The hooks are keyed by name, so every
+// version's rows reach them.
+type auditKey struct {
+	cols   []string
+	wires  [][]string
+	fields []map[string]bool
+}
+
+// versionKey is one entity version's auditKey.
+func versionKey(ent *entity.Entity) auditKey {
+	cols := ent.KeyColumns()
+	names := make([]string, len(cols))
+	for i, c := range cols {
+		names[i] = wireKeyOf(ent, c)
+	}
+	fields := map[string]bool{}
+	for _, f := range ent.GetFields() {
+		fields[wireKeyOf(ent, f.Name)] = true
+	}
+	return auditKey{cols: cols, wires: [][]string{names}, fields: []map[string]bool{fields}}
+}
+
+// auditKeyOf collects name's key across every registered version.
+func auditKeyOf(reg *Registry, name string) auditKey {
+	var k auditKey
+	for _, e := range reg.AllSorted() {
+		if e.GetName() != name {
+			continue
+		}
+		v := versionKey(e)
+		if k.cols == nil {
+			k.cols = v.cols
+		}
+		k.wires = append(k.wires, v.wires...)
+		k.fields = append(k.fields, v.fields...)
+	}
+	return k
+}
+
+// sensitive reports whether any key column, under its own name or any
+// version's wire key, is one the default scrub drops from the diff.
+func (k auditKey) sensitive() bool {
+	for i, col := range k.cols {
+		if isDefaultSensitiveField(col) {
+			return true
+		}
+		for _, names := range k.wires {
+			if i < len(names) && isDefaultSensitiveField(names[i]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// keyID is the record_id an audit row stores for a record's id, control
+// bytes stripped. With no Redact, a key the default scrub treats as
+// sensitive (an api_key, a token) is stored as its SHA-256: the record's
+// history still lines up and the secret stays out of it. A host that
+// sets Redact owns redaction, and its delete hook may remap the id.
+func (c AuditConfig) keyID(k auditKey, id string) string {
+	id = sanitizeAuditField(id)
+	if c.Redact != nil || id == "" || !k.sensitive() {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// AuditDigestID reports whether recordID is the "sha256:<hex>" digest
+// WithAuditLog stores in place of a sensitive key (see AuditConfig.Redact).
+// A digest names no live record: a reader that looks it up as a record
+// id can only reach a record whose own id is that digest string.
+func AuditDigestID(recordID string) bool {
+	hexPart, ok := strings.CutPrefix(recordID, "sha256:")
+	if !ok || len(hexPart) != 2*sha256.Size {
+		return false
+	}
+	_, err := hex.DecodeString(hexPart)
+	return err == nil
 }
 
 // actor returns the resolved actor id, recovering from any panic in the
@@ -552,20 +643,74 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 	return out
 }
 
-func stringifyPK(row map[string]any, pk string) string {
+// recordIDOf is the record id an After hook names: the id the crud
+// handler read from its own key columns when it ran the hook, else the
+// one stringifyPK reads from the row (a hook chain run outside crud).
+func recordIDOf(ctx context.Context, entity string, row map[string]any, k auditKey) string {
+	if id, ok := crud.AuditRecordIDFor(ctx, entity); ok {
+		return id
+	}
+	return stringifyPK(row, k)
+}
+
+// stringifyPK is the audit row's record id: the record's key columns,
+// read under one version's wire keys or as named, joined as the
+// framework's id. The row does not say which version wrote it, and one
+// version's key alias can be another's ordinary field, so the versions
+// are tried in order of how many of the row's keys each one names.
+func stringifyPK(row map[string]any, k auditKey) string {
 	if row == nil {
 		return ""
 	}
-	if v, ok := row[pk]; ok {
-		return fmt.Sprintf("%v", v)
+	order := make([]int, len(k.wires))
+	score := make([]int, len(k.wires))
+	for v := range k.wires {
+		order[v] = v
+		if v < len(k.fields) {
+			for key := range row {
+				if k.fields[v][key] {
+					score[v]++
+				}
+			}
+		}
 	}
-	// Case-insensitive fallback: handlers may return camelCase keys.
-	for k, v := range row {
-		if k == pk || k == "id" || k == "ID" {
-			return fmt.Sprintf("%v", v)
+	slices.SortStableFunc(order, func(a, b int) int { return score[b] - score[a] })
+	for _, v := range order {
+		names := k.wires[v]
+		wire := map[string]string{}
+		for i, c := range k.cols {
+			if i < len(names) {
+				wire[c] = names[i]
+			}
+		}
+		if id, ok := entity.RowKey(row, k.cols, func(c string) string { return wire[c] }); ok {
+			return id
+		}
+	}
+	if id, ok := entity.RowKey(row, k.cols, func(c string) string { return c }); ok {
+		return id
+	}
+	if len(k.cols) == 1 {
+		for _, key := range []string{"id", "ID"} {
+			if v, ok := row[key]; ok {
+				return fmt.Sprintf("%v", v)
+			}
 		}
 	}
 	return ""
+}
+
+// wireKeyOf is the key a hook row carries for one of ent's columns: the
+// field's WireName when it sets one, else the camelCase form. A
+// CaseSnake app's rows carry the column itself, which stringifyPK tries
+// next.
+func wireKeyOf(ent *entity.Entity, col string) string {
+	for _, f := range ent.GetFields() {
+		if f.Name == col && f.WireName != "" {
+			return f.WireName
+		}
+	}
+	return casing.ToCamel(col)
 }
 
 func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditOp, recordID, actor string, diff []byte) error {

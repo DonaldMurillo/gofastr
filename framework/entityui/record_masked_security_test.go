@@ -134,7 +134,7 @@ func storedToken(t *testing.T, x *testUI) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cell(rowValue(row, "token"))
+	return cell((&meta{}).rowValue(row, "token"))
 }
 
 // Saving the record form with a hook-masked text field leaves the
@@ -161,7 +161,7 @@ func TestMaskedTextSurvivesUnrelatedSave(t *testing.T) {
 	if got := storedToken(t, x); got != "tok-secret" {
 		t.Fatalf("SECURITY: an unrelated save rewrote the masked field to %q", got)
 	}
-	if !strings.Contains(body, i18nui.Defaults[i18nui.KeyEntitySet]) {
+	if !strings.Contains(body, i18nui.EntitySet.English()) {
 		t.Fatalf("a set masked field says so:\n%s", body)
 	}
 }

@@ -99,11 +99,11 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = "Active filters"
+		label = i18nui.FilterChipBarLabel.Text(ctx)
 	}
 	clearLabel := cfg.ClearAllLabel
 	if clearLabel == "" {
-		clearLabel = i18nui.T(ctx, i18nui.KeyFilterClearAll)
+		clearLabel = i18nui.FilterClearAll.Text(ctx)
 	}
 
 	cls := "fui-filter-bar"
@@ -146,10 +146,11 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		// Every chip is built from FilterChip's strings, so the whole
 		// Tag is the component's own.
 		items = append(items, headless.Own(Tag(TagConfig{
+			Ctx:           ctx,
 			Label:         f.Label,
 			Variant:       f.Variant,
 			Dismiss:       f.DismissPath,
-			DismissLabel:  i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": f.Label}),
+			DismissLabel:  i18nui.FilterChipRemove.Text(ctx, map[string]any{"label": f.Label}),
 			Island:        headless.Island{Endpoint: f.DismissPath, Signal: signal},
 			DismissMethod: "POST",
 			DismissBody:   f.DismissBody,

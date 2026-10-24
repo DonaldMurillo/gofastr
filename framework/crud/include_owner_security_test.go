@@ -189,7 +189,7 @@ CREATE TABLE rf_users (
 		},
 		func(c *entity.EntityConfig) {
 			c.Relations = []entity.Relation{
-				{Name: "author", Type: entity.RelManyToOne, Entity: "rf_users", ForeignKey: "author_id"},
+				{Name: "author", Type: entity.RelManyToOne, Entity: "rf_users", ForeignKey: []string{"author_id"}},
 			}
 		},
 	)
@@ -278,7 +278,7 @@ CREATE TABLE ur_users (
 		},
 		func(c *entity.EntityConfig) {
 			c.Relations = []entity.Relation{
-				{Name: "author", Type: entity.RelManyToOne, Entity: "ur_users", ForeignKey: "author_id"},
+				{Name: "author", Type: entity.RelManyToOne, Entity: "ur_users", ForeignKey: []string{"author_id"}},
 			}
 		},
 	)
@@ -369,7 +369,7 @@ CREATE TABLE nt_user_rows (
 			c.Relations = []entity.Relation{
 				// Entity names the registered NAME ("nt_users"); the rows
 				// live in table "nt_user_rows".
-				{Name: "author", Type: entity.RelManyToOne, Entity: "nt_users", ForeignKey: "author_id"},
+				{Name: "author", Type: entity.RelManyToOne, Entity: "nt_users", ForeignKey: []string{"author_id"}},
 			}
 		},
 	)
@@ -487,7 +487,7 @@ CREATE TABLE nl_users (
 		},
 		func(c *entity.EntityConfig) {
 			c.Relations = []entity.Relation{
-				{Name: "author", Type: entity.RelManyToOne, Entity: "nl_users", ForeignKey: "author_id"},
+				{Name: "author", Type: entity.RelManyToOne, Entity: "nl_users", ForeignKey: []string{"author_id"}},
 			}
 		},
 	)

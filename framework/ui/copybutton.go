@@ -132,15 +132,15 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyCopyCopy)
+		label = i18nui.CopyCopy.Text(ctx)
 	}
 	copied := cfg.CopiedLabel
 	if copied == "" {
-		copied = i18nui.T(ctx, i18nui.KeyCopyCopied)
+		copied = i18nui.CopyCopied.Text(ctx)
 	}
 	announce := cfg.AnnounceText
 	if announce == "" {
-		announce = i18nui.T(ctx, i18nui.KeyCopyCopied)
+		announce = i18nui.CopyCopied.Text(ctx)
 	}
 
 	cls := "fui-copy-btn"
@@ -171,7 +171,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		}
 		title := cfg.ToastTitle
 		if title == "" {
-			title = i18nui.T(ctx, i18nui.KeyCopyCopied)
+			title = i18nui.CopyCopied.Text(ctx)
 		}
 		ttl := cfg.ToastTTLms
 		if ttl <= 0 {
@@ -194,7 +194,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.IconOnly {
 		al := cfg.AriaLabel
 		if al == "" {
-			al = i18nui.T(ctx, i18nui.KeyCopyToClipboard)
+			al = i18nui.CopyToClipboard.Text(ctx)
 		}
 		btnAttrs["aria-label"] = al
 	} else if cfg.AriaLabel != "" {

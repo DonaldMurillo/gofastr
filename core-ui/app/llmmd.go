@@ -174,10 +174,12 @@ type ScreenLLMMDResult struct {
 // registered pattern and emits a placeholder for ScreenLoader screens,
 // this builds the same per-request instance the page render uses
 // (SetParams → DI → Load) so the document carries the loaded title and
-// rendered content. ok is false when the path resolves to no screen, or
-// a route resolver or Load answers ErrNotFound for it; any other
-// resolver, DI or Load failure falls back to the pattern-level doc rather than
-// erroring (llm.md is documentation, a degraded doc beats a 500).
+// rendered content. ok is false when the path resolves to no screen or
+// its page answers 404: a route resolver or Load answering ErrNotFound
+// (Load swallowing the resolver's error included), or an outlet nothing
+// fills (FallbackNotFound). Any other resolver, DI or Load failure falls
+// back to the pattern-level doc rather than erroring (llm.md is
+// documentation, a degraded doc beats a 500).
 func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDResult, bool) {
 	screen, params, found := a.Router.Resolve(path)
 	if !found {
@@ -187,12 +189,18 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	// The page render's order: the match and the route resolvers come
 	// first, so a Load that reads a resolver (a catch-all route that
 	// resolves its slug) loads here too, and a guard may read one.
-	if _, ok := MatchFromContext(ctx); !ok {
+	// A match for another path (route middleware matched the /llm.md
+	// URL, which a catch-all also matches) would hand this page's
+	// resolvers the wrong params ("foo/llm.md" for "foo"): replace it.
+	if m, ok := MatchFromContext(ctx); !ok || m.path != decodeRouteSeg(path) {
 		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
 	}
 	ctx = withResolverState(ctx, screen)
 	runEagerResolvers(ctx, screen)
-	resolveErr := resolverPageError(ctx, path)
+	var chain []LayoutLayer
+	if screen.Type == ScreenPage {
+		chain = resolveChainKeys(a.Router.layoutChainFor(screen), params)
+	}
 
 	// Evaluate the policy chain BEFORE building the instance, this
 	// function runs Load, so skipping the chain would leak loaded content
@@ -201,16 +209,24 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	// but a plain Allow degrades to the metadata-free withheld doc: the
 	// pattern doc is NOT safe here, its title/description/content are
 	// component-supplied, which the policy protects too.
-	if ResolvePolicy(ctx, screen).Kind != DecisionAllow {
+	decision := ResolvePolicy(ctx, screen)
+	// A resolver that names no such page (an unknown slug), read eagerly
+	// or by a guard, is no screen, as the page render answers 404; any
+	// other resolver failure degrades to the pattern doc like a failed
+	// Load, once the policy allows it.
+	resolveErr := resolverPageError(ctx, path)
+	if errors.Is(resolveErr, ErrNotFound) {
+		return ScreenLLMMDResult{}, false
+	}
+	if decision.Kind != DecisionAllow {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen)}, true
 	}
-	// A resolver that names no such page (an unknown slug) is no screen,
-	// as the page render answers 404; any other resolver failure
-	// degrades to the pattern doc like a failed Load.
+	// A region guard that redirects moves the whole page.
+	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	if guardRedirect.Kind == DecisionRedirect {
+		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen)}, true
+	}
 	if resolveErr != nil {
-		if errors.Is(resolveErr, ErrNotFound) {
-			return ScreenLLMMDResult{}, false
-		}
 		return ScreenLLMMDResult{MD: ScreenLLMMD(screen), Title: screen.Title, Allowed: true}, true
 	}
 
@@ -221,9 +237,13 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 		}
 	}
 	loaded := true
-	if err := a.Inject(comp); err != nil {
+	// The page render's DI contract (injectComponent): a value component
+	// is the stateless form and skips DI, so it renders per URL like a
+	// pointer one instead of falling back to the pattern doc.
+	if err := a.injectComponent(comp, path); err != nil {
 		loaded = false
 	}
+	ctx = withResolvePhase(ctx, resolvePhaseLoad)
 	if loaded {
 		if loader, ok := comp.(ScreenLoader); ok {
 			if err := safeScreenLoad(loader, ctx); err != nil {
@@ -236,13 +256,21 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 			}
 		}
 	}
+	// A resolver the Load read decides the outcome even when Load
+	// swallowed its error, as on the page render.
+	if pe := resolverPageError(ctx, path); pe != nil {
+		if errors.Is(pe, ErrNotFound) {
+			return ScreenLLMMDResult{}, false
+		}
+		loaded = false
+	}
 	if !loaded {
 		return ScreenLLMMDResult{MD: ScreenLLMMD(screen), Title: screen.Title, Allowed: true}, true
 	}
 
 	title := screen.Title
 	if t, ok := comp.(ScreenTitler); ok {
-		if tt := safeScreenTitle(t); tt != "" {
+		if tt := safeScreenTitle(ctx, t); tt != "" {
 			title = tt
 		}
 	}
@@ -256,7 +284,15 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 
 	b.WriteString("---\n\n")
 	b.WriteString("## Page Content\n\n")
+	// Below the screen, resolvers read in the region phase, as on the
+	// page render: the screen first, then its outlets.
+	ctx = withResolvePhase(ctx, resolvePhaseRegion)
 	content, err := component.SafeRenderCtx(ctx, comp)
+	// An outlet nothing fills (FallbackNotFound) makes the page the
+	// not-found page: no doc.
+	if fills := a.resolveFills(ctx, path, params, screen, chain, false, guards); fills != nil && fills.notFoundOutlet {
+		return ScreenLLMMDResult{}, false
+	}
 	if err != nil {
 		// The path is request-derived and the error carries panicked-on
 		// component state: scrub both so neither can forge a log line.
@@ -398,7 +434,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 			if desc == "" {
 				desc = "—"
 			}
-			fmt.Fprintf(&b, "| [%s](%s) | %s | %s | %s |\n", mdLinkText(r.Path), mdLinkDest(r.Path+"/llm.md"), mdTableCell(r.Title), screen.Type.String(), mdTableCell(desc))
+			fmt.Fprintf(&b, "| [%s](%s) | %s | %s | %s |\n", mdLinkText(r.Path), mdLinkDest(pageLLMMDLink(r.Path)), mdTableCell(r.Title), screen.Type.String(), mdTableCell(desc))
 		}
 		b.WriteString("\n")
 	}

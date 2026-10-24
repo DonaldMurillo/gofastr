@@ -10,7 +10,7 @@ import (
 
 // sidePanel is a side panel that draws the record's number.
 func sidePanel(seen *Record) SidePanel {
-	return SidePanel{Key: "billing", Title: "Billing contact", Build: func(rc RecordContext) (component.Component, error) {
+	return SidePanel{Key: "billing", Title: testPhrase("Billing contact"), Build: func(rc RecordContext) (component.Component, error) {
 		*seen = rc.Record
 		return staticComp("<p>panel for " + rc.Record.ID + "</p>"), nil
 	}}
@@ -34,7 +34,7 @@ func TestRecordSidePanelDraws(t *testing.T) {
 		t.Fatalf("the panel saw %+v", seen)
 	}
 	// It sits in the frame's side column, after the record's details.
-	side := body[strings.Index(body, i18nui.Defaults[i18nui.KeyEntityDetails]):]
+	side := body[strings.Index(body, i18nui.EntityDetails.English()):]
 	if !strings.Contains(side, "panel for inv-1") {
 		t.Fatalf("the panel is not after the details:\n%s", body)
 	}
@@ -63,13 +63,13 @@ func TestRecordSidePanelNotOnCreate(t *testing.T) {
 // the page and the form renders on.
 func TestRecordPanickingSidePanelFailsPanelOnly(t *testing.T) {
 	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), Extensions{Entities: map[string]Extension{
-		"invoices": {Side: []SidePanel{{Key: "boom", Title: "Boom", Build: func(RecordContext) (component.Component, error) {
+		"invoices": {Side: []SidePanel{{Key: "boom", Title: testPhrase("Boom"), Build: func(RecordContext) (component.Component, error) {
 			panic("kaboom")
 		}}}},
 	}}, withAPI(map[string]string{"invoices": "/api/invoices"}))
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").
 		RenderCtx(x.userCtx("/rec/invoices/inv-1", "", "u1")))
-	want := strings.ReplaceAll(i18nui.Defaults[i18nui.KeyEntitySlotFailed], "'", "&#39;")
+	want := strings.ReplaceAll(i18nui.EntitySlotFailed.English(), "'", "&#39;")
 	if !strings.Contains(body, want) {
 		t.Fatalf("the panel shows the slot message:\n%s", body)
 	}

@@ -49,6 +49,7 @@ func builtinKind(name string) Kind {
 	case "markdown", "code":
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.TextArea(ui.TextAreaConfig{
+				Ctx:  ic.Ctx,
 				Name: ic.Name, Label: ic.Label, ID: ic.Control.ID, Value: ic.Value,
 				Rows: 8, Placeholder: ic.Placeholder, Help: ic.Help, Monospace: true,
 				Required:  ic.Control.Required,
@@ -71,7 +72,7 @@ func moneyInput(ic InputContext) render.HTML {
 		Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 		Input: func(c headless.FieldControl) render.HTML {
 			return ui.InputGroup(ui.InputGroupConfig{
-				Prepend: render.Text(i18nui.T(ic.Ctx, i18nui.KeyEntityCurrency)),
+				Prepend: render.Text(i18nui.EntityCurrency.Text(ic.Ctx)),
 				Input: ui.Control(ui.ControlConfig{
 					Field: c, Type: "number", Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
 					Min: bound(ic.Field.Min), Max: bound(ic.Field.Max), Step: step,
@@ -94,7 +95,7 @@ func bound(b *float64) string {
 // title for a relation, a formatted date or number otherwise. The row
 // is the hooked read: whatever a redaction shows is what shows here.
 func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[string]any) render.HTML {
-	v := rowValue(row, f.Name)
+	v := fb.m.rowValue(row, f.Name)
 	switch f.Type {
 	case schema.Enum:
 		if s := cell(v); s != "" {
@@ -104,29 +105,29 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		switch t := v.(type) {
 		case bool:
 			if t {
-				return render.Text(i18nui.T(ctx, i18nui.KeyEntityYes))
+				return render.Text(i18nui.EntityYes.Text(ctx))
 			}
-			return render.Text(i18nui.T(ctx, i18nui.KeyEntityNo))
+			return render.Text(i18nui.EntityNo.Text(ctx))
 		case nil:
 			return muted()
 		default:
 			return render.Text(boolText(t))
 		}
 	case schema.Date:
-		if s := formatDate(v, dateLayout); s != "" {
+		if s := formatDate(ctx, v, false); s != "" {
 			return render.Text(s)
 		}
 	case schema.Timestamp:
-		if s := formatDate(v, timestampLayout); s != "" {
+		if s := formatDate(ctx, v, true); s != "" {
 			return render.Text(s)
 		}
-	case schema.Decimal:
+	case schema.Decimal, schema.Float:
 		if s := cell(v); s != "" {
-			return render.Text(decimal(s))
+			return render.Text(decimal(ctx, s))
 		}
-	case schema.Float, schema.Int:
+	case schema.Int:
 		if s := cell(v); s != "" {
-			return render.Text(s)
+			return render.Text(integer(ctx, s))
 		}
 	case schema.Relation:
 		return fb.relationDisplay(ctx, f, v)
@@ -137,7 +138,7 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		return muted()
 	case schema.JSON:
 		if s := cell(v); s != "" {
-			return ui.JSONViewer(ui.JSONViewerConfig{Value: s, OpenDepth: 1})
+			return ui.JSONViewer(ui.JSONViewerConfig{Ctx: ctx, Value: s, OpenDepth: 1})
 		}
 	default:
 		if s := cell(v); s != "" {

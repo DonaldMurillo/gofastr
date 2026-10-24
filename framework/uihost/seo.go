@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // ─── Sitemap ───────────────────────────────────────────────────────
@@ -83,9 +85,9 @@ func WithRobots(cfg RobotsConfig) Option {
 
 // ─── Internals ─────────────────────────────────────────────────────
 
-func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
+func (ds *UIHost) handleSitemap(w http.ResponseWriter, r *http.Request) {
 	doc, ok := ds.SitemapXML("")
-	serveSeoDoc(w, "application/xml; charset=utf-8", "sitemap not configured", doc, ok)
+	serveSeoDoc(w, r, "application/xml; charset=utf-8", reasonSitemapNotConfigured, doc, ok)
 }
 
 // serveSeoDoc is the shared handler body behind handleSitemap and
@@ -93,9 +95,9 @@ func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
 // in content type, not-configured message, and the document builder they
 // call: 404 with that message when the doc is unconfigured, otherwise the
 // doc bytes under contentType.
-func serveSeoDoc(w http.ResponseWriter, contentType, notConfigured, doc string, ok bool) {
+func serveSeoDoc(w http.ResponseWriter, r *http.Request, contentType string, notConfigured i18n.Phrase, doc string, ok bool) {
 	if !ok {
-		http.Error(w, notConfigured, http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, notConfigured)
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
@@ -120,7 +122,11 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	if ds.pathLocales != nil {
+		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
+	} else {
+		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	}
 
 	for _, route := range ds.App.Routes() {
 		if route.RedirectTo != "" {
@@ -132,6 +138,22 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 		paths := expandRouteForSitemap(ds.App, route.Path)
 		for _, p := range paths {
 			if !ds.sitemapPublic(p) {
+				continue
+			}
+			if ds.pathLocales != nil {
+				// One entry per locale, each naming every alternate, the
+				// way the protocol's xhtml:link extension asks.
+				links := localeLinks(*ds.pathLocales, base, p)
+				for _, l := range links[:len(links)-1] {
+					b.WriteString("  <url>\n")
+					fmt.Fprintf(&b, "    <loc>%s</loc>\n", stdhtml.EscapeString(l.URL))
+					fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
+					for _, alt := range links {
+						fmt.Fprintf(&b, "    <xhtml:link rel=\"alternate\" hreflang=\"%s\" href=\"%s\"/>\n",
+							stdhtml.EscapeString(alt.Lang), stdhtml.EscapeString(urlsafe.CleanAnchor(alt.URL)))
+					}
+					b.WriteString("  </url>\n")
+				}
 				continue
 			}
 			b.WriteString("  <url>\n")
@@ -184,9 +206,30 @@ func (ds *UIHost) sitemapPublic(p string) bool {
 	return true
 }
 
-func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
+func (ds *UIHost) handleRobots(w http.ResponseWriter, r *http.Request) {
 	doc, ok := ds.RobotsTXT("")
-	serveSeoDoc(w, "text/plain; charset=utf-8", "robots not configured", doc, ok)
+	serveSeoDoc(w, r, "text/plain; charset=utf-8", reasonRobotsNotConfigured, doc, ok)
+}
+
+// robotsPaths returns the Allow or Disallow prefixes as robots.txt
+// lists them. With path locales each locale serves the app's paths
+// under its prefix, so a rule for /app holds for /es/app too; "/"
+// already covers every prefix.
+func (ds *UIHost) robotsPaths(paths []string) []string {
+	if ds.pathLocales == nil {
+		return paths
+	}
+	var out []string
+	for _, p := range paths {
+		out = append(out, p)
+		if p == "/" || !strings.HasPrefix(p, "/") {
+			continue
+		}
+		for _, tag := range ds.pathLocales.Prefixed {
+			out = append(out, ds.pathLocales.Path(tag, p))
+		}
+	}
+	return out
 }
 
 // RobotsTXT builds the robots.txt document WithRobots configured. Like
@@ -194,7 +237,9 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 // exporter. basePath only affects the derived Sitemap: URL (Allow/
 // Disallow prefixes are emitted as authored: they are the app's own
 // route prefixes, and a subpath deploy that needs them prefixed should
-// author them that way). ok is false when WithRobots was not configured.
+// author them that way). With path locales each prefix is repeated
+// under every non-default locale. ok is false when WithRobots was not
+// configured.
 func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 	if ds.robotsConfig == nil {
 		return "", false
@@ -222,10 +267,10 @@ func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 		// Open default, explicit so it's obvious the file isn't empty.
 		b.WriteString("Allow: /\n")
 	}
-	for _, p := range cfg.Allow {
+	for _, p := range ds.robotsPaths(cfg.Allow) {
 		fmt.Fprintf(&b, "Allow: %s\n", p)
 	}
-	for _, p := range cfg.Disallow {
+	for _, p := range ds.robotsPaths(cfg.Disallow) {
 		fmt.Fprintf(&b, "Disallow: %s\n", p)
 	}
 	if cfg.CrawlDelay > 0 {

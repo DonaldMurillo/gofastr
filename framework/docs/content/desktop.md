@@ -3,13 +3,15 @@
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
 macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.
+It also works in CGO-enabled applications: those builds use Go's standard
+runtime support while the desktop bindings remain Go and assembly.
 The web rendering path is
 reused untouched: the same `framework/ui` screens, the same SSR +
 island model, the same `main.go` wiring minus `app.Start`.
 
 **EXPERIMENTAL.** This battery is a proof of concept: the capability
 set, the `Shell`/`Window` contracts, and the generated bridge may
-change or be removed without a deprecation window. Pin a version if you
+change or be removed without an upgrade note. Pin a version if you
 depend on it. Native shells ship for darwin/arm64 (AppKit + WKWebView)
 windows/amd64 (Win32 + WebView2), and linux/amd64 or linux/arm64
 (GTK 3 + WebKitGTK 4.1); other targets get a named
@@ -229,7 +231,9 @@ A method with a `Permission` ("resource:verb") is gated. The
 `deny` persist across restarts. A miss hops to the UI thread and shows
 the OS alert with Allow, Allow once, and Deny; only the first and the
 last persist (so a page cannot re-prompt in a loop, and deny is
-sticky). With no database on the app, grants fall back to memory with
+sticky). The alert speaks the calling page's language: its words are
+the `desktop.permission_*` phrases, rendered under the bridge
+request's locale. With no database on the app, grants fall back to memory with
 a startup Warn.
 
 A grant is keyed on the **capability and the permission**, not the
@@ -322,8 +326,16 @@ shape.
 
 `Config.Menu` declares the native menu bar in Go. The shell wraps it
 with the standard app menu (About, Quit) and an Edit menu; do not
-declare your own Quit beyond the `Role: "quit"` item. Each item is
-exactly one of:
+declare your own Quit beyond the `Role: "quit"` item. The shell's own
+words (those two menus, a role item's default title, the Windows
+About box and accelerator names) are `desktop.menu_*`,
+`desktop.about_*` and `desktop.accelerator_*` phrases. They speak the
+first of the OS's preferred languages your catalog has (System
+Settings on macOS, the display languages on Windows), else the one
+`LANG` names. Your own item titles are `i18n.Phrase` values the shell
+renders in that same language, so a catalog entry for the key
+translates your menu with no code change. Define them at package
+level, like every phrase. Each item is exactly one of:
 
 - `Navigate`: a same-origin absolute path, dispatched as
   `window.__gofastr.navigate(path)`, a client-side nav with no reload.
@@ -336,16 +348,23 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 func exportAll(ctx context.Context) error { return nil }
 stmt: _ = menu
 -->
 ```go
-menu := &desktop.Menu{Items: []desktop.MenuItem{
-	{Title: "File", Children: []desktop.MenuItem{
-		{Title: "New note", Key: "cmd+n", Navigate: "/notes/new"},
-		{Title: "Export all…", Key: "cmd+e", Handler: exportAll},
+var (
+	menuFile      = i18n.Define("notes.menu.file", "File")
+	menuNewNote   = i18n.Define("notes.menu.new_note", "New note")
+	menuExportAll = i18n.Define("notes.menu.export_all", "Export all…")
+)
+
+var menu = &desktop.Menu{Items: []desktop.MenuItem{
+	{Title: menuFile, Children: []desktop.MenuItem{
+		{Title: menuNewNote, Key: "cmd+n", Navigate: "/notes/new"},
+		{Title: menuExportAll, Key: "cmd+e", Handler: exportAll},
 		{Role: desktop.RoleSeparator},
 		{Role: desktop.RoleQuit},
 	}},
@@ -387,12 +406,12 @@ below).
 ```go
 Tray: &desktop.Tray{
     Title: "Notes",             // text in the bar; may be empty with Icon
-    Tooltip: "Notes",
+    Tooltip: trayTooltip,        // an i18n.Phrase, in the OS language
     Icon: appIconPNG(),          // PNG, rendered as an 18x18 template image
     Menu: &desktop.Menu{Items: []desktop.MenuItem{
-        {Title: "Show Notes", Role: desktop.RoleShow},
-        {Title: "New note", Navigate: "/notes/new"},
-        {Title: "Settings…", Role: desktop.RoleSettings},
+        {Title: menuShow, Role: desktop.RoleShow},
+        {Title: menuNewNote, Navigate: "/notes/new"},
+        {Title: menuSettings, Role: desktop.RoleSettings},
         {Role: desktop.RoleSeparator},
         {Role: desktop.RoleQuit},
     }},
@@ -1601,9 +1620,19 @@ reads them back typed, and renders them as a form.
 import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 func intPtr(n int) *int { return &n }
+
+var (
+	prefWorkMinutes    = i18n.Define("focus.pref.work_minutes", "Work minutes")
+	prefWorkMinutesTip = i18n.Define("focus.pref.work_minutes.help", "Length of one work session.")
+	prefBreakMinutes   = i18n.Define("focus.pref.break_minutes", "Break minutes")
+	prefNotifyOnDone   = i18n.Define("focus.pref.notify_on_done", "Notify when a session ends")
+	prefTrayCountdown  = i18n.Define("focus.pref.tray_countdown", "Countdown in the menu bar")
+	prefSound          = i18n.Define("focus.pref.sound", "Session sound")
+)
 stmt: _ = d
 -->
 ```go
@@ -1611,18 +1640,21 @@ d := native.New(desktop.Config{
     ID:    "dev.gofastr.focus",
     Title: "Focus",
     Preferences: []desktop.Preference{
-        {Key: "work_minutes", Label: "Work minutes", Help: "Length of one work session.", Kind: desktop.PreferenceInt, Default: 25, Min: intPtr(1), Max: intPtr(180)},
-        {Key: "break_minutes", Label: "Break minutes", Kind: desktop.PreferenceInt, Default: 5, Min: intPtr(1), Max: intPtr(60)},
-        {Key: "notify_on_done", Label: "Notify when a session ends", Kind: desktop.PreferenceBool, Default: true},
-        {Key: "tray_countdown", Label: "Countdown in the menu bar", Kind: desktop.PreferenceBool, Default: true},
-        {Key: "sound", Label: "Session sound", Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
+        {Key: "work_minutes", Label: prefWorkMinutes, Help: prefWorkMinutesTip, Kind: desktop.PreferenceInt, Default: 25, Min: intPtr(1), Max: intPtr(180)},
+        {Key: "break_minutes", Label: prefBreakMinutes, Kind: desktop.PreferenceInt, Default: 5, Min: intPtr(1), Max: intPtr(60)},
+        {Key: "notify_on_done", Label: prefNotifyOnDone, Kind: desktop.PreferenceBool, Default: true},
+        {Key: "tray_countdown", Label: prefTrayCountdown, Kind: desktop.PreferenceBool, Default: true},
+        {Key: "sound", Label: prefSound, Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
     },
 })
 ```
 
 `Key` matches `^[a-z][a-z0-9_]{0,63}$` and is unique (dots are
 refused: they would collide with the app state's namespace
-separators). `Label` is required. `Default` must match `Kind`: bool,
+separators). `Label` and `Help` are `i18n.Phrase` values
+(`examples/desktop-focus/phrases.go` defines them at package level);
+the screen and the capability render them in the request's language.
+`Label` is required. `Default` must match `Kind`: bool,
 int, string, or (choice) a string listed in `Choices`. `Min` and `Max`
 bound an int (both optional, but `Min` must not exceed `Max`) and are
 refused on every other kind; `Choices` belongs to choice and is
@@ -1687,7 +1719,8 @@ const out = await __gofastr.desktop.preferences.set({values: {work_minutes: 50, 
 
 - `get {}` answers `{values, declared}`: every declared key's
   stored-or-default value, plus the declarations (key, label, help,
-  kind, default, choices, min, max).
+  kind, default, choices, min, max). Label and help arrive as text in
+  the calling page's language.
 - `set {values}` applies every entry through the same validation as
   `Preferences.Set`. The whole call is all-or-nothing: every entry is
   validated first, the first invalid one refuses the call with
@@ -1890,6 +1923,10 @@ plist value is XML-escaped.
 
 ## Linux runtime and native tests
 
+Linux menus and the About box use the language named by
+`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG`. Permission prompts and
+file chooser labels use the calling request's language.
+
 On Linux, `gofastr desktop build --id=dev.example.app --name=MyApp`
 writes `dist/MyApp`, a plain ELF executable. It uses the current architecture;
 set `GOARCH=amd64` or `GOARCH=arm64` to select the other supported target.
@@ -1991,6 +2028,9 @@ func TestExport(t *testing.T) {
     h.Shell.Notifications(); h.Navigations(); h.Events(); h.WindowIDs()
 }
 ```
+
+`ClickMenu` and `ClickTray` match an item by its title phrase's
+English, so the same test passes on a machine set to any language.
 
 `h.Stranger()` is a client with no session, for asserting that another
 local process on the port is refused. The harness quits the app in

@@ -31,7 +31,7 @@ func TestListRefusesAnonymousDefaultPosture(t *testing.T) {
 	if strings.Contains(html, "classified note") {
 		t.Fatalf("anonymous render served rows of a default-posture entity:\n%s", html)
 	}
-	if !strings.Contains(html, AccessDeniedTitle) {
+	if !strings.Contains(html, AccessDeniedTitle.English()) {
 		t.Fatalf("the access-denied notice is missing:\n%s", html)
 	}
 }
@@ -291,7 +291,7 @@ func TestExtensionListReplacesBody(t *testing.T) {
 	)
 	// Anonymous: the entity is default posture, so even the replaced
 	// body stays behind the read gate.
-	if html := listHTML(t, x.ui.List("notes"), x.ctx("/notes", "")); !strings.Contains(html, AccessDeniedTitle) {
+	if html := listHTML(t, x.ui.List("notes"), x.ctx("/notes", "")); !strings.Contains(html, AccessDeniedTitle.English()) {
 		t.Fatalf("a replaced list body escaped the read gate:\n%s", html)
 	}
 	x2 := newTestUIExt(t,

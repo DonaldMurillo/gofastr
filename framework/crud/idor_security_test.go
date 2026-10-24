@@ -49,11 +49,11 @@ func TestServeStreamingList_DBErrorsDoNotLeakDriverText(t *testing.T) {
 }
 
 func TestNestedFilter_ManyToOneRejectsUnsafeFieldName(t *testing.T) {
-	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+	sqlStr, _ := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.Relation{
 			Type:       entity.RelManyToOne,
 			Entity:     "users",
-			ForeignKey: "author_id",
+			ForeignKey: []string{"author_id"},
 		},
 		Field: "name OR 1=1 --",
 		Op:    filter.OpEq,
@@ -65,11 +65,11 @@ func TestNestedFilter_ManyToOneRejectsUnsafeFieldName(t *testing.T) {
 }
 
 func TestNestedFilter_HasManyRejectsUnsafeFieldName(t *testing.T) {
-	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+	sqlStr, _ := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.Relation{
 			Type:       entity.RelHasMany,
 			Entity:     "comments",
-			ForeignKey: "post_id",
+			ForeignKey: []string{"post_id"},
 		},
 		Field: "body OR 1=1 --",
 		Op:    filter.OpEq,
@@ -81,11 +81,11 @@ func TestNestedFilter_HasManyRejectsUnsafeFieldName(t *testing.T) {
 }
 
 func TestNestedFilter_ManyToManyRejectsUnsafeFieldName(t *testing.T) {
-	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+	sqlStr, _ := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.Relation{
 			Type:             entity.RelManyToMany,
 			Entity:           "tags",
-			ForeignKey:       "tag_id",
+			ForeignKey:       []string{"tag_id"},
 			Through:          "post_tags",
 			LocalKey:         "post_id",
 			ForeignKeyTarget: "id",

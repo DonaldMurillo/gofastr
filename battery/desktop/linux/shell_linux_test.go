@@ -21,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/gtk"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 func TestNewIsLazy(t *testing.T) {
@@ -56,6 +57,32 @@ func TestGTKModifiers(t *testing.T) {
 	}
 	if gtkModifiers(1<<18) != 4 {
 		t.Fatal("Control not preserved")
+	}
+}
+
+func TestSettingsKeepsShellLocale(t *testing.T) {
+	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
+	s := New().(*linuxShell)
+	s.textCtx = ctx
+	got := make(chan context.Context, 1)
+	s.cfg.OnSettings = func(ctx context.Context) { got <- ctx }
+	action := menuAction{window: &linuxWindow{shell: s}, plan: desktop.MenuItemPlan{Role: desktop.RoleSettings}}
+	action.activate()
+	select {
+	case called := <-got:
+		if i18n.FromContext(called).Tag != "fr" {
+			t.Fatalf("Settings lost the shell's locale: %v", i18n.FromContext(called))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Settings callback did not run")
+	}
+	// An event arriving for a closed window must not open Settings.
+	action.window.closed.Store(true)
+	action.activate()
+	select {
+	case <-got:
+		t.Fatal("closed window dispatched Settings")
+	case <-time.After(20 * time.Millisecond):
 	}
 }
 func TestReadBoundedString(t *testing.T) {

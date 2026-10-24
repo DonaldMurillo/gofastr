@@ -2,7 +2,7 @@
 
 This page says which parts of GoFastr are safe to depend on and what changing
 each part costs the maintainer. It is the human half of the classification in
-`stability/stability.go`; the deprecation mechanics live in
+`stability/stability.go`; the upgrade mechanics live in
 [stability.md](../framework/docs/content/stability.md).
 
 Every package in the module is assigned one tier. A test
@@ -14,8 +14,8 @@ newly added top-level tree cannot ship until someone classifies it on purpose.
 | Tier | Promise | Depend on it if… |
 |---|---|---|
 | **Stable** | Frozen. After v1.0.0, a breaking change requires a new major version. | You want a fixed contract. **No package is Stable yet**: see below. |
-| **Provisional** | Supported and documented. May change before v1.0.0, but only through the deprecation window in [stability.md](../framework/docs/content/stability.md): deprecate first, keep the old shape for at least one minor, then remove. | You are building on GoFastr today and can absorb a documented migration at a minor bump. |
-| **Experimental** | May change or be removed with no deprecation window. | You accept that and pin an exact version. |
+| **Provisional** | Supported and documented. May change in a minor release before v1.0.0, and every break ships with a **BREAKING** changelog entry and a `gofastr upgrade` note that finds the affected code ([stability.md](../framework/docs/content/stability.md)). | You are building on GoFastr today and can absorb a documented migration at a minor bump. |
+| **Experimental** | May change or be removed with no changelog entry or upgrade note. | You accept that and pin an exact version. |
 | **Internal** | Not a contract even though the symbols are exported. Moves freely. | Don't. Import at your own risk. |
 | **Excluded** | Not part of the shipped library (examples, benchmarks, evals, build output). | N/A. |
 

@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ func (*articleWithSchemaComp) Render() render.HTML { return render.Raw("<p>x</p>
 func (*articleWithSchemaComp) ScreenArticle() app.ArticleMeta {
 	return app.ArticleMeta{Headline: "From Meta"}
 }
-func (*articleWithSchemaComp) ScreenSchema() []seo.Thing {
+func (*articleWithSchemaComp) ScreenSchema(ctx context.Context) []seo.Thing {
 	a := seo.NewArticle()
 	a.Headline = "From Schema"
 	return []seo.Thing{a}
@@ -96,7 +97,7 @@ func (*articleWithOGComp) Render() render.HTML { return render.Raw("<p>x</p>") }
 func (*articleWithOGComp) ScreenArticle() app.ArticleMeta {
 	return app.ArticleMeta{Headline: "From Meta", Description: "From Meta Desc"}
 }
-func (*articleWithOGComp) ScreenSEO() SEO {
+func (*articleWithOGComp) ScreenSEO(ctx context.Context) SEO {
 	return SEO{OG: &OG{Type: "website", Title: "Custom Title"}}
 }
 
@@ -131,8 +132,10 @@ type asArticlePlainComp struct{}
 func (*asArticlePlainComp) Render() render.HTML {
 	return render.Raw("<h1>My Post</h1><p>The prose.</p>")
 }
-func (*asArticlePlainComp) ScreenTitle() string       { return "My Post" }
-func (*asArticlePlainComp) ScreenDescription() string { return "A normal screen turned article." }
+func (*asArticlePlainComp) ScreenTitle(ctx context.Context) string { return "My Post" }
+func (*asArticlePlainComp) ScreenDescription(ctx context.Context) string {
+	return "A normal screen turned article."
+}
 
 func TestAsArticleDerivesFromScreenTitle(t *testing.T) {
 	a := app.NewApp("plain")

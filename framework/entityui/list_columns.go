@@ -152,10 +152,10 @@ func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML
 	}
 	return ui.ColumnPicker(ui.ColumnPickerConfig{
 		ID:         "eui-" + listIDSafe(s.key, m.name) + "-cols",
-		Label:      i18nui.T(ctx, i18nui.KeyEntityColumns),
+		Label:      i18nui.EntityColumns.Text(ctx),
 		Columns:    cols,
 		ResetHref:  s.dropColsHref(),
-		ResetLabel: i18nui.T(ctx, i18nui.KeyFilterReset),
+		ResetLabel: i18nui.FilterReset.Text(ctx),
 		Ctx:        ctx,
 	})
 }

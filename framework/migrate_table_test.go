@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,23 +56,56 @@ func TestRawTable_ExactColumns(t *testing.T) {
 	})
 }
 
-// TestRawTable_CompositePKPanics: marking two columns PrimaryKey fails loud
-// instead of silently keeping the last.
-func TestRawTable_CompositePKPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected a panic for a composite primary key")
-		} else if !strings.Contains(r.(string), "composite primary key") {
-			t.Fatalf("unexpected panic: %v", r)
+// TestRawTable_CompositeKey: two PrimaryKey columns make one composite
+// key, in column order. The table refuses a repeated pair and a NULL key
+// column, and accepts a pair that differs in either column.
+func TestRawTable_CompositeKey(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		reg := NewRegistry()
+		ent := migrate.Table{
+			Name: "membership",
+			Columns: []migrate.Column{
+				{Name: "user_id", Type: schema.String, PrimaryKey: true},
+				{Name: "group_id", Type: schema.String, PrimaryKey: true},
+				{Name: "role", Type: schema.String},
+			},
+		}.ToEntity()
+		if got := ent.KeyColumns(); !slices.Equal(got, []string{"user_id", "group_id"}) {
+			t.Fatalf("KeyColumns = %v", got)
 		}
-	}()
-	migrate.Table{
-		Name: "membership",
-		Columns: []migrate.Column{
-			{Name: "user_id", Type: schema.String, PrimaryKey: true},
-			{Name: "group_id", Type: schema.String, PrimaryKey: true},
-		},
-	}.ToEntity()
+		if err := reg.Register(ent); err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		if err := AutoMigrate(db, reg); err != nil {
+			t.Fatalf("AutoMigrate: %v", err)
+		}
+		exec := func(q string) error {
+			_, err := db.ExecContext(context.Background(), q)
+			return err
+		}
+		for _, q := range []string{
+			"INSERT INTO membership (user_id, group_id) VALUES ('u1', 'g1')",
+			"INSERT INTO membership (user_id, group_id) VALUES ('u1', 'g2')",
+			"INSERT INTO membership (user_id, group_id) VALUES ('u2', 'g1')",
+		} {
+			if err := exec(q); err != nil {
+				t.Fatalf("%s: %v", q, err)
+			}
+		}
+		if exec("INSERT INTO membership (user_id, group_id) VALUES ('u1', 'g1')") == nil {
+			t.Fatal("a repeated (user_id, group_id) pair was accepted")
+		}
+		if exec("INSERT INTO membership (user_id, group_id) VALUES ('u3', NULL)") == nil {
+			t.Fatal("a NULL key column was accepted")
+		}
+		changes, err := DiffSchema(context.Background(), db, reg)
+		if err != nil {
+			t.Fatalf("DiffSchema: %v", err)
+		}
+		if len(changes) != 0 {
+			t.Fatalf("composite table not coherent: %+v", changes)
+		}
+	})
 }
 
 // TestRawTable_RawType: an explicit RawType column survives migration and diffs
@@ -124,7 +158,7 @@ func TestReconcile_EntityAndRawTableWithFK(t *testing.T) {
 				{Name: "user_id", Type: schema.String, NotNull: true},
 				{Name: "action", Type: schema.Text},
 			},
-			ForeignKeys: []migrate.ForeignKey{{Column: "user_id", RefTable: "users"}},
+			ForeignKeys: []migrate.ForeignKey{{Columns: []string{"user_id"}, RefTable: "users"}},
 		}
 		_ = reg.Register(audit.ToEntity())
 

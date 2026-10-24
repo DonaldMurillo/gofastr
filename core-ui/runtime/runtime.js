@@ -147,12 +147,9 @@
   // executable), so they pass strict CSP. Reading happens before
   // first paint of any non-trivial component because runtime.js is
   // injected at the end of <body>, after the JSON blocks in <head>.
-  const _readInlineJSON = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return null;
-    try { return JSON.parse(el.textContent || 'null'); }
-    catch (_) { return null; }
-  };
+  // _json parses server-written JSON text, null for none or garbage.
+  const _json = (t) => { try { return JSON.parse(t || 'null'); } catch (_) { return null; } };
+  const _readInlineJSON = (id) => _json(document.getElementById(id)?.textContent);
   if (!window.__gofastr_routes) {
     const r = _readInlineJSON('gofastr-routes');
     if (r) window.__gofastr_routes = r;
@@ -161,6 +158,34 @@
     const c = _readInlineJSON('gofastr-catalog');
     if (c) window.__gofastr_catalog = c;
   }
+  if (!window.__gofastr_locales) {
+    const l = _readInlineJSON('gofastr-locales');
+    if (l) window.__gofastr_locales = l;
+  }
+
+  // Locale prefixes (framework.WithLocalePrefixes): /es/pricing is the
+  // /pricing screen in Spanish. Route tables and cache keys hold the
+  // unprefixed path, so every lookup strips the prefix first; every
+  // runtime fetch of a /__gofastr endpoint or the page itself gains the
+  // current page's prefix (_lp) so the server answers in its locale. A
+  // link that changes the locale crosses a document boundary (nav.js).
+  // _splitLocale returns [tag, path without the prefix]; tag is '' for
+  // the default locale or an app without prefixes. base is the static
+  // export's BasePath, which sits in front of the prefix.
+  const _locBase = () => window.__gofastr_locales?.base || '';
+  const _splitLocale = (p) => {
+    p = String(p ?? '');
+    const L = window.__gofastr_locales, b = _locBase();
+    const m = L?.prefixes?.length && p.startsWith(b + '/') && /^\/([^/?#]+)(.*)$/.exec(p.slice(b.length));
+    return m && L.prefixes.includes(m[1]) ? [m[1], b + (m[2][0] === '/' ? m[2] : '/' + m[2])] : ['', p];
+  };
+  const _unlocalize = (p) => _splitLocale(p)[1];
+  const _localeOf = (p) => _splitLocale(p)[0];
+  const _lp = (u) => {
+    u = String(u ?? '');
+    const t = _localeOf(location.pathname), b = _locBase();
+    return t && u[1] !== '/' && u.startsWith(b + '/') && !_localeOf(u) ? b + '/' + t + u.slice(b.length) : u;
+  };
 
   // Signal store seed: server-provided initial values for the signal
   // bus (core-ui/store). Stashed now; applied to _signals right after
@@ -182,6 +207,18 @@
   // Own-prop read for {} registries keyed by attribute-borne names: an
   // inherited "constructor" is truthy and must not pass as an entry.
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  // say is every word the runtime writes for a reader: the host's
+  // #gofastr-strings block (core-ui/runtime.StringsJSON, the reader's
+  // locale) else the English beside the key, with {{name}} filled from
+  // p. A Go test holds each say() call to its registered phrase. No
+  // Object.prototype member is a string, so a key like "toString" falls
+  // through to the English. A soft nav replaces the table
+  // (applyDocShell, frag/nav.js).
+  let _says = _readInlineJSON('gofastr-strings') || {};
+  const say = (k, en, p) => {
+    const s = _says[k];
+    return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
+  };
   const closestAttr = (el, attr) => {
     const node = el.closest(`[${CSS.escape(attr)}]`);
     return node?.getAttribute(attr) ?? null;
@@ -219,6 +256,10 @@
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
+    say,
+    _lp,
+    _unlocalize,
+    _localeOf,
 
     /* DOM attributes name fetch targets throughout the runtime. Keep these
        guards in kernel so navigation cannot race the RPC demand module that
@@ -397,11 +438,11 @@
     async _serverActionFor(componentId, action, params = {}) {
       const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
       const session = sessionCookie ? sessionCookie[1] : '';
-      const resp = await fetch('/__gofastr/action', {
+      const resp = await fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // page: the owning screen's Policy reads this page's route params.
-        body: JSON.stringify({ action, params, session, componentId, page: location.pathname }),
+        body: JSON.stringify({ action, params, session, componentId, page: _unlocalize(location.pathname) }),
       });
       if (resp.ok) {
         const result = await resp.json();
@@ -639,8 +680,8 @@
         const c = document.createElement('div');
         c.setAttribute('data-cui-toast-fallback', '');
         c.setAttribute('role', 'region');
-        c.setAttribute('aria-label', 'Notifications');
-        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
+        c.setAttribute('aria-label', say('runtime.notifications', 'Notifications'));
+        c.style.cssText = 'position:fixed;top:1rem;inset-inline-end:1rem;z-index:2147483600;display:grid;gap:.5rem;max-width:min(360px,100vw - 2rem)';
         return c;
       });
       const isAssertive = cfg.variant === 'warning' || cfg.variant === 'danger';
@@ -664,7 +705,7 @@
       }
       const dismiss = mk('button', 'background:none;border:0;color:inherit;cursor:pointer', '×');
       dismiss.type = 'button';
-      dismiss.setAttribute('aria-label', 'Dismiss notification');
+      dismiss.setAttribute('aria-label', say('runtime.dismiss_notification', 'Dismiss notification'));
       dismiss.addEventListener('click', () => { item.remove(); });
       item.appendChild(text);
       item.appendChild(dismiss);
@@ -751,7 +792,7 @@
           // documented optimistic-UI invariant, "a failed delete
           // leaves the row/list unchanged", depends on this no-op.
           // Text-mode nodes below still render a human-readable
-          // "Error: …" string, so failure feedback is not lost.
+          // "Request failed (…)" string, so failure feedback is not lost.
           if (typeof value !== 'string') return;
           // A value seeded from location.search is attacker-supplied by
           // construction, `?x=<img onerror=…>` on any page carrying an
@@ -799,12 +840,11 @@
         } else {
           // Task B: when the value is an error object from dispatchRPC
           // ({ok:false, status, text}), render it as a human-readable
-          // string instead of raw JSON so users see "Error: 500" rather
-          // than {"ok":false,"status":500,"text":"..."}.
+          // string instead of raw JSON so users see "Request failed (500)"
+          // in their language rather than {"ok":false,"status":500,...}.
           if (value != null && typeof value === 'object' && value.ok === false) {
-            const s = value.status ? String(value.status) : 'unknown';
             const t = value.text ? String(value.text).substring(0, 200) : '';
-            node.textContent = 'Error: ' + s + (t ? ' \u2014 ' + t : '');
+            node.textContent = say('runtime.request_failed_status', 'Request failed ({{status}})', { status: value.status || '?' }) + (t ? ' \u2014 ' + t : '');
           } else if (value == null) {
             node.textContent = '';
           } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -985,7 +1025,8 @@
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
   const routeEntry = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+    // Routes register unprefixed: /es/pricing looks up /pricing.
+    const clean = _unlocalize(path.split('?')[0].split('#')[0]);
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
@@ -1039,6 +1080,9 @@
   // (the rail rejects control characters), so unlike a comma it cannot
   // make two different sets read as one string.
   const crossesDocBoundary = (destPath) => {
+    // Another locale is another document: its lang, its strings table
+    // and every server-rendered word differ, not just the screen.
+    if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
     const srcs = [];
@@ -1049,6 +1093,35 @@
     srcs.sort();
     return srcs.join('\n') !== dest.join('\n');
   };
+  // A server redirect (X-Gofastr-Location) into another document loads
+  // it in place of the requested URL. Both navigators ask before they
+  // replace the URL: the boundary reads the locale off location.
+  const _docRedirect = (to) => {
+    if (!window.__gofastr._originOK(to) || !crossesDocBoundary(to)) return false;
+    location.replace(to);
+    return true;
+  };
+  window.__gofastr._docRedirect = _docRedirect;
+  // fetch follows a 3xx itself (uihost answers one for any target that
+  // is not a safe relative path), so only the response URL says where
+  // the reader landed. Another origin or another document loads as a
+  // document (null: handled); a page in this document comes back as its
+  // path, for the X-Gofastr-Location leg; '' when nothing redirected.
+  const _followed = (r, path) => {
+    // A policy sending the reader off the app: fetch could not follow
+    // it there, so the server names it and the page goes.
+    const doc = r.headers.get('X-Gofastr-Document');
+    if (doc) {
+      if (!/^https?:\/\//i.test(doc)) throw new Error('HTTP 303');
+      location.replace(doc);
+      return null;
+    }
+    if (!r.redirected || !r.url) return '';
+    if (!window.__gofastr._sameOrigin(r.url)) { location.replace(r.url); return null; }
+    const to = resolvePath(r.url);
+    return to === path ? '' : _docRedirect(to) ? null : to;
+  };
+  window.__gofastr._followed = _followed;
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
@@ -1076,6 +1149,9 @@
     if (lang) carrier.setAttribute('data-cui-lang', lang);
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
+    // The live document's head block is the first page's: after a soft
+    // nav its words are the table applyDocShell last set.
+    carrier.setAttribute('data-cui-strings', JSON.stringify(source == document ? _says : _json(source.getElementById('gofastr-strings')?.textContent)));
     return carrier.outerHTML;
   };
   window.__gofastr._docCarrier = docCarrier;
@@ -1336,6 +1412,8 @@
   const applyDocShell = (root) => {
     syncPageHead(root);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
+    // The destination's runtime words; none means English.
+    if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
     const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
       ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (!c) return;
@@ -1515,11 +1593,12 @@
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
-        let dest = path;
-        // resolvePath keeps the search string, the cache key and the
-        // URL bar must carry a redirect-added query (e.g. ?next=/admin).
-        if (fr.redirected && fr.url) dest = resolvePath(fr.url);
-        if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
+        // The path keeps the search string: the cache key and the URL
+        // bar must carry a redirect-added query (e.g. ?next=/admin).
+        const to = _followed(fr, path);
+        if (to === null) return;
+        const dest = to || path;
+        if (to) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
@@ -1531,7 +1610,9 @@
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
-          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
+          // The carrier rides <main>, so the cache entry below (and the
+          // whole-main fallback) keeps the page's language and words.
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
           const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -1577,14 +1658,18 @@
       // outcome. The fetch above won't see a 303 (we deliberately use
       // 200 + header to survive redirect:'follow').
       // (Session rollover already applied above, before the ok-check.)
-      const redirectTo = resp.headers.get('X-Gofastr-Location');
+      // A followed 3xx takes the same leg as the header.
+      const followed = _followed(resp, path);
+      if (followed === null) return;
+      const redirectTo = resp.headers.get('X-Gofastr-Location') || followed;
       if (redirectTo) {
+        _pendingNav.delete(path);
+        if (_docRedirect(redirectTo)) return;
         // pushState was already called by the click handler with the
         // requested path; replace it with the redirect destination so
         // the URL bar matches what we're about to load.
         _pushPub(redirectTo, { replace: true });
         currentPath = redirectTo;
-        _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
         // Keep bypassCache across the redirect: a post-mutation nav
         // must not serve the redirect target from the screen cache,
@@ -1630,8 +1715,8 @@
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
-        ? 'Could not load ' + path + ' (' + err.message + ')'
-        : 'Could not load ' + path + ' — check your connection');
+        ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
+        : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
       _pushPub(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {
@@ -1675,8 +1760,7 @@
     if (!root || !root.querySelector) return;
     const el = root.querySelector('#gofastr-signals-partial');
     if (!el) return;
-    let data = null;
-    try { data = JSON.parse(el.textContent || 'null'); } catch (_) { /* ignore */ }
+    const data = _json(el.textContent);
     el.remove();
     if (!data) return;
     const G = window.__gofastr;
@@ -1940,10 +2024,14 @@
       for (const s of sels) {
         if (s === '*') { screenCache.clear(); return; }
         if (!s || s[0] !== '/') continue;
-        if (s.includes('?')) { screenCache.delete(s); continue; }
-        // Queryless selector: evict the pathname and all its query
-        // variants (a stale list is stale on every page/filter of it).
-        for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+        // A selector with "?" is exact; a queryless one evicts the
+        // pathname and all its query variants (a stale list is stale on
+        // every page/filter of it). Cache keys keep the locale prefix;
+        // selectors never carry one.
+        for (const k of screenCache.keys()) {
+          const u = _unlocalize(k);
+          if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
+        }
       }
     },
 
@@ -1999,7 +2087,7 @@
   // export never composes widgets-boot, the `static` composition omits it
   // and rpc-stub intercepts data-cui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
-  fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
+  fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(location.pathname)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
     .then(async (list) => {
@@ -2143,7 +2231,7 @@
   // so the URL's modal/drawer query params open the right surface.
   window.addEventListener('gofastr:navigate', (e) => {
     const path = (e && e.detail && e.detail.path) || location.pathname;
-    fetch('/__gofastr/widgets?page=' + encodeURIComponent(path),
+    fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
       .then((r) => (r.ok ? r.json() : null))
       .then(async (list) => {

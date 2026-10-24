@@ -53,7 +53,7 @@ func (c *ssrLoadBoom) Render() render.HTML        { return render.Text("loaded")
 type ssrTitleBoom struct{ calls int }
 
 func (c *ssrTitleBoom) Render() render.HTML { return render.Text("titled") }
-func (c *ssrTitleBoom) ScreenTitle() string {
+func (c *ssrTitleBoom) ScreenTitle(ctx context.Context) string {
 	c.calls++
 	if c.calls > 1 {
 		panic("test: screen title boom")

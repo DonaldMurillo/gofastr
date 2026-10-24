@@ -73,7 +73,7 @@ func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 
 // Property: a panic in the SetGate gate function is isolated to the job;
 // the worker pool (and the process) survives it and keeps processing.
-// Handlers are panic-isolated via safeHandle; the gate gets the same net
+// Handlers are panic-isolated via invokeRecovering; the gate gets the same net
 // through gateAllows (recover → log + fail closed → defer), pinned here
 // process-level by re-exec because an unrecovered panic in the worker
 // goroutine kills the whole process.

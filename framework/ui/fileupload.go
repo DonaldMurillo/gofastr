@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -115,9 +114,9 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	prompt := i18nui.T(ctx, i18nui.KeyFileUploadDrop)
+	prompt := i18nui.FileUploadDrop.Text(ctx)
 	if !cfg.Multiple {
-		prompt = i18nui.T(ctx, i18nui.KeyFileUploadDropSingle)
+		prompt = i18nui.FileUploadDropSingle.Text(ctx)
 	}
 
 	field := headless.FileUpload(headless.FileUploadProps{
@@ -181,7 +180,7 @@ func uploadHelpText(cfg FileUploadConfig) string {
 		bits = append(bits, cfg.Help)
 	}
 	if cfg.MaxSizeMB > 0 {
-		bits = append(bits, i18nui.TVars(ctx, i18nui.KeyFileMaxSize, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)}))
+		bits = append(bits, i18nui.FileMaxSize.Text(ctx, map[string]any{"n": cfg.MaxSizeMB}))
 	}
 	return strings.Join(bits, " · ")
 }

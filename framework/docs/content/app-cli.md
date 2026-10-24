@@ -43,6 +43,7 @@ myapp posts create --title "Hello" --views 3
 myapp posts create --json @post.json
 myapp posts patch 42 --published=false     # explicit zeros survive
 myapp posts update 42 --json '{"title":"Edited"}'
+myapp customers patch 42 --logo ./acme.png    # an Image or File field takes a path
 myapp posts batch-create --json @rows.json # atomic, up to 100
 myapp posts batch-delete id1 id2 id3
 myapp posts watch                          # live SSE feed, one JSON line/event
@@ -71,12 +72,34 @@ Per verb:
   the body (via `flag.FlagSet.Visit`), so `--published=false` really
   sends `false`. The payload is built as a raw map, never squeezed
   through a struct with `omitempty`.
+  An Image or File field gets a file flag that takes a path, or `-`
+  for stdin (one flag per run can read stdin). A set file flag sends
+  the write as multipart/form-data, every part named by its column. A
+  file over the server's 32 MiB per-file limit, or a request over its
+  64 MiB body limit, fails before anything is sent, and so does a
+  JSON field flag set to `null` beside a file. `--json` sends
+  JSON, which can carry the stored key of a file already uploaded but
+  never a new file.
 - **batch-create / batch-update**: `--json` with an array, sent
   through the atomic `_batch` routes; the `{committed, results[]}`
   envelope prints verbatim and a rollback exits 1.
+- **composite keys**: a record verb on a composite-key entity takes one
+  positional argument per key column, in key order:
+  `myapp enrollments get ann math`, `myapp enrollments patch ann math
+  --grade B`. Each value is path-escaped into its own segment.
+  `create` takes a flag per key column; `update` and `patch` take
+  none, since the path names the record. `batch-delete` takes ids as the server spells them, the values
+  path-escaped and joined with `/` (`ann/math`). A key value that
+  starts with `-` reads as a flag, so the verb prints its usage.
 - **watch**: subscribes to `GET {entity}/_events` and prints one
   `{"event":…,"data":…}` line per server event until interrupted.
   No auto-reconnect: wrap it in a shell loop if you need one.
+- **custom endpoints**: one command per endpoint declared in
+  `gofastr.settings.yml` ([Custom endpoints](endpoints.md)), named after
+  it in kebab case: `myapp orders refund-order <id> --reason late`. Path
+  values are positional, in path order; every other input field is a
+  flag, required unless the Go field is a pointer. `POST`/`PUT`/`PATCH`
+  endpoints also take `--json` in place of the flags.
 
 Connection resolution, in order: the `--url` flag →
 `<BINARY>_URL`/`<BINARY>_TOKEN` env vars → the config file written by
@@ -127,8 +150,11 @@ Selection names match the entity name, table, or kebab command form; a
 typo fails generation rather than silently generating everything.
 Verbs: `list get create update patch delete batch-create batch-update
 batch-delete watch`. Excluded entities and verbs render nothing, so there
-is no dead code to strip. The chosen selection is echoed in the
-generated `main.go` header so a later `--force` regen can reproduce it.
+is no dead code to strip. The generated files do not record the
+selection. To have `gofastr generate` and `gofastr build` keep the CLI
+current, record it as a `cli` entry in `gofastr.settings.yml` (see
+[Keeping it current](#keeping-it-current)); a run with no entry prints
+one to paste.
 
 Other flags: `--out=cmd/<binary>` (target directory), `--binary=<name>` (command
 name; defaults to the project directory, and drives the env-var
@@ -159,7 +185,10 @@ Path, query, and header parameters become typed flags (arrays of
 strings repeat the flag; typed arrays are rejected rather than left
 unvalidated);
 `application/json` object bodies get a flag per top-level scalar
-property plus the `--json` raw escape; binary bodies
+property plus the `--json` raw escape. A body property named exactly
+like a path parameter gets no flag of its own: it repeats the record the
+path names, as a composite key's columns do in a GoFastr app's PUT body,
+and `--json` can still send it. Binary bodies
 (`application/octet-stream` / `format: binary`) take `--file` with `-`
 for stdin. JSON responses pretty-print; anything else streams raw to
 stdout so `barc generate-code ... > code.png` works. `servers[0].url`
@@ -168,8 +197,8 @@ security scheme wires into the same env/`login` machinery.
 
 The generated tree is fully self-contained (stdlib only, with its own
 `internal/client`), so it runs from any directory inside a Go module —
-no entities package, no framework dependency. `custom.go` and
-`--force` behave exactly as below.
+no entities package, no framework dependency. `custom.go` and the
+`*.gen.go` rebuild behave exactly as below.
 
 Supported subset, by design: local `#/components/...` `$ref`s (`allOf`
 of objects shallow-merges; `oneOf`/`anyOf` bodies fall back to
@@ -182,31 +211,93 @@ against bearer.
 
 ## Extending and regenerating
 
-Generation is one-shot owned code: re-running refuses to overwrite and
-`--force` regenerates, **except `custom.go`, which is only ever
-created when absent**. That file is the extension seam:
+The CLI is derived from your entities. Every run rebuilds the
+`*.gen.go` files and removes the ones the source no longer produces (an
+entity you deleted or excluded, a verb you deselected). Each file carries
+a `//gofastr:generated` marker and Go's `Code generated ... DO NOT EDIT.`
+line; a run that finds one edited names it before replacing it.
+**`custom.go` is the one file that is yours: it is created when absent
+and never overwritten.** It is the extension seam:
 
 - `customCommands()` is merged over the generated command table; an
   entry with a generated name (`"posts list"`) replaces that command,
-  a new name adds one. Wrap rather than replace by calling the
+  a new name adds one. The built-in `login` and `logout` can be
+  replaced the same way. Wrap rather than replace by calling the
   generated run function (`runPostsList(...)`) from your own.
 - `configureClient(c *client.Client)` runs before every request-bearing
   command. Use it to install a custom `http.Transport`, default headers,
   or retries.
-- Custom server endpoints are reachable via the client's raw
-  `Do(ctx, method, path, body, out)` escape hatch.
+- Endpoints registered by hand in Go (not in `gofastr.settings.yml`) are
+  reachable via the client's raw `Do(ctx, method, path, body, out)`
+  escape hatch.
 
-The rest of the tree is laid out the same way: each `<entity>.go` holds
-the command table, the per-entity filter and mutation-field tables, and
-one-line wrappers (`runPostsList`-style) binding them; `verbs.go` holds
-the shared verb bodies those wrappers call; `main.go`, `config.go`,
-`auth.go`, and `output.go` hold the dispatch, connection, and printing
-scaffold. Field names are data rows in the tables, never identifiers, so
-a field rename never changes the generated function names.
+The rest of the tree is laid out the same way: each `<entity>.gen.go`
+holds the command table, the per-entity filter and mutation-field tables,
+and one-line wrappers (`runPostsList`-style) binding them; `verbs.gen.go`
+holds the shared verb bodies those wrappers call; `main.gen.go`,
+`config.gen.go`, `auth.gen.go`, and `output.gen.go` hold the dispatch,
+connection, and printing code. Field names are data rows in the tables,
+never identifiers, so a field rename never changes the generated function
+names.
+
+### Keeping it current
+
+A `cli` entry in `gofastr.settings.yml` makes `gofastr generate` and
+`gofastr build` rebuild the CLI after an entity changes. The `config`
+keys mirror the flags:
+
+```yaml
+codegen:
+  generators:
+    - name: cli
+      output: cmd/myapp            # --out
+      config:
+        binary: myapp              # --binary
+        api_prefix: api            # --api-prefix
+        only: [posts, comments]    # --only
+        exclude: [audit_logs]      # --exclude
+        verbs:                     # --verbs
+          posts: [list, get]
+          comments: ["*"]
+```
+
+`only`, `exclude` and `verbs` are YAML lists. A comma string such as
+`only: posts,comments` is refused with the list spelling. `verbs` is
+either one list for every entity (`verbs: [list, get]`) or a map from
+entity to its list, as above; quote `"*"`, which YAML otherwise reads as
+an alias. `api_prefix` may be empty (`""` for an app with no API prefix).
+Any other value is a non-empty string.
+
+To build the CLI from an OpenAPI document instead, set
+`from_openapi: openapi.json` (`--from-openapi`), which excludes the
+selection keys. It takes a file in the project: a build that fetched a
+URL would depend on the network. Fetch the document into the repo
+instead.
+
+A run from the settings file rewrites only the files whose bytes changed
+and prints nothing when the CLI is current.
+
+`gofastr generate cli` reads the same entry. Flags win, key by key, and
+the entry fills the rest, so `gofastr generate cli --only=posts` keeps
+the entry's binary and output. With `--out` or `--binary` it uses the
+entry for that directory or binary; with neither, the only entry. Two or
+more entries need `--out` or `--binary` to pick one. `--from-openapi`
+takes the entry's binary and output but none of its entity selection.
+Only the settings file in the directory it runs in counts. A run that no
+entry drove prints the entry that reproduces it, ready to paste under
+`codegen.generators`.
+
+### Upgrading a CLI generated before v0.93.0
+
+Older CLIs were one-shot: plain `.go` files the generator refused to
+overwrite. The first run on such a tree removes the old files and writes
+the `*.gen.go` set. An old file you edited stops that run with its name;
+move the edit into `custom.go`, then re-run once with `--force` to
+remove the old files. `--force` matters only for that one migration.
 
 Fields with `hidden: true` never appear; `read_only` fields appear as
-list filters but not as mutation flags. Image/file fields are excluded
-entirely. The generated client doesn't speak multipart yet. A field
+list filters but not as mutation flags. Writable image and file fields
+appear only as file flags on create, update and patch. A field
 whose name collides with a reserved flag (`sort`, `page`, `json`,
 `url`, …) fails generation with the entity and field named: rename the
 field or exclude the entity.
@@ -227,10 +318,9 @@ field or exclude the entity.
   enforced where you gate it. Mount `auth.RequireAPIScopes("/api")`
   (or per-route `RequireScope`) or a `customers:*` token silently
   carries the user's full capability.
-- **Editing generated files, then regenerating with `--force`.** Only
-  `custom.go` survives a forced regen. Put every customization there
-  (override, wrap, or add commands); treat the other files as
-  regenerable.
+- **Editing a `*.gen.go` file.** The next run rebuilds it and the edit
+  is gone; the run names the file first. Put every customization in
+  `custom.go` (override, wrap, or add commands).
 - **Expecting `--published false` to parse.** Bool field flags follow
   stdlib `flag` semantics: bare `--published` sets true, and the
   explicit-value form needs `=`, as in `--published=false`. The space form

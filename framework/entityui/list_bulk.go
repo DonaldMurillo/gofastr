@@ -57,10 +57,10 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	}
 	var scopes []ui.SelectOption
 	if s.as != "cards" {
-		scopes = append(scopes, ui.SelectOption{Value: bulkScopeSelected, Text: i18nui.T(ctx, i18nui.KeyEntityBulkSelected)})
+		scopes = append(scopes, ui.SelectOption{Value: bulkScopeSelected, Text: i18nui.EntityBulkSelected.Text(ctx)})
 	}
-	scopes = append(scopes, ui.SelectOption{Value: bulkScopePage, Text: i18nui.TVars(ctx, i18nui.KeyEntityBulkPage, map[string]string{
-		"count": strconv.Itoa(len(rows)),
+	scopes = append(scopes, ui.SelectOption{Value: bulkScopePage, Text: i18nui.EntityBulkPage.Text(ctx, map[string]any{
+		"count": len(rows),
 	})})
 	// The bar carries the digest of the ids every match covers, so the
 	// run refuses any other set. A list past the cap is not offered it.
@@ -72,14 +72,14 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	}
 	every := match != ""
 	if every {
-		scopes = append(scopes, ui.SelectOption{Value: bulkScopeEvery, Text: i18nui.TVars(ctx, i18nui.KeyEntityBulkEvery, map[string]string{
-			"count": formatNumber(float64(total), 0),
+		scopes = append(scopes, ui.SelectOption{Value: bulkScopeEvery, Text: i18nui.EntityBulkEvery.Text(ctx, map[string]any{
+			"count": total,
 		})})
 	}
 
 	fields := make([]render.HTML, 0, len(rows)+6)
 	for _, row := range rows {
-		fields = append(fields, hiddenInput("page", cell(rowValue(row, m.pk))))
+		fields = append(fields, hiddenInput("page", m.rowID(row)))
 	}
 	if every {
 		fields = append(fields, hiddenInput("match", match))
@@ -95,19 +95,20 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 			ui.Select(ui.SelectConfig{
 				Name:        "action",
 				ID:          lb.form + "-action",
-				Label:       i18nui.T(ctx, i18nui.KeyEntityBulkAction),
+				Label:       i18nui.EntityBulkAction.Text(ctx),
 				LabelHidden: floating,
 				Options:     actionOpts,
 			}),
 			ui.Select(ui.SelectConfig{
 				Name:        "scope",
 				ID:          lb.form + "-scope",
-				Label:       i18nui.T(ctx, i18nui.KeyEntityBulkScope),
+				Label:       i18nui.EntityBulkScope.Text(ctx),
 				LabelHidden: floating,
 				Options:     scopes,
 			}),
 			ui.Button(ui.ButtonConfig{
-				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkApply),
+				Ctx:     ctx,
+				Label:   i18nui.EntityBulkApply.Text(ctx),
 				Type:    "submit",
 				Variant: ui.ButtonSecondary,
 			}),
@@ -115,13 +116,13 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	)
 	rpc := interactive.Post(m.api + "/_bulk").
 		WithConfirmDialog(interactive.Confirm{
-			Title:   i18nui.TVars(ctx, i18nui.KeyEntityBulkTitle, map[string]string{"entity": m.noun(ctx, true)}),
-			Message: i18nui.T(ctx, i18nui.KeyEntityBulkConfirm),
-			Accept:  i18nui.T(ctx, i18nui.KeyEntityBulkApply),
+			Title:   i18nui.EntityBulkTitle.Text(ctx, map[string]any{"entity": m.noun(ctx, true)}),
+			Message: i18nui.EntityBulkConfirm.Text(ctx),
+			Accept:  i18nui.EntityBulkApply.Text(ctx),
 		}).
 		OnSuccess(interactive.Navigate(listHref(s.path, s.q)))
 	attrs := rpc.Attrs()
-	attrs["aria-label"] = i18nui.T(ctx, i18nui.KeyEntityBulkBar)
+	attrs["aria-label"] = i18nui.EntityBulkBar.Text(ctx)
 	return ui.Form(ui.FormConfig{
 		Action:     m.api + "/_bulk",
 		Method:     "POST",
@@ -138,8 +139,8 @@ func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]
 	return ui.Checkbox(ui.ToggleConfig{
 		Name:        "ids",
 		ID:          lb.form + "-sel-" + strconv.Itoa(i),
-		Value:       cell(rowValue(row, s.m.pk)),
-		Label:       i18nui.TVars(ctx, i18nui.KeyEntityBulkSelect, map[string]string{"title": s.rowTitle(ctx, row)}),
+		Value:       s.m.rowID(row),
+		Label:       i18nui.EntityBulkSelect.Text(ctx, map[string]any{"title": s.rowTitle(ctx, row)}),
 		LabelHidden: true,
 		ExtraAttrs:  html.Attrs{"form": lb.form},
 	})
@@ -156,7 +157,7 @@ func exportLink(ctx context.Context, s *listState) render.HTML {
 		q.Set(exportKeyParam, s.key)
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:      i18nui.T(ctx, i18nui.KeyEntityBulkExport),
+		Label:      i18nui.EntityBulkExport.Text(ctx),
 		Href:       listHref(s.m.api+"/_export.csv", q),
 		Variant:    ui.ButtonSecondary,
 		Icon:       "download",

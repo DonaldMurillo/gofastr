@@ -4,9 +4,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -198,30 +200,30 @@ func irQuotingSites(payload string) []irSite {
 	})
 	add("relation.name", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
-			Type: framework.RelManyToOne, Name: payload, Entity: "tickets", ForeignKey: "parent_id",
+			Type: framework.RelManyToOne, Name: payload, Entity: "tickets", ForeignKey: []string{"parent_id"},
 		}}
 	})
 	add("relation.foreign_key", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
-			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets", ForeignKey: payload,
+			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets", ForeignKey: []string{payload},
 		}}
 	})
 	add("relation.through", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToMany, Name: "tags", Entity: "tickets",
-			ForeignKey: "tag_id", Through: payload, LocalKey: "ticket_id",
+			ForeignKey: []string{"tag_id"}, Through: payload, LocalKey: "ticket_id",
 		}}
 	})
 	add("relation.local_key", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToMany, Name: "tags", Entity: "tickets",
-			ForeignKey: "tag_id", Through: "t_pivot", LocalKey: payload,
+			ForeignKey: []string{"tag_id"}, Through: "t_pivot", LocalKey: payload,
 		}}
 	})
 	add("relation.foreign_key_target", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets",
-			ForeignKey: "parent_id", ForeignKeyTarget: payload,
+			ForeignKey: []string{"parent_id"}, ForeignKeyTarget: payload,
 		}}
 	})
 
@@ -347,16 +349,28 @@ func irQuotingSites(payload string) []irSite {
 	block("block.empty_text", AppSpecBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{"title"}, EmptyText: payload})
 
 	// ---- endpoints / stubs ----
+	endpoint := func() settings.Endpoint {
+		return settings.Endpoint{Name: "close", Entity: "tickets", Method: "POST", Path: "{id}/close", Handler: "entities/tickets_endpoints.go#CloseTicket"}
+	}
 	add("endpoint.name", func(b *AppSpec) {
-		b.Endpoints = []AppSpecEndpoint{{Name: payload, Method: "GET", Path: "/x", Handler: "handleX"}}
+		e := endpoint()
+		e.Name = payload
+		b.Endpoints = []settings.Endpoint{e}
 	})
 	add("endpoint.path", func(b *AppSpec) {
-		b.Endpoints = []AppSpecEndpoint{{Name: "x", Method: "GET", Path: payload, Handler: "handleX"}}
+		e := endpoint()
+		e.Path = payload
+		b.Endpoints = []settings.Endpoint{e}
+	})
+	add("endpoint.handler", func(b *AppSpec) {
+		e := endpoint()
+		e.Handler = "entities/tickets_endpoints.go#" + payload
+		b.Endpoints = []settings.Endpoint{e}
 	})
 	add("endpoint.description", func(b *AppSpec) {
-		b.Endpoints = []AppSpecEndpoint{{
-			Name: "x", Method: "GET", Path: "/x", Handler: "handleX", Description: payload,
-		}}
+		e := endpoint()
+		e.Description = payload
+		b.Endpoints = []settings.Endpoint{e}
 	})
 	add("middleware.description", func(b *AppSpec) {
 		b.Middleware = []AppSpecNamedStub{{Name: "audit", Description: payload}}
@@ -519,7 +533,7 @@ func TestRelationNameMustBeAnIdentifier(t *testing.T) {
 				Name:   "tickets",
 				Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 				Relations: []framework.Relation{{
-					Type: framework.RelManyToOne, Name: name, Entity: "tickets", ForeignKey: "parent_id",
+					Type: framework.RelManyToOne, Name: name, Entity: "tickets", ForeignKey: []string{"parent_id"},
 				}},
 			}},
 			Screens: []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
@@ -695,44 +709,50 @@ func TestSDKDerivedNamesMustNotCollide(t *testing.T) {
 	})
 }
 
-// Pins the endpoint-stub identifier gap the extended emitident sweep
-// found (2026-09-04 round 3 extension): appSpecEndpointHandlerName
-// falls back to the endpoint Name when Handler is empty, and
-// renderAppSpecStubs emitted `func %s` from that fallback root with no
-// identifier check of its own — toCamelCase transforms, it does not
-// validate. Fixed by gating the stub and the app.go registration on
-// isGoIdentifier, mirroring the hook stubs (validateAppSpec refuses the
-// Handler root; the Name fallback root had no validator).
-// Property: no emitted `func %s` / `http.HandlerFunc(%s)` ever carries a
-// non-identifier, whatever root derived it.
-// Surfaces: appspec.go::renderAppSpecStubs (the stub),
-// ::renderAppSpecApp (the registration), ::validateAppSpec (Handler
-// root refusal), versus the hook stubs' isGoIdentifier gate.
+// Property: no endpoint value reaches generated Go or the settings file
+// unchecked, even on a render that skipped validateAppSpec (tests, --add
+// fragments). A handler name lands at `func %s` and `type %sInput`, a
+// path value names a struct field, and every value lands in YAML.
+// Surfaces: appspec_endpoints.go::renderAppSpecEndpoints (the stub, the
+// registration, the settings section) against settings.Endpoint.Validate.
 func TestAppSpecEndpointStubRefusesNonIdentifiers(t *testing.T) {
-	bp := AppSpec{Endpoints: []AppSpecEndpoint{
-		{Name: "hostile-handler", Handler: "x =(pwn)(); y", Path: "/a", Method: "get"}, // hostile Handler root
-		{Name: "x =(pwn)(); y", Path: "/b", Method: "get"},                             // hostile Name fallback root
-		{Name: "benign", Handler: "RealHandler", Path: "/c", Method: "get"},            // benign control
-	}}
-	stubs := renderAppSpecStubs(bp)
-	if strings.Contains(stubs, "pwn") {
-		t.Fatalf("SECURITY: [app-spec-endpoint-ident] stubs.go carries a non-identifier handler at `func` position:\n%s", stubs)
+	base := func() AppSpec {
+		return AppSpec{Entities: []framework.EntityDeclaration{{Name: "tickets", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}}}}
 	}
-	if !strings.Contains(stubs, "func RealHandler(w http.ResponseWriter, r *http.Request) {") {
-		t.Fatalf("benign handler stub missing — the gate must skip junk, not drop endpoints:\n%s", stubs)
+	benign := settings.Endpoint{Name: "close", Entity: "tickets", Method: "POST", Path: "{id}/close", Handler: "entities/tickets_endpoints.go#CloseTicket"}
+	bp := base()
+	bp.Endpoints = []settings.Endpoint{benign}
+	files, err := renderAppSpecFiles(bp)
+	if err != nil {
+		t.Fatalf("benign endpoint refused: %v", err)
 	}
-	app := renderAppSpecApp(bp)
-	if strings.Contains(app, "pwn") {
-		t.Fatalf("SECURITY: [app-spec-endpoint-ident] app.go registers a non-identifier handler:\n%s", app)
+	var stub string
+	for _, f := range files {
+		if filepath.ToSlash(f.name) == "entities/tickets_endpoints.go" {
+			stub = f.content
+		}
 	}
-	if !strings.Contains(app, "http.HandlerFunc(RealHandler)") {
-		t.Fatalf("benign handler registration missing:\n%s", app)
+	if !strings.Contains(stub, "func CloseTicket(ctx context.Context, in CloseTicketInput) (*Tickets, error) {") {
+		t.Fatalf("benign handler stub missing:\n%s", stub)
 	}
-	// And the parse backstop still holds over the full set.
-	if err := assertAppSpecGoParses([]generatedFile{
-		{name: "stubs.go", content: stubs},
-		{name: "app.go", content: app},
-	}); err != nil {
-		t.Fatalf("emitted files do not parse: %v", err)
+	for _, hostile := range []func(*settings.Endpoint){
+		func(e *settings.Endpoint) { e.Handler = "entities/tickets_endpoints.go#X(){}; func pwn" },
+		func(e *settings.Endpoint) { e.Handler = "entities/../main.go#Pwn" },
+		func(e *settings.Endpoint) { e.Path = "{id}/close/{x string; pwn int}" },
+		func(e *settings.Endpoint) { e.Name = "x\nendpoints: pwn" },
+		func(e *settings.Endpoint) { e.Description = "ok\n  - name: pwn" },
+	} {
+		e := benign
+		hostile(&e)
+		bp := base()
+		bp.Endpoints = []settings.Endpoint{e}
+		if files, err := renderAppSpecFiles(bp); err == nil {
+			for _, f := range files {
+				if strings.Contains(f.content, "pwn") {
+					t.Fatalf("SECURITY: [app-spec-endpoint-ident] %+v reached %s:\n%s", e, f.name, f.content)
+				}
+			}
+			t.Fatalf("hostile endpoint %+v rendered", e)
+		}
 	}
 }

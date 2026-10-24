@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"slices"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── LineChart ──────────────────────────────────────────────────────
@@ -56,12 +58,15 @@ type LineChartConfig struct {
 	// keys the chart derives (width, height, viewBox, xmlns, role,
 	// aria-labelledby, aria-hidden).
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 // LineChart renders a multi-series line chart.
 func LineChart(cfg LineChartConfig) render.HTML {
 	if len(cfg.Series) == 0 {
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 	for _, s := range cfg.Series {
 		if s.Name == "" {
@@ -70,7 +75,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		// A line needs ≥2 points to draw a trend; with fewer there's simply
 		// not enough data yet. A calm empty state, not a crash.
 		if len(s.Values) < 2 {
-			return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "Not enough data yet", cfg.ExtraAttrs)
+			return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, i18nui.ChartNotEnoughData.Text(cfg.Ctx), cfg.ExtraAttrs)
 		}
 	}
 	w := cfg.Width

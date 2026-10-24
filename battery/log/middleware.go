@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
@@ -96,7 +97,7 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 						RequestID: textsafe.ScrubControlBytes(middleware.GetRequestID(r.Context())),
 						ctx:       r.Context(),
 					})
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+					i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				}
 			}()
 			next.ServeHTTP(w, r)

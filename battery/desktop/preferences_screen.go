@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -84,11 +85,13 @@ type preferencesScreen struct {
 
 // ScreenTitle names the page. The preferences form is the app's one
 // settings surface, so the title is fixed.
-func (s *preferencesScreen) ScreenTitle() string { return "Settings" }
+func (s *preferencesScreen) ScreenTitle(ctx context.Context) string {
+	return pageSettingsTitle.Text(ctx, nil)
+}
 
 // ScreenDescription is the page's one-line description.
-func (s *preferencesScreen) ScreenDescription() string {
-	return "Preferences for this installation"
+func (s *preferencesScreen) ScreenDescription(ctx context.Context) string {
+	return pageSettingsDescription.Text(ctx, nil)
 }
 
 // RenderCtx paints the form from the declared list and the
@@ -105,23 +108,23 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 		var field render.HTML
 		switch d.Kind {
 		case PreferenceBool:
-			field = boolField(d, p.Bool(d.Key))
+			field = boolField(ctx, d, p.Bool(d.Key))
 		case PreferenceInt:
-			field = intField(d, p.Int(d.Key))
+			field = intField(ctx, d, p.Int(d.Key))
 		case PreferenceChoice:
-			field = choiceField(d, p.String(d.Key))
+			field = choiceField(ctx, d, p.String(d.Key))
 		default: // PreferenceString; the kinds are a closed set validated at New
-			field = stringField(d, p.String(d.Key))
+			field = stringField(ctx, d, p.String(d.Key))
 		}
 		fields = append(fields, field)
 	}
 	action := interactive.Post(preferencesFormPath).OnSuccess(interactive.Navigate(s.path))
 	return render.Join(
-		ui.PageHeader(ui.PageHeaderConfig{Title: "Settings"}),
+		ui.PageHeader(ui.PageHeaderConfig{Title: pageSettingsTitle.Text(ctx)}),
 		ui.Form(ui.FormConfig{
 			Action:      preferencesFormPath,
 			Method:      http.MethodPost,
-			SubmitLabel: "Save",
+			SubmitLabel: pageSettingsSave.Text(ctx),
 			Ctx:         ctx,
 			ExtraAttrs:  html.Attrs(action.Attrs()),
 		}, fields...),
@@ -132,7 +135,7 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 // stored-or-default value the typed reader (Preferences.Bool)
 // answers: the hidden+checkbox pair. Field ids follow the
 // "f-<key>" shape this screen has always used.
-func boolField(d Preference, v bool) render.HTML {
+func boolField(ctx context.Context, d Preference, v bool) render.HTML {
 	id := "f-" + d.Key
 	// A bare checkbox cannot round-trip a bool through the form
 	// intercept, so the hidden "false" comes first and the checked
@@ -141,13 +144,13 @@ func boolField(d Preference, v bool) render.HTML {
 	// core-ui/runtime/src/rpc.js).
 	return render.Join(
 		html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
-		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label, ID: id, Value: "true", Checked: v, Help: d.Help}),
+		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: "true", Checked: v, Help: helpText(ctx, d)}),
 	)
 }
 
 // intField builds an int preference's number input from v, the
 // stored-or-default value the typed reader (Preferences.Int) answers.
-func intField(d Preference, v int) render.HTML {
+func intField(ctx context.Context, d Preference, v int) render.HTML {
 	id := "f-" + d.Key
 	var min, max *float64
 	if d.Min != nil {
@@ -159,55 +162,65 @@ func intField(d Preference, v int) render.HTML {
 		max = &f
 	}
 	return ui.NumberField(ui.NumberFieldConfig{
-		Name: d.Key, Label: d.Label, ID: id,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id,
 		Value: strconv.Itoa(v), Min: min, Max: max,
-		Help: intHelp(d),
+		Help: intHelp(ctx, d),
 	})
 }
 
 // choiceField builds a choice preference's select from cur, the
 // stored-or-default value the typed reader (Preferences.String)
 // answers.
-func choiceField(d Preference, cur string) render.HTML {
+func choiceField(ctx context.Context, d Preference, cur string) render.HTML {
 	id := "f-" + d.Key
 	opts := make([]ui.SelectOption, 0, len(d.Choices))
 	for _, c := range d.Choices {
 		opts = append(opts, ui.SelectOption{Value: c, Text: choiceLabel(c), Selected: c == cur})
 	}
 	return ui.Select(ui.SelectConfig{
-		Name: d.Key, Label: d.Label, ID: id, Options: opts, Help: d.Help,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Options: opts, Help: helpText(ctx, d),
 	})
 }
 
 // stringField builds a string preference's text input from text, the
 // stored-or-default value the typed reader (Preferences.String)
 // answers.
-func stringField(d Preference, text string) render.HTML {
+func stringField(ctx context.Context, d Preference, text string) render.HTML {
 	id := "f-" + d.Key
 	return ui.TextField(ui.TextFieldConfig{
-		Name: d.Key, Label: d.Label, ID: id, Value: text, Help: d.Help,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: text, Help: helpText(ctx, d),
 	})
 }
 
 // intHelp joins the declaration's help with the range hint, so the
-// bounds are visible where they are enforced.
-func intHelp(d Preference) string {
+// bounds are visible where they are enforced. The hint is in ctx's
+// locale, its numbers in the locale's digits.
+func intHelp(ctx context.Context, d Preference) string {
 	hint := ""
 	switch {
 	case d.Min != nil && d.Max != nil:
-		hint = "Between " + strconv.Itoa(*d.Min) + " and " + strconv.Itoa(*d.Max) + "."
+		hint = hintPrefBetween.Text(ctx, map[string]any{"min": *d.Min, "max": *d.Max})
 	case d.Min != nil:
-		hint = "At least " + strconv.Itoa(*d.Min) + "."
+		hint = hintPrefAtLeast.Text(ctx, map[string]any{"min": *d.Min})
 	case d.Max != nil:
-		hint = "At most " + strconv.Itoa(*d.Max) + "."
+		hint = hintPrefAtMost.Text(ctx, map[string]any{"max": *d.Max})
 	}
-	if d.Help == "" {
+	help := helpText(ctx, d)
+	if help == "" {
 		return hint
 	}
 	if hint == "" {
-		return d.Help
+		return help
 	}
-	return d.Help + " " + hint
+	return help + " " + hint
+}
+
+// helpText is the declaration's help in ctx's locale, "" when unset.
+func helpText(ctx context.Context, d Preference) string {
+	if d.Help.IsZero() {
+		return ""
+	}
+	return d.Help.Text(ctx)
 }
 
 // choiceLabel titles one choice the way the resource engine titles
@@ -237,26 +250,22 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 			// The --serve shape: the battery never Runs, so no store
 			// opens. Say so plainly; the screen still rendered the
 			// declared defaults.
-			writePreferencesEnvelope(w, http.StatusServiceUnavailable,
-				"preferences need the desktop host: the app state store is not open", nil)
+			writePreferencesEnvelope(w, r, http.StatusServiceUnavailable, reasonPrefsNeedHost, nil)
 			return
 		}
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-			writePreferencesEnvelope(w, http.StatusUnsupportedMediaType,
-				"content-type must be application/json", nil)
+			writePreferencesEnvelope(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType, nil)
 			return
 		}
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxCallBody))
 		if err != nil {
-			writePreferencesEnvelope(w, http.StatusBadRequest,
-				"request body too large or unreadable", nil)
+			writePreferencesEnvelope(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable, nil)
 			return
 		}
 		var form map[string]json.RawMessage
 		if len(body) > 0 {
 			if err := handler.UnmarshalStrict(body, &form); err != nil || form == nil {
-				writePreferencesEnvelope(w, http.StatusBadRequest,
-					"request body must be a JSON object", nil)
+				writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsNotObject, nil)
 				return
 			}
 		}
@@ -266,14 +275,14 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 		// could not have rendered.
 		p := b.prefs
 		values := make(map[string]json.RawMessage, len(form))
-		fieldErrs := make(map[string][]string)
+		fieldErrs := make(map[string]*preferenceError)
 		for _, name := range slices.Sorted(maps.Keys(form)) {
 			if name == csrfFormSkip {
 				continue
 			}
 			d, ok := p.index[name]
 			if !ok {
-				fieldErrs[name] = []string{"not a declared preference"}
+				fieldErrs[name] = &preferenceError{key: name, reason: reasonPrefUndeclared}
 				continue
 			}
 			if p.decls[d].Kind == PreferenceInt && string(form[name]) == `""` {
@@ -282,26 +291,26 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 			values[name] = form[name]
 		}
 		if len(fieldErrs) > 0 {
-			writePreferencesEnvelope(w, http.StatusBadRequest, "some fields are invalid", fieldErrs)
+			writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid, fieldErrs)
 			return
 		}
 		if _, err := p.setRaw(values); err != nil {
 			var pe *preferenceError
 			if errors.As(err, &pe) {
-				writePreferencesEnvelope(w, http.StatusBadRequest, pe.Error(),
-					map[string][]string{pe.key: {pe.msg}})
+				writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid,
+					map[string]*preferenceError{pe.key: pe})
 				return
 			}
 			var de *Error
 			if errors.As(err, &de) && de.Code == CodeUnsupported {
-				writePreferencesEnvelope(w, http.StatusServiceUnavailable, de.Message, nil)
+				writePreferencesEnvelope(w, r, http.StatusServiceUnavailable, reasonPrefsNeedHost, nil)
 				return
 			}
 			// Internal failures carry no detail to the page.
-			writePreferencesEnvelope(w, http.StatusInternalServerError, "saving preferences failed", nil)
+			writePreferencesEnvelope(w, r, http.StatusInternalServerError, reasonPrefsSaveFailed, nil)
 			return
 		}
-		writePreferencesEnvelope(w, http.StatusOK, "", nil)
+		writePreferencesEnvelope(w, r, http.StatusOK, i18n.Phrase{}, nil)
 	}
 }
 
@@ -313,17 +322,35 @@ const csrfFormSkip = "_csrf"
 // formerrors module renders: error is the fallback toast text, fields
 // maps a form field name to its messages.
 type preferencesEnvelope struct {
-	Error  string              `json:"error,omitempty"`
-	Fields map[string][]string `json:"fields,omitempty"`
-	OK     bool                `json:"ok"`
+	Error        string              `json:"error,omitempty"`
+	Reason       string              `json:"reason,omitempty"`
+	Fields       map[string][]string `json:"fields,omitempty"`
+	FieldReasons map[string][]string `json:"field_reasons,omitempty"`
+	OK           bool                `json:"ok"`
 }
 
-// writePreferencesEnvelope serves one answer. A 200 carries {"ok":true}
-// only; the form's navigate effect re-renders the page.
-func writePreferencesEnvelope(w http.ResponseWriter, status int, errMsg string, fields map[string][]string) {
+// writePreferencesEnvelope serves one answer: reason (given the refused
+// field names as {{fields}}) and each field's refusal in the request's
+// locale beside their codes. A 200 (zero
+// reason) carries {"ok":true} only; the form's navigate effect
+// re-renders the page.
+func writePreferencesEnvelope(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, fields map[string]*preferenceError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	_ = enc.Encode(preferencesEnvelope{Error: errMsg, Fields: fields, OK: status == http.StatusOK})
+	env := preferencesEnvelope{OK: status == http.StatusOK}
+	keys := slices.Sorted(maps.Keys(fields))
+	if !reason.IsZero() {
+		env.Error = reason.Text(r.Context(), map[string]any{"fields": strings.Join(keys, ", ")})
+		env.Reason = reason.Code()
+	}
+	for _, key := range keys {
+		if env.Fields == nil {
+			env.Fields, env.FieldReasons = map[string][]string{}, map[string][]string{}
+		}
+		pe := fields[key]
+		env.Fields[key] = []string{pe.reason.Text(r.Context(), pe.params)}
+		env.FieldReasons[key] = []string{pe.reason.Code()}
+	}
+	_ = json.NewEncoder(w).Encode(env)
 }

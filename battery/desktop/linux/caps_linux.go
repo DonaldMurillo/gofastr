@@ -319,7 +319,8 @@ func (s *linuxShell) Prompt(ctx context.Context, req desktop.PermissionRequest) 
 		return decision, nil
 	}
 	s.mu.Unlock()
-	message := req.Capability + "." + req.Method + " wants permission: " + req.Permission
+	words := desktop.PromptText(ctx, req)
+	message := words.Message
 	if req.Description != "" {
 		message += "\n\n" + req.Description
 	}
@@ -341,12 +342,12 @@ func (s *linuxShell) Prompt(ctx context.Context, req desktop.PermissionRequest) 
 		if op.handle == 0 {
 			return fmt.Errorf("desktop/linux: create permission dialog")
 		}
-		capsSetString(gtk.Sym.GtkWindowSetTitle, op.handle, "Permission required")
+		capsSetString(gtk.Sym.GtkWindowSetTitle, op.handle, words.Title)
 		for _, button := range []struct {
 			text     string
 			response uintptr
 		}{
-			{"Deny", capsResponseDeny}, {"Allow once", capsResponseOnce}, {"Allow", capsResponseAllow},
+			{words.Deny, capsResponseDeny}, {words.AllowOnce, capsResponseOnce}, {words.Allow, capsResponseAllow},
 		} {
 			label := capsCString(button.text)
 			capsCall(gtk.Sym.GtkDialogAddButton, op.handle, uintptr(unsafe.Pointer(&label[0])), button.response)
@@ -537,11 +538,11 @@ func capsClipboard() uintptr {
 }
 
 func (s *linuxShell) OpenFile(ctx context.Context, opts desktop.OpenOptions) ([]string, error) {
-	return s.chooseFiles(ctx, 0, "Open file", "Open", opts, "")
+	return s.chooseFiles(ctx, 0, dialogOpenFile.Text(ctx), dialogOpen.Text(ctx), opts, "")
 }
 
 func (s *linuxShell) SaveFile(ctx context.Context, opts desktop.SaveOptions) (string, error) {
-	paths, err := s.chooseFiles(ctx, 1, "Save file", "Save", desktop.OpenOptions{}, opts.DefaultName)
+	paths, err := s.chooseFiles(ctx, 1, dialogSaveFile.Text(ctx), dialogSave.Text(ctx), desktop.OpenOptions{}, opts.DefaultName)
 	if err != nil {
 		return "", err
 	}
@@ -549,7 +550,7 @@ func (s *linuxShell) SaveFile(ctx context.Context, opts desktop.SaveOptions) (st
 }
 
 func (s *linuxShell) OpenFolder(ctx context.Context) (string, error) {
-	paths, err := s.chooseFiles(ctx, 2, "Open folder", "Select", desktop.OpenOptions{}, "")
+	paths, err := s.chooseFiles(ctx, 2, dialogOpenFolder.Text(ctx), dialogSelect.Text(ctx), desktop.OpenOptions{}, "")
 	if err != nil {
 		return "", err
 	}
@@ -582,7 +583,7 @@ func (s *linuxShell) chooseFiles(ctx context.Context, action uintptr, title, acc
 	defer release()
 	op := newCapsOperation(s, true, false)
 	if err := s.launchCaps(ctx, op, func() error {
-		t, a, c := capsCString(title), capsCString(accept), capsCString("Cancel")
+		t, a, c := capsCString(title), capsCString(accept), capsCString(dialogCancel.Text(ctx))
 		op.handle = capsCall(gtk.Sym.GtkFileChooserNativeNew, uintptr(unsafe.Pointer(&t[0])), s.capsParent(), action,
 			uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&c[0])))
 		runtime.KeepAlive(t)

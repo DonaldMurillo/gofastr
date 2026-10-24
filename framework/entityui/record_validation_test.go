@@ -7,10 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/chromedp/chromedp"
 )
 
 func fptr(f float64) *float64 { return &f }

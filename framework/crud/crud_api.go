@@ -132,7 +132,7 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+	ch.EmitEvent(ctx, event.EntityDeleted, ch.keyPayload(id))
 	return nil
 }
 
@@ -147,9 +147,10 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 		return nil, err
 	}
 	cols := ch.visibleFields()
-	qb := query.Select(cols...).
+	kc, ka := ch.keyWhere(id)
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
@@ -164,8 +165,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	}
 
 	sqlStr, args := qb.Build()
-	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-	result, err := ch.scanOne(row, cols)
+	result, err := ch.scanOwn(ctx, id, cols, sqlStr, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound
@@ -360,7 +360,7 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	}
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		ch.Entity.GetTable(), ch.keyCols(), nested,
 	)
 	for _, c := range searchConds {
 		qb.Where(c.SQL, c.Args...)
@@ -470,7 +470,7 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 		return nil, txErr
 	}
 	for _, id := range ids {
-		ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.EmitEvent(ctx, event.EntityDeleted, ch.keyPayload(id))
 	}
 	return ids, nil
 }
@@ -537,7 +537,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	}
 	applyNestedFilters(
 		func(sql string, args ...any) { cb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		ch.Entity.GetTable(), ch.keyCols(), nested,
 	)
 	for _, c := range searchConds {
 		cb.Where(c.SQL, c.Args...)

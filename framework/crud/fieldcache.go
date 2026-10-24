@@ -53,7 +53,10 @@ type fieldCacheData struct {
 	// rows are already key-converted) by wire key.
 	jsonColumns  map[string]struct{}
 	jsonWireKeys map[string]struct{}
-	sig          uint64
+	// decimalWireKeys holds the schema.Decimal fields by wire key: the
+	// read path turns a driver's number back into the decimal's text.
+	decimalWireKeys map[string]struct{}
+	sig             uint64
 }
 
 // fieldCache is the shared holder. The handler stores a POINTER to it, so
@@ -130,10 +133,11 @@ func (ch *CrudHandler) refreshFieldCacheIfStale() {
 // entity's current declarations. Pure: writes nothing back to ch.
 func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 	s := &fieldCacheData{
-		wireKeyOf:    map[string]string{},
-		columnOfWire: map[string]string{},
-		jsonColumns:  map[string]struct{}{},
-		jsonWireKeys: map[string]struct{}{},
+		wireKeyOf:       map[string]string{},
+		columnOfWire:    map[string]string{},
+		jsonColumns:     map[string]struct{}{},
+		jsonWireKeys:    map[string]struct{}{},
+		decimalWireKeys: map[string]struct{}{},
 	}
 	if ch.Entity == nil {
 		s.sig = ch.fieldCacheSignature()
@@ -162,6 +166,9 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		if f.Type == schema.JSON {
 			s.jsonColumns[f.Name] = struct{}{}
 			s.jsonWireKeys[wk] = struct{}{}
+		}
+		if f.Type == schema.Decimal {
+			s.decimalWireKeys[wk] = struct{}{}
 		}
 		if !f.Hidden {
 			s.visible = append(s.visible, f.Name)

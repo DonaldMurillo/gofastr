@@ -60,8 +60,8 @@ type searchScreen struct {
 	path string
 }
 
-// ScreenTitle names the page.
-func (s *searchScreen) ScreenTitle() string { return "Search" }
+// ScreenTitle names the page with its heading's word.
+func (s *searchScreen) ScreenTitle(ctx context.Context) string { return i18nui.SearchLabel.Text(ctx) }
 
 // ScreenRobots keeps the page out of crawlers and out of the index.
 func (s *searchScreen) ScreenRobots() string { return "noindex" }
@@ -91,7 +91,7 @@ func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	// app frame's content area supplies itself.
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage},
 		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-			ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.T(ctx, i18nui.KeySearchLabel)}),
+			ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.SearchLabel.Text(ctx)}),
 			ui.SearchResults(cfg),
 		),
 	)

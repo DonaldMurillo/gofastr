@@ -110,7 +110,10 @@ component owns only its internal content and layout. Per position:
 
 - **Drawers** (`Edge`, `EdgeRight`): the position container paints
   the surface background, shadow, and scroll. Slot bodies add their
-  own internal padding.
+  own internal padding. `Edge` mounts on the reading direction's start
+  side and `EdgeRight` on its end, so on a `dir="rtl"` page they swap
+  sides and slide in from there. The corner positions mirror the same
+  way.
 - **Bottom sheets** (`Bottom`): the position container paints the
   surface background, shadow, and rounded top corners, caps height at
   75vh with internal scroll, and gives the slot default padding (the

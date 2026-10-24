@@ -141,7 +141,8 @@ See [Migrations](migrations.md) for the production-hardening details
 ## TLS & graceful shutdown
 
 Terminate TLS at your ingress/load balancer (the common setup) and run the
-app over plain HTTP behind it. `App.Start` installs signal handling and
+app over plain HTTP behind it. When nothing sits in front, the app can
+serve HTTPS itself (next section). `App.Start` installs signal handling and
 drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
 rolling deploys don't cut active requests.
 
@@ -156,6 +157,63 @@ If your process owns signal handling itself, set
 `AppConfig.DisableSignalHandling` and call `App.Shutdown` (or
 `App.RunWithSignals`) from your own handler. `Shutdown` is idempotent,
 so double-wiring is harmless.
+
+### Serving HTTPS from the app
+
+`framework.WithTLS` (or `AppConfig.TLS`) serves HTTPS on the listen
+address. Pick one certificate source:
+
+```go
+// Files on disk, e.g. from certbot. A renewal is picked up on the next
+// handshake after either file changes; no restart.
+framework.WithTLS(framework.TLSConfig{
+    CertFile: "/etc/letsencrypt/live/example.com/fullchain.pem",
+    KeyFile:  "/etc/letsencrypt/live/example.com/privkey.pem",
+})
+
+// Let's Encrypt, obtained and renewed by the app.
+framework.WithTLS(framework.TLSConfig{AutoCert: &framework.AutoCertConfig{
+    Domains:  []string{"example.com", "www.example.com"},
+    CacheDir: "/var/lib/myapp/certs",
+    Email:    "ops@example.com",
+}})
+```
+
+The third source, `Config`, takes a `*tls.Config` you build (client
+certificates, a certificate store). Setting none or more than one fails
+`Start`, as does a certificate pair that does not load.
+
+- TLS 1.2 is the minimum for every source; a `Config` asking for less
+  fails `Start`.
+- HTTP/2 is offered over TLS.
+- `AutoCert` answers the TLS-ALPN-01 challenge on the HTTPS port, so the
+  app must be reachable on `:443` at every name in `Domains` and nothing
+  needs to listen on `:80`. Handshakes for other names are refused.
+  `CacheDir` keeps certificates across restarts; without it each restart
+  asks Let's Encrypt again and hits its rate limits. Setting `AutoCert`
+  accepts the authority's terms of service; set `DirectoryURL` to the
+  staging directory while testing a deployment.
+- The startup banner prints `https://` URLs, and the `Secure` cookie and
+  HSTS checks see the connection as HTTPS.
+
+Plain HTTP on the same port gets net/http's 400 answer. To redirect
+port 80, run a second listener or let the load balancer do it.
+
+### HTTP versions
+
+`framework.WithHTTPProtocols` (or `AppConfig.HTTPProtocols`) passes an
+`http.Protocols` to the server. Unset, the app speaks HTTP/1.1, plus
+HTTP/2 when TLS is on. A proxy that speaks HTTP/2 to the app without TLS
+(h2c, prior knowledge) needs:
+
+```go
+var p http.Protocols
+p.SetHTTP1(true)
+p.SetUnencryptedHTTP2(true)
+app := framework.NewApp(framework.WithHTTPProtocols(p))
+```
+
+h2c by `Upgrade: h2c` is not supported, and HTTP/3 is not offered.
 
 ## HTTP server timeouts
 
@@ -288,7 +346,7 @@ what-breaks/what-fixes-it list.
 - [ ] Migrations run as a deploy step (or accepted on-boot for single-replica).
 - [ ] Readiness/liveness probes wired.
 - [ ] `/metrics` scraped from inside the network only.
-- [ ] TLS terminated at ingress.
+- [ ] TLS terminated at ingress, or served by the app with `WithTLS`.
 - [ ] Database backup scheduled and a restore actually tested. See [Backups and restore](backups.md).
 - [ ] Server timeouts fit your slowest real request. Raise `WriteTimeout` via `WithHTTPServerTimeouts` for report/export/AI endpoints instead of letting the 60s default cut them.
 

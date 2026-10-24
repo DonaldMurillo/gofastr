@@ -46,7 +46,7 @@ func init() {
 			contracts.RuleTokenCustomProperty,
 			contracts.RuleDuplicateTokenValue,
 			contracts.RuleRepeatedLiteral,
-			contracts.RuleBareThemeLiteral,
+			contracts.RuleBareThemeLiteral, contracts.RulePhysicalSide,
 		},
 		Run: runRendering,
 	})
@@ -210,10 +210,13 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		ownsStyling := hasPrefixAny(f.Rel, designSystemPrefixes)
 		devSurface := hasPrefixAny(f.Rel, devOnlyPrefixes)
 		ownTheme := hasPrefixAny(f.Rel, ownThemePrefixes)
+		bgMirrored := ownsStyling && mirrorsBackground(scan)
 		var dark darkScheme
+		var dir dirBlock
 
 		for i, line := range scan {
 			lineNo := i + 1
+			inDir := ownsStyling && dir.line(line)
 
 			// GOFASTR1807 runs on the styling trees, which the byte
 			// pre-filter below would mostly skip: a Set("gap", "8px")
@@ -234,6 +237,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			// they sit inside a shorthand.
 			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
 				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, line, lines[i], devSurface)...)
+			}
+			// GOFASTR1824: a physical side where a reading-direction one
+			// exists. Dev tooling is English-only chrome and stays out.
+			if ownsStyling && !devSurface && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
+				out = append(out, checkPhysicalSides(f.Rel, lineNo, line, lines[i], bgMirrored, inDir)...)
 			}
 
 			// Cheap pre-filter. Every pattern below needs at least one of

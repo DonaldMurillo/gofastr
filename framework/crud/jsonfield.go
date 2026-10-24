@@ -3,6 +3,7 @@ package crud
 import (
 	"database/sql"
 	"encoding/json"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -13,7 +14,7 @@ import (
 // handing it a map fails the statement outright ("unsupported type
 // map[string]interface {}, a map"). Every write path therefore runs its
 // values through bindJSONValue, and every read path parses the column
-// back through decodeJSONFields, so a round trip returns what was sent
+// back through decodeReadFields, so a round trip returns what was sent
 // rather than an opaque string the client has to parse a second time.
 //
 // The two directions are deliberately not symmetric about strings. On
@@ -70,30 +71,37 @@ func (ch *CrudHandler) isJSONColumn(col string) bool {
 	return ok
 }
 
-// decodeJSONFields parses every schema.JSON column of a scanned row back
-// into a JSON value, in place. Keys are wire keys, the shape a row has
-// after scanRow/scanRows applied convertKey.
-func (ch *CrudHandler) decodeJSONFields(row map[string]any) {
+// decodeReadFields parses every schema.JSON column of a scanned row back
+// into a JSON value and turns every schema.Decimal column into its text,
+// in place. Keys are wire keys, the shape a row has after scanRow/scanRows
+// applied convertKey.
+func (ch *CrudHandler) decodeReadFields(row map[string]any) {
 	if row == nil {
 		return
 	}
-	for key := range ch.snapshot().jsonWireKeys {
+	snap := ch.snapshot()
+	for key := range snap.jsonWireKeys {
 		if v, ok := row[key]; ok {
 			row[key] = decodeJSONColumn(v)
 		}
 	}
+	for key := range snap.decimalWireKeys {
+		if v, ok := row[key]; ok {
+			row[key] = decimalText(v)
+		}
+	}
 }
 
-// decodeJSONRows applies decodeJSONFields to a slice of scanned rows.
-func (ch *CrudHandler) decodeJSONRows(rows []map[string]any) {
+// decodeReadRows applies decodeReadFields to a slice of scanned rows.
+func (ch *CrudHandler) decodeReadRows(rows []map[string]any) {
 	if len(rows) == 0 {
 		return
 	}
-	if len(ch.snapshot().jsonWireKeys) == 0 {
+	if snap := ch.snapshot(); len(snap.jsonWireKeys) == 0 && len(snap.decimalWireKeys) == 0 {
 		return
 	}
 	for _, row := range rows {
-		ch.decodeJSONFields(row)
+		ch.decodeReadFields(row)
 	}
 }
 
@@ -104,14 +112,15 @@ func (ch *CrudHandler) decodeJSONRows(rows []map[string]any) {
 //
 // They pass the handler's entity down for the same reason: a driver that
 // reports a boolean column as int64 (modernc.org/sqlite does) would
-// otherwise serialize it as 0/1. Both normalizations belong on this seam,
-// so no read path can pick up one and miss the other.
+// otherwise serialize it as 0/1, and one that scans a DECIMAL column as a
+// number would break its string wire contract. Every normalization
+// belongs on this seam, so no read path can pick up one and miss another.
 func (ch *CrudHandler) scanOne(row *sql.Row, cols []string) (map[string]any, error) {
 	result, err := scanRowWithBoolColumns(row, cols, ch.convertKey, ch.boolColumns(cols))
 	if err != nil {
 		return nil, err
 	}
-	ch.decodeJSONFields(result)
+	ch.decodeReadFields(result)
 	return result, nil
 }
 
@@ -124,35 +133,58 @@ func (ch *CrudHandler) scanMany(rows *sql.Rows, cols []string) ([]map[string]any
 	if err != nil {
 		return nil, err
 	}
-	ch.decodeJSONRows(results)
+	ch.decodeReadRows(results)
 	return results, nil
 }
 
-// decodeEntityJSONColumns parses the schema.JSON columns of rows keyed by
-// RAW DB column name. Eager-loaded relation rows carry that shape (they
+// decodeEntityReadColumns does what decodeReadFields does for rows keyed
+// by RAW DB column name. Eager-loaded relation rows carry that shape (they
 // are case-converted only at the very end of the include walk), and they
 // belong to a different entity than the handler's, so they cannot go
-// through decodeJSONFields.
-func decodeEntityJSONColumns(ent *entity.Entity, rows []map[string]any) {
+// through decodeReadFields.
+func decodeEntityReadColumns(ent *entity.Entity, rows []map[string]any) {
 	if ent == nil || len(rows) == 0 {
 		return
 	}
-	var cols []string
+	var jsonCols, decimalCols []string
 	for _, f := range ent.GetFields() {
-		if f.Type == schema.JSON {
-			cols = append(cols, f.Name)
+		switch f.Type {
+		case schema.JSON:
+			jsonCols = append(jsonCols, f.Name)
+		case schema.Decimal:
+			decimalCols = append(decimalCols, f.Name)
+		default:
+			// Every other type reads back as the driver scanned it.
 		}
 	}
-	if len(cols) == 0 {
-		return
-	}
 	for _, row := range rows {
-		for _, c := range cols {
+		for _, c := range jsonCols {
 			if v, ok := row[c]; ok {
 				row[c] = decodeJSONColumn(v)
 			}
 		}
+		for _, c := range decimalCols {
+			if v, ok := row[c]; ok {
+				row[c] = decimalText(v)
+			}
+		}
 	}
+}
+
+// decimalText is a stored decimal as the string the wire carries. SQLite
+// gives a DECIMAL column numeric affinity, so its driver scans the value
+// back as an int64 or a float64; Postgres hands back the text already.
+// The float is the stored value: SQLite kept no more digits than it has.
+func decimalText(v any) any {
+	switch t := v.(type) {
+	case int64:
+		return strconv.FormatInt(t, 10)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case []byte:
+		return string(t)
+	}
+	return v
 }
 
 // decodeJSONColumn parses one stored column value. Anything that is not

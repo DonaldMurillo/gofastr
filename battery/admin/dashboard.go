@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -39,7 +39,7 @@ func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": b.singular(ctx, e)}),
+		Label:   i18nui.EntityNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)}),
 		Href:    b.entityBase(e) + "/create",
 		Variant: ui.ButtonPrimary,
 		Icon:    "plus",
@@ -50,8 +50,8 @@ func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) render.HTML {
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminDashboard),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminDashboardSub),
+			Title:    i18nui.AdminDashboard.Text(ctx),
+			Subtitle: i18nui.AdminDashboardSub.Text(ctx),
 			Actions:  b.dashboardNew(ctx),
 		}),
 		resultNotice(ctx),
@@ -97,7 +97,7 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 	}
 	out := make([]render.HTML, 0, len(order))
 	for _, g := range order {
-		label := i18nui.T(ctx, i18nui.KeyAdminEntities)
+		label := i18nui.AdminEntities.Text(ctx)
 		if g != "" {
 			label = i18nui.NavGroupLabel(ctx, nil, g, "")
 		}
@@ -118,19 +118,16 @@ func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML 
 
 // probeCount is a late count's fallback: a bounded read of at most
 // manyRows ids in the caller's scope, its own deadline apart from the
-// one the count spent. It reads the number when there are fewer, "10k+"
-// past it, and "—" when the read fails too.
+// one the count spent. It reads the number when there are fewer,
+// "10,000+" past it, and "—" when the read fails too.
 func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
 	pctx, cancel := context.WithTimeout(ctx, probeDeadline)
 	defer cancel()
 	n, more, ok := b.ui.CountUpTo(pctx, e.GetName(), "", manyRows)
-	switch {
-	case !ok:
-		return "—"
-	case more:
-		return countText(ctx, strconv.Itoa(manyRows))
+	if more {
+		n = manyRows
 	}
-	return countText(ctx, strconv.Itoa(n))
+	return countText(ctx, n, ok)
 }
 
 // entityStat is the card itself: the plural, the count read in the
@@ -139,13 +136,14 @@ func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
 func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML {
 	cctx, cancel := context.WithTimeout(ctx, countDeadline)
 	defer cancel()
-	count := countText(ctx, b.ui.StatValue(cctx, e.GetName(), "count", "", "", ""))
+	n, ok := b.ui.CountInt(cctx, e.GetName(), "")
+	count := countText(ctx, n, ok)
 	if count == "—" {
 		count = b.probeCount(ctx, e)
 	}
 	updated := ""
 	if t, ok := b.ui.LastUpdated(cctx, e.GetName()); ok {
-		updated = i18nui.TVars(ctx, i18nui.KeyAdminUpdatedAgo, map[string]string{"ago": ui.Ago(ctx, time.Now(), t)})
+		updated = i18nui.AdminUpdatedAgo.Text(ctx, map[string]any{"ago": ui.Ago(ctx, time.Now(), t)})
 	}
 	icon := ""
 	if n := navOf(e); n != nil {
@@ -159,7 +157,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 		Icon:  icon,
 		Tile:  true,
 		Action: ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyAdminCardNew),
+			Label:   i18nui.AdminCardNew.Text(ctx),
 			Href:    b.entityBase(e) + "/create",
 			Variant: ui.ButtonSecondary,
 			Size:    ui.ButtonSizeSmall,
@@ -175,21 +173,21 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
 		b.logger().Error("admin: list failed jobs", "error", err)
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminQueueLoadFailed)))
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx)))
 	}
 	if len(jobs) == 0 {
 		return ""
 	}
 	var count render.HTML
 	if stats, err := b.cfg.Queue.Stats(ctx); err == nil {
-		count = ui.Muted(render.Text(strconv.Itoa(stats["failed"])))
+		count = ui.Muted(render.Text(i18n.Number(ctx, stats["failed"])))
 	}
 	_, replay := b.replayable()
 	return render.Join(
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:        i18nui.T(ctx, i18nui.KeyAdminFailedJobs),
+			Title:        i18nui.AdminFailedJobs.Text(ctx),
 			Badge:        count,
-			Actions:      headerLink(i18nui.T(ctx, i18nui.KeyAdminViewAll), b.cfg.PathPrefix+"/queue?status=failed"),
+			Actions:      headerLink(i18nui.AdminViewAll.Text(ctx), b.cfg.PathPrefix+"/queue?status=failed"),
 			HeadingLevel: 3,
 			Compact:      true,
 		}),
@@ -199,17 +197,17 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 
 // recentCard is the newest audit rows, scoped as the Audit log page is.
 func (b *Battery) recentCard(ctx context.Context) render.HTML {
-	title := i18nui.T(ctx, i18nui.KeyAdminRecent)
-	all := headerLink(i18nui.T(ctx, i18nui.KeyAdminAudit), b.cfg.PathPrefix+"/audit")
+	title := i18nui.AdminRecent.Text(ctx)
+	all := headerLink(i18nui.AdminAudit.Text(ctx), b.cfg.PathPrefix+"/audit")
 	rows, err := b.queryAudit(ctx, dashboardRows)
 	if err != nil {
 		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditLoadFailed))))
+			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
 	}
 	if len(rows) == 0 {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoActivity), HeadingLevel: 3}))
+			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.AdminNoActivity.Text(ctx), HeadingLevel: 3}))
 	}
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
@@ -280,7 +278,7 @@ func (b *Battery) appCards(ctx context.Context) render.HTML {
 				"data-cui-poll-src": b.cardPath(c.Key),
 			}}, body)
 		}
-		cards[i] = ui.Card(ui.CardConfig{Heading: c.Title, HeadingLevel: 2}, body)
+		cards[i] = ui.Card(ui.CardConfig{Heading: c.Title.Text(ctx), HeadingLevel: 2}, body)
 	}
 	return ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG}, cards...)
 }

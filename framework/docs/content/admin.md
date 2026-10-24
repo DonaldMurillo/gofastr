@@ -66,6 +66,7 @@ not register fails boot.
 | `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |
 | `GET /admin/rbac/users` | User roles (needs `Auth`) |
 | `GET /admin/modules` | Process modules (needs `ProcessModules`) |
+| `GET /admin/emails?name=` | Email previews, one tab per mail (needs `EmailPreviews`) |
 
 A page whose backing is not wired is not mounted and has no sidebar
 entry. `Config.PathPrefix` moves everything off `/admin`.
@@ -107,8 +108,12 @@ its own routes:
 | `GET /admin/api/<name>/_export.csv` | CSV export |
 | `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
 | `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
-| `POST /admin/api/<name>/_views/_delete/{id}` | Delete a saved view |
+| `POST /admin/api/<name>/_views/_delete?id=<id>` | Delete a saved view |
 | `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too) |
+
+For an entity with a composite `PrimaryKey`, `{id}` above is one path
+segment per key column (`/admin/api/enrollments/{student_id}/{course_id}`),
+and the record screen is `/admin/entities/<name>/<v1>/<v2>`.
 
 Every write goes through the app's own CRUD handler, so validation,
 hooks, events, `WithAuditLog` rows, tenant and `OwnerField` scope, and
@@ -138,30 +143,45 @@ import "net/http"
 import "time"
 import "github.com/DonaldMurillo/gofastr/battery/admin"
 import "github.com/DonaldMurillo/gofastr/core-ui/component"
+import "github.com/DonaldMurillo/gofastr/core/i18n"
 import "github.com/DonaldMurillo/gofastr/framework/entity"
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 var reports, revenue func(*http.Request) (component.Component, error)
 var isFinance func(context.Context) bool
 -->
 ```go
+// Declared once, at package level.
+var (
+    reportsTitle = i18n.Define("myapp.admin.reports", "Reports")
+    revenueTitle = i18n.Define("myapp.admin.revenue", "Revenue")
+    docsLabel    = i18n.Define("myapp.admin.docs", "Docs")
+)
+
 admin.New(admin.Config{
     Pages: []admin.Page{{
         Path:   "/reports",
-        Title:  "Reports",
+        Title:  reportsTitle,
         Nav:    &entity.EntityNav{Group: "insights", Icon: "chart"},
         Access: isFinance, // optional, narrows beyond the gate
         Build:  reports,
     }},
-    Cards: []admin.Card{{Key: "revenue", Title: "Revenue", Build: revenue, Poll: 30 * time.Second}},
-    Links:    []admin.Link{{Group: "help", Label: "Docs", Href: "/docs"}},
+    Cards: []admin.Card{{Key: "revenue", Title: revenueTitle, Build: revenue, Poll: 30 * time.Second}},
+    Links:    []admin.Link{{Group: "help", Label: docsLabel, Href: "/docs"}},
     Commands: []ui.PaletteCommand{{Label: "Open docs", Href: "/docs"}},
 })
 ```
 
+A page's and a card's `Title`, a link's `Label` and a metric's `Label`
+are `i18n.Phrase` values, so the admin draws them in the request's
+language and a catalog entry for the key translates them (see
+`gofastr docs i18n`). A command's `Label` is the text itself: build the
+command list per request with the phrase's `Text(ctx)` when it needs
+translating.
+
 - A **Page** draws in the shell under `<PathPrefix><Path>` with a crumb
   and a palette entry. Its path may not take one of the admin's own
-  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/entities`,
-  `/api`, or anything under `/_`); boot fails if it does. `Access`
+  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/emails`,
+  `/entities`, `/api`, or anything under `/_`); boot fails if it does. `Access`
   refuses with 403, hides the nav entry and the palette entry, and Build
   never runs for a refused caller. An `Access` that panics refuses too,
   for that page alone; the rest of the admin draws. (A panicking
@@ -186,10 +206,10 @@ admin.New(admin.Config{
 
   ```go
   Metrics: []admin.Metric{
-      {Label: "MRR", Entity: "customers", Agg: "sum", Field: "mrr",
+      {Label: mrrLabel, Entity: "customers", Agg: "sum", Field: "mrr",
           Where: `status = "active"`, Format: "money", View: "active"},
-      {Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
-          Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount",
+      {Label: pastDueLabel, Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
+          Detail: &admin.Metric{Label: outstandingLabel, Agg: "sum", Field: "amount",
               Where: `status = "past_due"`, Format: "money", Tone: ui.TrendDown}},
   },
   ```
@@ -221,7 +241,7 @@ admin.New(admin.Config{
   per browser.
 
   ```go
-  Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: style.RegisterThemeOverride(theme.Brutal())}},
+  Themes: []ui.ThemeChoice{{Label: brutalName, Theme: style.RegisterThemeOverride(theme.Brutal())}},
   ```
 - Build failures are contained: an error, a panic or a nil component
   draws a generic notice in the shell and logs `app slot failed` with
@@ -313,7 +333,9 @@ Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
 Replay is offered on each failed row, and "Replay N failed" in the
 header whenever a job has failed, when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
-naming the actor. A failed list or stats read shows a generic notice and
+naming the actor. A failed job whose `UniqueKey` a newer live job holds
+is not replayed: one replay answers 409 with a notice, and "Replay N
+failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
 logs the driver error; the page never prints it. The Jobs page shows
 `QueueListLimit` jobs a page (default 50), newest first; the pager
 under the table turns pages through `?p=` and keeps the status. The
@@ -523,6 +545,40 @@ caller's roles in `Config.Policy`; without it, or without a policy, the
 page is read-only. Each lever writes an audit row (`module_enable`, ...), and
 a refused one a `*_refused` row. A failed lever answers a generic
 notice and logs the error.
+
+### Email previews
+
+`Config.EmailPreviews` lists the app's mails, each rendered from sample
+data so a template can be read before anything sends it. `Render` builds
+the mail the way the app does before sending, usually `email.Execute`
+over a template (see [email](email.md)):
+
+```go
+welcome := tmpls["welcome"] // from email.LoadFromDir
+admin.New(admin.Config{
+    EmailPreviews: []admin.EmailPreview{
+        {Name: "welcome", Render: func(ctx context.Context) (email.Email, error) {
+            return email.Execute(welcome, map[string]any{"Name": "Ada"})
+        }},
+    },
+})
+```
+
+`/admin/emails` draws a tab per preview (`?name=` picks one; the first
+is the default), the subject, the text body, and the HTML body in a
+frame. The frame loads `/admin/_email/<name>`, which is gated like every
+admin route and answers with its own policy: `Content-Security-Policy:
+sandbox; default-src 'none'` plus inline styles and `https:`/`data:`
+images and fonts, `frame-ancestors 'self'` and `X-Frame-Options:
+SAMEORIGIN`. The `<iframe>` carries an empty `sandbox` attribute too, so
+the mail gets an opaque origin with no scripts, forms or navigation of
+the admin page. Nothing is sent from the page.
+
+`Name` is lowercase letters, digits, `-` and `_`, unique; a bad or
+repeated name, or a preview with no `Render`, fails `Init`. `Render`
+runs with the admin's context, never elevated. An error or a panic draws
+a generic notice on the page, answers the frame with a 500, and logs the
+preview's name and the error's type, not its text.
 
 ### How ops posts answer
 

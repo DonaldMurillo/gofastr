@@ -53,7 +53,7 @@ func (u *UI) neighbours(ctx context.Context, m *meta, base, id string) (prev, ne
 		Where:   where,
 		Filters: s.facetFilters(),
 		Search:  s.search,
-		Fields:  []string{m.pk},
+		Fields:  m.keys,
 		Sorts:   s.sorts,
 		Limit:   EveryMatchCap,
 	})
@@ -62,14 +62,14 @@ func (u *UI) neighbours(ctx context.Context, m *meta, base, id string) (prev, ne
 		return "", ""
 	}
 	for i, row := range rows {
-		if cell(rowValue(row, m.pk)) != id {
+		if m.rowID(row) != id {
 			continue
 		}
 		if i > 0 {
-			prev = base + "/" + url.PathEscape(cell(rowValue(rows[i-1], m.pk)))
+			prev = under(base, m.idPath(m.rowID(rows[i-1])))
 		}
 		if i < len(rows)-1 {
-			next = base + "/" + url.PathEscape(cell(rowValue(rows[i+1], m.pk)))
+			next = under(base, m.idPath(m.rowID(rows[i+1])))
 		}
 		break
 	}

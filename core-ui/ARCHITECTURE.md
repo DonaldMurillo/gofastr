@@ -5,6 +5,8 @@ The directive must still occupy its whole comment line.
 Disk-backed UI host static files use operation-scoped `os.Root` handles.
 Each read verifies the original directory identity and retains kernel path
 containment. An idle host does not hold directory handles open on Windows.
+`UIHost.AssetURL` gives a static file a content-hash URL (`?v=<hash>`); the
+host serves a request at the file's current hash with immutable caching.
 RPC success toasts finish before navigation, including the feedback module's
 first lazy load.
 
@@ -105,8 +107,9 @@ discriminates on it:
   `Load` panic is still a 500: the boundary covers rendering only.
 - **A `Load` that returns an error** keeps the 404 it contracted (the
   screen chose "not found"; `uihost.ScreenStatusCode` renders a body
-  with a chosen status instead), logged at Warn with the path so it is
-  no longer silent.
+  with a chosen status instead, and `app.SetStatus` sets one from
+  inside the render), logged at Warn with the path so it is no longer
+  silent.
 - **A path no route owns** stays a plain 404 and logs nothing.
 
 The 500 is the same error page a failed route resolver gets
@@ -224,7 +227,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page: the RPC mutated server state, so the destination must be fetched fresh |
 | `data-cui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
 | `data-cui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
-| `data-cui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`). `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-cui-signal-attr`. |
+| `data-cui-signal-mode="text\|number\|html\|attr"` | How to apply the signal value (default `text`). `number` is `text` to the kernel; the marker loads the `headless-numbers` module, which rewrites a numeric value the way the page's `<html lang>` writes numbers (`Intl.NumberFormat`) in a microtask after each write, matching the server's `i18n.Number` text. The core runtime carries no bytes for it. `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-cui-signal-attr`. |
 | `data-cui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
 | `data-cui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
 | `data-cui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
@@ -265,10 +268,12 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-loadstate="shown\|exit"` | Runtime-written, on the outlet/slot cell across the loading content's lifecycle: `shown` while it holds the cloned content (the enter animation runs now — author CSS keys richer enter/exit effects off the same states; the framework ships a default fade in `frameworkDimCSS`), `exit` while the apply waits for the region's own `animationend` (capped at 400 ms, child animations ignored) before replacing it, absent otherwise. The framework CSS also exempts the region from the aria-busy dim (the loading content replaces the old content; dimming it would double the signal). Removed when the content is replaced or restored. |
 | `data-cui-vt-kinds="<names>"` | On `<html>` at first paint and on the doc shell every swapped payload's root layer carries (copied onto the documentElement after a swap): the document's declared keyed-transition vocabulary, the sorted union of the chain's `Transitions` map keys (`app.PrimaryConfig` / `app.OutletSpec` `.Transitions`). The runtime gates the page answer's `X-Gofastr-Transition` pick against it — a name outside the vocabulary is ignored and the navigation keeps the direction type only. After a swap the transition demand module copies the vocabulary off the payload's doc shell with a direct `setAttribute`; the attribute is module-owned, so the `__gofastr.doc` manifest does not list it. |
 | `data-fui-page-loading` | On the body-level `<div>` a host's `uihost.WithPageLoading(component)` renders into every full page: the host's own page-wide loading indicator, REPLACING the default `html[aria-busy]::after` progress strip (both never show at once). Pure CSS state — visibility keys off the same `html[aria-busy]` carrier, so it transitions in and out with no runtime involvement. The component is presentational config, rendered once per page with no Load/DI. |
-| `data-cui-lang="<tag>"` | On the outermost layer the server renders (layer 0 of a full page, the first re-rendered layer of a subtree partial, the bare `<main>` of a layout-less page): the page's resolved document language (`App.LangForPath`, layered with the screen's `ScreenLang`). `<html lang>` lives outside the shell the runtime swaps, so the value must travel with the swap payload; after every SPA swap the runtime copies it onto `document.documentElement.lang` via `doc.setHtmlAttr` (in the DOC_MANIFEST). A payload without the marker leaves the document alone. The inert page-head template also carries the destination values when navigation retains the outer layout. |
+| `data-cui-dir="rtl\|ltr"` | Same carrier as `data-cui-lang`, always beside it: the direction of that language (`i18n.Dir`: the language's script, its own subtag or CLDR's likely one). The server also writes it as `<html dir>` on every full page. The core runtime does not copy it; the `doc-dir` registered behaviour (`core-ui/app`), which the first `[data-cui-dir="rtl"]` marker loads, sets `<html dir>` after every SPA swap from the carrier whose `data-cui-lang` matches `<html lang>`, and from the language's likely script (`Intl.Locale(lang).maximize().script`) when no carrier names one (the cached first page's). It writes `<html dir>` with a direct `setAttribute`; the attribute is module-owned, so the `__gofastr.doc` manifest does not list it. A left-to-right site never fetches it. |
+| `data-cui-lang="<tag>"` | On the outermost layer the server renders (layer 0 of a full page, the first re-rendered layer of a subtree partial, the bare `<main>` of a layout-less page): the page's resolved document language (`App.LangFor`: the route's `LangFunc`, then the request's negotiated locale, then the app's `Lang`, layered with the screen's `ScreenLang`). `<html lang>` lives outside the shell the runtime swaps, so the value must travel with the swap payload; after every SPA swap the runtime copies it onto `document.documentElement.lang` via `doc.setHtmlAttr` (in the DOC_MANIFEST). A payload without the marker leaves the document alone. The inert page-head template also carries the destination values when navigation retains the outer layout. |
 | `data-cui-page-head` | Escaped page-owned meta/link HTML on an inert template in the navigation payload. The runtime replaces marked head nodes on navigation and cache replay; it never replays scripts. |
 | `data-cui-page-meta` | Per-screen meta/link ownership marker. The navigator preserves unmarked site-wide head metadata. |
-| `data-cui-skip-label="<text>"` | Same carrier and same rule as `data-cui-lang`, for the app shell's skip-link text (`App.SkipLabelForPath` / `WithSkipLabelFunc`): after every SPA swap the runtime writes it into the `[data-skip-link]` link, the first string a keyboard user tabs to, so it speaks the destination page's language (#411). |
+| `data-cui-skip-label="<text>"` | Same carrier and same rule as `data-cui-lang`, for the app shell's skip-link text (`App.SkipLabelFor` / `WithSkipLabelFunc`; the default is the `app.skip_to_main` phrase in the request's language): after every SPA swap the runtime writes it into the `[data-skip-link]` link, the first string a keyboard user tabs to, so it speaks the destination page's language (#411). |
+| `data-cui-strings="<json>"` | On the inert `template[data-cui-page-head]` a SPA partial carries (uihost), and on the carrier the runtime builds from a fully fetched page (from its `#gofastr-strings` block): the runtime strings in the destination reader's locale (`runtime.StringsJSON`). A soft navigation keeps the document, so after every swap whose payload has the page-head template the runtime replaces `say()`'s table with this map; an absent attribute means English and clears the previous page's words. |
 | `data-hui-disclosure` / `data-hui-disclosure-trap` / `data-hui-disclosure-dismiss` / `data-hui-disclosure-persist="<key>"` | On a `headless.Disclosure` / `framework/ui.Collapsible` `<details>` (and on menu dropdowns, which compose the same anatomy): `headless-disclosure` (a registered behaviour of `framework/headless`) mirrors `aria-expanded` onto the controller, closes the deepest open disclosure containing focus on Escape with focus returned to its controller, closes non-persistent disclosures on `gofastr:navigate` and when a link inside one is clicked (not a `data-cui-open` link, which opens a widget over the page, so the menu stays and the widget returns focus into it), restores/writes the open state of persistent ones under a namespaced, component-encoded session key, closes an open dismiss disclosure (every menu root, and `Disclosure.Dismiss`) on a click outside it or a touch or pen release on plain content outside it (iOS Safari sends no click for a tap on content with no click handler of its own; a tap on a control closes it through the control's click, so an in-flow panel never collapses before the browser aims that click), shifts an opened dismiss disclosure's panel back inside the viewport when it would cross an inline edge (writing `--hui-panel-shift`, which the kit's menu and dropdown panels read as a `translate`), floats an opened dismiss panel that a scrolling ancestor would clip (a table's last-row menu) as `position: fixed` at its trigger's edge, flipped above the trigger when the viewport has no room below and moved with it while anything scrolls, its inline styles cleared on close, and confines Tab inside the topmost open trap disclosure (the widget runtime's own containment technique over the kernel's focus selector). |
 | `X-Gofastr-Defer: 1` | On a client navigation's PAGE request (with `X-Gofastr-Navigate`/`X-Gofastr-From`) whose destination route has deferred outlets (`app.OutletSpec.Deferred`, listed per route in the manifest's `deferred` array): the server skips those outlets' loaders and ships their `Loading` content in place — kept layers as envelope fills, rendered layers inline in the cells. Without the header (a first load, a whole document) every fill renders inline: nothing depends on JavaScript. Deferral belongs to the OUTLET, not a fill (a candidate can decline at request time, so a per-fill flag cannot tell the manifest in advance).. |
 | `X-Gofastr-Part: <addr>` | One deferred outlet's fill, as its own request beside the page fetch: the same URL plus this header (plus `X-Gofastr-Navigate: 1`), read with `text()` so DevTools shows the request with its body, status and timing (streaming was removed for exactly this: Chrome keeps no body for a fetch read through a stream reader). The server runs the policy phase and ONLY the winning fill's loader — no screen `Load`, no other fills, no area builds — and answers one `<template data-cui-fill="<addr>">` plus an optional seed delta (never a session mint; `Cache-Control: no-store`). Parts fetch with priority `low` beside the page's `high`, at most three in flight, the rest queued; parts landing before the page commit wait in a buffer, the commit applies the page then the buffer, later parts apply on land through the region's `data-cui-loadstate` exit (never a second view transition). A whole-page disagreement — the route not resolving, the address not a deferred outlet of it, a policy Redirect/Block, a dead session — answers 409 with `X-Gofastr-Part-Reset: 1` and no body the client applies; the runtime reloads the URL as a whole document, at most once per navigation. |
@@ -301,7 +306,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-embed-state` *(on the embed root)* | Lifecycle of an embedded surface. The server writes `loading` into the shell HTML; the `boot-embed` fragment writes every later value, and ships **only** in the `embed` bundle served at `/__gofastr/embed-runtime.js`. `ready` once the handshake completed and the surface's server-rendered content was injected. `error` when there is no parent to hand over a nonce, no token arrived within 15s, the exchange was refused, or the content fetch failed. `expired` when the grant's absolute lifetime ran out and refresh could not renew it. Nothing in the runtime branches on it; it exists so tests can see the frame's state. The host page is cross-origin and can neither read nor style inside the frame. See `framework/docs/content/embed.md`. |
 | `data-cui-toast-fallback` | Marks the degraded inline container core injects when the `headless-feedback` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
 | `data-hui-menu` / `data-hui-menu-trigger="<id>"` / `data-hui-menu-panel` / `data-hui-menu-radio="<group>"` / `data-hui-menu-lazy` | On a `framework/ui.Menu` (headless.Menu anatomy): the dropdown and its submenus are disclosures (`data-hui-disclosure` beside `data-hui-menu`), `headless-menu` (a registered behaviour of `framework/headless`, `Requires("headless-disclosure", "widgets")`) owns the keyboard contract — roving focus scoped to the item's own panel, wrapping arrows, Home/End, bounded type-ahead, RTL-aware submenu open/close, Tab closing the chain, radio arbitration across the whole menu, focus-on-open, and the lazy template's inflation. The retired menu-module attribute family is gone with the `menu` module. |
-| `data-cui-match-prefix` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact matching only (a query-less href matches the URL's path, a trailing slash aside, since a screen's sort, page and filter live in its query, unless its nav also links that path with a query, a tab strip whose current tab the server picks; an href with a query must equal the URL, again a trailing slash on its path aside), so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-cui-match-prefix="<path>"` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact matching only (a query-less href matches the URL's path, a trailing slash aside, since a screen's sort, page and filter live in its query, unless its nav also links that path with a query, a tab strip whose current tab the server picks; an href with a query must equal the URL, again a trailing slash on its path aside), so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-cui-activelink` | On an `<a>` link, inside a `<nav>` landmark or not: hands the link's current-state to the `activelink` module without changing how it matches (exact, as above, unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
@@ -396,6 +401,7 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Envelope: 2` | Set when the partial body is a fills envelope: the seed island, then the primary `<template data-cui-fill>` (addressed by the bare swap key, no hash), then one hashed template per kept-layer fill. Emitted only when the request carried `X-Gofastr-Fills: 2` and the render produced fills; otherwise today's body. |
 | `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
+| `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
 
 **Screen cache + invalidation.** The router keeps a 20-entry LRU of
 rendered screens keyed by `pathname+search` (the initial page included)
@@ -812,6 +818,80 @@ client-side with no per-consumer round-trip.
   assignment that overwrites anything set earlier.)
 
 See `framework/docs/content/signal-store.md` for the full guide.
+
+### Runtime strings (`#gofastr-strings`, `__gofastr.say`)
+
+The words the runtime says itself (a failed request's toast, a
+navigation that could not load, the embed frame's error, a local
+entity's validation messages) are `i18n.Phrase`s registered with
+`runtime.RegisterStrings`. The host writes the ones the request's locale
+translates, and only those, into an inert
+`<script type="application/json" id="gofastr-strings">{key:text}</script>`
+on full pages and in the embed shell; an English page carries none. The
+id is reserved: `registry.DataBlock` refuses it.
+
+The kernel's `say(key, english, params)`, exported as
+`window.__gofastr.say`, reads the block once, falls back to the English
+argument on a miss, and fills `{{name}}` placeholders from `params`.
+Fragments call `say(...)`; modules and behaviours call `NS.say(...)`.
+Never write prose straight into a toast, `textContent`, `aria-label` or
+`title`: `core-ui/check.LintRuntimeProse` refuses it, and
+`TestRuntimeSayCallsMatchPhrases` holds every `say('key', 'English'`
+call to a registered phrase with the same English. A client-side
+navigation keeps the block it booted with, so a reader who switches
+locale mid-session sees the old runtime words until the next full load.
+
+### Locale prefixes (`#gofastr-locales`, `__gofastr_locales`)
+
+An app built with `framework.WithLocalePrefixes` serves `/es/pricing` as
+the `/pricing` screen in Spanish. The router strips the prefix before
+matching, so the server's route table, the manifest
+(`window.__gofastr_routes`) and the screen cache all hold unprefixed
+paths. The host writes the locale set into an inert
+`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`
+on full pages (`base` is a static export's mount path, which sits in
+front of the prefix); the kernel reads it once into
+`window.__gofastr_locales`. The id is reserved: `registry.DataBlock`
+refuses it.
+
+Three kernel helpers, exported on `__gofastr` for modules, carry the
+rules:
+
+- `_unlocalize(path)` strips a prefix. Route lookups (`routeEntry`, the
+  preload and intercept route matchers, the envelope's route info) and
+  cache invalidation compare unprefixed paths, so a `/es/` link resolves
+  to the same route and the same cache entry family as its English
+  twin.
+- `_localeOf(path)` names a path's locale (`''` for the default). A
+  navigation whose destination locale differs from the current page's
+  crosses a document boundary (`crossesDocBoundary`): the whole
+  document loads, so `<html lang>`, the shell and the runtime strings
+  change with it.
+- `_lp(url)` puts the current page's prefix on a root-relative URL that
+  has none. Every runtime fetch goes through it: the action endpoint,
+  widget discovery and chrome, poll and RPC URLs, the action module and
+  eager preloads. The server then answers in the reader's locale, and
+  the `page` the action endpoint receives is the unprefixed path.
+
+The server side of the same contract rewrites root-relative URLs in a
+prefixed HTML response (`core-ui/urlprefix`: `href`, form actions and
+the URL-valued `data-cui-*` attributes listed in `urlprefix.URLAttrs`)
+and the `Location`, `X-Gofastr-Location`, `X-Gofastr-Push-State` and
+`X-Gofastr-Document` headers. Markup never spells a
+prefix itself. A new URL-valued `data-cui-*` attribute joins
+`urlprefix.URLAttrs`, or `TestURLAttrsAllCovered` fails.
+
+The rewriter leaves an anchor with `hreflang` alone: it already names
+its locale. An `<a rel="alternate" hreflang>` means "this page in that
+language" (a language switcher, `ui.LanguageMenu`), so the active-link
+module (`src/activelink.js`) re-points every one whose tag is in the
+locale set at the current page after each navigation, at idle load and
+when widget chrome opens: the default locale at the plain path, the
+others under `/<tag>` after `base`. Chrome that outlives a swap then
+never links the page the reader left. An alternate naming a tag outside
+the set (another site's translation) and an `hreflang` link without
+`rel="alternate"` keep their `href`. No attribute marks the switcher:
+`rel` and `hreflang` are the HTML spelling of the contract.
 
 ### First-load order
 

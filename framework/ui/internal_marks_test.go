@@ -715,6 +715,8 @@ var kitComponents = []kitComponent{
 	{name: "InlineCodeDanger", fn: InlineCodeDanger},
 	{name: "InputGroup", fn: InputGroup, required: []string{"Input"}},
 	{name: "JSONViewer", fn: JSONViewer},
+	// Without path locales on Ctx the switcher renders nothing.
+	{name: "LanguageMenu", fn: LanguageMenu, prep: prepSet("Ctx", languageMenuCtx("es", "/pricing"))},
 	{name: "LineChart", fn: LineChart},
 	{name: "Link", fn: Link},
 	{name: "LinkButton", fn: LinkButton},
@@ -812,7 +814,7 @@ var kitComponents = []kitComponent{
 	{name: "TextArea", fn: TextArea},
 	{name: "TextField", fn: TextField},
 	{name: "Thumbnail", fn: Thumbnail},
-	{name: "ThemePicker", fn: ThemePicker, prep: prepSet("Themes", []ThemeChoice{{Label: "Alt", Theme: style.RegisterThemeOverride(theme.Default())}})},
+	{name: "ThemePicker", fn: ThemePicker, prep: prepSet("Themes", []ThemeChoice{{Label: testPhrase("Alt"), Theme: style.RegisterThemeOverride(theme.Default())}})},
 	// The pill: it renders the kit's own option buttons, which the
 	// default icon variant never reaches (its two glyphs are constants
 	// that carry the mark themselves).

@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -35,7 +35,7 @@ const statGroupCap = 100
 // computed by the database over every match. where is filter text in the
 // query DSL (`status = "active"`), checked against the entity's fields;
 // format "money" prints a sum as $1,234.00 (the currency symbol is the
-// i18nui.KeyEntityCurrency entry), anything else as a number. A
+// i18nui.EntityCurrency entry), anything else as a number. A
 // refused read, a bad filter, an unknown agg or a failed query prints
 // "—": a stat sits beside content the caller can see, and must not
 // announce what it cannot.
@@ -56,17 +56,14 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		if !ok {
 			return "—"
 		}
+		if format == "money" {
+			return money(ctx, total.FloatString(2))
+		}
 		places := 2
-		if format != "money" && total.IsInt() {
+		if total.IsInt() {
 			places = 0
 		}
-		s := groupDigits(total.FloatString(places))
-		if format == "money" {
-			if rest, ok := strings.CutPrefix(s, "-"); ok {
-				return "-" + i18nui.T(ctx, i18nui.KeyEntityCurrency) + rest
-			}
-			return i18nui.T(ctx, i18nui.KeyEntityCurrency) + s
-		}
+		s, _ := i18n.Decimal(ctx, total.FloatString(places), i18n.MinFraction(places), i18n.MaxFraction(places))
 		return s
 	default:
 		slog.WarnContext(ctx, "entityui: stat agg is not count or sum", "entity", entityName, "agg", agg)
@@ -124,7 +121,7 @@ func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool)
 	if !ok {
 		return "", false
 	}
-	return formatNumber(float64(n), 0), true
+	return i18n.Number(ctx, n), true
 }
 
 // CountInt is Count as a number, for a figure the caller computes with
@@ -156,7 +153,7 @@ func (u *UI) CountUpTo(ctx context.Context, entityName, where string, limit int)
 	if !ok {
 		return 0, false, false
 	}
-	opts.Fields = []string{m.pk}
+	opts.Fields = m.keys
 	opts.Limit = limit + 1
 	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
 	if err != nil {
@@ -197,7 +194,7 @@ func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, boo
 	if len(rows) == 0 {
 		return time.Time{}, false
 	}
-	return parseTime(rowValue(rows[0], "updated_at"))
+	return parseTime(m.rowValue(rows[0], "updated_at"))
 }
 
 // statSum totals field exactly: the database's SUM, or, when AfterList
@@ -222,7 +219,7 @@ func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListO
 	total := new(big.Rat)
 	for _, r := range rows {
 		// A value a hook masked to text is not a number, and adds nothing.
-		if v, ok := new(big.Rat).SetString(cell(rowValue(r, field))); ok {
+		if v, ok := new(big.Rat).SetString(cell(m.rowValue(r, field))); ok {
 			total.Add(total, v)
 		}
 	}
@@ -295,7 +292,7 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 		}
 		idx := map[string]int{}
 		for _, r := range rows {
-			k := cell(rowValue(r, groupBy))
+			k := cell(m.rowValue(r, groupBy))
 			if i, seen := idx[k]; seen {
 				out[i].n++
 				continue
@@ -370,5 +367,5 @@ func (u *UI) LineChart(ctx context.Context, entityName, groupBy string) render.H
 	if m != nil {
 		name = m.label(ctx, groupBy)
 	}
-	return ui.LineChart(ui.LineChartConfig{Series: []ui.LineSeries{{Name: name, Values: values}}, Labels: labels})
+	return ui.LineChart(ui.LineChartConfig{Ctx: ctx, Series: []ui.LineSeries{{Name: name, Values: values}}, Labels: labels})
 }

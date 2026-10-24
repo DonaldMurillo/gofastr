@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,7 +24,9 @@ func rawEnt(name, table string, fields []schema.Field, rels []entity.Relation, p
 		Pagination: &entity.PaginationConfig{},
 		Exposure:   &entity.ExposureConfig{},
 	}}
-	e.PrimaryKey = pk
+	if pk != "" {
+		e.Config.PrimaryKey = []string{pk}
+	}
 	return e
 }
 
@@ -146,8 +149,8 @@ func TestForeignKeyClauses_Branches(t *testing.T) {
 
 	// Duplicate FK on the same column → emitted once.
 	dupRels := []entity.Relation{
-		{Type: entity.RelManyToOne, Name: "a", Entity: "users", ForeignKey: "user_id"},
-		{Type: entity.RelManyToOne, Name: "b", Entity: "users", ForeignKey: "user_id"},
+		{Type: entity.RelManyToOne, Name: "a", Entity: "users", ForeignKey: []string{"user_id"}},
+		{Type: entity.RelManyToOne, Name: "b", Entity: "users", ForeignKey: []string{"user_id"}},
 	}
 	ent := rawEnt("posts", "posts", nil, dupRels, "id")
 	fks, err := foreignKeyClauses(ent, map[string]*entity.Entity{"users": users, "posts": ent})
@@ -156,27 +159,27 @@ func TestForeignKeyClauses_Branches(t *testing.T) {
 	}
 
 	// Unknown target entity.
-	unk := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "ghost", ForeignKey: "g_id"}}, "id")
+	unk := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "ghost", ForeignKey: []string{"g_id"}}}, "id")
 	if _, err := foreignKeyClauses(unk, map[string]*entity.Entity{"p": unk}); err == nil {
 		t.Error("expected unknown-entity error")
 	}
 
 	// Invalid FK column name.
-	badFK := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "users", ForeignKey: "bad col"}}, "id")
+	badFK := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "users", ForeignKey: []string{"bad col"}}}, "id")
 	if _, err := foreignKeyClauses(badFK, map[string]*entity.Entity{"p": badFK, "users": users}); err == nil {
 		t.Error("expected invalid FK column error")
 	}
 
 	// Invalid target table name.
 	badTable := rawEnt("bt", "bad table", []schema.Field{{Name: "id"}}, nil, "id")
-	refBadTable := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "bt", ForeignKey: "bt_id"}}, "id")
+	refBadTable := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "bt", ForeignKey: []string{"bt_id"}}}, "id")
 	if _, err := foreignKeyClauses(refBadTable, map[string]*entity.Entity{"p": refBadTable, "bt": badTable}); err == nil {
 		t.Error("expected invalid target table error")
 	}
 
 	// Invalid target primary key name.
 	badPK := rawEnt("bp", "bp", []schema.Field{{Name: "id"}}, nil, "bad pk")
-	refBadPK := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "bp", ForeignKey: "bp_id"}}, "id")
+	refBadPK := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "bp", ForeignKey: []string{"bp_id"}}}, "id")
 	if _, err := foreignKeyClauses(refBadPK, map[string]*entity.Entity{"p": refBadPK, "bp": badPK}); err == nil {
 		t.Error("expected invalid target PK error")
 	}
@@ -184,15 +187,15 @@ func TestForeignKeyClauses_Branches(t *testing.T) {
 
 func TestTopoSort_CycleAndNestedUnknown(t *testing.T) {
 	// A ↔ B cycle is broken (no error).
-	a := rawEnt("a", "a", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "b", ForeignKey: "b_id"}}, "id")
-	b := rawEnt("b", "b", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "a", ForeignKey: "a_id"}}, "id")
+	a := rawEnt("a", "a", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "b", ForeignKey: []string{"b_id"}}}, "id")
+	b := rawEnt("b", "b", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "a", ForeignKey: []string{"a_id"}}}, "id")
 	if _, err := topoSortEntities(map[string]*entity.Entity{"a": a, "b": b}); err != nil {
 		t.Fatalf("cycle should be tolerated: %v", err)
 	}
 
 	// A → B → unknown: the nested error propagates.
-	a2 := rawEnt("a", "a", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "b", ForeignKey: "b_id"}}, "id")
-	b2 := rawEnt("b", "b", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: "g_id"}}, "id")
+	a2 := rawEnt("a", "a", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "b", ForeignKey: []string{"b_id"}}}, "id")
+	b2 := rawEnt("b", "b", nil, []entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: []string{"g_id"}}}, "id")
 	if _, err := topoSortEntities(map[string]*entity.Entity{"a": a2, "b": b2}); err == nil {
 		t.Error("expected nested unknown-entity error")
 	}
@@ -219,7 +222,7 @@ func TestView_RenderAndToEntityBranches(t *testing.T) {
 		t.Error("ToEntity with no columns should be nil")
 	}
 	ent := View{Name: "v", Select: "SELECT 1", Columns: []Column{{Name: "id", Type: schema.String, PrimaryKey: true}}}.ToEntity()
-	if ent == nil || !ent.Config.Unmanaged || ent.PrimaryKey != "id" {
+	if ent == nil || !ent.Config.Unmanaged || !slices.Equal(ent.KeyColumns(), []string{"id"}) {
 		t.Fatalf("ToEntity with columns: %+v", ent)
 	}
 }
@@ -278,7 +281,7 @@ func TestBuildCreateTableSQL_NoFieldsUniqueAndFKError(t *testing.T) {
 	}
 	// foreignKeyClauses error propagates (valid target, invalid FK column name).
 	users := rawEnt("users", "users", []schema.Field{{Name: "id"}}, nil, "id")
-	badFK := rawEnt("p", "p", []schema.Field{{Name: "id"}}, []entity.Relation{{Type: entity.RelManyToOne, Entity: "users", ForeignKey: "bad col"}}, "id")
+	badFK := rawEnt("p", "p", []schema.Field{{Name: "id"}}, []entity.Relation{{Type: entity.RelManyToOne, Entity: "users", ForeignKey: []string{"bad col"}}}, "id")
 	if _, err := buildCreateTableSQL(badFK, map[string]*entity.Entity{"users": users, "p": badFK}, DialectSQLite); err == nil {
 		t.Error("expected buildCreateTableSQL FK error")
 	}
@@ -318,7 +321,7 @@ func TestMigrateEntity_InvalidTableExisting(t *testing.T) {
 	// A live set matching the declared fields yields no column adds, so the
 	// executor is never touched and a nil execQueryer is safe here.
 	ent := rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
-	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}); err == nil {
+	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}, nil); err == nil {
 		t.Error("expected invalid table name error in migrateEntity")
 	}
 }

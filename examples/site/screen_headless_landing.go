@@ -355,11 +355,11 @@ type HeadlessLandingScreen struct {
 	Subscribe landingSubscribeState
 }
 
-func (s *HeadlessLandingScreen) ScreenTitle() string {
+func (s *HeadlessLandingScreen) ScreenTitle(ctx context.Context) string {
 	return "Headless landing · " + s.Route.Name + " theme"
 }
 
-func (s *HeadlessLandingScreen) ScreenDescription() string {
+func (s *HeadlessLandingScreen) ScreenDescription(ctx context.Context) string {
 	return "The theme layer and the Button rebuild on a real page: " + landingThemeCountWord() + " registered themes, option fixtures, nesting, and a cold LoadAuto insertion."
 }
 

@@ -144,7 +144,7 @@ func TestHandleSSEPresenceNoTopicNoPresence(t *testing.T) {
 // threading verified end-to-end through injectChrome.
 func TestInjectChromePresenceMetaTag(t *testing.T) {
 	ds := newTestUIHost()
-	page := ds.injectChrome(`<html><head></head><body>x</body></html>`, "/p", "sess-123", "doc:42")
+	page := ds.injectChrome(context.Background(), `<html><head></head><body>x</body></html>`, "/p", "sess-123", "doc:42")
 	if !strings.Contains(page, `&presence=doc%3A42`) {
 		t.Errorf("SSE meta tag should include &presence=doc%%3A42 (url-escaped), got:\n%s", page)
 	}
@@ -157,7 +157,7 @@ func TestInjectChromePresenceMetaTag(t *testing.T) {
 // tag is the plain session URL (backward compatible).
 func TestInjectChromeNoPresenceMetaTag(t *testing.T) {
 	ds := newTestUIHost()
-	page := ds.injectChrome(`<html><head></head><body>x</body></html>`, "/p", "sess-123", "")
+	page := ds.injectChrome(context.Background(), `<html><head></head><body>x</body></html>`, "/p", "sess-123", "")
 	if strings.Contains(page, "&presence=") {
 		t.Errorf("SSE meta tag should NOT include &presence= when no topic, got:\n%s", page)
 	}

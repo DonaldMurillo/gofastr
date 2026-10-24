@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -33,9 +34,10 @@ type Menu struct {
 // "m<N>" in declaration order when the battery takes a copy at New.
 type MenuItem struct {
 	ID string
-	// Title is the displayed label. A separator needs none; an
-	// about/quit role gets the OS default when empty.
-	Title string
+	// Title is the displayed label, in the OS language the shell
+	// reads. A separator needs none; a role item gets the OS default
+	// when it is zero.
+	Title i18n.Phrase
 	// Key is a loosely validated accelerator ("cmd+n", "ctrl+shift+t");
 	// the shell maps it to the platform spelling.
 	Key  string
@@ -133,8 +135,8 @@ func (it MenuItem) displayID() string {
 	if it.ID != "" {
 		return it.ID
 	}
-	if it.Title != "" {
-		return it.Title
+	if !it.Title.IsZero() {
+		return it.Title.English()
 	}
 	return "<untitled>"
 }

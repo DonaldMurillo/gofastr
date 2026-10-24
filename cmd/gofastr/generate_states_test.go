@@ -54,7 +54,7 @@ func TestCLIRendersTransitionCommands(t *testing.T) {
 		joined[f.name] = f.content
 	}
 
-	invoices := joined["invoices.go"]
+	invoices := joined["invoices.gen.go"]
 	if invoices == "" {
 		t.Fatalf("no invoices.go emitted; files: %v", fileNames(files))
 	}
@@ -62,7 +62,7 @@ func TestCLIRendersTransitionCommands(t *testing.T) {
 		`{name: "invoices pay", summary: "move status from open to paid, stamps paid_on", run: runInvoicesPay}`,
 		`{name: "invoices issue", summary: "move status from draft to open", run: runInvoicesIssue}`,
 		`{name: "invoices void", summary: "move status from draft or open to void", run: runInvoicesVoid}`,
-		"func runInvoicesPay(args []string) int {\n\treturn runTransitionVerb(\"invoices pay\", \"/invoices\", \"pay\", args)\n}",
+		"func runInvoicesPay(args []string) int {\n\treturn runTransitionVerb(\"invoices pay\", \"/invoices\", \"pay\", []string{\"id\"}, args)\n}",
 	} {
 		if !strings.Contains(invoices, want) {
 			t.Errorf("invoices.go is missing %q:\n%s", want, invoices)
@@ -72,13 +72,13 @@ func TestCLIRendersTransitionCommands(t *testing.T) {
 		t.Error("invoices.go mentions the System move; system moves appear nowhere")
 	}
 
-	verbs := joined["verbs.go"]
+	verbs := joined["verbs.gen.go"]
 	if verbs == "" {
 		t.Fatal("verbs.go not emitted for a transitions-only surface")
 	}
 	for _, want := range []string{
-		"func runTransitionVerb(cmd, base, key string, args []string) int {",
-		`path := base + "/" + url.PathEscape(id) + "/transitions/" + url.PathEscape(key)`,
+		"func runTransitionVerb(cmd, base, key string, keys, args []string) int {",
+		`path := base + "/" + tail + "/transitions/" + url.PathEscape(key)`,
 		"g.client.Do(g.ctx, http.MethodPost, path, map[string]any{}, &out)",
 	} {
 		if !strings.Contains(verbs, want) {
@@ -160,7 +160,7 @@ func TestJSSDKRendersTransitionBindings(t *testing.T) {
 		t.Error("client.js binds the System move; system moves appear nowhere")
 	}
 	for _, want := range []string{
-		"transition(id: string, key: string): Promise<T>;",
+		"transition(id: TKey, key: string): Promise<T>;",
 		"export interface InvoicesMoves {",
 		"pay(id: string): Promise<Invoices>;",
 		"readonly invoices: Resource<Invoices, InvoicesInput, InvoicesPatch> & InvoicesMoves;",

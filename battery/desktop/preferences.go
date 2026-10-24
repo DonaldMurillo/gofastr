@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Declared preferences: typed app settings on Config.Preferences, stored
@@ -45,10 +47,11 @@ type Preference struct {
 	// Key is the preference's storage and form-field name. It must
 	// match ^[a-z][a-z0-9_]{0,63}$ and be unique in the list.
 	Key string
-	// Label is the field's visible label. Required.
-	Label string
+	// Label is the field's visible label, in the reader's language.
+	// Required.
+	Label i18n.Phrase
 	// Help is optional field help rendered under the control.
-	Help string
+	Help i18n.Phrase
 	// Kind is the value type. Required (the zero value is refused).
 	Kind PreferenceKind
 	// Default is the value used until something is stored. It must
@@ -80,7 +83,7 @@ func validatePreferences(decls []Preference) error {
 			return fmt.Errorf("desktop: duplicate preference key %q", p.Key)
 		}
 		seen[p.Key] = struct{}{}
-		if p.Label == "" {
+		if p.Label.IsZero() {
 			return fmt.Errorf("desktop: preference %q requires Label", p.Key)
 		}
 		if p.Kind != PreferenceInt && (p.Min != nil || p.Max != nil) {
@@ -283,12 +286,22 @@ func (p *Preferences) warnStored(key string, err error) {
 // capability answers it as invalid_input and the preferences screen's
 // route turns it into the form-error envelope for that field.
 type preferenceError struct {
-	key string
-	msg string
+	key    string
+	reason i18n.Phrase
+	params map[string]any
 }
 
 func (e *preferenceError) Error() string {
-	return fmt.Sprintf("preference %q: %s", e.key, e.msg)
+	return fmt.Sprintf("preference %q: %s", e.key, e.reason.Format(e.params))
+}
+
+// refusePreference is the preferenceError for key that cerr, a refusal
+// from coercePreference, describes.
+func refusePreference(key string, cerr error) *preferenceError {
+	if pe, ok := errors.AsType[*i18n.Error](cerr); ok {
+		return &preferenceError{key: key, reason: pe.Reason, params: pe.Params}
+	}
+	return &preferenceError{key: key, reason: reasonPrefBadShape}
 }
 
 // setRaw applies every entry at once: all entries are validated first
@@ -323,11 +336,11 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 	for _, key := range slices.Sorted(maps.Keys(values)) {
 		i, ok := p.index[key]
 		if !ok {
-			return nil, &preferenceError{key: key, msg: "not a declared preference"}
+			return nil, &preferenceError{key: key, reason: reasonPrefUndeclared}
 		}
 		v, cerr := coercePreference(p.decls[i], values[key])
 		if cerr != nil {
-			return nil, &preferenceError{key: key, msg: cerr.Error()}
+			return nil, refusePreference(key, cerr)
 		}
 		coerced[key] = v
 	}
@@ -365,7 +378,7 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 func (p *Preferences) Set(key string, v any) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return &preferenceError{key: key, msg: "must be a bool, a whole number, or a string"}
+		return &preferenceError{key: key, reason: reasonPrefBadShape}
 	}
 	_, err = p.setRaw(map[string]json.RawMessage{key: raw})
 	return err
@@ -384,7 +397,7 @@ func coercePreference(d Preference, raw json.RawMessage) (any, error) {
 	// it before the kind branches, which also covers the stored-value
 	// read path (value() coerces what it reads back).
 	if len(raw) == 0 || string(raw) == "null" {
-		return nil, fmt.Errorf("must not be null")
+		return nil, i18n.NewError(reasonPrefNull)
 	}
 	var text string
 	isText := json.Unmarshal(raw, &text) == nil
@@ -397,7 +410,7 @@ func coercePreference(d Preference, raw json.RawMessage) (any, error) {
 		if isText && (text == "true" || text == "false") {
 			return text == "true", nil
 		}
-		return nil, fmt.Errorf("must be true or false")
+		return nil, i18n.NewError(reasonPrefNotBool)
 	case PreferenceInt:
 		var n int
 		if json.Unmarshal(raw, &n) == nil {
@@ -408,31 +421,31 @@ func coercePreference(d Preference, raw json.RawMessage) (any, error) {
 				return checkIntRange(d, p)
 			}
 		}
-		return nil, fmt.Errorf("must be a whole number")
+		return nil, i18n.NewError(reasonPrefNotInt)
 	case PreferenceString:
 		if !isText {
-			return nil, fmt.Errorf("must be a string")
+			return nil, i18n.NewError(reasonPrefNotString)
 		}
 		return text, nil
 	case PreferenceChoice:
 		if !isText {
-			return nil, fmt.Errorf("must be a string")
+			return nil, i18n.NewError(reasonPrefNotString)
 		}
 		if !slices.Contains(d.Choices, text) {
-			return nil, fmt.Errorf("must be one of: %s", strings.Join(d.Choices, ", "))
+			return nil, i18n.NewError(reasonPrefNotChoice, map[string]any{"choices": strings.Join(d.Choices, ", ")})
 		}
 		return text, nil
 	}
-	return nil, fmt.Errorf("unknown kind %q", d.Kind)
+	return nil, i18n.NewError(reasonPrefUnknownKind, map[string]any{"kind": strconv.Quote(string(d.Kind))})
 }
 
 // checkIntRange applies an int declaration's Min and Max.
 func checkIntRange(d Preference, n int) (any, error) {
 	if d.Min != nil && n < *d.Min {
-		return nil, fmt.Errorf("must be at least %d", *d.Min)
+		return nil, i18n.NewError(reasonPrefTooSmall, map[string]any{"min": *d.Min})
 	}
 	if d.Max != nil && n > *d.Max {
-		return nil, fmt.Errorf("must be at most %d", *d.Max)
+		return nil, i18n.NewError(reasonPrefTooLarge, map[string]any{"max": *d.Max})
 	}
 	return n, nil
 }

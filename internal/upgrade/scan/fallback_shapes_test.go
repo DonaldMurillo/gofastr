@@ -136,8 +136,8 @@ func main() {
 // no shapes site that spells neither the method nor its parameter types.
 // The error names the interface and the method, which mints the hit the
 // way an error naming a uses symbol does. The implementation's own
-// declaration is not a hit here: against the new kit the type no longer
-// implements the interface, so the defs walk does not reach it.
+// declaration is a hit too: the method is all the type misses of the
+// interface, so the defs walk reads its retired shape.
 func TestFallbackShapeAssertionExplained(t *testing.T) {
 	src := `package main
 
@@ -161,8 +161,10 @@ func main() {}
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	wantHits(t, res, shapeAckNote, hitAt(src, "(*mem)(nil)", "main.go", shapeAckSym.String()+" shape"))
-	if got := res.Hits[shapeAckNote][0].Err; !strings.Contains(got, "wrong type for method Ack") {
+	wantHits(t, res, shapeAckNote,
+		hitAt(src, "Ack(ctx", "main.go", shapeAckSym.String()+" shape func(ctx context.Context, jobID string) error"),
+		hitAt(src, "(*mem)(nil)", "main.go", shapeAckSym.String()+" shape"))
+	if got := res.Hits[shapeAckNote][1].Err; !strings.Contains(got, "wrong type for method Ack") {
 		t.Fatalf("Err = %q, want the assertion error", got)
 	}
 	if len(res.Unexplained) != 0 {

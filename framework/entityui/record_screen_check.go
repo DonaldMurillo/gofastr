@@ -3,7 +3,6 @@ package entityui
 import (
 	"context"
 	"log/slog"
-	"net/url"
 	"sync"
 	"sync/atomic"
 )
@@ -37,8 +36,8 @@ type recordScreens struct {
 // nowhere. A list draws <base>/<id> for every row, and until the app
 // registers a record screen there, each link 404s with nothing in the
 // log (#503).
-func (u *UI) checkRecordScreen(ctx context.Context, entityName, base, id string) {
-	if u.screens == nil || u.screens.host == nil || id == "" {
+func (u *UI) checkRecordScreen(ctx context.Context, entityName, base, idPath string) {
+	if u.screens == nil || u.screens.host == nil || idPath == "" {
 		return
 	}
 	if _, seen := u.screens.checked.Load(base); seen {
@@ -47,7 +46,7 @@ func (u *UI) checkRecordScreen(ctx context.Context, entityName, base, id string)
 	if u.screens.n.Add(1) > maxCheckedBases {
 		return
 	}
-	has, known := u.screens.host.HasScreen(base + "/" + url.PathEscape(id))
+	has, known := u.screens.host.HasScreen(under(base, idPath))
 	if _, seen := u.screens.checked.LoadOrStore(base, struct{}{}); seen || !known || has {
 		return
 	}

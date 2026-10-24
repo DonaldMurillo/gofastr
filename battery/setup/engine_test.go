@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // helperBuildRunner creates a Runner with the given steps and a simple
@@ -184,8 +186,8 @@ func TestSecretNeverPrefilled(t *testing.T) {
 		Complete:     func(_ context.Context) (bool, error) { return done, nil },
 		Steps: []Step{
 			{Name: "create", Fields: []Field{
-				{Name: "NAME", Label: "Name", EnvVar: "GOFASTR_SETUP_NAME"},
-				{Name: "PW", Label: "Password", EnvVar: "GOFASTR_SETUP_PW", Secret: true},
+				{Name: "NAME", Label: i18n.Define("setup_test.name", "Name"), EnvVar: "GOFASTR_SETUP_NAME"},
+				{Name: "PW", Label: i18n.Define("setup_test.password", "Password"), EnvVar: "GOFASTR_SETUP_PW", Secret: true},
 			}, Run: func(_ context.Context, _ map[string]string) error { return nil }},
 		},
 	})
@@ -412,7 +414,7 @@ func TestRender_NoHandRolledClasses(t *testing.T) {
 		DisableToken: true,
 		Complete:     func(_ context.Context) (bool, error) { return done, nil },
 		Steps: []Step{
-			{Name: "step1", Fields: []Field{{Name: "X", Label: "X"}}},
+			{Name: "step1", Fields: []Field{{Name: "X", Label: i18n.Define("setup_test.x", "X")}}},
 		},
 	})
 	h := r.Handler(func() {}, nil, nil)

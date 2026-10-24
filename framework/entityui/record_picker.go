@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -68,7 +68,7 @@ func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label
 		Required:    f.Required && !fb.masked[f.Name],
 		Value:       cur,
 		ValueLabel:  valueLabel,
-		Placeholder: i18nui.TVars(ctx, i18nui.KeyEntityPickerSearch, map[string]string{"entities": plural}),
+		Placeholder: i18nui.EntityPickerSearch.Text(ctx, map[string]any{"entities": plural}),
 		Options:     opts,
 		More:        more,
 		Endpoint:    fb.m.api + "/_pick?field=" + url.QueryEscape(f.Name),
@@ -98,7 +98,7 @@ func (fb *formBuilder) relationNew(ctx context.Context, f schema.Field) render.H
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": om.singular(ctx)}),
+		Label:    i18nui.EntityNew.Text(ctx, map[string]any{"entity": om.singular(ctx)}),
 		Href:     createPath,
 		Variant:  ui.ButtonSecondary,
 		Icon:     "plus",
@@ -146,7 +146,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	titles := u.rowTitles(ctx, om, rows, 0)
 	needle := strings.ToLower(q)
 	for i, r := range rows {
-		oid := cell(rowValue(r, om.pk))
+		oid := cell(om.rowValue(r, om.pk))
 		if oid == "" {
 			continue
 		}
@@ -161,7 +161,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 			continue
 		}
 		if len(opts) == pickerRows {
-			more = i18nui.TVars(ctx, i18nui.KeyEntityPickerMore, map[string]string{"n": strconv.Itoa(pickerRows)})
+			more = i18nui.EntityPickerMore.Text(ctx, map[string]any{"n": pickerRows})
 			break
 		}
 		opts = append(opts, ui.PickerOption{Value: oid, Label: label})
@@ -186,48 +186,48 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			writeBulkError(w, http.StatusMethodNotAllowed, "method not allowed")
+			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		if handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		f, ok := m.field(r.URL.Query().Get("field"))
 		if !ok || f.Type != schema.Relation || m.system(f) || m.locked(f) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		ctx := r.Context()
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if !canRead(ctx, m.ch) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, pickerBodyLimit)
 		var body pickerBody
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
 			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeBulkError(w, http.StatusBadRequest, "invalid request body")
+			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		opts, more, refused := u.pickerOptions(ctx, f, body.Q)
 		if refused {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

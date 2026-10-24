@@ -16,8 +16,8 @@ func TestTagInputValuesAreChipsAndInputs(t *testing.T) {
 	got := TagInput(TagInputProps{Name: "tags", Label: "Tags", Values: []string{"go", "css"}}, nil)
 	has(t, got, `aria-label="Remove go"`, "a chip's remove control does not name what it removes")
 	has(t, got, `name="tags" type="hidden" value="go"`, "a committed value does not submit")
-	has(t, got, `data-hui-tag-input-added="{name} added"`, "the added sentence did not travel from Strings")
-	has(t, got, `data-hui-tag-input-removed="{name} removed"`, "the removed sentence did not travel from Strings")
+	has(t, got, `data-hui-tag-input-added="{{name}} added"`, "the added sentence did not travel from Strings")
+	has(t, got, `data-hui-tag-input-removed="{{name}} removed"`, "the removed sentence did not travel from Strings")
 	has(t, got, `aria-label="Add Tags"`, "the add control does not name its field")
 
 	// The cap applies to rendered values too: a server value longer

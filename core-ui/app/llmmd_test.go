@@ -359,6 +359,17 @@ func TestAppLLMMD_NoLLMMD_Global(t *testing.T) {
 	}
 }
 
+// An overlay's index link is the route uihost mounts: a trailing slash is
+// trimmed, as for a page.
+func TestOverlayLinkTrimsSlash(t *testing.T) {
+	a := NewApp("Test")
+	a.RegisterScreen(NewDrawer("/tools/", &basicComp{}), nil)
+	md := AppLLMMD(a)
+	if !strings.Contains(md, "](/tools/llm.md)") || strings.Contains(md, "//llm.md") {
+		t.Errorf("overlay link want /tools/llm.md, index:\n%s", md)
+	}
+}
+
 // ============================================================================
 // ScreenLLMMD: panic guard on Render()
 // ============================================================================
@@ -485,7 +496,7 @@ func (c *loadedDocComp) Load(ctx context.Context) error {
 	c.title = "Doc " + c.slug
 	return nil
 }
-func (c *loadedDocComp) ScreenTitle() string { return c.title }
+func (c *loadedDocComp) ScreenTitle(ctx context.Context) string { return c.title }
 func (c *loadedDocComp) Render() render.HTML {
 	return render.HTML("<h1>Doc " + c.slug + "</h1><p>Body of " + c.slug + ".</p>")
 }

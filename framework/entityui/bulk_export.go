@@ -6,15 +6,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // exportKeyParam names the list key on an export link: the list query's
@@ -41,21 +40,21 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		ctx := r.Context()
 		m, err := u.meta(entityName)
 		if err != nil || !bulkOn(m) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if !canRead(ctx, m.ch) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		q := r.URL.Query()
 		key := q.Get(exportKeyParam)
 		q.Del(exportKeyParam)
 		cols := exportColumns(m)
-		fields := append([]string{m.pk}, cols...)
+		fields := append(slices.Clone(m.keys), cols...)
 		var rows []map[string]any
 		if named := q[exportIDParam]; len(named) > 0 {
 			rows, err = u.namedRows(ctx, m, named, fields)
@@ -64,20 +63,20 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		}
 		if err != nil {
 			if ref, ok := errors.AsType[*bulkRefusal](err); ok {
-				writeBulkError(w, ref.status, ref.msg)
+				writeBulkError(w, r, ref.status, ref.reason, ref.params)
 				return
 			}
 			slog.ErrorContext(ctx, "entityui: export read", "entity", m.name, "error", err)
-			writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+			writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 			return
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+exportFilename(m.e.GetTable())+`.csv"`)
 		cw := csv.NewWriter(w)
 		header := make([]string, len(fields))
-		header[0] = m.pk
+		copy(header, m.keys)
 		for i, f := range cols {
-			header[i+1] = csvSafe(m.label(ctx, f))
+			header[len(m.keys)+i] = csvSafe(m.label(ctx, f))
 		}
 		if err := cw.Write(header); err != nil {
 			slog.Debug("entityui: export write", "error", err)
@@ -86,7 +85,7 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		rec := make([]string, len(fields))
 		for _, row := range rows {
 			for i, f := range fields {
-				rec[i] = csvSafe(cell(rowValue(row, f)))
+				rec[i] = csvSafe(cell(m.rowValue(row, f)))
 			}
 			if err := cw.Write(rec); err != nil {
 				slog.Debug("entityui: export write", "error", err)
@@ -97,12 +96,12 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 	})
 }
 
-// exportColumns are the fields an export carries after the primary key:
+// exportColumns are the fields an export carries after the key columns:
 // every field the API returns that is queryable, not omitted, not JSON.
 func exportColumns(m *meta) []string {
 	var out []string
 	for _, f := range m.fields {
-		if f.Name == m.pk || f.NoQuery || m.omitted(f.Name) || f.Type == schema.JSON {
+		if m.isKey(f.Name) || f.NoQuery || m.omitted(f.Name) || f.Type == schema.JSON {
 			continue
 		}
 		out = append(out, f.Name)
@@ -143,13 +142,11 @@ func exportFilename(table string) string {
 // drops out. More than InRequestCap names, repeats counted, is refused.
 func (u *UI) namedRows(ctx context.Context, m *meta, named, fields []string) ([]map[string]any, error) {
 	if len(named) > InRequestCap {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 	}
 	ids := dedupeIDs(named)
-	return m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
-		Where:  &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
+	return m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
 		Fields: fields,
-		Sorts:  []filter.ParsedSort{{Field: m.pk}},
-		Limit:  len(ids),
+		Sorts:  m.keySorts(),
 	})
 }

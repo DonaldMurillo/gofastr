@@ -61,7 +61,10 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption()}
+	// WithLocalePrefixes serves each catalog locale under its own path
+	// (/es/pricing), with hreflang and sitemap alternates; English keeps
+	// the plain paths.
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption(), framework.WithLocalePrefixes()}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
@@ -137,7 +140,7 @@ func main() {
 	if db != nil {
 		fwApp.WithAuditLog(framework.AuditConfig{})
 	}
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs, Themes: adminThemes, Pages: []admin.Page{revenuePage}, DashboardNew: "customers"}))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs, Themes: adminThemes, Pages: []admin.Page{revenuePage}, EmailPreviews: adminEmails(), DashboardNew: "customers"}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
@@ -216,7 +219,11 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 		if err != nil || len(rows) == 0 {
 			continue
 		}
-		if id, ok := rows[0]["id"]; ok {
+		pk, err := ch.Entity.KeyColumn()
+		if err != nil {
+			continue
+		}
+		if id, ok := rows[0][ch.WireKey(pk)]; ok {
 			row[k] = id
 		}
 	}

@@ -172,7 +172,7 @@ func TestScreenRechecksTheGate(t *testing.T) {
 	if got := s.RenderCtx(reader); got != "" {
 		t.Errorf("SECURITY: the screen drew %q for a caller the gate refuses", got)
 	}
-	if s.Load(reader); s.ScreenTitle() != "" {
+	if s.Load(reader); s.ScreenTitle(context.Background()) != "" {
 		t.Error("the screen resolved a title for a caller the gate refuses")
 	}
 	admin := handler.SetUser(context.Background(), theAdmin)
@@ -207,7 +207,7 @@ func TestShortcutHelpSheet(t *testing.T) {
 // Themes, the toggle alone.
 func TestThemePickerOnAccountPage(t *testing.T) {
 	brutal := style.RegisterThemeOverride(theme.Brutal())
-	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: brutal}}}, nil)
+	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: testPhrase("Brutal"), Theme: brutal}}}, nil)
 	account := get(x.as(theAdmin), "/admin/account").Body.String()
 	if !strings.Contains(account, `data-hui-theme-picker=""`) || !strings.Contains(account, ">Brutal<") || !strings.Contains(account, ">Look<") {
 		t.Errorf("no Look row on the account page")
@@ -225,5 +225,14 @@ func TestThemePickerOnAccountPage(t *testing.T) {
 	plain := setup(t, nil, Config{}, nil)
 	if strings.Contains(get(plain.as(theAdmin), "/admin/account").Body.String(), "data-hui-theme-picker") {
 		t.Errorf("a theme picker drew with no Themes")
+	}
+}
+
+// The host's boot check builds the chrome with no one signed in. The
+// account menu then has no one to name, and draws nothing rather than
+// an avatar with no name, which panics and drops the whole layout.
+func TestAccountMenuWithNoUser(t *testing.T) {
+	if got := New(Config{}).accountMenu(context.Background()); got != "" {
+		t.Errorf("account menu with no user = %q, want nothing", got)
 	}
 }

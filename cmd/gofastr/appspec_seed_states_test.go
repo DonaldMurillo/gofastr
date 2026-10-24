@@ -64,12 +64,11 @@ seed:
         paid_on: "2026-01-15"
 `
 
-// TestSeededStatesBootAndAuditOverride: the generated app boots with a
-// states entity seeded at a non-initial state, and the override that let
-// the seed write it leaves the audit trail the escape hatch promises: a
-// row per seeded row carrying the override's reason ("seed"), with the
-// non-initial state recorded in the create diff.
-func TestSeededStatesBootAndAuditOverride(t *testing.T) {
+// bootSeededApp generates the app spec into a temp module, runs it until
+// it serves (the seed hook runs before that), and returns its directory
+// and its log so far.
+func bootSeededApp(t *testing.T, spec string) (string, func() string) {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("generates, compiles and boots an app; skipped under -short")
 	}
@@ -90,7 +89,7 @@ func TestSeededStatesBootAndAuditOverride(t *testing.T) {
 	if err := copyGoSum(repoRoot, dir); err != nil {
 		t.Fatal(err)
 	}
-	bp, err := decodeAppSpecString(seedsStatesYAML)
+	bp, err := decodeAppSpecString(spec)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -140,7 +139,16 @@ func TestSeededStatesBootAndAuditOverride(t *testing.T) {
 	if !ready {
 		t.Fatalf("app never reported ready:\n%s", out.String())
 	}
+	return dir, out.String
+}
 
+// TestSeededStatesBootAndAuditOverride: the generated app boots with a
+// states entity seeded at a non-initial state, and the override that let
+// the seed write it leaves the audit trail the escape hatch promises: a
+// row per seeded row carrying the override's reason ("seed"), with the
+// non-initial state recorded in the create diff.
+func TestSeededStatesBootAndAuditOverride(t *testing.T) {
+	dir, log := bootSeededApp(t, seedsStatesYAML)
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "gofastr.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +156,7 @@ func TestSeededStatesBootAndAuditOverride(t *testing.T) {
 	defer db.Close()
 	var seeded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE number = 'INV-0002' AND status = 'paid'`).Scan(&seeded); err != nil {
-		t.Fatalf("query seeded invoice: %v\napp log:\n%s", err, out.String())
+		t.Fatalf("query seeded invoice: %v\napp log:\n%s", err, log())
 	}
 	if seeded != 1 {
 		t.Fatalf("the paid seed row did not land (found %d)", seeded)
@@ -170,5 +178,65 @@ func TestSeededStatesBootAndAuditOverride(t *testing.T) {
 	}
 	if paidDiff != 1 {
 		t.Fatalf("the non-initial seed state must be recorded in its audit diff, got %d rows", paidDiff)
+	}
+}
+
+const seedRefKeyYAML = `app:
+  name: SeedRefKey
+  module: example.com/seedstates
+  db:
+    driver: sqlite
+    url: file:gofastr.db
+entities:
+  - name: currencies
+    crud: true
+    primary_key: [currency_code]
+    fields:
+      - name: currency_code
+        type: string
+        required: true
+      - name: label
+        type: string
+  - name: products
+    crud: true
+    fields:
+      - name: name
+        type: string
+      - name: currency
+        type: relation
+        to: currencies
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: entity_list
+        entity: products
+        fields: [name]
+seed:
+  - entity: currencies
+    rows:
+      - currency_code: EUR
+        label: Euro
+  - entity: products
+    rows:
+      - name: Lamp
+        currency: "@currencies.label=Euro"
+`
+
+// A seed reference to an entity keyed on another column than id
+// resolves to that column's value.
+func TestSeedRefToDeclaredKey(t *testing.T) {
+	dir, log := bootSeededApp(t, seedRefKeyYAML)
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "gofastr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var currency string
+	if err := db.QueryRow(`SELECT currency FROM products WHERE name = 'Lamp'`).Scan(&currency); err != nil {
+		t.Fatalf("query seeded product: %v\napp log:\n%s", err, log())
+	}
+	if currency != "EUR" {
+		t.Errorf("product currency = %q, want EUR", currency)
 	}
 }

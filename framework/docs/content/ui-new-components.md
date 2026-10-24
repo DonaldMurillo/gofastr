@@ -63,6 +63,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **avatargroup**: `framework/ui.AvatarGroup`, readable 10% overlap, compact corner presence dots, and an adaptive-surface overflow chip
 - **thumbnail**: `framework/ui.Thumbnail`, a square lazily loaded image preview (sm 2rem / md 4rem / lg 8rem, `object-fit: cover`); a `Src` the image URL policy refuses draws nothing, so the caller draws its own empty mark
 - **icon**: `framework/ui.Icon`, inline-SVG primitive backed by `RegisterIcon`; built-ins cover chevrons, close, menu, more, search, the status family and a navigation set (home, user, users, file, receipt, card, box, layers, activity, shield, key, lock, sliders, chart, calendar, clock, plus, list, grid, database, inbox, folder, tag, mail, bell, globe, repeat, cpu, star, pencil, trash, rotate-ccw), `currentColor` stroke, `AriaLabel` flips to `role="img"`
+- **languagemenu**: `framework/ui.LanguageMenu`, the language switcher for an app built with `framework.WithLocalePrefixes`: a Menu with a globe trigger naming the current language, and one radio row per catalog locale linking this page in that language (`rel="alternate" hreflang`). Each language is named in itself (`i18n.LanguageName`; `Names` overrides). The runtime retargets the rows after each client-side navigation, so it can sit in persistent chrome. Renders nothing without path locales on `Ctx`
 - **link**: `framework/ui.Link`, typed anchor with external-link affordances + unsafe-scheme href sanitizing
 - **muted**: `framework/ui.Muted`, subdued inline `<span>` for secondary text
 - **inline code**: `framework/ui.InlineCode`, a short escaped `<code>` in the mono font on the soft surface, for an operator, a field name or an example inside text; `InlineCodeDanger` draws it in the danger tone, for an error a program returned (a job's last error); blocks of code use `CodeBlock`
@@ -245,7 +246,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **signout**: `framework/ui.SignOut`, logout control: minimal form POSTing to the auth sign-out endpoint; compatible with `auth.WithBFFPosture`, whose logout handler enforces same-origin submission
 - **pollingindicator**: `framework/ui.PollingIndicator`, pulsing dot + label confirming a polling RPC is firing
 - **seo**: `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema`, per-page SEO + sitewide sitemap.xml / robots.txt
-- **seo-bundle**: `ScreenSEO()` returning an `SEO` struct, per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
+- **seo-bundle**: `ScreenSEO(ctx)` returning an `SEO` struct, per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
 
 ### Marketing & page sections
 

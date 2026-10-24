@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -17,7 +18,8 @@ import (
 type ScreenResponse struct {
 	// Status is the HTTP status code to send. Zero means 200, unless
 	// the component implements [ScreenStatusCode], whose value then
-	// applies with the same contract a registered screen has. An
+	// applies with the same contract a registered screen has, or its
+	// render sets one through app.SetStatus. An
 	// out-of-range code (<100 or >999) is replaced with 500 rather
 	// than panicking inside net/http.
 	Status int
@@ -64,6 +66,7 @@ const screenCacheControlDefault = "private, no-store"
 // same tail every page runs (finishPageDocument): verify-or-mint the
 // session, no-store + Vary: Cookie, chrome, seed, widget SSR.
 func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp component.Component, resp ScreenResponse) {
+	app.RefuseRetiredScreenMethods("RenderScreen", comp)
 	status := resp.Status
 	if status == 0 {
 		if sc, ok := comp.(ScreenStatusCode); ok {
@@ -83,16 +86,23 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 
 	if comp == nil {
 		w.Header().Set("Cache-Control", cacheControl)
-		http.Error(w, http.StatusText(status), status)
+		i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 		return
 	}
 
-	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	ctx, recorded := app.TrackStatus(store.WithValues(app.WithRequest(r.Context(), r)))
 	body, err := component.SafeRenderCtx(ctx, comp)
 	if err != nil {
 		w.Header().Set("Cache-Control", cacheControl)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
+	}
+	// A status the render set (app.SetStatus) applies when neither the
+	// caller nor the component chose one, the ranking pageStatus runs.
+	if resp.Status == 0 && status == http.StatusOK {
+		if code := recorded(); code != 0 {
+			status = code
+		}
 	}
 
 	w.Header().Set("Cache-Control", cacheControl)
@@ -110,7 +120,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		// nav.js never reads a bare screen body as a full document.
 		if staleMarkupClient(r) {
 			w.Header().Del("Cache-Control")
-			writeStaleMarkupReload(w, r, r.URL.Path, "")
+			writeStaleMarkupReload(w, r, routePath(r), "")
 			return
 		}
 		w.Header().Set("X-Gofastr-Partial", "true")
@@ -134,7 +144,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	}
 	// Same convention as the page pipeline: "<page> — <app>".
 	if t, ok := comp.(app.ScreenTitler); ok {
-		if name := t.ScreenTitle(); name != "" {
+		if name := t.ScreenTitle(r.Context()); name != "" {
 			title = name
 			if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
 				title += suffix
@@ -148,5 +158,5 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	// enter a shared cache), signal seed, widget SSR. The partial arm
 	// above keeps its bare cache policy and mints nothing.
 	ds.finishPageDocument(w, r, ctx,
-		render.HTML(ds.documentShell(r.URL.Path, title, string(body))), r.URL.Path, comp, status)
+		render.HTML(ds.documentShell(ctx, r.URL.Path, title, string(body))), r.URL.Path, comp, status)
 }

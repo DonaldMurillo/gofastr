@@ -157,8 +157,8 @@ func heading(level int, t string) render.HTML {
 
 type indexScreen struct{ site *site }
 
-func (sc *indexScreen) ScreenTitle() string { return sc.site.cfg.AppName + " SDKs" }
-func (sc *indexScreen) ScreenDescription() string {
+func (sc *indexScreen) ScreenTitle(ctx context.Context) string { return sc.site.cfg.AppName + " SDKs" }
+func (sc *indexScreen) ScreenDescription(ctx context.Context) string {
 	return "Client SDKs and API reference for " + sc.site.cfg.AppName
 }
 
@@ -314,8 +314,8 @@ console.log(page.total);`, origin, prop)
 
 type authScreen struct{ site *site }
 
-func (sc *authScreen) ScreenTitle() string { return "API authentication" }
-func (sc *authScreen) ScreenDescription() string {
+func (sc *authScreen) ScreenTitle(ctx context.Context) string { return "API authentication" }
+func (sc *authScreen) ScreenDescription(ctx context.Context) string {
 	return "Bearer-token authentication for the " + sc.site.cfg.AppName + " API"
 }
 
@@ -372,8 +372,8 @@ func (s *site) exampleHost() string {
 
 type errorsScreen struct{ site *site }
 
-func (sc *errorsScreen) ScreenTitle() string { return "API errors" }
-func (sc *errorsScreen) ScreenDescription() string {
+func (sc *errorsScreen) ScreenTitle(ctx context.Context) string { return "API errors" }
+func (sc *errorsScreen) ScreenDescription(ctx context.Context) string {
 	return "Error envelope and status codes for the " + sc.site.cfg.AppName + " API"
 }
 
@@ -451,14 +451,14 @@ func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
 	return out
 }
 
-func (sc *entityScreen) ScreenTitle() string {
+func (sc *entityScreen) ScreenTitle(ctx context.Context) string {
 	if e, ok := sc.current(); ok {
 		return e.Config.Name + ": API reference"
 	}
 	return "API reference"
 }
 
-func (sc *entityScreen) ScreenDescription() string {
+func (sc *entityScreen) ScreenDescription(ctx context.Context) string {
 	return "Entity API reference for " + sc.site.cfg.AppName
 }
 
@@ -570,16 +570,20 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 	cfg := e.Config
 	base := sc.site.entityBase(e)
+	// A record's path has one segment per key column: /{id}, or
+	// /{student_id}/{course_id} for a composite key.
+	keys := e.KeyColumns()
+	record := base + "/{" + strings.Join(keys, "}/{") + "}"
 	type op struct{ method, path, desc string }
 	ops := []op{
 		{"GET", base, "List (offset or cursor pagination)"},
-		{"GET", base + "/{id}", "Get one record"},
+		{"GET", record, "Get one record"},
 		{"POST", base, "Create"},
-		{"PUT", base + "/{id}", "Full update"},
-		{"PATCH", base + "/{id}", "Partial update: only keys present in the body change"},
-		{"DELETE", base + "/{id}", "Delete"},
+		{"PUT", record, "Full update"},
+		{"PATCH", record, "Partial update: only keys present in the body change"},
+		{"DELETE", record, "Delete"},
 		{"POST", base + "/_batch", "Atomic batch create ({\"items\": […]})"},
-		{"PATCH", base + "/_batch", "Atomic batch update (items carry id)"},
+		{"PATCH", base + "/_batch", "Atomic batch update (items carry " + strings.Join(keys, " and ") + ")"},
 		{"DELETE", base + "/_batch", "Atomic batch delete ({\"ids\": […]})"},
 		{"GET", base + "/_events", "Live SSE feed: entity.created / updated / deleted"},
 	}
@@ -590,7 +594,7 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		if t.Stamp != "" {
 			desc += ", stamps " + t.Stamp
 		}
-		ops = append(ops, op{"POST", base + "/{id}/transitions/" + t.Key, desc})
+		ops = append(ops, op{"POST", record + "/transitions/" + t.Key, desc})
 	}
 	for _, ep := range cfg.Endpoints {
 		path := ep.Path
@@ -601,7 +605,14 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		if desc == "" {
 			desc = "Custom endpoint" + map[bool]string{true: " (" + ep.Name + ")", false: ""}[ep.Name != ""]
 		}
-		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc + ": use the SDK's Do escape hatch"})
+		// A settings-declared endpoint has a typed call in both SDKs;
+		// a hand-registered one is reached through Do.
+		if ep.SDK && ep.Name != "" {
+			desc += ": Go c." + upperFirst(casing.ToCamel(ep.Name)) + ", TypeScript api." + casing.ToCamel(cfg.Table) + "." + casing.ToCamel(ep.Name)
+		} else {
+			desc += ": use the SDK's Do escape hatch"
+		}
+		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc})
 	}
 	var rows []ui.Row
 	for _, o := range ops {

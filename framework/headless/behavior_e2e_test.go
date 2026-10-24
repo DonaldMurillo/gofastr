@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -955,6 +956,19 @@ func TestE2E_AControlInsertedIntoAHiddenRegionIsDisabled(t *testing.T) {
 	}
 }
 
+// withoutSSE serves a stand-in for the sse module the offline banner
+// idle-loads. The tests below drive the mirror sse.js owns by hand,
+// and the real module would replace it on load (a fresh, not-lost
+// status) and then emit its own retries against a server with no
+// stream: under load that landed between a write and the assertion
+// and hid the banner.
+func withoutSSE(mux *http.ServeMux) {
+	mux.HandleFunc("/__gofastr/runtime/sse.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		io.WriteString(w, `window.__gofastr.loadedModules.sse = true;`)
+	})
+}
+
 // The dismissed set never applies to the offline banner: it is the
 // runtime's, shown when the connection is lost and hidden on
 // reconnect, and a dismissal remembered for the session would hide
@@ -966,7 +980,7 @@ func TestE2E_OfflineBannerIgnoresTheDismissedSet(t *testing.T) {
 	banner := SystemBanner(SystemBannerProps{
 		ID: "sys-off2", Tone: "warning", Offline: true, Dismiss: &no, Title: "Connection lost",
 	}, nil)
-	b := startBehaviorServer(t, `<div id="host">`+string(banner)+`</div>`)
+	b := startBehaviorServer(t, `<div id="host">`+string(banner)+`</div>`, withoutSSE)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, moduleLoadedExpr) {
 		t.Fatal("the module never loaded")
@@ -1023,7 +1037,7 @@ func TestE2E_OfflineBannerReadsTheConnectionItMissed(t *testing.T) {
 	banner := SystemBanner(SystemBannerProps{
 		ID: "sys-off3", Tone: "warning", Offline: true, Dismiss: &no, Title: "Connection lost",
 	}, nil)
-	b := startBehaviorServer(t, `<div id="host">`+string(banner)+`</div>`)
+	b := startBehaviorServer(t, `<div id="host">`+string(banner)+`</div>`, withoutSSE)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, moduleLoadedExpr) {
 		t.Fatal("the module never loaded")

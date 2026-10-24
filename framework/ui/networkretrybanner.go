@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── NetworkRetryBanner ─────────────────────────────────────────────
@@ -34,6 +37,10 @@ import (
 
 // NetworkRetryBannerConfig configures the banner.
 type NetworkRetryBannerConfig struct {
+	// Ctx carries the per-request context the banner's default title,
+	// text and retry label are written in. When nil, English applies.
+	Ctx context.Context
+
 	// HealthEndpoint is the URL the Retry button pings to test
 	// connectivity. Must return 2xx when the server is healthy.
 	// Required.
@@ -67,15 +74,15 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	}
 	title := cfg.Title
 	if title == "" {
-		title = "Connection lost"
+		title = i18nui.NetworkRetryTitle.Text(cfg.Ctx)
 	}
 	desc := cfg.Description
 	if desc == "" {
-		desc = "We're having trouble reaching the server. Your changes are paused until the connection comes back."
+		desc = i18nui.NetworkRetryText.Text(cfg.Ctx)
 	}
 	retryLabel := cfg.RetryLabel
 	if retryLabel == "" {
-		retryLabel = "Retry now"
+		retryLabel = i18nui.NetworkRetryNowText.Text(cfg.Ctx)
 	}
 	noDismiss := false
 

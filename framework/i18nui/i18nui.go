@@ -1,18 +1,13 @@
-// Package i18nui provides translated default strings for framework UI
-// surfaces. When a translator is configured (via App.WithI18n), these
-// defaults are resolved through the translator. Without a translator,
-// English fallbacks are returned.
-//
-// This addresses the i18n surface coverage gap: entity field labels,
-// validator error messages, and framework/ui defaults (Pagination,
-// ValidationSummary, EmptyState, Banner, Toast) currently emit
-// hardcoded English.
+// Package i18nui holds the phrases framework UI surfaces show: the
+// pagination, table, form, dialog and widget words, the entity screens'
+// chrome and the admin's. Each is an [i18n.Phrase], so a catalog entry
+// under its key translates it and [i18n.Phrase.Text] falls back to the
+// English otherwise. The Entity* helpers resolve the strings an entity's
+// Display config names.
 package i18nui
 
 import (
 	"context"
-	"maps"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -21,254 +16,277 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
-// Key is a translation key for framework UI surfaces.
-type Key string
-
-const (
+var (
 	// Pagination
-	KeyPaginationPrevious Key = "ui.pagination.previous"
-	KeyPaginationNext     Key = "ui.pagination.next"
-	KeyPaginationPage     Key = "ui.pagination.page"
-	KeyPaginationOf       Key = "ui.pagination.of"
-	KeyPaginationShowing  Key = "ui.pagination.showing"
-	KeyPaginationResults  Key = "ui.pagination.results"
-	KeyPaginationLabel    Key = "ui.pagination.label"
-
-	// Validation
-	KeyValidationRequired Key = "ui.validation.required"
-	KeyValidationEmail    Key = "ui.validation.email"
-	KeyValidationMin      Key = "ui.validation.min"
-	KeyValidationMax      Key = "ui.validation.max"
-	KeyValidationMinLen   Key = "ui.validation.minLength"
-	KeyValidationMaxLen   Key = "ui.validation.maxLength"
-	KeyValidationPattern  Key = "ui.validation.pattern"
-	KeyValidationUnique   Key = "ui.validation.unique"
+	PaginationPrevious = i18n.Define("ui.pagination.previous", "Previous")
+	PaginationNext     = i18n.Define("ui.pagination.next", "Next")
+	PaginationPage     = i18n.Define("ui.pagination.page", "Page")
+	PaginationOf       = i18n.Define("ui.pagination.of", "of")
+	PaginationShowing  = i18n.Define("ui.pagination.showing", "Showing")
+	PaginationResults  = i18n.Define("ui.pagination.results", "results")
+	PaginationLabel    = i18n.Define("ui.pagination.label", "Pagination")
 
 	// Empty state
-	KeyEmptyStateTitle Key = "ui.empty.title"
-	KeyEmptyStateDesc  Key = "ui.empty.description"
+	EmptyStateTitle = i18n.Define("ui.empty.title", "Nothing here yet")
+	EmptyStateDesc  = i18n.Define("ui.empty.description", "No items to display.")
 
 	// Dialog / modal
-	KeyDialogConfirm Key = "ui.dialog.confirm"
-	KeyDialogCancel  Key = "ui.dialog.cancel"
-	KeyDialogClose   Key = "ui.dialog.close"
-	KeyDialogSave    Key = "ui.dialog.save"
-	KeyDialogDelete  Key = "ui.dialog.delete"
-	// KeyDialogConfirmTitle titles the confirm dialog a
+	DialogConfirm = i18n.Define("ui.dialog.confirm", "Confirm")
+	DialogCancel  = i18n.Define("ui.dialog.cancel", "Cancel")
+	DialogClose   = i18n.Define("ui.dialog.close", "Close")
+	DialogSave    = i18n.Define("ui.dialog.save", "Save")
+	DialogDelete  = i18n.Define("ui.dialog.delete", "Delete")
+	// DialogConfirmTitle titles the confirm dialog a
 	// data-cui-confirm control opens when it names no title.
-	KeyDialogConfirmTitle Key = "ui.dialog.confirmTitle"
+	DialogConfirmTitle = i18n.Define("ui.dialog.confirmTitle", "Are you sure?")
 
 	// Toast
-	KeyToastSuccess Key = "ui.toast.success"
-	KeyToastError   Key = "ui.toast.error"
-	KeyToastWarning Key = "ui.toast.warning"
-	KeyToastInfo    Key = "ui.toast.info"
+	ToastSuccess = i18n.Define("ui.toast.success", "Success")
+	ToastError   = i18n.Define("ui.toast.error", "Error")
+	ToastWarning = i18n.Define("ui.toast.warning", "Warning")
+	ToastInfo    = i18n.Define("ui.toast.info", "Info")
 
 	// Banner
-	KeyBannerDismiss Key = "ui.banner.dismiss"
+	BannerDismiss = i18n.Define("ui.banner.dismiss", "Dismiss")
 
 	// DataTable
-	KeyTableSortAsc   Key = "ui.table.sortAscending"
-	KeyTableSortDesc  Key = "ui.table.sortDescending"
-	KeyTableNoSort    Key = "ui.table.noSort"
-	KeyTableFilter    Key = "ui.table.filter"
-	KeyTableNoResults Key = "ui.table.noResults"
-	KeyTableLoading   Key = "ui.table.loading"
+	TableSortAsc   = i18n.Define("ui.table.sortAscending", "Sort ascending")
+	TableSortDesc  = i18n.Define("ui.table.sortDescending", "Sort descending")
+	TableNoSort    = i18n.Define("ui.table.noSort", "Remove sort")
+	TableFilter    = i18n.Define("ui.table.filter", "Filter")
+	TableNoResults = i18n.Define("ui.table.noResults", "No results")
+	TableLoading   = i18n.Define("ui.table.loading", "Loading…")
 
 	// File upload
-	KeyFileUploadDrop   Key = "ui.fileUpload.dropzone"
-	KeyFileUploadBrowse Key = "ui.fileUpload.browse"
-	KeyFileUploadRemove Key = "ui.fileUpload.remove"
+	FileUploadDrop   = i18n.Define("ui.fileUpload.dropzone", "Drop files here, or click to browse")
+	FileUploadBrowse = i18n.Define("ui.fileUpload.browse", "Browse")
+	FileUploadRemove = i18n.Define("ui.fileUpload.remove", "Remove")
 
 	// Form
-	KeyFormSubmit  Key = "ui.form.submit"
-	KeyFormReset   Key = "ui.form.reset"
-	KeyFormSending Key = "ui.form.sending"
-	KeyFormSuccess Key = "ui.form.success"
-	KeyFormError   Key = "ui.form.error"
-	KeyFormYes     Key = "ui.form.yes"
-	KeyFormNo      Key = "ui.form.no"
+	FormSubmit  = i18n.Define("ui.form.submit", "Submit")
+	FormReset   = i18n.Define("ui.form.reset", "Reset")
+	FormSending = i18n.Define("ui.form.sending", "Sending…")
+	FormSuccess = i18n.Define("ui.form.success", "Saved successfully")
+	FormError   = i18n.Define("ui.form.error", "An error occurred")
+	FormYes     = i18n.Define("ui.form.yes", "Yes")
+	FormNo      = i18n.Define("ui.form.no", "No")
 
 	// Search
-	KeySearchPlaceholder Key = "ui.search.placeholder"
-	KeySearchNoResults   Key = "ui.search.noResults"
+	SearchPlaceholder = i18n.Define("ui.search.placeholder", "Search…")
+	SearchNoResults   = i18n.Define("ui.search.noResults", "No results")
 
 	// Auth
-	KeyAuthLogin      Key = "ui.auth.login"
-	KeyAuthLogout     Key = "ui.auth.logout"
-	KeyAuthSignup     Key = "ui.auth.signup"
-	KeyAuthEmail      Key = "ui.auth.email"
-	KeyAuthPassword   Key = "ui.auth.password"
-	KeyAuthRememberMe Key = "ui.auth.rememberMe"
+	AuthLogin      = i18n.Define("ui.auth.login", "Log in")
+	AuthLogout     = i18n.Define("ui.auth.logout", "Log out")
+	AuthSignup     = i18n.Define("ui.auth.signup", "Sign up")
+	AuthEmail      = i18n.Define("ui.auth.email", "Email")
+	AuthPassword   = i18n.Define("ui.auth.password", "Password") // nosecret: UI label, not a credential
+	AuthRememberMe = i18n.Define("ui.auth.rememberMe", "Remember me")
 
 	// Repeater
-	KeyRepeaterAdd    Key = "ui.repeater.add"
-	KeyRepeaterRemove Key = "ui.repeater.remove"
+	RepeaterAdd    = i18n.Define("ui.repeater.add", "Add item")
+	RepeaterRemove = i18n.Define("ui.repeater.remove", "Remove")
 
 	// PasswordInput
-	KeyPasswordInputShow Key = "ui.passwordInput.show"
-	KeyPasswordInputHide Key = "ui.passwordInput.hide"
+	PasswordInputShow = i18n.Define("ui.passwordInput.show", "Show password")
+	PasswordInputHide = i18n.Define("ui.passwordInput.hide", "Hide password")
 
 	// Lightbox
-	KeyLightboxLabel    Key = "ui.lightbox.label"
-	KeyLightboxPrev     Key = "ui.lightbox.previous"
-	KeyLightboxNext     Key = "ui.lightbox.next"
-	KeyLightboxDownload Key = "ui.lightbox.download"
+	LightboxLabel    = i18n.Define("ui.lightbox.label", "Image viewer")
+	LightboxPrev     = i18n.Define("ui.lightbox.previous", "Previous image")
+	LightboxNext     = i18n.Define("ui.lightbox.next", "Next image")
+	LightboxDownload = i18n.Define("ui.lightbox.download", "Download image")
 
 	// StepWizard
-	KeyStepWizardBack   Key = "ui.stepWizard.back"
-	KeyStepWizardNext   Key = "ui.stepWizard.next"
-	KeyStepWizardSubmit Key = "ui.stepWizard.submit"
+	StepWizardBack   = i18n.Define("ui.stepWizard.back", "Back")
+	StepWizardNext   = i18n.Define("ui.stepWizard.next", "Continue")
+	StepWizardSubmit = i18n.Define("ui.stepWizard.submit", "Submit")
 	// DataTable extras
-	KeyTableEmptyDesc Key = "ui.table.emptyDescription"
-	KeyTableSortBy    Key = "ui.table.sortBy"
-	KeyTableSelectAll Key = "ui.table.selectAll"
+	TableEmptyDesc = i18n.Define("ui.table.emptyDescription", "Adjust your filters or add new entries.")
+	TableSortBy    = i18n.Define("ui.table.sortBy", "Sort by {{column}}")
+	TableSelectAll = i18n.Define("ui.table.selectAll", "Select all rows")
 
 	// FilterToolbar
-	KeyFilterToolbarLabel  Key = "ui.filterToolbar.label"
-	KeyFilterApply         Key = "ui.filterToolbar.apply"
-	KeyFilterReset         Key = "ui.filterToolbar.reset"
-	KeyShortcutSheetTitle  Key = "ui.shortcutSheet.title"  // "Keyboard shortcuts"
-	KeyTextAreaInvalidJSON Key = "ui.textArea.invalidJSON" // "Enter valid JSON"
-	KeyInlineEditSave      Key = "ui.inlineEdit.save"      // "Save"
-	KeyInlineEditSaved     Key = "ui.inlineEdit.saved"     // "Saved"
-	KeySelectionCount      Key = "ui.selection.count"      // "{n} selected"
-	KeySelectionClear      Key = "ui.selection.clear"      // "Clear selection"
-	KeySelectionCopy       Key = "ui.selection.copy"       // "Copy CSV"
-	KeySelectionCopied     Key = "ui.selection.copied"     // "Copied {n} rows as CSV"
-	KeySelectionCopyFailed Key = "ui.selection.copyFailed" // "The rows could not be copied."
+	FilterToolbarLabel  = i18n.Define("ui.filterToolbar.label", "Filters")
+	FilterApply         = i18n.Define("ui.filterToolbar.apply", "Apply")
+	FilterReset         = i18n.Define("ui.filterToolbar.reset", "Reset")
+	ShortcutSheetTitle  = i18n.Define("ui.shortcutSheet.title", "Keyboard shortcuts")
+	TextAreaInvalidJSON = i18n.Define("ui.textArea.invalidJSON", "Enter valid JSON")
+	InlineEditSave      = i18n.Define("ui.inlineEdit.save", "Save")
+	InlineEditSaved     = i18n.Define("ui.inlineEdit.saved", "Saved")
+	SelectionCount      = i18n.Define("ui.selection.count", "{{n}} selected")
+	SelectionClear      = i18n.Define("ui.selection.clear", "Clear selection")
+	SelectionCopy       = i18n.Define("ui.selection.copy", "Copy CSV")
+	SelectionCopied     = i18n.Define("ui.selection.copied", "Copied {{n}} rows as CSV")
+	SelectionCopyFailed = i18n.Define("ui.selection.copyFailed", "The rows could not be copied.")
 	// ColumnPicker's link names.
-	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
-	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
-	KeyColumnMoveUp   Key = "ui.columnPicker.moveUp"   // "Move {column} earlier"
-	KeyColumnMoveDown Key = "ui.columnPicker.moveDown" // "Move {column} later"
-	KeyFilterAll      Key = "ui.filterToolbar.all"     // "All {label}"
-	KeyFilterAllPlain Key = "ui.filterToolbar.allPlain"
-	KeyFilterSortBy   Key = "ui.filterToolbar.sortBy"
+	ColumnShow     = i18n.Define("ui.columnPicker.show", "Show {{column}}")
+	ColumnHide     = i18n.Define("ui.columnPicker.hide", "Hide {{column}}")
+	ColumnMoveUp   = i18n.Define("ui.columnPicker.moveUp", "Move {{column}} earlier")
+	ColumnMoveDown = i18n.Define("ui.columnPicker.moveDown", "Move {{column}} later")
+	FilterAll      = i18n.Define("ui.filterToolbar.all", "All {{label}}")
+	FilterAllPlain = i18n.Define("ui.filterToolbar.allPlain", "All")
+	FilterSortBy   = i18n.Define("ui.filterToolbar.sortBy", "Sort by")
 	// FilterChipBar
-	KeyFilterClearAll   Key = "ui.filterChipBar.clearAll"
-	KeyFilterChipRemove Key = "ui.filterChipBar.removeFilter" // "Remove filter {label}"
+	FilterClearAll   = i18n.Define("ui.filterChipBar.clearAll", "Clear all")
+	FilterChipRemove = i18n.Define("ui.filterChipBar.removeFilter", "Remove filter {{label}}")
 
 	// Search extras
-	KeySearchInputPlaceholder Key = "ui.search.inputPlaceholder" // "Search..." (ASCII dots)
-	KeySearchLabel            Key = "ui.search.label"
-	KeySearchClear            Key = "ui.search.clear"
+	SearchInputPlaceholder = i18n.Define("ui.search.inputPlaceholder", "Search...")
+	SearchLabel            = i18n.Define("ui.search.label", "Search")
+	SearchClear            = i18n.Define("ui.search.clear", "Clear search")
 
 	// SearchResults
-	KeySearchResultsCount Key = "ui.searchResults.count" // "{n} results for “{q}”"
-	KeySearchResultsOne   Key = "ui.searchResults.one"   // "1 result for “{q}”"
-	KeySearchResultsNone  Key = "ui.searchResults.none"  // "No pages match “{q}”"
-	KeySearchResultsLabel Key = "ui.searchResults.label" // "Search results"
-	KeySearchResultsMore  Key = "ui.searchResults.more"  // "More results"
-	KeySearchResultsAll   Key = "ui.searchResults.all"   // "See all results for “{q}”"
+	SearchResultsCount = i18n.Define("ui.searchResults.count", "{{n}} results for “{{q}}”")
+	SearchResultsOne   = i18n.Define("ui.searchResults.one", "1 result for “{{q}}”")
+	SearchResultsNone  = i18n.Define("ui.searchResults.none", "No pages match “{{q}}”")
+	SearchResultsLabel = i18n.Define("ui.searchResults.label", "Search results")
+	SearchResultsMore  = i18n.Define("ui.searchResults.more", "More results")
+	SearchResultsAll   = i18n.Define("ui.searchResults.all", "See all results for “{{q}}”")
 
 	// CommandPalette
-	KeyCommandPalettePlaceholder Key = "ui.commandPalette.placeholder"
-	KeyCommandPaletteOpen        Key = "ui.commandPalette.open"
-	KeyCommandPaletteTitle       Key = "ui.commandPalette.title"
-	KeyCommandPaletteNavigate    Key = "ui.commandPalette.navigate"
-	KeyCommandPaletteSelect      Key = "ui.commandPalette.select"
-	KeyCommandPaletteClose       Key = "ui.commandPalette.close"
+	CommandPalettePlaceholder = i18n.Define("ui.commandPalette.placeholder", "Type a command or search…")
+	CommandPaletteOpen        = i18n.Define("ui.commandPalette.open", "Open command palette")
+	CommandPaletteTitle       = i18n.Define("ui.commandPalette.title", "Command palette")
+	CommandPaletteNavigate    = i18n.Define("ui.commandPalette.navigate", "Navigate")
+	CommandPaletteSelect      = i18n.Define("ui.commandPalette.select", "Select")
+	CommandPaletteClose       = i18n.Define("ui.commandPalette.close", "Close")
 
 	// Form extras
-	KeyFormErrorsSummary      Key = "ui.form.errorsSummary"
-	KeyFormHasErrors          Key = "ui.form.hasErrors"
-	KeyFormSave               Key = "ui.form.save"
-	KeyValidationSummaryTitle Key = "ui.validationSummary.title"
+	FormErrorsSummary      = i18n.Define("ui.form.errorsSummary", "Please fix the highlighted fields and try again.")
+	FormHasErrors          = i18n.Define("ui.form.hasErrors", "Form has errors")
+	FormSave               = i18n.Define("ui.form.save", "Save")
+	ValidationSummaryTitle = i18n.Define("ui.validationSummary.title", "Please fix the following errors:")
 
 	// Carousel
-	KeyCarouselPrevious   Key = "ui.carousel.previous"
-	KeyCarouselNext       Key = "ui.carousel.next"
-	KeyCarouselGoTo       Key = "ui.carousel.goTo" // "Go to slide {slide}"
-	KeyCarouselPagination Key = "ui.carousel.pagination"
+	CarouselPrevious   = i18n.Define("ui.carousel.previous", "Previous slide")
+	CarouselNext       = i18n.Define("ui.carousel.next", "Next slide")
+	CarouselGoTo       = i18n.Define("ui.carousel.goTo", "Go to slide {{slide}}")
+	CarouselPagination = i18n.Define("ui.carousel.pagination", "Slide pagination")
 
 	// Counter
-	KeyCounterDecrement Key = "ui.counter.decrement"
-	KeyCounterIncrement Key = "ui.counter.increment"
-	KeyCounterLabel     Key = "ui.counter.label"
+	CounterDecrement = i18n.Define("ui.counter.decrement", "Decrement")
+	CounterIncrement = i18n.Define("ui.counter.increment", "Increment")
+	CounterLabel     = i18n.Define("ui.counter.label", "Counter")
 
 	// NumberInput
-	KeyNumberDecrement Key = "ui.number.decrement" // "Decrement {label}"
-	KeyNumberIncrement Key = "ui.number.increment" // "Increment {label}"
+	NumberDecrement = i18n.Define("ui.number.decrement", "Decrement {{label}}")
+	NumberIncrement = i18n.Define("ui.number.increment", "Increment {{label}}")
 
 	// Spinner / common
-	KeyLoading Key = "ui.loading"
+	Loading = i18n.Define("ui.loading", "Loading…")
 
 	// Sparkline
-	KeySparklineNoData Key = "ui.sparkline.noData"
+	SparklineNoData = i18n.Define("ui.sparkline.noData", "No trend data")
+
+	// Charts
+	ChartNoData        = i18n.Define("ui.chart.noData", "No data yet")
+	ChartNotEnoughData = i18n.Define("ui.chart.notEnoughData", "Not enough data yet")
+	ChartValue         = i18n.Define("ui.chart.value", "{{label}}: {{value}}")
+	GaugeNoData        = i18n.Define("ui.gauge.noData", "{{label}}: no data yet")
+	ScatterPoint       = i18n.Define("ui.scatter.point", "{{series}}: {{label}} ({{x}}, {{y}})")
+	ScatterPointBare   = i18n.Define("ui.scatter.pointBare", "{{series}}: ({{x}}, {{y}})")
+	HeatmapCell        = i18n.Define("ui.heatmap.cell", "{{row}}, {{col}}: {{value}}")
+	HeatmapNoData      = i18n.Define("ui.heatmap.noData", "no data")
+	HeatmapLess        = i18n.Define("ui.heatmap.less", "Less")
+	HeatmapMore        = i18n.Define("ui.heatmap.more", "More")
 
 	// Auth extras
-	KeySignOut Key = "ui.auth.signOut"
+	SignOut = i18n.Define("ui.auth.signOut", "Sign out")
 
 	// FileDropzone
-	KeyDropzoneDropFiles     Key = "ui.dropzone.promptMultiple"
-	KeyDropzoneDropFile      Key = "ui.dropzone.promptSingle"
-	KeyDropzoneMaxSize       Key = "ui.dropzone.maxSize"       // "Max {n} MB."
-	KeyDropzoneMaxSizeSuffix Key = "ui.dropzone.maxSizeSuffix" // " (max {n} MB)"
+	DropzoneDropFiles     = i18n.Define("ui.dropzone.promptMultiple", "Drop files here or click to browse")
+	DropzoneDropFile      = i18n.Define("ui.dropzone.promptSingle", "Drop a file here or click to browse")
+	DropzoneMaxSize       = i18n.Define("ui.dropzone.maxSize", "Max {{n}} MB.")
+	DropzoneMaxSizeSuffix = i18n.Define("ui.dropzone.maxSizeSuffix", " (max {{n}} MB)")
 
 	// FileUpload extras
-	KeyFileUploadDropSingle Key = "ui.fileUpload.dropzoneSingle" // "Drop a file here, or click to browse"
-	KeyFileMaxSize          Key = "ui.fileUpload.maxSize"        // "Max {n} MB"
+	FileUploadDropSingle = i18n.Define("ui.fileUpload.dropzoneSingle", "Drop a file here, or click to browse")
+	FileMaxSize          = i18n.Define("ui.fileUpload.maxSize", "Max {{n}} MB")
+
+	// SkipLink
+	SkipToMain = i18n.Define("ui.skipLink.toMain", "Skip to main content")
 
 	// Notification
-	KeyNotificationDismiss Key = "ui.notification.dismiss"
-	KeyNotificationEmpty   Key = "ui.notification.empty"
+	NotificationDismiss = i18n.Define("ui.notification.dismiss", "Dismiss notification")
+	NotificationEmpty   = i18n.Define("ui.notification.empty", "No new notifications")
 
 	// PollingIndicator
-	KeyPollingLive Key = "ui.polling.live"
+	PollingLive = i18n.Define("ui.polling.live", "Live")
 
 	// CopyButton
-	KeyCopyCopy        Key = "ui.copy.copy"
-	KeyCopyCopied      Key = "ui.copy.copied"
-	KeyCopyToClipboard Key = "ui.copy.toClipboard"
-	KeyCopyLink        Key = "ui.copy.link"
-	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
-	KeyDrawerOpenPanel Key = "ui.drawer.open_panel"
-	KeyDrawerPrev      Key = "ui.drawer.prev"
-	KeyDrawerNext      Key = "ui.drawer.next"
+	CopyCopy        = i18n.Define("ui.copy.copy", "Copy")
+	CopyCopied      = i18n.Define("ui.copy.copied", "Copied")
+	CopyToClipboard = i18n.Define("ui.copy.toClipboard", "Copy to clipboard")
+	CopyLink        = i18n.Define("ui.copy.link", "Copy link")
+	DrawerOpenPage  = i18n.Define("ui.drawer.open_page", "Open as page")
+	DrawerOpenPanel = i18n.Define("ui.drawer.open_panel", "Open in panel")
+	DrawerPrev      = i18n.Define("ui.drawer.prev", "Previous record")
+	DrawerNext      = i18n.Define("ui.drawer.next", "Next record")
 
 	// Ago: how long before now, the way an activity feed says it.
-	KeyAgoNow     Key = "ui.ago.now"     // "just now"
-	KeyAgoMinutes Key = "ui.ago.minutes" // "{n}m ago"
-	KeyAgoHours   Key = "ui.ago.hours"   // "{n}h ago"
-	KeyAgoDays    Key = "ui.ago.days"    // "{n}d ago"
+	AgoNow     = i18n.Define("ui.ago.now", "just now")
+	AgoMinutes = i18n.Define("ui.ago.minutes", "{{n}}m ago")
+	AgoHours   = i18n.Define("ui.ago.hours", "{{n}}h ago")
+	AgoDays    = i18n.Define("ui.ago.days", "{{n}}d ago")
 
 	// ChangeList: the visually hidden words before an edit's old and
 	// new value.
-	KeyChangeFrom Key = "ui.change.from" // "from"
-	KeyChangeTo   Key = "ui.change.to"   // "to"
+	ChangeFrom = i18n.Define("ui.change.from", "from")
+	ChangeTo   = i18n.Define("ui.change.to", "to")
 
 	// ProgressSteps
-	KeyProgressLabel Key = "ui.progress.label"
+	ProgressLabel = i18n.Define("ui.progress.label", "Progress")
+
+	// StepRail
+	StepRailLabel = i18n.Define("ui.stepRail.label", "Page steps")
+
+	// Component landmarks and defaults a caller may leave unnamed
+	AvatarGroupLabel    = i18n.Define("ui.avatarGroup.label", "Avatars")
+	AvatarGroupMore     = i18n.Define("ui.avatarGroup.more", "{{count}} more")
+	ContentRowSidebar   = i18n.Define("ui.contentRow.sidebar", "Sidebar")
+	ContentRowToolbar   = i18n.Define("ui.contentRow.toolbar", "Toolbar")
+	ContentRowAside     = i18n.Define("ui.contentRow.aside", "Context")
+	FilterChipBarLabel  = i18n.Define("ui.filterChipBar.label", "Active filters")
+	GalleryLabel        = i18n.Define("ui.gallery.label", "Image gallery")
+	ListDetailBack      = i18n.Define("ui.listDetail.back", "Back")
+	SidebarOpenDrawer   = i18n.Define("ui.sidebar.openDrawer", "Open navigation")
+	SidebarCloseDrawer  = i18n.Define("ui.sidebar.closeDrawer", "Close navigation")
+	NetworkRetryTitle   = i18n.Define("ui.networkRetry.title", "Connection lost")
+	NetworkRetryText    = i18n.Define("ui.networkRetry.text", "We're having trouble reaching the server. Your changes are paused until the connection comes back.")
+	NetworkRetryNowText = i18n.Define("ui.networkRetry.retry", "Retry now")
 
 	// Tag
-	KeyTagRemove Key = "ui.tag.remove" // "Remove {label}"
+	TagRemove = i18n.Define("ui.tag.remove", "Remove {{label}}")
 
 	// StepWizard extras
-	KeyStepWizardStep   Key = "ui.stepWizard.step"   // "Step {step}: {heading}"
-	KeyStepWizardStepOf Key = "ui.stepWizard.stepOf" // "Step {step} of {total}"
+	StepWizardStep   = i18n.Define("ui.stepWizard.step", "Step {{step}}: {{heading}}")
+	StepWizardStepOf = i18n.Define("ui.stepWizard.stepOf", "Step {{step}} of {{total}}")
 
 	// Section
-	KeySectionLabel Key = "ui.section.label"
+	Section = i18n.Define("ui.section.label", "Section")
 
 	// ThemeToggle
-	KeyThemeToggle      Key = "ui.themeToggle.toggle"
-	KeyThemeLight       Key = "ui.themeToggle.light"
-	KeyThemeDark        Key = "ui.themeToggle.dark"
-	KeyThemeAuto        Key = "ui.themeToggle.auto"
-	KeyThemeColorScheme Key = "ui.themeToggle.colorScheme"
+	ThemeToggle      = i18n.Define("ui.themeToggle.toggle", "Toggle color scheme")
+	ThemeLight       = i18n.Define("ui.themeToggle.light", "Light")
+	ThemeDark        = i18n.Define("ui.themeToggle.dark", "Dark")
+	ThemeAuto        = i18n.Define("ui.themeToggle.auto", "Auto")
+	ThemeColorScheme = i18n.Define("ui.themeToggle.colorScheme", "Color scheme")
+
+	// LanguageMenu's trigger, read before the current language's name.
+	LanguageMenu = i18n.Define("ui.languageMenu.label", "Language")
 
 	// ThemePicker
-	KeyThemePicker  Key = "ui.themePicker.label"
-	KeyThemeDefault Key = "ui.themePicker.default"
+	ThemePicker  = i18n.Define("ui.themePicker.label", "Theme")
+	ThemeDefault = i18n.Define("ui.themePicker.default", "Default")
 
 	// Site navigation (an app's own header package)
-	KeyNavPrimary       Key = "ui.nav.primary"
-	KeyNavMobilePrimary Key = "ui.nav.mobilePrimary"
-	KeyNavToggle        Key = "ui.nav.toggle"
+	NavPrimary       = i18n.Define("ui.nav.primary", "Primary")
+	NavMobilePrimary = i18n.Define("ui.nav.mobilePrimary", "Mobile primary")
+	NavToggle        = i18n.Define("ui.nav.toggle", "Toggle navigation")
 
 	// Repeater extras
-	KeyRepeaterRemoveItem Key = "ui.repeater.removeItem" // "Remove item {index}"
+	RepeaterRemoveItem = i18n.Define("ui.repeater.removeItem", "Remove item {{index}}")
 
 	// Headless component strings. framework/ui's StringsFor bridge
 	// resolves every field of headless.Strings from these, so a
@@ -278,468 +296,135 @@ const (
 	// (fmt.Sprintf at the site that owns the value), {name} tokens
 	// where the runtime substitutes. A catalog translation keeps the
 	// placeholders and may reorder the words around them.
-	KeyDismissTitled           Key = "ui.dismiss.titled"            // "Dismiss: %s"
-	KeyTagRemoveLabelled       Key = "ui.tag.removeLabelled"        // "Remove %s"
-	KeyActionFailed            Key = "ui.action.failed"             // "Could not save. Try again."
-	KeyColorPick               Key = "ui.color.pick"                // "Pick %s"
-	KeyPasswordRevealShow      Key = "ui.passwordInput.revealShow"  // "Show"
-	KeyPasswordRevealHide      Key = "ui.passwordInput.revealHide"  // "Hide"
-	KeyToneInfo                Key = "ui.tone.info"                 // "Information"
-	KeyToneSuccess             Key = "ui.tone.success"              // "Success"
-	KeyToneWarning             Key = "ui.tone.warning"              // "Warning"
-	KeyToneDanger              Key = "ui.tone.danger"               // "Error"
-	KeyFileSelected            Key = "ui.fileUpload.fileSelected"   // "{name} selected."
-	KeyFilesSelected           Key = "ui.fileUpload.filesSelected"  // "{n} files selected: {names}."
-	KeyValidationProblem       Key = "ui.validationSummary.problem" // "There is a problem"
-	KeyTableSortedBy           Key = "ui.table.sortedBy"            // "Sorted by {column}, {direction}"
-	KeyTableDirAscending       Key = "ui.table.dirAscending"        // "ascending"
-	KeyTableDirDescending      Key = "ui.table.dirDescending"       // "descending"
-	KeyHuiBackToTop            Key = "ui.backToTop.label"           // "Back to top"
-	KeyHuiCopyStatus           Key = "ui.copy.status"               // "Copied {name}"
-	KeyHuiNumberDecrement      Key = "ui.number.decrementLabelled"  // "Decrement %s"
-	KeyHuiNumberIncrement      Key = "ui.number.incrementLabelled"  // "Increment %s"
-	KeyHuiRangeLow             Key = "ui.range.low"                 // "Minimum %s"
-	KeyHuiRangeHigh            Key = "ui.range.high"                // "Maximum %s"
-	KeyHuiRangeValue           Key = "ui.range.value"               // "%s to %s"
-	KeyHuiRatingChoice         Key = "ui.rating.choice"             // "%d out of %d"
-	KeyHuiTagInputAdd          Key = "ui.tagInput.add"              // "Add %s"
-	KeyHuiTagInputAdded        Key = "ui.tagInput.added"            // "{name} added"
-	KeyHuiTagInputRemoved      Key = "ui.tagInput.removed"          // "{name} removed"
-	KeyHuiRepeaterRemove       Key = "ui.repeater.removeItemIndex"  // "Remove item %d"
-	KeyHuiNotificationCount    Key = "ui.notification.countUnread"  // "%d unread notifications"
-	KeyHuiStepOf               Key = "ui.stepWizard.stepOfFormat"   // "Step %d of %d"
-	KeyHuiStepName             Key = "ui.stepWizard.stepNameFormat" // "Step %d: %s"
-	KeyHuiTableOfContentsLabel Key = "ui.toc.label"
-	KeyHuiCarouselSlide        Key = "ui.carousel.slide"     // "Slide {n} of {total}"
-	KeyHuiCarouselGoToSlide    Key = "ui.carousel.goToSlide" // "Go to slide {n}"
+	DismissTitled           = i18n.Define("ui.dismiss.titled", "Dismiss: {{title}}")
+	TagRemoveLabelled       = i18n.Define("ui.tag.removeLabelled", "Remove {{label}}")
+	ActionFailed            = i18n.Define("ui.action.failed", "Could not save. Try again.")
+	ColorPick               = i18n.Define("ui.color.pick", "Pick {{name}}")
+	PasswordRevealShow      = i18n.Define("ui.passwordInput.revealShow", "Show")
+	PasswordRevealHide      = i18n.Define("ui.passwordInput.revealHide", "Hide")
+	ToneInfo                = i18n.Define("ui.tone.info", "Information")
+	ToneSuccess             = i18n.Define("ui.tone.success", "Success")
+	ToneWarning             = i18n.Define("ui.tone.warning", "Warning")
+	ToneDanger              = i18n.Define("ui.tone.danger", "Error")
+	FileSelected            = i18n.Define("ui.fileUpload.fileSelected", "{{name}} selected.")
+	FilesSelected           = i18n.Define("ui.fileUpload.filesSelected", "{{n}} files selected: {{names}}.")
+	ValidationProblem       = i18n.Define("ui.validationSummary.problem", "There is a problem")
+	TableSortedBy           = i18n.Define("ui.table.sortedBy", "Sorted by {{column}}, {{direction}}")
+	TableDirAscending       = i18n.Define("ui.table.dirAscending", "ascending")
+	TableDirDescending      = i18n.Define("ui.table.dirDescending", "descending")
+	HuiBackToTop            = i18n.Define("ui.backToTop.label", "Back to top")
+	HuiCopyStatus           = i18n.Define("ui.copy.status", "Copied {{name}}")
+	HuiNumberDecrement      = i18n.Define("ui.number.decrementLabelled", "Decrement {{label}}")
+	HuiNumberIncrement      = i18n.Define("ui.number.incrementLabelled", "Increment {{label}}")
+	HuiRangeLow             = i18n.Define("ui.range.low", "Minimum {{label}}")
+	HuiRangeHigh            = i18n.Define("ui.range.high", "Maximum {{label}}")
+	HuiRangeValue           = i18n.Define("ui.range.value", "{{low}} to {{high}}")
+	HuiRatingChoice         = i18n.Define("ui.rating.choice", "{{n}} out of {{max}}")
+	HuiTagInputAdd          = i18n.Define("ui.tagInput.add", "Add {{label}}")
+	HuiTagInputAdded        = i18n.Define("ui.tagInput.added", "{{name}} added")
+	HuiTagInputRemoved      = i18n.Define("ui.tagInput.removed", "{{name}} removed")
+	HuiRepeaterRemove       = i18n.Define("ui.repeater.removeItemIndex", "Remove item {{n}}")
+	HuiNotificationCount    = i18n.Define("ui.notification.countUnread", "{{n}} unread notifications")
+	HuiStepOf               = i18n.Define("ui.stepWizard.stepOfFormat", "Step {{step}} of {{total}}")
+	HuiStepName             = i18n.Define("ui.stepWizard.stepNameFormat", "Step {{step}}: {{heading}}")
+	HuiTableOfContentsLabel = i18n.Define("ui.toc.label", "On this page")
+	HuiCarouselSlide        = i18n.Define("ui.carousel.slide", "Slide {{n}} of {{total}}")
+	HuiCarouselGoToSlide    = i18n.Define("ui.carousel.goToSlide", "Go to slide {{n}}")
 
-	KeyHuiJSONObject                Key = "ui.json.object"                // "Object"
-	KeyHuiJSONArray                 Key = "ui.json.array"                 // "Array"
-	KeyHuiJSONNull                  Key = "ui.json.null"                  // "null"
-	KeyHuiJSONTrue                  Key = "ui.json.true"                  // "true"
-	KeyHuiJSONFalse                 Key = "ui.json.false"                 // "false"
-	KeyHuiJSONEmptyObj              Key = "ui.json.emptyObj"              // "{}"
-	KeyHuiJSONEmptyArr              Key = "ui.json.emptyArr"              // "[]"
-	KeyHuiJSONTruncated             Key = "ui.json.truncated"             // "…"
-	KeyHuiComboboxLoading           Key = "ui.combobox.loading"           // "Loading…"
-	KeyHuiComboboxNoResults         Key = "ui.combobox.noResults"         // "No matches"
-	KeyHuiComboboxResultCount       Key = "ui.combobox.resultCount"       // "{n} results"
-	KeyHuiComboboxResultsLabel      Key = "ui.combobox.resultsLabel"      // "results"                 // "On this page"
-	KeyHuiSidebarCollapse           Key = "ui.sidebar.collapse"           // "Collapse navigation"
-	KeyHuiSidebarExpand             Key = "ui.sidebar.expand"             // "Expand navigation"
-	KeyHuiSidebarCollapseText       Key = "ui.sidebar.collapseText"       // "Collapse"
-	KeyHuiBreadcrumbsLabel          Key = "ui.breadcrumbs.label"          // "Breadcrumb"
-	KeyHuiSortableItemRole          Key = "ui.sortable.itemRole"          // "sortable item"
-	KeyHuiSortableDragLabel         Key = "ui.sortable.dragLabel"         // "Drag %s"
-	KeyHuiSortableGrabbed           Key = "ui.sortable.grabbed"           // "Grabbed {label}. …"
-	KeyHuiSortablePosition          Key = "ui.sortable.position"          // "Position {position} in {list}."
-	KeyHuiSortableMoved             Key = "ui.sortable.moved"             // "Moved to {list}, position {position}."
-	KeyHuiSortableSaved             Key = "ui.sortable.saved"             // "Order saved."
-	KeyHuiSortableReverted          Key = "ui.sortable.reverted"          // "Save failed. Reverted."
-	KeyHuiSortableCancelled         Key = "ui.sortable.cancelled"         // "Cancelled."
-	KeyHuiSortableConflictReverted  Key = "ui.sortable.conflictReverted"  // "Conflict. Reverted."
-	KeyHuiSortableConflictRefreshed Key = "ui.sortable.conflictRefreshed" // "Conflict. List refreshed from server."
-	KeyHuiMultiSelectPlaceholder    Key = "ui.multiselect.placeholder"    // "Choose…"
-	KeyHuiMultiSelectRemoveLabel    Key = "ui.multiselect.removeLabel"    // "Remove {label}"
+	HuiJSONObject                = i18n.Define("ui.json.object", "Object")
+	HuiJSONArray                 = i18n.Define("ui.json.array", "Array")
+	HuiJSONNull                  = i18n.Define("ui.json.null", "null")
+	HuiJSONTrue                  = i18n.Define("ui.json.true", "true")
+	HuiJSONFalse                 = i18n.Define("ui.json.false", "false")
+	HuiJSONEmptyObj              = i18n.Define("ui.json.emptyObj", "{}")
+	HuiJSONEmptyArr              = i18n.Define("ui.json.emptyArr", "[]")
+	HuiJSONTruncated             = i18n.Define("ui.json.truncated", "…")
+	HuiComboboxLoading           = i18n.Define("ui.combobox.loading", "Loading…")
+	HuiComboboxNoResults         = i18n.Define("ui.combobox.noResults", "No matches")
+	HuiComboboxResultCount       = i18n.Define("ui.combobox.resultCount", "{{n}} results")
+	HuiComboboxResultsLabel      = i18n.Define("ui.combobox.resultsLabel", "results")
+	HuiSidebarCollapse           = i18n.Define("ui.sidebar.collapse", "Collapse navigation")
+	HuiSidebarExpand             = i18n.Define("ui.sidebar.expand", "Expand navigation")
+	HuiSidebarCollapseText       = i18n.Define("ui.sidebar.collapseText", "Collapse")
+	HuiBreadcrumbsLabel          = i18n.Define("ui.breadcrumbs.label", "Breadcrumb")
+	HuiSortableItemRole          = i18n.Define("ui.sortable.itemRole", "sortable item")
+	HuiSortableDragLabel         = i18n.Define("ui.sortable.dragLabel", "Drag {{label}}")
+	HuiSortableGrabbed           = i18n.Define("ui.sortable.grabbed", "Grabbed {{label}}. Arrow keys to move, Space to drop.")
+	HuiSortablePosition          = i18n.Define("ui.sortable.position", "Position {{position}} in {{list}}.")
+	HuiSortableMoved             = i18n.Define("ui.sortable.moved", "Moved to {{list}}, position {{position}}.")
+	HuiSortableSaved             = i18n.Define("ui.sortable.saved", "Order saved.")
+	HuiSortableReverted          = i18n.Define("ui.sortable.reverted", "Save failed. Reverted.")
+	HuiSortableCancelled         = i18n.Define("ui.sortable.cancelled", "Cancelled.")
+	HuiSortableConflictReverted  = i18n.Define("ui.sortable.conflictReverted", "Conflict. Reverted.")
+	HuiSortableConflictRefreshed = i18n.Define("ui.sortable.conflictRefreshed", "Conflict. List refreshed from server.")
+	HuiMultiSelectPlaceholder    = i18n.Define("ui.multiselect.placeholder", "Choose…")
 )
 
-// Defaults are the English fallback strings. Apps that provide their
-// own translations should cover all of these keys.
-var Defaults = map[Key]string{
-	KeyPaginationPrevious: "Previous",
-	KeyPaginationNext:     "Next",
-	KeyPaginationPage:     "Page",
-	KeyPaginationOf:       "of",
-	KeyPaginationShowing:  "Showing",
-	KeyPaginationResults:  "results",
-	KeyPaginationLabel:    "Pagination",
+// CodeBlock's accessible name, its line count and its copy control,
+// lower-case in the block's header.
+var (
+	CodeBlockSource     = i18n.Define("ui.codeBlock.source", "source code")
+	CodeBlockLangSource = i18n.Define("ui.codeBlock.langSource", "{{language}} source")
+	CodeBlockLines      = i18n.Define("ui.codeBlock.lines", "{{n}} lines")
+	CodeBlockCopy       = i18n.Define("ui.codeBlock.copy", "copy")
+	CodeBlockCopied     = i18n.Define("ui.codeBlock.copied", "copied")
+)
 
-	KeyValidationRequired: "This field is required",
-	KeyValidationEmail:    "Enter a valid email address",
-	KeyValidationMin:      "Must be at least {min}",
-	KeyValidationMax:      "Must be at most {max}",
-	KeyValidationMinLen:   "Must be at least {min} characters",
-	KeyValidationMaxLen:   "Must be at most {max} characters",
-	KeyValidationPattern:  "Invalid format",
-	KeyValidationUnique:   "This value is already taken",
+// PricingCard's badge and its default call to action.
+var (
+	PricingRecommended = i18n.Define("ui.pricing.recommended", "Recommended")
+	PricingChoose      = i18n.Define("ui.pricing.choose", "Choose {{plan}}")
+)
 
-	KeyEmptyStateTitle: "Nothing here yet",
-	KeyEmptyStateDesc:  "No items to display.",
+// ShortcutHint's keycaps and the sentence a screen reader hears. The
+// keycap words are the ones printed on the key: a German keyboard says
+// Strg where an English one says Ctrl.
+var (
+	ShortcutLabel = i18n.Define("ui.shortcut.label", "Shortcut: {{keys}}")
+	KeyCtrl       = i18n.Define("ui.key.ctrl", "Ctrl")
+	KeyMod        = i18n.Define("ui.key.mod", "Mod")
+	KeyShift      = i18n.Define("ui.key.shift", "Shift")
+	KeyAlt        = i18n.Define("ui.key.alt", "Alt")
+	KeyEnter      = i18n.Define("ui.key.enter", "Enter")
+	KeyEsc        = i18n.Define("ui.key.esc", "Esc")
+	KeyTab        = i18n.Define("ui.key.tab", "Tab")
+	KeySpace      = i18n.Define("ui.key.space", "Space")
+	KeyUp         = i18n.Define("ui.key.up", "Up")
+	KeyDown       = i18n.Define("ui.key.down", "Down")
+	KeyLeft       = i18n.Define("ui.key.left", "Left")
+	KeyRight      = i18n.Define("ui.key.right", "Right")
+)
 
-	KeyDialogConfirm:      "Confirm",
-	KeyDialogCancel:       "Cancel",
-	KeyDialogClose:        "Close",
-	KeyDialogSave:         "Save",
-	KeyDialogDelete:       "Delete",
-	KeyDialogConfirmTitle: "Are you sure?",
-
-	KeyToastSuccess: "Success",
-	KeyToastError:   "Error",
-	KeyToastWarning: "Warning",
-	KeyToastInfo:    "Info",
-
-	KeyBannerDismiss: "Dismiss",
-
-	KeyTableSortAsc:   "Sort ascending",
-	KeyTableSortDesc:  "Sort descending",
-	KeyTableNoSort:    "Remove sort",
-	KeyTableFilter:    "Filter",
-	KeyTableNoResults: "No results",
-	KeyTableLoading:   "Loading…",
-
-	KeyFileUploadDrop:   "Drop files here, or click to browse",
-	KeyFileUploadBrowse: "Browse",
-	KeyFileUploadRemove: "Remove",
-
-	KeyFormSubmit:  "Submit",
-	KeyFormReset:   "Reset",
-	KeyFormSending: "Sending…",
-	KeyFormSuccess: "Saved successfully",
-	KeyFormError:   "An error occurred",
-	KeyFormYes:     "Yes",
-	KeyFormNo:      "No",
-
-	KeySearchPlaceholder: "Search…",
-	KeySearchNoResults:   "No results",
-
-	KeyAuthLogin:      "Log in",
-	KeyAuthLogout:     "Log out",
-	KeyAuthSignup:     "Sign up",
-	KeyAuthEmail:      "Email",
-	KeyAuthPassword:   "Password", // nosecret: UI label, not a credential
-	KeyAuthRememberMe: "Remember me",
-
-	KeyRepeaterAdd:    "Add item",
-	KeyRepeaterRemove: "Remove",
-
-	KeyPasswordInputShow: "Show password",
-	KeyPasswordInputHide: "Hide password",
-	KeyLightboxLabel:     "Image viewer",
-	KeyLightboxPrev:      "Previous image",
-	KeyLightboxNext:      "Next image",
-	KeyLightboxDownload:  "Download image",
-
-	KeyStepWizardBack:   "Back",
-	KeyStepWizardNext:   "Continue",
-	KeyStepWizardSubmit: "Submit",
-
-	KeyTableEmptyDesc: "Adjust your filters or add new entries.",
-	KeyTableSortBy:    "Sort by {column}",
-	KeyTableSelectAll: "Select all rows",
-
-	KeyFilterToolbarLabel:  "Filters",
-	KeyFilterApply:         "Apply",
-	KeyFilterSortBy:        "Sort by",
-	KeyFilterClearAll:      "Clear all",
-	KeyFilterChipRemove:    "Remove filter {label}",
-	KeyFilterReset:         "Reset",
-	KeyShortcutSheetTitle:  "Keyboard shortcuts",
-	KeyTextAreaInvalidJSON: "Enter valid JSON",
-	KeyInlineEditSave:      "Save",
-	KeyInlineEditSaved:     "Saved",
-	KeySelectionCount:      "{n} selected",
-	KeySelectionClear:      "Clear selection",
-	KeySelectionCopy:       "Copy CSV",
-	KeySelectionCopied:     "Copied {n} rows as CSV",
-	KeySelectionCopyFailed: "The rows could not be copied.",
-	KeyColumnShow:          "Show {column}",
-	KeyColumnHide:          "Hide {column}",
-	KeyColumnMoveUp:        "Move {column} earlier",
-	KeyColumnMoveDown:      "Move {column} later",
-	KeyFilterAll:           "All {label}",
-	KeyFilterAllPlain:      "All",
-
-	KeySearchInputPlaceholder: "Search...",
-	KeySearchLabel:            "Search",
-	KeySearchClear:            "Clear search",
-
-	KeySearchResultsCount: "{n} results for “{q}”",
-	KeySearchResultsOne:   "1 result for “{q}”",
-	KeySearchResultsNone:  "No pages match “{q}”",
-	KeySearchResultsLabel: "Search results",
-	KeySearchResultsMore:  "More results",
-	KeySearchResultsAll:   "See all results for “{q}”",
-
-	KeyCommandPalettePlaceholder: "Type a command or search…",
-	KeyCommandPaletteOpen:        "Open command palette",
-	KeyCommandPaletteTitle:       "Command palette",
-	KeyCommandPaletteNavigate:    "Navigate",
-	KeyCommandPaletteSelect:      "Select",
-	KeyCommandPaletteClose:       "Close",
-
-	KeyFormErrorsSummary:      "Please fix the highlighted fields and try again.",
-	KeyFormHasErrors:          "Form has errors",
-	KeyFormSave:               "Save",
-	KeyValidationSummaryTitle: "Please fix the following errors:",
-
-	KeyCarouselPrevious:   "Previous slide",
-	KeyCarouselNext:       "Next slide",
-	KeyCarouselGoTo:       "Go to slide {slide}",
-	KeyCarouselPagination: "Slide pagination",
-
-	KeyCounterDecrement: "Decrement",
-	KeyCounterIncrement: "Increment",
-	KeyCounterLabel:     "Counter",
-
-	KeyNumberDecrement: "Decrement {label}",
-	KeyNumberIncrement: "Increment {label}",
-
-	KeyLoading: "Loading…",
-
-	KeySparklineNoData: "No trend data",
-
-	KeySignOut: "Sign out",
-
-	KeyDropzoneDropFiles:     "Drop files here or click to browse",
-	KeyDropzoneDropFile:      "Drop a file here or click to browse",
-	KeyDropzoneMaxSize:       "Max {n} MB.",
-	KeyDropzoneMaxSizeSuffix: " (max {n} MB)",
-
-	KeyFileUploadDropSingle: "Drop a file here, or click to browse",
-	KeyFileMaxSize:          "Max {n} MB",
-
-	KeyNotificationDismiss: "Dismiss notification",
-	KeyNotificationEmpty:   "No new notifications",
-
-	KeyPollingLive: "Live",
-
-	KeyCopyCopy:        "Copy",
-	KeyCopyCopied:      "Copied",
-	KeyCopyToClipboard: "Copy to clipboard",
-	KeyCopyLink:        "Copy link",
-	KeyDrawerOpenPage:  "Open as page",
-	KeyDrawerOpenPanel: "Open in panel",
-	KeyDrawerPrev:      "Previous record",
-	KeyDrawerNext:      "Next record",
-
-	KeyAgoNow:     "just now",
-	KeyAgoMinutes: "{n}m ago",
-	KeyAgoHours:   "{n}h ago",
-	KeyAgoDays:    "{n}d ago",
-
-	KeyChangeFrom: "from",
-	KeyChangeTo:   "to",
-
-	KeyProgressLabel: "Progress",
-
-	KeyTagRemove: "Remove {label}",
-
-	KeyStepWizardStep:   "Step {step}: {heading}",
-	KeyStepWizardStepOf: "Step {step} of {total}",
-
-	KeySectionLabel: "Section",
-
-	KeyThemeToggle:      "Toggle color scheme",
-	KeyThemeLight:       "Light",
-	KeyThemeDark:        "Dark",
-	KeyThemeAuto:        "Auto",
-	KeyThemeColorScheme: "Color scheme",
-
-	KeyThemePicker:  "Theme",
-	KeyThemeDefault: "Default",
-
-	KeyNavPrimary:       "Primary",
-	KeyNavMobilePrimary: "Mobile primary",
-	KeyNavToggle:        "Toggle navigation",
-
-	KeyRepeaterRemoveItem: "Remove item {index}",
-
-	// Headless component strings (see the const block above; the
-	// English matches headless's own defaults byte for byte — the
-	// bridge's no-translator output must be the words the goldens
-	// pin, and framework/ui's bridge test holds the two together).
-	KeyDismissTitled:                "Dismiss: %s",
-	KeyTagRemoveLabelled:            "Remove %s",
-	KeyActionFailed:                 "Could not save. Try again.",
-	KeyColorPick:                    "Pick %s",
-	KeyPasswordRevealShow:           "Show",
-	KeyPasswordRevealHide:           "Hide",
-	KeyToneInfo:                     "Information",
-	KeyToneSuccess:                  "Success",
-	KeyToneWarning:                  "Warning",
-	KeyToneDanger:                   "Error",
-	KeyTableSortedBy:                "Sorted by {column}, {direction}",
-	KeyTableDirAscending:            "ascending",
-	KeyTableDirDescending:           "descending",
-	KeyFileSelected:                 "{name} selected.",
-	KeyFilesSelected:                "{n} files selected: {names}.",
-	KeyValidationProblem:            "There is a problem",
-	KeyHuiBackToTop:                 "Back to top",
-	KeyHuiCopyStatus:                "Copied {name}",
-	KeyHuiNumberDecrement:           "Decrement %s",
-	KeyHuiNumberIncrement:           "Increment %s",
-	KeyHuiRangeLow:                  "Minimum %s",
-	KeyHuiRangeHigh:                 "Maximum %s",
-	KeyHuiRangeValue:                "%s to %s",
-	KeyHuiRatingChoice:              "%d out of %d",
-	KeyHuiTagInputAdd:               "Add %s",
-	KeyHuiTagInputAdded:             "{name} added",
-	KeyHuiTagInputRemoved:           "{name} removed",
-	KeyHuiRepeaterRemove:            "Remove item %d",
-	KeyHuiNotificationCount:         "%d unread notifications",
-	KeyHuiStepOf:                    "Step %d of %d",
-	KeyHuiStepName:                  "Step %d: %s",
-	KeyHuiTableOfContentsLabel:      "On this page",
-	KeyHuiCarouselSlide:             "Slide {n} of {total}",
-	KeyHuiJSONObject:                "Object",
-	KeyHuiJSONArray:                 "Array",
-	KeyHuiJSONNull:                  "null",
-	KeyHuiJSONTrue:                  "true",
-	KeyHuiJSONFalse:                 "false",
-	KeyHuiJSONEmptyObj:              "{}",
-	KeyHuiJSONEmptyArr:              "[]",
-	KeyHuiJSONTruncated:             "…",
-	KeyHuiCarouselGoToSlide:         "Go to slide {n}",
-	KeyHuiComboboxLoading:           "Loading…",
-	KeyHuiComboboxNoResults:         "No matches",
-	KeyHuiComboboxResultCount:       "{n} results",
-	KeyHuiComboboxResultsLabel:      "results",
-	KeyHuiSidebarCollapse:           "Collapse navigation",
-	KeyHuiSidebarExpand:             "Expand navigation",
-	KeyHuiSidebarCollapseText:       "Collapse",
-	KeyHuiBreadcrumbsLabel:          "Breadcrumb",
-	KeyHuiSortableItemRole:          "sortable item",
-	KeyHuiSortableDragLabel:         "Drag %s",
-	KeyHuiSortableGrabbed:           "Grabbed {label}. Arrow keys to move, Space to drop.",
-	KeyHuiSortablePosition:          "Position {position} in {list}.",
-	KeyHuiSortableMoved:             "Moved to {list}, position {position}.",
-	KeyHuiSortableSaved:             "Order saved.",
-	KeyHuiSortableReverted:          "Save failed. Reverted.",
-	KeyHuiSortableCancelled:         "Cancelled.",
-	KeyHuiSortableConflictReverted:  "Conflict. Reverted.",
-	KeyHuiSortableConflictRefreshed: "Conflict. List refreshed from server.",
-	KeyHuiMultiSelectPlaceholder:    "Choose…",
-	KeyHuiMultiSelectRemoveLabel:    "Remove {label}",
-}
-
-// translatorKey is the unexported context key used by WithTranslator
-// and translatorFromContext. Type-uniqueness prevents collisions with
-// other packages stashing values on the same ctx.
-type translatorKey struct{}
-
-// WithTranslator attaches a translator to ctx so callers downstream
-// can resolve translations via T(ctx, key) without threading a
-// translator argument through every signature.
-func WithTranslator(ctx context.Context, tr *i18n.Translator) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, translatorKey{}, tr)
-}
-
-// translatorFromContext returns the translator attached via
-// WithTranslator, or nil if none.
-func translatorFromContext(ctx context.Context) *i18n.Translator {
-	if ctx == nil {
-		return nil
-	}
-	v, _ := ctx.Value(translatorKey{}).(*i18n.Translator)
-	return v
-}
-
-// resolve returns the translated message for key: the ctx translator is
-// consulted first, but a translator MISS (it returns the bare key, which
-// happens when the app catalog has no ui.* entries) falls through to the
-// English Defaults entry rather than rendering the raw key to users.
-// Without a translator, Defaults is used directly; a key with no default
-// falls through to the bare key string (so missing keys surface visibly
-// rather than as empty strings).
-func resolve(ctx context.Context, key Key) string {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	tr := translatorFromContext(ctx)
-	if tr != nil {
-		if val := tr.T(ctx, string(key)); val != "" && val != string(key) {
-			return val
-		}
-	}
-	if def, ok := Defaults[key]; ok {
-		return def
-	}
-	return string(key)
-}
-
-// T translates a key. If ctx carries a translator (via WithTranslator),
-// it is consulted first; otherwise the English default for the key is
-// returned, or the bare key string when no default exists (so missing
-// keys surface visibly rather than as empty strings).
-//
-// Callers without a ctx in scope can pass context.Background(), the
-// English defaults still apply.
-func T(ctx context.Context, key Key) string {
-	return resolve(ctx, key)
-}
-
-// TVars translates a key and interpolates {name} placeholders from vars.
-// Interpolation applies to whichever string wins the lookup (translator
-// hit or English default), so the same {name} tokens work in app
-// catalogs and in the built-in defaults. Unknown placeholders are left
-// as-is (matching TranslateValidation). A translator miss falls through
-// to Defaults, the same miss-fallback as T.
-//
-// Example: i18nui.TVars(ctx, i18nui.KeyTableSortBy, map[string]string{"column": "name"})
-// → "Sort by name" (or the catalog's "ui.table.sortBy" for the locale).
-func TVars(ctx context.Context, key Key, vars map[string]string) string {
-	s := resolve(ctx, key)
-	for k, v := range vars {
-		s = strings.ReplaceAll(s, "{"+k+"}", v)
-	}
-	return s
-}
-
-// TVarsHTML is TVars for a line that carries markup: an activity line
-// with a bold actor and the record as a link. The translated text is
-// escaped and each {name} becomes vars[name] as given, in one pass, so
-// a value holding "{verb}" stays as written. A placeholder vars does not
-// name is left as text. The caller escapes what it builds each value
+// HTML is [i18n.Phrase.Text] for a line that carries markup: an activity
+// line with a bold actor and the record as a link. The translated text
+// is escaped and each {{name}} becomes vars[name] as given, in one pass,
+// so a value holding "{{verb}}" stays as written. A placeholder vars does
+// not name is left as text. The caller escapes what it builds each value
 // from.
-func TVarsHTML(ctx context.Context, key Key, vars map[string]render.HTML) render.HTML {
-	s := resolve(ctx, key)
+func HTML(ctx context.Context, p i18n.Phrase, vars map[string]render.HTML) render.HTML {
+	s := p.Text(ctx)
 	var b strings.Builder
 	for {
-		open := strings.IndexByte(s, '{')
+		open := strings.Index(s, "{{")
 		if open < 0 {
 			break
 		}
-		end := strings.IndexByte(s[open:], '}')
+		end := strings.Index(s[open:], "}}")
 		if end < 0 {
 			break
 		}
-		v, ok := vars[s[open+1:open+end]]
+		v, ok := vars[strings.TrimSpace(s[open+2:open+end])]
 		if !ok {
-			b.WriteString(string(render.Text(s[:open+1])))
-			s = s[open+1:]
+			b.WriteString(string(render.Text(s[:open+2])))
+			s = s[open+2:]
 			continue
 		}
 		b.WriteString(string(render.Text(s[:open])))
 		b.WriteString(string(v))
-		s = s[open+end+1:]
+		s = s[open+end+2:]
 	}
 	b.WriteString(string(render.Text(s)))
 	return render.HTML(b.String())
-}
-
-// TranslateValidation returns a translated validation error message
-// for the given validator type, with optional template variables. ctx
-// carries the per-request locale; tr may be nil to use English
-// defaults.
-//
-// Renamed from ValidationError so the symbol no longer collides with
-// core/handler.ValidationError when a file imports both packages.
-func TranslateValidation(ctx context.Context, tr *i18n.Translator, validator string, vars map[string]string) string {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if tr != nil {
-		ctx = WithTranslator(ctx, tr)
-	}
-	key := Key("ui.validation." + validator)
-	msg := T(ctx, key)
-	for k, v := range vars {
-		msg = strings.ReplaceAll(msg, "{"+k+"}", v)
-	}
-	return msg
 }
 
 // Entity display label helpers resolve the strings an entity's Display
@@ -748,7 +433,7 @@ func TranslateValidation(ctx context.Context, tr *i18n.Translator, validator str
 // and a nav group. Every one resolves the same way:
 //
 //  1. the catalog key for the locale (the ctx translator is consulted when
-//     the tr argument is nil, the same fallback T uses),
+//     the tr argument is nil),
 //  2. the Display value the caller passes, when it is set,
 //  3. a fallback derived from the key itself.
 //
@@ -807,7 +492,7 @@ func EntityNoun(ctx context.Context, tr *i18n.Translator, entityName, display st
 			words[i] = string(runes)
 		}
 	}
-	return strings.Join(words, " ")
+	return fallback(ctx, tr, strings.Join(words, " "))
 }
 
 // EntityDescription returns the one-line description shown under a list
@@ -826,9 +511,9 @@ func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName,
 		return got
 	}
 	if display != "" {
-		return display
+		return fallback(ctx, tr, display)
 	}
-	return humanize(fieldName)
+	return fallback(ctx, tr, humanize(fieldName))
 }
 
 // RelationLabel is FieldLabel for a Relation field. Its humanized
@@ -901,9 +586,9 @@ func displayLabel(ctx context.Context, tr *i18n.Translator, key, display, slug s
 		return got
 	}
 	if display != "" {
-		return display
+		return fallback(ctx, tr, display)
 	}
-	return titleCase(slug)
+	return fallback(ctx, tr, titleCase(slug))
 }
 
 // catalogString returns the catalog text for key and true when the catalog
@@ -915,7 +600,7 @@ func catalogString(ctx context.Context, tr *i18n.Translator, key string) (string
 		ctx = context.Background()
 	}
 	if tr == nil {
-		tr = translatorFromContext(ctx)
+		tr = i18n.TranslatorFrom(ctx)
 	}
 	if tr == nil {
 		return "", false
@@ -939,114 +624,6 @@ func titleCase(slug string) string {
 	runes := []rune(s)
 	runes[0] = unicode.ToUpper(runes[0])
 	return string(runes)
-}
-
-// AllKeys returns every translation Key constant declared by this
-// package. Used by completeness tests to assert that adding a new Key
-// without a matching Defaults entry is a build-breaking error.
-//
-// The per-entity families (entity.<entity>.* and nav.groups.<key>) are NOT
-// here: their keys name app data, so no constant or Defaults entry can hold
-// them. The Entity* label helpers build them, and the package test walks
-// every helper against a catalog to pin each key's shape.
-//
-// Keep this in sync with the const block above. The
-// TestAllKeysCoversAllPackageConstants test cross-checks against the
-// Defaults map so stale entries here are caught at test time.
-func AllKeys() []Key {
-	keys := []Key{
-		KeyPaginationPrevious, KeyPaginationNext, KeyPaginationPage,
-		KeyPaginationOf, KeyPaginationShowing, KeyPaginationResults,
-		KeyPaginationLabel,
-		KeyValidationRequired, KeyValidationEmail, KeyValidationMin,
-		KeyValidationMax, KeyValidationMinLen, KeyValidationMaxLen,
-		KeyValidationPattern, KeyValidationUnique,
-		KeyEmptyStateTitle, KeyEmptyStateDesc,
-		KeyDialogConfirm, KeyDialogCancel, KeyDialogClose,
-		KeyDialogSave, KeyDialogDelete, KeyDialogConfirmTitle,
-		KeyToastSuccess, KeyToastError, KeyToastWarning, KeyToastInfo,
-		KeyBannerDismiss,
-		KeyTableSortAsc, KeyTableSortDesc, KeyTableNoSort,
-		KeyTableFilter, KeyTableNoResults, KeyTableLoading,
-		KeyTableEmptyDesc, KeyTableSortBy, KeyTableSelectAll,
-		KeyFilterToolbarLabel, KeyFilterApply, KeyFilterReset,
-		KeyFilterAll, KeyFilterAllPlain, KeyFilterSortBy,
-		KeyFilterClearAll, KeyFilterChipRemove,
-		KeySearchPlaceholder, KeySearchNoResults,
-		KeySearchInputPlaceholder, KeySearchLabel, KeySearchClear,
-		KeySearchResultsCount, KeySearchResultsOne, KeySearchResultsNone,
-		KeySearchResultsLabel, KeySearchResultsMore, KeySearchResultsAll,
-		KeyCommandPalettePlaceholder, KeyCommandPaletteOpen,
-		KeyCommandPaletteTitle, KeyCommandPaletteNavigate,
-		KeyCommandPaletteSelect, KeyCommandPaletteClose,
-		KeyFormSubmit, KeyFormReset, KeyFormSending,
-		KeyFormSuccess, KeyFormError, KeyFormYes, KeyFormNo,
-		KeyFormErrorsSummary, KeyFormHasErrors, KeyFormSave,
-		KeyValidationSummaryTitle,
-		KeyFileUploadDrop, KeyFileUploadBrowse, KeyFileUploadRemove,
-		KeyFileUploadDropSingle, KeyFileMaxSize,
-		KeyDropzoneDropFiles, KeyDropzoneDropFile,
-		KeyDropzoneMaxSize, KeyDropzoneMaxSizeSuffix,
-		KeyCarouselPrevious, KeyCarouselNext, KeyCarouselGoTo,
-		KeyCarouselPagination,
-		KeyCounterDecrement, KeyCounterIncrement, KeyCounterLabel,
-		KeyNumberDecrement, KeyNumberIncrement,
-		KeyLoading, KeySparklineNoData,
-		KeyAuthLogin, KeyAuthLogout, KeyAuthSignup, KeySignOut,
-		KeyAuthEmail, KeyAuthPassword, KeyAuthRememberMe,
-		KeyNotificationDismiss, KeyNotificationEmpty,
-		KeyPollingLive,
-		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
-		KeyDrawerOpenPage, KeyDrawerOpenPanel, KeyDrawerPrev, KeyDrawerNext,
-		KeyAgoNow, KeyAgoMinutes, KeyAgoHours, KeyAgoDays,
-		KeyChangeFrom, KeyChangeTo,
-		KeyProgressLabel, KeyTagRemove,
-		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
-		KeyPasswordInputShow, KeyPasswordInputHide,
-		KeyLightboxLabel, KeyLightboxPrev, KeyLightboxNext, KeyLightboxDownload,
-		KeyStepWizardBack, KeyStepWizardNext, KeyStepWizardSubmit,
-		KeyStepWizardStep, KeyStepWizardStepOf,
-		KeySectionLabel,
-		KeyThemeToggle, KeyThemeLight, KeyThemeDark,
-		KeyThemeAuto, KeyThemeColorScheme,
-		KeyThemePicker, KeyThemeDefault,
-		KeyShortcutSheetTitle, KeyTextAreaInvalidJSON,
-		KeyInlineEditSave, KeyInlineEditSaved,
-		KeySelectionCount, KeySelectionClear,
-		KeySelectionCopy, KeySelectionCopied, KeySelectionCopyFailed,
-		KeyColumnShow, KeyColumnHide,
-		KeyColumnMoveUp, KeyColumnMoveDown,
-		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
-		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
-		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,
-		KeyToneInfo, KeyToneSuccess, KeyToneWarning, KeyToneDanger,
-		KeyFileSelected, KeyFilesSelected, KeyValidationProblem,
-		KeyTableSortedBy, KeyTableDirAscending, KeyTableDirDescending,
-		KeyHuiBackToTop, KeyHuiCopyStatus,
-		KeyHuiNumberDecrement, KeyHuiNumberIncrement,
-		KeyHuiRangeLow, KeyHuiRangeHigh, KeyHuiRangeValue,
-		KeyHuiRatingChoice,
-		KeyHuiTagInputAdd, KeyHuiTagInputAdded, KeyHuiTagInputRemoved,
-		KeyHuiRepeaterRemove, KeyHuiNotificationCount,
-		KeyHuiStepOf, KeyHuiStepName,
-		KeyHuiTableOfContentsLabel,
-		KeyHuiCarouselSlide, KeyHuiCarouselGoToSlide,
-		KeyHuiJSONObject, KeyHuiJSONArray, KeyHuiJSONNull,
-		KeyHuiJSONTrue, KeyHuiJSONFalse, KeyHuiJSONEmptyObj,
-		KeyHuiJSONEmptyArr, KeyHuiJSONTruncated,
-		KeyHuiComboboxLoading, KeyHuiComboboxNoResults,
-		KeyHuiComboboxResultCount, KeyHuiComboboxResultsLabel,
-		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiSidebarCollapseText, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
-		KeyHuiSortableDragLabel, KeyHuiSortableGrabbed, KeyHuiSortablePosition, KeyHuiSortableMoved,
-		KeyHuiSortableSaved, KeyHuiSortableReverted, KeyHuiSortableCancelled, KeyHuiSortableConflictReverted,
-		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,
-		KeyHuiMultiSelectRemoveLabel,
-	}
-	// The entity screens keep their keys in one block per area.
-	for _, block := range entityKeyBlocks {
-		keys = append(keys, slices.Sorted(maps.Keys(block))...)
-	}
-	return keys
 }
 
 // humanize converts snake_case or camelCase to "Title Case".

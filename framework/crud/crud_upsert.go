@@ -75,7 +75,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// or one already on the row it is writing (media_provenance.go).
 		// Checked on the caller's body, before hooks add their own values.
 		if err := ch.checkMediaProvenance(ctx, body,
-			ch.currentMediaKeys(ctx, req, body[ch.PrimaryKey])); err != nil {
+			ch.currentMediaKeys(ctx, req, "", ch.colKeyVals(body))); err != nil {
 			return err
 		}
 		ch.InjectTenant(body, ctx)
@@ -130,18 +130,28 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.upsertPreflight(ctx, body); err != nil {
 			return err
 		}
-		// The same belongs_to write-side boundary doCreate and doUpdate
-		// enforce: an FK in the body must resolve under the target's own
-		// owner / tenant / read scopes for this caller. Covers both the
-		// insert arm and the update arm, which share this body.
-		if err := ch.checkBelongsToScope(ctx, body); err != nil {
-			return err
-		}
 		// The state check, as an update of the existing row or a create
 		// (states.go).
 		var err error
 		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
 			return err
+		}
+		// The same belongs_to write-side boundary doCreate and doUpdate
+		// enforce: an FK in the body must resolve under the target's own
+		// owner / tenant / read scopes for this caller. Covers both the
+		// insert arm and the update arm, which share this body, so a
+		// multi-column FK the upsert writes only part of from the body is
+		// refused: the row would hold a tuple nobody checked.
+		// The row ends as one arm or the other, so both are checked: the
+		// insert writes the body's generated values, as a create does, and
+		// the conflict update keeps the stored ones.
+		for _, w := range []fkWrite{
+			ch.createWrite(ctx, body),
+			{body: body, sets: func(f schema.Field) bool { return ch.upsertSets(ctx, f) }, holds: ch.scopedHeld(ctx)},
+		} {
+			if err := ch.checkBelongsToScope(ctx, w); err != nil {
+				return err
+			}
 		}
 
 		// Build the column + value lists, same shape Create uses: auto-gen
@@ -172,9 +182,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				}
 				bind, bindErr := incrementBindValue(body[f.Name])
 				if bindErr != nil {
-					return &ValidationError{fields: map[string][]string{f.Name: {
-						"primary key number is not exactly representable; send it as a JSON integer literal or a string",
-					}}}
+					return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonKeyNotExact}}}}
 				}
 				cols = append(cols, f.Name)
 				vals = append(vals, bind)
@@ -185,13 +193,8 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, body[f.Name])
 				continue
 			}
-			if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) {
 				continue
-			}
-			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-				if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
-					continue
-				}
 			}
 			val, ok := body[f.Name]
 			sent[f.Name] = ok
@@ -216,7 +219,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// fields, those represent identity / immutability.
 		setParts := make([]string, 0, len(cols))
 		for _, c := range cols {
-			if c == ch.PrimaryKey {
+			if ch.isKeyCol(c) {
 				continue
 			}
 			if isAutoField(ch.Entity, c) {
@@ -245,7 +248,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		sb.WriteString(") VALUES (")
 		sb.WriteString(strings.Join(placeholders, ", "))
 		sb.WriteString(") ON CONFLICT (")
-		sb.WriteString(ch.PrimaryKey)
+		sb.WriteString(strings.Join(ch.keyCols(), ", "))
 		sb.WriteString(") DO ")
 		if len(setParts) == 0 {
 			// No fields to update, just DO NOTHING; RETURNING still picks
@@ -287,9 +290,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			// returned row consistent with what a scoped read would surface
 			// (e.g. never a soft-deleted row) even if the preflight contract
 			// ever changes.
+			kc, ka := ch.keyCond(ch.colKeyVals(body))
 			selQB := query.Select(visFields...).
 				From(ch.Entity.GetTable()).
-				Where(ch.PrimaryKey+" = $1", body[ch.PrimaryKey])
+				Where(kc, ka...)
 			ch.ApplyTenantScope(selQB, req)
 			ch.ApplyOwnerScope(selQB, req)
 			// This fallback is a READ (it hands the row to the caller), so
@@ -308,7 +312,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
+			if err := ch.afterRow(ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}
@@ -341,8 +345,8 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	if ownerField == "" && !checkSoftDelete && !checkTenant {
 		return nil
 	}
-	pk, ok := body[ch.PrimaryKey]
-	if !ok || pk == nil {
+	key := ch.colKeyVals(body)
+	if key == nil {
 		return nil // no PK supplied ⇒ no conflict possible.
 	}
 
@@ -362,9 +366,10 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	for i := range dest {
 		ptrs[i] = &dest[i]
 	}
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-		strings.Join(cols, ", "), ch.Entity.GetTable(), ch.PrimaryKey)
-	err := ch.DB.QueryRowContext(ctx, q, pk).Scan(ptrs...)
+	kc, ka := ch.keyCond(key)
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
+		strings.Join(cols, ", "), ch.Entity.GetTable(), kc)
+	err := ch.DB.QueryRowContext(ctx, q, ka...).Scan(ptrs...)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil // no existing row, pure insert path, allow.
@@ -495,4 +500,22 @@ func incrementBindValue(v any) (any, error) {
 		}
 	}
 	return v, nil
+}
+
+// upsertSets reports whether an upsert writes f from the body on both
+// arms. The owner column is stamped from the session and the tenant
+// column from the context; ReadOnly and Hidden fields need
+// WithServerWrites(ctx) or a state override; the conflict arm keeps a
+// generated field's stored value while the insert arm writes the body's.
+func (ch *CrudHandler) upsertSets(ctx context.Context, f schema.Field) bool {
+	if f.AutoGenerate != schema.AutoNone {
+		return false
+	}
+	if owner := ch.Entity.Config.Scope.OwnerField; owner != "" && f.Name == owner {
+		return false
+	}
+	if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+		return false
+	}
+	return !(f.ReadOnly || f.Hidden) || serverWrites(ctx) || ch.stateOverrideColumn(ctx, f.Name)
 }

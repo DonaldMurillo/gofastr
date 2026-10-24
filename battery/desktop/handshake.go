@@ -4,6 +4,8 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // The boot handshake. The desktop host serves the app on loopback; any
@@ -40,7 +42,7 @@ func (b *Battery) enterHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		// Match first (constant time), single-use second: a tokenless
@@ -49,7 +51,7 @@ func (b *Battery) enterHandler() http.Handler {
 		// one passes.
 		if !tokenMatches(r.URL.Query().Get("t"), b.bootToken) ||
 			!b.tokenUsed.CompareAndSwap(false, true) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 			return
 		}
 		// Plain loopback: no Secure (it would stop the cookie dead on
@@ -110,11 +112,11 @@ func (b *Battery) gateMiddleware() func(next http.Handler) http.Handler {
 			}
 			pin := b.hostPin.Load()
 			if pin == "" || r.Host != pin {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
 			}
 			if !b.requestHasSession(r) {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
 			}
 			next.ServeHTTP(w, r)

@@ -260,7 +260,7 @@ import (
 
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string        { return "Home" }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string        { return "Home" }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *HomeScreen) Render() render.HTML {
 	return render.Tag("div", nil, nil)

@@ -107,31 +107,30 @@ func TestGenerateCLI_PlainNamesStillGenerate(t *testing.T) {
 	}
 }
 
-// TestGenerateCLI_SelectionSinkIsCommentBodied demonstrates WHY the
-// spec-build guard exists: renderCLIMain itself cannot defend a comment —
-// a newline in spec.Selection lands at statement position and the file
-// stops parsing. The buildCLISpec guard is what keeps such a spec from
-// rendering; this pins the hazard so the guard is never "simplified" away.
-func TestGenerateCLI_SelectionSinkIsCommentBodied(t *testing.T) {
-	opts := defaultCLIOptions()
-	opts.apiPrefix = "api\nx()"
-	spec := cliSpec{Binary: "myapp", EnvPrefix: "MYAPP", APIPrefix: "/api", Selection: cliSelectionNote(opts)}
+// The main.gen.go header used to echo the selection flags into a comment,
+// where a newline in --api-prefix landed at statement position. The echo
+// is gone (the settings entry records the selection), so no flag value
+// reaches a comment: the prefix appears only as a quoted constant.
+func TestCLIHeaderEchoesNoFlags(t *testing.T) {
+	spec := cliSpec{Binary: "myapp", EnvPrefix: "MYAPP", APIPrefix: "/api\nx()"}
 	main := renderCLIMain(spec)
 	fset := token.NewFileSet()
-	if _, err := parser.ParseFile(fset, "main.go", main, 0); err == nil {
-		t.Errorf("a newline in the baked selection did NOT break main.go — the sink moved; revisit the buildCLISpec guard's coverage")
+	if _, err := parser.ParseFile(fset, "main.go", main, parser.ParseComments); err != nil {
+		t.Fatalf("a hostile prefix broke main.gen.go: %v", err)
+	}
+	if strings.Contains(main, "generate cli --") {
+		t.Fatal("the header echoes flags again")
 	}
 }
 
-// TestGenerateCLI_SelectionControlCharsRefusedAtSpecBuild: the fix —
-// buildCLISpec refuses a selection carrying control characters, naming the
-// sink it protects.
-func TestGenerateCLI_SelectionControlCharsRefusedAtSpecBuild(t *testing.T) {
+// buildCLISpec refuses a --api-prefix carrying control characters: it is
+// joined into every request URL, where a control byte is never a path.
+func TestCLIAPIPrefixControlCharsRefused(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.apiPrefix = "api\nx()"
 	_, err := buildCLISpec(cliFixtureDecls(), opts, "example.com/app/entities/client")
 	if err == nil {
-		t.Fatalf("buildCLISpec accepted a --api-prefix carrying a newline into the generated source header")
+		t.Fatalf("buildCLISpec accepted a --api-prefix carrying a newline")
 	}
 }
 
@@ -312,8 +311,7 @@ func TestCLIFieldNameMustDeriveIdentifier(t *testing.T) {
 }
 
 // TestGenerateCLI_FieldPayloadBecomesStatements: the hazard the guard above
-// must close, pinned the way TestGenerateCLI_SelectionSinkIsCommentBodied
-// pins its sink. Today the emitted file PARSES with pwn() at statement
+// must close. Today the emitted file PARSES with pwn() at statement
 // position — the format.Source gate cannot see it — so refusal at spec
 // build is the only boundary. This subtest proves the payload is live code,
 // not data, until the guard exists.
@@ -359,7 +357,7 @@ func TestCLIFileCollisionsFailGeneration(t *testing.T) {
 		if err == nil {
 			t.Fatal("SECURITY: [silent-overwrite] colliding command forms wrote one entity over the other with no error")
 		}
-		if !strings.Contains(err.Error(), "user-posts.go") {
+		if !strings.Contains(err.Error(), "user-posts.gen.go") {
 			t.Errorf("collision error must name the colliding file: %v", err)
 		}
 	})
@@ -395,8 +393,8 @@ func TestCLIFileCollisionsFailGeneration(t *testing.T) {
 // terminal rewrites) — the sibling pin above requires that.
 // Surfaces: cmd/gofastr/generate_cli_openapi.go::oaBuildOp (the refusal,
 // applied to both the spec summary and the method+path fallback),
-// versus buildCLISpec's Selection guard (the established refusal pattern
-// for this sink class).
+// versus buildCLISpec's --api-prefix guard (the established refusal
+// pattern for this sink class).
 func TestCLISummaryControlBytesRefused(t *testing.T) {
 	for _, hostileSummary := range []string{
 		"list things\x1b]0;pwned\x07\r  EVIL", // OSC title-set + CR line rewrite
@@ -486,11 +484,12 @@ func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`"/` + escaped + `",`,              // wrapper base-path bindings in <entity>.go
-		`base+"/"+url.PathEscape(id)`,      // shared get/delete (verbs.go)
-		`path += "/" + url.PathEscape(id)`, // shared create/update/patch with-id (verbs.go)
-		`base+"/_batch"`,                   // shared batch verbs (verbs.go)
-		`path := base`,                     // shared list (verbs.go)
+		`"/` + escaped + `",`,               // wrapper base-path bindings in <entity>.go
+		`segs[i] = url.PathEscape(args[i])`, // takeKey escapes every key value (output.go)
+		`base+"/"+tail`,                     // shared get/delete (verbs.go)
+		`path += "/" + tail`,                // shared create/update/patch with-id (verbs.go)
+		`base+"/_batch"`,                    // shared batch verbs (verbs.go)
+		`path := base`,                      // shared list (verbs.go)
 	} {
 		if !strings.Contains(cliJoined, want) {
 			t.Errorf("emitted CLI route construction missing escaped-table site %q:\n%s", want, cliJoined)

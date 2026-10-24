@@ -130,8 +130,8 @@ func optimisticDeleteDemo(ctx context.Context) render.HTML {
 
 type ComponentsIndexScreen struct{}
 
-func (s *ComponentsIndexScreen) ScreenTitle() string { return "Components" }
-func (s *ComponentsIndexScreen) ScreenDescription() string {
+func (s *ComponentsIndexScreen) ScreenTitle(ctx context.Context) string { return "Components" }
+func (s *ComponentsIndexScreen) ScreenDescription(ctx context.Context) string {
 	return "Every framework/ui constructor, one page each."
 }
 func (s *ComponentsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -187,11 +187,11 @@ type ComponentShowcaseScreen struct {
 	Entry componentEntry
 }
 
-func (s *ComponentShowcaseScreen) ScreenTitle() string {
+func (s *ComponentShowcaseScreen) ScreenTitle(ctx context.Context) string {
 	return s.Entry.Name
 }
-func (s *ComponentShowcaseScreen) ScreenDescription() string  { return s.Entry.Desc }
-func (s *ComponentShowcaseScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *ComponentShowcaseScreen) ScreenDescription(ctx context.Context) string { return s.Entry.Desc }
+func (s *ComponentShowcaseScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 // Render is the no-request fallback for direct callers (llm.md). It renders the
 // seed state for the stateful demos; live SSR uses RenderCtx instead.

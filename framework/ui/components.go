@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	stdhtml "html"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PageHeader ─────────────────────────────────────────────────────
@@ -377,6 +379,9 @@ type ButtonConfig struct {
 	// state, so that form needs FormConfig.LeaveGuard. It stays
 	// clickable and keeps its shortcut either way.
 	QuietUntilDirty bool
+	// Ctx carries the per-request context the Shortcut keycaps are
+	// said in. When nil, English applies.
+	Ctx context.Context
 }
 
 // Button renders a semantic button with a typed variant, through the
@@ -406,7 +411,7 @@ func Button(cfg ButtonConfig) render.HTML {
 		if cfg.ID == "" {
 			panic("ui: Button Shortcut needs ID — the chord clicks the button it names")
 		}
-		suffix = headless.Own(ShortcutHint(ShortcutHintConfig{Chord: cfg.Shortcut, BindTarget: "#" + cfg.ID}))
+		suffix = headless.Own(ShortcutHint(ShortcutHintConfig{Chord: cfg.Shortcut, BindTarget: "#" + cfg.ID, Ctx: cfg.Ctx}))
 		if aria == "" {
 			aria = cfg.Label
 		}
@@ -1162,6 +1167,9 @@ type CodeBlockConfig struct {
 	// the scroll contract (tabindex, aria-label) that lives on the
 	// <pre> body.
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context the block's accessible name,
+	// line count and copy control are said in. When nil, English applies.
+	Ctx context.Context
 }
 
 // LineRange is a 1-based, inclusive range of source lines. To == 0 means
@@ -1227,9 +1235,13 @@ var codeBlockSeq atomic.Uint64
 // auto-loads the scoped stylesheet on first appearance.
 func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	framed := cfg.Filename != "" || cfg.ShowCopy || cfg.LineNumbers || cfg.Scroll || len(cfg.Lines) > 0
-	label := "source code"
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	label := i18nui.CodeBlockSource.Text(ctx)
 	if cfg.Language != "" {
-		label = cfg.Language + " source"
+		label = i18nui.CodeBlockLangSource.Text(ctx, map[string]any{"language": cfg.Language})
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "tabindex", "aria-label")
 
@@ -1328,14 +1340,15 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	metaChildren := []render.HTML{}
 	if len(cfg.Lines) > 0 {
 		metaChildren = append(metaChildren,
-			html.Span(html.TextConfig{}, render.Text(strconv.Itoa(len(cfg.Lines))+" lines")))
+			html.Span(html.TextConfig{}, render.Text(i18nui.CodeBlockLines.Text(ctx, map[string]any{"n": len(cfg.Lines)}))))
 	}
 	if cfg.ShowCopy {
 		metaChildren = append(metaChildren, CopyButton(CopyButtonConfig{
 			Target:       "#" + bodyID,
-			Label:        "copy",
-			CopiedLabel:  "copied",
-			AnnounceText: "Copied",
+			Label:        i18nui.CodeBlockCopy.Text(ctx),
+			CopiedLabel:  i18nui.CodeBlockCopied.Text(ctx),
+			AnnounceText: i18nui.CopyCopied.Text(ctx),
+			Ctx:          ctx,
 			Class:        "fui-code-block__copy",
 		}))
 	}
@@ -1550,10 +1563,13 @@ type SkipLinkConfig struct {
 	// Defaults to "main-content" when empty.
 	Target string
 	// Text is the visible label shown on focus.
-	// Defaults to "Skip to main content" when empty.
+	// Defaults to "Skip to main content", in Ctx's language, when empty.
 	Text  string
 	Class string
 	ID    string
+	// Ctx carries the per-request context the default Text is said in.
+	// When nil, English applies.
+	Ctx context.Context
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the link's root <a>. Keys the component
@@ -1570,7 +1586,7 @@ func SkipLink(cfg SkipLinkConfig) render.HTML {
 	}
 	text := cfg.Text
 	if text == "" {
-		text = "Skip to main content"
+		text = i18nui.SkipToMain.Text(cfg.Ctx)
 	}
 	cls := "fui-skip-link"
 	if cfg.Class != "" {

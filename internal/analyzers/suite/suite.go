@@ -61,6 +61,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nonfinite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nostore"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nowaitdelay"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/rawtext"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverlog"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
@@ -130,6 +131,11 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// family enumeration over the long-lived/per-user response surfaces.
 	allow.Guard(nostore.Analyzer),
 	allow.Guard(unseated.Analyzer),
+
+	// The i18n error contract (2026-10): every framework response is a
+	// catalog Phrase with a stable code. Arms and silences are in
+	// rawtext's doc comment.
+	allow.Guard(rawtext.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

@@ -401,6 +401,41 @@ expose them to agents connected to a live app.**
   the app spec e2e_test.go template. The `//gofastr:allow` marker
   and the check-csp ignore directive are anchored comment-initial
   now: prose that merely mentions either no longer silences anything.
+  The 2026-10 i18n round added `rawtext`: framework code under
+  core/, framework/, battery/ and core-ui/, and the Meridian
+  flagship (examples/meridian), sends every user-facing
+  message through an `i18n.Phrase`, so a catalog translates it and
+  the body carries its code. It fires on a bare `http.Error` (use
+  `i18n.HTTPError`), `i18n.Define` inside a function or with
+  computed text, `handler.Errorf` or a `handler.Error` literal
+  setting `Message`, a response helper with a `msg string`
+  parameter, a JSON envelope whose "error"/"message" is prose or
+  `err.Error()`, and a constant JSON body written straight to the
+  ResponseWriter with a prose "error"/"message"/"title"/"detail".
+  The envelope arm also reads struct bodies that carry a json
+  "status" (RFC 9457 problem documents); a statusless protocol struct
+  (JSON-RPC, the service control socket) stays English. Its `uitext`
+  arm holds the page to the same rule: a constant (or a concatenation
+  with a constant operand) of words passed to `render.Text`, set as
+  an aria-label/title/placeholder/alt attribute, or set on a UI
+  package component's Label/Title/Text/Placeholder-named field. A
+  local variable or parameter assigned such a constant counts at any
+  of those sinks, and so does an index write into an attribute map
+  (`attrs["aria-label"] = …`): an English default set before the
+  sink was the shape 23 kit sites hid. The
+  gallery, `framework/sdkdocs` (the API reference, English like
+  OpenAPI), `headless.Spec` examples and the `headless.Strings`
+  defaults table are exempt. Its `nativetext` arm covers the desktop
+  shells: a constant into `objc.NSString` or a Win32 menu, window or
+  message-box title is English on every OS language. Its `ctxless` arm
+  fires on a UI component literal with a `Ctx context.Context` field left
+  unset while a request context is in scope (a ctx, `cfg.Ctx`, or
+  `r.Context()`): the component says its own words through Ctx, so
+  Meridian's header ThemeToggle and SignOut read English on /es/. The
+  runtime's JS twin is
+  `core-ui/check.LintRuntimeProse`: literal prose into a toast,
+  `textContent`, `aria-label` or `title` goes through `say()` and a
+  phrase registered with `runtime.RegisterStrings`.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

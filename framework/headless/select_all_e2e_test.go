@@ -3,8 +3,9 @@ package headless
 import (
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // A select-all header checks and clears its own table's row boxes,

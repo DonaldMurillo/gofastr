@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -42,6 +45,12 @@ type relationHop struct {
 	Table      string
 	SoftDelete bool
 	Scopes     []filter.ParsedFilter
+	// Pivot is the entity owning a many_to_many hop's Through table (nil
+	// when the migrator made it), and PivotScopes its owner, tenant and
+	// read-scope predicates: a link row its own route hides links
+	// nothing.
+	Pivot       *entity.Entity
+	PivotScopes []filter.ParsedFilter
 }
 
 // nestedFilter is one parsed `?author.name=alice` or `?author.team.name=x` style predicate.
@@ -89,7 +98,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			continue
 		}
 		if len(parts) > maxIncludeDepth+1 {
-			return nil, fmt.Errorf("nested filter %q: too many relation hops (max %d)", key, maxIncludeDepth)
+			return nil, i18n.NewError(reasonNestedTooManyHops, map[string]any{"key": strconv.Quote(key), "max": maxIncludeDepth})
 		}
 
 		currentEntity := ent
@@ -101,21 +110,23 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 				rel, ok = relationByName(currentEntity, casing.ToSnake(relName))
 			}
 			if !ok {
-				return nil, fmt.Errorf("nested filter %q: unknown relation %q", key, relName)
+				return nil, i18n.NewError(reasonNestedUnknownRel, map[string]any{"key": strconv.Quote(key), "relation": strconv.Quote(relName)})
 			}
 			target, err := entity.ResolveTarget(registry, currentEntity, rel.Entity)
 			if err != nil {
-				return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
+				return nil, i18n.Wrap(reasonNestedTargetFailed, err, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
 			}
 			if target == nil {
-				return nil, fmt.Errorf("nested filter %q: relation target %q resolved to no entity", key, rel.Entity)
+				return nil, i18n.NewError(reasonNestedTargetMissing, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
 			}
-			hops = append(hops, relationHop{
-				Relation:   rel,
-				Target:     target,
-				Table:      resolvedTable(target, rel),
-				SoftDelete: target.Config.Scope.SoftDelete,
-			})
+			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
+				return nil, i18n.Wrap(reasonNestedCompositeKey, err, map[string]any{"key": strconv.Quote(key)})
+			}
+			hop, err := newRelationHop(registry, currentEntity, rel, target)
+			if err != nil {
+				return nil, i18n.Wrap(reasonNestedTargetFailed, err, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
+			}
+			hops = append(hops, hop)
 			currentEntity = target
 		}
 
@@ -132,7 +143,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 
 		// Refuse field names that aren't plain SQL identifiers.
 		if !isSafeIdentifier(fieldName) {
-			return nil, fmt.Errorf("nested filter %q: unsafe field name", key)
+			return nil, i18n.NewError(reasonNestedUnsafeField, map[string]any{"key": strconv.Quote(key)})
 		}
 
 		target := currentEntity
@@ -151,13 +162,13 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			}
 		}
 		if blocked {
-			return nil, fmt.Errorf("nested filter %q: field %q cannot be filtered", key, fieldName)
+			return nil, i18n.NewError(reasonNestedNotFilterable, map[string]any{"key": strconv.Quote(key), "field": strconv.Quote(fieldName)})
 		}
 		if !known {
-			return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, target.GetName())
+			return nil, i18n.NewError(reasonNestedUnknownField, map[string]any{"key": strconv.Quote(key), "field": strconv.Quote(fieldName), "entity": strconv.Quote(target.GetName())})
 		}
 		if err := filter.CheckOpType(fieldName, op, colType); err != nil {
-			return nil, fmt.Errorf("nested filter %q: %w", key, err)
+			return nil, i18n.Wrap(reasonNestedFilter, err, map[string]any{"key": strconv.Quote(key)})
 		}
 
 		nf := nestedFilter{
@@ -172,8 +183,9 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		if op == filter.OpIn {
 			vals, total := filter.SplitINValuesBounded(values, filter.MaxINListEntries)
 			if total > filter.MaxINListEntries {
-				return nil, fmt.Errorf("nested filter %q: in-list on %q has %d entries (max %d)",
-					key, fieldName, total, filter.MaxINListEntries)
+				return nil, i18n.NewError(reasonNestedInListOverCap, map[string]any{
+					"key": strconv.Quote(key), "field": strconv.Quote(fieldName), "count": total, "max": filter.MaxINListEntries,
+				})
 			}
 			nf.Values = vals
 		} else {
@@ -234,12 +246,14 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				return nil, fmt.Errorf("nested filter %q.%q: relation target %q resolved to no entity",
 					spec.Relation, spec.Field, rel.Entity)
 			}
-			hops = append(hops, relationHop{
-				Relation:   rel,
-				Target:     target,
-				Table:      resolvedTable(target, rel),
-				SoftDelete: target.Config.Scope.SoftDelete,
-			})
+			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
+				return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
+			}
+			hop, err := newRelationHop(registry, currentEntity, rel, target)
+			if err != nil {
+				return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
+			}
+			hops = append(hops, hop)
 			currentEntity = target
 		}
 
@@ -313,9 +327,15 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // addWhere mirrors the Where signature shared by QueryBuilder and
 // CountBuilder so a single call site can wire the same filter chain into
 // both the data and count queries.
-func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, parentPK string, filters []nestedFilter) {
+//
+// A has_one or has_many hop joins the child's foreign key to the parent's
+// key, column by column; a many_to_many hop joins on the parent's one key
+// column; a belongs_to hop joins the parent's foreign key to the target's
+// key. A hop whose columns do not line up matches nothing
+// (parseNestedFilters refuses it first).
+func applyNestedFilters(addWhere func(sql string, args ...any), parentTable string, parentKey []string, filters []nestedFilter) {
 	for _, nf := range filters {
-		sql, args := buildExistsSubquery(parentTable, parentPK, nf)
+		sql, args := buildExistsSubquery(parentTable, parentKey, nf)
 		addWhere(sql, args...)
 	}
 }
@@ -331,11 +351,11 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 // payloads like `name OR 1=1 --` can't smuggle SQL fragments through
 // parseNestedFilters when the registry can't validate the field.
 //
-// Relation metadata (parentTable, parentPK, rel.Entity, rel.ForeignKey, rel.Through,
+// Relation metadata (parentTable, parentKey, rel.Entity, rel.FKColumns, rel.Through,
 // rel.LocalKey, rel.ForeignKeyTarget) may originate from dynamic definitions or API endpoints
 // (e.g. kiln add_entity/update_entity), so defense-in-depth isSafeIdentifier gates apply
 // across buildHopSubquery as well.
-func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string, []any) {
+func buildExistsSubquery(parentTable string, parentKey []string, nf nestedFilter) (string, []any) {
 	hops := nf.Hops
 	if len(hops) == 0 {
 		relTable := nf.table
@@ -363,10 +383,27 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		}
 	}
 
-	return buildHopSubquery(parentTable, parentPK, hops, nf)
+	return buildHopSubquery(parentTable, parentKey, hops, nf)
 }
 
-func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf nestedFilter) (string, []any) {
+// keyJoin renders the condition pairing columns lcols of table lt with
+// rcols of table rt: "lt.a = rt.x AND lt.b = rt.y". The callers have
+// checked every name and that the lists are the same length.
+func keyJoin(lt string, lcols []string, rt string, rcols []string) string {
+	conds := make([]string, len(lcols))
+	for i := range lcols {
+		conds[i] = fmt.Sprintf("%s.%s = %s.%s", lt, lcols[i], rt, rcols[i])
+	}
+	return strings.Join(conds, " AND ")
+}
+
+// safeIdentifiers reports whether every name in cols is a plain
+// identifier, and cols is not empty.
+func safeIdentifiers(cols []string) bool {
+	return len(cols) > 0 && !slices.ContainsFunc(cols, func(c string) bool { return !isSafeIdentifier(c) })
+}
+
+func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop, nf nestedFilter) (string, []any) {
 	if len(hops) == 0 {
 		return "1 = 1", nil
 	}
@@ -377,16 +414,23 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 	if relTable == "" {
 		relTable = rel.Entity
 	}
-	targetPK := "id"
-	if hop.Target != nil && hop.Target.PrimaryKey != "" {
-		targetPK = hop.Target.PrimaryKey
+	// The hop joins column by column; one whose columns do not line up
+	// with the key they reference matches nothing.
+	targetKey := hop.Target.KeyColumns()
+	fks := rel.ForeignKey
+	var joinable bool
+	switch rel.Type {
+	case entity.RelManyToOne:
+		joinable = len(fks) == len(targetKey)
+	case entity.RelHasOne, entity.RelHasMany:
+		joinable = len(fks) == len(parentKey)
+	case entity.RelManyToMany:
+		joinable = len(parentKey) == 1 && len(targetKey) == 1
 	}
-
-	if parentPK == "" {
-		parentPK = "id"
+	if !joinable || !isSafeIdentifier(parentTable) || !safeIdentifiers(parentKey) || !isSafeIdentifier(relTable) || !safeIdentifiers(targetKey) {
+		return "1 = 0", nil
 	}
-
-	if !isSafeIdentifier(parentTable) || !isSafeIdentifier(parentPK) || !isSafeIdentifier(relTable) || !isSafeIdentifier(targetPK) {
+	if rel.Type != entity.RelManyToMany && !safeIdentifiers(fks) {
 		return "1 = 0", nil
 	}
 
@@ -431,7 +475,7 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 		}
 		innerPredicate = fieldPred
 	} else {
-		subSQL, subArgs := buildHopSubquery(subTable, targetPK, hops[1:], nf)
+		subSQL, subArgs := buildHopSubquery(subTable, targetKey, hops[1:], nf)
 		args = append(args, subArgs...)
 		innerPredicate = subSQL
 	}
@@ -445,31 +489,31 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 
 	switch rel.Type {
 	case entity.RelManyToOne:
-		if !isSafeIdentifier(rel.ForeignKey) {
-			return "1 = 0", nil
-		}
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
-			aliasClause, subTable, targetPK, parentTable, rel.ForeignKey, innerPredicate,
+			"EXISTS (SELECT 1 FROM %s WHERE %s AND %s)",
+			aliasClause, keyJoin(subTable, targetKey, parentTable, fks), innerPredicate,
 		), args
 	case entity.RelHasOne, entity.RelHasMany:
-		if !isSafeIdentifier(rel.ForeignKey) {
-			return "1 = 0", nil
-		}
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
-			aliasClause, subTable, rel.ForeignKey, parentTable, parentPK, innerPredicate,
+			"EXISTS (SELECT 1 FROM %s WHERE %s AND %s)",
+			aliasClause, keyJoin(subTable, fks, parentTable, parentKey), innerPredicate,
 		), args
 	case entity.RelManyToMany:
 		if !isSafeIdentifier(rel.Through) || !isSafeIdentifier(rel.ForeignKeyTarget) || !isSafeIdentifier(rel.LocalKey) {
 			return "1 = 0", nil
 		}
+		// The builder renumbers placeholders in the order they appear, so
+		// the join entity's conditions follow the predicate whose args
+		// precede theirs.
+		pivotWhere, pivotArgs := pivotClause(hop.Pivot, hop.PivotScopes, rel.Through, len(args)+1)
+		args = append(args, pivotArgs...)
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s)",
+			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s%s)",
 			aliasClause, rel.Through,
-			subTable, targetPK, rel.Through, rel.ForeignKeyTarget,
-			rel.Through, rel.LocalKey, parentTable, parentPK,
+			subTable, targetKey[0], rel.Through, rel.ForeignKeyTarget,
+			rel.Through, rel.LocalKey, parentTable, parentKey[0],
 			innerPredicate,
+			pivotWhere,
 		), args
 	default:
 		return "1 = 0", nil
@@ -601,6 +645,7 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 			scopes = append(scopes, eagerScopeFilters(ctx, target)...)
 			scopes = append(scopes, readScopeFilters(ctx, target)...)
 			filters[i].Hops[h].Scopes = scopes
+			filters[i].Hops[h].PivotScopes = pivotScopes(ctx, filters[i].Hops[h].Pivot)
 			if h == 0 {
 				filters[i].scopes = scopes
 			}
@@ -609,6 +654,26 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 	}
 	return nil
 }
+
+// newRelationHop is the hop following rel from source to target, with the
+// many_to_many join entity resolved from the registry.
+func newRelationHop(registry entity.Registry, source *entity.Entity, rel entity.Relation, target *entity.Entity) (relationHop, error) {
+	hop := relationHop{
+		Relation:   rel,
+		Target:     target,
+		Table:      resolvedTable(target, rel),
+		SoftDelete: target.Config.Scope.SoftDelete,
+	}
+	if rel.Type == entity.RelManyToMany {
+		pivot, err := entity.PivotEntity(registry, source, rel.Through)
+		if err != nil {
+			return relationHop{}, err
+		}
+		hop.Pivot = pivot
+	}
+	return hop, nil
+}
+
 func resolvedTable(target *entity.Entity, rel entity.Relation) string {
 	if target != nil && target.GetTable() != "" {
 		return target.GetTable()

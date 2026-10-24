@@ -44,7 +44,7 @@ func TestLoadAppSpecDecodesCodegenSurface(t *testing.T) {
 	if len(bp.Screens) != 1 || bp.Screens[0].Route != "/" {
 		t.Fatalf("screens = %#v", bp.Screens)
 	}
-	if len(bp.Endpoints) != 1 || bp.Endpoints[0].Handler != "publishPost" {
+	if len(bp.Endpoints) != 1 || bp.Endpoints[0].Handler != "entities/posts_endpoints.go#PublishPost" {
 		t.Fatalf("endpoints = %#v", bp.Endpoints)
 	}
 	if len(bp.Middleware) != 1 || len(bp.Plugins) != 1 || len(bp.Helpers) != 1 {
@@ -459,21 +459,33 @@ screens:
 		{
 			name: "bad method",
 			yml: `
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
 endpoints:
   - name: publish
+    entity: posts
     method: WAT
-    path: /publish
-    handler: publish
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#Publish
 `,
-			want: `method "WAT" is not supported`,
+			want: `method "WAT" must be one of`,
 		},
 		{
 			name: "missing handler",
 			yml: `
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
 endpoints:
   - name: publish
+    entity: posts
     method: POST
-    path: /publish
+    path: "{id}/publish"
 `,
 			want: `handler is required`,
 		},
@@ -482,88 +494,88 @@ endpoints:
 			yml: `
 endpoints:
   - name: publish
-    method: POST
-    path: /publish
     entity: posts
-    handler: publish
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#Publish
 `,
-			want: `targets unknown entity "posts"`,
+			want: `hangs under entity "posts", which the app spec does not declare`,
 		},
 		{
 			name: "duplicate endpoint route",
 			yml: `
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
 endpoints:
   - name: publish
+    entity: posts
     method: POST
-    path: /posts/{id}/publish
-    handler: publishPost
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#Publish
   - name: publish_again
-    method: post
-    path: /posts/{id}/publish
-    handler: publishAgain
+    entity: posts
+    method: POST
+    path: "{post}/publish"
+    handler: entities/posts_endpoints.go#PublishAgain
 `,
-			want: `duplicate endpoint route "POST /posts/{id}/publish"`,
+			want: `is endpoint publish's route already`,
 		},
 		{
-			name: "endpoint collides with crud route",
+			name: "endpoint absolute path",
 			yml: `
 entities:
   - name: posts
-    crud: true
     fields:
       - name: title
         type: string
 endpoints:
-  - name: custom_create
+  - name: publish
+    entity: posts
     method: POST
-    path: /posts
-    handler: customCreate
+    path: /posts/{id}/publish
+    handler: entities/posts_endpoints.go#Publish
 `,
-			want: `collides with generated CRUD route "POST /posts"`,
+			want: `must be relative to the entity's route`,
 		},
 		{
-			name: "endpoint collides with kebab entity crud route",
+			name: "endpoints share a handler",
 			yml: `
 entities:
-  - name: blog-post
-    crud: true
+  - name: posts
     fields:
       - name: title
         type: string
 endpoints:
-  - name: custom_create
-    method: POST
-    path: /blog_post
-    handler: customCreate
-`,
-			want: `collides with generated CRUD route "POST /blog_post"`,
-		},
-		{
-			name: "duplicate endpoint handlers",
-			yml: `
-endpoints:
   - name: publish
+    entity: posts
     method: POST
-    path: /publish
-    handler: shared
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#Publish
   - name: archive
+    entity: posts
     method: POST
-    path: /archive
-    handler: shared
+    path: "{id}/archive"
+    handler: entities/posts_endpoints.go#Publish
 `,
-			want: `duplicate endpoint handler "shared"`,
+			want: `both link entities/posts_endpoints.go#Publish`,
 		},
 		{
-			name: "endpoint mcp unsupported",
+			name: "endpoints under an entity",
 			yml: `
-endpoints:
-  - name: publish
-    method: POST
-    path: /publish
-    handler: publish
-    mcp: true
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
+    endpoints:
+      - name: publish
+        method: POST
+        path: /publish
 `,
-			want: `cannot set mcp=true`,
+			want: `an entity no longer lists endpoints`,
 		},
 		{
 			name: "duplicate middleware",
@@ -605,7 +617,10 @@ app:
 	}
 }
 
-func TestEntityOwnedEndpointGeneratesStubAndRegistration(t *testing.T) {
+// An app spec endpoint becomes the settings entry, a typed handler stub
+// that answers 501, the registration and a typed client call: the app
+// generate app writes is the one `gofastr generate` keeps current.
+func TestAppSpecEndpointWritesSettingsAndStub(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, `
@@ -614,65 +629,32 @@ entities:
     fields:
       - name: title
         type: string
-    endpoints:
-      - name: publish_post
-        method: POST
-        path: "{id}/publish"
-        handler: publishPost
-`)
-	bp, err := loadAppSpec(path)
-	if err != nil {
-		t.Fatalf("loadAppSpec: %v", err)
-	}
-	if len(bp.Endpoints) != 1 || bp.Endpoints[0].Entity != "posts" {
-		t.Fatalf("endpoints = %#v", bp.Endpoints)
-	}
-	files, err := renderAppSpecFiles(bp)
-	if err != nil {
-		t.Fatalf("renderAppSpecFiles: %v", err)
-	}
-	byName := filesByName(files)
-	for _, want := range []string{
-		"func PublishPost(w http.ResponseWriter, r *http.Request)",
-		`fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`,
-	} {
-		if !strings.Contains(byName["stubs.go"]+byName["app.go"], want) {
-			t.Fatalf("generated files missing %q\napp:\n%s\nstubs:\n%s", want, byName["app.go"], byName["stubs.go"])
-		}
-	}
-}
-
-func TestAppSpecKeepsEntityOwnedAndTopLevelEndpoints(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "gofastr.yml")
-	writeTestFile(t, path, `
-entities:
-  - name: posts
-    fields:
-      - name: title
-        type: string
-    endpoints:
-      - name: publish_post
-        method: POST
-        path: "{id}/publish"
-        handler: publishPost
 endpoints:
-  - name: health_check
-    method: GET
-    path: /health
-    handler: healthCheck
+  - name: publish_post
+    entity: posts
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+    description: Publish a draft.
+    mcp: true
 `)
 	bp, err := loadAppSpec(path)
 	if err != nil {
 		t.Fatalf("loadAppSpec: %v", err)
-	}
-	if len(bp.Endpoints) != 2 {
-		t.Fatalf("endpoints = %#v", bp.Endpoints)
 	}
 	byName := filesByName(mustRenderAppSpecFiles(t, bp))
-	generated := byName["app.go"] + byName["stubs.go"]
-	assertContains(t, generated, `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
-	assertContains(t, generated, `fwApp.Router().Handle("GET", "/health", http.HandlerFunc(HealthCheck))`)
+	assertContains(t, byName["gofastr.settings.yml"], "  - name: \"publish_post\"\n    entity: \"posts\"\n    method: POST\n    path: \"{id}/publish\"\n")
+	stub := byName[filepath.Join("entities", "posts_endpoints.go")]
+	assertContains(t, stub, "type PublishPostInput struct {\n\tID string `path:\"id\" json:\"-\"`\n}")
+	assertContains(t, stub, "func PublishPost(ctx context.Context, in PublishPostInput) (*Posts, error) {")
+	assertContains(t, stub, "handler.Errorf(http.StatusNotImplemented")
+	reg := byName[filepath.Join("entities", "endpoints.gen.go")]
+	assertContains(t, reg, `app.EntityEndpoints("posts", framework.Endpoint{`)
+	assertContains(t, reg, "MCPHandler: handler.ToolAdapter[PublishPostInput, *Posts](PublishPost),")
+	assertContains(t, byName[filepath.Join("entities", "client", "client.go")], "PublishPost(")
+	if strings.Contains(byName["app.go"], "Router().Handle") {
+		t.Fatalf("app.go still hand-registers a route:\n%s", byName["app.go"])
+	}
 }
 
 func TestAppSpecBlockMultipleActionsAreReachable(t *testing.T) {
@@ -742,7 +724,7 @@ func TestRenderAppSpecFilesContentCoversAllSections(t *testing.T) {
 	// The list renders through the appUI builder; the list follows the
 	// screen's heading block, so its title drops to a section (level 2).
 	assertContains(t, screenContent, `appUI.List("posts").Columns("title", "status").PageSize(5).NoCreate().Heading("Latest posts", 2).Empty("No posts yet.")`)
-	assertContains(t, byName["stubs.go"], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
+	assertContains(t, byName[filepath.Join("entities", "posts_endpoints.go")], `func PublishPost(ctx context.Context, in PublishPostInput) (*Posts, error)`)
 	assertContains(t, byName["stubs.go"], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName["stubs.go"], `type AnalyticsPlugin struct{}`)
 	assertContains(t, byName["stubs.go"], `func NormalizeSlug()`)
@@ -751,7 +733,6 @@ func TestRenderAppSpecFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName["app.go"], `appModule = "example.com/demo"`)
 	assertContains(t, byName["app.go"], `dbDriver = "sqlite"`)
 	assertContains(t, byName["app.go"], `staticDir = "public"`)
-	assertContains(t, byName["app.go"], `fwApp.Router().Handle("POST", "/posts/{id}/publish", http.HandlerFunc(PublishPost))`)
 	assertContains(t, byName["app.go"], `fwApp.Use(RequestLoggerMiddleware)`)
 	assertContains(t, byName["app.go"], `fwApp.RegisterPlugin(AnalyticsPlugin{})`)
 	assertContains(t, byName["main.go"], `entities.RegisterAll(fwApp)`)
@@ -951,9 +932,10 @@ func TestGenerateFromAppSpecDryRunJSONReportsValidationErrors(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "bad.yml"), `
 endpoints:
   - name: bad
-    method: WAT
-    path: /bad
-    handler: bad
+    entity: ghosts
+    method: POST
+    path: "{id}/bad"
+    handler: entities/ghosts_endpoints.go#Bad
 `)
 	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", filepath.Join(dir, "bad.yml"), "--dry-run", "--json")
 	cmd.Dir = repoRoot
@@ -979,7 +961,7 @@ endpoints:
 	if jsonErr := json.Unmarshal(stdout.Bytes(), &got); jsonErr != nil {
 		t.Fatalf("dry-run JSON errors did not parse: %v\nstdout:\n%s\nstderr:\n%s", jsonErr, stdout.String(), stderr.String())
 	}
-	if len(got.Files) != 0 || len(got.Errors) != 1 || !strings.Contains(got.Errors[0].Message, `method "WAT" is not supported`) {
+	if len(got.Files) != 0 || len(got.Errors) != 1 || !strings.Contains(got.Errors[0].Message, `endpoint bad hangs under entity "ghosts"`) {
 		t.Fatalf("unexpected dry-run JSON error payload: %#v", got)
 	}
 	if _, statErr := os.Stat(filepath.Join(dir, "gen")); !os.IsNotExist(statErr) {
@@ -1238,7 +1220,8 @@ func TestAppSpecCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 		t.Fatalf("anonymous /openapi.json status = %d, want 401 (auth-gated by default)", resp.StatusCode)
 	}
 
-	resp, err = http.Post(baseURL+"/posts/123/publish", "text/plain", nil)
+	// The endpoint's generated stub answers 501 until it is written.
+	resp, err = http.Post(baseURL+"/api/posts/"+id+"/publish", "application/json", strings.NewReader("{}"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1495,7 +1478,8 @@ func allScreenContent(files []generatedFile) string {
 	var b strings.Builder
 	for _, f := range files {
 		if strings.HasPrefix(f.name, "screen_") || f.name == "screens.go" {
-			b.WriteString(f.content)
+			// The words a screen says are phrases; read them as English.
+			b.WriteString(inlinePhrases(f.content))
 			b.WriteByte('\n')
 		}
 	}
@@ -1655,10 +1639,11 @@ screens:
         empty_text: No posts yet.
 endpoints:
   - name: publish_post
-    method: POST
-    path: /posts/{id}/publish
     entity: posts
-    handler: publishPost
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+    public: true
 middleware:
   - request_logger
 plugins:

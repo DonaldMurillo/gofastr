@@ -1,9 +1,10 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"strings"
 )
 
 // ─── Tooltip ────────────────────────────────────────────────────────
@@ -18,7 +19,9 @@ import (
 // aria-describedby so screen readers announce the tooltip alongside
 // the trigger.
 
-// TooltipPlacement selects the side the tooltip appears on.
+// TooltipPlacement selects the side the tooltip appears on. Left and
+// Right are the reading direction's start and end: on a dir="rtl" page
+// TooltipLeft opens to the right of its trigger.
 type TooltipPlacement string
 
 const (

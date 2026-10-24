@@ -298,9 +298,14 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		}
 		tableNames = append(tableNames, ent.GetTable())
 	}
+	keysByTable := map[string]liveKey{}
 	if len(tableNames) > 0 {
 		var err error
 		liveByTable, err = ReadLiveColumnsBulk(ctx, db, tableNames, dialect)
+		if err != nil {
+			return fmt.Errorf("migrate: read live schema: %w", wrapConnErr(err))
+		}
+		keysByTable, err = readLiveKeysQ(ctx, db, existingEntityTables(ordered, liveByTable), dialect)
 		if err != nil {
 			return fmt.Errorf("migrate: read live schema: %w", wrapConnErr(err))
 		}
@@ -319,7 +324,12 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		// the conn, and the panic still propagates to the caller.
 		defer func() { _ = tx.Rollback() }()
 		for _, ent := range ordered {
-			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()]); err != nil {
+			var lk *liveKey
+			if len(liveByTable[ent.GetTable()]) > 0 {
+				k := keysByTable[ent.GetTable()]
+				lk = &k
+			}
+			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()], lk); err != nil {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
@@ -508,13 +518,13 @@ func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	return migrateEntity(context.Background(), db, ent, nil, dialect, nil)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
-	return migrateEntity(context.Background(), db, ent, nil, dialect, nil)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil)
 }
 
 // migrateEntity is the shared implementation. When `all` is non-nil it is
@@ -525,7 +535,9 @@ func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error
 // callers)" and triggers CREATE TABLE IF NOT EXISTS; non-empty means the
 // table pre-exists and is converged additively via addMissingColumns. Column
 // adds run BEFORE index DDL so a new field and its index land in one boot.
-func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) error {
+// lk is the existing table's pre-read primary key (nil for a new table, or
+// a single-entity caller); convergeKey checks it after the column adds.
+func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey) error {
 	// Unmanaged objects (views, FTS virtual tables, external/legacy tables) are
 	// created elsewhere. The migration system emits no DDL for them.
 	if ent.Config.Unmanaged {
@@ -543,8 +555,15 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
-	} else if err := addMissingColumns(ctx, exec, ent, all, dialect, live); err != nil {
-		return err
+	} else {
+		if err := addMissingColumns(ctx, exec, ent, all, dialect, live); err != nil {
+			return err
+		}
+		if lk != nil {
+			if err := convergeKey(ctx, exec, ent, all, dialect, *lk); err != nil {
+				return err
+			}
+		}
 	}
 
 	safeTable, err := query.SafeIdent(ent.GetTable())
@@ -710,16 +729,20 @@ func sanitizeIndexExpression(expr string) string {
 }
 
 // foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
-// fragments for every BelongsTo relation declared on the entity. Targets
-// must exist in `all` or the function returns an error.
+// fragments for every BelongsTo relation declared on the entity, naming
+// every column of a foreign key that references a composite key:
+// "FOREIGN KEY (order_store, order_no) REFERENCES orders(store, no)".
+// Targets must exist in `all` or the function returns an error.
 func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]string, error) {
 	var out []string
 	seen := make(map[string]bool)
 	for _, rel := range ent.Config.Relations {
-		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
+		fks := rel.ForeignKey
+		if rel.Type != entity.RelManyToOne || len(fks) == 0 {
 			continue
 		}
-		if seen[rel.ForeignKey] {
+		dedup := strings.Join(fks, ",")
+		if seen[dedup] {
 			continue
 		}
 		// The owner column is stamped by the framework from the session's
@@ -734,37 +757,36 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		// the clause rather than emit a constraint we guarantee to break; the
 		// relation still resolves for reads if the app does keep the two
 		// tables in sync.
-		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
-			seen[rel.ForeignKey] = true
+		if len(fks) == 1 && ent.Config.Scope.OwnerField != "" && strings.EqualFold(fks[0], ent.Config.Scope.OwnerField) {
+			seen[dedup] = true
 			continue
 		}
-		seen[rel.ForeignKey] = true
+		seen[dedup] = true
 		target, ok := all[rel.Entity]
 		if !ok {
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
-		safeRelFK, err := query.SafeIdent(rel.ForeignKey)
+		if err := entity.CheckRelationKeys(ent, rel, target); err != nil {
+			return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
+		}
+		safeFKs, err := safeIdents(fks)
 		if err != nil {
-			return nil, fmt.Errorf("relation %q: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
+			return nil, fmt.Errorf("relation %q: invalid FK: %w", rel.Name, err)
 		}
 		safeTargetTable, err := query.SafeIdent(target.GetTable())
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
-		}
-		safeTargetPK, err := query.SafeIdent(targetPK)
+		safeTargetKey, err := safeIdents(target.KeyColumns())
 		if err != nil {
-			return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
+			return nil, fmt.Errorf("relation %q: invalid target key: %w", rel.Name, err)
 		}
 		// Validated but UNQUOTED, same convention as columnDefs. Quoting would
 		// preserve case on Postgres while the referenced CREATE TABLE folded its
 		// identifiers to lowercase, so a mixed-case target like "MixedAccount"
 		// would resolve to a relation that doesn't exist.
 		fkClause := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-			safeRelFK, safeTargetTable, safeTargetPK)
+			strings.Join(safeFKs, ", "), safeTargetTable, strings.Join(safeTargetKey, ", "))
 		if rel.OnDelete != "" {
 			switch rel.OnDelete {
 			case entity.OnDeleteCascade, entity.OnDeleteSetNull, entity.OnDeleteRestrict, entity.OnDeleteNoAction:
@@ -774,6 +796,66 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 			}
 		}
 		out = append(out, fkClause)
+	}
+	return out, nil
+}
+
+// checkForeignKeyTypes refuses a foreign key of several columns whose
+// columns differ in type from the key columns they reference. Each such
+// column is a plain field typed by its own declaration, where a one-column
+// Relation field takes its target's key type: Postgres refuses the
+// constraint when TEXT references an integer, and SQLite compares the two
+// under different affinities, so a join matches nothing. The types are
+// compared as Postgres would declare them, on either dialect, so an app
+// that boots on SQLite boots on Postgres.
+func checkForeignKeyTypes(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
+	fks := rel.ForeignKey
+	if len(fks) < 2 {
+		return nil
+	}
+	holder, ref := ent, all[rel.Entity]
+	if rel.Type == entity.RelHasOne || rel.Type == entity.RelHasMany {
+		holder, ref = ref, ent
+	}
+	if holder == nil || ref == nil {
+		return nil
+	}
+	for i, k := range ref.KeyColumns() {
+		ft := keyColumnType(holder, fks[i], all, DialectPostgres, map[columnRef]bool{})
+		kt := keyColumnType(ref, k, all, DialectPostgres, map[columnRef]bool{})
+		if typeFamily(ft) != typeFamily(kt) {
+			return fmt.Errorf("%w: %s.%s is %s and references %s.%s, which is %s",
+				entity.ErrForeignKeyShape, holder.GetName(), fks[i], ft, ref.GetName(), k, kt)
+		}
+	}
+	return nil
+}
+
+// typeFamily folds the Postgres column types a foreign key may join
+// across: every integer width, and text of any length.
+func typeFamily(t string) string {
+	t = strings.ToUpper(t)
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = t[:i]
+	}
+	switch t {
+	case "SMALLINT", "INTEGER", "INT", "BIGINT":
+		return "INTEGER"
+	case "TEXT", "VARCHAR", "CHAR", "CHARACTER VARYING":
+		return "TEXT"
+	}
+	return t
+}
+
+// safeIdents validates each column name with query.SafeIdent.
+func safeIdents(cols []string) ([]string, error) {
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		s, err := query.SafeIdent(c)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", c, err)
+		}
+		out[i] = s
 	}
 	return out, nil
 }
@@ -796,11 +878,11 @@ func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []st
 					seen[rel.Through] = true
 				}
 			case entity.RelManyToOne:
-				if all[rel.Entity] != ent || rel.ForeignKey == "" {
+				if all[rel.Entity] != ent || len(rel.ForeignKey) == 0 {
 					continue
 				}
 				// foreignKeyClauses emits no key on the owner column.
-				if other.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, other.Config.Scope.OwnerField) {
+				if other.Config.Scope.OwnerField != "" && len(rel.ForeignKey) == 1 && strings.EqualFold(rel.ForeignKey[0], other.Config.Scope.OwnerField) {
 					continue
 				}
 				if rel.OnDelete == entity.OnDeleteCascade || rel.OnDelete == entity.OnDeleteSetNull {
@@ -935,9 +1017,9 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	var rels []entity.Relation
 	for _, v := range versions {
 		for _, rel := range v.Config.Relations {
-			key := rel.ForeignKey
+			key := strings.Join(rel.ForeignKey, ",")
 			if key == "" {
-				key = rel.Name // HasMany/HasOne with no FK column, dedupe by logical name
+				key = rel.Name // a relation with no FK column (many_to_many), dedupe by logical name
 			}
 			if seenRel[key] {
 				continue
@@ -995,6 +1077,22 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 		ent := all[name]
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
+			// A foreign key names one column per column of the key it
+			// references; the end holding it may have any key. Checked here,
+			// for every table and not only a new one, so a target whose key
+			// changes shape is refused while an existing child still
+			// references its old key.
+			if err := entity.CheckRelationKeys(ent, rel, all[rel.Entity]); err != nil {
+				return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
+			}
+			if err := checkForeignKeyTypes(ent, rel, all); err != nil {
+				return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
+			}
+			if rel.Type == entity.RelManyToMany {
+				if err := checkPivotEntity(ent, rel, all); err != nil {
+					return err
+				}
+			}
 			if rel.Type == entity.RelManyToOne {
 				if _, ok := all[rel.Entity]; !ok {
 					return fmt.Errorf("entity %q has BelongsTo to unknown entity %q", name, rel.Entity)
@@ -1182,10 +1280,15 @@ func quoteSQLLiteral(s string) string {
 
 // fkColumnSQLType resolves the SQL column type for a foreign key referencing ent's pkName.
 // In PostgreSQL, if the primary key is SERIAL or BIGSERIAL, the referencing column must be INTEGER or BIGINT.
-func fkColumnSQLType(ent *entity.Entity, pkName string, dialect Dialect) string {
+// A key that is itself a Relation column takes the type columnSQLType gives it.
+func fkColumnSQLType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect) string {
+	return keyColumnType(ent, pkName, all, dialect, map[columnRef]bool{})
+}
+
+func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect, seen map[columnRef]bool) string {
 	for _, f := range ent.GetFields() {
 		if strings.EqualFold(f.Name, pkName) {
-			t := SQLType(f, dialect)
+			t := relationColumnType(ent, f, all, dialect, seen)
 			if dialect == DialectPostgres {
 				if strings.EqualFold(t, "SERIAL") {
 					return "INTEGER"
@@ -1198,6 +1301,54 @@ func fkColumnSQLType(ent *entity.Entity, pkName string, dialect Dialect) string 
 		}
 	}
 	return "TEXT"
+}
+
+// columnSQLType is SQLType for a column of ent. A Relation field is TEXT,
+// which Postgres refuses as a foreign key to an integer key ("foreign key
+// constraint cannot be implemented") and refuses to join against one. When
+// the field is a belongs_to's foreign key and the target's one-column key
+// is an integer, the column takes that integer type on Postgres, following
+// a target key that is itself such a Relation. SQLite compares TEXT and
+// INTEGER by affinity, so it keeps TEXT and an existing table sees no
+// retype.
+func columnSQLType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect) string {
+	return relationColumnType(ent, f, all, dialect, map[columnRef]bool{})
+}
+
+// columnRef names one column of one entity: the cycle guard of a walk
+// along relation keys, which may pass through two columns of one entity
+// (a self-reference to a key that is itself a reference).
+type columnRef struct {
+	e   *entity.Entity
+	col string
+}
+
+func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect, seen map[columnRef]bool) string {
+	t := SQLType(f, dialect)
+	ref := columnRef{ent, f.Name}
+	if f.Type != schema.Relation || f.RawType != "" || dialect != DialectPostgres || all == nil || seen[ref] {
+		return t
+	}
+	seen[ref] = true
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || len(rel.ForeignKey) != 1 || !strings.EqualFold(rel.ForeignKey[0], f.Name) {
+			continue
+		}
+		target, ok := all[rel.Entity]
+		if !ok {
+			return t
+		}
+		pk, err := target.KeyColumn()
+		if err != nil {
+			return t
+		}
+		switch ft := keyColumnType(target, pk, all, dialect, seen); ft {
+		case "INTEGER", "BIGINT":
+			return ft
+		}
+		return t
+	}
+	return t
 }
 
 // generatedPivots yields each many_to_many relation whose Through table the
@@ -1227,6 +1378,25 @@ func generatedPivots(ordered []*entity.Entity, all map[string]*entity.Entity) it
 			}
 		}
 	}
+}
+
+// checkPivotEntity refuses a many_to_many whose Through table a registered
+// entity owns but whose two link columns that entity does not declare: the
+// migrator creates no pivot then, and every read of the relation would
+// name a column the table lacks.
+func checkPivotEntity(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
+	for _, name := range slices.Sorted(maps.Keys(all)) {
+		e := all[name]
+		if !strings.EqualFold(e.GetTable(), rel.Through) {
+			continue
+		}
+		for _, col := range []string{rel.LocalKey, rel.ForeignKeyTarget} {
+			if !slices.ContainsFunc(e.GetFields(), func(f schema.Field) bool { return strings.EqualFold(f.Name, col) }) {
+				return fmt.Errorf("entity %q relation %q: join entity %q declares no column %q", ent.GetName(), rel.Name, e.GetName(), col)
+			}
+		}
+	}
+	return nil
 }
 
 func pivotHasEntity(table string, all map[string]*entity.Entity) bool {
@@ -1279,25 +1449,25 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 	if err != nil {
 		return pivotSpec{}, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 	}
-	sourcePK := ent.PrimaryKey
-	if sourcePK == "" {
-		sourcePK = "id"
+	sourcePK, err := ent.KeyColumn()
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: %w", rel.Name, err)
 	}
 	safeSourcePK, err := query.SafeIdent(sourcePK)
 	if err != nil {
 		return pivotSpec{}, fmt.Errorf("relation %q: invalid source PK %q: %w", rel.Name, sourcePK, err)
 	}
-	targetPK := target.PrimaryKey
-	if targetPK == "" {
-		targetPK = "id"
+	targetPK, err := target.KeyColumn()
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: %w", rel.Name, err)
 	}
 	safeTargetPK, err := query.SafeIdent(targetPK)
 	if err != nil {
 		return pivotSpec{}, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
 	}
 
-	sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
-	targetPKType := fkColumnSQLType(target, targetPK, dialect)
+	sourcePKType := fkColumnSQLType(ent, sourcePK, all, dialect)
+	targetPKType := fkColumnSQLType(target, targetPK, all, dialect)
 	idxName := fmt.Sprintf("idx_%s_%s", safeThrough, safeTargetKey)
 	return pivotSpec{
 		Safe: safeThrough,

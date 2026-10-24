@@ -31,6 +31,13 @@ import (
 // database, mirroring TestE2E's boot, and returns the base URL.
 func e2eBootApp(t *testing.T) string {
 	t.Helper()
+	return e2eBootAppIn(t, nil)
+}
+
+// e2eBootAppIn is e2eBootApp with prepare run on the app's working
+// directory before it starts, to put files there it reads at boot.
+func e2eBootAppIn(t *testing.T, prepare func(dir string)) string {
+	t.Helper()
 	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
 	if os.Getenv("ADMIN_SEED_PASSWORD") == "" {
 		t.Setenv("ADMIN_SEED_PASSWORD", "e2e-seed-admin-pw")
@@ -45,6 +52,9 @@ func e2eBootApp(t *testing.T) string {
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
 		t.Fatalf("build: %v", err)
+	}
+	if prepare != nil {
+		prepare(dir)
 	}
 	addr := e2eFreeAddr(t)
 	srv := exec.Command(bin)
@@ -132,7 +142,7 @@ func TestE2E_QuickAddModal(t *testing.T) {
 		// close and the re-rendered count land after a fetch round-trip:
 		// poll for both instead of sleeping a fixed window.
 		chromedp.Poll(closedJS, &closedAfterSave, chromedp.WithPollingTimeout(8*time.Second)),
-		// The count subtitle is entityui's "{count} {plural}" with the
+		// The count subtitle is entityui's "{{count}} {{plural}}" with the
 		// title-cased plural label.
 		chromedp.Poll(`document.body.innerText.includes("11 customers")`, &countBumped, chromedp.WithPollingTimeout(8*time.Second)),
 	); err != nil {

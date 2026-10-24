@@ -2,7 +2,6 @@ package headless
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -149,7 +148,8 @@ func Tag(p TagProps, s Classes) render.HTML {
 	if p.DismissHref != "" {
 		aria := p.DismissAriaLabel
 		if aria == "" {
-			aria = fmt.Sprintf(p.Strings.Resolve().RemoveLabelled, p.Label)
+			w := p.Strings.Resolve()
+			aria = w.fill(w.RemoveLabelled, "label", p.Label)
 		}
 		requireIsland("Tag with DismissHref", p.Island)
 		if urlsafe.CleanAnchor(p.DismissHref) == "" {
@@ -355,7 +355,7 @@ func Pagination(p PaginationProps, s Classes) render.HTML {
 				render.Text("…")))
 			continue
 		}
-		links = append(links, paginationLink(b, p, n, strconv.Itoa(n), false, n == p.Page))
+		links = append(links, paginationLink(b, p, n, w.Number(n), false, n == p.Page))
 	}
 	if !p.OmitPrevNext {
 		links = append(links, paginationLink(b, p, p.Page+1, next, p.Page == p.Pages, false))
@@ -502,6 +502,11 @@ type StepsProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Strings are the strings this component says. Nil means the English
+	// defaults; a layer above sets them from the request's language. The
+	// step numbers follow its locale.
+	Strings *Strings
 }
 
 // Steps renders a progress rail — a list of states, not a set of
@@ -513,6 +518,7 @@ type StepsProps struct {
 // refused, because two current steps tell assistive technology the
 // flow is in two places at once.
 func Steps(p StepsProps, s Classes) render.HTML {
+	w := p.Strings.Resolve()
 	if len(p.Steps) == 0 {
 		panic("headless: Steps requires Steps")
 	}
@@ -562,7 +568,7 @@ func Steps(p StepsProps, s Classes) render.HTML {
 			if state == "done" {
 				marker = render.Text("✓")
 			} else {
-				marker = render.Text(strconv.Itoa(i + 1))
+				marker = render.Text(w.Number(i + 1))
 			}
 		}
 		attrs := Attrs(map[string]string{"data-state": state})

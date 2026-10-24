@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=fea7619edad190a1
+//gofastr:generated generator=app kind=scaffold version=dev sum=6f962477915732b6
 
 package main
 
@@ -54,6 +54,9 @@ func main() {
 
 	options := []framework.AppOption{
 		framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),
+		// The app's translations (i18n.go): locales/<tag>.json, picked
+		// by the browser's Accept-Language.
+		translatorOption(),
 		// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +
 		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
 		// WithMCPIntrospection adds read-only orientation tools
@@ -83,6 +86,11 @@ func main() {
 	// a production /mcp is reachable solely by trusted callers.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
 	entities.RegisterAll(fwApp)
+	// An entity declares states and the seed writes rows: seeded rows may
+	// start at any state under the audited state override below, and an
+	// override is refused on an entity with no audit log, so enable it
+	// here (WithAuditLog creates audit_log when it does not exist).
+	fwApp.WithAuditLog(framework.AuditConfig{})
 	fwApp.HookRegistry("orders").RegisterHook(framework.AfterCreate, recomputeOrderTotalsOnCreateHook)
 	fwApp.HookRegistry("orders").RegisterHook(framework.AfterUpdate, recomputeOrderTotalsOnUpdateHook)
 	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterCreate, recomputeOrderFromItemCreateHook)
@@ -215,7 +223,11 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 		if err != nil || len(rows) == 0 {
 			continue
 		}
-		if id, ok := rows[0]["id"]; ok {
+		pk, err := ch.Entity.KeyColumn()
+		if err != nil {
+			continue
+		}
+		if id, ok := rows[0][ch.WireKey(pk)]; ok {
 			row[k] = id
 		}
 	}

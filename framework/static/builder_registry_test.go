@@ -37,9 +37,9 @@ type styledScreen struct {
 	style *registry.Style
 }
 
-func (s *styledScreen) ScreenTitle() string            { return "Styled" }
-func (s *styledScreen) ScreenDescription() string      { return "" }
-func (s *styledScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (s *styledScreen) ScreenTitle(ctx context.Context) string       { return "Styled" }
+func (s *styledScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *styledScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 func (s *styledScreen) Render() render.HTML {
 	return s.style.WrapHTML(render.HTML(`<div class="x">hi</div>`))
 }

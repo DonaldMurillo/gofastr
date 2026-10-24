@@ -1,9 +1,11 @@
 package headless
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -40,7 +42,8 @@ func TestCounterAnimationHooksRenderOnlyWhenAnimated(t *testing.T) {
 	has(t, animated, `data-hui-counter-animate=""`, "the animate hook is missing")
 	has(t, animated, `data-hui-counter-from="4000"`, "the count the animation starts from is missing")
 	has(t, animated, `data-hui-counter-ms="600"`, "the duration bound is missing")
-	has(t, animated, ">4820</span>", "the final value is not the SSR text")
+	has(t, animated, ">4,820</span>", "the final value is not the SSR text")
+	has(t, animated, `data-hui-counter-to="4820"`, "the figure the animation ends on is missing")
 
 	plain := Counter(CounterProps{Signal: "qty", Label: "Qty"}, nil)
 	hasNot(t, plain, "data-hui-counter", "an unanimated counter carries the animation hooks for no one")
@@ -72,7 +75,7 @@ func TestCounterHugeValueSkipsAnimation(t *testing.T) {
 	from := 0
 	huge := Counter(CounterProps{Signal: "n", Display: true, Value: 1<<53 + 1, AnimateFrom: &from}, nil)
 	hasNot(t, huge, "data-hui-counter-animate", "a value past 2^53-1 kept the animation that would round it")
-	has(t, huge, ">9007199254740993</span>", "the SSR text is not the exact figure")
+	has(t, huge, ">9,007,199,254,740,993</span>", "the SSR text is not the exact figure")
 	edge := Counter(CounterProps{Signal: "n", Display: true, Value: 1<<53 - 1, AnimateFrom: &from}, nil)
 	has(t, edge, `data-hui-counter-animate=""`, "2^53-1 is exact in JavaScript and should animate")
 }
@@ -190,7 +193,7 @@ func TestRangeSliderPairContract(t *testing.T) {
 	for _, want := range []string{
 		`name="price-min"`, `name="price-max"`,
 		`aria-label="Minimum Price"`, `aria-label="Maximum Price"`,
-		`data-hui-range-slider-output="%s to %s"`,
+		`data-hui-range-slider-output="{{low}} to {{high}}"`,
 		`>20 to 80</output>`,
 	} {
 		has(t, got, want, "the pair's wiring is incomplete")
@@ -268,4 +271,23 @@ func TestNumberInputAndSliderGiveTheIDToTheControlOnly(t *testing.T) {
 		}
 		has(t, got, `for="size-ctl"`, name+": the label does not point at the control")
 	}
+}
+
+// Numbers a control shows follow the request's locale through
+// Strings.ForRequest: the counter, a step marker, the bell's count.
+func TestNumbersFollowRequestLocale(t *testing.T) {
+	fr := DefaultStrings().ForRequest(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}))
+	counter := Counter(CounterProps{Signal: "n", Label: "Seats", Value: 4820, Strings: fr}, nil)
+	has(t, counter, ">4 820<", "a French counter did not group its value the French way")
+	has(t, counter, `data-cui-signal-mode="number"`, "the live value is not bound in number mode")
+	steps := make([]Step, 12)
+	for i := range steps {
+		steps[i].Label = "Step"
+	}
+	has(t, Steps(StepsProps{Steps: steps, Strings: fr}, nil), ">12<", "a step marker lost its number")
+	ar := DefaultStrings().ForRequest(i18n.WithContext(context.Background(), i18n.Locale{Tag: "ar-EG"}))
+	bell := NotificationBell(NotificationBellProps{Label: "Inbox", Href: "/inbox", UnreadCount: 3, Strings: ar}, nil)
+	has(t, bell, ">٣<", "an Egyptian Arabic bell did not write its count in Arabic-Indic digits")
+	// No request: English.
+	has(t, Counter(CounterProps{Signal: "n", Label: "Seats", Value: 4820}, nil), ">4,820<", "the English default lost its grouping")
 }

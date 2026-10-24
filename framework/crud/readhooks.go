@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -151,11 +152,14 @@ func (ch *CrudHandler) runAfterGet(ctx context.Context, r *http.Request, id stri
 // vouch for keeps both properties. The id is not a secret: it is the row's own
 // URL, and the caller is about to be redirected to it.
 func (ch *CrudHandler) identityOnly(result map[string]any) map[string]any {
-	key := ch.convertKey(ch.PrimaryKey)
-	if v, ok := result[key]; ok {
-		return map[string]any{key: v}
+	out := map[string]any{}
+	for _, c := range ch.keyCols() {
+		key := ch.convertKey(c)
+		if v, ok := result[key]; ok {
+			out[key] = v
+		}
 	}
-	return map[string]any{}
+	return out
 }
 
 // hookRequest strips the read-hook opt-in from the request a hook receives.
@@ -273,7 +277,15 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 			if err := runHooks(reg, hookCtx(ctx), hook.AfterList, payload); err != nil {
 				return fmt.Errorf("include %s: after-list hook: %w", node.Relation.Name, err)
 			}
-			if err := reattachHookResults(node.Relation.Name, ch.convertKey(node.Target.PrimaryKey), before, payload.Results); err != nil {
+			// Included rows carry the target's wire keys, WireName
+			// overrides included, not this handler's.
+			conv := ch.wireConverterOf(node.Target)
+			keys := node.Target.KeyColumns()
+			wire := make([]string, len(keys))
+			for i, k := range keys {
+				wire[i] = conv(k)
+			}
+			if err := reattachHookResults(node.Relation.Name, wire, before, payload.Results); err != nil {
 				return err
 			}
 			// Recurse over the ORIGINAL maps: those are what the parents
@@ -292,12 +304,10 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 		toOne := node.Relation.Type == entity.RelHasOne || node.Relation.Type == entity.RelManyToOne
 		if toOne && len(reg.HooksFor(hook.AfterGet)) > 0 {
 			req := ch.requestFrom(ctx)
-			pkKey := ch.convertKey(node.Target.PrimaryKey)
+			keys := node.Target.KeyColumns()
+			conv := ch.wireConverterOf(node.Target)
 			for i, child := range childRows {
-				id := ""
-				if v, ok := child[pkKey]; ok {
-					id = fmt.Sprint(v)
-				}
+				id, _ := entity.RowKey(child, keys, conv)
 				payload := &hook.GetPayload{Request: req, ID: id, Result: child}
 				if err := runHooks(reg, hookCtx(ctx), hook.AfterGet, payload); err != nil {
 					return fmt.Errorf("include %s: after-get hook: %w", node.Relation.Name, err)
@@ -358,10 +368,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	if !parentHooks {
 		return row, nil
 	}
-	id := ""
-	if v, ok := row[ch.convertKey(ch.PrimaryKey)]; ok {
-		id = fmt.Sprint(v)
-	}
+	id, _ := ch.rowID(row)
 	payload := &hook.GetPayload{Request: r, ID: id, Result: row}
 	if err := runHooks(ch.Hooks, hookCtx(r.Context()), hook.AfterGet, payload); err != nil {
 		return nil, err
@@ -397,7 +404,9 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 // anyone able to insert a child row could permanently break another user's
 // include.
 //
-// The primary key is what actually identifies a row across both shapes. Every
+// The primary key is what actually identifies a row across both shapes:
+// pkKeys names its columns as the rows spell them, and a composite key
+// matches on the record id they join to. Every
 // documented mask preserves it (assign a constant, delete the masked key), so
 // matching on it accepts in-place edits, projections, and any ordering, while
 // still refusing the cases that cannot be honoured: a changed row count, a
@@ -407,7 +416,8 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 //
 // Nothing is mutated until every element has been matched, so a refused
 // payload is left exactly as it was.
-func reattachHookResults(relation, pkKey string, original, returned []map[string]any) error {
+func reattachHookResults(relation string, pkKeys []string, original, returned []map[string]any) error {
+	pkKey := strings.Join(pkKeys, ", ")
 	if len(returned) != len(original) {
 		return fmt.Errorf(
 			"include %s: after-list hook changed the row count (%d → %d); "+
@@ -426,18 +436,18 @@ func reattachHookResults(relation, pkKey string, original, returned []map[string
 	// which one a given replacement folds into does not matter; what matters
 	// is that each claims a distinct slot.
 	byPK := make(map[string][]int, len(original))
-	pkUsable := pkKey != ""
+	pkUsable := len(pkKeys) > 0
 	for i, row := range original {
 		origAt[reflect.ValueOf(row).Pointer()] = i
 		if !pkUsable {
 			continue
 		}
-		v, ok := row[pkKey]
+		id, ok := entity.RowKey(row, pkKeys, nil)
 		if !ok {
 			pkUsable = false // no id on these rows; identity is all we have
 			continue
 		}
-		byPK[fmt.Sprint(v)] = append(byPK[fmt.Sprint(v)], i)
+		byPK[id] = append(byPK[id], i)
 	}
 
 	type replacement struct {
@@ -459,7 +469,7 @@ func reattachHookResults(relation, pkKey string, original, returned []map[string
 						"match it against: mutate the row in place instead",
 					relation, pkKey)
 			}
-			v, has := want[pkKey]
+			v, has := entity.RowKey(want, pkKeys, nil)
 			if !has {
 				return fmt.Errorf(
 					"include %s: after-list hook returned a row without its %q, so it cannot be "+
@@ -468,14 +478,14 @@ func reattachHookResults(relation, pkKey string, original, returned []map[string
 			}
 			// First slot for this id that nothing has claimed yet.
 			at, ok = -1, false
-			for _, cand := range byPK[fmt.Sprint(v)] {
+			for _, cand := range byPK[v] {
 				if !claimed[cand] {
 					at, ok = cand, true
 					break
 				}
 			}
 			if !ok {
-				if _, known := byPK[fmt.Sprint(v)]; known {
+				if _, known := byPK[v]; known {
 					return fmt.Errorf(
 						"include %s: after-list hook returned %s=%v more often than the query did; "+
 							"each eager-loaded row is keyed to its parent and must appear once",

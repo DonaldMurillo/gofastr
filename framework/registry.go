@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -78,6 +79,9 @@ func (r *Registry) Register(ent *entity.Entity) error {
 	// at registration so the author sees the conflict at app.Entity, not
 	// at boot when the union consumer runs.
 	if err := r.checkVersionCompat(key, ent); err != nil {
+		return err
+	}
+	if err := r.checkTransitionTable(ent); err != nil {
 		return err
 	}
 
@@ -319,6 +323,16 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 //   - To/Many        (relation metadata, not column-level DDL)
 //   - field ordering (declaration order is irrelevant to the schema)
 func conflictingColumns(a, b *entity.Entity) error {
+	// One table has one primary key: the versions must name the same key
+	// columns in the same order, or the composite constraint differs.
+	// Case is folded, as it is for the columns below.
+	if ka, kb := a.KeyColumns(), b.KeyColumns(); !slices.EqualFunc(ka, kb, strings.EqualFold) {
+		return fmt.Errorf(
+			"registry: entity %q (table %q): %s is keyed on (%s) but %s on (%s); two versions share one table so they must declare the same primary key",
+			a.Config.Name, a.Config.Table,
+			versionLabel(a.Version), strings.Join(ka, ", "), versionLabel(b.Version), strings.Join(kb, ", "),
+		)
+	}
 	// Index a's fields by lowercased name (Postgres folds unquoted identifiers
 	// to lowercase, so a mixed-case column name is physically the same column
 	// in both versions even if the declarations differ in case).
@@ -331,7 +345,8 @@ func conflictingColumns(a, b *entity.Entity) error {
 		if !ok {
 			continue // column only b declares, additive, handled by the union
 		}
-		if columnSchemaEqual(fa, a.PrimaryKey, fb, b.PrimaryKey) {
+		aKey, bKey := slices.Contains(a.KeyColumns(), fa.Name), slices.Contains(b.KeyColumns(), fb.Name)
+		if columnSchemaEqual(fa, aKey, fb, bKey) {
 			continue
 		}
 		return fmt.Errorf(
@@ -339,8 +354,8 @@ func conflictingColumns(a, b *entity.Entity) error {
 				"%s declares %s, %s declares %s; two versions share one table so the column definitions must match exactly "+
 				"(type, nullability, uniqueness, default, auto/PK). Make both versions identical or rename the column in one version",
 			a.Config.Name, a.Config.Table, fb.Name,
-			versionLabel(a.Version), describeColumnSchema(fa, fa.Name == a.PrimaryKey),
-			versionLabel(b.Version), describeColumnSchema(fb, fb.Name == b.PrimaryKey),
+			versionLabel(a.Version), describeColumnSchema(fa, aKey),
+			versionLabel(b.Version), describeColumnSchema(fb, bKey),
 		)
 	}
 	return nil
@@ -353,7 +368,7 @@ func conflictingColumns(a, b *entity.Entity) error {
 // and can never drift from the DDL the way a hand-listed attribute set would.
 // Both dialects are compared as a belt-and-braces guard against a future
 // dialect-specific type rendering.
-func columnSchemaEqual(a schema.Field, aPK string, b schema.Field, bPK string) bool {
+func columnSchemaEqual(a schema.Field, aKey bool, b schema.Field, bKey bool) bool {
 	if migrate.SQLType(a, migrate.DialectPostgres) != migrate.SQLType(b, migrate.DialectPostgres) {
 		return false
 	}
@@ -369,7 +384,7 @@ func columnSchemaEqual(a schema.Field, aPK string, b schema.Field, bPK string) b
 	if a.AutoGenerate != b.AutoGenerate {
 		return false
 	}
-	if (a.Name == aPK) != (b.Name == bPK) {
+	if aKey != bKey {
 		return false
 	}
 	if !reflect.DeepEqual(a.Default, b.Default) {
@@ -491,6 +506,56 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 					"%s and %s; at most one version may seed a shared table",
 				newEnt.Config.Name,
 				versionLabel(existing.Version), versionLabel(newEnt.Version))
+		}
+	}
+	return nil
+}
+
+// checkTransitionTable refuses a transition that writes a column of a
+// multi-column belongs_to foreign key on the same physical table: the
+// state field or a move's stamp. A move writes its column with no
+// reference check, so with the row's other columns it could land on any
+// row. It runs at registration, whether or not the app migrates, over
+// the entity itself and every declaration sharing its table (versions of
+// one name, or other names over one table), both ways.
+func (r *Registry) checkTransitionTable(newEnt *entity.Entity) error {
+	if err := checkTransitionForeignKeys(newEnt, newEnt); err != nil {
+		return err
+	}
+	for _, existing := range r.entities {
+		if !strings.EqualFold(existing.GetTable(), newEnt.GetTable()) {
+			continue
+		}
+		for _, p := range [][2]*entity.Entity{{existing, newEnt}, {newEnt, existing}} {
+			if err := checkTransitionForeignKeys(p[0], p[1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkTransitionForeignKeys refuses a column of a multi-column
+// belongs_to foreign key held by rels that a transition of moves writes.
+// Only a belongs_to holds its columns on the declaring entity's table; a
+// has_one or has_many names columns on its target.
+func checkTransitionForeignKeys(rels, moves *entity.Entity) error {
+	s := moves.Config.States
+	if s == nil {
+		return nil
+	}
+	for _, rel := range rels.Config.Relations {
+		fks := rel.ForeignKey
+		if rel.Type != entity.RelManyToOne || len(fks) < 2 {
+			continue
+		}
+		for _, c := range fks {
+			if strings.EqualFold(s.Field, c) || slices.ContainsFunc(s.Transitions, func(t entity.Transition) bool { return strings.EqualFold(t.Stamp, c) }) {
+				return fmt.Errorf(
+					"registry: entity %q (%s): the transitions of %q (%s) write %q, one column of relation %q's foreign key (%s) on table %q",
+					rels.Config.Name, versionLabel(rels.Version), moves.Config.Name, versionLabel(moves.Version),
+					c, rel.Name, strings.Join(fks, ", "), rels.GetTable())
+			}
 		}
 	}
 	return nil
@@ -672,7 +737,7 @@ func findExclusiveMandatory(have, lack *entity.Entity) error {
 				"a NOT NULL column with no default cannot be supplied by the other version's writes. "+
 				"Give it a default, make it auto-generated, or declare it in both versions",
 			have.Config.Name, have.Config.Table, f.Name,
-			describeColumnSchema(f, f.Name == have.PrimaryKey),
+			describeColumnSchema(f, slices.Contains(have.KeyColumns(), f.Name)),
 			versionLabel(have.Version), versionLabel(lack.Version))
 	}
 	return nil
@@ -805,19 +870,19 @@ func conflictingRelations(a, b *entity.Entity) error {
 }
 
 // relationDedupKey returns the key the merge uses to deduplicate relations:
-// the ForeignKey column (the physical column), or the logical Name for
+// the foreign-key columns (the physical columns), or the logical Name for
 // HasMany/HasOne relations that carry no FK column on this side.
 func relationDedupKey(rel entity.Relation) string {
-	if rel.ForeignKey != "" {
-		return rel.ForeignKey
+	if fks := rel.ForeignKey; len(fks) > 0 {
+		return strings.Join(fks, ",")
 	}
 	return rel.Name
 }
 
 // relationDisplayColumn returns the column to name in the error message.
 func relationDisplayColumn(rel entity.Relation) string {
-	if rel.ForeignKey != "" {
-		return rel.ForeignKey
+	if fks := rel.ForeignKey; len(fks) > 0 {
+		return strings.Join(fks, ", ")
 	}
 	return rel.Name
 }

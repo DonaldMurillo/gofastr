@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -99,7 +100,7 @@ func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if handler.IsCrossSiteRequest(r) {
-		writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
+		writeFormAuthError(w, r, http.StatusForbidden, reasonCrossSiteRequest)
 		return true
 	}
 	return false
@@ -119,9 +120,9 @@ func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) boo
 	}
 	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
 	if isFormRequest(r) {
-		writeFormAuthError(w, r, http.StatusTooManyRequests, "rate_limit")
+		writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 	} else {
-		writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+		writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 	}
 	return false
 }
@@ -190,7 +191,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// replaces the three emit-and-respond blocks duplicated across
 		// the FindByEmail-error, bad-password, and two-factor
 		// fail-closed branches.
-		failLogin := func(userID, reason string, status int, formCode, jsonMsg string) {
+		failLogin := func(userID, reason string, status int, why i18n.Phrase) {
 			c.mgr.emitSecurity(r.Context(), SecurityEvent{
 				Kind:   "login.failed",
 				UserID: userID,
@@ -199,16 +200,16 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 				Meta:   map[string]string{"reason": reason},
 			})
 			if isForm {
-				writeFormAuthError(w, r, status, formCode)
+				writeFormAuthError(w, r, status, why)
 			} else {
-				writeAuthError(w, status, jsonMsg)
+				writeAuthError(w, r, status, why)
 			}
 		}
 		if email == "" || password == "" {
 			if isForm {
-				writeFormAuthError(w, r, http.StatusBadRequest, "credentials_required")
+				writeFormAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			} else {
-				writeAuthError(w, http.StatusBadRequest, "email and password required")
+				writeAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			}
 			return
 		}
@@ -227,9 +228,9 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			if !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
 				if isForm {
-					writeFormAuthError(w, r, http.StatusTooManyRequests, "rate_limit")
+					writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				} else {
-					writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+					writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				}
 				return
 			}
@@ -237,7 +238,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 
 		store := c.mgr.UserStore()
 		if store == nil {
-			writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 			return
 		}
 
@@ -252,11 +253,11 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
-			failLogin("", "bad_credentials", http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
+			failLogin("", "bad_credentials", http.StatusUnauthorized, reasonInvalidCredentials)
 			return
 		}
 		if !CheckPassword(password, hash) {
-			failLogin(user.GetID(), "bad_credentials", http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
+			failLogin(user.GetID(), "bad_credentials", http.StatusUnauthorized, reasonInvalidCredentials)
 			return
 		}
 
@@ -269,11 +270,11 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// password-only one.
 		sess, pendingTwoFA, err := c.mgr.MintSession(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
 		if err != nil && !errors.Is(err, ErrTwoFactorEnforcement) {
-			writeAuthError(w, http.StatusInternalServerError, "session create failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
 		}
 		if err != nil {
-			failLogin(user.GetID(), "twofa_failclosed", http.StatusInternalServerError, "two_factor_unavailable", "two-factor enforcement unavailable")
+			failLogin(user.GetID(), "twofa_failclosed", http.StatusInternalServerError, reasonTwoFactorUnavailable)
 			return
 		}
 		if pendingTwoFA {
@@ -371,7 +372,7 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			}
 		}
 		if revokeFailed {
-			writeAuthError(w, http.StatusInternalServerError, "could not sign out; the session is still active")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonSignOutFailed)
 			return
 		}
 		mintSessionCookie(w, cfg, "", time.Time{})
@@ -391,7 +392,7 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 		// different scopes shadow each other; the first valid one wins).
 		candidates := sessionCookieCandidates(r, cfg.SessionCookie)
 		if len(candidates) == 0 {
-			writeAuthError(w, http.StatusUnauthorized, "no session")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 			return
 		}
 		var sess *Session
@@ -413,10 +414,10 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 		}
 		if sess == nil {
 			if pending {
-				writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+				writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 				return
 			}
-			writeAuthError(w, http.StatusUnauthorized, "invalid session")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 			return
 		}
 
@@ -482,16 +483,16 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 		}
 		if email == "" || password == "" {
 			if isForm {
-				writeFormAuthError(w, r, http.StatusBadRequest, "credentials_required")
+				writeFormAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			} else {
-				writeAuthError(w, http.StatusBadRequest, "email and password required")
+				writeAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			}
 			return
 		}
 
 		store := c.mgr.UserStore()
 		if store == nil {
-			writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 			return
 		}
 
@@ -505,9 +506,9 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 
 		if err := ValidatePasswordStrength(password); err != nil {
 			if isForm {
-				writeFormAuthError(w, r, http.StatusBadRequest, "weak_password")
+				writeFormAuthError(w, r, http.StatusBadRequest, reasonPasswordTooShort)
 			} else {
-				writeAuthError(w, http.StatusBadRequest, "password must be at least 8 characters")
+				writeAuthError(w, r, http.StatusBadRequest, reasonPasswordTooShort)
 			}
 			return
 		}
@@ -516,7 +517,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 		// per-request cost, so neither branch is cheap to clock.
 		hash, err := HashPassword(password)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "password hashing failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasswordHashingFailed)
 			return
 		}
 
@@ -527,7 +528,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			// The old handler answered 409 "email already registered"
 			// here, reporting an account that may not exist; a real
 			// failure stays a 500 and stays visible.
-			writeAuthError(w, http.StatusInternalServerError, "registration failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonRegistrationFailed)
 			return
 		}
 
@@ -616,19 +617,41 @@ func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail
 }
 
 // writeAuthError is the shared error helper: it emits the canonical flat
-// envelope {"error","success","code"} with Content-Type application/json,
-// the shape framework/crud/crud.go's writeJSONError uses and the generated
-// SDKs and sdkdocs document. battery/auth keeps a local copy because
-// batteries may not import framework/crud.
-func writeAuthError(w http.ResponseWriter, status int, msg string) {
+// envelope {"error","success","code","reason"} with Content-Type
+// application/json, the shape framework/crud/crud.go's writeJSONError
+// uses and the generated SDKs and sdkdocs document. error is the reason
+// in the request's locale, reason its stable code. battery/auth keeps a
+// local copy because batteries may not import framework/crud.
+func writeAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params ...map[string]any) {
 	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{
-		"error":   msg,
+		"error":   reason.Text(requestContext(r), params...),
 		"success": false,
 		"code":    status,
+		"reason":  reason.Code(),
 	})
+}
+
+// writeAuthErrorFor answers err with its own phrase when it carries one,
+// and with frame otherwise: an unphrased error's text never reaches the
+// caller.
+func writeAuthErrorFor(w http.ResponseWriter, r *http.Request, status int, err error, frame i18n.Phrase) {
+	if p, ok := errors.AsType[i18n.Phrased](err); ok {
+		reason, params := p.Phrased()
+		writeAuthError(w, r, status, reason, params)
+		return
+	}
+	writeAuthError(w, r, status, frame)
+}
+
+// requestContext is r's context, or Background for a nil request.
+func requestContext(r *http.Request) context.Context {
+	if r == nil {
+		return context.Background()
+	}
+	return r.Context()
 }
 
 // invalidLinkBaseURL reports why base cannot serve as the origin of an

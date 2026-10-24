@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // buildTestRunner creates a Runner with token enabled (default) for
@@ -22,7 +24,7 @@ func buildTestRunner(t *testing.T, disableToken bool, completeVal *bool) *Runner
 		},
 		Steps: []Step{
 			{Name: "test", Fields: []Field{
-				{Name: "FOO", Label: "Foo"},
+				{Name: "FOO", Label: i18n.Define("setup_test.foo", "Foo")},
 			}, Run: func(_ context.Context, _ map[string]string) error { return nil }},
 		},
 	})
@@ -182,7 +184,7 @@ func TestToken_DisableTokenNoTokenInURL(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, true, &done)
 	_ = r.Handler(func() {}, nil, nil)
-	url := r.SetupURL("localhost:8080")
+	url := r.SetupURL("http", "localhost:8080")
 	if strings.Contains(url, "token=") {
 		t.Fatalf("DisableToken must not include token in URL, got %s", url)
 	}
@@ -193,7 +195,7 @@ func TestToken_URLIncludesToken(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, false, &done)
 	_ = r.Handler(func() {}, nil, nil)
-	url := r.SetupURL("localhost:8080")
+	url := r.SetupURL("http", "localhost:8080")
 	if !strings.Contains(url, "token="+r.token) {
 		t.Fatalf("expected token in URL, got %s", url)
 	}
@@ -319,7 +321,7 @@ func TestCookie_HTTPExchangeFlowWithJar(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, false, &done)
 	h := r.Handler(func() {}, nil, nil)
-	tok := extractTokenFromURL(t, r.SetupURL("127.0.0.1:8080"))
+	tok := extractTokenFromURL(t, r.SetupURL("http", "127.0.0.1:8080"))
 
 	server := httptest.NewServer(h)
 	defer server.Close()
@@ -364,7 +366,7 @@ func TestToken_SingleUse_SecondExchangeForbidden(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, false, &done)
 	h := r.Handler(func() {}, nil, nil)
-	tok := extractTokenFromURL(t, r.SetupURL("127.0.0.1:8080"))
+	tok := extractTokenFromURL(t, r.SetupURL("http", "127.0.0.1:8080"))
 
 	// First exchange succeeds.
 	w := doGet(h, "/setup?token="+tok)

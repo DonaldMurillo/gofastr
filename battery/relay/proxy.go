@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
@@ -159,7 +160,7 @@ func (r *Relay) handler(rt *routeRuntime) http.Handler {
 			tail := req.PathValue("rest")
 			if err := validateTail(tail, req.URL.RawPath != ""); err != nil {
 				r.logger.Warn("relay: refused hostile tail", "err", err.Error(), "path", req.URL.EscapedPath())
-				http.Error(w, "bad request", http.StatusBadRequest)
+				i18n.HTTPError(w, req, http.StatusBadRequest, i18n.StatusPhrase(http.StatusBadRequest))
 				return
 			}
 		}
@@ -167,7 +168,7 @@ func (r *Relay) handler(rt *routeRuntime) http.Handler {
 		// chunked bodies trip the reader mid-copy and surface through
 		// the proxy's error handler, which maps them to 413 too.
 		if req.ContentLength > rt.maxBody {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, req, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return
 		}
 		req.Body = http.MaxBytesReader(w, req.Body, rt.maxBody)
@@ -238,7 +239,7 @@ func forwardedProto(r *http.Request) string {
 func (r *Relay) proxyError(w http.ResponseWriter, req *http.Request, err error) {
 	var maxErr *http.MaxBytesError
 	if errors.As(err, &maxErr) {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		i18n.HTTPError(w, req, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 		return
 	}
 	if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {
@@ -246,11 +247,11 @@ func (r *Relay) proxyError(w http.ResponseWriter, req *http.Request, err error) 
 		// way every other log sink scrubs them, so a forged method
 		// cannot paint a forged line into the operator's tail.
 		r.logger.Warn("relay: upstream timeout", "method", url.PathEscape(req.Method), "path", req.URL.EscapedPath(), "err", err.Error())
-		http.Error(w, "upstream timeout", http.StatusGatewayTimeout)
+		i18n.HTTPError(w, req, http.StatusGatewayTimeout, reasonUpstreamTimeout)
 		return
 	}
 	r.logger.Warn("relay: upstream unreachable", "method", url.PathEscape(req.Method), "path", req.URL.EscapedPath(), "err", err.Error())
-	http.Error(w, "upstream unavailable", http.StatusBadGateway)
+	i18n.HTTPError(w, req, http.StatusBadGateway, reasonUpstreamUnavailable)
 }
 
 func isTimeoutError(err error) bool {

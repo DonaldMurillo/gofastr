@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -20,10 +22,19 @@ import (
 // Name is set via Define(); Fields declare the schema.
 // Timestamps is nil by default; Define resolves nil to true.
 type EntityConfig struct {
-	Name       string            // entity name (e.g. "users")
-	Table      string            // DB table name (defaults to snake_case of Name)
-	Fields     []schema.Field    // typed field definitions
-	Relations  []Relation        // entity relationships
+	Name      string         // entity name (e.g. "users")
+	Table     string         // DB table name (defaults to snake_case of Name)
+	Fields    []schema.Field // typed field definitions
+	Relations []Relation     // entity relationships
+
+	// PrimaryKey names the primary-key columns in order. Nil means the one
+	// column "id", which Define injects as a generated UUID unless Fields
+	// declares it. More than one column is a composite key: a join table
+	// keyed on the rows it links, (student_id, course_id). Define injects
+	// no "id" column when PrimaryKey leaves it out, and panics when a
+	// column is repeated or is not a declared field.
+	PrimaryKey []string
+
 	Endpoints  []Endpoint        // custom HTTP endpoints for this entity
 	Scope      *ScopeConfig      // ownership, tenancy, and soft-delete behavior
 	Pagination *PaginationConfig // list limits and keyset cursor shape
@@ -235,6 +246,12 @@ type Index struct {
 // are accepted. Handler is used for HTTP. MCPHandler is optional and is only
 // registered when MCP is true.
 //
+// The route runs Handler behind two gates, as the CRUD routes do: an
+// anonymous caller answers 401 unless Public is set, and a cross-site
+// request a form or a bodyless fetch could forge answers 403 on every
+// method but GET and HEAD. A per-caller response (not Public) also
+// carries Cache-Control: no-store unless Handler sets its own.
+//
 // Under framework.WithAPIPrefix a relative path resolves under the prefixed
 // table path. WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
 // at POST /api/posts/{id}/publish, alongside that entity's CRUD routes. An
@@ -270,14 +287,27 @@ type Endpoint struct {
 	// therefore role-checked over HTTP and ungated over MCP.
 	//
 	// When unset, the twin defaults to requiring an authenticated caller
-	// (framework.MCPRequireUser). Set MCPPublic to opt out of that default;
+	// (framework.MCPRequireUser). Set Public to opt out of that default;
 	// set this to something stricter, e.g. auth.MCPRole("editor").
 	MCPGate func(ctx context.Context) error `json:"-"`
 
-	// MCPPublic opts the MCP twin out of the default authenticated-caller
-	// gate, for an endpoint that really is anonymous over HTTP too. Ignored
-	// when MCPGate is set.
-	MCPPublic bool `json:"mcpPublic,omitempty"`
+	// Public opts both front doors out of the default authenticated-caller
+	// gate, for an endpoint that really is anonymous: the HTTP route serves
+	// a caller with no session, and the MCP twin runs without
+	// MCPRequireUser. MCPGate, when set, still decides the twin.
+	Public bool `json:"public,omitempty"`
+
+	// SDK marks an endpoint declared under endpoints: in
+	// gofastr.settings.yml. The generated Go client, JS SDK and CLI carry a
+	// typed call for it, and the SDK schema hash covers it. The derived
+	// entities/endpoints.gen.go sets it; a hand-registered endpoint leaves
+	// it false and the generated clients reach it through Do.
+	SDK bool `json:"sdk,omitempty"`
+
+	// Returns names what a successful call answers with, for the generated
+	// clients: an entity name ("orders"), "[]" and an entity name for a
+	// list of them, or "" for an empty object. Set with SDK.
+	Returns string `json:"returns,omitempty"`
 }
 
 // TenantColumn returns the tenant-scoping column name for this entity:
@@ -297,9 +327,8 @@ func (c EntityConfig) WithTimestamps(v bool) EntityConfig {
 
 // Entity represents a registered domain entity with its config and DB handle.
 type Entity struct {
-	Config     EntityConfig
-	DB         *sql.DB
-	PrimaryKey string // defaults to "id"
+	Config EntityConfig
+	DB     *sql.DB
 
 	// Version identifies the API version this entity is mounted under, when
 	// registered via App.GroupEntity. It is the route group's full prefix
@@ -335,7 +364,10 @@ func Define(name string, config EntityConfig) *Entity {
 		config.Table = toSnake(name)
 	}
 
-	// Inject id field if not already defined by user
+	config.PrimaryKey = slices.Clone(config.PrimaryKey)
+	keyCols := config.keyColumns()
+
+	// Inject the id field when the key uses it and Fields does not declare it.
 	hasID := false
 	for _, f := range config.Fields {
 		if f.Name == "id" {
@@ -343,7 +375,7 @@ func Define(name string, config EntityConfig) *Entity {
 			break
 		}
 	}
-	if !hasID {
+	if !hasID && slices.Contains(keyCols, "id") {
 		idField := schema.Field{
 			Name:         "id",
 			Type:         schema.UUID,
@@ -571,6 +603,8 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
+	config.checkKeyColumns()
+
 	// Cursor columns are a query surface too: they land in ORDER BY and in the
 	// keyset WHERE, and the emitted cursor token is base64 JSON of the raw
 	// value, reversible, not secret. A Hidden or NoQuery keyset column
@@ -589,21 +623,20 @@ func Define(name string, config EntityConfig) *Entity {
 	// less lets a column reach ORDER BY and the token without being checked:
 	// a composite silently gains the primary key as its tiebreak, so
 	// validating only the declared members missed a NoQuery `id` entirely.
-	// EntityConfig carries no primary key of its own; Entity.PrimaryKey and
-	// CrudHandler both default to "id", so that is the effective column.
+	// The key columns are the tiebreak and the default.
 	// normalizeSubConfigs has populated Pagination by here.
 	var cursorCols []string
 	switch {
 	case len(config.Pagination.CursorFields) > 0:
 		cursorCols = append(cursorCols, config.Pagination.CursorFields...)
-		cursorCols = append(cursorCols, "id") // auto-appended tiebreak
+		cursorCols = append(cursorCols, keyCols...) // auto-appended tiebreak
 	case config.Pagination.CursorField != "":
 		cursorCols = append(cursorCols, config.Pagination.CursorField)
 	default:
-		cursorCols = append(cursorCols, "id")
+		cursorCols = append(cursorCols, keyCols...)
 	}
 	for _, cf := range cursorCols {
-		declared := cf == "id" // the implicit primary key needs no declaration
+		declared := false
 		for i := range config.Fields {
 			f := config.Fields[i]
 			if f.Name != cf {
@@ -626,6 +659,7 @@ func Define(name string, config EntityConfig) *Entity {
 			panic(fmt.Sprintf("entity %q: cursor field %q is not a declared field", name, cf))
 		}
 	}
+	config.checkKeyServed()
 
 	// Derive a BelongsTo relation for every {Type: Relation} field that points
 	// at a target entity. Without this the field is only consumed for an
@@ -651,14 +685,125 @@ func Define(name string, config EntityConfig) *Entity {
 			config.Relations = append(config.Relations, BelongsTo(f.Name, f.To, f.Name))
 		}
 	}
+	return &Entity{Config: config}
+}
 
-	e := &Entity{
-		Config: config,
+// keyColumns is PrimaryKey, or "id" when it is nil. Only a raw
+// migrate.Table, which skips Define, holds an empty non-nil PrimaryKey:
+// a table with no key.
+func (c EntityConfig) keyColumns() []string {
+	if c.PrimaryKey == nil {
+		return []string{"id"}
 	}
-	if e.PrimaryKey == "" {
-		e.PrimaryKey = "id"
+	return c.PrimaryKey
+}
+
+// checkKeyColumns panics on keyColumnsErr.
+func (c EntityConfig) checkKeyColumns() {
+	if err := c.keyColumnsErr(); err != nil {
+		panic(err.Error())
 	}
-	return e
+}
+
+// keyColumnsErr refuses a primary key that names no column, repeats a
+// column, names one Fields does not declare, or cannot name a record
+// (checkRecordKey).
+func (c EntityConfig) keyColumnsErr() error {
+	if c.PrimaryKey != nil && len(c.PrimaryKey) == 0 {
+		return fmt.Errorf("entity %q: PrimaryKey names no column; leave it nil for \"id\"", c.Name)
+	}
+	seen := make(map[string]bool, len(c.PrimaryKey))
+	for _, col := range c.keyColumns() {
+		if seen[col] {
+			return fmt.Errorf("entity %q: primary key names %q twice", c.Name, col)
+		}
+		seen[col] = true
+		if !slices.ContainsFunc(c.Fields, func(f schema.Field) bool { return f.Name == col }) {
+			return fmt.Errorf("entity %q: primary key column %q is not a declared field", c.Name, col)
+		}
+	}
+	return c.checkRecordKey()
+}
+
+// CheckRecordKey reports whether the entity's key can name its records
+// by id: it has one, and every key column is keyable. Define panics on a
+// declared entity that fails it. A raw table registered for migration
+// (App.Table) skips Define and may key on any SQL type, so a surface
+// that serves such an entity's records by id checks it first.
+func (e *Entity) CheckRecordKey() error { return e.Config.checkRecordKey() }
+
+func (c EntityConfig) checkRecordKey() error {
+	keys := c.keyColumns()
+	if len(keys) == 0 {
+		return fmt.Errorf("entity %q has no primary key, so no id names one of its records", c.Name)
+	}
+	for _, col := range keys {
+		i := slices.IndexFunc(c.Fields, func(f schema.Field) bool { return f.Name == col })
+		if i >= 0 && !keyable(c.Fields[i]) {
+			return fmt.Errorf("entity %q: primary key column %q has a type whose values have more than one spelling, so one record would answer to several ids; key on a string, text, image, file, integer, enum, UUID or relation column with no RawType (an integer column may set an integer RawType)", c.Name, col)
+		}
+	}
+	return nil
+}
+
+// keyable reports whether column f can name a record. A record id is the
+// key's text, so each value needs exactly one spelling: text columns
+// match byte for byte and integer ids must be canonical decimal. A
+// float, decimal, bool, date, timestamp or JSON value does not: Postgres
+// reads 2024-1-2 as a DATE equal to 2024-01-02, and scans it back as a
+// time.Time that prints as neither. A RawType decides equality where
+// the portable type cannot see it (CITEXT folds case, a Postgres UUID
+// reads upper and lower case as one value), so only an integer column
+// may set one, and only to an integer type.
+func keyable(f schema.Field) bool {
+	switch f.Type {
+	case schema.String, schema.Text, schema.Int, schema.Enum, schema.UUID, schema.Relation, schema.Image, schema.File:
+	case schema.Float, schema.Decimal, schema.Bool, schema.Date, schema.Timestamp, schema.JSON:
+		return false
+	default:
+		return false
+	}
+	if f.RawType == "" {
+		return true
+	}
+	raw := strings.TrimSpace(f.RawType)
+	if f.Type != schema.Int || strings.ContainsFunc(raw, func(r rune) bool { return r > unicode.MaxASCII }) {
+		return false
+	}
+	switch strings.ToUpper(raw) {
+	case "INTEGER", "INT", "BIGINT", "SMALLINT", "INT2", "INT4", "INT8", "SERIAL", "BIGSERIAL", "SMALLSERIAL":
+		return true
+	}
+	return false
+}
+
+// checkKeyServed refuses a Hidden or NoQuery column in a composite key:
+// the API names such a record by every key value, and reads a set of
+// them back through key filters, so a row served without one, or a
+// filter refused on one, leaves the record unnamed. The default cursor
+// check already refuses one, since the key is its tiebreak; this covers
+// an entity paging on Pagination.CursorField. A one-column key routes by
+// path alone, and keeps its own posture. A MultiTenant table unique per
+// tenant keeps a generated id and enforces (tenant_id, code) with a
+// unique index instead.
+func (c EntityConfig) checkKeyServed() {
+	if err := c.keyServedErr(); err != nil {
+		panic(err.Error())
+	}
+}
+
+// keyServedErr is checkKeyServed's refusal as an error.
+func (c EntityConfig) keyServedErr() error {
+	keys := c.keyColumns()
+	if len(keys) < 2 {
+		return nil
+	}
+	for _, f := range c.Fields {
+		if (f.Hidden || f.NoQuery) && slices.Contains(keys, f.Name) {
+			return fmt.Errorf("entity %q: composite key column %q is Hidden or NoQuery, so the API cannot name its records; key on columns the API returns and filters, and enforce other uniqueness with a unique index", c.Name, f.Name)
+		}
+	}
+	return nil
 }
 
 func (c EntityConfig) normalizeSubConfigs() EntityConfig {
@@ -748,7 +893,6 @@ func (e *Entity) Validate() error {
 	if len(e.Config.Fields) == 0 {
 		return fmt.Errorf("entity %q: must have at least one field", e.Config.Name)
 	}
-
 	seen := make(map[string]bool, len(e.Config.Fields))
 	// wireKeys maps each field's wire key (WireName when set, else the column
 	// name) back to the column that claimed it. A wire key addresses exactly
@@ -795,6 +939,21 @@ func (e *Entity) Validate() error {
 					"entity %q: fields %q and %q both resolve to wire key %q: a wire key addresses exactly one column; change one field's WireName",
 					e.Config.Name, owner, f.Name, wk)
 			}
+		}
+		// A column name is a key too: entityui's forms post fields by
+		// name, and a body key resolves through the wire-key map first. A
+		// column named as another field's wire key would write that field.
+		for _, wk := range claims {
+			if wk != f.Name && seen[wk] {
+				return fmt.Errorf(
+					"entity %q: field %q's wire key %q is field %q's column name: a body naming that column would write %q; change one of them",
+					e.Config.Name, f.Name, wk, wk, f.Name)
+			}
+		}
+		if owner, clash := wireKeys[f.Name]; clash && owner != f.Name {
+			return fmt.Errorf(
+				"entity %q: field %q's wire key %q is field %q's column name: a body naming that column would write %q; change one of them",
+				e.Config.Name, owner, f.Name, f.Name, owner)
 		}
 		for _, wk := range claims {
 			wireKeys[wk] = f.Name
@@ -843,7 +1002,7 @@ func (e *Entity) Validate() error {
 		}
 	}
 	if e.Config.States != nil {
-		if err := e.Config.States.validate(e.Config, e.PrimaryKey); err != nil {
+		if err := e.Config.States.validate(e.Config); err != nil {
 			return err
 		}
 	}

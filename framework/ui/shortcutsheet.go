@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -47,14 +48,49 @@ type ShortcutSheetConfig struct {
 	Ctx        context.Context
 }
 
-// ShortcutSheet returns the trigger and the modal preset.
+// ShortcutSheet returns the trigger and the modal preset. The sheet's
+// own words (its close button, the keycaps, the default title) follow
+// the reader's locale on each request. Items and TriggerLabel are said
+// as given, so a sheet whose rows should be translated mounts
+// ShortcutSheetFunc instead.
 func ShortcutSheet(cfg ShortcutSheetConfig) (render.HTML, *widget.Builder) {
+	return shortcutSheet(cfg, nil)
+}
+
+// ShortcutSheetFunc is ShortcutSheet for a sheet built per request: the
+// sheet's body calls build with each request's context, so its rows and
+// title are the reader's. Mount the returned preset once, and render the
+// trigger in the chrome with ShortcutSheet(build(r.Context())). The
+// widget's identity (Name, Shortcut, FallbackHref) comes from
+// build(context.Background()).
+func ShortcutSheetFunc(build func(ctx context.Context) ShortcutSheetConfig) *widget.Builder {
+	if build == nil {
+		panic("ui.ShortcutSheetFunc: build is nil")
+	}
+	_, b := shortcutSheet(build(context.Background()), build)
+	return b
+}
+
+// checkShortcutSheet panics on a config no sheet can draw.
+func checkShortcutSheet(cfg ShortcutSheetConfig) {
 	if len(cfg.Items) == 0 {
 		panic("ui: ShortcutSheet requires Items")
 	}
 	if !strings.HasPrefix(cfg.FallbackHref, "/") || strings.HasPrefix(cfg.FallbackHref, "//") || strings.ContainsRune(cfg.FallbackHref, '\\') {
 		panic("ui: ShortcutSheet FallbackHref must be same-origin and start with /, not " + cfg.FallbackHref)
 	}
+}
+
+// shortcutSheetTitle is the sheet's name: TriggerLabel, else the phrase.
+func shortcutSheetTitle(ctx context.Context, cfg ShortcutSheetConfig) string {
+	if cfg.TriggerLabel != "" {
+		return cfg.TriggerLabel
+	}
+	return i18nui.ShortcutSheetTitle.Text(ctx)
+}
+
+func shortcutSheet(cfg ShortcutSheetConfig, build func(context.Context) ShortcutSheetConfig) (render.HTML, *widget.Builder) {
+	checkShortcutSheet(cfg)
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -67,10 +103,7 @@ func ShortcutSheet(cfg ShortcutSheetConfig) (render.HTML, *widget.Builder) {
 	if shortcut == "" {
 		shortcut = "?"
 	}
-	label := cfg.TriggerLabel
-	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyShortcutSheetTitle)
-	}
+	label := shortcutSheetTitle(ctx, cfg)
 	cls := "fui-visually-hidden"
 	if cfg.TriggerVisible {
 		cls = "fui-shortcut-sheet__trigger"
@@ -88,24 +121,32 @@ func ShortcutSheet(cfg ShortcutSheetConfig) (render.HTML, *widget.Builder) {
 	if cfg.TriggerVisible {
 		trigger = shortcutSheetStyle.WrapHTML(trigger)
 	}
-	body := &shortcutSheetSlot{
-		name:  name,
-		title: label,
-		close: i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
-		items: append([]ShortcutItem{}, cfg.Items...),
-	}
+	body := requestSlot{build: func(ctx context.Context) component.Component {
+		c := cfg
+		if build != nil {
+			c = build(ctx)
+			checkShortcutSheet(c)
+		}
+		return &shortcutSheetSlot{
+			name:  name,
+			title: shortcutSheetTitle(ctx, c),
+			close: i18nui.CommandPaletteClose.Text(ctx),
+			items: append([]ShortcutItem{}, c.Items...),
+			ctx:   ctx,
+		}
+	}}
 	return trigger, preset.Modal(name).Hidden().Role("dialog").LabelledBy(name+"-title").Slot("body", body)
 }
 
 // ShortcutList draws the rows a sheet holds, for a page of its own (the
 // sheet's FallbackHref) or anywhere else: each chord as keycaps beside
-// its label.
-func ShortcutList(items []ShortcutItem) render.HTML {
+// its label, the keycaps said in ctx's language.
+func ShortcutList(ctx context.Context, items []ShortcutItem) render.HTML {
 	rows := make([]render.HTML, 0, len(items))
 	for _, it := range items {
 		rows = append(rows, render.Tag("div", map[string]string{"class": "fui-shortcut-list__row", "data-cui-internal": ""},
 			render.Tag("dt", map[string]string{"class": "fui-shortcut-list__label"}, render.Text(it.Label)),
-			render.Tag("dd", map[string]string{"class": "fui-shortcut-list__keys"}, ShortcutHint(ShortcutHintConfig{Chord: it.Chord})),
+			render.Tag("dd", map[string]string{"class": "fui-shortcut-list__keys"}, ShortcutHint(ShortcutHintConfig{Chord: it.Chord, Ctx: ctx})),
 		))
 	}
 	return shortcutListStyle.WrapHTML(render.Tag("dl", map[string]string{"class": "fui-shortcut-list"}, rows...))
@@ -114,6 +155,7 @@ func ShortcutList(items []ShortcutItem) render.HTML {
 type shortcutSheetSlot struct {
 	name, title, close string
 	items              []ShortcutItem
+	ctx                context.Context
 }
 
 func (s *shortcutSheetSlot) Render() render.HTML {
@@ -126,7 +168,7 @@ func (s *shortcutSheetSlot) Render() render.HTML {
 			"aria-label":      s.close,
 		}, Icon("close", IconConfig{Size: "16"})),
 	)
-	return shortcutSheetStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-shortcut-sheet"}, head, ShortcutList(s.items)))
+	return shortcutSheetStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-shortcut-sheet"}, head, ShortcutList(s.ctx, s.items)))
 }
 
 var (

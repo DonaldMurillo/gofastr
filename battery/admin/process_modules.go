@@ -10,12 +10,11 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -57,16 +56,16 @@ func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render
 	modules := b.cfg.ProcessModules.List()
 	manage := b.callerHoldsPermission(ctx, modulesManage)
 	cols := []ui.Column{
-		{Key: "module", Header: i18nui.T(ctx, i18nui.KeyAdminColModule)},
-		{Key: "trust", Header: i18nui.T(ctx, i18nui.KeyAdminColTrust)},
-		{Key: "state", Header: i18nui.T(ctx, i18nui.KeyAdminColState)},
-		{Key: "gen", Header: i18nui.T(ctx, i18nui.KeyAdminColGeneration), Align: "end"},
-		{Key: "restarts", Header: i18nui.T(ctx, i18nui.KeyAdminColRestarts), Align: "end"},
-		{Key: "routes", Header: i18nui.T(ctx, i18nui.KeyAdminColRoutes), Align: "end"},
-		{Key: "exit", Header: i18nui.T(ctx, i18nui.KeyAdminColLastExit)},
+		{Key: "module", Header: i18nui.AdminColModule.Text(ctx)},
+		{Key: "trust", Header: i18nui.AdminColTrust.Text(ctx)},
+		{Key: "state", Header: i18nui.AdminColState.Text(ctx)},
+		{Key: "gen", Header: i18nui.AdminColGeneration.Text(ctx), Align: "end"},
+		{Key: "restarts", Header: i18nui.AdminColRestarts.Text(ctx), Align: "end"},
+		{Key: "routes", Header: i18nui.AdminColRoutes.Text(ctx), Align: "end"},
+		{Key: "exit", Header: i18nui.AdminColLastExit.Text(ctx)},
 	}
 	if manage {
-		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions)})
+		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.AdminColActions.Text(ctx)})
 	}
 	rows := make([]ui.Row, len(modules))
 	for i, m := range modules {
@@ -74,9 +73,9 @@ func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render
 			"module":   moduleNameCell(m),
 			"trust":    render.Text(m.TrustTier.String()),
 			"state":    moduleStateCell(ctx, m),
-			"gen":      moduleGenerationCell(m),
-			"restarts": render.Text(strconv.Itoa(m.RestartCount)),
-			"routes":   render.Text(fmt.Sprintf("%d / %d", m.RouteCount, m.ToolCount)),
+			"gen":      moduleGenerationCell(ctx, m),
+			"restarts": render.Text(i18n.Number(ctx, m.RestartCount)),
+			"routes":   render.Text(i18n.Number(ctx, m.RouteCount) + " / " + i18n.Number(ctx, m.ToolCount)),
 			"exit":     moduleLastExitCell(m.LastExit),
 		}
 		if manage {
@@ -86,18 +85,18 @@ func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminModules),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminModulesSub),
+			Title:    i18nui.AdminModules.Text(ctx),
+			Subtitle: i18nui.AdminModulesSub.Text(ctx),
 		}),
 		resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
 			Columns:       cols,
 			Rows:          rows,
-			Caption:       i18nui.T(ctx, i18nui.KeyAdminModules),
+			Caption:       i18nui.AdminModules.Text(ctx),
 			CaptionHidden: true,
 			Responsive:    ui.ResponsiveScroll,
 			Ctx:           ctx,
-			Empty:         ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoModules), HeadingLevel: 2},
+			Empty:         ui.EmptyStateConfig{Title: i18nui.AdminNoModules.Text(ctx), HeadingLevel: 2},
 		}),
 	)
 }
@@ -125,31 +124,31 @@ func moduleStateCell(ctx context.Context, m framework.ProcessModuleInfo) render.
 	default:
 		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: m.State.String(), Variant: ui.StatusWarning}))
 	}
-	items = append(items, ui.Muted(render.Text(i18nui.T(ctx, moduleServes(m.State)))))
+	items = append(items, ui.Muted(render.Text((moduleServes(m.State)).Text(ctx))))
 	if m.CircuitOpen {
-		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminCircuitOpen), Variant: ui.StatusDanger}))
+		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.AdminCircuitOpen.Text(ctx), Variant: ui.StatusDanger}))
 	}
 	if m.LeaseFailing {
-		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminLeaseFailing), Variant: ui.StatusDanger}))
+		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.AdminLeaseFailing.Text(ctx), Variant: ui.StatusDanger}))
 	}
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, items...)
 }
 
 // moduleServes is what a module's routes answer in state.
-func moduleServes(state framework.ProcessState) i18nui.Key {
+func moduleServes(state framework.ProcessState) i18n.Phrase {
 	switch state {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent:
-		return i18nui.KeyAdminServes404
+		return i18nui.AdminServes404
 	case framework.StateReady:
-		return i18nui.KeyAdminServing
+		return i18nui.AdminServing
 	}
-	return i18nui.KeyAdminServes503
+	return i18nui.AdminServes503
 }
 
 // moduleGenerationCell is desired / observed; a lagging observed
 // generation means convergence is in flight.
-func moduleGenerationCell(m framework.ProcessModuleInfo) render.HTML {
-	text := fmt.Sprintf("%d / %d", m.DesiredGeneration, m.ObservedGeneration)
+func moduleGenerationCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
+	text := i18n.Number(ctx, m.DesiredGeneration) + " / " + i18n.Number(ctx, m.ObservedGeneration)
 	if m.ObservedGeneration < m.DesiredGeneration {
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: ui.StatusDanger})
 	}
@@ -177,28 +176,28 @@ func moduleIsDisabled(state framework.ProcessState) bool {
 // moduleActions are one module's levers.
 func (b *Battery) moduleActions(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
 	page := b.cfg.PathPrefix + "/modules"
-	op := func(action string, label i18nui.Key, variant ui.ButtonVariant, confirm string) render.HTML {
+	op := func(action string, label i18n.Phrase, variant ui.ButtonVariant, confirm string) render.HTML {
 		return b.opForm(ctx, opSpec{
 			path: page + "/_" + action, page: page,
-			label: i18nui.T(ctx, label), variant: variant, small: true, confirm: confirm,
+			label: label.Text(ctx), variant: variant, small: true, confirm: confirm,
 			fields: map[string]string{"module": m.Name},
 		})
 	}
-	vars := map[string]string{"module": m.Name}
+	vars := map[string]any{"module": m.Name}
 	var forms []render.HTML
 	if moduleIsDisabled(m.State) {
-		forms = append(forms, op("enable", i18nui.KeyAdminEnable, ui.ButtonSecondary, ""))
+		forms = append(forms, op("enable", i18nui.AdminEnable, ui.ButtonSecondary, ""))
 	} else {
-		forms = append(forms, op("disable", i18nui.KeyAdminDisable, ui.ButtonDanger, i18nui.TVars(ctx, i18nui.KeyAdminDisableConfirm, vars)))
+		forms = append(forms, op("disable", i18nui.AdminDisable, ui.ButtonDanger, i18nui.AdminDisableConfirm.Text(ctx, vars)))
 	}
-	forms = append(forms, op("bump", i18nui.KeyAdminBump, ui.ButtonGhost, ""))
+	forms = append(forms, op("bump", i18nui.AdminBump, ui.ButtonGhost, ""))
 	forms = append(forms, b.opForm(ctx, opSpec{
 		path: page + "/_revoke", page: page,
-		label: i18nui.T(ctx, i18nui.KeyAdminRevoke), variant: ui.ButtonDanger, small: true,
-		confirm: i18nui.TVars(ctx, i18nui.KeyAdminRevokeConfirm, vars),
+		label: i18nui.AdminRevoke.Text(ctx), variant: ui.ButtonDanger, small: true,
+		confirm: i18nui.AdminRevokeConfirm.Text(ctx, vars),
 		fields:  map[string]string{"module": m.Name},
 		body: []render.HTML{ui.TextField(ui.TextFieldConfig{
-			Name: "grant", Label: i18nui.T(ctx, i18nui.KeyAdminCapability), ID: "admin-grant-" + m.Name,
+			Name: "grant", Label: i18nui.AdminCapability.Text(ctx), ID: "admin-grant-" + m.Name,
 			Placeholder: "resource:verb", Required: true,
 		})},
 	}))

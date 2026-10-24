@@ -34,7 +34,7 @@ func rhHandler(t *testing.T, parent *entity.Entity, childName string, reg *hook.
 	t.Helper()
 	return &CrudHandler{
 		Entity:     parent,
-		PrimaryKey: "id",
+		PrimaryKey: []string{"id"},
 		ChildHooks: func(name string) *hook.HookRegistry {
 			if name == childName {
 				return reg
@@ -53,7 +53,7 @@ func rhNode(target *entity.Entity, rel entity.Relation) *IncludeNode {
 func TestReattachInPlaceIsANoOp(t *testing.T) {
 	row := map[string]any{"id": "a", "cardNumber": "****"}
 	orig := []map[string]any{row}
-	if err := reattachHookResults("kids", "id", orig, []map[string]any{row}); err != nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{row}); err != nil {
 		t.Fatalf("in-place mutation should fold cleanly: %v", err)
 	}
 	if orig[0]["cardNumber"] != "****" {
@@ -68,7 +68,7 @@ func TestReattachFoldsProjectionIntoAttachedRow(t *testing.T) {
 	row := map[string]any{"id": "a", "cardNumber": "4111", "extra": 1}
 	orig := []map[string]any{row}
 	proj := []map[string]any{{"id": "a"}}
-	if err := reattachHookResults("kids", "id", orig, proj); err != nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, proj); err != nil {
 		t.Fatalf("projection should fold: %v", err)
 	}
 	if _, still := row["cardNumber"]; still {
@@ -81,7 +81,7 @@ func TestReattachFoldsProjectionIntoAttachedRow(t *testing.T) {
 
 func TestReattachRefusesRowCountChange(t *testing.T) {
 	orig := []map[string]any{{"id": "a"}, {"id": "b"}}
-	err := reattachHookResults("kids", "id", orig, []map[string]any{{"id": "a"}})
+	err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{{"id": "a"}})
 	if err == nil {
 		t.Fatal("dropping a row must fail the request, not quietly serve the rest")
 	}
@@ -101,7 +101,7 @@ func TestReattachAllowsReorderWithoutCorruption(t *testing.T) {
 	b := map[string]any{"id": "b"}
 	c := map[string]any{"id": "c"}
 	orig := []map[string]any{a, b, c}
-	if err := reattachHookResults("kids", "id", orig, []map[string]any{c, b, a}); err != nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{c, b, a}); err != nil {
 		t.Fatalf("a sorting child hook must not fail the request: %v", err)
 	}
 	for i, want := range []string{"a", "b", "c"} {
@@ -127,7 +127,7 @@ func TestReattachFoldsReorderedProjections(t *testing.T) {
 		{"id": "b", "secret": "****"},
 		{"id": "a", "secret": "****"},
 	}
-	if err := reattachHookResults("kids", "id", orig, returned); err != nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, returned); err != nil {
 		t.Fatalf("a hook that projects and sorts must fold cleanly: %v", err)
 	}
 	for _, row := range orig {
@@ -148,7 +148,7 @@ func TestReattachFoldsReorderedProjections(t *testing.T) {
 func TestReattachRefusesProjectionWithoutID(t *testing.T) {
 	a := map[string]any{"id": "a", "secret": "S"}
 	orig := []map[string]any{a}
-	err := reattachHookResults("kids", "id", orig, []map[string]any{{"secret": "****"}})
+	err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{{"secret": "****"}})
 	if err == nil {
 		t.Fatal("a projection that drops the primary key cannot be folded")
 	}
@@ -160,7 +160,7 @@ func TestReattachRefusesProjectionWithoutID(t *testing.T) {
 // A row the loader never produced cannot be introduced through the hook.
 func TestReattachRefusesUnknownRow(t *testing.T) {
 	orig := []map[string]any{{"id": "a"}}
-	if err := reattachHookResults("kids", "id", orig, []map[string]any{{"id": "zzz"}}); err == nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{{"id": "zzz"}}); err == nil {
 		t.Fatal("an include must not be able to introduce a row the query did not return")
 	}
 }
@@ -170,14 +170,14 @@ func TestReattachRefusesDuplicateRow(t *testing.T) {
 	a := map[string]any{"id": "a"}
 	b := map[string]any{"id": "b"}
 	orig := []map[string]any{a, b}
-	if err := reattachHookResults("kids", "id", orig, []map[string]any{a, a}); err == nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{a, a}); err == nil {
 		t.Fatal("the same row returned twice must be refused")
 	}
 }
 
 func TestReattachRefusesNilRow(t *testing.T) {
 	orig := []map[string]any{{"id": "a"}}
-	if err := reattachHookResults("kids", "id", orig, []map[string]any{nil}); err == nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{nil}); err == nil {
 		t.Fatal("a nil'd row must fail rather than serialise as null")
 	}
 }
@@ -205,7 +205,7 @@ func TestFoldHookRowRejectsNil(t *testing.T) {
 // The degraded write response carries the primary key and nothing else, under
 // the JSON casing the rest of the body uses.
 func TestIdentityOnlyKeepsOnlyThePrimaryKey(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	got := ch.identityOnly(map[string]any{"id": "r1", "secret": "S", "other": 2})
 	if len(got) != 1 || got["id"] != "r1" {
 		t.Fatalf("identityOnly = %#v, want only the id", got)
@@ -213,7 +213,7 @@ func TestIdentityOnlyKeepsOnlyThePrimaryKey(t *testing.T) {
 }
 
 func TestIdentityOnlyWithoutAPrimaryKeyIsEmpty(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	if got := ch.identityOnly(map[string]any{"secret": "S"}); len(got) != 0 {
 		t.Fatalf("identityOnly = %#v; with no id present it must not fall back to the row", got)
 	}
@@ -222,7 +222,7 @@ func TestIdentityOnlyWithoutAPrimaryKeyIsEmpty(t *testing.T) {
 // ---- requestFrom / hookRequest --------------------------------------------
 
 func TestRequestFromPrefersTheInFlightRequest(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	real := httptest.NewRequest(http.MethodGet, "/things?role=admin", nil)
 	got := ch.requestFrom(withRealRequest(context.Background(), real))
 	if got != real {
@@ -234,7 +234,7 @@ func TestRequestFromPrefersTheInFlightRequest(t *testing.T) {
 // The synthetic fallback must not carry the read-hook opt-in, or a hook that
 // reads through p.Request.Context() re-enters itself.
 func TestRequestFromStripsTheOptIn(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	got := ch.requestFrom(WithReadHooks(context.Background()))
 	if readHooksEnabled(got.Context()) {
 		t.Fatal("the synthetic request carried the opt-in; a hook reading through it recurses")
@@ -530,7 +530,7 @@ func TestApplyChildReadHooksHandlesMissingRegistry(t *testing.T) {
 
 	ch := &CrudHandler{
 		Entity:     parent,
-		PrimaryKey: "id",
+		PrimaryKey: []string{"id"},
 		ChildHooks: func(string) *hook.HookRegistry { return nil },
 	}
 	rows := []map[string]any{{"id": "p1", "kids": []map[string]any{{"id": "k1"}}}}
@@ -584,10 +584,10 @@ func TestApplyChildReadHooksConvertsMultiWordRelationName(t *testing.T) {
 func TestReattachWithoutAPrimaryKeyColumn(t *testing.T) {
 	a := map[string]any{"label": "x"}
 	orig := []map[string]any{a}
-	if err := reattachHookResults("kids", "id", orig, []map[string]any{a}); err != nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{a}); err != nil {
 		t.Fatalf("an in-place edit needs no id to fold: %v", err)
 	}
-	err := reattachHookResults("kids", "id", orig, []map[string]any{{"label": "y"}})
+	err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{{"label": "y"}})
 	if err == nil {
 		t.Fatal("a replacement cannot be matched when the rows carry no id; it must be refused")
 	}
@@ -600,7 +600,7 @@ func TestReattachWithoutAPrimaryKeyColumn(t *testing.T) {
 func TestReattachWithEmptyPKKey(t *testing.T) {
 	a := map[string]any{"id": "a"}
 	orig := []map[string]any{a}
-	if err := reattachHookResults("kids", "", orig, []map[string]any{{"id": "a"}}); err == nil {
+	if err := reattachHookResults("kids", nil, orig, []map[string]any{{"id": "a"}}); err == nil {
 		t.Fatal("with no primary-key name there is nothing to match a replacement against")
 	}
 }
@@ -618,7 +618,7 @@ func TestReattachDoesNotMutateBeforeARefusal(t *testing.T) {
 		{"id": "a", "secret": "****"}, // valid replacement
 		{"id": "zzz"},                 // refused: not among the eager-loaded rows
 	}
-	if err := reattachHookResults("kids", "id", orig, returned); err == nil {
+	if err := reattachHookResults("kids", []string{"id"}, orig, returned); err == nil {
 		t.Fatal("an unknown id must be refused")
 	}
 	if a["secret"] != "S1" || b["secret"] != "S2" {

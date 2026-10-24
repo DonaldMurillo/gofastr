@@ -11,11 +11,13 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -48,7 +50,9 @@ type MagicLinkConfig struct {
 	// Note: MagicLinkEmailSender's interface still takes (to, link).
 	// Implementations decide whether to wrap the link in HTML; this
 	// hook is the bridge for ones that just blast the body verbatim.
-	BodyTemplate func(url string) string
+	// ctx is the request's, so it carries the reader's locale: render
+	// the body from your phrases with it (i18n.Phrase.Text).
+	BodyTemplate func(ctx context.Context, url string) string
 
 	// BaseURL is the application base URL used to construct magic links
 	// (e.g. "http://localhost:8080").
@@ -83,8 +87,10 @@ type MagicLinkConfig struct {
 	// too and should not pay for it.
 	//
 	// The form MUST POST `token` back to the same path. See
-	// ConfirmPageData.
-	ConfirmPage func(ConfirmPageData) []byte
+	// ConfirmPageData. ctx is the request's: it carries the caller's
+	// locale, so the page's phrases resolve in the caller's language and
+	// i18n.DocLang(ctx) is its <html lang>.
+	ConfirmPage func(ctx context.Context, d ConfirmPageData) []byte
 
 	// DevMode permits the plugin to operate without an EmailSender by
 	// logging the magic-link URL to stdout. Without this flag, a nil
@@ -431,24 +437,24 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	var cerr error
 	body.Email, cerr = p.mgr.canonicalizeEmail(body.Email)
 	if cerr != nil {
-		writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+		writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
 		return
 	}
 	if body.Email == "" {
-		writeAuthError(w, http.StatusBadRequest, "email is required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonEmailIsRequired)
 		return
 	}
 	// The address rides inside the token and is handed to the sender, so
 	// an oversized one is carried all the way into delivery unless it is
 	// refused here. Length is independent of whether the account exists,
 	// so this opens no enumeration oracle.
-	if !emailWithinLimit(w, body.Email) {
+	if !emailWithinLimit(w, r, body.Email) {
 		return
 	}
 
 	token, err := createPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, body.Email, p.config.TokenTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to create token")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
 		return
 	}
 
@@ -462,10 +468,10 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	case p.config.EmailSender != nil:
 		linkBody := magicLinkURL
 		if p.config.BodyTemplate != nil {
-			linkBody = p.config.BodyTemplate(magicLinkURL)
+			linkBody = p.config.BodyTemplate(r.Context(), magicLinkURL)
 		}
 		if err := p.config.EmailSender.SendMagicLink(r.Context(), body.Email, linkBody); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to send email")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSendEmail)
 			return
 		}
 	case p.config.DevMode:
@@ -486,7 +492,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		// Fail-closed. The operator forgot to wire EmailSender and didn't
 		// opt into DevMode, better a 503 than silently leaking tokens.
-		writeAuthError(w, http.StatusServiceUnavailable, "magic link delivery not configured")
+		writeAuthError(w, r, http.StatusServiceUnavailable, reasonMagicLinkDeliveryNotConfigured)
 		return
 	}
 
@@ -499,7 +505,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
-		"message": "magic link sent",
+		"message": reasonMagicLinkSent.Text(r.Context()),
 		"success": true,
 	})
 }
@@ -520,12 +526,10 @@ type ConfirmPageData struct {
 	// CSRFField is a ready-to-embed hidden input carrying the CSRF
 	// token, or "" when the route is not behind CSRF middleware.
 	//
-	// A custom ConfirmPage MUST render this inside its form. It exists
-	// because ConfirmPageData carries no request and no context, so a
-	// custom page had no way to reach CSRFInputHTML, which meant that
+	// A custom ConfirmPage MUST render this inside its form. Without it,
 	// with auth.CSRF() mounted (WithBFFPosture does this app-wide), the
-	// only button on the confirmation page returned 403, and passwordless
-	// sign-in was unreachable.
+	// only button on the confirmation page returns 403 and passwordless
+	// sign-in is unreachable.
 	CSRFField template.HTML
 }
 
@@ -546,7 +550,7 @@ type ConfirmPageData struct {
 func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		writeAuthError(w, http.StatusUnauthorized, "token is required")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonTokenIsRequired)
 		return
 	}
 	// Peek, never redeem: the token has to survive for the POST, and a
@@ -556,7 +560,7 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 	if peeker, ok := p.tokenStore.(MagicLinkTokenPeeker); ok {
 		got, err := peeker.PeekToken(r.Context(), token)
 		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 			return
 		}
 		// A token from another flow reads as unknown here rather than
@@ -564,7 +568,7 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 		// display a reset token's userID as the address to sign in as.
 		addr, ok := peekPurposePayload(got, purposeMagicLink)
 		if !ok {
-			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 			return
 		}
 		email = addr
@@ -586,9 +590,9 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 	}
 	var body []byte
 	if p.config.ConfirmPage != nil {
-		body = p.config.ConfirmPage(data)
+		body = p.config.ConfirmPage(r.Context(), data)
 	} else {
-		body = defaultConfirmPage(data)
+		body = defaultConfirmPage(r.Context(), data)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -601,11 +605,23 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 
 // defaultConfirmPage is the unstyled fallback. It ships no CSS and no
 // class names: styling belongs to the app, which supplies
-// MagicLinkConfig.ConfirmPage built from the design system.
-func defaultConfirmPage(d ConfirmPageData) []byte {
-	who := "this account"
+// MagicLinkConfig.ConfirmPage built from the design system. Its words
+// are phrases in the caller's locale, and the document declares that
+// language and its direction.
+func defaultConfirmPage(ctx context.Context, d ConfirmPageData) []byte {
+	// The address is what lets a user notice a link meant for someone
+	// else, so it stays emphasised wherever the translation puts it: the
+	// sentence is escaped whole, then the escaped address inside it is
+	// wrapped. Both pieces are escaped, so the wrap adds no markup the
+	// requester controls.
+	who := confirmThisAccount.Text(ctx)
 	if d.Email != "" {
-		who = html.EscapeString(d.Email)
+		who = d.Email
+	}
+	whoHTML := html.EscapeString(who)
+	ask := html.EscapeString(confirmAs.Text(ctx, map[string]any{"who": who}))
+	if d.Email != "" {
+		ask = strings.Replace(ask, whoHTML, "<strong>"+whoHTML+"</strong>", 1)
 	}
 	// action is a URL attribute: HTML escaping is scheme-blind, so the
 	// value goes through the one scheme allow-list (urlsafe.CleanAnchor,
@@ -614,23 +630,25 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 	// somehow fails the allow-list renders an empty action, which posts
 	// to the current URL and is refused by the verify handler.
 	action := urlsafe.CleanAnchor(d.Action)
+	lang := i18n.DocLang(ctx)
+	title := html.EscapeString(confirmTitle.Text(ctx))
 	return []byte(`<!doctype html>
-<html lang="en">
+<html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Confirm sign-in</title>
+<title>` + title + `</title>
 </head>
 <body>
 <main>
-<h1>Confirm sign-in</h1>
-<p>Continue to sign in as <strong>` + who + `</strong>?</p>
-<p>If you did not request this link, close this page: someone else may be trying to sign you into their account.</p>
+<h1>` + title + `</h1>
+<p>` + ask + `</p>
+<p>` + html.EscapeString(confirmWarning.Text(ctx)) + `</p>
 <form method="post" action="` + html.EscapeString(action) + `">
 <input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
 ` + string(d.CSRFField) + `
-<button type="submit">Sign in</button>
+<button type="submit">` + html.EscapeString(confirmSubmit.Text(ctx)) + `</button>
 </form>
 </main>
 </body>
@@ -657,10 +675,10 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return
 		}
-		writeAuthError(w, http.StatusBadRequest, "invalid form body")
+		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 		return
 	}
 	token := r.PostFormValue("token")
@@ -668,20 +686,20 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		token = r.URL.Query().Get("token")
 	}
 	if token == "" {
-		writeAuthError(w, http.StatusUnauthorized, "token is required")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonTokenIsRequired)
 		return
 	}
 
 	email, err := redeemPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, token)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 
 	// Find or create user
 	userStore := p.mgr.UserStore()
 	if userStore == nil {
-		writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 		return
 	}
 
@@ -691,7 +709,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// NOT silently auto-create a user, that would mask the failure
 		// AND let an attacker provoke account creation by tripping a
 		// transient lookup error.
-		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
 	if findErr != nil {
@@ -707,7 +725,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, p.mgr.DefaultRoles())
 		}
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to create user")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateUser)
 			return
 		}
 		// The redeemed token proved the mailbox. A failure leaves the
@@ -715,7 +733,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// is a no-op on an account nothing else has touched.
 		if verifier, ok := userStore.(EmailVerifier); ok {
 			if err := verifier.MarkEmailVerified(r.Context(), user.GetID()); err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "failed to mark email verified")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToMarkEmailVerified)
 				return
 			}
 		}
@@ -731,20 +749,19 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// owner's password on every magic link.
 		checker, ok := userStore.(EmailVerifiedChecker)
 		if !ok {
-			writeAuthError(w, http.StatusInternalServerError,
-				"user store does not implement EmailVerifiedChecker")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoVerifiedChecker)
 			return
 		}
 		verified, err := checker.IsEmailVerified(r.Context(), user.GetID())
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 			return
 		}
 		if !verified {
 			if err := p.mgr.claimAccount(r.Context(), user.GetID(), "magic_link", remoteHost(r), true); err != nil {
 				slog.Warn("magic-link account claim failed",
 					"plugin", "magic-link", "user_hash", hashedIdentifier(user.GetID()), "err", err)
-				writeAuthError(w, http.StatusInternalServerError, "account claim failed")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonAccountClaimFailed)
 				return
 			}
 		}
@@ -758,7 +775,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	cfg := p.mgr.Config()
 	sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "session create failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 		return
 	}
 	// Set session cookie through the one mint helper: SameSite=Strict,

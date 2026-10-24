@@ -460,8 +460,13 @@ func (s *Server) writeStatus(w http.ResponseWriter, status int, id json.RawMessa
 	}
 	b, err := json.Marshal(resp)
 	if err != nil {
-		// One of the fixed error shapes; unreachable in practice.
-		http.Error(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal error"}}`, http.StatusOK)
+		// One of the fixed error shapes; unreachable in practice. The
+		// JSON-RPC message is protocol text, English like the rest of
+		// the agent contract.
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		//gofastr:allow(rawtext) JSON-RPC protocol text for an agent, beside its numeric code
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal error"}}`)
 		return
 	}
 	// Owner/session-scoped JSON-RPC bodies must not be retained by a

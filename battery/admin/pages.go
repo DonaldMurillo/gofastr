@@ -10,6 +10,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -25,8 +26,9 @@ type Page struct {
 	// not take one of the admin's own paths.
 	Path string
 
-	// Title is the page title, its crumb and its nav and palette label.
-	Title string
+	// Title is the page title, its crumb and its nav and palette label,
+	// in the request's language.
+	Title i18n.Phrase
 
 	// Nav places the page in the sidebar (Group, Order, Icon). Nil, or
 	// Hide, leaves it out of the sidebar; the palette still lists it.
@@ -48,8 +50,8 @@ type Card struct {
 	// Key names the card: a lowercase slug, unique among Cards.
 	Key string
 
-	// Title is the card's heading.
-	Title string
+	// Title is the card's heading, in the request's language.
+	Title i18n.Phrase
 
 	// Build draws the card body with the caller's own context. A panic or
 	// an error draws a generic message in the card and logs.
@@ -64,7 +66,8 @@ type Card struct {
 type Link struct {
 	// Group is the nav group key; "" is the default group.
 	Group string
-	Label string
+	// Label is the link's text, in the request's language.
+	Label i18n.Phrase
 	// Href is a same-origin path.
 	Href string
 	// Icon is a registered kit icon name, or "".
@@ -74,7 +77,7 @@ type Link struct {
 // reservedPagePath reports a path the admin draws itself, or the prefix
 // of one of its routes, which an app page may not take.
 func reservedPagePath(p string) bool {
-	for _, own := range []string{"/search", "/queue", "/audit", "/rbac", "/modules", "/entities", "/api"} {
+	for _, own := range []string{"/search", "/queue", "/audit", "/rbac", "/modules", "/emails", "/entities", "/api"} {
 		if p == own || strings.HasPrefix(p, own+"/") {
 			return true
 		}
@@ -88,18 +91,15 @@ func reservedPagePath(p string) bool {
 // policy, so a refused caller is answered before Build runs.
 func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	for _, p := range b.cfg.Pages {
-		s := b.screen(group, p.Path, "", false, func(ctx context.Context, _ map[string]string) render.HTML {
+		s := b.screen(group, p.Path, p.Title, false, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.buildSlot(ctx, "page "+p.Path, p.Build)
 		})
-		as := s.Component.(*adminScreen)
-		as.title = func(context.Context, map[string]string) string { return p.Title }
-		s.Title = p.Title
 		if p.Access != nil {
 			s.WithPolicy(appui.PolicyFunc(func(ctx context.Context) appui.Decision {
 				if b.pageAllows(ctx, p) {
 					return decide.Allow()
 				}
-				return decide.Block(http.StatusForbidden, http.StatusText(http.StatusForbidden))
+				return decide.Block(http.StatusForbidden)
 			}))
 		}
 	}
@@ -123,7 +123,7 @@ func (b *Battery) pageAllows(ctx context.Context, p Page) bool {
 func (b *Battery) buildSlot(ctx context.Context, slot string, build func(*http.Request) (component.Component, error)) (out render.HTML) {
 	failed := func(reason string) render.HTML {
 		b.logger().Error("admin: app slot failed", "slot", slot, "reason", reason)
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminFailed)))
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminFailed.Text(ctx)))
 	}
 	ctx = crud.WithoutElevation(ctx)
 	r := appui.RequestFromContext(ctx)

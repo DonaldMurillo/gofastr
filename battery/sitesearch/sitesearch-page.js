@@ -36,7 +36,7 @@
   function words(sec, total, q) {
     if (!q) return '';
     const f = sec.getAttribute('data-search-page-' + (total === 0 ? 'none' : total === 1 ? 'one' : 'count')) || '';
-    return f.replace(/\{([nq])\}/g, function (_, k) { return k === 'n' ? String(total) : q; });
+    return f.replace(/\{\{([nq])\}\}/g, function (_, k) { return k === 'n' ? String(total) : q; });
   }
 
   // moveURL keeps the address on the query the list shows, replacing

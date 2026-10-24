@@ -362,7 +362,7 @@ func TestTypedQuery_UpdateAllBelongsToScopeEnforced(t *testing.T) {
 		},
 		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 		Relations: []entity.Relation{
-			{Name: "parent", Type: entity.RelManyToOne, Entity: "parents", ForeignKey: "parent_id"},
+			{Name: "parent", Type: entity.RelManyToOne, Entity: "parents", ForeignKey: []string{"parent_id"}},
 		},
 	}.WithTimestamps(false))
 	itemEnt.SetDB(db)

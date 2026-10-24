@@ -82,7 +82,7 @@ func TestCLIFlagsDropStamp(t *testing.T) {
 		}
 		var src string
 		for _, f := range renderCLIFiles(spec) {
-			if f.name == "invoices.go" {
+			if f.name == "invoices.gen.go" {
 				src = f.content
 			}
 		}

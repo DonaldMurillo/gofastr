@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f30f969a16c6aa95
+//gofastr:generated generator=app kind=scaffold version=dev sum=b18efbc6849ce95b
 
 package entities
 
@@ -278,8 +278,8 @@ func registerOrderItems(app *framework.App) {
 			{Name: "total_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: "order_id"},
-			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
+			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: []string{"order_id"}},
+			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: []string{"product_id"}},
 		},
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",

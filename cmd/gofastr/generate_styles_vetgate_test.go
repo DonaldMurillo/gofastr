@@ -32,6 +32,9 @@ func TestGeneratedStylesPassRepoVettool(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "go.mod"),
 		"module example.com/app\n\ngo "+goVersion+"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => "+repoRoot+"\n")
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
 	css, err := os.ReadFile(filepath.Join(styleGenFixtureDir, "issuecard.style.css"))
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +131,9 @@ func TestGeneratedStyleBehavior(t *testing.T) {
 `)
 
 	// Build + behaviour.
-	if out, err := exec.Command("go", "test", "./...").CombinedOutput(); err != nil {
+	test := exec.Command("go", "test", "./...")
+	test.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
+	if out, err := test.CombinedOutput(); err != nil {
 		t.Fatalf("generated style package does not build or behave:\n%s", out)
 	}
 

@@ -1,422 +1,250 @@
 package i18nui
 
+import "github.com/DonaldMurillo/gofastr/core/i18n"
+
 // The admin back office (battery/admin): its shell, dashboard and ops
 // pages. The entity screens it draws use the entity*.go blocks; see
 // entity.go for how the blocks merge into Defaults and AllKeys.
 
 // The shell: brand, sidebar, toolbar, palette and account menu.
-const (
-	KeyAdminTitle        Key = "ui.admin.title"        // "Admin"
-	KeyAdminBrandSub     Key = "ui.admin.brandSub"     // "Back office"
-	KeyAdminNav          Key = "ui.admin.nav"          // "Admin navigation"
-	KeyAdminSidebar      Key = "ui.admin.sidebar"      // "Admin sidebar"
-	KeyAdminToolbar      Key = "ui.admin.toolbar"      // "Admin toolbar"
-	KeyAdminDashboard    Key = "ui.admin.dashboard"    // "Dashboard"
-	KeyAdminSystemNav    Key = "ui.admin.systemNav"    // "System"
-	KeyAdminEntities     Key = "ui.admin.entities"     // "Entities"
-	KeyAdminSearch       Key = "ui.admin.search"       // "Search or jump to…"
-	KeyAdminPaletteNew   Key = "ui.admin.paletteNew"   // "New {entity}"
-	KeyAdminPalettePage  Key = "ui.admin.palettePage"  // "Page"
-	KeyAdminPaletteEmpty Key = "ui.admin.paletteEmpty" // "No matches."
-	KeyAdminAccount      Key = "ui.admin.account"      // "Account"
-	KeyAdminSignedInAs   Key = "ui.admin.signedInAs"   // "Signed in as {name}"
-	KeyAdminYourRoles    Key = "ui.admin.yourRoles"    // "Roles: {roles}"
+var (
+	AdminTitle        = i18n.Define("ui.admin.title", "Admin")
+	AdminBrandSub     = i18n.Define("ui.admin.brandSub", "Back office")
+	AdminNav          = i18n.Define("ui.admin.nav", "Admin navigation")
+	AdminSidebar      = i18n.Define("ui.admin.sidebar", "Admin sidebar")
+	AdminToolbar      = i18n.Define("ui.admin.toolbar", "Admin toolbar")
+	AdminDashboard    = i18n.Define("ui.admin.dashboard", "Dashboard")
+	AdminSystemNav    = i18n.Define("ui.admin.systemNav", "System")
+	AdminEntities     = i18n.Define("ui.admin.entities", "Entities")
+	AdminSearch       = i18n.Define("ui.admin.search", "Search or jump to…")
+	AdminPaletteNew   = i18n.Define("ui.admin.paletteNew", "New {{entity}}")
+	AdminPalettePage  = i18n.Define("ui.admin.palettePage", "Page")
+	AdminPaletteEmpty = i18n.Define("ui.admin.paletteEmpty", "No matches.")
+	AdminAccount      = i18n.Define("ui.admin.account", "Account")
+	AdminSignedInAs   = i18n.Define("ui.admin.signedInAs", "Signed in as {{name}}")
+	AdminYourRoles    = i18n.Define("ui.admin.yourRoles", "Roles: {{roles}}")
 )
 
 // The account page: the signed-in user's own settings.
-const (
-	KeyAdminAccountSettings Key = "ui.admin.accountSettings" // "Account settings"
-	KeyAdminAccountSub      Key = "ui.admin.accountSub"      // "Your profile, how the admin looks to you, and your password."
-	KeyAdminProfile         Key = "ui.admin.profile"         // "Profile"
-	KeyAdminProfileSub      Key = "ui.admin.profileSub"      // "Who you are signed in as."
-	KeyAdminName            Key = "ui.admin.name"            // "Name"
-	KeyAdminNameHelp        Key = "ui.admin.nameHelp"        // "Shown in the account menu. Leave it empty to show your email."
-	KeyAdminSaveName        Key = "ui.admin.saveName"        // "Save name"
-	KeyAdminNameSaved       Key = "ui.admin.nameSaved"       // "Name saved"
-	KeyAdminNameRefused     Key = "ui.admin.nameRefused"     // "Use a name of at most 100 characters, with no control characters."
-	KeyAdminEmail           Key = "ui.admin.email"           // "Email"
-	KeyAdminVerified        Key = "ui.admin.verified"        // "Verified"
-	KeyAdminUnverified      Key = "ui.admin.unverified"      // "Unverified"
-	KeyAdminAppearance      Key = "ui.admin.appearance"      // "Appearance"
-	KeyAdminAppearanceSub   Key = "ui.admin.appearanceSub"   // "Applies in this browser."
-	KeyAdminThemeLabel      Key = "ui.admin.themeLabel"      // "Theme"
-	KeyAdminLook            Key = "ui.admin.look"            // "Look"
-	KeyAdminSecurity        Key = "ui.admin.security"        // "Password"
-	KeyAdminSecuritySub     Key = "ui.admin.securitySub"     // "Changing it signs you out everywhere else."
-	KeyAdminCurrentPassword Key = "ui.admin.currentPassword" // "Current password"
-	KeyAdminNewPassword     Key = "ui.admin.newPassword"     // "New password"
-	KeyAdminNewPasswordHelp Key = "ui.admin.newPasswordHelp" // "At least {min} characters."
-	KeyAdminConfirmPassword Key = "ui.admin.confirmPassword" // "Confirm new password"
-	KeyAdminChangePassword  Key = "ui.admin.changePassword"  // "Change password"
-	KeyAdminPasswordChanged Key = "ui.admin.passwordChanged" // "Password changed"
-	KeyAdminNoPassword      Key = "ui.admin.noPassword"      // "Your account signs in without a password. Use "Forgot password" on the sign-in page to set one."
+var (
+	AdminAccountSettings = i18n.Define("ui.admin.accountSettings", "Account settings")
+	AdminAccountSub      = i18n.Define("ui.admin.accountSub", "Your profile, how the admin looks to you, and your password.")
+	AdminProfile         = i18n.Define("ui.admin.profile", "Profile")
+	AdminProfileSub      = i18n.Define("ui.admin.profileSub", "Who you are signed in as.")
+	AdminName            = i18n.Define("ui.admin.name", "Name")
+	AdminNameHelp        = i18n.Define("ui.admin.nameHelp", "Shown in the account menu. Leave it empty to show your email.")
+	AdminSaveName        = i18n.Define("ui.admin.saveName", "Save name")
+	AdminNameSaved       = i18n.Define("ui.admin.nameSaved", "Name saved")
+	AdminNameRefused     = i18n.Define("ui.admin.nameRefused", "Use a name of at most 100 characters, with no control characters.")
+	AdminEmail           = i18n.Define("ui.admin.email", "Email")
+	AdminVerified        = i18n.Define("ui.admin.verified", "Verified")
+	AdminUnverified      = i18n.Define("ui.admin.unverified", "Unverified")
+	AdminAppearance      = i18n.Define("ui.admin.appearance", "Appearance")
+	AdminAppearanceSub   = i18n.Define("ui.admin.appearanceSub", "Applies in this browser.")
+	AdminThemeLabel      = i18n.Define("ui.admin.themeLabel", "Theme")
+	AdminLook            = i18n.Define("ui.admin.look", "Look")
+	AdminSecurity        = i18n.Define("ui.admin.security", "Password")
+	AdminSecuritySub     = i18n.Define("ui.admin.securitySub", "Changing it signs you out everywhere else.")
+	AdminCurrentPassword = i18n.Define("ui.admin.currentPassword", "Current password") // not-a-secret: UI label
+	AdminNewPassword     = i18n.Define("ui.admin.newPassword", "New password")         // not-a-secret: UI label
+	AdminNewPasswordHelp = i18n.Define("ui.admin.newPasswordHelp", "At least {{min}} characters.")
+	AdminConfirmPassword = i18n.Define("ui.admin.confirmPassword", "Confirm new password") // not-a-secret: UI label
+	AdminChangePassword  = i18n.Define("ui.admin.changePassword", "Change password")       // not-a-secret: UI label
+	AdminPasswordChanged = i18n.Define("ui.admin.passwordChanged", "Password changed")
+	AdminNoPassword      = i18n.Define("ui.admin.noPassword", "Your account signs in without a password. Use \"Forgot password\" on the sign-in page to set one.") // not-a-secret: UI label
 )
 
 // Answers every admin form shares.
-const (
-	KeyAdminRefused  Key = "ui.admin.refused"  // "You may not do that."
-	KeyAdminFailed   Key = "ui.admin.failed"   // "That did not work. Check the server logs for details."
-	KeyAdminBadInput Key = "ui.admin.badInput" // "Fill in every field the form asks for."
-	KeyAdminDone     Key = "ui.admin.done"     // "Done."
+var (
+	AdminRefused  = i18n.Define("ui.admin.refused", "You may not do that.")
+	AdminFailed   = i18n.Define("ui.admin.failed", "That did not work. Check the server logs for details.")
+	AdminBadInput = i18n.Define("ui.admin.badInput", "Fill in every field the form asks for.")
+	AdminDone     = i18n.Define("ui.admin.done", "Done.")
 )
 
 // The dashboard.
-const (
-	KeyAdminDashboardSub Key = "ui.admin.dashboardSub" // "Everything this admin manages, at a glance."
-	KeyAdminCardNew      Key = "ui.admin.cardNew"      // "New"
-	KeyAdminCountMany    Key = "ui.admin.countMany"    // "{count}+"
-	KeyAdminFailedJobs   Key = "ui.admin.failedJobs"   // "Failed jobs"
-	KeyAdminNeedsReplay  Key = "ui.admin.needsReplay"  // "Needs a replay"
-	KeyAdminMetrics      Key = "ui.admin.metrics"      // "Key figures"
-	KeyAdminNoFailedJobs Key = "ui.admin.noFailedJobs" // "No failed jobs."
-	KeyAdminRecent       Key = "ui.admin.recent"       // "Recent activity"
-	KeyAdminNoActivity   Key = "ui.admin.noActivity"   // "No activity yet."
-	KeyAdminViewAll      Key = "ui.admin.viewAll"      // "View all"
+var (
+	AdminDashboardSub = i18n.Define("ui.admin.dashboardSub", "Everything this admin manages, at a glance.")
+	AdminCardNew      = i18n.Define("ui.admin.cardNew", "New")
+	AdminCountMany    = i18n.Define("ui.admin.countMany", "{{count}}+")
+	AdminFailedJobs   = i18n.Define("ui.admin.failedJobs", "Failed jobs")
+	AdminNeedsReplay  = i18n.Define("ui.admin.needsReplay", "Needs a replay")
+	AdminMetrics      = i18n.Define("ui.admin.metrics", "Key figures")
+	AdminNoFailedJobs = i18n.Define("ui.admin.noFailedJobs", "No failed jobs.")
+	AdminRecent       = i18n.Define("ui.admin.recent", "Recent activity")
+	AdminNoActivity   = i18n.Define("ui.admin.noActivity", "No activity yet.")
+	AdminViewAll      = i18n.Define("ui.admin.viewAll", "View all")
 
 	// The Needs attention panel and one watched view's heading in it.
-	KeyAdminAttention      Key = "ui.admin.attention"      // "Needs attention"
-	KeyAdminAttentionClear Key = "ui.admin.attentionClear" // "Nothing needs attention."
-	KeyAdminAttentionList  Key = "ui.admin.attentionList"  // "{entity} · {view}"
+	AdminAttention      = i18n.Define("ui.admin.attention", "Needs attention")
+	AdminAttentionClear = i18n.Define("ui.admin.attentionClear", "Nothing needs attention.")
+	AdminAttentionList  = i18n.Define("ui.admin.attentionList", "{{entity}} · {{view}}")
 
 	// One recent-activity line and its parts: who did what to which
 	// record, and how long ago.
-	KeyAdminActivityLine      Key = "ui.admin.activityLine"      // "{actor} {verb} {record}"
-	KeyAdminActivityBulkLine  Key = "ui.admin.activityBulkLine"  // "{actor} {verb} {count} {entity} in bulk"
-	KeyAdminVerbCreate        Key = "ui.admin.verbCreate"        // "created"
-	KeyAdminVerbUpdate        Key = "ui.admin.verbUpdate"        // "updated"
-	KeyAdminVerbDelete        Key = "ui.admin.verbDelete"        // "deleted"
-	KeyAdminVerbRestore       Key = "ui.admin.verbRestore"       // "restored"
-	KeyAdminVerbPurge         Key = "ui.admin.verbPurge"         // "purged"
-	KeyAdminVerbBulk          Key = "ui.admin.verbBulk"          // "ran a bulk action on"
-	KeyAdminVerbStateOverride Key = "ui.admin.verbStateOverride" // "overrode the state of"
-	KeyAdminVerbTransition    Key = "ui.admin.verbTransition"    // "changed the state of"
-	KeyAdminUpdatedAgo        Key = "ui.admin.updatedAgo"        // "Updated {ago}"
+	AdminActivityLine      = i18n.Define("ui.admin.activityLine", "{{actor}} {{verb}} {{record}}")
+	AdminActivityBulkLine  = i18n.Define("ui.admin.activityBulkLine", "{{actor}} {{verb}} {{count}} {{entity}} in bulk")
+	AdminVerbCreate        = i18n.Define("ui.admin.verbCreate", "created")
+	AdminVerbUpdate        = i18n.Define("ui.admin.verbUpdate", "updated")
+	AdminVerbDelete        = i18n.Define("ui.admin.verbDelete", "deleted")
+	AdminVerbRestore       = i18n.Define("ui.admin.verbRestore", "restored")
+	AdminVerbPurge         = i18n.Define("ui.admin.verbPurge", "purged")
+	AdminVerbBulk          = i18n.Define("ui.admin.verbBulk", "ran a bulk action on")
+	AdminVerbStateOverride = i18n.Define("ui.admin.verbStateOverride", "overrode the state of")
+	AdminVerbTransition    = i18n.Define("ui.admin.verbTransition", "changed the state of")
+	AdminUpdatedAgo        = i18n.Define("ui.admin.updatedAgo", "Updated {{ago}}")
 )
 
 // Table columns on the ops pages.
-const (
-	KeyAdminKeyPalette    Key = "ui.admin.keyPalette"    // "Open the command palette"
-	KeyAdminKeySearch     Key = "ui.admin.keySearch"     // "Search the list"
-	KeyAdminKeySave       Key = "ui.admin.keySave"       // "Save the record"
-	KeyAdminKeyClose      Key = "ui.admin.keyClose"      // "Close a drawer or dialog"
-	KeyAdminKeyHelp       Key = "ui.admin.keyHelp"       // "Show these shortcuts"
-	KeyAdminColID         Key = "ui.admin.colID"         // "ID"
-	KeyAdminColJob        Key = "ui.admin.colJob"        // "Job"
-	KeyAdminColUpdated    Key = "ui.admin.colUpdated"    // "Updated"
-	KeyAdminColLastError  Key = "ui.admin.colLastError"  // "Last error"
-	KeyAdminColType       Key = "ui.admin.colType"       // "Type"
-	KeyAdminColAttempts   Key = "ui.admin.colAttempts"   // "Attempts"
-	KeyAdminColPriority   Key = "ui.admin.colPriority"   // "Priority"
-	KeyAdminColCreated    Key = "ui.admin.colCreated"    // "Created"
-	KeyAdminColScheduled  Key = "ui.admin.colScheduled"  // "Scheduled"
-	KeyAdminColActions    Key = "ui.admin.colActions"    // "Actions"
-	KeyAdminColTime       Key = "ui.admin.colTime"       // "Time"
-	KeyAdminColEntity     Key = "ui.admin.colEntity"     // "Entity"
-	KeyAdminColOperation  Key = "ui.admin.colOperation"  // "Operation"
-	KeyAdminColRecord     Key = "ui.admin.colRecord"     // "Record"
-	KeyAdminColChanges    Key = "ui.admin.colChanges"    // "Changes"
-	KeyAdminColActor      Key = "ui.admin.colActor"      // "Actor"
-	KeyAdminColUser       Key = "ui.admin.colUser"       // "User"
-	KeyAdminColRoles      Key = "ui.admin.colRoles"      // "Roles"
-	KeyAdminColModule     Key = "ui.admin.colModule"     // "Module"
-	KeyAdminColTrust      Key = "ui.admin.colTrust"      // "Trust"
-	KeyAdminColState      Key = "ui.admin.colState"      // "State"
-	KeyAdminColGeneration Key = "ui.admin.colGeneration" // "Generation"
-	KeyAdminColRestarts   Key = "ui.admin.colRestarts"   // "Restarts"
-	KeyAdminColRoutes     Key = "ui.admin.colRoutes"     // "Routes / tools"
-	KeyAdminColLastExit   Key = "ui.admin.colLastExit"   // "Last exit"
+var (
+	AdminKeyPalette    = i18n.Define("ui.admin.keyPalette", "Open the command palette")
+	AdminKeySearch     = i18n.Define("ui.admin.keySearch", "Search the list")
+	AdminKeySave       = i18n.Define("ui.admin.keySave", "Save the record")
+	AdminKeyClose      = i18n.Define("ui.admin.keyClose", "Close a drawer or dialog")
+	AdminKeyHelp       = i18n.Define("ui.admin.keyHelp", "Show these shortcuts")
+	AdminColID         = i18n.Define("ui.admin.colID", "ID")
+	AdminColJob        = i18n.Define("ui.admin.colJob", "Job")
+	AdminColUpdated    = i18n.Define("ui.admin.colUpdated", "Updated")
+	AdminColLastError  = i18n.Define("ui.admin.colLastError", "Last error")
+	AdminColType       = i18n.Define("ui.admin.colType", "Type")
+	AdminColAttempts   = i18n.Define("ui.admin.colAttempts", "Attempts")
+	AdminColPriority   = i18n.Define("ui.admin.colPriority", "Priority")
+	AdminColCreated    = i18n.Define("ui.admin.colCreated", "Created")
+	AdminColScheduled  = i18n.Define("ui.admin.colScheduled", "Scheduled")
+	AdminColActions    = i18n.Define("ui.admin.colActions", "Actions")
+	AdminColTime       = i18n.Define("ui.admin.colTime", "Time")
+	AdminColEntity     = i18n.Define("ui.admin.colEntity", "Entity")
+	AdminColOperation  = i18n.Define("ui.admin.colOperation", "Operation")
+	AdminColRecord     = i18n.Define("ui.admin.colRecord", "Record")
+	AdminColChanges    = i18n.Define("ui.admin.colChanges", "Changes")
+	AdminColActor      = i18n.Define("ui.admin.colActor", "Actor")
+	AdminColUser       = i18n.Define("ui.admin.colUser", "User")
+	AdminColRoles      = i18n.Define("ui.admin.colRoles", "Roles")
+	AdminColModule     = i18n.Define("ui.admin.colModule", "Module")
+	AdminColTrust      = i18n.Define("ui.admin.colTrust", "Trust")
+	AdminColState      = i18n.Define("ui.admin.colState", "State")
+	AdminColGeneration = i18n.Define("ui.admin.colGeneration", "Generation")
+	AdminColRestarts   = i18n.Define("ui.admin.colRestarts", "Restarts")
+	AdminColRoutes     = i18n.Define("ui.admin.colRoutes", "Routes / tools")
+	AdminColLastExit   = i18n.Define("ui.admin.colLastExit", "Last exit")
 )
 
 // The jobs page.
-const (
-	KeyAdminQueue            Key = "ui.admin.queue"            // "Jobs"
-	KeyAdminQueueSub         Key = "ui.admin.queueSub"         // "Background jobs. Failed jobs ran out of retries and wait for a replay."
-	KeyAdminQueueStatus      Key = "ui.admin.queueStatus"      // "Status"
-	KeyAdminQueueAll         Key = "ui.admin.queueAll"         // "All"
-	KeyAdminQueuePending     Key = "ui.admin.queuePending"     // "Pending"
-	KeyAdminQueueClaimed     Key = "ui.admin.queueClaimed"     // "Running"
-	KeyAdminQueueFailed      Key = "ui.admin.queueFailed"      // "Failed"
-	KeyAdminQueueDone        Key = "ui.admin.queueDone"        // "Done"
-	KeyAdminQueueLoadFailed  Key = "ui.admin.queueLoadFailed"  // "Could not load jobs. Check the server logs for details."
-	KeyAdminQueueEmpty       Key = "ui.admin.queueEmpty"       // "No jobs"
-	KeyAdminQueueEmptyDesc   Key = "ui.admin.queueEmptyDesc"   // "No jobs match this filter."
-	KeyAdminReplay           Key = "ui.admin.replay"           // "Replay"
-	KeyAdminReplayAll        Key = "ui.admin.replayAll"        // "Replay {n} failed"
-	KeyAdminReplayAllConfirm Key = "ui.admin.replayAllConfirm" // "Replay every failed job?"
-	KeyAdminReplayed         Key = "ui.admin.replayed"         // "Job queued again."
-	KeyAdminReplayedAll      Key = "ui.admin.replayedAll"      // "Failed jobs queued again."
+var (
+	AdminQueue            = i18n.Define("ui.admin.queue", "Jobs")
+	AdminQueueSub         = i18n.Define("ui.admin.queueSub", "Background jobs. Failed jobs ran out of retries and wait for a replay.")
+	AdminQueueStatus      = i18n.Define("ui.admin.queueStatus", "Status")
+	AdminQueueAll         = i18n.Define("ui.admin.queueAll", "All")
+	AdminQueuePending     = i18n.Define("ui.admin.queuePending", "Pending")
+	AdminQueueClaimed     = i18n.Define("ui.admin.queueClaimed", "Running")
+	AdminQueueFailed      = i18n.Define("ui.admin.queueFailed", "Failed")
+	AdminQueueDone        = i18n.Define("ui.admin.queueDone", "Done")
+	AdminQueueLoadFailed  = i18n.Define("ui.admin.queueLoadFailed", "Could not load jobs. Check the server logs for details.")
+	AdminQueueEmpty       = i18n.Define("ui.admin.queueEmpty", "No jobs")
+	AdminQueueEmptyDesc   = i18n.Define("ui.admin.queueEmptyDesc", "No jobs match this filter.")
+	AdminReplay           = i18n.Define("ui.admin.replay", "Replay")
+	AdminReplayAll        = i18n.Define("ui.admin.replayAll", "Replay {{n}} failed")
+	AdminReplayAllConfirm = i18n.Define("ui.admin.replayAllConfirm", "Replay every failed job?")
+	AdminReplayed         = i18n.Define("ui.admin.replayed", "Job queued again.")
+	AdminReplayedAll      = i18n.Define("ui.admin.replayedAll", "Failed jobs queued again.")
+	AdminReplayedSome     = i18n.Define("ui.admin.replayedSome", "Failed jobs queued again, except those whose unique key a newer job holds.")
+	AdminReplayDuplicate  = i18n.Define("ui.admin.replayDuplicate", "A newer job with the same unique key is already queued.")
 )
 
 // The audit log.
-const (
-	KeyAdminAudit           Key = "ui.admin.audit"           // "Audit log"
-	KeyAdminAuditSub        Key = "ui.admin.auditSub"        // "Who changed what, newest first."
-	KeyAdminAuditLoadFailed Key = "ui.admin.auditLoadFailed" // "Could not load audit rows. Check the server logs for details."
-	KeyAdminAuditEmpty      Key = "ui.admin.auditEmpty"      // "No audit entries"
-	KeyAdminAuditEmptyDesc  Key = "ui.admin.auditEmptyDesc"  // "Audit events will appear here."
-	KeyAdminAuditSystem     Key = "ui.admin.auditSystem"     // "System"
-	KeyAdminAuditFrom       Key = "ui.admin.auditFrom"       // "From"
-	KeyAdminAuditTo         Key = "ui.admin.auditTo"         // "To"
-	KeyAdminAuditAnyEntity  Key = "ui.admin.auditAnyEntity"  // "Any entity"
-	KeyAdminAuditAnyOp      Key = "ui.admin.auditAnyOp"      // "Any operation"
-	KeyAdminAuditBadFilter  Key = "ui.admin.auditBadFilter"  // "\"{param}\" was ignored. It is not a value the filter accepts."
+var (
+	AdminAudit           = i18n.Define("ui.admin.audit", "Audit log")
+	AdminAuditSub        = i18n.Define("ui.admin.auditSub", "Who changed what, newest first.")
+	AdminAuditLoadFailed = i18n.Define("ui.admin.auditLoadFailed", "Could not load audit rows. Check the server logs for details.")
+	AdminAuditEmpty      = i18n.Define("ui.admin.auditEmpty", "No audit entries")
+	AdminAuditEmptyDesc  = i18n.Define("ui.admin.auditEmptyDesc", "Audit events will appear here.")
+	AdminAuditSystem     = i18n.Define("ui.admin.auditSystem", "System")
+	AdminAuditFrom       = i18n.Define("ui.admin.auditFrom", "From")
+	AdminAuditTo         = i18n.Define("ui.admin.auditTo", "To")
+	AdminAuditAnyEntity  = i18n.Define("ui.admin.auditAnyEntity", "Any entity")
+	AdminAuditAnyOp      = i18n.Define("ui.admin.auditAnyOp", "Any operation")
+	AdminAuditBadFilter  = i18n.Define("ui.admin.auditBadFilter", "\"{{param}}\" was ignored. It is not a value the filter accepts.")
 
-	KeyAdminAuditRole          Key = "ui.admin.auditRole"          // "Role"
-	KeyAdminAuditUser          Key = "ui.admin.auditUser"          // "User"
-	KeyAdminAuditGranted       Key = "ui.admin.auditGranted"       // "Granted {permission}"
-	KeyAdminAuditRevoked       Key = "ui.admin.auditRevoked"       // "Revoked {permission}"
-	KeyAdminAuditGrantRefused  Key = "ui.admin.auditGrantRefused"  // "Refused to grant {permission}"
-	KeyAdminAuditRevokeRefused Key = "ui.admin.auditRevokeRefused" // "Refused to revoke {permission}"
-	KeyAdminAuditAssignRefused Key = "ui.admin.auditAssignRefused" // "Refused to assign {role}"
-	KeyAdminAuditNoRoles       Key = "ui.admin.auditNoRoles"       // "No roles"
-	KeyAdminAuditBulkRecord    Key = "ui.admin.auditBulkRecord"    // "{count} {entity}"
-	KeyAdminAuditBulkDeleted   Key = "ui.admin.auditBulkDeleted"   // "Deleted"
-	KeyAdminAuditBulkRestored  Key = "ui.admin.auditBulkRestored"  // "Restored"
-	KeyAdminAuditBulkUpdated   Key = "ui.admin.auditBulkUpdated"   // "Updated"
-	KeyAdminAuditBulkSkipped   Key = "ui.admin.auditBulkSkipped"   // "{count} skipped"
-	KeyAdminAuditBulkFailed    Key = "ui.admin.auditBulkFailed"    // "{count} failed"
+	AdminAuditRole          = i18n.Define("ui.admin.auditRole", "Role")
+	AdminAuditUser          = i18n.Define("ui.admin.auditUser", "User")
+	AdminAuditGranted       = i18n.Define("ui.admin.auditGranted", "Granted {{permission}}")
+	AdminAuditRevoked       = i18n.Define("ui.admin.auditRevoked", "Revoked {{permission}}")
+	AdminAuditGrantRefused  = i18n.Define("ui.admin.auditGrantRefused", "Refused to grant {{permission}}")
+	AdminAuditRevokeRefused = i18n.Define("ui.admin.auditRevokeRefused", "Refused to revoke {{permission}}")
+	AdminAuditAssignRefused = i18n.Define("ui.admin.auditAssignRefused", "Refused to assign {{role}}")
+	AdminAuditNoRoles       = i18n.Define("ui.admin.auditNoRoles", "No roles")
+	AdminAuditBulkRecord    = i18n.Define("ui.admin.auditBulkRecord", "{{count}} {{entity}}")
+	AdminAuditBulkDeleted   = i18n.Define("ui.admin.auditBulkDeleted", "Deleted")
+	AdminAuditBulkRestored  = i18n.Define("ui.admin.auditBulkRestored", "Restored")
+	AdminAuditBulkUpdated   = i18n.Define("ui.admin.auditBulkUpdated", "Updated")
+	AdminAuditBulkSkipped   = i18n.Define("ui.admin.auditBulkSkipped", "{{count}} skipped")
+	AdminAuditBulkFailed    = i18n.Define("ui.admin.auditBulkFailed", "{{count}} failed")
 )
 
 // Roles and user roles.
-const (
-	KeyAdminRoles             Key = "ui.admin.roles"             // "Roles"
-	KeyAdminRolesSub          Key = "ui.admin.rolesSub"          // "What each role may do."
-	KeyAdminUserRoles         Key = "ui.admin.userRoles"         // "User roles"
-	KeyAdminUserRolesSub      Key = "ui.admin.userRolesSub"      // "Which roles each user holds."
-	KeyAdminNoRoles           Key = "ui.admin.noRoles"           // "No roles"
-	KeyAdminNoRolesDesc       Key = "ui.admin.noRolesDesc"       // "Define roles in the app's access policy."
-	KeyAdminNoUsers           Key = "ui.admin.noUsers"           // "No users"
-	KeyAdminUsersLoadFailed   Key = "ui.admin.usersLoadFailed"   // "Could not load users. Check the server logs for details."
-	KeyAdminPermission        Key = "ui.admin.permission"        // "Permission"
-	KeyAdminNewRole           Key = "ui.admin.newRole"           // "New role"
-	KeyAdminAddRole           Key = "ui.admin.addRole"           // "Add a role"
-	KeyAdminGrant             Key = "ui.admin.grant"             // "Grant"
-	KeyAdminRevoke            Key = "ui.admin.revoke"            // "Revoke"
-	KeyAdminGrantCell         Key = "ui.admin.grantCell"         // "{role} holds {permission}"
-	KeyAdminHoldsEvery        Key = "ui.admin.holdsEvery"        // "{role} holds every permission"
-	KeyAdminSavePermissions   Key = "ui.admin.savePermissions"   // "Save permissions"
-	KeyAdminPermissionsSaved  Key = "ui.admin.permissionsSaved"  // "Permissions saved."
-	KeyAdminNoPermissions     Key = "ui.admin.noPermissions"     // "No permissions to grant"
-	KeyAdminNoPermissionsDesc Key = "ui.admin.noPermissionsDesc" // "Every role holds every permission. Register the app's capabilities on its policy to grant them one by one."
-	KeyAdminUndeclared        Key = "ui.admin.undeclared"        // "Not declared"
-	KeyAdminSaveRoles         Key = "ui.admin.saveRoles"         // "Save roles"
-	KeyAdminEditRoles         Key = "ui.admin.editRoles"         // "Edit roles"
-	KeyAdminGranted           Key = "ui.admin.granted"           // "Permission granted."
-	KeyAdminRolesSaved        Key = "ui.admin.rolesSaved"        // "Roles saved."
-	KeyAdminGrantRefused      Key = "ui.admin.grantRefused"      // "You can only grant or revoke a permission you hold."
-	KeyAdminAssignRefused     Key = "ui.admin.assignRefused"     // "You cannot assign a role above your own."
-	KeyAdminUnknownCapability Key = "ui.admin.unknownCapability" // "That permission is not one the app declares."
+var (
+	AdminRoles             = i18n.Define("ui.admin.roles", "Roles")
+	AdminRolesSub          = i18n.Define("ui.admin.rolesSub", "What each role may do.")
+	AdminUserRoles         = i18n.Define("ui.admin.userRoles", "User roles")
+	AdminUserRolesSub      = i18n.Define("ui.admin.userRolesSub", "Which roles each user holds.")
+	AdminNoRoles           = i18n.Define("ui.admin.noRoles", "No roles")
+	AdminNoRolesDesc       = i18n.Define("ui.admin.noRolesDesc", "Define roles in the app's access policy.")
+	AdminNoUsers           = i18n.Define("ui.admin.noUsers", "No users")
+	AdminUsersLoadFailed   = i18n.Define("ui.admin.usersLoadFailed", "Could not load users. Check the server logs for details.")
+	AdminPermission        = i18n.Define("ui.admin.permission", "Permission")
+	AdminNewRole           = i18n.Define("ui.admin.newRole", "New role")
+	AdminAddRole           = i18n.Define("ui.admin.addRole", "Add a role")
+	AdminGrant             = i18n.Define("ui.admin.grant", "Grant")
+	AdminRevoke            = i18n.Define("ui.admin.revoke", "Revoke")
+	AdminGrantCell         = i18n.Define("ui.admin.grantCell", "{{role}} holds {{permission}}")
+	AdminHoldsEvery        = i18n.Define("ui.admin.holdsEvery", "{{role}} holds every permission")
+	AdminSavePermissions   = i18n.Define("ui.admin.savePermissions", "Save permissions")
+	AdminPermissionsSaved  = i18n.Define("ui.admin.permissionsSaved", "Permissions saved.")
+	AdminNoPermissions     = i18n.Define("ui.admin.noPermissions", "No permissions to grant")
+	AdminNoPermissionsDesc = i18n.Define("ui.admin.noPermissionsDesc", "Every role holds every permission. Register the app's capabilities on its policy to grant them one by one.")
+	AdminUndeclared        = i18n.Define("ui.admin.undeclared", "Not declared")
+	AdminSaveRoles         = i18n.Define("ui.admin.saveRoles", "Save roles")
+	AdminEditRoles         = i18n.Define("ui.admin.editRoles", "Edit roles")
+	AdminGranted           = i18n.Define("ui.admin.granted", "Permission granted.")
+	AdminRolesSaved        = i18n.Define("ui.admin.rolesSaved", "Roles saved.")
+	AdminGrantRefused      = i18n.Define("ui.admin.grantRefused", "You can only grant or revoke a permission you hold.")
+	AdminAssignRefused     = i18n.Define("ui.admin.assignRefused", "You cannot assign a role above your own.")
+	AdminUnknownCapability = i18n.Define("ui.admin.unknownCapability", "That permission is not one the app declares.")
 )
 
 // Process modules.
-const (
-	KeyAdminModules        Key = "ui.admin.modules"        // "Modules"
-	KeyAdminModulesSub     Key = "ui.admin.modulesSub"     // "Process modules and their lifecycle."
-	KeyAdminNoModules      Key = "ui.admin.noModules"      // "No process modules registered."
-	KeyAdminEnable         Key = "ui.admin.enable"         // "Enable"
-	KeyAdminDisable        Key = "ui.admin.disable"        // "Disable"
-	KeyAdminDisableConfirm Key = "ui.admin.disableConfirm" // "Disable {module}? It drains and stops serving."
-	KeyAdminBump           Key = "ui.admin.bump"           // "Bump generation"
-	KeyAdminCapability     Key = "ui.admin.capability"     // "Capability"
-	KeyAdminRevokeConfirm  Key = "ui.admin.revokeConfirm"  // "Revoke this capability from {module}? Its generation bumps and the child restarts."
-	KeyAdminModuleEnabled  Key = "ui.admin.moduleEnabled"  // "Module enabled."
-	KeyAdminModuleDisabled Key = "ui.admin.moduleDisabled" // "Module disabled."
-	KeyAdminModuleBumped   Key = "ui.admin.moduleBumped"   // "Generation bumped."
-	KeyAdminModuleRevoked  Key = "ui.admin.moduleRevoked"  // "Capability revoked."
-	KeyAdminModuleFailed   Key = "ui.admin.moduleFailed"   // "The module did not accept that change. Check the server logs for details."
-	KeyAdminModuleRefused  Key = "ui.admin.moduleRefused"  // "You may not manage process modules."
-	KeyAdminServing        Key = "ui.admin.serving"        // "Serving"
-	KeyAdminServes404      Key = "ui.admin.serves404"      // "Serves 404"
-	KeyAdminServes503      Key = "ui.admin.serves503"      // "Serves 503"
-	KeyAdminCircuitOpen    Key = "ui.admin.circuitOpen"    // "Circuit open"
-	KeyAdminLeaseFailing   Key = "ui.admin.leaseFailing"   // "Lease failing"
+var (
+	AdminModules        = i18n.Define("ui.admin.modules", "Modules")
+	AdminModulesSub     = i18n.Define("ui.admin.modulesSub", "Process modules and their lifecycle.")
+	AdminNoModules      = i18n.Define("ui.admin.noModules", "No process modules registered.")
+	AdminEnable         = i18n.Define("ui.admin.enable", "Enable")
+	AdminDisable        = i18n.Define("ui.admin.disable", "Disable")
+	AdminDisableConfirm = i18n.Define("ui.admin.disableConfirm", "Disable {{module}}? It drains and stops serving.")
+	AdminBump           = i18n.Define("ui.admin.bump", "Bump generation")
+	AdminCapability     = i18n.Define("ui.admin.capability", "Capability")
+	AdminRevokeConfirm  = i18n.Define("ui.admin.revokeConfirm", "Revoke this capability from {{module}}? Its generation bumps and the child restarts.")
+	AdminModuleEnabled  = i18n.Define("ui.admin.moduleEnabled", "Module enabled.")
+	AdminModuleDisabled = i18n.Define("ui.admin.moduleDisabled", "Module disabled.")
+	AdminModuleBumped   = i18n.Define("ui.admin.moduleBumped", "Generation bumped.")
+	AdminModuleRevoked  = i18n.Define("ui.admin.moduleRevoked", "Capability revoked.")
+	AdminModuleFailed   = i18n.Define("ui.admin.moduleFailed", "The module did not accept that change. Check the server logs for details.")
+	AdminModuleRefused  = i18n.Define("ui.admin.moduleRefused", "You may not manage process modules.")
+	AdminServing        = i18n.Define("ui.admin.serving", "Serving")
+	AdminServes404      = i18n.Define("ui.admin.serves404", "Serves 404")
+	AdminServes503      = i18n.Define("ui.admin.serves503", "Serves 503")
+	AdminCircuitOpen    = i18n.Define("ui.admin.circuitOpen", "Circuit open")
+	AdminLeaseFailing   = i18n.Define("ui.admin.leaseFailing", "Lease failing")
 )
 
-var adminDefaults = map[Key]string{
-	KeyAdminTitle:              "Admin",
-	KeyAdminBrandSub:           "Back office",
-	KeyAdminNav:                "Admin navigation",
-	KeyAdminSidebar:            "Admin sidebar",
-	KeyAdminToolbar:            "Admin toolbar",
-	KeyAdminDashboard:          "Dashboard",
-	KeyAdminSystemNav:          "System",
-	KeyAdminEntities:           "Entities",
-	KeyAdminSearch:             "Search or jump to…",
-	KeyAdminPaletteNew:         "New {entity}",
-	KeyAdminPalettePage:        "Page",
-	KeyAdminPaletteEmpty:       "No matches.",
-	KeyAdminAccount:            "Account",
-	KeyAdminSignedInAs:         "Signed in as {name}",
-	KeyAdminYourRoles:          "Roles: {roles}",
-	KeyAdminAccountSettings:    "Account settings",
-	KeyAdminAccountSub:         "Your profile, how the admin looks to you, and your password.",
-	KeyAdminProfile:            "Profile",
-	KeyAdminProfileSub:         "Who you are signed in as.",
-	KeyAdminName:               "Name",
-	KeyAdminNameHelp:           "Shown in the account menu. Leave it empty to show your email.",
-	KeyAdminSaveName:           "Save name",
-	KeyAdminNameSaved:          "Name saved",
-	KeyAdminNameRefused:        "Use a name of at most 100 characters, with no control characters.",
-	KeyAdminEmail:              "Email",
-	KeyAdminVerified:           "Verified",
-	KeyAdminUnverified:         "Unverified",
-	KeyAdminAppearance:         "Appearance",
-	KeyAdminAppearanceSub:      "Applies in this browser.",
-	KeyAdminThemeLabel:         "Theme",
-	KeyAdminLook:               "Look",
-	KeyAdminSecurity:           "Password",
-	KeyAdminSecuritySub:        "Changing it signs you out everywhere else.",
-	KeyAdminCurrentPassword:    "Current password", // not-a-secret: UI label
-	KeyAdminNewPassword:        "New password",     // not-a-secret: UI label
-	KeyAdminNewPasswordHelp:    "At least {min} characters.",
-	KeyAdminConfirmPassword:    "Confirm new password", // not-a-secret: UI label
-	KeyAdminChangePassword:     "Change password",      // not-a-secret: UI label
-	KeyAdminPasswordChanged:    "Password changed",
-	KeyAdminNoPassword:         "Your account signs in without a password. Use \"Forgot password\" on the sign-in page to set one.", // not-a-secret: UI label
-	KeyAdminRefused:            "You may not do that.",
-	KeyAdminFailed:             "That did not work. Check the server logs for details.",
-	KeyAdminBadInput:           "Fill in every field the form asks for.",
-	KeyAdminDone:               "Done.",
-	KeyAdminDashboardSub:       "Everything this admin manages, at a glance.",
-	KeyAdminCardNew:            "New",
-	KeyAdminCountMany:          "{count}+",
-	KeyAdminFailedJobs:         "Failed jobs",
-	KeyAdminNeedsReplay:        "Needs a replay",
-	KeyAdminMetrics:            "Key figures",
-	KeyAdminNoFailedJobs:       "No failed jobs.",
-	KeyAdminRecent:             "Recent activity",
-	KeyAdminNoActivity:         "No activity yet.",
-	KeyAdminViewAll:            "View all",
-	KeyAdminAttention:          "Needs attention",
-	KeyAdminAttentionClear:     "Nothing needs attention.",
-	KeyAdminAttentionList:      "{entity} · {view}",
-	KeyAdminActivityLine:       "{actor} {verb} {record}",
-	KeyAdminActivityBulkLine:   "{actor} {verb} {count} {entity} in bulk",
-	KeyAdminVerbCreate:         "created",
-	KeyAdminVerbUpdate:         "updated",
-	KeyAdminVerbDelete:         "deleted",
-	KeyAdminVerbRestore:        "restored",
-	KeyAdminVerbPurge:          "purged",
-	KeyAdminVerbBulk:           "ran a bulk action on",
-	KeyAdminVerbStateOverride:  "overrode the state of",
-	KeyAdminVerbTransition:     "changed the state of",
-	KeyAdminUpdatedAgo:         "Updated {ago}",
-	KeyAdminKeyPalette:         "Open the command palette",
-	KeyAdminKeySearch:          "Search the list",
-	KeyAdminKeySave:            "Save the record",
-	KeyAdminKeyClose:           "Close a drawer or dialog",
-	KeyAdminKeyHelp:            "Show these shortcuts",
-	KeyAdminColID:              "ID",
-	KeyAdminColJob:             "Job",
-	KeyAdminColUpdated:         "Updated",
-	KeyAdminColLastError:       "Last error",
-	KeyAdminColType:            "Type",
-	KeyAdminColAttempts:        "Attempts",
-	KeyAdminColPriority:        "Priority",
-	KeyAdminColCreated:         "Created",
-	KeyAdminColScheduled:       "Scheduled",
-	KeyAdminColActions:         "Actions",
-	KeyAdminColTime:            "Time",
-	KeyAdminColEntity:          "Entity",
-	KeyAdminColOperation:       "Operation",
-	KeyAdminColRecord:          "Record",
-	KeyAdminColChanges:         "Changes",
-	KeyAdminColActor:           "Actor",
-	KeyAdminColUser:            "User",
-	KeyAdminColRoles:           "Roles",
-	KeyAdminColModule:          "Module",
-	KeyAdminColTrust:           "Trust",
-	KeyAdminColState:           "State",
-	KeyAdminColGeneration:      "Generation",
-	KeyAdminColRestarts:        "Restarts",
-	KeyAdminColRoutes:          "Routes / tools",
-	KeyAdminColLastExit:        "Last exit",
-	KeyAdminQueue:              "Jobs",
-	KeyAdminQueueSub:           "Background jobs. Failed jobs ran out of retries and wait for a replay.",
-	KeyAdminQueueStatus:        "Status",
-	KeyAdminQueueAll:           "All",
-	KeyAdminQueuePending:       "Pending",
-	KeyAdminQueueClaimed:       "Running",
-	KeyAdminQueueFailed:        "Failed",
-	KeyAdminQueueDone:          "Done",
-	KeyAdminQueueLoadFailed:    "Could not load jobs. Check the server logs for details.",
-	KeyAdminQueueEmpty:         "No jobs",
-	KeyAdminQueueEmptyDesc:     "No jobs match this filter.",
-	KeyAdminReplay:             "Replay",
-	KeyAdminReplayAll:          "Replay {n} failed",
-	KeyAdminReplayAllConfirm:   "Replay every failed job?",
-	KeyAdminReplayed:           "Job queued again.",
-	KeyAdminReplayedAll:        "Failed jobs queued again.",
-	KeyAdminAudit:              "Audit log",
-	KeyAdminAuditFrom:          "From",
-	KeyAdminAuditTo:            "To",
-	KeyAdminAuditAnyEntity:     "Any entity",
-	KeyAdminAuditAnyOp:         "Any operation",
-	KeyAdminAuditBadFilter:     "\"{param}\" was ignored. It is not a value the filter accepts.",
-	KeyAdminAuditRole:          "Role",
-	KeyAdminAuditUser:          "User",
-	KeyAdminAuditGranted:       "Granted {permission}",
-	KeyAdminAuditRevoked:       "Revoked {permission}",
-	KeyAdminAuditGrantRefused:  "Refused to grant {permission}",
-	KeyAdminAuditRevokeRefused: "Refused to revoke {permission}",
-	KeyAdminAuditAssignRefused: "Refused to assign {role}",
-	KeyAdminAuditNoRoles:       "No roles",
-	KeyAdminAuditBulkRecord:    "{count} {entity}",
-	KeyAdminAuditBulkDeleted:   "Deleted",
-	KeyAdminAuditBulkRestored:  "Restored",
-	KeyAdminAuditBulkUpdated:   "Updated",
-	KeyAdminAuditBulkSkipped:   "{count} skipped",
-	KeyAdminAuditBulkFailed:    "{count} failed",
-	KeyAdminAuditSub:           "Who changed what, newest first.",
-	KeyAdminAuditLoadFailed:    "Could not load audit rows. Check the server logs for details.",
-	KeyAdminAuditEmpty:         "No audit entries",
-	KeyAdminAuditEmptyDesc:     "Audit events will appear here.",
-	KeyAdminAuditSystem:        "System",
-	KeyAdminRoles:              "Roles",
-	KeyAdminRolesSub:           "What each role may do.",
-	KeyAdminUserRoles:          "User roles",
-	KeyAdminUserRolesSub:       "Which roles each user holds.",
-	KeyAdminNoRoles:            "No roles",
-	KeyAdminNoRolesDesc:        "Define roles in the app's access policy.",
-	KeyAdminNoUsers:            "No users",
-	KeyAdminUsersLoadFailed:    "Could not load users. Check the server logs for details.",
-	KeyAdminPermission:         "Permission",
-	KeyAdminNewRole:            "New role",
-	KeyAdminAddRole:            "Add a role",
-	KeyAdminGrant:              "Grant",
-	KeyAdminRevoke:             "Revoke",
-	KeyAdminGrantCell:          "{role} holds {permission}",
-	KeyAdminHoldsEvery:         "{role} holds every permission",
-	KeyAdminSavePermissions:    "Save permissions",
-	KeyAdminPermissionsSaved:   "Permissions saved.",
-	KeyAdminNoPermissions:      "No permissions to grant",
-	KeyAdminNoPermissionsDesc:  "Every role holds every permission. Register the app's capabilities on its policy to grant them one by one.",
-	KeyAdminUndeclared:         "Not declared",
-	KeyAdminSaveRoles:          "Save roles",
-	KeyAdminEditRoles:          "Edit roles",
-	KeyAdminGranted:            "Permission granted.",
-	KeyAdminRolesSaved:         "Roles saved.",
-	KeyAdminGrantRefused:       "You can only grant or revoke a permission you hold.",
-	KeyAdminAssignRefused:      "You cannot assign a role above your own.",
-	KeyAdminUnknownCapability:  "That permission is not one the app declares.",
-	KeyAdminModules:            "Modules",
-	KeyAdminModulesSub:         "Process modules and their lifecycle.",
-	KeyAdminNoModules:          "No process modules registered.",
-	KeyAdminEnable:             "Enable",
-	KeyAdminDisable:            "Disable",
-	KeyAdminDisableConfirm:     "Disable {module}? It drains and stops serving.",
-	KeyAdminBump:               "Bump generation",
-	KeyAdminCapability:         "Capability",
-	KeyAdminRevokeConfirm:      "Revoke this capability from {module}? Its generation bumps and the child restarts.",
-	KeyAdminModuleEnabled:      "Module enabled.",
-	KeyAdminModuleDisabled:     "Module disabled.",
-	KeyAdminModuleBumped:       "Generation bumped.",
-	KeyAdminModuleRevoked:      "Capability revoked.",
-	KeyAdminModuleFailed:       "The module did not accept that change. Check the server logs for details.",
-	KeyAdminModuleRefused:      "You may not manage process modules.",
-	KeyAdminServing:            "Serving",
-	KeyAdminServes404:          "Serves 404",
-	KeyAdminServes503:          "Serves 503",
-	KeyAdminCircuitOpen:        "Circuit open",
-	KeyAdminLeaseFailing:       "Lease failing",
-}
+// Email previews.
+var (
+	AdminEmails         = i18n.Define("ui.admin.emails", "Emails")
+	AdminEmailsSub      = i18n.Define("ui.admin.emailsSub", "Email templates rendered with sample data. Nothing is sent.")
+	AdminEmailTemplates = i18n.Define("ui.admin.emailTemplates", "Email templates")
+	AdminEmailSubject   = i18n.Define("ui.admin.emailSubject", "Subject")
+	AdminEmailHTML      = i18n.Define("ui.admin.emailHTML", "HTML body")
+	AdminEmailText      = i18n.Define("ui.admin.emailText", "Text body")
+	AdminEmailNoHTML    = i18n.Define("ui.admin.emailNoHTML", "This template has no HTML body.")
+	AdminEmailNoText    = i18n.Define("ui.admin.emailNoText", "This template has no text body.")
+	AdminEmailFailed    = i18n.Define("ui.admin.emailFailed", "This template did not render with its sample data. Check the server logs for details.")
+)

@@ -363,3 +363,26 @@ func TestDashboardTableServesTheWindow(t *testing.T) {
 		t.Fatalf("stranger GET /api/tasks = %d, want 403", resp.StatusCode)
 	}
 }
+
+// A second app built in the same process, its database closed, leaves
+// the first app's record page reading its own database. The entity
+// screen set was once a package variable every buildApp overwrote, and
+// the page answered not-found once the other app's DB closed.
+func TestRecordPageOutlivesOtherApp(t *testing.T) {
+	h, _ := newHarness(t)
+	task := h.Post("/api/tasks", map[string]any{"title": "Kept task"}).AssertStatus(t, http.StatusCreated)
+	taskID := between(task.Body, `"id":"`, `"`)
+
+	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
+	other, _, _, err := buildApp(desktoptest.NewShell())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.DB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Get("/tasks/"+taskID+"?tab=focus").AssertStatus(t, http.StatusOK).
+		AssertContains(t, "Kept task").
+		AssertContains(t, `data-focus-start="`+taskID+`"`)
+}

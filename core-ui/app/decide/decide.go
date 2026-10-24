@@ -1,7 +1,7 @@
 // Package decide provides the constructors for app.Decision values
 // returned from Policy.Decide implementations. Lives in a subpackage
 // (rather than under app directly) so call sites read like
-// `decide.Block(403, "no")` without shadowing common variable names
+// `decide.Block(403)` without shadowing common variable names
 // ("block", "redirect") that authors reach for.
 //
 //	import (
@@ -18,6 +18,7 @@ package decide
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Allow returns the "let the request proceed" Decision.
@@ -39,7 +40,21 @@ func RenderAlt(factory func() component.Component) app.Decision {
 }
 
 // Block returns a Decision that aborts with status (e.g. 401, 403,
-// 404). Message is optional human-readable text.
-func Block(status int, message string) app.Decision {
-	return app.Decision{Kind: app.DecisionBlock, Status: status, Message: message}
+// 404). The body is the status's generic phrase in the request's
+// locale.
+func Block(status int) app.Decision {
+	return app.Decision{Kind: app.DecisionBlock, Status: status}
+}
+
+// BlockWith is Block with the body naming reason, translated per
+// request with params:
+//
+//	var exporterDown = i18n.Define("reports.exporter_down", "The CSV exporter is down for maintenance.")
+//	return decide.BlockWith(http.StatusServiceUnavailable, exporterDown)
+func BlockWith(status int, reason i18n.Phrase, params ...map[string]any) app.Decision {
+	d := app.Decision{Kind: app.DecisionBlock, Status: status, Reason: reason}
+	if len(params) > 0 {
+		d.Params = params[0]
+	}
+	return d
 }

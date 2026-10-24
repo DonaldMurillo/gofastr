@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
@@ -234,7 +235,7 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 	login := g.loginHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !g.hostAllowed(r.Host) {
-			http.Error(w, "forbidden: this address is not the app's own loopback address", http.StatusForbidden)
+			i18n.HTTPError(w, r, http.StatusForbidden, reasonNotOwnLoopback)
 			return
 		}
 		if u := g.canonicalURL(r); u != "" {
@@ -247,12 +248,12 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			return
 		}
 		if !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
-			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
+			i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
 			return
 		}
 		if !g.hasSession(r) {
 			w.Header().Set("Cache-Control", "no-store")
-			http.Error(w, "Not signed in. Run `"+g.openCmd+"` to sign in.", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, reasonNotSignedIn, map[string]any{"command": g.openCmd})
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -286,7 +287,7 @@ func (g *gate) loginHandler() http.Handler {
 		case r.Method == http.MethodPost:
 			r.Body = http.MaxBytesReader(w, r.Body, maxLoginBody)
 			if err := r.ParseForm(); err != nil {
-				http.Error(w, "bad request", http.StatusBadRequest)
+				i18n.HTTPError(w, r, http.StatusBadRequest, i18n.StatusPhrase(http.StatusBadRequest))
 				return
 			}
 			tok = r.PostForm.Get("t")
@@ -294,16 +295,16 @@ func (g *gate) loginHandler() http.Handler {
 			tok = r.URL.Query().Get("t")
 		default:
 			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		if !g.redeem(tok) {
-			http.Error(w, "This sign-in link has expired or was already used. Run `"+g.openCmd+"` again.", http.StatusForbidden)
+			i18n.HTTPError(w, r, http.StatusForbidden, reasonSignInLinkUsed, map[string]any{"command": g.openCmd})
 			return
 		}
 		val, exp, err := g.mintSession()
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		//gofastr:allow(security/insecure-cookie) plain loopback origin only, Secure would make the browser drop this cookie over http://127.0.0.1
@@ -316,13 +317,6 @@ func (g *gate) loginHandler() http.Handler {
 			SameSite: http.SameSiteStrictMode,
 		})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(signedInPage))
+		_, _ = w.Write([]byte(signedInPage(r.Context())))
 	})
 }
-
-// signedInPage is the login success body: a same-origin refresh to the
-// app's root, plus a link for a browser that ignores refresh.
-const signedInPage = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>Signed in</title></head>
-<body><p>Signed in. <a href="/">Continue</a></p></body></html>
-`

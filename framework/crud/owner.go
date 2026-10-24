@@ -98,8 +98,9 @@ func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
 // (access.WithDecider): the decider is asked about access.Ref{Type, ID}, so it
 // can allow the listing and deny an individual row, "member may read project
 // 42" is the whole point of that seam. The HTTP read-one route already passes
-// r.PathValue("id") into the check; a screen rendering the same record with the
-// collection-level predicate would show a row the API refuses by id.
+// the record id from its path into the check; a screen rendering the same
+// record with the collection-level predicate would show a row the API
+// refuses by id.
 //
 // Pass the record id for a detail or edit view. With no decider installed this
 // answers exactly what CanReadScoped answers.
@@ -210,7 +211,7 @@ func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request,
 		return true
 	}
 	if !ch.accessAllows(r.Context(), perm, recordID) {
-		writeJSONError(w, http.StatusForbidden, "access denied: missing permission "+perm)
+		writeJSONError(w, r, http.StatusForbidden, handler.ReasonMissingPermission, map[string]any{"permission": string(perm)})
 		return false
 	}
 	return true
@@ -404,7 +405,7 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 	}
 	id, found := owner.Get(r.Context())
 	if !found {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 		return nil, false
 	}
 	return id, true
@@ -432,7 +433,7 @@ func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Reque
 		return true // an explicit mechanism already governs this entity
 	}
 	if _, ok := handler.GetUser(r.Context()); !ok {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 		return false
 	}
 	return true
@@ -463,7 +464,7 @@ func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op c
 	if !ch.requireAuthenticated(w, r, op) {
 		return false
 	}
-	return ch.requirePermission(w, r, op, r.PathValue("id"))
+	return ch.requirePermission(w, r, op, ch.pathID(r))
 }
 
 // RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.
@@ -485,7 +486,7 @@ func (ch *CrudHandler) RequireTenant(w http.ResponseWriter, r *http.Request) (ok
 	}
 	ctx := r.Context()
 	if tenantIDFromCtx(ctx) == "" && !tenant.IsCrossTenant(ctx) {
-		writeJSONError(w, http.StatusUnauthorized, "tenant context required")
+		writeJSONError(w, r, http.StatusUnauthorized, reasonTenantRequired)
 		return false
 	}
 	return true

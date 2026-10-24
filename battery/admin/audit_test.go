@@ -139,3 +139,17 @@ func TestAuditOpKindFoldsKeyedOps(t *testing.T) {
 		t.Errorf("opKind folded an operation that only starts like a move: %q", got)
 	}
 }
+
+// A sensitive key's audit rows carry its digest, which names no record.
+// Looking it up would title and link a record whose own id is that
+// digest string.
+func TestAuditDigestIDLinksNothing(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	x.insert("posts", map[string]any{"id": digest, "title": "Planted", "status": "draft"})
+	x.seedAudit("a1", "", "posts", "update", digest, "admin-1", time.Now().UTC())
+	body := get(x.as(theAdmin), "/admin/audit").Body.String()
+	if strings.Contains(body, "Planted") || strings.Contains(body, `href="/admin/entities/posts/sha256`) {
+		t.Fatal("a digest record_id was looked up as a live record")
+	}
+}

@@ -3,12 +3,14 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
@@ -23,7 +25,9 @@ type meta struct {
 	states *entity.StatesConfig
 	fields []schema.Field // every field the API returns: not Hidden
 	byName map[string]schema.Field
-	pk     string
+	keys   []string          // the primary-key columns: a record's id is rowID
+	pk     string            // the one key column a relation joins on; "" for a composite key
+	wire   map[string]string // column -> WireName, for the fields that set one
 	ch     *crud.CrudHandler
 	api    string
 	hasAPI bool
@@ -53,11 +57,124 @@ func (u *UI) meta(name string) (*meta, error) {
 		m.fields = append(m.fields, f)
 		m.byName[f.Name] = f
 	}
-	m.pk = e.PrimaryKey
-	if m.pk == "" {
-		m.pk = "id"
+	// Screens name a record by its whole key; only a relation, refused
+	// onto or off a composite key at boot, reads the one column.
+	m.keys = e.KeyColumns()
+	m.pk, _ = e.KeyColumn()
+	for _, f := range e.GetFields() {
+		if f.WireName != "" && f.WireName != f.Name {
+			if m.wire == nil {
+				m.wire = map[string]string{}
+			}
+			m.wire[f.Name] = f.WireName
+		}
 	}
 	return m, nil
+}
+
+// isKey reports whether field is a primary-key column.
+func (m *meta) isKey(field string) bool { return slices.Contains(m.keys, field) }
+
+// rowID is a row's record id, entity.JoinKey over its key columns, or ""
+// when a key value is missing.
+func (m *meta) rowID(row map[string]any) string {
+	parts := make([]string, len(m.keys))
+	for i, c := range m.keys {
+		if parts[i] = cell(m.rowValue(row, c)); parts[i] == "" {
+			return ""
+		}
+	}
+	return entity.JoinKey(parts)
+}
+
+// idPath is a record id as the path segments that name it: the escaped
+// id for a one-column key, each value escaped for a composite key.
+func (m *meta) idPath(id string) string {
+	if len(m.keys) > 1 {
+		if parts, err := entity.SplitKey(id, len(m.keys)); err == nil {
+			return entity.JoinKey(parts)
+		}
+	}
+	return url.PathEscape(id)
+}
+
+// keySorts orders rows by the primary key.
+func (m *meta) keySorts() []filter.ParsedSort {
+	out := make([]filter.ParsedSort, len(m.keys))
+	for i, c := range m.keys {
+		out[i] = filter.ParsedSort{Field: c}
+	}
+	return out
+}
+
+// keyWheres returns the predicates matching the records ids name: one IN
+// for a one-column key; for a composite key, ORs of per-record ANDs, as
+// many records to each as keep its tree under the filter's 64-node cap.
+// An id entity.KeyValues refuses names no record: one that does not
+// split into the key, or an integer value not in canonical decimal,
+// which the database would coerce onto another record's key.
+func (m *meta) keyWheres(ids []string) []*filter.Predicate {
+	fields := m.e.GetFields()
+	if m.ch != nil {
+		fields = entity.ValueFields(m.ch.Registry, m.e)
+	}
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, err := entity.KeyValues(id, m.keys, fields); err == nil {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return nil
+	}
+	if len(m.keys) == 1 {
+		return []*filter.Predicate{{Field: m.keys[0], Op: filter.OpIn, Values: valid}}
+	}
+	per := 63 / (1 + len(m.keys))
+	var out []*filter.Predicate
+	for _, id := range valid {
+		parts, _ := entity.SplitKey(id, len(m.keys))
+		if len(out) == 0 || len(out[len(out)-1].Children) == per {
+			out = append(out, &filter.Predicate{Or: true})
+		}
+		rec := filter.Predicate{Children: make([]filter.Predicate, len(parts))}
+		for i, c := range m.keys {
+			rec.Children[i] = filter.Predicate{Field: c, Op: filter.OpEq, Value: parts[i]}
+		}
+		or := out[len(out)-1]
+		or.Children = append(or.Children, rec)
+	}
+	return out
+}
+
+// listByIDs reads the records ids name, with opts' fields and sorts, one
+// keyWheres predicate at a time: rows come in key order within each.
+// opts' fields must carry the key columns: a row whose own id is not
+// one of ids drops out, since a column type the database chose (a
+// Postgres UUID or CITEXT under a view or an Unmanaged table) matches a
+// second spelling of its key. Each record comes back once: an alias in
+// one predicate reaches the row its own id reaches in another.
+func (m *meta) listByIDs(ctx context.Context, ids []string, opts crud.ListOptions) ([]map[string]any, error) {
+	asked := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		asked[id] = true
+	}
+	var out []map[string]any
+	for _, w := range m.keyWheres(ids) {
+		o := opts
+		o.Where, o.Limit = w, len(ids)
+		rows, err := m.ch.ListAll(ctx, o)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if id := m.rowID(row); asked[id] {
+				delete(asked, id)
+				out = append(out, row)
+			}
+		}
+	}
+	return out, nil
 }
 
 // field reports a visible field by name.
@@ -104,9 +221,11 @@ func (m *meta) valueLabel(ctx context.Context, field, value string) string {
 	return i18nui.FieldValueLabel(ctx, m.tr, m.name, field, value)
 }
 
-// system reports the fields the server owns outright: the primary key,
-// auto-generated fields and ReadOnly fields. The record header shows them;
-// forms never carry them.
+// system reports the fields the server owns outright: a one-column
+// primary key, auto-generated fields and ReadOnly fields. The record
+// header shows them; forms never carry them. A composite key's columns
+// name the record the caller creates (the pair a join row links), so a
+// create sets them and every later write leaves them (locked).
 func (m *meta) system(f schema.Field) bool {
 	return f.Name == m.pk || f.AutoGenerate != schema.AutoNone || f.ReadOnly
 }
@@ -121,8 +240,13 @@ func (m *meta) guarded(field string) bool {
 }
 
 // locked reports a field drawn read-only on forms and never submitted:
-// Locked, guarded, or system.
+// Locked, guarded, system, or a key column (a record keeps its key).
 func (m *meta) locked(f schema.Field) bool {
+	return m.createLocked(f) || m.isKey(f.Name)
+}
+
+// createLocked is locked for a create form, which sets a composite key.
+func (m *meta) createLocked(f schema.Field) bool {
 	return m.hint(f.Name).Locked || m.guarded(f.Name) || m.system(f)
 }
 
@@ -176,9 +300,16 @@ func (m *meta) columns() []string {
 	return out
 }
 
-// rowValue reads a row value by declaration name, falling back to the
-// camelCase spelling the JSON API serializes under camel casing.
-func rowValue(row map[string]any, key string) any {
+// rowValue reads a row value by declaration name: under the field's
+// WireName when it sets one (the key the CRUD handler returns it under),
+// then the name itself, then the camelCase spelling the JSON API
+// serializes under camel casing.
+func (m *meta) rowValue(row map[string]any, key string) any {
+	if w, ok := m.wire[key]; ok {
+		if v, ok := row[w]; ok {
+			return v
+		}
+	}
 	if v, ok := row[key]; ok {
 		return v
 	}

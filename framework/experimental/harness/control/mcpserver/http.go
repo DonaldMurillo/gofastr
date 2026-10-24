@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -98,13 +99,13 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// included — with no credential at all. Refuse every request instead
 	// of degrading to stdio trust semantics on TCP.
 	if h.Encoder == nil {
-		http.Error(w, "mcp http handler: no auth encoder configured; refusing to serve unauthenticated", http.StatusServiceUnavailable)
+		i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonNoAuthEncoder)
 		return
 	}
 	tok := r.Header.Get("Authorization")
 	c, ok := verifyBearer(h.Encoder, h.Revocations, tok)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 		return
 	}
 	claims := &c
@@ -124,7 +125,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.dropSession(sessID)
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 	}
 }
 
@@ -212,12 +213,12 @@ func defangSSEDirectives(ln []byte) []byte {
 func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID string, claims *auth.Claims) {
 	defer r.Body.Close()
 	if !isAcceptableJSONContentType(r.Header.Get("Content-Type")) {
-		http.Error(w, "unsupported media type: expected application/json", http.StatusUnsupportedMediaType)
+		i18n.HTTPError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 		return
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 4*1024*1024))
 	if err != nil {
-		http.Error(w, "body read: "+err.Error(), http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable)
 		return
 	}
 	// Reuse Server's stdio handler via an in-memory io pair. Build a
@@ -235,7 +236,7 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 		// Serve returns nil on EOF; only log unexpected errors.
 		if err != io.EOF {
 			log.Printf("mcpserver: serve: %v", err)
-			http.Error(w, "mcp serve failed", http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 	}
@@ -253,7 +254,7 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID string, claims *auth.Claims) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "no flusher", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	// Seat the stream per token principal BEFORE any bytes go out, so
@@ -268,7 +269,7 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 	seat, seated := h.seatTable().AcquireSeat(principal, 0, stream.SeatOverflowRefuse)
 	if !seated {
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "too many concurrent event streams for this token", http.StatusTooManyRequests)
+		i18n.HTTPError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 		return
 	}
 	defer h.seatTable().ReleaseSeat(seat)

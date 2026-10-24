@@ -52,8 +52,8 @@ func ChangeList(cfg ChangeListConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	from := i18nui.T(ctx, i18nui.KeyChangeFrom)
-	to := i18nui.T(ctx, i18nui.KeyChangeTo)
+	from := i18nui.ChangeFrom.Text(ctx)
+	to := i18nui.ChangeTo.Text(ctx)
 	// The label, arrow, hidden words and empty mark are the component's
 	// own; so is a side, or a whole row, holding no caller value.
 	own := func(tag, class string, kids ...render.HTML) render.HTML {

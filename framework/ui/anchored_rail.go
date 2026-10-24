@@ -1,11 +1,12 @@
 package ui
 
 import (
-	"strconv"
+	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -99,6 +100,10 @@ type AnchoredRailConfig struct {
 	// Keys the component owns are dropped: class and id (use Class /
 	// ID), data-hui-* (the rail wiring), and aria-label (use Label).
 	ExtraAttrs html.Attrs
+
+	// Ctx carries the per-request context the item counts are written
+	// in: Arabic digits for an ar-EG reader. When nil, English applies.
+	Ctx context.Context
 }
 
 // AnchoredRail returns the rail HTML. When ObserveSelector is set the
@@ -108,7 +113,7 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	for i, it := range cfg.Items {
 		count := ""
 		if it.Count > 0 {
-			count = strconv.Itoa(it.Count)
+			count = i18n.Number(cfg.Ctx, it.Count)
 		}
 		items[i] = headless.RailItem{
 			Anchor:  it.Anchor,
@@ -152,7 +157,7 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	if cfg.ID != "" {
 		sheetID = cfg.ID + "-sheet"
 	}
-	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: cfg.Label, SwapAt: cfg.SwapAt, Top: cfg.PhoneSheetTop}, rail)
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{Ctx: cfg.Ctx, ID: sheetID, Title: cfg.Label, SwapAt: cfg.SwapAt, Top: cfg.PhoneSheetTop}, rail)
 }
 
 var anchoredRailStyle = registry.RegisterStyle("ui-anchored-rail", anchoredRailCSS)

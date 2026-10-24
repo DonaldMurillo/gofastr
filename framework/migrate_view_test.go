@@ -3,9 +3,11 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -106,23 +108,36 @@ func TestView_ColumnsWithoutPKPanics(t *testing.T) {
 	}.ToEntity()
 }
 
-// TestView_MultiplePKPanics: more than one PrimaryKey column on a view fails loud.
-func TestView_MultiplePKPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected a panic for multiple PrimaryKey columns")
-		} else if !strings.Contains(r.(string), "exactly one") {
-			t.Fatalf("unexpected panic: %v", r)
-		}
-	}()
-	migrate.View{
+// TestView_CompositeKey: several PrimaryKey columns on a view make its
+// key, in column order.
+func TestView_CompositeKey(t *testing.T) {
+	ent := migrate.View{
 		Name:   "v",
 		Select: "SELECT a, b FROM t",
 		Columns: []migrate.Column{
 			{Name: "a", Type: schema.String, PrimaryKey: true},
 			{Name: "b", Type: schema.String, PrimaryKey: true},
+			{Name: "c", Type: schema.String},
 		},
 	}.ToEntity()
+	if got := ent.KeyColumns(); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("KeyColumns = %v", got)
+	}
+}
+
+// A view's read routes name rows by id, so App.View refuses a key column
+// read case-insensitively (a Postgres UUID), as Define does for an entity.
+func TestView_RawTypeKeyPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), "more than one spelling") {
+			t.Fatalf("App.View with a UUID-typed key: recover = %v, want the key refusal", r)
+		}
+	}()
+	NewApp(WithoutDefaultMiddleware()).View(migrate.View{
+		Name:    "v",
+		Select:  "SELECT a FROM t",
+		Columns: []migrate.Column{{Name: "a", Type: schema.UUID, RawType: "UUID", PrimaryKey: true}},
+	})
 }
 
 // TestView_GenerateReversible: a generated view migration creates the view

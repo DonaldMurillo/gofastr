@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"testing"
@@ -35,107 +36,53 @@ func newResult(ids ...string) map[string]map[string]any {
 	return r
 }
 
-func TestFiltered_InvalidRelEntity(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "bad ent!", ForeignKey: "fk"}, Target: guardTarget("bad ent!")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "target table") {
-		t.Fatalf("invalid target table err = %v", err)
+// TestFiltered_IdentifierGuards: each case breaks one identifier
+// loadIncludeNode interpolates and expects the guard naming it to refuse
+// the load. A bogus RelationType falls through the switch to nil.
+func TestFiltered_IdentifierGuards(t *testing.T) {
+	hasMany := entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "ent", ForeignKey: []string{"fk"}}
+	m2m := func(through, local, target string) entity.Relation {
+		return entity.Relation{Type: entity.RelManyToMany, Name: "r", Entity: "ent", Through: through, LocalKey: local, ForeignKeyTarget: target}
 	}
-}
-
-func TestFiltered_InvalidParentTable(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "ent", ForeignKey: "fk"}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "bad table!", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "parent table") {
-		t.Fatalf("invalid parent table err = %v", err)
+	with := func(r entity.Relation, edit func(*entity.Relation)) entity.Relation {
+		edit(&r)
+		return r
 	}
-}
-
-func TestFiltered_InvalidParentPK(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "ent", ForeignKey: "fk"}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "bad pk!", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "parent PK") {
-		t.Fatalf("invalid parent PK err = %v", err)
+	cases := []struct {
+		name      string
+		table     string
+		parentKey string
+		rel       entity.Relation
+		filters   []filter.ParsedFilter
+		want      string // "" means the load succeeds
+	}{
+		{name: "target table", rel: with(hasMany, func(r *entity.Relation) { r.Entity = "bad ent!" }), want: "target table"},
+		{name: "parent table", table: "bad table!", rel: hasMany, want: "parent table"},
+		{name: "parent PK", parentKey: "bad pk!", rel: hasMany, want: "parent PK"},
+		{name: "has_many FK", rel: with(hasMany, func(r *entity.Relation) { r.ForeignKey = []string{"bad fk!"} }), want: "FK"},
+		{name: "belongs_to FK", rel: with(hasMany, func(r *entity.Relation) { r.Type, r.ForeignKey = entity.RelManyToOne, []string{"bad fk!"} }), want: "FK"},
+		{name: "unknown type", rel: with(hasMany, func(r *entity.Relation) { r.Type = entity.RelationType(99) })},
+		{name: "filter field", rel: hasMany, filters: []filter.ParsedFilter{{Field: "bad field!", Op: filter.OpEq, Value: "x"}}, want: "filter field"},
+		{name: "m2m through", rel: m2m("bad through!", "lk", "fkt"), want: "through"},
+		{name: "m2m local key", rel: m2m("pivot", "bad key!", "fkt"), want: "local key"},
+		{name: "m2m FK target", rel: m2m("pivot", "lk", "bad!"), want: "FK target"},
 	}
-}
-
-func TestFiltered_InvalidFKHasMany(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "ent", ForeignKey: "bad fk!"}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "FK") {
-		t.Fatalf("invalid FK hasMany err = %v", err)
-	}
-}
-
-func TestFiltered_InvalidFKBelongsTo(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelManyToOne, Name: "r", Entity: "ent", ForeignKey: "bad fk!"}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "FK") {
-		t.Fatalf("invalid FK belongsTo err = %v", err)
-	}
-}
-
-func TestFiltered_UnknownRelType(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	// Cast a bogus RelationType so the switch falls through to `return nil`.
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelationType(99), Name: "r", Entity: "ent", ForeignKey: "fk"}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err != nil {
-		t.Fatalf("unknown rel type should fall through to nil, got %v", err)
-	}
-}
-
-func TestFiltered_InvalidFilterField(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{
-		Relation: entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "ent", ForeignKey: "fk"},
-		Target:   guardTarget("ent"),
-		Filters:  []filter.ParsedFilter{{Field: "bad field!", Op: filter.OpEq, Value: "x"}},
-	}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "filter field") {
-		t.Fatalf("invalid filter field err = %v", err)
-	}
-}
-
-func TestFiltered_M2MInvalidThrough(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{
-		Type: entity.RelManyToMany, Name: "r", Entity: "ent",
-		Through: "bad through!", LocalKey: "lk", ForeignKeyTarget: "fkt",
-	}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "through") {
-		t.Fatalf("invalid through err = %v", err)
-	}
-}
-
-func TestFiltered_M2MInvalidLocalKey(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{
-		Type: entity.RelManyToMany, Name: "r", Entity: "ent",
-		Through: "pivot", LocalKey: "bad key!", ForeignKeyTarget: "fkt",
-	}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "local key") {
-		t.Fatalf("invalid local key err = %v", err)
-	}
-}
-
-func TestFiltered_M2MInvalidFKTarget(t *testing.T) {
-	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
-	node := &IncludeNode{Relation: entity.Relation{
-		Type: entity.RelManyToMany, Name: "r", Entity: "ent",
-		Through: "pivot", LocalKey: "lk", ForeignKeyTarget: "bad!",
-	}, Target: guardTarget("ent")}
-	err := loadIncludeNode(context.Background(), db, "p", "id", node, []string{"1"}, newResult("1"), newIncludeBudget())
-	if err == nil || !strings.Contains(err.Error(), "FK target") {
-		t.Fatalf("invalid FK target err = %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
+			table, pk := cmp.Or(tc.table, "p"), cmp.Or(tc.parentKey, "id")
+			node := &IncludeNode{Relation: tc.rel, Target: guardTarget(tc.rel.Entity), Filters: tc.filters}
+			err := loadIncludeNode(context.Background(), db, table, []string{pk}, node, []string{"1"}, newResult("1"), newIncludeBudget())
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("want nil, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want an error naming %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
 
@@ -145,9 +92,9 @@ func TestFiltered_BelongsToNoSourceRows(t *testing.T) {
 		`CREATE TABLE src (id TEXT PRIMARY KEY, author_id TEXT)`,
 		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT)`,
 	)
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"}, Target: guardTarget("users")}
+	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}}, Target: guardTarget("users")}
 	// ids reference no existing src rows → source query yields nothing → fks empty.
-	err := loadIncludeNode(context.Background(), db, "src", "id", node, []string{"nope"}, newResult("nope"), newIncludeBudget())
+	err := loadIncludeNode(context.Background(), db, "src", []string{"id"}, node, []string{"nope"}, newResult("nope"), newIncludeBudget())
 	if err != nil {
 		t.Fatalf("no-source-rows belongsTo = %v", err)
 	}
@@ -163,9 +110,9 @@ func TestFiltered_BelongsToScanNullFK(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO src (id, author_id) VALUES ('s1', NULL)`); err != nil {
 		t.Fatal(err)
 	}
-	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"}, Target: guardTarget("users")}
+	node := &IncludeNode{Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}}, Target: guardTarget("users")}
 	result := newResult("s1")
-	err := loadIncludeNode(context.Background(), db, "src", "id", node, []string{"s1"}, result, newIncludeBudget())
+	err := loadIncludeNode(context.Background(), db, "src", []string{"id"}, node, []string{"s1"}, result, newIncludeBudget())
 	if err != nil {
 		t.Fatalf("NULL fk should not error, got: %v", err)
 	}

@@ -182,7 +182,7 @@ func TestAPITabRefusesAnonymous(t *testing.T) {
 	x := newInvoiceUI(t)
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").API().
 		RenderCtx(x.ctx("/rec/invoices/inv-1", "?tab=api")))
-	if !strings.Contains(body, AccessDeniedTitle) {
+	if !strings.Contains(body, AccessDeniedTitle.English()) {
 		t.Fatalf("an anonymous caller must see the refusal:\n%s", body)
 	}
 	if strings.Contains(body, "tok-secret") || strings.Contains(body, "INV-1") {

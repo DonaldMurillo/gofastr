@@ -34,10 +34,14 @@ type SchemaSnapshot struct {
 	// table's Down recreates it WITH all constraints (PK, NOT NULL, UNIQUE,
 	// FK, defaults) rather than a lossy column-list reconstruction. Optional:
 	// snapshots written by an older gofastr fall back to recreateTableSQL.
-	TableDDL map[string]string     `json:"table_ddl,omitempty"`
-	Indices  map[string][]string   `json:"indices,omitempty"`
-	Views    map[string]RoutineDef `json:"views,omitempty"`
-	Routines map[string]RoutineDef `json:"routines,omitempty"`
+	TableDDL map[string]string   `json:"table_ddl,omitempty"`
+	Indices  map[string][]string `json:"indices,omitempty"`
+	// PrimaryKeys holds each entity table's key columns in key order, so a
+	// later generation can see a key change. A snapshot written before it
+	// existed has none, and the first generation after records them.
+	PrimaryKeys map[string][]string   `json:"primary_keys,omitempty"`
+	Views       map[string]RoutineDef `json:"views,omitempty"`
+	Routines    map[string]RoutineDef `json:"routines,omitempty"`
 }
 
 // RoutineDef is the snapshot record for a routine: its Up and Down bodies, so
@@ -65,9 +69,13 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 			}
 			cols := map[string]string{}
 			for _, f := range ent.GetFields() {
-				cols[f.Name] = SQLType(f, dialect)
+				cols[f.Name] = columnSQLType(ent, f, all, dialect)
 			}
 			snap.Tables[ent.GetTable()] = cols
+			if snap.PrimaryKeys == nil {
+				snap.PrimaryKeys = map[string][]string{}
+			}
+			snap.PrimaryKeys[ent.GetTable()] = ent.KeyColumns()
 			// Capture the exact CREATE TABLE so a future drop is faithfully
 			// reversible. Skip silently if the entity can't render (it would
 			// have failed the diff anyway).
@@ -173,7 +181,11 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			continue // views / external tables generate no table DDL
 		}
 		prevCols := lookupTableCols(prev.Tables, ent.GetTable())
-		entChanges, derr := diffEntityFromLive(ent, all, dialect, prevCols)
+		var lk *liveKey
+		if cols, ok := lookupKeyCase(prev.PrimaryKeys, ent.GetTable()); ok && len(prevCols) > 0 {
+			lk = &liveKey{cols: cols, constraint: defaultPKName(ent.GetTable())}
+		}
+		entChanges, derr := diffEntity(ent, all, dialect, prevCols, lk)
 		if derr != nil {
 			return "", "", SchemaSnapshot{}, fmt.Errorf("generate %s: %w", ent.GetName(), derr)
 		}
@@ -294,16 +306,20 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	changes = append(changes, routineChanges(plan.Routines, prev.Routines)...)
 
 	// Deduplicate identical SchemaChange statements (e.g. index DDL emitted
-	// both by diffEntityFromLive column additions and diffTableIndices).
-	seenSQL := make(map[string]bool, len(changes))
+	// both by diffEntityFromLive column additions and diffTableIndices). A
+	// dropped duplicate's irreversibility carries over to the one kept: two
+	// entities on one table can render the same key change, and only one of
+	// them may drop the column that makes it irreversible.
+	seenSQL := make(map[string]int, len(changes))
 	dedupedChanges := make([]SchemaChange, 0, len(changes))
 	for _, c := range changes {
 		norm := strings.TrimRight(strings.TrimSpace(c.SQL), ";")
-		if norm != "" && seenSQL[norm] {
+		if i, ok := seenSQL[norm]; ok && norm != "" {
+			dedupedChanges[i].irreversible = dedupedChanges[i].irreversible || c.irreversible
 			continue
 		}
 		if norm != "" {
-			seenSQL[norm] = true
+			seenSQL[norm] = len(dedupedChanges)
 		}
 		dedupedChanges = append(dedupedChanges, c)
 	}
@@ -321,6 +337,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Down is the inverse in REVERSE order so dependencies unwind correctly
 	// (e.g. drop the FK-holding table before the one it references).
 	downs := make([]string, 0, len(changes))
+	if slices.ContainsFunc(changes, func(c SchemaChange) bool { return c.irreversible }) {
+		return strings.Join(ups, ";\n") + ";", "", next, nil
+	}
 	for _, change := range slices.Backward(changes) {
 		if d := strings.TrimSpace(change.Down); d != "" {
 			downs = append(downs, strings.TrimRight(d, ";"))
@@ -638,6 +657,19 @@ func lookupStringCase(m map[string]string, key string) string {
 }
 
 // lookupIndicesCase performs a case-insensitive lookup in a table-to-indices map.
+// lookupKeyCase finds a table's recorded primary key, ignoring case.
+func lookupKeyCase(m map[string][]string, key string) ([]string, bool) {
+	if cols, ok := m[key]; ok {
+		return cols, true
+	}
+	for k, cols := range m {
+		if strings.EqualFold(k, key) {
+			return cols, true
+		}
+	}
+	return nil, false
+}
+
 func lookupIndicesCase(m map[string][]string, key string) []string {
 	if m == nil {
 		return nil

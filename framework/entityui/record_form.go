@@ -13,6 +13,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -84,23 +85,23 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 			if !mayCreateSet(m, f) || blank[f.Name] {
 				continue
 			}
-			if cell(rowValue(row, f.Name)) != cell(rowValue(hooked, f.Name)) {
+			if cell(m.rowValue(row, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
 				continue
 			}
-			if v := formValueText(f, rowValue(row, f.Name)); v != "" {
+			if v := formValueText(f, m.rowValue(row, f.Name)); v != "" {
 				values[f.Name] = v
 			}
 		}
 	}
 	cfg := ui.PageHeaderConfig{
-		Title: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
+		Title: i18nui.EntityNew.Text(ctx, map[string]any{"entity": m.singular(ctx)}),
 	}
 	if !m.hasAPI {
 		return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), readOnlyNotice(ctx, m))
 	}
 	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 		ui.LinkButton(ui.LinkButtonConfig{
-			Label: i18nui.T(ctx, i18nui.KeyEntityCancel), Href: base, Variant: ui.ButtonGhost,
+			Label: i18nui.EntityCancel.Text(ctx), Href: base, Variant: ui.ButtonGhost,
 		}),
 		saveButton(ctx, m, true),
 	)
@@ -112,7 +113,8 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 // unique column index. A relation in a mixed index keeps its value,
 // since the other fields alone make the copy distinct (an invoice
 // copied under the same customer needs only a new number); an index
-// of relations alone blanks them all.
+// of relations alone blanks them all. A composite primary key counts as
+// one more unique index.
 func uniqueBlank(m *meta) map[string]bool {
 	out := map[string]bool{}
 	for _, f := range m.fields {
@@ -120,15 +122,21 @@ func uniqueBlank(m *meta) map[string]bool {
 			out[f.Name] = true
 		}
 	}
+	var sets [][]string
+	if len(m.keys) > 1 {
+		sets = append(sets, m.keys)
+	}
 	for _, ix := range m.e.Config.Indices {
-		if !ix.Unique || ix.Expression != "" {
-			continue
+		if ix.Unique && ix.Expression == "" {
+			sets = append(sets, ix.Columns)
 		}
-		onlyRelations := !slices.ContainsFunc(ix.Columns, func(c string) bool {
+	}
+	for _, cols := range sets {
+		onlyRelations := !slices.ContainsFunc(cols, func(c string) bool {
 			f, ok := m.field(c)
 			return ok && f.Type != schema.Relation
 		})
-		for _, c := range ix.Columns {
+		for _, c := range cols {
 			if f, ok := m.field(c); ok && (onlyRelations || f.Type != schema.Relation) {
 				out[c] = true
 			}
@@ -141,17 +149,14 @@ func uniqueBlank(m *meta) map[string]bool {
 // no write routes: nothing to fill in, nothing to submit.
 func readOnlyNotice(ctx context.Context, m *meta) render.HTML {
 	return ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo},
-		render.Text(i18nui.TVars(ctx, i18nui.KeyEntityReadOnly, map[string]string{"entity": m.singular(ctx)})))
+		render.Text(i18nui.EntityReadOnly.Text(ctx, map[string]any{"entity": m.singular(ctx)})))
 }
 
 // mayCreateSet reports whether a create may set the field: visible,
 // not system, not Locked, not Omit, not guarded (the state field and
 // stamps change only through a move).
 func mayCreateSet(m *meta, f schema.Field) bool {
-	if f.Hidden || m.system(f) || m.locked(f) || m.omitted(f.Name) {
-		return false
-	}
-	return true
+	return !f.Hidden && !m.createLocked(f) && !m.omitted(f.Name)
 }
 
 // editTab draws the record's Edit tab: the form, or the read-only
@@ -219,7 +224,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 
 	action := m.api
 	rpc := interactive.Post(m.api)
-	toast := i18nui.TVars(ctx, i18nui.KeyEntityCreated, map[string]string{"entity": m.singular(ctx)})
+	toast := i18nui.EntityCreated.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 	// A create lands on the list, or, opened as a drawer, back on the
 	// page under it (the list, or the record whose Related tab added
 	// it), which the runtime refreshes in place of leaving the stack.
@@ -228,10 +233,10 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		dest = o
 	}
 	if !fb.create {
-		action = m.api + "/" + url.PathEscape(b.id)
+		action = m.api + "/" + m.idPath(b.id)
 		rpc = interactive.Put(action)
-		toast = i18nui.T(ctx, i18nui.KeyEntitySaved)
-		dest = base + "/" + url.PathEscape(b.id)
+		toast = i18nui.EntitySaved.Text(ctx)
+		dest = under(base, m.idPath(b.id))
 	}
 	attrs := rpc.
 		OnSuccessToast(toast).
@@ -246,9 +251,9 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		HideSubmit:       true,
 		Wide:             len(side) > 0,
 		ExtraAttrs:       attrs,
-		LeaveGuard:       i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
-		LeaveGuardTitle:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuardTitle),
-		LeaveGuardAccept: i18nui.T(ctx, i18nui.KeyEntityLeaveGuardAccept),
+		LeaveGuard:       i18nui.EntityLeaveGuard.Text(ctx),
+		LeaveGuardTitle:  i18nui.EntityLeaveGuardTitle.Text(ctx),
+		LeaveGuardAccept: i18nui.EntityLeaveGuardAccept.Text(ctx),
 	}, body)}
 	// The masked fields' Replace forms: empty, their input and button
 	// sit in the record form's markup and name them by the form
@@ -261,7 +266,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 			Ctx:        ctx,
 			HideSubmit: true,
 			ExtraAttrs: interactive.Put(action).
-				OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySaved)).
+				OnSuccessToast(i18nui.EntitySaved.Text(ctx)).
 				OnSuccess(interactive.Navigate(dest)).
 				Attrs(),
 		}))
@@ -284,9 +289,9 @@ func (b *RecordBuilder) editableFields(m *meta) []schema.Field {
 
 func submitLabel(ctx context.Context, m *meta, create bool) string {
 	if create {
-		return i18nui.TVars(ctx, i18nui.KeyEntityCreate, map[string]string{"entity": m.singular(ctx)})
+		return i18nui.EntityCreate.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 	}
-	return i18nui.T(ctx, i18nui.KeyEntitySave)
+	return i18nui.EntitySave.Text(ctx)
 }
 
 // formBuilder walks the declared layout and renders one field at a
@@ -342,9 +347,9 @@ func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
 			}
 			return renderComponent(cctx, c), nil
 		})
-		title := p.Title
-		if title == "" {
-			title = p.Key
+		title := p.Key
+		if !p.Title.IsZero() {
+			title = p.Title.Text(ctx)
 		}
 		out = append(out, ui.Section(ui.SectionConfig{ID: "eui-side-" + p.Key, Heading: title, Overline: true, Compact: true}, body))
 	}
@@ -391,15 +396,15 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 		return ""
 	}
 	var items []ui.DetailItem
-	if id := cell(rowValue(row, m.pk)); id != "" {
+	if id := cell(m.rowValue(row, m.pk)); m.pk != "" && id != "" {
 		target := "eui-" + m.name + "-id"
 		items = append(items, ui.DetailItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityID),
+			Label: i18nui.EntityID.Text(ctx),
 			Value: render.Join(
 				html.Code(html.TextConfig{ID: target, ExtraAttrs: html.Attrs{"title": id}}, render.Text(id)),
 				ui.CopyButton(ui.CopyButtonConfig{
 					Target: target, IconOnly: true, Icon: "copy", Inline: true, Ctx: ctx,
-					AriaLabel: i18nui.T(ctx, i18nui.KeyCopyToClipboard),
+					AriaLabel: i18nui.CopyToClipboard.Text(ctx),
 				})),
 		})
 	}
@@ -421,7 +426,7 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 	if len(items) == 0 {
 		return ""
 	}
-	return ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityDetails), Overline: true, Compact: true},
+	return ui.Section(ui.SectionConfig{Heading: i18nui.EntityDetails.Text(ctx), Overline: true, Compact: true},
 		ui.DetailList(ui.DetailListConfig{Spread: true, Items: items}))
 }
 
@@ -505,7 +510,7 @@ func (fb *formBuilder) value(f schema.Field) string {
 	if fb.row == nil {
 		return ""
 	}
-	return formValueText(f, rowValue(fb.row, f.Name))
+	return formValueText(f, fb.m.rowValue(fb.row, f.Name))
 }
 
 // field renders one field: read-only when locked or masked-write-only,
@@ -526,7 +531,7 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 		if err == nil && cond.field == fb.m.states.Field {
 			current := ""
 			if fb.row != nil {
-				current = cell(rowValue(fb.row, fb.m.states.Field))
+				current = cell(fb.m.rowValue(fb.row, fb.m.states.Field))
 			} else if fb.create && fb.values != nil {
 				current = fb.values[cond.field]
 			}
@@ -558,7 +563,7 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 	help := fb.m.help(ctx, f.Name)
 	id := "eui-f-" + f.Name
 
-	if fb.locked[f.Name] || fb.m.locked(f) {
+	if fb.locked[f.Name] || (fb.create && fb.m.createLocked(f)) || (!fb.create && fb.m.locked(f)) {
 		return fb.readOnly(ctx, f, label)
 	}
 	if fb.masked[f.Name] && !fb.create {
@@ -580,7 +585,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 		// Only an editable input gets the raw row.
 		row, val := fb.row, fb.value(f)
 		if !fb.create && fb.displayRow != nil {
-			row, val = fb.displayRow, formValueText(f, rowValue(fb.displayRow, f.Name))
+			row, val = fb.displayRow, formValueText(f, fb.m.rowValue(fb.displayRow, f.Name))
 		}
 		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
 			return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: muted()}}})
@@ -614,25 +619,25 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 // its native control (it would submit a value the user never saw), so
 // it becomes a select with an explicit "unchanged" option.
 func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label, help, id string) render.HTML {
-	state := i18nui.T(ctx, i18nui.KeyEntityNotSet)
+	state := i18nui.EntityNotSet.Text(ctx)
 	if v := fb.value(f); v != "" {
-		state = i18nui.T(ctx, i18nui.KeyEntitySet)
+		state = i18nui.EntitySet.Text(ctx)
 	}
-	help = state + " · " + i18nui.T(ctx, i18nui.KeyEntityKeepValue)
+	help = state + " · " + i18nui.EntityKeepValue.Text(ctx)
 	switch f.Type {
 	case schema.Enum:
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: label, ID: id, Help: help,
-			Placeholder: i18nui.T(ctx, i18nui.KeyEntityUnchanged),
+			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options:     enumOptions(ctx, fb.m, f, ""),
 		})
 	case schema.Bool:
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: label, ID: id, Help: help,
-			Placeholder: i18nui.T(ctx, i18nui.KeyEntityUnchanged),
+			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options: []ui.SelectOption{
-				{Value: "true", Text: i18nui.T(ctx, i18nui.KeyEntityYes)},
-				{Value: "false", Text: i18nui.T(ctx, i18nui.KeyEntityNo)},
+				{Value: "true", Text: i18nui.EntityYes.Text(ctx)},
+				{Value: "false", Text: i18nui.EntityNo.Text(ctx)},
 			},
 		})
 	case schema.Relation:
@@ -646,12 +651,13 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		// that form writes this one field, and only a typed value.
 		formID := fb.replaceFormID(f.Name)
 		fb.replace = append(fb.replace, f.Name)
-		help = state + " · " + i18nui.T(ctx, i18nui.KeyEntityReplaceHint)
-		ph := i18nui.T(ctx, i18nui.KeyEntityNewValue)
+		help = state + " · " + i18nui.EntityReplaceHint.Text(ctx)
+		ph := i18nui.EntityNewValue.Text(ctx)
 		owner := html.Attrs{"form": formID}
 		var input render.HTML
 		if f.Type == schema.Text || f.Type == schema.JSON {
 			input = ui.TextArea(ui.TextAreaConfig{
+				Ctx:  ctx,
 				Name: f.Name, Label: label, ID: id, Rows: 4, Help: help, Placeholder: ph,
 				Required: true, ExtraAttrs: owner,
 			})
@@ -668,7 +674,8 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		}
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, input,
 			ui.Button(ui.ButtonConfig{
-				Label: i18nui.T(ctx, i18nui.KeyEntityReplace), Type: "submit",
+				Ctx:   ctx,
+				Label: i18nui.EntityReplace.Text(ctx), Type: "submit",
 				Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, ExtraAttrs: owner,
 			}))
 	}
@@ -689,6 +696,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		})
 	case schema.Text:
 		return ui.TextArea(ui.TextAreaConfig{
+			Ctx:  ctx,
 			Name: f.Name, Label: label, ID: id, Value: val, Rows: 4, Placeholder: ph,
 			Help: help, Required: required,
 			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),
@@ -812,8 +820,8 @@ func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur str
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityOpen, map[string]string{"entity": om.singular(ctx)}),
-		Href:     base + "/" + url.PathEscape(cur),
+		Label:    i18nui.EntityOpen.Text(ctx, map[string]any{"entity": om.singular(ctx)}),
+		Href:     under(base, url.PathEscape(cur)),
 		Variant:  ui.ButtonSecondary,
 		Icon:     "arrow-up-right",
 		IconOnly: true,
@@ -832,7 +840,7 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	// The kind's ctx carries the app's translator so its labels
 	// resolve through the same catalog the form's own fields read, and
 	// Control carries the wiring a FormField would have handed down.
-	kctx := i18nui.WithTranslator(asCaller(ctx), fb.m.tr)
+	kctx := i18n.WithTranslator(asCaller(ctx), fb.m.tr)
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
 			Ctx: kctx, Entity: fb.m.name, Field: f, Name: f.Name, Value: val, Placeholder: ph,
@@ -870,7 +878,7 @@ func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
 		if m.system(f) || m.locked(f) {
 			continue
 		}
-		if cell(rowValue(raw, f.Name)) != cell(rowValue(hooked, f.Name)) {
+		if cell(m.rowValue(raw, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
 			masked[f.Name] = true
 		}
 	}
@@ -932,7 +940,7 @@ func selectPlaceholder(ctx context.Context, f schema.Field, required bool) strin
 	if required || len(f.Values) == 0 {
 		return ""
 	}
-	return i18nui.T(ctx, i18nui.KeyEntitySelect)
+	return i18nui.EntitySelect.Text(ctx)
 }
 
 // formValueText renders a stored value for an <input> of the field's

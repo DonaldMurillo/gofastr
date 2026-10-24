@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -38,20 +39,22 @@ type App struct {
 
 	// Lang is the BCP-47 language tag of the document (e.g. "en", "fr",
 	// "pt-BR"). It becomes the <html lang="…"> attribute on every page the app
-	// renders, so screen readers announce the right language (WCAG 3.1.1).
+	// renders when neither LangFunc nor the request's negotiated locale names
+	// one, so screen readers announce the right language (WCAG 3.1.1).
 	// Empty defaults to "en" via EffectiveLang. Set with WithLang.
 	Lang string
 
 	// LangFunc resolves the document language per route. It is called with the
 	// page path on every full-page render and returns a BCP-47 tag, or "" to
-	// fall back to Lang. A multilingual site that serves /es/… in Spanish sets
-	// this once instead of tagging every screen. Nil (the default) keeps Lang
-	// on every page. Set with WithLangFunc.
+	// fall back to the negotiated locale, then Lang. A multilingual site that
+	// serves /es/… in Spanish sets this once instead of tagging every screen.
+	// Nil (the default) keeps Lang on every page. Set with WithLangFunc.
 	LangFunc func(path string) string
 
 	// SkipLabel is the visible text of the app shell's skip link, the
 	// first string a keyboard user meets. Empty renders the default
-	// "Skip to main content". Set with WithSkipLabel.
+	// "Skip to main content", in the request's language. Set with
+	// WithSkipLabel.
 	SkipLabel string
 
 	// SkipLabelFunc resolves the skip-link text per route, like LangFunc
@@ -75,6 +78,7 @@ type App struct {
 // WithNotFoundBody sets the body the 404-outlet outcome renders and
 // returns the app for chaining (see App.NotFound).
 func (a *App) WithNotFoundBody(c component.Component) *App {
+	RefuseRetiredScreenMethods("not-found body", c)
 	a.NotFound = c
 	return a
 }
@@ -94,12 +98,12 @@ func (a *App) notFoundBody() component.Component {
 // composed html, no chrome of its own (the root layout owns the
 // shell), no request data (the route resolved; echoing a path would
 // read as "no route matched" copy).
-type minimalNotFoundBody struct{}
+type minimalNotFoundBody struct{ component.ContextOnly }
 
-func (minimalNotFoundBody) Render() render.HTML {
+func (minimalNotFoundBody) RenderCtx(ctx context.Context) render.HTML {
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
-		html.Paragraph(html.TextConfig{}, render.Text("This page does not exist.")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(pageNotFoundBody.Text(ctx))),
 	)
 }
 
@@ -144,7 +148,8 @@ func (a *App) WithLang(lang string) *App {
 // language and stems it with the wrong rules.
 //
 // The func is called with the page path on every full-page render. Returning ""
-// falls back to Lang, so an app that never sets it renders exactly as before.
+// falls back to the negotiated locale, then Lang, so an app that never sets it
+// renders exactly as before.
 // A prefix test is usually all a bilingual site needs:
 //
 //	application.WithLangFunc(func(path string) string {
@@ -176,14 +181,11 @@ func (a *App) WithSkipLabelFunc(fn func(path string) string) *App {
 	return a
 }
 
-// defaultSkipLabel keeps a host that sets nothing byte-identical.
-const defaultSkipLabel = "Skip to main content"
-
 // docLangFor resolves the document language a render of path carries:
 // the route rule, then the component's own ScreenLang read after Load so
 // a dynamic route can take the tag from the content it fetched.
-func (a *App) docLangFor(path string, comp any) string {
-	lang := a.LangForPath(path)
+func (a *App) docLangFor(ctx context.Context, path string, comp any) string {
+	lang := a.LangFor(ctx, path)
 	if langer, ok := comp.(ScreenLanger); ok {
 		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
 			lang = l
@@ -192,12 +194,12 @@ func (a *App) docLangFor(path string, comp any) string {
 	return lang
 }
 
-// SkipLabelForPath returns the skip-link text for a route: SkipLabelFunc's
-// answer when it gives one, else SkipLabel, else the English default. It
-// mirrors LangForPath, and the value rides the outermost layout layer as
-// data-cui-skip-label so the runtime can re-localize the link after a
-// client-side navigation.
-func (a *App) SkipLabelForPath(path string) string {
+// SkipLabelFor returns the skip-link text for a route: SkipLabelFunc's
+// answer when it gives one, else SkipLabel, else "Skip to main content"
+// in the request's language. It mirrors LangFor, and the value rides the
+// outermost layout layer as data-cui-skip-label so the runtime can
+// re-localize the link after a client-side navigation.
+func (a *App) SkipLabelFor(ctx context.Context, path string) string {
 	if a.SkipLabelFunc != nil {
 		if l := strings.TrimSpace(a.SkipLabelFunc(path)); l != "" {
 			return l
@@ -206,11 +208,11 @@ func (a *App) SkipLabelForPath(path string) string {
 	if a.SkipLabel != "" {
 		return a.SkipLabel
 	}
-	return defaultSkipLabel
+	return skipToMain.Text(ctx)
 }
 
 // EffectiveLang returns the document language, defaulting to "en" when unset.
-// It is the site-wide fallback; LangForPath is what page rendering asks.
+// It is the site-wide fallback; LangFor is what page rendering asks.
 func (a *App) EffectiveLang() string {
 	if a.Lang != "" {
 		return a.Lang
@@ -218,17 +220,22 @@ func (a *App) EffectiveLang() string {
 	return "en"
 }
 
-// LangForPath returns the document language for a route: LangFunc's answer when
-// it gives one, else EffectiveLang. It deliberately does not consult
+// LangFor returns the document language for a route: LangFunc's answer when
+// it gives one, else the locale the request negotiated (i18n.FromContext,
+// set by the i18n middleware: the catalog language the page's phrases are
+// said in), else EffectiveLang. It deliberately does not consult
 // ScreenLanger, which needs the loaded component; RenderPageResult layers that
 // on top. Hosts that build their own document shells (a 404, an offline page)
 // call this so those shells land in the same language as the route they stand
-// in for.
-func (a *App) LangForPath(path string) string {
+// in for. Pair it with i18n.Dir for the document's <html dir>.
+func (a *App) LangFor(ctx context.Context, path string) string {
 	if a.LangFunc != nil {
 		if lang := strings.TrimSpace(a.LangFunc(path)); lang != "" {
 			return lang
 		}
+	}
+	if tag := i18n.FromContext(ctx).Tag; tag != "" {
+		return tag
 	}
 	return a.EffectiveLang()
 }
@@ -269,10 +276,10 @@ func (a *App) Register(path string, comp component.Component, layout *Layout, op
 	// Each is detected independently, a component can implement
 	// ScreenTitler alone, or ScreenTitler + ScreenDescriber, etc.
 	if titler, ok := comp.(ScreenTitler); ok {
-		screen.Title = titler.ScreenTitle()
+		screen.Title = titler.ScreenTitle(context.Background())
 	}
 	if describer, ok := comp.(ScreenDescriber); ok {
-		screen.Description = describer.ScreenDescription()
+		screen.Description = describer.ScreenDescription(context.Background())
 	}
 	if typer, ok := comp.(ScreenTyper); ok {
 		screen.Type = typer.ScreenType()
@@ -558,8 +565,9 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // registered; it exists so the render pipeline treats the 404 body
 // exactly like a registered screen (per-request instance, DI, Load,
 // article wrap, the default layout chain).
-func notFoundScreenFor(comp component.Component) *Screen {
-	return NewScreen("/__gofastr_not_found__", comp).WithTitle("Page not found")
+func notFoundScreenFor(ctx context.Context, comp component.Component) *Screen {
+	RefuseRetiredScreenMethods("not-found body", comp)
+	return NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
 }
 
 // RenderNotFoundPageResult renders comp as the not-found page for an
@@ -569,7 +577,7 @@ func notFoundScreenFor(comp component.Component) *Screen {
 // path, and the document shell/head build is the one every page gets.
 // The caller owns the 404 status; the result's Kind is DecisionAllow.
 func (a *App) RenderNotFoundPageResult(ctx context.Context, path string, comp component.Component) (RenderResult, error) {
-	return a.renderScreenPage(ctx, path, notFoundScreenFor(comp), nil)
+	return a.renderScreenPage(ctx, path, notFoundScreenFor(ctx, comp), nil)
 }
 
 // RenderNotFoundFromResult is RenderNotFoundPageResult's subtree-partial
@@ -580,7 +588,7 @@ func (a *App) RenderNotFoundPageResult(ctx context.Context, path string, comp co
 // included. An unknown fromPath keeps the bare partial (empty SwapLayer),
 // the runtime's existing deploy-skew recovery answers with a full load.
 func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
-	target := notFoundScreenFor(comp)
+	target := notFoundScreenFor(ctx, comp)
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
 		return res, err
@@ -596,8 +604,9 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 // the same pipeline (per-request instance, DI, Load, article wrap,
 // the default layout chain) so the error body renders inside the root
 // layout like every page..
-func errorScreenFor(comp component.Component) *Screen {
-	return NewScreen("/__gofastr_error__", comp).WithTitle("Something went wrong")
+func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
+	RefuseRetiredScreenMethods("error body", comp)
+	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
 }
 
 // RenderErrorPageResult renders comp as the whole-page error body for
@@ -605,7 +614,7 @@ func errorScreenFor(comp component.Component) *Screen {
 // PageError). The caller owns the status; the result's Kind is
 // DecisionAllow..
 func (a *App) RenderErrorPageResult(ctx context.Context, path string, comp component.Component) (RenderResult, error) {
-	return a.renderScreenPage(ctx, path, errorScreenFor(comp), nil)
+	return a.renderScreenPage(ctx, path, errorScreenFor(ctx, comp), nil)
 }
 
 // RenderErrorFromResult is RenderErrorPageResult's subtree-partial
@@ -614,7 +623,7 @@ func (a *App) RenderErrorPageResult(ctx context.Context, path string, comp compo
 // whole-page shows the error page inside the live shell instead of
 // toasting..
 func (a *App) RenderErrorFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
-	target := errorScreenFor(comp)
+	target := errorScreenFor(ctx, comp)
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
 		return res, err
@@ -689,7 +698,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
-		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Reason: decision.Reason, Params: decision.Params}, nil
 	}
 	// Region guards outlet, area and fill
 	// policies run in the policy phase, in declaration order after the
@@ -703,10 +712,12 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 
 	// Per-request component instance: shallow-copy from the registered
 	// template so SetParams / Inject / Load mutations land on storage
-	// only this request can see. RenderAlt overrides with its factory.
+	// only this request can see. RenderAlt overrides with its factory,
+	// whose component no registration ever saw.
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
+		RefuseRetiredScreenMethods("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	// Inject route params into ParamSetter components
@@ -761,13 +772,8 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	// values can ride the outermost layer (see docShell) as well as
 	// <html lang> and the link text below. ScreenLang is read after Load
 	// exactly like the title.
-	lang := a.LangForPath(path)
-	if langer, ok := comp.(ScreenLanger); ok {
-		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
-			lang = l
-		}
-	}
-	skip := a.SkipLabelForPath(path)
+	lang := a.docLangFor(ctx, path, comp)
+	skip := a.SkipLabelFor(ctx, path)
 	// The keyed-transition vocabulary of THIS document's chain rides
 	// the doc shell (data-cui-vt-kinds, copied onto <html> by the
 	// runtime after a swap) beside the pick the answer carries.
@@ -781,7 +787,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	titleText := a.Name
 	effectiveTitle := screen.Title
 	if titler, ok := comp.(ScreenTitler); ok {
-		if t := safeScreenTitle(titler); t != "" {
+		if t := safeScreenTitle(ctx, titler); t != "" {
 			effectiveTitle = t
 		}
 	}
@@ -825,7 +831,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 			// decline decides this; a contained fill failure returned
 			// above and left the page alone.
 			if fills != nil && fills.notFoundOutlet {
-				nfScreen := notFoundScreenFor(a.notFoundBody())
+				nfScreen := notFoundScreenFor(ctx, a.notFoundBody())
 				nfComp := newComponentInstance(nfScreen.Component)
 				if err := a.injectComponent(nfComp, path); err != nil {
 					return RenderResult{}, err
@@ -843,7 +849,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 				comp = nfComp
 				effectiveTitle = nfScreen.Title
 				if titler, ok := nfComp.(ScreenTitler); ok {
-					if t := safeScreenTitle(titler); t != "" {
+					if t := safeScreenTitle(ctx, titler); t != "" {
 						effectiveTitle = t
 					}
 				}
@@ -932,7 +938,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")
-	htmlAttrs := map[string]string{"lang": lang}
+	htmlAttrs := map[string]string{"lang": lang, "dir": i18n.Dir(lang)}
 	if len(vtKinds) > 0 {
 		htmlAttrs["data-cui-vt-kinds"] = strings.Join(vtKinds, " ")
 	}
@@ -1080,8 +1086,8 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 		// (its ScreenLang is not re-read), so a route whose language comes
 		// from ScreenLang declares it in LangFunc as well.
 		if len(tChain) == 0 && len(fChain) == 0 {
-			lang, skip := a.docLangFor(path, res.Component), a.SkipLabelForPath(path)
-			if lang != a.LangForPath(fromPath) || skip != a.SkipLabelForPath(fromPath) {
+			lang, skip := a.docLangFor(ctx, path, res.Component), a.SkipLabelFor(ctx, path)
+			if lang != a.LangFor(ctx, fromPath) || skip != a.SkipLabelFor(ctx, fromPath) {
 				res.SwapLayer = docShellSwapPrefix + lang
 			}
 		}
@@ -1091,7 +1097,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	// values the full page would carry: without them the document language
 	// and skip link could never change on an in-chain swap. ScreenLang is
 	// layered like the full-page path so both render shapes agree.
-	ctx = withDocShell(ctx, a.docLangFor(path, res.Component), a.SkipLabelForPath(path), strings.Join(chainVTKinds(tChain), " "))
+	ctx = withDocShell(ctx, a.docLangFor(ctx, path, res.Component), a.SkipLabelFor(ctx, path), strings.Join(chainVTKinds(tChain), " "))
 	// renderPartial installed the route match on its own ctx copy; the
 	// collect-mode builds below read it from THIS ctx, so install it here
 	// too when absent (kept layers' route areas re-run for the target).
@@ -1136,7 +1142,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	// NotFoundOutlet). The client applies the envelope and never caches
 	// a 404 answer.
 	if fills != nil && fills.notFoundOutlet {
-		nfScreen := notFoundScreenFor(a.notFoundBody())
+		nfScreen := notFoundScreenFor(ctx, a.notFoundBody())
 		nfComp := newComponentInstance(nfScreen.Component)
 		if err := a.injectComponent(nfComp, path); err != nil {
 			return res, err
@@ -1154,7 +1160,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 		res.Component = nfComp
 		res.Title = nfScreen.Title
 		if titler, ok := nfComp.(ScreenTitler); ok {
-			if t := safeScreenTitle(titler); t != "" {
+			if t := safeScreenTitle(ctx, titler); t != "" {
 				res.Title = t
 			}
 		}
@@ -1370,7 +1376,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
-		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Reason: decision.Reason, Params: decision.Params}, nil
 	}
 	// Region guards run here too a Redirect
 	// moves the page even on the bare partial path, and the recorded
@@ -1386,6 +1392,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
+		RefuseRetiredScreenMethods("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	if len(params) > 0 {
@@ -1450,7 +1457,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	// (or generic) title, so the partial path must re-read it from the
 	// loaded instance, same as the full-page path's <title> build.
 	if t, ok := comp.(ScreenTitler); ok {
-		out.Title = safeScreenTitle(t)
+		out.Title = safeScreenTitle(ctx, t)
 	}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
@@ -1518,7 +1525,7 @@ func safeScreenLoad(loader ScreenLoader, ctx context.Context) (err error) {
 // containment: a hook that works at registration (the 1st read) but panics
 // on the per-request copy (the 2nd) degrades to the registered title
 // instead of killing the request.
-func safeScreenTitle(titler ScreenTitler) (title string) {
+func safeScreenTitle(ctx context.Context, titler ScreenTitler) (title string) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Default().Error("app: ScreenTitle re-read panicked; using registered title",
@@ -1526,7 +1533,7 @@ func safeScreenTitle(titler ScreenTitler) (title string) {
 			title = ""
 		}
 	}()
-	return titler.ScreenTitle()
+	return titler.ScreenTitle(ctx)
 }
 
 // safeScreenLang is safeScreenTitle for the ScreenLang re-read: a panicking

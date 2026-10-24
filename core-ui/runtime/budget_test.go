@@ -573,6 +573,50 @@ const (
 	//        marker the module left behind froze the page in a
 	//        microtask loop; TestStalledBundleModuleIsBounded).
 	//        Measured 13647 → 13655. (l1: 23)
+	//   +97 runtime strings (2026-10-21): the kernel's say(), which
+	//        reads the host's #gofastr-strings block once and fills
+	//        {{name}} placeholders, and the core fragments' toasts and
+	//        notices calling it (TestRuntimeSayCallsMatchPhrases,
+	//        TestStringsJSONCarriesOnlyTranslations). Measured
+	//        14176 → 14303 (+127); 30 of those bytes were slack under
+	//        the old line. (l1: 189)
+	//   +49 runtime strings follow the destination (2026-10-21): a soft
+	//        navigation keeps the document, so the page-head template
+	//        and the full-fetch carrier bring the destination's
+	//        data-cui-strings and applyDocShell swaps say()'s table
+	//        (TestNavSwapsRuntimeStrings). One _json helper replaced
+	//        three try/JSON.parse spellings. Measured 14304 → 14352.
+	//        (l1: -9)
+	//   +11 Back keeps the page's words (2026-10-21): the live
+	//        document's carrier copies say()'s current table, not the
+	//        first page's head block, and a full fetch puts its carrier
+	//        in <main> so the cache entry holds it. say() reads its table
+	//        at boot instead of lazily. Measured 14352 → 14371 (the
+	//        lazy-table spelling measured 14378). (l1: 35)
+	//   +3 the RPC error text speaks the page's language (2026-10-21):
+	//        a text-mode signal bound to a failed RPC renders "Request
+	//        failed (500)" through say() instead of a literal "Error: 500"
+	//        (TestNavSwapsRuntimeStrings). Measured 14371 → 14374.
+	//        (l1: 13)
+	//   +421 locale prefixes (2026-10-21): /es/pricing is the /pricing
+	//        screen in Spanish (framework.WithLocalePrefixes). The kernel
+	//        reads #gofastr-locales and splits the prefix off; the plain
+	//        navigator looks routes up and evicts cache keys without it,
+	//        and a link or a server redirect that changes the locale
+	//        loads a document, a redirect fetch followed included, on
+	//        the partial leg as well as the whole-page one, and a
+	//        redirect off the origin loads that origin's page
+	//        (TestRedirectToLocaleLoadsDocument); the
+	//        server action and widget discovery fetches carry the page's
+	//        prefix. Every one of them runs before a demand module could
+	//        load, so no carve exists. Measured 14374 → 14795. (l1: 531)
+	//   +46 a policy redirect off the app loads that page (2026-10-21):
+	//        uihost names an absolute http(s) target in
+	//        X-Gofastr-Document instead of a 303 fetch cannot follow to
+	//        a site that refuses CORS, and _followed loads it after an
+	//        http(s) check (TestPartialRedirect_ExternalLoadsPage,
+	//        TestDocumentHeaderRefusesScript). It runs on the navigator's
+	//        answer to every click. Measured 14795 → 14841. (l1: 61)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -585,7 +629,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -952,7 +996,38 @@ const (
 	// into widgetlinks, keeping envelope/widgets under their existing caps.
 	// 16426 is the smallest level-1 line accepting the real bundle. The padded
 	// level-6 fixture must still cross it, checked by the cliff guard below.
-	coreCongestionWindowGZ = 16426
+	// 2026-10-21: the runtime's own words speak the reader's language
+	// (say() and the #gofastr-strings block) and raise core to 14303/16615.
+	// The calls that cost the most are the failed-navigation and
+	// needs-the-server toasts, which fire when the network is the thing
+	// that failed, so a demand module could not load to say them; say()
+	// itself reuses _readInlineJSON. 16615, the smallest step that fits.
+	// 2026-10-21, later: the fallback toast stack sits at the inline end
+	// (inset-inline-end, for right-to-left pages), and the same style
+	// string drops calc() inside min() and the 0 of 0.5rem. Core measures
+	// 14304/16597. The line moves DOWN to 16597, the smallest that fits,
+	// so the padded level-6 fixture crosses it again.
+	// 2026-10-21, later still: the destination's runtime strings on soft
+	// navigation, with one _json helper for the three JSON.parse sites,
+	// measure 14352/16588. The line moves DOWN to 16588.
+	// 2026-10-21, review: Back to a page reached by soft navigation keeps
+	// its runtime words (the live carrier copies say()'s table; a full
+	// fetch's carrier rides <main> into the cache entry). Core measures
+	// 14371/16623. Both are the leave capture and the full-fetch commit
+	// every navigation runs, so no carve exists. 16623, the smallest step
+	// that fits. The same day, the failed-RPC signal text through say()
+	// measures 14374/16636; it runs on every page with a text signal
+	// bound to an RPC, so the line moves to 16636.
+	// 2026-10-21, locale prefixes: route lookups and cache eviction read
+	// the path without its /<tag>/ prefix, a locale change (a link or a
+	// server redirect) loads a document, and the action and widget
+	// discovery fetches carry the prefix. Core measures 14795/17167. The navigator runs these on
+	// every click, before any module could load, so the line moves to
+	// 17167, the smallest that fits. The same day a policy redirect off
+	// the app loading that page (X-Gofastr-Document) measures
+	// 14841/17228; it reads the navigator's answer to every click, so the
+	// line moves to 17228.
+	coreCongestionWindowGZ = 17228
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1001,6 +1076,12 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"in-flight dedup joins only the live navigation (epoch-owned)":             3,   // (l1: -20)
 		"stale cleanup keeps the live dedup + one-shot bounded module wait":        8,   // (l1: 23)
 		"page head/language carriers, safe metadata application and cache replay":  519, // (l1: 649)
+		"runtime strings: kernel say() and the core fragments' calls":              97,  // (l1: 189)
+		"runtime strings follow the destination on soft nav (data-cui-strings)":    49,  // (l1: -9)
+		"Back keeps the page's runtime strings (live carrier, full-fetch cache)":   11,  // (l1: 35)
+		"failed-RPC signal text through say()":                                     3,   // (l1: 13)
+		"locale prefixes: unprefixed route lookups, prefixed fetches":              421, // (l1: 531)
+		"a policy redirect off the app loads that page (X-Gofastr-Document)":       46,  // (l1: 61)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1162,13 +1243,26 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// loading hold and sweep (TestLoadingMinSpansSheetWait's cached
 		// and prefetched arms) and a stale navigation's cleanup stopped
 		// dropping the live one's dedup entry (TestStaleNavKeepsDedup).
-		"envelope": 7843,
+		// 7849 measured (7847 + 2) after the failed-navigation toast
+		// speaks through say() (2026-10-21, runtime strings).
+		// 7889 measured (7887 + 2) after its route lookup reads the path
+		// without the locale prefix and a redirect into another locale
+		// loads a document (2026-10-21, locale prefixes).
+		// 7856 measured (7854 + 2) after its cache eviction matches
+		// prefixed keys and a followed redirect goes through the plain
+		// navigator's _followed, which also catches one that leaves the
+		// origin (TestRedirectToLocaleLoadsDocument).
+		"envelope": 7856,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
 		// the document; the 5 bytes over the generic goal are that
 		// hand-off. Pinned at the measured size plus 2 clearance.
-		"widgets": 3079,
+		// 3099 measured (3097 + 2) after its two toasts speak through
+		// say() (2026-10-21, runtime strings).
+		// 3112 measured (3110 + 2) after its chrome and state fetches
+		// carry the page's locale prefix (2026-10-21, locale prefixes).
+		"widgets": 3112,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1198,7 +1292,21 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// fallback would navigate over the newer page
 		// (TestPlainNavOutlivesMissedPane). Pinned at the measured size
 		// plus 2 clearance.
-		"intercept": 3417,
+		// 3445 measured (3443 + 2) after the panel-limit toast speaks
+		// through say() with its {{n}} (2026-10-21, runtime strings).
+		// 3468 measured (3466 + 2) after its route lookup reads the path
+		// without the locale prefix (2026-10-21, locale prefixes).
+		// 3476 measured (3474 + 2) after an overlay fetch that followed
+		// a redirect falls back to the navigator
+		// (TestInterceptRedirectLeavesOverlay).
+		// 3479 measured (3477 + 2) after a panel record that will not
+		// open over the list opens as its own page
+		// (TestInterceptPanelRedirectOpensPage).
+		// 3508 measured (3506 + 2) after a 404/410 overlay drops the
+		// record's cached page before falling back
+		// (TestInterceptMissingRecordSkipsCache,
+		// TestInterceptGoneRefetchWithHash).
+		"intercept": 3508,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1259,7 +1367,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// broadcast, the deferred error report and widget open, the
 		// network-error catch, and the node-keyed busy-state cleanup),
 		// each pinned by a case in TestDispatchRPC_StaleFormResponseDropped.
-		"rpc": 3303,
+		// 3328 measured (3326 + 2) after its failure toasts and the
+		// network-error signal speak through say() (2026-10-21, runtime
+		// strings).
+		// 3332 measured (3330 + 2) after the default success toast says
+		// 'Done' through say() too (2026-10-21): the optional-call toast
+		// spelling hid it from the runtimeprose lint. Hoisting the
+		// repeated network-error say() into a local measured 3343.
+		// 3346 measured (3344 + 2) after its form and RPC fetches carry
+		// the page's locale prefix (2026-10-21, locale prefixes).
+		"rpc": 3346,
 	}
 	const coreOverride = 0
 

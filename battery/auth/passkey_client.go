@@ -5,6 +5,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 //go:embed passkey.js
@@ -15,6 +17,15 @@ var passkeyJS string
 // can read them.
 var _ = registry.RegisterBehavior("passkey", passkeyJS,
 	registry.Markers("[data-passkey-login]", "[data-passkey-register]", "[data-passkey-delete]"))
+
+// The toasts passkey.js says, in the reader's language.
+var (
+	sayPasskeyAdded   = i18n.Define("auth.passkey_added", "Passkey added")
+	sayPasskeyRemoved = i18n.Define("auth.passkey_removed", "Passkey removed")
+	sayPasskeyFailed  = i18n.Define("auth.passkey_failed", "Passkey request failed")
+)
+
+func init() { runtime.RegisterStrings(sayPasskeyAdded, sayPasskeyRemoved, sayPasskeyFailed) }
 
 // PasskeyLoginAttrs marks a button as "sign in with a passkey" against
 // the auth routes mounted at basePath ("/auth"). Put them on a

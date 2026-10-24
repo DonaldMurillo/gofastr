@@ -8,6 +8,7 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -90,11 +91,11 @@ var (
 // arrays would turn one caller's edit into every later caller's answer.
 func ParseDSL(input string) (DSLQuery, error) {
 	if len(input) > maxDSLInputSize {
-		return DSLQuery{}, fmt.Errorf("dsl: input exceeds %d bytes", maxDSLInputSize)
+		return DSLQuery{}, i18n.NewError(reasonInputTooLong, map[string]any{"max": maxDSLInputSize})
 	}
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return DSLQuery{}, fmt.Errorf("dsl: query is empty")
+		return DSLQuery{}, i18n.NewError(reasonEmptyQuery)
 	}
 
 	// Fast path: check cache
@@ -140,10 +141,10 @@ func cloneDSLQuery(q DSLQuery) DSLQuery {
 func parseDSLUncached(input string) (DSLQuery, error) {
 	ent, rest, _ := strings.Cut(input, ".")
 	if ent == "" {
-		return DSLQuery{}, fmt.Errorf("dsl: entity is required")
+		return DSLQuery{}, i18n.NewError(reasonEntityRequired)
 	}
 	if !dslIdentRe.MatchString(ent) {
-		return DSLQuery{}, fmt.Errorf("dsl: invalid entity name %q", ent)
+		return DSLQuery{}, i18n.NewError(reasonInvalidEntity, map[string]any{"name": strconv.Quote(ent)})
 	}
 	out := DSLQuery{Entity: ent}
 	if rest == "" {
@@ -163,7 +164,7 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			}
 			for _, f := range filters {
 				if !dslIdentRe.MatchString(f.Field) {
-					return DSLQuery{}, fmt.Errorf("dsl: invalid filter field name %q", f.Field)
+					return DSLQuery{}, i18n.NewError(reasonInvalidFilterField, map[string]any{"name": strconv.Quote(f.Field)})
 				}
 			}
 			out.Filters = append(out.Filters, filters...)
@@ -175,7 +176,7 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 				// the allow-list compares against the bare identifier.
 				name := trimDSLValue(inc)
 				if !dslIdentRe.MatchString(name) {
-					return DSLQuery{}, fmt.Errorf("dsl: invalid include name %q", name)
+					return DSLQuery{}, i18n.NewError(reasonInvalidInclude, map[string]any{"name": strconv.Quote(name)})
 				}
 			}
 			out.Includes = append(out.Includes, includes...)
@@ -185,16 +186,16 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 				return DSLQuery{}, err
 			}
 			if !dslIdentRe.MatchString(order.Field) {
-				return DSLQuery{}, fmt.Errorf("dsl: invalid order field name %q", order.Field)
+				return DSLQuery{}, i18n.NewError(reasonInvalidOrderField, map[string]any{"name": strconv.Quote(order.Field)})
 			}
 			out.Orders = append(out.Orders, order)
 		case "limit":
 			n, err := strconv.Atoi(strings.TrimSpace(args))
 			if err != nil || n < 1 {
-				return DSLQuery{}, fmt.Errorf("dsl: limit must be a positive integer")
+				return DSLQuery{}, i18n.NewError(reasonLimitNotPositive)
 			}
 			if n > maxDSLLimit {
-				return DSLQuery{}, fmt.Errorf("dsl: limit %d exceeds max %d", n, maxDSLLimit)
+				return DSLQuery{}, i18n.NewError(reasonLimitOverMax, map[string]any{"limit": n, "max": maxDSLLimit})
 			}
 			out.Limit = n
 		case "after":
@@ -204,7 +205,7 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			// line or break out of a re-encoded DSL string.
 			out.After = textsafe.SanitizeControlBytes(trimDSLValue(args))
 		default:
-			return DSLQuery{}, fmt.Errorf("dsl: unknown call %q", name)
+			return DSLQuery{}, i18n.NewError(reasonUnknownCall, map[string]any{"name": strconv.Quote(name)})
 		}
 		rest = strings.TrimPrefix(tail, ".")
 	}
@@ -237,7 +238,7 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 
 	for _, include := range parsed.Includes {
 		if !hasRelation(ent, include) {
-			return nil, fmt.Errorf("dsl: relation %q not found on %s", include, parsed.Entity)
+			return nil, i18n.NewError(reasonRelationNotFound, map[string]any{"name": strconv.Quote(include), "entity": parsed.Entity})
 		}
 	}
 	for _, filter := range parsed.Filters {
@@ -245,10 +246,10 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		if !ok || field.Hidden {
 			// Hidden folds into not-found so the DSL can't distinguish a
 			// hidden column from an absent one, matching ParseFilters.
-			return nil, fmt.Errorf("dsl: field %q not found on %s", filter.Field, parsed.Entity)
+			return nil, i18n.NewError(reasonFieldNotFound, map[string]any{"field": strconv.Quote(filter.Field), "entity": parsed.Entity})
 		}
 		if field.NoQuery {
-			return nil, fmt.Errorf("dsl: field %q on %s cannot be filtered", filter.Field, parsed.Entity)
+			return nil, i18n.NewError(reasonFieldNotFilterable, map[string]any{"field": strconv.Quote(filter.Field), "entity": parsed.Entity})
 		}
 		condition, args, err := dslCondition(field, filter.Operator, filter.Value)
 		if err != nil {
@@ -259,10 +260,10 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	for _, order := range parsed.Orders {
 		orderField, ok := entitySchema.FieldByName(order.Field)
 		if !ok || orderField.Hidden {
-			return nil, fmt.Errorf("dsl: field %q not found on %s", order.Field, parsed.Entity)
+			return nil, i18n.NewError(reasonFieldNotFound, map[string]any{"field": strconv.Quote(order.Field), "entity": parsed.Entity})
 		}
 		if orderField.NoQuery {
-			return nil, fmt.Errorf("dsl: field %q on %s cannot be sorted on", order.Field, parsed.Entity)
+			return nil, i18n.NewError(reasonFieldNotSortable, map[string]any{"field": strconv.Quote(order.Field), "entity": parsed.Entity})
 		}
 		qb.Order(order.Field, order.Direction)
 	}
@@ -278,21 +279,24 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	// with a clear error rather than silently paging from page 1.
 	if parsed.After != "" {
 		if len(ent.Config.Pagination.CursorFields) > 0 {
-			return nil, fmt.Errorf("dsl: after() is unsupported on %s (composite cursor); use the HTTP cursor API", parsed.Entity)
+			return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
 		}
+		// The default cursor is the primary key; a key of more than one
+		// column is a composite cursor, refused the same way.
 		cursorField := ent.Config.Pagination.CursorField
 		if cursorField == "" {
-			cursorField = ent.PrimaryKey
-		}
-		if cursorField == "" {
-			cursorField = "id"
+			keys := ent.KeyColumns()
+			if len(keys) > 1 {
+				return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
+			}
+			cursorField = keys[0]
 		}
 		cf, ok := entitySchema.FieldByName(cursorField)
 		if !ok || cf.Hidden {
-			return nil, fmt.Errorf("dsl: after() cursor field %q not found on %s", cursorField, parsed.Entity)
+			return nil, i18n.NewError(reasonAfterFieldNotFound, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
 		if cf.NoQuery {
-			return nil, fmt.Errorf("dsl: after() cursor field %q on %s cannot be queried", cursorField, parsed.Entity)
+			return nil, i18n.NewError(reasonAfterFieldNotQueryable, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
 		qb.Cursor(cursorField, parsed.After, "forward")
 	}
@@ -302,7 +306,7 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 func nextDSLCall(input string) (name, args, tail string, err error) {
 	open := strings.IndexByte(input, '(')
 	if open <= 0 {
-		return "", "", "", fmt.Errorf("dsl: expected call in %q", input)
+		return "", "", "", i18n.NewError(reasonExpectedCall, map[string]any{"input": strconv.Quote(input)})
 	}
 	name = strings.TrimSpace(input[:open])
 	depth := 0
@@ -329,7 +333,7 @@ func nextDSLCall(input string) (name, args, tail string, err error) {
 			}
 		}
 	}
-	return "", "", "", fmt.Errorf("dsl: unclosed call %q", name)
+	return "", "", "", i18n.NewError(reasonUnclosedCall, map[string]any{"name": strconv.Quote(name)})
 }
 
 func parseDSLFilters(args string) ([]DSLFilter, error) {
@@ -352,25 +356,25 @@ func parseDSLFilter(input string) (DSLFilter, error) {
 			field := strings.TrimSpace(before)
 			value := strings.TrimSpace(after)
 			if field == "" || value == "" {
-				return DSLFilter{}, fmt.Errorf("dsl: invalid filter %q", input)
+				return DSLFilter{}, i18n.NewError(reasonInvalidFilter, map[string]any{"input": strconv.Quote(input)})
 			}
 			return DSLFilter{Field: field, Operator: strings.TrimSpace(op), Value: trimDSLValue(value)}, nil
 		}
 	}
-	return DSLFilter{}, fmt.Errorf("dsl: invalid filter %q", input)
+	return DSLFilter{}, i18n.NewError(reasonInvalidFilter, map[string]any{"input": strconv.Quote(input)})
 }
 
 func parseDSLOrder(input string) (DSLOrder, error) {
 	parts := strings.Fields(input)
 	if len(parts) == 0 || len(parts) > 2 {
-		return DSLOrder{}, fmt.Errorf("dsl: invalid order %q", input)
+		return DSLOrder{}, i18n.NewError(reasonInvalidOrder, map[string]any{"input": strconv.Quote(input)})
 	}
 	dir := "ASC"
 	if len(parts) == 2 {
 		dir = strings.ToUpper(parts[1])
 	}
 	if dir != "ASC" && dir != "DESC" {
-		return DSLOrder{}, fmt.Errorf("dsl: invalid order direction %q", dir)
+		return DSLOrder{}, i18n.NewError(reasonInvalidDirection, map[string]any{"dir": strconv.Quote(dir)})
 	}
 	return DSLOrder{Field: parts[0], Direction: dir}, nil
 }
@@ -434,7 +438,7 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 	case "in":
 		values := splitDSLArgs(strings.Trim(raw, "[]"))
 		if len(values) == 0 {
-			return "", nil, fmt.Errorf("dsl: in operator requires at least one value")
+			return "", nil, i18n.NewError(reasonInNeedsValue)
 		}
 		placeholders := make([]string, len(values))
 		args := make([]any, len(values))
@@ -444,7 +448,7 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 		}
 		return field.Name + " IN (" + strings.Join(placeholders, ", ") + ")", args, nil
 	default:
-		return "", nil, fmt.Errorf("dsl: unsupported operator %q", op)
+		return "", nil, i18n.NewError(reasonUnsupportedOperator, map[string]any{"op": strconv.Quote(op)})
 	}
 }
 

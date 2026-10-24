@@ -175,12 +175,16 @@ var fragmentAttrs = map[string][]string{
 		// entry point. A difference is a hard document load.
 		"data-cui-doc",
 		// data-cui-lang / data-cui-skip-label ride the outermost layer
-		// the server renders (App.LangForPath / SkipLabelForPath): the
+		// the server renders (App.LangFor / SkipLabelFor): the
 		// runtime copies them onto documentElement.lang and the skip link
 		// after every swap, they live outside the shell it replaces.
 		"data-cui-lang",
 		"data-cui-skip-label",
 		"data-cui-page-head",
+		// data-cui-strings rides the page-head template: the runtime
+		// strings in the destination reader's locale, which replace
+		// say()'s table on every swap.
+		"data-cui-strings",
 		"data-cui-page-meta",
 		"data-cui-screen-group",
 		// The fills-envelope, view-transition and loading-content

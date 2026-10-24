@@ -3,11 +3,11 @@ package entityui
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -39,6 +39,12 @@ func cell(v any) string {
 			return ""
 		}
 		return t.Format(time.RFC3339)
+	case float64:
+		// Plain decimal, never Go's 1e+06: the locale formatter reads
+		// digits only.
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(t), 'f', -1, 32)
 	default:
 		return fmt.Sprint(v)
 	}
@@ -52,22 +58,21 @@ func truthy(s string) bool {
 	return false
 }
 
-// dateLayout and timestampLayout are how every screen prints a Date and
-// a Timestamp: list cells, plain-text cells and a record's read-only
-// fields alike.
-const (
-	dateLayout      = "Jan 2, 2006"
-	timestampLayout = "Jan 2, 2006 3:04 PM"
-)
-
-// formatDate renders a date or timestamp. Drivers hand dates back as
-// time.Time or as one of a few string layouts; anything else prints as is.
-func formatDate(raw any, layout string) string {
+// formatDate renders a date, or with withTime a timestamp, in the
+// reader's locale: "Mar 5, 2026" and "Mar 5, 2026, 2:05 PM" in English,
+// "5 mars 2026" in French. Every screen prints them this way: list
+// cells, plain-text cells and a record's read-only fields alike.
+// Drivers hand dates back as time.Time or as one of a few string
+// layouts; anything else prints as is.
+func formatDate(ctx context.Context, raw any, withTime bool) string {
 	if t, ok := raw.(time.Time); ok && t.IsZero() {
 		return ""
 	}
 	if t, ok := parseTime(raw); ok {
-		return t.Format(layout)
+		if withTime {
+			return i18n.DateTime(ctx, t, i18n.DateMedium, i18n.TimeShort)
+		}
+		return i18n.Date(ctx, t, i18n.DateMedium)
 	}
 	return cell(raw)
 }
@@ -93,40 +98,31 @@ func parseTime(raw any) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// formatNumber prints a float without trailing zeros on whole values and
-// with thousands grouping.
-func formatNumber(f float64, decimals int) string {
-	return groupDigits(strconv.FormatFloat(f, 'f', decimals, 64))
+// twoPlaces writes a plain decimal string with two places in the
+// reader's locale, exactly: a NUMERIC column's digits never pass
+// through a float64.
+func twoPlaces(ctx context.Context, val string) (string, bool) {
+	return i18n.Decimal(ctx, val, i18n.MinFraction(2), i18n.MaxFraction(2))
 }
 
-// groupDigits puts thousands separators into a plain decimal string
-// ("-1234567.50" reads "-1,234,567.50").
-func groupDigits(s string) string {
-	s, neg := strings.CutPrefix(s, "-")
-	whole, frac, _ := strings.Cut(s, ".")
-	var grp []string
-	for len(whole) > 3 {
-		grp = append([]string{whole[len(whole)-3:]}, grp...)
-		whole = whole[:len(whole)-3]
+// decimal prints a Decimal or Float value with two places in the
+// reader's locale. Text that is not a number prints as stored.
+func decimal(ctx context.Context, val string) string {
+	if s, ok := twoPlaces(ctx, val); ok {
+		return s
 	}
-	out := strings.Join(append([]string{whole}, grp...), ",")
-	if frac != "" {
-		out += "." + frac
-	}
-	if neg {
-		out = "-" + out
-	}
-	return out
+	return val
 }
 
-// decimal prints a Decimal or Float value with two places and grouping.
-// A currency is drawn only where the field names the money kind.
-func decimal(val string) string {
-	f, err := strconv.ParseFloat(val, 64)
-	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+// integer writes an integer column's value in the reader's digits with
+// no grouping: years, ids and codes live in int columns, and 2026 must
+// not read as 2,026. A value that is no integer prints as stored.
+func integer(ctx context.Context, val string) string {
+	n, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
 		return val
 	}
-	return formatNumber(f, 2)
+	return i18n.Number(ctx, n, i18n.NoGrouping())
 }
 
 // enumVariant picks a badge colour for common status words: settled is
@@ -152,16 +148,20 @@ func enumVariant(v string) ui.StatusVariant {
 func muted() render.HTML { return ui.EmptyValue() }
 
 // money prints an amount as the catalog's currency symbol and two
-// grouped places: $1,234.00, and -$5.00 for a negative one. Text that
-// is not a number prints as stored.
+// places in the reader's locale: $1,234.00, and -$5.00 for a negative
+// one, the symbol inside the locale's minus sign. Text that is not a
+// number prints as stored.
 func money(ctx context.Context, val string) string {
-	sym := i18nui.T(ctx, i18nui.KeyEntityCurrency)
-	if _, err := strconv.ParseFloat(val, 64); err != nil {
+	sym := i18nui.EntityCurrency.Text(ctx)
+	mag, neg := strings.CutPrefix(val, "-")
+	abs, ok := twoPlaces(ctx, mag)
+	if !ok || strings.HasPrefix(mag, "-") || strings.HasPrefix(mag, "+") {
 		return val
 	}
-	s := decimal(val)
-	if rest, ok := strings.CutPrefix(s, "-"); ok {
-		return "-" + sym + rest
+	if !neg {
+		return sym + abs
 	}
-	return sym + s
+	// The locale's minus is whatever the signed form adds in front.
+	signed, _ := twoPlaces(ctx, val)
+	return strings.TrimSuffix(signed, abs) + sym + abs
 }

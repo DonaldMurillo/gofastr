@@ -287,8 +287,11 @@ change summary notes this); backfill the rows and tighten it in a later
 migration. A required field that has a default keeps `NOT NULL`, since
 every existing row gets the default. Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On
-Postgres they render as an in-place `ALTER COLUMN TYPE`, which often still
-needs a data-specific `USING` clause, so review and hand-tighten. On SQLite,
+Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
+type carries `USING col::INTEGER` (or the declared integer type), so
+numeric text converts and anything else fails the migration; other
+changes may still need a data-specific `USING` clause, so review and
+hand-tighten. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
@@ -305,9 +308,10 @@ transaction, where the pragma has no effect: it refuses a rebuild that a
 migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
 foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated; a required-but-undefaulted column added in the same
-change still fails loud on a populated table until you backfill it, and the
-change ships no `Down` (the pre-migration constraints are not recoverable),
-so a SQLite retype is forward-only. Renames: declare
+change still fails loud on a populated table until you backfill it, and a
+migration holding a rebuild ships no `Down` (the pre-migration constraints
+are not recoverable, and the other changes' inverses alone would roll back to
+a table matching neither schema), so a SQLite retype is forward-only. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
 `RENAME COLUMN` instead of a data-losing drop+add. A rename is otherwise
 indistinguishable from a drop plus an add, so it has to be declared.
@@ -341,6 +345,46 @@ whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY
 
 The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
 
+### Primary-key changes
+
+An entity's `PrimaryKey` can change after its table exists, as when a join
+table keyed on a generated `id` moves to the pair it links. The diff
+compares the declared key with the live one (or the snapshot's
+`primary_keys`) and emits the change as destructive, so
+`ApplySchemaDiff` refuses it until `ApplySchemaDiffWithOptions` sets
+`AllowDestructive`:
+
+- Postgres drops the old key constraint, clears the `NOT NULL` the old key
+  gave a column that leaves the key (unless the field is `Required`), and
+  runs `ADD PRIMARY KEY (student_id, course_id)`. The `Down` drops the new
+  constraint, clears the `NOT NULL` the new key gave a column that was not
+  in the old one, and adds the old key back. When an old key column leaves
+  the entity (the injected `id`, say), the diff drops it with its values,
+  so the generated migration has no `Down`.
+- SQLite cannot alter a key in place, so the table is rebuilt the way a
+  retype is, with the same foreign-key handling and no `Down`.
+
+Either way the change fails, and the table keeps its old key and rows, when
+rows repeat the new key or leave a key column `NULL`. Clean those rows up
+first. A key column renamed through `Renames` keeps its place in the key, so
+a rename alone is no key change. A foreign key onto the table names one
+column per key column, so a key that grows from one column to several
+needs every relation onto it to list the new columns first: a one-column
+`belongs_to` or a `many_to_many` onto a composite key is refused with
+`entity.ErrCompositeKey` before anything runs.
+
+Boot applies a key change only to an empty table. A table with rows and a
+different key fails the boot with an error naming `gofastr migrate
+generate`: rows keyed one way do not satisfy another, and a write on the
+wrong key could touch several rows. A table with rows and no key at all
+fails the same way, since nothing holds the declared key unique. Boot
+never drops the old key column; a
+generated migration does, when the entity no longer declares it.
+
+A snapshot written before `primary_keys` was recorded generates no key
+change. The next generated migration records the keys, and boot catches a
+mismatch in the meantime.
+
 ### Snapshot file format (`schema.snapshot.json`)
 
 The schema snapshot file records the declarative state migrations have been generated up to:
@@ -362,6 +406,9 @@ The schema snapshot file records the declarative state migrations have been gene
       "CREATE INDEX idx_posts_title ON posts(title)"
     ]
   },
+  "primary_keys": {
+    "posts": ["id"]
+  },
   "views": {
     "published_posts": {
       "up": "CREATE VIEW published_posts AS SELECT ...",
@@ -380,6 +427,7 @@ The schema snapshot file records the declarative state migrations have been gene
 - `tables`: Map of table names to column-name-to-SQL-type maps, used for structural column diffing.
 - `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
 - `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
+- `primary_keys`: Map of table names to their primary-key columns in key order. The diff compares these to detect a [primary-key change](#primary-key-changes).
 - `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
 - `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
 
@@ -477,16 +525,23 @@ app.Table(migrate.Table{
         {Name: "amount",  RawType: "NUMERIC(12,2)"}, // RawType escape hatch
     },
     Indices:     []migrate.Index{{Name: "ux_user_roles", Columns: []string{"user_id", "role"}, Unique: true}},
-    ForeignKeys: []migrate.ForeignKey{{Column: "user_id", RefTable: "users"}},
+    ForeignKeys: []migrate.ForeignKey{{Columns: []string{"user_id"}, RefTable: "users"}},
 })
 ```
 
 Only the columns you declare are emitted. Nothing is injected. A foreign key
 references the target table's primary key (the target may be an entity or
-another raw table). Single-column or no primary key are supported; composite
-primary keys are not yet (use a unique index). `RawType` on a column overrides
+another raw table): `Columns` names one local column per key column, in
+key order: `{Columns: []string{"user_id"}, RefTable: "users"}`, or
+`{Columns: []string{"order_store", "order_no"}, RefTable: "orders"}` for a
+composite one. Mark several columns `PrimaryKey: true` for a composite key;
+the key takes them in column order.
+A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
-on entity fields too.
+on entity fields too. A raw table has no CRUD routes, and the admin's
+`AllEntities` leaves it out; naming one in the admin's `Config.Entities`
+fails boot unless its key could key an entity (see
+[Composite primary keys](entity-declarations.md)).
 
 ## Stored routines (functions, procedures, triggers, views)
 
@@ -738,6 +793,10 @@ app.View(migrate.View{
   three, labelled `read-only`. The query layer is not one of them: it is
   a Go surface, not an HTTP route, so it never appears in either count.
   Without `Columns`, the view is migration-only. Query it with raw SQL.
+  The key columns follow an entity's rule: `App.View` panics on a float,
+  decimal, bool, date, timestamp or JSON key, or one with a `RawType`
+  other than an integer type, since `GET /active_users/{id}` would match
+  one row under several ids.
 - The view's ORM entity is `Unmanaged`: the migration system emits no
   table DDL for it (the view DDL handles its existence). `Unmanaged` is a
   general `EntityConfig` flag. Use it for any externally-created table
@@ -880,6 +939,8 @@ DDL, so a new field and its index land in one boot. It will **not**:
 - Drop columns or tables.
 - Rename columns (it sees a rename as add+drop).
 - Change a column type when data would be lost.
+- Change the primary key of a table that has rows (see
+  [Primary-key changes](#primary-key-changes)).
 
 Framework-managed columns are created for you: `created_at` /
 `updated_at` (when `Timestamps` is on), `deleted_at` (when `SoftDelete`
