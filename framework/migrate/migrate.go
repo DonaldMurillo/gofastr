@@ -298,9 +298,14 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		}
 		tableNames = append(tableNames, ent.GetTable())
 	}
+	keysByTable := map[string]liveKey{}
 	if len(tableNames) > 0 {
 		var err error
 		liveByTable, err = ReadLiveColumnsBulk(ctx, db, tableNames, dialect)
+		if err != nil {
+			return fmt.Errorf("migrate: read live schema: %w", wrapConnErr(err))
+		}
+		keysByTable, err = readLiveKeysQ(ctx, db, existingEntityTables(ordered, liveByTable), dialect)
 		if err != nil {
 			return fmt.Errorf("migrate: read live schema: %w", wrapConnErr(err))
 		}
@@ -319,7 +324,12 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		// the conn, and the panic still propagates to the caller.
 		defer func() { _ = tx.Rollback() }()
 		for _, ent := range ordered {
-			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()]); err != nil {
+			var lk *liveKey
+			if len(liveByTable[ent.GetTable()]) > 0 {
+				k := keysByTable[ent.GetTable()]
+				lk = &k
+			}
+			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()], lk); err != nil {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
@@ -508,13 +518,13 @@ func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	return migrateEntity(context.Background(), db, ent, nil, dialect, nil)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
-	return migrateEntity(context.Background(), db, ent, nil, dialect, nil)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil)
 }
 
 // migrateEntity is the shared implementation. When `all` is non-nil it is
@@ -525,7 +535,9 @@ func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error
 // callers)" and triggers CREATE TABLE IF NOT EXISTS; non-empty means the
 // table pre-exists and is converged additively via addMissingColumns. Column
 // adds run BEFORE index DDL so a new field and its index land in one boot.
-func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) error {
+// lk is the existing table's pre-read primary key (nil for a new table, or
+// a single-entity caller); convergeKey checks it after the column adds.
+func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey) error {
 	// Unmanaged objects (views, FTS virtual tables, external/legacy tables) are
 	// created elsewhere. The migration system emits no DDL for them.
 	if ent.Config.Unmanaged {
@@ -543,8 +555,15 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 		if _, err := exec.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
-	} else if err := addMissingColumns(ctx, exec, ent, all, dialect, live); err != nil {
-		return err
+	} else {
+		if err := addMissingColumns(ctx, exec, ent, all, dialect, live); err != nil {
+			return err
+		}
+		if lk != nil {
+			if err := convergeKey(ctx, exec, ent, all, dialect, *lk); err != nil {
+				return err
+			}
+		}
 	}
 
 	safeTable, err := query.SafeIdent(ent.GetTable())
@@ -751,9 +770,9 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
+		targetPK, err := target.KeyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
 		}
 		safeTargetPK, err := query.SafeIdent(targetPK)
 		if err != nil {
@@ -995,9 +1014,27 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 		ent := all[name]
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
+			// A foreign key names one column on each end. Checked here, for
+			// every table and not only a new one, so a target whose key
+			// turns composite is refused while an existing child still
+			// references its old key.
+			if rel.Type == entity.RelManyToMany {
+				if _, err := ent.KeyColumn(); err != nil {
+					return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
+				}
+				if target, ok := all[rel.Entity]; ok {
+					if _, err := target.KeyColumn(); err != nil {
+						return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
+					}
+				}
+			}
 			if rel.Type == entity.RelManyToOne {
-				if _, ok := all[rel.Entity]; !ok {
+				target, ok := all[rel.Entity]
+				if !ok {
 					return fmt.Errorf("entity %q has BelongsTo to unknown entity %q", name, rel.Entity)
+				}
+				if _, err := target.KeyColumn(); err != nil {
+					return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
 				}
 				if err := visit(rel.Entity); err != nil {
 					return err
@@ -1279,17 +1316,17 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 	if err != nil {
 		return pivotSpec{}, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 	}
-	sourcePK := ent.PrimaryKey
-	if sourcePK == "" {
-		sourcePK = "id"
+	sourcePK, err := ent.KeyColumn()
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: %w", rel.Name, err)
 	}
 	safeSourcePK, err := query.SafeIdent(sourcePK)
 	if err != nil {
 		return pivotSpec{}, fmt.Errorf("relation %q: invalid source PK %q: %w", rel.Name, sourcePK, err)
 	}
-	targetPK := target.PrimaryKey
-	if targetPK == "" {
-		targetPK = "id"
+	targetPK, err := target.KeyColumn()
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: %w", rel.Name, err)
 	}
 	safeTargetPK, err := query.SafeIdent(targetPK)
 	if err != nil {

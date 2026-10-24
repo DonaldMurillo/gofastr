@@ -142,13 +142,12 @@ func TestApplyIncludeTree_ChildWithZeroRows(t *testing.T) {
 	}
 }
 
-// include.go:362: recurseLoadOnRawRows defaults a blank PrimaryKey to "id".
-// Built directly with a target entity whose PrimaryKey is "" so the guard
-// fires (NOT removed, exercised).
-func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
+// recurseLoadOnRawRows joins children on the target's one key column, so a
+// composite-key target is refused.
+func TestRecurseLoadOnRawRows_CompositeKey(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
-	target := reg.byName["users"]
-	target.PrimaryKey = "" // force the pk=="" guard at line 362
+	target := *reg.byName["users"]
+	target.Config.PrimaryKey = []string{"id", "name"}
 
 	child := &IncludeNode{
 		Name:     "profile",
@@ -156,9 +155,9 @@ func TestRecurseLoadOnRawRows_BlankPK(t *testing.T) {
 		Target:   reg.byName["profiles"],
 	}
 	rawRows := []map[string]any{{"id": "u1", "name": "alice"}}
-	err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget())
-	if err != nil {
-		t.Fatalf("recurseLoadOnRawRows blank-pk: %v", err)
+	err := ch.recurseLoadOnRawRows(context.Background(), &target, []*IncludeNode{child}, rawRows, newIncludeBudget())
+	if !errors.Is(err, entity.ErrCompositeKey) {
+		t.Fatalf("recurseLoadOnRawRows on a composite key: err = %v, want ErrCompositeKey", err)
 	}
 }
 

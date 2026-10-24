@@ -350,7 +350,7 @@ func TestLiteralHandlerDecodesJSONField(t *testing.T) {
 		{"id": "p1", "name": "seeded", "features": `{"seats":7}`},
 	})
 
-	bare := &CrudHandler{Entity: ch.Entity, DB: ch.Entity.DB, PrimaryKey: "id", JSONCase: CaseCamel}
+	bare := &CrudHandler{Entity: ch.Entity, DB: ch.Entity.DB, PrimaryKey: []string{"id"}, JSONCase: CaseCamel}
 	row, err := bare.GetOne(signedIn("u1"), "p1", nil)
 	if err != nil {
 		t.Fatalf("GetOne: %v", err)

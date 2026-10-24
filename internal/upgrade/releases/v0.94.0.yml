@@ -905,3 +905,21 @@ notes:
         - symbol: gofastr/framework/ui.ThemeChoice.Label
           type: '^string$'
     guidance: "Define the theme's name at package level, var brutalName = i18n.Define(\"myapp.themes.brutal\", \"Brutal\"), and set Label: brutalName. ThemePicker draws it in the language of ThemePickerConfig.Ctx."
+  - change: "entity.Entity.PrimaryKey is removed; EntityConfig.PrimaryKey []string holds the key and Entity.KeyColumns() reads it"
+    breaking: true
+    hits: edit
+    find:
+      uses: [gofastr/framework/entity.Entity.PrimaryKey]
+    guidance: "Declare a key other than id as EntityConfig.PrimaryKey: []string{\"code\"}, or several columns for a composite key. Read ent.KeyColumns() where you read ent.PrimaryKey, or ent.KeyColumn() where one column is needed (it returns entity.ErrCompositeKey for a composite key). See gofastr docs entity-declarations, Record ids."
+  - change: "boot refuses a table that has rows and no primary key, where it left the table keyless"
+    breaking: true
+    nodetect: "the change is in the database's state, not the app's source"
+    guidance: "A table created outside gofastr with no primary key now fails the boot with an error naming it. Run gofastr migrate generate, review the migration that adds the key (rows that repeat the key, or leave a key column NULL, must be cleaned up first), and apply it. See gofastr docs migrations, Primary-key changes."
+  - change: "crud.CrudHandler.PrimaryKey is []string"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/crud.CrudHandler.PrimaryKey
+          type: '^string$'
+    guidance: "Set PrimaryKey: []string{\"code\"}, or leave it empty and the handler reads its entity's key."

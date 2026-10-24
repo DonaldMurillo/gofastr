@@ -275,7 +275,7 @@ func TestAmbientTxRollbackWithholdsUpdateEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed CreateOne: %v", err)
 	}
-	id := created[ch.convertKey(ch.PrimaryKey)]
+	id := created[ch.convertKey(ch.PrimaryKey[0])]
 
 	// Subscribe only now, so the seed's own event is not in the channel.
 	ch.Events = bus

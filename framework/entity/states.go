@@ -210,7 +210,7 @@ var reservedTransitionKeys = map[string]string{
 
 // validate checks every name the config holds against the entity's
 // fields, so a typo fails the app at boot naming the offender.
-func (s *StatesConfig) validate(c EntityConfig, pk string) error {
+func (s *StatesConfig) validate(c EntityConfig) error {
 	name := c.Name
 	byName := make(map[string]schema.Field, len(c.Fields))
 	for _, f := range c.Fields {
@@ -226,7 +226,7 @@ func (s *StatesConfig) validate(c EntityConfig, pk string) error {
 	if field.Type != schema.Enum {
 		return fmt.Errorf("entity %q: states field %q must be an Enum, not %s", name, s.Field, schema.FieldTypeLabel(field.Type, false))
 	}
-	if err := checkGuardedColumn(c, pk, "states field", s.Field); err != nil {
+	if err := checkGuardedColumn(c, "states field", s.Field); err != nil {
 		return err
 	}
 	// A Default of any other type (a JSON `true`, a number) silently
@@ -304,7 +304,7 @@ func (s *StatesConfig) validate(c EntityConfig, pk string) error {
 		if stamp.AutoGenerate != schema.AutoNone {
 			return fmt.Errorf("entity %q: states move %q stamp %q is auto-generated; the move could not set it", name, t.Key, t.Stamp)
 		}
-		if err := checkGuardedColumn(c, pk, fmt.Sprintf("move %q stamp", t.Key), t.Stamp); err != nil {
+		if err := checkGuardedColumn(c, fmt.Sprintf("move %q stamp", t.Key), t.Stamp); err != nil {
 			return err
 		}
 	}
@@ -331,7 +331,7 @@ func ValidateStates(name string, cfg EntityConfig) (err error) {
 	if e.Config.States == nil {
 		return nil
 	}
-	return e.Config.States.validate(e.Config, e.PrimaryKey)
+	return e.Config.States.validate(e.Config)
 }
 
 // checkGuardedColumn refuses a state field or stamp that is also a column
@@ -342,11 +342,8 @@ func ValidateStates(name string, cfg EntityConfig) (err error) {
 // machinery that already owns it — a Stamp of deleted_at would soft-delete
 // the row, and delete/restore would then write a guarded column outside
 // any move.
-func checkGuardedColumn(c EntityConfig, pk, what, col string) error {
-	if pk == "" {
-		pk = "id"
-	}
-	if col == pk {
+func checkGuardedColumn(c EntityConfig, what, col string) error {
+	if slices.Contains(c.keyColumns(), col) {
 		return fmt.Errorf("entity %q: states %s %q is the primary key", c.Name, what, col)
 	}
 	if c.Scope != nil {

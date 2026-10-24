@@ -193,12 +193,12 @@ func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
 func TestBuildExistsSubquery_UnsafeHopChain(t *testing.T) {
 	toAuthor := relationHop{
 		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id"},
-		Target:   &entity.Entity{PrimaryKey: "id"},
+		Target:   &entity.Entity{Config: entity.EntityConfig{PrimaryKey: []string{"id"}}},
 		Table:    "authors",
 	}
 	toTeam := relationHop{
 		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "teams", ForeignKey: "team_id"},
-		Target:   &entity.Entity{PrimaryKey: "id"},
+		Target:   &entity.Entity{Config: entity.EntityConfig{PrimaryKey: []string{"id"}}},
 		Table:    "teams",
 	}
 	nf := func(hops ...relationHop) nestedFilter {
@@ -217,7 +217,7 @@ func TestBuildExistsSubquery_UnsafeHopChain(t *testing.T) {
 
 	t.Run("unsafe target primary key", func(t *testing.T) {
 		hop := toAuthor
-		hop.Target = &entity.Entity{PrimaryKey: "id; DROP TABLE users"}
+		hop.Target = &entity.Entity{Config: entity.EntityConfig{PrimaryKey: []string{"id; DROP TABLE users"}}}
 		sql, _ := buildExistsSubquery("posts", "id", nf(hop, toTeam))
 		noInjection(t, sql)
 		if sql != "1 = 0" {

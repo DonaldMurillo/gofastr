@@ -19,11 +19,6 @@ import (
 // childHandlerFor builds a tx-bound CrudHandler for the relation target.
 func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 	child := NewCrudHandler(target, ch.DB).WithJSONCase(ch.JSONCase)
-	pk := target.PrimaryKey
-	if pk == "" {
-		pk = "id"
-	}
-	child.PrimaryKey = pk
 	child.Registry = ch.Registry
 	child.Storage = ch.Storage
 	child.ImageDeriver = ch.ImageDeriver
@@ -178,8 +173,12 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, target *entity.E
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return err
+	}
 	coercedChildID := coercePKValue(target, targetPK, childIDVal)
-	coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)
+	coercedParentID := coercePKValue(ch.Entity, parentPK, parentID)
 	allArgs := append([]any{coercedChildID, coercedParentID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var belongs int
@@ -226,7 +225,11 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *enti
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
-	coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return nil, err
+	}
+	coercedParentID := coercePKValue(ch.Entity, parentPK, parentID)
 	allArgs := append([]any{coercedParentID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var existingID any
@@ -359,9 +362,9 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 
 		childHandler := ch.childHandlerFor(target)
 		childMap = childHandler.unconvertMapKeys(childMap)
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
+		targetPK, err := target.KeyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
 		}
 
 		var childResult map[string]any
@@ -428,9 +431,13 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
 		childHandler := ch.childHandlerFor(target)
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
+		parentPK, err := ch.keyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
+		}
+		targetPK, err := target.KeyColumn()
+		if err != nil {
+			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
 		}
 
 		switch rel.Type {
@@ -649,7 +656,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObjectOrID}}}}
 				}
 
-				coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)
+				coercedParentID := coercePKValue(ch.Entity, parentPK, parentID)
 				coercedChildID := coercePKValue(target, targetPK, childID)
 
 				var exists int

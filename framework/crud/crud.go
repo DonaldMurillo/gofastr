@@ -76,7 +76,7 @@ type DBExecutor = db.Executor
 type CrudHandler struct {
 	Entity     *entity.Entity
 	DB         DBExecutor
-	PrimaryKey string             // defaults to "id"
+	PrimaryKey []string           // key columns in order; nil means "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
@@ -155,11 +155,7 @@ type CrudHandler struct {
 // The derived field caches are built here, single-threaded, so the request
 // path never has to fill them (see fieldcache.go).
 func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
-	pk := "id"
-	if ent != nil && ent.PrimaryKey != "" {
-		pk = ent.PrimaryKey
-	}
-	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: pk, JSONCase: CaseCamel, Hooks: nil}
+	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: ent.KeyColumns(), JSONCase: CaseCamel, Hooks: nil}
 	ch.fcache = newFieldCache(ch)
 	ch.seats = newStreamSeatRegistry()
 	return ch
@@ -700,7 +696,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		ch.applySoftDeleteFilterCountQ(countQb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { countQb.Where(sql, args...) },
-			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+			ch.Entity.GetTable(), ch.keyCols(), nested,
 		)
 		for _, c := range listPayload.Where {
 			countQb.Where(c.SQL, c.Args...)
@@ -722,7 +718,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		ch.applySoftDeleteFilterQ(qb, q, ctx)
 		applyNestedFilters(
 			func(sql string, args ...any) { qb.Where(sql, args...) },
-			ch.Entity.GetTable(), ch.PrimaryKey, nested,
+			ch.Entity.GetTable(), ch.keyCols(), nested,
 		)
 		for _, c := range listPayload.Where {
 			qb.Where(c.SQL, c.Args...)

@@ -115,14 +115,14 @@ func TestGenerateRefusesCascadingRebuild(t *testing.T) {
 			Fields:    []schema.Field{{Name: "count", Type: schema.Text}},
 			Relations: rels,
 		}.WithTimestamps(false))
-		e.PrimaryKey = "id"
+		e.Config.PrimaryKey = []string{"id"}
 		return e
 	}
 	tags := entity.Define("tags", entity.EntityConfig{
 		Name: "tags", Table: "tags",
 		Fields: []schema.Field{{Name: "name", Type: schema.String}},
 	}.WithTimestamps(false))
-	tags.PrimaryKey = "id"
+	tags.Config.PrimaryKey = []string{"id"}
 	prev := SchemaSnapshot{Tables: map[string]map[string]string{
 		"widgets":     {"id": "TEXT", "count": "INTEGER"},
 		"tags":        {"id": "TEXT", "name": "TEXT"},
@@ -140,7 +140,7 @@ func TestGenerateRefusesCascadingRebuild(t *testing.T) {
 		Fields:    []schema.Field{{Name: "widget_id", Type: schema.String}},
 		Relations: []entity.Relation{entity.BelongsTo("widget", "widgets", "widget_id").OnDeleteAction(entity.OnDeleteSetNull)},
 	}.WithTimestamps(false))
-	notes.PrimaryKey = "id"
+	notes.Config.PrimaryKey = []string{"id"}
 	prev.Tables["notes"] = map[string]string{"id": "TEXT", "widget_id": "TEXT"}
 	_, _, _, err = GeneratePlan(Plan{Registry: secTypeReg{"widgets": widgets(), "tags": tags, "notes": notes}}, prev, DialectSQLite)
 	if err == nil || !strings.Contains(err.Error(), "notes") {
@@ -170,7 +170,7 @@ func TestRetypeRebuildKeepsFKIndex(t *testing.T) {
 		}
 	}
 	owners := entity.Define("owners", entity.EntityConfig{Name: "owners", Table: "owners"}.WithTimestamps(false))
-	owners.PrimaryKey = "id"
+	owners.Config.PrimaryKey = []string{"id"}
 	pets := entity.Define("pets", entity.EntityConfig{
 		Name: "pets", Table: "pets",
 		Fields: []schema.Field{
@@ -179,7 +179,7 @@ func TestRetypeRebuildKeepsFKIndex(t *testing.T) {
 		},
 		Relations: []entity.Relation{entity.BelongsTo("owner", "owners", "owner_id")},
 	}.WithTimestamps(false))
-	pets.PrimaryKey = "id"
+	pets.Config.PrimaryKey = []string{"id"}
 	changes, err := DiffSchema(ctx, db, secTypeReg{"owners": owners, "pets": pets})
 	if err != nil {
 		t.Fatalf("DiffSchema: %v", err)

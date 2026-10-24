@@ -64,7 +64,7 @@ func TestCovClientIP(t *testing.T) {
 func TestCovStringifyPK(t *testing.T) {
 	key := func(pk string, fields ...schema.Field) auditKey {
 		e := entity.Define("t", entity.EntityConfig{Fields: fields})
-		e.PrimaryKey = pk
+		e.Config.PrimaryKey = []string{pk}
 		return versionKey(e)
 	}
 	if got := stringifyPK(nil, key("id")); got != "" {
