@@ -50,6 +50,38 @@ each command to the doc that covers it.
 - `gofastr theme init`: scaffold a typed `theme/theme.go` you own
   (`--out=<path>` writes elsewhere; `--force` overwrites).
 
+### Windows init reports an existing directory
+
+`gofastr init <name>` checks for an existing destination before writing
+files. It exits 1 if that directory exists and leaves it unchanged,
+including `.env` and its signing key. A fresh project should exit 0.
+
+If a complete scaffold appears but the captured result says "already
+exists", check whether a launcher or agent runner invoked the command
+twice. The first run can create the project while the captured error
+belongs to the second run. Capture process IDs and arguments to check
+whether both results came from one invocation.
+
+Check which executable runs before changing the project:
+
+```powershell
+Get-Command gofastr -All
+where.exe gofastr
+gofastr version
+```
+
+Run that executable once from a normal terminal in a fresh temporary
+directory, and record stdout, stderr, and `$LASTEXITCODE`. Check any
+`.cmd` or `.ps1` wrapper and the runner's retry policy. Wait for a running
+command's result instead of starting it again. `go mod init` and
+`git init` can write progress to stderr even when they succeed; use the
+exit code to decide whether a command failed.
+
+Inspect a project that was already created before retrying. `init .`
+writes a new `.env` signing key and is not a way to acknowledge a
+successful scaffold. For a project whose scaffold completed, continue
+with `go mod tidy` from that project directory.
+
 ## App specs
 
 - `gofastr validate <yml>`: validate an app spec without generating
