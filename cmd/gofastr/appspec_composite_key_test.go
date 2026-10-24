@@ -242,6 +242,31 @@ func TestEditFormPacksBack(t *testing.T) {
 // An entity keyed on one declared column has no "id" in its create
 // response: the generated e2e test reads the record's path from the key
 // column instead.
+// The e2e create sends no relation, so a relation in the declared key
+// leaves the record with no id: the entity is no create target, whether
+// the relation is required or not.
+func TestE2ESkipsRelationKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gofastr.yml")
+	writeTestFile(t, path, compositeScreensSpec)
+	bp, err := loadAppSpec(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	decl := bp.Entities[0]
+	if appSpecUnfillableRelation(decl) {
+		t.Fatal("control: a key of plain columns must stay a create target")
+	}
+	for i := range decl.Fields {
+		decl.Fields[i].Required = false
+		if decl.Fields[i].Name == "student_id" {
+			decl.Fields[i].Type = "relation"
+		}
+	}
+	if !appSpecUnfillableRelation(decl) {
+		t.Error("an optional relation in the key must disqualify the create target")
+	}
+}
+
 func TestE2EReadsDeclaredKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gofastr.yml")
 	writeTestFile(t, path, strings.Replace(compositeScreensSpec, "primary_key: [student_id, course_id]", "primary_key: [student_id]", 1))
