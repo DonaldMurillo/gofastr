@@ -9,9 +9,9 @@
 // two in sync.
 //
 // Before v1.0.0 the supported library surface is Provisional, not Stable:
-// it is documented and follows the deprecation window in stability.md, but it
-// is not frozen. Promoting a package to Stable is the deliberate v1 act — it
-// is not done implicitly by omission.
+// it is documented and every break ships with an upgrade note
+// (stability.md), but it is not frozen. Promoting a package to Stable is
+// the deliberate v1 act — it is not done implicitly by omission.
 package stability
 
 import "strings"
@@ -30,11 +30,11 @@ const (
 	Stable Tier = "stable"
 
 	// Provisional: supported and documented, but may change before v1.0.0
-	// following the deprecation window in stability.md. This is the honest
+	// with an upgrade note, as stability.md describes. This is the honest
 	// pre-v1 tier for the framework, core, core-ui, and battery surface.
 	Provisional Tier = "provisional"
 
-	// Experimental: may change or be removed without a deprecation window.
+	// Experimental: may change or be removed without an upgrade note.
 	// Consumers should pin a version. Covers framework/experimental/*, the
 	// Kiln build-mode runtime, and the codegen extension exec surface.
 	Experimental Tier = "experimental"
