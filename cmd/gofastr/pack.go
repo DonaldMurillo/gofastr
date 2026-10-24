@@ -221,6 +221,9 @@ func appToMap(a AppSpecApp) map[string]any {
 	if a.LLMMD {
 		m["llm_md"] = true
 	}
+	if a.LocalePrefixes {
+		m["locale_prefixes"] = true
+	}
 	return m
 }
 
@@ -988,7 +991,7 @@ var (
 	// emits but this list omits ships unsorted, which
 	// TestPackSerializerCoversEveryAppSpecField catches.
 	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
-	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
+	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "locale_prefixes"}
 	entityOrder    = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
@@ -1058,7 +1061,11 @@ func orderFor(key string) []string {
 
 func packParseFile(path string) (*ast.File, error) {
 	fset := token.NewFileSet()
-	return parser.ParseFile(fset, path, nil, 0)
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	return packResolvePhrases(file), nil
 }
 
 // rootReadDirEntries lists the entries of rel (a slash path relative to
@@ -2216,7 +2223,7 @@ func packReadApp(dir string) (AppSpecApp, error) {
 		return true
 	})
 
-	// Admin, PWA, and LLM-markdown config live in main.go.
+	// Admin, PWA, LLM-markdown and locale-prefix config live in main.go.
 	if mainFile, err := packParseFile(filepath.Join(dir, "main.go")); err == nil {
 		app.OutputDir = packOutputDir(mainFile, app.Module)
 		ast.Inspect(mainFile, func(n ast.Node) bool {
@@ -2245,8 +2252,11 @@ func packReadApp(dir string) (AppSpecApp, error) {
 					app.PWA.BackgroundColor = astString(cv["BackgroundColor"])
 				}
 			case *ast.CallExpr:
-				if astSelLast(t.Fun) == "WithPublicLLMMD" {
+				switch astSelLast(t.Fun) {
+				case "WithPublicLLMMD":
 					app.LLMMD = true
+				case "WithLocalePrefixes":
+					app.LocalePrefixes = true
 				}
 			}
 			return true
@@ -2429,7 +2439,11 @@ func packReadPerScreenFiles(dir string) ([]AppSpecScreen, error) {
 		if rerr != nil {
 			return nil, rerr
 		}
-		return parser.ParseFile(token.NewFileSet(), rel, src, 0)
+		file, err := parser.ParseFile(token.NewFileSet(), rel, src, 0)
+		if err != nil {
+			return nil, err
+		}
+		return packResolvePhrases(file), nil
 	}
 	var screenNames []string
 	for _, e := range entries {

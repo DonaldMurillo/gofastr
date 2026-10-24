@@ -406,8 +406,8 @@ aggregated `screens.go`:
   Byte-identical for any screen/entity count. Add a screen by dropping in a new
   `screen_<name>.go`; never edit the seam.
 - `screen_<snake>.go`: one per authored non-CRUD screen (marketing pages,
-  dashboards, auth forms): the screen struct, its `Screen*` methods, `Render`,
-  a `mount<Screen>` func holding the `site.Register`/`site.RegisterScreen`
+  dashboards, auth forms): the screen struct, its `Screen*` methods,
+  `RenderCtx`, a `mount<Screen>` func holding the `site.Register`/`site.RegisterScreen`
   call, and an `init()` that appends one
   `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
 - `screen_<entity>_crud.go`: one per entity with CRUD screens (or referenced
@@ -421,6 +421,49 @@ assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
 and names no screen type. The generated screen order is
 recovered by `gofastr pack` from each file's `screenRegistrar{order: …}`; see
 [Packing](#packing-gofastr-pack-lossy-snapshot-of-the-app-as-an-app-spec).
+
+### Translations (`i18n.go`, `locales/`)
+
+Every word the app spec writes for a reader (a title, a hero line, a
+button label, a nav entry, a footer column, an auth error) is emitted as
+an `i18n.Phrase` declared at the top of the file that says it, and the
+screen reads it with the request's context:
+
+```go
+var (
+	homeScreenTextSeeYourRevenue = i18n.Define("meridian.screens.home.see_your_revenue", "See your revenue.")
+)
+
+func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
+	return ui.Hero(ui.HeroConfig{Title: homeScreenTextSeeYourRevenue.Text(ctx)})
+}
+```
+
+The key is `<app>.screens.<screen>.<slug>` in a screen file,
+`<app>.screens.<entity>_crud.<slug>` in an entity's crud file,
+`<app>.chrome.<slug>` in `app.go` and `<app>.auth.<code>` in
+`auth_hooks.go`. The slug is the English's first four words; the same
+English twice in one file is one phrase. Field labels go through
+`i18nui.FieldLabel` and enum values through `i18nui.FieldValueLabel`, so
+they read the `entity.*` keys the admin reads.
+
+With `app.module` set the generator also writes:
+
+- `i18n.go`: `translatorOption()`, which `main.go` installs. It embeds
+  `locales/`, loads every `<tag>.json` there with `i18n.LoadJSONCatalog`,
+  and adds the `en-XA` pseudo-locale when `GOFASTR_PSEUDO_LOCALE=1`.
+- `i18n_test.go`: `TestCatalogsMatchPhrases` runs `i18n.CheckCatalog`
+  over every `locales/<tag>.json`, so `go test` fails on a key no phrase
+  defines or a translation that drops a `{{placeholder}}`. `entity.*`
+  keys name the app's data and are skipped. Add `i18n.Require("<app>.")`
+  to fail on a phrase a locale has not translated yet.
+- `locales/README.md`: what goes in the directory. It also keeps the
+  directory non-empty, which `go:embed` requires.
+
+The generator never writes a `<tag>.json`, so `generate --force` keeps
+every translation. Add `locales/es.json` keyed like the phrases (dots
+nest) and the browser's `Accept-Language` picks it. See
+[i18n](i18n.md) for the catalog format and `i18n.CheckCatalog`.
 
 
 ## Additive generation (`--add`)
@@ -634,6 +677,11 @@ prints to stdout, or to a file with `-o`:
 ```sh
 gofastr pack examples/meridian -o recovered.yml
 ```
+
+Pack reads a phrase as its English: `homeScreenTextWelcome.Text(ctx)`
+becomes the text its `i18n.Define` in the same file gives, and an
+`i18nui.FieldLabel` call becomes its English argument. The packed spec
+holds the English only; translations stay in `locales/`.
 
 Pack then checks its own result. It regenerates the app from the packed
 spec in memory and compares each Go file at the app root and directly
@@ -1348,6 +1396,23 @@ opt-outs keep working. Off by default because the documents enumerate every
 screen and its data shape: useful for AI agents in trusted environments,
 schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
 enabling one never emits the other.
+
+### Locale in the URL (`app.locale_prefixes`)
+
+```yaml
+app:
+  locale_prefixes: true
+```
+
+Emits `framework.WithLocalePrefixes()`. English keeps the plain paths and
+each `locales/<tag>.json` is served under `/<tag>/`: `/es/pricing` is the
+pricing screen in Spanish, with `hreflang` alternates on every page, a sitemap
+entry per locale, and robots rules repeated under each prefix. A marketing
+footer gets `ui.LanguageMenu` in its `Language` slot, so a reader can switch
+from any page. Off by default,
+because it pins the plain paths to English: without it the browser's
+`Accept-Language` picks the locale. The [i18n guide](i18n.md#locale-in-the-url)
+covers the routing rules and the language switcher.
 
 ### app.module and the enclosing go.mod
 

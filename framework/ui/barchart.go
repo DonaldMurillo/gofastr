@@ -145,7 +145,11 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	barGap := 8.0
 	provPlotW := float64(w) - axisGutter
 	provBarW := (provPlotW - barGap*float64(n-1)) / float64(n)
-	slotChars := int(math.Floor((provBarW + barGap) / 6.2))
+	// A line gets its slot less 4px of air from its neighbour, at 7px a
+	// rune: 12px text runs 5-6.5px a rune, wider in capitals and accents
+	// (a translated or pseudo-localized label), and a label centred in
+	// the last slot that overruns it is cut off by the plot edge.
+	slotChars := int(math.Floor((provBarW + barGap - 4) / 7))
 	var wrapped [][]string
 	maxLines := 1
 	if cfg.ShowLabels {
@@ -445,10 +449,12 @@ func plausibleCSSColor(s string) bool {
 
 // wrapChartLabel greedily word-wraps label to at most two lines that each
 // fit within maxChars runes. A single word longer than a line is
-// ellipsized; the full text is preserved by the caller in <title>.
+// ellipsized; the full text is preserved by the caller in <title>. A slot
+// too narrow for any rune still gets one, the ellipsis: a wider floor
+// spilled the label past its slot, and the last one past the plot edge.
 func wrapChartLabel(label string, maxChars int) []string {
-	if maxChars < 4 {
-		maxChars = 4
+	if maxChars < 1 {
+		maxChars = 1
 	}
 	if len([]rune(label)) <= maxChars {
 		return []string{label}

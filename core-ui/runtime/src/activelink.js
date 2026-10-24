@@ -48,6 +48,10 @@
     } catch (_) { return bare(p); }
   };
   const key = (u) => { const i = u.indexOf('?'); return i < 0 ? pathKey(u) : pathKey(u.slice(0, i)) + u.slice(i); };
+  // The path without its locale prefix, and the site root a static
+  // export's base puts in front of every page.
+  const unloc = (p) => (G._unlocalize ? G._unlocalize(p) : p);
+  const root = () => pathKey((window.__gofastr_locales?.base || '') + '/');
   const update = (path, navigated, scope) => {
     const pathOnly = (path || '').split('?')[0].split('#')[0];
     // Whether the link's nav (or the document, outside one) also holds
@@ -87,10 +91,11 @@
         // left the ordinary case permanently dark. /docs-old shares a
         // text prefix with /docs but not a segment, so it stays out.
         // "/" is never used as a prefix, otherwise every nav link
-        // would match every page.
-        const hrefBase = pathKey(hrefPath);
-        const currentBase = pathKey(pathOnly);
-        if (hrefBase !== '/' && hrefBase !== '' && (currentBase === hrefBase || currentBase.startsWith(hrefBase + '/'))) {
+        // would match every page. Both sides drop the locale prefix
+        // first: a home link under /es is /es, the root all the same.
+        const hrefBase = pathKey(unloc(hrefPath));
+        const currentBase = pathKey(unloc(pathOnly));
+        if (hrefBase !== '/' && hrefBase !== '' && hrefBase !== root() && (currentBase === hrefBase || currentBase.startsWith(hrefBase + '/'))) {
           active = true;
         }
       }
@@ -141,9 +146,28 @@
     }
   };
 
+  // A rel=alternate hreflang link names this page in another locale (a
+  // language switcher, ui.LanguageMenu). Chrome that outlives a swap
+  // still points at the page it was rendered on, so every sweep points
+  // it at the page the reader is on now, the way the server builds it
+  // (i18n.PathLocales.Path): the default locale plain, the others under
+  // /<tag> after the export's base. A tag outside the app's locale set
+  // is an alternate on another site and is left alone.
+  const alternates = () => {
+    const L = window.__gofastr_locales;
+    if (!L || !G._unlocalize) return;
+    const b = L.base || '', p = G._unlocalize(location.pathname).slice(b.length) || '/';
+    for (const a of document.querySelectorAll('a[rel~="alternate"][hreflang]')) {
+      const t = a.getAttribute('hreflang').toLowerCase();
+      if (t === L.default) a.setAttribute('href', b + p + location.search);
+      else if (L.prefixes.includes(t)) a.setAttribute('href', b + '/' + t + (p === '/' ? '' : p) + location.search);
+    }
+  };
+
   G._updateActiveLink = update;
   window.addEventListener('gofastr:navigate', (e) => {
     update((e.detail && e.detail.path) || location.pathname + location.search, true);
+    alternates();
   });
   // Widget chrome (the sidebar's phone drawer) mounts after load and is
   // served without the page's current path, and no navigation follows
@@ -152,12 +176,14 @@
   document.addEventListener('fui:widget-open', (e) => {
     const root = e.detail && e.detail.root;
     if (root && root.querySelectorAll) update(location.pathname + location.search, true, root);
+    alternates();
   });
   // Correct the highlight for wherever the page is NOW, SSR covered the
   // initial URL, but a navigation may have happened before idle load.
   // Boot's navigate listener records one in G._navigated; without it
   // the sweep only stamps matches and leaves the handed-over marks.
   update(location.pathname + location.search, !!G._navigated);
+  alternates();
 
   (G.loadedModules ||= {}).activelink = true;
 })();

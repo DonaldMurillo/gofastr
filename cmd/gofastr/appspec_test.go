@@ -1478,7 +1478,8 @@ func allScreenContent(files []generatedFile) string {
 	var b strings.Builder
 	for _, f := range files {
 		if strings.HasPrefix(f.name, "screen_") || f.name == "screens.go" {
-			b.WriteString(f.content)
+			// The words a screen says are phrases; read them as English.
+			b.WriteString(inlinePhrases(f.content))
 			b.WriteByte('\n')
 		}
 	}

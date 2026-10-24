@@ -235,6 +235,14 @@ func (f *goFields) flag(key string, on bool) {
 
 func (f *goFields) raw(key, expr string) { *f = append(*f, key+": "+expr) }
 
+// text sets a reader-facing field: a phrase read through the request
+// ctx when the file has a collector, the literal otherwise.
+func (f *goFields) text(bp AppSpec, key, v string) {
+	if v != "" {
+		*f = append(*f, key+": "+appSpecTx(bp, v))
+	}
+}
+
 func (f goFields) String() string { return strings.Join(f, ", ") }
 
 func appSpecButtonVariantExpr(v string) string {
@@ -251,7 +259,7 @@ func appSpecButtonVariantExpr(v string) string {
 
 // renderAppSpecControlBlock emits a control-catalog block. children is
 // the comma-joined child expressions (custom_form, item_list).
-func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string, bool) {
+func renderAppSpecControlBlock(bp AppSpec, block AppSpecBlock, childExprs []string) (string, bool) {
 	kind := strings.ToLower(strings.TrimSpace(block.Kind))
 	if !appSpecControlKind(kind) {
 		return "", false
@@ -259,7 +267,7 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 	var f goFields
 	switch kind {
 	case "action_button":
-		f.str("Label", appSpecProp(block, "label"))
+		f.text(bp, "Label", appSpecProp(block, "label"))
 		f.raw("Variant", appSpecButtonVariantExpr(appSpecProp(block, "variant")))
 		typ := strings.ToLower(appSpecProp(block, "type"))
 		if typ == "" {
@@ -270,9 +278,9 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 		return "ui.Button(ui.ButtonConfig{" + f.String() + "})", true
 	case "text_field", "number_field":
 		f.str("Name", appSpecProp(block, "name"))
-		f.str("Label", appSpecProp(block, "label"))
-		f.str("Placeholder", appSpecProp(block, "placeholder"))
-		f.str("Help", appSpecProp(block, "help"))
+		f.text(bp, "Label", appSpecProp(block, "label"))
+		f.text(bp, "Placeholder", appSpecProp(block, "placeholder"))
+		f.text(bp, "Help", appSpecProp(block, "help"))
 		f.flag("Required", appSpecBoolProp(block, "required"))
 		f.flag("Disabled", appSpecBoolProp(block, "disabled"))
 		if kind == "number_field" {
@@ -281,7 +289,7 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 		return "ui.TextField(ui.TextFieldConfig{" + f.String() + "})", true
 	case "checkbox", "switch":
 		f.str("Name", appSpecProp(block, "name"))
-		f.str("Label", appSpecProp(block, "label"))
+		f.text(bp, "Label", appSpecProp(block, "label"))
 		f.flag("Checked", appSpecBoolProp(block, "checked"))
 		f.flag("Disabled", appSpecBoolProp(block, "disabled"))
 		fn := "ui.Checkbox"
@@ -295,12 +303,12 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 		for i, c := range choices {
 			var o goFields
 			o.str("Value", c.Value)
-			o.str("Text", c.Label)
+			o.text(bp, "Text", c.Label)
 			o.flag("Selected", c.On)
 			opts[i] = "{" + o.String() + "}"
 		}
 		f.str("Name", appSpecProp(block, "name"))
-		f.str("Label", appSpecProp(block, "label"))
+		f.text(bp, "Label", appSpecProp(block, "label"))
 		f.raw("Options", "[]ui.SelectOption{"+strings.Join(opts, ", ")+"}")
 		f.flag("Required", appSpecBoolProp(block, "required"))
 		f.flag("Disabled", appSpecBoolProp(block, "disabled"))
@@ -311,19 +319,19 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 		for i, c := range choices {
 			var o goFields
 			o.str("Value", c.Value)
-			o.str("Label", c.Label)
+			o.text(bp, "Label", c.Label)
 			o.flag("Checked", c.On)
 			opts[i] = "{" + o.String() + "}"
 		}
 		f.str("Name", appSpecProp(block, "name"))
-		f.str("Legend", appSpecProp(block, "legend"))
+		f.text(bp, "Legend", appSpecProp(block, "legend"))
 		f.raw("Options", "[]ui.RadioGroupOption{"+strings.Join(opts, ", ")+"}")
 		f.flag("Required", appSpecBoolProp(block, "required"))
 		return "ui.RadioGroup(ui.RadioGroupConfig{" + f.String() + "})", true
 	case "custom_form":
 		f.str("Action", appSpecProp(block, "action"))
 		f.str("Method", strings.ToUpper(appSpecProp(block, "method")))
-		f.str("SubmitLabel", appSpecProp(block, "submit"))
+		f.text(bp, "SubmitLabel", appSpecProp(block, "submit"))
 		f.flag("HideSubmit", appSpecBoolProp(block, "hide_submit"))
 		// Ctx lets the form stamp the CSRF token the request carries.
 		f.raw("Ctx", "ctx")
@@ -333,17 +341,17 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 		rows, _ := appSpecTableRows(block)
 		cols := make([]string, len(columns))
 		for i, c := range columns {
-			cols[i] = fmt.Sprintf("{Key: %q, Header: %q}", fmt.Sprintf("c%d", i), c)
+			cols[i] = fmt.Sprintf("{Key: %q, Header: %s}", fmt.Sprintf("c%d", i), appSpecTx(bp, c))
 		}
 		rowExprs := make([]string, len(rows))
 		for i, r := range rows {
 			cells := make([]string, len(r))
 			for j, cell := range r {
-				cells[j] = fmt.Sprintf("%q: render.Text(%q)", fmt.Sprintf("c%d", j), cell)
+				cells[j] = fmt.Sprintf("%q: render.Text(%s)", fmt.Sprintf("c%d", j), appSpecTx(bp, cell))
 			}
 			rowExprs[i] = "{Cells: map[string]render.HTML{" + strings.Join(cells, ", ") + "}}"
 		}
-		f.str("Caption", appSpecProp(block, "caption"))
+		f.text(bp, "Caption", appSpecProp(block, "caption"))
 		f.flag("CaptionHidden", appSpecBoolProp(block, "caption_hidden"))
 		f.str("ID", appSpecProp(block, "id"))
 		f.raw("Columns", "[]ui.Column{"+strings.Join(cols, ", ")+"}")
@@ -365,7 +373,7 @@ func renderAppSpecControlBlock(block AppSpecBlock, childExprs []string) (string,
 			gap = "md"
 		}
 		row := "ui.Cluster(" + joinCallArgs("ui.ClusterConfig{Gap: "+appSpecGapExpr(gap)+"}", childExprs) + ")"
-		return fmt.Sprintf("html.Nav(html.NavConfig{Label: %q}, %s)", appSpecProp(block, "label"), row), true
+		return fmt.Sprintf("html.Nav(html.NavConfig{Label: %s}, %s)", appSpecTx(bp, appSpecProp(block, "label")), row), true
 	}
 	return "", false
 }

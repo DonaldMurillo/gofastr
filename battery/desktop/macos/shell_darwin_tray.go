@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"context"
 	"runtime"
 	"unsafe"
 
@@ -45,8 +46,14 @@ func (s *darwinShell) installTray(t *desktop.Tray, rows []desktop.MenuItemPlan) 
 	if t.Title != "" {
 		objc.Send(button, objc.Sel("setTitle:"), uintptr(objc.NSString(t.Title)))
 	}
-	if t.Tooltip != "" {
-		objc.Send(button, objc.Sel("setToolTip:"), uintptr(objc.NSString(t.Tooltip)))
+	if !t.Tooltip.IsZero() {
+		s.mu.Lock()
+		textCtx := s.textCtx
+		s.mu.Unlock()
+		if textCtx == nil {
+			textCtx = context.Background()
+		}
+		objc.Send(button, objc.Sel("setToolTip:"), uintptr(objc.NSString(t.Tooltip.Text(textCtx))))
 	}
 	if len(t.Icon) > 0 {
 		if img := templateImage(t.Icon); img != 0 {

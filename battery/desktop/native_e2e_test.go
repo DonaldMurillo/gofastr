@@ -189,17 +189,17 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 		Widgets: []desktop.WindowSpec{desktop.Widget("/mini", 300, 200)},
 		Tray: &desktop.Tray{
 			Title:            e2eTrayTitle,
-			Tooltip:          "Shell E2E",
+			Tooltip:          testPhrase("Shell E2E"),
 			CloseHidesWindow: true,
 			Menu: &desktop.Menu{Items: []desktop.MenuItem{
-				{Title: "Show Window", Role: desktop.RoleShow},
+				{Title: testPhrase("Show Window"), Role: desktop.RoleShow},
 				{Role: desktop.RoleQuit},
 			}},
 		},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
-			{Title: "Go", Children: []desktop.MenuItem{
-				{Title: "Two", Navigate: "/two", Key: "cmd+2"},
-				{Title: "Ping", Handler: func(ctx context.Context) error {
+			{Title: testPhrase("Go"), Children: []desktop.MenuItem{
+				{Title: testPhrase("Two"), Navigate: "/two", Key: "cmd+2"},
+				{Title: testPhrase("Ping"), Handler: func(ctx context.Context) error {
 					select {
 					case e2eHandlerRan <- ctx.Err():
 					default:
@@ -487,6 +487,15 @@ func phaseTrayTitle(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	}
 	if got := reader.StatusItemTitle(); got != e2eTrayTitle {
 		t.Fatalf("status item title at boot = %q, want %q", got, e2eTrayTitle)
+	}
+	// The Tooltip phrase, rendered in the shell's language: the test
+	// phrase has no catalog entry, so every language gets its English.
+	tips, ok := h.Shell.(interface{ StatusItemToolTip() string })
+	if !ok {
+		t.Fatalf("the shell %T exposes no StatusItemToolTip", h.Shell)
+	}
+	if got := tips.StatusItemToolTip(); got != "Shell E2E" {
+		t.Fatalf("status item tooltip = %q, want %q", got, "Shell E2E")
 	}
 	wantCallOK(t, h.Call("tray", "setTitle", map[string]any{"title": e2eTrayTitle + "2"}), "tray.setTitle")
 	h.Wait("the status item title to change", func() bool {

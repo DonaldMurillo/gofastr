@@ -37,7 +37,7 @@
     const meta = document.querySelector('meta[name="csrf-token"]');
     const token = meta && meta.getAttribute('content');
     if (token) headers['X-CSRF-Token'] = token;
-    return fetch(url, {
+    return fetch(NS._lp?.(url) ?? url, {
       method: (method || 'POST').toUpperCase(),
       credentials: 'same-origin',
       headers,

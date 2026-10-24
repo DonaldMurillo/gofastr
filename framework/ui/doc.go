@@ -92,6 +92,7 @@
 //	HeroSplit:            two-column hero (copy + media) with mobile collapse
 //	InputGroup:           input with prepend/append addons
 //	JSONViewer:           collapsible tree of arbitrary values
+//	LanguageMenu:         locale switcher linking this page in each language
 //	Lightbox:             zoom-overlay modal; pairs with Gallery
 //	LineChart:            multi-series SVG time-series chart
 //	Link:                 typed-variant anchor with unsafe-href sanitizing

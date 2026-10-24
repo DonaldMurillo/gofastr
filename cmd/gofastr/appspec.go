@@ -52,6 +52,11 @@ type AppSpec struct {
 	Middleware []AppSpecNamedStub
 	Plugins    []AppSpecNamedStub
 	Helpers    []AppSpecNamedStub
+
+	// phrases collects the reader-facing text of the file being
+	// emitted (appSpecTx). Each file renderer sets it on its own copy;
+	// nil outside one, where text is emitted as a literal.
+	phrases *appSpecPhrases
 }
 
 // AppSpecSeedEntity holds seed data for one entity.
@@ -104,6 +109,11 @@ type AppSpecApp struct {
 	// Independent of PWA. A screen inventory is schema disclosure, so
 	// it never rides along with another feature.
 	LLMMD bool
+	// LocalePrefixes emits framework.WithLocalePrefixes()
+	// (app.locale_prefixes): every locales/<tag>.json is served under
+	// /<tag>/, with hreflang, sitemap and robots entries. English keeps
+	// the plain paths.
+	LocalePrefixes bool
 }
 
 // AppSpecPWA configures the generated app's installable-PWA surface
@@ -558,7 +568,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	if err != nil {
 		return AppSpecApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true}
+	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true, "locale_prefixes": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return AppSpecApp{}, err
 	}
@@ -635,6 +645,9 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	}
 	if v, ok := m["llm_md"]; ok {
 		app.LLMMD = boolValue(v)
+	}
+	if v, ok := m["locale_prefixes"]; ok {
+		app.LocalePrefixes = boolValue(v)
 	}
 	return app, nil
 }
@@ -2612,7 +2625,28 @@ func validateAppSpec(bp AppSpec) error {
 	errs.add(validateAppSpecSeedTypes(bp, entitiesByName))
 	errs.add(validateAppSpecSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
-	screenFiles := map[string]string{} // file name → declaring screen
+	screenFiles := map[string]string{} // file name → what writes it
+	screenTypes := map[string]string{} // generated type name → screen name
+	routesOf := map[string]string{}    // screen name → its route, for the error
+	// Two writers of one generated file emit it twice; the second write
+	// silently replaces the first and its routes never mount. A
+	// standalone screen writes screen_<name>.go, and an entity's screens
+	// share screen_<entity>_crud.go, so a screen named "Posts Crud"
+	// collides with the posts screens.
+	claimFile := func(screen AppSpecScreen) {
+		file, owner := screenFileName(screen.Name), fmt.Sprintf("screen %q", screen.Name)
+		if e, ok := screenEntityRef(screen); ok {
+			file, owner = screenFileName(e+"_crud"), fmt.Sprintf("the %s entity's screens", e)
+		}
+		if file == "" {
+			return
+		}
+		if prev, dup := screenFiles[file]; dup && prev != owner {
+			errs.add(fmt.Errorf("app spec: %s and %s both write the screen file %s: the second write would replace the first and its routes would never mount; rename the screen", prev, owner, file))
+		} else {
+			screenFiles[file] = owner
+		}
+	}
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
 			errs.add(fmt.Errorf("app spec: screen name is required"))
@@ -2631,15 +2665,15 @@ func validateAppSpec(bp AppSpec) error {
 			continue
 		}
 		routes[screen.Route] = true
-		// Two screens whose names normalize to the same file name would
-		// emit one screen_<snake>.go twice; the second write silently
-		// replaces the first and its route never mounts.
-		if file := screenFileName(screen.Name); file != "" {
-			if prev, dup := screenFiles[file]; dup {
-				errs.add(fmt.Errorf("app spec: screens %q and %q both normalize to the screen file %s: the second write would replace the first and its route would never mount; rename one", prev, screen.Name, file))
-			} else {
-				screenFiles[file] = screen.Name
-			}
+		claimFile(screen)
+		// Every screen declares <Name>Screen and mount<Name>Screen in one
+		// package, whichever file it lands in, so the name is the app's.
+		typeName := toCamelCase(screen.Name) + "Screen"
+		if prev, dup := screenTypes[typeName]; dup {
+			errs.add(fmt.Errorf("app spec: screens %q (%s) and %q (%s) both generate the type %s, so the app would not build; rename one", prev, routesOf[prev], screen.Name, screen.Route, typeName))
+		} else {
+			screenTypes[typeName] = screen.Name
+			routesOf[screen.Name] = screen.Route
 		}
 		if _, err := screenTypeConst(screen.Type); err != nil {
 			errs.add(err)
@@ -2673,6 +2707,15 @@ func validateAppSpec(bp AppSpec) error {
 			}
 		}
 		errs.add(validateAppSpecActions(screen.Name, screen.Body))
+	}
+	// The render adds a create screen per writable list; its file and its
+	// type join the same package as the authored ones.
+	for _, screen := range appSpecSynthesizeCRUDScreens(bp).Screens[len(bp.Screens):] {
+		claimFile(screen)
+		typeName := toCamelCase(screen.Name) + "Screen"
+		if prev, dup := screenTypes[typeName]; dup {
+			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))
+		}
 	}
 	errs.add(validateAppSpecEndpoints(bp))
 	// Hooks are the sibling construct of endpoints: a surface the generated
@@ -3592,6 +3635,12 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 	var files []generatedFile
 	if bp.App.Module != "" {
 		files = append(files, generatedFile{name: "main.go", content: renderAppSpecMain(bp)})
+		// The translator main.go installs, and the directory its
+		// catalog embeds. The generator never writes a <tag>.json, so
+		// a regenerate keeps every translation.
+		files = append(files, generatedFile{name: "i18n.go", content: appSpecI18nGo})
+		files = append(files, generatedFile{name: "i18n_test.go", content: appSpecI18nTestGo})
+		files = append(files, generatedFile{name: "locales/README.md", content: strings.Replace(appSpecLocalesReadme, "{{pick}}", appSpecLocalesPick(bp), 1)})
 	}
 	if len(bp.Entities) > 0 {
 		decls := make([]framework.EntityDeclaration, len(bp.Entities))
@@ -3683,7 +3732,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		files = append(files, generatedFile{name: "extensions.go", content: appSpecExtensionsGo})
 	}
 	if appSpecNeedsAuthHooks(bp) {
-		files = append(files, generatedFile{name: "auth_hooks.go", content: appSpecAuthHooksGo})
+		files = append(files, generatedFile{name: "auth_hooks.go", content: appSpecAuthHooksGo(bp)})
 	}
 	if bp.App.Module != "" && len(bp.Screens) > 0 {
 		files = append(files, generatedFile{name: "e2e_test.go", content: renderAppSpecE2ETest(bp)})
@@ -4608,6 +4657,120 @@ func renderAppSpecE2ETest(bp AppSpec) string {
 	return b.String()
 }
 
+// appSpecI18nGo installs the generated app's translator. The screens and
+// app.go declare their words as phrases (i18n.Define); this file loads
+// the catalog that translates them.
+const appSpecI18nGo = `package main
+
+import (
+	"embed"
+	"log"
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+)
+
+// localeFS holds the app's translations: one locales/<tag>.json per
+// language (es.json, pt-br.json), keyed like the phrases the screens
+// declare. English is the phrases themselves and needs no file.
+//
+//go:embed locales
+var localeFS embed.FS
+
+// pseudoLocale is the tag GOFASTR_PSEUDO_LOCALE=1 adds: every phrase
+// accented and lengthened, for finding layouts that cannot take longer
+// words. A browser asking for en-XA gets it, or /en-xa/ under
+// app.locale_prefixes (the catalog stores tags lowercase).
+const pseudoLocale = "en-XA"
+
+// translatorOption installs the app's translator.
+func translatorOption() framework.AppOption {
+	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
+	if err != nil {
+		log.Fatalf("locales: %v", err)
+	}
+	if os.Getenv("GOFASTR_PSEUDO_LOCALE") == "1" {
+		i18nui.AddPseudo(c, pseudoLocale)
+	}
+	return framework.WithI18n(i18n.NewTranslator(c, "en"))
+}
+`
+
+// appSpecI18nTestGo checks each locale file against the phrases the
+// app links in. It lives in package main, which wires the whole app, so
+// i18n.Phrases() knows every screen's words and the framework's.
+const appSpecI18nTestGo = `package main
+
+import (
+	"io/fs"
+	"path"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+)
+
+// Each locales/<tag>.json names only phrases the app and the framework
+// define, and keeps every {{placeholder}} of a phrase's English. Entity
+// keys name the app's data rather than a defined phrase, so the check
+// leaves them alone. Pass i18n.Require("<app>.") to also fail on a
+// phrase a locale does not translate yet.
+func TestCatalogsMatchPhrases(t *testing.T) {
+	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := fs.Glob(localeFS, "locales/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		tag := strings.TrimSuffix(path.Base(name), ".json")
+		for _, is := range i18n.CheckCatalog(c, tag, i18n.Skip("entity.")) {
+			t.Errorf("%s: %s: %s (English %q, translation %q)", tag, is.Key, is.Problem, is.English, is.Text)
+		}
+	}
+}
+`
+
+// appSpecLocalesReadme says what goes in locales/. It is also the file
+// that keeps the directory non-empty, which go:embed requires.
+const appSpecLocalesReadme = `# Translations
+
+Add one JSON file per language, named by its tag: ` + "`es.json`" + `,
+` + "`pt-br.json`" + `. Each key is a phrase key. The screens declare theirs at
+the top of each screen file (` + "`i18n.Define(\"<key>\", \"<English>\")`" + `).
+` + "`i18n.Phrases()`" + ` returns every key the app knows with its English,
+the framework's own words (form buttons, table headers, the admin)
+included. Dots nest:
+
+` + "```json" + `
+{
+  "shop": {"screens": {"home": {"welcome": "Bienvenido"}}},
+  "entity": {"orders": {"name": "Pedidos"}}
+}
+` + "```" + `
+
+A key with no translation renders its English. {{pick}}
+`
+
+// appSpecLocalesPick is the README's line on how a reader gets a
+// locale: the browser's Accept-Language, or the path under
+// app.locale_prefixes.
+func appSpecLocalesPick(bp AppSpec) string {
+	if bp.App.LocalePrefixes {
+		return "Each language lives under its own\n" +
+			"path: `/es/` serves es.json, and English keeps the plain paths. Run\n" +
+			"with `GOFASTR_PSEUDO_LOCALE=1` and open `/en-xa/` to see every phrase\n" +
+			"accented and lengthened."
+	}
+	return "The browser's\n" +
+		"Accept-Language picks the locale. Run with `GOFASTR_PSEUDO_LOCALE=1` and\n" +
+		"ask for `en-XA` to see every phrase accented and lengthened."
+}
+
 // appSpecNeedsAuthHooks reports whether generated screens render an auth
 // form, whose error copy lives in the owned auth_hooks.go seam.
 func appSpecNeedsAuthHooks(bp AppSpec) bool {
@@ -4621,32 +4784,51 @@ func appSpecNeedsAuthHooks(bp AppSpec) bool {
 
 // appSpecAuthHooksGo is the thin owned seam for the auth screens' error
 // copy. Edit the hook when the app needs different copy or extra codes.
-const appSpecAuthHooksGo = `package main
+// The copy is phrases under <app>.auth, so the app's catalog translates
+// it like every other word the app says.
+func appSpecAuthHooksGo(bp AppSpec) string {
+	return strings.ReplaceAll(appSpecAuthHooksTemplate, "{{app}}", appSpecPhraseApp(bp.App.Name))
+}
+
+const appSpecAuthHooksTemplate = `package main
 
 import (
 	"context"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+// The auth screens' error copy, in English. The app's catalog
+// (locales/*.json) translates it by key.
+var (
+	authErrInvalidCredentials = i18n.Define("{{app}}.auth.invalid_credentials", "Invalid email or password.")
+	authErrCredentialsMissing = i18n.Define("{{app}}.auth.credentials_required", "Enter your email and password.")
+	authErrRateLimit          = i18n.Define("{{app}}.auth.rate_limit", "Too many attempts. Please wait a moment and try again.")
+	authErrEmailTaken         = i18n.Define("{{app}}.auth.email_taken", "That email is already registered.")
+	authErrUnknown            = i18n.Define("{{app}}.auth.unknown", "Sorry, something went wrong. Please try again.")
 )
 
 // authError maps auth redirect codes to the alert rendered by generated auth
 // screens. Edit this hook when the app needs different copy or extra codes.
 func authError(ctx context.Context) render.HTML {
+	var p i18n.Phrase
 	switch appui.QueryFromContext(ctx).Get("error") {
 	case "":
 		return ""
 	case "invalid_credentials":
-		return render.Text("Invalid email or password.")
+		p = authErrInvalidCredentials
 	case "credentials_required":
-		return render.Text("Enter your email and password.")
+		p = authErrCredentialsMissing
 	case "rate_limit":
-		return render.Text("Too many attempts. Please wait a moment and try again.")
+		p = authErrRateLimit
 	case "email_taken", "user_exists", "duplicate":
-		return render.Text("That email is already registered.")
+		p = authErrEmailTaken
 	default:
-		return render.Text("Sorry, something went wrong. Please try again.")
+		p = authErrUnknown
 	}
+	return render.Text(p.Text(ctx))
 }
 `
 
@@ -4831,6 +5013,14 @@ func renderAppSpecMain(bp AppSpec) string {
 	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
 	sb.WriteString("\toptions := []framework.AppOption{\n")
 	sb.WriteString("\t\tframework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),\n")
+	sb.WriteString("\t\t// The app's translations (i18n.go): locales/<tag>.json, picked\n")
+	sb.WriteString("\t\t// by the browser's Accept-Language.\n")
+	sb.WriteString("\t\ttranslatorOption(),\n")
+	if bp.App.LocalePrefixes {
+		sb.WriteString("\t\t// Each locale under its own path (/es/pricing), with hreflang,\n")
+		sb.WriteString("\t\t// sitemap and robots entries; English keeps the plain paths.\n")
+		sb.WriteString("\t\tframework.WithLocalePrefixes(),\n")
+	}
 	sb.WriteString("\t\t// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +\n")
 	sb.WriteString("\t\t// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);\n")
 	sb.WriteString("\t\t// WithMCPIntrospection adds read-only orientation tools\n")
@@ -5187,31 +5377,21 @@ func renderAppSpecScreens(bp AppSpec) string {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	bp.phrases = appSpecScreenPhrases(bp.App.Name, "screens")
 	var bodies strings.Builder
 	for _, screen := range bp.Screens {
 		bodies.WriteString(appSpecScreenBody(bp, screen, entityMap, apiBase))
 	}
 	needs := appSpecScreenImports(bp)
-	needs.html = emitsHTMLRef(bodies.String())
-	anyCtx := screensNeedCtx(bp.Screens)
-	writeScreenImportBlock(&sb, needs, anyCtx, false, true)
+	needs.readCode(bodies.String(), bp.phrases)
+	writeScreenImportBlock(&sb, needs, false, true)
+	sb.WriteString(bp.phrases.block())
 	if needs.node {
 		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
 		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }\n\n")
 	}
 	sb.WriteString(bodies.String())
 	return sb.String()
-}
-
-// screensNeedCtx reports whether any screen in the set needs a request
-// context (RenderCtx). That drives the context + component.ContextOnly imports.
-func screensNeedCtx(screens []AppSpecScreen) bool {
-	for _, s := range screens {
-		if screenNeedsCtx(s) {
-			return true
-		}
-	}
-	return false
 }
 
 // appSpecScreenStackOpen opens the ui.Stack a screen's blocks sit in.
@@ -5227,7 +5407,11 @@ const appSpecScreenStackOpen = "ui.Stack(ui.StackConfig{Gap: ui.GapXL},"
 // screen root stopped being an html.Div that pulled the import in for
 // everyone. The code is tokenized, so a string literal or comment that
 // mentions html.Div (a callout's copy) does not count as a call.
-func emitsHTMLRef(code string) bool {
+func emitsHTMLRef(code string) bool { return emitsPkgRef(code, "html") }
+
+// emitsPkgRef reports whether code selects an exported name from the
+// package named pkg, read the way emitsHTMLRef reads html.
+func emitsPkgRef(code, pkg string) bool {
 	type tokLit struct {
 		tok token.Token
 		lit string
@@ -5244,7 +5428,7 @@ func emitsHTMLRef(code string) bool {
 		if tok == token.EOF {
 			return false
 		}
-		if last[0].tok != token.PERIOD && last[1].tok == token.IDENT && last[1].lit == "html" &&
+		if last[0].tok != token.PERIOD && last[1].tok == token.IDENT && last[1].lit == pkg &&
 			last[2].tok == token.PERIOD && tok == token.IDENT && lit[0] >= 'A' && lit[0] <= 'Z' {
 			return true
 		}
@@ -5256,7 +5440,7 @@ func emitsHTMLRef(code string) bool {
 // When withMount is true, database/sql + framework are added (per-screen files
 // carry a mount func with that signature); the aggregated test-facing emitter
 // passes false to stay byte-compatible with the pre-per-screen screens.go.
-func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx, withMount, hasScreens bool) {
+func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMount, hasScreens bool) {
 	sb.WriteString("import (\n")
 	// Every screen takes a context: ScreenTitle(ctx) is always emitted.
 	if hasScreens {
@@ -5266,7 +5450,7 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 		sb.WriteString("\t\"database/sql\"\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
-	if hasScreens && (needs.component || anyCtx) {
+	if hasScreens {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/component\"\n")
 	}
 	if hasScreens && needs.island {
@@ -5278,11 +5462,17 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if hasScreens && needs.interactive {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/interactive\"\n")
 	}
+	if hasScreens && needs.i18n {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/i18n\"\n")
+	}
 	if hasScreens {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/render\"\n")
 	}
 	if hasScreens && needs.ui {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
+	}
+	if hasScreens && needs.i18nui {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/i18nui\"\n")
 	}
 	if hasScreens && needs.headless {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/headless\"\n")
@@ -5310,35 +5500,27 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	var sb strings.Builder
 	typeName := toCamelCase(screen.Name) + "Screen"
-	ctxScreen := screenNeedsCtx(screen)
-	needParams := screenNeedsParams(screen)
 	hasActions := screenHasActions(screen, entityMap, apiBase)
-	if ctxScreen {
-		if needParams {
-			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
-			sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[%q] }\n", typeName, screenParamName(screen)))
-		} else {
-			sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
-		}
-	} else if needParams {
-		// A dynamic route without context still MUST accept its params;
-		// the router fails loudly at registration for any dynamic screen
-		// lacking SetParams (silently dropped params were a bug class).
-		sb.WriteString(fmt.Sprintf("type %s struct{ id string }\n\n", typeName))
+	// Every screen renders with the request ctx: its words are phrases
+	// the request's locale translates. A dynamic route MUST accept its
+	// params; the router fails loudly at registration for any dynamic
+	// screen lacking SetParams (silently dropped params were a bug class).
+	if screenNeedsParams(screen) {
+		sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly; id string }\n\n", typeName))
 		sb.WriteString(fmt.Sprintf("func (s *%s) SetParams(p map[string]string) { s.id = p[%q] }\n", typeName, screenParamName(screen)))
 	} else {
-		sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", typeName))
+		sb.WriteString(fmt.Sprintf("type %s struct{ component.ContextOnly }\n\n", typeName))
 	}
-	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle(ctx context.Context) string { return %q }\n", typeName, screen.TitleOrName()))
+	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle(ctx context.Context) string { return %s }\n", typeName, appSpecTx(bp, screen.TitleOrName())))
 	if screen.Description != "" {
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription(ctx context.Context) string { return %q }\n", typeName, screen.Description))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription(ctx context.Context) string { return %s }\n", typeName, appSpecTx(bp, screen.Description)))
 	} else {
 		// No description in the app spec. A zero-value ScreenSEO is the
 		// framework's documented "deliberately no per-page SEO" opt-out,
 		// which keeps uihost strict mode passing without inventing filler
 		// copy. Replace with a real ScreenDescription when the page has
 		// something to say.
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO() uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the app spec or replace with real copy\n", typeName))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO(ctx context.Context) uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the app spec or replace with real copy\n", typeName))
 	}
 	typeConst, _ := screenTypeConst(screen.Type)
 	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenType() app.ScreenType { return %s }\n", typeName, typeConst))
@@ -5351,11 +5533,7 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 		sb.WriteString("}\n")
 	}
 	sb.WriteString("\n")
-	renderMethod := "Render() render.HTML"
-	if ctxScreen {
-		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
-	}
-	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
+	sb.WriteString(fmt.Sprintf("func (s *%s) RenderCtx(ctx context.Context) render.HTML {\n", typeName))
 	// A screen with blocks stacks them in a ui.Stack at the xl gap, so a
 	// page header, a stat grid, a chart card and a table get the design
 	// system's vertical rhythm instead of touching (a bare div gave them
@@ -5368,7 +5546,7 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 		divCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
 	}
 	if len(screen.Body) == 0 {
-		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", divCfg, screen.TitleOrName()))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%s)))\n", divCfg, appSpecTx(bp, screen.TitleOrName())))
 	} else {
 		closer := "\t)\n"
 		if hasActions {
@@ -5673,10 +5851,12 @@ func renderAppSpecStandaloneScreenFile(screen AppSpecScreen, bp AppSpec, entityM
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	bp.phrases = appSpecScreenPhrases(bp.App.Name, screen.Name)
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
 	needs := appSpecScreensImportNeeds(bp, []AppSpecScreen{screen}, entityMap, apiBase)
-	needs.html = emitsHTMLRef(body)
-	writeScreenImportBlock(&sb, needs, screenNeedsCtx(screen), true, true)
+	needs.readCode(body, bp.phrases)
+	writeScreenImportBlock(&sb, needs, true, true)
+	sb.WriteString(bp.phrases.block())
 	sb.WriteString(body)
 	mountName := "mount" + toCamelCase(screen.Name) + "Screen"
 	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, appSpecScreenMountStmt(screen, bp)))
@@ -5712,13 +5892,15 @@ func renderAppSpecCrudFile(entity string, screens []AppSpecScreen, bp AppSpec, e
 		}
 	}
 	screens = kept
+	bp.phrases = appSpecCrudPhrases(bp.App.Name, entity)
 	var bodies strings.Builder
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
 	}
 	needs := appSpecScreensImportNeeds(bp, screens, entityMap, apiBase)
-	needs.html = emitsHTMLRef(bodies.String())
-	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
+	needs.readCode(bodies.String(), bp.phrases)
+	writeScreenImportBlock(&sb, needs, true, len(screens) > 0)
+	sb.WriteString(bp.phrases.block())
 	sb.WriteString(bodies.String())
 	// Mount funcs in authored (declaration) order.
 	ordered := append([]AppSpecScreen(nil), screens...)
@@ -5870,35 +6052,6 @@ func appSpecDisplayField(decl framework.EntityDeclaration) string {
 // singularize is the naive English singularizer for entity display names,
 // shared with the admin battery so both spell "Category" the same way.
 func singularize(s string) string { return inflect.Singular(s) }
-
-// screenNeedsCtx reports whether a screen renders any request-time, server-side
-// data block (top-level entity_list/entity_detail, or any data-bound widget with
-// a `source:` anywhere in the tree) and so must implement RenderCtx.
-func screenNeedsCtx(screen AppSpecScreen) bool {
-	var walk func([]AppSpecBlock, bool) bool
-	walk = func(blocks []AppSpecBlock, top bool) bool {
-		for _, b := range blocks {
-			// Any entity list/detail/form, at any nesting level, is
-			// server-rendered via the resource engine, which needs the request ctx.
-			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) {
-				return true
-			}
-			// Auth forms read ?error= from the request to surface a failed-login
-			// message inline, so they render with the request ctx too.
-			if isLoginFormBlock(b) || isSignupFormBlock(b) {
-				return true
-			}
-			if appSpecBlockHasSource(b) || appSpecBlocksHaveCustomForm([]AppSpecBlock{b}) {
-				return true
-			}
-			if walk(b.Children, false) {
-				return true
-			}
-		}
-		return false
-	}
-	return walk(screen.Body, true)
-}
 
 // appSpecBlockHasSource reports whether a block binds to live entity data.
 func appSpecBlockHasSource(b AppSpecBlock) bool {
@@ -6119,10 +6272,10 @@ func appSpecEntityListExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock)
 		if h1, _ := appSpecH1Before(screen.Body, entity); h1 {
 			level = 2
 		}
-		expr += fmt.Sprintf(".Heading(%q, %d)", block.Text, level)
+		expr += fmt.Sprintf(".Heading(%s, %d)", appSpecTx(bp, block.Text), level)
 	}
 	if block.EmptyText != "" {
-		expr += fmt.Sprintf(".Empty(%q)", block.EmptyText)
+		expr += fmt.Sprintf(".Empty(%s)", appSpecTx(bp, block.EmptyText))
 	}
 	// Off the entity's home screen the rows still link to the home list,
 	// where the detail and create screens sit; the default base is the
@@ -6161,6 +6314,20 @@ type screenImportNeeds struct {
 	// uihost: any screen without an app spec description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
+	// i18n: the file declares phrases. i18nui: the code reads the
+	// framework's own phrases or catalog lookups (form labels, auth
+	// fields).
+	i18n   bool
+	i18nui bool
+}
+
+// readCode sets the needs the emitted code itself decides: which block
+// emitters reached for html.*, i18nui.*, and whether the file says any
+// phrase.
+func (n *screenImportNeeds) readCode(code string, p *appSpecPhrases) {
+	n.html = emitsHTMLRef(code)
+	n.i18nui = emitsPkgRef(code, "i18nui")
+	n.i18n = p.used()
 }
 
 // appSpecCatalogKind reports whether a block kind maps to a framework/ui
@@ -6483,6 +6650,7 @@ func appSpecSectionChildrenAreCards(children []AppSpecBlock) bool {
 // (expr, true) when handled; ("", false) to fall through to other paths.
 func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) (string, bool) {
 	kind := strings.ToLower(strings.TrimSpace(block.Kind))
+	tx := func(s string) string { return appSpecTx(bp, s) }
 	childExprs := func() string {
 		parts := make([]string, 0, len(block.Children))
 		for i, ch := range block.Children {
@@ -6497,7 +6665,7 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			cp := append(append([]int(nil), path...), i)
 			children = append(children, renderAppSpecBlockForScreen(bp, screen, ch, cp, entityMap, apiBase))
 		}
-		return renderAppSpecControlBlock(block, children)
+		return renderAppSpecControlBlock(bp, block, children)
 	}
 	switch kind {
 	case "stack":
@@ -6530,16 +6698,16 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		}
 		return "ui.Grid(" + cfg + ", " + children + ")", true
 	case "page_header":
-		cfg := fmt.Sprintf("ui.PageHeaderConfig{Title: %q, Subtitle: %q, Eyebrow: %q}", appSpecProp(block, "title"), appSpecProp(block, "subtitle"), appSpecProp(block, "eyebrow"))
+		cfg := fmt.Sprintf("ui.PageHeaderConfig{Title: %s, Subtitle: %s, Eyebrow: %s}", tx(appSpecProp(block, "title")), tx(appSpecProp(block, "subtitle")), tx(appSpecProp(block, "eyebrow")))
 		return "ui.PageHeader(" + cfg + ")", true
 	case "hero":
 		title := appSpecProp(block, "title")
 		var ctas []string
 		if t := appSpecProp(block, "cta_text"); t != "" {
-			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %q, Href: %q, Variant: ui.ButtonPrimary})", t, appSpecProp(block, "cta_href")))
+			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonPrimary})", tx(t), appSpecProp(block, "cta_href")))
 		}
 		if t := appSpecProp(block, "secondary_text"); t != "" {
-			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %q, Href: %q, Variant: ui.ButtonSecondary})", t, appSpecProp(block, "secondary_href")))
+			ctas = append(ctas, fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonSecondary})", tx(t), appSpecProp(block, "secondary_href")))
 		}
 		actions := ""
 		if len(ctas) > 0 {
@@ -6551,11 +6719,11 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		}
 		media := ""
 		if image != "" {
-			media = fmt.Sprintf(", Media: html.Image(html.ImageConfig{Src: %q, Alt: %q})", image, title)
+			media = fmt.Sprintf(", Media: html.Image(html.ImageConfig{Src: %q, Alt: %s})", image, tx(title))
 		}
-		return fmt.Sprintf("ui.Hero(ui.HeroConfig{Eyebrow: %q, Title: %q, Subtitle: %q%s%s})", appSpecProp(block, "eyebrow"), title, appSpecProp(block, "subtitle"), actions, media), true
+		return fmt.Sprintf("ui.Hero(ui.HeroConfig{Eyebrow: %s, Title: %s, Subtitle: %s%s%s})", tx(appSpecProp(block, "eyebrow")), tx(title), tx(appSpecProp(block, "subtitle")), actions, media), true
 	case "section":
-		cfg := fmt.Sprintf("ui.SectionConfig{Heading: %q, Eyebrow: %q, Description: %q, Label: %q, Class: %q, ID: %q}", appSpecProp(block, "heading"), appSpecProp(block, "eyebrow"), appSpecProp(block, "description"), appSpecProp(block, "label"), appSpecProp(block, "class"), appSpecProp(block, "id"))
+		cfg := fmt.Sprintf("ui.SectionConfig{Heading: %s, Eyebrow: %s, Description: %s, Label: %s, Class: %q, ID: %q}", tx(appSpecProp(block, "heading")), tx(appSpecProp(block, "eyebrow")), tx(appSpecProp(block, "description")), tx(appSpecProp(block, "label")), appSpecProp(block, "class"), appSpecProp(block, "id"))
 		if len(block.Children) > 0 {
 			// Card-like children flow in a responsive ui.Grid; anything else
 			// (a CTA button, prose) flows in a left-aligned ui.Stack so it keeps
@@ -6568,7 +6736,7 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		}
 		return "ui.Section(" + cfg + ")", true
 	case "card":
-		cfg := fmt.Sprintf("ui.CardConfig{Heading: %q, Description: %q%s}", appSpecProp(block, "heading"), appSpecProp(block, "text"), appSpecCardHeadingLevel(screen, path))
+		cfg := fmt.Sprintf("ui.CardConfig{Heading: %s, Description: %s%s}", tx(appSpecProp(block, "heading")), tx(appSpecProp(block, "text")), appSpecCardHeadingLevel(screen, path))
 		if len(block.Children) > 0 {
 			return "ui.Card(" + cfg + ", " + childExprs() + ")", true
 		}
@@ -6583,9 +6751,9 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			field, _ := src["field"].(string)
 			filter, _ := src["filter"].(string)
 			format := appSpecProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", tx(label), entity, agg, field, filter, format), true
 		}
-		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: %q})", label, appSpecProp(block, "value")), true
+		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: %q})", tx(label), appSpecProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":
 		title := appSpecProp(block, "title")
 		if src, ok := block.Props["source"].(map[string]any); ok {
@@ -6603,7 +6771,7 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			// A titled chart is a Card with a heading; design-system
 			// composition, zero bespoke classes (Hard rule 7).
 			if title != "" {
-				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %q%s}, %s)", title, appSpecCardHeadingLevel(screen, path), chart), true
+				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %s%s}, %s)", tx(title), appSpecCardHeadingLevel(screen, path), chart), true
 			}
 			return chart, true
 		}
@@ -6616,19 +6784,19 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 		case "ghost":
 			v = "ui.ButtonGhost"
 		}
-		return fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %q, Href: %q, Variant: %s})", appSpecProp(block, "label"), appSpecProp(block, "href"), v), true
+		return fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: %s})", tx(appSpecProp(block, "label")), appSpecProp(block, "href"), v), true
 	case "callout":
-		return fmt.Sprintf("ui.Callout(ui.CalloutConfig{Title: %q}, render.Text(%q))", appSpecProp(block, "title"), block.Text), true
+		return fmt.Sprintf("ui.Callout(ui.CalloutConfig{Title: %s}, render.Text(%s))", tx(appSpecProp(block, "title")), tx(block.Text)), true
 	case "divider":
 		return "ui.Divider(ui.DividerConfig{})", true
 	case "markdown":
-		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %q, Measure: true})", block.Text), true
+		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %s, Measure: true})", tx(block.Text)), true
 	case "pricing":
 		plans, _ := block.Props["plans"].([]any)
 		cards := make([]string, 0, len(plans))
 		for _, p := range plans {
 			if pm, ok := p.(map[string]any); ok {
-				cards = append(cards, appSpecPricingCardExpr(pm))
+				cards = append(cards, appSpecPricingCardExpr(bp, pm))
 			}
 		}
 		return "ui.Grid(ui.GridConfig{Min: \"16rem\"}, " + strings.Join(cards, ", ") + ")", true
@@ -6637,14 +6805,15 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 }
 
 // appSpecPricingCardExpr emits a ui.PricingCard call from a plan map.
-func appSpecPricingCardExpr(p map[string]any) string {
+func appSpecPricingCardExpr(bp AppSpec, p map[string]any) string {
 	s := func(k string) string { v, _ := p[k].(string); return v }
+	tx := func(k string) string { return appSpecTx(bp, s(k)) }
 	feats := ""
 	if fl, ok := p["features"].([]any); ok && len(fl) > 0 {
 		qs := make([]string, 0, len(fl))
 		for _, f := range fl {
 			if fs, ok := f.(string); ok {
-				qs = append(qs, fmt.Sprintf("%q", fs))
+				qs = append(qs, appSpecTx(bp, fs))
 			}
 		}
 		feats = ", Features: []string{" + strings.Join(qs, ", ") + "}"
@@ -6653,8 +6822,8 @@ func appSpecPricingCardExpr(p map[string]any) string {
 	if b, _ := p["featured"].(bool); b {
 		featured = ", Featured: true"
 	}
-	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Name: %q, Price: %q, Period: %q, Description: %q%s, CTALabel: %q, CTAHref: %q%s})",
-		s("name"), s("price"), s("period"), s("description"), feats, s("cta_text"), s("cta_href"), featured)
+	return fmt.Sprintf("ui.PricingCard(ui.PricingCardConfig{Name: %s, Price: %q, Period: %s, Description: %s%s, CTALabel: %s, CTAHref: %q%s})",
+		tx("name"), s("price"), tx("period"), tx("description"), feats, tx("cta_text"), s("cta_href"), featured)
 }
 
 func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
@@ -6664,12 +6833,13 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "login_form":
-		return renderAppSpecLoginFormExpr(block)
+		return renderAppSpecLoginFormExpr(bp, block)
 	case "signup_form":
-		return renderAppSpecSignupFormExpr(block)
+		return renderAppSpecSignupFormExpr(bp, block)
 	case "entity_form":
-		// Island form composed from framework components (no ctx needed).
-		return appSpecEntityFormExpr(screen, block, path, entityMap, apiBase)
+		// Island form composed from framework components; its labels
+		// translate through the request ctx.
+		return appSpecEntityFormExpr(bp, screen, block, path, entityMap, apiBase)
 	case "entity_detail":
 		// Server-rendered via the resource engine (s.id from the route param).
 		return appSpecDetailExpr(block)
@@ -6682,7 +6852,7 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 		return expr
 	}
 	if appSpecBlockUsesNodeRenderer(block) {
-		expr := renderAppSpecNodeExpressionForScreen(screen, block, path, entityMap, apiBase)
+		expr := renderAppSpecNodeExpressionForScreen(bp, screen, block, path, entityMap, apiBase)
 		if block.Island != "" {
 			return fmt.Sprintf("island.NewIsland(%q, nodeComponent{node: %s}).Render()", block.Island, expr)
 		}
@@ -6697,7 +6867,7 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 	}
 	switch strings.ToLower(block.Type) {
 	case "", "text", "p", "paragraph":
-		return fmt.Sprintf("html.Paragraph(html.TextConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
+		return fmt.Sprintf("html.Paragraph(html.TextConfig{Class: %q}, render.Text(%s))", block.Class, appSpecTx(bp, block.Text))
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
 		level := block.Level
 		if level == 0 {
@@ -6716,36 +6886,43 @@ func renderAppSpecBlockForScreen(bp AppSpec, screen AppSpecScreen, block AppSpec
 				level = 1
 			}
 		}
-		return fmt.Sprintf("html.Heading(html.HeadingConfig{Level: %d, Class: %q}, render.Text(%q))", level, block.Class, block.Text)
+		return fmt.Sprintf("html.Heading(html.HeadingConfig{Level: %d, Class: %q}, render.Text(%s))", level, block.Class, appSpecTx(bp, block.Text))
 	case "link":
 		// ui.Link is the design system's anchor: the same unsafe-scheme
 		// guard html.Link applies, plus the link styling a bare <a> lacks.
 		// It refuses empty text, so a text-less link reads as its href.
-		text := block.Text
-		if text == "" {
-			text = block.Href
+		text := appSpecTx(bp, block.Text)
+		if block.Text == "" {
+			text = strconv.Quote(block.Href)
 		}
-		return fmt.Sprintf("ui.Link(ui.LinkConfig{Href: %q, Text: %q, Class: %q})", block.Href, text, block.Class)
+		return fmt.Sprintf("ui.Link(ui.LinkConfig{Href: %q, Text: %s, Class: %q})", block.Href, text, block.Class)
 	case "section":
-		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%q))", attrs, block.Text)
+		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%s))", attrs, appSpecTx(bp, block.Text))
 	default:
-		return fmt.Sprintf("html.Div(html.DivConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
+		return fmt.Sprintf("html.Div(html.DivConfig{Class: %q}, render.Text(%s))", block.Class, appSpecTx(bp, block.Text))
 	}
 }
 
 func renderAppSpecNodeExpression(block AppSpecBlock) string {
-	return renderAppSpecNodeExpressionForScreen(AppSpecScreen{}, block, nil, nil, "")
+	return renderAppSpecNodeExpressionForScreen(AppSpec{}, AppSpecScreen{}, block, nil, nil, "")
+}
+
+// appSpecNodeTextProps are the node props a reader sees or hears: the
+// node renderer's text and the attributes assistive technology reads.
+var appSpecNodeTextProps = map[string]bool{
+	"text": true, "label": true, "title": true, "alt": true,
+	"placeholder": true, "aria-label": true,
 }
 
 // appSpecChildNodeExpr returns the uinode.Node literal for a child block.
 // Entity blocks (list/detail/form) are framework UI components, not nodes, so
 // they're rendered by renderAppSpecBlockForScreen (in ui-component containers
 // like ui.Section), never inside a raw node tree.
-func appSpecChildNodeExpr(screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
-	return renderAppSpecNodeExpressionForScreen(screen, block, path, entityMap, apiBase)
+func appSpecChildNodeExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	return renderAppSpecNodeExpressionForScreen(bp, screen, block, path, entityMap, apiBase)
 }
 
-func renderAppSpecNodeExpressionForScreen(screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func renderAppSpecNodeExpressionForScreen(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	kind := block.Kind
 	if kind == "" {
 		kind = block.Type
@@ -6790,6 +6967,13 @@ func renderAppSpecNodeExpressionForScreen(screen AppSpecScreen, block AppSpecBlo
 			}
 		}
 	}
+	if bp.phrases != nil {
+		for k, v := range props {
+			if s, ok := v.(string); ok && s != "" && appSpecNodeTextProps[k] {
+				props[k] = goExpr(appSpecTx(bp, s))
+			}
+		}
+	}
 	var sb strings.Builder
 	sb.WriteString("uinode.Node{")
 	sb.WriteString(fmt.Sprintf("Kind: %q", kind))
@@ -6806,7 +6990,7 @@ func renderAppSpecNodeExpressionForScreen(screen AppSpecScreen, block AppSpecBlo
 				sb.WriteString(", ")
 			}
 			childPath := append(append([]int(nil), path...), i)
-			sb.WriteString(appSpecChildNodeExpr(screen, child, childPath, entityMap, apiBase))
+			sb.WriteString(appSpecChildNodeExpr(bp, screen, child, childPath, entityMap, apiBase))
 		}
 		sb.WriteString("}")
 	}
@@ -6886,24 +7070,24 @@ func isSignupFormBlock(block AppSpecBlock) bool {
 // The fields are built through FormField's builder with ui.Control, so the
 // label association and any future description wiring arrive by construction
 // rather than by raw input strings.
-func appSpecAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
+func appSpecAuthFormExpr(bp AppSpec, heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
 	// html.Input, NOT a hand-rolled <input> string through render.Raw:
 	// the generator ships zero raw markup (hard rule 7), and the
 	// primitive is the same one every other control in the emitted app
 	// goes through. gofastr pack reads this expression back —
 	// reverseAuthCard knows exactly this shape.
 	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
-	emailField := `ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,` +
+	emailField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true,` +
 		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`
 	minLen := ""
 	if pwMinLength > 0 {
 		minLen = fmt.Sprintf(", MinLength: %d", pwMinLength)
 	}
-	pwField := `ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,` +
+	pwField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true,` +
 		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, SubmitFullWidth: true}, %s, %s, %s)",
-		action, submitLabel, hidden, emailField, pwField)
+		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %s, SubmitFullWidth: true}, %s, %s, %s)",
+		action, appSpecTx(bp, submitLabel), hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
 		// ui.Link, NOT a hand-rolled <a> inside render.Raw. render.Raw is what
@@ -6917,16 +7101,16 @@ func appSpecAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete stri
 		// generator already goes through that guard or ui.LinkButton's
 		// isUnsafeScheme. Emitting the component also satisfies Hard rule 7,
 		// no hand-rolled structural markup.
-		footer = fmt.Sprintf(", Footer: ui.Link(ui.LinkConfig{Href: %q, Text: %q})", footerHref, footerText)
+		footer = fmt.Sprintf(", Footer: ui.Link(ui.LinkConfig{Href: %q, Text: %s})", footerHref, appSpecTx(bp, footerText))
 	}
 	// Auth screens render with the request ctx (screenNeedsCtx), so the card
 	// surfaces a failed-login / duplicate-email message inline from ?error=.
-	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %q, Alert: authError(ctx), Body: %s%s})", heading, form, footer)
+	return fmt.Sprintf("ui.AuthCard(ui.AuthCardConfig{Title: %s, Alert: authError(ctx), Body: %s%s})", appSpecTx(bp, heading), form, footer)
 }
 
 // renderAppSpecSignupFormExpr emits the registration form (posts to the auth
 // battery's register endpoint, 303-redirects to ?next= on success).
-func renderAppSpecSignupFormExpr(block AppSpecBlock) string {
+func renderAppSpecSignupFormExpr(bp AppSpec, block AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
@@ -6940,12 +7124,12 @@ func renderAppSpecSignupFormExpr(block AppSpecBlock) string {
 	if heading == "" {
 		heading = "Create your account"
 	}
-	return appSpecAuthFormExpr(heading, action, next, "Create account", "new-password", 8, propStr("login_href"), "Already have an account? Sign in")
+	return appSpecAuthFormExpr(bp, heading, action, next, "Create account", "new-password", 8, propStr("login_href"), "Already have an account? Sign in")
 }
 
 // renderAppSpecLoginFormExpr emits the login form. props: action (default
 // /auth/login), next (post-login redirect, default /), register_href (optional).
-func renderAppSpecLoginFormExpr(block AppSpecBlock) string {
+func renderAppSpecLoginFormExpr(bp AppSpec, block AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
@@ -6959,7 +7143,7 @@ func renderAppSpecLoginFormExpr(block AppSpecBlock) string {
 	if heading == "" {
 		heading = "Sign in"
 	}
-	return appSpecAuthFormExpr(heading, action, next, "Sign in", "current-password", 0, propStr("register_href"), "Create an account")
+	return appSpecAuthFormExpr(bp, heading, action, next, "Sign in", "current-password", 0, propStr("register_href"), "Create an account")
 }
 
 func appSpecBlockKindIs(block AppSpecBlock, want string) bool {
@@ -7019,7 +7203,7 @@ func appSpecFormInputType(fieldType string) string {
 // ships no bespoke styling. The form is an island: data-cui-rpc-* (on the form
 // via ExtraAttrs) makes the runtime JSON-encode the body to the CRUD endpoint;
 // relation <select>s are populated on mount via data-action-mount.
-func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func appSpecEntityFormExpr(bp AppSpec, screen AppSpecScreen, block AppSpecBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
 	entity := strings.Trim(block.Entity, "/")
 	decl, ok := entityMap[entity]
 	if !ok {
@@ -7069,8 +7253,11 @@ func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int,
 		// field.Name is constrained to a Go identifier by
 		// validateAppSpec, so %q here is stable and escaped once (the
 		// components' own renderers escape again at the value level,
-		// never double-escaping the identifier).
-		label := toDisplayName(field.Name)
+		// never double-escaping the identifier). The label is the
+		// catalog's entity.<entity>.fields.<field>.label, the derived
+		// display name when the catalog has none: the same lookup the
+		// entityui forms make.
+		label := fmt.Sprintf("i18nui.FieldLabel(ctx, nil, %q, %q, %q)", entity, field.Name, toDisplayName(field.Name))
 		fieldID := "field-" + field.Name
 		req := fmt.Sprintf("%t", field.Required)
 		var expr string
@@ -7079,38 +7266,38 @@ func appSpecEntityFormExpr(screen AppSpecScreen, block AppSpecBlock, path []int,
 			var opts strings.Builder
 			opts.WriteString("[]ui.SelectOption{")
 			for _, v := range field.Values {
-				fmt.Fprintf(&opts, "{Value: %q, Text: %q},", v, toDisplayName(v))
+				fmt.Fprintf(&opts, "{Value: %q, Text: i18nui.FieldValueLabel(ctx, nil, %q, %q, %q)},", v, entity, field.Name, v)
 			}
 			opts.WriteString("}")
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %q, ID: %q, Placeholder: \"— Select —\", Options: %s, Required: %s})",
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
 				field.Name, label, fieldID, opts.String(), req)
 		case "relation":
 			// The relation select keeps data-rel-entity: the generated
 			// mount hook populates it from the related entity's API.
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %q, ID: %q, Placeholder: \"— Select —\", Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
 				field.Name, label, fieldID, req, field.To)
 		case "text":
-			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "bool", "boolean":
-			expr = fmt.Sprintf("ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "int", "integer", "float", "decimal":
-			expr = fmt.Sprintf("ui.NumberField(ui.NumberFieldConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.NumberField(ui.NumberFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "date":
-			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
-			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %q, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
 				label, fieldID, req, appSpecFormInputType(field.Type), field.Name)
 		}
 		fields = append(fields, expr)
 	}
-	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, ExtraAttrs: %s}, %s)", rpcPath, submitLabel, extraAttrs, strings.Join(fields, ", "))
-	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %q}), %s)", title, form)
+	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %s, ExtraAttrs: %s}, %s)", rpcPath, appSpecTx(bp, submitLabel), extraAttrs, strings.Join(fields, ", "))
+	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %s}), %s)", appSpecTx(bp, title), form)
 }
 
 // appSpecFormFieldSkipped reports whether a field is omitted from a
@@ -7415,6 +7602,11 @@ func renderAppSpecApp(bp AppSpec) string {
 		name = "GoFastr"
 	}
 	var sb strings.Builder
+	// The chrome's words (nav labels, the header's auth action, footer
+	// columns) are phrases under <app>.chrome; the brand name stays as
+	// written.
+	bp.phrases = appSpecChromePhrases(bp.App.Name)
+	tx := func(s string) string { return appSpecTx(bp, s) }
 	adminSeed := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
 	hasMarketing := appSpecHasMarketing(bp)
 	hasAccess := false
@@ -7586,7 +7778,7 @@ func renderAppSpecApp(bp AppSpec) string {
 		var navLinks []string
 		for _, l := range chrome {
 			if l.Nav {
-				navLinks = append(navLinks, fmt.Sprintf("{Label: %q, Href: %q}", l.Label, l.Route))
+				navLinks = append(navLinks, fmt.Sprintf("{Label: %s, Href: %q}", tx(l.Label), l.Route))
 			}
 		}
 		// The app declares a dark scheme: surface the toggle as a real
@@ -7604,8 +7796,8 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString(fmt.Sprintf("\tlinks := []siteheader.Link{%s}\n", strings.Join(navLinks, ", ")))
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: \"Dashboard\", Href: %q})\n", appHome))
-			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Next: \"/\"})", themeToggle) + "\n")
+			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: %s, Href: %q})\n", tx("Dashboard"), appHome))
+			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})", themeToggle) + "\n")
 			sb.WriteString("\t} else {\n")
 			// appSpecLoginRoute, not a hardcoded "/login": the app-shell
 			// sidebar had the same literal and it pointed at a route six of
@@ -7613,7 +7805,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			// only because meridian is the sole app spec with both marketing
 			// screens and auth, and it happens to route /login, which is luck,
 			// not design.
-			sb.WriteString("\t\tactions = " + barActions(fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})", appSpecLoginRoute(bp)), themeToggle) + "\n")
+			sb.WriteString("\t\tactions = " + barActions(fmt.Sprintf("ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})", tx("Sign in"), appSpecLoginRoute(bp)), themeToggle) + "\n")
 			sb.WriteString("\t}\n")
 			sb.WriteString("\treturn siteheader.Render(siteheader.Config{\n")
 			sb.WriteString("\t\tCtx:     ctx,\n")
@@ -7622,8 +7814,9 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString("\t\tActions: actions,\n")
 			sb.WriteString("\t})\n}\n\n")
 		} else {
-			sb.WriteString("func marketingHeader() render.HTML {\n")
+			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
 			sb.WriteString("\treturn siteheader.Render(siteheader.Config{\n")
+			sb.WriteString("\t\tCtx:  ctx,\n")
 			sb.WriteString("\t\tName: appName,\n")
 			// No Links line when no chrome link survives: an omitted field
 			// renders the brand + actions bar; an empty slice would add noise.
@@ -7631,11 +7824,11 @@ func renderAppSpecApp(bp AppSpec) string {
 				sb.WriteString(fmt.Sprintf("\t\tLinks: []siteheader.Link{%s},\n", strings.Join(navLinks, ", ")))
 			}
 			if themeToggle {
-				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n")
+				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}),\n")
 			}
 			sb.WriteString("\t})\n}\n\n")
 		}
-		sb.WriteString("func marketingFooter() render.HTML {\n")
+		sb.WriteString("func marketingFooter(ctx context.Context) render.HTML {\n")
 		sb.WriteString("\treturn sitefooter.Render(sitefooter.Config{\n")
 		sb.WriteString("\t\tName: appName,\n")
 		// A footer column is emitted only when at least one of its links
@@ -7652,7 +7845,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			if l.Column == "" {
 				continue
 			}
-			expr := fmt.Sprintf("{Label: %q, Href: %q}", l.Label, l.Route)
+			expr := fmt.Sprintf("{Label: %s, Href: %q}", tx(l.Label), l.Route)
 			if i, ok := columnIndex[l.Column]; ok {
 				columns[i].links = append(columns[i].links, expr)
 				continue
@@ -7663,11 +7856,17 @@ func renderAppSpecApp(bp AppSpec) string {
 		if len(columns) > 0 {
 			sb.WriteString("\t\tColumns: []sitefooter.Column{\n")
 			for _, col := range columns {
-				sb.WriteString(fmt.Sprintf("\t\t\t{Title: %q, Links: []sitefooter.Link{%s}},\n", col.title, strings.Join(col.links, ", ")))
+				sb.WriteString(fmt.Sprintf("\t\t\t{Title: %s, Links: []sitefooter.Link{%s}},\n", tx(col.title), strings.Join(col.links, ", ")))
 			}
 			sb.WriteString("\t\t},\n")
 		}
-		sb.WriteString(fmt.Sprintf("\t\tNote: %q,\n", fmt.Sprintf("© %d %s.", time.Now().Year(), name)))
+		// A reader reaches another language from any marketing page.
+		// The footer renders once per page, where the header's actions
+		// render twice (bar and phone menu).
+		if bp.App.LocalePrefixes {
+			sb.WriteString("\t\tLanguage: ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: ctx, Position: ui.MenuTopStart}),\n")
+		}
+		sb.WriteString(fmt.Sprintf("\t\tNote: %s,\n", tx(fmt.Sprintf("© %d %s.", time.Now().Year(), name))))
 		sb.WriteString("\t})\n}\n\n")
 	}
 	if appSpecHasTheme(bp.App) {
@@ -7743,14 +7942,10 @@ func renderAppSpecApp(bp AppSpec) string {
 		// anyone was signed *in*, so the app shell told every first-time visitor
 		// they had a session to end. The marketing header already resolved this
 		// correctly from handler.GetUser(ctx); the app shell now does too.
-		if bp.App.Auth.Enabled {
-			sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
-		} else {
-			sb.WriteString("func sidebarConfig() ui.SidebarConfig {\n")
-		}
+		sb.WriteString("func sidebarConfig(ctx context.Context) ui.SidebarConfig {\n")
 		sb.WriteString(fmt.Sprintf("\tcfg := ui.SidebarConfig{Title: %q, Items: []ui.SidebarItem{\n", name))
 		for _, item := range bp.Nav {
-			renderNavItemGo(&sb, item, "\t\t")
+			renderNavItemGo(bp, &sb, item, "\t\t")
 		}
 		sb.WriteString("\t}}\n")
 		// The app shell has no top bar, so account/appearance controls live in
@@ -7760,13 +7955,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		// plain Items slice.
 		themeToggle := ""
 		if len(bp.App.ThemeDark) > 0 {
-			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
+			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon})"
 		}
 		switch {
 		case bp.App.Auth.Enabled:
 			sb.WriteString("\tvar authAction render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Next: \"/\"})\n")
+			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})\n")
 			// Only offer Sign in when a screen actually hosts the login form.
 			// Six of the seven shipped app specs never route /login, so an
 			// unconditional button would make the app shell's only auth
@@ -7775,7 +7970,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			// rather than emitted empty.
 			if appSpecHasAuthFormScreen(bp) {
 				sb.WriteString("\t} else {\n")
-				sb.WriteString(fmt.Sprintf("\t\tauthAction = ui.LinkButton(ui.LinkButtonConfig{Label: \"Sign in\", Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})\n", appSpecLoginRoute(bp)))
+				sb.WriteString(fmt.Sprintf("\t\tauthAction = ui.LinkButton(ui.LinkButtonConfig{Label: %s, Href: %q, Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})\n", tx("Sign in"), appSpecLoginRoute(bp)))
 			}
 			sb.WriteString("\t}\n")
 			if themeToggle != "" {
@@ -7841,12 +8036,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\tsite.WithTheme(theme.Default().Extend(siteheader.Tokens))\n")
 	}
 	if len(bp.Nav) > 0 {
-		if bp.App.Auth.Enabled {
-			// Per-request sidebar: the footer's auth action depends on the live
-			// session, so the shell resolves it the same way the marketing
-			// header does. The phone drawer renders the same footer, so it is
-			// mounted with the builder (MountSidebarFunc) below, never with a
-			// config built once at startup.
+		{
+			// Per-request sidebar: its labels translate per request and the
+			// footer's auth action depends on the live session, so the shell
+			// resolves it the same way the marketing header does. The phone
+			// drawer renders the same sidebar, so it is mounted with the
+			// builder (MountSidebarFunc) below, never with a config built
+			// once at startup.
 			sb.WriteString("\tsbComponent :=app.NewContextComponent(func(ctx context.Context) render.HTML {\n")
 			// SafeRenderCtx, never Render(): the sidebar component's
 			// ctx-aware path is what filters role-gated nav items, and the
@@ -7858,9 +8054,6 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString("\t\thtml, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))\n")
 			sb.WriteString("\t\treturn html\n")
 			sb.WriteString("\t})\n")
-		} else {
-			sb.WriteString("\tsbCfg := sidebarConfig()\n")
-			sb.WriteString("\tsbComponent := ui.Sidebar(sbCfg)\n")
 		}
 		// No standalone app top bar: the sidebar owns brand + nav + the theme
 		// toggle (in its footer), so content fills from the top with no empty
@@ -7875,20 +8068,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\t\t\tui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))\n")
 		sb.WriteString("\t})\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
-		if bp.App.Auth.Enabled {
-			sb.WriteString("\tui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)\n")
-		} else {
-			sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
-		}
+		sb.WriteString("\tui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)\n")
 	}
 	if hasMarketing {
-		headerExpr := "app.NewStaticComponent(marketingHeader())"
-		if authHeader {
-			// Render per-request so the header reflects the live session.
-			headerExpr = "app.NewContextComponent(marketingHeader)"
-		}
+		// Rendered per request: the header's words translate per request
+		// and its auth action reflects the live session.
 		sb.WriteString("\tmarketingLayout = app.NewLayout(\"marketing\", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {\n")
-		sb.WriteString(fmt.Sprintf("\t\theader, _ := component.SafeRenderCtx(ctx, %s)\n", headerExpr))
+		sb.WriteString("\t\theader, _ := component.SafeRenderCtx(ctx, app.NewContextComponent(marketingHeader))\n")
 		// siteheader / sitefooter render their own <header>/<footer>
 		// landmarks (the scope root of each owned style), so the stack
 		// takes them directly; the header is the direct child of the
@@ -7897,7 +8083,7 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\t\treturn ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},\n")
 		sb.WriteString("\t\t\theader,\n")
 		sb.WriteString("\t\t\tui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()),\n")
-		sb.WriteString("\t\t\tmarketingFooter(),\n")
+		sb.WriteString("\t\t\tmarketingFooter(ctx),\n")
 		sb.WriteString("\t\t)\n")
 		sb.WriteString("\t})\n")
 	}
@@ -8076,9 +8262,8 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("func (m routerMounter) MountWidget(def *widget.Definition) {\n")
 		sb.WriteString("\twidget.Mount(m.r, def)\n")
 		sb.WriteString("}\n")
-		return sb.String()
 	}
-	return sb.String()
+	return appSpecChromeWithPhrases(sb.String(), bp.phrases)
 }
 
 // appSpecBaseCSSFunc emits the appBaseCSS() function. It returns the
@@ -8100,8 +8285,8 @@ func appSpecBaseCSSFunc() string {
 	return sb.String()
 }
 
-func renderNavItemGo(sb *strings.Builder, item AppSpecNavItem, indent string) {
-	sb.WriteString(fmt.Sprintf("%s{Label: %q, Href: %q", indent, item.Label, item.Href))
+func renderNavItemGo(bp AppSpec, sb *strings.Builder, item AppSpecNavItem, indent string) {
+	sb.WriteString(fmt.Sprintf("%s{Label: %s, Href: %q", indent, appSpecTx(bp, item.Label), item.Href))
 	if item.Role != "" {
 		sb.WriteString(fmt.Sprintf(", Roles: []string{%q}", item.Role))
 	}
@@ -8120,7 +8305,7 @@ func renderNavItemGo(sb *strings.Builder, item AppSpecNavItem, indent string) {
 	if len(item.Items) > 0 {
 		sb.WriteString(", Children: []ui.SidebarItem{\n")
 		for _, child := range item.Items {
-			renderNavItemGo(sb, child, indent+"\t")
+			renderNavItemGo(bp, sb, child, indent+"\t")
 		}
 		sb.WriteString(indent + "}")
 	}
@@ -8395,7 +8580,7 @@ func barActions(action string, toggle bool) string {
 	if !toggle {
 		return action
 	}
-	return fmt.Sprintf("render.Join(\n\t\t\t%s,\n\t\t\tui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n\t\t)", action)
+	return fmt.Sprintf("render.Join(\n\t\t\t%s,\n\t\t\tui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}),\n\t\t)", action)
 }
 
 // chromePackageImport returns the import-path base of the app's chrome
@@ -8765,7 +8950,7 @@ var appLevelKeys = map[string]bool{
 	"name": true, "description": true, "base_url": true, "module": true,
 	"db": true, "static_dir": true, "output_dir": true, "api_prefix": true,
 	"public_openapi": true, "theme": true, "auth": true, "admin": true,
-	"pwa": true, "llm_md": true,
+	"pwa": true, "llm_md": true, "locale_prefixes": true,
 }
 
 // topLevelKeys are the app spec's root sections; written under `app:`

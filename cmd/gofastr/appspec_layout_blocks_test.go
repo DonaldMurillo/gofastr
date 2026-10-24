@@ -201,7 +201,7 @@ func TestAppShellFooterAndAuthSubmit(t *testing.T) {
 	got := all(bp)
 	for _, want := range []string{
 		"SubmitFullWidth: true}",
-		"cfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))",
+		"cfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}))",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("generated app missing %q", want)
@@ -242,7 +242,7 @@ func TestListFirstKeepsPageHeading(t *testing.T) {
 	}
 	var all strings.Builder
 	for _, src := range filesByName(mustRenderAppSpecFiles(t, bp)) {
-		all.WriteString(src)
+		all.WriteString(inlinePhrases(src))
 	}
 	src := all.String()
 	// The level is part of the heading call: presence of the exact string

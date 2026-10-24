@@ -77,6 +77,24 @@ func NewTranslator(c Catalog, fallback string) *Translator {
 	}
 }
 
+// Fallback returns the locale the translator answers in when the
+// reader's locale lacks a key, "" when it has none.
+func (t *Translator) Fallback() string {
+	if t == nil {
+		return ""
+	}
+	return t.fallback
+}
+
+// Locales returns the catalog's locales, sorted, or nil without a
+// catalog.
+func (t *Translator) Locales() []string {
+	if t == nil || t.catalog == nil {
+		return nil
+	}
+	return slices.Sorted(slices.Values(t.catalog.Locales()))
+}
+
 // T returns the translated message for key, interpolating any
 // {{placeholder}} tokens from the first params map. When the message
 // is a plural and params contains a numeric "count" / "n", the
@@ -469,8 +487,9 @@ func Middleware(tr *Translator, opts ...NegotiateOption) func(http.Handler) http
 }
 
 // Negotiate picks the best locale for the request. Resolution order:
-// locale resolver(s) → explicit X-Locale header → highest-quality
-// Accept-Language entry that matches a catalog locale → fallback.
+// the URL's locale ([WithPathLocale]) → locale resolver(s) → explicit
+// X-Locale header → highest-quality Accept-Language entry that matches
+// a catalog locale → fallback.
 //
 // A resolver value only wins when it matches a catalog locale (after
 // tag fallbacks); otherwise the resolver is ignored and negotiation
@@ -481,6 +500,12 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 	cfg := negotiateConfig{}
 	for _, o := range opts {
 		o(&cfg)
+	}
+	// 0. The URL's locale: an app that routes by locale prefix lets the
+	//    path alone decide, so a page's hreflang is the language it
+	//    serves whatever the cookie or the headers say.
+	if _, tag, ok := PathLocale(r.Context()); ok {
+		return Locale{Tag: tag}
 	}
 	available := availableLocales(tr)
 

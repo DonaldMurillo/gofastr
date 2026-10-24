@@ -148,10 +148,7 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		if !holdsExact(ctx, m, t.Permission) {
 			continue
 		}
-		name := t.Label
-		if name == "" {
-			name = t.Key
-		}
+		name := i18nui.TransitionLabel(ctx, m.tr, m.name, t.Key, t.Label)
 		out = append(out, bulkAction{
 			key: "move:" + t.Key, kind: bulkMove, move: t.Key, perm: t.Permission,
 			label: i18nui.EntityBulkMove.Text(ctx, map[string]any{"move": name}),
@@ -161,7 +158,7 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		if !a.Bulk || !holdsExact(ctx, m, a.Permission) {
 			continue
 		}
-		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
+		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(ctx, a), perm: a.Permission, app: a})
 	}
 	return out
 }
@@ -171,10 +168,10 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 // (the record has its own delete and moves). Who may run each is asked
 // about the record itself, by mayRun, so a grant on that one record
 // counts where the collection-level holdsExact would refuse it.
-func recordActions(m *meta) []bulkAction {
+func recordActions(ctx context.Context, m *meta) []bulkAction {
 	var out []bulkAction
 	for _, a := range m.ext.Actions {
-		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
+		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(ctx, a), perm: a.Permission, app: a})
 	}
 	return out
 }
@@ -188,11 +185,13 @@ func restoreActions(ctx context.Context, m *meta) []bulkAction {
 	return []bulkAction{{key: bulkRestoreKey, kind: bulkRestore, label: i18nui.EntityRestore.Text(ctx)}}
 }
 
-func actionLabel(a Action) string {
-	if a.Label == "" {
+// actionLabel is a's button text in ctx's language, or its Key when it
+// declares none.
+func actionLabel(ctx context.Context, a Action) string {
+	if a.Label.IsZero() {
 		return a.Key
 	}
-	return a.Label
+	return a.Label.Text(ctx)
 }
 
 // holdsExact reports whether ctx holds perm by name on the entity ("" is
@@ -658,7 +657,7 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		offered := u.bulkActions
 		switch body.Scope {
 		case bulkScopeRecord:
-			offered = func(_ context.Context, m *meta) []bulkAction { return recordActions(m) }
+			offered = recordActions
 		case bulkScopeDeleted:
 			offered = restoreActions
 		}

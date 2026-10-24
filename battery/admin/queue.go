@@ -417,7 +417,7 @@ func (b *Battery) opForm(ctx context.Context, op opSpec) render.HTML {
 			ExtraAttrs:  rpc.Attrs(),
 		}, ui.Stack(ui.StackConfig{Gap: ui.GapMD}, children...))
 	}
-	btn := ui.ButtonConfig{Label: op.label, AriaLabel: op.ariaLabel, Variant: op.variant, Type: "submit"}
+	btn := ui.ButtonConfig{Ctx: ctx, Label: op.label, AriaLabel: op.ariaLabel, Variant: op.variant, Type: "submit"}
 	if op.small {
 		btn.Size = ui.ButtonSizeSmall
 	}

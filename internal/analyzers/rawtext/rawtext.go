@@ -11,7 +11,7 @@
 // sweep had to convert.
 //
 // Arms, all in the framework's own packages (core, framework, battery,
-// core-ui under the module path):
+// core-ui under the module path) and examples/meridian:
 //   - httperror: a call to net/http.Error. Write through
 //     i18n.HTTPError (a Phrase) or i18n.HTTPErrorFor (an error).
 //   - define: an i18n.Define call inside a function body (a func or a
@@ -61,6 +61,13 @@
 //     core-ui/check LintRuntimeProse. A ScreenTitle or
 //     ScreenDescription method returning such a constant is the same
 //     shape: the method takes the request ctx, so return phrase.Text(ctx).
+//   - nativetext: prose handed to the OS by a desktop shell: the string
+//     argument of objc.NSString/NSStringErr, and the title or text of
+//     win32.SetWindowText, AppendMenu, MessageBox, CreateWindow and
+//     CreateWindowEx. The shell speaks the OS language
+//     (desktop.ShellContext), so render a phrase in that context and
+//     pass its text. AppKit keys and selectors ("CFBundleShortVersionString")
+//     read as no words and stay quiet.
 //   - numtext: a number turned into Go's digits (strconv.Itoa,
 //     FormatInt, FormatUint, FormatFloat, or fmt.Sprint/Sprintf of plain
 //     numbers) where a reader sees it: a value in a params map literal
@@ -71,6 +78,16 @@
 //     pick the plural form from it, so ASCII digits read wrong both ways.
 //     Pass the number, or write it with i18n.Number. A machine value a
 //     person copies (an id, a port, a code) carries the allow marker.
+//   - ctxless: a UI-package component literal whose type has a
+//     Ctx context.Context field, left unset in a function that holds a
+//     request context: a context.Context parameter or local, a
+//     parameter or receiver carrying Ctx (cfg.Ctx), or an *http.Request
+//     (r.Context()). The component says its own words (a toggle's
+//     label, a form's submit button) through Ctx, so without it they
+//     render in English on every locale's page. Meridian's header
+//     ThemeToggle and SignOut did, on /es/. A literal bound to a
+//     variable whose Ctx the function assigns later, and a positional
+//     literal, stay quiet.
 //
 // Silent postures, deliberately:
 //   - _test.go files, and every package outside the four roots
@@ -104,13 +121,14 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "rawtext",
-	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, English written into markup (render.Text, label attributes, reader-facing component fields), and numbers stringified into phrase params or markup",
+	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, English written into markup (render.Text, label attributes, reader-facing component fields), numbers stringified into phrase params or markup, and UI components left without Ctx while a request context is in scope",
 	Run:  run,
 }
 
 const module = "github.com/DonaldMurillo/gofastr/"
 
-// inScope reports whether path is one of the framework's own packages.
+// inScope reports whether path is one of the framework's own packages,
+// or Meridian.
 func inScope(path string) bool {
 	rest, ok := strings.CutPrefix(path, module)
 	if !ok {
@@ -121,7 +139,10 @@ func inScope(path string) bool {
 	case "core", "framework", "battery", "core-ui":
 		return true
 	}
-	return false
+	// Meridian, the flagship: the app every framework change is checked
+	// against says its words through phrases, the way a generated app
+	// does, so the pseudo-locale sweep sees every word it shows.
+	return rest == "examples/meridian" || strings.HasPrefix(rest, "examples/meridian/")
 }
 
 var msgParams = map[string]bool{
@@ -152,6 +173,18 @@ func run(pass *analysis.Pass) (any, error) {
 			case *ast.FuncDecl:
 				checkParams(pass, n.Type, n.Name.Name)
 				checkScreenText(pass, n, ui)
+				checkCtxless(pass, n.Type, n.Body, n.Recv, ui)
+			case *ast.GenDecl:
+				// A func literal at package level (var h = func(w, r) …)
+				// belongs to no declared function, so ctxless reads it here;
+				// the walk covers the literals nested in it.
+				ast.Inspect(n, func(m ast.Node) bool {
+					if fl, ok := m.(*ast.FuncLit); ok {
+						checkCtxless(pass, fl.Type, fl.Body, nil, ui)
+						return false
+					}
+					return true
+				})
 			case *ast.FuncLit:
 				checkParams(pass, n.Type, "func literal")
 			case *ast.AssignStmt:
@@ -241,8 +274,36 @@ func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt,
 		}
 		reportNumberText(pass, call.Args[0], ui, "a number into the page")
 	}
+	if args, ok := nativeSinks[pkg][name]; ok {
+		for _, i := range args {
+			if i < len(call.Args) {
+				if s, ok := uiProse(pass, call.Args[i]); ok {
+					ui.reportf(call.Args[i], "%s(%q) hands English to the OS: define it as an i18n.Phrase at package level and pass phrase.Text of the shell's context (desktop.ShellContext)", name, s)
+				}
+			}
+		}
+	}
 	checkPhraseParams(pass, call, ui)
 	checkTextArgs(pass, call, ui)
+}
+
+// nativeSinks are the desktop shells' calls that hand a string to the OS
+// for a person to read (a menu row, a window title, an alert, a tooltip
+// through NSString), with the argument positions that carry it. The
+// shell renders its words in the OS language, so a constant here is
+// English on every machine. Keys and selectors passed to NSString
+// ("CFBundleShortVersionString") are not prose and stay quiet. The
+// Linux shell has no entry yet: internal/gtk only resolves symbols and
+// nothing calls gtk_menu_item_new_with_label or gtk_window_set_title,
+// so the wrappers that do add their rows here.
+var nativeSinks = map[string]map[string][]int{
+	module + "battery/desktop/internal/objc": {
+		"NSString": {0}, "NSStringErr": {0},
+	},
+	module + "battery/desktop/internal/win32": {
+		"SetWindowText": {1}, "AppendMenu": {3}, "MessageBox": {1, 2},
+		"CreateWindow": {1}, "CreateWindowEx": {2},
+	},
 }
 
 // uiPackage reports whether path declares components: types whose

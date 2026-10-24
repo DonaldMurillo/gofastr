@@ -48,6 +48,7 @@ func (a *App) serveLocale(next http.Handler) http.Handler {
 		opts = append(opts, i18n.WithLocaleResolver(a.localeResolver))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = a.pathLocaleFor(r)
 		if loc, ok := negotiateGuarded(tr, r, opts); ok {
 			r = r.WithContext(i18n.WithTranslator(i18n.WithContext(r.Context(), loc), tr))
 		}

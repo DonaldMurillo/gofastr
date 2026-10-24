@@ -81,7 +81,7 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	// never caller markup; it never marks its own root (an owner must
 	// place it, the same as ui.Form's controls), so the mark is
 	// spliced on here.
-	b.WriteString(string(headless.Own(Button(ButtonConfig{Label: label, Variant: variant, Type: "submit", Size: ButtonSizeSmall}))))
+	b.WriteString(string(headless.Own(Button(ButtonConfig{Ctx: ctx, Label: label, Variant: variant, Type: "submit", Size: ButtonSizeSmall}))))
 	b.WriteString(`</form>`)
 	return signOutStyle.WrapHTML(render.HTML(b.String()))
 }

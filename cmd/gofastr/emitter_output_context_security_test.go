@@ -252,12 +252,12 @@ func TestAuthFormHrefRejectsBadScheme(t *testing.T) {
 		expr func(string) string
 	}{
 		{"login_form.register_href", func(v string) string {
-			return renderAppSpecLoginFormExpr(AppSpecBlock{
+			return renderAppSpecLoginFormExpr(AppSpec{}, AppSpecBlock{
 				Kind: "login_form", Props: map[string]any{"register_href": v},
 			})
 		}},
 		{"signup_form.login_href", func(v string) string {
-			return renderAppSpecSignupFormExpr(AppSpecBlock{
+			return renderAppSpecSignupFormExpr(AppSpec{}, AppSpecBlock{
 				Kind: "signup_form", Props: map[string]any{"login_href": v},
 			})
 		}},
@@ -335,7 +335,7 @@ func TestFormFieldIDIsEscaped(t *testing.T) {
 		Name:   "tickets",
 		Fields: []framework.FieldDeclaration{{Name: `x" onfocus=PWN() z`, Type: "string"}},
 	}
-	expr := appSpecEntityFormExpr(
+	expr := appSpecEntityFormExpr(AppSpec{},
 		AppSpecScreen{Name: "home"},
 		AppSpecBlock{Kind: "entity_form", Entity: "tickets"},
 		nil, map[string]framework.EntityDeclaration{"tickets": decl}, "/api",

@@ -861,7 +861,7 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	// chrome, beside (not inside) the body's marked region.
 	return sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
 		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
-		Button(ButtonConfig{Label: label, Icon: "close", IconOnly: true,
+		Button(ButtonConfig{Ctx: ctx, Label: label, Icon: "close", IconOnly: true,
 			Variant: ButtonGhost, Class: "fui-sidebar__drawer-close",
 			ExtraAttrs: html.Attrs{"data-cui-action": "close"}}),
 	))

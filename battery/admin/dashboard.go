@@ -278,7 +278,7 @@ func (b *Battery) appCards(ctx context.Context) render.HTML {
 				"data-cui-poll-src": b.cardPath(c.Key),
 			}}, body)
 		}
-		cards[i] = ui.Card(ui.CardConfig{Heading: c.Title, HeadingLevel: 2}, body)
+		cards[i] = ui.Card(ui.CardConfig{Heading: c.Title.Text(ctx), HeadingLevel: 2}, body)
 	}
 	return ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG}, cards...)
 }

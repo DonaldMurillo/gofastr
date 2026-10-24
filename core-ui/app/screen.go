@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -48,19 +49,30 @@ type ScreenDescriber interface {
 	ScreenDescription(ctx context.Context) string
 }
 
-// RefuseRetiredTitle panics on a component still declaring the
-// no-argument ScreenTitle or ScreenDescription. Those compile but satisfy
-// neither interface, so the page would lose its title without a word.
-func RefuseRetiredTitle(where string, comp any) {
-	if _, ok := comp.(interface{ ScreenTitle() string }); ok {
-		panic(fmt.Sprintf("app: %s: %T declares ScreenTitle() string; "+
-			"screen titles are ScreenTitle(ctx context.Context) string", where, comp))
+// RefuseRetiredScreenMethods panics on a component still declaring the
+// no-argument ScreenTitle, ScreenDescription, ScreenSEO or ScreenSchema.
+// Those compile but satisfy no interface, so the page would lose its
+// title, description or SEO without a word.
+func RefuseRetiredScreenMethods(where string, comp any) {
+	if comp == nil {
+		return
 	}
-	if _, ok := comp.(interface{ ScreenDescription() string }); ok {
-		panic(fmt.Sprintf("app: %s: %T declares ScreenDescription() string; "+
-			"screen descriptions are ScreenDescription(ctx context.Context) string", where, comp))
+	t := reflect.TypeOf(comp)
+	for _, name := range retiredScreenMethods {
+		// The method's type counts the receiver: the receiver alone is
+		// the retired spelling.
+		if m, ok := t.MethodByName(name); ok && m.Type.NumIn() == 1 {
+			panic(fmt.Sprintf("app: %s: %T declares %s() with no context; "+
+				"it is %s(ctx context.Context) now", where, comp, name, name))
+		}
 	}
 }
+
+// retiredScreenMethods are the screen methods that take the request
+// context, so their words follow the reader's language. ScreenSEO and
+// ScreenSchema live in framework/uihost, which this package cannot name,
+// hence the check by name and arity.
+var retiredScreenMethods = []string{"ScreenTitle", "ScreenDescription", "ScreenSEO", "ScreenSchema"}
 
 // ScreenLanger is an optional interface for components that declare the
 // document language of their own page as a BCP-47 tag ("es", "pt-BR"). It is

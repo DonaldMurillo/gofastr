@@ -11,6 +11,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -22,8 +23,9 @@ import (
 // count or a sum over an exposed entity, computed by the database in the
 // admin's read, the way the entity cards count.
 type Metric struct {
-	// Label names the figure.
-	Label string
+	// Label names the figure, in the request's language. A Detail's
+	// follows its value ("3 trialing").
+	Label i18n.Phrase
 
 	// Entity is an exposed entity's name. A Detail's defaults to its
 	// parent's.
@@ -66,13 +68,13 @@ const maxFigures = 6
 // checkMetric refuses a metric that could only ever draw "—". parent is
 // the entity a Detail inherits; "" for a top-level metric.
 func (b *Battery) checkMetric(m Metric, parent string) error {
-	if m.Label == "" {
+	if m.Label.IsZero() {
 		return errors.New("a metric needs a Label")
 	}
 	switch m.Tone {
 	case "", ui.TrendUp, ui.TrendDown, ui.TrendFlat:
 	default:
-		return fmt.Errorf("%q has the tone %q; use ui.TrendUp, ui.TrendDown or ui.TrendFlat", m.Label, m.Tone)
+		return fmt.Errorf("%q has the tone %q; use ui.TrendUp, ui.TrendDown or ui.TrendFlat", m.Label.English(), m.Tone)
 	}
 	if parent == "" && m.Tone != "" {
 		return fmt.Errorf("%q has a Tone, which colours a Detail's line: set it on the Detail", m.Label)
@@ -87,15 +89,15 @@ func (b *Battery) checkMetric(m Metric, parent string) error {
 	}
 	e, ok := b.exposedNamed(m.Entity)
 	if !ok {
-		return fmt.Errorf("%q counts %q, which the admin does not expose", m.Label, m.Entity)
+		return fmt.Errorf("%q counts %q, which the admin does not expose", m.Label.English(), m.Entity)
 	}
 	if err := b.ui.CheckStat(m.Entity, m.Agg, m.Field, m.Where, m.Format); err != nil {
-		return fmt.Errorf("%q: %w", m.Label, err)
+		return fmt.Errorf("%q: %w", m.Label.English(), err)
 	}
 	if m.View != "" && !slices.ContainsFunc(listViews(e), func(v entity.ListView) bool { return v.Key == m.View }) {
-		return fmt.Errorf("%q links to view %q, which %s does not declare", m.Label, m.View, m.Entity)
+		return fmt.Errorf("%q links to view %q, which %s does not declare", m.Label.English(), m.View, m.Entity)
 	}
-	if err := checkIcon(m.Icon, "metric "+m.Label); err != nil {
+	if err := checkIcon(m.Icon, "metric "+m.Label.English()); err != nil {
 		return err
 	}
 	if m.Detail != nil {
@@ -151,13 +153,13 @@ func (b *Battery) metricStat(ctx context.Context, m Metric) render.HTML {
 		if name == "" {
 			name = m.Entity
 		}
-		trend = b.ui.StatValue(cctx, name, d.Agg, d.Field, d.Where, d.Format) + " " + d.Label
+		trend = b.ui.StatValue(cctx, name, d.Agg, d.Field, d.Where, d.Format) + " " + d.Label.Text(ctx)
 		if d.Tone != "" {
 			tone = d.Tone
 		}
 	}
 	return ui.StatCard(ui.StatCardConfig{
-		Label:     m.Label,
+		Label:     m.Label.Text(ctx),
 		Value:     b.ui.StatValue(cctx, m.Entity, m.Agg, m.Field, m.Where, m.Format),
 		Trend:     trend,
 		Direction: tone,

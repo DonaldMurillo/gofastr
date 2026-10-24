@@ -17,6 +17,9 @@ app:
   module: github.com/DonaldMurillo/gofastr/examples/meridian
   api_prefix: api
   static_dir: static
+  # Spanish (locales/es.json) lives under /es/, with hreflang, sitemap
+  # and robots entries; English keeps the plain paths.
+  locale_prefixes: true
   db:
     driver: sqlite
     url: file:meridian.db

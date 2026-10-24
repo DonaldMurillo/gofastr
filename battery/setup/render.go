@@ -37,6 +37,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 		}
 	}
 	progress := ui.ProgressSteps(ui.ProgressStepsConfig{
+		Ctx:         ctx,
 		Steps:       progressSteps,
 		Orientation: ui.ProgressStepsVertical,
 	})
@@ -71,6 +72,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 	var alert render.HTML
 	if stepErr, ok := fieldErrors["_step"]; ok && stepErr != "" {
 		alert = ui.Notification(ui.NotificationConfig{
+			Ctx:     ctx,
 			Title:   pageStepFailed.Text(ctx),
 			Body:    stepErr,
 			Variant: ui.StatusDanger,
@@ -79,6 +81,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 	// Force-mode warning: setup already completed but operator re-entered.
 	if isForceMode() {
 		forceAlert := ui.Notification(ui.NotificationConfig{
+			Ctx:     ctx,
 			Title:   pageForceTitle.Text(ctx),
 			Body:    pageForceBody.Text(ctx),
 			Variant: ui.StatusWarning,
@@ -96,6 +99,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 	}
 
 	formBody := ui.Form(ui.FormConfig{
+		Ctx:         ctx,
 		Action:      "/setup",
 		Method:      "POST",
 		SubmitLabel: submitLabel,
@@ -154,6 +158,7 @@ func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, re
 	body := ui.AuthCard(ui.AuthCardConfig{
 		Title: r.cfg.Title.Text(ctx),
 		Alert: ui.Notification(ui.NotificationConfig{
+			Ctx:     ctx,
 			Title:   pageNotCompleteTitle.Text(ctx),
 			Body:    reason,
 			Variant: ui.StatusDanger,

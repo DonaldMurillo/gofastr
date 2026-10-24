@@ -21,7 +21,7 @@ type text string
 func (s text) Render() render.HTML { return render.Text(string(s)) }
 
 func page(path, title string, build func(*http.Request) (component.Component, error)) Page {
-	return Page{Path: path, Title: title, Build: build}
+	return Page{Path: path, Title: testPhrase(title), Build: build}
 }
 
 func says(s string) func(*http.Request) (component.Component, error) {
@@ -74,7 +74,7 @@ func TestPageRefusesTheAdminsOwnPaths(t *testing.T) {
 			t.Errorf("Pages path %q was accepted", path)
 		}
 	}
-	for _, bad := range []Page{{Path: "/x", Title: "X"}, {Path: "/x", Build: says("x")}} {
+	for _, bad := range []Page{{Path: "/x", Title: testPhrase("X")}, {Path: "/x", Build: says("x")}} {
 		if _, _, err := trySetup(t, nil, Config{Pages: []Page{bad}}, nil); err == nil {
 			t.Errorf("page %+v was accepted", bad)
 		}
@@ -126,7 +126,7 @@ func TestPageBuildIsNotElevated(t *testing.T) {
 	}
 	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()},
 		Config{Entities: []string{"posts"}, Pages: []Page{page("/peek", "Peek", read)},
-			Cards: []Card{{Key: "peek", Title: "Peek", Build: read}}},
+			Cards: []Card{{Key: "peek", Title: testPhrase("Peek"), Build: read}}},
 		func(_ *env, c *Config) { eui = c.UI })
 	x.insert("posts", map[string]any{"id": "p1", "title": "Locked one", "status": "draft"})
 	h := withPolicy(x.as(theAdmin))
@@ -162,8 +162,8 @@ func TestPageAccessIsNotElevated(t *testing.T) {
 
 func TestCardsDrawAndPoll(t *testing.T) {
 	cards := []Card{
-		{Key: "revenue", Title: "Revenue", Build: says("$42"), Poll: 30 * time.Second},
-		{Key: "static", Title: "Static", Build: says("fixed")},
+		{Key: "revenue", Title: testPhrase("Revenue"), Build: says("$42"), Poll: 30 * time.Second},
+		{Key: "static", Title: testPhrase("Static"), Build: says("fixed")},
 	}
 	x := setup(t, nil, Config{Cards: cards}, nil)
 	dash := get(x.as(theAdmin), "/admin").Body.String()
@@ -180,10 +180,10 @@ func TestCardsDrawAndPoll(t *testing.T) {
 		t.Errorf("SECURITY: a reader read a card: %d", rr.Code)
 	}
 	for _, bad := range [][]Card{
-		{{Key: "Bad Key", Title: "x", Build: says("x")}},
-		{{Key: "a", Title: "x", Build: says("x")}, {Key: "a", Title: "y", Build: says("y")}},
+		{{Key: "Bad Key", Title: testPhrase("x"), Build: says("x")}},
+		{{Key: "a", Title: testPhrase("x"), Build: says("x")}, {Key: "a", Title: testPhrase("y"), Build: says("y")}},
 		{{Key: "a", Build: says("x")}},
-		{{Key: "a", Title: "x", Build: says("x"), Poll: -time.Second}},
+		{{Key: "a", Title: testPhrase("x"), Build: says("x"), Poll: -time.Second}},
 	} {
 		if _, _, err := trySetup(t, nil, Config{Cards: bad}, nil); err == nil {
 			t.Errorf("cards %+v were accepted", bad)
@@ -193,11 +193,11 @@ func TestCardsDrawAndPoll(t *testing.T) {
 
 func TestLinksMustBeSameOrigin(t *testing.T) {
 	for _, href := range []string{"https://evil.example", "//evil.example", "javascript:alert(1)", ""} {
-		if _, _, err := trySetup(t, nil, Config{Links: []Link{{Label: "x", Href: href}}}, nil); err == nil {
+		if _, _, err := trySetup(t, nil, Config{Links: []Link{{Label: testPhrase("x"), Href: href}}}, nil); err == nil {
 			t.Errorf("link %q was accepted", href)
 		}
 	}
-	x := setup(t, nil, Config{Links: []Link{{Label: "Docs", Href: "/docs", Group: "help"}}}, nil)
+	x := setup(t, nil, Config{Links: []Link{{Label: testPhrase("Docs"), Href: "/docs", Group: "help"}}}, nil)
 	if body := get(x.as(theAdmin), "/admin").Body.String(); !strings.Contains(body, `href="/docs"`) {
 		t.Error("the sidebar lacks the link")
 	}

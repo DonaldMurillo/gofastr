@@ -416,7 +416,7 @@ func (b *Battery) accessAudit(ctx context.Context, r auditRow) (record, changes 
 		}
 		tags := make([]render.HTML, len(d.Roles))
 		for i, role := range d.Roles {
-			tags[i] = ui.Tag(ui.TagConfig{Label: role})
+			tags[i] = ui.Tag(ui.TagConfig{Ctx: ctx, Label: role})
 		}
 		return record, ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, tags...), true
 	}

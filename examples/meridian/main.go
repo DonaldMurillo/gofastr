@@ -61,7 +61,10 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption()}
+	// WithLocalePrefixes serves each catalog locale under its own path
+	// (/es/pricing), with hreflang and sitemap alternates; English keeps
+	// the plain paths.
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption(), framework.WithLocalePrefixes()}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}

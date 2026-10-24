@@ -29,7 +29,7 @@
   // export never composes widgets-boot, the `static` composition omits it
   // and rpc-stub intercepts data-cui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
-  fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
+  fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(location.pathname)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
     .then(async (list) => {
@@ -173,7 +173,7 @@
   // so the URL's modal/drawer query params open the right surface.
   window.addEventListener('gofastr:navigate', (e) => {
     const path = (e && e.detail && e.detail.path) || location.pathname;
-    fetch('/__gofastr/widgets?page=' + encodeURIComponent(path),
+    fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
       .then((r) => (r.ok ? r.json() : null))
       .then(async (list) => {

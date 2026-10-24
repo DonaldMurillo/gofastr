@@ -212,6 +212,7 @@ func (b *Battery) layout() *appui.Layout {
 		)
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 			ui.ContentRow(ui.ContentRowConfig{
+				Ctx:          ctx,
 				Sidebar:      nav,
 				NavLabel:     i18nui.AdminSidebar.Text(ctx),
 				Toolbar:      toolbar,
@@ -319,6 +320,7 @@ func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) re
 		items = append(items, ui.SidebarItem{Label: i18nui.AdminSystemNav.Text(ctx), Children: ops, Open: true})
 	}
 	return ui.SidebarConfig{
+		Ctx:                   ctx,
 		NavLabel:              i18nui.AdminNav.Text(ctx),
 		Items:                 items,
 		CurrentPath:           path,
@@ -357,11 +359,11 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 		if p.Nav == nil || p.Nav.Hide || !b.pageAllows(ctx, p) {
 			continue
 		}
-		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title,
+		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title.Text(ctx),
 			href: b.cfg.PathPrefix + p.Path, icon: p.Nav.Icon})
 	}
 	for _, l := range b.cfg.Links {
-		all = append(all, navItem{group: l.Group, label: l.Label, href: l.Href, icon: l.Icon})
+		all = append(all, navItem{group: l.Group, label: l.Label.Text(ctx), href: l.Href, icon: l.Icon})
 	}
 	var order []string
 	byGroup := map[string][]navItem{}
@@ -513,6 +515,7 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	}
 	parts = append(parts, ui.Divider(ui.DividerConfig{}), ui.ActionList(ui.ActionListConfig{Items: rows}))
 	return ui.Dropdown(ui.DropdownConfig{
+		Ctx:     ctx,
 		Label:   i18nui.AdminAccount.Text(ctx),
 		Avatar:  &ui.AvatarConfig{Name: name},
 		Align:   ui.DropdownEnd,
@@ -570,7 +573,7 @@ func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
 	}
 	for _, p := range b.cfg.Pages {
 		if rest == p.Path {
-			return []ui.Crumb{{Text: p.Title}}
+			return []ui.Crumb{{Text: p.Title.Text(ctx)}}
 		}
 	}
 	if e, id, ok := b.entityPath(rest); ok {

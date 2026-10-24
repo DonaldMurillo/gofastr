@@ -118,7 +118,7 @@
     }
 
     try {
-      const resp = await fetch(action, {
+      const resp = await fetch(NS._lp?.(action) ?? action, {
         method: form.getAttribute('method') || 'POST',
         headers,
         body,
@@ -250,7 +250,7 @@
     node.setAttribute('aria-busy', 'true');
     try {
       if (!NS._originOK(resolvedPath)) return;
-      const r = await fetch(resolvedPath, {
+      const r = await fetch(NS._lp?.(resolvedPath) ?? resolvedPath, {
         method,
         headers,
         body: body || undefined,

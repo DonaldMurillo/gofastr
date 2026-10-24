@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 
@@ -408,6 +409,11 @@ type App struct {
 	// before X-Locale / Accept-Language during negotiation so a stored
 	// per-user locale (cookie) can win. Only effective with WithI18n.
 	localeResolver func(*http.Request) (string, bool)
+
+	// localePrefixes is set by WithLocalePrefixes; pathLocales is the
+	// locale set NewApp reads from the translator for it.
+	localePrefixes bool
+	pathLocales    i18n.PathLocales
 
 	// Optional metrics. When set (via WithMetrics), the metrics middleware
 	// joins the default chain and a Prometheus /metrics endpoint is mounted.
@@ -1202,11 +1208,12 @@ func (a *App) SetLogger(l *slog.Logger) {
 // DefaultMiddleware is the framework's standard safety chain in
 // canonical order:
 //
-//	recovery → request-id → [i18n] → [compress] → [db] → [tracing] →
-//	[metrics] → [idempotency] → security headers → timeout
+//	recovery → request-id → [i18n] → [compress] → [locale prefix] →
+//	[db] → [tracing] → [metrics] → [idempotency] → security headers →
+//	timeout
 //
 // The optional entries are present when the App was configured with
-// WithIdempotency / WithI18n; the timeout entry is omitted when
+// WithIdempotency / WithI18n / WithLocalePrefixes; the timeout entry is omitted when
 // AppConfig.DisableRequestTimeout is true.
 //
 // Access logging is deliberately NOT in this list. battery/log owns
@@ -1255,6 +1262,11 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	// middleware, so it sees the final bytes and the timeout's flushes.
 	if a != nil && a.Config.Compression {
 		chain = append(chain, middleware.Compress())
+	}
+	// The locale-prefix rewriter sits inside Compress, so it reads the
+	// handler's plain bytes and Compress encodes what it wrote.
+	if a != nil && a.localePrefixes {
+		chain = append(chain, urlprefix.Middleware())
 	}
 	// Stamp the App's *sql.DB onto each request context so screens and
 	// handlers can reach it via DBFromContext without a package-level
@@ -1318,6 +1330,14 @@ func (a *App) Mount(m Mountable) *App {
 		}
 	}
 	a.mountables = append(a.mountables, m)
+	// A host that renders pages learns the locale set before it serves
+	// one (WithLocalePrefixes): hreflang, sitemap and the runtime's
+	// locale manifest come from it. Duck-typed, like SetFanout below.
+	if a.localePrefixes {
+		if pl, ok := m.(interface{ SetPathLocales(i18n.PathLocales) }); ok {
+			pl.SetPathLocales(a.pathLocales)
+		}
+	}
 	m.Mount(a.router)
 	// Wire the mountable into the cross-replica fanout (WithFanout) when it
 	// supports it, a mounted UI host forwards to its island manager so
@@ -1936,6 +1956,9 @@ func NewApp(opts ...AppOption) *App {
 		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware: " +
 			"the i18n middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(i18n.Middleware(translator)) in your custom chain instead")
+	}
+	if a.localePrefixes {
+		a.installLocalePrefixes()
 	}
 	if a.noDefaults && a.metrics != nil {
 		panic("framework: WithMetrics is incompatible with WithoutDefaultMiddleware: " +
@@ -3586,6 +3609,7 @@ func (a *App) Start(addr string) error {
 	// register routes after Mount. This is the last stop before the
 	// listener binds: the latest point at which a finding can still
 	// refuse to serve. Same panic contract as a Mount-time check.
+	a.checkLocaleRoutes()
 	for _, m := range a.mountables {
 		if bv, ok := m.(BootValidator); ok {
 			bv.ValidateBoot()

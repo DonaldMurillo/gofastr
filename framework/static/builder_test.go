@@ -522,6 +522,24 @@ func TestRewriteBaseURLs_PrefixesPushState(t *testing.T) {
 	}
 }
 
+// data-cui-match-prefix names the section a link owns, which the runtime
+// compares with the page path. The href gains the base, so the prefix
+// must too, or the section never reads as current on a subpath deploy.
+func TestRewriteBaseURLs_PrefixesMatchPrefix(t *testing.T) {
+	b := &Builder{BasePath: "/site"}
+	in := `<a href="/es/docs" data-cui-match-prefix="/es/docs">Docs</a>` +
+		`<a href="/guide" data-cui-match-prefix>Guide</a>`
+	out := b.rewriteBaseURLs(in)
+	for _, want := range []string{
+		`data-cui-match-prefix="/site/es/docs"`,
+		`href="/site/guide" data-cui-match-prefix>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewriteBaseURLs: want %q; got:\n%s", want, out)
+		}
+	}
+}
+
 // A form's action is where its submit navigates: on a subpath deploy a
 // root-absolute one must carry the base, or the search page's GET form
 // lands on the apex.

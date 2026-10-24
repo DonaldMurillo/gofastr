@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=a4fc53c14debac91
+//gofastr:generated generator=app kind=scaffold version=dev sum=e8be326dd8c18b11
 
 package main
 
@@ -54,6 +54,9 @@ func main() {
 
 	options := []framework.AppOption{
 		framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),
+		// The app's translations (i18n.go): locales/<tag>.json, picked
+		// by the browser's Accept-Language.
+		translatorOption(),
 		// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +
 		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
 		// WithMCPIntrospection adds read-only orientation tools

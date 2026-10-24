@@ -33,7 +33,7 @@ func readGatedInvoices(t *testing.T, ext Extensions) (*testUI, *access.RolePolic
 func TestActionRunIsNotElevated(t *testing.T) {
 	readable, ran := true, false
 	x, policy := readGatedInvoices(t, Extensions{Entities: map[string]Extension{"invoices": {Actions: []Action{{
-		Key: "peek", Label: "Peek", Bulk: true,
+		Key: "peek", Label: testPhrase("Peek"), Bulk: true,
 		Run: func(ctx context.Context, ac ActionContext) error {
 			ran = true
 			readable = ac.Crud.CanReadRecordScoped(ctx, ac.IDs[0])
@@ -80,7 +80,7 @@ func TestTabBuildIsNotElevated(t *testing.T) {
 	titled, ran := true, false
 	var drawn, drawTitled bool
 	x, policy := readGatedInvoices(t, Extensions{Entities: map[string]Extension{"invoices": {Tabs: []Tab{{
-		Key: "peek", Label: "Peek",
+		Key: "peek", Label: testPhrase("Peek"),
 		Build: func(tc TabContext) (component.Component, error) {
 			ran = true
 			_, titled = tc.UI.RecordTitle(tc.Ctx, "invoices", "inv-1")
@@ -105,7 +105,7 @@ func TestSidePanelBuildIsNotElevated(t *testing.T) {
 	titled, ran := true, false
 	var drawn, drawTitled bool
 	x, policy := readGatedInvoices(t, Extensions{Entities: map[string]Extension{"invoices": {Side: []SidePanel{{
-		Key: "peek", Title: "Peek",
+		Key: "peek", Title: testPhrase("Peek"),
 		Build: func(rc RecordContext) (component.Component, error) {
 			ran = true
 			_, titled = rc.UI.RecordTitle(rc.Ctx, "invoices", "inv-1")

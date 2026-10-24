@@ -252,7 +252,7 @@ func TestRunWiresSettingsAndTray(t *testing.T) {
 		Tray: &Tray{
 			Title: "Wire",
 			Menu: &Menu{Items: []MenuItem{
-				{Title: "Show Wiring", Role: RoleShow},
+				{Title: testPhrase("Show Wiring"), Role: RoleShow},
 				{Role: RoleQuit},
 			}},
 		},

@@ -63,7 +63,7 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	if held := callerHeldRoles(ctx); len(held) > 0 {
 		tags := make([]render.HTML, len(held))
 		for i, r := range held {
-			tags[i] = ui.Tag(ui.TagConfig{Label: r})
+			tags[i] = ui.Tag(ui.TagConfig{Ctx: ctx, Label: r})
 		}
 		roles = ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, tags...)
 	}
@@ -85,6 +85,7 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 func (b *Battery) nameForm(ctx context.Context) render.HTML {
 	action := b.cfg.PathPrefix + "/account/_name"
 	return ui.Form(ui.FormConfig{
+		Ctx:         ctx,
 		Action:      action,
 		ID:          nameFormID,
 		SubmitLabel: i18nui.AdminSaveName.Text(ctx),
@@ -179,6 +180,7 @@ func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 	}
 	action := b.cfg.Auth.Config().BasePath + "/password"
 	return card(ui.Form(ui.FormConfig{
+		Ctx:         ctx,
 		Action:      action,
 		ID:          passwordFormID,
 		SubmitLabel: i18nui.AdminChangePassword.Text(ctx),

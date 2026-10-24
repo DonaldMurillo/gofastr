@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // staleMarkupClient reports whether a navigation fetch comes from a
@@ -47,7 +48,9 @@ func writeStaleMarkupReload(w http.ResponseWriter, r *http.Request, path, swapLa
 	}
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusConflict)
-	target := (&url.URL{Path: path, RawQuery: r.URL.RawQuery}).RequestURI()
+	// The refresh is no link the page rewriter reads, so the locale
+	// prefix the router stripped goes back on here.
+	target := i18n.PathPrefix(r.Context()) + (&url.URL{Path: path, RawQuery: r.URL.RawQuery}).RequestURI()
 	updated := html.EscapeString(pageAppUpdated.Text(r.Context(), nil))
 	reload := html.EscapeString(pageReloadPage.Text(r.Context(), nil))
 	if !handler.IsSafeRelativePath(target) {

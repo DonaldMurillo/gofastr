@@ -266,3 +266,24 @@ func TestCopyLinkAllowed(t *testing.T) {
 		t.Fatalf("prompts = %d, want 1 (the allow persisted)", n)
 	}
 }
+
+// A second app built in the same process, its database closed, leaves
+// the first app's pages reading their own database. The entity screen
+// set was once a package variable every buildApp overwrote, and the
+// list and record pages lost their rows once the other app's DB closed.
+func TestPagesOutliveOtherApp(t *testing.T) {
+	h := newHarness(t)
+	id := createNote(t, h, "Kept note", "body")
+
+	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
+	other, _, err := buildApp(desktoptest.NewShell())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.DB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Get("/notes").AssertStatus(t, http.StatusOK).AssertContains(t, "Kept note")
+	h.Get("/notes/"+id).AssertStatus(t, http.StatusOK).AssertContains(t, "Kept note")
+}

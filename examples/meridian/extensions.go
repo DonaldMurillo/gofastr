@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -21,11 +22,19 @@ var appExtensions = entityui.Extensions{
 	},
 }
 
+// The Billing panel's words: its title and the figures it lists.
+var (
+	panelBilling       = i18n.Define("meridian.customers.billing.title", "Billing")
+	billingOutstanding = i18n.Define("meridian.customers.billing.outstanding", "Outstanding")
+	billingPaidToDate  = i18n.Define("meridian.customers.billing.paid_to_date", "Paid to date")
+	billingInvoices    = i18n.Define("meridian.customers.billing.invoices", "Invoices")
+)
+
 // customerBilling is the customer record's Billing panel: what the
 // customer owes, what they have paid and how many invoices they have,
 // read as the caller, so a figure they may not see reads "—".
 var customerBilling = entityui.SidePanel{
-	Key: "billing", Title: "Billing",
+	Key: "billing", Title: panelBilling,
 	Build: func(rc entityui.RecordContext) (component.Component, error) {
 		return billingPanel{ui: rc.UI, customer: rc.Record.ID}, nil
 	},
@@ -44,9 +53,9 @@ func (p billingPanel) RenderCtx(ctx context.Context) render.HTML {
 		return render.Text(p.ui.StatValue(ctx, "invoices", agg, field, mine+where, format))
 	}
 	return ui.DetailList(ui.DetailListConfig{Spread: true, Items: []ui.DetailItem{
-		{Label: "Outstanding", Value: stat("sum", "amount", ` and status in ["open", "past_due"]`, "money")},
-		{Label: "Paid to date", Value: stat("sum", "amount", ` and status = "paid"`, "money")},
-		{Label: "Invoices", Value: stat("count", "", "", "")},
+		{Label: billingOutstanding.Text(ctx), Value: stat("sum", "amount", ` and status in ["open", "past_due"]`, "money")},
+		{Label: billingPaidToDate.Text(ctx), Value: stat("sum", "amount", ` and status = "paid"`, "money")},
+		{Label: billingInvoices.Text(ctx), Value: stat("count", "", "", "")},
 	}})
 }
 

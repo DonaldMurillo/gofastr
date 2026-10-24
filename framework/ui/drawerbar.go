@@ -67,6 +67,7 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 	}
 	kids := []render.HTML{
 		Button(ButtonConfig{
+			Ctx:        ctx,
 			Label:      i18nui.DialogClose.Text(ctx),
 			Icon:       "close",
 			IconOnly:   true,
@@ -123,7 +124,7 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 func drawerStep(ctx context.Context, href, icon string, key i18n.Phrase) render.HTML {
 	label := key.Text(ctx)
 	if href == "" {
-		return Button(ButtonConfig{Label: label, Icon: icon, IconOnly: true, Variant: ButtonGhost, Size: ButtonSizeSmall, Disabled: true})
+		return Button(ButtonConfig{Ctx: ctx, Label: label, Icon: icon, IconOnly: true, Variant: ButtonGhost, Size: ButtonSizeSmall, Disabled: true})
 	}
 	return LinkButton(LinkButtonConfig{
 		Label:      label,

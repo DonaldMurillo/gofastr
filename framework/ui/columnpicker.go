@@ -93,7 +93,8 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 	// panel is this component's own.
 	content := headless.Own(columnPickerStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-colpick"}, body...)))
 	return Dropdown(DropdownConfig{
-		ID: cfg.ID, Label: cfg.Label, Icon: "columns", Content: content,
+		Ctx: ctx,
+		ID:  cfg.ID, Label: cfg.Label, Icon: "columns", Content: content,
 		Align: DropdownEnd, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	})
 }

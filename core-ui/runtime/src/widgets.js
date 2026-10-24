@@ -122,7 +122,7 @@
             ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx)
             : path;
           if (!NS._originOK?.(url)) throw new Error('cross-origin chrome');
-          const r = await fetch(url);
+          const r = await fetch(NS._lp?.(url) ?? url);
           if (!r.ok) throw new Error('chrome fetch ' + r.status);
           return await r.text();
         } catch (err) {
@@ -343,7 +343,7 @@
     // Initial state hydration, only when the widget declared signals.
     if (cfg.statePath) {
       if (!NS._originOK?.(cfg.statePath)) return;
-      fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+      fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         .then((r) => (r.ok ? r.json() : {}))
         .then((state) => {
           for (const k in state) {

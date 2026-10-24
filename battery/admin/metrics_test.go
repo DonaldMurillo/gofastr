@@ -38,9 +38,9 @@ func ordersEnv(t *testing.T, cfg Config) *env {
 // above the entity cards, and polls each figure on its own route.
 func TestMetricsStripDrawsAndPolls(t *testing.T) {
 	x := ordersEnv(t, Config{Entities: []string{"orders"}, Metrics: []Metric{
-		{Label: "Open orders", Entity: "orders", Where: `status = "open"`},
-		{Label: "Late", Entity: "orders", Where: `status = "late"`, View: "late", Icon: "clock",
-			Detail: &Metric{Label: "owed", Agg: "sum", Field: "amount", Where: `status = "late"`, Format: "money"}},
+		{Label: testPhrase("Open orders"), Entity: "orders", Where: `status = "open"`},
+		{Label: testPhrase("Late"), Entity: "orders", Where: `status = "late"`, View: "late", Icon: "clock",
+			Detail: &Metric{Label: testPhrase("owed"), Agg: "sum", Field: "amount", Where: `status = "late"`, Format: "money"}},
 	}})
 	dash := get(x.as(theAdmin), "/admin").Body.String()
 	for _, want := range []string{
@@ -71,16 +71,16 @@ func TestMetricsStripDrawsAndPolls(t *testing.T) {
 func TestMetricsRefuseWhatCannotCompute(t *testing.T) {
 	for name, m := range map[string]Metric{
 		"no label":           {Entity: "orders"},
-		"unexposed entity":   {Label: "x", Entity: "ghosts"},
-		"unknown agg":        {Label: "x", Entity: "orders", Agg: "avg"},
-		"sum of text":        {Label: "x", Entity: "orders", Agg: "sum", Field: "ref"},
-		"bad filter":         {Label: "x", Entity: "orders", Where: `nope = 1`},
-		"unknown view":       {Label: "x", Entity: "orders", View: "overdue"},
-		"bad icon":           {Label: "x", Entity: "orders", Icon: "no-such-icon"},
-		"detail no label":    {Label: "x", Entity: "orders", Detail: &Metric{}},
-		"detail bad field":   {Label: "x", Entity: "orders", Detail: &Metric{Label: "y", Agg: "sum", Field: "nope"}},
-		"detail has a view":  {Label: "x", Entity: "orders", Detail: &Metric{Label: "y", View: "late"}},
-		"detail has a child": {Label: "x", Entity: "orders", Detail: &Metric{Label: "y", Detail: &Metric{Label: "z"}}},
+		"unexposed entity":   {Label: testPhrase("x"), Entity: "ghosts"},
+		"unknown agg":        {Label: testPhrase("x"), Entity: "orders", Agg: "avg"},
+		"sum of text":        {Label: testPhrase("x"), Entity: "orders", Agg: "sum", Field: "ref"},
+		"bad filter":         {Label: testPhrase("x"), Entity: "orders", Where: `nope = 1`},
+		"unknown view":       {Label: testPhrase("x"), Entity: "orders", View: "overdue"},
+		"bad icon":           {Label: testPhrase("x"), Entity: "orders", Icon: "no-such-icon"},
+		"detail no label":    {Label: testPhrase("x"), Entity: "orders", Detail: &Metric{}},
+		"detail bad field":   {Label: testPhrase("x"), Entity: "orders", Detail: &Metric{Label: testPhrase("y"), Agg: "sum", Field: "nope"}},
+		"detail has a view":  {Label: testPhrase("x"), Entity: "orders", Detail: &Metric{Label: testPhrase("y"), View: "late"}},
+		"detail has a child": {Label: testPhrase("x"), Entity: "orders", Detail: &Metric{Label: testPhrase("y"), Detail: &Metric{Label: testPhrase("z")}}},
 	} {
 		_, _, err := trySetup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
 			Config{Entities: []string{"orders"}, Metrics: []Metric{m}}, nil)
@@ -156,9 +156,9 @@ func TestDashboardNew(t *testing.T) {
 // colours its line, and Init caps the strip at six figures.
 func TestMetricsAreOneStrip(t *testing.T) {
 	x := ordersEnv(t, Config{Entities: []string{"orders"}, Metrics: []Metric{
-		{Label: "Open orders", Entity: "orders", Where: `status = "open"`},
-		{Label: "Late", Entity: "orders", Where: `status = "late"`,
-			Detail: &Metric{Label: "owed", Agg: "sum", Field: "amount", Where: `status = "late"`, Format: "money", Tone: ui.TrendDown}},
+		{Label: testPhrase("Open orders"), Entity: "orders", Where: `status = "open"`},
+		{Label: testPhrase("Late"), Entity: "orders", Where: `status = "late"`,
+			Detail: &Metric{Label: testPhrase("owed"), Agg: "sum", Field: "amount", Where: `status = "late"`, Format: "money", Tone: ui.TrendDown}},
 	}})
 	dash := get(x.as(theAdmin), "/admin").Body.String()
 	for _, want := range []string{`fui-stat-strip fui-stat-strip--2`, `fui-stat-card--plain`, `fui-stat-card__trend--down`} {
@@ -171,12 +171,12 @@ func TestMetricsAreOneStrip(t *testing.T) {
 	}
 	seven := make([]Metric, 7)
 	for i := range seven {
-		seven[i] = Metric{Label: "x", Entity: "orders"}
+		seven[i] = Metric{Label: testPhrase("x"), Entity: "orders"}
 	}
 	for name, ms := range map[string][]Metric{
 		"seven figures":  seven,
-		"unknown tone":   {{Label: "x", Entity: "orders", Detail: &Metric{Label: "y", Tone: "sideways"}}},
-		"top-level tone": {{Label: "x", Entity: "orders", Tone: ui.TrendUp}},
+		"unknown tone":   {{Label: testPhrase("x"), Entity: "orders", Detail: &Metric{Label: testPhrase("y"), Tone: "sideways"}}},
+		"top-level tone": {{Label: testPhrase("x"), Entity: "orders", Tone: ui.TrendUp}},
 	} {
 		if _, _, err := trySetup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
 			Config{Entities: []string{"orders"}, Metrics: ms}, nil); err == nil {

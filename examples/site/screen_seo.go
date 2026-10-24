@@ -31,17 +31,18 @@ func (*SEOScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 // ScreenCanonical → <link rel="canonical">.
 func (*SEOScreen) ScreenCanonical() string { return siteOrigin + "/seo" }
 
-// ScreenHreflangs → one <link rel="alternate" hreflang> per locale.
+// ScreenHreflangs → one <link rel="alternate" hreflang> per entry. An app
+// that routes by locale prefix (framework.WithLocalePrefixes) gets these
+// per locale without declaring them; this site is English only.
 func (*SEOScreen) ScreenHreflangs() []uihost.HreflangLink {
 	return []uihost.HreflangLink{
 		{Lang: "en", URL: siteOrigin + "/seo"},
-		{Lang: "es", URL: siteOrigin + "/es/seo"},
 		{Lang: "x-default", URL: siteOrigin + "/seo"},
 	}
 }
 
 // ScreenSchema → one <script type="application/ld+json"> per item.
-func (*SEOScreen) ScreenSchema() []seo.Thing {
+func (*SEOScreen) ScreenSchema(ctx context.Context) []seo.Thing {
 	article := seo.NewArticle()
 	article.Headline = "GoFastr SEO module"
 	article.Description = "How per-page SEO tags compose in GoFastr."
@@ -75,7 +76,7 @@ func (s *SEOScreen) Render() render.HTML {
 		),
 		ui.Section(ui.SectionConfig{Heading: "Bundle alternative: ScreenSEO", Compact: true},
 			html.Paragraph(html.TextConfig{},
-				render.Text("Prefer one method over four? "), codeText("ScreenSEO()"),
+				render.Text("Prefer one method over four? "), codeText("ScreenSEO(ctx)"),
 				render.Text(" bundles description, canonical, hreflangs, robots, OG, Twitter Card, and JSON-LD into a single declaration. "),
 				ui.Link(ui.LinkConfig{Href: "/seo-bundle", Text: "See the ScreenSEO bundle demo →"}),
 			),
@@ -105,7 +106,7 @@ func (*SEOBundleScreen) ScreenType() app.ScreenType             { return app.Scr
 
 // ScreenSEO returns every per-page SEO field in one struct. Empty fields fall
 // through to the per-concern interface chain.
-func (*SEOBundleScreen) ScreenSEO() uihost.SEO {
+func (*SEOBundleScreen) ScreenSEO(ctx context.Context) uihost.SEO {
 	article := seo.NewArticle()
 	article.Headline = "GoFastr SEO bundle"
 	article.Description = "All per-page SEO declared in one struct."
@@ -115,7 +116,7 @@ func (*SEOBundleScreen) ScreenSEO() uihost.SEO {
 		Canonical:   siteOrigin + "/seo-bundle",
 		Hreflangs: []uihost.HreflangLink{
 			{Lang: "en", URL: siteOrigin + "/seo-bundle"},
-			{Lang: "es", URL: siteOrigin + "/es/seo-bundle"},
+			{Lang: "x-default", URL: siteOrigin + "/seo-bundle"},
 		},
 		Robots: "index,follow",
 		OG: &uihost.OG{

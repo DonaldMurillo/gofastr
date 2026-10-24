@@ -428,7 +428,9 @@ func (h *Harness) config() desktop.WindowConfig {
 }
 
 // ClickMenu activates a main-menu item by its title path ("File",
-// "New note"). A role item with no title matches its role name
+// "New note"), matched against each title phrase's English, so a test
+// reads the same in every OS language. A role item with no title
+// matches its role name
 // ("quit"). Navigate and Handler items go through the battery's menu
 // dispatch like a native click; quit, settings, and show roles do what
 // the native shell does for them.
@@ -442,8 +444,8 @@ func (h *Harness) ClickMenu(titles ...string) {
 	h.activate(cfg, item, strings.Join(titles, " > "))
 }
 
-// ClickTray activates a tray-menu item by title (or role name for a
-// title-less role item).
+// ClickTray activates a tray-menu item by its title's English (or
+// role name for a title-less role item).
 func (h *Harness) ClickTray(title string) {
 	h.t.Helper()
 	cfg := h.config()
@@ -501,7 +503,7 @@ func (h *Harness) findItem(items []desktop.MenuItem, titles []string) desktop.Me
 
 func matchItem(items []desktop.MenuItem, title string) (desktop.MenuItem, bool) {
 	for _, it := range items {
-		if it.Title == title || (it.Title == "" && it.Role == title) {
+		if !it.Title.IsZero() && it.Title.English() == title || (it.Title.IsZero() && it.Role == title) {
 			return it, true
 		}
 	}
@@ -512,8 +514,8 @@ func itemTitles(items []desktop.MenuItem) string {
 	var out []string
 	for _, it := range items {
 		switch {
-		case it.Title != "":
-			out = append(out, fmt.Sprintf("%q", it.Title))
+		case !it.Title.IsZero():
+			out = append(out, fmt.Sprintf("%q", it.Title.English()))
 		case it.Role != "":
 			out = append(out, "<"+it.Role+">")
 		}

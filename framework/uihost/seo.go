@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
@@ -121,7 +122,11 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	if ds.pathLocales != nil {
+		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
+	} else {
+		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	}
 
 	for _, route := range ds.App.Routes() {
 		if route.RedirectTo != "" {
@@ -133,6 +138,22 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 		paths := expandRouteForSitemap(ds.App, route.Path)
 		for _, p := range paths {
 			if !ds.sitemapPublic(p) {
+				continue
+			}
+			if ds.pathLocales != nil {
+				// One entry per locale, each naming every alternate, the
+				// way the protocol's xhtml:link extension asks.
+				links := localeLinks(*ds.pathLocales, base, p)
+				for _, l := range links[:len(links)-1] {
+					b.WriteString("  <url>\n")
+					fmt.Fprintf(&b, "    <loc>%s</loc>\n", stdhtml.EscapeString(l.URL))
+					fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
+					for _, alt := range links {
+						fmt.Fprintf(&b, "    <xhtml:link rel=\"alternate\" hreflang=\"%s\" href=\"%s\"/>\n",
+							stdhtml.EscapeString(alt.Lang), stdhtml.EscapeString(urlsafe.CleanAnchor(alt.URL)))
+					}
+					b.WriteString("  </url>\n")
+				}
 				continue
 			}
 			b.WriteString("  <url>\n")
@@ -190,12 +211,35 @@ func (ds *UIHost) handleRobots(w http.ResponseWriter, r *http.Request) {
 	serveSeoDoc(w, r, "text/plain; charset=utf-8", reasonRobotsNotConfigured, doc, ok)
 }
 
+// robotsPaths returns the Allow or Disallow prefixes as robots.txt
+// lists them. With path locales each locale serves the app's paths
+// under its prefix, so a rule for /app holds for /es/app too; "/"
+// already covers every prefix.
+func (ds *UIHost) robotsPaths(paths []string) []string {
+	if ds.pathLocales == nil {
+		return paths
+	}
+	var out []string
+	for _, p := range paths {
+		out = append(out, p)
+		if p == "/" || !strings.HasPrefix(p, "/") {
+			continue
+		}
+		for _, tag := range ds.pathLocales.Prefixed {
+			out = append(out, ds.pathLocales.Path(tag, p))
+		}
+	}
+	return out
+}
+
 // RobotsTXT builds the robots.txt document WithRobots configured. Like
 // [UIHost.SitemapXML] it serves both the live handler and the static
 // exporter. basePath only affects the derived Sitemap: URL (Allow/
 // Disallow prefixes are emitted as authored: they are the app's own
 // route prefixes, and a subpath deploy that needs them prefixed should
-// author them that way). ok is false when WithRobots was not configured.
+// author them that way). With path locales each prefix is repeated
+// under every non-default locale. ok is false when WithRobots was not
+// configured.
 func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 	if ds.robotsConfig == nil {
 		return "", false
@@ -223,10 +267,10 @@ func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 		// Open default, explicit so it's obvious the file isn't empty.
 		b.WriteString("Allow: /\n")
 	}
-	for _, p := range cfg.Allow {
+	for _, p := range ds.robotsPaths(cfg.Allow) {
 		fmt.Fprintf(&b, "Allow: %s\n", p)
 	}
-	for _, p := range cfg.Disallow {
+	for _, p := range ds.robotsPaths(cfg.Disallow) {
 		fmt.Fprintf(&b, "Disallow: %s\n", p)
 	}
 	if cfg.CrawlDelay > 0 {

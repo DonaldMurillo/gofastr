@@ -601,7 +601,7 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 		where    string
 	}{
 		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
-		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
+		{"src/poll.js", "fetch(NS._lp?.(src) ?? src", "el.innerHTML = html", "poll region swap"},
 		{"src/intercept.js", "fetch(path", "mountLayer(res", "intercept overlay mount"},
 		// Both refetches mount through swap, fed only by fetchOverlay,
 		// whose !r.ok arm answers null before any text is read.

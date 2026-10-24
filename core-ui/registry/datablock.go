@@ -36,6 +36,7 @@ var (
 		"gofastr-compute-assets": true, "gofastr-catalog": true,
 		"gofastr-routes": true, "gofastr-embed-root": true,
 		"gofastr-embed-navigation-error": true, "gofastr-strings": true,
+		"gofastr-locales": true,
 	}
 )
 

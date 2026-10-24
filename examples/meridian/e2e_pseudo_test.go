@@ -1,7 +1,7 @@
 package main
 
 // Pseudo-locale overflow gate for the admin. The app boots with
-// MERIDIAN_PSEUDO_LOCALE=1, the browser asks for en-XA, and every
+// GOFASTR_PSEUDO_LOCALE=1, the browser opens /en-xa/, and every
 // framework string arrives accented and at least a third longer: about
 // what German or Spanish adds to English. The same screens are then
 // browsed in Spanish, whose real words are longest in other places. Each admin screen the sidebar
@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -116,13 +115,9 @@ func TestE2E_AdminPseudoLocaleOverflow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
 	}
-	t.Setenv("MERIDIAN_PSEUDO_LOCALE", "1")
+	t.Setenv("GOFASTR_PSEUDO_LOCALE", "1")
 	base := e2eBootApp(t)
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800), chromedptest.Timeout(5*time.Minute))
-	if err := chromedp.Run(ctx, network.Enable(),
-		network.SetExtraHTTPHeaders(network.Headers{"Accept-Language": pseudoLocale})); err != nil {
-		t.Fatal(err)
-	}
 	e2eLogin(t, ctx, base)
 
 	// The admin's own screens, from its sidebar, plus one record.
@@ -154,15 +149,16 @@ func TestE2E_AdminPseudoLocaleOverflow(t *testing.T) {
 }
 
 // checkLocaleOverflow browses paths in one locale at desktop and phone
-// widths and reports what overflows.
+// widths and reports what overflows. The locale is the path prefix
+// (WithLocalePrefixes), so each path is opened under /<tag>/.
 func checkLocaleOverflow(t *testing.T, ctx context.Context, base, tag, dashboard string, paths []string) {
 	t.Helper()
+	prefix := "/" + strings.ToLower(tag)
 	// The locale took: the dashboard heading is in it.
 	var heading string
 	if err := chromedp.Run(ctx,
-		network.SetExtraHTTPHeaders(network.Headers{"Accept-Language": tag}),
 		chromedp.EmulateViewport(1280, 800),
-		chromedp.Navigate(base+"/admin"),
+		chromedp.Navigate(base+prefix+"/admin"),
 		chromedp.Text(`h1`, &heading, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
@@ -179,7 +175,7 @@ func checkLocaleOverflow(t *testing.T, ctx context.Context, base, tag, dashboard
 			var problems []string
 			if err := chromedp.Run(ctx,
 				chromedp.EmulateViewport(size.w, size.h),
-				chromedp.Navigate(base+path),
+				chromedp.Navigate(base+prefix+path),
 				chromedp.WaitVisible(`main`, chromedp.ByQuery),
 				chromedp.Sleep(300*time.Millisecond),
 				chromedp.Evaluate(overflowProbe, &problems),
