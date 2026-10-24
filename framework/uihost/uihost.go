@@ -3956,8 +3956,9 @@ func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 //   - GET /llm-pages.md: top-level index listing all screens
 //   - GET /{screen-path}/llm.md: per-screen markdown documentation
 //
-// Dynamic routes (e.g. /products/:slug) are documented with their
-// pattern, not concrete values.
+// An exact route's handler serves the per-URL doc (pageLLMMD); a
+// dynamic route's handler sits at its pattern text and serves the
+// pattern doc, while its concrete URLs reach dynamicPageLLMMD.
 func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	coreApp := ds.App
 
@@ -3988,7 +3989,23 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		}
 		// Capture for closure
 		sc := screen
+		base := routePath
+		_, exact := coreApp.Router.Screens()[routePath]
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// An exact route's URL is its pattern: it gets the per-URL doc
+			// the static export writes, and answers 404 where its page
+			// does (a resolver that names no row, an outlet nothing fills).
+			if exact {
+				md, ok := ds.pageLLMMD(req, base, sc)
+				if !ok {
+					ds.handlePage(w, req)
+					return
+				}
+				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Write([]byte(md))
+				return
+			}
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
 			// A screen whose policy chain doesn't Allow this request gets
@@ -4298,9 +4315,29 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	if !ok || scr.NoLLMMD {
 		return "", false
 	}
+	return ds.pageLLMMD(r, base, scr)
+}
+
+// pageLLMMD renders the llm.md for the concrete URL base of screen scr.
+// ok is false when the page answers 404 or another status (the caller
+// answers with the page's 404).
+func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (string, bool) {
 	// Same context the page render gets: policies and Load hooks read the
-	// live request (session, headers, query) through app.WithRequest.
-	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
+	// live request (session, headers, query) through app.WithRequest. It
+	// is the PAGE's request: the /llm.md URL rebased onto the page, so a
+	// screen that builds links off the request path (entityui.List)
+	// points them at the page, not at <page>/llm.md/<id>.
+	// Built from base, the routing form, never by trimming the suffix
+	// off the raw URL: base keeps a key's encoded slash and a page's
+	// trailing slash however the /llm.md suffix was spelled.
+	pr := r.Clone(r.Context())
+	esc := app.EscapeRoutePath(base)
+	decoded, err := url.PathUnescape(esc)
+	if err != nil {
+		decoded = base
+	}
+	pr.URL.Path, pr.URL.RawPath = decoded, esc
+	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), pr))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, base)
 	if !ok {
 		return "", false

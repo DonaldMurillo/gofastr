@@ -42,7 +42,6 @@ func TestStaticBuildSkipsNotFoundOutlet(t *testing.T) {
 		return render.Join(l.Place(toc), l.Primary(), l.Place(aside))
 	})
 	a.SetDefaultLayout(shell)
-	a.NoLLMMD = true
 	a.RegisterScreen(coreapp.NewScreen("/present", nfStaticScreen("PRESENT")).
 		Fill(toc, nfStaticFill("TOC")), nil)
 	a.RegisterScreen(coreapp.NewScreen("/missing", nfStaticScreen("MISSING")), nil)
@@ -61,6 +60,12 @@ func TestStaticBuildSkipsNotFoundOutlet(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "missing", "index.html")); !os.IsNotExist(err) {
 		t.Errorf("no page may be baked in at the 404-outlet route's URL")
+	}
+	if _, err := os.Stat(filepath.Join(out, "missing", "llm.md")); !os.IsNotExist(err) {
+		t.Errorf("no llm.md may be written at the 404-outlet route's URL")
+	}
+	if _, err := os.Stat(filepath.Join(out, "present", "llm.md")); err != nil {
+		t.Errorf("the exportable route lost its llm.md: %v", err)
 	}
 	page, err := os.ReadFile(filepath.Join(out, "present", "index.html"))
 	if err != nil || !strings.Contains(string(page), "PRESENT") {

@@ -568,7 +568,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   such a page and its `llm.md` the way it skips a 404 outlet. A screen
   registered as a value, not a pointer, now renders its per-URL doc the
   way its page does; it fell back to the route's pattern doc, which
-  never ran the render that sets the status. The embed content route
+  never ran the render that sets the status. Every llm.md and negotiated
+  markdown answer now follows the page's steps: a resolver whose error
+  `Load` dropped, or an outlet declared `FallbackNotFound` that nothing
+  fills, answers 404 where it answered 200 with the screen's body, and
+  a region guard that redirects serves the withheld doc where it served
+  the screen's body. An exact route's `/llm.md` is built per URL, as the
+  static export already built it, not from the pattern doc, so a
+  `ScreenLoader` screen's doc carries its loaded content in place of
+  the placeholder line. The doc renders under its page's request and
+  route match, not the `/llm.md` URL's, so a list's record links point
+  at `/customers/7`, not `/customers/llm.md/7`, and a catch-all's
+  resolver reads `foo`, not `foo/llm.md`. The embed content route
   keeps answering 200 with the not-found body, because the embed loader
   mounts only a 2xx.
 - **Postgres text-to-integer retypes apply.** A column whose declared
