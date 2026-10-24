@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -291,6 +292,10 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rq.Replay(r.Context(), id); err != nil {
+		if errors.Is(err, queue.ErrDuplicateJob) {
+			b.refuse(w, r, page, http.StatusConflict, "replay-duplicate")
+			return
+		}
 		b.logger().Error("admin: replay job", "job", textsafe.ScrubControlBytes(id), "error", textsafe.ScrubControlBytes(err.Error()))
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
@@ -302,8 +307,9 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 // handleReplayAll re-queues every failed job, up to maxReplayAll,
 // auditing each one. It reads the failed jobs a page at a time first,
 // then replays them, so the replays do not move the pages it is still
-// reading. A failure stops the run; the jobs replayed before it stay
-// replayed and audited.
+// reading. A job whose unique key a newer job holds stays failed and the
+// run goes on. Any other failure stops the run; the jobs replayed before
+// it stay replayed and audited.
 func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/queue?status=failed"
 	if _, ok := b.readOps(w, r, page); !ok {
@@ -321,13 +327,22 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor := adminActorID(r.Context())
+	skipped := false
 	for _, id := range ids {
 		if err := rq.Replay(r.Context(), id); err != nil {
+			if errors.Is(err, queue.ErrDuplicateJob) {
+				skipped = true
+				continue
+			}
 			b.logger().Error("admin: replay job", "job", id, "error", err)
 			b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 			return
 		}
 		b.appendAudit(r.Context(), "queue", "replay", id, actor, nil)
+	}
+	if skipped {
+		b.done(w, r, page, "replayed-some")
+		return
 	}
 	b.done(w, r, page, "replayed-all")
 }

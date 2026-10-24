@@ -92,6 +92,11 @@ type MemoryQueue struct {
 	seq     uint64
 	closed  bool
 
+	// held is the set of UniqueKeys live jobs hold, from Enqueue until the
+	// job succeeds or is dead-lettered. A retry or a gate deferral puts
+	// the job back without taking its key again. Guarded by pmu.
+	held map[uniqueSlot]struct{}
+
 	// inflight tracks jobs handed out by manual Dequeue but not yet
 	// Ack'd/Nack'd, so Nack(jobID) can re-enqueue the right job. The
 	// automatic worker pool processes jobs in-line and never touches this
@@ -107,6 +112,9 @@ type MemoryQueue struct {
 	deadMu sync.Mutex
 	dead   []Job
 }
+
+// uniqueSlot scopes a UniqueKey to its job type.
+type uniqueSlot struct{ jobType, key string }
 
 // maxDeadJobs caps the in-memory dead-letter store. Beyond this, the oldest
 // retained failed job is dropped to keep memory bounded. The durable DBQueue
@@ -323,7 +331,9 @@ func (q *MemoryQueue) processJob(job Job) {
 	ctx, cancel := context.WithTimeout(context.Background(), q.handlerTimeout)
 	defer cancel()
 	err := q.awaitHandler(ctx, handler, job)
-	if err != nil {
+	if err == nil {
+		q.release(job)
+	} else {
 		job.Attempts++
 		q.logger.Warn("queue: handler failed",
 			"job_id", job.ID,
@@ -336,7 +346,7 @@ func (q *MemoryQueue) processJob(job Job) {
 			// per-attempt one that just timed out / was cancelled; using
 			// it here made Enqueue fail on the very jobs retries exist for
 			// (the error was discarded, so the retry silently vanished).
-			if enqErr := q.Enqueue(context.Background(), job); enqErr != nil {
+			if enqErr := q.requeue(context.Background(), job); enqErr != nil {
 				q.logger.Error("queue: job dead-lettered",
 					"job_id", job.ID,
 					"job_type", job.Type,
@@ -392,8 +402,19 @@ func (q *MemoryQueue) awaitHandler(ctx context.Context, handler Handler, job Job
 // Enqueue adds a job to the priority-ordered pending store. If the job has no
 // ID, one is generated. The store is unbounded, so Enqueue never blocks on
 // capacity (unlike the old buffered channel); it returns ErrQueueClosed only
-// when the queue has been closed.
+// when the queue has been closed, and ErrDuplicateJob when a live job holds
+// the job's UniqueKey.
 func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) error {
+	return q.enqueue(ctx, job, true)
+}
+
+// requeue puts a failed job back for its retry. The job still holds its
+// UniqueKey, so it skips the key check that would refuse it.
+func (q *MemoryQueue) requeue(ctx context.Context, job Job) error {
+	return q.enqueue(ctx, job, false)
+}
+
+func (q *MemoryQueue) enqueue(ctx context.Context, job Job, acquire bool) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -413,8 +434,29 @@ func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) error {
 	if q.closed {
 		return ErrQueueClosed
 	}
+	if acquire && job.UniqueKey != "" {
+		slot := uniqueSlot{job.Type, job.UniqueKey}
+		if _, ok := q.held[slot]; ok {
+			return ErrDuplicateJob
+		}
+		if q.held == nil {
+			q.held = map[uniqueSlot]struct{}{}
+		}
+		q.held[slot] = struct{}{}
+	}
 	q.pushLocked(job)
 	return nil
+}
+
+// release frees the job's UniqueKey once the job has succeeded or been
+// dead-lettered.
+func (q *MemoryQueue) release(job Job) {
+	if job.UniqueKey == "" {
+		return
+	}
+	q.pmu.Lock()
+	delete(q.held, uniqueSlot{job.Type, job.UniqueKey})
+	q.pmu.Unlock()
 }
 
 // pushLocked appends a job to the pending heap and wakes one waiting worker.
@@ -504,7 +546,9 @@ func randomID() string {
 // in-flight copy. For jobs processed by the automatic worker pool it is a
 // no-op (those are auto-acknowledged after successful handler execution).
 func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
-	q.takeInflight(job.ID)
+	if stored, ok := q.takeInflight(job.ID); ok {
+		q.release(stored)
+	}
 	return nil
 }
 
@@ -536,7 +580,7 @@ func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 		q.retainDead(stored)
 		return nil
 	}
-	if err := q.Enqueue(ctx, stored); err != nil {
+	if err := q.requeue(ctx, stored); err != nil {
 		q.logger.Error("queue: job dead-lettered",
 			"job_id", stored.ID,
 			"job_type", stored.Type,
@@ -554,6 +598,7 @@ func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 // bounded under a flood of failures. The job's Attempts is left at its
 // exhausted value so inspection reflects how many tries it took.
 func (q *MemoryQueue) retainDead(job Job) {
+	q.release(job)
 	if job.ID == "" {
 		// An ID is required to inspect/replay a job; skip ID-less jobs.
 		return

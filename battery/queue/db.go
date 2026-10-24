@@ -2,7 +2,9 @@ package queue
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -254,6 +256,7 @@ func (q *DBQueue) ensureTable() error {
 		claimed_at    %s,
 		claim_token   TEXT NOT NULL DEFAULT '',
 		user_id       TEXT NOT NULL DEFAULT '',
+		unique_key    TEXT NOT NULL DEFAULT '',
 		updated_at    %s,
 		last_error    TEXT NOT NULL DEFAULT ''
 	)`, q.qt(), tsType, tsType, tsType, tsType)
@@ -292,13 +295,16 @@ func (q *DBQueue) ensureTable() error {
 	if err := q.addTextColumn("last_error"); err != nil {
 		return err
 	}
+	if err := q.addTextColumn("unique_key"); err != nil {
+		return err
+	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
 	// shared-worker claim (any lane) is served by (status, scheduled_at,
 	// priority); the lane-filtered claim used by dedicated lane workers is
 	// served by (lane, status, scheduled_at, priority).
 	for _, ix := range []struct{ name, cols string }{
-		{q.table + "_dequeue_idx", "(status, scheduled_at, priority)"},
-		{q.table + "_lane_idx", "(lane, status, scheduled_at, priority)"},
+		{q.indexName("_dequeue_idx"), "(status, scheduled_at, priority)"},
+		{q.indexName("_lane_idx"), "(lane, status, scheduled_at, priority)"},
 	} {
 		safeIdx, err := query.SafeIdent(ix.name)
 		if err != nil {
@@ -310,7 +316,50 @@ func (q *DBQueue) ensureTable() error {
 			return err
 		}
 	}
-	return nil
+	// One live job per (type, unique_key). Rows with no key, and rows
+	// that finished or were dead-lettered, sit outside the index, so a
+	// key is free again once its job is done or failed.
+	safeIdx, err := query.SafeIdent(q.indexName("_unique_idx"))
+	if err != nil {
+		return fmt.Errorf("queue: invalid index name: %w", err)
+	}
+	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (type, unique_key) WHERE %s",
+		query.QuoteIdent(safeIdx), q.qt(), liveUniqueKey))
+	return err
+}
+
+// maxIdentLen is Postgres's identifier cap (NAMEDATALEN-1), in bytes.
+const maxIdentLen = 63
+
+// indexName names one of the table's indexes. Postgres truncates a longer
+// identifier silently, so for a long table name the suffixes would be cut
+// off, every index would get the same name, and CREATE INDEX IF NOT EXISTS
+// would skip all but the first. A name over the cap keeps its suffix and
+// replaces the table name's tail with a hash of the whole name.
+func (q *DBQueue) indexName(suffix string) string {
+	name := q.table + suffix
+	if len(name) <= maxIdentLen {
+		return name
+	}
+	sum := sha256.Sum256([]byte(q.table))
+	tag := "_" + hex.EncodeToString(sum[:4])
+	return q.table[:maxIdentLen-len(suffix)-len(tag)] + tag + suffix
+}
+
+// liveUniqueKey is the predicate of the unique-key index. Enqueue's ON
+// CONFLICT clause repeats it, which is how both dialects match the clause
+// to the partial index.
+const liveUniqueKey = "unique_key <> '' AND status IN ('pending', 'claimed')"
+
+// isUniqueViolation reports whether err is a unique-constraint failure,
+// for the SQLite ("UNIQUE constraint failed") and Postgres ("duplicate
+// key value") drivers, which share no typed error.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "duplicate key value")
 }
 
 // addTextColumn adds a TEXT NOT NULL DEFAULT ” column to the queue
@@ -605,7 +654,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id`,
+		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id, unique_key`,
 		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
 	job, err := scanJob(row)
@@ -655,7 +704,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	tx := sqliteConnTx{conn: conn}
 
 	where, args := q.eligibleWhere(types, 1, lane)
-	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id
+	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id, unique_key
 		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
 	row := tx.QueryRowContext(ctx, pickSQL, args...)
 	job, err := scanJob(row)
@@ -858,9 +907,14 @@ func (q *DBQueue) nack(ctx context.Context, job Job, lastError string) error {
 // `AND status='failed'` clause makes it idempotent and safe: replaying an
 // unknown, pending, running, or claimed job matches no row and is a no-op, so
 // it can never double-run an in-flight job or resurrect a non-terminal one.
+// A failed job whose UniqueKey a newer live job now holds stays failed, and
+// Replay returns ErrDuplicateJob.
 func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
 	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1, updated_at=$1 WHERE id=$2 AND status='failed'", q.qt())
 	_, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
+	if isUniqueViolation(err) {
+		return fmt.Errorf("%w: replay %s", ErrDuplicateJob, jobID)
+	}
 	return err
 }
 
@@ -874,7 +928,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	}
 	offset = max(offset, 0)
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
-		max_attempts, created_at, scheduled_at, status, updated_at, last_error FROM %s`, q.qt())
+		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key FROM %s`, q.qt())
 	args := []any{}
 	if status != "" && status != "all" {
 		base += " WHERE status = $1"
@@ -895,7 +949,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
-			&j.Status, &updatedAt, &j.LastError); err != nil {
+			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey); err != nil {
 			return nil, err
 		}
 		j.CreatedAt, err = query.ParseDBTime(createdAt)
@@ -1238,7 +1292,7 @@ func scanJob(row interface {
 	if err := row.Scan(
 		&job.ID, &job.OccurrenceID, &job.Type, &payload,
 		&job.Priority, &lane, &job.Attempts, &job.MaxAttempts,
-		&createdAt, &scheduledAt, &userID,
+		&createdAt, &scheduledAt, &userID, &job.UniqueKey,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return Job{}, ErrNoJob

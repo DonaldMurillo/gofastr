@@ -314,7 +314,9 @@ Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
 Replay is offered on each failed row, and "Replay N failed" in the
 header whenever a job has failed, when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
-naming the actor. A failed list or stats read shows a generic notice and
+naming the actor. A failed job whose `UniqueKey` a newer live job holds
+is not replayed: one replay answers 409 with a notice, and "Replay N
+failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
 logs the driver error; the page never prints it. The Jobs page shows
 `QueueListLimit` jobs a page (default 50), newest first; the pager
 under the table turns pages through `?p=` and keeps the status. The

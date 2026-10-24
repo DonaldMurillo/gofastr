@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -20,8 +21,10 @@ type fakeQueue struct {
 	listErr   error
 	statsErr  error
 	replayErr error
-	statuses  []string // the status each ListJobs asked for
-	replayed  []string
+	// held names the jobs whose unique key a newer job holds.
+	held     map[string]bool
+	statuses []string // the status each ListJobs asked for
+	replayed []string
 	// ignoreOffset answers every offset with the first page.
 	ignoreOffset bool
 }
@@ -43,6 +46,9 @@ func (q *fakeQueue) Stats(context.Context) (queue.JobStats, error) { return q.st
 func (q *fakeQueue) Replay(_ context.Context, id string) error {
 	if q.replayErr != nil {
 		return q.replayErr
+	}
+	if q.held[id] {
+		return fmt.Errorf("%w: replay %s", queue.ErrDuplicateJob, id)
 	}
 	q.replayed = append(q.replayed, id)
 	return nil
@@ -228,6 +234,36 @@ func TestQueueReplayAllAuditsEachJob(t *testing.T) {
 	}
 	if ops := x.auditOps("queue"); len(ops) != 3 {
 		t.Fatalf("audit ops = %v, want three replays", ops)
+	}
+}
+
+func TestReplayAllSkipsHeldKey(t *testing.T) {
+	q := &fakeQueue{jobs: failedJobs("j1", "j2", "j3"), held: map[string]bool{"j2": true}}
+	x := queueEnv(t, q)
+	if got := resultOf(t, post(x.as(theAdmin), "/admin/queue/_replay_all", nil)); got != "replayed-some" {
+		t.Fatalf("result = %q, want replayed-some", got)
+	}
+	if !slices.Equal(q.replayed, []string{"j1", "j3"}) {
+		t.Fatalf("replayed %v, want j1 and j3", q.replayed)
+	}
+	if ops := x.auditOps("queue"); len(ops) != 2 {
+		t.Fatalf("audit ops = %v, want two replays", ops)
+	}
+}
+
+func TestReplayHeldKeyIsConflict(t *testing.T) {
+	q := &fakeQueue{held: map[string]bool{"j1": true}}
+	x := queueEnv(t, q)
+	rr := post(x.as(theAdmin), "/admin/queue/_replay/j1", nil)
+	if got := resultOf(t, rr); got != "replay-duplicate" {
+		t.Fatalf("result = %q, want replay-duplicate", got)
+	}
+	rr = rpc(x.as(theAdmin), "/admin/queue/_replay/j1", map[string]any{})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("RPC replay = %d, want 409", rr.Code)
+	}
+	if ops := x.auditOps("queue"); len(ops) != 0 {
+		t.Fatalf("a refused replay audited %v", ops)
 	}
 }
 
