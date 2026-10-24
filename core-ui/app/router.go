@@ -152,13 +152,20 @@ func (r *Router) GetDefaultLayout() *Layout {
 // Returns the screen, the extracted route params (for dynamic routes), and whether it was found.
 // Params are returned separately to avoid mutating the shared screen instance.
 //
+// path is in routing form ([RoutePath]): decoded, except that a "/"
+// or "%" inside one segment is still %2F or %25. A decoded path with
+// neither is already in routing form. Param values come back decoded.
+//
 // Exact-map matches win; among dynamic routes, registration order
 // decides precedence (first-match-wins). There is no specificity
 // ranking, register more specific patterns first.
 func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
-	// Exact match first
-	if s, ok := r.screens[path]; ok {
-		return s, nil, true
+	// Exact match first. A segment holding an escaped "/" is never a
+	// registered path's, so "/a%2Fb" does not reach the screen at "/a/b".
+	if !strings.Contains(path, "%2F") {
+		if s, ok := r.screens[decodeRouteSeg(path)]; ok {
+			return s, nil, true
+		}
 	}
 
 	// Try dynamic routes in registration order.
@@ -179,12 +186,17 @@ func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 // does not match "/docs/{p...}"), and a param position never binds an
 // empty path segment ("/" must not match "/:slug", "/files//edit" must
 // not match "/files/:name/edit"): a route author declares the path
-// shapes they serve, and an empty key is never one of them. Param values
-// are the raw matched text, no URL decoding, consistent with single-segment
-// params.
+// shapes they serve, and an empty key is never one of them. pathParts are
+// routing-form segments; each is decoded before it is compared or bound,
+// so a param value may hold "/" ("/files/a%2Fb" binds name "a/b").
 func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	lastIdx := len(segments) - 1
 	catchAll := lastIdx >= 0 && isCatchAllSeg(segments[lastIdx])
+	parts := make([]string, len(pathParts))
+	for i, p := range pathParts {
+		parts[i] = decodeRouteSeg(p)
+	}
+	pathParts = parts
 
 	if !catchAll {
 		if len(segments) != len(pathParts) {

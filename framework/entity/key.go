@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // KeyColumns returns the entity's primary-key columns in declared order:
@@ -56,7 +59,10 @@ func JoinKey(parts []string) string {
 
 // SplitKey reverses JoinKey for a key of n columns. It refuses an id
 // with the wrong number of values or an empty one, so a truncated URL
-// never matches a record on a prefix of its key.
+// never matches a record on a prefix of its key, and one not spelled as
+// JoinKey spells it: "%61/b" names the record "a/b" does, and a check
+// keyed on the id string (a Decider, an audit row) must never see a
+// second spelling of one record.
 func SplitKey(id string, n int) ([]string, error) {
 	if n <= 1 {
 		return []string{id}, nil
@@ -68,12 +74,43 @@ func SplitKey(id string, n int) ([]string, error) {
 	out := make([]string, n)
 	for i, p := range raw {
 		v, err := url.PathUnescape(p)
-		if err != nil || v == "" {
+		if err != nil || v == "" || url.PathEscape(v) != p {
 			return nil, fmt.Errorf("%w: value %d", ErrBadKey, i+1)
 		}
 		out[i] = v
 	}
 	return out, nil
+}
+
+// KeyValues reads a record id as the values its key columns hold: one
+// per column of cols, each in the type fields declares for it. An Int
+// column's value must be canonical decimal and comes back as an int64,
+// since both dialects compare "01" and "1.0" equal to 1; every other
+// value stays the string SplitKey returned. Every lookup by id goes
+// through it, so a check keyed on the id string sees the only spelling
+// that reaches the row.
+func KeyValues(id string, cols []string, fields []schema.Field) ([]any, error) {
+	if len(cols) == 0 {
+		return nil, fmt.Errorf("%w: the table has no key", ErrBadKey)
+	}
+	parts, err := SplitKey(id, len(cols))
+	if err != nil {
+		return nil, err
+	}
+	vals := make([]any, len(parts))
+	for i, p := range parts {
+		vals[i] = p
+		f := slices.IndexFunc(fields, func(f schema.Field) bool { return f.Name == cols[i] })
+		if f < 0 || fields[f].Type != schema.Int {
+			continue
+		}
+		n, err := strconv.ParseInt(p, 10, 64)
+		if err != nil || strconv.FormatInt(n, 10) != p {
+			return nil, fmt.Errorf("%w: value %d is not a canonical integer", ErrBadKey, i+1)
+		}
+		vals[i] = n
+	}
+	return vals, nil
 }
 
 // RowKey reads a record's id from a row: the value of each key column,

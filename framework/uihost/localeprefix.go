@@ -3,9 +3,9 @@ package uihost
 import (
 	"context"
 	"encoding/json"
-	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
@@ -52,10 +52,11 @@ func (ds *UIHost) localeAlternates(pagePath string) []HreflangLink {
 	return localeLinks(*ds.pathLocales, base, pagePath)
 }
 
-// localeLinks takes the decoded page path (r.URL.Path, a sitemap
-// path) and escapes it: a "?" in it is part of the path.
+// localeLinks takes the page path in routing form (app.RoutePath, a
+// sitemap path) and escapes it: a "?" in it is part of the path, and a
+// key value's "/" stays %2F.
 func localeLinks(set i18n.PathLocales, base, pagePath string) []HreflangLink {
-	p := (&url.URL{Path: pagePath}).EscapedPath()
+	p := app.EscapeRoutePath(pagePath)
 	var out []HreflangLink
 	for _, tag := range set.All() {
 		out = append(out, HreflangLink{Lang: tag, URL: base + set.Path(tag, p)})

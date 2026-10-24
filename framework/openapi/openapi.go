@@ -302,6 +302,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		if ent.Version != "" {
 			path = pathPrefix + "/" + tableName
 		}
+		recPath, keyProps, keyReq := recordKey(ent, path)
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts
@@ -458,7 +459,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			getOp.AddSecurity("cookieAuth", nil)
 		}
 		getOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("GET", path+"/:id", *getOp)
+		s.AddPath("GET", recPath, *getOp)
 
 		// --- PUT /{table}/:id: Update ---
 		updateOp := openapi.NewOperation()
@@ -480,7 +481,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			updateOp.AddSecurity("cookieAuth", nil)
 		}
 		updateOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PUT", path+"/:id", *updateOp)
+		s.AddPath("PUT", recPath, *updateOp)
 
 		// --- PATCH /{table}/:id: Sparse update ---
 		patchOp := openapi.NewOperation()
@@ -502,7 +503,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			patchOp.AddSecurity("cookieAuth", nil)
 		}
 		patchOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("PATCH", path+"/:id", *patchOp)
+		s.AddPath("PATCH", recPath, *patchOp)
 
 		// --- DELETE /{table}/:id: Delete ---
 		deleteOp := openapi.NewOperation()
@@ -519,7 +520,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			deleteOp.AddSecurity("cookieAuth", nil)
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
-		s.AddPath("DELETE", path+"/:id", *deleteOp)
+		s.AddPath("DELETE", recPath, *deleteOp)
 
 		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
 		// The router mounts the transition route when States holds a
@@ -565,7 +566,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				moveOp.AddSecurity("bearerAuth", nil)
 				moveOp.AddSecurity("cookieAuth", nil)
 			}
-			s.AddPath("POST", path+"/:id/transitions/"+t.Key, *moveOp)
+			s.AddPath("POST", recPath+"/transitions/"+t.Key, *moveOp)
 		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
@@ -596,10 +597,24 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		s.AddPath("POST", path+"/_batch", *batchCreateOp)
 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
+		// An item names its record in the body, so each key column takes
+		// its field's own schema (an integer key is a JSON number there),
+		// never the string a path parameter is; readOnly is dropped, since
+		// the item must carry it.
+		entityProps, _ := entitySchema["properties"].(map[string]any)
+		itemKeys := make(map[string]any, len(keyReq))
+		for _, w := range keyReq {
+			itemKeys[w] = keyProps[w]
+			if fp, ok := entityProps[w].(map[string]any); ok {
+				cp := maps.Clone(fp)
+				delete(cp, "readOnly")
+				itemKeys[w] = cp
+			}
+		}
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
 				requestSchema(entitySchema, fields, st, updateSkip, true),
-				map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
+				map[string]any{"type": "object", "properties": itemKeys, "required": keyReq},
 			},
 		}
 		batchUpdateBody := map[string]any{
@@ -654,9 +669,10 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			"type": "object",
 			"properties": map[string]any{
 				"ids": map[string]any{
-					"type":     "array",
-					"maxItems": crud.MaxBatchSize,
-					"items":    map[string]any{"type": "string"},
+					"type":        "array",
+					"maxItems":    crud.MaxBatchSize,
+					"items":       map[string]any{"type": "string"},
+					"description": batchIDsDesc(ent),
 				},
 			},
 			"required": []string{"ids"},
@@ -915,6 +931,42 @@ func wireKeyOf(f schema.Field) string {
 		return f.WireName
 	}
 	return casing.ToCamel(f.Name)
+}
+
+// recordKey returns the path naming one record of ent under path, and
+// the properties and required list a batch-update item names it with.
+// A one-column key is the path's {id} and the item's key column; a
+// composite key takes one path segment per column (crud.KeyPath), each
+// named after its column's wire key.
+func recordKey(ent *entity.Entity, path string) (string, map[string]any, []string) {
+	cols := ent.KeyColumns()
+	props := make(map[string]any, len(cols))
+	req := make([]string, 0, len(cols))
+	rec := path
+	for _, c := range cols {
+		w := casing.ToCamel(c)
+		for _, f := range ent.GetFields() {
+			if f.Name == c {
+				w = wireKeyOf(f)
+			}
+		}
+		props[w] = map[string]any{"type": "string"}
+		req = append(req, w)
+		rec += "/:" + w
+	}
+	if len(cols) == 1 {
+		rec = path + "/:id"
+	}
+	return rec, props, req
+}
+
+// batchIDsDesc describes the ids a batch delete names its records by.
+func batchIDsDesc(ent *entity.Entity) string {
+	cols := ent.KeyColumns()
+	if len(cols) == 1 {
+		return "Record ids."
+	}
+	return fmt.Sprintf("Record ids. An id joins the record's %s values, each path-escaped, with \"/\".", strings.Join(cols, ", "))
 }
 
 // hasCustomEndpoints reports whether the entity declares at least one

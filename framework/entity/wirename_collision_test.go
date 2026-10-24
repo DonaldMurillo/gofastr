@@ -61,6 +61,25 @@ func TestValidate_RejectsWireKeyCollision(t *testing.T) {
 			},
 			want: "authorId",
 		},
+		{
+			// The column "content" publishes as "summary", but a form
+			// posting it by name ("content") writes body_text, whose wire
+			// key that is.
+			name: "WireName is a renamed column's Name",
+			fields: []schema.Field{
+				{Name: "body_text", Type: schema.String, WireName: "content"},
+				{Name: "content", Type: schema.String, WireName: "summary"},
+			},
+			want: "content",
+		},
+		{
+			name: "renamed column's Name is a later WireName",
+			fields: []schema.Field{
+				{Name: "content", Type: schema.String, WireName: "summary"},
+				{Name: "body_text", Type: schema.String, WireName: "content"},
+			},
+			want: "content",
+		},
 	}
 
 	for _, tc := range cases {

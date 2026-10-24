@@ -110,7 +110,7 @@ func (b *Battery) gatePolicy() appui.Policy {
 		if status == http.StatusUnauthorized && b.cfg.LoginPath != "" {
 			next := b.cfg.PathPrefix
 			if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
-				next = r.URL.Path
+				next = r.URL.EscapedPath()
 			}
 			return decide.Redirect(b.cfg.LoginPath + "?next=" + urlQueryEscape(next))
 		}
@@ -198,7 +198,7 @@ func (b *Battery) layout() *appui.Layout {
 		})
 		nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
 		crumbs := l.RouteArea("crumbs", func(ctx context.Context, m appui.Match) render.HTML {
-			return b.crumbs(ctx, m.Path())
+			return b.crumbs(ctx, m)
 		})
 		trigger, _ := ui.CommandPalette(b.paletteConfig(ctx))
 		keys, _ := ui.ShortcutSheet(b.keysConfig(ctx))
@@ -538,19 +538,20 @@ func handlerUser(ctx context.Context) any {
 	return u
 }
 
-// crumbs draws the breadcrumbs for path: the product, then where the
-// page sits. A record's crumb is its title, read behind its own gate.
-func (b *Battery) crumbs(ctx context.Context, path string) render.HTML {
+// crumbs draws the breadcrumbs for the page m matched: the product, then
+// where the page sits. A record's crumb is its title, read behind its
+// own gate.
+func (b *Battery) crumbs(ctx context.Context, m appui.Match) render.HTML {
 	items := []ui.Crumb{{Text: b.title(ctx), Href: b.cfg.PathPrefix}}
-	items = append(items, b.trail(ctx, path)...)
+	items = append(items, b.trail(ctx, m)...)
 	items[len(items)-1].Current = true
 	items[len(items)-1].Href = ""
 	return ui.Breadcrumbs(ui.BreadcrumbsConfig{CompactMobile: true, Ctx: ctx}, items...)
 }
 
-// trail is the crumbs after the product for one admin path.
-func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
-	rest := strings.TrimPrefix(path, b.cfg.PathPrefix)
+// trail is the crumbs after the product for one admin page.
+func (b *Battery) trail(ctx context.Context, m appui.Match) []ui.Crumb {
+	rest := strings.TrimPrefix(m.Path(), b.cfg.PathPrefix)
 	switch rest {
 	case "", "/":
 		return []ui.Crumb{{Text: i18nui.AdminDashboard.Text(ctx)}}
@@ -576,7 +577,7 @@ func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
 			return []ui.Crumb{{Text: p.Title.Text(ctx)}}
 		}
 	}
-	if e, id, ok := b.entityPath(rest); ok {
+	if e, id, ok := b.entityPath(rest, m); ok {
 		list := ui.Crumb{Text: b.plural(ctx, e), Href: b.entityBase(e)}
 		switch id {
 		case "":

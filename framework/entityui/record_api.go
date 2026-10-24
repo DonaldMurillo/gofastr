@@ -64,7 +64,7 @@ func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML 
 	}}
 	items = append(items, ui.DetailItem{
 		Label: i18nui.EntityApiRecord.Text(ctx),
-		Value: render.Text(restRecordMethods + " " + base + "/{id}"),
+		Value: render.Text(restRecordMethods + " " + base + crud.KeyPath(m.keys)),
 	})
 	return []render.HTML{
 		ui.DetailList(ui.DetailListConfig{Items: items}),

@@ -2,10 +2,13 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -61,9 +64,24 @@ func (ch *CrudHandler) keyCond(vals []any) (string, []any) {
 	return strings.Join(conds, " AND "), vals
 }
 
-// keyWhere is keyCond for a record id as JoinKey renders it. An id that
-// does not split into the key columns names no record: the condition
-// matches nothing, so every caller reaches its own not-found answer.
+// keyWhere is the WHERE condition matching the record id names by
+// equality on each key column: keyCond over the values entity.KeyValues
+// reads from id. An id that does not split into the key columns names no
+// record: the condition matches nothing, so every caller reaches its own
+// not-found answer.
+//
+// A record id names a row only when it is the row's own id, the one
+// entity.RowKey renders from the row. On a managed entity equality says
+// that already: its key columns are types the framework created (TEXT,
+// INTEGER), and KeyValues binds an integer only in canonical form. On an
+// Unmanaged entity the database chose the types (a view's SELECT, a
+// Postgres UUID, CITEXT or CHAR(n), a case-folding collation), and
+// equality can match a second spelling: a request for the uppercase id
+// would reach the row a Decider, asked about the id string, knows by its
+// lowercase one. There each statement reads the key columns back
+// (keyedCols) and keeps a row only when ownRow finds its own id is id.
+// The check reads the row the statement itself reached, so no write
+// between a check and the operation can swap in another.
 func (ch *CrudHandler) keyWhere(id string) (string, []any) {
 	vals, ok := ch.idVals(id)
 	if !ok {
@@ -72,17 +90,175 @@ func (ch *CrudHandler) keyWhere(id string) (string, []any) {
 	return ch.keyCond(vals)
 }
 
-// idVals splits a record id into its key values, one per key column.
-func (ch *CrudHandler) idVals(id string) ([]any, bool) {
-	parts, err := entity.SplitKey(id, len(ch.keyCols()))
+// keyHasSpellings reports whether the key columns' equality may match a
+// value under more than one spelling: the database, not the framework,
+// typed an Unmanaged entity's columns.
+func (ch *CrudHandler) keyHasSpellings() bool {
+	return ch.Entity != nil && ch.Entity.Config.Unmanaged
+}
+
+// keyedCols is cols plus the key columns it lacks, when keyHasSpellings:
+// the columns a statement reads so ownRow can see the row's own id.
+func (ch *CrudHandler) keyedCols(cols []string) []string {
+	if !ch.keyHasSpellings() {
+		return cols
+	}
+	out := slices.Clip(cols)
+	for _, k := range ch.keyCols() {
+		if !slices.Contains(cols, k) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// ownRow reports whether row, read with keyedCols(cols), is the record id
+// names (see keyWhere), and removes the key columns keyedCols added, so a
+// key column cols left out never reaches the caller.
+func (ch *CrudHandler) ownRow(id string, row map[string]any, cols []string) bool {
+	if !ch.keyHasSpellings() {
+		return true
+	}
+	own, ok := ch.rowID(row)
+	for _, k := range ch.keyCols() {
+		if !slices.Contains(cols, k) {
+			delete(row, ch.convertKey(k))
+		}
+	}
+	return ok && own == id
+}
+
+// queryKeyed runs a statement reading keyedCols(cols) and scans every row
+// it returns: equality may match more than one spelling, and a SQLite
+// key may be declared under a stricter collation than its column.
+func (ch *CrudHandler) queryKeyed(ctx context.Context, cols []string, sqlStr string, args []any) ([]map[string]any, error) {
+	rows, err := ch.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
-	vals := make([]any, len(parts))
-	for i, p := range parts {
-		vals[i] = p
+	defer rows.Close()
+	return ch.scanMany(rows, ch.keyedCols(cols))
+}
+
+// scanOwn runs a SELECT of keyedCols(cols) naming id's record and returns
+// the row whose own id is id, or sql.ErrNoRows.
+func (ch *CrudHandler) scanOwn(ctx context.Context, id string, cols []string, sqlStr string, args []any) (map[string]any, error) {
+	if !ch.keyHasSpellings() {
+		return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
 	}
-	return vals, true
+	found, err := ch.queryKeyed(ctx, cols, sqlStr, args)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range found {
+		if ch.ownRow(id, row, cols) {
+			return row, nil
+		}
+	}
+	return nil, sql.ErrNoRows
+}
+
+// writeOwn runs an UPDATE naming id's record, RETURNING keyedCols(cols),
+// and returns the row it changed, or sql.ErrNoRows when it changed none.
+// Every changed row must be id's own: a statement that also changed
+// another fails with errNotFound, which rolls it back (inTx), so a key
+// equality matches under two spellings is refused rather than half
+// written.
+func (ch *CrudHandler) writeOwn(ctx context.Context, id string, cols []string, sqlStr string, args []any) (map[string]any, error) {
+	if !ch.keyHasSpellings() {
+		return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+	}
+	changed, err := ch.queryKeyed(ctx, cols, sqlStr, args)
+	if err != nil {
+		return nil, err
+	}
+	if len(changed) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	for _, row := range changed {
+		if !ch.ownRow(id, row, cols) {
+			return nil, errNotFound
+		}
+	}
+	return changed[0], nil
+}
+
+// execOwn runs a write naming id's record, built by build, and returns
+// how many rows it changed. When keyHasSpellings every row the write
+// reaches must be id's own, or it fails with errNotFound, which rolls it
+// back (inTx). Postgres reads them back: build gets the key columns for a
+// RETURNING clause, since a READ COMMITTED transaction sees rows other
+// writes commit between two statements. SQLite cannot return rows from a
+// virtual table (an FTS5 index), so there it reads the rows matching
+// selects first, under the write's own WHERE (owner, tenant, live or
+// trashed), which holds through the write: a SQLite transaction is
+// serializable.
+func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(cols ...string) (string, []any), build func(returning []string) (string, []any)) (int64, error) {
+	if !ch.keyHasSpellings() {
+		sqlStr, args := build(nil)
+		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
+	}
+	if isPostgres(ctx, ch.DB) {
+		sqlStr, args := build(ch.keyCols())
+		changed, err := ch.queryKeyed(ctx, ch.keyCols(), sqlStr, args)
+		if err != nil {
+			return 0, err
+		}
+		for _, row := range changed {
+			if !ch.ownRow(id, row, ch.keyCols()) {
+				return 0, errNotFound
+			}
+		}
+		return int64(len(changed)), nil
+	}
+	sel, selArgs := matching(ch.keyCols()...)
+	matched, err := ch.queryKeyed(ctx, ch.keyCols(), sel, selArgs)
+	if err != nil {
+		return 0, err
+	}
+	for _, row := range matched {
+		if !ch.ownRow(id, row, ch.keyCols()) {
+			return 0, errNotFound
+		}
+	}
+	sqlStr, args := build(nil)
+	res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// isPostgres reports whether q's database answers SELECT version() with a
+// PostgreSQL banner, query.IsPostgres over an executor: inside a
+// transaction the probe runs on it. SQLite has no version(), and a failed
+// statement leaves its transaction usable.
+func isPostgres(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) bool {
+	var v string
+	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(v), "postgresql")
+}
+
+// idVals splits a record id into its key values, one per key column,
+// through entity.KeyValues: an integer key column takes its value only
+// in canonical decimal and binds it as an integer, so no second spelling
+// reaches a record that a Decider, asked about the id string, knows by
+// the first.
+func (ch *CrudHandler) idVals(id string) ([]any, bool) {
+	var fields []schema.Field
+	if ch.Entity != nil {
+		fields = ch.Entity.GetFields()
+	}
+	vals, err := entity.KeyValues(id, ch.keyCols(), fields)
+	return vals, err == nil
 }
 
 // rowKeyVals reads the key values out of a row, under either the wire

@@ -47,7 +47,7 @@ func TestSavedViewDeleteForeignRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := postSavedViews(t, x, "u2", "/api/orders/_views/_delete/"+saved.ID, url.Values{"back": {"/orders"}})
+	w := postSavedViews(t, x, "u2", "/api/orders/_views/_delete?id="+saved.ID, url.Values{"back": {"/orders"}})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("SECURITY: u2 deleting u1's view answered %d, want 404", w.Code)
 	}

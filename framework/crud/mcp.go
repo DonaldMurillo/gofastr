@@ -5,13 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -70,19 +72,20 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		item        bool // the route judges one record: Ref{Type, ID}
 		write       bool // dev-implied entities mark their write tools
 	}
+	keyArgs := crud.toolKeyArgs()
 	defs := []toolDef{
 		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), opRead, true, false},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(keyArgs), crud.getTool(router), opRead, true, false},
 		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), opUpdate, true, true},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), opDelete, true, true},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, keyArgs), crud.updateTool(router), opUpdate, true, true},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(keyArgs), crud.deleteTool(router), opDelete, true, true},
 	}
 	// One tool per non-system move, named by its key (the boot check
 	// keeps keys off the names above and the other reserved ones),
 	// posting to the move's route.
 	// It is a write: the update permission gates it like update.
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
-		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(), crud.transitionTool(router, t.Key), opUpdate, true, true})
+		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true})
 	}
 	for _, def := range defs {
 		// Every tool carries the Access permission its route enforces
@@ -264,11 +267,11 @@ func toolParamString(v any) string {
 
 func (ch *CrudHandler) getTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
-		id, err := requireToolString(params, "id")
+		path, _, err := ch.toolRecordPath(params)
 		if err != nil {
 			return nil, err
 		}
-		return unwrapToolData(runToolRequest(ctx, router, http.MethodGet, ch.mcpBase()+"/"+url.PathEscape(id), nil))
+		return unwrapToolData(runToolRequest(ctx, router, http.MethodGet, path, nil))
 	}
 }
 
@@ -280,17 +283,17 @@ func (ch *CrudHandler) createTool(router http.Handler) mcp.ToolHandler {
 
 func (ch *CrudHandler) updateTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
-		id, err := requireToolString(params, "id")
+		path, args, err := ch.toolRecordPath(params)
 		if err != nil {
 			return nil, err
 		}
-		body := make(map[string]any, len(params)-1)
+		body := make(map[string]any, len(params))
 		for k, v := range params {
-			if k != "id" {
+			if _, isKey := args[k]; !isKey {
 				body[k] = v
 			}
 		}
-		return unwrapToolData(runToolRequest(ctx, router, http.MethodPatch, ch.mcpBase()+"/"+url.PathEscape(id), body))
+		return unwrapToolData(runToolRequest(ctx, router, http.MethodPatch, path, body))
 	}
 }
 
@@ -298,11 +301,11 @@ func (ch *CrudHandler) updateTool(router http.Handler) mcp.ToolHandler {
 // POST <base>/<id>/transitions/<key>.
 func (ch *CrudHandler) transitionTool(router http.Handler, key string) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
-		id, err := requireToolString(params, "id")
+		path, _, err := ch.toolRecordPath(params)
 		if err != nil {
 			return nil, err
 		}
-		path := ch.mcpBase() + "/" + url.PathEscape(id) + "/transitions/" + url.PathEscape(key)
+		path += "/transitions/" + url.PathEscape(key)
 		return unwrapToolData(runToolRequest(ctx, router, http.MethodPost, path, map[string]any{}))
 	}
 }
@@ -339,14 +342,18 @@ func unwrapToolData(result any, err error) (any, error) {
 
 func (ch *CrudHandler) deleteTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
-		id, err := requireToolString(params, "id")
+		path, args, err := ch.toolRecordPath(params)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := runToolRequest(ctx, router, http.MethodDelete, ch.mcpBase()+"/"+url.PathEscape(id), nil); err != nil {
+		if _, err := runToolRequest(ctx, router, http.MethodDelete, path, nil); err != nil {
 			return nil, err
 		}
-		return map[string]any{"deleted": true, "id": id}, nil
+		out := map[string]any{"deleted": true}
+		for k, v := range args {
+			out[k] = v
+		}
+		return out, nil
 	}
 }
 
@@ -436,13 +443,53 @@ func requireToolString(params map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-func idToolSchema() map[string]any {
+// toolKeyArgs names the tool arguments that name one record: "id" for a
+// one-column key, and for a composite one each key column under the name
+// the write tools give its field (mcpFieldKey).
+func (ch *CrudHandler) toolKeyArgs() []string {
+	cols := ch.keyCols()
+	if len(cols) <= 1 {
+		return []string{"id"}
+	}
+	args := slices.Clone(cols)
+	for i, c := range cols {
+		for _, f := range ch.Entity.GetFields() {
+			if f.Name == c {
+				args[i] = mcpFieldKey(f)
+			}
+		}
+	}
+	return args
+}
+
+// toolRecordPath reads the record a tool call names and returns its route,
+// one path-escaped segment per key argument, and the key arguments it read.
+func (ch *CrudHandler) toolRecordPath(params map[string]any) (string, map[string]string, error) {
+	keys := ch.toolKeyArgs()
+	args := make(map[string]string, len(keys))
+	path := ch.mcpBase()
+	for _, k := range keys {
+		v, err := requireToolString(params, k)
+		if err != nil {
+			return "", nil, err
+		}
+		args[k] = v
+		path += "/" + url.PathEscape(v)
+	}
+	return path, args, nil
+}
+
+// idToolSchema is the input of a tool that takes nothing but the record's
+// key arguments (toolKeyArgs).
+func idToolSchema(args []string) map[string]any {
+	props := make(map[string]any, len(args))
+	for _, a := range args {
+		props[a] = map[string]any{"type": "string"}
+	}
 	return map[string]any{
-		"type":     "object",
-		"required": []string{"id"},
-		"properties": map[string]any{
-			"id": map[string]any{"type": "string"},
-		},
+		"type":       "object",
+		"required":   slices.Clone(args),
+		"properties": props,
 	}
 }
 
@@ -519,11 +566,13 @@ func writeToolSchema(ent *entity.Entity) map[string]any {
 	return bodyToolSchema(ent, false)
 }
 
-func updateToolSchema(ent *entity.Entity) map[string]any {
+func updateToolSchema(ent *entity.Entity, args []string) map[string]any {
 	out := bodyToolSchema(ent, true)
 	props := out["properties"].(map[string]any)
-	props["id"] = map[string]any{"type": "string"}
-	out["required"] = []string{"id"}
+	for _, a := range args {
+		props[a] = map[string]any{"type": "string"}
+	}
+	out["required"] = slices.Clone(args)
 	return out
 }
 

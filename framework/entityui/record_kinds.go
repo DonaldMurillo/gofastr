@@ -95,7 +95,7 @@ func bound(b *float64) string {
 // title for a relation, a formatted date or number otherwise. The row
 // is the hooked read: whatever a redaction shows is what shows here.
 func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[string]any) render.HTML {
-	v := rowValue(row, f.Name)
+	v := fb.m.rowValue(row, f.Name)
 	switch f.Type {
 	case schema.Enum:
 		if s := cell(v); s != "" {

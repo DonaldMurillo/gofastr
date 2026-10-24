@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"strings"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -121,9 +120,13 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 			if len(out) >= paletteCap {
 				return out
 			}
+			href := b.recordHref(e, m.ID)
+			if href == "" {
+				continue
+			}
 			out = append(out, ui.PaletteCommand{
 				Label: m.Title,
-				Href:  b.entityBase(e) + "/" + url.PathEscape(m.ID),
+				Href:  href,
 				Meta:  b.singular(ctx, e),
 			})
 		}

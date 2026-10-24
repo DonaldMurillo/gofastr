@@ -530,7 +530,10 @@ another raw table) and needs a one-column key there. Mark several columns
 `PrimaryKey: true` for a composite key; the key takes them in column order.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
-on entity fields too.
+on entity fields too. A raw table has no CRUD routes, and the admin's
+`AllEntities` leaves it out; naming one in the admin's `Config.Entities`
+fails boot unless its key could key an entity (see
+[Composite primary keys](entity-declarations.md)).
 
 ## Stored routines (functions, procedures, triggers, views)
 
@@ -782,6 +785,10 @@ app.View(migrate.View{
   three, labelled `read-only`. The query layer is not one of them: it is
   a Go surface, not an HTTP route, so it never appears in either count.
   Without `Columns`, the view is migration-only. Query it with raw SQL.
+  The key columns follow an entity's rule: `App.View` panics on a float,
+  decimal, bool, date, timestamp or JSON key, or one with a `RawType`
+  other than an integer type, since `GET /active_users/{id}` would match
+  one row under several ids.
 - The view's ORM entity is `Unmanaged`: the migration system emits no
   table DDL for it (the view DDL handles its existence). `Unmanaged` is a
   general `EntityConfig` flag. Use it for any externally-created table

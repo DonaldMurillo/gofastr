@@ -286,7 +286,9 @@ func (s *listState) readFields() []string {
 		seen[name] = true
 		out = append(out, name)
 	}
-	add(s.m.pk)
+	for _, k := range s.m.keys {
+		add(k)
+	}
 	for _, c := range s.columns {
 		add(c)
 	}

@@ -98,8 +98,9 @@ func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
 // (access.WithDecider): the decider is asked about access.Ref{Type, ID}, so it
 // can allow the listing and deny an individual row, "member may read project
 // 42" is the whole point of that seam. The HTTP read-one route already passes
-// r.PathValue("id") into the check; a screen rendering the same record with the
-// collection-level predicate would show a row the API refuses by id.
+// the record id from its path into the check; a screen rendering the same
+// record with the collection-level predicate would show a row the API
+// refuses by id.
 //
 // Pass the record id for a detail or edit view. With no decider installed this
 // answers exactly what CanReadScoped answers.
@@ -463,7 +464,7 @@ func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op c
 	if !ch.requireAuthenticated(w, r, op) {
 		return false
 	}
-	return ch.requirePermission(w, r, op, r.PathValue("id"))
+	return ch.requirePermission(w, r, op, ch.pathID(r))
 }
 
 // RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.

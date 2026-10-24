@@ -9,7 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // RecordBuilder draws one record: header, move buttons, tabs (Edit,
@@ -112,7 +111,7 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 	var found []map[string]any
 	for page := range searchPages {
 		rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
-			Search: q, Limit: limit, Offset: page * limit, Sorts: []filter.ParsedSort{{Field: m.pk}},
+			Search: q, Limit: limit, Offset: page * limit, Sorts: m.keySorts(),
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "entityui: search records", "entity", entityName, "error", err)
@@ -121,7 +120,7 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 		for _, row := range rows {
 			// A Decider may allow the list and refuse one row: a match
 			// names only a record whose own screen would open.
-			id := cell(rowValue(row, m.pk))
+			id := m.rowID(row)
 			if id == "" || !canReadRecord(ctx, m.ch, id) {
 				continue
 			}

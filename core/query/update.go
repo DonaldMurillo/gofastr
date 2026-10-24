@@ -47,6 +47,25 @@ func (ub *UpdateBuilder) Returning(cols ...string) *UpdateBuilder {
 }
 
 // Build produces the final parameterized SQL and argument slice. The
+// Matching builds the SELECT of cols from the rows this UPDATE would
+// change: the same table and WHERE conditions, with only their arguments.
+func (ub *UpdateBuilder) Matching(cols ...string) (string, []any) {
+	var args []any
+	for _, w := range ub.wheres {
+		args = append(args, w.args...)
+	}
+	return buildFiltered(selectVerb(cols), ub.table, ub.wheres, args)
+}
+
+// selectVerb is "SELECT a, b FROM ", each column sanitized.
+func selectVerb(cols []string) string {
+	safe := make([]string, len(cols))
+	for i, c := range cols {
+		safe[i] = sanitizeColumn(c)
+	}
+	return "SELECT " + strings.Join(safe, ", ") + " FROM "
+}
+
 // args follow the placeholders, every SET value before every WHERE arg,
 // whatever order Set and Where were called in.
 func (ub *UpdateBuilder) Build() (string, []any) {

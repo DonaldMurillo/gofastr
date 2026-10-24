@@ -108,8 +108,12 @@ its own routes:
 | `GET /admin/api/<name>/_export.csv` | CSV export |
 | `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
 | `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
-| `POST /admin/api/<name>/_views/_delete/{id}` | Delete a saved view |
+| `POST /admin/api/<name>/_views/_delete?id=<id>` | Delete a saved view |
 | `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too) |
+
+For an entity with a composite `PrimaryKey`, `{id}` above is one path
+segment per key column (`/admin/api/enrollments/{student_id}/{course_id}`),
+and the record screen is `/admin/entities/<name>/<v1>/<v2>`.
 
 Every write goes through the app's own CRUD handler, so validation,
 hooks, events, `WithAuditLog` rows, tenant and `OwnerField` scope, and
