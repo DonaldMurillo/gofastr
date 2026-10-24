@@ -227,3 +227,12 @@ func TestThemePickerOnAccountPage(t *testing.T) {
 		t.Errorf("a theme picker drew with no Themes")
 	}
 }
+
+// The host's boot check builds the chrome with no one signed in. The
+// account menu then has no one to name, and draws nothing rather than
+// an avatar with no name, which panics and drops the whole layout.
+func TestAccountMenuWithNoUser(t *testing.T) {
+	if got := New(Config{}).accountMenu(context.Background()); got != "" {
+		t.Errorf("account menu with no user = %q, want nothing", got)
+	}
+}

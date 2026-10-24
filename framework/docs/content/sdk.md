@@ -83,6 +83,14 @@ created, err := c.CreateCustomersWithFiles(ctx, client.CustomersInput{Name: "Acm
 // created.Logo is the stored file's key.
 ```
 
+A composite-key entity's record methods take one argument per key
+column, in key order, and path-escape each into its own segment:
+`GetEnrollments(ctx, studentId, courseId)`, and likewise `Update`,
+`Patch`, `Delete` and each move. A `BatchUpdate` item carries the key
+columns as fields (`EnrollmentsBatchPatch{StudentId: s, CourseId: c,
+Grade: new("A")}`), and `BatchDelete` takes ids spelled by
+`EnrollmentsID(studentId, courseId)`.
+
 ### The JS/TS SDK
 
 Two plain files, no npm packaging, no build step; publishing to a
@@ -126,6 +134,20 @@ upload one row at a time.
 const logo = document.querySelector("input[type=file]").files[0];
 const created = await api.customers.create({ name: "Acme", logo });
 ```
+
+A composite-key entity names a record by an array of its key values in
+key order, which `client.d.ts` types as a readonly tuple:
+
+```js
+await api.enrollments.get([studentId, courseId]);
+await api.enrollments.patch([studentId, courseId], { grade: "B" });
+await api.enrollments.batchUpdate([{ studentId, courseId, grade: "C" }]);
+await api.enrollments.batchDelete([[studentId, courseId]]);
+```
+
+Each value goes into its own path segment, escaped the way the server's
+`entity.JoinKey` escapes it, so the id the request names is the one the
+server stores.
 
 ## The casing contract both SDKs encode
 

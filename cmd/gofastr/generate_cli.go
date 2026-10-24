@@ -157,9 +157,10 @@ type cliTransition struct {
 // future SDK generator (issue #86) should consume rather than re-deriving
 // from raw declarations.
 type cliEntity struct {
-	Struct      string // Go type name in the client package (Posts)
-	Command     string // CLI command word (kebab of the table)
-	Table       string // route path segment
+	Struct      string   // Go type name in the client package (Posts)
+	Command     string   // CLI command word (kebab of the table)
+	Table       string   // route path segment
+	Keys        []string // key columns in order: one positional argument each
 	Verbs       []string
 	Fields      []cliField
 	Uploads     []cliField      // Image and File fields: a file flag each on create/update/patch
@@ -723,6 +724,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		Struct:     toCamelCase(decl.Name),
 		Command:    strings.ReplaceAll(strings.ToLower(table), "_", "-"),
 		Table:      table,
+		Keys:       keyColumnNames(decl),
 		Verbs:      verbs,
 		Search:     len(decl.SearchFields) > 0,
 		SoftDelete: entityDeclarationScope(decl).SoftDelete,
@@ -732,8 +734,9 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 	// the flag table and may start at an initial value.
 	stamps, _ := statesWriteDrops(decl.States)
 	uploads := uploadFields(decl)
+	keyIsID := declKeyIsID(decl)
 	for _, fd := range decl.Fields {
-		if fd.Name == "id" || fd.Hidden {
+		if (keyIsID && fd.Name == "id") || fd.Hidden {
 			continue
 		}
 		typ := strings.ToLower(fd.Type)
@@ -1355,6 +1358,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -1478,13 +1482,33 @@ func apiFail(err error) int {
 	return 1
 }
 
-// takeID pops the leading positional argument: <verb> <id> [flags].
-func takeID(verb string, args []string) (string, []string, bool) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fmt.Fprintf(os.Stderr, "usage: %s %s <id> [flags]\n", binaryName, verb)
-		return "", nil, false
+// takeKey pops the record's key: one leading positional argument per key
+// column, <verb> <id> [flags] or <verb> <a> <b> [flags]. It returns the
+// record's path tail, one escaped segment per value, and the id the
+// server knows the record by: the value itself for a one-column key, the
+// path tail for a longer one.
+func takeKey(verb string, keys, args []string) (tail, id string, rest []string, ok bool) {
+	short := len(args) < len(keys)
+	for i := 0; !short && i < len(keys); i++ {
+		short = strings.HasPrefix(args[i], "-")
 	}
-	return args[0], args[1:], true
+	if short {
+		names := make([]string, len(keys))
+		for i, k := range keys {
+			names[i] = "<" + k + ">"
+		}
+		fmt.Fprintf(os.Stderr, "usage: %s %s %s [flags]\n", binaryName, verb, strings.Join(names, " "))
+		return "", "", nil, false
+	}
+	segs := make([]string, len(keys))
+	for i := range keys {
+		segs[i] = url.PathEscape(args[i])
+	}
+	tail = strings.Join(segs, "/")
+	if id = tail; len(keys) == 1 {
+		id = args[0]
+	}
+	return tail, id, args[len(keys):], true
 }
 
 // readJSONArg resolves a --json value: "-" reads stdin, "@path" reads a
@@ -1682,16 +1706,23 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	fmt.Fprintf(&sb, "func %sCommands() []command {\n\treturn []command{\n", lowerFirst(ent.Struct))
 	fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: func(args []string) int { return groupUsage(%q, args) }},\n",
 		ent.Command, "manage "+ent.Table+" (run for subcommands)", ent.Command)
+	keyWords, batchIDNote := "id", ""
+	if len(ent.Keys) > 1 || ent.Keys[0] != "id" {
+		keyWords = "key (" + strings.Join(ent.Keys, ", ") + ")"
+	}
+	if len(ent.Keys) > 1 {
+		batchIDNote = ", each " + strings.Join(ent.Keys, "/") + " path-escaped"
+	}
 	summaries := map[string]string{
 		"list":         "list " + ent.Table + " (filters, sort, pagination)",
-		"get":          "fetch one record by id",
+		"get":          "fetch one record by " + keyWords,
 		"create":       "create a record from field flags or --json",
 		"update":       "update fields on a record (PUT)",
 		"patch":        "patch fields on a record (PATCH)",
-		"delete":       "delete a record by id",
+		"delete":       "delete a record by " + keyWords,
 		"batch-create": "create up to 100 records atomically (--json array)",
 		"batch-update": "patch up to 100 records atomically (--json array)",
-		"batch-delete": "delete ids atomically (positional ids)",
+		"batch-delete": "delete ids atomically (positional ids" + batchIDNote + ")",
 		"watch":        "stream live create/update/delete events (SSE)",
 	}
 	for _, verb := range cliVerbs {
@@ -1714,33 +1745,44 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		fmt.Fprintf(&sb, "// Verb wrappers: each binds this entity's command names and pre-escaped\n// base path %q to the shared verb bodies in verbs.go.\n\n", base)
 	}
 
+	// The key columns are literals, like every other declaration-derived
+	// string here.
+	keys := "[]string{" + quoteList(ent.Keys) + "}"
 	if has("list") {
 		renderCLIListTables(&sb, ent)
 		fmt.Fprintf(&sb, "func run%sList(args []string) int {\n\treturn runListVerb(%q, %q, %sListFilters, %sListHeaders, %sListKeys, args)\n}\n\n",
 			ent.Struct, ent.Command+" list", base, lowerFirst(ent.Struct), lowerFirst(ent.Struct), lowerFirst(ent.Struct))
 	}
 	if has("get") {
-		fmt.Fprintf(&sb, "func run%sGet(args []string) int {\n\treturn runGetVerb(%q, %q, args)\n}\n\n",
-			ent.Struct, ent.Command+" get", base)
+		fmt.Fprintf(&sb, "func run%sGet(args []string) int {\n\treturn runGetVerb(%q, %q, %s, args)\n}\n\n",
+			ent.Struct, ent.Command+" get", base, keys)
 	}
+	changeFields := lowerFirst(ent.Struct) + "MutationFields"
 	if hasMutation {
-		renderCLIMutationFields(&sb, ent)
+		renderCLIMutationFields(&sb, ent, false)
+		// A declared key's columns are fields, set on create. The path
+		// names the record on update and patch, and the server never
+		// writes a key column there, so those verbs offer no flag for one.
+		if (has("update") || has("patch")) && slices.ContainsFunc(ent.Fields, func(f cliField) bool { return slices.Contains(ent.Keys, f.Snake) }) {
+			renderCLIMutationFields(&sb, ent, true)
+			changeFields = lowerFirst(ent.Struct) + "ChangeFields"
+		}
 	}
 	if has("create") {
 		fmt.Fprintf(&sb, "func run%sCreate(args []string) int {\n\treturn runCreateVerb(%q, %q, %sMutationFields, args)\n}\n\n",
 			ent.Struct, ent.Command+" create", base, lowerFirst(ent.Struct))
 	}
 	if has("update") {
-		fmt.Fprintf(&sb, "func run%sUpdate(args []string) int {\n\treturn runUpdateVerb(%q, %q, %sMutationFields, args)\n}\n\n",
-			ent.Struct, ent.Command+" update", base, lowerFirst(ent.Struct))
+		fmt.Fprintf(&sb, "func run%sUpdate(args []string) int {\n\treturn runUpdateVerb(%q, %q, %s, %s, args)\n}\n\n",
+			ent.Struct, ent.Command+" update", base, keys, changeFields)
 	}
 	if has("patch") {
-		fmt.Fprintf(&sb, "func run%sPatch(args []string) int {\n\treturn runPatchVerb(%q, %q, %sMutationFields, args)\n}\n\n",
-			ent.Struct, ent.Command+" patch", base, lowerFirst(ent.Struct))
+		fmt.Fprintf(&sb, "func run%sPatch(args []string) int {\n\treturn runPatchVerb(%q, %q, %s, %s, args)\n}\n\n",
+			ent.Struct, ent.Command+" patch", base, keys, changeFields)
 	}
 	if has("delete") {
-		fmt.Fprintf(&sb, "func run%sDelete(args []string) int {\n\treturn runDeleteVerb(%q, %q, args)\n}\n\n",
-			ent.Struct, ent.Command+" delete", base)
+		fmt.Fprintf(&sb, "func run%sDelete(args []string) int {\n\treturn runDeleteVerb(%q, %q, %s, args)\n}\n\n",
+			ent.Struct, ent.Command+" delete", base, keys)
 	}
 	if has("batch-create") {
 		fmt.Fprintf(&sb, "func run%sBatchCreate(args []string) int {\n\treturn runBatchJSONVerb(%q, %q, http.MethodPost, args)\n}\n\n",
@@ -1759,8 +1801,8 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 			ent.Struct, ent.Command+" watch", ent.Struct)
 	}
 	for _, tr := range ent.Transitions {
-		fmt.Fprintf(&sb, "func run%s%s(args []string) int {\n\treturn runTransitionVerb(%q, %q, %q, args)\n}\n\n",
-			ent.Struct, toCamelCase(tr.Key), ent.Command+" "+tr.Key, base, tr.Key)
+		fmt.Fprintf(&sb, "func run%s%s(args []string) int {\n\treturn runTransitionVerb(%q, %q, %q, %s, args)\n}\n\n",
+			ent.Struct, toCamelCase(tr.Key), ent.Command+" "+tr.Key, base, tr.Key, keys)
 	}
 	for _, ep := range ent.Endpoints {
 		renderCLIEndpoint(&sb, ent, ep, base)
@@ -1844,8 +1886,10 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		}
 	}
 	sb.WriteString("}\n\n")
-	headers := []string{"id"}
-	keys := []string{"id"}
+	var headers, keys []string
+	if slices.Equal(ent.Keys, []string{"id"}) {
+		headers, keys = []string{"id"}, []string{"id"}
+	}
 	for _, f := range ent.Fields {
 		headers = append(headers, f.Snake)
 		keys = append(keys, f.Wire)
@@ -1859,16 +1903,22 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 // each binding the CLI flag to the JSON wire key it sets. The mechanics
 // live once in verbs.go (runMutationVerb); this is the part that
 // genuinely varies. Field names are string literals here, never
-// identifiers.
-func renderCLIMutationFields(sb *strings.Builder, ent cliEntity) {
+// identifiers. With change set, it emits <entity>ChangeFields instead:
+// the table less the key columns, behind update and patch.
+func renderCLIMutationFields(sb *strings.Builder, ent cliEntity, change bool) {
 	p := lowerFirst(ent.Struct)
-	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, goCommentSafe(ent.Command))
-	if len(ent.Uploads) > 0 {
-		sb.WriteString("// A file flag sends the write as multipart, where every part goes by its\n// column.\n")
+	if change {
+		fmt.Fprintf(sb, "// %sChangeFields is %sMutationFields less the key columns, behind\n// `%s update/patch`: the path names the record.\n", p, p, goCommentSafe(ent.Command))
+		fmt.Fprintf(sb, "var %sChangeFields = []mutationField{\n", p)
+	} else {
+		fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, goCommentSafe(ent.Command))
+		if len(ent.Uploads) > 0 {
+			sb.WriteString("// A file flag sends the write as multipart, where every part goes by its\n// column.\n")
+		}
+		fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	}
-	fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	for _, f := range ent.Fields {
-		if f.ReadOnly {
+		if f.ReadOnly || (change && slices.Contains(ent.Keys, f.Snake)) {
 			continue
 		}
 		help := f.Snake + " (" + f.Type + ")"
@@ -2085,7 +2135,7 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list || get || del || batchDel || mutation || transition {
 		imports = append(imports, "\t\"net/http\"")
 	}
-	if list || get || del || mutation || transition || endpoint {
+	if list || transition || endpoint {
 		imports = append(imports, "\t\"net/url\"")
 	}
 	if batchDel || endpoint || uploads {
@@ -2188,10 +2238,10 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 `)
 	}
 	if get {
-		sb.WriteString(`// runGetVerb is the shared get body: take the positional id, GET
-// base/{id}, print the record.
-func runGetVerb(cmd, base string, args []string) int {
-	id, rest, ok := takeID(cmd, args)
+		sb.WriteString(`// runGetVerb is the shared get body: take the positional key, GET
+// base/{key}, print the record.
+func runGetVerb(cmd, base string, keys, args []string) int {
+	tail, _, rest, ok := takeKey(cmd, keys, args)
 	if !ok {
 		return 2
 	}
@@ -2201,7 +2251,7 @@ func runGetVerb(cmd, base string, args []string) int {
 		return code
 	}
 	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, base+"/"+url.PathEscape(id), nil, &out); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodGet, base+"/"+tail, nil, &out); err != nil {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
@@ -2287,32 +2337,32 @@ func fieldFlags(fs *flag.FlagSet, fields []mutationField) func(name string, body
 	if mutation {
 		sb.WriteString(`// runCreateVerb is the shared create body over the entity's field table.
 func runCreateVerb(cmd, base string, fields []mutationField, args []string) int {
-	return runMutationVerb(cmd, http.MethodPost, false, base, fields, args)
+	return runMutationVerb(cmd, http.MethodPost, nil, base, fields, args)
 }
 
 // runUpdateVerb is the shared update body over the entity's field table.
-func runUpdateVerb(cmd, base string, fields []mutationField, args []string) int {
-	return runMutationVerb(cmd, http.MethodPut, true, base, fields, args)
+func runUpdateVerb(cmd, base string, keys []string, fields []mutationField, args []string) int {
+	return runMutationVerb(cmd, http.MethodPut, keys, base, fields, args)
 }
 
 // runPatchVerb is the shared patch body over the entity's field table.
-func runPatchVerb(cmd, base string, fields []mutationField, args []string) int {
-	return runMutationVerb(cmd, http.MethodPatch, true, base, fields, args)
+func runPatchVerb(cmd, base string, keys []string, fields []mutationField, args []string) int {
+	return runMutationVerb(cmd, http.MethodPatch, keys, base, fields, args)
 }
 
 // runMutationVerb is the shared create/update/patch body: per-field flags
 // from the entity's field table OR --json, sent as a presence-faithful map
-// so explicit zero values survive. withID selects the item form:
-// update/patch pop the positional id first and address base/{id}; create
-// posts the collection itself.
-func runMutationVerb(cmd, method string, withID bool, base string, fields []mutationField, args []string) int {
-	id := ""
-	if withID {
-		var rest []string
-		var ok bool
-		if id, rest, ok = takeID(cmd, args); !ok {
+// so explicit zero values survive. keys selects the item form:
+// update/patch pop the positional key first and address base/{key};
+// create passes none and posts the collection itself.
+func runMutationVerb(cmd, method string, keys []string, base string, fields []mutationField, args []string) int {
+	path := base
+	if keys != nil {
+		tail, _, rest, ok := takeKey(cmd, keys, args)
+		if !ok {
 			return 2
 		}
+		path += "/" + tail
 		args = rest
 	}
 	fs := newFlagSet(cmd)
@@ -2326,10 +2376,6 @@ func runMutationVerb(cmd, method string, withID bool, base string, fields []muta
 	if code != 0 {
 		return code
 	}
-	path := base
-	if withID {
-		path += "/" + url.PathEscape(id)
-	}
 	var out singleResponse
 ` + mutationSend(uploads) + `	return printJSON(out.Data)
 }
@@ -2340,10 +2386,10 @@ func runMutationVerb(cmd, method string, withID bool, base string, fields []muta
 		}
 	}
 	if del {
-		sb.WriteString(`// runDeleteVerb is the shared delete body: take the positional id,
-// DELETE base/{id}, confirm on stdout.
-func runDeleteVerb(cmd, base string, args []string) int {
-	id, rest, ok := takeID(cmd, args)
+		sb.WriteString(`// runDeleteVerb is the shared delete body: take the positional key,
+// DELETE base/{key}, confirm on stdout.
+func runDeleteVerb(cmd, base string, keys, args []string) int {
+	tail, id, rest, ok := takeKey(cmd, keys, args)
 	if !ok {
 		return 2
 	}
@@ -2352,7 +2398,7 @@ func runDeleteVerb(cmd, base string, args []string) int {
 	if g == nil {
 		return code
 	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, base+"/"+url.PathEscape(id), nil, nil); err != nil {
+	if err := g.client.Do(g.ctx, http.MethodDelete, base+"/"+tail, nil, nil); err != nil {
 		return apiFail(err)
 	}
 	fmt.Printf("deleted %s\n", id)
@@ -2362,12 +2408,12 @@ func runDeleteVerb(cmd, base string, args []string) int {
 `)
 	}
 	if transition {
-		sb.WriteString(`// runTransitionVerb is the shared move body: take the positional id,
-// POST base/{id}/transitions/{key}, print the moved record. The route
+		sb.WriteString(`// runTransitionVerb is the shared move body: take the positional key,
+// POST base/{key}/transitions/{move}, print the moved record. The route
 // takes no payload but requires the JSON content type (its cross-site
 // gate), so the request carries an empty JSON body.
-func runTransitionVerb(cmd, base, key string, args []string) int {
-	id, rest, ok := takeID(cmd, args)
+func runTransitionVerb(cmd, base, key string, keys, args []string) int {
+	tail, _, rest, ok := takeKey(cmd, keys, args)
 	if !ok {
 		return 2
 	}
@@ -2377,7 +2423,7 @@ func runTransitionVerb(cmd, base, key string, args []string) int {
 		return code
 	}
 	var out singleResponse
-	path := base + "/" + url.PathEscape(id) + "/transitions/" + url.PathEscape(key)
+	path := base + "/" + tail + "/transitions/" + url.PathEscape(key)
 	if err := g.client.Do(g.ctx, http.MethodPost, path, map[string]any{}, &out); err != nil {
 		return apiFail(err)
 	}

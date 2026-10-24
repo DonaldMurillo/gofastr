@@ -699,25 +699,31 @@ func (c EntityConfig) keyColumns() []string {
 	return c.PrimaryKey
 }
 
-// checkKeyColumns refuses a primary key that names no column, repeats a
-// column, or names one Fields does not declare.
+// checkKeyColumns panics on keyColumnsErr.
 func (c EntityConfig) checkKeyColumns() {
+	if err := c.keyColumnsErr(); err != nil {
+		panic(err.Error())
+	}
+}
+
+// keyColumnsErr refuses a primary key that names no column, repeats a
+// column, names one Fields does not declare, or cannot name a record
+// (checkRecordKey).
+func (c EntityConfig) keyColumnsErr() error {
 	if c.PrimaryKey != nil && len(c.PrimaryKey) == 0 {
-		panic(fmt.Sprintf("entity %q: PrimaryKey names no column; leave it nil for \"id\"", c.Name))
+		return fmt.Errorf("entity %q: PrimaryKey names no column; leave it nil for \"id\"", c.Name)
 	}
 	seen := make(map[string]bool, len(c.PrimaryKey))
 	for _, col := range c.keyColumns() {
 		if seen[col] {
-			panic(fmt.Sprintf("entity %q: primary key names %q twice", c.Name, col))
+			return fmt.Errorf("entity %q: primary key names %q twice", c.Name, col)
 		}
 		seen[col] = true
 		if !slices.ContainsFunc(c.Fields, func(f schema.Field) bool { return f.Name == col }) {
-			panic(fmt.Sprintf("entity %q: primary key column %q is not a declared field", c.Name, col))
+			return fmt.Errorf("entity %q: primary key column %q is not a declared field", c.Name, col)
 		}
 	}
-	if err := c.checkRecordKey(); err != nil {
-		panic(err.Error())
-	}
+	return c.checkRecordKey()
 }
 
 // CheckRecordKey reports whether the entity's key can name its records
@@ -782,15 +788,23 @@ func keyable(f schema.Field) bool {
 // tenant keeps a generated id and enforces (tenant_id, code) with a
 // unique index instead.
 func (c EntityConfig) checkKeyServed() {
+	if err := c.keyServedErr(); err != nil {
+		panic(err.Error())
+	}
+}
+
+// keyServedErr is checkKeyServed's refusal as an error.
+func (c EntityConfig) keyServedErr() error {
 	keys := c.keyColumns()
 	if len(keys) < 2 {
-		return
+		return nil
 	}
 	for _, f := range c.Fields {
 		if (f.Hidden || f.NoQuery) && slices.Contains(keys, f.Name) {
-			panic(fmt.Sprintf("entity %q: composite key column %q is Hidden or NoQuery, so the API cannot name its records; key on columns the API returns and filters, and enforce other uniqueness with a unique index", c.Name, f.Name))
+			return fmt.Errorf("entity %q: composite key column %q is Hidden or NoQuery, so the API cannot name its records; key on columns the API returns and filters, and enforce other uniqueness with a unique index", c.Name, f.Name)
 		}
 	}
+	return nil
 }
 
 func (c EntityConfig) normalizeSubConfigs() EntityConfig {

@@ -290,6 +290,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   escaped path, so `/a%2Fb` and `/a/b` stay two pages.
   New: `app.RoutePath` and `app.EscapeRoutePath`. See
   `gofastr docs entity-declarations` → "Composite keys over HTTP and MCP".
+- **Composite keys in the generators.** An app spec entity takes
+  `primary_key: [student_id, course_id]`, and `gofastr pack` writes it
+  back. A record screen's `{id}` mounts as one segment per key column
+  (`/enrollments/:student_id/:course_id`), and the generated
+  `e2e_test.go` addresses the record by every key column. The typed
+  repository's `Get`, `Update`, `Delete`, `Exists` and `Transition`, the
+  Go client's record methods and moves, and the CLI's record verbs take
+  one argument per key column; the JS SDK takes an array of the values
+  (`api.enrollments.get([s, c])`), typed as a tuple in `client.d.ts`.
+  Each escapes a value into its own path segment the way
+  `entity.JoinKey` does, and `<Entity>ID(a, b)` spells the id that
+  batch deletes and lifecycle subscriptions use. `gofastr generate cli
+  --from-openapi` reads such an app's document: a body property named
+  exactly like a path parameter, as the key columns are in the PUT body,
+  takes no flag of its own. `seed.count` rows never repeat a key, and
+  the generator refuses a count an enum-only key cannot cover. New:
+  `framework.JoinKey` and `framework.RowKey`. An entity keyed on `id`
+  keeps every generated signature. See `gofastr docs app-spec` →
+  "Composite keys (`primary_key`)".
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only
@@ -479,6 +498,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **App spec edit forms load their record.** An `entity_form` with
+  `mode: edit` PUT to a literal `{id}`, drew its fields empty, and could
+  not submit while a required field stayed blank. It renders the record
+  page now (`appUI.Record`, with `fields:` as `.Omit` of the rest), which
+  loads the record, keeps the key read-only and saves it. A record screen
+  whose route continues past `{id}` (`/posts/{id}/edit`) passes the
+  route up to `{id}` as the page's base, so Save lands on `/posts/<id>`
+  instead of `/posts/<id>/<id>`.
+- **`auto_generate: none` is no generation in an app spec.** The
+  generated form left the field out and seed rows skipped it, as if the
+  server filled it. Both read `none` the way the entity does now. Seed
+  rows also fill a field with no `type`, which is a string; a required
+  one left out aborted startup.
+- **The admin layout renders with no signed-in user.** Its account menu
+  panicked with "Avatar requires Name" when uihost's strict boot check
+  drew the layout with no one signed in; the menu is left out instead.
+- **Lists and records mounted at the root render.** entityui joined its
+  links as `base + "/" + id`, so a list or record whose base is `/`
+  built `//create` and `//42`, which the link guards refuse, and the
+  section drew "Couldn't load this section". Links join with one slash
+  now.
 - **entityui reads a field by its `WireName`.** crud returns a field
   that sets `WireName` under that name, and entityui looked it up by the
   field's `Name`, so lists, record screens, titles and exports drew it

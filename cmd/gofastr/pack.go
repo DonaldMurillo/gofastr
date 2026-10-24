@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -231,6 +232,7 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", e.Name)
 	putStr(m, "table", e.Table)
+	putStrs(m, "primary_key", e.PrimaryKey)
 	if e.Scope != nil {
 		scope := map[string]any{}
 		putBool(scope, "soft_delete", e.Scope.SoftDelete)
@@ -992,7 +994,7 @@ var (
 	// TestPackSerializerCoversEveryAppSpecField catches.
 	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
 	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "locale_prefixes"}
-	entityOrder    = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
+	entityOrder    = []string{"name", "table", "primary_key", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
 	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
@@ -1587,6 +1589,9 @@ func packEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 	cfg := fieldVals(call.Args[1])
 	if v, ok := cfg["Table"]; ok {
 		decl.Table = astString(v)
+	}
+	if v, ok := cfg["PrimaryKey"]; ok {
+		decl.PrimaryKey = astStringSlice(v)
 	}
 	// An all-zero group normalizes to nil: a hand-written (or legacy
 	// generator's) empty `Scope: &framework.ScopeConfig{}` literal must
@@ -3338,7 +3343,8 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (AppSpecBlock, boo
 		return AppSpecBlock{}, false
 	}
 	b := AppSpecBlock{}
-	noCreate := false
+	noCreate, deletes := false, false
+	var omit []string
 	node := ast.Expr(call)
 	hops := 0
 	for {
@@ -3368,7 +3374,15 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (AppSpecBlock, boo
 				b.Kind = "entity_list"
 				b.Create = !noCreate
 			case "Record":
+				// A detail offers Delete; an edit form is the record page
+				// without it, its fields allowlist spelled as Omit.
 				b.Kind = "entity_detail"
+				if !deletes {
+					b.Kind, b.Mode = "entity_form", "edit"
+					if len(omit) > 0 {
+						b.Props = map[string]any{packOmitProp: omit}
+					}
+				}
 			case "Create":
 				// synthesized create screen: marked so pack can drop it.
 				b.Kind = "entity_create"
@@ -3408,7 +3422,13 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (AppSpecBlock, boo
 			if len(c.Args) == 1 {
 				b.EmptyText = astString(c.Args[0])
 			}
-		case "Key", "Base", "Delete", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
+		case "Delete":
+			deletes = true
+		case "Omit":
+			for _, a := range c.Args {
+				omit = append(omit, astString(a))
+			}
+		case "Key", "Base", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
 			// structural: no app spec key (RenderCtx turns the builder
 			// into the HTML the screen's stack takes; Actions, Related and
 			// RelatedAt are app-side extensions pack does not declare)
@@ -3730,6 +3750,8 @@ func packAppSpec(dir string) (AppSpec, error) {
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}
+	packResolveOmits(bp)
+	packFoldRecordKeys(bp)
 	if bp.Nav, err = packReadNav(dir); err != nil {
 		return bp, err
 	}
@@ -3744,6 +3766,57 @@ func packAppSpec(dir string) (AppSpec, error) {
 		return bp, err
 	}
 	return bp, nil
+}
+
+// packOmitProp carries an edit form's omitted fields from the screen
+// reader to packResolveOmits, which knows the entity's fields.
+const packOmitProp = "\x00omit"
+
+// packResolveOmits turns each edit form's omitted fields back into the
+// fields allowlist the app spec wrote: the entity's fields it did not omit.
+func packResolveOmits(bp AppSpec) {
+	fieldsOf := map[string][]framework.FieldDeclaration{}
+	for _, d := range bp.Entities {
+		fieldsOf[d.Name] = d.Fields
+	}
+	var walk func([]AppSpecBlock)
+	walk = func(blocks []AppSpecBlock) {
+		for i := range blocks {
+			b := &blocks[i]
+			if omit, ok := b.Props[packOmitProp].([]string); ok {
+				delete(b.Props, packOmitProp)
+				if len(b.Props) == 0 {
+					b.Props = nil
+				}
+				for _, f := range fieldsOf[b.Entity] {
+					if !slices.Contains(omit, f.Name) {
+						b.Fields = append(b.Fields, f.Name)
+					}
+				}
+			}
+			walk(b.Children)
+		}
+	}
+	for i := range bp.Screens {
+		walk(bp.Screens[i].Body)
+	}
+}
+
+// packFoldRecordKeys turns a composite-key record screen's mounted route
+// back into the route the app spec wrote: the run of one segment per key
+// column, as appSpecScreenPattern expanded it, is the record's {id}.
+func packFoldRecordKeys(bp AppSpec) {
+	for i := range bp.Screens {
+		s := &bp.Screens[i]
+		keys := screenRecordKeys(bp, *s)
+		if keys == nil {
+			continue
+		}
+		run := "/{" + strings.Join(keys, "}/{") + "}"
+		if j := strings.Index(s.Route+"/", run+"/"); j >= 0 {
+			s.Route = s.Route[:j] + "/{id}" + s.Route[j+len(run):]
+		}
+	}
 }
 
 // runPack implements `gofastr pack [app-dir] [-o out.yml]`: a lossy

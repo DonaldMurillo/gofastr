@@ -186,7 +186,7 @@ func (u *UI) createScreenPath(e *entity.Entity, base string) string {
 		}
 		return path
 	}
-	return base + "/create"
+	return under(base, "create")
 }
 
 // WithSavedViews returns a UI whose lists can keep named saved views in

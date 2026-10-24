@@ -140,3 +140,11 @@ func Or(conds ...entity.Condition) entity.Condition { return entity.Or(conds...)
 
 // Not wraps entity.Not.
 func Not(c entity.Condition) entity.Condition { return entity.Not(c) }
+
+// JoinKey wraps entity.JoinKey: a record id from its key values.
+func JoinKey(parts []string) string { return entity.JoinKey(parts) }
+
+// RowKey wraps entity.RowKey: a record id read from a row.
+func RowKey(row map[string]any, cols []string, names func(string) string) (string, bool) {
+	return entity.RowKey(row, cols, names)
+}

@@ -264,9 +264,9 @@ func (c *Client) Create%[1]sWithFiles(ctx context.Context, body %[1]sInput, file
 
 // Update%[1]sWithFiles is Update%[1]s with file uploads, sent the way
 // Create%[1]sWithFiles sends them.
-func (c *Client) Update%[1]sWithFiles(ctx context.Context, id string, body %[1]sInput, files %[2]s) (%[1]s, error) {
+func (c *Client) Update%[1]sWithFiles(ctx context.Context, %[5]s, body %[1]sInput, files %[2]s) (%[1]s, error) {
 	var out %[1]s
-	if err := c.doSingleWithFiles(ctx, http.MethodPut, "/%[3]s/"+url.PathEscape(id), body, %[4]s, files.parts(), &out); err != nil {
+	if err := c.doSingleWithFiles(ctx, http.MethodPut, %[6]s, body, %[4]s, files.parts(), &out); err != nil {
 		return %[1]s{}, err
 	}
 	return out, nil
@@ -274,14 +274,14 @@ func (c *Client) Update%[1]sWithFiles(ctx context.Context, id string, body %[1]s
 
 // Patch%[1]sWithFiles is Patch%[1]s with file uploads, sent the way
 // Create%[1]sWithFiles sends them.
-func (c *Client) Patch%[1]sWithFiles(ctx context.Context, id string, body %[1]sPatch, files %[2]s) (%[1]s, error) {
+func (c *Client) Patch%[1]sWithFiles(ctx context.Context, %[5]s, body %[1]sPatch, files %[2]s) (%[1]s, error) {
 	var out %[1]s
-	if err := c.doSingleWithFiles(ctx, http.MethodPatch, "/%[3]s/"+url.PathEscape(id), body, %[4]s, files.parts(), &out); err != nil {
+	if err := c.doSingleWithFiles(ctx, http.MethodPatch, %[6]s, body, %[4]s, files.parts(), &out); err != nil {
 		return %[1]s{}, err
 	}
 	return out, nil
 }
 
-`, struct_, files, route, columns)
+`, struct_, files, route, columns, goKeyParams(decl), goKeyPath(decl, route))
 	return sb.String()
 }

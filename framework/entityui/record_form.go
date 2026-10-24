@@ -236,7 +236,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		action = m.api + "/" + m.idPath(b.id)
 		rpc = interactive.Put(action)
 		toast = i18nui.EntitySaved.Text(ctx)
-		dest = base + "/" + m.idPath(b.id)
+		dest = under(base, m.idPath(b.id))
 	}
 	attrs := rpc.
 		OnSuccessToast(toast).
@@ -821,7 +821,7 @@ func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur str
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
 		Label:    i18nui.EntityOpen.Text(ctx, map[string]any{"entity": om.singular(ctx)}),
-		Href:     base + "/" + url.PathEscape(cur),
+		Href:     under(base, url.PathEscape(cur)),
 		Variant:  ui.ButtonSecondary,
 		Icon:     "arrow-up-right",
 		IconOnly: true,

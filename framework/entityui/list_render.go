@@ -564,5 +564,5 @@ func (b *ListBuilder) headingLevel() int {
 // recordHref is one record's link: <base>/<id>, the id path-escaped
 // (idPath).
 func (s *listState) recordHref(id string) string {
-	return s.base + "/" + s.m.idPath(id)
+	return under(s.base, s.m.idPath(id))
 }
