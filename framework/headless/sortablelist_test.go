@@ -47,8 +47,8 @@ func TestSortableListRendersTheRowsAndContract(t *testing.T) {
 	// The announcements travel as attributes, so the module never
 	// says a sentence of its own.
 	for _, want := range []string{
-		`data-hui-sortable-s-grabbed="Grabbed {label}. Arrow keys to move, Space to drop."`,
-		`data-hui-sortable-s-position="Position {position} in {list}."`,
+		`data-hui-sortable-s-grabbed="Grabbed {{label}}. Arrow keys to move, Space to drop."`,
+		`data-hui-sortable-s-position="Position {{position}} in {{list}}."`,
 		`data-hui-sortable-s-saved="Order saved."`,
 		`data-hui-sortable-s-cancelled="Cancelled."`,
 	} {

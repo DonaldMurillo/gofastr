@@ -133,7 +133,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 				return fmt.Errorf("static: contributor on %q: %w", p, err)
 			}
 		}
-		html := b.applyStaticMode(page)
+		html := b.applyStaticMode(ctx, page)
 		dst := filepath.Join(b.OutDir, pathToFile(p))
 		if err := b.ensureContained(dst); err != nil {
 			return err
@@ -191,7 +191,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// a dead toast. A host without a root layout emits none: its bare
 	// 404 has no shell to keep.
 	if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
-		html := b.applyStaticMode(page)
+		html := b.applyStaticMode(ctx, page)
 		dst := filepath.Join(b.OutDir, "404.html")
 		if err := b.ensureContained(dst); err != nil {
 			return res, err
@@ -670,13 +670,13 @@ func validateCatchAllValue(key, v string) error {
 //     as intentionally inactive rather than broken. When BasePath is
 //     set, every root-absolute asset/nav URL is rewritten to resolve
 //     under the mount path.
-func (b *Builder) applyStaticMode(page string) string {
+func (b *Builder) applyStaticMode(ctx context.Context, page string) string {
 	page = stampStatic(page)
 	page = applyStaticCSP(page)
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
-		Title:       "Static preview",
-		Body:        "This is a read-only export. Run the app locally for full interactivity: demos and server-driven islands need the Go server.",
+		Title:       pageStaticTitle.Text(ctx),
+		Body:        pageStaticBody.Text(ctx),
 		Variant:     ui.BannerInfo,
 		Dismissible: true,
 		DismissID:   "gofastr-static-preview",

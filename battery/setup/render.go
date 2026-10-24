@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -18,7 +19,7 @@ import (
 // indicator (ProgressSteps) + the form (AuthCard wrapping Form +
 // FormField rows). Zero bespoke CSS, zero hand-rolled structural markup,
 // everything is typed framework/ui composition.
-func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string]string) render.HTML {
+func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, fieldErrors map[string]string) render.HTML {
 	// 1. Progress indicator.
 	progressSteps := make([]ui.ProgressStep, len(steps))
 	for i, s := range steps {
@@ -69,7 +70,7 @@ func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string
 	var alert render.HTML
 	if stepErr, ok := fieldErrors["_step"]; ok && stepErr != "" {
 		alert = ui.Notification(ui.NotificationConfig{
-			Title:   "Step failed",
+			Title:   pageStepFailed.Text(ctx),
 			Body:    stepErr,
 			Variant: ui.StatusDanger,
 		})
@@ -77,8 +78,8 @@ func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string
 	// Force-mode warning: setup already completed but operator re-entered.
 	if isForceMode() {
 		forceAlert := ui.Notification(ui.NotificationConfig{
-			Title:   "Setup already completed",
-			Body:    "You are in rescue mode (GOFASTR_SETUP=force). Re-running setup steps.",
+			Title:   pageForceTitle.Text(ctx),
+			Body:    pageForceBody.Text(ctx),
 			Variant: ui.StatusWarning,
 		})
 		if alert != "" {
@@ -88,9 +89,9 @@ func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string
 		}
 	}
 
-	submitLabel := "Continue"
+	submitLabel := pageContinue.Text(ctx)
 	if stepIdx == len(steps)-1 {
-		submitLabel = "Complete Setup"
+		submitLabel = pageCompleteSetup.Text(ctx)
 	}
 
 	formBody := ui.Form(ui.FormConfig{
@@ -112,22 +113,22 @@ func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string
 }
 
 // buildCompletionPage renders the "all done" body.
-func (r *Runner) buildCompletionPage() render.HTML {
+func (r *Runner) buildCompletionPage(ctx context.Context) render.HTML {
 	return ui.AuthCard(ui.AuthCardConfig{
 		Title: r.cfg.Title,
 		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Setup Complete")),
-			html.Paragraph(html.TextConfig{}, render.Text("Your application is ready.")),
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text(pageCompleteTitle.Text(ctx))),
+			html.Paragraph(html.TextConfig{}, render.Text(pageCompleteBody.Text(ctx))),
 			html.Link(html.LinkConfig{
 				Href: "/",
-				Text: "Go to the app →",
+				Text: pageGoToApp.Text(ctx),
 			}),
 		),
 	})
 }
 
 // renderStep writes the current step's wizard page.
-func (r *Runner) renderStep(w http.ResponseWriter, _ *http.Request) {
+func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	stepIdx := r.currentStep
 	steps := r.cfg.Steps
@@ -137,12 +138,10 @@ func (r *Runner) renderStep(w http.ResponseWriter, _ *http.Request) {
 		// Steps exhausted but this request got PAST handleSetup's
 		// completeAndSwap gate, so Complete is still false (or erroring).
 		// Never claim completion here; explain instead.
-		r.renderIncomplete(w, "Every step ran, but setup still reports incomplete. "+
-			"The Complete predicate does not observe the steps' writes, e.g. AdminStep configured "+
-			"with a different users table than the auth store writes to. Fix the wiring and restart.")
+		r.renderIncomplete(req.Context(), w, pageIncompleteWiring.Text(req.Context()))
 		return
 	}
-	body := r.buildStepForm(stepIdx, steps, nil)
+	body := r.buildStepForm(req.Context(), stepIdx, steps, nil)
 	r.writePage(w, body)
 }
 
@@ -150,19 +149,19 @@ func (r *Runner) renderStep(w http.ResponseWriter, _ *http.Request) {
 // page: a danger notification with the reason, never the completion page,
 // the app is still serving 503s, and saying "ready" would strand the
 // operator on a lie.
-func (r *Runner) renderIncomplete(w http.ResponseWriter, reason string) {
+func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, reason string) {
 	body := ui.AuthCard(ui.AuthCardConfig{
 		Title: r.cfg.Title,
 		Alert: ui.Notification(ui.NotificationConfig{
-			Title:   "Setup is not complete",
+			Title:   pageNotCompleteTitle.Text(ctx),
 			Body:    reason,
 			Variant: ui.StatusDanger,
 		}),
 		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Setup incomplete")),
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text(pageIncompleteHeading.Text(ctx))),
 			html.Link(html.LinkConfig{
 				Href: "/setup",
-				Text: "Retry",
+				Text: pageRetry.Text(ctx),
 			}),
 		),
 	})
@@ -170,14 +169,14 @@ func (r *Runner) renderIncomplete(w http.ResponseWriter, reason string) {
 }
 
 // renderStepWithErrors writes the step page with validation errors.
-func (r *Runner) renderStepWithErrors(w http.ResponseWriter, _ *http.Request, stepIdx int, errors map[string]string) {
-	body := r.buildStepForm(stepIdx, r.cfg.Steps, errors)
+func (r *Runner) renderStepWithErrors(w http.ResponseWriter, req *http.Request, stepIdx int, errors map[string]string) {
+	body := r.buildStepForm(req.Context(), stepIdx, r.cfg.Steps, errors)
 	r.writePage(w, body)
 }
 
 // renderCompletionPage writes the "all done" page.
-func (r *Runner) renderCompletionPage(w http.ResponseWriter, _ *http.Request) {
-	r.writePage(w, r.buildCompletionPage())
+func (r *Runner) renderCompletionPage(w http.ResponseWriter, req *http.Request) {
+	r.writePage(w, r.buildCompletionPage(req.Context()))
 }
 
 // writePage emits a complete standalone HTML document. Mirrors the

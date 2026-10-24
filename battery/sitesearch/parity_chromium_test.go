@@ -447,7 +447,7 @@ func TestClientEndsOnSearchPage(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!doctype html><html><meta charset=utf-8>
 <div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false">
-<ul id="lb" role="listbox" hidden data-search data-search-empty="None" data-search-all="/search" data-search-all-label="All for “{q}” ({q})"></ul></div>
+<ul id="lb" role="listbox" hidden data-search data-search-empty="None" data-search-all="/search" data-search-all-label="All for “{{q}}” ({{q}})"></ul></div>
 <script src="/client.js"></script>`)
 	})
 	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {

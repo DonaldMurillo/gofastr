@@ -43,9 +43,9 @@ func TestPaginationClassMapKeepsTheSheetsNames(t *testing.T) {
 // The labels resolve through the i18n keys: the nav's aria-label from
 // KeyPaginationLabel, the ends' words from StringsFor.
 func TestPaginationLabelsResolveThroughI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyPaginationLabel, "PROBE-PAG")
-	swapDefault(t, i18nui.KeyPaginationPrevious, "PROBE-PREV")
-	swapDefault(t, i18nui.KeyPaginationNext, "PROBE-NEXT")
+	swapDefault(t, i18nui.PaginationLabel, "PROBE-PAG")
+	swapDefault(t, i18nui.PaginationPrevious, "PROBE-PREV")
+	swapDefault(t, i18nui.PaginationNext, "PROBE-NEXT")
 	h := string(Pagination(PaginationConfig{Page: 2, Pages: 3}))
 	for _, want := range []string{
 		`aria-label="PROBE-PAG"`, ">PROBE-PREV</a>", ">PROBE-NEXT</a>",

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -13,19 +14,31 @@ func htmlString(t *testing.T, h render.HTML) string {
 	return string(h)
 }
 
-// swapDefault temporarily overrides an i18nui default and restores
-// it via t.Cleanup. Used to prove components actually look the key
-// up rather than emitting a parallel hardcoded string.
-func swapDefault(t *testing.T, key i18nui.Key, val string) {
+// swapCatalog backs the default translator swapDefault installs; a test
+// that swaps several phrases adds them all to one catalog.
+var swapCatalog *i18n.MapCatalog
+
+// swapDefault makes the process default translator render key as val
+// for the rest of the test, restoring the previous one via t.Cleanup.
+// Used to prove components actually look the phrase up rather than
+// emitting a parallel hardcoded string.
+func swapDefault(t *testing.T, key i18n.Phrase, val string) {
 	t.Helper()
-	prev := i18nui.Defaults[key]
-	i18nui.Defaults[key] = val
-	t.Cleanup(func() { i18nui.Defaults[key] = prev })
+	if swapCatalog == nil {
+		prev := i18n.Default()
+		swapCatalog = i18n.NewMapCatalog()
+		i18n.SetDefault(i18n.NewTranslator(swapCatalog, "en"))
+		t.Cleanup(func() {
+			i18n.SetDefault(prev)
+			swapCatalog = nil
+		})
+	}
+	swapCatalog.Set("en", key.Key(), i18n.Message{Text: val})
 }
 
-// Repeater default labels come from i18nui.Defaults.
+// Repeater default labels come from i18nui phrases.
 func TestRepeaterUsesI18nDefaults(t *testing.T) {
-	swapDefault(t, i18nui.KeyRepeaterAdd, "PROBE-ADD")
+	swapDefault(t, i18nui.RepeaterAdd, "PROBE-ADD")
 	out := htmlString(t, Repeater(RepeaterConfig{Name: "x"}))
 	if !strings.Contains(out, "PROBE-ADD") {
 		t.Fatalf("expected PROBE-ADD in output, got:\n%s", out)
@@ -45,7 +58,7 @@ func TestRepeaterCustomAddLabelWins(t *testing.T) {
 
 // PasswordInput show toggle aria-label uses i18nui default.
 func TestPasswordInputShowUsesI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyPasswordInputShow, "PROBE-SHOW")
+	swapDefault(t, i18nui.PasswordInputShow, "PROBE-SHOW")
 	out := htmlString(t, PasswordInput(PasswordInputConfig{Name: "p", ID: "p"}))
 	if !strings.Contains(out, "PROBE-SHOW") {
 		t.Fatalf("expected PROBE-SHOW in output, got:\n%s", out)
@@ -54,8 +67,8 @@ func TestPasswordInputShowUsesI18n(t *testing.T) {
 
 // StepWizard Back/Submit labels use i18nui defaults.
 func TestStepWizardLabelsUseI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyStepWizardBack, "PROBE-BACK")
-	swapDefault(t, i18nui.KeyStepWizardSubmit, "PROBE-SUBMIT")
+	swapDefault(t, i18nui.StepWizardBack, "PROBE-BACK")
+	swapDefault(t, i18nui.StepWizardSubmit, "PROBE-SUBMIT")
 	out := htmlString(t, StepWizard(StepWizardConfig{
 		Steps: []StepWizardStep{
 			{Heading: "A"},
@@ -74,9 +87,9 @@ func TestStepWizardLabelsUseI18n(t *testing.T) {
 
 // Lightbox nav/download aria-labels use i18nui defaults.
 func TestLightboxLabelsUseI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyLightboxPrev, "PROBE-PREV")
-	swapDefault(t, i18nui.KeyLightboxNext, "PROBE-NEXT")
-	swapDefault(t, i18nui.KeyLightboxDownload, "PROBE-DL")
+	swapDefault(t, i18nui.LightboxPrev, "PROBE-PREV")
+	swapDefault(t, i18nui.LightboxNext, "PROBE-NEXT")
+	swapDefault(t, i18nui.LightboxDownload, "PROBE-DL")
 	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true, allowDownload: true}
 	out := string(slot.Render())
 	if !strings.Contains(out, "PROBE-PREV") || !strings.Contains(out, "PROBE-NEXT") {
@@ -89,8 +102,8 @@ func TestLightboxLabelsUseI18n(t *testing.T) {
 
 // DataTable empty-state title + description come from i18nui defaults.
 func TestDataTableEmptyStateI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyTableNoResults, "PROBE-NOPE")
-	swapDefault(t, i18nui.KeyTableEmptyDesc, "PROBE-DESC")
+	swapDefault(t, i18nui.TableNoResults, "PROBE-NOPE")
+	swapDefault(t, i18nui.TableEmptyDesc, "PROBE-DESC")
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "x", Header: "X"}},
 	}))
@@ -104,7 +117,7 @@ func TestDataTableEmptyStateI18n(t *testing.T) {
 
 // DataTable empty-state Title override wins over the i18nui default.
 func TestDataTableEmptyTitleOverrideWins(t *testing.T) {
-	swapDefault(t, i18nui.KeyTableNoResults, "PROBE-NOPE")
+	swapDefault(t, i18nui.TableNoResults, "PROBE-NOPE")
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "x", Header: "X"}},
 		Empty:   EmptyStateConfig{Title: "Custom title"},
@@ -119,7 +132,7 @@ func TestDataTableEmptyTitleOverrideWins(t *testing.T) {
 
 // DataTable sortable empty-header column uses TVars for its aria-label.
 func TestDataTableSortAriaLabelTVars(t *testing.T) {
-	swapDefault(t, i18nui.KeyTableSortBy, "Sortby {column}")
+	swapDefault(t, i18nui.TableSortBy, "Sortby {{column}}")
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "name", Sortable: true}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
@@ -133,9 +146,9 @@ func TestDataTableSortAriaLabelTVars(t *testing.T) {
 // i18nui: the sentence and both direction words, substituted by name
 // on the server.
 func TestDataTableAnnouncementI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyTableSortedBy, "PROBE-SORTED {column} {direction}")
-	swapDefault(t, i18nui.KeyTableDirAscending, "PROBE-ASC")
-	swapDefault(t, i18nui.KeyTableDirDescending, "PROBE-DESC")
+	swapDefault(t, i18nui.TableSortedBy, "PROBE-SORTED {{column}} {{direction}}")
+	swapDefault(t, i18nui.TableDirAscending, "PROBE-ASC")
+	swapDefault(t, i18nui.TableDirDescending, "PROBE-DESC")
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
@@ -156,9 +169,9 @@ func TestDataTableAnnouncementI18n(t *testing.T) {
 
 // DataTable threads i18n labels into the pagination nav.
 func TestDataTableThreadsI18nPagination(t *testing.T) {
-	swapDefault(t, i18nui.KeyPaginationLabel, "PROBE-PAG")
-	swapDefault(t, i18nui.KeyPaginationPrevious, "PROBE-PREV")
-	swapDefault(t, i18nui.KeyPaginationNext, "PROBE-NEXT")
+	swapDefault(t, i18nui.PaginationLabel, "PROBE-PAG")
+	swapDefault(t, i18nui.PaginationPrevious, "PROBE-PREV")
+	swapDefault(t, i18nui.PaginationNext, "PROBE-NEXT")
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "x", Header: "X"}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
@@ -175,8 +188,8 @@ func TestDataTableThreadsI18nPagination(t *testing.T) {
 
 // FilterToolbar uses i18n defaults for its landmark label + Apply.
 func TestFilterToolbarUsesI18n(t *testing.T) {
-	swapDefault(t, i18nui.KeyFilterToolbarLabel, "PROBE-LBL")
-	swapDefault(t, i18nui.KeyFilterApply, "PROBE-APPLY")
+	swapDefault(t, i18nui.FilterToolbarLabel, "PROBE-LBL")
+	swapDefault(t, i18nui.FilterApply, "PROBE-APPLY")
 	out := htmlString(t, FilterToolbar(FilterToolbarConfig{
 		Action: "/list",
 		Facets: []Facet{{
@@ -194,7 +207,7 @@ func TestFilterToolbarUsesI18n(t *testing.T) {
 
 // FilterToolbar "All <label>" select option uses TVars.
 func TestFilterToolbarAllLabelTVars(t *testing.T) {
-	swapDefault(t, i18nui.KeyFilterAll, "All {label}")
+	swapDefault(t, i18nui.FilterAll, "All {{label}}")
 	out := htmlString(t, FilterToolbar(FilterToolbarConfig{
 		Action: "/list",
 		Facets: []Facet{{
@@ -209,9 +222,9 @@ func TestFilterToolbarAllLabelTVars(t *testing.T) {
 
 // Carousel "Go to slide N" dot aria-labels use TVars. The words moved
 // to the headless Strings table with the primitive: the key the bridge
-// reads is the Hui one ({n}-shaped).
+// reads is the Hui one ({{n}}-shaped).
 func TestCarouselGoToSlideTVars(t *testing.T) {
-	swapDefault(t, i18nui.KeyHuiCarouselGoToSlide, "Goto {n}")
+	swapDefault(t, i18nui.HuiCarouselGoToSlide, "Goto {{n}}")
 	out := htmlString(t, Carousel(CarouselConfig{
 		Label:  "gallery",
 		Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},

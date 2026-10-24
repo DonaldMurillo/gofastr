@@ -411,6 +411,19 @@ expose them to agents connected to a live app.**
   parameter, a JSON envelope whose "error"/"message" is prose or
   `err.Error()`, and a constant JSON body written straight to the
   ResponseWriter with a prose "error"/"message"/"title"/"detail".
+  The envelope arm also reads struct bodies that carry a json
+  "status" (RFC 9457 problem documents); a statusless protocol struct
+  (JSON-RPC, the service control socket) stays English. Its `uitext`
+  arm holds the page to the same rule: a constant (or a concatenation
+  with a constant operand) of words passed to `render.Text`, set as
+  an aria-label/title/placeholder/alt attribute, or set on a UI
+  package component's Label/Title/Text/Placeholder-named field. The
+  gallery, `framework/sdkdocs` (the API reference, English like
+  OpenAPI), `headless.Spec` examples and the `headless.Strings`
+  defaults table are exempt. The runtime's JS twin is
+  `core-ui/check.LintRuntimeProse`: literal prose into a toast,
+  `textContent`, `aria-label` or `title` goes through `say()` and a
+  phrase registered with `runtime.RegisterStrings`.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

@@ -118,11 +118,11 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 	}
 	action := interactive.Post(preferencesFormPath).OnSuccess(interactive.Navigate(s.path))
 	return render.Join(
-		ui.PageHeader(ui.PageHeaderConfig{Title: "Settings"}),
+		ui.PageHeader(ui.PageHeaderConfig{Title: pageSettingsTitle.Text(ctx)}),
 		ui.Form(ui.FormConfig{
 			Action:      preferencesFormPath,
 			Method:      http.MethodPost,
-			SubmitLabel: "Save",
+			SubmitLabel: pageSettingsSave.Text(ctx),
 			Ctx:         ctx,
 			ExtraAttrs:  html.Attrs(action.Attrs()),
 		}, fields...),

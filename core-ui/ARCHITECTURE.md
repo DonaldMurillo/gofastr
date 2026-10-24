@@ -815,6 +815,28 @@ client-side with no per-consumer round-trip.
 
 See `framework/docs/content/signal-store.md` for the full guide.
 
+### Runtime strings (`#gofastr-strings`, `__gofastr.say`)
+
+The words the runtime says itself (a failed request's toast, a
+navigation that could not load, the embed frame's error, a local
+entity's validation messages) are `i18n.Phrase`s registered with
+`runtime.RegisterStrings`. The host writes the ones the request's locale
+translates, and only those, into an inert
+`<script type="application/json" id="gofastr-strings">{key:text}</script>`
+on full pages and in the embed shell; an English page carries none. The
+id is reserved: `registry.DataBlock` refuses it.
+
+The kernel's `say(key, english, params)`, exported as
+`window.__gofastr.say`, reads the block once, falls back to the English
+argument on a miss, and fills `{{name}}` placeholders from `params`.
+Fragments call `say(...)`; modules and behaviours call `NS.say(...)`.
+Never write prose straight into a toast, `textContent`, `aria-label` or
+`title`: `core-ui/check.LintRuntimeProse` refuses it, and
+`TestRuntimeSayCallsMatchPhrases` holds every `say('key', 'English'`
+call to a registered phrase with the same English. A client-side
+navigation keeps the block it booted with, so a reader who switches
+locale mid-session sees the old runtime words until the next full load.
+
 ### First-load order
 
 A live page paints from its document and stylesheets alone. The one

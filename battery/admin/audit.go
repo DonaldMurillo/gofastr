@@ -14,6 +14,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -136,8 +137,8 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 		carry.Del(auditPageParam)
 	}
 	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:    i18nui.T(ctx, i18nui.KeyAdminAudit),
-		Subtitle: i18nui.T(ctx, i18nui.KeyAdminAuditSub),
+		Title:    i18nui.AdminAudit.Text(ctx),
+		Subtitle: i18nui.AdminAuditSub.Text(ctx),
 	})
 	total, err := b.countAuditWhere(ctx, f)
 	var rows []auditRow
@@ -152,12 +153,12 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 		// the log.
 		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditLoadFailed))))
+			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
 	}
 	above := []render.HTML{header, b.auditFilterForm(ctx, f)}
 	for _, param := range warned {
 		above = append(above, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning},
-			render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBadFilter, map[string]string{"param": param}))))
+			render.Text(i18nui.AdminAuditBadFilter.Text(ctx, map[string]any{"param": param}))))
 	}
 	var pager *ui.PaginationConfig
 	if pages > 1 {
@@ -179,8 +180,8 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 // and the date range ride along as Extra, counted on the badge. Reset
 // drops back to the bare page.
 func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTML {
-	entityOpts := []ui.FacetOption{{Value: "", Label: i18nui.T(ctx, i18nui.KeyAdminAuditAnyEntity)}}
-	opOpts := []ui.FacetOption{{Value: "", Label: i18nui.T(ctx, i18nui.KeyAdminAuditAnyOp)}}
+	entityOpts := []ui.FacetOption{{Value: "", Label: i18nui.AdminAuditAnyEntity.Text(ctx)}}
+	opOpts := []ui.FacetOption{{Value: "", Label: i18nui.AdminAuditAnyOp.Text(ctx)}}
 	for _, e := range b.ents {
 		entityOpts = append(entityOpts, ui.FacetOption{Value: e.GetName(), Label: b.plural(ctx, e)})
 	}
@@ -197,13 +198,13 @@ func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTM
 		Action:   b.cfg.PathPrefix + "/audit",
 		Dropdown: true,
 		Facets: []ui.Facet{
-			{Name: "entity", Label: i18nui.T(ctx, i18nui.KeyAdminColEntity), Options: entityOpts, Value: f.entity},
-			{Name: "op", Label: i18nui.T(ctx, i18nui.KeyAdminColOperation), Options: opOpts, Value: f.op},
+			{Name: "entity", Label: i18nui.AdminColEntity.Text(ctx), Options: entityOpts, Value: f.entity},
+			{Name: "op", Label: i18nui.AdminColOperation.Text(ctx), Options: opOpts, Value: f.op},
 		},
 		Extra: []render.HTML{
-			ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.T(ctx, i18nui.KeyAdminColActor), Value: f.actor}),
-			ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.T(ctx, i18nui.KeyAdminAuditFrom), Value: dayValue(f.hasFrom, f.from)}),
-			ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.T(ctx, i18nui.KeyAdminAuditTo), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
+			ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.AdminColActor.Text(ctx), Value: f.actor}),
+			ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.AdminAuditFrom.Text(ctx), Value: dayValue(f.hasFrom, f.from)}),
+			ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.AdminAuditTo.Text(ctx), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
 		},
 		Applied: applied,
 		Ctx:     ctx,
@@ -299,11 +300,11 @@ func auditWhere(ctx context.Context, f auditFilter) (string, []any) {
 // entity row the admin exposes links to its record.
 func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel int, pager *ui.PaginationConfig) render.HTML {
 	cols := []ui.Column{
-		{Key: "time", Header: i18nui.T(ctx, i18nui.KeyAdminColTime)},
-		{Key: "actor", Header: i18nui.T(ctx, i18nui.KeyAdminColActor)},
-		{Key: "op", Header: i18nui.T(ctx, i18nui.KeyAdminColOperation)},
-		{Key: "record", Header: i18nui.T(ctx, i18nui.KeyAdminColRecord)},
-		{Key: "changes", Header: i18nui.T(ctx, i18nui.KeyAdminColChanges)},
+		{Key: "time", Header: i18nui.AdminColTime.Text(ctx)},
+		{Key: "actor", Header: i18nui.AdminColActor.Text(ctx)},
+		{Key: "op", Header: i18nui.AdminColOperation.Text(ctx)},
+		{Key: "record", Header: i18nui.AdminColRecord.Text(ctx)},
+		{Key: "changes", Header: i18nui.AdminColChanges.Text(ctx)},
 	}
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
@@ -322,7 +323,7 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	return ui.DataTable(ui.DataTableConfig{
 		Columns:       cols,
 		Rows:          data,
-		Caption:       i18nui.T(ctx, i18nui.KeyAdminAudit),
+		Caption:       i18nui.AdminAudit.Text(ctx),
 		CaptionHidden: true,
 		// Phone cards keep the record and its changes in view; a scrolled
 		// table showed only who and when.
@@ -330,8 +331,8 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 		Pagination: pager,
 		Ctx:        ctx,
 		Empty: ui.EmptyStateConfig{
-			Title:        i18nui.T(ctx, i18nui.KeyAdminAuditEmpty),
-			Description:  i18nui.T(ctx, i18nui.KeyAdminAuditEmptyDesc),
+			Title:        i18nui.AdminAuditEmpty.Text(ctx),
+			Description:  i18nui.AdminAuditEmptyDesc.Text(ctx),
 			HeadingLevel: emptyLevel,
 		},
 	})
@@ -395,23 +396,23 @@ func (b *Battery) accessAudit(ctx context.Context, r auditRow) (record, changes 
 		if d.Permission == "" {
 			return "", "", false
 		}
-		key := map[string]i18nui.Key{
-			"grant": i18nui.KeyAdminAuditGranted, "revoke": i18nui.KeyAdminAuditRevoked,
-			"grant-refused": i18nui.KeyAdminAuditGrantRefused, "revoke-refused": i18nui.KeyAdminAuditRevokeRefused,
+		key := map[string]i18n.Phrase{
+			"grant": i18nui.AdminAuditGranted, "revoke": i18nui.AdminAuditRevoked,
+			"grant-refused": i18nui.AdminAuditGrantRefused, "revoke-refused": i18nui.AdminAuditRevokeRefused,
 		}[r.Op]
-		record = render.Join(ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditRole)+" · ")), render.Text(r.RecordID))
-		return record, i18nui.TVarsHTML(ctx, key, map[string]render.HTML{"permission": ui.InlineCode(d.Permission)}), true
+		record = render.Join(ui.Muted(render.Text(i18nui.AdminAuditRole.Text(ctx)+" · ")), render.Text(r.RecordID))
+		return record, i18nui.HTML(ctx, key, map[string]render.HTML{"permission": ui.InlineCode(d.Permission)}), true
 	case "assign-roles", "assign-roles-refused":
 		who := b.actorName(ctx, r.RecordID)
 		if who == "" {
 			who = r.RecordID
 		}
-		record = render.Join(ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditUser)+" · ")), render.Text(who))
+		record = render.Join(ui.Muted(render.Text(i18nui.AdminAuditUser.Text(ctx)+" · ")), render.Text(who))
 		if r.Op == "assign-roles-refused" {
-			return record, i18nui.TVarsHTML(ctx, i18nui.KeyAdminAuditAssignRefused, map[string]render.HTML{"role": ui.InlineCode(d.RefusedRole)}), true
+			return record, i18nui.HTML(ctx, i18nui.AdminAuditAssignRefused, map[string]render.HTML{"role": ui.InlineCode(d.RefusedRole)}), true
 		}
 		if len(d.Roles) == 0 {
-			return record, ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditNoRoles))), true
+			return record, ui.Muted(render.Text(i18nui.AdminAuditNoRoles.Text(ctx))), true
 		}
 		tags := make([]render.HTML, len(d.Roles))
 		for i, role := range d.Roles {
@@ -438,27 +439,27 @@ func bulkAudit(ctx context.Context, e *entity.Entity, r auditRow) (record, chang
 	if json.Unmarshal([]byte(r.Diff.String), &d) != nil || d.Count < 0 || d.Skipped < 0 || d.Failed < 0 {
 		return "", "", false
 	}
-	var verb i18nui.Key
+	var verb i18n.Phrase
 	switch {
 	case d.Action == "delete":
-		verb = i18nui.KeyAdminAuditBulkDeleted
+		verb = i18nui.AdminAuditBulkDeleted
 	case d.Action == "restore":
-		verb = i18nui.KeyAdminAuditBulkRestored
+		verb = i18nui.AdminAuditBulkRestored
 	case strings.HasPrefix(d.Action, "set:"), strings.HasPrefix(d.Action, "move:"):
-		verb = i18nui.KeyAdminAuditBulkUpdated
+		verb = i18nui.AdminAuditBulkUpdated
 	default:
 		return "", "", false
 	}
-	record = i18nui.TVarsHTML(ctx, i18nui.KeyAdminAuditBulkRecord, map[string]render.HTML{
+	record = i18nui.HTML(ctx, i18nui.AdminAuditBulkRecord, map[string]render.HTML{
 		"count":  render.Text(strconv.Itoa(d.Count)),
 		"entity": render.Text(entityNoun(ctx, e, d.Count)),
 	})
-	parts := []render.HTML{render.Text(i18nui.T(ctx, verb))}
+	parts := []render.HTML{render.Text(verb.Text(ctx))}
 	if d.Skipped > 0 {
-		parts = append(parts, ui.Muted(render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBulkSkipped, map[string]string{"count": strconv.Itoa(d.Skipped)}))))
+		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkSkipped.Text(ctx, map[string]any{"count": strconv.Itoa(d.Skipped)}))))
 	}
 	if d.Failed > 0 {
-		parts = append(parts, ui.Muted(render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBulkFailed, map[string]string{"count": strconv.Itoa(d.Failed)}))))
+		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkFailed.Text(ctx, map[string]any{"count": strconv.Itoa(d.Failed)}))))
 	}
 	return record, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, parts...), true
 }

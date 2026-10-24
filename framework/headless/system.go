@@ -1,8 +1,6 @@
 package headless
 
 import (
-	"fmt"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -173,7 +171,7 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	if p.Dismiss == nil || *p.Dismiss {
 		dismiss := Internal(Mark(Attrs(map[string]string{
 			"type":       "button",
-			"aria-label": orDefault(p.DismissLabel, fmt.Sprintf(p.Strings.Resolve().DismissTitled, p.Title)),
+			"aria-label": orDefault(p.DismissLabel, fill(p.Strings.Resolve().DismissTitled, "title", p.Title)),
 		}), "data-hui-system-dismiss"))
 		kids = append(kids, b.El("button", PartDismiss, dismiss, render.Text("×")))
 	}

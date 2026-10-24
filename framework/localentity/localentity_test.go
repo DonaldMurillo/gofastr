@@ -125,8 +125,8 @@ func TestFormCarriesTheSpec(t *testing.T) {
 	if f[3].T != "bool" {
 		t.Errorf("shiny = %+v", f[3])
 	}
-	if spec.Msgs["full"] != "Team full" || spec.Msgs["required"] != DefaultMessages.Required {
-		t.Errorf("messages = %v; want the override merged over the defaults", spec.Msgs)
+	if len(spec.Msgs) != 1 || spec.Msgs["full"] != "Team full" {
+		t.Errorf("messages = %v; want only the override (defaults are phrases)", spec.Msgs)
 	}
 }
 
@@ -142,7 +142,6 @@ func TestListRowAndCount(t *testing.T) {
 		"data-fui-local-order": "by_level",
 		"data-fui-local-dir":   "prev",
 		"data-fui-local-limit": "6",
-		"data-fui-local-fail":  DefaultMessages.Failed,
 		"data-cui-comp":        "local-entity",
 	} {
 		if got := attr(t, h, name); got != want {

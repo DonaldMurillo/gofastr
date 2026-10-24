@@ -21,7 +21,7 @@ func TestMultiSelectRendersTheCheckboxGroup(t *testing.T) {
 		`data-hui-multiselect-chips=""`,
 		`aria-live="polite"`,
 		`data-hui-multiselect-placeholder="Choose…"`,
-		`data-hui-multiselect-remove-label="Remove {label}"`,
+		`data-hui-multiselect-remove-label="Remove {{label}}"`,
 		`data-hui-disclosure=""`,
 		`<summary>Pick languages</summary>`,
 		`role="group"`,
@@ -59,13 +59,13 @@ func TestMultiSelectSaysItsWordsThroughStrings(t *testing.T) {
 		Options: []MultiSelectOption{{Value: "a", Label: "A"}},
 		Strings: &Strings{
 			MultiSelectPlaceholder: "Aucun choisi",
-			MultiSelectRemoveLabel: "Retirer {label}",
+			RemoveLabelled:         "Retirer {{label}}",
 		},
 	})
 	if !strings.Contains(h, `data-hui-multiselect-placeholder="Aucun choisi"`) {
 		t.Errorf("the translated placeholder never arrived:\n%s", h)
 	}
-	if !strings.Contains(h, `data-hui-multiselect-remove-label="Retirer {label}"`) {
+	if !strings.Contains(h, `data-hui-multiselect-remove-label="Retirer {{label}}"`) {
 		t.Errorf("the translated remove label never arrived:\n%s", h)
 	}
 }

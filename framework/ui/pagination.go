@@ -105,7 +105,7 @@ func Pagination(cfg PaginationConfig) render.HTML {
 	}
 	label := cfg.AriaLabel
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyPaginationLabel)
+		label = i18nui.PaginationLabel.Text(ctx)
 	}
 	parts := headless.Parts{}
 	if cfg.Class != "" {

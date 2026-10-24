@@ -123,7 +123,7 @@ func TestTableAnnouncementIsComposedOnTheServer(t *testing.T) {
 // copies them without knowing a language.
 func TestTableAnnouncementIsTranslated(t *testing.T) {
 	w := DefaultStrings()
-	w.TableSortedBy = "Trié par {column}, {direction}"
+	w.TableSortedBy = "Trié par {{column}}, {{direction}}"
 	w.SortAscending = "ascendant"
 	got := Table(TableProps{
 		Columns: []Column{{Key: "name", Header: "Nom", Sortable: true}},
@@ -266,7 +266,7 @@ func TestTableHeaderlessColumns(t *testing.T) {
 	// The label is the Strings table's to say, not the component's.
 	fr := Table(TableProps{Path: "/apps",
 		Columns: []Column{{Key: "env", Sortable: true}},
-		Strings: &Strings{TableSortBy: "Trier par {column}"}}, nil)
+		Strings: &Strings{TableSortBy: "Trier par {{column}}"}}, nil)
 	has(t, fr, `aria-label="Trier par env"`, "a translated TableSortBy did not reach the anchor")
 }
 

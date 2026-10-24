@@ -94,12 +94,12 @@ func (a *App) notFoundBody() component.Component {
 // composed html, no chrome of its own (the root layout owns the
 // shell), no request data (the route resolved; echoing a path would
 // read as "no route matched" copy).
-type minimalNotFoundBody struct{}
+type minimalNotFoundBody struct{ component.ContextOnly }
 
-func (minimalNotFoundBody) Render() render.HTML {
+func (minimalNotFoundBody) RenderCtx(ctx context.Context) render.HTML {
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
-		html.Paragraph(html.TextConfig{}, render.Text("This page does not exist.")),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(pageNotFoundBody.Text(ctx))),
 	)
 }
 
@@ -558,8 +558,8 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // registered; it exists so the render pipeline treats the 404 body
 // exactly like a registered screen (per-request instance, DI, Load,
 // article wrap, the default layout chain).
-func notFoundScreenFor(comp component.Component) *Screen {
-	return NewScreen("/__gofastr_not_found__", comp).WithTitle("Page not found")
+func notFoundScreenFor(ctx context.Context, comp component.Component) *Screen {
+	return NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
 }
 
 // RenderNotFoundPageResult renders comp as the not-found page for an
@@ -569,7 +569,7 @@ func notFoundScreenFor(comp component.Component) *Screen {
 // path, and the document shell/head build is the one every page gets.
 // The caller owns the 404 status; the result's Kind is DecisionAllow.
 func (a *App) RenderNotFoundPageResult(ctx context.Context, path string, comp component.Component) (RenderResult, error) {
-	return a.renderScreenPage(ctx, path, notFoundScreenFor(comp), nil)
+	return a.renderScreenPage(ctx, path, notFoundScreenFor(ctx, comp), nil)
 }
 
 // RenderNotFoundFromResult is RenderNotFoundPageResult's subtree-partial
@@ -580,7 +580,7 @@ func (a *App) RenderNotFoundPageResult(ctx context.Context, path string, comp co
 // included. An unknown fromPath keeps the bare partial (empty SwapLayer),
 // the runtime's existing deploy-skew recovery answers with a full load.
 func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
-	target := notFoundScreenFor(comp)
+	target := notFoundScreenFor(ctx, comp)
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
 		return res, err
@@ -596,8 +596,8 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 // the same pipeline (per-request instance, DI, Load, article wrap,
 // the default layout chain) so the error body renders inside the root
 // layout like every page..
-func errorScreenFor(comp component.Component) *Screen {
-	return NewScreen("/__gofastr_error__", comp).WithTitle("Something went wrong")
+func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
+	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
 }
 
 // RenderErrorPageResult renders comp as the whole-page error body for
@@ -605,7 +605,7 @@ func errorScreenFor(comp component.Component) *Screen {
 // PageError). The caller owns the status; the result's Kind is
 // DecisionAllow..
 func (a *App) RenderErrorPageResult(ctx context.Context, path string, comp component.Component) (RenderResult, error) {
-	return a.renderScreenPage(ctx, path, errorScreenFor(comp), nil)
+	return a.renderScreenPage(ctx, path, errorScreenFor(ctx, comp), nil)
 }
 
 // RenderErrorFromResult is RenderErrorPageResult's subtree-partial
@@ -614,7 +614,7 @@ func (a *App) RenderErrorPageResult(ctx context.Context, path string, comp compo
 // whole-page shows the error page inside the live shell instead of
 // toasting..
 func (a *App) RenderErrorFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
-	target := errorScreenFor(comp)
+	target := errorScreenFor(ctx, comp)
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
 		return res, err
@@ -825,7 +825,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 			// decline decides this; a contained fill failure returned
 			// above and left the page alone.
 			if fills != nil && fills.notFoundOutlet {
-				nfScreen := notFoundScreenFor(a.notFoundBody())
+				nfScreen := notFoundScreenFor(ctx, a.notFoundBody())
 				nfComp := newComponentInstance(nfScreen.Component)
 				if err := a.injectComponent(nfComp, path); err != nil {
 					return RenderResult{}, err
@@ -1136,7 +1136,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	// NotFoundOutlet). The client applies the envelope and never caches
 	// a 404 answer.
 	if fills != nil && fills.notFoundOutlet {
-		nfScreen := notFoundScreenFor(a.notFoundBody())
+		nfScreen := notFoundScreenFor(ctx, a.notFoundBody())
 		nfComp := newComponentInstance(nfScreen.Component)
 		if err := a.injectComponent(nfComp, path); err != nil {
 			return res, err

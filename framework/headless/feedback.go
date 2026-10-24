@@ -1,7 +1,6 @@
 package headless
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -177,7 +176,7 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		}
 		label := p.DismissLabel
 		if label == "" {
-			label = fmt.Sprintf(p.Strings.Resolve().DismissTitled, p.Title)
+			label = fill(p.Strings.Resolve().DismissTitled, "title", p.Title)
 		}
 		// The same element is both destinations: the href is the page
 		// without script, the island contract is the region update

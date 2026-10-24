@@ -48,7 +48,7 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyPollingLive)
+		label = i18nui.PollingLive.Text(ctx)
 	}
 	cls := "fui-polling-indicator"
 	if cfg.Paused {

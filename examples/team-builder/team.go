@@ -28,7 +28,7 @@ var (
 		localentity.Indexed("level"),
 		localentity.MaxRecords(TeamSize),
 		localentity.WithMessages(localentity.Messages{
-			Full: "Your team is full: release a Pokémon first ({n} at most).",
+			Full: "Your team is full: release a Pokémon first ({{n}} at most).",
 		}),
 	)
 )

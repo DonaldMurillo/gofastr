@@ -2,7 +2,6 @@ package headless
 
 import (
 	"encoding/json"
-	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -164,7 +163,7 @@ func Toast(p ToastProps, s Classes) render.HTML {
 		}
 		label := p.DismissLabel
 		if label == "" {
-			label = fmt.Sprintf(w.DismissTitled, orDefault(title, body))
+			label = fill(w.DismissTitled, "title", orDefault(title, body))
 		}
 		kids = append(kids, b.El("a", PartDismiss, Internal(Merge(html.Attrs{
 			"href":       p.DismissHref,
@@ -434,7 +433,7 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 	b := p.Parts.Box(s, PartText)
 	own := Merge(Safe(p.ExtraAttrs, "href", "aria-label"), Attrs(map[string]string{
 		"href":       urlsafe.CleanAnchor(p.Href),
-		"aria-label": fmt.Sprintf(w.NotificationCount, p.UnreadCount),
+		"aria-label": fill(w.NotificationCount, "n", strconv.Itoa(p.UnreadCount)),
 		"id":         p.ID,
 		// The sentence shape travels so the module can re-say the
 		// count when the signal changes it.

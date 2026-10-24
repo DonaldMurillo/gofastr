@@ -191,8 +191,8 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 // not see: never say which of the two it was.
 func (m *meta) notFound(ctx context.Context) render.HTML {
 	return ui.EmptyState(ui.EmptyStateConfig{
-		Title:        i18nui.T(ctx, i18nui.KeyEntityNotFound),
-		Description:  i18nui.TVars(ctx, i18nui.KeyEntityNotFoundBody, map[string]string{"entity": m.singular(ctx)}),
+		Title:        i18nui.EntityNotFound.Text(ctx),
+		Description:  i18nui.EntityNotFoundBody.Text(ctx, map[string]any{"entity": m.singular(ctx)}),
 		HeadingLevel: 1,
 	})
 }
@@ -266,14 +266,14 @@ func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 	var parts []string
 	for _, s := range []struct {
 		col string
-		key i18nui.Key
-	}{{"created_at", i18nui.KeyEntityCreatedOn}, {"updated_at", i18nui.KeyEntityUpdatedOn}} {
+		key i18n.Phrase
+	}{{"created_at", i18nui.EntityCreatedOn}, {"updated_at", i18nui.EntityUpdatedOn}} {
 		f, ok := m.field(s.col)
 		if !ok || f.Hidden {
 			continue
 		}
 		if t, ok := parseTime(rowValue(row, s.col)); ok {
-			parts = append(parts, i18nui.TVars(ctx, s.key, map[string]string{"date": t.Format(dateLayout)}))
+			parts = append(parts, s.key.Text(ctx, map[string]any{"date": t.Format(dateLayout)}))
 		}
 	}
 	return strings.Join(parts, " · ")
@@ -306,20 +306,20 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 				variant = ui.ButtonSecondary
 			}
 			act := interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityMoved, map[string]string{"entity": m.singular(ctx)})).
+				OnSuccessToast(i18nui.EntityMoved.Text(ctx, map[string]any{"entity": m.singular(ctx)})).
 				OnSuccess(interactive.Navigate(currentURL(ctx))).
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": strings.ToLower(label)}))
+				OnErrorToast(i18nui.EntityMoveFailed.Text(ctx, map[string]any{"action": strings.ToLower(label)}))
 			if variant == ui.ButtonDanger {
 				act = act.WithConfirmDialog(interactive.Confirm{
-					Title: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirmTitle, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
-					Message: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirm, map[string]string{
+					Title: i18nui.EntityMoveConfirmTitle.Text(ctx, map[string]any{"action": label, "entity": m.noun(ctx, false)}),
+					Message: i18nui.EntityMoveConfirm.Text(ctx, map[string]any{
 						"from": m.valueLabel(ctx, m.states.Field, current),
 						"to":   m.valueLabel(ctx, m.states.Field, t.To),
 					}),
 					// The move's label alone can read as the dismiss
 					// button ("Cancel" beside "Cancel"); naming the
 					// record makes the accept unmistakable.
-					Accept: i18nui.TVars(ctx, i18nui.KeyEntityMoveAccept, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
+					Accept: i18nui.EntityMoveAccept.Text(ctx, map[string]any{"action": label, "entity": m.noun(ctx, false)}),
 					Danger: true,
 				})
 				danger = append(danger, ui.MenuItem{Label: label, Danger: true, Do: &act})
@@ -359,13 +359,13 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 		}
 		name := strings.ToLower(act.label)
 		run := interactive.Post(m.api + "/_bulk").WithBody(string(body)).
-			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
+			OnSuccessToast(i18nui.EntityActionRan.Text(ctx, map[string]any{"action": name})).
 			OnSuccess(interactive.Navigate(currentURL(ctx))).
-			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name}))
+			OnErrorToast(i18nui.EntityMoveFailed.Text(ctx, map[string]any{"action": name}))
 		if variant == ui.ButtonDanger {
 			run = run.WithConfirmDialog(interactive.Confirm{
-				Title:   i18nui.TVars(ctx, i18nui.KeyEntityActionConfirmTitle, map[string]string{"action": act.label}),
-				Message: i18nui.TVars(ctx, i18nui.KeyEntityActionConfirm, map[string]string{"title": title}),
+				Title:   i18nui.EntityActionConfirmTitle.Text(ctx, map[string]any{"action": act.label}),
+				Message: i18nui.EntityActionConfirm.Text(ctx, map[string]any{"title": title}),
 				Accept:  act.label,
 				Danger:  true,
 			})
@@ -393,12 +393,12 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 	if createPath := b.ui.createScreenPath(m.e, base); b.dup && createPath != "" && canCreate(ctx, m) {
 		if !m.d.NoDuplicate {
 			items = append(items, ui.MenuItem{
-				Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+				Label: i18nui.EntityDuplicate.Text(ctx),
 				Href:  createPath + "?duplicate=" + url.QueryEscape(b.id),
 			})
 		}
 		items = append(items, ui.MenuItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityCreateAnother),
+			Label: i18nui.EntityCreateAnother.Text(ctx),
 			Href:  createPath,
 		})
 	}
@@ -417,13 +417,13 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 		if len(items) > 0 && len(danger) == 0 {
 			items = append(items, ui.MenuItem{Separator: true})
 		}
-		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeyEntityDelete), Danger: true, Do: &del})
+		items = append(items, ui.MenuItem{Label: i18nui.EntityDelete.Text(ctx), Danger: true, Do: &del})
 	}
 	if len(items) == 0 {
 		return ""
 	}
 	return render.Join(span, ui.Menu(ui.MenuConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
+		Label:    i18nui.EntityRowActions.Text(ctx, map[string]any{"title": title}),
 		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,
@@ -441,7 +441,7 @@ func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuIte
 	}
 	id := "eui-rec-link"
 	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
-		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+		[]ui.MenuItem{{Label: i18nui.EntityCopyLink.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
 // copyAPIURL is the record's REST address on this origin as a hidden
@@ -458,7 +458,7 @@ func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, [
 	}
 	id := "eui-rec-api"
 	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+url.PathEscape(b.id))),
-		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyAPIURL), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+		[]ui.MenuItem{{Label: i18nui.EntityCopyAPIURL.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
 // absoluteURL is the request's absolute address without its query:
@@ -504,12 +504,12 @@ type tab struct {
 // active tab's body, and names the active tab. Only the active tab's
 // body is built.
 func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, string, error) {
-	editTab := tab{key: "edit", label: i18nui.T(ctx, i18nui.KeyEntityTabEdit), build: func() (render.HTML, error) {
+	editTab := tab{key: "edit", label: i18nui.EntityTabEdit.Text(ctx), build: func() (render.HTML, error) {
 		return b.editTab(ctx, m, raw, row, masked, base), nil
 	}}
 	tabs := []tab{editTab}
 	if len(b.related) > 0 {
-		tabs = append(tabs, tab{key: "related", label: i18nui.T(ctx, i18nui.KeyEntityTabRelated), count: b.relatedCount(ctx, m), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "related", label: i18nui.EntityTabRelated.Text(ctx), count: b.relatedCount(ctx, m), build: func() (render.HTML, error) {
 			return b.relatedTab(ctx, m, base), nil
 		}})
 	}
@@ -537,12 +537,12 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}})
 	}
 	if b.activity && b.ui.host.Audit() != nil {
-		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "activity", label: i18nui.EntityTabActivity.Text(ctx), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
 			return b.activityTab(ctx, m), nil
 		}})
 	}
 	if b.apiTab {
-		tabs = append(tabs, tab{key: "api", label: i18nui.T(ctx, i18nui.KeyEntityTabApi), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "api", label: i18nui.EntityTabApi.Text(ctx), build: func() (render.HTML, error) {
 			return b.apiTabBody(ctx, m, row), nil
 		}})
 	}
@@ -577,7 +577,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	return ui.Stack(ui.StackConfig{},
 		ui.TabNav(ui.TabNavConfig{
 			ID:    "eui-" + m.name + "-tabs",
-			Label: i18nui.T(ctx, i18nui.KeyEntityRecordSections),
+			Label: i18nui.EntityRecordSections.Text(ctx),
 			Items: items,
 		}),
 		body,
@@ -672,17 +672,17 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 // the caller may update, the toast carries Undo: it restores the record
 // and returns to back, and the restore handler's answer is its toast.
 func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
-	vars := map[string]string{"entity": m.singular(ctx)}
+	vars := map[string]any{"entity": m.singular(ctx)}
 	del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
 		WithConfirmDialog(deleteConfirm(ctx, m)).
-		OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, vars)).
+		OnSuccessToast(i18nui.EntityDeleted.Text(ctx, vars)).
 		OnSuccess(interactive.Navigate(back)).
-		OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, vars))
+		OnErrorToast(i18nui.EntityDeleteFailed.Text(ctx, vars))
 	if undo && m.e.Config.Scope.SoftDelete && canUpdate(ctx, m, id) {
-		del = del.OnSuccessToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
+		del = del.OnSuccessToastAction(i18nui.EntityUndo.Text(ctx),
 			interactive.Post(m.api+"/"+url.PathEscape(id)+"/_restore").WithBody(`{}`).
 				OnSuccess(interactive.Navigate(back)).
-				OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+				OnErrorToast(i18nui.EntityRestoreFailed.Text(ctx)))
 	}
 	return del
 }
@@ -691,15 +691,15 @@ func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) inte
 // whether the delete is final (a soft-deleting entity's record can be
 // restored) and answers in the danger variant.
 func deleteConfirm(ctx context.Context, m *meta) interactive.Confirm {
-	vars := map[string]string{"entity": m.noun(ctx, false)}
-	msg := i18nui.KeyEntityDeleteConfirm
+	vars := map[string]any{"entity": m.noun(ctx, false)}
+	msg := i18nui.EntityDeleteConfirm
 	if m.e.Config.Scope.SoftDelete {
-		msg = i18nui.KeyEntityDeleteSoft
+		msg = i18nui.EntityDeleteSoft
 	}
 	return interactive.Confirm{
-		Title:   i18nui.TVars(ctx, i18nui.KeyEntityDeleteTitle, vars),
-		Message: i18nui.T(ctx, msg),
-		Accept:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+		Title:   i18nui.EntityDeleteTitle.Text(ctx, vars),
+		Message: msg.Text(ctx),
+		Accept:  i18nui.EntityDelete.Text(ctx),
 		Danger:  true,
 	}
 }

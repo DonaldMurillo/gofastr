@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
-	"github.com/chromedp/chromedp"
 )
 
 // This suite pins the COMPUTED display of real menu panels under the

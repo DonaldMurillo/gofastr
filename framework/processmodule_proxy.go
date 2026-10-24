@@ -145,7 +145,7 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 		writeProxy503(w, proxyRetryAfter)
 		return
 	}
-	commitBufferedResponse(w, &res, sl.uiRenderer())
+	commitBufferedResponse(w, &res, sl.uiRenderer(r.Context()))
 }
 
 // uiRenderer builds the ui.node.v1 → design-system renderer for this module.
@@ -154,7 +154,7 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 // declared routes and nothing else, an ActionRef that names no declared
 // route fails the render closed (design §9). Rebuilt per call from the
 // descriptor's routes (a handful of entries; no hot-path cost).
-func (sl *moduleSlot) uiRenderer() *uinoderender.Renderer {
+func (sl *moduleSlot) uiRenderer(ctx context.Context) *uinoderender.Renderer {
 	sl.mu.RLock()
 	routes := sl.desc.Routes
 	sl.mu.RUnlock()
@@ -162,7 +162,7 @@ func (sl *moduleSlot) uiRenderer() *uinoderender.Renderer {
 	for _, rt := range routes {
 		byID[rt.ID] = rt.Path
 	}
-	return uinoderender.New(func(actionRef string) (string, bool) {
+	return uinoderender.New(ctx, func(actionRef string) (string, bool) {
 		p, ok := byID[actionRef]
 		return p, ok
 	})

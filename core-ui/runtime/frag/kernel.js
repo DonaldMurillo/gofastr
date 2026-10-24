@@ -174,6 +174,17 @@
   // Own-prop read for {} registries keyed by attribute-borne names: an
   // inherited "constructor" is truthy and must not pass as an entry.
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  // say is every word the runtime writes for a reader: the host's
+  // #gofastr-strings block (core-ui/runtime.StringsJSON, the reader's
+  // locale) else the English beside the key, with {{name}} filled from
+  // p. A Go test holds each say() call to its registered phrase. No
+  // Object.prototype member is a string, so a key like "toString" falls
+  // through to the English.
+  let _says;
+  const say = (k, en, p) => {
+    const s = (_says ??= _readInlineJSON('gofastr-strings') || {})[k];
+    return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
+  };
   const closestAttr = (el, attr) => {
     const node = el.closest(`[${CSS.escape(attr)}]`);
     return node?.getAttribute(attr) ?? null;
@@ -211,6 +222,7 @@
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
+    say,
 
     /* DOM attributes name fetch targets throughout the runtime. Keep these
        guards in kernel so navigation cannot race the RPC demand module that
@@ -631,7 +643,7 @@
         const c = document.createElement('div');
         c.setAttribute('data-cui-toast-fallback', '');
         c.setAttribute('role', 'region');
-        c.setAttribute('aria-label', 'Notifications');
+        c.setAttribute('aria-label', say('runtime.notifications', 'Notifications'));
         c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
         return c;
       });
@@ -656,7 +668,7 @@
       }
       const dismiss = mk('button', 'background:none;border:0;color:inherit;cursor:pointer', '×');
       dismiss.type = 'button';
-      dismiss.setAttribute('aria-label', 'Dismiss notification');
+      dismiss.setAttribute('aria-label', say('runtime.dismiss_notification', 'Dismiss notification'));
       dismiss.addEventListener('click', () => { item.remove(); });
       item.appendChild(text);
       item.appendChild(dismiss);

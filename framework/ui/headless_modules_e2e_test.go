@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/chromedp/cdproto/emulation"
-	"github.com/chromedp/chromedp"
 )
 
 // moduleTestCtx opens the page body renders on and waits for #ready.
@@ -246,7 +247,7 @@ func TestIslandComboboxAnnouncesResults(t *testing.T) {
 		t.Fatal("the combobox marker never loaded headless-combobox")
 	}
 	const status = `document.querySelector('[data-hui-combobox-status]').textContent`
-	want := evalString(ctx, `document.getElementById('q-listbox').getAttribute('data-hui-combobox-count').replace('{n}','2')`)
+	want := evalString(ctx, `document.getElementById('q-listbox').getAttribute('data-hui-combobox-count').replace('{{n}}','2')`)
 	if err := chromedp.Run(ctx, chromedp.SendKeys(`#q`, "al", chromedp.ByID)); err != nil {
 		t.Fatal(err)
 	}

@@ -124,7 +124,7 @@ type bulkAction struct {
 func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 	var out []bulkAction
 	if m.ch.CanDeleteRecordScoped(ctx, "") {
-		out = append(out, bulkAction{key: "delete", kind: bulkDelete, label: i18nui.T(ctx, i18nui.KeyEntityBulkDelete)})
+		out = append(out, bulkAction{key: "delete", kind: bulkDelete, label: i18nui.EntityBulkDelete.Text(ctx)})
 	}
 	if !m.ch.CanUpdateRecordScoped(ctx, "") {
 		return out
@@ -134,7 +134,7 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 			continue
 		}
 		for _, v := range bulkValues(f) {
-			label := i18nui.TVars(ctx, i18nui.KeyEntityBulkSet, map[string]string{
+			label := i18nui.EntityBulkSet.Text(ctx, map[string]any{
 				"field": m.label(ctx, f.Name),
 				"value": bulkValueLabel(ctx, m, f, v),
 			})
@@ -155,7 +155,7 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		}
 		out = append(out, bulkAction{
 			key: "move:" + t.Key, kind: bulkMove, move: t.Key, perm: t.Permission,
-			label: i18nui.TVars(ctx, i18nui.KeyEntityBulkMove, map[string]string{"move": name}),
+			label: i18nui.EntityBulkMove.Text(ctx, map[string]any{"move": name}),
 		})
 	}
 	for _, a := range m.ext.Actions {
@@ -186,7 +186,7 @@ func restoreActions(ctx context.Context, m *meta) []bulkAction {
 	if !m.e.Config.Scope.SoftDelete {
 		return nil
 	}
-	return []bulkAction{{key: bulkRestoreKey, kind: bulkRestore, label: i18nui.T(ctx, i18nui.KeyEntityRestore)}}
+	return []bulkAction{{key: bulkRestoreKey, kind: bulkRestore, label: i18nui.EntityRestore.Text(ctx)}}
 }
 
 func actionLabel(a Action) string {
@@ -231,9 +231,9 @@ func bulkValues(f schema.Field) []string {
 func bulkValueLabel(ctx context.Context, m *meta, f schema.Field, v string) string {
 	if f.Type == schema.Bool {
 		if v == "true" {
-			return i18nui.T(ctx, i18nui.KeyEntityYes)
+			return i18nui.EntityYes.Text(ctx)
 		}
-		return i18nui.T(ctx, i18nui.KeyEntityNo)
+		return i18nui.EntityNo.Text(ctx)
 	}
 	return m.valueLabel(ctx, f.Name, v)
 }
@@ -724,21 +724,21 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 // through says what happened to how many ("2 payments deleted"); one
 // that skipped or failed any, or ran an app action, counts each outcome.
 func bulkToast(ctx context.Context, m *meta, act bulkAction, t bulkTally) string {
-	key := i18nui.KeyEntityBulkUpdated
+	key := i18nui.EntityBulkUpdated
 	switch act.kind {
 	case bulkDelete:
-		key = i18nui.KeyEntityBulkDeleted
+		key = i18nui.EntityBulkDeleted
 	case bulkRestore:
-		key = i18nui.KeyEntityBulkRestored
+		key = i18nui.EntityBulkRestored
 	case bulkRun:
-		key = ""
+		key = i18n.Phrase{}
 	}
-	if key == "" || t.skipped > 0 || t.failed > 0 {
-		return i18nui.TVars(ctx, i18nui.KeyEntityBulkDone, map[string]string{
+	if key.IsZero() || t.skipped > 0 || t.failed > 0 {
+		return i18nui.EntityBulkDone.Text(ctx, map[string]any{
 			"done": strconv.Itoa(t.done), "skipped": strconv.Itoa(t.skipped), "failed": strconv.Itoa(t.failed),
 		})
 	}
-	return i18nui.TVars(ctx, key, map[string]string{"count": strconv.Itoa(t.done), "entity": m.noun(ctx, t.done != 1)})
+	return key.Text(ctx, map[string]any{"count": strconv.Itoa(t.done), "entity": m.noun(ctx, t.done != 1)})
 }
 
 // bulkUndo is a delete's Undo button: a restore of the ids the run
@@ -763,10 +763,10 @@ func bulkUndo(ctx context.Context, m *meta, ids []string, outcomes map[string]st
 	if err != nil {
 		return nil
 	}
-	a := interactive.NewToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
+	a := interactive.NewToastAction(i18nui.EntityUndo.Text(ctx),
 		interactive.Post(m.api+"/_bulk").WithBody(string(body)).
 			OnSuccess(interactive.Navigate(back)).
-			OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+			OnErrorToast(i18nui.EntityRestoreFailed.Text(ctx)))
 	if enc, err := json.Marshal(a); err != nil || len(enc) > undoActionBudget {
 		return nil
 	}
@@ -829,7 +829,7 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, r *http.Reque
 			slog.WarnContext(ctx, "entityui: bulk enqueued mark", "entity", m.name, "job", job.ID, "error", err)
 		}
 	}
-	ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusInfo, TTL: 6000, Title: i18nui.TVars(ctx, i18nui.KeyEntityBulkQueued, map[string]string{
+	ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusInfo, TTL: 6000, Title: i18nui.EntityBulkQueued.Text(ctx, map[string]any{
 		"count": strconv.Itoa(held.Count), "entity": m.plural(ctx),
 	})})
 	writeBulkJSON(w, http.StatusAccepted, map[string]any{"job": held.ID, "count": held.Count})

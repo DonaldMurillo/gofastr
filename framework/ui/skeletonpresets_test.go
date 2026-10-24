@@ -98,7 +98,7 @@ func TestSkeletonPresets_LabelCustomAndLocalised(t *testing.T) {
 		t.Errorf("the default announcement replaced the custom Label:\n%s", custom)
 	}
 
-	ctx := makeCtxWithLocale(i18nui.KeyLoading, "Chargement…")
+	ctx := makeCtxWithLocale(i18nui.Loading, "Chargement…")
 	localised := string(SkeletonRow(SkeletonRowConfig{Ctx: ctx}))
 	if !strings.Contains(localised, "Chargement…") {
 		t.Errorf("the default announcement did not resolve through the ctx locale:\n%s", localised)

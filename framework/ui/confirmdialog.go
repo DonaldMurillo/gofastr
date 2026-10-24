@@ -25,7 +25,7 @@ import (
 // control that names its own title or accept label replaces them at
 // open time.
 func confirmDialogTemplate(ctx context.Context) render.HTML {
-	confirm := i18nui.T(ctx, i18nui.KeyDialogConfirm)
+	confirm := i18nui.DialogConfirm.Text(ctx)
 	button := func(label string, v ButtonVariant, part string) render.HTML {
 		return Button(ButtonConfig{
 			Label:      label,
@@ -43,7 +43,7 @@ func confirmDialogTemplate(ctx context.Context) render.HTML {
 		html.Heading(html.HeadingConfig{
 			Level: 2, ID: "fui-confirm-dialog-title", Class: "fui-confirm-dialog__title",
 			ExtraAttrs: html.Attrs{"data-cui-confirm-part": "title", "data-cui-internal": ""},
-		}, render.Text(i18nui.T(ctx, i18nui.KeyDialogConfirmTitle))),
+		}, render.Text(i18nui.DialogConfirmTitle.Text(ctx))),
 		html.Paragraph(html.TextConfig{
 			ID: "fui-confirm-dialog-message", Class: "fui-confirm-dialog__message",
 			ExtraAttrs: html.Attrs{"data-cui-confirm-part": "message", "data-cui-internal": ""},
@@ -52,7 +52,7 @@ func confirmDialogTemplate(ctx context.Context) render.HTML {
 			Class:      "fui-confirm-dialog__actions",
 			ExtraAttrs: html.Attrs{"data-cui-internal": ""},
 		},
-			button(i18nui.T(ctx, i18nui.KeyDialogCancel), ButtonSecondary, "cancel"),
+			button(i18nui.DialogCancel.Text(ctx), ButtonSecondary, "cancel"),
 			button(confirm, ButtonPrimary, "accept"),
 			button(confirm, ButtonDanger, "accept-danger"),
 		),

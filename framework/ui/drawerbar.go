@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -66,7 +67,7 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 	}
 	kids := []render.HTML{
 		Button(ButtonConfig{
-			Label:      i18nui.T(ctx, i18nui.KeyDialogClose),
+			Label:      i18nui.DialogClose.Text(ctx),
 			Icon:       "close",
 			IconOnly:   true,
 			Variant:    ButtonGhost,
@@ -77,8 +78,8 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 	}
 	if cfg.Prev != "" || cfg.Next != "" {
 		kids = append(kids,
-			drawerStep(ctx, cfg.Prev, "chevron-up", i18nui.KeyDrawerPrev),
-			drawerStep(ctx, cfg.Next, "chevron-down", i18nui.KeyDrawerNext))
+			drawerStep(ctx, cfg.Prev, "chevron-up", i18nui.DrawerPrev),
+			drawerStep(ctx, cfg.Next, "chevron-down", i18nui.DrawerNext))
 	}
 	if cfg.CopyURL != "" {
 		// One id per path: a stack never holds two layers on one path
@@ -94,16 +95,16 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 				IconOnly:    true,
 				Icon:        "link",
 				Ghost:       true,
-				AriaLabel:   i18nui.T(ctx, i18nui.KeyCopyLink),
+				AriaLabel:   i18nui.CopyLink.Text(ctx),
 				ToastOnCopy: true,
-				ToastTitle:  i18nui.T(ctx, i18nui.KeyCopyCopied),
+				ToastTitle:  i18nui.CopyCopied.Text(ctx),
 				Ctx:         ctx,
 			}),
 		)
 	}
 	if cfg.PageURL != "" {
 		kids = append(kids, LinkButton(LinkButtonConfig{
-			Label:      i18nui.T(ctx, i18nui.KeyDrawerOpenPage),
+			Label:      i18nui.DrawerOpenPage.Text(ctx),
 			Href:       cfg.PageURL,
 			Icon:       "maximize",
 			IconOnly:   true,
@@ -119,8 +120,8 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 
 // drawerStep is one step control: a link that swaps href into the
 // layer, or with no href the same control disabled.
-func drawerStep(ctx context.Context, href, icon string, key i18nui.Key) render.HTML {
-	label := i18nui.T(ctx, key)
+func drawerStep(ctx context.Context, href, icon string, key i18n.Phrase) render.HTML {
+	label := key.Text(ctx)
 	if href == "" {
 		return Button(ButtonConfig{Label: label, Icon: icon, IconOnly: true, Variant: ButtonGhost, Size: ButtonSizeSmall, Disabled: true})
 	}

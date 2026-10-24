@@ -69,7 +69,7 @@ type LightboxConfig struct {
 	// data-cui-open="<this Name>" opens the overlay.
 	Name string
 	// Label is the accessible name for the open modal. Defaults to
-	// "Image viewer" (i18nui.KeyLightboxLabel through the strings
+	// "Image viewer" (i18nui.LightboxLabel through the strings
 	// bridge).
 	Label string
 	// NavArrows renders Prev/Next buttons inside the modal AND wires
@@ -84,12 +84,6 @@ type LightboxConfig struct {
 	AllowDownload bool
 	// Pages, when non-empty, scopes the modal mount to those routes.
 	Pages []string
-
-	// Ctx carries the per-request context used to resolve i18n strings
-	// (the viewer label, Prev/Next nav and Download aria-labels) through
-	// the strings bridge. When nil, context.Background() is used and
-	// English fallbacks are returned, preserving today's behaviour.
-	Ctx context.Context
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) onto the lightbox's own root
@@ -113,7 +107,6 @@ func Lightbox(cfg LightboxConfig) *widget.Builder {
 		navArrows:     cfg.NavArrows,
 		showCaption:   cfg.ShowCaption,
 		allowDownload: cfg.AllowDownload,
-		ctx:           cfg.Ctx,
 		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}
 	titleID := cfg.Name + "-title"
@@ -142,9 +135,7 @@ type lightboxSlot struct {
 	navArrows     bool
 	showCaption   bool
 	allowDownload bool
-	// ctx carries the per-request locale for i18n resolution. nil = context.Background().
-	ctx        context.Context
-	extraAttrs html.Attrs
+	extraAttrs    html.Attrs
 }
 
 // lightboxClasses dresses headless.LightboxViewer's parts in this
@@ -162,8 +153,13 @@ var lightboxClasses = headless.Classes{
 	headless.PartDownload:       "fui-lightbox__download",
 }
 
-func (s *lightboxSlot) Render() render.HTML {
-	ctx := s.ctx
+// Render is RenderCtx with no reader: the English viewer.
+func (s *lightboxSlot) Render() render.HTML { return s.RenderCtx(context.Background()) }
+
+// RenderCtx draws the viewer with its words (the Prev/Next and Download
+// labels) in the request's locale. The modal is mounted once, so the
+// locale comes from each render, never from the mount.
+func (s *lightboxSlot) RenderCtx(ctx context.Context) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -182,7 +178,7 @@ func (s *lightboxSlot) Render() render.HTML {
 	}, lightboxClasses))
 }
 
-var _ component.Component = (*lightboxSlot)(nil)
+var _ component.ContextComponent = (*lightboxSlot)(nil)
 
 const lightboxChevronLeft render.HTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 const lightboxChevronRight render.HTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`

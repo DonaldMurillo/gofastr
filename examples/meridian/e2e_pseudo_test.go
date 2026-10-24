@@ -146,7 +146,7 @@ func TestE2E_AdminPseudoLocaleOverflow(t *testing.T) {
 	// Each locale in turn: the pseudo locale, then Spanish, whose
 	// real words run longest in places the pseudo text does not.
 	for _, loc := range []struct{ tag, dashboard string }{
-		{pseudoLocale, i18nui.Pseudo(i18nui.Defaults[i18nui.KeyAdminDashboard])},
+		{pseudoLocale, i18nui.Pseudo(i18nui.AdminDashboard.English())},
 		{"es", "Panel"},
 	} {
 		checkLocaleOverflow(t, ctx, base, loc.tag, loc.dashboard, paths)

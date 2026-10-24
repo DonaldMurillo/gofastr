@@ -71,7 +71,7 @@ func moneyInput(ic InputContext) render.HTML {
 		Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 		Input: func(c headless.FieldControl) render.HTML {
 			return ui.InputGroup(ui.InputGroupConfig{
-				Prepend: render.Text(i18nui.T(ic.Ctx, i18nui.KeyEntityCurrency)),
+				Prepend: render.Text(i18nui.EntityCurrency.Text(ic.Ctx)),
 				Input: ui.Control(ui.ControlConfig{
 					Field: c, Type: "number", Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
 					Min: bound(ic.Field.Min), Max: bound(ic.Field.Max), Step: step,
@@ -104,9 +104,9 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		switch t := v.(type) {
 		case bool:
 			if t {
-				return render.Text(i18nui.T(ctx, i18nui.KeyEntityYes))
+				return render.Text(i18nui.EntityYes.Text(ctx))
 			}
-			return render.Text(i18nui.T(ctx, i18nui.KeyEntityNo))
+			return render.Text(i18nui.EntityNo.Text(ctx))
 		case nil:
 			return muted()
 		default:

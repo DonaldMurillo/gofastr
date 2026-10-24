@@ -109,10 +109,10 @@ func (b *Battery) renderEmails(ctx context.Context, _ map[string]string) render.
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminEmails),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminEmailsSub),
+			Title:    i18nui.AdminEmails.Text(ctx),
+			Subtitle: i18nui.AdminEmailsSub.Text(ctx),
 		}),
-		ui.TabNav(ui.TabNavConfig{Items: tabs, Label: i18nui.T(ctx, i18nui.KeyAdminEmailTemplates)}),
+		ui.TabNav(ui.TabNavConfig{Items: tabs, Label: i18nui.AdminEmailTemplates.Text(ctx)}),
 		b.emailDetail(ctx, sel),
 	)
 }
@@ -121,29 +121,29 @@ func (b *Battery) renderEmails(ctx context.Context, _ map[string]string) render.
 func (b *Battery) emailDetail(ctx context.Context, p EmailPreview) render.HTML {
 	msg, err := b.renderEmail(ctx, p)
 	if err != nil {
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminEmailFailed)))
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminEmailFailed.Text(ctx)))
 	}
-	none := func(key i18nui.Key) render.HTML {
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo}, render.Text(i18nui.T(ctx, key)))
+	none := func(key i18n.Phrase) render.HTML {
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo}, render.Text(key.Text(ctx)))
 	}
-	htmlBody := none(i18nui.KeyAdminEmailNoHTML)
+	htmlBody := none(i18nui.AdminEmailNoHTML)
 	if msg.HTMLBody != "" {
 		htmlBody = ui.AspectRatioComponent(ui.AspectRatioConfig{Ratio: ui.AspectRatio4_3},
 			html.IFrame(html.IFrameConfig{
 				Src:   b.cfg.PathPrefix + "/_email/" + pathSegment(p.Name),
-				Title: i18nui.T(ctx, i18nui.KeyAdminEmailHTML),
+				Title: i18nui.AdminEmailHTML.Text(ctx),
 			}))
 	}
-	textBody := none(i18nui.KeyAdminEmailNoText)
+	textBody := none(i18nui.AdminEmailNoText)
 	if msg.TextBody != "" {
 		textBody = ui.CodeBlock(ui.CodeBlockConfig{Code: msg.TextBody, Language: "text", Scroll: true, Wrap: true})
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
-			{Label: i18nui.T(ctx, i18nui.KeyAdminEmailSubject), Value: render.Text(msg.Subject)},
+			{Label: i18nui.AdminEmailSubject.Text(ctx), Value: render.Text(msg.Subject)},
 		}}),
-		ui.Card(ui.CardConfig{Heading: i18nui.T(ctx, i18nui.KeyAdminEmailHTML), HeadingLevel: 2}, htmlBody),
-		ui.Card(ui.CardConfig{Heading: i18nui.T(ctx, i18nui.KeyAdminEmailText), HeadingLevel: 2}, textBody),
+		ui.Card(ui.CardConfig{Heading: i18nui.AdminEmailHTML.Text(ctx), HeadingLevel: 2}, htmlBody),
+		ui.Card(ui.CardConfig{Heading: i18nui.AdminEmailText.Text(ctx), HeadingLevel: 2}, textBody),
 	)
 }
 

@@ -157,7 +157,7 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 		return
 	}
 	if jsonCall {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.T(ctx, i18nui.KeyEntitySavedSaved)})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.EntitySavedSaved.Text(ctx)})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"id": v.ID})
 		return
 	}
@@ -193,7 +193,7 @@ func (u *UI) deleteSavedView(ctx context.Context, w http.ResponseWriter, r *http
 		return
 	}
 	if jsonCall {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.T(ctx, i18nui.KeyEntitySavedDeleted)})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, TTL: 6000, Title: i18nui.EntitySavedDeleted.Text(ctx)})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}

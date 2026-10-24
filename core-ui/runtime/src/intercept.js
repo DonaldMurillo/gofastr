@@ -364,7 +364,7 @@
     if (d.kind === 'refuse') {
       // Claimed and refused: the stack, the URL and every layer's
       // content stay as they are.
-      NS._toastOrFallback?.({ variant: 'warning', title: MAX_LAYERS + ' panels is the limit', body: 'Open this one as a page, or close a panel first.' });
+      NS._toastOrFallback?.({ variant: 'warning', title: NS.say('runtime.panel_limit', '{{n}} panels is the limit', { n: MAX_LAYERS }), body: NS.say('runtime.panel_limit_hint', 'Open this one as a page, or close a panel first.') });
       return true;
     }
     const trigger = anchor || document.activeElement;

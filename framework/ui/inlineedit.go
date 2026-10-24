@@ -64,10 +64,10 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 	}
 	save, saved := cfg.SaveLabel, cfg.Saved
 	if save == "" {
-		save = i18nui.T(ctx, i18nui.KeyInlineEditSave)
+		save = i18nui.InlineEditSave.Text(ctx)
 	}
 	if saved == "" {
-		saved = i18nui.T(ctx, i18nui.KeyInlineEditSaved)
+		saved = i18nui.InlineEditSaved.Text(ctx)
 	}
 	rpc := interactive.Put(cfg.Action)
 	if strings.EqualFold(cfg.Method, "PATCH") {

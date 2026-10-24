@@ -11,8 +11,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func wizardIslandPage(t *testing.T, current int, errors string) string {

@@ -89,7 +89,7 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	}
 	placeholder := cfg.Placeholder
 	if placeholder == "" {
-		placeholder = i18nui.T(ctx, i18nui.KeySearchPlaceholder)
+		placeholder = i18nui.SearchPlaceholder.Text(ctx)
 	}
 	shortcut := cfg.Shortcut
 	if cfg.Shortcut == "" && cfg.Shortcut != " " {

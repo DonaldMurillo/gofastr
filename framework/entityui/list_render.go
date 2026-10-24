@@ -154,9 +154,9 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), listOpts)
 	if err != nil {
 		return ui.Callout(ui.CalloutConfig{
-			Title:   i18nui.TVars(ctx, i18nui.KeyEntityLoadFailed, map[string]string{"entity": m.plural(ctx)}),
+			Title:   i18nui.EntityLoadFailed.Text(ctx, map[string]any{"entity": m.plural(ctx)}),
 			Variant: ui.StatusDanger,
-		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
+		}, render.Text(i18nui.EntitySlotFailedBody.Text(ctx))), nil
 	}
 	b.ui.pageTitles(ctx, s, rows)
 	if len(rows) > 0 && !b.embedded && !b.noLinks && !s.deletedView {
@@ -295,9 +295,9 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	subtitle := ""
 	if known && (desc == "" || !tabsCounted) {
 		if total == 1 {
-			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCountOne, map[string]string{"entity": m.noun(ctx, false)})
+			subtitle = i18nui.EntityCountOne.Text(ctx, map[string]any{"entity": m.noun(ctx, false)})
 		} else {
-			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCount, map[string]string{
+			subtitle = i18nui.EntityCount.Text(ctx, map[string]any{
 				"count":  formatNumber(float64(total), 0),
 				"entity": m.noun(ctx, true),
 			})
@@ -318,7 +318,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	// The trash view creates nothing: there is no New in it.
 	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
+			Label:   i18nui.EntityNew.Text(ctx, map[string]any{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),
 			Variant: ui.ButtonPrimary,
 			Icon:    "plus",
@@ -345,7 +345,7 @@ func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map
 	actions := slices.Clone(b.actions)
 	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.TVars(ctx, i18nui.KeyEntityAdd, map[string]string{"entity": m.noun(ctx, false)}),
+			Label:   i18nui.EntityAdd.Text(ctx, map[string]any{"entity": m.noun(ctx, false)}),
 			Href:    s.createHref(),
 			Variant: ui.ButtonSecondary,
 			Size:    ui.ButtonSizeSmall,
@@ -395,12 +395,12 @@ func (b *ListBuilder) facetControls(ctx context.Context, s *listState) []ui.Face
 		// The label sits above the control, so the clear choice is a
 		// plain "All", never "All Customer".
 		facet := ui.Facet{Name: p, Label: m.label(ctx, name), Value: strings.TrimSpace(s.q.Get(p)),
-			AllLabel: i18nui.T(ctx, i18nui.KeyFilterAllPlain)}
+			AllLabel: i18nui.FilterAllPlain.Text(ctx)}
 		switch f.Type {
 		case schema.Bool:
 			facet.Options = []ui.FacetOption{
-				{Label: i18nui.T(ctx, i18nui.KeyEntityYes), Value: "true"},
-				{Label: i18nui.T(ctx, i18nui.KeyEntityNo), Value: "false"},
+				{Label: i18nui.EntityYes.Text(ctx), Value: "true"},
+				{Label: i18nui.EntityNo.Text(ctx), Value: "false"},
 			}
 			facet.Kind = ui.FacetPills
 		case schema.Relation:
@@ -442,7 +442,7 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 	m := s.m
 	var search *ui.FilterSearch
 	if len(m.e.Config.SearchFields) > 0 {
-		placeholder := i18nui.TVars(ctx, i18nui.KeyEntitySearch, map[string]string{"entity": m.plural(ctx)})
+		placeholder := i18nui.EntitySearch.Text(ctx, map[string]any{"entity": m.plural(ctx)})
 		search = &ui.FilterSearch{Name: s.p.q, Value: s.search, Placeholder: placeholder, Label: placeholder}
 		if !b.embedded && !b.top && s.key == "" {
 			// The page's own list takes "/"; an embedded or keyed list
@@ -520,10 +520,10 @@ func (b *ListBuilder) layoutSwitchControl(ctx context.Context, s *listState) ren
 	}
 	cards := s.as == "cards"
 	return ui.SegmentedLinks(ui.SegmentedLinksConfig{
-		Label: i18nui.T(ctx, i18nui.KeyEntityLayout),
+		Label: i18nui.EntityLayout.Text(ctx),
 		Items: []ui.SegmentLink{
-			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutTable), Icon: "list", Href: href("table"), Current: !cards},
-			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutCards), Icon: "grid", Href: href("cards"), Current: cards},
+			{Text: i18nui.EntityLayoutTable.Text(ctx), Icon: "list", Href: href("table"), Current: !cards},
+			{Text: i18nui.EntityLayoutCards.Text(ctx), Icon: "grid", Href: href("cards"), Current: cards},
 		},
 		Ctx: ctx,
 	})

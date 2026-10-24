@@ -113,32 +113,32 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 		ID:     "eui-" + m.name + "-override",
 		ExtraAttrs: interactive.Post(action).
 			WithConfirmDialog(interactive.Confirm{
-				Title:   i18nui.TVars(ctx, i18nui.KeyEntityOverrideTitle, map[string]string{"entity": m.noun(ctx, false)}),
-				Message: i18nui.T(ctx, i18nui.KeyEntityOverrideConfirm),
-				Accept:  i18nui.T(ctx, i18nui.KeyEntityOverride),
+				Title:   i18nui.EntityOverrideTitle.Text(ctx, map[string]any{"entity": m.noun(ctx, false)}),
+				Message: i18nui.EntityOverrideConfirm.Text(ctx),
+				Accept:  i18nui.EntityOverride.Text(ctx),
 			}).
-			OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntityOverrideDone)).
+			OnSuccessToast(i18nui.EntityOverrideDone.Text(ctx)).
 			OnSuccess(interactive.Navigate(back)).
 			Attrs(),
 	},
 		hiddenInput("back", back),
 		ui.Select(ui.SelectConfig{
 			Name:     overrideStateField,
-			Label:    i18nui.T(ctx, i18nui.KeyEntityOverrideState),
+			Label:    i18nui.EntityOverrideState.Text(ctx),
 			Options:  opts,
 			Required: true,
 		}),
 		ui.TextArea(ui.TextAreaConfig{
 			Name:      overrideReasonField,
-			Label:     i18nui.T(ctx, i18nui.KeyEntityOverrideReason),
+			Label:     i18nui.EntityOverrideReason.Text(ctx),
 			Required:  true,
 			MaxLength: overrideReasonMax,
 			Rows:      3,
-			Help:      i18nui.T(ctx, i18nui.KeyEntityOverrideHelp),
+			Help:      i18nui.EntityOverrideHelp.Text(ctx),
 		}),
 	)
 	return ui.Collapsible(ui.CollapsibleConfig{
-		Summary: i18nui.T(ctx, i18nui.KeyEntityOverride),
+		Summary: i18nui.EntityOverride.Text(ctx),
 		ID:      "eui-" + m.name + "-override-disclosure",
 	}, form)
 }
@@ -263,7 +263,7 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 			http.Redirect(w, r, back, http.StatusSeeOther)
 			return
 		}
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: i18nui.T(ctx, i18nui.KeyEntityOverrideDone)})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: i18nui.EntityOverrideDone.Text(ctx)})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"status": "ok", "state": state})
 	})
 }
@@ -320,7 +320,7 @@ func writeOverrideError(w http.ResponseWriter, r *http.Request, ctx context.Cont
 	msg := reason.Text(ctx, params...)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	body := ui.Callout(ui.CalloutConfig{Title: i18nui.T(ctx, i18nui.KeyEntityOverride), Variant: ui.StatusDanger}, render.Text(msg))
+	body := ui.Callout(ui.CalloutConfig{Title: i18nui.EntityOverride.Text(ctx), Variant: ui.StatusDanger}, render.Text(msg))
 	_, _ = w.Write([]byte(body))
 }
 

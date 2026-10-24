@@ -92,7 +92,7 @@ func Render(cfg Config) render.HTML {
 
 	var primary, barCTA, menu render.HTML
 	if len(cfg.Links) > 0 {
-		primary = html.Nav(html.NavConfig{Class: Style.Links(), Label: i18nui.T(ctx, i18nui.KeyNavPrimary)}, links()...)
+		primary = html.Nav(html.NavConfig{Class: Style.Links(), Label: i18nui.NavPrimary.Text(ctx)}, links()...)
 	}
 	if cfg.CTA.Href != "" {
 		barCTA = html.Div(html.DivConfig{Class: Style.BarCta()},
@@ -100,7 +100,7 @@ func Render(cfg Config) render.HTML {
 	}
 	if len(cfg.Links) > 0 || cfg.CTA.Href != "" {
 		panel := []render.HTML{
-			html.Nav(html.NavConfig{Class: Style.PanelLinks(), Label: i18nui.T(ctx, i18nui.KeyNavMobilePrimary)}, links()...),
+			html.Nav(html.NavConfig{Class: Style.PanelLinks(), Label: i18nui.NavMobilePrimary.Text(ctx)}, links()...),
 		}
 		if cfg.CTA.Href != "" {
 			panel = append(panel, html.Div(html.DivConfig{Class: Style.PanelCta()},
@@ -114,7 +114,7 @@ func Render(cfg Config) render.HTML {
 			Content: render.Join(panel...),
 			Trap:    true,
 			Parts: headless.Parts{Attrs: headless.PartAttrs{
-				headless.PartSummary: {"aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},
+				headless.PartSummary: {"aria-label": i18nui.NavToggle.Text(ctx)},
 			}},
 		}, headless.Classes{
 			headless.PartRoot:    Style.Menu(),

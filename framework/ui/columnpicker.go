@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -66,21 +67,21 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 		case c.Locked || c.ToggleHref == "":
 			toggle = render.Tag("span", map[string]string{"class": "fui-colpick__toggle", "aria-disabled": "true"}, mark, render.Text(c.Label))
 		default:
-			key := i18nui.KeyColumnShow
+			key := i18nui.ColumnShow
 			if c.Shown {
-				key = i18nui.KeyColumnHide
+				key = i18nui.ColumnHide
 			}
 			toggle = render.Tag("a", map[string]string{
 				"class":      "fui-colpick__toggle",
 				"href":       c.ToggleHref,
-				"aria-label": i18nui.TVars(ctx, key, map[string]string{"column": c.Label}),
+				"aria-label": key.Text(ctx, map[string]any{"column": c.Label}),
 			}, mark, render.Text(c.Label))
 		}
 		kids := []render.HTML{toggle}
 		if c.Shown {
 			kids = append(kids,
-				colpickMove(ctx, c.UpHref, "arrow-up", i18nui.KeyColumnMoveUp, c.Label),
-				colpickMove(ctx, c.DownHref, "arrow-down", i18nui.KeyColumnMoveDown, c.Label))
+				colpickMove(ctx, c.UpHref, "arrow-up", i18nui.ColumnMoveUp, c.Label),
+				colpickMove(ctx, c.DownHref, "arrow-down", i18nui.ColumnMoveDown, c.Label))
 		}
 		rows = append(rows, render.Tag("li", map[string]string{"class": "fui-colpick__row"}, kids...))
 	}
@@ -98,8 +99,8 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 }
 
 // colpickMove is a move link, or the same glyph disabled with no href.
-func colpickMove(ctx context.Context, href, icon string, key i18nui.Key, label string) render.HTML {
-	name := i18nui.TVars(ctx, key, map[string]string{"column": label})
+func colpickMove(ctx context.Context, href, icon string, key i18n.Phrase, label string) render.HTML {
+	name := key.Text(ctx, map[string]any{"column": label})
 	attrs := map[string]string{"class": "fui-colpick__move", "aria-label": name, "title": name}
 	tag := "a"
 	if href == "" {

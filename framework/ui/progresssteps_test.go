@@ -1,9 +1,10 @@
 package ui
 
 import (
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestProgressStepsRequiresAtLeastOneStep(t *testing.T) {

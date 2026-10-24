@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ShortcutHint ───────────────────────────────────────────────────
@@ -51,6 +53,9 @@ type ShortcutHintConfig struct {
 	// ID), data-cui-*, and aria-hidden — the wrapper must stay in the
 	// accessibility tree for its SR-only label.
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context the keycap words and the
+	// screen-reader sentence are said in. When nil, English applies.
+	Ctx context.Context
 }
 
 // ShortcutHint renders the visual chord chips.
@@ -58,7 +63,11 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	if cfg.Chord == "" {
 		panic("ui: ShortcutHint requires Chord")
 	}
-	parts := parseChordParts(cfg.Chord)
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	parts := parseChordParts(ctx, cfg.Chord)
 	if len(parts) == 0 {
 		panic("ui: ShortcutHint Chord parsed to zero parts: " + cfg.Chord)
 	}
@@ -68,7 +77,7 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 
 	srLabel := cfg.SROnlyLabel
 	if srLabel == "" {
-		srLabel = humanizeChord(parts)
+		srLabel = humanizeChord(ctx, parts)
 	}
 
 	cls := "fui-shortcut-hint"
@@ -78,9 +87,9 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 
 	chips := make([]render.HTML, 0, len(parts))
 	for _, p := range parts {
-		chips = append(chips, renderChordPart(p))
+		chips = append(chips, renderChordPart(ctx, p))
 	}
-	chips = append(chips, html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text("Shortcut: "+srLabel)))
+	chips = append(chips, html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(i18nui.ShortcutLabel.Text(ctx, map[string]any{"keys": srLabel}))))
 
 	extras := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden", "data-hui-shortcut-hint")
 	if extras == nil {
@@ -128,7 +137,7 @@ type chordPart struct {
 	key  string // for kind=key: literal text (e.g. "K", "/", "Esc")
 }
 
-func parseChordParts(chord string) []chordPart {
+func parseChordParts(ctx context.Context, chord string) []chordPart {
 	out := []chordPart{}
 	for raw := range strings.SplitSeq(chord, "+") {
 		t := strings.TrimSpace(raw)
@@ -144,22 +153,22 @@ func parseChordParts(chord string) []chordPart {
 		case "alt", "option", "opt":
 			out = append(out, chordPart{kind: "alt"})
 		default:
-			out = append(out, chordPart{kind: "key", key: displayKey(t)})
+			out = append(out, chordPart{kind: "key", key: displayKey(ctx, t)})
 		}
 	}
 	return out
 }
 
-func displayKey(k string) string {
+func displayKey(ctx context.Context, k string) string {
 	switch strings.ToLower(k) {
 	case "enter", "return":
 		return "↵"
 	case "esc", "escape":
-		return "Esc"
+		return i18nui.KeyEsc.Text(ctx)
 	case "tab":
-		return "Tab"
+		return i18nui.KeyTab.Text(ctx)
 	case "space":
-		return "Space"
+		return i18nui.KeySpace.Text(ctx)
 	case "arrowup", "up":
 		return "↑"
 	case "arrowdown", "down":
@@ -175,7 +184,7 @@ func displayKey(k string) string {
 	return k
 }
 
-func renderChordPart(p chordPart) render.HTML {
+func renderChordPart(ctx context.Context, p chordPart) render.HTML {
 	switch p.kind {
 	case "mod":
 		// Two spans: ⌘ for Mac, Ctrl for others. CSS hides the wrong one.
@@ -184,7 +193,7 @@ func renderChordPart(p chordPart) render.HTML {
 			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 		},
 			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-mac"}, render.Text("⌘")),
-			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-other"}, render.Text("Ctrl")),
+			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-other"}, render.Text(i18nui.KeyCtrl.Text(ctx))),
 		)
 	case "shift":
 		return html.Kbd(html.TextConfig{
@@ -235,28 +244,28 @@ func ariaKeyShortcuts(chord string) string {
 	return spell("Meta") + " " + spell("Control")
 }
 
-func humanizeChord(parts []chordPart) string {
+func humanizeChord(ctx context.Context, parts []chordPart) string {
 	out := []string{}
 	for _, p := range parts {
 		switch p.kind {
 		case "mod":
-			out = append(out, "Mod")
+			out = append(out, i18nui.KeyMod.Text(ctx))
 		case "shift":
-			out = append(out, "Shift")
+			out = append(out, i18nui.KeyShift.Text(ctx))
 		case "alt":
-			out = append(out, "Alt")
+			out = append(out, i18nui.KeyAlt.Text(ctx))
 		default:
 			switch p.key {
 			case "↵":
-				out = append(out, "Enter")
+				out = append(out, i18nui.KeyEnter.Text(ctx))
 			case "↑":
-				out = append(out, "Up")
+				out = append(out, i18nui.KeyUp.Text(ctx))
 			case "↓":
-				out = append(out, "Down")
+				out = append(out, i18nui.KeyDown.Text(ctx))
 			case "←":
-				out = append(out, "Left")
+				out = append(out, i18nui.KeyLeft.Text(ctx))
 			case "→":
-				out = append(out, "Right")
+				out = append(out, i18nui.KeyRight.Text(ctx))
 			default:
 				out = append(out, p.key)
 			}

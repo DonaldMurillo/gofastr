@@ -88,7 +88,7 @@ func TestUploadFileHrefRefusesEscapes(t *testing.T) {
 // An upload's prompt speaks the request's language.
 func TestUploadFieldTranslated(t *testing.T) {
 	cat := i18n.NewMapCatalog()
-	cat.Set("de", string(i18nui.KeyFileUploadDropSingle), i18n.Message{Text: "DATEI HIER ABLEGEN"})
+	cat.Set("de", i18nui.FileUploadDropSingle.Key(), i18n.Message{Text: "DATEI HIER ABLEGEN"})
 	x := uploadsUI(t, true, withTranslator(i18n.NewTranslator(cat, "en")))
 	ctx := i18n.WithContext(x.ctx("/products/p1", ""), i18n.Locale{Tag: "de"})
 	body := string(x.ui.Record("products", "p1").RenderCtx(ctx))

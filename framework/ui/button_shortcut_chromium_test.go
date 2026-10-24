@@ -4,11 +4,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chromedp/cdproto/input"
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/cdproto/input"
-	"github.com/chromedp/chromedp"
 )
 
 // A button's chord clicks it while focus sits in a field, and a copy
