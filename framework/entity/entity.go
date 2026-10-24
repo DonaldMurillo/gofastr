@@ -735,7 +735,7 @@ func (c EntityConfig) checkRecordKey() error {
 	for _, col := range keys {
 		i := slices.IndexFunc(c.Fields, func(f schema.Field) bool { return f.Name == col })
 		if i >= 0 && !keyable(c.Fields[i]) {
-			return fmt.Errorf("entity %q: primary key column %q has a type whose values have more than one spelling, so one record would answer to several ids; key on a string, integer, enum, UUID or relation column with no RawType (an integer column may set an integer RawType)", c.Name, col)
+			return fmt.Errorf("entity %q: primary key column %q has a type whose values have more than one spelling, so one record would answer to several ids; key on a string, text, image, file, integer, enum, UUID or relation column with no RawType (an integer column may set an integer RawType)", c.Name, col)
 		}
 	}
 	return nil
