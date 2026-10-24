@@ -44,6 +44,108 @@ func TestQuitBeforeRun(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRunTwiceRejected(t *testing.T) {
+	s := New()
+	s.Quit() // Both calls stay independent of GTK and a display.
+	if err := s.Run(context.Background(), desktop.WindowConfig{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run(context.Background(), desktop.WindowConfig{}, nil); err == nil || err.Error() != "desktop/linux: Run called twice" {
+		t.Fatalf("second Run: %v", err)
+	}
+}
+
+func TestWindowIDValidationBeforeDispatch(t *testing.T) {
+	s := New().(*linuxShell)
+	for _, test := range []struct {
+		name, id string
+		valid    bool
+	}{
+		{"empty", "", false},
+		{"reserved-main", desktop.MainWindowID, false},
+		{"secondary", "secondary", true},
+		{"main-prefix", "main-child", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			w, err := s.OpenWindow(test.id, desktop.WindowSpec{}, "about:blank")
+			if w != nil {
+				t.Fatalf("OpenWindow(%q) returned a window before Run", test.id)
+			}
+			if !test.valid {
+				if err == nil || err.Error() != "desktop/linux: invalid secondary window id" {
+					t.Fatalf("OpenWindow(%q): %v", test.id, err)
+				}
+				return
+			}
+			// A valid ID reaches dispatch; an invalid ID must never get this error.
+			assertDesktopError(t, err, desktop.CodeCancelled, "Linux desktop shell is not running")
+		})
+	}
+}
+
+func TestSidebarWidthBounds(t *testing.T) {
+	w := &linuxWindow{shell: New().(*linuxShell)}
+	for _, test := range []struct {
+		points int
+		valid  bool
+	}{
+		{-1, false},
+		{0, true},
+		{1, true},
+		{desktop.MaxSidebarWidth, true},
+		{desktop.MaxSidebarWidth + 1, false},
+	} {
+		t.Run(fmt.Sprint(test.points), func(t *testing.T) {
+			err := w.SetSidebarWidth(test.points)
+			if !test.valid {
+				assertDesktopError(t, err, desktop.CodeInvalidInput, "invalid sidebar width")
+			} else if err != nil {
+				t.Fatalf("valid sidebar width %d: %v", test.points, err)
+			}
+		})
+	}
+}
+
+func TestFrameValidationBeforeDispatch(t *testing.T) {
+	w := &linuxWindow{shell: New().(*linuxShell)}
+	for _, test := range []struct {
+		name          string
+		width, height int
+		valid         bool
+	}{
+		{"negative-width", -1, 10, false},
+		{"zero-width", 0, 10, false},
+		{"negative-height", 10, -1, false},
+		{"zero-height", 10, 0, false},
+		{"wide", 32768, 10, false},
+		{"tall", 10, 32768, false},
+		{"minimum", 1, 1, true},
+		{"maximum-width", 32767, 1, true},
+		{"maximum-height", 1, 32767, true},
+		{"maximum", 32767, 32767, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := w.SetFrame(desktop.Frame{Width: test.width, Height: test.height})
+			if !test.valid {
+				if err == nil || err.Error() != "desktop/linux: invalid window frame" {
+					t.Fatalf("invalid frame: %v", err)
+				}
+				return
+			}
+			assertDesktopError(t, err, desktop.CodeCancelled, "Linux desktop shell is not running")
+		})
+	}
+}
+
+func assertDesktopError(t *testing.T, err error, code, message string) {
+	t.Helper()
+	var got *desktop.Error
+	if !errors.As(err, &got) || got.Code != code || got.Message != message {
+		t.Fatalf("got %v, want desktop error %q: %s", err, code, message)
+	}
+}
+
 func TestCancelledBeforeRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

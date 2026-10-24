@@ -31,8 +31,10 @@ each command to the doc that covers it.
   no Go code or git changes. A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
-  The generated `go.mod` uses this CLI release's minimum Go version and
-  preferred toolchain, even when the `go` on PATH is older. `init .` preserves
+  The generated `go.mod` uses this CLI release's minimum Go version, even
+  when the `go` on PATH is older, and a `toolchain` line only when the
+  release prefers a newer toolchain than that minimum (`go mod tidy` drops
+  one that repeats the `go` line). `init .` preserves
   higher requirements already set in `go.mod`, including an explicit
   `toolchain default`. Project names
   must use lowercase letters, digits, hyphens, or underscores and start

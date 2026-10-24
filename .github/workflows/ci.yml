@@ -145,8 +145,8 @@ jobs:
         with:
           # Restored BEFORE Set up Go, here and in the two restore-only
           # steps below. setup-go installs the go.mod `go` version, and its
-          # `go env` then downloads the `toolchain` version into the module
-          # cache as read-only files. A snapshot restored on top of them
+          # `go env` then downloads any newer `toolchain` version into the
+          # module cache as read-only files. A snapshot restored on top of them
           # (it holds the same toolchain) fails tar on every one ("Cannot
           # open: File exists", exit 2). Restored first, the toolchain comes
           # from the snapshot and nothing is downloaded. An exclusion
@@ -258,6 +258,10 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           go test -count=1 ./battery/desktop/...
+          # Cross-link test executables: archive-only builds miss unresolved
+          # ARM64 FFI/GTK assembly symbols. These binaries are not executed.
+          mkdir -p dist/ci/linux-arm64
+          GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
           go test -count=1 ./cmd/gofastr -run 'Test(Desktop|LinuxDesktop)'
 
       - name: gofmt (tracked files must be clean)

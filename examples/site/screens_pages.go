@@ -130,7 +130,7 @@ func gsHero() render.HTML {
 			AriaLabel: "Get started",
 		}),
 		ui.DetailList(ui.DetailListConfig{Inline: true, Items: []ui.DetailItem{
-			{Label: "Prereqs", Value: text("Go 1.27+, git")},
+			{Label: "Prereqs", Value: text("Go 1.27.3+, git")},
 			{Label: "OS", Value: text("macOS, Linux, Windows (WSL)")},
 			{Label: "Storage", Value: text("SQLite by default, Postgres opt-in")},
 			{Label: "Time", Value: text("~4 minutes")},
