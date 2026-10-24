@@ -172,9 +172,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				}
 				bind, bindErr := incrementBindValue(body[f.Name])
 				if bindErr != nil {
-					return &ValidationError{fields: map[string][]string{f.Name: {
-						"primary key number is not exactly representable; send it as a JSON integer literal or a string",
-					}}}
+					return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonKeyNotExact}}}}
 				}
 				cols = append(cols, f.Name)
 				vals = append(vals, bind)

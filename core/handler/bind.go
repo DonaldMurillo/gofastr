@@ -120,7 +120,7 @@ func bindBody(r *http.Request, dst any) error {
 	limited := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return Errorf(400, "invalid JSON: %s", err.Error())
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	if len(body) == 0 {
 		return nil
@@ -138,7 +138,7 @@ func bindBody(r *http.Request, dst any) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
-		return Errorf(400, "invalid JSON: %s", err.Error())
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	// Exactly one value: a second Decode must find nothing. '{"a":1}{"b":2}'
 	// decodes its first value and hides the second, leaving two parsers (or
@@ -146,7 +146,7 @@ func bindBody(r *http.Request, dst any) error {
 	// same two-ways-to-read ambiguity the strict key rules refuse.
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return Errorf(400, "invalid JSON: body must contain exactly one JSON value")
+		return Fail(400, ReasonJSONMultipleValues)
 	}
 	return nil
 }
@@ -189,11 +189,11 @@ func validateBodyKeys(body []byte, dst any) error {
 			return nil
 		}
 		if _, dup := seen[key]; dup {
-			return Errorf(400, "invalid JSON: duplicate key %q", key)
+			return Fail(400, ReasonJSONDuplicateKey, map[string]any{"key": strconv.Quote(key)})
 		}
 		seen[key] = struct{}{}
 		if _, allowedKey := allowed[key]; !allowedKey {
-			return Errorf(400, "invalid JSON: unknown field %q", key)
+			return Fail(400, ReasonJSONUnknownField, map[string]any{"key": strconv.Quote(key)})
 		}
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
@@ -306,7 +306,7 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 		}
 
 		if err := setField(fv, sanitizeQueryParam(values[0])); err != nil {
-			return Errorf(400, "invalid query parameter %q: %s", tag, err.Error())
+			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "query", "name": strconv.Quote(tag), "detail": err.Error()})
 		}
 	}
 
@@ -355,7 +355,7 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 		}
 
 		if err := setField(fv, value); err != nil {
-			return Errorf(400, "invalid path parameter %q: %s", tag, err.Error())
+			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "path", "name": strconv.Quote(tag), "detail": err.Error()})
 		}
 	}
 
@@ -384,7 +384,7 @@ func bindHeaders(r *http.Request, rv reflect.Value) error {
 		}
 
 		if err := setField(fv, value); err != nil {
-			return Errorf(400, "invalid header %q: %s", tag, err.Error())
+			return Fail(400, ReasonInvalidHeader, map[string]any{"name": strconv.Quote(tag), "detail": err.Error()})
 		}
 	}
 

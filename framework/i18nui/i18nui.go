@@ -34,16 +34,6 @@ const (
 	KeyPaginationResults  Key = "ui.pagination.results"
 	KeyPaginationLabel    Key = "ui.pagination.label"
 
-	// Validation
-	KeyValidationRequired Key = "ui.validation.required"
-	KeyValidationEmail    Key = "ui.validation.email"
-	KeyValidationMin      Key = "ui.validation.min"
-	KeyValidationMax      Key = "ui.validation.max"
-	KeyValidationMinLen   Key = "ui.validation.minLength"
-	KeyValidationMaxLen   Key = "ui.validation.maxLength"
-	KeyValidationPattern  Key = "ui.validation.pattern"
-	KeyValidationUnique   Key = "ui.validation.unique"
-
 	// Empty state
 	KeyEmptyStateTitle Key = "ui.empty.title"
 	KeyEmptyStateDesc  Key = "ui.empty.description"
@@ -354,15 +344,6 @@ var Defaults = map[Key]string{
 	KeyPaginationResults:  "results",
 	KeyPaginationLabel:    "Pagination",
 
-	KeyValidationRequired: "This field is required",
-	KeyValidationEmail:    "Enter a valid email address",
-	KeyValidationMin:      "Must be at least {min}",
-	KeyValidationMax:      "Must be at most {max}",
-	KeyValidationMinLen:   "Must be at least {min} characters",
-	KeyValidationMaxLen:   "Must be at most {max} characters",
-	KeyValidationPattern:  "Invalid format",
-	KeyValidationUnique:   "This value is already taken",
-
 	KeyEmptyStateTitle: "Nothing here yet",
 	KeyEmptyStateDesc:  "No items to display.",
 
@@ -612,31 +593,6 @@ var Defaults = map[Key]string{
 	KeyHuiMultiSelectRemoveLabel:    "Remove {label}",
 }
 
-// translatorKey is the unexported context key used by WithTranslator
-// and translatorFromContext. Type-uniqueness prevents collisions with
-// other packages stashing values on the same ctx.
-type translatorKey struct{}
-
-// WithTranslator attaches a translator to ctx so callers downstream
-// can resolve translations via T(ctx, key) without threading a
-// translator argument through every signature.
-func WithTranslator(ctx context.Context, tr *i18n.Translator) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, translatorKey{}, tr)
-}
-
-// translatorFromContext returns the translator attached via
-// WithTranslator, or nil if none.
-func translatorFromContext(ctx context.Context) *i18n.Translator {
-	if ctx == nil {
-		return nil
-	}
-	v, _ := ctx.Value(translatorKey{}).(*i18n.Translator)
-	return v
-}
-
 // resolve returns the translated message for key: the ctx translator is
 // consulted first, but a translator MISS (it returns the bare key, which
 // happens when the app catalog has no ui.* entries) falls through to the
@@ -648,7 +604,7 @@ func resolve(ctx context.Context, key Key) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	tr := translatorFromContext(ctx)
+	tr := i18n.TranslatorFrom(ctx)
 	if tr != nil {
 		if val := tr.T(ctx, string(key)); val != "" && val != string(key) {
 			return val
@@ -660,7 +616,7 @@ func resolve(ctx context.Context, key Key) string {
 	return string(key)
 }
 
-// T translates a key. If ctx carries a translator (via WithTranslator),
+// T translates a key. If ctx carries a translator (via i18n.WithTranslator),
 // it is consulted first; otherwise the English default for the key is
 // returned, or the bare key string when no default exists (so missing
 // keys surface visibly rather than as empty strings).
@@ -718,28 +674,6 @@ func TVarsHTML(ctx context.Context, key Key, vars map[string]render.HTML) render
 	}
 	b.WriteString(string(render.Text(s)))
 	return render.HTML(b.String())
-}
-
-// TranslateValidation returns a translated validation error message
-// for the given validator type, with optional template variables. ctx
-// carries the per-request locale; tr may be nil to use English
-// defaults.
-//
-// Renamed from ValidationError so the symbol no longer collides with
-// core/handler.ValidationError when a file imports both packages.
-func TranslateValidation(ctx context.Context, tr *i18n.Translator, validator string, vars map[string]string) string {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if tr != nil {
-		ctx = WithTranslator(ctx, tr)
-	}
-	key := Key("ui.validation." + validator)
-	msg := T(ctx, key)
-	for k, v := range vars {
-		msg = strings.ReplaceAll(msg, "{"+k+"}", v)
-	}
-	return msg
 }
 
 // Entity display label helpers resolve the strings an entity's Display
@@ -915,7 +849,7 @@ func catalogString(ctx context.Context, tr *i18n.Translator, key string) (string
 		ctx = context.Background()
 	}
 	if tr == nil {
-		tr = translatorFromContext(ctx)
+		tr = i18n.TranslatorFrom(ctx)
 	}
 	if tr == nil {
 		return "", false
@@ -958,9 +892,6 @@ func AllKeys() []Key {
 		KeyPaginationPrevious, KeyPaginationNext, KeyPaginationPage,
 		KeyPaginationOf, KeyPaginationShowing, KeyPaginationResults,
 		KeyPaginationLabel,
-		KeyValidationRequired, KeyValidationEmail, KeyValidationMin,
-		KeyValidationMax, KeyValidationMinLen, KeyValidationMaxLen,
-		KeyValidationPattern, KeyValidationUnique,
 		KeyEmptyStateTitle, KeyEmptyStateDesc,
 		KeyDialogConfirm, KeyDialogCancel, KeyDialogClose,
 		KeyDialogSave, KeyDialogDelete, KeyDialogConfirmTitle,

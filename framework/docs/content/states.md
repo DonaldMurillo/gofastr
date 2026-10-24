@@ -150,8 +150,10 @@ columns: a write changes them only through a move.
 ```json
 HTTP/1.1 422 Unprocessable Entity
 {"error": "status changes only through a move; open from \"draft\": issue, void",
+ "reason": "state_moves_open",
  "success": false,
  "fields": {"status": ["status changes only through a move; open from \"draft\": issue, void"]},
+ "field_reasons": {"status": ["state_moves_open"]},
  "moves": ["issue", "void"]}
 ```
 

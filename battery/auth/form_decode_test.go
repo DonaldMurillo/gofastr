@@ -71,7 +71,7 @@ func TestWriteFormAuthError_RejectsCrossOriginReferer(t *testing.T) {
 	req.Host = "real.example"
 	req.Header.Set("Referer", "https://evil.example/phish.html")
 	rec := httptest.NewRecorder()
-	writeFormAuthError(rec, req, http.StatusUnauthorized, "invalid_credentials")
+	writeFormAuthError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials)
 
 	if loc := rec.Header().Get("Location"); strings.Contains(loc, "evil.example") {
 		t.Errorf("redirected to attacker Referer: %q", loc)
@@ -87,7 +87,7 @@ func TestWriteFormAuthError_StripsRefererQuery(t *testing.T) {
 	req.Host = "real.example"
 	req.Header.Set("Referer", "https://real.example/login?return=//evil.attack&token=hijack")
 	rec := httptest.NewRecorder()
-	writeFormAuthError(rec, req, http.StatusUnauthorized, "invalid_credentials")
+	writeFormAuthError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials)
 
 	loc := rec.Header().Get("Location")
 	if strings.Contains(loc, "return=") || strings.Contains(loc, "token=hijack") {
@@ -106,7 +106,7 @@ func TestWriteFormAuthError_AcceptsSameOriginReferer(t *testing.T) {
 	req.Host = "real.example"
 	req.Header.Set("Referer", "https://real.example/login")
 	rec := httptest.NewRecorder()
-	writeFormAuthError(rec, req, http.StatusUnauthorized, "invalid_credentials")
+	writeFormAuthError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials)
 
 	loc := rec.Header().Get("Location")
 	if !strings.Contains(loc, "/login") {

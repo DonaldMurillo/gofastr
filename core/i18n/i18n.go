@@ -500,8 +500,9 @@ func matchCatalog(tag string, available map[string]struct{}) string {
 }
 
 // Middleware returns an HTTP middleware that resolves the caller's
-// locale and attaches it to the request context. Handlers downstream
-// call [T] / [Translator.T] with `r.Context()`.
+// locale and attaches it, with tr, to the request context. Handlers
+// downstream call [T], [Translator.T] or [Phrase.Text] with
+// `r.Context()`.
 //
 // Resolution order: locale resolver(s) (see [WithLocaleResolver]) →
 // explicit `X-Locale` header → highest-quality `Accept-Language` entry
@@ -517,7 +518,7 @@ func Middleware(tr *Translator, opts ...NegotiateOption) func(http.Handler) http
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			loc := Negotiate(tr, r, opts...)
-			ctx := WithContext(r.Context(), loc)
+			ctx := WithTranslator(WithContext(r.Context(), loc), tr)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

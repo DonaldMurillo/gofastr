@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -35,7 +36,7 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 	// The app's translator rides the context: every chrome string the
 	// screen draws (and every string an extension tab draws through
 	// i18nui.T) resolves through it.
-	ctx = i18nui.WithTranslator(ctx, m.tr)
+	ctx = i18n.WithTranslator(ctx, m.tr)
 	base := b.base
 	if base == "" {
 		base = requestBase(ctx)

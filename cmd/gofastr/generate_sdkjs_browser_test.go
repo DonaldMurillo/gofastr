@@ -134,11 +134,15 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
     r.valIsApiError = e instanceof ApiError;
     r.valStatus = e.status;
     r.valFields = e.fields ? Object.keys(e.fields).join(',') : 'none';
+    r.valReason = e.reason;
+    r.valFieldReasons = e.fieldReasons ? (e.fieldReasons.author_name || []).join(',') : 'none';
   }
 
   const rb = await api.posts.batchCreate([{ title: 'ok', authorName: 'c' }, {}]);
   r.rbCommitted = rb.committed;
   r.rbLen = rb.results.length;
+  const rbBad = rb.results.find((x) => x.index === 1) || {};
+  r.rbFieldReasons = rbBad.field_reasons ? (rbBad.field_reasons.author_name || []).join(',') : 'none';
 
   let resolveEvt;
   const evtP = new Promise((res) => { resolveEvt = res; });
@@ -197,6 +201,12 @@ true`
 	}
 	if fields, _ := r["valFields"].(string); !strings.Contains(fields, "author_name") {
 		t.Errorf("validation fields must use snake_case keys, got %v", r["valFields"])
+	}
+	if r["valReason"] != "validation_failed" || r["valFieldReasons"] != "required" {
+		t.Errorf("ApiError must carry the codes: reason=%v fieldReasons=%v", r["valReason"], r["valFieldReasons"])
+	}
+	if r["rbFieldReasons"] != "required" {
+		t.Errorf("batch result must carry field_reasons: %v", r["rbFieldReasons"])
 	}
 	if r["rbCommitted"] != false || r["rbLen"] != float64(2) {
 		t.Errorf("batch rollback must surface as an uncommitted result: %+v", r)

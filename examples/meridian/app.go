@@ -65,7 +65,7 @@ func authPolicy(loginPath, role string) app.Policy {
 					return decide.Allow()
 				}
 			}
-			return decide.Block(403, "Forbidden")
+			return decide.Block(403)
 		}
 		return decide.Allow()
 	})

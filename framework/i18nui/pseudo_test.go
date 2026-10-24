@@ -47,7 +47,7 @@ func TestAddPseudoCoversDefaults(t *testing.T) {
 			t.Fatalf("%s: got %q, %v", k, m.Text, ok)
 		}
 	}
-	ctx := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en-xa"}), i18n.NewTranslator(c, "en"))
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en-xa"}), i18n.NewTranslator(c, "en"))
 	if got := T(ctx, KeyDialogSave); got != Pseudo(Defaults[KeyDialogSave]) {
 		t.Fatalf("T in the pseudo locale = %q", got)
 	}

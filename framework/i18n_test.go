@@ -49,6 +49,23 @@ func TestApp_WithI18nWiresMiddlewareAndExposesT(t *testing.T) {
 	}
 }
 
+// A handler panic answers its 500 in the caller's locale.
+func TestApp_PanicAnswersInLocale(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", "error.internal", i18n.Message{Text: "erreur interne du serveur"})
+	a := NewApp(WithI18n(i18n.NewTranslator(cat, "en")))
+	a.Router().Get("/boom", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	req.Header.Set("Accept-Language", "fr")
+	rr := httptest.NewRecorder()
+	a.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusInternalServerError || strings.TrimSpace(rr.Body.String()) != "erreur interne du serveur" {
+		t.Fatalf("got %d %q", rr.Code, rr.Body.String())
+	}
+}
+
 func TestApp_WithI18nPanicsWithWithoutDefaultMiddleware(t *testing.T) {
 	defer func() {
 		r := recover()

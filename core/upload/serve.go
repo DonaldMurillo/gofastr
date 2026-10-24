@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // scriptableHead reports whether a sniffed content type is one a
@@ -72,7 +74,7 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 
@@ -88,7 +90,7 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 		if rg, ok := storage.(RangeGetter); ok {
 			rs, err := rg.GetRange(r.Context(), key)
 			if err != nil {
-				serveStoreError(w, err)
+				serveStoreError(w, r, err)
 				return
 			}
 			defer rs.Close()
@@ -98,7 +100,7 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 
 		rc, err := storage.Get(r.Context(), key)
 		if err != nil {
-			serveStoreError(w, err)
+			serveStoreError(w, r, err)
 			return
 		}
 		defer rc.Close()
@@ -109,7 +111,7 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 		head := make([]byte, 512)
 		n, readErr := io.ReadFull(rc, head)
 		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		head = head[:n]
@@ -135,11 +137,11 @@ func serveSeekable(w http.ResponseWriter, r *http.Request, key string, rs io.Rea
 	head := make([]byte, 512)
 	n, readErr := io.ReadFull(rs, head)
 	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	if _, err := rs.Seek(0, io.SeekStart); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 
@@ -170,15 +172,15 @@ func setServeHeaders(w http.ResponseWriter, key, contentType string) {
 // echoing any filesystem path. Missing keys are 404; keys rejected by
 // backend sanitization (traversal / escaped paths) are 400; anything
 // else is a generic 500.
-func serveStoreError(w http.ResponseWriter, err error) {
+func serveStoreError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		// ErrNotFound wraps os.ErrNotExist, so this also matches any
 		// backend that returns a stdlib not-exist error through it.
-		http.Error(w, "not found", http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	case errors.Is(err, ErrInvalidKey):
-		http.Error(w, "invalid key", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidKey)
 	default:
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 	}
 }

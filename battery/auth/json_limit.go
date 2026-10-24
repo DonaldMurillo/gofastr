@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // maxAuthBodyBytes caps every JSON body decoded by an auth handler.
@@ -33,21 +34,21 @@ const maxAuthBodyBytes = 1 << 20 // 1 MiB
 // its 413 mapping).
 func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-		writeAuthError(w, http.StatusUnsupportedMediaType, "expected application/json")
+		writeAuthError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return false
 		}
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
+		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
 	}
 	if err := handler.UnmarshalStrict(body, dst); err != nil {
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
+		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
 	}
 	return true

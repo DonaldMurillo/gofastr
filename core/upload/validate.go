@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -48,7 +49,7 @@ func ValidateMIME(file io.ReadSeeker, allowed []string) error {
 		return nil
 	}
 
-	return fmt.Errorf("unsupported MIME type: %s (allowed: %s)", detected, strings.Join(allowed, ", "))
+	return i18n.NewError(reasonMIMENotAllowed, map[string]any{"type": detected, "allowed": strings.Join(allowed, ", ")})
 }
 
 // mediaType strips any "; parameter" suffix and normalizes case and
@@ -68,7 +69,7 @@ func ValidateSize(size int64, max int64) error {
 		return nil
 	}
 	if size > max {
-		return fmt.Errorf("file size %d exceeds maximum %d bytes", size, max)
+		return i18n.NewError(reasonSizeExceeded, map[string]any{"size": size, "max": max})
 	}
 	return nil
 }
@@ -83,7 +84,7 @@ func ValidateExt(filename string, allowed []string) error {
 
 	fileExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
 	if fileExt == "" {
-		return fmt.Errorf("file has no extension")
+		return i18n.NewError(reasonNoExtension)
 	}
 
 	for _, a := range allowed {
@@ -92,7 +93,7 @@ func ValidateExt(filename string, allowed []string) error {
 		}
 	}
 
-	return fmt.Errorf("file extension .%s not allowed (allowed: %s)", fileExt, strings.Join(allowed, ", "))
+	return i18n.NewError(reasonExtNotAllowed, map[string]any{"ext": fileExt, "allowed": strings.Join(allowed, ", ")})
 }
 
 // MaxFilenameBytes caps the sanitised filename length. A user-supplied

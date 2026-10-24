@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -56,7 +57,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// without passing through it, exactly as it does for the owner/tenant
 	// gate above.
 	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterList)) > 0 {
-		writeJSONError(w, http.StatusBadRequest, "streaming list does not support AfterList hooks; drop ?stream=true")
+		writeJSONError(w, r, http.StatusBadRequest, reasonStreamAfterList)
 		return
 	}
 	// Parse the URL query once and thread it through the helpers, mirroring
@@ -71,7 +72,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// skip side too. When chained from List() the guard has already run
 	// and passes again cheaply.
 	streamPage, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
-	if !ch.requireBoundedOffset(w, q, streamPage, streamPerPage) {
+	if !ch.requireBoundedOffset(w, r, q, streamPage, streamPerPage) {
 		return
 	}
 	// COUNT first so the envelope has the totals up front.
@@ -96,7 +97,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	var total int
 	if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
 		log.Printf("crud: stream count failed: %v", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 
@@ -130,7 +131,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
 		log.Printf("crud: stream query failed: %v", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	defer rows.Close()

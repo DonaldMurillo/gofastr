@@ -473,7 +473,7 @@ func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
 	// <img srcset> and reach the same storage delete as the original.
 	for _, m := range ch.bodyMediaRefs(body) {
 		if !isSafeMediaURL(m.ref) {
-			return &ValidationError{fields: map[string][]string{m.field: {"unsafe URL or path"}}}
+			return &ValidationError{fields: map[string][]schema.Violation{m.field: {{Reason: reasonUnsafeURL}}}}
 		}
 	}
 	return nil

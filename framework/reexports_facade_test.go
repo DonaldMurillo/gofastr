@@ -188,7 +188,7 @@ func TestFacadeCrudWrappersDelegate(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("context wrappers returned nil")
 	}
-	if ve := NewValidationError(map[string][]string{"title": {"required"}}); ve == nil {
+	if ve := NewValidationError(map[string][]schema.Violation{"title": {{Reason: schema.ReasonRequired}}}); ve == nil {
 		t.Fatal("NewValidationError returned nil")
 	}
 

@@ -153,14 +153,14 @@ func Validate(field Field, value any) error {
 // ValidationResult holds the outcome of validating a full map of values.
 type ValidationResult struct {
 	Valid  bool
-	Errors map[string][]string // field name → list of error messages
+	Errors map[string][]Violation // field name → its violations
 }
 
 // ValidateAll validates a map of values against every Field in the Schema.
 // Unknown keys are ignored; missing required fields produce errors.
 func ValidateAll(s Schema, values map[string]any) ValidationResult {
 	result := ValidationResult{
-		Errors: make(map[string][]string),
+		Errors: make(map[string][]Violation),
 	}
 
 	for _, f := range s.Fields {
@@ -171,12 +171,12 @@ func ValidateAll(s Schema, values map[string]any) ValidationResult {
 		val, present := values[f.Name]
 		if !present {
 			if f.Required && f.Default == nil {
-				result.Errors[f.Name] = append(result.Errors[f.Name], "is required")
+				result.Errors[f.Name] = append(result.Errors[f.Name], Violation{Reason: ReasonRequired})
 			}
 			continue
 		}
 		if err := validateField(f, val); err != nil {
-			result.Errors[f.Name] = append(result.Errors[f.Name], err.Error())
+			result.Errors[f.Name] = append(result.Errors[f.Name], AsViolation(err))
 		}
 	}
 
@@ -191,7 +191,7 @@ func ValidateAll(s Schema, values map[string]any) ValidationResult {
 // field happens not to be in the body.
 func ValidatePartial(s Schema, values map[string]any) ValidationResult {
 	result := ValidationResult{
-		Errors: make(map[string][]string),
+		Errors: make(map[string][]Violation),
 	}
 
 	for _, f := range s.Fields {
@@ -203,7 +203,7 @@ func ValidatePartial(s Schema, values map[string]any) ValidationResult {
 			continue
 		}
 		if err := validateField(f, val); err != nil {
-			result.Errors[f.Name] = append(result.Errors[f.Name], err.Error())
+			result.Errors[f.Name] = append(result.Errors[f.Name], AsViolation(err))
 		}
 	}
 

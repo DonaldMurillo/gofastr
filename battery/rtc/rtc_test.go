@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -341,7 +342,7 @@ func TestMountPanicsWithoutAuthorize(t *testing.T) {
 // carries its own status and message; success flows into Serve.
 func TestServeHTTPAuthorizeRefuses(t *testing.T) {
 	gone := newTestSignaler(t, Config{Authorize: func(r *http.Request) (Join, error) {
-		return Join{}, &HTTPError{Status: http.StatusGone, Message: "session ended"}
+		return Join{}, &HTTPError{Status: http.StatusGone, Reason: testReasonSessionEnded}
 	}})
 	w := httptest.NewRecorder()
 	gone.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil))
@@ -391,7 +392,7 @@ func TestServeHTTPPanicsWithoutAuthorize(t *testing.T) {
 func TestInitMountsAndStopsWithApp(t *testing.T) {
 	s := New(Config{
 		Authorize: func(r *http.Request) (Join, error) {
-			return Join{}, &HTTPError{Status: http.StatusUnauthorized, Message: "no session"}
+			return Join{}, &HTTPError{Status: http.StatusUnauthorized, Reason: testReasonNoSession}
 		},
 	})
 	app := framework.NewApp(framework.WithoutDefaultMiddleware())
@@ -522,3 +523,10 @@ func TestPermissionsPolicyOpensSelf(t *testing.T) {
 		}
 	}
 }
+
+// Host refusals the Authorize stubs return.
+var (
+	testReasonNo           = i18n.Define("rtc_test.no", "no")
+	testReasonSessionEnded = i18n.Define("rtc_test.session_ended", "session ended")
+	testReasonNoSession    = i18n.Define("rtc_test.no_session", "no session")
+)

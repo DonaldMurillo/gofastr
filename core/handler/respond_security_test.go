@@ -138,7 +138,7 @@ func TestWriteError_WrappedErrorGeneric500(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			WriteError(rec, tc.err)
+			WriteError(rec, nil, tc.err)
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("expected generic 500, got %d", rec.Code)
 			}

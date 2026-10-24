@@ -319,8 +319,8 @@ func TestUniqueValidator(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
-	if errs["email"] != "must be unique" {
-		t.Errorf("expected 'must be unique', got %q", errs["email"])
+	if errs["email"] != "is already in use" {
+		t.Errorf("expected 'is already in use', got %q", errs["email"])
 	}
 }
 

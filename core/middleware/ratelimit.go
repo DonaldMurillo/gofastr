@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
@@ -30,12 +31,14 @@ import (
 // refill tick — the earliest instant a retry can actually succeed,
 // since tokens arrive RefillBy at a time, not one by one.
 type RateLimitConfig struct {
-	KeyFunc      func(*http.Request) string
-	Capacity     int
-	RefillEvery  time.Duration
-	RefillBy     int
-	StatusCode   int
-	ErrorMessage string
+	KeyFunc     func(*http.Request) string
+	Capacity    int
+	RefillEvery time.Duration
+	RefillBy    int
+	StatusCode  int
+	// Message is the refusal body, translated per request. Zero means
+	// "rate limit exceeded" (catalog key error.rate_limited).
+	Message i18n.Phrase
 
 	// TrustProxyHeaders enables reading the client IP from
 	// X-Forwarded-For (or X-Real-IP). Only set this when the origin
@@ -125,8 +128,8 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = http.StatusTooManyRequests
 	}
-	if cfg.ErrorMessage == "" {
-		cfg.ErrorMessage = "rate limit exceeded"
+	if cfg.Message.IsZero() {
+		cfg.Message = reasonRateLimited
 	}
 
 	buckets := newBucketStoreCapped(cfg.Capacity, cfg.RefillEvery, cfg.RefillBy, cfg.MaxKeys)
@@ -147,7 +150,7 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 					// one sub-second too early, into another 429.
 					w.Header().Set("Retry-After", strconv.Itoa(ceilSeconds(retryAfter)))
 				}
-				http.Error(w, cfg.ErrorMessage, cfg.StatusCode)
+				i18n.HTTPError(w, r, cfg.StatusCode, cfg.Message)
 				return
 			}
 			next.ServeHTTP(w, r)

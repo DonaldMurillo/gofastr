@@ -46,7 +46,7 @@ func TestRespondJSON_SetsNoSniff(t *testing.T) {
 func TestWriteError_SetsNoSniff(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	WriteError(w, Errorf(http.StatusBadRequest, "bad input"))
+	WriteError(w, nil, Errorf(http.StatusBadRequest, "bad input"))
 
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("SECURITY: [respond] error JSON missing X-Content-Type-Options: nosniff (got %q). Attack: browser MIME sniffing on structured error responses.", got)

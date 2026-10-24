@@ -102,10 +102,12 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 
 	// Add common error response schema
 	s.AddSchema("Error", objectSchemaWith(map[string]any{
-		"error":   map[string]any{"type": "string"},
-		"success": map[string]any{"type": "boolean"},
-		"code":    map[string]any{"type": "integer"},
-		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"error":         map[string]any{"type": "string"},
+		"success":       map[string]any{"type": "boolean"},
+		"code":          map[string]any{"type": "integer"},
+		"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
+		"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
 	}))
 
 	// Offset-mode list envelope
@@ -127,11 +129,13 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 
 	// Per-item shape inside a _batch response
 	s.AddSchema("BatchResult", objectSchemaWith(map[string]any{
-		"index":   map[string]any{"type": "integer"},
-		"data":    map[string]any{"type": "object"},
-		"error":   map[string]any{"type": "string"},
-		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-		"skipped": map[string]any{"type": "boolean"},
+		"index":         map[string]any{"type": "integer"},
+		"data":          map[string]any{"type": "object"},
+		"error":         map[string]any{"type": "string"},
+		"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
+		"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"skipped":       map[string]any{"type": "boolean"},
 	}))
 
 	// Top-level shape for every _batch response
@@ -145,6 +149,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 	s.AddSchema("TransitionConflict", objectSchemaWith(map[string]any{
 		"error":   map[string]any{"type": "string"},
 		"success": map[string]any{"type": "boolean"},
+		"reason":  map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
 		"current": map[string]any{"type": "string", "description": "The record's current state value."},
 		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "The move keys open from the current value."},
 	}))
@@ -153,10 +158,12 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 	// or a stamp outside a move: the field error in the validation shape,
 	// plus the moves the caller can run instead.
 	s.AddSchema("StateError", objectSchemaWith(map[string]any{
-		"error":   map[string]any{"type": "string"},
-		"success": map[string]any{"type": "boolean"},
-		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"error":         map[string]any{"type": "string"},
+		"success":       map[string]any{"type": "boolean"},
+		"reason":        map[string]any{"type": "string", "description": "Stable code of the refusal (the catalog key's last segment); error is its text in the request's locale."},
+		"fields":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"moves":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 	}))
 
 	// Track whether any entity is auth-gated so the shared security

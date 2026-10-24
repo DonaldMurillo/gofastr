@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"runtime/debug"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -33,10 +35,7 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 					"error", textsafe.Recovered(rec),
 					"stack", textsafe.Truncate(string(debug.Stack()), maxStackLogLen),
 				)
-				WriteError(w, &Error{
-					Code:    http.StatusInternalServerError,
-					Message: "internal server error",
-				})
+				WriteError(w, r, Fail(http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError)))
 			}
 		}()
 
@@ -45,13 +44,13 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 
 		var in I
 		if err := Bind(r, &in); err != nil {
-			WriteError(w, err)
+			WriteError(w, r, err)
 			return
 		}
 
 		out, err := h(ctx, in)
 		if err != nil {
-			WriteError(w, err)
+			WriteError(w, r, err)
 			return
 		}
 
@@ -68,19 +67,31 @@ const (
 )
 
 // Error is a structured HTTP error with optional field-level validation errors.
+//
+// Reason, when set, is what the client reads: the response message is
+// Reason translated into the request's locale with Params, and the
+// body's "reason" is Reason.Code(), the stable code a client branches
+// on. Message is the text an error with no Reason sends as written (an
+// app's own wording); framework code always sets a Reason.
 type Error struct {
-	Code    int                 // HTTP status code
-	Message string              // human-readable message
-	Err     error               // wrapped cause (optional)
-	Fields  map[string][]string // field-level validation errors (optional)
+	Code       int                           // HTTP status code
+	Reason     i18n.Phrase                   // translated message + stable code (optional)
+	Params     map[string]any                // Reason's {{placeholders}}
+	Message    string                        // message sent as written when Reason is zero
+	Err        error                         // wrapped cause (optional)
+	Violations map[string][]schema.Violation // field-level validation errors (optional)
 }
 
-// Error implements the error interface.
+// Error implements the error interface with the English message.
 func (e *Error) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("%s: %v", e.Message, e.Err)
+	msg := e.Message
+	if !e.Reason.IsZero() {
+		msg = e.Reason.Format(e.Params)
 	}
-	return e.Message
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", msg, e.Err)
+	}
+	return msg
 }
 
 // Unwrap returns the wrapped cause for errors.Is/As.
@@ -88,29 +99,51 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-// Errorf creates a new Error with the given HTTP status code and formatted message.
+// Phrased implements i18n.Phrased; an Error with no Reason returns the
+// zero Phrase, which i18n.ErrorText passes over.
+func (e *Error) Phrased() (i18n.Phrase, map[string]any) { return e.Reason, e.Params }
+
+// Errorf creates a new Error with the given HTTP status code and a
+// formatted message sent as written. Framework code uses [Fail] so the
+// message translates; Errorf is for an app's own wording.
 func Errorf(code int, format string, args ...any) *Error {
 	return &Error{
-		Code:    code,
+		Code: code,
+		//gofastr:allow(rawtext) Errorf is the app author's own-wording escape hatch; framework code reaches for Fail
 		Message: fmt.Sprintf(format, args...),
 	}
 }
 
-// WrapError wraps an existing error with an HTTP status code and message.
-func WrapError(code int, message string, err error) *Error {
+// Fail creates an Error whose message is reason translated with params.
+func Fail(code int, reason i18n.Phrase, params ...map[string]any) *Error {
+	e := &Error{Code: code, Reason: reason}
+	if len(params) > 0 {
+		e.Params = params[0]
+	}
+	return e
+}
+
+// WrapError wraps an existing error with an HTTP status code and the
+// phrase the client reads, keeping the cause for errors.Is/As without
+// sending it.
+func WrapError(code int, reason i18n.Phrase, err error) *Error {
 	return &Error{
-		Code:    code,
-		Message: message,
-		Err:     err,
+		Code:   code,
+		Reason: reason,
+		Err:    err,
 	}
 }
 
-// ValidationError creates a 400 error with field-level validation messages.
-func ValidationError(fields map[string][]string) *Error {
+// ReasonValidationFailed is the message of a 400 that carries
+// field-level violations.
+var ReasonValidationFailed = i18n.Define("error.validation_failed", "validation failed")
+
+// ValidationError creates a 400 error with field-level violations.
+func ValidationError(fields map[string][]schema.Violation) *Error {
 	return &Error{
-		Code:    http.StatusBadRequest,
-		Message: "validation failed",
-		Fields:  fields,
+		Code:       http.StatusBadRequest,
+		Reason:     ReasonValidationFailed,
+		Violations: fields,
 	}
 }
 
@@ -121,48 +154,70 @@ type errorResponse struct {
 }
 
 type errorResponseDetail struct {
-	Code    int                 `json:"code"`
-	Message string              `json:"message"`
-	Fields  map[string][]string `json:"fields,omitempty"`
+	Code         int                 `json:"code"`
+	Reason       string              `json:"reason,omitempty"`
+	Message      string              `json:"message"`
+	Fields       map[string][]string `json:"fields,omitempty"`
+	FieldReasons map[string][]string `json:"field_reasons,omitempty"`
 }
 
-// WriteError writes a structured error response to w.
+// ViolationBodies renders field violations for a response body: the
+// messages in ctx's locale, and the stable codes in the same order.
+func ViolationBodies(ctx context.Context, fields map[string][]schema.Violation) (messages, codes map[string][]string) {
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	messages = make(map[string][]string, len(fields))
+	codes = make(map[string][]string, len(fields))
+	for name, vs := range fields {
+		for _, v := range vs {
+			messages[name] = append(messages[name], v.Text(ctx))
+			codes[name] = append(codes[name], v.Code())
+		}
+	}
+	return messages, codes
+}
+
+// WriteError writes a structured error response to w, translated into
+// r's locale.
 //
-// An *Error is rendered verbatim (its Code, Message, and Fields are
-// what the developer chose to expose). Any other error type is treated
-// as an internal failure: the response message is a generic
-// "internal server error" with status 500, and the original error
-// stays out of the response body. Callers that *do* want the inner
-// message to reach the client must wrap explicitly via [Errorf] or
-// [WrapError] (the latter keeps the cause for `errors.Is/As` without
-// leaking it).
+// An *Error is rendered as the developer built it: its Code, its
+// Reason (translated, with the code in "reason") or its Message, and
+// its Violations. Any other error type is treated as an internal
+// failure: the response message is a generic "internal server error"
+// with status 500, and the original error stays out of the response
+// body. Callers that *do* want a message to reach the client must wrap
+// explicitly via [Fail], [WrapError] or [Errorf] (WrapError keeps the
+// cause for `errors.Is/As` without leaking it).
 //
 // This prevents accidental leaks of database errors, driver-specific
 // strings ("pq: password authentication failed for user \"admin\""),
-// or wrapped stack traces.
-func WriteError(w http.ResponseWriter, err error) {
+// or wrapped stack traces. r may be nil; the message is then English.
+func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	herr, ok := err.(*Error)
 	if !ok {
 		herr = &Error{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-			Err:     err,
+			Code:   http.StatusInternalServerError,
+			Reason: i18n.StatusPhrase(http.StatusInternalServerError),
+			Err:    err,
 		}
+	}
+	ctx := context.Background()
+	if r != nil {
+		ctx = r.Context()
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(herr.Code)
 
-	resp := errorResponse{
-		Success: false,
-		Error: errorResponseDetail{
-			Code:    herr.Code,
-			Message: herr.Message,
-			Fields:  herr.Fields,
-		},
+	detail := errorResponseDetail{Code: herr.Code, Message: herr.Message}
+	if !herr.Reason.IsZero() {
+		detail.Reason = herr.Reason.Code()
+		detail.Message = herr.Reason.Text(ctx, herr.Params)
 	}
-	json.NewEncoder(w).Encode(resp)
+	detail.Fields, detail.FieldReasons = ViolationBodies(ctx, herr.Violations)
+	json.NewEncoder(w).Encode(errorResponse{Success: false, Error: detail})
 }
 
 // RequestFromContext retrieves the *http.Request stored by HandlerAdapter.

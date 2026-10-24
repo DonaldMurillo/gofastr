@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -30,7 +31,7 @@ const (
 func (b *Battery) handlePalette(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxPaletteBody)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.StatusPhrase(http.StatusBadRequest))
 		return
 	}
 	ctx := appui.WithRequest(r.Context(), r)

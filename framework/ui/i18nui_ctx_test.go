@@ -24,7 +24,7 @@ func makeCtxWithLocale(key i18nui.Key, translated string) context.Context {
 	cat.Set("fr", string(key), i18n.Message{Text: translated})
 	tr := i18n.NewTranslator(cat, "en")
 	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	return i18nui.WithTranslator(ctx, tr)
+	return i18n.WithTranslator(ctx, tr)
 }
 
 // TestRepeaterCtxLocaleAdd: AddLabel uses ctx locale when Ctx set.

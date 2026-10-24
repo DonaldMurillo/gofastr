@@ -689,7 +689,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
-		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Reason: decision.Reason, Params: decision.Params}, nil
 	}
 	// Region guards outlet, area and fill
 	// policies run in the policy phase, in declaration order after the
@@ -1370,7 +1370,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
-		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Reason: decision.Reason, Params: decision.Params}, nil
 	}
 	// Region guards run here too a Redirect
 	// moves the page even on the bare partial path, and the recorded

@@ -7554,7 +7554,7 @@ func renderAppSpecApp(bp AppSpec) string {
 		sb.WriteString("\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
 		sb.WriteString("\t\t\t\tfor _, r := range rh.GetRoles() { if r == role { return decide.Allow() } }\n")
 		sb.WriteString("\t\t\t}\n")
-		sb.WriteString("\t\t\treturn decide.Block(403, \"Forbidden\")\n")
+		sb.WriteString("\t\t\treturn decide.Block(403)\n")
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\treturn decide.Allow()\n")
 		sb.WriteString("\t})\n")

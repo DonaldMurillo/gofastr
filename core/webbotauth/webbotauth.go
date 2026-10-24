@@ -146,12 +146,14 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 				w.Header().Set("Retry-After", "1")
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusServiceUnavailable)
+				//gofastr:allow(rawtext) RFC 9457 problem details for a signing agent, protocol text like the Accept-Signature header
 				fmt.Fprintf(w, `{"title":"Web Bot Auth verification unavailable","status":503,"detail":%q}`+"\n", res.Reason)
 				return
 			}
 			w.Header().Set("Accept-Signature", `wba=("@authority" "signature-agent");created;expires;keyid;tag="web-bot-auth";alg="ed25519"`)
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusForbidden)
+			//gofastr:allow(rawtext) RFC 9457 problem details for a signing agent, protocol text like the Accept-Signature header
 			fmt.Fprintf(w, `{"title":"Web Bot Auth signature required","status":403,"detail":%q}`+"\n", res.Reason)
 			return
 		}

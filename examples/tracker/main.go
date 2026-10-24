@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/examples/tracker/appbar"
@@ -59,6 +60,10 @@ var (
 	resolvedIssue   = uiapp.NewKey[*Issue]("issue")
 	resolvedFilter  = uiapp.NewKey[string]("filter")
 )
+
+// exporterDown is the export screen's maintenance refusal, translated
+// per request like every framework refusal.
+var exporterDown = i18n.Define("tracker.exporter_down", "The CSV exporter is down for maintenance.")
 
 // bellTrigger is the notification bell's markup; the paired popover is
 // mounted once in buildApp.
@@ -346,8 +351,7 @@ func buildSite() *uiapp.App {
 	site.RegisterScreen(uiapp.NewScreen("/reports/export", &ExportScreen{}).
 		WithTitle("Export").
 		WithPolicy(uiapp.PolicyFunc(func(ctx context.Context) app.Decision {
-			return decide.Block(http.StatusServiceUnavailable,
-				"The CSV exporter is down for maintenance.")
+			return decide.BlockWith(http.StatusServiceUnavailable, exporterDown)
 		})), nil)
 
 	return site

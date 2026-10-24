@@ -242,7 +242,7 @@ func TestIndexIgnoresCallerIdentity(t *testing.T) {
 			if ctx.Value(roleKey{}) == "admin" {
 				return decide.Allow()
 			}
-			return decide.Block(http.StatusForbidden, "admins only")
+			return decide.Block(http.StatusForbidden)
 		})), nil)
 	if err := app.InitPlugins(); err != nil {
 		t.Fatal(err)

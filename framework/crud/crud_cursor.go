@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -55,7 +57,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	w.Header().Set("Cache-Control", "no-store")
 	cursor, limit, direction := pagination.ParseCursorPagination(r)
 	if direction != "forward" && direction != "backward" {
-		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")
+		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return
 	}
 	// ParseCursorPagination clamps only to the global MaxPageSize; the
@@ -86,7 +88,9 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	if cursor != "" {
 		decoded, err := decodeCursorAny(cursor, fields)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid cursor: "+err.Error())
+			// Wrap, not a frame: the decoder's phrased refusal keeps the
+			// "invalid cursor:" prefix and still answers its own code.
+			writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, err), i18n.Phrase{})
 			return
 		}
 		// Build the keyset WHERE only. ORDER BY is owned by the single
@@ -128,7 +132,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		// Redact: raw driver text must not reach the client. Mirrors the
 		// non-cursor List and streaming paths.
 		log.Printf("crud: cursor query failed: %v", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	defer rows.Close()
@@ -136,12 +140,12 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	results, err := ch.scanMany(rows, cols)
 	if err != nil {
 		log.Printf("crud: cursor scan failed: %v", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal server error")
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 
 	if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
-		writeIncludeError(w, "cursor", err)
+		writeIncludeError(w, r, "cursor", err)
 		return
 	}
 
@@ -173,7 +177,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		payload := &hook.ListPayload{Request: r, Where: extraWhere, Results: page.Data}
 		if err := runHooks(ch.Hooks, ctx, hook.AfterList, payload); err != nil {
 			log.Printf("crud: after-list hook failed (cursor): %v", err)
-			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		page.Data = payload.Results
@@ -204,10 +208,10 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 			// Single-field consumer must use the single-field encoding;
 			// accepting a composite blob here would let a caller widen
 			// the WHERE clause beyond the declared key.
-			return nil, fmt.Errorf("cursor shape mismatch: composite cursor with %d fields, expected single-field", len(mf))
+			return nil, i18n.NewError(reasonCursorComposite, map[string]any{"count": len(mf)})
 		}
 		if len(mf) != len(fields) {
-			return nil, fmt.Errorf("cursor shape mismatch: %d fields decoded, expected %d", len(mf), len(fields))
+			return nil, i18n.NewError(reasonCursorFieldCount, map[string]any{"count": len(mf), "expected": len(fields)})
 		}
 		want := make(map[string]struct{}, len(fields))
 		for _, f := range fields {
@@ -215,10 +219,10 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 		}
 		for _, kv := range mf {
 			if _, ok := want[kv.Name]; !ok {
-				return nil, fmt.Errorf("cursor field %q not in expected set", kv.Name)
+				return nil, i18n.NewError(reasonCursorUnknownField, map[string]any{"field": strconv.Quote(kv.Name)})
 			}
 			if _, dup := out[kv.Name]; dup {
-				return nil, fmt.Errorf("cursor field %q appears more than once", kv.Name)
+				return nil, i18n.NewError(reasonCursorDuplicateField, map[string]any{"field": strconv.Quote(kv.Name)})
 			}
 			out[kv.Name] = kv.Value
 		}
@@ -230,15 +234,15 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 	// value under the expected column.
 	if name, val, err := pagination.DecodeCursor(cursor); err == nil && len(fields) > 0 {
 		if len(fields) > 1 {
-			return nil, fmt.Errorf("cursor shape mismatch: single-field cursor, expected %d fields", len(fields))
+			return nil, i18n.NewError(reasonCursorNotComposite, map[string]any{"expected": len(fields)})
 		}
 		if name != fields[0] {
-			return nil, fmt.Errorf("cursor field %q does not match expected keyset field %q", name, fields[0])
+			return nil, i18n.NewError(reasonCursorFieldMismatch, map[string]any{"field": strconv.Quote(name), "expected": strconv.Quote(fields[0])})
 		}
 		out[fields[0]] = val
 		return out, nil
 	}
-	return nil, fmt.Errorf("cursor format not recognised")
+	return nil, i18n.NewError(reasonCursorFormat)
 }
 
 // buildCursorPage assembles the CursorPage envelope. Single-field

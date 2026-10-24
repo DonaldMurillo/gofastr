@@ -99,7 +99,7 @@ func (b *Battery) mountPages(group *appui.ScreenGroup) {
 				if b.pageAllows(ctx, p) {
 					return decide.Allow()
 				}
-				return decide.Block(http.StatusForbidden, http.StatusText(http.StatusForbidden))
+				return decide.Block(http.StatusForbidden)
 			}))
 		}
 	}

@@ -274,7 +274,7 @@ func TestDriftBanner(t *testing.T) {
 func TestPolicyGatesScreensAndDownloads(t *testing.T) {
 	reg := testRegistry()
 	deny := app.PolicyFunc(func(context.Context) app.Decision {
-		return decide.Block(http.StatusForbidden, "no")
+		return decide.Block(http.StatusForbidden)
 	})
 	srv := mountedServer(t, Config{Registry: reg, Artifacts: testArtifacts(t, reg, true), Policy: deny})
 	for _, path := range []string{"/docs/api", "/docs/api/entities/posts", "/docs/api/sdk/go.zip", "/docs/api/sdk/client.js"} {

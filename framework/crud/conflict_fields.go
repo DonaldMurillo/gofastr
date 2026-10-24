@@ -1,12 +1,12 @@
 package crud
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -30,9 +30,6 @@ import (
 // stays a 500.
 
 const (
-	msgUniqueTaken    = "is already in use"
-	msgMissingTarget  = "refers to a record that does not exist"
-	msgRequired       = "is required"
 	sqliteUniqueLead  = "UNIQUE constraint failed: "
 	sqliteNotNullLead = "NOT NULL constraint failed: "
 	pgNotNullLead     = `null value in column "`
@@ -45,7 +42,7 @@ const (
 // to writeCRUDError, which keeps its order of arms.
 type constraintFieldsError struct {
 	err    error
-	fields map[string][]string
+	fields map[string][]schema.Violation
 }
 
 func (e *constraintFieldsError) Error() string { return e.err.Error() }
@@ -56,7 +53,7 @@ func (e *constraintFieldsError) Unwrap() error { return e.err }
 // through unchanged. sent holds the request body's keys (columns, or
 // wire keys), taken before the write ran.
 func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) error {
-	msg := msgUniqueTaken
+	msg := schema.ReasonUniqueTaken
 	switch {
 	case err == nil:
 		return nil
@@ -65,15 +62,15 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 		if f, declared := fieldNamed(ch.Entity, c); !declared || f.Hidden {
 			return err
 		}
-		return &constraintFieldsError{err: err, fields: map[string][]string{ch.convertKey(c): {msgRequired}}}
+		return &constraintFieldsError{err: err, fields: map[string][]schema.Violation{ch.convertKey(c): {{Reason: schema.ReasonRequired}}}}
 	case isUniqueViolation(err):
 	case isForeignKeyViolation(err):
-		msg = msgMissingTarget
+		msg = reasonMissingTarget
 	default:
 		return err
 	}
 	cols := conflictColumns(ch.Entity, err.Error())
-	fields := map[string][]string{}
+	fields := map[string][]schema.Violation{}
 	for _, c := range cols {
 		f, declared := fieldNamed(ch.Entity, c)
 		key := ch.convertKey(c)
@@ -83,7 +80,7 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 		if f.Hidden || f.NoQuery {
 			return err
 		}
-		fields[key] = []string{msg}
+		fields[key] = []schema.Violation{{Reason: msg}}
 	}
 	if len(fields) == 0 {
 		return err
@@ -93,21 +90,13 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 
 // writeConflict answers a constraint refusal: 409 with the generic
 // message, plus the named fields when the error carries them.
-func writeConflict(w http.ResponseWriter, err error, message string) {
+func writeConflict(w http.ResponseWriter, r *http.Request, err error, reason i18n.Phrase) {
 	cf, ok := errors.AsType[*constraintFieldsError](err)
 	if !ok {
-		writeJSONError(w, http.StatusConflict, message)
+		writeJSONError(w, r, http.StatusConflict, reason)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusConflict)
-	json.NewEncoder(w).Encode(map[string]any{
-		"error":   message,
-		"success": false,
-		"code":    http.StatusConflict,
-		"fields":  cf.fields,
-	})
+	writeFieldsError(w, r, http.StatusConflict, schema.Violation{Reason: reason}, cf.fields, nil)
 }
 
 // sentKeys snapshots a request body's keys before the write runs.

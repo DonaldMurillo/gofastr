@@ -157,7 +157,7 @@ func TestSemanticDocStatesTheAuthRequirement(t *testing.T) {
 		}
 	}
 	routes := readRepo(t, "battery/semantic/routes.go")
-	if !strings.Contains(routes, `writeErr(w, http.StatusUnauthorized, "authentication required")`) {
+	if !strings.Contains(routes, `writeErr(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)`) {
 		t.Error("the semantic fail-closed path changed — recheck semantic-search.md's auth section")
 	}
 }

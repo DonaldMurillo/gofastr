@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
@@ -43,7 +44,7 @@ func (m *Manager) ServeSSE(w http.ResponseWriter, r *http.Request) {
 func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, identity PresenceIdentity, topics []string) {
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
-		http.Error(w, "missing session query parameter", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonSessionMissing)
 		return
 	}
 	// The id is pinned as the m.streams key for the stream's lifetime; an
@@ -53,7 +54,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	// session tokens the framework mints and matches the URL-carried ctx
 	// bound serveChrome applies.
 	if len(sessionID) > maxSessionIDLen {
-		http.Error(w, "session query parameter too long", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonSessionTooLong)
 		return
 	}
 
@@ -86,7 +87,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 		// (NewSSEWriter defers them to the first write), so this is a clean
 		// error response, not a superfluous WriteHeader.
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		i18n.HTTPErrorFor(w, r, http.StatusTooManyRequests, err)
 		return
 	}
 	// cancel is deferred IMMEDIATELY: PresenceJoin fires the app-supplied

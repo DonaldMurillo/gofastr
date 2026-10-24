@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -62,7 +63,7 @@ type PDFRenderer interface {
 func (b *Battery) servePDF(doc *Document) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if b.cfg.PDFRenderer == nil {
-			http.Error(w, "PDF rendering is not configured for this app", http.StatusNotImplemented)
+			i18n.HTTPError(w, r, http.StatusNotImplemented, reasonPDFNotConfigured)
 			return
 		}
 
@@ -79,7 +80,7 @@ func (b *Battery) servePDF(doc *Document) http.Handler {
 			defer func() { <-b.renderSem }()
 		default:
 			w.Header().Set("Retry-After", renderBusyRetryAfter)
-			http.Error(w, "PDF rendering is busy; retry shortly", http.StatusServiceUnavailable)
+			i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonPDFBusy)
 			return
 		}
 
@@ -92,7 +93,7 @@ func (b *Battery) servePDF(doc *Document) http.Handler {
 
 		pdf, err := b.cfg.PDFRenderer.RenderPDF(r.Context(), html, page, b.cfg.BaseURL)
 		if err != nil {
-			http.Error(w, "PDF rendering failed", http.StatusBadGateway)
+			i18n.HTTPError(w, r, http.StatusBadGateway, reasonPDFFailed)
 			return
 		}
 

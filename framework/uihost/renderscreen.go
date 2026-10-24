@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -83,7 +84,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 
 	if comp == nil {
 		w.Header().Set("Cache-Control", cacheControl)
-		http.Error(w, http.StatusText(status), status)
+		i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 		return
 	}
 
@@ -91,7 +92,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	body, err := component.SafeRenderCtx(ctx, comp)
 	if err != nil {
 		w.Header().Set("Cache-Control", cacheControl)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 

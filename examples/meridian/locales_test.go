@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -47,16 +48,21 @@ var (
 	printfVerb       = regexp.MustCompile(`%[sd]`)
 )
 
-// The Spanish catalog names only keys the framework reads, uses no
-// {placeholder} the English text does not fill, keeps every printf verb
-// in order, and covers every framework string that is words.
+// The Spanish catalog names only keys the framework reads (an i18nui
+// key or a defined phrase), uses no {placeholder} the English text does
+// not fill, keeps every printf verb in order, and covers every i18nui
+// string that is words.
 func TestSpanishCatalogMatchesDefaults(t *testing.T) {
 	es := flatCatalog(t, "es.json")
+	phrases := i18n.Phrases()
 	for k, v := range es {
 		if strings.HasPrefix(k, "entity.") {
 			continue
 		}
 		en, ok := i18nui.Defaults[i18nui.Key(k)]
+		if !ok {
+			en, ok = phrases[k]
+		}
 		if !ok {
 			t.Errorf("%s is not a framework key", k)
 			continue

@@ -390,7 +390,7 @@ func TestWriteIncludeErrorStatusMapping(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			writeIncludeError(rec, "list", tc.err)
+			writeIncludeError(rec, httptest.NewRequest(http.MethodGet, "/", nil), "list", tc.err)
 			if rec.Code != tc.wantStatus {
 				t.Errorf("status = %d, want %d (body %s)", rec.Code, tc.wantStatus, rec.Body.String())
 			}

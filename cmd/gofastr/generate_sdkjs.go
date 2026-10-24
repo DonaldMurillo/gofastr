@@ -331,7 +331,7 @@ func renderSDKJSReadme(spec sdkSpec) string {
 			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire)
 		}
 	}
-	sb.WriteString("## Surface per entity\n\n`list(params)`, `listCursor(params)`, `get(id, opts)`, `create(body)`,\n`update(id, body)`, `patch(id, body)` (send only the keys you mean;\nJS objects are presence-faithful), `remove(id)`, `batchCreate(items)`,\n`batchUpdate(items)` (each item carries `id`), `batchDelete(ids)`, and\n`watch(onEvent, { signal })` for the live SSE feed (uses fetch streaming so\nthe Authorization header works; EventSource can't send it).\n\nErrors throw `ApiError` with `status`, `code`, `fields`, and the raw `body`.\nBatch rollbacks (HTTP 400 with a decodable envelope) resolve normally:\ninspect `committed` and per-item `error`.\n")
+	sb.WriteString("## Surface per entity\n\n`list(params)`, `listCursor(params)`, `get(id, opts)`, `create(body)`,\n`update(id, body)`, `patch(id, body)` (send only the keys you mean;\nJS objects are presence-faithful), `remove(id)`, `batchCreate(items)`,\n`batchUpdate(items)` (each item carries `id`), `batchDelete(ids)`, and\n`watch(onEvent, { signal })` for the live SSE feed (uses fetch streaming so\nthe Authorization header works; EventSource can't send it).\n\nErrors throw `ApiError` with `status`, `code`, `reason` (the stable error\ncode to branch on), `fields`, `fieldReasons`, and the raw `body`.\nBatch rollbacks (HTTP 400 with a decodable envelope) resolve normally:\ninspect `committed` and per-item `error`.\n")
 	return sb.String()
 }
 
@@ -339,15 +339,20 @@ func renderSDKJSReadme(spec sdkSpec) string {
 // Kept as one literal so the emitted file reads top-to-bottom like
 // handwritten code.
 const jsRuntimePrelude = `/**
- * ApiError is thrown for non-2xx responses. fields (when present) maps
+ * ApiError is thrown for non-2xx responses. The message is in the
+ * request's locale; reason is its stable code (unique_taken,
+ * unknown_filter), the thing to branch on. fields (when present) maps
  * snake_case column names to validation messages: the server keys
  * validation errors by DB column, not by the camelCase response casing.
+ * fieldReasons holds each message's code, in the same order.
  */
 export class ApiError extends Error {
   constructor(status, body) {
     let message = "api: " + status;
     let code = status;
+    let reason = null;
     let fields = null;
+    let fieldReasons = null;
     let parsed = null;
     if (typeof body === "string" && body) {
       try { parsed = JSON.parse(body); } catch { /* non-JSON error body */ }
@@ -355,13 +360,17 @@ export class ApiError extends Error {
     if (parsed && typeof parsed === "object") {
       if (parsed.error) message = "api: " + status + ": " + parsed.error;
       if (typeof parsed.code === "number") code = parsed.code;
+      if (typeof parsed.reason === "string") reason = parsed.reason;
       if (parsed.fields) fields = parsed.fields;
+      if (parsed.field_reasons) fieldReasons = parsed.field_reasons;
     }
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.reason = reason;
     this.fields = fields;
+    this.fieldReasons = fieldReasons;
     this.body = body;
     this.parsed = parsed;
   }
@@ -686,8 +695,12 @@ const jsClientMethods = `  async do(method, path, body) {
 const dtsRuntimePrelude = `export declare class ApiError extends Error {
   status: number;
   code: number;
+  /** The error's stable code (unique_taken, unknown_filter); null on a non-JSON body. */
+  reason: string | null;
   /** Validation errors keyed by snake_case column name. */
   fields: Record<string, string[]> | null;
+  /** The code of each message in fields, in the same order. */
+  fieldReasons: Record<string, string[]> | null;
   body: string;
   parsed: unknown;
 }
@@ -734,8 +747,12 @@ export interface BatchResult<T> {
   index: number;
   data?: T;
   error?: string;
+  /** The error's stable code. */
+  reason?: string;
   /** Validation errors keyed by snake_case column name. */
   fields?: Record<string, string[]>;
+  /** The code of each message in fields, in the same order. */
+  field_reasons?: Record<string, string[]>;
   skipped?: boolean;
 }
 

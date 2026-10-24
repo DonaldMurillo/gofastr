@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -89,7 +91,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			continue
 		}
 		if len(parts) > maxIncludeDepth+1 {
-			return nil, fmt.Errorf("nested filter %q: too many relation hops (max %d)", key, maxIncludeDepth)
+			return nil, i18n.NewError(reasonNestedTooManyHops, map[string]any{"key": strconv.Quote(key), "max": maxIncludeDepth})
 		}
 
 		currentEntity := ent
@@ -101,14 +103,14 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 				rel, ok = relationByName(currentEntity, casing.ToSnake(relName))
 			}
 			if !ok {
-				return nil, fmt.Errorf("nested filter %q: unknown relation %q", key, relName)
+				return nil, i18n.NewError(reasonNestedUnknownRel, map[string]any{"key": strconv.Quote(key), "relation": strconv.Quote(relName)})
 			}
 			target, err := entity.ResolveTarget(registry, currentEntity, rel.Entity)
 			if err != nil {
-				return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
+				return nil, i18n.Wrap(reasonNestedTargetFailed, err, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
 			}
 			if target == nil {
-				return nil, fmt.Errorf("nested filter %q: relation target %q resolved to no entity", key, rel.Entity)
+				return nil, i18n.NewError(reasonNestedTargetMissing, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
 			}
 			hops = append(hops, relationHop{
 				Relation:   rel,
@@ -132,7 +134,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 
 		// Refuse field names that aren't plain SQL identifiers.
 		if !isSafeIdentifier(fieldName) {
-			return nil, fmt.Errorf("nested filter %q: unsafe field name", key)
+			return nil, i18n.NewError(reasonNestedUnsafeField, map[string]any{"key": strconv.Quote(key)})
 		}
 
 		target := currentEntity
@@ -151,13 +153,13 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			}
 		}
 		if blocked {
-			return nil, fmt.Errorf("nested filter %q: field %q cannot be filtered", key, fieldName)
+			return nil, i18n.NewError(reasonNestedNotFilterable, map[string]any{"key": strconv.Quote(key), "field": strconv.Quote(fieldName)})
 		}
 		if !known {
-			return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, target.GetName())
+			return nil, i18n.NewError(reasonNestedUnknownField, map[string]any{"key": strconv.Quote(key), "field": strconv.Quote(fieldName), "entity": strconv.Quote(target.GetName())})
 		}
 		if err := filter.CheckOpType(fieldName, op, colType); err != nil {
-			return nil, fmt.Errorf("nested filter %q: %w", key, err)
+			return nil, i18n.Wrap(reasonNestedFilter, err, map[string]any{"key": strconv.Quote(key)})
 		}
 
 		nf := nestedFilter{
@@ -172,8 +174,9 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		if op == filter.OpIn {
 			vals, total := filter.SplitINValuesBounded(values, filter.MaxINListEntries)
 			if total > filter.MaxINListEntries {
-				return nil, fmt.Errorf("nested filter %q: in-list on %q has %d entries (max %d)",
-					key, fieldName, total, filter.MaxINListEntries)
+				return nil, i18n.NewError(reasonNestedInListOverCap, map[string]any{
+					"key": strconv.Quote(key), "field": strconv.Quote(fieldName), "count": total, "max": filter.MaxINListEntries,
+				})
 			}
 			nf.Values = vals
 		} else {

@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/rtc"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/examples/rtc-call/siteheader"
@@ -190,17 +191,23 @@ func handleJoin() http.Handler {
 	})
 }
 
+// The join refusals, translated per request like the framework's own.
+var (
+	reasonLobbyFirst = i18n.Define("call.lobby_first", "join from the lobby first")
+	reasonBadRoom    = i18n.Define("call.bad_room", "bad room")
+)
+
 // authorize is the signaler's gate: the display-name cookie decides
 // WHO, the ?room= query decides WHERE. A client names nothing about
 // itself on the wire that this function did not derive.
 func authorize(r *http.Request) (rtc.Join, error) {
 	c, err := r.Cookie(callNameCookie)
 	if err != nil || c.Value == "" || !validName(c.Value) {
-		return rtc.Join{}, &rtc.HTTPError{Status: http.StatusUnauthorized, Message: "join from the lobby first"}
+		return rtc.Join{}, &rtc.HTTPError{Status: http.StatusUnauthorized, Reason: reasonLobbyFirst}
 	}
 	room := r.URL.Query().Get("room")
 	if !validRoom(room) {
-		return rtc.Join{}, &rtc.HTTPError{Status: http.StatusBadRequest, Message: "bad room"}
+		return rtc.Join{}, &rtc.HTTPError{Status: http.StatusBadRequest, Reason: reasonBadRoom}
 	}
 	return rtc.Join{Room: room, DisplayName: c.Value}, nil
 }

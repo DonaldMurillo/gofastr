@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
@@ -743,8 +744,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// see preflights whose path has no OPTIONS route. Cold path,
 			// so the per-request wrap is fine.
 			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed),
-					http.StatusMethodNotAllowed)
+				i18n.HTTPError(w, req, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			})).ServeHTTP(w, req)
 			return
 		}

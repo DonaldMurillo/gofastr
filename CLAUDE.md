@@ -401,6 +401,16 @@ expose them to agents connected to a live app.**
   the app spec e2e_test.go template. The `//gofastr:allow` marker
   and the check-csp ignore directive are anchored comment-initial
   now: prose that merely mentions either no longer silences anything.
+  The 2026-10 i18n round added `rawtext`: framework code under
+  core/, framework/, battery/ and core-ui/ sends every user-facing
+  message through an `i18n.Phrase`, so a catalog translates it and
+  the body carries its code. It fires on a bare `http.Error` (use
+  `i18n.HTTPError`), `i18n.Define` inside a function or with
+  computed text, `handler.Errorf` or a `handler.Error` literal
+  setting `Message`, a response helper with a `msg string`
+  parameter, a JSON envelope whose "error"/"message" is prose or
+  `err.Error()`, and a constant JSON body written straight to the
+  ResponseWriter with a prose "error"/"message"/"title"/"detail".
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE
