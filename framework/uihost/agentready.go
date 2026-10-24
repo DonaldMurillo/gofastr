@@ -548,7 +548,7 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 // route, because non-screen routes (/api/*, /healthz, /.well-known/*,
 // …) have no markdown counterpart and would produce dead links.
 func defaultLLMsSections(ds *UIHost) []LLMsTxtSection {
-	if !ds.llmMDPublic {
+	if !ds.pageDocsOn() {
 		return nil
 	}
 	return []LLMsTxtSection{{
@@ -812,8 +812,12 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	if ds.agentReady.openAPI != "" {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="service-desc"; type="application/json"`, base, ds.agentReady.openAPI))
 	}
-	if ds.llmMDPublic {
-		links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.Path)))
+	// Only a doc that is served: none for an app or a screen that opts
+	// out with NoLLMMD.
+	if ds.pageDocsOn() {
+		if scr, _, ok := ds.App.Router.Resolve(routePath(req)); ok && !scr.NoLLMMD {
+			links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.Path)))
+		}
 	}
 	if len(links) == 0 {
 		return
@@ -861,10 +865,17 @@ func markdownAlternate(path string) string {
 	return strings.TrimRight(path, "/") + "/llm.md"
 }
 
+// pageDocsOn reports whether the per-screen markdown docs are served:
+// WithPublicLLMMD is on and the app has not opted out with NoLLMMD.
+// Every surface that serves or links a page doc checks it.
+func (ds *UIHost) pageDocsOn() bool {
+	return ds.App != nil && ds.llmMDPublic && !ds.App.NoLLMMD
+}
+
 // serveMarkdownForPage renders the markdown for the requested path via
 // the per-screen LLM doc renderer. Returns false if no screen matches.
 func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) bool {
-	if ds.App == nil || ds.App.NoLLMMD {
+	if !ds.pageDocsOn() {
 		return false
 	}
 	screen, _, ok := ds.App.Router.Resolve(routePath(r))

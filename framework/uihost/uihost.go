@@ -4124,7 +4124,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		// Concrete-URL llm.md for a dynamic route (mirrors
 		// serveOrRender's dynamicPageLLMMD branch, incl. the
 		// WithPublicLLMMD opt-in gate).
-		if ds.llmMDPublic && !ds.App.NoLLMMD && strings.HasSuffix(path, "/llm.md") {
+		if ds.pageDocsOn() && strings.HasSuffix(path, "/llm.md") {
 			base := strings.TrimSuffix(path, "/llm.md")
 			if base == "" {
 				base = "/"
@@ -4304,7 +4304,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	// Same opt-in gate as mountPageLLMMD: per-screen docs are public
 	// only via WithPublicLLMMD (see the security suite's
 	// PageLLMScreenDocDisabledByDefault).
-	if ds.App == nil || !ds.llmMDPublic || ds.App.NoLLMMD || !strings.HasSuffix(path, "/llm.md") {
+	if !ds.pageDocsOn() || !strings.HasSuffix(path, "/llm.md") {
 		return "", false
 	}
 	base := strings.TrimSuffix(path, "/llm.md")
