@@ -44,6 +44,12 @@ type relationHop struct {
 	Table      string
 	SoftDelete bool
 	Scopes     []filter.ParsedFilter
+	// Pivot is the entity owning a many_to_many hop's Through table (nil
+	// when the migrator made it), and PivotScopes its owner, tenant and
+	// read-scope predicates: a link row its own route hides links
+	// nothing.
+	Pivot       *entity.Entity
+	PivotScopes []filter.ParsedFilter
 }
 
 // nestedFilter is one parsed `?author.name=alice` or `?author.team.name=x` style predicate.
@@ -112,15 +118,14 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			if target == nil {
 				return nil, i18n.NewError(reasonNestedTargetMissing, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
 			}
-			if err := oneColumnKeys(currentEntity, target); err != nil {
+			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
 				return nil, i18n.Wrap(reasonNestedCompositeKey, err, map[string]any{"key": strconv.Quote(key)})
 			}
-			hops = append(hops, relationHop{
-				Relation:   rel,
-				Target:     target,
-				Table:      resolvedTable(target, rel),
-				SoftDelete: target.Config.Scope.SoftDelete,
-			})
+			hop, err := newRelationHop(registry, currentEntity, rel, target)
+			if err != nil {
+				return nil, i18n.Wrap(reasonNestedTargetFailed, err, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
+			}
+			hops = append(hops, hop)
 			currentEntity = target
 		}
 
@@ -240,12 +245,14 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				return nil, fmt.Errorf("nested filter %q.%q: relation target %q resolved to no entity",
 					spec.Relation, spec.Field, rel.Entity)
 			}
-			hops = append(hops, relationHop{
-				Relation:   rel,
-				Target:     target,
-				Table:      resolvedTable(target, rel),
-				SoftDelete: target.Config.Scope.SoftDelete,
-			})
+			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
+				return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
+			}
+			hop, err := newRelationHop(registry, currentEntity, rel, target)
+			if err != nil {
+				return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
+			}
+			hops = append(hops, hop)
 			currentEntity = target
 		}
 
@@ -320,29 +327,19 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // CountBuilder so a single call site can wire the same filter chain into
 // both the data and count queries.
 //
-// A nested filter joins on one parent key column. parseNestedFilters
-// refuses a composite-key parent, and a key that still is not one column
-// matches nothing.
+// A has_one, has_many or many_to_many hop joins on the parent's one key
+// column; a composite-key parent has none, passes "", and such a hop
+// matches nothing (parseNestedFilters refuses it first). A belongs_to hop
+// joins on the parent's foreign key, so any parent key serves.
 func applyNestedFilters(addWhere func(sql string, args ...any), parentTable string, parentKey []string, filters []nestedFilter) {
+	parentPK := ""
+	if len(parentKey) == 1 {
+		parentPK = parentKey[0]
+	}
 	for _, nf := range filters {
-		if len(parentKey) != 1 {
-			addWhere("1 = 0")
-			continue
-		}
-		sql, args := buildExistsSubquery(parentTable, parentKey[0], nf)
+		sql, args := buildExistsSubquery(parentTable, parentPK, nf)
 		addWhere(sql, args...)
 	}
-}
-
-// oneColumnKeys reports the first of a relation's two ends whose primary
-// key is not one column. Includes and nested filters join on it.
-func oneColumnKeys(source, target *entity.Entity) error {
-	for _, e := range []*entity.Entity{source, target} {
-		if _, err := e.KeyColumn(); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // buildExistsSubquery returns the WHERE fragment for one nested filter.
@@ -402,20 +399,22 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 	if relTable == "" {
 		relTable = rel.Entity
 	}
+	// A key that is not one column is "": the hop that would join on it
+	// matches nothing.
 	targetPK := "id"
 	if hop.Target != nil {
 		pk, err := hop.Target.KeyColumn()
 		if err != nil {
-			return "1 = 0", nil
+			pk = ""
 		}
 		targetPK = pk
 	}
-
-	if parentPK == "" {
-		parentPK = "id"
+	if (targetPK == "" && (rel.Type == entity.RelManyToOne || rel.Type == entity.RelManyToMany)) ||
+		(parentPK == "" && rel.Type != entity.RelManyToOne) {
+		return "1 = 0", nil
 	}
 
-	if !isSafeIdentifier(parentTable) || !isSafeIdentifier(parentPK) || !isSafeIdentifier(relTable) || !isSafeIdentifier(targetPK) {
+	if !isSafeIdentifier(parentTable) || (parentPK != "" && !isSafeIdentifier(parentPK)) || !isSafeIdentifier(relTable) || (targetPK != "" && !isSafeIdentifier(targetPK)) {
 		return "1 = 0", nil
 	}
 
@@ -493,12 +492,18 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 		if !isSafeIdentifier(rel.Through) || !isSafeIdentifier(rel.ForeignKeyTarget) || !isSafeIdentifier(rel.LocalKey) {
 			return "1 = 0", nil
 		}
+		// The builder renumbers placeholders in the order they appear, so
+		// the join entity's conditions follow the predicate whose args
+		// precede theirs.
+		pivotWhere, pivotArgs := pivotClause(hop.Pivot, hop.PivotScopes, rel.Through, len(args)+1)
+		args = append(args, pivotArgs...)
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s)",
+			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s%s)",
 			aliasClause, rel.Through,
 			subTable, targetPK, rel.Through, rel.ForeignKeyTarget,
 			rel.Through, rel.LocalKey, parentTable, parentPK,
 			innerPredicate,
+			pivotWhere,
 		), args
 	default:
 		return "1 = 0", nil
@@ -630,6 +635,7 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 			scopes = append(scopes, eagerScopeFilters(ctx, target)...)
 			scopes = append(scopes, readScopeFilters(ctx, target)...)
 			filters[i].Hops[h].Scopes = scopes
+			filters[i].Hops[h].PivotScopes = pivotScopes(ctx, filters[i].Hops[h].Pivot)
 			if h == 0 {
 				filters[i].scopes = scopes
 			}
@@ -638,6 +644,26 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 	}
 	return nil
 }
+
+// newRelationHop is the hop following rel from source to target, with the
+// many_to_many join entity resolved from the registry.
+func newRelationHop(registry entity.Registry, source *entity.Entity, rel entity.Relation, target *entity.Entity) (relationHop, error) {
+	hop := relationHop{
+		Relation:   rel,
+		Target:     target,
+		Table:      resolvedTable(target, rel),
+		SoftDelete: target.Config.Scope.SoftDelete,
+	}
+	if rel.Type == entity.RelManyToMany {
+		pivot, err := entity.PivotEntity(registry, source, rel.Through)
+		if err != nil {
+			return relationHop{}, err
+		}
+		hop.Pivot = pivot
+	}
+	return hop, nil
+}
+
 func resolvedTable(target *entity.Entity, rel entity.Relation) string {
 	if target != nil && target.GetTable() != "" {
 		return target.GetTable()

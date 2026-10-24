@@ -115,6 +115,9 @@ func (m *meta) keySorts() []filter.ParsedSort {
 // which the database would coerce onto another record's key.
 func (m *meta) keyWheres(ids []string) []*filter.Predicate {
 	fields := m.e.GetFields()
+	if m.ch != nil {
+		fields = entity.ValueFields(m.ch.Registry, m.e)
+	}
 	valid := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if _, err := entity.KeyValues(id, m.keys, fields); err == nil {

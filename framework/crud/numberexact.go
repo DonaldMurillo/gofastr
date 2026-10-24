@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // JSON numbers and 64-bit integers disagree above 2^53: encoding/json
@@ -48,6 +49,28 @@ import (
 // only answer that never silently stores a different number than was
 // sent. Callers that need big integers send JSON integer literals or
 // strings, both of which decode exactly.
+// relationIntText renders a reference to an integer key in canonical
+// decimal: "01", "+1", 1.0 and json.Number("1") are all "1". It reports
+// false for a value that names no integer.
+func relationIntText(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		i, err := strconv.ParseInt(x, 10, 64)
+		return strconv.FormatInt(i, 10), err == nil
+	case json.Number:
+		i, err := x.Int64()
+		return strconv.FormatInt(i, 10), err == nil
+	case float64:
+		i, ok := exactFloatInt64(x)
+		return strconv.FormatInt(i, 10), ok
+	case int64:
+		return strconv.FormatInt(x, 10), true
+	case int:
+		return strconv.Itoa(x), true
+	}
+	return "", false
+}
+
 func exactFloatInt64(f float64) (int64, bool) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, false
@@ -193,6 +216,21 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			if n, ok := floatText(s); ok {
 				body[f.Name] = n
 			}
+			continue
+		}
+		if f.Type == schema.Relation && ch.Entity != nil && entity.RelationHoldsInt(ch.Registry, ch.Entity, f.Name) {
+			// A reference to an integer key is stored in canonical
+			// decimal, so a TEXT column on SQLite never holds "01" for
+			// key 1: the canonical id binds 1, which TEXT affinity
+			// compares as "1".
+			if raw == nil || raw == "" {
+				continue
+			}
+			s, ok := relationIntText(raw)
+			if !ok {
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
+			}
+			body[f.Name] = s
 			continue
 		}
 		if f.Type != schema.Int {

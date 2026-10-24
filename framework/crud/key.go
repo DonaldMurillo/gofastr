@@ -255,7 +255,7 @@ func isPostgres(ctx context.Context, q interface {
 func (ch *CrudHandler) idVals(id string) ([]any, bool) {
 	var fields []schema.Field
 	if ch.Entity != nil {
-		fields = ch.Entity.GetFields()
+		fields = entity.ValueFields(ch.Registry, ch.Entity)
 	}
 	vals, err := entity.KeyValues(id, ch.keyCols(), fields)
 	return vals, err == nil

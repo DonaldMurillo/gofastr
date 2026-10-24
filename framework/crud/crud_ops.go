@@ -450,7 +450,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		if target.Config.Scope.SoftDelete {
 			q += " AND deleted_at IS NULL"
 		}
-		coercedFK := coercePKValue(target, targetPK, raw)
+		coercedFK := coercePKValue(ch.Registry, target, targetPK, raw)
 		allArgs := append([]any{coercedFK}, args...)
 		allArgs = append(allArgs, readArgs...)
 		var hit any

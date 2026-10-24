@@ -287,8 +287,11 @@ change summary notes this); backfill the rows and tighten it in a later
 migration. A required field that has a default keeps `NOT NULL`, since
 every existing row gets the default. Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On
-Postgres they render as an in-place `ALTER COLUMN TYPE`, which often still
-needs a data-specific `USING` clause, so review and hand-tighten. On SQLite,
+Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
+type carries `USING col::INTEGER` (or the declared integer type), so
+numeric text converts and anything else fails the migration; other
+changes may still need a data-specific `USING` clause, so review and
+hand-tighten. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old

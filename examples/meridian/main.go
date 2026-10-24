@@ -219,7 +219,11 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 		if err != nil || len(rows) == 0 {
 			continue
 		}
-		if id, ok := rows[0]["id"]; ok {
+		pk, err := ch.Entity.KeyColumn()
+		if err != nil {
+			continue
+		}
+		if id, ok := rows[0][ch.WireKey(pk)]; ok {
 			row[k] = id
 		}
 	}

@@ -414,6 +414,13 @@ func (ch *CrudHandler) convertKey(col string) string {
 	return ch.convertKeyRaw(col)
 }
 
+// WireKey is the key a column's value sits under in the rows ListAll,
+// GetOne and the HTTP responses return: its WireName, or the column name
+// in the handler's JSONCase.
+func (ch *CrudHandler) WireKey(col string) string {
+	return ch.convertKey(col)
+}
+
 // convertKeyRaw applies the configured JSON casing to a DB column name,
 // ignoring any WireName override. Used to seed the wire-key map itself
 // (WireName-empty fields) and by callers that explicitly want the derived

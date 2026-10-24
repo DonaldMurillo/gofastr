@@ -22,9 +22,43 @@ func (e *Entity) KeyColumns() []string {
 	return slices.Clone(e.Config.keyColumns())
 }
 
-// ErrCompositeKey reports a relation to or from an entity whose primary
-// key is not one column. A relation joins on one key column.
+// ErrCompositeKey reports a relation whose foreign key names an entity
+// keyed on more than one column. A foreign key is one column, so the end
+// it references needs a one-column key.
 var ErrCompositeKey = errors.New("entity: a relation needs a one-column primary key")
+
+// CheckRelationKeys reports whether rel, declared on source, can join to
+// target: the end its foreign key references must be keyed on one column.
+// A belongs_to references target, a has_one or has_many references
+// source, and a many_to_many's pivot references both. The end holding the
+// foreign key may have any key, so a join table keyed on the pair it
+// links belongs to both sides, and each side has many of it. A cascade
+// write into a has_one or has_many child tells an existing child from a
+// new one by the child's one key column, so that child needs one too. A
+// nil end is not checked.
+func CheckRelationKeys(source *Entity, rel Relation, target *Entity) error {
+	var ends []*Entity
+	switch rel.Type {
+	case RelManyToOne:
+		ends = []*Entity{target}
+	case RelHasOne, RelHasMany:
+		ends = []*Entity{source}
+		if rel.CascadeWrite {
+			ends = append(ends, target)
+		}
+	case RelManyToMany:
+		ends = []*Entity{source, target}
+	}
+	for _, e := range ends {
+		if e == nil {
+			continue
+		}
+		if _, err := e.KeyColumn(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // KeyColumn returns the entity's one primary-key column, the column a
 // relation to or from it joins on. An entity keyed on several columns,
@@ -80,6 +114,83 @@ func SplitKey(id string, n int) ([]string, error) {
 		out[i] = v
 	}
 	return out, nil
+}
+
+// ValueFields returns e's fields typed by the values their columns hold.
+// A Relation column that is a belongs_to's foreign key to an integer key
+// holds that integer, and comes back typed schema.Int: KeyValues then
+// refuses its non-canonical spellings, and crud stores it as an integer
+// on SQLite too, where the column is TEXT. A target key that is itself
+// such a Relation counts as an integer key. Without reg, or when the
+// target does not resolve, the fields come back as declared.
+func ValueFields(reg Registry, e *Entity) []schema.Field {
+	fields := e.GetFields()
+	if reg == nil {
+		return fields
+	}
+	out, cloned := fields, false
+	for i, f := range fields {
+		if f.Type != schema.Relation || f.RawType != "" || !RelationHoldsInt(reg, e, f.Name) {
+			continue
+		}
+		if !cloned {
+			out, cloned = slices.Clone(fields), true
+		}
+		out[i].Type = schema.Int
+	}
+	return out
+}
+
+// RelationHoldsInt reports whether column col of e is a belongs_to's
+// foreign key whose target's one-column key holds an integer: an Int
+// field, or a Relation that itself holds one.
+func RelationHoldsInt(reg Registry, e *Entity, col string) bool {
+	return relationHoldsInt(reg, e, col, map[columnRef]bool{})
+}
+
+// columnRef names one column of one entity: the cycle guard of a walk
+// along relation keys, which may pass through two columns of one entity
+// (a self-reference to a key that is itself a reference).
+type columnRef struct {
+	e   *Entity
+	col string
+}
+
+func relationHoldsInt(reg Registry, e *Entity, col string, seen map[columnRef]bool) bool {
+	ref := columnRef{e, col}
+	if seen[ref] {
+		return false
+	}
+	seen[ref] = true
+	for _, rel := range e.Config.Relations {
+		if rel.Type != RelManyToOne || !strings.EqualFold(rel.ForeignKey, col) {
+			continue
+		}
+		target, err := ResolveTarget(reg, e, rel.Entity)
+		if err != nil || target == nil {
+			return false
+		}
+		pk, err := target.KeyColumn()
+		if err != nil {
+			return false
+		}
+		fields := target.GetFields()
+		j := slices.IndexFunc(fields, func(f schema.Field) bool { return strings.EqualFold(f.Name, pk) })
+		if j < 0 {
+			return false
+		}
+		switch fields[j].Type {
+		case schema.Int:
+			return true
+		case schema.Relation:
+			return fields[j].RawType == "" && relationHoldsInt(reg, target, fields[j].Name, seen)
+		default:
+			// Every other key type holds what it says: text, a uuid, a
+			// date, never an integer.
+			return false
+		}
+	}
+	return false
 }
 
 // KeyValues reads a record id as the values its key columns hold: one

@@ -219,7 +219,7 @@ func TestEagerFiltered_InvalidFilterField(t *testing.T) {
 		Target:  entity.Define("efcomments", entity.EntityConfig{Table: "efcomments", Fields: []schema.Field{{Name: "post_id", Type: schema.String}}}),
 		Filters: []filter.ParsedFilter{{Field: "bad field", Op: filter.OpEq, Value: "x"}},
 	}
-	err := loadIncludeNode(context.Background(), db, "efc", "id", node, []string{"1"}, map[string]map[string]any{"1": {}}, newIncludeBudget())
+	err := loadIncludeNode(context.Background(), db, "efc", []string{"id"}, node, []string{"1"}, map[string]map[string]any{"1": {}}, newIncludeBudget())
 	if err == nil {
 		t.Error("unsafe filter field should error in loadIncludeNode")
 	}
