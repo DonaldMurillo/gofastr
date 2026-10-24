@@ -600,11 +600,14 @@ for another user's record now gets 404.
   resolver reads `foo`, not `foo/llm.md`. The embed content route
   keeps answering 200 with the not-found body, because the embed loader
   mounts only a 2xx.
-- **`App.NoLLMMD` turns off negotiated markdown.** With
-  `WithMarkdownNegotiation`, a request with `Accept: text/markdown` got
-  the page's doc on an app that set `NoLLMMD`, while every `llm.md`
-  route stayed unmounted. It now gets the HTML page, as a screen's own
-  `NoLLMMD` already did.
+- **`App.NoLLMMD` turns off every page doc.** On an app that set
+  `NoLLMMD`, every `llm.md` route stayed unmounted, but three places
+  still served or linked a doc: `Accept: text/markdown` under
+  `WithMarkdownNegotiation` got the page's doc, the default `/llms.txt`
+  linked `/llm-pages.md`, and a page's `Link` header advertised its
+  `llm.md` as a markdown alternate. The request now gets the HTML page,
+  `/llms.txt` lists no index, and the header names no doc, the last
+  also for a screen that sets its own `NoLLMMD`.
 - **An overlay's index link has one slash.** `/llm-pages.md` linked a
   drawer or sheet registered at `/tools/` to `/tools//llm.md`; it links
   `/tools/llm.md`, the route uihost mounts, as pages already did.
