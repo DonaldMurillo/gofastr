@@ -1462,7 +1462,8 @@ when a key column is repeated or is not a declared field. A composite key
 column must not be `Hidden` or `NoQuery`: the API names a record by its
 key values, so it has to return and filter on each. Enforce other
 uniqueness with a unique index. Every key column, `id` included, is a
-string, text, integer, enum, UUID or relation field; `Define` panics on
+string, text, image, file, integer, enum, UUID or relation field (an
+image or file column stores its path as text); `Define` panics on
 a float, decimal, bool, date, timestamp or JSON one, whose values have
 more than one spelling (Postgres reads `2024-1-2` as the date
 `2024-01-02`), so one record would answer to several ids. For the same
@@ -1489,9 +1490,11 @@ Where an API takes or returns one record id as a string (`GetOne`,
 `OnBeforeDelete`, `hook.GetPayload.ID`, an audit row), that string is
 `entity.JoinKey` of the key values. For a single-column key, the usual
 case, it is the value itself. `entity.SplitKey(id, n)` reverses it and
-refuses an id with the wrong number of values, or one spelled other than
-`JoinKey` spells it (`%61/c1` for `a/c1`), with `entity.ErrBadKey`, so a
-record has exactly one id.
+refuses an id with the wrong number of values, or a composite id spelled
+other than `JoinKey` spells it (`a/c1` is the id of `a` and `c1`;
+`%61/c1` is refused), with `entity.ErrBadKey`, so a record has exactly
+one id. A one-column id is the value itself, so every string is its own
+spelling.
 `entity.KeyValues(id, cols, fields)` reads an id into the values a lookup
 binds, an integer key column's only in canonical decimal (`1`, never `01`).
 `entity.RowKey` reads the id out of a row.
