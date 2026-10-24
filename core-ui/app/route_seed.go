@@ -22,7 +22,8 @@ import (
 var Route = store.Route
 
 // seedRouteValues installs the route snapshot for this render. query
-// may be nil. See store.SeedRoute.
+// may be nil, and path is in routing form; route.path carries it
+// decoded. See store.SeedRoute.
 //
 // The bag writes are cheap and carry no wire cost; what the opt-in
 // gates is the seed WRITERS (store.SeedFor / SeedSplit include the
@@ -32,7 +33,7 @@ var Route = store.Route
 // area's fn runs on every render its layer survives and its markup
 // can bind any route.* slice.
 func seedRouteValues(ctx context.Context, path, pattern, title string, params map[string]string, query map[string][]string) {
-	store.SeedRoute(ctx, path, pattern, title, params, store.SeedRouteQueryFrom(query))
+	store.SeedRoute(ctx, decodeRouteSeg(path), pattern, title, params, store.SeedRouteQueryFrom(query))
 }
 
 // chainHasArea reports whether any tree layer of the chain declares a

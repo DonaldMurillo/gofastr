@@ -160,7 +160,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	}
 	b.ui.pageTitles(ctx, s, rows)
 	if len(rows) > 0 && !b.embedded && !b.noLinks && !s.deletedView {
-		b.ui.checkRecordScreen(ctx, m.name, s.base, cell(rowValue(rows[0], m.pk)))
+		b.ui.checkRecordScreen(ctx, m.name, s.base, m.idPath(m.rowID(rows[0])))
 	}
 	if b.inlineEdit && !s.deletedView && !b.top && m.hasAPI {
 		// The same page read without read hooks: an inline editor
@@ -168,7 +168,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		if raw, err := m.ch.ListAll(ctx, listOpts); err == nil {
 			s.rawRows = make(map[string]map[string]any, len(raw))
 			for _, r := range raw {
-				s.rawRows[cell(rowValue(r, m.pk))] = r
+				s.rawRows[m.rowID(r)] = r
 			}
 		}
 	}
@@ -561,7 +561,8 @@ func (b *ListBuilder) headingLevel() int {
 	panic(fmt.Sprintf("entityui: %s: Heading level %d is out of range — 1 to 5 (0 means 1); the empty state takes the level below", b.entity, b.level))
 }
 
-// recordHref is one record's link: <base>/<id>, the id path-escaped.
+// recordHref is one record's link: <base>/<id>, the id path-escaped
+// (idPath).
 func (s *listState) recordHref(id string) string {
-	return s.base + "/" + url.PathEscape(id)
+	return s.base + "/" + s.m.idPath(id)
 }

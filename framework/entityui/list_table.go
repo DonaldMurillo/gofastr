@@ -44,7 +44,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 
 	uiRows := make([]ui.Row, 0, len(rows))
 	for i, row := range rows {
-		id := cell(rowValue(row, s.m.pk))
+		id := s.m.rowID(row)
 		cells := map[string]render.HTML{}
 		if lb != nil {
 			cells["_s"] = selectCell(ctx, s, lb, row, i)
@@ -172,7 +172,7 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 		return ""
 	}
 	raw, ok := s.rawRows[id]
-	if !ok || cell(rowValue(raw, f.Name)) != cell(rowValue(row, f.Name)) {
+	if !ok || cell(s.m.rowValue(raw, f.Name)) != cell(s.m.rowValue(row, f.Name)) {
 		return ""
 	}
 	fb := &formBuilder{b: &RecordBuilder{ui: b.ui, entity: s.m.name, id: id}, m: s.m, row: raw, compact: true}
@@ -183,7 +183,7 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 		Display: display,
 		Label:   i18nui.EntityInlineEdit.Text(ctx, map[string]any{"field": label, "title": s.rowTitle(ctx, row)}),
 		Control: control,
-		Action:  s.m.api + "/" + url.PathEscape(id),
+		Action:  s.m.api + "/" + s.m.idPath(id),
 		Return:  listHref(s.path, s.q),
 		Saved:   i18nui.EntitySaved.Text(ctx),
 		Ctx:     ctx,
@@ -279,7 +279,7 @@ func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[stri
 		}
 		ids := make([]string, 0, len(rows))
 		for _, row := range rows {
-			if v := cell(rowValue(row, name)); v != "" {
+			if v := cell(s.m.rowValue(row, name)); v != "" {
 				ids = append(ids, v)
 			}
 		}
@@ -307,10 +307,10 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		// An app's Cell runs behind a recover: a panicking kind degrades
 		// to a muted value, never a failed list.
 		return contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
+			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
 		})
 	}
-	val := cell(rowValue(row, name))
+	val := cell(m.rowValue(row, name))
 	if f.Type == schema.Relation {
 		// nil labels: the caller may not read the related entity. Muted,
 		// never the raw foreign key — a bare id where a name belongs is
@@ -354,9 +354,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	case schema.Int:
 		return render.Text(integer(ctx, val))
 	case schema.Date:
-		return render.Text(formatDate(ctx, rowValue(row, name), false))
+		return render.Text(formatDate(ctx, m.rowValue(row, name), false))
 	case schema.Timestamp:
-		return render.Text(formatDate(ctx, rowValue(row, name), true))
+		return render.Text(formatDate(ctx, m.rowValue(row, name), true))
 	case schema.Image, schema.File:
 		// A value with no safe address draws the empty mark, never the
 		// stored text.
@@ -379,10 +379,10 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	}
 	if kind, ok := u.kindCell(m, f); ok {
 		return string(contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
+			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
 		}))
 	}
-	raw := rowValue(row, name)
+	raw := m.rowValue(row, name)
 	val := cell(raw)
 	if f.Type == schema.Relation {
 		if val == "" || labels.refused(name) {
@@ -461,7 +461,7 @@ func sortDir(desc bool) string {
 // re-fetches the page on success and toasts a refusal.
 func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[string]any, i int) render.HTML {
 	m := s.m
-	id := cell(rowValue(row, m.pk))
+	id := m.rowID(row)
 	href := s.recordHref(id)
 	title := s.rowTitle(ctx, row)
 

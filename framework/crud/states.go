@@ -598,9 +598,9 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		ub.Where("deleted_at IS NULL")
 	}
 	visFields := ch.visibleFields()
-	ub.Returning(visFields...)
+	ub.Returning(ch.keyedCols(visFields)...)
 	sqlStr, args := ub.Build()
-	result, err := ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), visFields)
+	result, err := ch.writeOwn(ctx, id, visFields, sqlStr, args)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Another write moved the record (or removed it) between the read
 		// and this statement. Re-read to name where it stands now.
@@ -631,7 +631,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 // owner-write scope, deleted_at IS NULL); absent answers errNotFound.
 func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id string, cols []string) (map[string]any, error) {
 	kc, ka := ch.keyWhere(id)
-	qb := query.Select(cols...).
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
 		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
@@ -640,7 +640,7 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 		qb.Where("deleted_at IS NULL")
 	}
 	sqlStr, args := qb.Build()
-	row, err := ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+	row, err := ch.scanOwn(ctx, id, cols, sqlStr, args)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -692,7 +692,7 @@ func (ch *CrudHandler) Transition() http.HandlerFunc {
 		if !ch.requireScope(w, r, opUpdate) {
 			return
 		}
-		id, key := r.PathValue("id"), r.PathValue("key")
+		id, key := ch.pathID(r), r.PathValue(transitionParam(ch.keyCols()))
 		if t, ok := ch.Entity.Config.States.Transition(key); !ok || t.System {
 			writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return

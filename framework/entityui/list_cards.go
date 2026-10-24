@@ -23,7 +23,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 	cards := make([]render.HTML, 0, len(rows))
 	noLinks := b.noLinks || s.deletedView
 	for i, row := range rows {
-		id := cell(rowValue(row, s.m.pk))
+		id := s.m.rowID(row)
 		title := ""
 		if f, ok := s.m.field(card.title); ok {
 			title = b.ui.plainText(ctx, s, labels, f, row, card.title)
@@ -37,7 +37,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		}
 		if card.badge != "" {
 			if f, ok := s.m.field(card.badge); ok && f.Type == schema.Enum {
-				if v := cell(rowValue(row, card.badge)); v != "" {
+				if v := cell(s.m.rowValue(row, card.badge)); v != "" {
 					header = append(header, ui.StatusBadge(ui.StatusBadgeConfig{
 						Label:   s.m.valueLabel(ctx, card.badge, v),
 						Variant: enumVariant(v),

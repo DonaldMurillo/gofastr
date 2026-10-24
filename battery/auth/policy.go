@@ -261,14 +261,16 @@ func containsQuery(s string) bool {
 
 // requestPathFromCtx pulls the live request path out of ctx if
 // app.WithRequest was called upstream (uihost does this). Returns
-// empty string when no request is attached.
+// empty string when no request is attached. The path is the escaped
+// one the browser sent: a key segment holding "/" (/orders/a%2Fb) has
+// to come back as that one segment, not as /orders/a/b.
 func requestPathFromCtx(ctx context.Context) string {
 	r := app.RequestFromContext(ctx)
 	if r == nil || r.URL == nil {
 		return ""
 	}
 	if r.URL.RawQuery != "" {
-		return r.URL.Path + "?" + r.URL.RawQuery
+		return r.URL.EscapedPath() + "?" + r.URL.RawQuery
 	}
-	return r.URL.Path
+	return r.URL.EscapedPath()
 }

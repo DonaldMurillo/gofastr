@@ -34,12 +34,20 @@ func TestCrudRoutePatternsMatchRegistration(t *testing.T) {
 				{Key: "mark_overdue", From: []string{"draft"}, To: "void", System: true},
 			},
 		}}},
+		{"composite key", CrudRouteOptions{Key: []string{"scope", "name"}}},
+		{"composite key, states", CrudRouteOptions{Key: []string{"scope", "name"}, States: statesInvoiceStates()}},
+		{"composite key named key", CrudRouteOptions{Key: []string{"scope", "key"}, States: statesInvoiceStates()}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fields := []schema.Field{{Name: "title", Type: schema.String}}
+			for _, c := range tc.opts.Key {
+				fields = append(fields, schema.Field{Name: c, Type: schema.String, Required: true})
+			}
 			ent := entity.Define("posts", entity.EntityConfig{
 				Name: "posts", Table: "posts",
-				Fields: []schema.Field{{Name: "title", Type: schema.String}},
-				States: tc.opts.States,
+				Fields:     fields,
+				States:     tc.opts.States,
+				PrimaryKey: tc.opts.Key,
 			})
 			r := router.New()
 			RegisterCrudRoutes(r, NewCrudHandler(ent, nil), "/posts", tc.opts)

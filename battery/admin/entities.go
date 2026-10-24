@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -21,9 +22,11 @@ import (
 // written through routes under <prefix>/api/<entity> behind the gate.
 
 // entitiesToExpose resolves the entities the admin manages: Entities in
-// order (an unknown name fails boot), or with AllEntities every entity
-// whose CRUD is on. Neither exposes nothing. One entity per table, so a
-// versioned entity is listed once.
+// order (an unknown name, or one whose key cannot name a record, fails
+// boot), or with AllEntities every entity whose CRUD routes the app
+// mounted, which leaves out a raw App.Table, registered for migration
+// only. Neither exposes nothing. One entity per table, so a versioned
+// entity is listed once.
 func (b *Battery) entitiesToExpose() ([]*entity.Entity, error) {
 	byName := b.app.Registry.All()
 	seen := map[string]bool{}
@@ -33,6 +36,11 @@ func (b *Battery) entitiesToExpose() ([]*entity.Entity, error) {
 			e, ok := byName[name]
 			if !ok {
 				return nil, fmt.Errorf("admin: Config.Entities names %q, which the app does not register", name)
+			}
+			// The admin serves records by id; a raw table skipped
+			// Define's key check.
+			if err := e.CheckRecordKey(); err != nil {
+				return nil, fmt.Errorf("admin: Config.Entities names %q: %w", name, err)
 			}
 			if seen[e.GetTable()] {
 				continue
@@ -46,19 +54,13 @@ func (b *Battery) entitiesToExpose() ([]*entity.Entity, error) {
 		return nil, nil
 	}
 	for _, e := range b.app.Registry.AllSorted() {
-		if !crudEnabled(e) || seen[e.GetTable()] {
+		if !b.app.EntityCRUDMounted(e) || seen[e.GetTable()] {
 			continue
 		}
 		seen[e.GetTable()] = true
 		out = append(out, e)
 	}
 	return out, nil
-}
-
-// crudEnabled reports whether e has auto-CRUD on (nil means on).
-func crudEnabled(e *entity.Entity) bool {
-	x := e.Config.Exposure
-	return x == nil || x.CRUD == nil || *x.CRUD
 }
 
 // exposed reports whether the admin manages e.
@@ -87,19 +89,73 @@ func (b *Battery) apiBase(e *entity.Entity) string {
 }
 
 // entityPath splits an admin-relative path under /entities into the
-// exposed entity and the segment after it ("" for the list, "create",
-// or a record id).
-func (b *Battery) entityPath(rest string) (*entity.Entity, string, bool) {
+// exposed entity and what follows it: "" for the list, "create", or the
+// id of the record m, the route match the path resolved to, names,
+// joined as entity.JoinKey renders it. The id comes from m's params and
+// not the path, whose decoded text cannot split a key value holding "/".
+func (b *Battery) entityPath(rest string, m appui.Match) (*entity.Entity, string, bool) {
 	tail, ok := strings.CutPrefix(rest, "/entities/")
 	if !ok {
 		return nil, "", false
 	}
 	name, id, _ := strings.Cut(tail, "/")
 	e, ok := b.exposedNamed(name)
-	if !ok || strings.Contains(id, "/") {
+	if !ok {
 		return nil, "", false
 	}
-	return e, id, true
+	if id == "" || id == "create" {
+		return e, id, true
+	}
+	if m.ScreenID() != b.entityBase(e)+recordPattern(e) {
+		return nil, "", false
+	}
+	p := map[string]string{"id": m.Param("id")}
+	for _, c := range e.KeyColumns() {
+		p[c] = m.Param(c)
+	}
+	return e, recordID(e, p), true
+}
+
+// recordPattern is the screen pattern tail naming one of e's records:
+// "/:id", or one segment per key column of a composite key.
+func recordPattern(e *entity.Entity) string {
+	cols := e.KeyColumns()
+	if len(cols) == 1 {
+		return "/:id"
+	}
+	var b strings.Builder
+	for _, c := range cols {
+		b.WriteString("/:" + c)
+	}
+	return b.String()
+}
+
+// recordHref is the screen path of e's record id: the escaped id for a
+// one-column key; for a composite key the id itself, already one escaped
+// segment per key column. "" when the id does not split into e's key.
+func (b *Battery) recordHref(e *entity.Entity, id string) string {
+	n := len(e.KeyColumns())
+	if n == 1 {
+		return b.entityBase(e) + "/" + url.PathEscape(id)
+	}
+	if _, err := entity.SplitKey(id, n); err != nil {
+		return ""
+	}
+	return b.entityBase(e) + "/" + id
+}
+
+// recordID is the id of the record a screen matched by recordPattern
+// names.
+func recordID(e *entity.Entity, p map[string]string) string {
+	cols := e.KeyColumns()
+	if len(cols) == 1 {
+		return p["id"]
+	}
+	parts := make([]string, len(cols))
+	for i, c := range cols {
+		parts[i] = p[c]
+	}
+	return entity.JoinKey(parts)
 }
 
 // plural and singular are an entity's localized names.
@@ -143,7 +199,7 @@ func (b *Battery) parentRecords(e *entity.Entity) []string {
 		if slices.ContainsFunc(e.Config.Relations, func(r entity.Relation) bool {
 			return r.Entity == other.GetName() && r.ForeignKey != ""
 		}) {
-			out = append(out, b.entityBase(other)+"/:id")
+			out = append(out, b.entityBase(other)+recordPattern(other))
 		}
 	}
 	return out
@@ -154,7 +210,7 @@ func (b *Battery) parentRecords(e *entity.Entity) []string {
 // belong to it, so a relation's open button and a Related tab's row push
 // a panel instead of leaving the drawer. Its own pattern is left out.
 func (b *Battery) relatedRecords(e *entity.Entity) []string {
-	own := b.entityBase(e) + "/:id"
+	own := b.entityBase(e) + recordPattern(e)
 	var out []string
 	add := func(p string) {
 		if p != own && !slices.Contains(out, p) {
@@ -167,7 +223,7 @@ func (b *Battery) relatedRecords(e *entity.Entity) []string {
 	children := b.relatedTo(e)
 	for _, other := range b.ents {
 		if slices.Contains(children, other.GetName()) {
-			add(b.entityBase(other) + "/:id")
+			add(b.entityBase(other) + recordPattern(other))
 		}
 	}
 	return out
@@ -198,12 +254,12 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		// to it; a direct load is the full page.
 		create.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.parentRecords(e), As: appui.ScreenDrawer}
 
-		record := b.screen(group, base+"/:id", i18nui.AdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
-			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Undo().Duplicate().Steps().Panel().
+		record := b.screen(group, base+recordPattern(e), i18nui.AdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
+			return b.ui.Record(name, recordID(e, p)).Base(listPath).Related(related...).Activity().Delete().Undo().Duplicate().Steps().Panel().
 				API().Override().RenderCtx(ctx)
 		})
 		b.entityTitle(record, e, func(ctx context.Context, p map[string]string) string {
-			if t, ok := b.ui.RecordTitle(ctx, name, p["id"]); ok {
+			if t, ok := b.ui.RecordTitle(ctx, name, recordID(e, p)); ok {
 				return t
 			}
 			return b.singular(ctx, e)
@@ -239,21 +295,22 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 		})
 	}
 	api := b.apiBase(e)
+	rec := api + crud.KeyPath(e.KeyColumns())
 	r.Post(api, elevated(ch.Create()))
-	r.Put(api+"/{id}", elevated(ch.Update()))
-	r.Patch(api+"/{id}", elevated(ch.Update()))
-	r.Delete(api+"/{id}", elevated(ch.Delete()))
+	r.Put(rec, elevated(ch.Update()))
+	r.Patch(rec, elevated(ch.Update()))
+	r.Delete(rec, elevated(ch.Delete()))
 	if len(crud.RoutableTransitions(e.Config.States)) > 0 {
-		r.Post(api+"/{id}/transitions/{key}", elevated(ch.Transition()))
+		r.Post(api+crud.TransitionPath(e.KeyColumns()), elevated(ch.Transition()))
 	}
 	// The override's capability is checked by name: elevation lifts the
 	// entity's update permission for the write, never the capability.
 	if e.Config.States != nil {
-		r.Post(api+"/{id}/_override", elevated(b.ui.OverrideHandler(e.GetName())))
+		r.Post(rec+"/_override", elevated(b.ui.OverrideHandler(e.GetName())))
 	}
 	if e.Config.Scope != nil && e.Config.Scope.SoftDelete {
-		r.Post(api+"/{id}/_restore", elevated(b.ui.RestoreHandler(e.GetName())))
-		r.Post(api+"/{id}/_purge", elevated(b.ui.PurgeHandler(e.GetName())))
+		r.Post(rec+"/_restore", elevated(b.ui.RestoreHandler(e.GetName())))
+		r.Post(rec+"/_purge", elevated(b.ui.PurgeHandler(e.GetName())))
 	}
 	r.Post(api+"/_bulk", elevated(b.ui.BulkHandler(e.GetName())))
 	r.Get(api+"/_export.csv", elevated(b.ui.ExportHandler(e.GetName())))
@@ -264,7 +321,7 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	if b.savedViews != nil {
 		views := elevated(b.ui.SavedViewsHandler(e.GetName()))
 		r.Post(api+"/_views", views)
-		r.Post(api+"/_views/_delete/{id}", views)
+		r.Post(api+"/_views/_delete", views)
 	}
 }
 

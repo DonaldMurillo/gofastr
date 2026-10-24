@@ -148,7 +148,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	}
 	cols := ch.visibleFields()
 	kc, ka := ch.keyWhere(id)
-	qb := query.Select(cols...).
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
 		Where(kc, ka...)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
@@ -165,8 +165,7 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	}
 
 	sqlStr, args := qb.Build()
-	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-	result, err := ch.scanOne(row, cols)
+	result, err := ch.scanOwn(ctx, id, cols, sqlStr, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound

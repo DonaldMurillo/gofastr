@@ -175,6 +175,18 @@ Drop down to `core/query` directly when:
 - You need `OR` between predicates.
 - You need projections beyond `SELECT * FROM entity_table`.
 
+`core/query` builds writes too. `query.Update` and `query.Delete` take
+the same `Where` conditions, and `Returning(cols...)` ends either in a
+`RETURNING` clause naming the changed rows' columns. `Matching(cols...)`
+on either builder returns the `SELECT` of those columns from the rows
+the write would reach, with the same conditions and only their
+arguments, so a caller can check the rows before it writes:
+
+```go
+del := query.Delete("notes").Where("slug = $1", slug).Where("deleted_at IS NOT NULL")
+sel, args := del.Matching("slug") // SELECT slug FROM notes WHERE (slug = $1) AND (deleted_at IS NOT NULL)
+```
+
 ## Common mistakes
 
 - **Trusting `include()` to eager-load.** It only validates. Combine

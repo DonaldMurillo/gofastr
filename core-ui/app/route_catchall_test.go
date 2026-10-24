@@ -152,16 +152,22 @@ func TestRegisterCatchAllNotFinalPanics(t *testing.T) {
 	}
 }
 
-// Catch-all value is the raw path remainder (no URL-decoding surprises),
-// consistent with how single-segment params are passed through verbatim.
-func TestResolveCatchAllRawNoDecode(t *testing.T) {
+// Catch-all value is the decoded path remainder, decoded once: a request
+// for "/docs/a%252Fb" carries the text "a%2Fb", never "a/b".
+func TestResolveCatchAllDecodesOnce(t *testing.T) {
 	r := NewRouter()
 	r.Screen(NewScreen("/docs/{path...}", &catchScreen{}), nil)
-	_, params, ok := r.Resolve("/docs/a%2Fb")
-	if !ok {
-		t.Fatal("expected match")
-	}
-	if params["path"] != "a%2Fb" {
-		t.Errorf("catch-all must pass raw (no decode): got %q", params["path"])
+	for escaped, want := range map[string]string{
+		"/docs/a%252Fb": "a%2Fb",
+		"/docs/a%2Fb/c": "a/b/c",
+		"/docs/50%25":   "50%",
+	} {
+		_, params, ok := r.Resolve(RoutePath(escaped))
+		if !ok {
+			t.Fatalf("%s: expected match", escaped)
+		}
+		if params["path"] != want {
+			t.Errorf("%s: catch-all = %q, want %q", escaped, params["path"], want)
+		}
 	}
 }

@@ -153,7 +153,7 @@ func (u *UI) CountUpTo(ctx context.Context, entityName, where string, limit int)
 	if !ok {
 		return 0, false, false
 	}
-	opts.Fields = []string{m.pk}
+	opts.Fields = m.keys
 	opts.Limit = limit + 1
 	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
 	if err != nil {
@@ -194,7 +194,7 @@ func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, boo
 	if len(rows) == 0 {
 		return time.Time{}, false
 	}
-	return parseTime(rowValue(rows[0], "updated_at"))
+	return parseTime(m.rowValue(rows[0], "updated_at"))
 }
 
 // statSum totals field exactly: the database's SUM, or, when AfterList
@@ -219,7 +219,7 @@ func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListO
 	total := new(big.Rat)
 	for _, r := range rows {
 		// A value a hook masked to text is not a number, and adds nothing.
-		if v, ok := new(big.Rat).SetString(cell(rowValue(r, field))); ok {
+		if v, ok := new(big.Rat).SetString(cell(m.rowValue(r, field))); ok {
 			total.Add(total, v)
 		}
 	}
@@ -292,7 +292,7 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 		}
 		idx := map[string]int{}
 		for _, r := range rows {
-			k := cell(rowValue(r, groupBy))
+			k := cell(m.rowValue(r, groupBy))
 			if i, seen := idx[k]; seen {
 				out[i].n++
 				continue

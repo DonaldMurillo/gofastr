@@ -586,7 +586,7 @@ func (b *Battery) gate(next http.Handler) http.Handler {
 		if !b.authorized(r.Context()) {
 			status := b.authzStatus(r.Context())
 			if status == http.StatusUnauthorized && b.cfg.LoginPath != "" && r.Method == http.MethodGet {
-				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.Path), http.StatusSeeOther)
+				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.EscapedPath()), http.StatusSeeOther)
 				return
 			}
 			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))

@@ -224,6 +224,29 @@ func TestDeleteWithWhere(t *testing.T) {
 	}
 }
 
+func TestDeleteReturning(t *testing.T) {
+	sql, _ := Delete("users").
+		Where("id = $1", 5).
+		Returning("id", "name").
+		Build()
+
+	want := "DELETE FROM users WHERE (id = $1) RETURNING id, name"
+	if sql != want {
+		t.Errorf("SQL = %q, want %q", sql, want)
+	}
+}
+
+func TestWriteMatching(t *testing.T) {
+	sql, args := Delete("users").Where("id = $1", 5).Where("deleted_at IS NULL").Matching("id", "name")
+	if want := "SELECT id, name FROM users WHERE (id = $1) AND (deleted_at IS NULL)"; sql != want || len(args) != 1 || args[0] != 5 {
+		t.Errorf("Delete.Matching = %q %v, want %q [5]", sql, args, want)
+	}
+	sql, args = Update("users").Set("name", "x").Where("id = $1", 5).Where("org = $1", 7).Matching("id")
+	if want := "SELECT id FROM users WHERE (id = $1) AND (org = $2)"; sql != want || len(args) != 2 || args[0] != 5 || args[1] != 7 {
+		t.Errorf("Update.Matching = %q %v, want %q [5 7]", sql, args, want)
+	}
+}
+
 func TestDeleteMultipleWhere(t *testing.T) {
 	sql, args := Delete("users").
 		Where("id = $1", 5).

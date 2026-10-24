@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -122,6 +123,21 @@ func TestView_CompositeKey(t *testing.T) {
 	if got := ent.KeyColumns(); !slices.Equal(got, []string{"a", "b"}) {
 		t.Fatalf("KeyColumns = %v", got)
 	}
+}
+
+// A view's read routes name rows by id, so App.View refuses a key column
+// read case-insensitively (a Postgres UUID), as Define does for an entity.
+func TestView_RawTypeKeyPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), "more than one spelling") {
+			t.Fatalf("App.View with a UUID-typed key: recover = %v, want the key refusal", r)
+		}
+	}()
+	NewApp(WithoutDefaultMiddleware()).View(migrate.View{
+		Name:    "v",
+		Select:  "SELECT a FROM t",
+		Columns: []migrate.Column{{Name: "a", Type: schema.UUID, RawType: "UUID", PrimaryKey: true}},
+	})
 }
 
 // TestView_GenerateReversible: a generated view migration creates the view

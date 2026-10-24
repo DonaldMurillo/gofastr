@@ -201,7 +201,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// A storage key in a file field must be one this request uploaded or
 	// one already on this row (media_provenance.go).
 	idKey, _ := ch.idVals(id)
-	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, idKey)); err != nil {
+	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, id, idKey)); err != nil {
 		return nil, err
 	}
 	// Snapshot the pre-change row inside the same transaction so the audit
@@ -332,15 +332,13 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			ub.Where("deleted_at IS NULL")
 		}
 		visFields := ch.visibleFields()
-		ub.Returning(visFields...)
+		ub.Returning(ch.keyedCols(visFields)...)
 
 		sqlStr, args := ub.Build()
-		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
 		var scanErr error
-		result, scanErr = ch.scanOne(row, visFields)
+		result, scanErr = ch.writeOwn(ctx, id, visFields, sqlStr, args)
 		if scanErr != nil {
-			if errors.Is(scanErr, sql.ErrNoRows) {
+			if errors.Is(scanErr, sql.ErrNoRows) || errors.Is(scanErr, errNotFound) {
 				return nil, errNotFound
 			}
 			return nil, fmt.Errorf("update: %w", scanErr)
@@ -562,23 +560,25 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		// like a fresh delete. Filtering to live rows makes affected==0,
 		// which maps to errNotFound below.
 		ub.Where("deleted_at IS NULL")
-		sqlStr, args := ub.Build()
-		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+		n, err := ch.execOwn(ctx, id, ub.Matching, func(returning []string) (string, []any) {
+			return ub.Returning(returning...).Build()
+		})
 		if err != nil {
 			return fmt.Errorf("soft delete: %w", err)
 		}
-		affected, _ = res.RowsAffected()
+		affected = n
 	} else {
 		db := query.Delete(ch.Entity.GetTable()).
 			Where(kc, ka...)
 		ch.ApplyTenantScopeDelete(db, r)
 		ch.ApplyOwnerScopeDelete(db, r)
-		sqlStr, args := db.Build()
-		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+		n, err := ch.execOwn(ctx, id, db.Matching, func(returning []string) (string, []any) {
+			return db.Returning(returning...).Build()
+		})
 		if err != nil {
 			return fmt.Errorf("delete: %w", err)
 		}
-		affected, _ = res.RowsAffected()
+		affected = n
 	}
 	if affected == 0 {
 		return errNotFound
@@ -603,19 +603,14 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := ch.visibleFields()
 	kc, ka := ch.keyWhere(id)
-	qb := query.Select(cols...).
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
 		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
 	ch.ApplySoftDeleteFilter(qb, r)
 	sqlStr, args := qb.Build()
-	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-	result, err := ch.scanOne(row, cols)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return ch.scanOwn(ctx, id, cols, sqlStr, args)
 }
 
 // selectWriteTarget reads the row an update without scalar fields cascades
@@ -626,7 +621,7 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 func (ch *CrudHandler) selectWriteTarget(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := ch.visibleFields()
 	kc, ka := ch.keyWhere(id)
-	qb := query.Select(cols...).
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
 		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
@@ -635,7 +630,7 @@ func (ch *CrudHandler) selectWriteTarget(ctx context.Context, r *http.Request, i
 		qb.Where("deleted_at IS NULL")
 	}
 	sqlStr, args := qb.Build()
-	return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+	return ch.scanOwn(ctx, id, cols, sqlStr, args)
 }
 
 // dropEmptyFormValues treats an empty string as "not provided" for every

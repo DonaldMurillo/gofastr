@@ -1088,6 +1088,12 @@ registration: the parser tries the suffix first, so `?status_ne=` would
 filter `status` and the `status_ne` column could never be filtered at
 all. Rename one field or set a `WireName`.
 
+**A wire key names one column.** Two fields resolving to one wire key
+(`WireName`, or a bare column's name and its camelCase form) are refused
+at `Define`. So is a `WireName` that is another field's column name: a
+body names a field by either, and entityui's forms post by column name,
+so `content` would write whichever field publishes as `content`.
+
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
 (`filter.MaxINListEntries`) counts the union, and the same cap applies to
@@ -1452,17 +1458,28 @@ app.Entity("enrollments", framework.EntityConfig{
 ```
 
 `Define` injects no `id` column when `PrimaryKey` leaves it out, and panics
-when a key column is repeated or is not a declared field. A nil
-`PrimaryKey` means the one `id` column; an empty `[]string{}` names no
-column and also panics. An entity always has a key: only a raw
-`migrate.Table` describes a table without one. The table gets
+when a key column is repeated or is not a declared field. A composite key
+column must not be `Hidden` or `NoQuery`: the API names a record by its
+key values, so it has to return and filter on each. Enforce other
+uniqueness with a unique index. Every key column, `id` included, is a
+string, text, image, file, integer, enum, UUID or relation field (an
+image or file column stores its path as text); `Define` panics on
+a float, decimal, bool, date, timestamp or JSON one, whose values have
+more than one spelling (Postgres reads `2024-1-2` as the date
+`2024-01-02`), so one record would answer to several ids. For the same
+reason a key column sets no `RawType`, except an integer type such as
+`BIGINT` on an `Int` column: `CITEXT` or a Postgres `UUID` matches
+either case. A nil `PrimaryKey` means the one `id` column; an
+empty `[]string{}` names no column and also panics. An entity always has
+a key: only a raw `migrate.Table` describes a table without one. The
+table gets
 each key column `NOT NULL` and a `PRIMARY KEY (student_id, course_id)`
 constraint. Changing the key of an existing table is a migration; see
 [Primary-key changes](migrations.md#primary-key-changes).
 
 A relation needs a one-column key on both ends for now: a `belongs_to`,
-`has_many` or `many_to_many` to or from a composite-key entity, and the
-admin pages for one, return `entity.ErrCompositeKey`.
+`has_many` or `many_to_many` to or from a composite-key entity returns
+`entity.ErrCompositeKey`.
 
 The framework names a record by its primary-key columns,
 `Entity.KeyColumns()`, in declared order. Reads, writes, the keyset
@@ -1473,8 +1490,59 @@ Where an API takes or returns one record id as a string (`GetOne`,
 `OnBeforeDelete`, `hook.GetPayload.ID`, an audit row), that string is
 `entity.JoinKey` of the key values. For a single-column key, the usual
 case, it is the value itself. `entity.SplitKey(id, n)` reverses it and
-refuses an id with the wrong number of values (`entity.ErrBadKey`).
+refuses an id with the wrong number of values, or a composite id spelled
+other than `JoinKey` spells it (`a/c1` is the id of `a` and `c1`;
+`%61/c1` is refused), with `entity.ErrBadKey`, so a record has exactly
+one id. A one-column id is the value itself, so every string is its own
+spelling.
+`entity.KeyValues(id, cols, fields)` reads an id into the values a lookup
+binds, an integer key column's only in canonical decimal (`1`, never `01`).
 `entity.RowKey` reads the id out of a row.
+
+On an `Unmanaged` entity (a view, or a table created elsewhere) the
+database chose the key column types, and equality may match a second
+spelling: a Postgres `UUID`, `CITEXT` or nondeterministic collation
+matches either case, a SQLite `NOCASE` column too, and a `CHAR(n)`
+matches the value with or without its padding. Each read and write by
+id there reads back the key columns of the row it reached and keeps the
+row only when its own `RowKey` is the id; a write that reached another
+row fails and rolls back. So `GET /claims/550E8400-…/x` is 404 for the
+row keyed in lowercase, and a `CHAR(5)` row answers to its padded id
+(`ab%20%20%20/s`). A SQLite key declared under a stricter collation
+than its column (`PRIMARY KEY (code COLLATE BINARY, scope)` on a
+`NOCASE` column) holds rows the id's equality matches together: a read
+returns the id's own row, and a write that would reach more than one is
+refused with 404. Postgres checks the rows a delete reached through
+`RETURNING`; SQLite, which cannot return rows from a virtual table such
+as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
+owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
+
+### Composite keys over HTTP and MCP
+
+A composite-key entity's record routes take one path segment per key
+column, in key order, each value path-escaped:
+
+| Surface | Single key | `PrimaryKey: {"student_id", "course_id"}` |
+|---|---|---|
+| REST record | `/api/enrollments/{id}` | `/api/enrollments/{student_id}/{course_id}` |
+| State move | `.../{id}/transitions/{key}` | `.../{student_id}/{course_id}/transitions/{key}` |
+| OpenAPI path params | `id` | `studentId`, `courseId` (wire names, type string) |
+| MCP get/update/delete/move args | `id` | `student_id`, `course_id` |
+| Batch update item | `{"id": ..., ...}` | `{"studentId": ..., "courseId": ..., ...}` |
+| Batch delete `ids` | the id | `entity.JoinKey` of the values, `"s1/c1"` |
+
+The move's wildcard is `{key}` unless a key column is itself named `key`;
+then it is `{key_}`. `crud.KeyPath(cols)` and `crud.TransitionPath(cols)`
+build these route tails, and `crud.PathRecordID(r, cols)` reads the id
+back off a request, for a handler mounted beside the CRUD routes.
+`/api/llm.md` lists the path parameters per key column.
+
+entityui and the admin draw a composite record at `<base>/<v1>/<v2>`.
+The create form sets every key column; the edit form shows them
+read-only, since a record keeps its key, and a duplicate leaves them
+blank, as it does a unique index's fields. A key value holding `/` is
+escaped in its segment (`/enrollments/a%2Fb/c1`), and its screen
+answers there as REST and MCP do.
 
 ## States (a state machine)
 

@@ -254,17 +254,42 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   ids all name a record through them. A string id is `entity.JoinKey` of
   the key values (`entity.SplitKey` and `entity.RowKey` read it back),
   which for a one-column key is the value itself, so nothing changes for
-  existing entities. See `gofastr docs entity-declarations` → "Record
-  ids".
+  existing entities. `SplitKey` refuses any spelling of a composite id
+  but the one `JoinKey` writes (`a/b` names `a` and `b`; `%61/b` is
+  refused), so one record has one id. See `gofastr docs
+  entity-declarations` → "Record ids".
 - **Composite primary keys.** `EntityConfig.PrimaryKey: []string{"student_id",
   "course_id"}` keys a table on several columns: each gets `NOT NULL` and
   the table a `PRIMARY KEY (student_id, course_id)` constraint, with no
   injected `id`. A raw `migrate.Table` marks several columns `PrimaryKey:
-  true` for the same key. Relations and admin screens still need a
-  one-column key and return `entity.ErrCompositeKey` for now. Two versions
-  of one entity must declare the same key. `ExportData` pages a composite
-  key by row value, and the manifest's `primary_key` joins its columns
-  with commas.
+  true` for the same key. Relations still need a one-column key and
+  return `entity.ErrCompositeKey` for now. Two versions
+  of one entity must declare the same key, and `Define` panics on a
+  composite key column that is `Hidden` or `NoQuery`, since the API could
+  not name its records. `ExportData` pages a composite key by row value,
+  and the manifest's `primary_key` joins its columns with commas.
+- **Composite keys over HTTP, MCP and the admin.** A composite-key
+  entity's record routes take one path segment per key column,
+  `/api/enrollments/{student_id}/{course_id}`, each value path-escaped,
+  and its state moves hang off that path. OpenAPI declares one string
+  path parameter per key column, `/api/llm.md` lists them, the MCP get,
+  update, delete and move tools take one argument per key column, and a
+  batch update item names its record by every key column, each in its
+  field's own type. entityui and
+  the admin link, read, edit, bulk-act on and export such records at
+  `<base>/<v1>/<v2>`; the create form sets the key columns and later
+  edits show them read-only. New: `crud.KeyPath`, `crud.TransitionPath`,
+  `crud.PathRecordID`, `CrudRouteOptions.Key`. A key value holding `/`
+  is escaped in its segment and reaches its screen as it reaches REST
+  and MCP: the screen router splits the escaped path and decodes each
+  segment, and a pattern redirect carries such a value as one segment,
+  with a `?`, `#` or (in a catch-all) `%` in it escaped, so it never
+  turns into a query or a fragment of the target.
+  The login `next=` from `auth.SessionPolicy` and the admin gate, the
+  stale-markup reload, and `cache.CacheMiddleware`'s key all use the
+  escaped path, so `/a%2Fb` and `/a/b` stay two pages.
+  New: `app.RoutePath` and `app.EscapeRoutePath`. See
+  `gofastr docs entity-declarations` → "Composite keys over HTTP and MCP".
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only
@@ -272,6 +297,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   populated table with no primary key at all is refused the same way.
   The snapshot records `primary_keys`. See `gofastr docs migrations` →
   "Primary-key changes".
+- **`query.DeleteBuilder.Returning`.** A DELETE built with `query.Delete`
+  can end in `RETURNING` the deleted rows' columns, as an UPDATE already
+  could.
+- **`Matching` on `query.UpdateBuilder` and `query.DeleteBuilder`.**
+  `b.Matching("id")` builds the `SELECT id FROM <table> WHERE …` of the
+  rows the write would reach, with the same conditions and their
+  arguments.
 
 ### Changed
 - **BREAKING: `EntityConfig.PrimaryKey` holds the key.** `Entity.PrimaryKey
@@ -280,6 +312,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   column is needed. `CrudHandler.PrimaryKey` is `[]string`, and a handler
   that leaves it empty reads its entity's key. A raw `migrate.Table` with
   several `PrimaryKey` columns no longer panics.
+- **BREAKING: a column name may not be another field's wire key.**
+  `Define` panics when one field's `WireName` is another field's column
+  name (`body_text` published as `content` beside a `content` column
+  published as `summary`): a body naming the column, as entityui's forms
+  do, wrote the other field.
+- **BREAKING: a key column is a string, text, image, file, integer,
+  enum, UUID or relation.** `Define` panics on a key column, `id` included, of type
+  `Float`, `Decimal`, `Bool`, `Date`, `Timestamp` or `JSON`, or one that
+  sets a `RawType` other than an integer type on an `Int` column. A record
+  id is the key's text, and those values have several spellings:
+  Postgres reads `2024-1-2` as the `DATE` keyed `2024-01-02`, and a
+  `CITEXT` or Postgres `UUID` column matches either case, so one row
+  answered to many ids. `App.View` with `Columns` panics on the same key,
+  and the admin's `Config.Entities` fails `Init` naming a raw table with
+  one; both skip `Define`, and `Entity.CheckRecordKey` is the check they
+  share.
+- **BREAKING: the saved-view delete route takes its id in the query.**
+  It is `POST <write base>/_views/_delete?id=<id>`, not
+  `.../_views/_delete/{id}`, which collided with a composite key's
+  record routes (`<write base>/{a}/{b}/_restore`). Mount
+  `SavedViewsHandler` at `POST <write base>/_views/_delete`; the admin
+  and entityui's delete form already use the new route.
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
   reason, err)` takes an `i18n.Phrase`; `handler.Fail(code, reason,
   params)` builds one. `handler.ValidationError` and
@@ -425,6 +479,46 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **entityui reads a field by its `WireName`.** crud returns a field
+  that sets `WireName` under that name, and entityui looked it up by the
+  field's `Name`, so lists, record screens, titles and exports drew it
+  empty, and a title column that sets one failed to render its link.
+- **An integer key has one spelling.** A record id for an integer key
+  column takes its value in canonical decimal only and binds it as an
+  integer. `/api/seats/01` named the row keyed 1, since both databases
+  coerce `"01"`, under an id a resource-aware Decider, asked about the
+  id string, did not recognise; it now answers 404, as do `+1` and `1.0`.
+  entityui's named CSV export (`_export.csv?_id=01`) reads ids the same
+  way, through the new `entity.KeyValues`.
+- **A record id matches its row's own spelling.** A key column whose type
+  the database chose, under a view's `SELECT` or an `Unmanaged` table,
+  can compare a second spelling equal: a Postgres `UUID`, `CITEXT` or
+  nondeterministic collation matches either case, a SQLite `NOCASE`
+  column too, and a `CHAR(n)` matches the value with or without its
+  padding. Every read and write by id on an `Unmanaged` entity now reads
+  back the key columns of the row the statement reached and keeps it
+  only when its own id, as `entity.RowKey` renders it, is the one asked
+  for; a write that reached another row fails and rolls back. A row
+  swapped in under another spelling between two statements is refused
+  the same way, and so is a write whose key equality matches several
+  rows (a SQLite `PRIMARY KEY (code COLLATE BINARY, …)` on a `NOCASE`
+  column); a delete on a SQLite virtual table checks its rows before it
+  runs, since SQLite cannot return rows from one. `/claims/550E8400-…/x` answers 404 for the row keyed in
+  lowercase, a `CHAR(5)` row answers to its padded id, and the media
+  check on an update reads the same row. entityui's bulk reads and named
+  exports drop a row whose own id was not asked for, and return each row
+  once.
+- **A raw `App.Table` has no CRUD.** `migrate.Table.ToEntity` left
+  `Exposure.CRUD` unset, which every reader takes as on, so the admin's
+  `AllEntities` listed a migration-only table with write routes and
+  `App.EntityCRUDMounted` reported routes that were never mounted. It
+  sets `CRUD` false now.
+- **entityui's record base ignores a trailing slash.** A record screen
+  with no `Base` at `/invoices/42/` based its links at `/invoices/42`.
+- **Deleting a saved view returns to the list.** The delete toasted
+  "View deleted" twice, once from the form and once from the handler's
+  toast header, and left the deleted view open on screen. It now toasts
+  once and navigates to the list without the view.
 - **`EagerLoad` joins on each entity's own key.** It assumed every parent
   and every belongs_to or many_to_many target was keyed on `id`, so an
   entity keyed on another column loaded nothing for those relations. It

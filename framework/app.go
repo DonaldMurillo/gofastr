@@ -2353,6 +2353,10 @@ func (a *App) View(v migrate.View) *App {
 	if ent == nil {
 		return a
 	}
+	// Its read routes name rows by id, and a view skips Define's key check.
+	if err := ent.CheckRecordKey(); err != nil {
+		panic(fmt.Sprintf("framework: view %q: %v", v.Name, err))
+	}
 	if a.DB != nil {
 		ent.SetDB(a.DB)
 	}
@@ -2443,7 +2447,7 @@ func (a *App) entityRouteCollision(ent *entity.Entity, mountPath string) string 
 	// them, better a loud false positive at registration than a panic
 	// halfway through the commit phase.
 	claimed := map[string][]string{}
-	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
+	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 		method, path, _ := strings.Cut(pattern, " ")
 		path = normalizeRoutePattern(path)
 		claimed[path] = append(claimed[path], method)
@@ -2544,7 +2548,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// The CRUD routes are not on the router yet, this runs before
 		// the commit phase, so ask crud for the set it will mount.
 		if crudMount != "" {
-			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
+			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 			}
 		}

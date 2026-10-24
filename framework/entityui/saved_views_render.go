@@ -171,7 +171,11 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 		return ""
 	}
 	m := s.m
-	action := m.api + "/_views/_delete/" + url.PathEscape(s.savedID)
+	action := m.api + "/_views/_delete?id=" + url.QueryEscape(s.savedID)
+	back := listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))
+	// The handler's toast header says "View deleted"; the success
+	// navigates to the list without the view, the page a plain post's
+	// 303 lands on.
 	del := interactive.Post(action).
 		WithConfirmDialog(interactive.Confirm{
 			Title:   i18nui.EntitySavedDeleteTitle.Text(ctx),
@@ -179,7 +183,7 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 			Accept:  i18nui.EntitySavedDelete.Text(ctx),
 			Danger:  true,
 		}).
-		OnSuccessToast(i18nui.EntitySavedDeleted.Text(ctx))
+		OnSuccess(interactive.Navigate(back))
 	return ui.Form(ui.FormConfig{
 		Action:     action,
 		Method:     "POST",
@@ -187,7 +191,7 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 		HideSubmit: true,
 		ExtraAttrs: del.Attrs(),
 	},
-		hiddenInput("back", listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))),
+		hiddenInput("back", back),
 		hiddenInput("key", s.key),
 		ui.Button(ui.ButtonConfig{
 			Ctx:     ctx,

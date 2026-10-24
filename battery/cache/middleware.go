@@ -103,8 +103,9 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 
 			// Include the request authority (Host) in the key so distinct
 			// virtual hosts / tenants sharing one Cache do not collide on the
-			// same method+path+query.
-			baseKey := r.Method + ":" + r.Host + ":" + r.URL.Path + "?" + r.URL.RawQuery
+			// same method+path+query. The path is the escaped one: /a%2Fb
+			// (one segment) and /a/b (two) are different pages.
+			baseKey := r.Method + ":" + r.Host + ":" + r.URL.EscapedPath() + "?" + r.URL.RawQuery
 
 			// Try to fetch from cache only if we're allowed to serve a
 			// stored variant for this request.

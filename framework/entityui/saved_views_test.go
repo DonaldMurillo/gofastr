@@ -182,8 +182,17 @@ func TestSavedViewOpensAndNarrows(t *testing.T) {
 		t.Errorf("the chips do not show the saved filter:\n%s", html)
 	}
 	// An open, unchanged saved view offers its delete, not a save.
-	if !strings.Contains(html, `action="/api/orders/_views/_delete/`+saved.ID+`"`) {
+	if !strings.Contains(html, `action="/api/orders/_views/_delete?id=`+saved.ID+`"`) {
 		t.Errorf("the open saved view has no delete form:\n%s", html)
+	}
+	// The handler's toast header is the one "View deleted", and the
+	// delete returns to the list without the view.
+	delForm := regexp.MustCompile(`<form[^>]*_views/_delete[^>]*>`).FindString(html)
+	if strings.Contains(delForm, "data-cui-rpc-success-toast") {
+		t.Errorf("the delete form toasts beside the handler's toast header: %s", delForm)
+	}
+	if !strings.Contains(delForm, `data-cui-rpc-navigate="/orders"`) {
+		t.Errorf("the delete form does not return to the list: %s", delForm)
 	}
 	if strings.Contains(html, `action="/api/orders/_views"`) {
 		t.Errorf("an unchanged saved view offers to save itself again:\n%s", html)
@@ -288,7 +297,7 @@ func TestSavedViewsNoopWithoutStore(t *testing.T) {
 func savedViewsMux(x *testUI) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/orders/_views", x.ui.SavedViewsHandler("orders"))
-	mux.Handle("POST /api/orders/_views/_delete/{id}", x.ui.SavedViewsHandler("orders"))
+	mux.Handle("POST /api/orders/_views/_delete", x.ui.SavedViewsHandler("orders"))
 	return mux
 }
 
@@ -384,7 +393,7 @@ func TestDeleteViewRemovesAndRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := postSavedViews(t, x, "u1", "/api/orders/_views/_delete/"+saved.ID, url.Values{
+	w := postSavedViews(t, x, "u1", "/api/orders/_views/_delete?id="+saved.ID, url.Values{
 		"back": {"/orders?saved=" + saved.ID},
 	})
 	if w.Code != http.StatusSeeOther {
@@ -397,7 +406,7 @@ func TestDeleteViewRemovesAndRedirects(t *testing.T) {
 		t.Errorf("the view survived its delete: %v", err)
 	}
 	// A second delete of the same id answers 404.
-	if w := postSavedViews(t, x, "u1", "/api/orders/_views/_delete/"+saved.ID, url.Values{"back": {"/orders"}}); w.Code != http.StatusNotFound {
+	if w := postSavedViews(t, x, "u1", "/api/orders/_views/_delete?id="+saved.ID, url.Values{"back": {"/orders"}}); w.Code != http.StatusNotFound {
 		t.Errorf("deleting a gone view answered %d, want 404", w.Code)
 	}
 }

@@ -93,8 +93,10 @@ func (s *Spec) AddPath(method, path string, op Operation) {
 	openapiPath := toOpenAPIPath(path)
 	pathParams := extractPathParams(path)
 
-	// Add path params to the operation if not already present.
-	existing := paramNames(op.Parameters)
+	// Add path params to the operation if not already present. A query
+	// parameter of the same name (?fields= beside a {fields} key segment)
+	// is a different parameter.
+	existing := pathParamNames(op.Parameters)
 	for _, p := range pathParams {
 		if _, found := existing[p]; !found {
 			op.Parameters = append(op.Parameters, map[string]any{
@@ -214,10 +216,13 @@ func extractPathParams(path string) []string {
 	return params
 }
 
-// paramNames returns a set of parameter names already present.
-func paramNames(params []map[string]any) map[string]struct{} {
+// pathParamNames returns the set of path parameter names already present.
+func pathParamNames(params []map[string]any) map[string]struct{} {
 	names := make(map[string]struct{}, len(params))
 	for _, p := range params {
+		if p["in"] != "path" {
+			continue
+		}
 		if name, ok := p["name"].(string); ok {
 			names[name] = struct{}{}
 		}
