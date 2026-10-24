@@ -281,7 +281,13 @@ bin/
 	// Set all directives in one edit: after the go line changes, a second
 	// go invocation could switch to the minimum toolchain before seeing the
 	// preferred patch release. Do this for development CLIs too.
-	editArgs := []string{"mod", "edit", "-go=" + minimumGo, "-toolchain=" + preferredGo}
+	// A toolchain line that repeats the go line is one go mod tidy
+	// removes, so it is never written.
+	toolchainArg := preferredGo
+	if preferredGo == "go"+minimumGo {
+		toolchainArg = "none"
+	}
+	editArgs := []string{"mod", "edit", "-go=" + minimumGo, "-toolchain=" + toolchainArg}
 	if pinnedVersion != "" {
 		editArgs = append(editArgs, "-require="+gofastrModule+"@"+pinnedVersion)
 	}
@@ -409,7 +415,8 @@ Flags:
   --force          With --reinit, overwrite customized onboarding files
 
 The generated go.mod pins the GoFastr release matching this CLI and
-carries GoFastr's go and toolchain lines, not the local Go version.
+carries GoFastr's go line, not the local Go version, plus a toolchain
+line only when GoFastr prefers a newer release than that minimum.
 Local development builds cannot infer a release and print the exact
 go get command that must be run before go mod tidy.`)
 }
@@ -417,9 +424,12 @@ go get command that must be run before go mod tidy.`)
 // frameworkGoDirective and frameworkToolchain are the go and toolchain
 // lines of GoFastr's own go.mod (TestFrameworkGoMatchesGoMod holds them
 // to it). go mod init writes the local toolchain's version instead, which
-// can be older than the framework needs.
+// can be older than the framework needs. The floor is 1.27.3 because
+// earlier 1.27 releases build crypto/x509 with GO-2026-6809; a toolchain
+// equal to the go line is written as no toolchain line, as go mod tidy
+// leaves it.
 const (
-	frameworkGoDirective = "1.27.0"
+	frameworkGoDirective = "1.27.3"
 	frameworkToolchain   = "go1.27.3"
 )
 

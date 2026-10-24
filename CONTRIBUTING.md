@@ -12,7 +12,7 @@ Security bugs: see [SECURITY.md](SECURITY.md). Do not open a public issue.
 
 ## Prerequisites (the honest list)
 
-- **Go 1.27.0+** (`go.mod` selects the preferred `go1.27.3` toolchain).
+- **Go 1.27.3+** (the `go.mod` floor; Go 1.27.0 to 1.27.2 carry GO-2026-6809).
 - **Docker**: the Postgres suites need a server. `make postgres-up` starts
   the `postgres` service from `docker-compose.yml` (pgvector/pgvector:pg16,
   which also covers `battery/semantic`), and `make test-pg` starts it and runs

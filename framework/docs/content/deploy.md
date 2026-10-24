@@ -25,7 +25,12 @@ gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.27.0`. The framework uses the 1.27
+> **Go version.** `go.mod` declares `go 1.27.3`. The patch level is a
+> security floor: Go 1.27.0 to 1.27.2 build `crypto/x509` with
+> GO-2026-6809, which the SMTP sender's TLS handshake reaches. `go get`
+> raises an app's own `go` line to match, and the default
+> `GOTOOLCHAIN=auto` downloads 1.27.3; with `GOTOOLCHAIN=local`, install
+> it first. The framework uses the 1.27
 > standard library directly: `uuid` for request ids and entity keys,
 > `strings.CutLast`, and the runtime's `goroutineleak` profile behind
 > `/.debug/goroutineleak`. Go 1.21+ refuses to build a module whose `go`

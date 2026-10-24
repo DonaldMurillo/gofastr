@@ -26,7 +26,7 @@ the checks list showed `pass`. Every finding is triaged on the PR before merge.
 
 ## Quickstart
 
-Requires Go 1.27+. Install the CLI:
+Requires Go 1.27.3+. Install the CLI:
 
 ```bash
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
@@ -228,7 +228,8 @@ Manual steps and the full guide:
 [upgrading](framework/docs/content/upgrading.md), or `gofastr docs upgrading`.
 
 With a released CLI, `gofastr init` pins a new app to the CLI's release and
-writes its minimum Go version and preferred toolchain into `go.mod`. See the
+writes its minimum Go version (1.27.3) into `go.mod`, plus a `toolchain`
+line when the release prefers a newer one. See the
 [CLI reference](framework/docs/content/cli.md#scaffold) for project name rules.
 
 ## The code you don't write
