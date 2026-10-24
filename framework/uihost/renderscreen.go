@@ -18,7 +18,8 @@ import (
 type ScreenResponse struct {
 	// Status is the HTTP status code to send. Zero means 200, unless
 	// the component implements [ScreenStatusCode], whose value then
-	// applies with the same contract a registered screen has. An
+	// applies with the same contract a registered screen has, or its
+	// render sets one through app.SetStatus. An
 	// out-of-range code (<100 or >999) is replaced with 500 rather
 	// than panicking inside net/http.
 	Status int
@@ -89,12 +90,19 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		return
 	}
 
-	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	ctx, recorded := app.TrackStatus(store.WithValues(app.WithRequest(r.Context(), r)))
 	body, err := component.SafeRenderCtx(ctx, comp)
 	if err != nil {
 		w.Header().Set("Cache-Control", cacheControl)
 		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
+	}
+	// A status the render set (app.SetStatus) applies when neither the
+	// caller nor the component chose one, the ranking pageStatus runs.
+	if resp.Status == 0 && status == http.StatusOK {
+		if code := recorded(); code != 0 {
+			status = code
+		}
 	}
 
 	w.Header().Set("Cache-Control", cacheControl)

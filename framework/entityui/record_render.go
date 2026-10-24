@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"slices"
@@ -224,8 +225,11 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 }
 
 // notFound is the one answer for a missing id and an id the caller may
-// not see: never say which of the two it was.
+// not see: never say which of the two it was. The page answers 404
+// with it (app.SetStatus), so a crawler, a script and the client's
+// screen cache read the body's verdict, not a 200.
 func (m *meta) notFound(ctx context.Context) render.HTML {
+	appui.SetStatus(ctx, http.StatusNotFound)
 	return ui.EmptyState(ui.EmptyStateConfig{
 		Title:        i18nui.EntityNotFound.Text(ctx),
 		Description:  i18nui.EntityNotFoundBody.Text(ctx, map[string]any{"entity": m.singular(ctx)}),

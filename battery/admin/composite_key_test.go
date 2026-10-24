@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -57,6 +58,21 @@ func TestCompositeRecordScreen(t *testing.T) {
 		if rr := get(x.as(theAdmin), path); rr.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", path, rr.Code)
 		}
+	}
+}
+
+// A key that names no row answers 404 with the record's not-found body,
+// on the page and on a client navigation alike.
+func TestAdminMissingRecord404(t *testing.T) {
+	x := enrollmentsEnv(t)
+	rr := get(x.as(theAdmin), "/admin/entities/enrollments/s9/c9")
+	if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), `aria-label="Not found"`) {
+		t.Errorf("GET s9/c9 = %d, want 404 with the not-found body:\n%s", rr.Code, rr.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodGet, "/admin/entities/enrollments/s9/c9", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusNotFound {
+		t.Errorf("navigate to s9/c9 = %d, want 404", rr.Code)
 	}
 }
 

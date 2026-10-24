@@ -256,9 +256,26 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 				// (a placeholder, for ScreenLoader screens). Fall back to
 				// the pattern doc if the concrete path doesn't resolve.
 				var md string
-				if doc, ok := coreapp.ScreenLLMMDForPath(ctx, b.Host.App, p); ok {
+				sctx, recorded := coreapp.TrackStatus(ctx)
+				if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); ok {
+					// A page that answers another status is skipped like
+					// its HTML (uihost.StatusPageError): the static host
+					// would serve its not-found body as a 200 doc.
+					if st := docStatus(doc.Component, recorded()); st != 0 {
+						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
+							"path", p, "status", st)
+						continue
+					}
 					md = doc.MD
 				} else {
+					// The URL resolves but its page answers 404 (a resolver
+					// or Load naming no row, an outlet nothing fills): no
+					// doc, like its skipped HTML.
+					if _, _, resolves := b.Host.App.Router.Resolve(p); resolves {
+						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
+							"path", p, "status", http.StatusNotFound)
+						continue
+					}
 					// The expanded URL doesn't resolve (e.g. a StaticPaths
 					// value that violates the route's constraint). The
 					// WITHHELD doc, not the pattern doc: the pattern doc
@@ -491,6 +508,13 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 				if nf, ok := errors.AsType[*uihost.NotFoundOutletError](err); ok {
 					slog.Warn("static: skipped 404-outlet route: a FallbackNotFound outlet had no fill at build time, the route's own answer is 404; it stays reachable via the live server",
 						"path", nf.Path)
+					continue
+				}
+				// A page that answers another status (app.SetStatus, a
+				// ScreenStatusCode): a static host would serve it 200.
+				if st, ok := errors.AsType[*uihost.StatusPageError](err); ok {
+					slog.Warn("static: skipped page that answers a status other than 200; a static host would serve it as 200, so it stays reachable via the live server",
+						"path", st.Path, "status", st.Status)
 					continue
 				}
 				if err := fail(p, fmt.Errorf("static: render %q: %w", p, err)); err != nil {
@@ -1216,6 +1240,22 @@ func pathToFile(p string) string {
 //	"/"              -> "llm.md"
 //	"/about"         -> "about/llm.md"
 //	"/products/abc"  -> "products/abc/llm.md"
+//
+// docStatus is the status a page's render answers when it is not 200:
+// the screen's ScreenStatusCode first, then what the render set through
+// app.SetStatus. Zero means 200.
+func docStatus(c any, recorded int) int {
+	if sc, ok := c.(uihost.ScreenStatusCode); ok {
+		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+			return code
+		}
+	}
+	if recorded == http.StatusOK {
+		return 0
+	}
+	return recorded
+}
+
 func pathToLLMFile(p string) string {
 	clean := strings.Trim(p, "/")
 	if clean == "" {

@@ -1596,6 +1596,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
 	// injectHeadData resolves below.
 	ctx = store.WithValues(ctx)
+	ctx, recorded := app.TrackStatus(ctx)
 	var res app.RenderResult
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
@@ -1624,18 +1625,28 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		writeBlock(w, r, res)
 		return
 	}
-	// The status, decided once: a 404-outlet outcome outranks the
-	// component's own ScreenStatusCode (Decided 5 — the route's answer
-	// is the not-found page), which otherwise outranks the implicit 200.
-	status := 0
+	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, pageStatus(res, recorded()))
+}
+
+// pageStatus is the status of a rendered page, decided once by the one
+// ranking every page path shares: a 404-outlet outcome (Decided 5: the
+// route's answer is the not-found page), else the component's own
+// ScreenStatusCode, else what the render set through app.SetStatus
+// (a record view that drew its not-found state), else 0, the implicit
+// 200.
+func pageStatus(res app.RenderResult, recorded int) int {
 	if res.NotFoundOutlet {
-		status = http.StatusNotFound
-	} else if sc, ok := res.Component.(ScreenStatusCode); ok {
+		return http.StatusNotFound
+	}
+	if sc, ok := res.Component.(ScreenStatusCode); ok {
 		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
-			status = code
+			return code
 		}
 	}
-	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, status)
+	if recorded == http.StatusOK {
+		return 0
+	}
+	return recorded
 }
 
 // finishPageDocument is the ONE page-finishing tail every document that
@@ -2966,6 +2977,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx) // capture producer-seeded values for the partial seed
+	ctx, recorded := app.TrackStatus(ctx)
 	// Route match for policies/screens on the partial path too, same
 	// as handlePage: RouteMatchMiddleware normally installed it.
 	if _, ok := app.MatchFromContext(ctx); !ok {
@@ -3062,14 +3074,14 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
-	ds.writePartialResult(w, r, ctx, path, res, overlay, 0)
+	ds.writePartialResult(w, r, ctx, path, res, overlay, pageStatus(res, recorded()))
 }
 
 // writePartialResult writes a rendered partial-navigation result: the
 // title/swap headers, the envelope or bare body, and status. The
-// success path passes 0 (implicit 200); serveNotFoundPartial passes
-// http.StatusNotFound so a missed navigation answers partial-shaped
-// with the error status.
+// success path passes pageStatus (0 is the implicit 200);
+// serveNotFoundPartial passes http.StatusNotFound so a missed
+// navigation answers partial-shaped with the error status.
 func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
 	// Deploy skew: a runtime that reads another markup generation must
 	// not receive this body (markupskew.go).
@@ -3077,20 +3089,11 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		writeStaleMarkupReload(w, r, path, res.SwapLayer)
 		return
 	}
-	// The status is decided ONCE, here, before any body byte (DESIGN
-	// "Render algorithm"): the 404-outlet outcome (Decided 5), else
-	// the component's own ScreenStatusCode (the same contract the
-	// full-page path honours — a partial that silently answered 200
-	// for a 410 page would cache a wrong-status entry), else the
-	// implicit 200. A serveNotFoundPartial caller that already chose
-	// 404 keeps it.
-	if status == 0 {
-		if res.NotFoundOutlet {
-			status = http.StatusNotFound
-		} else if sc, ok := res.Component.(ScreenStatusCode); ok {
-			status = sc.ScreenStatusCode()
-		}
-	}
+	// The status arrives decided, before any body byte (DESIGN "Render
+	// algorithm"): the success path ranks it through pageStatus, the
+	// same ranking the full-page path runs (a partial that silently
+	// answered 200 for a 410 page would cache a wrong-status entry),
+	// and serveNotFoundPartial's 404 is its own.
 	// Screen title: prefer the post-Load effective title from the render
 	// (dynamic routes register with an empty/generic title; the loaded
 	// instance knows the real one), falling back to the registration-time
@@ -3953,8 +3956,9 @@ func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 //   - GET /llm-pages.md: top-level index listing all screens
 //   - GET /{screen-path}/llm.md: per-screen markdown documentation
 //
-// Dynamic routes (e.g. /products/:slug) are documented with their
-// pattern, not concrete values.
+// An exact route's handler serves the per-URL doc (pageLLMMD); a
+// dynamic route's handler sits at its pattern text and serves the
+// pattern doc, while its concrete URLs reach dynamicPageLLMMD.
 func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	coreApp := ds.App
 
@@ -3985,7 +3989,23 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		}
 		// Capture for closure
 		sc := screen
+		base := routePath
+		_, exact := coreApp.Router.Screens()[routePath]
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// An exact route's URL is its pattern: it gets the per-URL doc
+			// the static export writes, and answers 404 where its page
+			// does (a resolver that names no row, an outlet nothing fills).
+			if exact {
+				md, ok := ds.pageLLMMD(req, base, sc)
+				if !ok {
+					ds.handlePage(w, req)
+					return
+				}
+				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Write([]byte(md))
+				return
+			}
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
 			// A screen whose policy chain doesn't Allow this request gets
@@ -4104,7 +4124,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		// Concrete-URL llm.md for a dynamic route (mirrors
 		// serveOrRender's dynamicPageLLMMD branch, incl. the
 		// WithPublicLLMMD opt-in gate).
-		if ds.llmMDPublic && !ds.App.NoLLMMD && strings.HasSuffix(path, "/llm.md") {
+		if ds.pageDocsOn() && strings.HasSuffix(path, "/llm.md") {
 			base := strings.TrimSuffix(path, "/llm.md")
 			if base == "" {
 				base = "/"
@@ -4284,7 +4304,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	// Same opt-in gate as mountPageLLMMD: per-screen docs are public
 	// only via WithPublicLLMMD (see the security suite's
 	// PageLLMScreenDocDisabledByDefault).
-	if ds.App == nil || !ds.llmMDPublic || ds.App.NoLLMMD || !strings.HasSuffix(path, "/llm.md") {
+	if !ds.pageDocsOn() || !strings.HasSuffix(path, "/llm.md") {
 		return "", false
 	}
 	base := strings.TrimSuffix(path, "/llm.md")
@@ -4295,11 +4315,37 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	if !ok || scr.NoLLMMD {
 		return "", false
 	}
+	return ds.pageLLMMD(r, base, scr)
+}
+
+// pageLLMMD renders the llm.md for the concrete URL base of screen scr.
+// ok is false when the page answers 404 or another status (the caller
+// answers with the page's 404).
+func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (string, bool) {
 	// Same context the page render gets: policies and Load hooks read the
-	// live request (session, headers, query) through app.WithRequest.
-	ctx := app.WithRequest(r.Context(), r)
+	// live request (session, headers, query) through app.WithRequest. It
+	// is the PAGE's request: the /llm.md URL rebased onto the page, so a
+	// screen that builds links off the request path (entityui.List)
+	// points them at the page, not at <page>/llm.md/<id>.
+	// Built from base, the routing form, never by trimming the suffix
+	// off the raw URL: base keeps a key's encoded slash and a page's
+	// trailing slash however the /llm.md suffix was spelled.
+	pr := r.Clone(r.Context())
+	esc := app.EscapeRoutePath(base)
+	decoded, err := url.PathUnescape(esc)
+	if err != nil {
+		decoded = base
+	}
+	pr.URL.Path, pr.URL.RawPath = decoded, esc
+	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), pr))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, base)
 	if !ok {
+		return "", false
+	}
+	// A page that answers another status (app.SetStatus for a missing
+	// record, a ScreenStatusCode) has no doc to serve: answer 404 the
+	// way a Load's ErrNotFound does, never a 200 doc of its not-found body.
+	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
 	md := res.MD
@@ -4360,6 +4406,21 @@ func (e *NotFoundOutletError) Error() string {
 	return fmt.Sprintf("uihost: static render %q: a FallbackNotFound outlet had no fill, the route's answer is 404", e.Path)
 }
 
+// StatusPageError is the static-render form of a page that answers a
+// status other than 200: a component called app.SetStatus while it
+// drew (entityui's Record for a missing row) or the screen declares
+// ScreenStatusCode. The builder skips the route with a warning, like
+// NotFoundOutletError, because the static host would serve the file
+// with a 200.
+type StatusPageError struct {
+	Path   string
+	Status int
+}
+
+func (e *StatusPageError) Error() string {
+	return fmt.Sprintf("uihost: static render %q: the page answers %d, not 200", e.Path, e.Status)
+}
+
 // PolicyBlockedError reports a static render refused by the screen's
 // policy: a redirect or a block, never a render failure. The static
 // builder skips such routes (with a warning) instead of aborting the
@@ -4411,6 +4472,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
+	ctx, recorded := app.TrackStatus(ctx)
 	// RenderPageResult (not RenderPage) so the loaded per-request
 	// component reaches the chrome injection: a dynamic route's meta
 	// description only exists on the loaded instance.
@@ -4431,6 +4493,12 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// unexpandable one.
 	if res.NotFoundOutlet {
 		return "", nil, &NotFoundOutletError{Path: path}
+	}
+	// A page that answers another status (app.SetStatus, a
+	// ScreenStatusCode) is skipped the same way: a static host serves
+	// every file 200, so a missing record's page would read as present.
+	if status := pageStatus(res, recorded()); status != 0 && status != http.StatusOK {
+		return "", nil, &StatusPageError{Path: path, Status: status}
 	}
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead

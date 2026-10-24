@@ -139,6 +139,9 @@ type interceptStackServer struct {
 	// (500) or "drop" (the connection closes; Chrome retries a dropped
 	// GET twice, so the fetch rejects after about 900 ms).
 	overlayMiss atomic.Value
+	// gone, when set, answers /rec/a 404 on both the overlay and the
+	// page request, the way a record deleted since the last visit does.
+	gone atomic.Bool
 }
 
 func (s *interceptStackServer) overlayFroms() []string {
@@ -181,6 +184,16 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 		if r.URL.Path == "/rec/old" {
 			// A moved record: every variant redirects to /rec/a.
 			http.Redirect(w, r, "/rec/a", http.StatusSeeOther)
+			return
+		}
+		if r.URL.Path == "/rec/a" && s.gone.Load() && r.Header.Get("X-Gofastr-Navigate") == "1" {
+			if r.Header.Get("X-Gofastr-Intercept") != "" {
+				w.Header().Set("X-Gofastr-Overlay", "drawer")
+			} else {
+				w.Header().Set("X-Gofastr-Partial", "true")
+			}
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `<p id="gone">GONE</p>`)
 			return
 		}
 		switch {
