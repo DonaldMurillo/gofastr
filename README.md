@@ -13,7 +13,7 @@
 &nbsp;·&nbsp; [Quickstart](#quickstart)
 &nbsp;·&nbsp; [A GoFastr app in production](https://barcode.donaldmurillo.com/)
 
-GoFastr is a pre-v1 full-stack Go framework. The API can still change between releases, under the [deprecation policy](framework/docs/content/stability.md). Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder. The output is plain Go you can read, edit, and own: no reflection discovers your entities, no generated code you can't open. Auth, background jobs, search, and storage are opt-in packages, and you can drop to `net/http` or `database/sql` at any point.
+GoFastr is a pre-v1 full-stack Go framework. The API can still change between releases, under the [upgrade policy](framework/docs/content/stability.md): each breaking change ships with a changelog entry and a `gofastr upgrade` note. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder. The output is plain Go you can read, edit, and own: no reflection discovers your entities, no generated code you can't open. Auth, background jobs, search, and storage are opt-in packages, and you can drop to `net/http` or `database/sql` at any point.
 
 It is built for both the agentic web and AI-assisted development. The app you ship joins the agentic web: the agents your users bring call your data over MCP, with the same login and permissions your users have. While you build, `gofastr dev` hands your coding agent, Claude Code or Codex, the app's routes, config, and logs over MCP, to help build and debug it.
 
@@ -363,7 +363,7 @@ GoFastr is pre-1.0 and explicitly not stable. Pin a version
 
 - The `core/` primitives are usable and tested in isolation.
 - The `framework/` entity layer handles SQLite + Postgres CRUD apps today.
-- `core-ui/` changes fastest. Its exported APIs follow the same [deprecation policy](framework/docs/content/stability.md) as the rest of the tree: deprecate first, keep the old shape for at least one minor release. Expect that window to be exercised more often here than anywhere else before v1.
+- `core-ui/` changes fastest. Its exported APIs follow the same [upgrade policy](framework/docs/content/stability.md) as the rest of the tree: a breaking change ships whole in a minor release, with a `gofastr upgrade` note. Expect more of those here than anywhere else before v1.
 - The CLI binary bundles a pure-Go SQLite driver (`modernc.org/sqlite`, registered as `sqlite3` by `gofastr/sqlite/stdlib`), so it builds with `CGO_ENABLED=0`. To run migrations against Postgres, build a custom binary that imports your driver of choice.
 
 ## Why this exists

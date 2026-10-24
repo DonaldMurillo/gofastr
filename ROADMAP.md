@@ -62,7 +62,7 @@ without hand-writing the glue.*
 **`v1.0.0` gate** (what must be true to drop `v0.x`)
 
 - The public `framework.X` + battery interfaces are frozen. The documented
-  [deprecation policy](framework/docs/content/stability.md) is already in
+  [upgrade policy](framework/docs/content/stability.md) is already in
   force; the remaining work is completing the freeze.
 - The declaration→surfaces proof (#2) stays green in CI, and the
   remaining roadmap items are closed or consciously scoped out.

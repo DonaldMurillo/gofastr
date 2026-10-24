@@ -1,5 +1,5 @@
 version: v0.94.0
-title: Framework messages are phrases with stable error codes
+title: Framework messages are phrases, and entities take composite keys
 notes:
   - change: "handler.WrapError takes an i18n.Phrase, handler.ValidationError and crud.NewValidationError take map[string][]schema.Violation, crud.ValidationError.Fields returns it, schema.ValidationResult.Errors holds violations, and handler.WriteError takes the request"
     breaking: true

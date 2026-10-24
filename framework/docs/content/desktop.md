@@ -9,7 +9,7 @@ island model, the same `main.go` wiring minus `app.Start`.
 
 **EXPERIMENTAL.** This battery is a proof of concept: the capability
 set, the `Shell`/`Window` contracts, and the generated bridge may
-change or be removed without a deprecation window. Pin a version if you
+change or be removed without an upgrade note. Pin a version if you
 depend on it. Native shells ship for darwin/arm64 (AppKit + WKWebView)
 and windows/amd64 (Win32 + WebView2); other targets get a named
 `unsupported` error from `Run`.

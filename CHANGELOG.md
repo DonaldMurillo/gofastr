@@ -7,6 +7,32 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-10-23
+
+**BREAKING** for error helpers, translated text and entity keys.
+`gofastr upgrade` lists each change.
+
+**Translation.** Every message the framework writes is an `i18n.Phrase`
+in the request's locale, and every JSON error body carries a stable
+`reason` code. Error helpers, refusals, screen titles, battery text
+callbacks, and desktop, setup and admin words take phrases or the
+request context. Numbers, dates and plurals follow CLDR, pages carry
+`<html lang dir>` from the request, and kit CSS sets logical
+properties. Generated apps and Meridian translate, a locale can live in
+the URL (`/es/pricing`), and a language switcher picks it.
+
+**Composite keys.** `EntityConfig.PrimaryKey` is a `[]string`, so an
+entity can key on several columns. HTTP, MCP, the admin, the screens
+and the generated clients name a record by one path segment per key
+column, and relations, join entities and foreign keys
+(`Relation.ForeignKey` is a list) reach composite keys. A key column
+must be a string, text, integer, enum, UUID or relation. The schema
+diff migrates a changed primary key.
+
+v0.94.0 also adds unique jobs, and a record page for a missing or
+hidden row answers 404 where it answered 200: a test that expects 200
+for another user's record now gets 404.
+
 ### Added
 - **Unique jobs.** A job with `Job.UniqueKey` set is refused with
   `queue.ErrDuplicateJob` while another job of the same type holds the
@@ -40,22 +66,42 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   schemas; the generated Go client, JS SDK and CLI decode them. See
   `gofastr docs i18n` → "Framework messages and error codes".
 - **`rawtext` analyzer.** `make analyze` refuses English that skips the
-  catalog in `core/`, `framework/`, `battery/` and `core-ui/`: a bare
-  `http.Error`, `i18n.Define` in a function body or with computed text,
-  `handler.Errorf` and `handler.Error{Message: ...}`, a response helper
-  that takes a `msg string`, a JSON envelope whose `error` or `message`
-  is prose or `err.Error()`, a status-bearing JSON struct body (RFC 9457)
-  whose `title` or `detail` is prose, and a constant JSON body written
-  straight to the response with a prose message. It also refuses English
-  in markup: `render.Text` of a prose constant, an `aria-label`, `title`,
-  `placeholder` or `alt` attribute written as a constant, and a constant
-  in a reader-facing field of a `framework/ui`, `framework/headless`,
-  `framework/entityui` or `core-ui` type (`Label`, `Heading`, `Hint`,
-  and any field ending in `Label`, `Title`, `Text` or `Placeholder`). A
-  deliberate site carries
-  `//gofastr:allow(rawtext) <why>`. `core-ui/check.LintRuntimeProse` is
-  the runtime JavaScript twin: literal prose written into a toast, a
-  `textContent`, an `aria-label` or a `title`.
+  catalog in `core/`, `framework/`, `battery/`, `core-ui/` and
+  `examples/meridian`. A deliberate site carries
+  `//gofastr:allow(rawtext) <why>`. It reports:
+  - **Responses:** a bare `http.Error`, `i18n.Define` in a function body
+    or with computed text, `handler.Errorf` and
+    `handler.Error{Message: ...}`, a response helper that takes a
+    `msg string`, a JSON envelope whose `error` or `message` is prose or
+    `err.Error()`, a status-bearing JSON struct body (RFC 9457) whose
+    `title` or `detail` is prose, and a constant JSON body written
+    straight to the response with a prose message.
+  - **Markup (`uitext`):** `render.Text` of a prose constant; an
+    `aria-label`, `title`, `placeholder` or `alt` attribute written as a
+    constant; a constant in a reader-facing field of a `framework/ui`,
+    `framework/headless`, `framework/entityui` or `core-ui` type
+    (`Label`, `Heading`, `Hint`, `Help`, and any field ending in
+    `Label`, `Title`, `Text` or `Placeholder`); a `fmt.Sprintf` whose
+    format is English ("Signed in as %s"); and a `ScreenTitle` or
+    `ScreenDescription` returning a constant. A local variable,
+    parameter or package-level variable holding English, a same-package
+    helper whose string parameter reaches page text, and an index write
+    into an attribute map (`attrs["aria-label"] = ...`) count at those
+    sinks.
+  - **Numbers (`numtext`):** a number turned into Go's digits
+    (`strconv.Itoa`, `fmt.Sprint`, ...) passed as a phrase parameter or
+    written into page text; pass the number or `i18n.Number`.
+  - **Desktop shells (`nativetext`):** a constant passed to
+    `objc.NSString` or used as a Win32 menu row, window or message-box
+    title.
+  - **Components without Ctx (`ctxless`):** a UI component literal whose
+    `Ctx context.Context` field is unset while the function holds a
+    request context. It found 55 sites in the admin, setup, entityui,
+    `framework/ui` and Meridian; each now passes its context.
+
+  `core-ui/check.LintRuntimeProse` is the runtime JavaScript twin:
+  literal prose written into a toast (the `_toastOrFallback?.(` spelling
+  included), a `textContent` (`+=` too), an `aria-label` or a `title`.
 - **Every component word is a phrase.** All of `framework/ui`'s labels,
   hints and screen-reader text are `i18n.Phrase` vars in
   `framework/i18nui` (`i18nui.PaginationNext`, `i18nui.KeyCtrl`, ...),
@@ -133,16 +179,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   drawers) and tooltip sides mean start and end; code blocks stay left
   to right; an anchored popover lines up with its trigger's start edge.
   See `gofastr docs i18n` → "Direction".
-- **`rawtext` reads numbers and helper parameters.** A number turned
-  into Go's digits (`strconv.Itoa`, `fmt.Sprint`, ...) and passed as a
-  phrase parameter or written into page text is refused; pass the number
-  or `i18n.Number`. A same-package helper whose string parameter reaches
-  page text or a label attribute makes its callers' English literals
-  findings too, and so does a local variable or parameter holding an
-  English default (`aria := "Page steps"`) or an index write into an
-  attribute map (`attrs["aria-label"] = ...`). The `numtext` arm
-  follows a local the same way: `n := strconv.Itoa(size)` passed as a
-  phrase param is reported.
 - **Component defaults in the reader's language.** The default labels of
   `ui.AvatarGroup`, `ui.ContentRow`, `ui.FilterChipBar`, `ui.Gallery`,
   `ui.ListDetail`, `ui.NetworkRetryBanner`, `ui.StepRail`,
@@ -180,26 +216,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   signal reads "Request failed (500)" in the page's language, where it
   read "Error: 500". See
   `gofastr docs i18n` → "Beyond the page body".
-- **`rawtext` refuses literal screen titles.** A `ScreenTitle` or
-  `ScreenDescription` method returning a constant in framework code is
-  reported; return a phrase's `Text(ctx)`. The `uitext` arm also reads a
-  component's `Help` field, a `fmt.Sprintf` whose format is English
-  ("Signed in as %s"), a package-level variable declared with English,
-  and English with short words between ("Choose a value").
-  `LintRuntimeProse` also reads a toast called with the optional-call
-  spelling (`_toastOrFallback?.(`), a `+=` text write and a lone word
-  ending in a colon (`'Error: '`).
-- **`rawtext` reads the desktop shells' native text.** Its `nativetext`
-  arm reports a constant passed to `objc.NSString` or used as the title
-  or text of a Win32 menu row, window or message box: the shell speaks
-  the OS language, so it passes a phrase's text.
-- **`rawtext` refuses components left without Ctx.** Its `ctxless` arm
-  reports a UI component literal whose `Ctx context.Context` field is
-  unset while the function holds a request context (a `ctx`, a
-  `cfg.Ctx`, or `r.Context()`). Such a component says its own words in
-  English on every locale's page. It found 55 sites in the admin,
-  setup, entityui, `framework/ui` and Meridian, Meridian's header theme
-  toggle and sign-out among them; each now passes its context.
 - **Generated apps translate.** Every word an app spec writes for a
   reader is an `i18n.Phrase` declared at the top of the file that says
   it, keyed `<app>.screens.<screen>.<slug>`, `<app>.chrome.<slug>` or
@@ -217,9 +233,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   "Translations".
 - **Meridian's screens speak Spanish.** Every word its screens and
   chrome show is a phrase, from the marketing pages to the admin's
-  revenue report, and `locales/es.json` translates all of them; its catalog test fails
-  on a `meridian.*` phrase with no Spanish. `rawtext` now covers
-  `examples/meridian` as well as the framework.
+  revenue report, and `locales/es.json` translates all of them; its
+  catalog test fails on a `meridian.*` phrase with no Spanish.
 - **The language in the URL.** `framework.WithLocalePrefixes()` serves
   each catalog locale under its own path: `/es/pricing` is the pricing
   screen in Spanish, the fallback locale keeps the plain paths, and
