@@ -18,7 +18,8 @@ index 085cb44..9bc50d8 100644
 +++ b/entities/tasks.go
 @@ -270,9 +270,8 @@ func registerTasks(app *framework.App) {
  		Relations: []framework.Relation{
- 			{Type: framework.RelManyToOne, Name: "owner", Entity: "users", ForeignKey: "user_id"},
+-			{Type: framework.RelManyToOne, Name: "owner", Entity: "users", ForeignKey: "user_id"},
++			{Type: framework.RelManyToOne, Name: "owner", Entity: "users", ForeignKey: []string{"user_id"}},
  		},
 -		OwnerField: "user_id",
 -		CRUD:       boolPtr(true),
