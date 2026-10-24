@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=4bda3376b546eb37
+//gofastr:generated generator=app kind=scaffold version=dev sum=8a7aa2809c6cba78
 
 package entities
 
@@ -346,7 +346,7 @@ func registerOrders(app *framework.App) {
 			{Name: "delivered_at", Type: schema.Timestamp},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelHasMany, Name: "items", Entity: "order_items", ForeignKey: "order_id"},
+			{Type: framework.RelHasMany, Name: "items", Entity: "order_items", ForeignKey: []string{"order_id"}},
 		},
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",

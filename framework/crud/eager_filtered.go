@@ -54,10 +54,12 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid parent table %q: %w", parentTable, err)
 	}
-	// The ids are record ids. A has_one, has_many or many_to_many relation
-	// joins on the parent's one key column, which parseIncludeTree has
-	// checked; a belongs_to reads the parent's foreign key by its whole key.
-	if rel.Type != entity.RelManyToOne && len(parentKey) != 1 {
+	// The ids are record ids. A has_one or has_many relation matches them
+	// against the child's foreign key, one column per key column; a
+	// many_to_many joins on the parent's one key column; a belongs_to reads
+	// the parent's foreign key by its whole key. parseIncludeTree has
+	// checked each shape (entity.CheckRelationKeys).
+	if rel.Type == entity.RelManyToMany && len(parentKey) != 1 {
 		return fmt.Errorf("eager filtered: relation %q: %w", rel.Name, entity.ErrCompositeKey)
 	}
 	for _, k := range parentKey {
@@ -81,17 +83,26 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 
 	switch rel.Type {
 	case entity.RelHasOne, entity.RelHasMany:
-		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		safeFKs, err := relationFKs(rel)
 		if err != nil {
-			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
+			return fmt.Errorf("eager filtered: %w", err)
 		}
-		return loadHasManyFiltered(ctx, db, safeEntity, safeFK, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
+		if len(safeFKs) != len(parentKey) {
+			// The same split entity.CheckRelationKeys draws: one column
+			// against a composite key is the composite-key refusal.
+			shape := entity.ErrForeignKeyShape
+			if len(safeFKs) == 1 {
+				shape = entity.ErrCompositeKey
+			}
+			return fmt.Errorf("eager filtered: relation %q: %w: its parent is keyed on (%s)", rel.Name, shape, strings.Join(parentKey, ", "))
+		}
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToOne:
-		safeFK, err := query.SafeIdent(rel.ForeignKey)
+		safeFKs, err := relationFKs(rel)
 		if err != nil {
-			return fmt.Errorf("eager filtered: invalid FK %q: %w", rel.ForeignKey, err)
+			return fmt.Errorf("eager filtered: %w", err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFK, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
+		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToMany:
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
@@ -154,21 +165,18 @@ func servedColumns(target *entity.Entity) servedCols {
 	return set
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
-	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids))
-	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args = append(args, id)
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	where, args, ok, err := keyInClause(safeFKs, ids, 1)
+	if err != nil || !ok {
+		return err
 	}
-
-	extra, extraArgs := filterClause(filters, len(ids)+1)
-	readClause, readArgs := renderReadScope(readScopes, "", len(ids)+len(extraArgs)+1)
+	extra, extraArgs := filterClause(filters, len(args)+1)
+	readClause, readArgs := renderReadScope(readScopes, "", len(args)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	q := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s%s%s",
-		safeEntity, safeFK, strings.Join(placeholders, ", "), extra, readClause, softDeleteFilter)
+	q := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
+		safeEntity, where, extra, readClause, softDeleteFilter)
 	args = append(args, extraArgs...)
 	args = append(args, readArgs...)
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -195,47 +203,42 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 			return err
 		}
 		row := make(map[string]any, len(cols))
-		var fkVal any
 		for i, c := range cols {
-			if strings.EqualFold(c, safeFK) {
-				fkVal = vals[i]
-			}
 			if served.drop(c) {
 				continue
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
-		attachChildRow(rel, fkVal, row, result)
+		if parentID, ok := scannedKey(cols, vals, safeFKs); ok {
+			attachChildRow(rel, parentID, row, result)
+		}
 	}
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity, safeFK string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
-	targetPK, err := target.KeyColumn()
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	targetKey, err := safeColumns(target.KeyColumns())
 	if err != nil {
-		return err
+		return fmt.Errorf("eager filtered: invalid target key: %w", err)
 	}
-	if targetPK, err = query.SafeIdent(targetPK); err != nil {
-		return fmt.Errorf("eager filtered: invalid target key %q: %w", targetPK, err)
+	if len(targetKey) != len(safeFKs) {
+		return fmt.Errorf("eager filtered: relation %q: %w: %s is keyed on (%s)", rel.Name, entity.ErrForeignKeyShape, target.GetName(), strings.Join(targetKey, ", "))
 	}
-	sourceToFK, unique, err := belongsToFKs(ctx, db, parentTable, parentKey, safeFK, ids)
+	sourceToFK, unique, err := belongsToFKs(ctx, db, parentTable, parentKey, safeFKs, ids)
 	if err != nil || len(unique) == 0 {
 		return err
 	}
-
-	fkPlaceholders := make([]string, len(unique))
-	fkArgs := make([]any, 0, len(unique))
-	for i, fk := range unique {
-		fkPlaceholders[i] = fmt.Sprintf("$%d", i+1)
-		fkArgs = append(fkArgs, fk)
+	where, fkArgs, ok, err := keyInClause(targetKey, unique, 1)
+	if err != nil || !ok {
+		return err
 	}
-	extra, extraArgs := filterClause(filters, len(unique)+1)
-	readClause, readArgs := renderReadScope(readScopes, "", len(unique)+len(extraArgs)+1)
+	extra, extraArgs := filterClause(filters, len(fkArgs)+1)
+	readClause, readArgs := renderReadScope(readScopes, "", len(fkArgs)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)%s%s%s",
-		safeEntity, targetPK, strings.Join(fkPlaceholders, ", "), extra, readClause, softDeleteFilter)
+	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
+		safeEntity, where, extra, readClause, softDeleteFilter)
 	fkArgs = append(fkArgs, extraArgs...)
 	fkArgs = append(fkArgs, readArgs...)
 
@@ -264,17 +267,15 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable strin
 			return err
 		}
 		row := make(map[string]any, len(cols))
-		var idVal any
 		for i, c := range cols {
-			if strings.EqualFold(c, targetPK) {
-				idVal = vals[i]
-			}
 			if served.drop(c) {
 				continue
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
-		targetByID[fmt.Sprintf("%v", idVal)] = row
+		if id, ok := scannedKey(cols, vals, targetKey); ok {
+			targetByID[id] = row
+		}
 	}
 	if err := tgtRows.Err(); err != nil {
 		return err

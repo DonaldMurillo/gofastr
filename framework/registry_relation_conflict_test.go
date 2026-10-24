@@ -65,8 +65,8 @@ func TestRegistry_RejectsConflictingRelationsAcrossVersions(t *testing.T) {
 		// target(key) form. A ManyToMany on the same key diverging in target
 		// entity is a conflict.
 		expectConflictPanic(t,
-			[]entity.Relation{{Type: entity.RelManyToMany, Name: "tags", Entity: "tags", ForeignKey: "tag_id", ForeignKeyTarget: "id"}},
-			[]entity.Relation{{Type: entity.RelManyToMany, Name: "tags", Entity: "labels", ForeignKey: "tag_id", ForeignKeyTarget: "id"}},
+			[]entity.Relation{{Type: entity.RelManyToMany, Name: "tags", Entity: "tags", ForeignKey: []string{"tag_id"}, ForeignKeyTarget: "id"}},
+			[]entity.Relation{{Type: entity.RelManyToMany, Name: "tags", Entity: "labels", ForeignKey: []string{"tag_id"}, ForeignKeyTarget: "id"}},
 		)
 	})
 
@@ -75,10 +75,10 @@ func TestRegistry_RejectsConflictingRelationsAcrossVersions(t *testing.T) {
 		// v1's map → skipped) AND a colliding one. The skip must not mask the
 		// collision: the colliding relation still trips the gate.
 		expectConflictPanic(t,
-			[]entity.Relation{{Type: entity.RelHasMany, Name: "comments", Entity: "comments", ForeignKey: "post_id"}},
+			[]entity.Relation{{Type: entity.RelHasMany, Name: "comments", Entity: "comments", ForeignKey: []string{"post_id"}}},
 			[]entity.Relation{
-				{Type: entity.RelHasMany, Name: "likes", Entity: "likes", ForeignKey: "like_id"},             // not in v1 → skipped
-				{Type: entity.RelHasMany, Name: "comments", Entity: "other_comments", ForeignKey: "post_id"}, // collides
+				{Type: entity.RelHasMany, Name: "likes", Entity: "likes", ForeignKey: []string{"like_id"}},             // not in v1 → skipped
+				{Type: entity.RelHasMany, Name: "comments", Entity: "other_comments", ForeignKey: []string{"post_id"}}, // collides
 			},
 		)
 	})

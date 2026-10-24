@@ -81,6 +81,9 @@ func (r *Registry) Register(ent *entity.Entity) error {
 	if err := r.checkVersionCompat(key, ent); err != nil {
 		return err
 	}
+	if err := r.checkTransitionTable(ent); err != nil {
+		return err
+	}
 
 	// Cross-version column compatibility. Two versions of the same entity
 	// name share one DB table (the table is derived from the name, or set
@@ -508,6 +511,56 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 	return nil
 }
 
+// checkTransitionTable refuses a transition that writes a column of a
+// multi-column belongs_to foreign key on the same physical table: the
+// state field or a move's stamp. A move writes its column with no
+// reference check, so with the row's other columns it could land on any
+// row. It runs at registration, whether or not the app migrates, over
+// the entity itself and every declaration sharing its table (versions of
+// one name, or other names over one table), both ways.
+func (r *Registry) checkTransitionTable(newEnt *entity.Entity) error {
+	if err := checkTransitionForeignKeys(newEnt, newEnt); err != nil {
+		return err
+	}
+	for _, existing := range r.entities {
+		if !strings.EqualFold(existing.GetTable(), newEnt.GetTable()) {
+			continue
+		}
+		for _, p := range [][2]*entity.Entity{{existing, newEnt}, {newEnt, existing}} {
+			if err := checkTransitionForeignKeys(p[0], p[1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkTransitionForeignKeys refuses a column of a multi-column
+// belongs_to foreign key held by rels that a transition of moves writes.
+// Only a belongs_to holds its columns on the declaring entity's table; a
+// has_one or has_many names columns on its target.
+func checkTransitionForeignKeys(rels, moves *entity.Entity) error {
+	s := moves.Config.States
+	if s == nil {
+		return nil
+	}
+	for _, rel := range rels.Config.Relations {
+		fks := rel.ForeignKey
+		if rel.Type != entity.RelManyToOne || len(fks) < 2 {
+			continue
+		}
+		for _, c := range fks {
+			if strings.EqualFold(s.Field, c) || slices.ContainsFunc(s.Transitions, func(t entity.Transition) bool { return strings.EqualFold(t.Stamp, c) }) {
+				return fmt.Errorf(
+					"registry: entity %q (%s): the transitions of %q (%s) write %q, one column of relation %q's foreign key (%s) on table %q",
+					rels.Config.Name, versionLabel(rels.Version), moves.Config.Name, versionLabel(moves.Version),
+					c, rel.Name, strings.Join(fks, ", "), rels.GetTable())
+			}
+		}
+	}
+	return nil
+}
+
 // checkRowIsolationCompat rejects two versions of one entity name that
 // disagree on who may reach the shared table's rows.
 //
@@ -817,19 +870,19 @@ func conflictingRelations(a, b *entity.Entity) error {
 }
 
 // relationDedupKey returns the key the merge uses to deduplicate relations:
-// the ForeignKey column (the physical column), or the logical Name for
+// the foreign-key columns (the physical columns), or the logical Name for
 // HasMany/HasOne relations that carry no FK column on this side.
 func relationDedupKey(rel entity.Relation) string {
-	if rel.ForeignKey != "" {
-		return rel.ForeignKey
+	if fks := rel.ForeignKey; len(fks) > 0 {
+		return strings.Join(fks, ",")
 	}
 	return rel.Name
 }
 
 // relationDisplayColumn returns the column to name in the error message.
 func relationDisplayColumn(rel entity.Relation) string {
-	if rel.ForeignKey != "" {
-		return rel.ForeignKey
+	if fks := rel.ForeignKey; len(fks) > 0 {
+		return strings.Join(fks, ", ")
 	}
 	return rel.Name
 }

@@ -286,7 +286,7 @@ CREATE TABLE note_people (note_id TEXT, person_id TEXT);
 	reg := versionedStubRegistry{ents: []*entity.Entity{people, notes}}
 
 	linked := entity.ManyToMany("linked", "people", "note_people", "note_id", "person_id")
-	linked.ForeignKey = "person_id" // EagerLoad validates ForeignKey for every shape
+	linked.ForeignKey = []string{"person_id"} // EagerLoad validates ForeignKey for every shape
 	rels := []entity.Relation{
 		entity.BelongsTo("person", "people", "person_id"),
 		entity.HasMany("filed", "people", "folder_id"),

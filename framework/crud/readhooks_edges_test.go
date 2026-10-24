@@ -249,7 +249,7 @@ func TestResolveNestedFiltersAcceptsAQueryableColumn(t *testing.T) {
 // somehow reached it emits an unconditionally-false predicate rather than
 // interpolating the name.
 func TestBuildExistsSubqueryRefusesUnsafeIdentifiers(t *testing.T) {
-	sql, args := buildExistsSubquery("posts", "id", nestedFilter{
+	sql, args := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.BelongsTo("author", "authors", "author_id"),
 		Field:    "name OR 1=1 --",
 		Op:       filter.OpEq,

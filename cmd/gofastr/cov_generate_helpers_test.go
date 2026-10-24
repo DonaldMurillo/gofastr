@@ -142,9 +142,9 @@ func TestRenderIndexLiteral(t *testing.T) {
 func TestRenderRelationLiteralFull(t *testing.T) {
 	got := renderRelationLiteral(framework.Relation{
 		Type: framework.RelManyToMany, Name: "tags", Entity: "tag",
-		ForeignKey: "fk", Through: "jt", LocalKey: "lk", ForeignKeyTarget: "fkt",
+		ForeignKey: []string{"fk"}, Through: "jt", LocalKey: "lk", ForeignKeyTarget: "fkt",
 	})
-	for _, want := range []string{"RelManyToMany", `Name: "tags"`, `Entity: "tag"`, `ForeignKey: "fk"`, `Through: "jt"`, `LocalKey: "lk"`, `ForeignKeyTarget: "fkt"`} {
+	for _, want := range []string{"RelManyToMany", `Name: "tags"`, `Entity: "tag"`, `ForeignKey: []string{"fk"}`, `Through: "jt"`, `LocalKey: "lk"`, `ForeignKeyTarget: "fkt"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("relation missing %q: %s", want, got)
 		}

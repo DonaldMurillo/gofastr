@@ -122,7 +122,7 @@ func TestEagerBelongsTo_TgtNextErr(t *testing.T) {
 func TestEagerManyToMany_NextErr(t *testing.T) {
 	ch, db, reg := covFaultRelWorld(t)
 	m2m := entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")
-	m2m.ForeignKey = "tag_id"
+	m2m.ForeignKey = []string{"tag_id"}
 	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM tags " })
 	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{m2m}, []string{"p1"}, reg)
 	if !errors.Is(err, errCovInjected) {

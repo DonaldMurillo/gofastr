@@ -38,6 +38,12 @@ type StatesConfig struct {
 	Advisory bool `json:"advisory,omitempty"`
 }
 
+// transitionWrites reports whether a move of s writes column c: the state
+// field, or a transition's stamp.
+func transitionWrites(s *StatesConfig, c string) bool {
+	return s != nil && (s.Field == c || slices.ContainsFunc(s.Transitions, func(t Transition) bool { return t.Stamp == c }))
+}
+
 // Transition is one named move of the state field.
 type Transition struct {
 	// Key names the move in its route (POST <api>/<entity>/<id>/transitions/<key>)

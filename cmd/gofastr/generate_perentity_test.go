@@ -232,7 +232,7 @@ func TestRenderPerEntityFilesCompile(t *testing.T) {
 		{Pagination: &framework.PaginationDeclaration{}, Name: "posts", Table: "posts", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Scope: &framework.ScopeDeclaration{SoftDelete: true}, Fields: []framework.FieldDeclaration{
 			{Name: "title", Type: "string", Required: true},
 			{Name: "author_id", Type: "relation", To: "users"},
-		}, Relations: []framework.Relation{{Type: framework.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"}}},
+		}, Relations: []framework.Relation{{Type: framework.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}}}},
 		{Pagination: &framework.PaginationDeclaration{}, Name: "users", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Scope: &framework.ScopeDeclaration{OwnerField: "user_id"}, Fields: []framework.FieldDeclaration{{Name: "email", Type: "string", Unique: true}}},
 	})
 	if err != nil {
@@ -271,7 +271,7 @@ func TestPackRoundTripPerEntityFiles(t *testing.T) {
 	crud := true
 	decls := []framework.EntityDeclaration{
 		{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "zebra", Table: "zebra", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
-		{Name: "alpha", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}, Relations: []framework.Relation{{Type: framework.RelManyToOne, Name: "z", Entity: "zebra", ForeignKey: "z_id"}}},
+		{Name: "alpha", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}, Relations: []framework.Relation{{Type: framework.RelManyToOne, Name: "z", Entity: "zebra", ForeignKey: []string{"z_id"}}}},
 		{Pagination: &framework.PaginationDeclaration{}, Name: "mango", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Scope: &framework.ScopeDeclaration{OwnerField: "user_id"}, Fields: []framework.FieldDeclaration{{Name: "qty", Type: "int"}}},
 	}
 	files, err := renderGeneratedProject(decls)

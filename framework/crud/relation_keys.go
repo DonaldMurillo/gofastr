@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -54,25 +55,85 @@ func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
 	return lhs + " IN (" + strings.Join(tuples, ", ") + ")", args, true, nil
 }
 
-// belongsToFKs reads the foreign key fk of each parent row ids names, from
-// the parent table keyed on cols. It returns each parent's foreign key
-// value by record id, and the distinct values in first-seen order. A NULL
-// foreign key is an absent optional relation and is left out.
-func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols []string, fk string, ids []string) (map[string]string, []string, error) {
+// safeColumns validates each of cols with query.SafeIdent. The names go
+// into SQL unquoted, the way the DDL wrote them.
+func safeColumns(cols []string) ([]string, error) {
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		s, err := query.SafeIdent(c)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column %q: %w", c, err)
+		}
+		out[i] = s
+	}
+	return out, nil
+}
+
+// oneFK returns rel's foreign-key column when it has exactly one, as a
+// cascade write needs (entity.CheckRelationKeys refuses it several), or
+// "" when it has none or several.
+func oneFK(rel entity.Relation) string {
+	if len(rel.ForeignKey) != 1 {
+		return ""
+	}
+	return rel.ForeignKey[0]
+}
+
+// relationFKs returns rel's foreign-key columns validated for SQL: one,
+// or one per key column of a composite key it references.
+func relationFKs(rel entity.Relation) ([]string, error) {
+	fks := rel.ForeignKey
+	if len(fks) == 0 {
+		return nil, fmt.Errorf("relation %q names no foreign key", rel.Name)
+	}
+	cols, err := safeColumns(fks)
+	if err != nil {
+		return nil, fmt.Errorf("relation %q has an invalid FK: %w", rel.Name, err)
+	}
+	return cols, nil
+}
+
+// scannedKey reads the values columns cols hold in one scanned row (names
+// the row's columns, matched case-insensitively, vals its values) as one
+// record id, the spelling entity.JoinKey gives the ids a loader is handed.
+// It reports false when a column is missing or NULL: an absent reference.
+func scannedKey(names []string, vals []any, cols []string) (string, bool) {
+	parts := make([]string, len(cols))
+	for i, c := range cols {
+		j := slices.IndexFunc(names, func(n string) bool { return strings.EqualFold(n, c) })
+		if j < 0 || vals[j] == nil {
+			return "", false
+		}
+		if b, ok := vals[j].([]byte); ok {
+			parts[i] = string(b)
+		} else {
+			parts[i] = fmt.Sprintf("%v", vals[j])
+		}
+	}
+	return entity.JoinKey(parts), true
+}
+
+// belongsToFKs reads the foreign key fks of each parent row ids names,
+// from the parent table keyed on cols. It returns each parent's foreign
+// key by record id, the key of several columns joined the way
+// entity.JoinKey joins a record id, and the distinct keys in first-seen
+// order. A foreign key with a NULL column is an absent optional relation
+// and is left out.
+func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols, fks []string, ids []string) (map[string]string, []string, error) {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid parent table %q: %w", table, err)
 	}
-	safeFK, err := query.SafeIdent(fk)
+	safeFKs, err := safeColumns(fks)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid FK %q: %w", fk, err)
+		return nil, nil, fmt.Errorf("invalid FK: %w", err)
 	}
 	where, args, ok, err := keyInClause(cols, ids, 1)
 	if err != nil || !ok {
 		return nil, nil, err
 	}
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s",
-		strings.Join(cols, ", "), safeFK, safeTable, where), args...)
+		strings.Join(cols, ", "), strings.Join(safeFKs, ", "), safeTable, where), args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,21 +144,31 @@ func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols []strin
 	seen := map[string]bool{}
 	for rows.Next() {
 		parts := make([]string, len(cols))
-		var fkVal sql.NullString
-		dest := make([]any, 0, len(cols)+1)
+		fkVals := make([]sql.NullString, len(fks))
+		dest := make([]any, 0, len(cols)+len(fks))
 		for i := range parts {
 			dest = append(dest, &parts[i])
 		}
-		if err := rows.Scan(append(dest, &fkVal)...); err != nil {
+		for i := range fkVals {
+			dest = append(dest, &fkVals[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, nil, err
 		}
-		if !fkVal.Valid {
+		fk := make([]string, len(fks))
+		absent := false
+		for i, v := range fkVals {
+			absent = absent || !v.Valid
+			fk[i] = v.String
+		}
+		if absent {
 			continue
 		}
-		bySource[entity.JoinKey(parts)] = fkVal.String
-		if !seen[fkVal.String] {
-			seen[fkVal.String] = true
-			unique = append(unique, fkVal.String)
+		key := entity.JoinKey(fk)
+		bySource[entity.JoinKey(parts)] = key
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, key)
 		}
 	}
 	return bySource, unique, rows.Err()

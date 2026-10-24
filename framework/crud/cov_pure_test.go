@@ -190,14 +190,14 @@ func TestBuildExistsSubquery_AllRelTypes(t *testing.T) {
 	mk := func(rt entity.RelationType) nestedFilter {
 		return nestedFilter{
 			Relation: entity.Relation{
-				Type: rt, Name: "r", Entity: "users", ForeignKey: "author_id",
+				Type: rt, Name: "r", Entity: "users", ForeignKey: []string{"author_id"},
 				Through: "post_tags", LocalKey: "post_id", ForeignKeyTarget: "tag_id",
 			},
 			Field: "name", Op: filter.OpEq, Value: "x",
 		}
 	}
 	for _, rt := range []entity.RelationType{entity.RelManyToOne, entity.RelHasOne, entity.RelHasMany, entity.RelManyToMany} {
-		sql, args := buildExistsSubquery("posts", "id", mk(rt))
+		sql, args := buildExistsSubquery("posts", []string{"id"}, mk(rt))
 		if !strings.HasPrefix(sql, "EXISTS") {
 			t.Errorf("rel %v sql = %q", rt, sql)
 		}
@@ -208,7 +208,7 @@ func TestBuildExistsSubquery_AllRelTypes(t *testing.T) {
 	// Unsafe field name → match-nothing fallback.
 	bad := mk(entity.RelManyToOne)
 	bad.Field = "name OR 1=1"
-	if sql, _ := buildExistsSubquery("posts", "id", bad); sql != "1 = 0" {
+	if sql, _ := buildExistsSubquery("posts", []string{"id"}, bad); sql != "1 = 0" {
 		t.Errorf("unsafe field should yield 1=0, got %q", sql)
 	}
 }

@@ -479,7 +479,7 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 func includeNearMiss(ent *entity.Entity, seg string) string {
 	for _, rel := range ent.Config.Relations {
 		switch seg {
-		case strings.TrimSuffix(rel.Name, "_id"), strings.TrimSuffix(rel.ForeignKey, "_id"),
+		case strings.TrimSuffix(rel.Name, "_id"), strings.TrimSuffix(oneFK(rel), "_id"),
 			rel.Entity, strings.TrimSuffix(rel.Entity, "s"):
 			return rel.Name
 		}

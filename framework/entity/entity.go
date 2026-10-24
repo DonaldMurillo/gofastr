@@ -685,7 +685,6 @@ func Define(name string, config EntityConfig) *Entity {
 			config.Relations = append(config.Relations, BelongsTo(f.Name, f.To, f.Name))
 		}
 	}
-
 	return &Entity{Config: config}
 }
 
@@ -894,7 +893,6 @@ func (e *Entity) Validate() error {
 	if len(e.Config.Fields) == 0 {
 		return fmt.Errorf("entity %q: must have at least one field", e.Config.Name)
 	}
-
 	seen := make(map[string]bool, len(e.Config.Fields))
 	// wireKeys maps each field's wire key (WireName when set, else the column
 	// name) back to the column that claimed it. A wire key addresses exactly

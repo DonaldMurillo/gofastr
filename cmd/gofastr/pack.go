@@ -338,7 +338,12 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			putStr(rm, "type", relationTypeToString(r.Type))
 			putStr(rm, "name", r.Name)
 			putStr(rm, "entity", r.Entity)
-			putStr(rm, "foreign_key", r.ForeignKey)
+			// One column packs as a scalar, as foreign_key always read.
+			if len(r.ForeignKey) == 1 {
+				putStr(rm, "foreign_key", r.ForeignKey[0])
+			} else {
+				putStrs(rm, "foreign_key", r.ForeignKey)
+			}
 			putStr(rm, "through", r.Through)
 			putStr(rm, "local_key", r.LocalKey)
 			putStr(rm, "foreign_key_target", r.ForeignKeyTarget)
@@ -1845,7 +1850,7 @@ func packReadRelations(e ast.Expr) ([]framework.Relation, error) {
 			Type:             relationTypeFromConstName(astSelName(rv["Type"])),
 			Name:             astString(rv["Name"]),
 			Entity:           astString(rv["Entity"]),
-			ForeignKey:       astString(rv["ForeignKey"]),
+			ForeignKey:       astStringSlice(rv["ForeignKey"]),
 			Through:          astString(rv["Through"]),
 			LocalKey:         astString(rv["LocalKey"]),
 			ForeignKeyTarget: astString(rv["ForeignKeyTarget"]),
