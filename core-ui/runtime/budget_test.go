@@ -610,6 +610,13 @@ const (
 	//        server action and widget discovery fetches carry the page's
 	//        prefix. Every one of them runs before a demand module could
 	//        load, so no carve exists. Measured 14374 → 14795. (l1: 531)
+	//   +46 a policy redirect off the app loads that page (2026-10-21):
+	//        uihost names an absolute http(s) target in
+	//        X-Gofastr-Document instead of a 303 fetch cannot follow to
+	//        a site that refuses CORS, and _followed loads it after an
+	//        http(s) check (TestPartialRedirect_ExternalLoadsPage,
+	//        TestDocumentHeaderRefusesScript). It runs on the navigator's
+	//        answer to every click. Measured 14795 → 14841. (l1: 61)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -622,7 +629,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1016,8 +1023,11 @@ const (
 	// server redirect) loads a document, and the action and widget
 	// discovery fetches carry the prefix. Core measures 14795/17167. The navigator runs these on
 	// every click, before any module could load, so the line moves to
-	// 17167, the smallest that fits.
-	coreCongestionWindowGZ = 17167
+	// 17167, the smallest that fits. The same day a policy redirect off
+	// the app loading that page (X-Gofastr-Document) measures
+	// 14841/17228; it reads the navigator's answer to every click, so the
+	// line moves to 17228.
+	coreCongestionWindowGZ = 17228
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1071,6 +1081,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"Back keeps the page's runtime strings (live carrier, full-fetch cache)":   11,  // (l1: 35)
 		"failed-RPC signal text through say()":                                     3,   // (l1: 13)
 		"locale prefixes: unprefixed route lookups, prefixed fetches":              421, // (l1: 531)
+		"a policy redirect off the app loads that page (X-Gofastr-Document)":       46,  // (l1: 61)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1288,7 +1299,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3476 measured (3474 + 2) after an overlay fetch that followed
 		// a redirect falls back to the navigator
 		// (TestInterceptRedirectLeavesOverlay).
-		"intercept": 3476,
+		// 3479 measured (3477 + 2) after a panel record that will not
+		// open over the list opens as its own page
+		// (TestInterceptPanelRedirectOpensPage).
+		"intercept": 3479,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

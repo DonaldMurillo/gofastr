@@ -61,7 +61,8 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 		return fmt.Sprintf(`<h1 id="v">%s %d</h1>`+
 			`<a id="to-a" href="/es/a">a</a><a id="to-b" href="/es/b">b</a><a id="to-en" href="/b">en</a><a id="to-redir" href="/es/redir">r</a>`+
 			`<a id="to-hop" href="/es/hop">h</a><a id="to-jump" href="/es/jump">j</a><a id="to-stay" href="/es/stay">s</a>`+
-			`<a id="to-out" href="/es/out">o</a><a id="to-hop-out" href="/es/hop-out">ho</a>`, path, n)
+			`<a id="to-out" href="/es/out">o</a><a id="to-hop-out" href="/es/hop-out">ho</a>`+
+			`<a id="to-doc" href="/es/doc">d</a><a id="to-hop-doc" href="/es/hop-doc">hd</a><a id="to-doc-bad" href="/es/doc-bad">db</a>`, path, n)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -77,6 +78,19 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 			return
 		case "/es/out", "/es/hop-out":
 			http.Redirect(w, r, other.URL+"/x", http.StatusSeeOther)
+			return
+		case "/es/doc", "/es/hop-doc":
+			// uihost's answer to a policy sending the reader off the
+			// app: a script fetch gets the URL named, a document load
+			// the 303.
+			if m := r.Header.Get("Sec-Fetch-Mode"); m == "cors" || m == "same-origin" {
+				w.Header().Set("X-Gofastr-Document", other.URL+"/x")
+				return
+			}
+			http.Redirect(w, r, other.URL+"/x", http.StatusSeeOther)
+			return
+		case "/es/doc-bad":
+			w.Header().Set("X-Gofastr-Document", "javascript:window.__pwned=1")
 			return
 		case "/a", "/b", "/es/a", "/es/b":
 		default:
@@ -101,7 +115,8 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 		page := strings.TrimPrefix(r.URL.Path, "/es")
 		fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+
 			`<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"},{"path":"/redir"},{"path":"/hop","layouts":["l:other"]},`+
-			`{"path":"/jump"},{"path":"/stay"},{"path":"/out"},{"path":"/hop-out","layouts":["l:other"]}]</script>`+
+			`{"path":"/jump"},{"path":"/stay"},{"path":"/out"},{"path":"/hop-out","layouts":["l:other"]},`+
+			`{"path":"/doc"},{"path":"/hop-doc","layouts":["l:other"]},{"path":"/doc-bad"}]</script>`+
 			`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`+
 			`</head><body><header>`+
 			`<a id="alt-en" rel="alternate" hreflang="en" href="`+page+`">English</a>`+
@@ -209,6 +224,8 @@ func TestRedirectToLocaleLoadsDocument(t *testing.T) {
 		{"to-stay", "/es/b ", true},
 		{"to-out", "/x out", false},
 		{"to-hop-out", "/x out", false},
+		{"to-doc", "/x out", false},
+		{"to-hop-doc", "/x out", false},
 	}
 	for name, outlet := range localeNavigators {
 		for _, c := range cases {
@@ -216,6 +233,34 @@ func TestRedirectToLocaleLoadsDocument(t *testing.T) {
 				redirectLands(t, outlet, c.link, c.text, c.soft)
 			})
 		}
+	}
+}
+
+// X-Gofastr-Document names a page to load; anything but an http(s) URL
+// fails the navigation instead of running.
+func TestDocumentHeaderRefusesScript(t *testing.T) {
+	for name, outlet := range localeNavigators {
+		t.Run(name, func(t *testing.T) {
+			srv, _ := localePrefixSrvWith(t, outlet)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			var pwned, mark bool
+			var path string
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(srv.URL+"/es/a"),
+				waitText("#v", "/es/a 1"),
+				chromedp.Evaluate(`window.__mark = 1`, nil),
+				chromedp.Click("#to-doc-bad", chromedp.ByID),
+				chromedp.Sleep(800*time.Millisecond),
+				chromedp.Evaluate(`window.__pwned === 1`, &pwned),
+				chromedp.Evaluate(`window.__mark === 1`, &mark),
+				chromedp.Evaluate(`location.pathname`, &path),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if pwned || !mark || path != "/es/a" {
+				t.Errorf("javascript: document header: ran %v, page kept %v, path %q", pwned, mark, path)
+			}
+		})
 	}
 }
 
