@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -118,19 +118,16 @@ func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML 
 
 // probeCount is a late count's fallback: a bounded read of at most
 // manyRows ids in the caller's scope, its own deadline apart from the
-// one the count spent. It reads the number when there are fewer, "10k+"
-// past it, and "—" when the read fails too.
+// one the count spent. It reads the number when there are fewer,
+// "10,000+" past it, and "—" when the read fails too.
 func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
 	pctx, cancel := context.WithTimeout(ctx, probeDeadline)
 	defer cancel()
 	n, more, ok := b.ui.CountUpTo(pctx, e.GetName(), "", manyRows)
-	switch {
-	case !ok:
-		return "—"
-	case more:
-		return countText(ctx, strconv.Itoa(manyRows))
+	if more {
+		n = manyRows
 	}
-	return countText(ctx, strconv.Itoa(n))
+	return countText(ctx, n, ok)
 }
 
 // entityStat is the card itself: the plural, the count read in the
@@ -139,7 +136,8 @@ func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
 func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML {
 	cctx, cancel := context.WithTimeout(ctx, countDeadline)
 	defer cancel()
-	count := countText(ctx, b.ui.StatValue(cctx, e.GetName(), "count", "", "", ""))
+	n, ok := b.ui.CountInt(cctx, e.GetName(), "")
+	count := countText(ctx, n, ok)
 	if count == "—" {
 		count = b.probeCount(ctx, e)
 	}
@@ -182,7 +180,7 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	}
 	var count render.HTML
 	if stats, err := b.cfg.Queue.Stats(ctx); err == nil {
-		count = ui.Muted(render.Text(strconv.Itoa(stats["failed"])))
+		count = ui.Muted(render.Text(i18n.Number(ctx, stats["failed"])))
 	}
 	_, replay := b.replayable()
 	return render.Join(

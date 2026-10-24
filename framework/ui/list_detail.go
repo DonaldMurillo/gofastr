@@ -1,16 +1,22 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ListDetailConfig configures the two panes of a ListDetail.
 type ListDetailConfig struct {
+	// Ctx carries the per-request context the default back label is
+	// written in. When nil, English applies.
+	Ctx context.Context
+
 	// List is kept chrome in a group layout, not a per-route outlet.
 	List render.HTML
 	// ListLabel labels the independently scrolling list. Required.
@@ -69,7 +75,7 @@ func ListDetail(cfg ListDetailConfig) render.HTML {
 	if cfg.BackHref != "" {
 		label := cfg.BackLabel
 		if label == "" {
-			label = "Back"
+			label = i18nui.ListDetailBack.Text(cfg.Ctx)
 		}
 		backAttrs := html.Attrs{}
 		if cfg.Detail != "" {

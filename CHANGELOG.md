@@ -94,6 +94,72 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   placeholder and key hints. `ui.ShortcutSheetFunc` and
   `ui.CommandPaletteFunc` build the whole config per request, so the
   rows and commands translate too; the admin shell mounts both.
+- **Numbers, dates and lists in the reader's locale.** `i18n.Number`,
+  `i18n.Percent`, `i18n.Currency`, `i18n.Date`, `i18n.Time`,
+  `i18n.DateTime`, `i18n.List` and `i18n.ListOr` write a value the way
+  the request's locale does (`1 234,5` in French, `٤٬٨٢٠` in Egyptian
+  Arabic, `5 mars 2026`), from CLDR 47 tables generated into the package.
+  `i18n.MinFraction` and `i18n.MaxFraction` set the decimals.
+  `i18n.Decimal` formats an exact decimal string, a money amount from
+  the database, without going through a float. `i18n.NoGrouping` keeps
+  a year or an id in one run of the locale's digits. NaN and infinity
+  take the pattern's signs (`$∞`). Plural forms follow CLDR 47's rules
+  for every locale (a French million is `many`), and a `B` time pattern
+  names the part of the day (zh-Hant's `下午3:04`). A number passed as
+  a phrase parameter is formatted in the reader's locale, and
+  `i18n.FillContext` does the same for a plain template.
+- **Components write numbers and dates the reader's way.** Pagination,
+  counts, steps, ratings, tags, the section menu, dropdown badges,
+  `ui.Ago` past a month, entity list and record cells, admin dashboard
+  counts and charts all format through the request's locale. `ui.BarChart`,
+  `ui.LineChart`, `ui.PieChart`, `ui.Gauge`, `ui.Heatmap`,
+  `ui.ScatterChart` and `ui.Sparkline` take a `Ctx` field for it, and
+  their words ("No data yet", point and cell titles) are phrases. The
+  command palette's `Esc` key chip is translatable. Headless
+  `Strings.ForRequest(ctx)` carries the locale into headless components,
+  and `data-cui-signal-mode="number"` keeps a live counter formatted
+  after the client updates it (the `headless-numbers` module, loaded
+  only where a page uses it).
+- **Right-to-left pages.** Every full page carries `<html dir>` from the
+  new `i18n.Dir(lang)`, so Arabic, Hebrew, Persian and the other
+  right-to-left scripts render `dir="rtl"`. The document language is the
+  negotiated locale when no route sets one, and the `doc-dir` runtime
+  module keeps `dir` right across client navigation. The setup wizard
+  and the print shell declare the reader's language and direction too.
+  The design system's CSS uses logical properties, so the sidebar,
+  indents, chips, the select chevron, switches, toggles, the segmented
+  indicator, the timeline and the nav progress bar mirror. Corner and
+  edge positions (notifications, back-to-top, widget corners, `Edge`
+  drawers) and tooltip sides mean start and end; code blocks stay left
+  to right; an anchored popover lines up with its trigger's start edge.
+  See `gofastr docs i18n` → "Direction".
+- **`rawtext` reads numbers and helper parameters.** A number turned
+  into Go's digits (`strconv.Itoa`, `fmt.Sprint`, ...) and passed as a
+  phrase parameter or written into page text is refused; pass the number
+  or `i18n.Number`. A same-package helper whose string parameter reaches
+  page text or a label attribute makes its callers' English literals
+  findings too, and so does a local variable or parameter holding an
+  English default (`aria := "Page steps"`) or an index write into an
+  attribute map (`attrs["aria-label"] = ...`). The `numtext` arm
+  follows a local the same way: `n := strconv.Itoa(size)` passed as a
+  phrase param is reported.
+- **Component defaults in the reader's language.** The default labels of
+  `ui.AvatarGroup`, `ui.ContentRow`, `ui.FilterChipBar`, `ui.Gallery`,
+  `ui.ListDetail`, `ui.NetworkRetryBanner`, `ui.StepRail`,
+  `ui.TableOfContents`, the sidebar drawer, `interactive.SectionMenu`
+  and `interactive.PhoneSheet` are phrases. Their configs (and
+  `ui.SidebarConfig`, `ui.AnimatedCounterConfig`, `ui.SliderConfig`,
+  `ui.JSONViewerConfig`, `ui.AnchoredRailConfig`) take a `Ctx` field;
+  `ui.Slider`'s and the headless range controls' value outputs,
+  `ui.JSONViewer`'s counts, `ui.AnchoredRail`'s item counts,
+  `ui.FilterRows`' row numbers, `ui.FileDropzone`'s size hint and the
+  admin process-module generations write the locale's digits. The
+  admin activity feed's hover time is in the reader's date format.
+- **Contracts rule GOFASTR1824** refuses a physical side in the design
+  system's CSS (`margin-left`, `left: 8px`, `text-align: right`, a
+  corner radius, an asymmetric four-value shorthand) where a logical
+  property exists. See `gofastr docs contracts`. The contract catalog
+  holds 80 rules.
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -164,6 +230,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   resolve)` take a context. `ui.LightboxConfig.Ctx` and
   `ui.ConfirmActionConfig.Ctx` are gone: the mounted widget takes the
   locale from each request.
+- **BREAKING: `print.Battery.PrintLink` takes the request context.**
+  `PrintLink(ctx, doc, params, label)`; an empty label is "Print" in the
+  reader's language.
+- **BREAKING: plural rules come from CLDR.** `i18n.PluralRule` and
+  `Translator.RegisterPluralRule` are gone; every locale CLDR knows has
+  its rule built in.
+- **BREAKING: the document language follows the request.**
+  `App.LangForPath(path)` is `App.LangFor(ctx, path)`, and
+  `UIHost.LangForPath` is `UIHost.LangFor(ctx, path)`: with no route
+  language set, `<html lang>` is the negotiated locale, where it was
+  the app's default. `App.SkipLabelForPath(path)` is
+  `App.SkipLabelFor(ctx, path)`, and the default skip label is the
+  `app.skip_to_main` phrase.
+- **BREAKING: numbers and dates in markup changed shape.** English
+  numbers now carry grouping (`4,820`, where `4820` was written), entity
+  timestamps read `Mar 5, 2026, 2:05 PM`, `ui.Ago` past a month writes
+  `Mar 5, 2026` where it wrote `2026-03-05`, and the admin's capped
+  count reads `10,000+` where it read `10k+`. A headless counter's value
+  span carries `data-cui-signal-mode="number"` and an animated counter
+  `data-hui-counter-to`. `headless.StepsProps` gains a `Strings` field.
+- **BREAKING: logical CSS.** Kit CSS that set `left`, `right`,
+  `margin-left`, `padding-right`, `border-right` and the like now sets
+  the logical property. An app override written with the physical
+  property still lands on a left-to-right page but hits the wrong side
+  on a right-to-left one; write the logical property instead.
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts

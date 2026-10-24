@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
@@ -190,7 +189,7 @@ func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 	},
 		field("current_password", i18nui.AdminCurrentPassword.Text(ctx), "", "current-password"),
 		field("password", i18nui.AdminNewPassword.Text(ctx),
-			i18nui.AdminNewPasswordHelp.Text(ctx, map[string]any{"min": strconv.Itoa(auth.RecommendedMinPasswordBytes)}),
+			i18nui.AdminNewPasswordHelp.Text(ctx, map[string]any{"min": auth.RecommendedMinPasswordBytes}),
 			"new-password"),
 		field("confirm_password", i18nui.AdminConfirmPassword.Text(ctx), "", "new-password"),
 	))

@@ -113,20 +113,20 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 			return render.Text(boolText(t))
 		}
 	case schema.Date:
-		if s := formatDate(v, dateLayout); s != "" {
+		if s := formatDate(ctx, v, false); s != "" {
 			return render.Text(s)
 		}
 	case schema.Timestamp:
-		if s := formatDate(v, timestampLayout); s != "" {
+		if s := formatDate(ctx, v, true); s != "" {
 			return render.Text(s)
 		}
-	case schema.Decimal:
+	case schema.Decimal, schema.Float:
 		if s := cell(v); s != "" {
-			return render.Text(decimal(s))
+			return render.Text(decimal(ctx, s))
 		}
-	case schema.Float, schema.Int:
+	case schema.Int:
 		if s := cell(v); s != "" {
-			return render.Text(s)
+			return render.Text(integer(ctx, s))
 		}
 	case schema.Relation:
 		return fb.relationDisplay(ctx, f, v)

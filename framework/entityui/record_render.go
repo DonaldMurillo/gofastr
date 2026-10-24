@@ -273,7 +273,7 @@ func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 			continue
 		}
 		if t, ok := parseTime(rowValue(row, s.col)); ok {
-			parts = append(parts, s.key.Text(ctx, map[string]any{"date": t.Format(dateLayout)}))
+			parts = append(parts, s.key.Text(ctx, map[string]any{"date": i18n.Date(ctx, t, i18n.DateMedium)}))
 		}
 	}
 	return strings.Join(parts, " · ")

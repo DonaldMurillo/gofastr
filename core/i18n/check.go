@@ -151,7 +151,7 @@ func placeholdersAgree(english string, m Message) bool {
 }
 
 // isCountParam reports whether name is a param plural selection reads
-// its count from (see extractCount).
+// its count from (see countOperands).
 func isCountParam(name string) bool {
 	return slices.Contains(countParams, name)
 }

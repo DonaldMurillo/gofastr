@@ -417,7 +417,11 @@ expose them to agents connected to a live app.**
   arm holds the page to the same rule: a constant (or a concatenation
   with a constant operand) of words passed to `render.Text`, set as
   an aria-label/title/placeholder/alt attribute, or set on a UI
-  package component's Label/Title/Text/Placeholder-named field. The
+  package component's Label/Title/Text/Placeholder-named field. A
+  local variable or parameter assigned such a constant counts at any
+  of those sinks, and so does an index write into an attribute map
+  (`attrs["aria-label"] = …`): an English default set before the
+  sink was the shape 23 kit sites hid. The
   gallery, `framework/sdkdocs` (the API reference, English like
   OpenAPI), `headless.Spec` examples and the `headless.Strings`
   defaults table are exempt. The runtime's JS twin is

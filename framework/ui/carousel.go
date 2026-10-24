@@ -311,7 +311,7 @@ func carouselCSS(_ style.Theme) string {
   content: "";
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-start: 50%;
+  left: 50%;
   inline-size: var(--ui-carousel-dot-size, 10px);
   block-size: var(--ui-carousel-dot-size, 10px);
   border-radius: var(--radii-full, 9999px);

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -102,7 +103,7 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta) string {
 	if !any {
 		return ""
 	}
-	return formatNumber(float64(total), 0)
+	return i18n.Number(ctx, total)
 }
 
 // relatedBase derives the related entity's list path from this

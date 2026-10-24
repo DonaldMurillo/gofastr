@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -38,20 +39,22 @@ type App struct {
 
 	// Lang is the BCP-47 language tag of the document (e.g. "en", "fr",
 	// "pt-BR"). It becomes the <html lang="…"> attribute on every page the app
-	// renders, so screen readers announce the right language (WCAG 3.1.1).
+	// renders when neither LangFunc nor the request's negotiated locale names
+	// one, so screen readers announce the right language (WCAG 3.1.1).
 	// Empty defaults to "en" via EffectiveLang. Set with WithLang.
 	Lang string
 
 	// LangFunc resolves the document language per route. It is called with the
 	// page path on every full-page render and returns a BCP-47 tag, or "" to
-	// fall back to Lang. A multilingual site that serves /es/… in Spanish sets
-	// this once instead of tagging every screen. Nil (the default) keeps Lang
-	// on every page. Set with WithLangFunc.
+	// fall back to the negotiated locale, then Lang. A multilingual site that
+	// serves /es/… in Spanish sets this once instead of tagging every screen.
+	// Nil (the default) keeps Lang on every page. Set with WithLangFunc.
 	LangFunc func(path string) string
 
 	// SkipLabel is the visible text of the app shell's skip link, the
 	// first string a keyboard user meets. Empty renders the default
-	// "Skip to main content". Set with WithSkipLabel.
+	// "Skip to main content", in the request's language. Set with
+	// WithSkipLabel.
 	SkipLabel string
 
 	// SkipLabelFunc resolves the skip-link text per route, like LangFunc
@@ -144,7 +147,8 @@ func (a *App) WithLang(lang string) *App {
 // language and stems it with the wrong rules.
 //
 // The func is called with the page path on every full-page render. Returning ""
-// falls back to Lang, so an app that never sets it renders exactly as before.
+// falls back to the negotiated locale, then Lang, so an app that never sets it
+// renders exactly as before.
 // A prefix test is usually all a bilingual site needs:
 //
 //	application.WithLangFunc(func(path string) string {
@@ -176,14 +180,11 @@ func (a *App) WithSkipLabelFunc(fn func(path string) string) *App {
 	return a
 }
 
-// defaultSkipLabel keeps a host that sets nothing byte-identical.
-const defaultSkipLabel = "Skip to main content"
-
 // docLangFor resolves the document language a render of path carries:
 // the route rule, then the component's own ScreenLang read after Load so
 // a dynamic route can take the tag from the content it fetched.
-func (a *App) docLangFor(path string, comp any) string {
-	lang := a.LangForPath(path)
+func (a *App) docLangFor(ctx context.Context, path string, comp any) string {
+	lang := a.LangFor(ctx, path)
 	if langer, ok := comp.(ScreenLanger); ok {
 		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
 			lang = l
@@ -192,12 +193,12 @@ func (a *App) docLangFor(path string, comp any) string {
 	return lang
 }
 
-// SkipLabelForPath returns the skip-link text for a route: SkipLabelFunc's
-// answer when it gives one, else SkipLabel, else the English default. It
-// mirrors LangForPath, and the value rides the outermost layout layer as
-// data-cui-skip-label so the runtime can re-localize the link after a
-// client-side navigation.
-func (a *App) SkipLabelForPath(path string) string {
+// SkipLabelFor returns the skip-link text for a route: SkipLabelFunc's
+// answer when it gives one, else SkipLabel, else "Skip to main content"
+// in the request's language. It mirrors LangFor, and the value rides the
+// outermost layout layer as data-cui-skip-label so the runtime can
+// re-localize the link after a client-side navigation.
+func (a *App) SkipLabelFor(ctx context.Context, path string) string {
 	if a.SkipLabelFunc != nil {
 		if l := strings.TrimSpace(a.SkipLabelFunc(path)); l != "" {
 			return l
@@ -206,11 +207,11 @@ func (a *App) SkipLabelForPath(path string) string {
 	if a.SkipLabel != "" {
 		return a.SkipLabel
 	}
-	return defaultSkipLabel
+	return skipToMain.Text(ctx)
 }
 
 // EffectiveLang returns the document language, defaulting to "en" when unset.
-// It is the site-wide fallback; LangForPath is what page rendering asks.
+// It is the site-wide fallback; LangFor is what page rendering asks.
 func (a *App) EffectiveLang() string {
 	if a.Lang != "" {
 		return a.Lang
@@ -218,17 +219,22 @@ func (a *App) EffectiveLang() string {
 	return "en"
 }
 
-// LangForPath returns the document language for a route: LangFunc's answer when
-// it gives one, else EffectiveLang. It deliberately does not consult
+// LangFor returns the document language for a route: LangFunc's answer when
+// it gives one, else the locale the request negotiated (i18n.FromContext,
+// set by the i18n middleware: the catalog language the page's phrases are
+// said in), else EffectiveLang. It deliberately does not consult
 // ScreenLanger, which needs the loaded component; RenderPageResult layers that
 // on top. Hosts that build their own document shells (a 404, an offline page)
 // call this so those shells land in the same language as the route they stand
-// in for.
-func (a *App) LangForPath(path string) string {
+// in for. Pair it with i18n.Dir for the document's <html dir>.
+func (a *App) LangFor(ctx context.Context, path string) string {
 	if a.LangFunc != nil {
 		if lang := strings.TrimSpace(a.LangFunc(path)); lang != "" {
 			return lang
 		}
+	}
+	if tag := i18n.FromContext(ctx).Tag; tag != "" {
+		return tag
 	}
 	return a.EffectiveLang()
 }
@@ -761,13 +767,8 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	// values can ride the outermost layer (see docShell) as well as
 	// <html lang> and the link text below. ScreenLang is read after Load
 	// exactly like the title.
-	lang := a.LangForPath(path)
-	if langer, ok := comp.(ScreenLanger); ok {
-		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
-			lang = l
-		}
-	}
-	skip := a.SkipLabelForPath(path)
+	lang := a.docLangFor(ctx, path, comp)
+	skip := a.SkipLabelFor(ctx, path)
 	// The keyed-transition vocabulary of THIS document's chain rides
 	// the doc shell (data-cui-vt-kinds, copied onto <html> by the
 	// runtime after a swap) beside the pick the answer carries.
@@ -932,7 +933,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")
-	htmlAttrs := map[string]string{"lang": lang}
+	htmlAttrs := map[string]string{"lang": lang, "dir": i18n.Dir(lang)}
 	if len(vtKinds) > 0 {
 		htmlAttrs["data-cui-vt-kinds"] = strings.Join(vtKinds, " ")
 	}
@@ -1080,8 +1081,8 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 		// (its ScreenLang is not re-read), so a route whose language comes
 		// from ScreenLang declares it in LangFunc as well.
 		if len(tChain) == 0 && len(fChain) == 0 {
-			lang, skip := a.docLangFor(path, res.Component), a.SkipLabelForPath(path)
-			if lang != a.LangForPath(fromPath) || skip != a.SkipLabelForPath(fromPath) {
+			lang, skip := a.docLangFor(ctx, path, res.Component), a.SkipLabelFor(ctx, path)
+			if lang != a.LangFor(ctx, fromPath) || skip != a.SkipLabelFor(ctx, fromPath) {
 				res.SwapLayer = docShellSwapPrefix + lang
 			}
 		}
@@ -1091,7 +1092,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	// values the full page would carry: without them the document language
 	// and skip link could never change on an in-chain swap. ScreenLang is
 	// layered like the full-page path so both render shapes agree.
-	ctx = withDocShell(ctx, a.docLangFor(path, res.Component), a.SkipLabelForPath(path), strings.Join(chainVTKinds(tChain), " "))
+	ctx = withDocShell(ctx, a.docLangFor(ctx, path, res.Component), a.SkipLabelFor(ctx, path), strings.Join(chainVTKinds(tChain), " "))
 	// renderPartial installed the route match on its own ctx copy; the
 	// collect-mode builds below read it from THIS ctx, so install it here
 	// too when absent (kept layers' route areas re-run for the target).

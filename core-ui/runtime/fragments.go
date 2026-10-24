@@ -175,7 +175,7 @@ var fragmentAttrs = map[string][]string{
 		// entry point. A difference is a hard document load.
 		"data-cui-doc",
 		// data-cui-lang / data-cui-skip-label ride the outermost layer
-		// the server renders (App.LangForPath / SkipLabelForPath): the
+		// the server renders (App.LangFor / SkipLabelFor): the
 		// runtime copies them onto documentElement.lang and the skip link
 		// after every swap, they live outside the shell it replaces.
 		"data-cui-lang",

@@ -451,15 +451,15 @@ func bulkAudit(ctx context.Context, e *entity.Entity, r auditRow) (record, chang
 		return "", "", false
 	}
 	record = i18nui.HTML(ctx, i18nui.AdminAuditBulkRecord, map[string]render.HTML{
-		"count":  render.Text(strconv.Itoa(d.Count)),
+		"count":  render.Text(i18n.Number(ctx, d.Count)),
 		"entity": render.Text(entityNoun(ctx, e, d.Count)),
 	})
 	parts := []render.HTML{render.Text(verb.Text(ctx))}
 	if d.Skipped > 0 {
-		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkSkipped.Text(ctx, map[string]any{"count": strconv.Itoa(d.Skipped)}))))
+		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkSkipped.Text(ctx, map[string]any{"count": d.Skipped}))))
 	}
 	if d.Failed > 0 {
-		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkFailed.Text(ctx, map[string]any{"count": strconv.Itoa(d.Failed)}))))
+		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkFailed.Text(ctx, map[string]any{"count": d.Failed}))))
 	}
 	return record, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, parts...), true
 }
@@ -509,13 +509,14 @@ func auditSides(r auditRow) (before, after map[string]any) {
 }
 
 // agoCell is a time as the activity feed says it, "2h ago", with the
-// exact UTC time on hover and in the datetime attribute.
+// exact UTC time on hover, in the reader's date format, and in the
+// datetime attribute.
 func agoCell(ctx context.Context, now, t time.Time) render.HTML {
 	if t.IsZero() {
 		return ui.EmptyValue()
 	}
 	u := t.UTC()
-	return html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339), ExtraAttrs: html.Attrs{"title": u.Format("2006-01-02 15:04 UTC")}},
+	return html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339), ExtraAttrs: html.Attrs{"title": i18n.DateTime(ctx, u, i18n.DateMedium, i18n.TimeLong)}},
 		render.Text(ui.Ago(ctx, now, t)))
 }
 

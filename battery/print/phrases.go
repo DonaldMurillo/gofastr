@@ -8,3 +8,6 @@ var (
 	reasonPDFFailed        = i18n.Define("print.render_failed", "PDF rendering failed")
 	reasonPDFNotConfigured = i18n.Define("print.not_configured", "PDF rendering is not configured for this app")
 )
+
+// printLabel is PrintLink's default link text.
+var printLabel = i18n.Define("print.link", "Print")

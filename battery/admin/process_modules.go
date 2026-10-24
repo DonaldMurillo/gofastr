@@ -10,9 +10,7 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -75,9 +73,9 @@ func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render
 			"module":   moduleNameCell(m),
 			"trust":    render.Text(m.TrustTier.String()),
 			"state":    moduleStateCell(ctx, m),
-			"gen":      moduleGenerationCell(m),
-			"restarts": render.Text(strconv.Itoa(m.RestartCount)),
-			"routes":   render.Text(fmt.Sprintf("%d / %d", m.RouteCount, m.ToolCount)),
+			"gen":      moduleGenerationCell(ctx, m),
+			"restarts": render.Text(i18n.Number(ctx, m.RestartCount)),
+			"routes":   render.Text(i18n.Number(ctx, m.RouteCount) + " / " + i18n.Number(ctx, m.ToolCount)),
 			"exit":     moduleLastExitCell(m.LastExit),
 		}
 		if manage {
@@ -149,8 +147,8 @@ func moduleServes(state framework.ProcessState) i18n.Phrase {
 
 // moduleGenerationCell is desired / observed; a lagging observed
 // generation means convergence is in flight.
-func moduleGenerationCell(m framework.ProcessModuleInfo) render.HTML {
-	text := fmt.Sprintf("%d / %d", m.DesiredGeneration, m.ObservedGeneration)
+func moduleGenerationCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
+	text := i18n.Number(ctx, m.DesiredGeneration) + " / " + i18n.Number(ctx, m.ObservedGeneration)
 	if m.ObservedGeneration < m.DesiredGeneration {
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: ui.StatusDanger})
 	}

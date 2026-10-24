@@ -6593,11 +6593,11 @@ func renderAppSpecCatalogBlock(bp AppSpec, screen AppSpecScreen, block AppSpecBl
 			var chart string
 			switch kind {
 			case "pie_chart":
-				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: appUI.GroupSlices(ctx, %q, %q)})", entity, groupBy)
+				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Ctx: ctx, Slices: appUI.GroupSlices(ctx, %q, %q)})", entity, groupBy)
 			case "line_chart":
 				chart = fmt.Sprintf("appUI.LineChart(ctx, %q, %q)", entity, groupBy)
 			default:
-				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
+				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: appUI.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
 			}
 			// A titled chart is a Card with a heading; design-system
 			// composition, zero bespoke classes (Hard rule 7).

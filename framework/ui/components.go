@@ -1563,10 +1563,13 @@ type SkipLinkConfig struct {
 	// Defaults to "main-content" when empty.
 	Target string
 	// Text is the visible label shown on focus.
-	// Defaults to "Skip to main content" when empty.
+	// Defaults to "Skip to main content", in Ctx's language, when empty.
 	Text  string
 	Class string
 	ID    string
+	// Ctx carries the per-request context the default Text is said in.
+	// When nil, English applies.
+	Ctx context.Context
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the link's root <a>. Keys the component
@@ -1583,7 +1586,7 @@ func SkipLink(cfg SkipLinkConfig) render.HTML {
 	}
 	text := cfg.Text
 	if text == "" {
-		text = "Skip to main content"
+		text = i18nui.SkipToMain.Text(cfg.Ctx)
 	}
 	cls := "fui-skip-link"
 	if cfg.Class != "" {

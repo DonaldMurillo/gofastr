@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"slices"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Heatmap ────────────────────────────────────────────────────────
@@ -55,6 +57,9 @@ type HeatmapConfig struct {
 	// data-cui-*, width, height, viewBox, xmlns, role, aria-labelledby
 	// (use LabelledBy) and aria-hidden.
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 const (
@@ -83,11 +88,11 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 		}
 	}
 	if len(cfg.Rows) == 0 || len(cfg.Cols) == 0 || lo > hi {
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 	format := cfg.Format
 	if format == nil {
-		format = ftoa
+		format = func(v float64) string { return chartNumber(cfg.Ctx, v) }
 	}
 	tone := "primary"
 	if slices.Contains(chartPalette, cfg.Color) {
@@ -194,25 +199,25 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 		y := heatTop + float64(i)*(heatCellH+heatGap)
 		label(left-6, y+heatCellH/2+4, "end", rowText[i])
 		for j, v := range cfg.Values[i] {
-			level, value := "empty", "no data"
+			level, value := "empty", i18nui.HeatmapNoData.Text(cfg.Ctx)
 			if finite(v) {
 				level, value = strconv.Itoa(heatLevel(v, lo, hi)), format(v)
 			}
 			rect(colX(j), y, cellW, heatCellH, level)
 			sb.WriteString(`><title>`)
-			sb.WriteString(escapeXML(r + ", " + cfg.Cols[j] + ": " + value))
+			sb.WriteString(escapeXML(i18nui.HeatmapCell.Text(cfg.Ctx, map[string]any{"row": r, "col": cfg.Cols[j], "value": value})))
 			sb.WriteString(`</title></rect>`)
 		}
 	}
 	if cfg.ShowLegend {
 		y := heatTop + gridH + 10
 		x := float64(w) - 4*12 - 32
-		label(x-6, y+9, "end", "Less")
+		label(x-6, y+9, "end", i18nui.HeatmapLess.Text(cfg.Ctx))
 		for k := 1; k <= 4; k++ {
 			rect(x+float64(k-1)*12, y, 10, 10, strconv.Itoa(k))
 			sb.WriteString(`/>`)
 		}
-		label(x+4*12+2, y+9, "start", "More")
+		label(x+4*12+2, y+9, "start", i18nui.HeatmapMore.Text(cfg.Ctx))
 	}
 	sb.WriteString(`</svg>`)
 	return heatmapStyle.WrapHTML(render.HTML(sb.String()))

@@ -33,6 +33,9 @@ func TestEveryWordHasADefault(t *testing.T) {
 	typ := val.Type()
 	probe := reflect.ValueOf(*ProbeStrings())
 	for i := range typ.NumField() {
+		if !typ.Field(i).IsExported() {
+			continue
+		}
 		name := typ.Field(i).Name
 		def := val.Field(i).String()
 		if def == "" {
@@ -80,6 +83,9 @@ func TestEveryWordIsSaidBySomeCase(t *testing.T) {
 	val := reflect.ValueOf(*ProbeStrings())
 	typ := val.Type()
 	for i := range typ.NumField() {
+		if !typ.Field(i).IsExported() {
+			continue
+		}
 		name := typ.Field(i).Name
 		// A plain field renders as its whole token; a format field
 		// renders with its arguments after the name, so its token is

@@ -95,6 +95,7 @@ func jsonNode(b Box, v any, depth int, p JSONTreeProps, w *Strings) render.HTML 
 		return b.El("span", PartJSONBool, own, render.Text(word))
 	case float64:
 		s := strconv.FormatFloat(t, 'f', -1, 64)
+		//gofastr:allow(rawtext) a JSON viewer shows the document's own digits, the source a reader copies
 		return b.El("span", PartJSONNum, own, render.Text(s))
 	case string:
 		s := t
@@ -122,13 +123,13 @@ func jsonNodeArray(b Box, arr []any, depth int, p JSONTreeProps, w *Strings, own
 	}
 	items := make([]render.HTML, 0, len(arr))
 	for i, item := range arr {
-		key := b.El("span", PartLabel, nil, render.Text(strconv.Itoa(i)))
+		key := b.El("span", PartLabel, nil, render.Text(w.Number(i)))
 		colon := b.El("span", PartJSONColon, nil, render.Text(":"))
 		items = append(items, b.El("li", PartText, nil, key, colon,
 			jsonNode(b, item, depth+1, p, w)))
 	}
 	list := b.El("ol", PartBody, nil, items...)
-	count := b.El("span", PartJSONCount, nil, render.Text("("+strconv.Itoa(len(arr))+")"))
+	count := b.El("span", PartJSONCount, nil, render.Text("("+w.Number(len(arr))+")"))
 	typ := b.El("span", PartJSONType, nil, render.Text(w.JSONArray))
 	summary := b.El("summary", PartTitle, nil, typ, count)
 	return b.El("details", PartControl, Merge(jsonOpenAttr(p, depth), own), summary, list)
@@ -147,7 +148,7 @@ func jsonNodeObject(b Box, obj map[string]any, depth int, p JSONTreeProps, w *St
 			jsonNode(b, obj[k], depth+1, p, w)))
 	}
 	list := b.El("ul", PartBody, nil, items...)
-	count := b.El("span", PartJSONCount, nil, render.Text("("+strconv.Itoa(len(obj))+")"))
+	count := b.El("span", PartJSONCount, nil, render.Text("("+w.Number(len(obj))+")"))
 	typ := b.El("span", PartJSONType, nil, render.Text(w.JSONObject))
 	summary := b.El("summary", PartTitle, nil, typ, count)
 	return b.El("details", PartControl, Merge(jsonOpenAttr(p, depth), own), summary, list)

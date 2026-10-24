@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -56,17 +56,14 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		if !ok {
 			return "—"
 		}
+		if format == "money" {
+			return money(ctx, total.FloatString(2))
+		}
 		places := 2
-		if format != "money" && total.IsInt() {
+		if total.IsInt() {
 			places = 0
 		}
-		s := groupDigits(total.FloatString(places))
-		if format == "money" {
-			if rest, ok := strings.CutPrefix(s, "-"); ok {
-				return "-" + i18nui.EntityCurrency.Text(ctx) + rest
-			}
-			return i18nui.EntityCurrency.Text(ctx) + s
-		}
+		s, _ := i18n.Decimal(ctx, total.FloatString(places), i18n.MinFraction(places), i18n.MaxFraction(places))
 		return s
 	default:
 		slog.WarnContext(ctx, "entityui: stat agg is not count or sum", "entity", entityName, "agg", agg)
@@ -124,7 +121,7 @@ func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool)
 	if !ok {
 		return "", false
 	}
-	return formatNumber(float64(n), 0), true
+	return i18n.Number(ctx, n), true
 }
 
 // CountInt is Count as a number, for a figure the caller computes with
@@ -370,5 +367,5 @@ func (u *UI) LineChart(ctx context.Context, entityName, groupBy string) render.H
 	if m != nil {
 		name = m.label(ctx, groupBy)
 	}
-	return ui.LineChart(ui.LineChartConfig{Series: []ui.LineSeries{{Name: name, Values: values}}, Labels: labels})
+	return ui.LineChart(ui.LineChartConfig{Ctx: ctx, Series: []ui.LineSeries{{Name: name, Values: values}}, Labels: labels})
 }

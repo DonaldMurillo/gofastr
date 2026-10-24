@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── BarChart ───────────────────────────────────────────────────────
@@ -86,12 +88,15 @@ type BarChartConfig struct {
 	// aria-labelledby (use LabelledBy), and aria-hidden. With no Bars
 	// the extras land on the shared zero-data placeholder instead.
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
 	if len(cfg.Bars) == 0 {
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 	w := cfg.Width
 	if w == 0 {
@@ -250,7 +255,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ty + 3))
 			sb.WriteString(`" class="fui-bar-chart__axis-label" data-cui-internal="" text-anchor="end">`)
-			sb.WriteString(ftoa(tv))
+			sb.WriteString(chartNumber(cfg.Ctx, tv))
 			sb.WriteString(`</text>`)
 		}
 	}
@@ -306,7 +311,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 		if b.Label != "" {
 			sb.WriteString(`><title>`)
-			sb.WriteString(escapeXML(b.Label + ": " + ftoa(b.Value)))
+			sb.WriteString(escapeXML(i18nui.ChartValue.Text(cfg.Ctx, map[string]any{"label": b.Label, "value": chartNumber(cfg.Ctx, b.Value)})))
 			sb.WriteString(`</title></rect>`)
 		} else {
 			sb.WriteString(`/>`)
@@ -319,7 +324,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(y - 4))
 			sb.WriteString(`" class="fui-bar-chart__value" data-cui-internal="" text-anchor="middle">`)
-			sb.WriteString(escapeXML(ftoa(b.Value)))
+			sb.WriteString(escapeXML(chartNumber(cfg.Ctx, b.Value)))
 			sb.WriteString(`</text>`)
 		}
 

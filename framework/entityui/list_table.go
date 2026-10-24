@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -105,9 +106,9 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	if known && total > 0 && len(rows) > 0 && !b.top {
 		from := (page-1)*s.limit + 1
 		dt.Summary = i18nui.EntityRange.Text(ctx, map[string]any{
-			"from":  formatNumber(float64(from), 0),
-			"to":    formatNumber(float64(from+len(rows)-1), 0),
-			"total": formatNumber(float64(total), 0),
+			"from":  from,
+			"to":    from + len(rows) - 1,
+			"total": total,
 		})
 		dt.FooterTools = b.perPageMenu(ctx, s, total)
 	}
@@ -131,14 +132,14 @@ func (b *ListBuilder) perPageMenu(ctx context.Context, s *listState, total int) 
 	for i, n := range sizes {
 		q := s.carryWithSort(s.p.page, s.p.per)
 		q.Set(s.p.per, strconv.Itoa(n))
-		items[i] = ui.MenuItem{Label: strconv.Itoa(n), Href: listHref(s.path, q)}
+		items[i] = ui.MenuItem{Label: i18n.Number(ctx, n), Href: listHref(s.path, q)}
 	}
 	label := i18nui.EntityPageSize.Text(ctx)
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
 		ui.Muted(render.Text(label)),
 		ui.Menu(ui.MenuConfig{
 			ID:       "eui-" + listIDSafe(s.key, s.m.name) + "-per",
-			Label:    strconv.Itoa(s.limit),
+			Label:    i18n.Number(ctx, s.limit),
 			Items:    items,
 			Position: ui.MenuTopEnd,
 		}),
@@ -349,11 +350,13 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	}
 	switch f.Type {
 	case schema.Decimal, schema.Float:
-		return render.Text(decimal(val))
+		return render.Text(decimal(ctx, val))
+	case schema.Int:
+		return render.Text(integer(ctx, val))
 	case schema.Date:
-		return render.Text(formatDate(rowValue(row, name), dateLayout))
+		return render.Text(formatDate(ctx, rowValue(row, name), false))
 	case schema.Timestamp:
-		return render.Text(formatDate(rowValue(row, name), timestampLayout))
+		return render.Text(formatDate(ctx, rowValue(row, name), true))
 	case schema.Image, schema.File:
 		// A value with no safe address draws the empty mark, never the
 		// stored text.
@@ -400,11 +403,16 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		if val == "" {
 			return ""
 		}
-		return decimal(val)
+		return decimal(ctx, val)
+	case schema.Int:
+		if val == "" {
+			return ""
+		}
+		return integer(ctx, val)
 	case schema.Date:
-		return formatDate(raw, dateLayout)
+		return formatDate(ctx, raw, false)
 	case schema.Timestamp:
-		return formatDate(raw, timestampLayout)
+		return formatDate(ctx, raw, true)
 	default:
 		// Everything else prints its value as text.
 	}

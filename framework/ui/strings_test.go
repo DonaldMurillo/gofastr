@@ -49,8 +49,11 @@ func everyHeadlessStringField(t *testing.T, w *headless.Strings, fn func(name, v
 	typ := v.Type()
 	for i := range typ.NumField() {
 		f := typ.Field(i)
-		if f.PkgPath != "" || f.Type.Kind() != reflect.String {
-			t.Fatalf("headless.Strings.%s is not an exported string field — the bridge's walk and this test both assume the struct is flat", f.Name)
+		if !f.IsExported() {
+			continue
+		}
+		if f.Type.Kind() != reflect.String {
+			t.Fatalf("headless.Strings.%s is not a string field — the bridge's walk and this test both assume the words are flat", f.Name)
 		}
 		fn(f.Name, v.Field(i).String())
 	}
@@ -63,8 +66,11 @@ func TestStringsForMapsEveryField(t *testing.T) {
 	fields := map[string]bool{}
 	for i := range typ.NumField() {
 		f := typ.Field(i)
-		if f.PkgPath != "" || f.Type.Kind() != reflect.String {
-			t.Fatalf("headless.Strings.%s is not an exported string field", f.Name)
+		if !f.IsExported() {
+			continue
+		}
+		if f.Type.Kind() != reflect.String {
+			t.Fatalf("headless.Strings.%s is not a string field", f.Name)
 		}
 		fields[f.Name] = true
 	}

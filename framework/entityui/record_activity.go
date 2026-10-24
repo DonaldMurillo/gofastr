@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -62,9 +63,9 @@ func (b *RecordBuilder) activityCount(ctx context.Context, m *meta) string {
 		return ""
 	}
 	if len(entries) > activityCap {
-		return formatNumber(activityCap, 0) + "+"
+		return i18n.Number(ctx, activityCap) + "+"
 	}
-	return formatNumber(float64(len(entries)), 0)
+	return i18n.Number(ctx, len(entries))
 }
 
 // activityEvent draws one audit entry: the headline, how long ago, and

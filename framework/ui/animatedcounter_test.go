@@ -9,7 +9,7 @@ func TestAnimatedCounterSSRRendersFinalValue(t *testing.T) {
 	h := string(AnimatedCounter(AnimatedCounterConfig{To: 1234}))
 	// Final value MUST be in SSR. No-JS users + reduced-motion users
 	// see the target without any animation.
-	if !strings.Contains(h, ">1234<") {
+	if !strings.Contains(h, ">1,234<") || !strings.Contains(h, `data-hui-counter-to="1234"`) {
 		t.Errorf("SSR should render the target value:\n%s", h)
 	}
 }

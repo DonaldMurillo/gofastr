@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -124,6 +125,25 @@ func problemDoc(w http.ResponseWriter) {
 	}{Message: "method not found"})
 }
 
+// uitext arm, a default one assignment away from its sink.
+func defaulted(title string, n int) {
+	aria := title
+	if aria == "" {
+		aria = "Page steps"
+	}
+	_ = map[string]string{"aria-label": aria} // want `aria-label "Page steps" is English written`
+	attrs := map[string]string{}
+	attrs["aria-label"] = aria     // want `aria-label "Page steps" is English written`
+	attrs["title"] = "Open drawer" // want `title "Open drawer" is English written`
+	attrs["class"] = "Open drawer"
+	label := "Next page"
+	_ = render.Text(label) // want `render.Text\("Next page"\) writes English`
+	// A variable that only ever holds a class or a caller's text: quiet.
+	class := "fui-steps"
+	_ = render.Text(class)
+	_ = render.Text(title)
+}
+
 // uitext arm.
 type localConfig struct{ Label string }
 
@@ -148,4 +168,84 @@ func page(ctx context.Context, method string) {
 	_ = localConfig{Label: "Save changes"}
 	_ = headless.Strings{Close: "Close"}
 	_ = headless.Spec{Example: ui.ButtonConfig{Label: "Save changes"}}
+}
+
+// numtext arm.
+type seconds int64
+
+func (s seconds) String() string { return "s" }
+
+func counts(ctx context.Context, n int, size int64, ratio float64, d seconds, tr *i18n.Translator) {
+	_ = reasonGone.Text(ctx, map[string]any{"count": strconv.Itoa(n)})            // want `strconv.Itoa turns a number into Go's digits`
+	_ = reasonGone.Text(ctx, map[string]any{"size": strconv.FormatInt(size, 10)}) // want `strconv.FormatInt turns a number`
+	_ = reasonGone.Text(ctx, map[string]any{"ratio": fmt.Sprintf("%.1f", ratio)}) // want `fmt.Sprintf turns a number`
+	_ = reasonGone.Text(ctx, map[string]any{"n": "#" + strconv.Itoa(n)})          // want `strconv.Itoa turns a number`
+	_ = i18n.FillContext(ctx, "{{n}} left", map[string]any{"n": fmt.Sprint(n)})   // want `fmt.Sprint turns a number`
+	_ = tr.T(ctx, "rt.left", map[string]any{"n": strconv.Itoa(n)})                // want `strconv.Itoa turns a number`
+	_ = render.Text(strconv.Itoa(n))                                              // want `strconv.Itoa writes a number into the page`
+	_ = map[string]string{"aria-label": strconv.Itoa(n)}                          // want `strconv.Itoa writes a number into aria-label`
+	_ = ui.ButtonConfig{Label: strconv.FormatFloat(ratio, 'f', 1, 64)}            // want `strconv.FormatFloat writes a number into Label`
+	// The number itself, a Stringer, mixed text, and machine slots: quiet.
+	_ = reasonGone.Text(ctx, map[string]any{"count": n})
+	_ = reasonGone.Text(ctx, map[string]any{"d": fmt.Sprint(d)})
+	_ = reasonGone.Text(ctx, map[string]any{"id": fmt.Sprintf("%s-%d", "rt", n)})
+	_ = map[string]string{"data-count": strconv.Itoa(n)}
+	_ = ui.ButtonConfig{Class: strconv.Itoa(n)}
+	//gofastr:allow(rawtext) a port the reader copies into a config file
+	_ = render.Text(strconv.Itoa(n))
+	// A helper that builds the params map is a sink too.
+	_ = say(ctx, "{{n}} left", "n", strconv.Itoa(n)) // want `strconv.Itoa turns a number`
+	_ = say(ctx, "{{n}} left", "n", n)
+	_ = join("a", strconv.Itoa(n))
+	// The digits hoisted into a local first reach the sink the same way.
+	digits := strconv.Itoa(n)
+	_ = reasonGone.Text(ctx, map[string]any{"n": digits}) // want `strconv.Itoa turns a number`
+	_ = render.Text("+" + digits)                         // want `strconv.Itoa writes a number into the page`
+	_ = map[string]string{"data-count": digits}
+	// A local that a later assignment replaces with localized text is
+	// not number text: only a local every assignment fills with Go's
+	// digits is followed.
+	shown := strconv.Itoa(n)
+	_ = map[string]string{"data-count": shown}
+	shown = i18n.Number(ctx, n)
+	_ = render.Text(shown)
+	picked := strconv.Itoa(n)
+	for _, picked = range []string{i18n.Number(ctx, n)} {
+	}
+	_ = render.Text(picked)
+	held := strconv.Itoa(n)
+	ptr := &held
+	*ptr = i18n.Number(ctx, n)
+	_ = render.Text(held)
+}
+
+// say forwards kv to a phrase sink.
+func say(ctx context.Context, tpl string, kv ...any) string {
+	params := map[string]any{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		params[kv[i].(string)] = kv[i+1]
+	}
+	return i18n.FillContext(ctx, tpl, params)
+}
+
+// join takes a variadic but never reaches a phrase: quiet.
+func join(parts ...string) string { return parts[0] }
+
+// textparam: empty writes its message into a label attribute and the
+// page, the chartEmpty shape, so its callers' literals are page text.
+func empty(class, message string) render.HTML {
+	attrs := map[string]string{"class": class}
+	attrs["aria-label"] = message
+	_ = attrs
+	return render.Text(message)
+}
+
+// emptyChart hands its label on to empty: a sink one call further.
+func emptyChart(label string) render.HTML { return empty("c", label) }
+
+func useEmpty(n int) {
+	_ = empty("fui-empty", "No data yet") // want `empty's message parameter writes "No data yet"`
+	_ = emptyChart("Nothing here")        // want `emptyChart's label parameter writes "Nothing here"`
+	_ = empty("Wide Class", "")
+	_ = empty("x", strconv.Itoa(n)) // want `strconv.Itoa writes a number into empty`
 }

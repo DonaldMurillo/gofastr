@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ContentRow ────────────────────────────────────────────────────
@@ -36,6 +38,10 @@ import (
 
 // ContentRowConfig configures a ContentRow.
 type ContentRowConfig struct {
+	// Ctx carries the per-request context the default column labels are
+	// written in. When nil, English applies.
+	Ctx context.Context
+
 	// Sidebar is the start column. Give it a ui.Sidebar; the column
 	// takes its width from the sidebar's content, sits on the surface
 	// color and draws the inline-end rule. Below the breakpoint the
@@ -171,7 +177,7 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	if cfg.Sidebar != "" {
 		label := cfg.NavLabel
 		if label == "" {
-			label = "Sidebar"
+			label = i18nui.ContentRowSidebar.Text(cfg.Ctx)
 		}
 		// The nav landmark around the sidebar: headless.Sidebar's own
 		// nav names only the links list, so the column landmark is what
@@ -181,7 +187,7 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	if cfg.Toolbar != "" {
 		label := cfg.ToolbarLabel
 		if label == "" {
-			label = "Toolbar"
+			label = i18nui.ContentRowToolbar.Text(cfg.Ctx)
 		}
 		body = append(body, html.Div(html.DivConfig{Class: "fui-content-row__workspace"},
 			html.Section(html.SectionConfig{Label: label, Class: "fui-content-row__toolbar"}, cfg.Toolbar),
@@ -192,7 +198,7 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	if cfg.Aside != "" {
 		label := cfg.AsideLabel
 		if label == "" {
-			label = "Context"
+			label = i18nui.ContentRowAside.Text(cfg.Ctx)
 		}
 		body = append(body, html.Aside(html.AsideConfig{Label: label, Class: "fui-content-row__aside"}, cfg.Aside))
 	}
@@ -225,7 +231,7 @@ func contentRowCSS(_ style.Theme) string {
 	// the header and footer leave and the nav column reaches the footer.
 	return `.fui-content-row { display: flex; align-items: stretch; flex: 1 0 auto; }
 .fui-content-row > main, .fui-content-row > .layout-content { flex: 1 1 auto; min-width: 0; }
-.fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-right: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
+.fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
 .fui-content-row__workspace { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-direction: column; }
 .fui-content-row__workspace > main, .fui-content-row__workspace > .layout-content { flex: 1 1 auto; min-inline-size: 0; }
 .fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: var(--stroke-thin, 1px) solid var(--color-border); }
@@ -329,7 +335,7 @@ func (b rowBreakpointCSS) viewportCSS() string {
 func (b rowBreakpointCSS) stackCSS() string {
 	css := fmt.Sprintf(`@media (max-width: %s) {
   :where(.fui-content-row):SCOPE: { display: block; }
-  .fui-content-row:SCOPE: .fui-content-row__nav { border-right: none; border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
+  .fui-content-row:SCOPE: .fui-content-row__nav { border-inline-end: none; border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
   /* The stacked nav band holds the menu trigger. It takes main's inline
      gutter, so the trigger lines up with the page content instead of
      sitting flush in the viewport corner. */

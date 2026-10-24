@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	_ "embed"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -251,11 +250,10 @@ func dropzoneHelp(cfg FileDropzoneConfig, ctx context.Context) string {
 	if cfg.MaxSizeMB <= 0 {
 		return cfg.Help
 	}
-	n := strconv.Itoa(cfg.MaxSizeMB)
 	if cfg.Help == "" {
-		return i18nui.DropzoneMaxSize.Text(ctx, map[string]any{"n": n})
+		return i18nui.DropzoneMaxSize.Text(ctx, map[string]any{"n": cfg.MaxSizeMB})
 	}
-	return cfg.Help + i18nui.DropzoneMaxSizeSuffix.Text(ctx, map[string]any{"n": n})
+	return cfg.Help + i18nui.DropzoneMaxSizeSuffix.Text(ctx, map[string]any{"n": cfg.MaxSizeMB})
 }
 
 func dropzoneIcon() string {

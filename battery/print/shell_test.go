@@ -47,6 +47,18 @@ func TestCustomLengthRejected(t *testing.T) {
 	}
 }
 
+func TestShellDeclaresLang(t *testing.T) {
+	for _, tc := range []struct{ lang, want string }{
+		{"", `<html dir="ltr" lang="en">`},
+		{"he", `<html dir="rtl" lang="he">`},
+		{`x"><b`, `<html dir="ltr" lang="x&quot;&gt;&lt;b">`},
+	} {
+		if out := renderShell(shellInput{Lang: tc.lang, Title: "t"}); !strings.Contains(out, tc.want) {
+			t.Errorf("lang %q: want %s in %.80q", tc.lang, tc.want, out)
+		}
+	}
+}
+
 func TestLinksAppCSSWhenSet(t *testing.T) {
 	out := renderShell(shellInput{Title: "t", AppCSSHref: "/__gofastr/app.css", BaseCSS: "x", PageCSS: "y"})
 	if !strings.Contains(out, `<link rel="stylesheet" href="/__gofastr/app.css">`) {

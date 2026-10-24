@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -82,6 +83,7 @@ func pageCSS(p PageConfig) string {
 // shellInput carries everything renderShell needs to assemble a standalone
 // print document.
 type shellInput struct {
+	Lang         string      // <html lang>, the request's locale; "" = "en"
 	Title        string      // <title>, escaped here
 	Body         render.HTML // already-escaped component output
 	PageCSS      string      // from pageCSS
@@ -139,8 +141,12 @@ func renderShell(in shellInput) string {
 	// config.
 	appCSSHref := urlsafe.Clean(in.AppCSSHref, urlsafe.Resource)
 	autoPrintSrc := urlsafe.Clean(in.AutoPrintSrc, urlsafe.Resource)
+	lang := in.Lang
+	if lang == "" {
+		lang = "en"
+	}
 	var b strings.Builder
-	b.WriteString("<!doctype html>\n<html lang=\"en\">\n<head>\n")
+	fmt.Fprintf(&b, "<!doctype html>\n<html dir=\"%s\" lang=\"%s\">\n<head>\n", i18n.Dir(lang), render.Escape(lang))
 	b.WriteString(`  <meta charset="utf-8">` + "\n")
 	b.WriteString(`  <meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
 	// The CSP is emitted IN the document, not only as a response header.
@@ -196,7 +202,7 @@ body.print-doc h1, body.print-doc h2, body.print-doc h3 {
 }
 body.print-doc table { width: 100%; border-collapse: collapse; }
 body.print-doc th, body.print-doc td {
-  text-align: left;
+  text-align: start;
   padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }

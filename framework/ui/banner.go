@@ -249,7 +249,8 @@ func bannerCSS(_ style.Theme) string {
   font-size: var(--text-lg, 1.125rem);
   line-height: 1;
   border-radius: var(--radii-sm, 6px);
-  margin: calc(var(--spacing-md, 8px) * -1) calc(var(--spacing-md, 8px) * -1) calc(var(--spacing-md, 8px) * -1) 0;
+  margin-block: calc(var(--spacing-md, 8px) * -1);
+  margin-inline: 0 calc(var(--spacing-md, 8px) * -1);
 }
 [data-cui-comp="ui-banner"] .fui-banner__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);

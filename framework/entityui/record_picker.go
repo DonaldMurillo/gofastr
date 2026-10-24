@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -162,7 +161,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 			continue
 		}
 		if len(opts) == pickerRows {
-			more = i18nui.EntityPickerMore.Text(ctx, map[string]any{"n": strconv.Itoa(pickerRows)})
+			more = i18nui.EntityPickerMore.Text(ctx, map[string]any{"n": pickerRows})
 			break
 		}
 		opts = append(opts, ui.PickerOption{Value: oid, Label: label})

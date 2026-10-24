@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Document-level markers that must travel with a layout render.
@@ -59,6 +60,7 @@ func docShellAttrs(ctx context.Context) html.Attrs {
 	}
 	attrs := html.Attrs{
 		"data-cui-lang":       ds.lang,
+		"data-cui-dir":        i18n.Dir(ds.lang),
 		"data-cui-skip-label": ds.skipLabel,
 	}
 	if ds.vtKinds != "" {

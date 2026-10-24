@@ -201,14 +201,21 @@ var stringsKeys = map[string]i18n.Phrase{
 // count inside an accessible name, where nobody sighted would see it.
 // i18n.CheckCatalog reports the same drift in a test, where it is
 // cheap to fix.
+//
+// The result also carries ctx for numbers (headless.Strings.Number), so
+// a counter or a step number reads the way the reader writes numbers.
 func StringsFor(ctx context.Context) *headless.Strings {
 	w := headless.DefaultStrings()
 	if ctx == nil {
 		return w
 	}
+	w = w.ForRequest(ctx)
 	v := reflect.ValueOf(w).Elem()
 	t := v.Type()
 	for i := range t.NumField() {
+		if !t.Field(i).IsExported() {
+			continue
+		}
 		name := t.Field(i).Name
 		key, mapped := stringsKeys[name]
 		if !mapped {

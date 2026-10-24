@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Gallery ────────────────────────────────────────────────────────
@@ -74,6 +76,10 @@ type GalleryItem struct {
 
 // GalleryConfig configures a Gallery.
 type GalleryConfig struct {
+	// Ctx carries the per-request context the default gallery label is
+	// written in. When nil, English applies.
+	Ctx context.Context
+
 	// Variant picks the surface layout.
 	Variant GalleryVariant
 	// Items are the entries (≥1).
@@ -130,7 +136,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = "Image gallery"
+		label = i18nui.GalleryLabel.Text(cfg.Ctx)
 	}
 	cols := cfg.Columns
 	if cols == 0 {

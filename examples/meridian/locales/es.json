@@ -447,6 +447,10 @@
       "signOut": "Cerrar sesión",
       "signup": "Crear cuenta"
     },
+    "avatarGroup": {
+      "label": "Avatares",
+      "more": "{{count}} más"
+    },
     "backToTop": {
       "label": "Volver arriba"
     },
@@ -467,6 +471,11 @@
     "change": {
       "from": "de",
       "to": "a"
+    },
+    "chart": {
+      "noData": "Aún no hay datos",
+      "notEnoughData": "Aún no hay datos suficientes",
+      "value": "{{label}}: {{value}}"
     },
     "codeBlock": {
       "copied": "copiado",
@@ -497,6 +506,11 @@
       "placeholder": "Escribe un comando o busca…",
       "select": "Elegir",
       "title": "Paleta de comandos"
+    },
+    "contentRow": {
+      "aside": "Contexto",
+      "sidebar": "Barra lateral",
+      "toolbar": "Barra de herramientas"
     },
     "copy": {
       "copied": "Copiado",
@@ -717,6 +731,7 @@
     },
     "filterChipBar": {
       "clearAll": "Borrar todo",
+      "label": "Filtros activos",
       "removeFilter": "Quitar el filtro {{label}}"
     },
     "filterToolbar": {
@@ -738,6 +753,18 @@
       "submit": "Enviar",
       "success": "Guardado correctamente",
       "yes": "Sí"
+    },
+    "gallery": {
+      "label": "Galería de imágenes"
+    },
+    "gauge": {
+      "noData": "{{label}}: aún no hay datos"
+    },
+    "heatmap": {
+      "cell": "{{row}}, {{col}}: {{value}}",
+      "less": "Menos",
+      "more": "Más",
+      "noData": "sin datos"
     },
     "inlineEdit": {
       "save": "Guardar",
@@ -767,6 +794,9 @@
       "next": "Imagen siguiente",
       "previous": "Imagen anterior"
     },
+    "listDetail": {
+      "back": "Volver"
+    },
     "loading": "Cargando…",
     "multiselect": {
       "placeholder": "Elige…"
@@ -775,6 +805,11 @@
       "mobilePrimary": "Principal en móvil",
       "primary": "Principal",
       "toggle": "Mostrar u ocultar la navegación"
+    },
+    "networkRetry": {
+      "retry": "Reintentar ahora",
+      "text": "Tenemos problemas para conectar con el servidor. Tus cambios quedan en pausa hasta que vuelva la conexión.",
+      "title": "Conexión perdida"
     },
     "notification": {
       "countUnread": "{{n}} notificaciones sin leer",
@@ -826,6 +861,10 @@
       "removeItem": "Quitar el elemento {{index}}",
       "removeItemIndex": "Quitar el elemento {{n}}"
     },
+    "scatter": {
+      "point": "{{series}}: {{label}} ({{x}}, {{y}})",
+      "pointBare": "{{series}}: ({{x}}, {{y}})"
+    },
     "search": {
       "clear": "Borrar la búsqueda",
       "inputPlaceholder": "Buscar...",
@@ -858,9 +897,14 @@
       "title": "Atajos de teclado"
     },
     "sidebar": {
+      "closeDrawer": "Cerrar navegación",
       "collapse": "Contraer la navegación",
       "collapseText": "Contraer",
-      "expand": "Expandir la navegación"
+      "expand": "Expandir la navegación",
+      "openDrawer": "Abrir navegación"
+    },
+    "skipLink": {
+      "toMain": "Saltar al contenido principal"
     },
     "sortable": {
       "cancelled": "Cancelado.",
@@ -876,6 +920,9 @@
     },
     "sparkline": {
       "noData": "Sin datos de tendencia"
+    },
+    "stepRail": {
+      "label": "Pasos de la página"
     },
     "stepWizard": {
       "back": "Atrás",

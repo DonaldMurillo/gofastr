@@ -163,7 +163,7 @@ theme.go was never updated to concatenate it.
 |---|---|
 | `data-cui-rpc="<path>"` | Click/submit fires HTTP request |
 | `data-cui-rpc-signal="<name>"` | Response body becomes the value of signal `<name>` |
-| `data-cui-signal="<name>"` mode=`text\|html\|attr` | Element auto-updates when the signal changes |
+| `data-cui-signal="<name>"` mode=`text\|number\|html\|attr` | Element auto-updates when the signal changes |
 | `data-cui-poll="<interval>"` + `data-cui-poll-src="<path>"` | Region re-fetches + swaps on the interval (≥5s, jittered, pauses hidden) |
 | `data-cui-open="<widget>"` | Opens a mounted widget |
 | `data-cui-comp="<name>"` | Marker for a registered styled component: runtime loads `/__gofastr/comp/<name>.css` once |

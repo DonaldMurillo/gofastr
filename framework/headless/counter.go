@@ -119,6 +119,7 @@ func Counter(p CounterProps, s Classes) render.HTML {
 		// leaves the number the signal owns alone.
 		Mark(own, "data-hui-counter-animate")
 		own["data-hui-counter-from"] = strconv.Itoa(*p.AnimateFrom)
+		own["data-hui-counter-to"] = strconv.Itoa(p.Value)
 		if p.DurationMS > 0 {
 			own["data-hui-counter-ms"] = strconv.Itoa(p.DurationMS)
 		}
@@ -149,14 +150,16 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			"data-cui-signal-attr": "value",
 		}))
 	} else {
-		live := html.Attrs{"aria-live": "polite", "data-cui-signal": p.Signal}
+		// Number mode: the runtime writes each new value the reader's
+		// way, as the server wrote this one.
+		live := html.Attrs{"aria-live": "polite", "data-cui-signal": p.Signal, "data-cui-signal-mode": "number"}
 		if p.Display {
 			// No step button changes a figure, so there is nothing to
 			// announce, and a live region would read out every frame of
 			// the tick-up animation.
 			delete(live, "aria-live")
 		}
-		value = b.El("span", PartCounterValue, Internal(live), render.Text(strconv.Itoa(p.Value)))
+		value = b.El("span", PartCounterValue, Internal(live), render.Text(w.Number(p.Value)))
 	}
 
 	if p.Display {
@@ -179,7 +182,7 @@ func init() {
 	Register(Spec{
 		Name:    "Counter",
 		Anatomy: []Part{PartRoot, PartCounterDecrement, PartCounterValue, PartCounterIncrement},
-		Hooks:   []string{"data-hui-counter-animate", "data-hui-counter-from", "data-hui-counter-ms"},
+		Hooks:   []string{"data-hui-counter-animate", "data-hui-counter-from", "data-hui-counter-to", "data-hui-counter-ms"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Counter(CounterProps{Signal: "qty", Label: "Quantity", Parts: parts}, s)
 		},

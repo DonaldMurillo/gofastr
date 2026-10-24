@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -21,6 +23,10 @@ import (
 
 // JSONViewerConfig configures a JSONViewer.
 type JSONViewerConfig struct {
+	// Ctx carries the per-request context the tree's type words and
+	// counts are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Value is the data to render (required).
 	Value any
 	// OpenDepth is the recursion depth that renders open by default.
@@ -68,6 +74,7 @@ func JSONViewer(cfg JSONViewerConfig) render.HTML {
 		ID:           cfg.ID,
 		ExtraAttrs:   html.SafeExtraAttrs(cfg.ExtraAttrs),
 		Parts:        parts,
+		Strings:      StringsFor(cfg.Ctx),
 	}, nil))
 }
 
