@@ -3057,10 +3057,7 @@ func validateAppSpecSeedStructure(bp AppSpec, entitiesByName map[string]framewor
 		// leaves every fabricated row failing CreateOne's required check —
 		// and a failed seed row aborts startup.
 		if seed.Count > 0 {
-			keyCols := decl.PrimaryKey
-			if declKeyIsID(decl) {
-				keyCols = []string{"id"}
-			}
+			keyCols := appSpecKeyColNames(decl)
 			fits := true
 			for _, f := range decl.Fields {
 				isKey := slices.Contains(keyCols, f.Name)
@@ -4213,13 +4210,23 @@ func appSpecE2EWritableTarget(bp AppSpec) (appSpecCRUDTarget, bool) {
 	return appSpecCRUDTarget{}, false
 }
 
+// appSpecKeyColNames lists the columns the record's id is made of: the
+// declared primary key, or "id" for an entity keyed on id alone (which
+// a declared id field, a relation included, fills).
+func appSpecKeyColNames(decl framework.EntityDeclaration) []string {
+	if declKeyIsID(decl) {
+		return []string{"id"}
+	}
+	return decl.PrimaryKey
+}
+
 // appSpecUnfillableRelation reports a relation the e2e create body cannot
 // fill (it sends no relation) and the record cannot do without: a
 // required one, or one in the declared key, which the id is made of.
 func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
+	keyCols := appSpecKeyColNames(decl)
 	for _, f := range decl.Fields {
-		isKey := !declKeyIsID(decl) && slices.Contains(decl.PrimaryKey, f.Name)
-		if (f.Required || isKey) && strings.EqualFold(f.Type, "relation") {
+		if (f.Required || slices.Contains(keyCols, f.Name)) && strings.EqualFold(strings.TrimSpace(f.Type), "relation") {
 			return true
 		}
 	}
