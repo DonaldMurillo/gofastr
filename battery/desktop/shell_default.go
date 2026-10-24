@@ -8,8 +8,8 @@ import (
 // The unsupported shell: the answer for every platform without a native
 // layer. It is exported (NewUnsupportedShell) because the platform
 // packages' New() hand it back off their platform: battery/desktop/macos
-// outside darwin/arm64, battery/desktop/windows and battery/desktop/linux
-// everywhere today. desktop.New also picks it when Config.Shell is nil;
+// outside darwin/arm64, battery/desktop/windows outside windows/amd64,
+// and battery/desktop/linux outside linux/amd64 or linux/arm64. desktop.New also picks it when Config.Shell is nil;
 // the real shell for a host is native.Shell()'s to choose
 // (battery/desktop/native).
 

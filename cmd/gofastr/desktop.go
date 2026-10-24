@@ -429,6 +429,19 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		return
 	}
 
+	if targetOS == "linux" {
+		if err := buildLinuxDesktop(f, name); err != nil {
+			fail("Linux desktop build failed: %v", err)
+			osExit(1)
+		}
+		return
+	}
+	if targetOS != "darwin" {
+		fail("Desktop build is not supported on %s", targetOS)
+		osExit(1)
+		return
+	}
+
 	appDir := filepath.Join(f.out, name+".app")
 	contents := filepath.Join(appDir, "Contents")
 	macOS := filepath.Join(contents, "MacOS")
