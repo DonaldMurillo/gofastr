@@ -36,17 +36,28 @@ func TestInitFreshDirectory(t *testing.T) {
 	}
 	// A second invocation must refuse the existing project without touching it.
 	sentinel := filepath.Join(work, "repro-check-0", "main.go")
+	envPath := filepath.Join(work, "repro-check-0", ".env")
+	envBefore, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(sentinel, []byte("keep this file\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bin, "init", "repro-check-0")
 	cmd.Dir = work
 	out, err := cmd.CombinedOutput()
-	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 || !strings.Contains(string(out), "already exists") {
+	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
+		!strings.Contains(string(out), "already exists") ||
+		!strings.Contains(string(out), "This invocation has not written any files") ||
+		strings.Contains(string(out), "run 'gofastr init .'") {
 		t.Fatalf("repeat init should refuse with exit 1: %v\n%s", err, out)
 	}
 	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "keep this file\n" {
 		t.Fatalf("repeat init changed existing file: %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(envPath); err != nil || string(got) != string(envBefore) {
+		t.Fatalf("repeat init changed the existing .env: %v", err)
 	}
 }
 

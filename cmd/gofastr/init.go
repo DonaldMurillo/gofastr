@@ -45,7 +45,8 @@ func runInit(args []string) {
 	if name != "." {
 		if _, err := os.Stat(name); err == nil {
 			fail("Directory %q already exists.", name)
-			info("Use a different name, or cd into the existing directory and run 'gofastr init .'")
+			info("This invocation has not written any files. Check whether an earlier run created the project.")
+			info("Use a different name for a new project, or inspect the existing directory before running init again.")
 			osExit(1)
 		}
 	} else if envTrackedByGit(".") {
