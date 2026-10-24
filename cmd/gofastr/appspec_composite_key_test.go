@@ -265,6 +265,12 @@ func TestE2ESkipsRelationKey(t *testing.T) {
 	if !appSpecUnfillableRelation(decl) {
 		t.Error("an optional relation in the key must disqualify the create target")
 	}
+	// primary_key: [id] with id a relation is the same shape.
+	decl.PrimaryKey = []string{"id"}
+	decl.Fields = append(decl.Fields, framework.FieldDeclaration{Name: "id", Type: "relation", To: "people"})
+	if !appSpecUnfillableRelation(decl) {
+		t.Error("an optional relation id key must disqualify the create target")
+	}
 }
 
 func TestE2EReadsDeclaredKey(t *testing.T) {
