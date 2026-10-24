@@ -254,9 +254,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   ids all name a record through them. A string id is `entity.JoinKey` of
   the key values (`entity.SplitKey` and `entity.RowKey` read it back),
   which for a one-column key is the value itself, so nothing changes for
-  existing entities. `SplitKey` refuses any spelling but the one
-  `JoinKey` writes (`%61/b` for `a/b`), so one record has one id. See `gofastr docs entity-declarations` → "Record
-  ids".
+  existing entities. `SplitKey` refuses any spelling of a composite id
+  but the one `JoinKey` writes (`a/b` names `a` and `b`; `%61/b` is
+  refused), so one record has one id. See `gofastr docs
+  entity-declarations` → "Record ids".
 - **Composite primary keys.** `EntityConfig.PrimaryKey: []string{"student_id",
   "course_id"}` keys a table on several columns: each gets `NOT NULL` and
   the table a `PRIMARY KEY (student_id, course_id)` constraint, with no
@@ -280,7 +281,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `crud.PathRecordID`, `CrudRouteOptions.Key`. A key value holding `/`
   is escaped in its segment and reaches its screen as it reaches REST
   and MCP: the screen router splits the escaped path and decodes each
-  segment, and a pattern redirect carries such a value as one segment.
+  segment, and a pattern redirect carries such a value as one segment,
+  with a `?`, `#` or (in a catch-all) `%` in it escaped, so it never
+  turns into a query or a fragment of the target.
   The login `next=` from `auth.SessionPolicy` and the admin gate, the
   stale-markup reload, and `cache.CacheMiddleware`'s key all use the
   escaped path, so `/a%2Fb` and `/a/b` stay two pages.
@@ -355,8 +358,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   name (`body_text` published as `content` beside a `content` column
   published as `summary`): a body naming the column, as entityui's forms
   do, wrote the other field.
-- **BREAKING: a key column is a string, integer, enum, UUID or
-  relation.** `Define` panics on a key column, `id` included, of type
+- **BREAKING: a key column is a string, text, image, file, integer,
+  enum, UUID or relation.** `Define` panics on a key column, `id` included, of type
   `Float`, `Decimal`, `Bool`, `Date`, `Timestamp` or `JSON`, or one that
   sets a `RawType` other than an integer type on an `Int` column. A record
   id is the key's text, and those values have several spellings:
