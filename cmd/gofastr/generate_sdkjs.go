@@ -78,7 +78,7 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 	dts.WriteString("  constructor(opts: { baseURL: string; token?: string; fetch?: typeof fetch });\n")
 	dts.WriteString("  baseURL: string;\n  token: string;\n")
 	for i, ent := range spec.Entities {
-		prop := fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch>", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct)
+		prop := fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch%s>", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct, tsKeyArgs(spec.Decls[i]))
 		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
 			prop += fmt.Sprintf(" & %sMoves", ent.Struct)
 		}
@@ -100,6 +100,38 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		{name: "client.d.ts", content: dts.String()},
 		{name: "README.md", content: renderSDKJSReadme(spec)},
 	}
+}
+
+// tsKeyType is the TypeScript type naming one record: string for the
+// generated id, the key field's type for a one-column key, and a labeled
+// tuple in key order for a composite key.
+func tsKeyType(decl framework.EntityDeclaration) string {
+	cols := declKeyCols(decl)
+	if len(cols) == 1 {
+		if declKeyIsID(decl) {
+			return "string"
+		}
+		return tsTypeForField(cols[0].Field.Type, cols[0].Field.Values)
+	}
+	parts := make([]string, len(cols))
+	for i, k := range cols {
+		parts[i] = toCamelJSON(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
+	}
+	return "readonly [" + strings.Join(parts, ", ") + "]"
+}
+
+// tsKeyArgs is the TKey and TItemKey arguments of an entity's Resource,
+// empty for the generated id (the defaults).
+func tsKeyArgs(decl framework.EntityDeclaration) string {
+	if declKeyIsID(decl) {
+		return ""
+	}
+	cols := declKeyCols(decl)
+	fields := make([]string, len(cols))
+	for i, k := range cols {
+		fields[i] = toCamelJSON(k.Name) + ": " + tsTypeForField(k.Field.Type, k.Field.Values)
+	}
+	return ", " + tsKeyType(decl) + ", { " + strings.Join(fields, "; ") + " }"
 }
 
 // jsUploadColumns is the third Resource argument of an entity that takes
@@ -146,12 +178,21 @@ func isJSIdentifier(s string) bool { return jsIdentRe.MatchString(s) }
 func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, ent cliEntity) {
 	// d.ts: output interface. Responses are camelCase; every visible field
 	// except id may be omitted by the server's omitempty handling.
-	fmt.Fprintf(dts, "export interface %s {\n  id: string;\n", ent.Struct)
+	// A declared key's fields are always present, like id.
+	keyIsID := declKeyIsID(decl)
+	fmt.Fprintf(dts, "export interface %s {\n", ent.Struct)
+	if keyIsID {
+		dts.WriteString("  id: string;\n")
+	}
 	for _, fd := range decl.Fields {
-		if fd.Name == "id" || fd.Hidden {
+		if (keyIsID && fd.Name == "id") || fd.Hidden {
 			continue
 		}
-		fmt.Fprintf(dts, "  %s?: %s;\n", toCamelJSON(fd.Name), tsTypeForField(fd.Type, fd.Values))
+		opt := "?"
+		if slices.Contains(decl.PrimaryKey, fd.Name) {
+			opt = ""
+		}
+		fmt.Fprintf(dts, "  %s%s: %s;\n", toCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values))
 	}
 	dts.WriteString("}\n\n")
 
@@ -235,8 +276,8 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 			// part goes through tsCommentSafe, or a `*/` in an enum value
 			// ends the comment early and the rest becomes live .d.ts tokens
 			// (t.Key stays raw — it is a grammar-checked identifier there).
-			fmt.Fprintf(dts, "  /** %s: %s → %s%s. Server-set; no request body. */\n  %s(id: string): Promise<%s>;\n",
-				tsCommentSafe(decl.States.Field), tsCommentSafe(strings.Join(t.From, "|")), tsCommentSafe(t.To), tsCommentSafe(stampNote(t.Stamp)), t.Key, ent.Struct)
+			fmt.Fprintf(dts, "  /** %s: %s → %s%s. Server-set; no request body. */\n  %s(id: %s): Promise<%s>;\n",
+				tsCommentSafe(decl.States.Field), tsCommentSafe(strings.Join(t.From, "|")), tsCommentSafe(t.To), tsCommentSafe(stampNote(t.Stamp)), t.Key, tsKeyType(decl), ent.Struct)
 		}
 		dts.WriteString("}\n\n")
 	}
@@ -453,6 +494,22 @@ function toFormData(body, columns) {
   return form;
 }
 
+/**
+ * pathEscape spells one key value the way Go's url.PathEscape does: the
+ * spelling the server requires of each value inside a composite record
+ * id, where encodeURIComponent's differs ("@" stays, "!" escapes).
+ */
+function pathEscape(value) {
+  return encodeURIComponent(String(value))
+    .replace(/[!'()*]/g, (c) => "%%" + c.charCodeAt(0).toString(16).toUpperCase())
+    .replace(/%%(24|26|2B|3A|3D|40)/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/** recordID joins a composite key's values into the record id the server uses. */
+function recordID(values) {
+  return values.map(pathEscape).join("/");
+}
+
 class Resource {
   /**
    * columns maps each Input key to its column; only a table with Image or
@@ -462,6 +519,14 @@ class Resource {
     this.client = client;
     this.table = table;
     this.columns = columns || null;
+  }
+
+  /**
+   * A record's path tail: the id, or for a composite key an array of its
+   * values in key order, one path segment each.
+   */
+  _key(id) {
+    return "/" + (Array.isArray(id) ? recordID(id) : encodeURIComponent(id));
   }
 
   _path(suffix, params) {
@@ -488,7 +553,7 @@ class Resource {
   }
 
   async get(id, opts) {
-    const out = await this.client.do("GET", this._path("/" + encodeURIComponent(id), opts));
+    const out = await this.client.do("GET", this._path(this._key(id), opts));
     return out && out.data !== undefined ? out.data : out;
   }
 
@@ -498,7 +563,7 @@ class Resource {
   }
 
   update(id, body) {
-    return this._write("PUT", this._path("/" + encodeURIComponent(id)), body);
+    return this._write("PUT", this._path(this._key(id)), body);
   }
 
   /**
@@ -507,7 +572,7 @@ class Resource {
    * key leaves the column untouched.
    */
   patch(id, body) {
-    return this._write("PATCH", this._path("/" + encodeURIComponent(id)), body);
+    return this._write("PATCH", this._path(this._key(id)), body);
   }
 
   async _write(method, path, body) {
@@ -516,7 +581,7 @@ class Resource {
   }
 
   remove(id) {
-    return this.client.do("DELETE", this._path("/" + encodeURIComponent(id)));
+    return this.client.do("DELETE", this._path(this._key(id)));
   }
 
   async batchCreate(items) {
@@ -524,14 +589,18 @@ class Resource {
     return this._batch("POST", { items });
   }
 
-  /** Each item must carry id plus the fields to change. */
+  /** Each item must carry its key (id, or every key field) plus the fields to change. */
   async batchUpdate(items) {
     refuseBlobs(items);
     return this._batch("PATCH", { items });
   }
 
+  /**
+   * ids are record ids, or for a composite key arrays of key values. The
+   * server reads ids as strings, so a number key goes as its string.
+   */
   batchDelete(ids) {
-    return this._batch("DELETE", { ids });
+    return this._batch("DELETE", { ids: ids.map((id) => (Array.isArray(id) ? recordID(id) : String(id))) });
   }
 
   async _batch(method, body) {
@@ -555,7 +624,7 @@ class Resource {
    * keys as named methods (api.invoices.pay(id)).
    */
   async transition(id, key) {
-    const out = await this.client.do("POST", this._path("/" + encodeURIComponent(id) + "/transitions/" + encodeURIComponent(key)), {});
+    const out = await this.client.do("POST", this._path(this._key(id) + "/transitions/" + encodeURIComponent(key)), {});
     return out && out.data !== undefined ? out.data : out;
   }
 
@@ -764,23 +833,27 @@ export interface BatchResponse<T> {
   results: Array<BatchResult<T>>;
 }
 
-export declare class Resource<T, TInput, TPatch> {
+/**
+ * TKey names one record: its id, or for a composite key a tuple of its
+ * values in key order. TItemKey is the key a batchUpdate item carries.
+ */
+export declare class Resource<T, TInput, TPatch, TKey = string, TItemKey = { id: string }> {
   list(params?: ListParams): Promise<ListResponse<T>>;
   listCursor(params?: CursorParams): Promise<CursorPage<T>>;
-  get(id: string, opts?: { include?: string | string[]; fields?: string | string[] }): Promise<T>;
+  get(id: TKey, opts?: { include?: string | string[]; fields?: string | string[] }): Promise<T>;
   create(body: TInput): Promise<T>;
-  update(id: string, body: TInput): Promise<T>;
-  patch(id: string, body: TPatch): Promise<T>;
-  remove(id: string): Promise<null>;
+  update(id: TKey, body: TInput): Promise<T>;
+  patch(id: TKey, body: TPatch): Promise<T>;
+  remove(id: TKey): Promise<null>;
   batchCreate(items: Array<NoBlob<TInput>>): Promise<BatchResponse<T>>;
-  batchUpdate(items: Array<NoBlob<TPatch> & { id: string }>): Promise<BatchResponse<T>>;
-  batchDelete(ids: string[]): Promise<BatchResponse<T>>;
+  batchUpdate(items: Array<NoBlob<TPatch> & TItemKey>): Promise<BatchResponse<T>>;
+  batchDelete(ids: TKey[]): Promise<BatchResponse<T>>;
   watch(
     onEvent: (event: string, data: unknown) => void | Promise<void>,
     opts?: { signal?: AbortSignal },
   ): Promise<void>;
   /** Runs one state move; generated clients also bind each move key as a named method. */
-  transition(id: string, key: string): Promise<T>;
+  transition(id: TKey, key: string): Promise<T>;
 }
 
 `

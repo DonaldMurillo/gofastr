@@ -66,10 +66,10 @@ func (u *UI) neighbours(ctx context.Context, m *meta, base, id string) (prev, ne
 			continue
 		}
 		if i > 0 {
-			prev = base + "/" + m.idPath(m.rowID(rows[i-1]))
+			prev = under(base, m.idPath(m.rowID(rows[i-1])))
 		}
 		if i < len(rows)-1 {
-			next = base + "/" + m.idPath(m.rowID(rows[i+1]))
+			next = under(base, m.idPath(m.rowID(rows[i+1])))
 		}
 		break
 	}

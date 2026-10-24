@@ -83,6 +83,14 @@ Per verb:
 - **batch-create / batch-update**: `--json` with an array, sent
   through the atomic `_batch` routes; the `{committed, results[]}`
   envelope prints verbatim and a rollback exits 1.
+- **composite keys**: a record verb on a composite-key entity takes one
+  positional argument per key column, in key order:
+  `myapp enrollments get ann math`, `myapp enrollments patch ann math
+  --grade B`. Each value is path-escaped into its own segment.
+  `create` takes a flag per key column; `update` and `patch` take
+  none, since the path names the record. `batch-delete` takes ids as the server spells them, the values
+  path-escaped and joined with `/` (`ann/math`). A key value that
+  starts with `-` reads as a flag, so the verb prints its usage.
 - **watch**: subscribes to `GET {entity}/_events` and prints one
   `{"event":…,"data":…}` line per server event until interrupted.
   No auto-reconnect: wrap it in a shell loop if you need one.
@@ -177,7 +185,10 @@ Path, query, and header parameters become typed flags (arrays of
 strings repeat the flag; typed arrays are rejected rather than left
 unvalidated);
 `application/json` object bodies get a flag per top-level scalar
-property plus the `--json` raw escape; binary bodies
+property plus the `--json` raw escape. A body property named exactly
+like a path parameter gets no flag of its own: it repeats the record the
+path names, as a composite key's columns do in a GoFastr app's PUT body,
+and `--json` can still send it. Binary bodies
 (`application/octet-stream` / `format: binary`) take `--file` with `-`
 for stdin. JSON responses pretty-print; anything else streams raw to
 stdout so `barc generate-code ... > code.png` works. `servers[0].url`

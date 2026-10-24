@@ -484,11 +484,12 @@ func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`"/` + escaped + `",`,              // wrapper base-path bindings in <entity>.go
-		`base+"/"+url.PathEscape(id)`,      // shared get/delete (verbs.go)
-		`path += "/" + url.PathEscape(id)`, // shared create/update/patch with-id (verbs.go)
-		`base+"/_batch"`,                   // shared batch verbs (verbs.go)
-		`path := base`,                     // shared list (verbs.go)
+		`"/` + escaped + `",`,               // wrapper base-path bindings in <entity>.go
+		`segs[i] = url.PathEscape(args[i])`, // takeKey escapes every key value (output.go)
+		`base+"/"+tail`,                     // shared get/delete (verbs.go)
+		`path += "/" + tail`,                // shared create/update/patch with-id (verbs.go)
+		`base+"/_batch"`,                    // shared batch verbs (verbs.go)
+		`path := base`,                      // shared list (verbs.go)
 	} {
 		if !strings.Contains(cliJoined, want) {
 			t.Errorf("emitted CLI route construction missing escaped-table site %q:\n%s", want, cliJoined)

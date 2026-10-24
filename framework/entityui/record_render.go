@@ -136,6 +136,13 @@ func requestBase(ctx context.Context, n int) string {
 	return p
 }
 
+// under is tail under base. A list or record mounted at the root bases
+// at "/", and base + "/" + tail would start "//", which a browser reads
+// as a host.
+func under(base, tail string) string {
+	return strings.TrimSuffix(base, "/") + "/" + tail
+}
+
 // currentURL is the page's own URL, path and query, the destination a
 // transition's success navigates back to so the move is visible.
 func currentURL(ctx context.Context) string {
@@ -470,7 +477,7 @@ func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, [
 		return "", nil
 	}
 	id := "eui-rec-api"
-	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+m.idPath(b.id))),
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+under(base, m.idPath(b.id)))),
 		[]ui.MenuItem{{Label: i18nui.EntityCopyAPIURL.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 

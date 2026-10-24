@@ -132,6 +132,29 @@ func TestCompositeRecordDefaultBase(t *testing.T) {
 	}
 }
 
+// A list or record mounted at the root bases at "/": its links join
+// without doubling the slash, which a browser reads as a host (//s1/c1
+// is the host s1).
+func TestRootBaseLinksOneSlash(t *testing.T) {
+	x := enrollmentsUI(t)
+	list := listHTML(t, x.ui.List("enrollments").Base("/"), x.userCtx("/", "", "u1"))
+	id := entity.JoinKey([]string{"s1", "c1"})
+	ctx := x.userCtx("/s1/c1", "", "u1")
+	for name, html := range map[string]string{
+		"list":         list,
+		"record":       string(x.ui.Record("enrollments", id).Delete().Duplicate().Base("/").RenderCtx(ctx)),
+		"default base": string(x.ui.Record("enrollments", id).Delete().Duplicate().RenderCtx(ctx)),
+	} {
+		if strings.Contains(html, `"//`) {
+			i := strings.Index(html, `"//`)
+			t.Errorf("%s links a doubled slash: %.80s", name, html[i:])
+		}
+	}
+	if !strings.Contains(list, `href="/s1/c1"`) {
+		t.Errorf("the root list does not link /s1/c1:\n%s", list)
+	}
+}
+
 func TestCompositeCreateSetsKeyColumns(t *testing.T) {
 	x := enrollmentsUI(t)
 	html := string(x.ui.Create("enrollments").Base("/enrollments").

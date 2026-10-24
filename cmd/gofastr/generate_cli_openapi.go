@@ -748,6 +748,13 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 					if !ok || repeated {
 						continue // settable via --json only
 					}
+					// A body field named like a path parameter repeats
+					// the record the path names, as a composite key's
+					// columns do in its PUT body: the path flag sets it,
+					// and --json can still send it.
+					if slices.ContainsFunc(op.PathParams, func(p cliOpParam) bool { return p.Name == n }) {
+						continue
+					}
 					f := cliOpBodyField{Wire: n, Flag: oaKebab(n), GoType: goType, Required: requiredSet[n]}
 					if err := claim(f.Flag, "body field "+n); err != nil {
 						return op, err
