@@ -165,6 +165,14 @@ teaser) renders in place of the gated screen and is exported like any other
 page. `Allow` and `RenderAlt` are the only decisions a static export can
 materialize, so a Redirect/Block screen is never written to disk.
 
+A page that answers a status other than 200 is skipped the same way:
+a component called `app.SetStatus` while it drew (entityui's Record
+for a missing row), or the screen declares `ScreenStatusCode`. A
+static host serves every file with a 200, so writing the page would
+tell every visitor it exists. The builder logs a `WARN` naming the
+route and the status (`uihost.StatusPageError`), and writes no
+`llm.md` for that page either.
+
 ## Failed fills refuse the export
 
 A tree-layout outlet fill whose `Load` or render fails can be **contained**

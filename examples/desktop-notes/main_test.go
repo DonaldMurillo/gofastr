@@ -69,8 +69,8 @@ func TestOwnerScopingAcrossUsers(t *testing.T) {
 	if strings.Contains(u2Screen.Body(), "u1 secret") {
 		t.Fatal("u2's list screen contains u1's note")
 	}
-	// And the editor Load falls back rather than leaking the title.
-	u2Edit := u2.Get("/notes/"+id).AssertStatus(t, http.StatusOK)
+	// And the editor answers 404 rather than leaking the title.
+	u2Edit := u2.Get("/notes/"+id).AssertStatus(t, http.StatusNotFound)
 	if strings.Contains(u2Edit.Body(), "u1 secret") {
 		t.Fatal("u2's editor screen contains u1's note title")
 	}

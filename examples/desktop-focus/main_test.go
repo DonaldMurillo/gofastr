@@ -69,12 +69,12 @@ func TestOwnerScopingAcrossUsers(t *testing.T) {
 	if body := u2.Get("/api/sessions").AssertStatus(t, http.StatusOK).Body(); strings.Contains(body, `"minutes"`) {
 		t.Fatal("u2's session list contains u1's session")
 	}
-	// So does the dashboard, and a foreign detail id renders "Not
-	// found", never another user's title.
+	// So does the dashboard, and a foreign detail id answers 404 with
+	// "Not found", never another user's title.
 	if body := u2.Get("/").AssertStatus(t, http.StatusOK).Body(); strings.Contains(body, "u1 secret task") {
 		t.Fatal("u2's dashboard contains u1's task")
 	}
-	if body := u2.Get("/tasks/"+id).AssertStatus(t, http.StatusOK).Body(); strings.Contains(body, "u1 secret task") {
+	if body := u2.Get("/tasks/"+id).AssertStatus(t, http.StatusNotFound).Body(); strings.Contains(body, "u1 secret task") {
 		t.Fatal("u2's task detail leaked u1's title")
 	}
 	// u1 still sees it everywhere.

@@ -107,8 +107,9 @@ discriminates on it:
   `Load` panic is still a 500: the boundary covers rendering only.
 - **A `Load` that returns an error** keeps the 404 it contracted (the
   screen chose "not found"; `uihost.ScreenStatusCode` renders a body
-  with a chosen status instead), logged at Warn with the path so it is
-  no longer silent.
+  with a chosen status instead, and `app.SetStatus` sets one from
+  inside the render), logged at Warn with the path so it is no longer
+  silent.
 - **A path no route owns** stays a plain 404 and logs nothing.
 
 The 500 is the same error page a failed route resolver gets

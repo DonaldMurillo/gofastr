@@ -557,6 +557,45 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **A record page for a missing or hidden row answers 404.** entityui's
+  Record (a generated record screen, the admin record page) drew its
+  "Not found" state with a 200, while the JSON API gave the same caller
+  404. The page answers 404 now, on the full page, a client navigation
+  and a drawer, and so does a Create duplicating such a row. The status
+  comes from the new `app.SetStatus(ctx, code)`, which any component
+  can call while it draws; a screen's `ScreenStatusCode` still outranks
+  it. A drawer that gets the 404 drops the record's cached page before
+  it falls back to a navigation, so a deleted record never replays from
+  the screen cache. The record's `llm.md` and its negotiated markdown
+  (`Accept: text/markdown`) answer 404 too, and a static export skips
+  such a page and its `llm.md` the way it skips a 404 outlet. A screen
+  registered as a value, not a pointer, now renders its per-URL doc the
+  way its page does; it fell back to the route's pattern doc, which
+  never ran the render that sets the status. Every llm.md and negotiated
+  markdown answer now follows the page's steps: a resolver whose error
+  `Load` dropped, or an outlet declared `FallbackNotFound` that nothing
+  fills, answers 404 where it answered 200 with the screen's body, and
+  a region guard that redirects serves the withheld doc where it served
+  the screen's body. An exact route's `/llm.md` is built per URL, as the
+  static export already built it, not from the pattern doc, so a
+  `ScreenLoader` screen's doc carries its loaded content in place of
+  the placeholder line. The doc renders under its page's request and
+  route match, not the `/llm.md` URL's, so a list's record links point
+  at `/customers/7`, not `/customers/llm.md/7`, and a catch-all's
+  resolver reads `foo`, not `foo/llm.md`. The embed content route
+  keeps answering 200 with the not-found body, because the embed loader
+  mounts only a 2xx.
+- **`App.NoLLMMD` turns off every page doc.** On an app that set
+  `NoLLMMD`, every `llm.md` route stayed unmounted, but three places
+  still served or linked a doc: `Accept: text/markdown` under
+  `WithMarkdownNegotiation` got the page's doc, the default `/llms.txt`
+  linked `/llm-pages.md`, and a page's `Link` header advertised its
+  `llm.md` as a markdown alternate. The request now gets the HTML page,
+  `/llms.txt` lists no index, and the header names no doc, the last
+  also for a screen that sets its own `NoLLMMD`.
+- **An overlay's index link has one slash.** `/llm-pages.md` linked a
+  drawer or sheet registered at `/tools/` to `/tools//llm.md`; it links
+  `/tools/llm.md`, the route uihost mounts, as pages already did.
 - **Postgres text-to-integer retypes apply.** A column whose declared
   type moved from text to an integer rendered
   `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres
