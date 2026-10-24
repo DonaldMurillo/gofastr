@@ -4170,7 +4170,7 @@ func appSpecE2EWritableTarget(bp AppSpec) (appSpecCRUDTarget, bool) {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	for _, e := range names {
 		decl, ok := entityMap[e]
-		if !ok || appSpecHasRequiredRelation(decl) {
+		if !ok || appSpecUnfillableRelation(decl) {
 			continue
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
@@ -4199,9 +4199,13 @@ func appSpecE2EWritableTarget(bp AppSpec) (appSpecCRUDTarget, bool) {
 	return appSpecCRUDTarget{}, false
 }
 
-func appSpecHasRequiredRelation(decl framework.EntityDeclaration) bool {
+// appSpecUnfillableRelation reports a relation the e2e create body cannot
+// fill (it sends no relation) and the record cannot do without: a
+// required one, or one in the declared key, which the id is made of.
+func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
 	for _, f := range decl.Fields {
-		if f.Required && strings.EqualFold(f.Type, "relation") {
+		isKey := !declKeyIsID(decl) && slices.Contains(decl.PrimaryKey, f.Name)
+		if (f.Required || isKey) && strings.EqualFold(f.Type, "relation") {
 			return true
 		}
 	}
@@ -4233,7 +4237,9 @@ func appSpecE2ECreateBody(decl framework.EntityDeclaration) (createJSON, updateJ
 			}
 			v = `"` + f.Values[0] + `"`
 		case "relation":
-			continue // required relations disqualify the entity upstream
+			// The create sends no relation: one the record needs (a
+			// required or key relation) disqualifies the entity upstream.
+			continue
 		case "uuid":
 			// The server fills only an auto_generate uuid: any other is
 			// sent, one value per field.
