@@ -1,4 +1,4 @@
-//go:build linux && amd64
+//go:build linux && amd64 && !cgo
 
 #include "textflag.h"
 

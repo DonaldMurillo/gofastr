@@ -1,4 +1,4 @@
-//go:build darwin && (arm64 || amd64)
+//go:build darwin && (arm64 || amd64) && !cgo
 
 package fakecgo_test
 

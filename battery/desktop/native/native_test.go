@@ -10,7 +10,7 @@ import (
 )
 
 // TestShellMatchesPlatform pins the selection contract: Shell() hands
-// back a native shell on darwin/arm64 and windows/amd64, and the
+// back a native shell on darwin/arm64, windows/amd64, and linux/amd64 or arm64, and the
 // unsupported shell naming GOOS/GOARCH elsewhere. SetTrayTitle remains
 // unsupported on a native shell when the app has no configured tray.
 func TestShellMatchesPlatform(t *testing.T) {
@@ -21,10 +21,11 @@ func TestShellMatchesPlatform(t *testing.T) {
 		t.Fatalf("SetTrayTitle probe: %v, want an unsupported refusal", err)
 	}
 	hasNative := (runtime.GOOS == "darwin" && runtime.GOARCH == "arm64") ||
-		(runtime.GOOS == "windows" && runtime.GOARCH == "amd64")
+		(runtime.GOOS == "windows" && runtime.GOARCH == "amd64") ||
+		(runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"))
 	namedPlatform := strings.Contains(de.Message, "GOOS="+runtime.GOOS)
 	if hasNative == namedPlatform {
-		t.Fatalf("GOOS=%s GOARCH=%s: Shell() answered %q; want a native shell on darwin/arm64 and windows/amd64, and the unsupported one elsewhere",
+		t.Fatalf("GOOS=%s GOARCH=%s: Shell() answered %q; want a native shell on darwin/arm64, windows/amd64, and linux/amd64 or arm64, and the unsupported one elsewhere",
 			runtime.GOOS, runtime.GOARCH, de.Message)
 	}
 }

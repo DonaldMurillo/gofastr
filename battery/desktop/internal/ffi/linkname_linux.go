@@ -4,13 +4,6 @@ package ffi
 
 import (
 	"unsafe"
-
-	// The fake-cgo layer: its x_cgo_init sets runtime.iscgo from rt0_go
-	// and it defines the _cgo_* symbols the runtime then demands.
-	// runtime.cgocall throws "cgocall unavailable" without it
-	// (runtime/cgocall.go:135), so every binary that calls ffi imports
-	// fakecgo right here, ahead of any use of Call.
-	_ "github.com/DonaldMurillo/gofastr/battery/desktop/internal/fakecgo"
 )
 
 // The two runtime symbols this package pulls, each with the place in the

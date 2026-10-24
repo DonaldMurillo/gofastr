@@ -251,6 +251,19 @@ jobs:
           GOOS=windows go build ./...
           GOOS=darwin go build ./...
 
+      - name: Linux desktop (CGO-free runtime and CLI)
+        # The normal job uses runtime/cgo. Exercise the assembly runtime
+        # shim separately so neither build mode can hide a link regression.
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go test -count=1 ./battery/desktop/...
+          # Cross-link test executables: archive-only builds miss unresolved
+          # ARM64 FFI/GTK assembly symbols. These binaries are not executed.
+          mkdir -p dist/ci/linux-arm64
+          GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
+          go test -count=1 ./cmd/gofastr -run 'Test(Desktop|LinuxDesktop)'
+
       - name: gofmt (tracked files must be clean)
         run: |
           drift=$(git ls-files '*.go' | xargs gofmt -l)
