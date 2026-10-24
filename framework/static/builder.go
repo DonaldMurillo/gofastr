@@ -268,6 +268,14 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 					}
 					md = doc.MD
 				} else {
+					// The URL resolves but its page answers 404 (a resolver
+					// or Load naming no row, an outlet nothing fills): no
+					// doc, like its skipped HTML.
+					if _, _, resolves := b.Host.App.Router.Resolve(p); resolves {
+						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
+							"path", p, "status", http.StatusNotFound)
+						continue
+					}
 					// The expanded URL doesn't resolve (e.g. a StaticPaths
 					// value that violates the route's constraint). The
 					// WITHHELD doc, not the pattern doc: the pattern doc
