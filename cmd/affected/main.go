@@ -75,7 +75,10 @@
 // With a command after `--`, an empty set skips the command and exits 0
 // with a note on stderr: `go test` with no packages would test the
 // current directory, which is never what a caller meant. The command's
-// own exit code is propagated otherwise.
+// own exit code is propagated otherwise. The command also learns what the
+// set came from: GOFASTR_AFFECTED_FILES holds the change set, one
+// repo-relative path per line, or, when the set is every package,
+// GOFASTR_TEST_ALL=1 is set instead (see changeEnv).
 //
 // The affected set is the first half of what nx affected does; Go's test
 // cache is the second. A package in the set whose binary and recorded
@@ -235,7 +238,7 @@ func main() {
 		return
 	}
 
-	pkgs, err := compute(opts)
+	pkgs, changed, err := compute(opts)
 	if err != nil {
 		fatal(err)
 	}
@@ -254,7 +257,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "affected: %d package(s)\n", len(pkgs))
 	c := exec.Command(cmd[0], append(cmd[1:], pkgs...)...) //gofastr:allow(nowaitdelay) interactive wrapper with inherited stdio; no pipes to wedge on
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-	c.Env = commandEnv(opts.root)
+	c.Env = changeEnv(commandEnv(opts.root), changed, os.Stderr)
 	if err := c.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -295,6 +298,35 @@ func commandEnv(root string) []string {
 	return env
 }
 
+// changedFilesEnv carries the change set to the wrapped command, one
+// repo-relative path per line.
+const changedFilesEnv = "GOFASTR_AFFECTED_FILES"
+
+// maxChangedEnv bounds that value: Linux refuses to exec a process with
+// one environment string over 128 KiB (MAX_ARG_STRLEN), and the whole
+// wrapped run would fail instead of testing.
+const maxChangedEnv = 64 << 10
+
+// changeEnv tells the wrapped command what its package list came from. A
+// run that walked the graph lists its change set in GOFASTR_AFFECTED_FILES;
+// a run that tests everything (-all, GOFASTR_TEST_ALL=1, a widening
+// change, an unresolved base: changed is nil) sets GOFASTR_TEST_ALL=1
+// instead, and so does a change set too long for one variable, which
+// degrades to the full run like every other doubt here. A test worth
+// running only when its own input changed reads them: cmd/gofastr's
+// generated-app variant builds (clitest.VariantBuild).
+func changeEnv(env, changed []string, stderr io.Writer) []string {
+	if changed == nil {
+		return append(env, "GOFASTR_TEST_ALL=1")
+	}
+	list := strings.Join(changed, "\n")
+	if len(list) > maxChangedEnv {
+		fmt.Fprintf(stderr, "affected: %d changed files are too many to hand the command in %s; it runs as GOFASTR_TEST_ALL=1\n", len(changed), changedFilesEnv)
+		return append(env, "GOFASTR_TEST_ALL=1")
+	}
+	return append(env, changedFilesEnv+"="+list)
+}
+
 // noVCSStamp adds -buildvcs=false to goflags unless it already sets
 // -buildvcs either way.
 func noVCSStamp(goflags string) string {
@@ -332,15 +364,17 @@ func fatal(err error) {
 }
 
 // compute returns the affected package set in the requested format,
-// sorted. It never returns an empty set by accident: every failure to
-// establish the change set widens to all packages and says so on stderr.
-func compute(o options) ([]string, error) {
+// sorted, and the change set it was computed from, which is nil when the
+// set is every package. It never returns an empty set by accident: every
+// failure to establish the change set widens to all packages and says so
+// on stderr.
+func compute(o options) ([]string, []string, error) {
 	all, err := listPackages(o.root, o.tags)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if o.all {
-		return format(o, all, nil), nil
+		return format(o, all, nil), nil, nil
 	}
 
 	files, base := o.files, ""
@@ -348,12 +382,12 @@ func compute(o options) ([]string, error) {
 		files, base, err = changedFiles(o)
 		if err != nil {
 			fmt.Fprintf(o.stderr, "affected: %v; testing everything\n", err)
-			return format(o, all, nil), nil
+			return format(o, all, nil), nil, nil
 		}
 	}
 	if trigger := widensToAll(files, o.allIfChanged); trigger != "" {
 		fmt.Fprintf(o.stderr, "affected: %s changed; testing everything\n", trigger)
-		return format(o, all, nil), nil
+		return format(o, all, nil), nil, nil
 	}
 
 	owners := ownerDirs(o.root, files, all)
@@ -364,7 +398,7 @@ func compute(o options) ([]string, error) {
 			affected[p.ImportPath] = true
 		}
 	}
-	return format(o, all, affected), nil
+	return format(o, all, affected), files, nil
 }
 
 // widensToAll reports the first changed path that matches an always-all

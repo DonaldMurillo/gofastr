@@ -37,6 +37,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `examples/` edit no longer reruns every scan, and none of these
   packages takes more than about 5s, down from about 18s for the one
   package.
+- **`cmd/affected` tells the command it wraps what changed (#589).** A
+  command run after `--` gets the change set in
+  `GOFASTR_AFFECTED_FILES`, one repo-relative path per line. When the
+  run tests every package (`-all`, `GOFASTR_TEST_ALL=1`, a `go.mod`
+  change, a base it cannot resolve, or a change set longer than 64 KiB)
+  the command gets `GOFASTR_TEST_ALL=1` instead.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
