@@ -65,6 +65,12 @@ jobs:
             echo "::error::refusing tag $tag — only [A-Za-z0-9._-] are allowed in a release tag"
             exit 1
           fi
+          # Only a published release deploys. A v* tag the release gate
+          # refused has no release, and its docs were never released.
+          if ! gh release view "$tag" --repo "$REPO" --json tagName >/dev/null; then
+            echo "::error::refusing tag $tag — it has no published release"
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
