@@ -1,32 +1,26 @@
 package embedcheck
 
 import (
-	"os"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
+// checkFixture applies Check's analysis and error precedence (checkLoaded) to
+// one fixture from the shared load.
 func checkFixture(t *testing.T, pkgName string) ([]Finding, error) {
 	t.Helper()
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(testdataDir(t)); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWD); err != nil {
-			t.Errorf("restore working directory: %v", err)
-		}
-	}()
-
-	findings, _, err := Check("./src/" + pkgName)
+	findings, _, err := checkLoaded([]*packages.Package{fixture(t, pkgName)})
 	return findings, err
 }
 
+// TestCheckReturnsFindings drives the exported Check end to end, its own
+// loader included, from inside the fixture module the way the CLI runs from a
+// project root. The precedence tests below reuse the shared load.
 func TestCheckReturnsFindings(t *testing.T) {
-	findings, err := checkFixture(t, "bad")
+	t.Chdir(testdataDir(t))
+	findings, _, err := Check("./src/bad")
 	if err != nil {
 		t.Fatalf("Check returned an error with a finding: %v", err)
 	}

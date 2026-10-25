@@ -30,9 +30,7 @@ func Check(pattern string) ([]Finding, *token.FileSet, error) {
 func CheckAll(pattern string) ([]Finding, []Unresolved, *token.FileSet, error) {
 	fset := token.NewFileSet()
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedTypes | packages.NeedTypesInfo |
-			packages.NeedSyntax | packages.NeedDeps,
+		Mode:  loadMode,
 		Fset:  fset,
 		Tests: false,
 	}
@@ -40,6 +38,19 @@ func CheckAll(pattern string) ([]Finding, []Unresolved, *token.FileSet, error) {
 	if err != nil {
 		return nil, nil, fset, err
 	}
+	findings, notes, err := checkLoaded(pkgs)
+	return findings, notes, fset, err
+}
+
+// loadMode is what analyze reads: syntax plus full type information for the
+// matched packages and, through NeedDeps, for everything they import.
+const loadMode = packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+	packages.NeedImports | packages.NeedTypes | packages.NeedTypesInfo |
+	packages.NeedSyntax | packages.NeedDeps
+
+// checkLoaded is CheckAll after the load: it analyzes packages loaded with
+// loadMode and applies the findings-before-load-errors precedence.
+func checkLoaded(pkgs []*packages.Package) ([]Finding, []Unresolved, error) {
 	var firstErr error
 	for _, p := range pkgs {
 		for _, e := range p.Errors {
@@ -61,7 +72,7 @@ func CheckAll(pattern string) ([]Finding, []Unresolved, *token.FileSet, error) {
 		notes = append(notes, u...)
 	}
 	if len(out) > 0 {
-		return out, notes, fset, nil
+		return out, notes, nil
 	}
-	return out, notes, fset, firstErr
+	return out, notes, firstErr
 }

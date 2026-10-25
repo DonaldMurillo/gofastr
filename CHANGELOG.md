@@ -7,6 +7,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **`cmd/check-embed/embedcheck` type-checks its fixtures once per run
+  (#589).** The tests share one load of the fixture module, plus one
+  load of the mutated fixtures, instead of loading it in every test: the
+  package runs in about 3s, down from about 40s. The fixture module
+  moved out of the package to `cmd/check-embed/testdata`, so editing a
+  fixture no longer selects `cmd/gofastr` and the other packages that
+  import `embedcheck`.
+
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
   (#577).** fetch follows a 3xx itself, so a runtime request whose

@@ -38,7 +38,7 @@ require (
 )
 
 // Local replace: the parent module is the repo root. Standard nested-module
-// pattern (see cmd/check-embed/embedcheck/testdata/go.mod). Published as part
+// pattern (see cmd/check-embed/testdata/go.mod). Published as part
 // of the same repo; the replace is dropped only if this module is ever tagged
 // independently, which it is not today.
 replace github.com/DonaldMurillo/gofastr => ../../..

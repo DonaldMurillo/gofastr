@@ -1,81 +1,11 @@
 package embedcheck
 
 import (
-	"go/token"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/go/packages"
 )
-
-// testdataDir is the absolute path to the testdata module. go test runs this
-// test with the package directory as the working directory.
-func testdataDir(t *testing.T) string {
-	t.Helper()
-	td, err := filepath.Abs("testdata")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return td
-}
-
-// loadFindings loads one testdata package in module mode (the testdata go.mod
-// has a local replace onto the real framework, so the fixtures import the real
-// embed.Surface / app.Screen / component types) and runs findFindings over it.
-// This exercises the exact resolution path the CLI and `gofastr build` gate
-// use, against real Go source. It deliberately bypasses analysistest's `// want`
-// checker so the mutation suite can assert before/after counts without fighting
-// static expectations.
-func loadFindings(t *testing.T, pkgName string) []Finding {
-	t.Helper()
-	findings, _ := loadAll(t, pkgName)
-	return findings
-}
-
-// loadAll is loadFindings plus the walk's give-up notes.
-func loadAll(t *testing.T, pkgName string) ([]Finding, []Unresolved) {
-	t.Helper()
-	dir := testdataDir(t)
-	fset := token.NewFileSet()
-	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedTypes | packages.NeedTypesInfo |
-			packages.NeedSyntax | packages.NeedDeps,
-		Fset:  fset,
-		Dir:   dir,
-		Tests: false,
-		// testdata/go.mod is its own module with a local replace; module mode +
-		// GOPROXY=off resolves everything from the working tree and cache.
-		Env:     append(os.Environ(), "GO111MODULE=on", "GOPROXY=off", "GOWORK=off"),
-		Overlay: overlay,
-	}
-	pkgs, err := packages.Load(cfg, "./src/"+pkgName)
-	if err != nil {
-		t.Fatalf("loading %s: %v", pkgName, err)
-	}
-	var out []Finding
-	var notes []Unresolved
-	loaded := false
-	for _, p := range pkgs {
-		if p.Types == nil || p.TypesInfo == nil {
-			for _, e := range p.Errors {
-				t.Logf("package %s error: %v", p.ID, e)
-			}
-			continue
-		}
-		loaded = true
-		f, u := analyze(p.Types, p.TypesInfo, p.Syntax)
-		out = append(out, f...)
-		notes = append(notes, u...)
-	}
-	if !loaded {
-		t.Fatalf("package %s did not type-check (see logged errors above)", pkgName)
-	}
-	return out, notes
-}
 
 // TestAnalyzerAnalysistest runs the analyzer against every resolvable shape and
 // the fixtures that must remain silent.
@@ -212,102 +142,56 @@ func TestAnalyzerSilentWhenFullyResolved(t *testing.T) {
 
 // --- mutation checks ----------------------------------------------------
 //
-// Each proves its static test is actually exercising the trigger: the source
-// is rewritten in the loader's overlay, the mutation is verified to have
-// applied (occurrence count before/after), and the finding count must flip. A mutation that
-// silently did not apply looks exactly like a test that cannot fail.
+// Each registers its edits with mutation (fixtures_test.go) and reads the
+// mutated fixture through mutatedFindings, which fails the test when an edit
+// did not apply and logs each edit that did.
 
-// replacement is one (from→to) edit applied to a fixture file.
-type replacement struct{ from, to string }
-
-// mutateFixture rewrites relPath in the loader overlay by applying each replacement exactly
-// once, in order, and asserts each one actually changed the content. An edit
-// whose `from` is absent is a silent no-op, exactly the failure mode that
-// makes a mutated test indistinguishable from an inert one, which has bitten
-// this repo before. The before/after occurrence count of each `to` is logged so
-// the test output proves the mutation landed. The file on disk is never
-// written: a fixture rewritten in place, even restored, carries a fresh
-// mtime, and every package that walks the repo then misses Go's test cache.
-// The overlay lasts until the test ends.
-func mutateFixture(t *testing.T, relPath string, reps ...replacement) {
-	t.Helper()
-	orig, err := os.ReadFile(relPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", relPath, err)
-	}
-	// Git may check fixtures out with CRLF on Windows, while the mutation
-	// patterns intentionally use source-style LF line endings. Normalize only
-	// the overlay copy used for the mutation; the file on disk keeps its bytes.
-	cur := strings.ReplaceAll(string(orig), "\r\n", "\n")
-	for _, r := range reps {
-		if !strings.Contains(cur, r.from) {
-			t.Fatalf("mutation did not apply: from-pattern not found in %s\n%q", relPath, r.from)
-		}
-		before := strings.Count(cur, r.to)
-		cur = strings.Replace(cur, r.from, r.to, 1)
-		after := strings.Count(cur, r.to)
-		t.Logf("applied in %s: %q removed; %q occurrences %d→%d", relPath, r.from, r.to, before, after)
-	}
-	abs, err := filepath.Abs(relPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	overlay = map[string][]byte{abs: []byte(cur)}
-	t.Cleanup(func() { overlay = nil })
-}
-
-// overlay is the mutated fixture source loadAll hands the loader in place
-// of the file on disk; nil outside a mutation check.
-var overlay map[string][]byte
+// cleanMutated turns the clean surface's setState action into a server action.
+var cleanMutated = mutation("clean", replacement{
+	from: "G.setState('count', 1)",
+	to:   `G.serverAction(\"save\")`,
+})
 
 // TestMutationCleanBecomesFlagged: turning the clean surface's setState action
 // into a server action must produce exactly one finding, proving the clean
 // case passed because it had no server action, not because detection is inert.
 func TestMutationCleanBecomesFlagged(t *testing.T) {
-	const rel = "testdata/src/clean/clean.go"
-	mutateFixture(t, rel, replacement{
-		from: "G.setState('count', 1)",
-		to:   `G.serverAction(\"save\")`,
-	})
-	if got := loadFindings(t, "clean"); len(got) != 1 {
+	if got := mutatedFindings(t, cleanMutated); len(got) != 1 {
 		t.Fatalf("after mutation, expected 1 finding on clean, got %d: %+v", len(got), got)
 	}
 }
+
+// badMutated removes the bad surface's server action.
+var badMutated = mutation("bad", replacement{
+	from: `G.serverAction("save")`,
+	to:   "G.setState('saved', true)",
+})
 
 // TestMutationBadBecomesClean: removing the bad surface's server action must
 // drop the finding count to zero, proving the finding was due to the
 // G.serverAction token, not a side effect.
 func TestMutationBadBecomesClean(t *testing.T) {
-	const rel = "testdata/src/bad/bad.go"
-	mutateFixture(t, rel, replacement{
-		from: `G.serverAction("save")`,
-		to:   "G.setState('saved', true)",
-	})
-	if got := loadFindings(t, "bad"); len(got) != 0 {
+	if got := mutatedFindings(t, badMutated); len(got) != 0 {
 		t.Fatalf("after mutation, expected 0 findings on bad, got %d: %+v", len(got), got)
 	}
 }
 
-// TestMutationNonEmbeddableBecomesFlagged: putting the notembeddable component
-// (which already registers a server action) onto an embeddable surface must
-// produce a finding. That proves reachability from an embed.Surface, not the
-// action itself, is what the gate keys on. Two edits land the surface: the
-// fembed import and the Surface declaration that replaces RegisterScreen.
-func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {
-	const rel = "testdata/src/notembeddable/notembeddable.go"
-	mutateFixture(t, rel,
-		replacement{
-			from: `"github.com/DonaldMurillo/gofastr/core/render"
+// notEmbeddableMutated puts the notembeddable component onto an embeddable
+// surface. Two edits land the surface: the fembed import and the Surface
+// declaration that replaces RegisterScreen.
+var notEmbeddableMutated = mutation("notembeddable",
+	replacement{
+		from: `"github.com/DonaldMurillo/gofastr/core/render"
 )`,
-			to: `"github.com/DonaldMurillo/gofastr/core/render"
+		to: `"github.com/DonaldMurillo/gofastr/core/render"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 )`,
-		},
-		replacement{
-			from: `func Register(a *app.App) {
+	},
+	replacement{
+		from: `func Register(a *app.App) {
 	a.RegisterScreen(app.NewScreen("/internal", &internalComp{}), nil)
 }`,
-			to: `func Surfaces() []fembed.Surface {
+		to: `func Surfaces() []fembed.Surface {
 	scr := app.NewScreen("/internal", &internalComp{})
 	return []fembed.Surface{{
 		Name:    "internal",
@@ -315,34 +199,34 @@ func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {
 		Origins: []string{"https://acme.example"},
 	}}
 }`,
-		},
-	)
-	if got := loadFindings(t, "notembeddable"); len(got) != 1 {
+	},
+)
+
+// TestMutationNonEmbeddableBecomesFlagged: putting the notembeddable component
+// (which already registers a server action) onto an embeddable surface must
+// produce a finding. That proves reachability from an embed.Surface, not the
+// action itself, is what the gate keys on.
+func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {
+	if got := mutatedFindings(t, notEmbeddableMutated); len(got) != 1 {
 		t.Fatalf("after mutation, expected 1 finding on notembeddable, got %d: %+v", len(got), got)
 	}
 }
 
+// resolvedShapesMutated removes the server action from every resolved shape.
+var resolvedShapesMutated = []string{
+	mutation("interfacecomponent", replacement{from: `G.serverAction("save")`, to: `G.setState("saved", true)`}),
+	mutation("chained", replacement{from: `G.serverAction("save")`, to: `G.setState("saved", true)`}),
+	mutation("inline", replacement{from: `G.serverAction("save")`, to: `G.setState("saved", true)`}),
+	mutation("childaction", replacement{from: `G.serverAction("save")`, to: `G.setState("saved", true)`}),
+	mutation("whitespace", replacement{from: `G.serverAction ("save")`, to: `G.setState("saved", true)`}),
+}
+
 func TestMutationResolvedShapesBecomeClean(t *testing.T) {
-	fixtures := []struct {
-		pkgName string
-		from    string
-	}{
-		{pkgName: "interfacecomponent", from: `G.serverAction("save")`},
-		{pkgName: "chained", from: `G.serverAction("save")`},
-		{pkgName: "inline", from: `G.serverAction("save")`},
-		{pkgName: "childaction", from: `G.serverAction("save")`},
-		{pkgName: "whitespace", from: `G.serverAction ("save")`},
-	}
-	for _, fixture := range fixtures {
-		t.Run(fixture.pkgName, func(t *testing.T) {
-			rel := filepath.Join("testdata", "src", fixture.pkgName, fixture.pkgName+".go")
-			mutateFixture(t, rel, replacement{
-				from: fixture.from,
-				to:   `G.setState("saved", true)`,
-			})
-			if got := loadFindings(t, fixture.pkgName); len(got) != 0 {
+	for _, pkgName := range resolvedShapesMutated {
+		t.Run(pkgName, func(t *testing.T) {
+			if got := mutatedFindings(t, pkgName); len(got) != 0 {
 				t.Fatalf("after mutation, expected 0 findings on %s, got %d: %+v",
-					fixture.pkgName, len(got), got)
+					pkgName, len(got), got)
 			}
 		})
 	}
