@@ -134,7 +134,11 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 	})
 
 	base := "http://" + net.JoinHostPort("127.0.0.1", port)
-	if !waitFor200(base+"/healthz", 60*time.Second) && !waitFor200(base+"/", 15*time.Second) {
+	// An app booted by App.Start serves /healthz; one that calls
+	// http.ListenAndServe itself (backoffice) answers only its own routes.
+	// Either answer means the server is up, so poll both in one loop: in
+	// sequence, an app without /healthz sat out the whole first timeout.
+	if !waitForAny200(60*time.Second, base+"/healthz", base+"/") {
 		t.Fatalf("%s never became ready on %s; output:\n%s", s.name, base, out.String())
 	}
 
@@ -168,11 +172,15 @@ func assertHMRReady(t *testing.T, repoRoot string, s exampleSurface) {
 	}
 }
 
-func waitFor200(url string, timeout time.Duration) bool {
+// waitForAny200 polls urls in turn until one answers 200 or timeout passes.
+func waitForAny200(timeout time.Duration, urls ...string) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url)
-		if err == nil {
+		for _, url := range urls {
+			resp, err := http.Get(url)
+			if err != nil {
+				continue
+			}
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
