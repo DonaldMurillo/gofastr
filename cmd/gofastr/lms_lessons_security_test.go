@@ -1,27 +1,5 @@
 package main
 
-// Pins: every write operation on the lms lessons entity is permission-gated exactly as the entity's own comment promises.
-// Property: every write operation on the lms lessons entity is permission-
-// gated exactly as the entity's own comment promises ("every write still
-// requires the permission below") — including create.
-// Surfaces: examples/lms/gofastr.yml:258-261 lessons access block — `read:`
-// blank, `update: catalog:write`, `delete: catalog:admin`, NO `create:` key.
-// Sibling entities courses (:90-94) and modules (:207-211) both gate create
-// with catalog:write. The omitted key decodes to "" (appspec.go::
-// decodeEntityAccess :1344-1347) and requirePermission treats "" as ungated
-// (crud/owner.go::permissionForOp :28), so the one write the author forgot
-// is world-open on both surfaces.
-// Finding (verified by execution): anonymous POST /api/lessons
-// {"title":"anon","module_id":<id>,"status":"published","lesson_type":"text"}
-// = 201 with the row persisted (and, being published, served straight into
-// the anonymous outline); anonymous MCP tools/call lessons_create also
-// creates a published row with no session, while courses_create answers
-// 403 and PATCH/DELETE on lessons answer 403.
-// Fix direction: examples/lms/gofastr.yml lessons access block gains
-// `create: catalog:write`. NOT a app-spec-validator change: intentional
-// lead-capture entities omit create too, so omission is a legitimate idiom
-// the validator must keep allowing.
-
 import (
 	"database/sql"
 	"encoding/json"
@@ -33,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -123,7 +102,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 	const anonTitle = "red-anon-lesson"
 	code, raw := api(anon, http.MethodPost, "/api/lessons", lessonBody(anonTitle))
 	if code < http.StatusUnauthorized {
-		t.Errorf("SECURITY: [lessons-create-ungated] anonymous POST /api/lessons = %d (%s): the lessons access block omits create:, the missing key decodes to \"\" and requirePermission treats \"\" as ungated, so the one write the author forgot is world-open while update: catalog:write and delete: catalog:admin gate their ops (courses and modules gate create with catalog:write). Want 401/403", code, truncate(raw, 200))
+		t.Errorf("SECURITY: [lessons-create-ungated] anonymous POST /api/lessons = %d (%s): the lessons access block omits create:, the missing key decodes to \"\" and requirePermission treats \"\" as ungated, so the one write the author forgot is world-open while update: catalog:write and delete: catalog:admin gate their ops (courses and modules gate create with catalog:write). Want 401/403", code, clitest.Truncate(raw, 200))
 	}
 	if gcode, grow := api(anon, http.MethodGet, "/api/lessons", ""); gcode == http.StatusOK && strings.Contains(grow, anonTitle) {
 		t.Errorf("SECURITY: [lessons-create-ungated] the anonymous lesson row persisted and is served in the public outline (GET /api/lessons contains %q): a published lesson any network peer injected. Want no row", anonTitle)
@@ -133,7 +112,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 	stranger := registerAndLogin("stranger@learnhub.test")
 	code, raw = api(stranger, http.MethodPost, "/api/lessons", lessonBody("red-stranger-lesson"))
 	if code < http.StatusUnauthorized {
-		t.Errorf("SECURITY: [lessons-create-ungated] registered role-less account POST /api/lessons = %d (%s): any signed-in stranger can publish lessons because create: is missing from the access block. Want 403", code, truncate(raw, 200))
+		t.Errorf("SECURITY: [lessons-create-ungated] registered role-less account POST /api/lessons = %d (%s): any signed-in stranger can publish lessons because create: is missing from the access block. Want 403", code, clitest.Truncate(raw, 200))
 	}
 
 	// Leg 3: the MCP arm must inherit the same gate. Stateless JSON-RPC
@@ -183,7 +162,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 		t.Fatalf("setup broken: anonymous tools/call lessons_create failed for a non-authorization reason (arguments/schema drift?): %s\n%s", failure, cbody)
 	}
 	if !refused {
-		t.Errorf("SECURITY: [lessons-create-ungated] anonymous MCP tools/call lessons_create succeeded (%s): the tool re-enters the same ungated create route, so an agent with no session publishes a lesson while courses_create answers 403. Want an authorization error", truncate(cbody, 200))
+		t.Errorf("SECURITY: [lessons-create-ungated] anonymous MCP tools/call lessons_create succeeded (%s): the tool re-enters the same ungated create route, so an agent with no session publishes a lesson while courses_create answers 403. Want an authorization error", clitest.Truncate(cbody, 200))
 	}
 	if gcode, grow := api(anon, http.MethodGet, "/api/lessons", ""); gcode == http.StatusOK && strings.Contains(grow, mcpTitle) {
 		t.Errorf("SECURITY: [lessons-create-ungated] the MCP-created lesson row persisted into the public outline (GET /api/lessons contains %q). Want no row", mcpTitle)
@@ -194,7 +173,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 	// fix; if one drifts, the premise broke, not the finding.
 	code, raw = api(anon, http.MethodPost, "/api/courses", fmt.Sprintf(`{"title":"red-contrast","topic":"x","level":"beginner","price":0,"status":"published"}`))
 	if code != http.StatusUnauthorized && code != http.StatusForbidden {
-		t.Fatalf("setup broken: anonymous POST /api/courses = %d (%s): courses is supposed to gate create with catalog:write — if this drifted, the contrast premise is stale", code, truncate(raw, 200))
+		t.Fatalf("setup broken: anonymous POST /api/courses = %d (%s): courses is supposed to gate create with catalog:write — if this drifted, the contrast premise is stale", code, clitest.Truncate(raw, 200))
 	}
 	for _, leg := range []struct {
 		method string
@@ -206,10 +185,10 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 		{http.MethodDelete, "/api/lessons/" + lessonID, "", "DELETE"},
 	} {
 		if code, raw = api(anon, leg.method, leg.path, leg.body); code != http.StatusUnauthorized && code != http.StatusForbidden {
-			t.Fatalf("setup broken: anonymous %s /api/lessons/<seeded> = %d (%s): update/delete are gated by the same access block — if this drifted, the contrast premise is stale", leg.what, code, truncate(raw, 200))
+			t.Fatalf("setup broken: anonymous %s /api/lessons/<seeded> = %d (%s): update/delete are gated by the same access block — if this drifted, the contrast premise is stale", leg.what, code, clitest.Truncate(raw, 200))
 		}
 	}
 	if code, raw = api(anon, http.MethodGet, "/api/modules", ""); code != http.StatusOK {
-		t.Fatalf("setup broken: anonymous GET /api/modules = %d (%s): the public outline read the finding's severity rests on is down — app or route drift, not the finding", code, truncate(raw, 200))
+		t.Fatalf("setup broken: anonymous GET /api/modules = %d (%s): the public outline read the finding's severity rests on is down — app or route drift, not the finding", code, clitest.Truncate(raw, 200))
 	}
 }

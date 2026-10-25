@@ -330,7 +330,7 @@ expose them to agents connected to a live app.**
   alive, so the prefix is load-bearing). Its live-tree probe is
   `TestStorageKeysEncodeAttrValues` in `core-ui/runtime/
   runtime_security_test.go`. The same round added the generated-code
-  gate `TestGeneratedCLIPassesRepoVettool` (`cmd/gofastr`): it
+  gate `TestGeneratedCLIPassesRepoVettool` (`cmd/gofastr/internal/generatecmd`): it
   regenerates a CLI from a fixture spec into a temp module and runs the
   repo vettool over the EMITTED code, plus a direct check that
   terminal-control summaries never ship live — that round's

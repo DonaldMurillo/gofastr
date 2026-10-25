@@ -1,13 +1,5 @@
 package main
 
-// End-to-end MCP-readiness gate for the app spec surface: a generated app
-// must expose the full agent-facing MCP contract rather than only entity
-// CRUD tools. The framework is AI-first: an agent pointed at a generated app
-// must be able to discover the server (server card), stream it (GET /mcp),
-// and orient inside it (app_routes from WithMCPIntrospection,
-// framework_docs_search from WithMCPTools(mcptools.Register), …), exactly
-// like examples/site. Gated by -short.
-
 import (
 	"bytes"
 	"context"
@@ -21,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestE2E_MCP_AppSpecApp(t *testing.T) {
@@ -32,16 +26,16 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	goVersion, err := repoGoVersion(repoRoot)
+	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
 	goMod := "module example.com/demo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
-	if err := copyGoSum(repoRoot, dir); err != nil {
+	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"), goMod)
+	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
-	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), testAppSpecYAML())
+	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.yml"), clitest.TestAppSpecYAML())
 
 	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
 	generate.Dir = dir
@@ -53,14 +47,14 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 	if output, err := tidy.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy: %v\n%s", err, output)
 	}
-	appBin := testExecutablePath(filepath.Join(dir, "app"))
+	appBin := clitest.TestExecutablePath(filepath.Join(dir, "app"))
 	build := exec.Command("go", "build", "-o", appBin, ".")
 	build.Dir = dir
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, output)
 	}
 
-	port := nextE2EPort(t)
+	port := clitest.NextE2EPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	app := exec.CommandContext(ctx, appBin)
@@ -72,16 +66,16 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 		// debug tools under it (they stay off for untrusted prod /mcp).
 		"GOFASTR_DEV=1",
 	)
-	var appOut syncBuffer
+	var appOut clitest.SyncBuffer
 	app.Stdout = &appOut
 	app.Stderr = &appOut
-	configureTestProcessGroup(app)
+	clitest.ConfigureTestProcessGroup(app)
 	if err := app.Start(); err != nil {
 		t.Fatalf("start generated app: %v", err)
 	}
 	t.Cleanup(func() {
 		cancel()
-		_ = killTestProcessTree(app)
+		_ = clitest.KillTestProcessTree(app)
 		_ = app.Wait()
 	})
 
@@ -172,9 +166,9 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 	// register: access logs carry client IPs and paths, so an untrusted
 	// production /mcp never exposes them by default.
 	cancel()
-	_ = killTestProcessTree(app)
+	_ = clitest.KillTestProcessTree(app)
 	_ = app.Wait()
-	prodPort := nextE2EPort(t)
+	prodPort := clitest.NextE2EPort(t)
 	prodCtx, prodCancel := context.WithCancel(context.Background())
 	defer prodCancel()
 	prod := exec.CommandContext(prodCtx, appBin)
@@ -183,16 +177,16 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 		"PORT=localhost:"+prodPort,
 		"DATABASE_URL=file:"+filepath.Join(dir, "mcp-e2e.db"),
 	)
-	var prodOut syncBuffer
+	var prodOut clitest.SyncBuffer
 	prod.Stdout = &prodOut
 	prod.Stderr = &prodOut
-	configureTestProcessGroup(prod)
+	clitest.ConfigureTestProcessGroup(prod)
 	if err := prod.Start(); err != nil {
 		t.Fatalf("start generated app (prod mode): %v", err)
 	}
 	t.Cleanup(func() {
 		prodCancel()
-		_ = killTestProcessTree(prod)
+		_ = clitest.KillTestProcessTree(prod)
 		_ = prod.Wait()
 	})
 	prodBase := "http://localhost:" + prodPort

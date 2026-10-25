@@ -10,7 +10,7 @@ import (
 )
 
 // hookSecPost mirrors a real codegen model: every non-id field carries
-// `,omitempty` on its json tag (cmd/gofastr/generate.go emits this). A
+// `,omitempty` on its json tag (cmd/gofastr/internal/appgen/generate.go emits this). A
 // defensive Before-hook that forces a field to its zero value (e.g.
 // IsAdmin=false, Balance=0, Role="") must still override the
 // attacker-supplied value already in the pending body. If the merge-back

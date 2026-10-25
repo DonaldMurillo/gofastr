@@ -600,7 +600,7 @@ func tailForDetail(s string) string {
 // scrubTerminalBytes strips the control bytes that let a subprocess
 // *drive* the operator's terminal rather than merely write to it. Copied
 // (string-typed) from codegen/extension_command.go scrubTerminalBytes /
-// cmd/gofastr/generate.go scrubTerminalOutput — same contract: C0 except
+// cmd/gofastr/internal/cli/generate.go ScrubTerminalOutput — same contract: C0 except
 // \n and \t, plus DEL, so newlines and tabs survive as layout while ESC/
 // BEL/CR and kin cannot rewrite the window title or clipboard from
 // inside an error string.

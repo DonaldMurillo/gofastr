@@ -66,7 +66,7 @@
 // the templates. The rot gate is the lesson of #131; the drift gate is
 // the lesson of #416.
 //
-// Backward (code → app spec), by cmd/gofastr/pack_test.go: it runs
+// Backward (code → app spec), by cmd/gofastr/internal/appgen/pack_test.go: it runs
 // `gofastr pack` over THIS directory and asserts the recovered
 // declarations equal the parsed gofastr.yml. So the app's declarative
 // surfaces, entities, screens, nav, seed, must still match the

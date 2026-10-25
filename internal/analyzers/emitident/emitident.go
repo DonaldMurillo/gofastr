@@ -18,7 +18,7 @@
 // (font families into `font-family: '%s'`), TestWidgetBehaviorURLMatchesRuntimeGate
 // (widget ids into behavior URLs). Fixes: 29219c04, f06f4412, e936f791.
 // The 2026-09-04 red-probe round added the JS/TS side:
-// TestSDKJSIdentSlotRefusesTables (cmd/gofastr/generate_sdkjs.go wrote
+// TestSDKJSIdentSlotRefusesTables (cmd/gofastr/internal/appgen/generate_sdkjs.go wrote
 // entity-table-derived camelCase names into `export const %sFields =`
 // and `readonly %s:` of the generated client.d.ts with only toCamelCase
 // — a transform, not a gate — in front; the .js got the quoted

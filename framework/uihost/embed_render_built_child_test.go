@@ -27,7 +27,7 @@ import (
 // the boot walk is exact. The covering gate for this shape is the static
 // analyzer at build time: cmd/check-embed/embedcheck emits an Unresolved note
 // for a Render-constructed child it cannot read, and `gofastr build` now FAILS
-// on a note (see cmd/gofastr/build.go). Neither gate is total on its own; the
+// on a note (see cmd/gofastr/internal/buildcmd/build.go). Neither gate is total on its own; the
 // pair is.
 type renderBuiltChildParent struct{}
 
@@ -72,7 +72,7 @@ func TestBootWalkCannotSeeRenderBuiltChild(t *testing.T) {
 	// reasoning and embed.md before deleting this test.
 	if got != "" {
 		t.Fatalf("boot walk unexpectedly caught a render-built child: %s\n"+
-			"If this is a real improvement, cmd/gofastr/build.go and embed.md both "+
+			"If this is a real improvement, cmd/gofastr/internal/buildcmd/build.go and embed.md both "+
 			"describe the note-fails-build split that exists to cover this shape.", got)
 	}
 }

@@ -386,7 +386,7 @@ var reGeneratedHeader = regexp.MustCompile(`(?m)^// Code generated .* DO NOT EDI
 // ReadModulePath returns the `module` line from root/go.mod, or "" when the
 // file is missing or declares no module. Pass discovery uses it to derive
 // package import paths from filesystem locations. Formerly duplicated as
-// cmd/gofastr/audit.go:readModulePath; that copy is deleted and calls
+// cmd/gofastr/internal/auditcmd/audit.go:readModulePath; that copy is deleted and calls
 // this one.
 func ReadModulePath(root string) string {
 	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
@@ -402,7 +402,7 @@ func ReadModulePath(root string) string {
 
 // ImportPathFor maps a directory to its Go import path given the module's
 // root and module-path declaration. Formerly duplicated as
-// cmd/gofastr/audit.go:importPathFor; that copy is deleted and calls this
+// cmd/gofastr/internal/auditcmd/audit.go:importPathFor; that copy is deleted and calls this
 // one.
 func ImportPathFor(modulePath, root, dir string) string {
 	rel, err := filepath.Rel(root, dir)

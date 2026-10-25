@@ -3,10 +3,13 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestDispatchNoArgsPrintsHelp(t *testing.T) {
-	out := covT_capStdout(t, func() { dispatch(nil) })
+	out := clitest.CovT_capStdout(t, func() { dispatch(nil) })
 	if !strings.Contains(out, "GoFastr CLI") {
 		t.Fatalf("expected help, got: %s", out)
 	}
@@ -14,7 +17,7 @@ func TestDispatchNoArgsPrintsHelp(t *testing.T) {
 
 func TestDispatchHelpFlag(t *testing.T) {
 	for _, flag := range []string{"--help", "-h"} {
-		out := covT_capStdout(t, func() { dispatch([]string{flag}) })
+		out := clitest.CovT_capStdout(t, func() { dispatch([]string{flag}) })
 		if !strings.Contains(out, "Commands") {
 			t.Fatalf("%s: expected help, got %s", flag, out)
 		}
@@ -30,7 +33,7 @@ func TestCommandSpecificHelp(t *testing.T) {
 		{"generate", "Scaffold generators write code you own"},
 		{"validate", "validate an app spec without writing files"},
 	} {
-		out := covT_capStdout(t, func() { dispatch([]string{tc.command, "--help"}) })
+		out := clitest.CovT_capStdout(t, func() { dispatch([]string{tc.command, "--help"}) })
 		if !strings.Contains(out, tc.want) {
 			t.Errorf("%s --help missing %q:\n%s", tc.command, tc.want, out)
 		}
@@ -42,7 +45,7 @@ func TestCommandSpecificHelp(t *testing.T) {
 
 func TestDispatchVersionFlag(t *testing.T) {
 	for _, flag := range []string{"--version", "-v", "version"} {
-		out := covT_capStdout(t, func() { dispatch([]string{flag}) })
+		out := clitest.CovT_capStdout(t, func() { dispatch([]string{flag}) })
 		if !strings.Contains(out, "GoFastr") || !strings.Contains(out, "commit") {
 			t.Fatalf("%s: expected version, got %s", flag, out)
 		}
@@ -51,8 +54,8 @@ func TestDispatchVersionFlag(t *testing.T) {
 
 func TestDispatchUnknownCmdExits(t *testing.T) {
 	var out string
-	code := covT_capExit(t, func() {
-		out = covT_capStdout(t, func() { dispatch([]string{"qq"}) })
+	code := clitest.CovT_capExit(t, func() {
+		out = clitest.CovT_capStdout(t, func() { dispatch([]string{"qq"}) })
 	})
 	if code != 1 {
 		t.Fatalf("expected exit 1, got %d", code)
@@ -61,8 +64,8 @@ func TestDispatchUnknownCmdExits(t *testing.T) {
 }
 
 func TestDispatchUnknownCmdSuggests(t *testing.T) {
-	out := covT_capStdout(t, func() {
-		_ = covT_capExit(t, func() { dispatch([]string{"versio"}) })
+	out := clitest.CovT_capStdout(t, func() {
+		_ = clitest.CovT_capExit(t, func() { dispatch([]string{"versio"}) })
 	})
 	if !strings.Contains(out, "Did you mean") {
 		t.Fatalf("expected suggestion, got %s", out)
@@ -70,8 +73,8 @@ func TestDispatchUnknownCmdSuggests(t *testing.T) {
 }
 
 func TestColorHelpersTTYBranch(t *testing.T) {
-	covT_withTTY(func() {
-		for _, got := range []string{green("x"), red("x"), yellow("x"), bold("x"), dim("x")} {
+	clitest.CovT_withTTY(func() {
+		for _, got := range []string{cli.Green("x"), cli.Red("x"), cli.Yellow("x"), cli.Bold("x"), cli.Dim("x")} {
 			if !strings.Contains(got, "\033[") {
 				t.Fatalf("expected ANSI escape on TTY, got %q", got)
 			}
@@ -80,22 +83,11 @@ func TestColorHelpersTTYBranch(t *testing.T) {
 }
 
 func TestInfoWarnPrint(t *testing.T) {
-	out := covT_capStdout(t, func() {
-		info("hello %d", 1)
-		warn("careful %s", "now")
+	out := clitest.CovT_capStdout(t, func() {
+		cli.Info("hello %d", 1)
+		cli.Warn("careful %s", "now")
 	})
 	if !strings.Contains(out, "hello 1") || !strings.Contains(out, "careful now") {
 		t.Fatalf("unexpected info/warn output: %s", out)
-	}
-}
-
-// Edit distance now lives in core/fuzzy (shared with framework/filter) and is
-// tested there; here we only cover the CLI-local variadic min helper.
-func TestMin(t *testing.T) {
-	if min(3, 1, 2) != 1 {
-		t.Fatalf("min broken")
-	}
-	if min(5) != 5 {
-		t.Fatalf("min single-arg broken")
 	}
 }

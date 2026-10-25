@@ -43,7 +43,7 @@ func zzRound2PostsConfig() entity.EntityConfig {
 //
 // Two halves of the same check disagree:
 //
-//   - GENERATION (cmd/gofastr/generate_sdk.go sdkSchemaHash) builds
+//   - GENERATION (cmd/gofastr/internal/appgen/generate_sdk.go SdkSchemaHash) builds
 //     NamedConfig{Name, Config} from EntityDeclarations and NEVER sets
 //     Version, so the manifest hash is the unversioned one.
 //   - SERVING (framework/sdkdocs.loadManifest) builds NamedConfigs via
@@ -63,7 +63,7 @@ func zzRound2PostsConfig() entity.EntityConfig {
 func TestNoDriftForGroupMountedEntity(t *testing.T) {
 	cfg := zzRound2PostsConfig()
 
-	// Generation half, exactly what cmd/gofastr's sdkSchemaHash emits.
+	// Generation half, exactly what cmd/gofastr's appgen.SdkSchemaHash emits.
 	// entity.Define applies the same defaults EntityDeclaration.Config() does.
 	manifestHash := SchemaHash([]NamedConfig{
 		{Name: "posts", Config: entity.Define("posts", cfg).Config},

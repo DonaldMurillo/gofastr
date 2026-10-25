@@ -2,8 +2,8 @@ package testdb
 
 // Pins (2026-09-06 adversarial pass, round 5):
 // password redaction is total, not prefix-deep. In a URL the userinfo ends at
-// the LAST '@' before the path (url.Parse semantics; cmd/gofastr/appspec.go::redactDSN
-// :3806-3824 pins the textual last-@ cut for exactly this reason). This twin cuts at the
+// the LAST '@' before the path (url.Parse semantics; cmd/gofastr/internal/appgen/appspec.go::redactDSN
+// :501-503 pins the textual last-@ cut for exactly this reason). This twin cuts at the
 // FIRST '@', so an '@' inside the password leaves its tail past the mask.
 // Surfaces: framework/internal/testdb/testdb.go::RedactDSN :350-361 — strings.Index (first
 // '@') at :352; the half-masked value is logged via t.Logf :109 on the first PG-backed

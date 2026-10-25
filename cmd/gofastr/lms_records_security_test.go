@@ -1,10 +1,5 @@
 package main
 
-// Property: the lms example app spec gates every student-record entity
-// (enrollments, progress, certificates) the way it gates the student
-// roster itself: RBAC on every operation, so an unrelated registered
-// account is refused on read and write — the generated app must not
-// ship world-open student data.
 import (
 	"database/sql"
 	"encoding/json"
@@ -16,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -143,14 +139,14 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 
 	code, _, raw := api(stranger, http.MethodGet, "/api/enrollments", "")
 	if code == http.StatusOK && (strings.Contains(raw, "studentId") || strings.Contains(raw, "student_id")) {
-		t.Errorf("unrelated account GET /api/enrollments = 200 with rows (%s): every student's enrollment status and progress_percent is readable by any registered account — enrollments has no access block while the same file RBAC-gates students. Want gated refusal (403/404) or an empty result", truncate(raw, 200))
+		t.Errorf("unrelated account GET /api/enrollments = 200 with rows (%s): every student's enrollment status and progress_percent is readable by any registered account — enrollments has no access block while the same file RBAC-gates students. Want gated refusal (403/404) or an empty result", clitest.Truncate(raw, 200))
 	}
 
 	// 2. Rewriting a student's progress record.
 	if pid := rowID(progress); pid != "" {
 		code, _, raw = api(stranger, http.MethodPatch, "/api/progress/"+pid, `{"score":0,"notes":"rewritten by stranger"}`)
 		if code == http.StatusOK {
-			t.Errorf("unrelated account PATCH /api/progress/%s = 200 (%s): any registered account rewrites any student's score and instructor notes. Want 403", pid, truncate(raw, 200))
+			t.Errorf("unrelated account PATCH /api/progress/%s = 200 (%s): any registered account rewrites any student's score and instructor notes. Want 403", pid, clitest.Truncate(raw, 200))
 		}
 	} else {
 		t.Log("progress row id not captured from create response; PATCH leg skipped (create was gated or shape changed)")
@@ -159,6 +155,6 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 	// 3. Certificate codes.
 	code, _, raw = api(stranger, http.MethodGet, "/api/certificates", "")
 	if code == http.StatusOK && (strings.Contains(raw, "code") || rowID(certificate) != "") {
-		t.Errorf("unrelated account GET /api/certificates = 200 with rows (%s): unique certificate codes are harvestable by any registered account. Want gated refusal or empty result", truncate(raw, 200))
+		t.Errorf("unrelated account GET /api/certificates = 200 with rows (%s): unique certificate codes are harvestable by any registered account. Want gated refusal or empty result", clitest.Truncate(raw, 200))
 	}
 }

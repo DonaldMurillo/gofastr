@@ -1,9 +1,9 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // TestDispatchRoutesNonBlocking exercises every dispatch case that does
@@ -12,12 +12,12 @@ import (
 // routed without crashing the suite.
 func TestDispatchRoutesNonBlocking(t *testing.T) {
 	dir := t.TempDir()
-	covT_chdir(t, dir)
+	clitest.CovT_chdir(t, dir)
 
-	covT_capStdout(t, func() { dispatch([]string{"theme"}) })
-	covT_capStdout(t, func() { dispatch([]string{"new", "-h"}) })
-	covT_capStdout(t, func() { dispatch([]string{"docs", "--help"}) })
-	covT_capStdout(t, func() { dispatch([]string{"semantic", "help"}) })
+	clitest.CovT_capStdout(t, func() { dispatch([]string{"theme"}) })
+	clitest.CovT_capStdout(t, func() { dispatch([]string{"new", "-h"}) })
+	clitest.CovT_capStdout(t, func() { dispatch([]string{"docs", "--help"}) })
+	clitest.CovT_capStdout(t, func() { dispatch([]string{"semantic", "help"}) })
 
 	// These dispatch to functions whose no-/bad-arg path, or a
 	// removed-feature path (`generate entity`), calls osExit.
@@ -28,101 +28,8 @@ func TestDispatchRoutesNonBlocking(t *testing.T) {
 		{"audit"},
 	} {
 		args := args
-		_ = covT_capExit(t, func() {
-			covT_capStdout(t, func() { dispatch(args) })
+		_ = clitest.CovT_capExit(t, func() {
+			clitest.CovT_capStdout(t, func() { dispatch(args) })
 		})
-	}
-}
-
-func TestValidateScaffoldNameDotDot(t *testing.T) {
-	// Contains ".." but no path separator → hits the dedicated branch.
-	if err := validateScaffoldName("a..b"); err == nil {
-		t.Fatal("expected error for embedded '..'")
-	}
-}
-
-// ── migrate error branches ────────────────────────────────────────────
-
-func TestMigratorFromArgsErrors(t *testing.T) {
-	// No migrations dir.
-	covT_chdir(t, t.TempDir())
-	if _, _, err := migratorFromArgs(nil); err == nil {
-		t.Fatal("missing migrations dir should error")
-	}
-	// Migrations dir present but no DB URL. The environment has to be
-	// cleared, not assumed: migratorFromArgs falls back to DATABASE_URL,
-	// and anyone working on a Postgres app is likely to have it exported,
-	// which turns "missing db url should error" into a failure that
-	// depends on whose shell ran the suite.
-	t.Setenv("DATABASE_URL", "")
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "migrations"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	covT_chdir(t, dir)
-	if _, _, err := migratorFromArgs(nil); err == nil {
-		t.Fatal("missing db url should error")
-	}
-}
-
-func TestRunMigrateUpConstructErrorExits(t *testing.T) {
-	covT_chdir(t, t.TempDir()) // no migrations dir
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateUp([]string{"--db-url=x.db"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
-func TestRunMigrateDownConstructErrorExits(t *testing.T) {
-	covT_chdir(t, t.TempDir())
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateDown([]string{"2", "--db-url=x.db"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
-func TestRunMigrateStatusConstructErrorExits(t *testing.T) {
-	covT_chdir(t, t.TempDir())
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateStatus([]string{"--db-url=x.db"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
-func TestRunMigrateForceConstructErrorExits(t *testing.T) {
-	covT_chdir(t, t.TempDir())
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateForce([]string{"1", "--db-url=x.db"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
-func TestRunMigrateDownStatusForceSucceed(t *testing.T) {
-	dir := covT_migrationsDir(t)
-	dbURL := "--db-url=" + filepath.Join(dir, "x.db")
-	// Apply, then status (with applied + pending), down, force.
-	covT_capStdout(t, func() { runMigrateUp([]string{dbURL}) })
-	covT_capStdout(t, func() { runMigrateStatus([]string{dbURL}) })
-	covT_capStdout(t, func() { runMigrateDown([]string{"1", dbURL}) })
-	covT_capStdout(t, func() { runMigrateForce([]string{"1", dbURL}) })
-}
-
-func TestRunMigrateGenerateNoAppSpecExits(t *testing.T) {
-	dir := t.TempDir()
-	covT_chdir(t, dir)
-	// No --from → app spec required → exit 1.
-	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { runMigrateGenerate([]string{"name"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
 	}
 }

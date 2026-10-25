@@ -231,7 +231,7 @@ func snapshotDeepCopy[T any](v T) T {
 // value (false, 0, "").
 //
 // Why not just marshal `after`: generated structs tag every field
-// `,omitempty` (cmd/gofastr/generate.go), so json.Marshal silently drops a
+// `,omitempty` (cmd/gofastr/internal/appgen/generate.go), so json.Marshal silently drops a
 // field a defensive hook forced to its zero value. Relying on that
 // marshalling makes a hook that does `value.IsAdmin = false` (to override
 // attacker-supplied is_admin=true) a no-op, the client's value survives

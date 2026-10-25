@@ -93,7 +93,7 @@ was needed.
 
 **You changed migration directives or the migrate CLI:**
 - `framework/docs/content/migrations.md`
-- `cmd/gofastr/migrate_cmd.go` (+ `migrate_generate.go`), same PR
+- `cmd/gofastr/internal/migratecmd/migrate_cmd.go` (+ `migrate_generate.go`), same PR
 
 **You changed `core-ui/` or `framework/uihost/`:**
 - `core-ui/ARCHITECTURE.md`: this is mandatory; the doc is the contract
@@ -138,7 +138,7 @@ was needed.
 - If the release adds host-facing surface (a new battery, uihost
   option, or CLI capability a host-app agent should reach for):
   `.claude/skills/gofastr-host/SKILL.md` recipe table + trigger
-  phrases, then copy to `cmd/gofastr/embedded/gofastr-host-skill.md`
+  phrases, then copy to `cmd/gofastr/internal/agentscmd/embedded/gofastr-host-skill.md`
   (`TestEmbeddedHostSkillMatchesRepo` pins the sync)
 - **Publish the GitHub Release: a pushed tag is NOT a release.** After
   the PR merges, tag the merge commit AND run

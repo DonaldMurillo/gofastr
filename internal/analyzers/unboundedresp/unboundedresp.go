@@ -4,7 +4,7 @@
 // on that body's chain in the function — or one hop away in a
 // same-package helper the body is passed to.
 //
-// Probe: cmd/gofastr/semantic.go remoteQuery/remoteGet (2026-09-07
+// Probe: cmd/gofastr/internal/semanticcmd/semantic.go remoteQuery/remoteGet (2026-09-07
 // round-5 red probes). Both fetch a user-named (GOFASTR_URL) endpoint
 // and read its answer with io.ReadAll(resp.Body) /
 // json.NewDecoder(resp.Body): a hostile or wedged endpoint pins memory

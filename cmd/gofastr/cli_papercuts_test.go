@@ -3,6 +3,9 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // TestFuzzySuggestionsIncludeNewAndTheme pins that the unknown-command
@@ -16,10 +19,10 @@ func TestFuzzySuggestionsIncludeNewAndTheme(t *testing.T) {
 		{"ne", "new"},
 		{"them", "theme"},
 	} {
-		out := covT_capStdout(t, func() {
-			_ = covT_capExit(t, func() { dispatch([]string{tc.typo}) })
+		out := clitest.CovT_capStdout(t, func() {
+			_ = clitest.CovT_capExit(t, func() { dispatch([]string{tc.typo}) })
 		})
-		want := "Did you mean: " + bold("gofastr "+tc.want) + "?"
+		want := "Did you mean: " + cli.Bold("gofastr "+tc.want) + "?"
 		if !strings.Contains(out, want) {
 			t.Errorf("typo %q did not suggest %q; output:\n%s", tc.typo, tc.want, out)
 		}
@@ -32,7 +35,7 @@ func TestFuzzySuggestionsIncludeNewAndTheme(t *testing.T) {
 // harness, agents), so each fell through to printHelp().
 func TestSubcommandHelpIsCommandSpecific(t *testing.T) {
 	for _, cmd := range []string{"new", "pack", "build", "dev", "export", "migrate", "test", "harness", "agents"} {
-		out := covT_capStdout(t, func() { dispatch([]string{cmd, "--help"}) })
+		out := clitest.CovT_capStdout(t, func() { dispatch([]string{cmd, "--help"}) })
 		if want := "Usage: gofastr " + cmd; !strings.Contains(out, want) {
 			t.Errorf("%s --help missing command-specific %q:\n%s", cmd, want, out)
 		}

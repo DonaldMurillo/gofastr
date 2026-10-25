@@ -3,123 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
-
-func writeReportExtension(t *testing.T, dir, marker string) string {
-	t.Helper()
-	var command []string
-	if runtime.GOOS == "windows" {
-		path := filepath.Join(dir, "report-extension.cmd")
-		body := "@echo off\r\nmore >nul\r\n"
-		if marker != "" {
-			body += "type nul > \"" + marker + "\"\r\n"
-		}
-		body += "echo {\"files\":[{\"path\":\"report.go\",\"content\":\"package reports\\n\"}]}\r\n"
-		writeTestFile(t, path, body)
-		command = []string{"cmd.exe", "/d", "/c", path}
-	} else {
-		path := filepath.Join(dir, "report-extension.sh")
-		body := "#!/bin/sh\ncat >/dev/null\n"
-		if marker != "" {
-			body += "touch \"" + marker + "\"\n"
-		}
-		body += "printf '%s' '{\"files\":[{\"path\":\"report.go\",\"content\":\"package reports\\n\"}]}'\n"
-		writeTestFile(t, path, body)
-		if err := os.Chmod(path, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		command = []string{path}
-	}
-	encoded, err := json.Marshal(command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(encoded)
-}
-
-func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
-	crud := true
-	timestamps := false
-	files, err := renderGeneratedProject([]framework.EntityDeclaration{
-		{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts",
-			Table: "posts", Exposure: &framework.ExposureDeclaration{CRUD: &crud, MCP: true}, Timestamps: &timestamps,
-			Fields: []framework.FieldDeclaration{
-				{Name: "title", Type: "string", Required: true, Max: floatPtrTest(120)},
-				{Name: "published", Type: "bool"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("renderGeneratedProject: %v", err)
-	}
-	// register.go (seam) + events.go (event-helper seam) + client/client.go
-	// + one file per entity.
-	if len(files) != 4 {
-		t.Fatalf("files len = %d, want 4 (register.go, events.go, client/client.go, posts.go)", len(files))
-	}
-	byName := map[string]string{}
-	for _, f := range files {
-		byName[f.name] = f.content
-	}
-
-	// register.go is the fixed seam: it declares RegisterAll and the
-	// registrar slice, but carries NO entity name. Adding an entity never
-	// edits it. Owned scaffold carries no "DO NOT EDIT" header (it's yours to
-	// edit). See framework/ARCHITECTURE.md.
-	register := byName["register.go"]
-	for _, want := range []string{
-		"func RegisterAll(app *framework.App)",
-		"var registrars []registrar",
-		"type registrar struct {",
-	} {
-		if !strings.Contains(register, want) {
-			t.Fatalf("register.go missing %q:\n%s", want, register)
-		}
-	}
-	if strings.Contains(register, `app.Entity(`) {
-		t.Fatalf("register.go must hold no app.Entity call (it's the seam):\n%s", register)
-	}
-
-	// Everything for the "posts" entity lives in one self-contained posts.go:
-	// model, columns, repo, events, and its registration.
-	posts := byName["posts.go"]
-	for _, want := range []string{
-		`app.Entity("posts", framework.EntityConfig{`,
-		`Type: schema.String`,
-		`CRUD: boolPtr(true)`,
-		`MCP: true`,
-		`.WithTimestamps(false))`,
-		`type Posts struct {`,
-		`PostsTitle = framework.NewStringColumn("title")`,
-		`PostsPublished = framework.NewBoolColumn("published")`,
-		`Event helpers: OnPostsCreated/OnPostsUpdated/OnPostsDeleted in this package.`,
-		`type PostsRepo struct {`,
-		`func NewPostsRepo(app *framework.App) *PostsRepo`,
-		`func (r *PostsRepo) Create(ctx context.Context, in PostsInput) (*Posts, error)`,
-		`func (r *PostsRepo) Update(ctx context.Context, id string, patch PostsPatch) (*Posts, error)`,
-		"Published *bool `json:\"published,omitempty\"`",
-		`func (r *PostsRepo) Query() *framework.TypedQuery[Posts]`,
-		`WithTx(tx *sql.Tx) *PostsRepo`,
-		// self-registration: the file appends itself, so register.go never
-		// needs editing when an entity is added.
-		`func registerPosts(app *framework.App) {`,
-		`func init() {`,
-		`registrar{order: 0, fn: registerPosts}`,
-	} {
-		if !strings.Contains(posts, want) {
-			t.Fatalf("posts.go missing %q:\n%s", want, posts)
-		}
-	}
-}
 
 func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -139,114 +30,6 @@ func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
 	}
 }
 
-func TestGenerateProjectWithExternalCodegenExtension(t *testing.T) {
-	dir := t.TempDir()
-	extCommand := writeReportExtension(t, dir, "")
-	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
-	writeTestFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
-version: 1
-codegen:
-  output: generated
-  generators:
-    - name: custom/reports
-      extension: report-generator
-      source:
-        type: json_file
-        path: reports.codegen.json
-      output: reports
-  extensions:
-    - name: report-generator
-      command: `+extCommand+`
-`)
-
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(oldWD)
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	generateProject([]string{"--config=gofastr.settings.yml"})
-	data, err := os.ReadFile(filepath.Join("generated", "reports", "report.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "package reports\n" {
-		t.Fatalf("report.go = %q", data)
-	}
-}
-
-func TestSafeCleanOutputDirRejectsSymlinkRoot(t *testing.T) {
-	dir := t.TempDir()
-	outside := filepath.Join(dir, "outside")
-	if err := os.Mkdir(outside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(outside, "register.go"), []byte("do not delete"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(dir, "out")
-	if err := os.Symlink(outside, link); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
-	}
-	err := safeCleanOutputDir(link)
-	if err == nil || !strings.Contains(err.Error(), "refusing to write through symlink") {
-		t.Fatalf("safeCleanOutputDir err = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(outside, "register.go")); err != nil {
-		t.Fatalf("outside file was removed: %v", err)
-	}
-}
-
-func TestAppSpecGenerateRejectsSymlinkOutput(t *testing.T) {
-	if os.Getenv("GOFASTR_APPSPEC_SYMLINK_HELPER") == "1" {
-		runGenerateApp([]string{"gofastr.yml", "--out=out"})
-		return
-	}
-	dir := t.TempDir()
-	outside := filepath.Join(dir, "outside")
-	if err := os.Mkdir(outside, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	outLink := filepath.Join(dir, "out")
-	if err := os.Symlink(outside, outLink); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
-	}
-	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), `
-app:
-  name: Demo
-entities:
-  - name: posts
-    fields:
-      - name: title
-        type: string
-`)
-	// os.Executable resolves the test binary absolutely: os.Args[0] can
-	// be a bare/relative name, and cmd.Dir points the re-exec at a temp
-	// dir, so a relative arg[0] would fail to exec (empty output) under
-	// the full package run where a sibling test has moved the cwd.
-	self, err := os.Executable()
-	if err != nil {
-		self = os.Args[0]
-	}
-	cmd := exec.Command(self, "-test.run=^TestAppSpecGenerateRejectsSymlinkOutput$")
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOFASTR_APPSPEC_SYMLINK_HELPER=1")
-	output, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected symlink output to fail\n%s", output)
-	}
-	if !strings.Contains(string(output), "refusing to write through symlink") {
-		t.Fatalf("unexpected output (err=%v):\n%s", err, output)
-	}
-	if entries, err := os.ReadDir(outside); err != nil {
-		t.Fatal(err)
-	} else if len(entries) != 0 {
-		t.Fatalf("app spec wrote through symlink: %#v", entries)
-	}
-}
-
 func TestGenerateProjectDryRunJSONValidatesOutputBeforeExtensions(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -254,9 +37,9 @@ func TestGenerateProjectDryRunJSONValidatesOutputBeforeExtensions(t *testing.T) 
 	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "extension-ran")
-	extCommand := writeReportExtension(t, dir, marker)
-	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
-	writeTestFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
+	extCommand := clitest.WriteReportExtension(t, dir, marker)
+	clitest.WriteTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
+	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
 version: 1
 codegen:
   output: generated
@@ -294,33 +77,4 @@ codegen:
 	if len(got.Files) != 0 || len(got.Errors) != 1 || !strings.Contains(got.Errors[0].Message, "would target the working directory") {
 		t.Fatalf("unexpected dry-run JSON error payload: %#v", got)
 	}
-}
-
-func floatPtrTest(v float64) *float64 {
-	return &v
-}
-
-// copyGoSum copies the repo's go.sum into the temp module so `go test`
-// inside the temp dir can satisfy transitive dependencies without needing
-// network access.
-func copyGoSum(repoRoot, destDir string) error {
-	src, err := os.ReadFile(filepath.Join(repoRoot, "go.sum"))
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(destDir, "go.sum"), src, 0o644)
-}
-
-func repoGoVersion(repoRoot string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "go" {
-			return fields[1], nil
-		}
-	}
-	return "", fmt.Errorf("go directive not found in %s/go.mod", repoRoot)
 }

@@ -940,7 +940,7 @@ func joinPath(path, key string) string {
 // then the remaining keys sorted, so the emitted YAML keeps the documented
 // key order while never depending on map iteration order.
 //
-// Exported because cmd/gofastr/pack.go carried a byte-identical private
+// Exported because cmd/gofastr/internal/packcmd/pack.go carried a byte-identical private
 // copy for its own YAML writer; that copy is deleted and calls this one.
 func OrderedKeys(m map[string]any, order []string) []string {
 	seen := map[string]bool{}

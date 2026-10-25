@@ -14,7 +14,7 @@ import (
 // surfaces as a later request error instead of a failed rollout. The ready
 // banner's own comment promises it fires only after migrations succeeded.
 func TestInitMainFailsClosedOnMigrationError(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 	cmd := exec.Command(bin, "init", "migrfail", "--module=example.com/migrfail")
 	cmd.Dir = work

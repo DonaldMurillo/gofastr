@@ -591,16 +591,16 @@ func duplicateURLGuardLine(rel string, body []byte) int {
 // A new entry here is a decision, not paperwork: say why this read cannot
 // be the drift the rule exists to stop.
 var crudExposureClassified = map[string]string{
-	"framework/app.go":                "defines the predicate (entityCRUDEnabled) and ANDs a.DB != nil at every other read",
-	"framework/entity/entity.go":      "marshals the declaration; not an exposure decision",
-	"framework/entity/declaration.go": "merges the declaration; not an exposure decision",
-	"cmd/gofastr/generate.go":         "emits the declared flag back into generated source; not an exposure decision",
-	"cmd/gofastr/pack.go":             "serializes the declared flag back to YAML; not an exposure decision",
-	"framework/openapi/openapi.go":    "takes a crudMounted predicate; the bare read is its documented nil fallback for direct callers",
-	"framework/sdkdocs/sdkdocs.go":    "takes a CRUDMounted predicate; the bare read is the Exposure-only prefilter",
-	"battery/admin/entity_admin.go":   "admin mounts only with a DB attached, so nil really is auto-true here",
-	"battery/auth/verify_private.go":  "warns that an auth entity is exposed; omitting the DB check makes it warn in the SAFE direction",
-	"framework/crud/owner.go":         "relationReachable refuses an explicit CRUD:false opt-out on another entity's mounted route; a DB-less app mounts no route that could reach it, so nil stays reachable",
+	"framework/app.go":                        "defines the predicate (entityCRUDEnabled) and ANDs a.DB != nil at every other read",
+	"framework/entity/entity.go":              "marshals the declaration; not an exposure decision",
+	"framework/entity/declaration.go":         "merges the declaration; not an exposure decision",
+	"cmd/gofastr/internal/appgen/generate.go": "emits the declared flag back into generated source; not an exposure decision",
+	"cmd/gofastr/internal/packcmd/pack.go":    "serializes the declared flag back to YAML; not an exposure decision",
+	"framework/openapi/openapi.go":            "takes a crudMounted predicate; the bare read is its documented nil fallback for direct callers",
+	"framework/sdkdocs/sdkdocs.go":            "takes a CRUDMounted predicate; the bare read is the Exposure-only prefilter",
+	"battery/admin/entity_admin.go":           "admin mounts only with a DB attached, so nil really is auto-true here",
+	"battery/auth/verify_private.go":          "warns that an auth entity is exposed; omitting the DB check makes it warn in the SAFE direction",
+	"framework/crud/owner.go":                 "relationReachable refuses an explicit CRUD:false opt-out on another entity's mounted route; a DB-less app mounts no route that could reach it, so nil stays reachable",
 }
 
 // crudExposureRederivedLines reports lines where an unclassified file reads

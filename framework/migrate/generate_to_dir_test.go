@@ -269,7 +269,7 @@ func TestGenerateMigrationFileGroup(t *testing.T) {
 }
 
 // Version-numbering and name-sanitization used to live in
-// cmd/gofastr/migrate_generate.go, copied alongside the CLI's own inline
+// cmd/gofastr/internal/migratecmd/migrate_generate.go, copied alongside the CLI's own inline
 // generation sequence. The CLI now calls GenerateMigrationFile, so these tests
 // moved here with the one surviving implementation.
 func TestNextMigrationVersion(t *testing.T) {

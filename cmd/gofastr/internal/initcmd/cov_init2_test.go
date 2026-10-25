@@ -1,0 +1,95 @@
+package initcmd
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+)
+
+func TestRunInitPostgresWithEntities(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	clitest.CovT_capStdout(t, func() { RunInit([]string{"pg", "--db=postgres"}) })
+	main, err := os.ReadFile(filepath.Join(dir, "pg", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(main), "postgres") && !strings.Contains(string(main), "pq") && !strings.Contains(string(main), "pgx") {
+		t.Fatalf("postgres main.go should reference a pg driver:\n%s", main[:200])
+	}
+}
+
+// The write* helpers osExit when their target directory does not exist.
+// Pointing name at a missing path exercises the write-failure branch.
+func covT_missingDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "does", "not", "exist")
+}
+
+func TestWriteMainGoWriteFailureExits(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { writeMainGo(covT_missingDir(t), "m", false, "sqlite", "file:x.db") })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestWriteIsolationConfigWriteFailureExits(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { writeSettingsFile(covT_missingDir(t), "sqlite") })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestWriteScreensGoWriteFailureExits(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { writeScreensGo(covT_missingDir(t), true) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestWriteDesignMDWriteFailure(t *testing.T) {
+	if err := writeDesignMD(covT_missingDir(t)); err == nil {
+		t.Fatal("writeDesignMD should fail when the target directory is missing")
+	}
+}
+
+func TestWriteEntitiesGoWriteFailureExits(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { writeEntitiesGo(covT_missingDir(t)) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestWriteScreensGoNoEntityVsEntity(t *testing.T) {
+	d1 := t.TempDir()
+	// Both branches of the noEntity hint land in flat screens.go.
+	clitest.CovT_capStdout(t, func() { writeScreensGo(d1, true) })
+	d2 := t.TempDir()
+	clitest.CovT_capStdout(t, func() { writeScreensGo(d2, false) })
+
+	// The entity hint is prose. It must land in the Section description,
+	// never inside the shell CodeBlock; a sentence concatenated onto a
+	// command renders as a nonsense line a new user may copy-paste.
+	b, err := os.ReadFile(filepath.Join(d2, "screens.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if !strings.Contains(src, `Code:     "gofastr docs ui-composition-recipes\ngofastr theme init",`) {
+		t.Errorf("generated CodeBlock must contain shell commands only:\n%s", src)
+	}
+	if !strings.Contains(src, "entities/entities.go") || !strings.Contains(src, "/posts") {
+		t.Errorf("entity hint prose missing from generated screen:\n%s", src)
+	}
+}

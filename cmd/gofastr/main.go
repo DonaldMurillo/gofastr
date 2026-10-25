@@ -1,3 +1,7 @@
+// Command gofastr is the GoFastr CLI. main parses the subcommand and
+// dispatches to the package under internal/ that implements it; each
+// subcommand's code and tests live there, so a change to one selects
+// only that package's tests and the packages that import it.
 package main
 
 import (
@@ -5,93 +9,39 @@ import (
 	"os"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/agentscmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/auditcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/buildcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/desktopcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/docscmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/exportcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/generatecmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/harnesscmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/initcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/migratecmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/newcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/packcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/semanticcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/testcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/themecmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/unmountcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/upgradecmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/validatecmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/verifycmd"
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 )
 
-// Version info: overridden via -ldflags at build time.
+// Version info: overridden via -ldflags at build time
+// (-X main.version=…). main hands them to cli, where every subcommand
+// reads them.
 var (
 	version   = "dev"
 	commit    = "none"
 	buildDate = "unknown"
 )
-
-// osExit is an indirection over os.Exit so tests can observe the exit
-// code of CLI entry points without terminating the test binary. In
-// production it is os.Exit verbatim. Behavior is identical. Tests swap
-// it (and restore via the helper) to capture the requested exit status.
-var osExit = os.Exit
-
-// stdoutIsTTY is true when os.Stdout is connected to a terminal. ANSI
-// color helpers below return their input unchanged when this is false,
-// so `gofastr docs | less` or `gofastr docs > out.txt` don't get
-// littered with escape sequences. Evaluated once at startup;
-// re-opening stdout post-init doesn't re-detect.
-var stdoutIsTTY = func() bool {
-	fi, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
-}()
-
-// ANSI color helpers
-func green(msg string) string {
-	if !stdoutIsTTY {
-		return msg
-	}
-	return "\033[32m" + msg + "\033[0m"
-}
-
-func red(msg string) string {
-	if !stdoutIsTTY {
-		return msg
-	}
-	return "\033[31m" + msg + "\033[0m"
-}
-
-func yellow(msg string) string {
-	if !stdoutIsTTY {
-		return msg
-	}
-	return "\033[33m" + msg + "\033[0m"
-}
-
-func bold(msg string) string {
-	if !stdoutIsTTY {
-		return msg
-	}
-	return "\033[1m" + msg + "\033[0m"
-}
-
-func dim(msg string) string {
-	if !stdoutIsTTY {
-		return msg
-	}
-	return "\033[2m" + msg + "\033[0m"
-}
-
-func success(format string, args ...interface{}) {
-	fmt.Printf("  %s %s\n", green("✓"), fmt.Sprintf(format, args...))
-}
-
-func fail(format string, args ...interface{}) {
-	fmt.Printf("  %s %s\n", red("✗"), fmt.Sprintf(format, args...))
-}
-
-func info(format string, args ...interface{}) {
-	fmt.Printf("  %s %s\n", yellow("→"), fmt.Sprintf(format, args...))
-}
-
-// infoString is info's message formatted for a caller-owned writer:
-// for goroutines that must not read the os.Stdout global (see dev.go's
-// crash watcher).
-func infoString(format string, args ...interface{}) string {
-	return fmt.Sprintf("  %s %s", yellow("→"), fmt.Sprintf(format, args...))
-}
-
-func warn(format string, args ...interface{}) {
-	fmt.Printf("  %s %s\n", yellow("⚠"), fmt.Sprintf(format, args...))
-}
 
 func printHelp() {
 	fmt.Printf(`
@@ -192,11 +142,12 @@ func printHelp() {
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
-`, bold("GoFastr"), cliVersion(), bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
+`, cli.Bold("GoFastr"), project.CliVersion(), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
 }
 
 func main() {
-	runAsVettoolIfMarked()
+	verifycmd.RunAsVettoolIfMarked()
+	cli.Version, cli.Commit, cli.BuildDate = version, commit, buildDate
 	dispatch(os.Args[1:])
 }
 
@@ -234,15 +185,6 @@ var ownsHelp = map[string]bool{
 	"export":   true,
 }
 
-func hasHelpFlag(args []string) bool {
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			return true
-		}
-	}
-	return false
-}
-
 // dispatch routes a parsed argument vector (os.Args[1:]) to the matching
 // subcommand. main() is a thin wrapper so this dispatch logic is testable
 // in-process; behavior is identical to inlining it in main().
@@ -264,7 +206,7 @@ func dispatch(args []string) {
 			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
 				continue
 			}
-			fmt.Println(versionLine())
+			fmt.Println(project.VersionLine())
 			return
 		}
 	}
@@ -282,60 +224,60 @@ func dispatch(args []string) {
 
 	switch cmd {
 	case "init":
-		runInit(cmdArgs)
+		initcmd.RunInit(cmdArgs)
 	case "theme":
-		runTheme(cmdArgs)
+		themecmd.RunTheme(cmdArgs)
 	case "generate", "gen", "g":
-		runGenerate(cmdArgs)
+		generatecmd.RunGenerate(cmdArgs)
 	case "pack":
-		runPack(cmdArgs)
+		packcmd.RunPack(cmdArgs)
 	case "validate":
-		runValidate(cmdArgs)
+		validatecmd.RunValidate(cmdArgs)
 	case "build":
-		runBuild(cmdArgs)
+		buildcmd.RunBuild(cmdArgs)
 	case "dev":
-		runDev(cmdArgs)
+		devcmd.RunDev(cmdArgs)
 	case "export":
-		runExport(cmdArgs)
+		exportcmd.RunExport(cmdArgs)
 	case "new":
-		runNew(cmdArgs)
+		newcmd.RunNew(cmdArgs)
 	case "migrate", "m":
-		runMigrate(cmdArgs)
+		migratecmd.RunMigrate(cmdArgs)
 	case "test", "t":
-		runTest(cmdArgs)
+		testcmd.RunTest(cmdArgs)
 	case "semantic":
-		runSemantic(cmdArgs)
+		semanticcmd.RunSemantic(cmdArgs)
 	case "harness":
-		runHarness(cmdArgs)
+		harnesscmd.RunHarness(cmdArgs)
 	case "docs", "doc":
-		runDocs(cmdArgs)
+		docscmd.RunDocs(cmdArgs)
 	case "agents":
-		runAgents(cmdArgs)
+		agentscmd.RunAgents(cmdArgs)
 	case "audit":
-		runAudit(cmdArgs)
+		auditcmd.RunAudit(cmdArgs)
 	case "verify":
-		runVerify(cmdArgs)
+		verifycmd.RunVerify(cmdArgs)
 	case "upgrade":
-		runUpgrade(cmdArgs)
+		upgradecmd.RunUpgrade(cmdArgs)
 	case "unmount":
-		runUnmount(cmdArgs)
+		unmountcmd.RunUnmount(cmdArgs)
 	case "remount":
-		runRemount(cmdArgs)
+		unmountcmd.RunRemount(cmdArgs)
 	case "desktop":
-		runDesktop(cmdArgs)
+		desktopcmd.RunDesktop(cmdArgs)
 	case "version":
-		fmt.Println(versionLine())
+		fmt.Println(project.VersionLine())
 	default:
-		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
+		fmt.Printf("%s Unknown command: %s\n\n", cli.Red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
 		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
-				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))
+				fmt.Printf("  Did you mean: %s?\n", cli.Bold("gofastr "+s))
 			}
 		}
 		printHelp()
-		osExit(1)
+		cli.OsExit(1)
 	}
 }
 
@@ -344,14 +286,4 @@ func desktopCommandOwnsVersionFlag(args []string, index int) bool {
 		return false
 	}
 	return args[1] == "build" || args[1] == "feed"
-}
-
-func min(vals ...int) int {
-	m := vals[0]
-	for _, v := range vals[1:] {
-		if v < m {
-			m = v
-		}
-	}
-	return m
 }

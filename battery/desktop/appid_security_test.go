@@ -29,7 +29,7 @@ import (
 //	The grammar excludes "/", so multi-segment traversal is impossible;
 //	the escape is exactly one level and only for the "." / ".." spellings.
 //	Developer/CLI input today, but DataDir is EXPORTED, the grammar is
-//	duplicated in cmd/gofastr/desktop.go (validateDesktopID) where --id
+//	duplicated in cmd/gofastr/internal/desktopcmd/desktop.go (validateDesktopID) where --id
 //	comes from argv, and a validator outlives the caller that controls
 //	its input.
 //

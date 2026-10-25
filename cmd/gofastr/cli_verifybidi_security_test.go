@@ -1,31 +1,11 @@
 package main
 
-// Pins the bidi/C1 hole in `gofastr verify`'s terminal boundary and the
-// dev loop's unscrubbed summary, found by the 2026-09-05 red-probe round
-// (round 4); fixed by widening framework/contracts sanitizeText to the
-// core/textsafe set (C1 + bidi + zero-width, \n/\t kept) and routing
-// dev_contracts.summarise's Location/Message through
-// scrubTerminalOutput.
-// Family: F25 bidi, invisible, and confusable characters
-// Property: terminal output that `gofastr verify` (and the dev loop's
-// per-save findings summary) builds from scanned repo content must not
-// carry bidi overrides, zero-width characters, or C1 controls — the same
-// injection class the repo already strips for ESC/DEL, at the same print
-// boundaries.
-// Surfaces: framework/contracts/format_text.go:sanitizeText (printed by
-// cmd/gofastr/verify.go); cmd/gofastr/dev_contracts.go:summarise
-// (prints d.Location() and d.Message — previously with no scrub at all,
-// even ESC reached the terminal there).
-// Threat: a hostile PR whose source line triggers a contracts rule
-// prints its snippet with RLO (U+202E) reordering the location line and
-// 8-bit CSI/OSC (U+009B/U+009D) still live as escape sequences in
-// terminals that accept 8-bit C1; zero-width U+200B/U+FEFF smuggle
-// invisible content past review.
-
 import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
@@ -63,7 +43,7 @@ func assertNoHostile(t *testing.T, label, out string) {
 // through runVerify) and the dev loop's per-save summary (surface 2, the
 // summarise print boundary the dev watcher calls after every reload).
 func TestVerifyReportScrubBidiAndC1(t *testing.T) {
-	dir := writeModule(t, map[string]string{
+	dir := clitest.WriteModule(t, map[string]string{
 		// Only .go/.css files are discovered; the EventSource trigger
 		// lives inside a Go string literal, the shape the rule exists for.
 		"stream.go": "package main\n\nconst js = `" + verifyHostileLine + "`\n",
@@ -98,8 +78,8 @@ func TestVerifyReportScrubBidiAndC1(t *testing.T) {
 		Line:    1,
 		Message: "bespoke EventSource: matched `new EventSource(\x1b[31m\u009B\u202E)`" + verifyHostileLine,
 	})
-	w := newDevContractWatch(".")
-	summary := w.summarise(report)
+	w := devcmd.NewDevContractWatch(".")
+	summary := w.Summarise(report)
 
 	if !strings.Contains(summary, "EventSource") {
 		t.Fatalf("fixture check: dev summary lost the finding entirely:\n%s", summary)

@@ -1,0 +1,1377 @@
+package themecmd
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	gotoken "go/token"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/loopback"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/gallery"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
+)
+
+// newTestServer builds a themeEditServer backed by a real in-process UIHost
+// (the same wiring runThemeEdit uses, minus the network listener). No DB,
+// no framework.App: UIHost.New takes a core-ui/app.App directly.
+func newTestServer(t *testing.T) *ThemeEditServer {
+	t.Helper()
+	outDir := filepath.Join(t.TempDir(), "theme")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base := uitheme.Default()
+	a := app.NewApp("theme-edit-test").WithTheme(base)
+	a.Register("/preview", &GalleryPreviewScreen{}, nil)
+	host := uihost.New(a)
+	return &ThemeEditServer{
+		Host:    host,
+		Base:    base,
+		Working: base,
+		OutPath: filepath.Join(outDir, "theme.go"),
+		Hosts:   []string{"127.0.0.1:0"},
+		Origins: []string{"http://127.0.0.1:0"},
+		Token:   "test-token", // not-a-secret: fixture bearer for the in-process test server
+	}
+}
+
+func TestThemeEditCSPExemptionIsLocal(t *testing.T) {
+	page, err := os.ReadFile("theme_edit_page.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := os.ReadFile("theme_edit.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageText := strings.ReplaceAll(string(page), "\r\n", "\n")
+	serverText := strings.ReplaceAll(string(server), "\r\n", "\n")
+	if !strings.HasPrefix(pageText, "// check-csp:ignore-file\n") {
+		t.Error("theme_edit_page.go lacks the exemption for its inline script and style")
+	}
+	if strings.HasPrefix(serverText, "// check-csp:ignore-file\n") {
+		t.Error("theme_edit.go carries a CSP exemption despite emitting no inline script or style")
+	}
+}
+
+// The acceptance test: editing a token through the server registers a
+// variant whose served app.css carries the new value. This is worth more
+// than a screenshot; it proves the live-preview swap path
+// (ApplyTokens → RegisterThemeVariant → /__gofastr/app.css?t=<key>) lands
+// the edited token in the CSS the browser fetches.
+func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
+	srv := newTestServer(t)
+
+	hash, err := srv.applyToken("color-primary", "#B91C1C")
+	if err != nil {
+		t.Fatalf("applyToken: %v", err)
+	}
+	if hash == "" {
+		t.Fatal("applyToken returned empty hash")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/app.css?t="+hash, nil)
+	srv.Host.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("app.css?t=%s: status %d, want 200", hash, rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, minify.ServedCSS("--color-primary: #B91C1C")) {
+		t.Fatalf("variant CSS does not carry the edited value:\n%s", clitest.Truncate(body, 400))
+	}
+	// The variant must be served immutable: the content-addressed URL is
+	// the cache-busting contract.
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Errorf("variant Cache-Control = %q, want immutable", cc)
+	}
+}
+
+// An invalid value is rejected at the ApplyTokens boundary: the working
+// theme is untouched and the error names the offending key. The tool
+// surfaces this next to the control rather than silently keeping the old
+// value.
+func TestThemeEditApplyRejectsInvalidValue(t *testing.T) {
+	srv := newTestServer(t)
+	before := srv.Working.Colors.Primary.Value
+
+	_, err := srv.applyToken("color-primary", "red; --x:}body{display:none}")
+	if err == nil {
+		t.Fatal("ApplyTokens accepted a CSS-escaping value — the boundary must reject, not sanitise")
+	}
+	if !strings.Contains(err.Error(), "color-primary") {
+		t.Errorf("error does not name the offending key: %v", err)
+	}
+	if srv.Working.Colors.Primary.Value != before {
+		t.Error("the working theme was mutated despite a rejection — ApplyTokens must leave the prior state intact")
+	}
+}
+
+// An unknown key is an error too: a typo in a theme edit must be reported,
+// not silently ignored.
+func TestThemeEditApplyRejectsUnknownKey(t *testing.T) {
+	srv := newTestServer(t)
+	_, err := srv.applyToken("color-nonexistent", "#000000")
+	if err == nil {
+		t.Fatal("ApplyTokens accepted an unknown key")
+	}
+}
+
+// Write-back produces a file that parses as valid Go (format.Source already
+// ran inside emitThemeGoSource; parsing is the decisive compile-time check).
+func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	src, err := os.ReadFile(srv.OutPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "theme.go", src, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n--- source ---\n%s", err, src)
+	}
+	if file.Name.Name != "theme" {
+		t.Errorf("package name = %q, want %q", file.Name.Name, "theme")
+	}
+	// The emitted file must call AutoFillNames so the user's file boots
+	// without naming every token manually.
+	if !strings.Contains(string(src), "style.AutoFillNames(&App)") {
+		t.Error("emitted file missing the AutoFillNames init guard")
+	}
+}
+
+// A theme carrying dark overrides (the compiled style.Theme.DarkColors
+// the editor works in) must survive the write-back intact: the emitted
+// file re-declares the dark palette key for key, so an app that saves
+// keeps its dark mode. This is the round-trip for a theme built with
+// theme.Overrides{Dark: &theme.Overrides{…}} — the typed dark config.
+func TestThemeEditWritebackRoundTripsDarkPalette(t *testing.T) {
+	th := uitheme.Default(uitheme.Overrides{
+		Primary: "#0F766E",
+		Dark: &uitheme.Overrides{
+			Primary: "#5EEAD4",
+			Surface: "#10201E",
+		},
+	})
+	src, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+
+	// Locate `DarkColors: map[string]string{…}` inside var App and read
+	// its pairs back out of the AST.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "theme.go", src, 0)
+	if err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n--- source ---\n%s", err, src)
+	}
+	emitted := map[string]string{}
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := kv.Key.(*ast.Ident); !ok || id.Name != "DarkColors" {
+			return true
+		}
+		cl, ok := kv.Value.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		found = true
+		for _, elt := range cl.Elts {
+			pair, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			k, ok := pair.Key.(*ast.BasicLit)
+			v, ok2 := pair.Value.(*ast.BasicLit)
+			if !ok || !ok2 {
+				continue
+			}
+			key, err := strconv.Unquote(k.Value)
+			if err != nil {
+				t.Errorf("dark key %s does not unquote: %v", k.Value, err)
+				continue
+			}
+			val, err := strconv.Unquote(v.Value)
+			if err != nil {
+				t.Errorf("dark value %s does not unquote: %v", v.Value, err)
+				continue
+			}
+			emitted[key] = val
+		}
+		return false
+	})
+	if !found {
+		t.Fatalf("emitted theme.go carries no DarkColors block:\n%s", src)
+	}
+	if len(emitted) != len(th.DarkColors) {
+		t.Errorf("dark palette shrank in the write-back: emitted %d entries, theme carries %d", len(emitted), len(th.DarkColors))
+	}
+	for k, v := range th.DarkColors {
+		if emitted[k] != v {
+			t.Errorf("dark token %q: emitted %q, theme carries %q", k, emitted[k], v)
+		}
+	}
+	// The typed Dark config specifically: its compiled values are what
+	// the emitted file re-declares.
+	if emitted["primary"] != "#5EEAD4" || emitted["surface"] != "#10201E" {
+		t.Errorf("typed Dark override did not reach the emitted palette: primary=%q surface=%q", emitted["primary"], emitted["surface"])
+	}
+}
+
+// Write-back after an edit reflects the edit: the value lands in the
+// generated file as a %q literal, round-tripping through the emitter.
+func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
+	srv := newTestServer(t)
+	if _, err := srv.applyToken("color-primary", "#166534"); err != nil {
+		t.Fatalf("applyToken: %v", err)
+	}
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	src, err := os.ReadFile(srv.OutPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	// %q renders #166534 as "#166534", a double-quoted literal. The raw
+	// value must appear; a backtick literal would have been an injection
+	// risk.
+	if !strings.Contains(string(src), `"#166534"`) {
+		t.Errorf("edited value not in written file:\n%s", clitest.Truncate(string(src), 400))
+	}
+}
+
+// Write-back keeps a theme's component options. The edit server round-
+// trips the whole token map ("component.*" keys ride ThemeToTokens →
+// ApplyTokens), and the emitter writes the map back out as %q
+// literals in sorted order. There is no option editor, so this path is
+// the only one that could silently drop them.
+func TestThemeEditWritebackKeepsComponentOptions(t *testing.T) {
+	srv := newTestServer(t)
+	if _, err := srv.applyToken("component.density", "compact"); err != nil {
+		t.Fatalf("applyToken(component.density): %v", err)
+	}
+	if _, err := srv.applyToken("component.button.treatment", "outline"); err != nil {
+		t.Fatalf("applyToken(component.button.treatment): %v", err)
+	}
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	src, err := os.ReadFile(srv.OutPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "Components: map[string]string{") {
+		t.Errorf("emitted theme.go lost the Components map:\n%s", clitest.Truncate(s, 400))
+	}
+	// Sorted, quoted, both entries (gofmt aligns values, so the check
+	// tolerates the alignment gap).
+	if !regexp.MustCompile(`"button\.treatment":\s+"outline",`).MatchString(s) ||
+		!regexp.MustCompile(`"density":\s+"compact",`).MatchString(s) {
+		t.Errorf("emitted theme.go lost an option entry:\n%s", clitest.Truncate(s, 400))
+	}
+	if strings.Index(s, `"button.treatment"`) > strings.Index(s, `"density"`) {
+		t.Error("Components entries not emitted in sorted key order")
+	}
+
+	// The grammar is enforced on the way in: an uppercase value is
+	// refused at apply, exactly like an uppercase color token value.
+	if _, err := srv.applyToken("component.density", "Compact"); err == nil {
+		t.Error("applyToken accepted an uppercase component value")
+	}
+}
+
+// goLiteralBreakers are the byte sequences that end a Go string literal,
+// the same set appspec_emitter_injection_test.go uses. A raw backtick
+// literal has no escape mechanism, so one backtick closes it; an
+// interpreted literal ends at an unescaped quote and never spans a newline.
+// %q must neutralise every one.
+var themeEditLiteralBreakers = []string{
+	"x`+PWN()+`y",
+	`x"+PWN()+"y`,
+	"x\nfunc PWN() {}\nvar y = \"",
+	"x\r\nPWN()",
+}
+
+// The injection test the brief requires: no theme-derived string may
+// terminate the Go literal it is emitted into. Theme values are free-form
+// CSS (oklch expressions, font stacks with embedded quotes), exactly the
+// risky shape. %q escapes every breaking byte, so even a value crafted to
+// break out stays data. We bypass ApplyTokens (which would reject these)
+// and drive the payloads through the EMITTER directly, because the
+// emitter's safety is the property under test.
+func TestThemeEditWritebackInjectionSafety(t *testing.T) {
+	for _, payload := range themeEditLiteralBreakers {
+		label := strings.NewReplacer("\n", "N", "\r", "R", "`", "BT", `"`, "Q").Replace(payload)
+		t.Run(label, func(t *testing.T) {
+			// Drive the payload through EVERY string the emitter writes.
+			//
+			// This used to set nine fields by hand and claim to cover "every
+			// string-valued token field", of roughly fifty-five. Reflection
+			// makes the claim true and keeps it true: a field added to
+			// style.Theme later is covered without anyone remembering to add a
+			// line here. The map KEYS and the theme Name go in too; both are
+			// emitted, and neither was exercised.
+			th := uitheme.Default()
+			clitest.InjectEveryThemeString(reflect.ValueOf(&th).Elem(), payload)
+			th.Name = payload
+			th.DarkColors = map[string]string{"primary": payload, payload: payload}
+			th.DarkCode = map[string]string{"kw": payload, payload: payload}
+			src, err := emitThemeGoSource(th, "theme")
+			if err != nil {
+				t.Fatalf("emitter rejected a payload (it must emit it inertly): %v", err)
+			}
+			assertThemePayloadStayedData(t, src)
+		})
+	}
+}
+
+// assertThemePayloadStayedData parses the emitted file and fails if the
+// marker became syntax rather than data. Parsing is the decisive check: an
+// injected `func PWN()` is valid Go, so "does it compile" passes it. The
+// question is whether "PWN" appears as an IDENTIFIER: inside a string
+// literal it is just the value the theme asked for. Modeled on
+// appspec_emitter_injection_test.go's assertPayloadStayedData.
+func assertThemePayloadStayedData(t *testing.T, src []byte) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "theme.go", src, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("SECURITY: [injection] emitted theme.go does not parse: %v", err)
+	}
+	var escaped bool
+	ast.Inspect(file, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && strings.Contains(id.Name, "PWN") {
+			escaped = true
+			return false
+		}
+		return true
+	})
+	if escaped {
+		t.Fatalf("SECURITY: [injection] the payload left its literal and became an identifier in theme.go")
+	}
+}
+
+// tokenControlType classifies a ThemeToTokens key into the input type the
+// controls page renders. The classification is by key prefix: adding a
+// new token type to style.Theme still gets a usable text input (never
+// hidden).
+func TestTokenControlType(t *testing.T) {
+	cases := []struct {
+		key, want string
+	}{
+		{"color-primary", "color"},
+		{"dark.color-primary", "color"},
+		{"color-text-muted", "color"},
+		{"z-modal", "number"},
+		{"spacing-md", "number-px"},
+		{"radii-lg", "number-px"},
+		{"breakpoint-md", "number-px"},
+		{"component.density", "select"},
+		{"component.button.treatment", "select"},
+		{"component.field.radius", "select"},
+		{"shadow-md", "text"},
+		{"duration-fast", "text"},
+		{"easing-spring", "text"},
+		{"text-base", "text"},
+		{"tk-kw", "text"},
+		{"dark.tk-kw", "text"},
+		{"unknown-future-token", "text"},
+	}
+	for _, c := range cases {
+		if got := tokenControlType(c.key); got != c.want {
+			t.Errorf("tokenControlType(%q) = %q, want %q", c.key, got, c.want)
+		}
+	}
+}
+
+// The controls page renders without error and contains a control for at
+// least one well-known token. This is the server-side smoke test: the
+// generated HTML must mention the token key so the JS can find the input.
+func TestThemeEditControlsPageContainsTokenControls(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:0"
+	srv.ServeControlsPage(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("controls page status %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-token="color-primary"`) { // not-a-secret: a DOM attribute selector, not a credential
+		t.Errorf("controls page missing the color-primary control:\n%s", clitest.Truncate(body, 400))
+	}
+	if !strings.Contains(body, `name="theme-edit-token"`) {
+		t.Errorf("controls page missing the bearer-token meta tag (name=\"theme-edit-token\")")
+	}
+}
+
+// The component options render as selects, not free-text inputs: the
+// option key rides data-token on a <select> whose options are the
+// catalogue's members with the current value selected, labelled
+// readably ("Button treatment", not "component.button.treatment"),
+// inside a "Component options" group ordered first after Colors. A
+// select is the one control whose values the operator cannot get wrong;
+// a text input here is the regression this pins.
+func TestThemeEditComponentOptionsRenderAsSelects(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:0"
+	srv.ServeControlsPage(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("controls page status %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// A <select> carrying the key, with every member offered and the
+	// current value (filled, the default) selected.
+	iSel := strings.Index(body, `data-token="component.button.treatment"`) // not-a-secret: the editor's data-token control selector
+	if iSel == -1 || !strings.Contains(body[max(0, iSel-40):iSel], "<select") {
+		t.Errorf("button treatment control is not a select carrying data-token:\n%s", clitest.Truncate(body, 400))
+	}
+	for _, m := range []string{"filled", "outline", "soft"} {
+		if !strings.Contains(body, `value="`+m+`">`+m+`</option>`) {
+			t.Errorf("button treatment select does not offer member %q", m)
+		}
+	}
+	if !strings.Contains(body, `selected="" value="filled">filled</option>`) {
+		t.Error("button treatment select does not preselect the current value (filled)")
+	}
+
+	// The group follows the catalogue's order, not the keys' spelling.
+	last := -1
+	for _, o := range uitheme.Options() {
+		at := strings.Index(body, `data-token="component.`+o.Key+`"`) // not-a-secret: the editor's data-token control selector
+		if at <= last {
+			t.Errorf("component option %q renders out of catalogue order", o.Key)
+		}
+		last = at
+	}
+
+	// The readable label, not the raw key.
+	if !strings.Contains(body, ">Button treatment</label>") {
+		t.Error("button treatment select is not labelled \"Button treatment\"")
+	}
+	// The label names the select: its for is the select's id.
+	labelFor := regexp.MustCompile(`<label[^>]*for="([^"]+)"[^>]*>Button treatment</label>`).FindStringSubmatch(body)
+	if labelFor == nil {
+		t.Fatal("the Button treatment label carries no for")
+	}
+	treatment := regexp.MustCompile(`<select[^>]*data-token="component.button.treatment"[^>]*>`).FindString(body) // not-a-secret: the editor's data-token control selector
+	if !strings.Contains(treatment, ` id="`+labelFor[1]+`"`) {
+		t.Errorf("the Button treatment label's for=%q is not the treatment select's id: %s", labelFor[1], treatment)
+	}
+
+	// The group exists and sits first after Colors (before Colors (dark)).
+	for _, marker := range []string{"Component options (5)", "Colors (", "Colors (dark)"} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("controls page missing group %q", marker)
+		}
+	}
+	iColors := strings.Index(body, "Colors (")
+	iComponent := strings.Index(body, "Component options (5)")
+	iDark := strings.Index(body, "Colors (dark)")
+	if !(iColors < iComponent && iComponent < iDark) {
+		t.Errorf("Component options group is not first after Colors: colors=%d component=%d dark=%d", iColors, iComponent, iDark)
+	}
+
+	// Every option key in the catalogue has a select; nothing falls back
+	// to free text.
+	for _, opt := range uitheme.Options() {
+		i := strings.Index(body, `data-token="component.`+opt.Key+`"`) // not-a-secret: the editor's data-token control selector
+		if i == -1 || !strings.Contains(body[max(0, i-40):i], "<select") {
+			t.Errorf("component option %q renders as something other than a select", opt.Key)
+		}
+	}
+}
+
+// The HTTP apply endpoint requires the bearer token: without it, a
+// cross-origin page cannot drive edits even if it passes the Host guard.
+func TestThemeEditApplyRequiresBearerToken(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(`{"key":"color-primary","value":"#000"}`))
+	req.Host = "127.0.0.1:0"
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("apply without token: status %d, want 401", rec.Code)
+	}
+}
+
+// The writeback endpoint writes the file when the bearer token is correct.
+func TestThemeEditWritebackHTTP(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/__theme/writeback", strings.NewReader(`{}`))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("writeback: status %d, want 200 — body: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(srv.OutPath); err != nil {
+		t.Errorf("writeback did not create %s: %v", srv.OutPath, err)
+	}
+}
+
+// The Host guard rejects a request whose Host header is not one of the
+// pinned loopback authorities, the DNS-rebinding defence.
+func TestThemeEditHostGuard(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "evil.example.com:8080"
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Host guard: status %d for foreign Host, want 403", rec.Code)
+	}
+}
+
+// packageNameForPath derives the Go package name from the output path's
+// directory.
+func TestPackageNameForPath(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		path, want string
+	}{
+		{"theme/theme.go", "theme"},
+		{"design-system/tokens.go", "design_system"},
+	}
+	for _, c := range cases {
+		path := filepath.Join(root, c.path)
+		if got := packageNameForPath(path); got != c.want {
+			t.Errorf("packageNameForPath(%q) = %q, want %q", path, got, c.want)
+		}
+	}
+}
+
+// durationLiteral renders a time.Duration as a readable Go literal that
+// round-trips exactly.
+func TestDurationLiteral(t *testing.T) {
+	cases := []struct {
+		d    string // parsed by time.ParseDuration
+		want string
+	}{
+		{"150ms", "150 * time.Millisecond"},
+		{"1s", "1000 * time.Millisecond"},
+		{"2.5ms", "2500 * time.Microsecond"},
+	}
+	for _, c := range cases {
+		d, err := time.ParseDuration(c.d)
+		if err != nil {
+			t.Fatalf("parse %s: %v", c.d, err)
+		}
+		if got := durationLiteral(d); got != c.want {
+			t.Errorf("durationLiteral(%s) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
+// frameFriendlyWriter strips X-Frame-Options and widens frame-ancestors so
+// the preview iframe can load a UIHost-served page.
+func TestFrameFriendlyWriterStripsHeaders(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+		_, _ = w.Write([]byte("ok"))
+	})
+	rec := httptest.NewRecorder()
+	fw := &frameFriendlyWriter{rw: rec}
+	inner.ServeHTTP(fw, httptest.NewRequest(http.MethodGet, "/preview", nil))
+	if rec.Header().Get("X-Frame-Options") != "" {
+		t.Errorf("X-Frame-Options not stripped: %q", rec.Header().Get("X-Frame-Options"))
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-ancestors 'self'") {
+		t.Errorf("frame-ancestors not widened to 'self': %q", csp)
+	}
+}
+
+// The gallery preview screen renders gallery Demo closures + the contrast
+// probes. This exercises the same render path the UIHost serves at /preview.
+func TestThemeEditGalleryPreviewRenders(t *testing.T) {
+	screen := &GalleryPreviewScreen{}
+	html := string(screen.Render())
+	rendered := html + previewChromeCSS
+
+	// The preview's own structure is design-system output. A page whose job is
+	// to show what the design system looks like must not lay itself out with
+	// anything else.
+	if !strings.Contains(html, `data-cui-comp="ui-section"`) {
+		t.Errorf("preview does not use ui.Section for its groups:\n%s", clitest.Truncate(html, 400))
+	}
+	if !strings.Contains(html, `data-cui-comp="ui-layout"`) {
+		t.Errorf("preview does not use ui.Stack for its rhythm:\n%s", clitest.Truncate(html, 400))
+	}
+	// Each demo sits in a plain block box after its name, as on the docs
+	// site, so a lone button keeps its own width instead of stretching
+	// across the stack's column.
+	demos := 0
+	for _, group := range gallery.Grouped() {
+		for _, entry := range group.Entries {
+			if !gallery.IsNoteOnly(entry.Slug) && entry.Demo != nil {
+				demos++
+			}
+		}
+	}
+	if boxed := strings.Count(html, "</span><div>"); boxed < demos {
+		t.Errorf("%d demos but only %d in a block box", demos, boxed)
+	}
+	for _, gone := range []string{"tp-category", "tp-demo", "tp-gallery", "tp-preview"} {
+		if strings.Contains(rendered, gone) {
+			t.Errorf("preview still carries the hand-rolled %q hook", gone)
+		}
+	}
+
+	// The contrast probes must be present so the JS can measure them.
+	if !strings.Contains(html, "data-cp=") {
+		t.Error("preview missing contrast-probe elements")
+	}
+	if !strings.Contains(html, "text-subtle|surface") {
+		t.Error("preview missing the text-subtle/surface contrast probe")
+	}
+	if !strings.Contains(html, "danger|danger-tint") {
+		t.Error("preview missing the danger tint contrast probe")
+	}
+}
+
+// TestThemeEditChromeHasNoBespokeClasses is hard rule 7's gate for the editor
+// chrome: it must compose framework/ui + core-ui/app + core-ui/style, not ship
+// its own stylesheet. The previous chrome carried ~25 hand-written .te-*
+// classes (~85 occurrences) plus ~21 hardcoded hex values in a BaseCSS string.
+// This test pins the cutover: no inline <style> block, no inline style=
+// attribute, and the design-system primitives (ui-workbench shell, ui-form-field
+// inputs, ui-callout status surface, ui-button) are present.
+//
+// It does NOT police the JS string for ".te-*" mentions or the inputs'
+// value="..." attributes: the JS legitimately mentions the old class name in a
+// comment explaining what the new code does NOT do, and the inputs legitimately
+// carry the theme's hex colour values (those are data the operator edits, not
+// styling the chrome owns).
+func TestThemeEditChromeHasNoBespokeClasses(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	srv.ServeControlsPage(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+
+	// ZERO bespoke CSS: no inline <style> block ships in the chrome page. The
+	// previous themeEditChromeCSS const fed a <style> tag with ~25 .te-*
+	// rules + ~21 hardcoded hexes; the cutover moves every visual treatment
+	// into /__gofastr/app.css.
+	if strings.Contains(body, "<style") {
+		t.Errorf("chrome ships an inline <style> block; all styling must come from /__gofastr/app.css")
+	}
+	// No inline style="..." attribute either: the design system's variants
+	// drive every visual state through class/data-cui-comp markers.
+	if loc := regexp.MustCompile(`style="[^"]*"`).FindStringIndex(body); loc != nil {
+		t.Errorf("chrome has an inline style=\"…\" attribute at byte %d — bespoke CSS by another name:\n...%s...",
+			loc[0], clitest.Truncate(body[loc[0]:], 200))
+	}
+
+	// The chrome must be pinned to the framework's default theme, linking
+	// /__gofastr/app.css with no ?t= query, so the controls stay usable even
+	// when the operator sets --color-text: transparent in the working theme.
+	// (The working theme only lives in the preview iframe, which swaps to
+	// /__gofastr/app.css?t=<hash> via swapPreviewCSS.)
+	if !strings.Contains(body, `href="/__gofastr/app.css"`) {
+		t.Errorf("chrome does not link /__gofastr/app.css (default theme); cannot be immune to the working theme:\n%s",
+			clitest.Truncate(body, 400))
+	}
+	if strings.Contains(body, `href="/__gofastr/app.css?t=`) {
+		t.Errorf("chrome links a variant app.css (?t=…); it must use the framework default theme, not the working one")
+	}
+
+	// Positive presence checks: the chrome composes these design-system
+	// primitives. Cutover is incomplete without them.
+	mustHave := []string{
+		`data-cui-comp="ui-workbench"`,    // framework/ui two-pane inspector shell
+		`data-cui-comp="ui-form-field"`,   // design-system input rows
+		`data-cui-comp="ui-callout"`,      // status + contrast panels
+		`data-cui-comp="ui-button"`,       // scheme toggle + Write button
+		`data-cui-comp="fui-collapsible"`, // token groups
+		`data-cui-comp="ui-color-field"`,  // swatch + text input row
+	}
+	for _, want := range mustHave {
+		if !strings.Contains(body, want) {
+			t.Errorf("chrome missing design-system marker %q", want)
+		}
+	}
+}
+
+// The contrast checker's probes must carry their colours in a STYLESHEET.
+//
+// They used to use an inline style attribute, which the framework's default CSP
+// (default-src 'self', no 'unsafe-inline') discards. Every probe then measured
+// the inherited text colour against a transparent background, every ratio came
+// out around 20:1, and the tool reported "no issues" for every theme it was
+// ever pointed at. A checker that cannot fail is an assurance, not a check.
+func TestThemeEditContrastProbesAreNotInlineStyled(t *testing.T) {
+	html := string(contrastProbeHTML())
+	if strings.Contains(html, "style=") {
+		t.Fatalf("contrast probes carry an inline style attribute, which CSP drops — every measurement would read transparent:\n%s", html)
+	}
+
+	css := contrastProbeCSS()
+	if len(contrastPairs) == 0 {
+		t.Fatal("no contrast pairs declared")
+	}
+	for _, p := range contrastPairs {
+		if !strings.Contains(html, "tp-probe--"+p.slug) {
+			t.Errorf("no probe element for pair %q", p.name)
+		}
+		if !strings.Contains(css, ".tp-probe--"+p.slug+" {") {
+			t.Errorf("no CSS rule for pair %q — the probe would measure nothing", p.name)
+		}
+		if !strings.Contains(css, p.fg) || !strings.Contains(css, p.bg) {
+			t.Errorf("pair %q rule does not carry both colours", p.name)
+		}
+	}
+	// The pair the theme docs call the harder target has to be in there.
+	if !strings.Contains(css, "color-mix(in srgb, var(--color-danger) 15%") {
+		t.Error("the status-tone-on-its-own-tint pair is missing from the probe CSS")
+	}
+}
+
+// The /__theme/tokens endpoint returns the flat token map as JSON.
+func TestThemeEditTokensEndpoint(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/__theme/tokens", nil)
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("tokens: status %d, want 200 — body: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "color-primary") {
+		t.Errorf("tokens response missing color-primary:\n%s", clitest.Truncate(body, 400))
+	}
+	if !strings.Contains(body, `"type":"color"`) {
+		t.Errorf("tokens response missing type classification:\n%s", clitest.Truncate(body, 400))
+	}
+}
+
+// The happy path: POST /__theme/apply with a valid token returns a hash.
+func TestThemeEditApplyHappyPath(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply",
+		strings.NewReader(`{"key":"color-primary","value":"#0F766E"}`))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	req.Header.Set("Origin", "http://127.0.0.1:0")
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("apply: status %d, want 200 — body: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"hash"`) {
+		t.Errorf("apply response missing hash:\n%s", rec.Body.String())
+	}
+}
+
+// A cross-origin POST is rejected even with a valid bearer token.
+func TestThemeEditCheckOriginRejectsForeignOrigin(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply",
+		strings.NewReader(`{"key":"color-primary","value":"#000"}`))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	req.Header.Set("Origin", "http://evil.example.com")
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("cross-origin apply: status %d, want 403", rec.Code)
+	}
+}
+
+// An apply with a malformed JSON body is a 400, not a 500.
+func TestThemeEditApplyMalformedBody(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(`not json`))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed apply: status %d, want 400", rec.Code)
+	}
+}
+
+// An apply with an invalid value surfaces the ApplyTokens error as JSON.
+func TestThemeEditApplyInvalidValueJSON(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/__theme/apply",
+		strings.NewReader(`{"key":"color-primary","value":"red;}"}`))
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("invalid apply: status %d, want 422", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"error"`) {
+		t.Errorf("invalid apply response missing error field:\n%s", rec.Body.String())
+	}
+}
+
+// The selects can only send members, but the API must not depend on
+// that: a non-member value for a known component key and a value for an
+// unknown component key both POST /__theme/apply, both come back 4xx,
+// and neither moves the working theme. ApplyTokens' grammar accepts
+// both shapes (they are lowercase words); the refusal is
+// applyToken's Validate, which runs the compiler's vocabulary — the
+// same boundary a hand-written theme file crosses.
+func TestThemeEditApplyRefusesBadComponentOptions(t *testing.T) {
+	srv := newTestServer(t)
+	before := make(map[string]string, len(srv.Working.Components))
+	for k, v := range srv.Working.Components {
+		before[k] = v
+	}
+
+	apply := func(body string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(body))
+		req.Host = "127.0.0.1:0"
+		req.Header.Set("Authorization", "Bearer "+srv.Token)
+		srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := apply(`{"key":"component.button.treatment","value":"sparkly"}`); code < 400 || code > 499 {
+		t.Errorf("non-member component value: status %d, want 4xx", code)
+	}
+	if code := apply(`{"key":"component.button.sparkle","value":"filled"}`); code < 400 || code > 499 {
+		t.Errorf("unknown component key: status %d, want 4xx", code)
+	}
+	if !reflect.DeepEqual(srv.Working.Components, before) {
+		t.Errorf("refused component applies mutated the working theme: %v", srv.Working.Components)
+	}
+	// The refused keys never landed anywhere: the preview variant is
+	// unchanged too (applyToken only registers on success).
+	if got := srv.Working.Components["button.treatment"]; got != before["button.treatment"] {
+		t.Errorf("button.treatment = %q after refusals, want %q", got, before["button.treatment"])
+	}
+}
+
+// An unknown /__theme/* path returns 404.
+func TestThemeEditUnknownAPIPath(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/__theme/nope", nil)
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown API path: status %d, want 404", rec.Code)
+	}
+}
+
+// A GET on the writeback endpoint is method-not-allowed.
+func TestThemeEditWritebackMethodGuard(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/__theme/writeback", nil)
+	req.Host = "127.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer "+srv.Token)
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET writeback: status %d, want 405", rec.Code)
+	}
+}
+
+// The full ServeHTTP routing delegates /preview to the UIHost, which
+// renders the gallery screen with full chrome (app.css link present).
+func TestThemeEditServeHTTPDelegatesPreviewToHost(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/preview", nil)
+	req.Host = "127.0.0.1:0"
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("preview: status %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// The UIHost renders the page with the app.css link.
+	if !strings.Contains(body, "/__gofastr/app.css") {
+		t.Errorf("preview page missing app.css link — the live-swap path depends on it:\n%s", clitest.Truncate(body, 400))
+	}
+	// X-Frame-Options must be stripped so the iframe can embed it.
+	if rec.Header().Get("X-Frame-Options") != "" {
+		t.Errorf("preview page still carries X-Frame-Options: %q", rec.Header().Get("X-Frame-Options"))
+	}
+}
+
+// A refresh mid-session must show what the server holds, not what it started
+// with. The JSON endpoint always read the working theme; only the HTML render
+// disagreed, so the swatches and the preview both lied and Write emitted values
+// the operator could not see.
+func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
+	srv := newTestServer(t)
+	if _, err := srv.applyToken("color-primary", "#B91C1C"); err != nil {
+		t.Fatalf("applyToken: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = srv.Hosts[0]
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "#B91C1C") {
+		t.Errorf("the controls page does not show the edited value:\n%s", clitest.Truncate(body, 400))
+	}
+	if !strings.Contains(body, `name="theme-edit-variant"`) {
+		t.Errorf("the page does not carry the working theme's variant for the preview to adopt:\n%s", clitest.Truncate(body, 400))
+	}
+
+	// And the page that carries the bearer token must not be framable.
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want DENY — otherwise any page the developer has open can clickjack Write", got)
+	}
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", csp)
+	}
+}
+
+// The package clause is the one string the emitter writes as an IDENTIFIER
+// rather than through %q, so a directory name that is not a Go identifier used
+// to make Write fail every time, with a 500 carrying the entire generated file
+// and nothing written to disk.
+func TestPackageNameForPathIsAlwaysALegalIdentifier(t *testing.T) {
+	root := t.TempDir()
+	cases := map[string]string{
+		"design-system/theme.go": "design_system",
+		"my.theme/theme.go":      "my_theme",
+		"2tokens/theme.go":       "_2tokens",
+		"type/theme.go":          "type_",
+		"theme/theme.go":         "theme",
+		"---/theme.go":           "theme",
+		"my theme/theme.go":      "my_theme",
+	}
+	for path, want := range cases {
+		path = filepath.Join(root, path)
+		got := packageNameForPath(path)
+		if got != want {
+			t.Errorf("packageNameForPath(%q) = %q, want %q", path, got, want)
+		}
+		// Whatever it returns has to actually parse as a package clause.
+		if _, err := parser.ParseFile(gotoken.NewFileSet(), "x.go", "package "+got+"\n", 0); err != nil {
+			t.Errorf("packageNameForPath(%q) = %q, which does not parse: %v", path, got, err)
+		}
+	}
+}
+
+// Attribute values are HTML, not Go literals. %q renders a double quote as \",
+// which HTML does not treat as an escape; the attribute simply ends early. Not
+// reachable with the default theme, which is exactly why it is a trap: the
+// label two lines above used htmlEscape correctly while the value beside it
+// did not.
+func TestThemeEditControlsEscapeAttributeValues(t *testing.T) {
+	controls := renderTokenControls(map[string]string{
+		"font-body": `"Ivy Mode", 'Comic Sans', serif`,
+		"shadow-md": `0 1px 2px rgba(0,0,0,.2) /* <script>alert(1)</script> */`,
+	})
+	if strings.Contains(controls, `\"`) {
+		t.Errorf("a value was emitted with a Go-style escape, which HTML ignores:\n%s", clitest.Truncate(controls, 400))
+	}
+	if strings.Contains(controls, "<script>") {
+		t.Errorf("an unescaped tag reached the markup:\n%s", clitest.Truncate(controls, 400))
+	}
+	if !strings.Contains(controls, "&quot;Ivy Mode&quot;") {
+		t.Errorf("the quoted font stack was not HTML-escaped:\n%s", clitest.Truncate(controls, 400))
+	}
+}
+
+// Every debounced keystroke registers a theme variant, and the registry has no
+// eviction of its own. Only the current variant is ever served, so holding a
+// full style.Theme per edit for the life of the session is pure accumulation.
+func TestThemeEditReleasesSupersededVariants(t *testing.T) {
+	srv := newTestServer(t)
+	for i, hex := range []string{"#111111", "#222222", "#333333", "#444444", "#555555"} {
+		if _, err := srv.applyToken("color-primary", hex); err != nil {
+			t.Fatalf("apply %d: %v", i, err)
+		}
+	}
+	if got := srv.Host.ThemeVariantCount(); got > 1 {
+		t.Fatalf("the theme registry holds %d variants after 5 sequential edits — superseded ones are never released", got)
+	}
+}
+
+// The theme editor serves an unauthenticated page carrying its own bearer token
+// and writes a Go file to disk, so it must not leave the machine. A Host pin
+// stops a browser rebinding DNS onto the port; it does not stop a direct TCP
+// client, which picks its own Host, fetches "/", and reads the token out of the
+// markup. Same reasoning as the dev MCP bind guard.
+func TestThemeEditAddrIsConfinedToLoopback(t *testing.T) {
+	// The friendly "this machine" spellings resolve to loopback rather than
+	// binding every interface.
+	for _, in := range []string{":8090", "0.0.0.0:8090", "[::]:8090"} {
+		got := loopbackifyThemeAddr(in)
+		host, _, err := net.SplitHostPort(got)
+		if err != nil {
+			t.Fatalf("loopbackifyThemeAddr(%q) = %q, which is not host:port", in, got)
+		}
+		if !loopback.IsLoopbackHost(host) {
+			t.Errorf("loopbackifyThemeAddr(%q) = %q — a wildcard bind must resolve to loopback", in, got)
+		}
+	}
+	// An explicit address is left alone, so the caller can refuse it.
+	if got := loopbackifyThemeAddr("192.168.1.10:8090"); got != "192.168.1.10:8090" {
+		t.Errorf("an explicit address was rewritten: %q", got)
+	}
+	if got := loopbackifyThemeAddr("127.0.0.1:0"); got != "127.0.0.1:0" {
+		t.Errorf("the default was rewritten: %q", got)
+	}
+}
+
+func TestWriteBackRefusesLateFile(t *testing.T) {
+	srv := newTestServer(t)
+	const existing = "package palette\n"
+	if err := os.WriteFile(srv.OutPath, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.writeBack(); err == nil {
+		t.Fatal("writeBack replaced a file created after startup without --force")
+	}
+	got, err := os.ReadFile(srv.OutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != existing {
+		t.Fatalf("late-created file changed to:\n%s", got)
+	}
+}
+
+func TestWriteBackReplacesAtomically(t *testing.T) {
+	srv := newTestServer(t)
+	srv.force = true
+	if err := os.WriteFile(srv.OutPath, []byte("package old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(srv.OutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	got, err := os.ReadFile(srv.OutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) == "package old\n" {
+		t.Fatal("writeBack left the old destination contents in place")
+	}
+	after, err := os.Stat(srv.OutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows' replacement rename may preserve the destination file identity
+	// while still replacing it atomically. The content assertion below is the
+	// portable contract; Unix additionally exposes a distinct inode.
+	if runtime.GOOS != "windows" && os.SameFile(before, after) {
+		t.Fatal("writeBack truncated the destination in place instead of atomically replacing it")
+	}
+}
+
+func TestWriteBackUsesSiblingPackage(t *testing.T) {
+	srv := newTestServer(t)
+	dir := filepath.Dir(srv.OutPath)
+	if err := os.WriteFile(filepath.Join(dir, "palette.go"), []byte("package palette\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	src, err := os.ReadFile(srv.OutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parser.ParseFile(gotoken.NewFileSet(), srv.OutPath, src, parser.PackageClauseOnly)
+	if err != nil {
+		t.Fatalf("parse generated package: %v", err)
+	}
+	if file.Name.Name != "palette" {
+		t.Fatalf("generated package = %q beside package palette", file.Name.Name)
+	}
+}
+
+func TestContrastCompositesAlpha(t *testing.T) {
+	for _, want := range []string{
+		"return [d[0], d[1], d[2], d[3] / 255]",
+		"function composite(",
+		"var renderedFg = composite(",
+	} {
+		if !strings.Contains(themeEditChromeJS, want) {
+			t.Errorf("contrast script does not composite RGBA values; missing %q", want)
+		}
+	}
+}
+
+func TestApplySameValueReleasesVariant(t *testing.T) {
+	srv := newTestServer(t)
+	for _, value := range []string{"#111111", "#111111", "#222222"} {
+		if _, err := srv.applyToken("color-primary", value); err != nil {
+			t.Fatalf("apply %s: %v", value, err)
+		}
+	}
+	if got := srv.Host.ThemeVariantCount(); got != 1 {
+		t.Fatalf("theme registry holds %d variants after a duplicate edit, want 1", got)
+	}
+}
+
+func TestThemeAppliesStayOrdered(t *testing.T) {
+	for _, want := range []string{
+		"var applyQueue = Promise.resolve();",
+		"applyQueue = applyQueue.then(function()",
+	} {
+		if !strings.Contains(themeEditChromeJS, want) {
+			t.Errorf("apply script does not serialize requests; missing %q", want)
+		}
+	}
+}
+
+func TestControlKeyEscapesEveryAttribute(t *testing.T) {
+	controls := string(renderOneControl(tokenControl{
+		Key:   `color-a"b<c`,
+		Value: "#000000",
+		Type:  "color",
+	}))
+	if strings.Contains(controls, `data-err-for=`) {
+		t.Fatalf("the bespoke data-err-for lookup is back; the reserved node is found by id:\n%s", controls)
+	}
+	// The hostile key reaches every attribute it rides escaped, and the
+	// reserved error node is addressed by the control-id-derived id —
+	// the slug of the key, which contains nothing hostile to begin with.
+	if !strings.Contains(controls, `data-field="color-a&quot;b&lt;c"`) {
+		t.Fatalf("the field marker does not carry the escaped token key:\n%s", controls)
+	}
+	if !strings.Contains(controls, `id="te-input-color-a-b-c-error"`) {
+		t.Fatalf("the reserved error node is not addressed by its derived id:\n%s", controls)
+	}
+}
+
+func TestThemeSelectorsHandleQuotes(t *testing.T) {
+	if strings.Contains(themeEditChromeJS, "cssEsc(") {
+		t.Fatal("theme script still interpolates token keys into CSS selectors")
+	}
+	if !strings.Contains(themeEditChromeJS, "getAttribute(attr) === key") {
+		t.Fatal("theme script does not match author-supplied token keys as attribute values")
+	}
+}
+
+func TestColorProbeUsesTwoSentinels(t *testing.T) {
+	for _, want := range []string{"#010203", "#040506"} {
+		if !strings.Contains(themeEditChromeJS, want) {
+			t.Errorf("color parser lacks sentinel %s", want)
+		}
+	}
+	if strings.Contains(themeEditChromeJS, "v !== '#000000'") {
+		t.Fatal("color parser still rejects valid black spellings through a denylist")
+	}
+}
+
+// The written file has to survive the validation the app performs at boot.
+// ApplyTokens is not that boundary: its spacing/radius/z-index setters accept
+// values Theme.Validate rejects (a 0 spacing, a negative radius), so one
+// keystroke in a number field produced a green "updated", a written theme.go,
+// and a panic on next run.
+func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
+	srv := newTestServer(t)
+
+	for _, bad := range []struct{ key, value string }{
+		{"spacing-md", "0px"},
+		{"radii-sm", "-2px"},
+		// White ink on pure red is 4.0:1: the pair guard refuses it for
+		// the same reason — the written app panics at WithTheme.
+		{"color-primary", "#FF0000"},
+	} {
+		if _, err := srv.applyToken(bad.key, bad.value); err == nil {
+			t.Errorf("%s=%s was accepted; app.WithTheme calls MustValidate, so this "+
+				"writes a theme.go that panics the operator's app at boot", bad.key, bad.value)
+		}
+	}
+	// A legitimate edit still applies, or the guard has simply broken the tool.
+	if _, err := srv.applyToken("color-primary", "#0F766E"); err != nil {
+		t.Errorf("a valid edit was refused: %v", err)
+	}
+	// A square corner is a design, not a broken token.
+	if _, err := srv.applyToken("radii-sm", "0px"); err != nil {
+		t.Errorf("radii-sm=0px was refused: %v", err)
+	}
+}
+
+// TestThemeEditApplyRejectsDeclarationBreaks extends the invalid-value test
+// above across EVERY token class the editor exposes, because each class has
+// its own setter in style.ApplyTokens and any one of them accepting a
+// declaration-breaking value would let that token's class inject rules into
+// the variant CSS the preview iframe loads (same-origin /preview). The
+// app generator's copy of this boundary is TestThemeValueCannotInjectCSS;
+// this is the theme-edit API's copy — the two must not drift.
+func TestThemeEditRejectsDeclarationBreaks(t *testing.T) {
+	srv := newTestServer(t)
+	breakers := []string{
+		"#fff; } body { display:none } :root{ --x:1", // declaration/block break
+		"red; background:url(//evil.test/x)",         // exfil via injected url()
+		"var(--color-primary)) url(",                 // url( smuggled via var
+		"#fff}",                                      // block close alone
+		`"><img src=x onerror=PWN()>`,                // markup (page re-render)
+	}
+	for _, key := range []string{
+		"color-primary", "dark.color-primary",
+		"font-heading", "font-body",
+		"shadow-md",
+		"tk-kw",
+		"text-base",
+	} {
+		for _, v := range breakers {
+			before := srv.currentTokens()[key]
+			if _, err := srv.applyToken(key, v); err == nil {
+				t.Errorf("SECURITY: [theme-css-injection] token %q accepted declaration-breaking value %q", key, v)
+			}
+			if after := srv.currentTokens()[key]; after != before {
+				t.Errorf("token %q mutated despite rejection: %q -> %q", key, before, after)
+			}
+		}
+	}
+	// Control: the values real themes carry (font stacks, oklch, shadow
+	// lists) still apply — the boundary rejects, it does not sanitise.
+	for _, tc := range []struct{ key, value string }{
+		{"color-primary", "oklch(0.62 0.19 255)"},
+		{"font-heading", "'Hanken Grotesk', ui-sans-serif, system-ui"},
+		{"shadow-md", "0 4px 6px -1px rgb(0 0 0 / 0.1)"},
+		{"text-base", "1rem"},
+	} {
+		if _, err := srv.applyToken(tc.key, tc.value); err != nil {
+			t.Errorf("legitimate %s value %q rejected: %v", tc.key, tc.value, err)
+		}
+	}
+}
+
+// A working value no member matches must show as itself, selected; with
+// no selected option the browser would show the first member while the
+// theme holds something else.
+func TestThemeEditSelectShowsAnUnmatchedValue(t *testing.T) {
+	var opt uitheme.Option
+	for _, o := range uitheme.Options() {
+		if o.Key == "button.treatment" {
+			opt = o
+		}
+	}
+	h := string(componentOptionSelect(tokenControl{Key: "component.button.treatment", Value: "ghostly", Type: "select"}, opt))
+	if !strings.Contains(h, `selected="" value="ghostly">ghostly</option>`) {
+		t.Errorf("an unmatched value is not shown selected:\n%s", h)
+	}
+	if strings.Count(h, `selected=""`) != 1 {
+		t.Errorf("want exactly one selected option:\n%s", h)
+	}
+	h = string(componentOptionSelect(tokenControl{Key: "component.button.treatment", Value: "outline", Type: "select"}, opt))
+	if strings.Contains(h, "ghostly") || !strings.Contains(h, `selected="" value="outline">`) {
+		t.Errorf("a member value should select that member and add nothing:\n%s", h)
+	}
+}
+
+// A select-typed component key the catalogue does not know (a newer
+// theme.go, a typo) falls through to the text control: an unrecognised
+// key is shown, never hidden.
+func TestThemeEditUnknownComponentKeyFallsBackToText(t *testing.T) {
+	out := string(renderOneControl(tokenControl{Key: "component.button.sparkle", Value: "x", Type: "select"}))
+	if !strings.Contains(out, `data-token="component.button.sparkle"`) { // not-a-secret: the editor's data-token control selector
+		t.Fatalf("an unknown component key renders no control:\n%s", out)
+	}
+	if !strings.Contains(out, "<input") || strings.Contains(out, "<select") {
+		t.Errorf("an unknown component key should fall back to a text input, not a select:\n%s", out)
+	}
+	if !strings.Contains(out, `value="x"`) {
+		t.Errorf("the fallback input does not carry the current value:\n%s", out)
+	}
+}
+
+// Every token set on style.Theme must reach the write-back. A set the
+// emitter skips still boots: init's AutoFillNames names its tokens and
+// a zero width or radius validates, so saving an edited theme would
+// quietly zero every stroke.
+func TestWritebackEmitsEveryTokenSet(t *testing.T) {
+	src, err := emitThemeGoSource(uitheme.Default(), "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	typ := reflect.TypeFor[style.Theme]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Struct {
+			continue
+		}
+		if !strings.Contains(string(src), "\t"+f.Name+": style."+f.Type.Name()+"{") {
+			t.Errorf("write-back drops Theme.%s (%s)", f.Name, f.Type.Name())
+		}
+	}
+}
+
+// The type-scale groups and the knob map survive the write-back: a
+// theme edited to a tighter leading, a wider tracking, a stronger muted
+// opacity and a button edge saves them into theme.go, so the next boot
+// draws what the editor showed.
+func TestWritebackKeepsTypeScaleAndKnobs(t *testing.T) {
+	th := uitheme.Default()
+	th.Leading.Tight.Value = "1.05"
+	th.Tracking.Wider.Value = "0.14em"
+	th.Opacities.Muted.Value = "0.8"
+	th.Knobs = map[string]string{
+		"ui-checkbox-box-size": "20px",
+		"ui-button-edge":       "var(--color-border-strong)",
+	}
+	src, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "theme.go", src, parser.AllErrors); err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n%s", err, src)
+	}
+	// gofmt aligns the composite literals, so compare with every run of
+	// whitespace collapsed to one space.
+	flat := strings.Join(strings.Fields(string(src)), " ")
+	for _, want := range []string{
+		`Tight: style.LineHeight{Value: "1.05"},`,
+		`Wider: style.LetterSpacing{Value: "0.14em"},`,
+		`Muted: style.Opacity{Value: "0.8"},`,
+		`Knobs: map[string]string{ "ui-button-edge": "var(--color-border-strong)", "ui-checkbox-box-size": "20px", },`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("emitted theme.go lacks %q:\n%s", want, src)
+		}
+	}
+}

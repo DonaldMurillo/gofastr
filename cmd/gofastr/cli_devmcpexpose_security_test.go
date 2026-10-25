@@ -1,37 +1,5 @@
 package main
 
-// Property: a non-loopback bind under GOFASTR_DEV must not serve ANY
-// dev-implied unauthenticated MCP surface, not only the app_module_*
-// control tools.
-//
-// Found red in the 2026-09-05 adversarial pass round 4 (F22, HIGH):
-// `gofastr dev --addr 0.0.0.0:8080` (or a scaffold child binding a bare
-// $PORT, which normalizeBarePort turns into ":8080" = all interfaces)
-// starts the app with GOFASTR_DEV=1; guardDevMCPBind dropped the two
-// app_module_* control tools but every entity's write tools
-// (notes_create/notes_update/notes_delete) and battery/log's dev-implied
-// mutation (log_set_level) stayed registered and unauthenticated — and a
-// TCP client sets Host freely (the repo's own doc,
-// framework/devmcp_bind.go), so the transport's loopback Host pin is not a
-// defense. Observed: tools/list on an exposed bind still named them, and an
-// anonymous tools/call log_set_level SUCCEEDED. Any network peer of an
-// exposed dev bind could mutate the database and rewrite the log level with
-// zero credentials.
-//
-// Fixed (2026-09-06) as ONE dev-implied set instead of a per-feature one:
-// registrars mark the tools that exist only by dev implication with
-// mcp.WithDevImplied (framework/crud/mcp.go marks every dev-implied
-// entity's create/update/delete; battery/log marks log_set_level plus the
-// disclosing reads log_recent/log_filter; framework/mcp_contracts_dev.go
-// marks contracts_fix, which writes to disk), and guardDevMCPBind withdraws
-// the whole marked set via mcp.UnregisterDevImpliedTools on a non-loopback
-// bind. The withdrawal also arms a bar inside core/mcp — Start guards the
-// bind BEFORE InitPlugins registers the battery tools, so a later marked
-// registration is dropped rather than reintroducing the surface post-guard.
-// A loopback bind keeps everything (the dev loop's whole point); an
-// explicit Exposure.MCP / WithMCPControl / AllowMCPMutation opt-in is never
-// marked and never withdrawn by this path.
-
 import (
 	"context"
 	"database/sql"

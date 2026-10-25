@@ -14,26 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 )
-
-// TestExampleAppSpecsLoad validates every examples/<name>/gofastr.yml parses
-// and validates cleanly. This is the cheap half of the gate: it runs under
-// -short and catches an app spec that no longer decodes.
-//
-// It is NOT sufficient on its own. Parsing proves nothing about the Go the
-// generator emits from the parse. See TestExampleAppSpecsGenerateAndCompile.
-func TestExampleAppSpecsLoad(t *testing.T) {
-	for _, path := range exampleAppSpecs(t) {
-		path := path
-		t.Run(filepath.Base(filepath.Dir(path)), func(t *testing.T) {
-			if _, err := loadAppSpec(path); err != nil {
-				t.Errorf("%s failed to load: %v", path, err)
-			}
-		})
-	}
-}
 
 // buildGateScratchPkg prefixes the throwaway package each app spec is
 // generated into, under scratchdir.Root (see that package for why it lives
@@ -41,21 +25,6 @@ func TestExampleAppSpecsLoad(t *testing.T) {
 // because the two suites run beside each other and must not share a scratch
 // directory.
 const buildGateScratchPkg = "build_"
-
-// exampleAppSpecs returns every examples/<name>/gofastr.yml in the repo.
-//
-//gofastr:test-reads examples/*/gofastr.yml
-func exampleAppSpecs(t *testing.T) []string {
-	t.Helper()
-	matches, err := filepath.Glob("../../examples/*/gofastr.yml")
-	if err != nil {
-		t.Fatalf("glob: %v", err)
-	}
-	if len(matches) == 0 {
-		t.Skip("no example app specs found (run from repo)")
-	}
-	return matches
-}
 
 // TestExampleAppSpecsGenerateAndCompile is the gate that matters: every
 // shipped app spec must emit Go that BUILDS.
@@ -79,11 +48,13 @@ func exampleAppSpecs(t *testing.T) []string {
 // The lesson is that a gate aimed at one fixture proves one fixture. This test
 // is aimed at all seven, so a generator path is covered the moment any
 // app spec uses it.
+//
+//gofastr:test-reads examples/*/gofastr.yml
 func TestExampleAppSpecsGenerateAndCompile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the generator and compiles its output; skipped under -short")
 	}
-	for _, path := range exampleAppSpecs(t) {
+	for _, path := range clitest.ExampleAppSpecs(t) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
@@ -116,7 +87,7 @@ func TestExampleAppSpecsBoot(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, compiles, and boots every example app spec; skipped under -short")
 	}
-	for _, path := range exampleAppSpecs(t) {
+	for _, path := range clitest.ExampleAppSpecs(t) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
@@ -145,7 +116,7 @@ func TestExampleAppSpecsBoot(t *testing.T) {
 // succeeds where REST answers 401/403 is an unguarded second authorization
 // path, which is the failure this exists to catch; the reverse (REST open,
 // tool refused) is a silently broken agent surface.
-func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *syncBuffer) {
+func exerciseGeneratedApp(t *testing.T, name, baseURL string, output *clitest.SyncBuffer) {
 	t.Helper()
 
 	status, body := postMCP(t, baseURL, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
@@ -562,12 +533,12 @@ const bootPortAttempts = 3
 // faster than burning the whole HTTP deadline, and the output is the
 // diagnostic that matters. A bind lost to another test is the one exit
 // retried, on a fresh port and a fresh database.
-func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuffer) {
+func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *clitest.SyncBuffer) {
 	t.Helper()
-	return bootGeneratedAppOn(t, name, bin, appDir, freeAddr)
+	return bootGeneratedAppOn(t, name, bin, appDir, clitest.FreeAddr)
 }
 
-func bootGeneratedAppOn(t *testing.T, name, bin, appDir string, nextAddr func(*testing.T) string) (string, *syncBuffer) {
+func bootGeneratedAppOn(t *testing.T, name, bin, appDir string, nextAddr func(*testing.T) string) (string, *clitest.SyncBuffer) {
 	t.Helper()
 	for attempt := 1; ; attempt++ {
 		baseURL, output, lostPort := bootGeneratedAppOnce(t, name, bin, appDir, nextAddr(t))
@@ -593,9 +564,9 @@ func portTaken(output string) bool {
 
 // bootGeneratedAppOnce boots the app on addr. lostPort reports that the
 // child exited because addr was already bound.
-func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL string, output *syncBuffer, lostPort bool) {
+func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL string, output *clitest.SyncBuffer, lostPort bool) {
 	t.Helper()
-	cmd := exec.Command(testExecutablePath(bin))
+	cmd := exec.Command(clitest.TestExecutablePath(bin))
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(),
 		"PORT="+addr,
@@ -610,17 +581,17 @@ func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL
 		// port, so isolation buys it nothing: pin it off.
 		"GOFASTR_ISOLATION=off",
 	)
-	configureTestProcessGroup(cmd)
+	clitest.ConfigureTestProcessGroup(cmd)
 	// syncBuffer: exerciseGeneratedApp reads this while the app is running,
 	// and os/exec copies a child's output from its own goroutines until Wait.
-	output = &syncBuffer{}
+	output = &clitest.SyncBuffer{}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start generated %s app: %v", name, err)
 	}
 	t.Cleanup(func() {
-		_ = killTestProcessTree(cmd)
+		_ = clitest.KillTestProcessTree(cmd)
 		_, _ = cmd.Process.Wait()
 	})
 	exited := make(chan error, 1)
@@ -681,7 +652,7 @@ func TestBootRetriesOnTakenPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(dir, "bootprobe")
-	build := exec.Command("go", "build", "-o", testExecutablePath(bin), ".")
+	build := exec.Command("go", "build", "-o", clitest.TestExecutablePath(bin), ".")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build probe: %v\n%s", err, out)
@@ -698,7 +669,7 @@ func TestBootRetriesOnTakenPort(t *testing.T) {
 		if calls == 1 {
 			return held.Addr().String()
 		}
-		return freeAddr(t)
+		return clitest.FreeAddr(t)
 	}
 	baseURL, _ := bootGeneratedAppOn(t, "bootprobe", bin, dir, next)
 	if calls != 2 || baseURL == "http://"+held.Addr().String() {
@@ -758,7 +729,7 @@ func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, 
 	// here rather than at the next release. The shared test binary IS that
 	// source, built once per package run (testbin_test.go); `go run` here
 	// re-linked the whole CLI per example.
-	cli, err := gofastrTestBinary()
+	cli, err := clitest.GofastrTestBinary()
 	if err != nil {
 		t.Fatalf("build gofastr: %v", err)
 	}
@@ -771,14 +742,14 @@ func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, 
 	// output_dir moves the emitted app one level down (examples/ecommerce uses
 	// it). Resolve it from the app spec rather than assuming a flat layout.
 	appDir := dir
-	if out := appSpecOutputDir(string(src)); out != "" {
+	if out := clitest.AppSpecOutputDir(string(src)); out != "" {
 		appDir = filepath.Join(dir, out)
 	}
 
 	// Compile the main package. The binary goes to a temp dir, never the
 	// worktree. This pulls in the generated entities package transitively;
 	// ./... below covers any package the main package does not import.
-	bin := testExecutablePath(filepath.Join(t.TempDir(), name+"-from-app-spec"))
+	bin := clitest.TestExecutablePath(filepath.Join(t.TempDir(), name+"-from-app-spec"))
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = appDir
 	if out, err := build.CombinedOutput(); err != nil {
@@ -800,23 +771,4 @@ func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, 
 		t.Fatalf("generated code fails go vet for %s:\n%s", appSpecPath, out)
 	}
 	return bin, appDir
-}
-
-// appSpecOutputDir extracts an uncommented `output_dir:` from an app spec.
-// Returns "" when the app generator scaffolds into the module root.
-func appSpecOutputDir(appSpec string) string {
-	for _, line := range strings.Split(appSpec, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		_, after, found := strings.Cut(trimmed, "output_dir:")
-		if !found {
-			continue
-		}
-		if v := strings.TrimSpace(after); v != "" {
-			return v
-		}
-	}
-	return ""
 }

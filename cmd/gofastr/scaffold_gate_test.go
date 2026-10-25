@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // Executable-scaffold gate. The site's /get-started page walks a reader
@@ -23,10 +25,10 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and boots a scaffolded app")
 	}
-	repoRoot := repoRootDir(t)
+	repoRoot := clitest.RepoRootDir(t)
 
 	binDir := t.TempDir()
-	binPath := testExecutablePath(filepath.Join(binDir, "gofastr"))
+	binPath := clitest.TestExecutablePath(filepath.Join(binDir, "gofastr"))
 	build := exec.Command("go", "build", "-o", binPath, "./cmd/gofastr")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
@@ -53,24 +55,24 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	}
 
 	// Point the scaffold's module at the working tree and build it.
-	goVersion, err := repoGoVersion(repoRoot)
+	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
 	goMod := "module local/blog\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	writeTestFile(t, filepath.Join(appDir, "go.mod"), goMod)
-	if err := copyGoSum(repoRoot, appDir); err != nil {
+	clitest.WriteTestFile(t, filepath.Join(appDir, "go.mod"), goMod)
+	if err := clitest.CopyGoSum(repoRoot, appDir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
 
-	appBin := testExecutablePath(filepath.Join(appDir, "scaffold-app"))
+	appBin := clitest.TestExecutablePath(filepath.Join(appDir, "scaffold-app"))
 	appBuild := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	appBuild.Dir = appDir
 	if out, err := appBuild.CombinedOutput(); err != nil {
 		t.Fatalf("scaffolded app did not build: %v\n%s", err, out)
 	}
 
-	addr := freeAddr(t)
+	addr := clitest.FreeAddr(t)
 	cmd := exec.Command(appBin)
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(),
@@ -81,7 +83,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	// own goroutines until Wait returns, and Wait runs in t.Cleanup, so every
 	// read of this below races the copier. The package already has the
 	// mutex-guarded writer for exactly this.
-	var output syncBuffer
+	var output clitest.SyncBuffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Start(); err != nil {
@@ -93,7 +95,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	})
 
 	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/", &output)
+	clitest.WaitForHTTP(t, baseURL+"/", &output)
 
 	// The scaffolded home screen renders (PageHeader carries the app name).
 	homeResp, err := http.Get(baseURL + "/")

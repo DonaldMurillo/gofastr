@@ -81,9 +81,10 @@ PARALLEL=${TEST_PARALLELISM:-2}
 # .githooks/pre-push and .github/workflows/ci.yml use. Keep in sync.
 HEAVY_RE='gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
 # The four cmd/gofastr tests CI runs serialized in its browser-e2e
-# gofastr-cli shard: three drive a real Chrome over the dev livereload
-# websocket, one builds and boots every example. Skipped in the parallel
-# pass, run alone at -p 1 in the serialized pass.
+# gofastr-cli shard: three (main package) drive a real Chrome over the dev
+# livereload websocket, one (internal/devcmd) builds and boots every
+# example. Skipped in the parallel pass, run alone at -p 1 in the
+# serialized pass.
 CLI_BROWSER_TESTS='TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
 
 FLAGS=(-count=1 -timeout=20m)
@@ -103,7 +104,7 @@ dryrun || go vet $PKGS
 all_pkgs=$(go list $PKGS)
 light_pkgs=$(printf '%s\n' "$all_pkgs" | grep -Ev "$HEAVY_RE" || true)
 heavy_pkgs=$(printf '%s\n' "$all_pkgs" | grep -E "$HEAVY_RE" || true)
-cli_pkg=$(printf '%s\n' "$all_pkgs" | grep -E 'gofastr/cmd/gofastr$' || true)
+cli_pkgs=$(printf '%s\n' "$all_pkgs" | grep -E 'gofastr/cmd/gofastr(/internal/devcmd)?$' || true)
 
 LOG=$(mktemp "${TMPDIR:-/tmp}/gofastr-test-all.XXXXXX")
 trap 'rm -f "$LOG"' EXIT
@@ -195,7 +196,7 @@ if [ -n "$heavy_pkgs" ]; then
 else
   echo "==> pass 2: no heavy packages in scope"
 fi
-if [ -n "$cli_pkg" ]; then
+if [ -n "$cli_pkgs" ]; then
   echo "==> pass 2: serialized (-p 1), cmd/gofastr browser tests"
-  go_test_selfheal "$cli_pkg" "${FLAGS[@]}" -p 1 -run "$CLI_BROWSER_TESTS"
+  go_test_selfheal "$cli_pkgs" "${FLAGS[@]}" -p 1 -run "$CLI_BROWSER_TESTS"
 fi

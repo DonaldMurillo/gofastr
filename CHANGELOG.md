@@ -8,6 +8,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Changed
+- **`cmd/gofastr` is a package per subcommand (#589).** It was one
+  `package main` with 1,413 tests, so a change to any subcommand, or to
+  any of the 224 packages its tests reached, reran all of them: 640s of
+  a CI run. `main.go` now parses the command line and calls
+  `cmd/gofastr/internal/<name>cmd` (`initcmd`, `generatecmd`, `devcmd`,
+  `verifycmd`, …). The app spec parser is `internal/appspec`, the app
+  generator `internal/appgen`, and the helpers their tests share
+  `internal/clitest`. Each test moved with the code it covers, so a
+  change to one subcommand runs that package's tests, the cross-command
+  tests left in `cmd/gofastr`, and the packages that run the built
+  binary. The commands, their flags and `-ldflags "-X main.version=…"`
+  are unchanged.
 - **`cmd/check-embed/embedcheck` type-checks its fixtures once per run
   (#589).** The tests share one load of the fixture module, plus one
   load of the mutated fixtures, instead of loading it in every test: the

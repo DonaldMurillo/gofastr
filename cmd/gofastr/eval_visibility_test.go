@@ -39,7 +39,7 @@ type evalAssertion struct {
 //
 // The eval verifies the docs pipeline surfaces the right answers.
 func TestEvalNewUserPlansSite(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	// Step 1: scaffold
@@ -174,7 +174,7 @@ func TestEvalNewUserPlansSite(t *testing.T) {
 // TestEvalNewUserPlansSiteNoEntity verifies the same docs pipeline
 // works when the user passes --no-entity (UI-only project).
 func TestEvalNewUserPlansSiteNoEntity(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	initCmd := exec.Command(bin, "init", "portfolio", "--module=example.com/portfolio", "--no-entity")
@@ -217,7 +217,7 @@ func TestEvalNewUserPlansSiteNoEntity(t *testing.T) {
 }
 
 func TestReinitRefreshesOnboarding(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	// Scaffold fresh
@@ -252,7 +252,7 @@ func TestReinitRefreshesOnboarding(t *testing.T) {
 }
 
 func TestReinitPreservesModifiedClaudeMD(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	// Scaffold
@@ -296,7 +296,7 @@ func TestReinitPreservesModifiedClaudeMD(t *testing.T) {
 }
 
 func TestReinitForceOverwritesModifiedClaudeMD(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	// Scaffold
@@ -338,7 +338,7 @@ func TestReinitForceOverwritesModifiedClaudeMD(t *testing.T) {
 }
 
 func TestReinitDoesNotTouchGoFiles(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	// Scaffold

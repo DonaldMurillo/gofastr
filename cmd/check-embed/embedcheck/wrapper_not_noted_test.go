@@ -4,7 +4,7 @@ import "testing"
 
 // ROUND-2 REVIEW REPRO.
 //
-// Making Unresolved fatal (cmd/gofastr/build.go buildEmbedGate) turned two
+// Making Unresolved fatal (cmd/gofastr/internal/buildcmd/build.go buildEmbedGate) turned two
 // pre-existing note shapes into build failures:
 //
 //  1. a component-typed value from another package appearing anywhere in a

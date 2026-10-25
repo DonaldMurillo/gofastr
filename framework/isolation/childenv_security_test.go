@@ -10,7 +10,7 @@ package isolation
 // The boundary is enforced twice: loadConfig drops env-shaping names and
 // static (non-template) values from the file, and Env never overrides a
 // variable present in the env it was handed. The consumer is
-// cmd/gofastr/dev.go (runtimeIsolation.Env(os.Environ()) builds the
+// cmd/gofastr/internal/devcmd/dev.go (runtimeIsolation.Env(os.Environ()) builds the
 // dev-server child's entire environment for every rebuild); that child
 // holds the operator's session cookies, DB, and .env secrets.
 

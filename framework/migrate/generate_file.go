@@ -161,7 +161,7 @@ var afterVersionScan func(dir, filename string)
 
 // nextMigrationVersion returns one past the highest NNNN_ prefix among the
 // existing .sql files, or 1 when the directory is empty. Matches the app spec
-// CLI's version-numbering exactly (cmd/gofastr/migrate_generate.go).
+// CLI's version-numbering exactly (cmd/gofastr/internal/migratecmd/migrate_generate.go).
 func nextMigrationVersion(dir string) uint64 {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -251,7 +251,7 @@ func parseMigrationSections(content string) (up, down string, ok bool) {
 
 // sanitizeMigrationName lower-cases and replaces non-alphanumeric runs with a
 // single underscore so the name is filesystem- and directive-safe. Matches the
-// app spec CLI's sanitization exactly (cmd/gofastr/migrate_generate.go).
+// app spec CLI's sanitization exactly (cmd/gofastr/internal/migratecmd/migrate_generate.go).
 func sanitizeMigrationName(name string) string {
 	var b strings.Builder
 	lastUnderscore := false

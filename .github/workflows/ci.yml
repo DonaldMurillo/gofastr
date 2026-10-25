@@ -262,7 +262,7 @@ jobs:
           # ARM64 FFI/GTK assembly symbols. These binaries are not executed.
           mkdir -p dist/ci/linux-arm64
           GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
-          go test -count=1 ./cmd/gofastr -run 'Test(Desktop|LinuxDesktop)'
+          go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
 
       - name: gofmt (tracked files must be clean)
         run: |
@@ -601,16 +601,19 @@ jobs:
             pkg: kiln/integration$
             run: go test -count=1 -timeout=15m ./kiln/integration/
           - suite: gofastr-cli
-            pkg: cmd/gofastr$
+            pkg: cmd/gofastr(/internal/devcmd)?$
             # Every cmd/gofastr test that drives a real Chrome, the
-            # app spec app E2E plus the two dev livereload browser tests.
-            # Kept out of the deterministic step so the websocket connect
-            # isn't starved by parallel package load. TestE2E_DevLoop_Examples
-            # (builds and boots every example under `gofastr dev`) rides
+            # app spec app E2E plus the two dev livereload browser tests
+            # (all three in the main package). Kept out of the
+            # deterministic step so the websocket connect isn't starved by
+            # parallel package load. TestE2E_DevLoop_Examples (devcmd:
+            # builds and boots every example under `gofastr dev`) rides
             # here too: it needs no Chrome, but its eleven builds would
-            # push the deterministic job past its 20m budget. 25m covers its
-            # worst case: eleven examples at the 90s per-example wait.
-            run: go test -count=1 -timeout=25m -run 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' ./cmd/gofastr/
+            # push the deterministic job past its 20m budget. -p 1 keeps
+            # those builds off the browser tests, as when all four shared
+            # one test binary. 25m covers its worst case: eleven examples
+            # at the 90s per-example wait.
+            run: go test -count=1 -timeout=25m -p 1 -run 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' ./cmd/gofastr/ ./cmd/gofastr/internal/devcmd/
           - suite: core-ui-runtime
             pkg: core-ui/runtime$
             # The runtime hydration suite launches a real Chrome per test

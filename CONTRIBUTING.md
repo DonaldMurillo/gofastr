@@ -91,6 +91,15 @@ build tag such as the `red` probes, or a test that depends on which
 files a directory holds rather than on their contents; those still need
 a directive written by hand.
 
+Selection is per package, so a test belongs in the package whose code it
+covers. `cmd/gofastr` is a dispatcher: each subcommand is its own
+package under `cmd/gofastr/internal/` (`devcmd`, `generatecmd`, …), the
+app generator is `internal/appgen`, and helpers shared by their tests
+live in `internal/clitest`. A change to one subcommand then selects that
+package and what imports it, not the whole CLI suite. `cmd/gofastr`
+itself keeps only the tests that cross subcommands, such as the
+end-to-end runs of the built binary.
+
 Windows CI runs one build with `CGO_ENABLED=0`.
 
 ### Known isolation rules

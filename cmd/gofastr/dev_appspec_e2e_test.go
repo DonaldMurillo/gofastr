@@ -1,11 +1,5 @@
 package main
 
-// End-to-end HMR-readiness gate for the app spec surface: a generated app
-// run under `gofastr dev` must serve the livereload client, expose the SSE
-// endpoint, and rebuild+serve edited content, the same contract the init
-// scaffold already proves in dev_e2e_test.go. Gated by -short (slow: two Go
-// compiles + a dev-watch loop).
-
 import (
 	"context"
 	"fmt"
@@ -17,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
@@ -28,16 +24,16 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	goVersion, err := repoGoVersion(repoRoot)
+	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
 	goMod := "module example.com/demo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
-	if err := copyGoSum(repoRoot, dir); err != nil {
+	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"), goMod)
+	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
-	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), testAppSpecYAML())
+	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.yml"), clitest.TestAppSpecYAML())
 
 	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
 	generate.Dir = dir
@@ -54,26 +50,26 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 
 	// Boot the generated app under `gofastr dev`, the path the guidance
 	// funnels users to, and the only one that enables livereload.
-	bin := buildGofastrBinary(t)
-	port := nextE2EPort(t)
+	bin := clitest.BuildGofastrBinary(t)
+	port := clitest.NextE2EPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	dev := exec.CommandContext(ctx, bin, "dev", "-p", port, "--dir", dir)
-	dev.Env = append(append(os.Environ(), devTempEnv(t)...),
+	dev.Env = append(append(os.Environ(), clitest.DevTempEnv(t)...),
 		"PORT=localhost:"+port,
 		"DATABASE_URL=file:"+filepath.Join(dir, "devloop.db"),
 		// The child app resolves worktree isolation from its cwd; a linked
 		// git worktree would silently remap the polled port.
 		"GOFASTR_ISOLATION=off",
 	)
-	var devOut syncBuffer
+	var devOut clitest.SyncBuffer
 	dev.Stdout = &devOut
 	dev.Stderr = &devOut
-	configureTestProcessGroup(dev)
+	clitest.ConfigureTestProcessGroup(dev)
 	if err := dev.Start(); err != nil {
 		t.Fatalf("start gofastr dev: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = killTestProcessTree(dev)
+		_ = clitest.KillTestProcessTree(dev)
 		cancel()
 		_ = dev.Wait()
 	})
@@ -84,7 +80,7 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 	// HMR-ready contract, part 1: the page carries the livereload client and
 	// the SSE endpoint answers.
 	if !strings.Contains(body, "/__livereload.js") {
-		t.Fatalf("generated page does not inject the livereload client:\n%s", clip(body))
+		t.Fatalf("generated page does not inject the livereload client:\n%s", clitest.Clip(body))
 	}
 	resp, err := http.Get(base + "/__livereload.js")
 	if err != nil || resp.StatusCode != http.StatusOK {
@@ -97,7 +93,7 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 	// new content serves without any manual restart.
 	const marker = "HMR-LOOP-ALIVE"
 	if !strings.Contains(body, "Generated from YAML.") {
-		t.Fatalf("fixture heading missing from generated page:\n%s", clip(body))
+		t.Fatalf("fixture heading missing from generated page:\n%s", clitest.Clip(body))
 	}
 	edited := false
 	entries, err := os.ReadDir(dir)
@@ -143,7 +139,7 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 }
 
 // waitForBody polls url until it returns 200 and yields the body.
-func waitForBody(t *testing.T, url string, timeout time.Duration, devOut *syncBuffer) string {
+func waitForBody(t *testing.T, url string, timeout time.Duration, devOut *clitest.SyncBuffer) string {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	var last string
@@ -163,11 +159,4 @@ func waitForBody(t *testing.T, url string, timeout time.Duration, devOut *syncBu
 	}
 	t.Fatalf("server never became ready (%s); dev output:\n%s", last, devOut.String())
 	return ""
-}
-
-func clip(s string) string {
-	if len(s) > 2000 {
-		return s[:2000] + "…"
-	}
-	return s
 }
