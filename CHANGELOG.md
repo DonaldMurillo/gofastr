@@ -68,6 +68,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework/docs/content/ui-new-components.md`, now live in a package
   of their own that such a change selects instead. That package runs in
   under a second.
+- **A CHANGELOG edit no longer reruns the `framework` and
+  `framework/docs` tests (#589).** Every pull request edits
+  CHANGELOG.md, and three checks that read it lived in those two
+  packages, which take about 2.5 and 1.5 minutes in CI. The check that
+  README.md and CHANGELOG.md state the contract rule count moved to
+  `framework/contracts/internal/docgate`, so a README edit no longer
+  reruns `framework` either. The two checks that CHANGELOG.md and the
+  upgrade registry agree on which releases are breaking moved to
+  `internal/upgrade`, next to the CHANGELOG check already there. A
+  CHANGELOG edit now selects those two packages, which run in under a
+  second.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
