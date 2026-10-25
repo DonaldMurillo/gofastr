@@ -52,7 +52,6 @@ func TestInitGeneratedProjectsBuild(t *testing.T) {
 }
 
 func TestInitGeneratedSQLiteMigrationsRunFromCLI(t *testing.T) {
-	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
