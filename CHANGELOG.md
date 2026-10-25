@@ -8,6 +8,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Changed
+- **Editing a release note no longer re-runs most of the test suite.**
+  The retired-markup check that test binaries and `gofastr dev` run
+  over rendered pages loaded the whole migration registry, so `framework`
+  and `framework/uihost` embedded every `internal/upgrade/releases/*.yml`
+  file, and a change to any of them selected 104 packages and 10 browser
+  CI jobs. The check now reads `internal/retired/retired_table.gen.go`,
+  a table of the retired kit class and attribute names generated from
+  the registry by `go generate ./internal/retired`. A release-note edit
+  now selects 14 packages and 2 browser jobs, `gofastr-cli` and
+  `meridian` (both build the `gofastr` CLI, which ships the registry for
+  `gofastr upgrade`). `TestTableIsCurrent` fails with the regenerate
+  command when the table is out of date: a breaking note added or
+  dropped a kit name, the change text of a note that retires one was
+  edited, or a release file holding one was renamed. Regenerating it
+  then runs every package that renders through the check. The check
+  flags exactly the names it flagged before. The version checks the CLI
+  shares with the registry moved to `internal/semver`.
 - **`cmd/gofastr` is a package per subcommand (#589).** It was one
   `package main` with 1,413 tests, so a change to any subcommand, or to
   any of the 224 packages its tests reached, reran all of them: 640s of
@@ -79,6 +96,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `internal/upgrade`, next to the CHANGELOG check already there. A
   CHANGELOG edit now selects those two packages, which run in under a
   second.
+- **The docs site deploys when a release is published, not on every
+  push to main.** `pages.yml` ran on each merge, so the site showed
+  docs for code no release contained, under the previous release's
+  version number. `release.yml` now calls it once the publish gate has
+  passed and the release exists, and it builds the site from that tag.
+  A refused gate deploys nothing. A manual run of `pages.yml` redeploys
+  the latest release, or the tag you name.
 - **Three tests stop waiting on nothing, and two groups stop running
   where they don't belong.** `TestExamplesAreHMRReady/backoffice`
   waited 60s for a `/healthz` that backoffice never serves before

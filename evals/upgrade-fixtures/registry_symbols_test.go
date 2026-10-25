@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
@@ -368,7 +369,7 @@ func newSymbolSource(repo string) (*symbolSource, error) {
 		return nil, fmt.Errorf("list git tags in %s: %w", repo, err)
 	}
 	for _, tag := range strings.Fields(out) {
-		if err := upgrade.ValidateSemver(tag); err == nil {
+		if err := semver.Validate(tag); err == nil {
 			s.tags = append(s.tags, tag)
 		}
 	}
@@ -393,9 +394,9 @@ func openSymbolSource(t *testing.T, repo string) *symbolSource {
 // semverTagLess orders tags by semver for slices.SortFunc.
 func semverTagLess(a, b string) int {
 	switch {
-	case upgrade.SemverLess(a, b):
+	case semver.Less(a, b):
 		return -1
-	case upgrade.SemverLess(b, a):
+	case semver.Less(b, a):
 		return 1
 	default:
 		return 0
@@ -425,7 +426,7 @@ func (p *pkgSymbols) hasMember(typeName, member string) bool {
 func (s *symbolSource) priorTag(version string) (string, bool) {
 	best := ""
 	for _, tag := range s.tags {
-		if !upgrade.SemverLess(tag, version) {
+		if !semver.Less(tag, version) {
 			break
 		}
 		best = tag

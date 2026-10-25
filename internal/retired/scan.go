@@ -5,13 +5,17 @@
 // — is invisible to that scan but plain to see in the rendered page, so
 // in a Go test binary and under `gofastr dev` the framework scans each
 // finite HTML response it serves and reports what it finds. Production
-// never scans and never loads the registry.
+// never scans and never loads the retired table.
 //
 // The retired names come from internal/upgrade's migration registry: the
 // union of every breaking note's strings.classes, css.classes and
-// strings.attrs. That package has no dependency on go/packages, and
-// neither does this one — the serving path must never link a type
-// checker (pinned by TestServingPackagesSkipXTools).
+// strings.attrs in the kit's namespaces, compiled into
+// retired_table.gen.go by `go generate ./internal/retired`. This package
+// imports neither the registry nor go/packages: a serving binary must
+// never link a type checker, and a release-note edit must not select
+// every package that serves markup. TestServingPackagesSkipScanEngineAndRegistry
+// pins both; internal/retired/internal/tablegen's TestTableIsCurrent,
+// which a release-note edit does select, keeps the table current.
 package retired
 
 import (

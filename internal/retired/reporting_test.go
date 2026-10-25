@@ -13,7 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
-// page is a fixture page carrying the fixture registry's retired names.
+// page is a fixture page carrying the fixture set's retired names.
 const page = `<!DOCTYPE html><html><body><div class="ui-button">go</div><span data-fui-signal>x</span></body></html>`
 
 // serve runs one request through Middleware, the way the app router
@@ -138,21 +138,21 @@ func TestScanDevDedupesPerPathAndName(t *testing.T) {
 }
 
 // Production posture: outside dev mode, with the scan disarmed, the
-// registry is never loaded even when the page carries retired names.
+// table is never loaded even when the page carries retired names.
 // The armed twin proves the same harness would have loaded it.
-func TestScanProductionNeverLoadsRegistry(t *testing.T) {
+func TestScanProductionNeverLoadsTable(t *testing.T) {
 	ResetForTest(t)
 	handler := Middleware(func() bool { return false })(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, page)
 	}))
 	ProductionScan(t, handler).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if Loads() != 0 {
-		t.Fatalf("production posture loaded the registry %d times", Loads())
+		t.Fatalf("production posture loaded the table %d times", Loads())
 	}
 	// The guard is real: the same handler without the exemption loads.
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if Loads() != 1 {
-		t.Fatalf("armed scan loaded the registry %d times, want 1", Loads())
+		t.Fatalf("armed scan loaded the table %d times, want 1", Loads())
 	}
 }
 
