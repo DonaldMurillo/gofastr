@@ -1320,8 +1320,9 @@ takes that body as the request's own (#577):
   toggle) hands the redirect target to the client navigator, the way
   the intercept overlay does, so a same-origin sign-in page opens with
   no reload and another origin loads as a document. No server handler
-  answers a successful RPC with a 3xx; the framework's interactive
-  redirect is `X-Gofastr-Location`.
+  answers a successful RPC with a 3xx. An element that should move the
+  reader after its RPC names the destination in `data-cui-rpc-navigate`;
+  `X-Gofastr-Location` moves the reader on navigation fetches only.
 - **Passive fetches** swap, parse and cache nothing: region and widget
   poll (a failed poll, so it backs off), widget chrome (a failed open)
   and state, widget discovery, `fetchPage` and server actions (empty

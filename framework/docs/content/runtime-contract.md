@@ -538,8 +538,10 @@ takes that body as the request's own:
   throw the input away. **Anything else** (a button, an optimistic
   toggle) hands the redirect target to the client navigator, so a
   same-origin sign-in page opens with no reload and another origin
-  loads as a document. Answer a successful RPC with a 2xx (and
-  `X-Gofastr-Location` to move the reader), never a 3xx.
+  loads as a document. Answer a successful RPC with a 2xx, never a 3xx.
+  To move the reader after it, name the destination on the element in
+  `data-cui-rpc-navigate`; the RPC path does not read
+  `X-Gofastr-Location`.
 - **Passive fetches** swap, parse and cache nothing: region and widget
   poll (a failed poll, so it backs off), widget chrome (a failed open)
   and state, widget discovery, `fetchPage` and server actions (empty
