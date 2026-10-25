@@ -2,10 +2,15 @@ package chromedptest
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"testing"
+	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
@@ -112,43 +117,159 @@ func TestContextsShareOneChrome(t *testing.T) {
 	}
 }
 
-// TestDeadChromeIsReplaced: when the shared Chrome dies, the next Context
-// call starts a fresh one instead of failing every later test. "between
-// tests" lets chromedp notice the dropped connection first, so the pool's
-// liveness check is what catches it; "while opening" calls at once, before
-// chromedp has noticed, so the failed window open and its retry catch it.
+// pooled returns the shared Chrome for the default options, which the
+// caller's earlier Context call started.
+func pooled(t *testing.T) *browser {
+	t.Helper()
+	key, _ := allocatorKey(nil)
+	poolMu.Lock()
+	defer poolMu.Unlock()
+	b := pool[key]
+	if b == nil {
+		t.Fatal("no shared Chrome in the pool")
+	}
+	return b
+}
+
+// TestDeadChromeIsReplaced: when the shared Chrome dies, no later caller is
+// handed it.
+//
+//   - "liveness check": the pool is held while Chrome dies, so the idle
+//     watcher cannot drop it first, and acquire (which has no retry) must
+//     see the dropped connection itself and start a fresh Chrome.
+//   - "idle watcher": nobody calls acquire; the watcher alone must take
+//     the dead Chrome out of the pool and disarm its reaper.
+//   - "while opening": Context is called at once, before chromedp has
+//     noticed, so the failed window open and its retry catch it.
 func TestDeadChromeIsReplaced(t *testing.T) {
 	if shellPath() == "" {
 		t.Skip("no sh to run the reaper: every Context gets a private Chrome")
 	}
-	for _, tc := range []struct {
-		name     string
-		waitLost bool
-	}{
-		{"between tests", true},
-		{"while opening", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := Context(t)
-			b := chromedp.FromContext(ctx).Browser
-			dead := b.Process().Pid
-			if err := b.Process().Kill(); err != nil {
-				t.Fatal(err)
+	t.Run("liveness check", func(t *testing.T) {
+		ctx := Context(t)
+		key, _ := allocatorKey(nil)
+		cb := chromedp.FromContext(ctx).Browser
+		dead := cb.Process().Pid
+		poolMu.Lock()
+		if err := cb.Process().Kill(); err != nil {
+			poolMu.Unlock()
+			t.Fatal(err)
+		}
+		<-cb.LostConnection
+		b, err := acquireLocked(newConfig(), key)
+		poolMu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer b.release()
+		if pid := chromedp.FromContext(b.ctx).Browser.Process().Pid; pid == dead {
+			t.Fatalf("acquire handed out the dead Chrome (pid %d)", dead)
+		}
+	})
+	t.Run("idle watcher", func(t *testing.T) {
+		Context(t)
+		b := pooled(t)
+		if err := chromedp.FromContext(b.ctx).Browser.Process().Kill(); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			poolMu.Lock()
+			gone := b.retired && pool[b.key] != b
+			poolMu.Unlock()
+			if gone {
+				break
 			}
-			if tc.waitLost {
-				<-b.LostConnection
+			if time.Now().After(deadline) {
+				t.Fatal("a Chrome that died idle is still in the pool")
 			}
-			next := Context(t)
-			if pid := chromePID(t, next); pid == dead {
-				t.Fatalf("Context handed out the dead Chrome (pid %d)", dead)
-			}
-			var title string
-			if err := chromedp.Run(next, chromedp.Navigate(originServer(t)), chromedp.Title(&title)); err != nil {
-				t.Fatalf("replacement Chrome does not work: %v", err)
-			}
-			if title != "origin" {
-				t.Errorf("replacement Chrome loaded %q, want origin", title)
-			}
-		})
+			time.Sleep(10 * time.Millisecond)
+		}
+		// The watcher disarms before it retires, and poolMu orders the
+		// two, so the reaper has exited by now.
+		if b.reaper == nil || b.reaper.ProcessState == nil {
+			t.Error("the dead Chrome's reaper is still armed")
+		}
+	})
+	t.Run("while opening", func(t *testing.T) {
+		ctx := Context(t)
+		b := chromedp.FromContext(ctx).Browser
+		dead := b.Process().Pid
+		if err := b.Process().Kill(); err != nil {
+			t.Fatal(err)
+		}
+		next := Context(t)
+		if pid := chromePID(t, next); pid == dead {
+			t.Fatalf("Context handed out the dead Chrome (pid %d)", dead)
+		}
+		var title string
+		if err := chromedp.Run(next, chromedp.Navigate(originServer(t)), chromedp.Title(&title)); err != nil {
+			t.Fatalf("replacement Chrome does not work: %v", err)
+		}
+		if title != "origin" {
+			t.Errorf("replacement Chrome loaded %q, want origin", title)
+		}
+	})
+}
+
+// TestFailedWindowSparesOthers: a window whose cleanup fails retires the
+// shared Chrome, but a window another test still holds on it keeps
+// working, and the next caller gets a fresh Chrome.
+func TestFailedWindowSparesOthers(t *testing.T) {
+	if shellPath() == "" {
+		t.Skip("no sh to run the reaper: every Context gets a private Chrome")
+	}
+	url := originServer(t)
+	held := Context(t)
+	heldPID := chromePID(t, held)
+	t.Run("failing window", func(t *testing.T) {
+		ctx := Context(t)
+		// Disposing the window's BrowserContext here makes its cleanup's
+		// dispose fail, the path that retires a Chrome.
+		c := chromedp.FromContext(ctx)
+		if err := target.DisposeBrowserContext(c.BrowserContextID).Do(cdp.WithExecutor(ctx, c.Browser)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	var title string
+	if err := chromedp.Run(held, chromedp.Navigate(url), chromedp.Title(&title)); err != nil {
+		t.Fatalf("the held window died with the other window's Chrome: %v", err)
+	}
+	if title != "origin" {
+		t.Errorf("held window loaded %q, want origin", title)
+	}
+	if pid := chromePID(t, Context(t)); pid == heldPID {
+		t.Errorf("the retired Chrome (pid %d) was handed out again", heldPID)
+	}
+}
+
+// TestReferenceOptionsGetPrivateChrome: an option set holding a func or a
+// writer cannot be compared by value, so it never shares a Chrome; two
+// ModifyCmdFunc closures over different values would print the same.
+func TestReferenceOptionsGetPrivateChrome(t *testing.T) {
+	modify := func(v string) Option {
+		return AllocatorOptions(chromedp.ModifyCmdFunc(func(cmd *exec.Cmd) {
+			cmd.Env = append(cmd.Env, "CHROMEDPTEST_PROBE="+v)
+		}))
+	}
+	a := chromePID(t, Context(t, modify("a")))
+	b := chromePID(t, Context(t, modify("b")))
+	if a == b {
+		t.Errorf("two ModifyCmdFunc option sets shared one Chrome (pid %d)", a)
+	}
+	if _, shareable := allocatorKey([]chromedp.ExecAllocatorOption{chromedp.CombinedOutput(io.Discard)}); shareable {
+		t.Error("a CombinedOutput writer was treated as shareable")
+	}
+	if _, shareable := allocatorKey([]chromedp.ExecAllocatorOption{chromedp.Flag("lang", "fr")}); !shareable {
+		t.Error("a plain flag was treated as unshareable")
+	}
+}
+
+// TestNoSharingOnWindows: Windows gets no reaper shell, so every Context
+// there gets a private Chrome. Git's sh.exe is on PATH on most Windows
+// hosts, but its kill cannot signal a native Windows process.
+func TestNoSharingOnWindows(t *testing.T) {
+	if sh := reaperShell("windows"); sh != "" {
+		t.Errorf("reaperShell(windows) = %q, want none", sh)
 	}
 }

@@ -28,10 +28,16 @@
 // incognito profile) and its own window at the requested size, so tests
 // stay isolated from each other. Chrome is started against a background
 // context (not the deadline context) under a watchdog so a hung cold launch
-// fails the test instead of the suite; a shared Chrome that died is
-// replaced on the next call. The returned context carries the per-test
-// deadline. Cleanup registration order is BrowserContext disposal, window
-// close, deadline cancel — teardown runs deadline-first.
+// fails the test instead of the suite; a shared Chrome that died or failed
+// leaves the pool at once, so the next call starts a fresh one, and closes
+// when the last window still open on it is done. Sharing needs an sh to run
+// the reaper that kills Chrome when the test binary exits; on Windows, or
+// with no sh, or for an option set that installs a func or writer (see
+// AllocatorOptions), every call gets a private Chrome that closes with its
+// window, as before sharing. The returned context carries the per-test
+// deadline. Cleanup registration order is BrowserContext disposal and
+// release of the Chrome, window close, deadline cancel — teardown runs
+// deadline-first.
 package chromedptest
 
 import (
@@ -102,9 +108,26 @@ func StartTimeout(d time.Duration) Option {
 // AllocatorOptions appends extra chromedp allocator options after the standard
 // flag set. It replaces the custom allocator additions in former helpers that
 // needed an explicit browser path or test-specific flags. Calls with the same
-// extra options share one Chrome; calls with different ones never do.
+// extra options share one Chrome; calls with different ones never do. An
+// option that installs a func, writer, or other reference (ModifyCmdFunc,
+// CombinedOutput) cannot be compared, so a call carrying one always gets a
+// private Chrome that closes with its window.
 func AllocatorOptions(opts ...chromedp.ExecAllocatorOption) Option {
 	return func(c *config) { c.extra = append(c.extra, opts...) }
+}
+
+// newConfig resolves opts over the package defaults.
+func newConfig(opts ...Option) config {
+	cfg := config{
+		windowW:      defaultWindowW,
+		windowH:      defaultWindowH,
+		timeout:      defaultTimeout,
+		startTimeout: defaultStartTimeout,
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return cfg
 }
 
 // Context opens an isolated window in the test binary's headless Chrome for a
@@ -116,21 +139,13 @@ func AllocatorOptions(opts ...chromedp.ExecAllocatorOption) Option {
 // the same BrowserContext, so it shares the test's cookies and storage.
 func Context(t testing.TB, opts ...Option) context.Context {
 	t.Helper()
-	cfg := config{
-		windowW:      defaultWindowW,
-		windowH:      defaultWindowH,
-		timeout:      defaultTimeout,
-		startTimeout: defaultStartTimeout,
-	}
-	for _, o := range opts {
-		o(&cfg)
-	}
+	cfg := newConfig(opts...)
 	// A shared Chrome can die between tests, or wedge without the
 	// connection dropping. The window open is what finds out, so a failed
-	// open drops that Chrome and retries once on a fresh one.
+	// open retires that Chrome and retries once on a fresh one.
 	var lastErr error
 	for range 2 {
-		b, err := acquire(t, cfg)
+		b, err := acquire(cfg)
 		if err != nil {
 			t.Fatalf("chrome did not start: %v", err)
 		}
@@ -139,16 +154,18 @@ func Context(t testing.TB, opts ...Option) context.Context {
 			return ctx
 		}
 		lastErr = err
-		b.discard()
+		b.retire()
+		b.release()
 	}
 	t.Fatalf("chrome did not open a window: %v", lastErr)
 	return nil
 }
 
 // openWindow creates a BrowserContext and a window in it on b, and returns
-// the window's context with the per-test deadline. Its cleanups are
-// registered on t only once the window is open; on error it has already
-// released what it made.
+// the window's context with the per-test deadline. Its cleanups, which end
+// with releasing b, are registered on t only once the window is open; on
+// error it has already disposed of what it made, and b is still the
+// caller's to release.
 func openWindow(t testing.TB, b *browser, cfg config) (context.Context, error) {
 	opCtx, opCancel := b.command(context.Background(), cfg.startTimeout)
 	defer opCancel()
@@ -200,13 +217,15 @@ func openWindow(t testing.TB, b *browser, cfg config) (context.Context, error) {
 	t.Cleanup(func() {
 		// Disposing closes every tab left in the BrowserContext and
 		// drops its cookies, storage, and cache. A Chrome that cannot
-		// do that is not fit for the next test.
+		// do that is not fit for the next test: it leaves the pool now
+		// and closes once the other windows on it are done.
 		if err := dispose(); err != nil {
 			if b.alive() {
 				t.Logf("chromedptest: dispose browser context: %v; replacing the shared Chrome", err)
 			}
-			b.discard()
+			b.retire()
 		}
+		b.release()
 	})
 	t.Cleanup(tabCancel)
 	ctx, cancel := context.WithTimeout(tab, cfg.timeout)

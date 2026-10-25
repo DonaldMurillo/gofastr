@@ -109,12 +109,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   window in its own BrowserContext, so cookies, storage and HTTP cache
   never carry from one test to the next, and a tab opened from the
   returned context shares that test's state. If the shared Chrome dies,
-  the next call starts a new one. A small `sh` watcher kills Chrome and
-  deletes its profile when the test binary exits, including on a panic
-  or a `-timeout` kill; without `sh`, every call gets its own Chrome as
-  before. framework/headless's `behaviorBrowserCtx` and
-  core-ui/runtime's `boundaryBrowserCtx`, which said they shared one
-  browser but started a new one per test, now use it.
+  or a test's window cannot be cleaned up, the next call starts a new
+  one; the old one closes once the other tests' windows on it are done.
+  A small `sh` watcher kills Chrome and deletes its profile when the
+  test binary exits, including on a panic or a `-timeout` kill. On
+  Windows, without `sh`, or with an option that installs a func or a
+  writer (`chromedp.ModifyCmdFunc`, `chromedp.CombinedOutput`), every
+  call gets its own Chrome as before. framework/headless's
+  `behaviorBrowserCtx` and core-ui/runtime's `boundaryBrowserCtx`, which
+  said they shared one browser but started a new one per test, now use
+  it.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
