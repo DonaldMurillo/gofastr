@@ -110,6 +110,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   never held. Fixed sleeps remain only where a test checks that
   something does not happen within a window, each marked with a
   comment.
+- **The site's code-sample compile checks reuse the Go build cache.**
+  They built each sample with an empty cache, so every sample compiled
+  the framework from scratch. They now share the normal cache and skip
+  writing a binary, and still fail when a sample stops compiling.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
