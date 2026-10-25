@@ -2,6 +2,7 @@ package chromedptest
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -191,16 +192,25 @@ func TestDeadChromeIsReplaced(t *testing.T) {
 			t.Error("the dead Chrome's reaper is still armed")
 		}
 	})
-	t.Run("while opening", func(t *testing.T) {
-		ctx := Context(t)
-		b := chromedp.FromContext(ctx).Browser
-		dead := b.Process().Pid
-		if err := b.Process().Kill(); err != nil {
-			t.Fatal(err)
+	t.Run("failed open retries on a fresh Chrome", func(t *testing.T) {
+		// The first window keeps the wedged Chrome open: retiring it must
+		// take it out of the pool, not close it under this window.
+		wedged := chromePID(t, Context(t))
+		calls := 0
+		openWindowFault = func(*browser) error {
+			calls++
+			if calls == 1 {
+				return errors.New("wedged")
+			}
+			return nil
 		}
+		defer func() { openWindowFault = nil }()
 		next := Context(t)
-		if pid := chromePID(t, next); pid == dead {
-			t.Fatalf("Context handed out the dead Chrome (pid %d)", dead)
+		if calls != 2 {
+			t.Fatalf("openWindow ran %d times, want 2: a failed open retries once", calls)
+		}
+		if pid := chromePID(t, next); pid == wedged {
+			t.Fatalf("Context retried on the Chrome whose window failed (pid %d)", wedged)
 		}
 		var title string
 		if err := chromedp.Run(next, chromedp.Navigate(originServer(t)), chromedp.Title(&title)); err != nil {

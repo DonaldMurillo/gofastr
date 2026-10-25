@@ -161,12 +161,22 @@ func Context(t testing.TB, opts ...Option) context.Context {
 	return nil
 }
 
+// openWindowFault, when set, fails openWindow before it touches b. It is
+// the tests' stand-in for a Chrome that wedged with its connection still
+// up, the failure only a window open finds.
+var openWindowFault func(b *browser) error
+
 // openWindow creates a BrowserContext and a window in it on b, and returns
 // the window's context with the per-test deadline. Its cleanups, which end
 // with releasing b, are registered on t only once the window is open; on
 // error it has already disposed of what it made, and b is still the
 // caller's to release.
 func openWindow(t testing.TB, b *browser, cfg config) (context.Context, error) {
+	if openWindowFault != nil {
+		if err := openWindowFault(b); err != nil {
+			return nil, err
+		}
+	}
 	opCtx, opCancel := b.command(context.Background(), cfg.startTimeout)
 	defer opCancel()
 	bcID, err := target.CreateBrowserContext().Do(opCtx)
