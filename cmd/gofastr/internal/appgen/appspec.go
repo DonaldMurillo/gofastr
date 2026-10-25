@@ -1079,6 +1079,14 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("\taddr := e2eFreeAddr(t)\n")
 	b.WriteString("\tsrv := exec.Command(bin)\n")
 	b.WriteString("\tsrv.Dir = dir\n")
+	if bp.App.PWA.Enabled {
+		// The server runs from dir and serves its static directory, the
+		// PWA icons the suite asserts below included, relative to where
+		// it runs: from dir alone every icon answered 404.
+		staticDir := appSpecEffectiveStaticDir(bp)
+		b.WriteString("\t// The server serves its static directory relative to where it runs.\n")
+		b.WriteString(fmt.Sprintf("\tif err := os.CopyFS(filepath.Join(dir, %q), os.DirFS(%q)); err != nil { t.Fatalf(\"copy static dir: %%v\", err) }\n", staticDir, staticDir))
+	}
 	if isPostgres {
 		b.WriteString("\t// postgres app spec: carve a throwaway DB from TEST_POSTGRES_DSN\n")
 		b.WriteString("\t// (skips when Postgres is unreachable). DATABASE_URL + DB_DRIVER point\n")

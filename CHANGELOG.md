@@ -50,6 +50,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   desktop bridge ignore the redirected body, and the embed handshake
   refuses redirects. A sortable reorder whose save redirects reverts,
   and a selection Copy fails instead of copying the sign-in page.
+- **A generated PWA app's e2e test finds its icons.** The emitted
+  `e2e_test.go` runs the app from a temporary directory, so every icon
+  it checks under `/icons/` answered 404 and the suite failed on a
+  freshly generated app. It now copies the app's static directory there
+  before it starts the server.
 
 ## [0.94.1] - 2026-10-24
 
