@@ -38,51 +38,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/browserpath"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
-// one shared browser for the whole file: an allocator per test would
-// boot Chrome four times for what is one surface.
-var boundaryAlloc struct {
-	once sync.Once
-	ctx  context.Context
-}
-
+// boundaryBrowserCtx opens this test's window in the test binary's shared
+// WebMCP Chrome. The extra blink feature makes it a different allocator
+// option set, so chromedptest keeps it apart from the package's plain
+// Chrome, starts it once for the file, and gives every call its own
+// BrowserContext.
 func boundaryBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	boundaryAlloc.once.Do(func() {
-		execPath, ok := browserpath.Find()
-		if !ok {
-			return
-		}
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+	execPath, ok := browserpath.Find()
+	if !ok {
+		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
+	}
+	return chromedptest.Context(t,
+		chromedptest.Timeout(120*time.Second),
+		chromedptest.AllocatorOptions(
 			chromedp.ExecPath(execPath),
-			chromedp.Flag("headless", true),
-			chromedp.Flag("disable-gpu", true),
-			chromedp.Flag("no-sandbox", true),
 			// WebMCP is a flagged experimental feature; this exposes
 			// navigator.modelContext on Chromium 146+ (same flag as
 			// webmcp/browser_test.go).
 			chromedp.Flag("enable-blink-features", "WebMCP"),
-			chromedp.WSURLReadTimeout(90*time.Second),
-		)
-		allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		boundaryAlloc.ctx = allocCtx
-		// The browser outlives every test; canceling would kill later
-		// ones, so the cancel is deliberately dropped (the process dies
-		// with the test binary).
-		_ = cancel
-	})
-	if boundaryAlloc.ctx == nil {
-		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	}
-	ctx, cancel := chromedp.NewContext(boundaryAlloc.ctx)
-	t.Cleanup(cancel)
-	tctx, tcancel := context.WithTimeout(ctx, 120*time.Second)
-	t.Cleanup(tcancel)
-	return tctx
+		))
 }
 
 // ---------------------------------------------------------------------------

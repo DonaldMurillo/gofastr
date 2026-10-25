@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,48 +28,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/internal/browserpath"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
-// One shared browser for the whole file: an allocator per test would
-// boot Chrome eleven times for what is one surface.
-var behaviorAlloc struct {
-	once sync.Once
-	ctx  context.Context
-}
-
+// behaviorBrowserCtx opens this test's window in the test binary's shared
+// Chrome (chromedptest keeps one per allocator option set and gives every
+// call its own BrowserContext), so the file's browser tests pay for one
+// Chrome launch, not one each.
 func behaviorBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	behaviorAlloc.once.Do(func() {
-		execPath, ok := browserpath.Find()
-		if !ok {
-			return
-		}
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.ExecPath(execPath),
-			chromedp.Flag("headless", true),
-			chromedp.Flag("disable-gpu", true),
-			chromedp.Flag("no-sandbox", true),
-			chromedp.Flag("force-prefers-no-reduced-motion", true),
-			chromedp.WSURLReadTimeout(90*time.Second),
-		)
-		allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		behaviorAlloc.ctx = allocCtx
-		// The browser outlives every test; canceling would kill later
-		// ones, so the cancel is deliberately dropped (the process dies
-		// with the test binary).
-		_ = cancel
-	})
-	if behaviorAlloc.ctx == nil {
+	execPath, ok := browserpath.Find()
+	if !ok {
 		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
 	}
-	ctx, cancel := chromedp.NewContext(behaviorAlloc.ctx)
-	t.Cleanup(cancel)
-	tctx, tcancel := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(tcancel)
-	return tctx
+	return chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(execPath)))
 }
 
 // behaviorServer serves the runtime, the headless module (counting

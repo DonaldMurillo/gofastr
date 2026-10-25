@@ -101,6 +101,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `kiln/integration`'s live agent tests, which need `KILN_LIVE=1` and
   never run in CI, now also need `-tags kilnlive`, so a `cmd/gofastr`
   change no longer pulls the kiln browser job into a pull request.
+- **Browser tests start one Chrome per test binary, not one per test.**
+  `internal/chromedptest.Context` starts a headless Chrome the first
+  time a test binary needs one and reuses it for every later call with
+  the same allocator options; a call with other flags (WebMCP, an
+  explicit browser path) gets its own. Each call still gets its own
+  window in its own BrowserContext, so cookies, storage and HTTP cache
+  never carry from one test to the next, and a tab opened from the
+  returned context shares that test's state. If the shared Chrome dies,
+  the next call starts a new one. A small `sh` watcher kills Chrome and
+  deletes its profile when the test binary exits, including on a panic
+  or a `-timeout` kill; without `sh`, every call gets its own Chrome as
+  before. framework/headless's `behaviorBrowserCtx` and
+  core-ui/runtime's `boundaryBrowserCtx`, which said they shared one
+  browser but started a new one per test, now use it.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
