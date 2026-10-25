@@ -12,6 +12,7 @@ import (
 
 	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -361,6 +362,13 @@ func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
 		t.Logf("step %s ok", name)
 	}
 
+	// The browser's HTTP cache lets only one request per URL run at a time,
+	// and makes a second identical GET wait up to 20s for the first. The
+	// held slowfail fetch would hold "open-after" for that long. This test
+	// is about the runtime's own chrome cache (a held fetch must not evict
+	// the new page's entry), not the HTTP cache, which never stores these
+	// responses anyway, so take the HTTP cache out of the way.
+	step("nocache", network.Enable(), network.SetCacheDisabled(true))
 	step("nav0", chromedp.Navigate(c.Srv.URL+"/"), chromedp.WaitVisible(`#ready`, chromedp.ByID), chromedp.Sleep(200*time.Millisecond))
 	// Open with the gated ctx: the chrome fetch blocks server-side, so
 	// it is provably in flight (and cached) before the navigation runs.

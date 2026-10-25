@@ -1,17 +1,22 @@
+//go:build kilnlive
+
 // Live agent tests: spawn a real `kiln serve --agent omp`
 // subprocess and drive build prompts end-to-end. These tests verify
 // "the agent can actually build X", not "the IR shape works in
 // isolation". They use OMP with GLM-5.2 and consume provider credits,
-// and are SLOW (30-180s per prompt), so they're gated by KILN_LIVE=1
-// and skip otherwise.
+// and are SLOW (30-180s per prompt), so they're gated twice: the
+// kilnlive build tag keeps them out of every ordinary build (CI never
+// runs them, and without the tag their `go build` of cmd/gofastr would
+// tie this package to every cmd/gofastr change), and KILN_LIVE=1 skips
+// them unless asked.
 //
 // Run all live scenarios:
 //
-//	KILN_LIVE=1 go test ./kiln/integration/ -run TestLive -v -timeout 30m
+//	KILN_LIVE=1 go test -tags kilnlive ./kiln/integration/ -run TestLive -v -timeout 30m
 //
 // Run one scenario:
 //
-//	KILN_LIVE=1 go test ./kiln/integration/ -run TestLive_BuildSimplePage -v -timeout 5m
+//	KILN_LIVE=1 go test -tags kilnlive ./kiln/integration/ -run TestLive_BuildSimplePage -v -timeout 5m
 package integration_test
 
 import (
