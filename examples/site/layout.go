@@ -203,11 +203,15 @@ func groupScreen(path string, comp component.Component, opts ...app.ScreenOption
 	return s
 }
 
-// build time from the deployment's git tag via
+// siteVersion is the release the site shows, stamped at build time.
+// pages.yml and release.yml stamp the release tag they build from:
+//
+//	go build "-ldflags=-X=main.siteVersion=${TAG#v}" ./examples/site/
+//
+// scripts/dev-watch.sh and Makefile build-examples stamp the latest tag:
 //
 //	-ldflags "-X 'main.siteVersion=$(git describe --tags --abbrev=0 | sed s/^v//)'"
 //
-// (see scripts/dev-watch.sh, Makefile build-examples, .github/workflows/pages.yml).
 // The "dev" fallback is what an un-injected `go build`/`go run` shows locally,
 // so the deployed site always matches the tag it was built from, instead of a
 // hand-bumped constant drifting behind releases.

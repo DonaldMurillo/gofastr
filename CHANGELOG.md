@@ -96,6 +96,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `internal/upgrade`, next to the CHANGELOG check already there. A
   CHANGELOG edit now selects those two packages, which run in under a
   second.
+- **The docs site deploys when a release is published, not on every
+  push to main.** `pages.yml` ran on each merge, so the site showed
+  docs for code no release contained, under the previous release's
+  version number. `release.yml` now calls it once the publish gate has
+  passed and the release exists, and it builds the site from that tag.
+  A refused gate deploys nothing. A manual run of `pages.yml` redeploys
+  the latest release, or the tag you name.
 - **Three tests stop waiting on nothing, and two groups stop running
   where they don't belong.** `TestExamplesAreHMRReady/backoffice`
   waited 60s for a `/healthz` that backoffice never serves before
