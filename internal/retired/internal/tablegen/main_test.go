@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/retired"
+	"github.com/DonaldMurillo/gofastr/internal/retired/names"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
@@ -35,8 +40,11 @@ func TestTableIsCurrent(t *testing.T) {
 		t.Fatalf("read the checked-in table: %v", err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Fatalf("internal/retired/retired_table.gen.go does not match internal/upgrade's migration registry "+
-			"(a release note retired or renamed a kit class or attribute); regenerate it from the repo root:\n\n\t%s\n", regenerate)
+		t.Fatalf("internal/retired/retired_table.gen.go does not match internal/upgrade's migration registry. "+
+			"The table holds every kit class and attribute a breaking note retires, plus that note's version "+
+			"and change text, so it goes stale when a breaking note adds or drops such a name, when the change "+
+			"text of a note that retires one is edited, or when a release file holding one is renamed. "+
+			"Regenerate it from the repo root and commit it:\n\n\t%s\n", regenerate)
 	}
 }
 
@@ -119,13 +127,14 @@ func TestRenderKeepsBreakingKitNames(t *testing.T) {
 }
 
 // The generated table builds the same set the registry does: the check
-// that serving code runs is the check the registry describes.
+// that serving code runs is the check the registry describes. The test
+// binary may import internal/retired; the command itself must not.
 func TestTableMatchesRegistrySet(t *testing.T) {
 	reg, err := upgrade.Load()
 	if err != nil {
 		t.Fatalf("load migration registry: %v", err)
 	}
-	want := retired.New(candidates(reg)).Entries()
+	want := names.Keep(candidates(reg))
 	if len(want) == 0 {
 		t.Fatal("the registry retires no kit name: the walk is broken, not the registry empty")
 	}
@@ -136,6 +145,31 @@ func TestTableMatchesRegistrySet(t *testing.T) {
 		}
 		if len(retired.Current().Check([]byte(probe))) == 0 {
 			t.Errorf("the registry retires %s %q but the shipped set does not flag it", e.Kind, e.Name)
+		}
+	}
+}
+
+// The command must build when internal/retired does not: internal/retired
+// compiles only with the table this command writes, so a conflicted,
+// deleted or stale table would otherwise block its own regeneration.
+func TestCommandSkipsRetired(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, imp := range f.Imports {
+			if path, _ := strconv.Unquote(imp.Path.Value); path == "github.com/DonaldMurillo/gofastr/internal/retired" {
+				t.Errorf("%s imports internal/retired; the generator must import only internal/retired/names", name)
+			}
 		}
 	}
 }

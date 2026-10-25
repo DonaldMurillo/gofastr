@@ -17,10 +17,20 @@ import (
 // retired set reads the generated table instead. Prove both on the real
 // dependency graph.
 //
-// The importers: directive selects this test whenever a changed package
-// imports the registry, the edit that would bring it back.
+// The importers: directives select this test whenever a changed package
+// imports the registry, one of its subpackages, or go/packages (the
+// x/tools entry point of the scan engine): the edits that would bring
+// either back. cmd/affected matches the exact import path, so each
+// registry package is listed on its own.
 //
 //gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade/scan
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade/scantest
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade/examplescan
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade/releasetest
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade/releasetest/mid
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/internal/upgrade/releasetest/old
+//gofastr:test-reads importers:golang.org/x/tools/go/packages
 func TestServingPackagesSkipScanEngineAndRegistry(t *testing.T) {
 	if testing.Short() {
 		t.Skip("shells out to the go tool")

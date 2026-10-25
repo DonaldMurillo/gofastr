@@ -16,10 +16,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   CI jobs. The check now reads `internal/retired/retired_table.gen.go`,
   a table of the retired kit class and attribute names generated from
   the registry by `go generate ./internal/retired`. A release-note edit
-  now selects 15 packages and 3 browser jobs (the ones that build the
-  `gofastr` CLI, which ships the registry for `gofastr upgrade`).
-  `TestTableIsCurrent` fails with the regenerate command when a note
-  retires a kit name and the table was not regenerated; regenerating it
+  now selects 14 packages and 2 browser jobs, `gofastr-cli` and
+  `meridian` (both build the `gofastr` CLI, which ships the registry for
+  `gofastr upgrade`). `TestTableIsCurrent` fails with the regenerate
+  command when the table is out of date: a breaking note added or
+  dropped a kit name, the change text of a note that retires one was
+  edited, or a release file holding one was renamed. Regenerating it
   then runs every package that renders through the check. The check
   flags exactly the names it flagged before. The version checks the CLI
   shares with the registry moved to `internal/semver`.

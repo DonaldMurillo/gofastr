@@ -3,8 +3,10 @@
 
 package retired
 
+import "github.com/DonaldMurillo/gofastr/internal/retired/names"
+
 // tableNotes are the breaking notes the retired names in table cite.
-var tableNotes = [...]Note{
+var tableNotes = [...]names.Note{
 	{Version: "v0.54.0", Change: "Pattern components register under bare names (disclosure, multiselect, sortablelist)"},
 	{Version: "v0.54.0", Change: "data-fui-sticky and data-fui-viewport are no longer emitted"},
 	{Version: "v0.86.0", Change: "the button classes are fui-button*; the ui-button class no longer exists in any emitted markup or stylesheet"},
@@ -27,8 +29,8 @@ var tableNotes = [...]Note{
 	{Version: "v0.87.0", Change: "runtime toasts are cloned from the kit's registered template inside a host-guaranteed stack: the headless-feedback module no longer mounts the fui-toast-stack-auto singleton, and a dismissed row is marked data-hui-toast-leaving instead of the is-leaving class"},
 }
 
-// table is every retired kit name, in the order New keeps them.
-var table = [...]Entry{
+// table is every retired kit name, in the order names.Keep keeps them.
+var table = [...]names.Entry{
 	{Kind: "class", Name: "ui-disclosure", Note: &tableNotes[0]},
 	{Kind: "class", Name: "ui-multiselect", Note: &tableNotes[0]},
 	{Kind: "class", Name: "ui-sortable-list", Note: &tableNotes[0]},

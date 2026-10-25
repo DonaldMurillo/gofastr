@@ -23,8 +23,10 @@ import (
 // `gofastr upgrade` reads it to guide a project from its current
 // version to a target. The format is documented for contributors in
 // framework/docs/content/cli.md, under "The migration registry". A
-// breaking note naming kit classes or attributes also changes
-// internal/retired's generated table: `go generate ./internal/retired`
+// breaking note naming kit classes or attributes is copied, with its
+// version and change text, into internal/retired's generated table, so
+// adding such a name, editing that note's change text, or renaming its
+// release file needs `go generate ./internal/retired`
 // (TestTableIsCurrent in internal/retired/internal/tablegen fails until
 // it is run).
 //

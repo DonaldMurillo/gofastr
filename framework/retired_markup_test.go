@@ -12,14 +12,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
+	"github.com/DonaldMurillo/gofastr/internal/retired/names"
 )
 
 // retiredFixtureSet is shaped like the shipped table: one breaking note
 // retiring a class and a data-fui-* attribute plus an attribute family
 // (the trailing "-" retires every extension).
 func retiredFixtureSet() *retired.Set {
-	note := &retired.Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
-	return retired.New([]retired.Entry{
+	note := &names.Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
+	return retired.New([]names.Entry{
 		{Kind: "class", Name: "ui-button", Note: note},
 		{Kind: "attr", Name: "data-fui-signal", Note: note},
 		{Kind: "attr", Name: "data-fui-toggle-", Note: note},

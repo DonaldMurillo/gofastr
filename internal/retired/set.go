@@ -4,53 +4,37 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/retired/names"
 )
 
 //go:generate go run ./internal/tablegen -out retired_table.gen.go
 
-// Note is the breaking migration note that retired a name: the release
-// that retired it and the change it describes.
-type Note struct {
-	Version string
-	Change  string
-}
-
-// Entry is one retired name and the note that retired it. Kind is
-// "class" or "attr"; an attr Name spelled with a trailing "-" retires
-// every extension of it.
-type Entry struct {
-	Kind string
-	Name string
-	Note *Note
-}
-
 // Set is the retired-name set: every class and attribute name a breaking
 // note of the migration registry retired, kept only when it falls in the
-// kit's namespaces (see kitClass). A nil *Set and a zero Set match
+// kit's namespaces (names.Keep). A nil *Set and a zero Set match
 // nothing.
 type Set struct {
-	classes  map[string]*Note // class token -> note (BEM stems included by matchClass)
-	attrs    map[string]*Note // lowercase attribute name -> note
-	attrPre  []attrPrefix     // entries spelled with a trailing "-"
-	entries  []Entry          // what the set kept, in the order it was added
+	classes  map[string]*names.Note // class token -> note (BEM stems included by matchClass)
+	attrs    map[string]*names.Note // lowercase attribute name -> note
+	attrPre  []attrPrefix           // entries spelled with a trailing "-"
 	nonEmpty bool
 }
 
 type attrPrefix struct {
 	prefix string
-	note   *Note
+	note   *names.Note
 }
 
 // Finding is one retired name the check saw in a response.
 type Finding struct {
 	Kind string // "class" or "attr"
 	Name string // the spelling as it appeared (a BEM variant keeps its suffix)
-	Note *Note
+	Note *names.Note
 }
 
 // Message renders the finding the way a test failure and a dev console
@@ -60,92 +44,38 @@ func (f Finding) Message() string {
 		f.Kind, f.Name, f.Note.Version, f.Note.Change)
 }
 
-// New builds a set from entries in order. The first entry naming a name
-// wins, so a name retired in one release and mentioned again later keeps
-// its original note. Names outside the kit's namespaces are dropped.
-func New(entries []Entry) *Set {
+// New builds a set from the entries names.Keep keeps: the kit's
+// namespaces only, first note wins.
+func New(entries []names.Entry) *Set {
 	set := &Set{}
-	for _, e := range entries {
-		switch e.Kind {
-		case "class":
-			set.addClass(e)
-		case "attr":
-			set.addAttr(e)
+	for _, e := range names.Keep(entries) {
+		set.nonEmpty = true
+		if e.Kind == "class" {
+			if set.classes == nil {
+				set.classes = make(map[string]*names.Note)
+			}
+			set.classes[e.Name] = e.Note
+			continue
 		}
+		lower := strings.ToLower(e.Name)
+		if strings.HasSuffix(lower, "-") {
+			// The trailing dash is part of the prefix: data-cui-toggle-
+			// retires data-cui-toggle-open, not data-cui-togglex.
+			set.attrPre = append(set.attrPre, attrPrefix{prefix: lower, note: e.Note})
+			continue
+		}
+		if set.attrs == nil {
+			set.attrs = make(map[string]*names.Note)
+		}
+		set.attrs[lower] = e.Note
 	}
 	return set
-}
-
-// Entries returns the names the set kept, in the order they were added:
-// what New dropped as a duplicate or outside the kit's namespaces is
-// absent. The table generator writes exactly this list.
-func (s *Set) Entries() []Entry {
-	if s == nil {
-		return nil
-	}
-	return slices.Clone(s.entries)
-}
-
-// kitClass and kitAttr are the namespaces the kit owns. A breaking
-// note can retire a generic name the kit used to emit (a "card" class,
-// a data-placeholder attribute), but an app may own that name too, so
-// only names in these namespaces are read as retired in rendered
-// markup; the source scan still reports the rest.
-func kitClass(name string) bool {
-	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-")
-}
-
-func kitAttr(name string) bool {
-	lower := strings.ToLower(name)
-	return strings.HasPrefix(lower, "data-cui-") || strings.HasPrefix(lower, "data-fui-") || strings.HasPrefix(lower, "data-hui-")
-}
-
-func (s *Set) addClass(e Entry) {
-	if !kitClass(e.Name) {
-		return
-	}
-	if s.classes == nil {
-		s.classes = make(map[string]*Note)
-	}
-	if _, dup := s.classes[e.Name]; !dup {
-		s.classes[e.Name] = e.Note
-		s.entries = append(s.entries, e)
-		s.nonEmpty = true
-	}
-}
-
-func (s *Set) addAttr(e Entry) {
-	if !kitAttr(e.Name) {
-		return
-	}
-	lower := strings.ToLower(e.Name)
-	if strings.HasSuffix(lower, "-") && len(lower) > 1 {
-		// The trailing dash is part of the prefix: data-cui-toggle-
-		// retires data-cui-toggle-open, not data-cui-togglex.
-		for _, p := range s.attrPre {
-			if p.prefix == lower {
-				return
-			}
-		}
-		s.attrPre = append(s.attrPre, attrPrefix{prefix: lower, note: e.Note})
-		s.entries = append(s.entries, e)
-		s.nonEmpty = true
-		return
-	}
-	if s.attrs == nil {
-		s.attrs = make(map[string]*Note)
-	}
-	if _, dup := s.attrs[lower]; !dup {
-		s.attrs[lower] = e.Note
-		s.entries = append(s.entries, e)
-		s.nonEmpty = true
-	}
 }
 
 // matchClass resolves one class token to the note that retired it, or
 // nil. The registry rule: the token equals the name, or is the name
 // wearing a BEM suffix (name--modifier, name__element).
-func (s *Set) matchClass(token string) *Note {
+func (s *Set) matchClass(token string) *names.Note {
 	if len(s.classes) == 0 {
 		return nil
 	}
@@ -165,7 +95,7 @@ func (s *Set) matchClass(token string) *Note {
 // matchAttr resolves one attribute name to the note that retired it, or
 // nil. HTML attribute names are case-insensitive; an entry spelled with
 // a trailing "-" retires every extension of it.
-func (s *Set) matchAttr(name []byte) *Note {
+func (s *Set) matchAttr(name []byte) *names.Note {
 	if !s.nonEmpty {
 		return nil
 	}

@@ -1,18 +1,20 @@
 package retired
 
 import (
-	"slices"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/retired/names"
 )
 
-// fixtureEntries is what the table generator emits for two breaking
-// notes, plus the generic names a note can name that New must drop: the
-// generator hands New every breaking note's names, kit namespace or not.
-func fixtureEntries() []Entry {
-	button := &Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
-	form := &Note{Version: "v9.1.0", Change: "the ui-form family is renamed"}
-	generic := &Note{Version: "v9.1.0", Change: "the kit stopped emitting two generic names"}
-	return []Entry{
+// fixtureEntries is what the table generator hands names.Keep for two
+// breaking notes, plus the generic names a note can name that New must
+// drop. names.Keep's own tests pin the keep rule; these pin that New
+// reads only what it keeps.
+func fixtureEntries() []names.Entry {
+	button := &names.Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
+	form := &names.Note{Version: "v9.1.0", Change: "the ui-form family is renamed"}
+	generic := &names.Note{Version: "v9.1.0", Change: "the kit stopped emitting two generic names"}
+	return []names.Entry{
 		{Kind: "class", Name: "ui-button", Note: button},
 		{Kind: "attr", Name: "data-fui-signal", Note: button},
 		{Kind: "attr", Name: "data-fui-toggle-", Note: button},
@@ -33,9 +35,9 @@ func fixtureSet(t *testing.T) *Set {
 	return New(fixtureEntries())
 }
 
-// The first entry naming a name wins, and Entries is exactly what the
-// set kept, in order: the list the table generator writes.
-func TestNewKeepsFirstNoteAndListsEntries(t *testing.T) {
+// The first entry naming a name wins in the built set, for classes,
+// exact attributes and attribute prefixes alike.
+func TestNewKeepsFirstNote(t *testing.T) {
 	set := fixtureSet(t)
 	if note := set.matchClass("ui-button"); note == nil || note.Version != "v9.0.0" {
 		t.Errorf("ui-button matched %+v, want the v9.0.0 note", note)
@@ -43,19 +45,8 @@ func TestNewKeepsFirstNoteAndListsEntries(t *testing.T) {
 	if note := set.matchAttr([]byte("data-fui-signal")); note == nil || note.Version != "v9.0.0" {
 		t.Errorf("data-fui-signal matched %+v, want the v9.0.0 note", note)
 	}
-	var got []string
-	for _, e := range set.Entries() {
-		got = append(got, e.Kind+" "+e.Name)
-	}
-	want := []string{
-		"class ui-button", "attr data-fui-signal", "attr data-fui-toggle-", "class ui-hero",
-		"class ui-form", "class ui-form-old", "attr data-hui-old",
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("Entries() = %q, want %q", got, want)
-	}
-	if again := New(set.Entries()).Entries(); !slices.Equal(again, set.Entries()) {
-		t.Errorf("rebuilding from Entries() changed the set: %v", again)
+	if note := set.matchAttr([]byte("data-fui-toggle-open")); note == nil || note.Version != "v9.0.0" {
+		t.Errorf("data-fui-toggle-open matched %+v, want the v9.0.0 note", note)
 	}
 }
 
