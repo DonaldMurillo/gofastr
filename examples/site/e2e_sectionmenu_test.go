@@ -6,6 +6,7 @@ package main
 // for: close-on-outside-click, scroll-lock, and NO layout shift on open.
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,47 @@ import (
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 )
+
+// sheetOpen waits until the named modal widget is mounted and visible,
+// its demand-loaded stylesheet has applied, the page is scroll-locked,
+// and the entry animations on the sheet and its backdrop have finished:
+// the settled open state the tests measure.
+func sheetOpen(name string) chromedp.Action {
+	return waitFor(`(()=>{const w=document.querySelector('[data-cui-widget="` + name + `"]');
+		if(!w||!w.isConnected||w.hidden)return false;
+		const l=document.querySelector('link[data-cui-style="` + name + `"]');
+		if(l&&!l.sheet)return false;
+		if(getComputedStyle(document.documentElement).overflow!=='hidden')return false;
+		const b=document.querySelector('[data-cui-backdrop="` + name + `"]');
+		return [w,b].every(e=>!e||e.getAnimations().every(a=>a.playState!=='running'))})()`)
+}
+
+// sheetClosed waits until the named modal widget has been dismissed:
+// no backdrop left and the scroll lock released.
+func sheetClosed(name string) chromedp.Action {
+	return waitFor(`!document.querySelector('[data-cui-backdrop="` + name + `"]')&&getComputedStyle(document.documentElement).overflow!=='hidden'`)
+}
+
+// scrolledTo waits until a programmatic scroll to y (clamped to the
+// page's scroll range) has landed, smooth scrolling included.
+func scrolledTo(y string) chromedp.Action {
+	return waitFor(`Math.abs(scrollY-Math.min(` + y + `,document.documentElement.scrollHeight-innerHeight))<1`)
+}
+
+// scrollSettled waits until the scroll offset js reports holds the same
+// value across six consecutive polls (~150ms), for a synthesized touch
+// gesture whose distance is unknown in advance: a browser that cannot
+// synthesize touch scrolls moves nothing at all.
+func scrollSettled(js string) chromedp.Action {
+	return chromedp.Tasks{
+		chromedp.Evaluate(`delete window.__scrollSettle`, nil),
+		waitFor(`(()=>{const v=` + js + `,s=window.__scrollSettle||(window.__scrollSettle={v:NaN,n:0});if(s.v===v){s.n++}else{s.v=v;s.n=1}return s.n>=6})()`),
+	}
+}
+
+// phoneSheetSettled is true once the phone sheet popover has no running
+// animation, so a tap lands where its link has come to rest.
+const phoneSheetSettled = `document.querySelector('.cui-phone-sheet__sheet').getAnimations({subtree:true}).every(a=>a.playState!=='running')`
 
 // Desktop: the menu is a rail (trigger hidden, groups force-expanded) and the
 // current item is highlighted with the primary-coloured left border.
@@ -67,12 +109,13 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		pageReady(),
 		chromedp.Evaluate(`window.innerWidth`, &viewportW),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowClosed),
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').getBoundingClientRect().top`, &triggerTopBefore),
 		// Open the drawer.
 		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
-		chromedp.Sleep(700*time.Millisecond), // lazy widget chrome + open
+		sheetOpen(drawer), // lazy widget chrome + open
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').getBoundingClientRect().top`, &triggerTopAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="`+drawer+`"]')`, &backdropPresent),
@@ -80,7 +123,7 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 		// (at most 75vh tall). Clicking the sheet itself would (correctly)
 		// NOT dismiss.
 		chromedp.MouseClickXY(187, 60),
-		chromedp.Sleep(400*time.Millisecond),
+		sheetClosed(drawer),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterBackdrop),
 	); err != nil {
 		t.Fatalf("mobile drawer: %v", err)
@@ -127,18 +170,19 @@ func TestE2E_SectionMenu_CloseButtonAndScrollPreserved(t *testing.T) {
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		pageReady(),
 		// Scroll the page down so an open/close scroll jump would be visible.
 		chromedp.Evaluate(`window.scrollTo(0, 600)`, nil),
-		chromedp.Sleep(100*time.Millisecond),
+		scrolledTo("600"),
 		chromedp.Evaluate(`window.scrollY`, &scrollBefore),
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').click()`, nil),
-		chromedp.Sleep(700*time.Millisecond),
+		sheetOpen(drawer),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterOpen),
 		// The × close button must be visible inside the drawer.
 		chromedp.Evaluate(`(()=>{const b=document.querySelector('[data-cui-widget="`+drawer+`"] .cui-sheet-head__close');return !!b && b.getBoundingClientRect().width>0})()`, &closeVisible),
 		// Close via the × button (data-cui-action="close").
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="`+drawer+`"] .cui-sheet-head__close').click()`, nil),
-		chromedp.Sleep(400*time.Millisecond),
+		sheetClosed(drawer),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterClose),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterClose),
 	); err != nil {
@@ -173,12 +217,15 @@ func TestE2E_SectionMenu_DrawerClosesOnNav(t *testing.T) {
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		pageReady(),
 		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
-		chromedp.Sleep(700*time.Millisecond),
+		sheetOpen(drawer),
 		chromedp.Evaluate(`location.pathname`, &pathBefore),
 		// Tap the "Overview" lead link inside the open drawer.
 		chromedp.Click(`[data-cui-widget="`+drawer+`"] .cui-section-menu__lead`, chromedp.ByQuery),
-		chromedp.Sleep(700*time.Millisecond),
+		// The SPA navigation lands and the drawer auto-closes.
+		waitFor(`location.pathname!=='/components/dropdown'&&getComputedStyle(document.documentElement).overflow!=='hidden'`),
+		pageReady(),
 		chromedp.Evaluate(`location.pathname`, &pathAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfter),
 	); err != nil {
@@ -209,12 +256,13 @@ func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/auth"),
 		chromedp.WaitReady(`[data-cui-comp="cui-section-menu"] .cui-section-menu__rail`, chromedp.ByQuery),
+		pageReady(),
 		// Scroll well past the fold so the rail is sticky-pinned.
 		chromedp.Evaluate(`window.scrollTo(0, 1500)`, nil),
-		chromedp.Sleep(150*time.Millisecond),
+		scrolledTo("1500"),
 		// Open the palette (⌘K trigger in the header).
 		chromedp.Click(`[data-cui-scope="docsite-header"] .cmd`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
+		sheetOpen("site-command-palette"),
 		chromedp.Evaluate(`window.innerHeight`, &innerH),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail')).display`, &railDisplay),
 		chromedp.Evaluate(`document.querySelector('.cui-section-menu__rail').getBoundingClientRect().top`, &railTop),
@@ -248,13 +296,15 @@ func TestE2E_SectionMenu_PillAndSheetFilter(t *testing.T) {
 		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
 		chromedp.Navigate(base+"/components/tabs"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
+		pageReady(),
+		waitFor(`(()=>{const b=document.querySelector('.cui-sheet-pill');return b.querySelector('.cui-sheet-pill__label').textContent+'|'+b.querySelector('.cui-sheet-pill__detail').textContent})()==='Tabs|Navigation'`),
 		chromedp.Evaluate(`(()=>{const b=document.querySelector('.cui-sheet-pill');return b.querySelector('.cui-sheet-pill__label').textContent+'|'+b.querySelector('.cui-sheet-pill__detail').textContent})()`, &pill),
 		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
-		chromedp.Sleep(700*time.Millisecond),
+		sheetOpen(drawer),
+		waitFor(`[...document.querySelectorAll('`+sheet+` details[open] .cui-section-menu__group-label')].map(e=>e.textContent).join('|')==='Navigation'`),
 		chromedp.Evaluate(`[...document.querySelectorAll('`+sheet+` details[open] .cui-section-menu__group-label')].map(e=>e.textContent).join('|')`, &openGroup),
 		chromedp.SendKeys(sheet+` .cui-section-menu__filter-input`, "datefield", chromedp.ByQuery),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(`[...document.querySelectorAll('`+sheet+` .cui-section-menu__link')].filter(a=>a.getClientRects().length).map(a=>a.textContent).join('|')==='DateField'`),
 		chromedp.Evaluate(`[...document.querySelectorAll('`+sheet+` .cui-section-menu__link')].filter(a=>a.getClientRects().length).map(a=>a.textContent).join('|')`, &shown),
 	); err != nil {
 		t.Fatalf("pill + sheet filter: %v", err)
@@ -298,23 +348,31 @@ func TestE2E_SectionMenu_SheetTouchScrolls(t *testing.T) {
 		emulation.SetTouchEmulationEnabled(true),
 		chromedp.Navigate(base+"/docs"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		pageReady(),
 		// Control: the same swipe on the page itself. A browser build that
 		// cannot synthesize a touch scroll (CI's Linux Chrome moved neither
 		// the page nor the sheet) leaves this at 0.
 		input.SynthesizeScrollGesture(195, 500).
 			WithYDistance(-200).
 			WithGestureSourceType(input.GestureTouch),
-		chromedp.Sleep(400*time.Millisecond),
+		// The page may legitimately not move (a browser that cannot
+		// synthesize touch scrolls), so wait for scrollY to settle.
+		scrollSettled(`scrollY`),
 		chromedp.Evaluate(`(()=>{const y=scrollY;scrollTo(0,0);return y})()`, &control),
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').click()`, nil),
-		chromedp.Sleep(700*time.Millisecond),
+		sheetOpen("docs-section-menu"),
 		chromedp.Evaluate(`(()=>{const s=`+sheet+`;return s.scrollHeight-s.clientHeight})()`, &overflow),
 		chromedp.Evaluate(`getComputedStyle(`+sheet+`).touchAction`, &rootTouch),
 		chromedp.Evaluate(`getComputedStyle(`+sheet+`.querySelector('.cui-widget-drag-handle')).touchAction`, &handleTouch),
 		input.SynthesizeScrollGesture(195, 500).
 			WithYDistance(-200).
 			WithGestureSourceType(input.GestureTouch),
-		chromedp.Sleep(400*time.Millisecond),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			if control < 100 {
+				return scrollSettled(sheet + `.scrollTop`).Do(ctx)
+			}
+			return waitFor(sheet + `.scrollTop>=100`).Do(ctx)
+		}),
 		chromedp.Evaluate(sheet+`.scrollTop`, &scrolled),
 		chromedp.Evaluate(`(()=>{const s=`+sheet+`;s.scrollTop=0;const r=s.querySelector('.cui-widget-drag-handle').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()`, &handle),
 	); err != nil {
@@ -339,9 +397,9 @@ func TestE2E_SectionMenu_SheetTouchScrolls(t *testing.T) {
 	y := handle[1]
 	steps := []chromedp.Action{touch(input.TouchStart, y)}
 	for i := 1; i <= 6; i++ {
-		steps = append(steps, touch(input.TouchMove, y+float64(i)*25), chromedp.Sleep(16*time.Millisecond))
+		steps = append(steps, touch(input.TouchMove, y+float64(i)*25), chromedp.Sleep(16*time.Millisecond)) // deliberate: paces the synthesized drag at one move per frame
 	}
-	steps = append(steps, touch(input.TouchEnd, 0), chromedp.Sleep(500*time.Millisecond),
+	steps = append(steps, touch(input.TouchEnd, 0), waitFor(`getComputedStyle(document.documentElement).overflow!=='hidden'`),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &lockAfterDrag))
 	if err := chromedp.Run(ctx, steps...); err != nil {
 		t.Fatalf("handle drag: %v", err)
@@ -370,16 +428,17 @@ func TestE2E_HubTOC_PhonePill(t *testing.T) {
 		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
 		chromedp.Navigate(base+"/framework"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		pageReady(),
 		chromedp.Evaluate(`(()=>{const a=document.querySelector('.fui-content-row__aside');return Math.round(a.getBoundingClientRect().height)+'|'+getComputedStyle(a).borderTopWidth})()`, &aside),
 		chromedp.Evaluate(`document.getElementById('migrations').scrollIntoView()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(label+`==='Migrations'`),
 		chromedp.Evaluate(label, &pill),
 		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(open+`+'|'+document.querySelector('.cui-sheet-head__title').textContent==='true|On this page'&&`+phoneSheetSettled),
 		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-sheet-head__title').textContent`, &opened),
 		chromedp.Evaluate(`[...document.querySelectorAll('.cui-phone-sheet__sheet .fui-toc__link')].map(a=>a.textContent).slice(0,2).join('|')`, &entries),
 		chromedp.Click(`.cui-phone-sheet__sheet a[href="#auth"]`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`!(`+open+`)&&Math.abs(document.getElementById('auth').getBoundingClientRect().top)<=200`),
 		chromedp.Evaluate(`!(`+open+`)`, &closed),
 		chromedp.Evaluate(`Math.abs(document.getElementById('auth').getBoundingClientRect().top)`, &jumped),
 	); err != nil {
@@ -421,22 +480,27 @@ func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
 		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
 		chromedp.Navigate(base+"/docs/"),
 		chromedp.WaitReady(`.cui-sheet-pill--bar`, chromedp.ByQuery),
+		pageReady(),
 		chromedp.Evaluate(`(()=>{
 			const floating=[...document.querySelectorAll('.cui-sheet-pill')].filter(p=>getComputedStyle(p).position==='fixed');
 			const rail=document.querySelector('[data-cui-comp="ui-anchored-rail"]').getClientRects().length;
 			return 'floating='+floating.length+' docs pill='+!!floating[0]?.closest('[data-cui-comp="cui-section-menu"]')+' rail boxes='+rail;
 		})()`, &layout),
 		chromedp.Evaluate(`document.getElementById('serving').scrollIntoView()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`(()=>{const b=`+bar+`, h=document.querySelector('header').getBoundingClientRect();
+			const top=b.getBoundingClientRect().top;
+			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()==='true|On this page: Serving HTTP'`),
 		chromedp.Evaluate(`(()=>{const b=`+bar+`, h=document.querySelector('header').getBoundingClientRect();
 			const top=b.getBoundingClientRect().top;
 			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()`, &pinned),
 		chromedp.Evaluate(bar+`.click()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`(`+open+`+'|'+document.querySelector('.cui-phone-sheet .cui-sheet-head__title').textContent+'|'+
+			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().bottom))==='true|On this page|0'&&`+phoneSheetSettled),
 		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-phone-sheet .cui-sheet-head__title').textContent+'|'+
 			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().bottom)`, &opened),
 		chromedp.Click(`.cui-phone-sheet__sheet a[href="#persist"]`, chromedp.ByQuery),
-		chromedp.Sleep(800*time.Millisecond),
+		waitFor(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
+			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()==='false|true|Persisting & migrating'`),
 		chromedp.Evaluate(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
 			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()`, &landed),
 	); err != nil {

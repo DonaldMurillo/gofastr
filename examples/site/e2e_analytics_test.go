@@ -465,7 +465,7 @@ func TestE2E_Analytics_SPANav(t *testing.T) {
 	})
 	// Bounded stray window: a double-fire (navigate listener + something
 	// else) would land here and fail the exact-count check below.
-	if err := chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond)); err != nil { // negative window: no second $pageview (double-fire) may land
 		t.Fatal(err)
 	}
 
@@ -529,7 +529,7 @@ func TestE2E_Analytics_CancelledNav(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('[data-cui-scope="docsite-header"] .links a[href="/framework"]').click()`, nil),
 		// Bounded settle: a pageview that should not exist cannot be
 		// waited for, so give the (suppressed) nav room to misfire.
-		chromedp.Sleep(1200*time.Millisecond),
+		chromedp.Sleep(1200*time.Millisecond), // negative window: the cancelled nav must fire no pageview and move no URL
 	); err != nil {
 		t.Fatalf("click cancelled link: %v", err)
 	}

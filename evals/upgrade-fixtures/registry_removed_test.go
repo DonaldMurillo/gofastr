@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
@@ -205,7 +206,7 @@ func removalPairs(tags []string, floor string) ([]removalPair, error) {
 func notesBetween(reg *upgrade.Registry, from, through string) []*upgrade.Note {
 	var notes []*upgrade.Note
 	for _, rel := range reg.Releases {
-		if upgrade.SemverLess(from, rel.Version) && !upgrade.SemverLess(through, rel.Version) {
+		if semver.Less(from, rel.Version) && !semver.Less(through, rel.Version) {
 			notes = append(notes, rel.Notes...)
 		}
 	}

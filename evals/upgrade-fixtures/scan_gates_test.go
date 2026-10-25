@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
 )
@@ -438,7 +439,7 @@ func fixtureGofastrVersion(t *testing.T, appDir string) string {
 		t.Fatalf("read %s/go.mod: %v", appDir, err)
 	}
 	for _, m := range regexp.MustCompile(`github\.com/DonaldMurillo/gofastr (v[0-9.]+)`).FindAllStringSubmatch(string(b), -1) {
-		if err := upgrade.ValidateSemver(m[1]); err == nil {
+		if err := semver.Validate(m[1]); err == nil {
 			return m[1]
 		}
 	}

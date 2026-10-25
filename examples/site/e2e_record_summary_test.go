@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 
@@ -84,7 +83,6 @@ func TestE2ERecordSummaryResponsiveContract(t *testing.T) {
 					chromedp.Navigate(base+"/components/recordsummary"),
 					chromedp.WaitReady("body", chromedp.ByQuery),
 					axetest.Prepare(scheme),
-					chromedp.Sleep(100*time.Millisecond),
 					chromedp.Evaluate(`(() => {
   const root = document.querySelector('[data-cui-comp="ui-record-summary"]');
   const title = root.querySelector('.fui-record-summary__title');

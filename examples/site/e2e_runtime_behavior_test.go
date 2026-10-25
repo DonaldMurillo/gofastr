@@ -49,7 +49,9 @@ func TestE2E_SetSignalRejectsJavascriptHref(t *testing.T) {
             window.__gofastr.setSignal('danger_href', 'javascript:alert(1)');
             window.__gofastr.setSignal('benign_href', '/safe-path');
         })()`, nil),
-		chromedp.Sleep(150*time.Millisecond),
+		// Signals apply in order: the benign href landing means the
+		// dangerous one was already processed (written or refused).
+		waitFor(`document.getElementById('sig-benign').getAttribute('href') === '/safe-path'`),
 		chromedp.Evaluate(`document.getElementById('sig-danger').getAttribute('href') || ''`, &dangerous),
 		chromedp.Evaluate(`document.getElementById('sig-benign').getAttribute('href') || ''`, &benign),
 	); err != nil {
@@ -96,7 +98,7 @@ func TestE2E_AnchorDownloadSkipsSPA(t *testing.T) {
             const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
             a.dispatchEvent(ev);
         })()`, nil),
-		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Sleep(200*time.Millisecond), // negative window: gofastr:navigate must not fire for <a download>
 		chromedp.Evaluate(`window.__navigateFired === true`, &navigateFired),
 		chromedp.Evaluate(`location.pathname`, &urlAfterClick),
 	); err != nil {
@@ -140,7 +142,7 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
             // Fire pointerover twice — runtime must de-dup per element.
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
         })()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`!!window.__gofastr.loadedModules?.popover`),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -215,7 +217,7 @@ func TestE2E_IdleFallbackUsesRIC(t *testing.T) {
             // fallback path.
             window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x' } }));
         })()`, nil),
-		chromedp.Sleep(300*time.Millisecond),
+		waitFor(`window.__timeoutZeroSeen === true`),
 		chromedp.Evaluate(`window.__rICUsed === true`, &rICUsed),
 		chromedp.Evaluate(`window.__timeoutZeroSeen === true`, &timeoutZeroSeen),
 	); err != nil {

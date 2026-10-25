@@ -198,7 +198,7 @@ func TestMiddlewareProductionPassthrough(t *testing.T) {
 		t.Fatalf("production wrapped the writer: %T", seen)
 	}
 	if Loads() != 0 {
-		t.Fatalf("production loaded the registry %d times", Loads())
+		t.Fatalf("production loaded the table %d times", Loads())
 	}
 }
 

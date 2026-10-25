@@ -30,7 +30,7 @@ const scanCap = 16 << 20
 // devMode is the `gofastr dev` predicate (framework/dev's Enabled),
 // asked per request so this package stays leaf-level. In a Go test
 // binary responses are always armed; in production the handler gets
-// the writer it was given and the registry is never loaded.
+// the writer it was given and the retired table is never loaded.
 func Middleware(devMode func() bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +113,7 @@ type productionScanKey struct{}
 // ProductionScan exempts requests through next from the retired-markup
 // scan the way renderdiag.ProductionStatus exempts them from the
 // test-only 500: a test can drive the production posture (no scan, no
-// registry load) inside a test binary. The exemption ends at t.Cleanup,
+// table load) inside a test binary. The exemption ends at t.Cleanup,
 // is invisible to any HTTP request, and pans outside a test binary.
 func ProductionScan(t testing.TB, next http.Handler) http.Handler {
 	t.Helper()

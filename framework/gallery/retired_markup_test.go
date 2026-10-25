@@ -14,7 +14,7 @@ import (
 // The runtime retired-markup check fails an app's test on every name
 // the upgrade registry retired. A name the kit itself still emits would
 // fail every app that renders the component, so these gates render the
-// kit against the live registry and refuse any finding: every catalog
+// kit against the shipped retired table and refuse any finding: every catalog
 // demo, a widget's chrome at every position (the panel, backdrop and
 // position classes), and every registered stylesheet's class
 // selectors. v0.13.0's note once retired cui-pos-center, which every

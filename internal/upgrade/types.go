@@ -3,8 +3,9 @@
 // note with the guidance an app needs and a Find describing exactly
 // which code the change affects. The scanner that runs a Find against
 // an app lives in internal/upgrade/scan; this package has no
-// dependency on go/packages, so the runtime can read the retired-name
-// lists without linking a type checker.
+// dependency on go/packages. Serving code never imports it: the
+// dev-mode retired-markup check reads internal/retired's table, which
+// internal/retired/internal/tablegen generates from this registry.
 package upgrade
 
 import "regexp"

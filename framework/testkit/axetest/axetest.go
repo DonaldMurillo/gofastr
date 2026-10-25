@@ -7,9 +7,12 @@
 //
 //   - [NewBrowser], one chromedp browser context reused across all scans;
 //   - [NewTab], a fresh tab per page so the previous page's SSE socket tears down;
+//   - [WaitReady], the post-navigation wait: the page loaded and every
+//     runtime module it requested registered;
 //   - [Prepare], the load-bearing color-scheme freeze + force step;
-//   - [Scan], injects axe and runs it against the CURRENT DOM state (so a
-//     caller can open a modal first and then scan).
+//   - [Scan], runs axe against the CURRENT DOM state (so a caller can open a
+//     modal first and then scan), injecting the engine once per document;
+//   - [ScanSchemes], Prepare + Scan per scheme on one loaded page.
 //
 // Each app keeps its own page list, allowlist, and gate Test function, only
 // the reusable machinery lives here. Derive the page list from the same
@@ -162,10 +165,88 @@ func filteredErrorf(format string, args ...any) {
 	log.Printf("ERROR: "+format, args...)
 }
 
+// readyJS reports why the current document is not settled yet, or ""
+// once it is: the load event fired, web fonts finished, the GoFastr
+// runtime booted (when the page ships it), no client navigation is in
+// flight (the runtime marks <html aria-busy> for that window), and every
+// split runtime module the page requested has registered itself in
+// window.__gofastr.loadedModules. A module script that failed to load
+// never registers, so the wait names it instead of scanning a page whose
+// behaviour never attached.
+const readyJS = `(() => {
+	if (document.readyState !== 'complete') return 'document.readyState is ' + document.readyState;
+	if (document.fonts && document.fonts.status !== 'loaded') return 'web fonts are still loading';
+	const G = window.__gofastr;
+	if (document.querySelector('script[src*="/__gofastr/runtime.js"]') && !G) return 'the GoFastr runtime has not booted';
+	if (document.documentElement.getAttribute('aria-busy') === 'true') return 'a client navigation is in flight (<html aria-busy>)';
+	const lm = (G && G.loadedModules) || {};
+	for (const s of document.querySelectorAll('script[src*="/__gofastr/runtime/"]')) {
+		const m = /\/__gofastr\/runtime\/([\w-]+)\.js$/.exec(new URL(s.src, location.href).pathname);
+		if (m && !(Object.prototype.hasOwnProperty.call(lm, m[1]) && lm[m[1]])) return 'runtime module ' + m[1] + ' has not registered';
+	}
+	return '';
+})()`
+
+// readyPoll is how often [WaitReady] and [Prepare] re-check the page.
+// The loop runs in Go, not in the page, so a throttled tab's timers
+// cannot stretch it.
+const readyPoll = 25 * time.Millisecond
+
+// readyTimeout bounds [WaitReady] and the scheme check in [Prepare]: a
+// page that never settles fails with the reason instead of hanging
+// until the caller's tab deadline.
+// A var so the package's own guard test can shorten it.
+var readyTimeout = 10 * time.Second
+
+// pollSettled evaluates js, a script returning "" when the awaited state
+// holds and a reason otherwise, until it returns "" on two consecutive
+// polls. The second poll catches work queued right behind the first
+// (an idle-callback module request, a listener reacting to the change).
+func pollSettled(ctx context.Context, js, what string) error {
+	deadline := time.Now().Add(readyTimeout)
+	hits := 0
+	reason := "never evaluated"
+	for {
+		var got string
+		if err := chromedp.Evaluate(js, &got).Do(ctx); err != nil {
+			return fmt.Errorf("axetest: wait for %s: %w", what, err)
+		}
+		if got == "" {
+			hits++
+			if hits == 2 {
+				return nil
+			}
+		} else {
+			hits = 0
+			reason = got
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("axetest: %s not reached within %s: %s", what, readyTimeout, reason)
+		}
+		if err := chromedp.Sleep(readyPoll).Do(ctx); err != nil {
+			return fmt.Errorf("axetest: wait for %s: %w", what, err)
+		}
+	}
+}
+
+// WaitReady is a chromedp action that waits until the current document
+// has settled: the load event fired, web fonts loaded, the GoFastr
+// runtime booted (when the page ships it), no client navigation is in
+// flight, and every split runtime module the page requested has
+// registered. It holds on two consecutive polls 25ms apart and fails
+// with the unmet condition after 10s. Run it after navigating and
+// before [Prepare]; it replaces a fixed post-navigation sleep.
+func WaitReady() chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return pollSettled(ctx, readyJS, "page ready")
+	})
+}
+
 // Prepare is a chromedp action that freezes CSS transitions/animations and
 // forces the given color scheme on the current document and its UA controls.
-// Run it AFTER
-// navigating (and a brief settle), BEFORE any widget interaction and [Scan].
+// Run it AFTER navigating ([WaitReady]), BEFORE any widget interaction and
+// [Scan]. It may run again on the same document to flip the scheme in
+// place; [ScanSchemes] does exactly that.
 //
 // The freeze is load-bearing AND must be a constructed stylesheet: the scheme
 // flip starts 120–160ms color transitions (header links, search pill), and in
@@ -175,6 +256,11 @@ func filteredErrorf(format string, args ...any) {
 // element cannot fix this when the host ships a `default-src 'self'` CSP,
 // which silently blocks inline styles; adoptedStyleSheets is script-created
 // and not subject to style-src, so it bypasses the CSP.
+//
+// Prepare returns once the scheme took effect: <html data-color-scheme>
+// and <meta name="color-scheme"> both name it, and the body's computed
+// colors read the same on two consecutive polls, so a listener reacting to
+// the attribute has run before axe measures.
 func Prepare(scheme string) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		// Freeze transitions via a constructed stylesheet (CSP-safe).
@@ -208,9 +294,52 @@ func Prepare(scheme string) chromedp.Action {
 			})()`, scheme), nil).Do(ctx); err != nil {
 			return err
 		}
-		// Settle so any scheme-attribute listeners run before axe measures.
-		return chromedp.Sleep(150 * time.Millisecond).Do(ctx)
+		return pollSettled(ctx, schemeAppliedJS(scheme), scheme+" color scheme")
 	})
+}
+
+// schemeAppliedJS reports why scheme has not taken effect on the current
+// document, or "" once it has. The body's computed colors are kept on
+// window between polls; reading them forces a style recalc, and a change
+// since the previous poll means something is still restyling the page.
+func schemeAppliedJS(scheme string) string {
+	return fmt.Sprintf(`(() => {
+		const mode = %q;
+		const root = document.documentElement;
+		if (root.getAttribute('data-color-scheme') !== mode) return '<html data-color-scheme> is ' + root.getAttribute('data-color-scheme');
+		const meta = document.querySelector('meta[name="color-scheme"]');
+		if (!meta || meta.getAttribute('content') !== mode) return '<meta name="color-scheme"> is ' + (meta && meta.getAttribute('content'));
+		const cs = getComputedStyle(document.body || root);
+		const now = mode + '|' + cs.color + '|' + cs.backgroundColor;
+		const prev = window.__axetestSchemeColors;
+		window.__axetestSchemeColors = now;
+		return prev === now ? '' : 'body colors still changing (' + now + ')';
+	})()`, scheme)
+}
+
+// ScanSchemes scans the CURRENT document once per scheme: for each it
+// runs [Prepare](scheme), which flips the scheme in place, then [Scan].
+// The page loads once and axe is injected once for every scheme, where a
+// fresh tab per scheme would pay a second navigation, settle and
+// injection for the same DOM. Violations come back tagged with the
+// scheme that produced them; the first error stops the run. An empty
+// scheme list is an error: it would scan nothing and pass.
+func ScanSchemes(ctx context.Context, schemes []string, ruleAllowlist map[string]string, opts ...ScanOption) ([]Violation, error) {
+	if len(schemes) == 0 {
+		return nil, fmt.Errorf("axetest: ScanSchemes got no schemes; an empty list would scan nothing and pass")
+	}
+	var kept []Violation
+	for _, scheme := range schemes {
+		if err := chromedp.Run(ctx, Prepare(scheme)); err != nil {
+			return kept, fmt.Errorf("prepare %s scheme: %w", scheme, err)
+		}
+		vs, err := Scan(ctx, scheme, ruleAllowlist, opts...)
+		if err != nil {
+			return kept, err
+		}
+		kept = append(kept, vs...)
+	}
+	return kept, nil
 }
 
 // ScanOption modifies how [Scan] configures axe.run(). The nil option is a
@@ -240,7 +369,7 @@ func WithEnabledRules(rules ...string) ScanOption {
 	return func(c *scanConfig) { c.enabledRules = append(c.enabledRules, rules...) }
 }
 
-// Scan injects axe-core and runs it once against the CURRENT DOM state,
+// Scan runs axe-core once against the CURRENT DOM state,
 // returning allowlist-filtered [Violation]s tagged with scheme. The caller
 // controls navigation, [Prepare](scheme), and any widget opening before
 // calling. Scan only measures whatever the page looks like right now, which
@@ -274,10 +403,26 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 		return nil, fmt.Errorf("axe pre-scan (%s scheme): page rendered only %d elements under <body> (need ≥%d): the page is blank or not rendered; refusing a vacuous pass", scheme, elementCount, minBodyElements)
 	}
 
+	// Inject the 553 KB engine only when this document does not hold the
+	// copy this harness injected: a second scan of the same page
+	// ([ScanSchemes] flipping the scheme in place) reuses it. A window.axe
+	// the page defined itself (an app bundling axe, a stub) is never
+	// trusted: the marker names the vendored engine, and the injection
+	// replaces anything else.
+	var injected bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__axetestEngine !== undefined && window.__axetestEngine === window.axe && typeof window.axe.run === 'function'`, &injected),
+	); err != nil {
+		return nil, fmt.Errorf("axe scan (%s scheme): probe engine: %w", scheme, err)
+	}
+	if !injected {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(";"+axeMinJS+";window.__axetestEngine = window.axe;void 0", nil)); err != nil {
+			return nil, fmt.Errorf("axe scan (%s scheme): inject engine: %w", scheme, err)
+		}
+	}
 	rulesJS := axeRulesJS(cfg)
 	var raw string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(";"+axeMinJS, nil),
 		chromedp.Evaluate(`(async () => {
 			const r = await axe.run(document, {
 				resultTypes: ['violations'],

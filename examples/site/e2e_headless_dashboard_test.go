@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	cdnetwork "github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -35,7 +34,10 @@ func TestE2E_DashboardSettingsJourney(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/headless/default/dashboard"),
 		pageReady(),
-		chromedp.Sleep(400*time.Millisecond),
+		waitFor(`(() => {
+			const regions = document.querySelectorAll('#hd-settings [data-hui-when]');
+			return regions.length >= 2 && regions[0].hidden && regions[1].hidden && document.querySelector('input[name="webhook"]').disabled;
+		})()`),
 		chromedp.Evaluate(`(() => {
 			const regions = document.querySelectorAll('#hd-settings [data-hui-when]');
 			return regions.length >= 2 && regions[0].hidden && regions[1].hidden;
@@ -56,7 +58,7 @@ func TestE2E_DashboardSettingsJourney(t *testing.T) {
 	var outerShown, innerStillHidden, hookEnabled bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelector('input[name="notify"][value="webhook"]').click()`, nil),
-		chromedp.Sleep(250*time.Millisecond),
+		waitFor(`(r => !r[0].hidden && r[1].hidden && !document.querySelector('input[name="webhook"]').disabled)(document.querySelectorAll('#hd-settings [data-hui-when]'))`),
 		chromedp.Evaluate(`!document.querySelectorAll('#hd-settings [data-hui-when]')[0].hidden`, &outerShown),
 		chromedp.Evaluate(`document.querySelectorAll('#hd-settings [data-hui-when]')[1].hidden`, &innerStillHidden),
 		chromedp.Evaluate(`!document.querySelector('input[name="webhook"]').disabled`, &hookEnabled),
@@ -74,7 +76,7 @@ func TestE2E_DashboardSettingsJourney(t *testing.T) {
 	var innerShown bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.getElementById('hd-retries').click()`, nil),
-		chromedp.Sleep(250*time.Millisecond),
+		waitFor(`!document.querySelectorAll('#hd-settings [data-hui-when]')[1].hidden`),
 		chromedp.Evaluate(`!document.querySelectorAll('#hd-settings [data-hui-when]')[1].hidden`, &innerShown),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)

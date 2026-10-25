@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -36,8 +35,15 @@ func TestE2E_SortableKanbanDragPersist(t *testing.T) {
 			item.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true, cancelable:true}));
 			item.dispatchEvent(new KeyboardEvent('keydown', {key:' ', bubbles:true, cancelable:true}));
 		})()`, nil),
-		// Wait for the async commit POST to complete.
-		chromedp.Sleep(500*time.Millisecond),
+		// Wait for the async commit POST to complete: on a 2xx the
+		// module announces the destination list's "saved" copy in its
+		// live region (a failure announces "reverted" instead).
+		waitFor(`(() => {
+			const dest = document.querySelector('[data-hui-sort-key="k1"]').closest('[data-hui-sortable-container]');
+			const saved = dest.getAttribute('data-hui-sortable-s-saved') || '';
+			const live = document.getElementById('hui-sortable-live');
+			return saved !== '' && !!live && live.textContent === saved.replace(/\{\{(label|list|position)\}\}/g, '');
+		})()`),
 		// Verify k1 is now in the "doing" column.
 		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="k1"]').closest('[data-hui-sortable-container]').getAttribute('data-hui-sortable-container')`, &containerAfter),
 	)
