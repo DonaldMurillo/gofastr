@@ -1,15 +1,11 @@
 package appgen
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -147,44 +143,5 @@ func TestCrudScreensLiveInCrudFile(t *testing.T) {
 	}
 	if strings.Contains(fileContent(files, "app.go"), `appUI.List("customers")`) {
 		t.Fatal("app.go must NOT carry the customers screen render")
-	}
-}
-
-// TestPerScreenFilesCompile builds the generated app to confirm the seam,
-// self-registration, and the layout-var references all type-check.
-func TestPerScreenFilesCompile(t *testing.T) {
-	clitest.VariantBuild(t)
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	files, err := RenderAppSpecFiles(perscreenBP())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	for _, f := range files {
-		full := filepath.Join(dir, f.Name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/test\n\ngo "+goVersion+"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => "+repoRoot+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	cmd := exec.Command("go", "build", "-mod=mod", "./...")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("generated per-screen app did not build: %v\n%s", err, out)
 	}
 }

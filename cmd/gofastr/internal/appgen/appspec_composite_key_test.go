@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,12 +16,13 @@ import (
 )
 
 // TestCompositeKeyScreens generates an app whose record screens show a
-// composite-key entity and runs the app's own generated e2e suite: it
-// creates a record, opens its detail screen at one path segment per key
-// column, then updates and deletes it through the API.
+// composite-key entity and checks the screens it emits: one path segment
+// per key column, the joined key, an escaped base, and an e2e test that
+// reads the key columns back. TestUnionApp builds and runs the same shape,
+// its bookings entity, through the generated e2e suite and editSaveTest.
 func TestCompositeKeyScreens(t *testing.T) {
 	if testing.Short() {
-		t.Skip("builds and boots a generated app; skipped under -short")
+		t.Skip("generates an app; skipped under -short")
 	}
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
@@ -60,24 +60,6 @@ func TestCompositeKeyScreens(t *testing.T) {
 	for _, want := range compositeScreenWants("enrollments") {
 		if !strings.Contains(src.String(), want) {
 			t.Errorf("generated app lacks %s", want)
-		}
-	}
-	if t.Failed() {
-		return
-	}
-
-	clitest.WriteTestFile(t, filepath.Join(dir, "edit_save_test.go"), editSaveTest("enrollments"))
-	clitest.VariantBuild(t)
-	cmd := exec.Command("go", "test", "-run", "^(TestE2E|TestEditSavesToRecord)$", "-count=1", "-v", ".")
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("generated e2e failed: %v\n%s", err, out)
-	}
-	for _, name := range []string{"TestE2E", "TestEditSavesToRecord"} {
-		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
-			t.Fatalf("generated %s did not run:\n%s", name, out)
 		}
 	}
 }
