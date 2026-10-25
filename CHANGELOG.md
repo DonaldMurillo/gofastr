@@ -15,6 +15,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   moved out of the package to `cmd/check-embed/testdata`, so editing a
   fixture no longer selects `cmd/gofastr` and the other packages that
   import `embedcheck`.
+- **`internal/upgrade`'s tests are split by what they read (#589).**
+  The parser tests and the release-recipe gates stay in
+  `internal/upgrade`. The `examples/` check is
+  `internal/upgrade/examplescan`, one scan shared by the v0.86.0 and
+  v0.87.0 assertions. The release-note scans are
+  `internal/upgrade/releasetest` (v0.86.0 on; new release tests go
+  there), `releasetest/mid` and `releasetest/old`. A CHANGELOG edit or an
+  `examples/` edit no longer reruns every scan, and none of these
+  packages takes more than about 5s, down from about 18s for the one
+  package.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

@@ -1,4 +1,4 @@
-package upgrade_test
+package mid
 
 import (
 	"maps"
@@ -13,10 +13,7 @@ import (
 // registry so the tests exercise the shipped YAML, not a copy.
 func midNote(t *testing.T, version string, index int, kinds ...string) *upgrade.Note {
 	t.Helper()
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Note(t, reg, version, index)
 	if n.Find.Empty() {
 		t.Fatalf("%s note %d has no find", version, index)
@@ -811,10 +808,7 @@ func main() {
 // correct after their release: hits: edit would claim every hit must
 // change, which is false where a spelling survives on another surface.
 func TestMidTierDecisions(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	// v0.60.0/2: static export, theme-variant pages, and embeds keep the
 	// inline catalog blocks and the /__gofastr/actions.js concat endpoint,
 	// so a hit on those spellings may be correct as written.
@@ -828,10 +822,7 @@ func TestMidTierDecisions(t *testing.T) {
 // and holds the count to the ones this slice justified, so a silent
 // extra nodetect cannot slip in.
 func TestMidNodetectNotesJustified(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	want := map[string]int{ // version -> count of nodetect notes
 		"v0.56.0": 1, "v0.57.0": 1, "v0.58.0": 1, "v0.59.0": 1,
 		"v0.60.0": 0, "v0.61.0": 3, "v0.62.0": 0, "v0.63.0": 1,

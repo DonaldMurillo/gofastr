@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"strings"
@@ -22,10 +22,7 @@ func BaseCSS(t Theme) string     { return "" }
 // through the shipped YAML.
 func v088Note(t *testing.T, prefix string) *upgrade.Note {
 	t.Helper()
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	for _, rel := range reg.Releases {
 		if rel.Version != "v0.88.0" {
 			continue

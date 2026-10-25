@@ -1,6 +1,8 @@
-package upgrade_test
+package releasetest
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,10 +15,7 @@ import (
 // review hit (the app decides whether to add framework.WithMCPTools(mcptools.Register)),
 // and an app that never asked for introspection is silent.
 func TestV087DocsToolsNoteHitsIntrospectionCalls(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 0), "uses")
 	if !n.Review {
 		t.Fatalf("v0.87.0/0 must be review-tier: each hit is a decision, not an edit")
@@ -130,12 +129,11 @@ func v087Marks(t *testing.T, marks ...string) map[string]bool {
 
 // TestV087PrefixNotesListEveryOldSpelling drives the shipped v0.87.0
 // prefix and hook notes over the fixture: each marked line is a hit,
-// in Go constants, CSS, JS and HTML alike, and nothing else is.
+// in Go constants, CSS, JS and HTML alike, and nothing else is. One scan
+// carries all three notes: their matchers (strings, css, text) record
+// hits per note and read nothing another note found.
 func TestV087PrefixNotesListEveryOldSpelling(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	want := map[int]map[string]bool{
 		1: v087Marks(t, "M1", "M2", "M3", "M4", "M5", "C1", "C2", "J1", "J2", "J3", "H1", "H2"),
 		2: v087Marks(t, "M6", "C3", "J4", "H3"),
@@ -143,17 +141,21 @@ func TestV087PrefixNotesListEveryOldSpelling(t *testing.T) {
 	}
 	kit := map[string]string{"core-ui/html/html.go": "package html\n\ntype Attrs map[string]string\n"}
 	root := scantest.App(t, v087Fixture, scantest.Options{Kit: kit})
-	for idx, lines := range want {
+	notes := map[int]*upgrade.Note{}
+	for idx := range want {
 		n := scantest.Note(t, reg, "v0.87.0", idx)
 		if n.Review || !n.Breaking {
 			t.Errorf("note %d: every old spelling is dead, so the note is breaking and edit-tier", idx)
 		}
-		res := scantest.Run(t, root, []*upgrade.Note{n}, reg.MarkerSinks)
-		if !res.TypeChecked {
-			t.Fatalf("fixture did not type-check: broken=%v unexplained=%v", res.Broken, res.Unexplained)
-		}
+		notes[idx] = n
+	}
+	res := scantest.Run(t, root, slices.Collect(maps.Values(notes)), reg.MarkerSinks)
+	if !res.TypeChecked {
+		t.Fatalf("fixture did not type-check: broken=%v unexplained=%v", res.Broken, res.Unexplained)
+	}
+	for idx, lines := range want {
 		got := map[string]bool{}
-		for _, h := range res.Hits[n] {
+		for _, h := range res.Hits[notes[idx]] {
 			got[h.File+":"+itoa(h.Line)] = true
 		}
 		for line := range lines {
@@ -169,46 +171,12 @@ func TestV087PrefixNotesListEveryOldSpelling(t *testing.T) {
 	}
 }
 
-// TestV087ExamplesStaySilent scans the repo's migrated examples tree
-// with the v0.87.0 string, css and text matchers: zero hits.
-//
-//gofastr:test-reads examples/
-func TestV087ExamplesStaySilent(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
-	var notes []*upgrade.Note
-	for _, rel := range reg.Releases {
-		if rel.Version != "v0.87.0" {
-			continue
-		}
-		for _, n := range rel.Notes {
-			notes = append(notes, scantest.Only(n, "strings", "css", "config", "text"))
-		}
-	}
-	res := scantest.Run(t, "../../examples", notes, reg.MarkerSinks)
-	// Zero hits on a tree that did not type-check prove nothing: the
-	// attribute matcher needs the kit's Attrs type to see map keys.
-	if !res.TypeChecked || len(res.Broken) != 0 {
-		t.Fatalf("examples tree did not type-check: broken=%v errors=%+v", res.Broken, res.Unexplained)
-	}
-	for i, n := range notes {
-		for _, h := range scantest.Hits(res, n) {
-			t.Errorf("v0.87.0 note %d (%s): fires on the migrated examples tree: %s", i, n.Change, h)
-		}
-	}
-}
-
 // The XS shadow note, through the shipped YAML: the ShadowSet literal an
 // earlier `gofastr theme init` wrote (no XS, so Validate now refuses it)
 // is a review hit, and a theme that starts from style.DefaultTheme() and
 // sets no ShadowSet step is silent.
 func TestV087ShadowXSNoteHitsShadowLiteral(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 5), "fields")
 	if !n.Review || !n.Breaking {
 		t.Fatalf("v0.87.0/5 must be breaking and review-tier: review=%v breaking=%v", n.Review, n.Breaking)
@@ -271,10 +239,7 @@ func App() style.Theme {
 // now refuses outline-offset: 2px, and the same rule on the stroke tokens
 // is silent. A width in the kit's own Go-string CSS is not the host's.
 func TestV087StrokeNoteHitsOwnedSheet(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 6), "css")
 	if n.Review || !n.Breaking {
 		t.Fatalf("v0.87.0/6 must be breaking and edit-tier: review=%v breaking=%v", n.Review, n.Breaking)
@@ -310,10 +275,7 @@ func TestV087StrokeNoteHitsOwnedSheet(t *testing.T) {
 // the same sheet on the leading, tracking and opacity tokens, or with
 // values off their scale, is silent.
 func TestV087TypeScaleNoteHitsOwnedSheet(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 7), "css")
 	if n.Review || !n.Breaking {
 		t.Fatalf("v0.87.0/7 must be breaking and edit-tier: review=%v breaking=%v", n.Review, n.Breaking)
@@ -347,10 +309,7 @@ func TestV087TypeScaleNoteHitsOwnedSheet(t *testing.T) {
 // reads --color-secondary, whose role flipped from grey ink to a light
 // fill. A hover edge on --color-border-strong, its new role, is silent.
 func TestV087ZincNoteHitsDefaultTheme(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	var note *upgrade.Note
 	for _, rel := range reg.Releases {
 		for _, c := range rel.Notes {
@@ -402,10 +361,7 @@ var B = uitheme.Default()
 // an edit hit in any spelling the check reads as --spacing-lg, and the
 // token, an off-scale value and a plain stylesheet are silent.
 func TestV087LogicalSpacingNoteHitsOwnedSheet(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	var note *upgrade.Note
 	for _, rel := range reg.Releases {
 		for _, c := range rel.Notes {

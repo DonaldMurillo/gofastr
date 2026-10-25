@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"slices"
@@ -13,10 +13,7 @@ import (
 // each removed block kind in a gofastr.yml is a hit on its own, and a
 // blueprint on the current spellings is silent.
 func TestV087BlueprintNoteHitsRemovedKinds(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	i := slices.IndexFunc(reg.Releases, func(r upgrade.Release) bool { return r.Version == "v0.87.0" })
 	if i < 0 {
 		t.Fatal("registry has no v0.87.0")

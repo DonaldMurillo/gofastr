@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"fmt"
@@ -14,19 +14,16 @@ import (
 // The v0.86.0 notes, driven through the shipped YAML and the real scan
 // engine: every string/css matcher separates an app written against
 // v0.85.0 from its migrated spelling, the Go-API matchers hit the old
-// symbols through a stub kit at the real import paths, the kept ui-*
-// marker names stay silent, and the repo's migrated examples tree
-// reports zero hits beyond three documented prose mentions.
+// symbols through a stub kit at the real import paths, and the kept ui-*
+// marker names stay silent. The check that the repo's migrated examples
+// tree reports zero hits lives in internal/upgrade/examplescan.
 
 const v086Version = "v0.86.0"
 
 // v086Loaded returns the registry and its v0.86.0 release.
 func v086Loaded(t *testing.T) (*upgrade.Registry, *upgrade.Release) {
 	t.Helper()
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	for i := range reg.Releases {
 		if reg.Releases[i].Version == v086Version {
 			return reg, &reg.Releases[i]
@@ -1680,28 +1677,6 @@ var sidebarClass = "ui-sidebar"
 		}
 		if len(lines) != 1 || !lines[want] {
 			t.Errorf("note %d (%s): expected exactly the class control hit at %s, got %v", i, n.Change, want, lines)
-		}
-	}
-}
-
-// TestV086ExamplesStaySilent scans the repo's examples tree (migrated
-// code) with every v0.86.0 note's string, css, config and text
-// matchers: zero hits. Go-API
-// matchers are stripped: a renamed symbol's replacement still exists
-// at HEAD and the examples call it, which is correct for an app below
-// v0.86.0 and not a property of migrated code.
-//
-//gofastr:test-reads examples/
-func TestV086ExamplesStaySilent(t *testing.T) {
-	reg, rel := v086Loaded(t)
-	notes := make([]*upgrade.Note, len(rel.Notes))
-	for i, n := range rel.Notes {
-		notes[i] = scantest.Only(n, "strings", "css", "config", "text")
-	}
-	res := scantest.Run(t, "../../examples", notes, reg.MarkerSinks)
-	for i, n := range notes {
-		for _, h := range scantest.Hits(res, n) {
-			t.Errorf("v0.86.0 note %d (%s): fires on the migrated examples tree: %s", i, n.Change, h)
 		}
 	}
 }

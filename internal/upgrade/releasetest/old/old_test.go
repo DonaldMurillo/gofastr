@@ -1,4 +1,4 @@
-package upgrade_test
+package old
 
 import (
 	"strings"
@@ -12,10 +12,7 @@ import (
 // registry so the tests exercise the shipped YAML, not a copy.
 func oldNote(t *testing.T, version string, index int, kinds ...string) *upgrade.Note {
 	t.Helper()
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Note(t, reg, version, index)
 	if n.Nodetect != "" {
 		t.Fatalf("%s note %d is nodetect; it has no matcher to drive", version, index)
@@ -489,10 +486,7 @@ func main() { _ = modes }
 // and holds the count to the ones this slice justified, so a silent
 // extra nodetect cannot slip in.
 func TestOldNodetectNotesJustified(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	want := map[string]int{ // version -> count of nodetect notes
 		"v0.3.0": 6, "v0.4.0": 0, "v0.5.0": 1, "v0.6.0": 2,
 		"v0.7.0": 1, "v0.11.0": 0, "v0.12.0": 1, "v0.13.0": 2,

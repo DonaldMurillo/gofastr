@@ -42,3 +42,13 @@ func TestOnlyKeepsNamedKinds(t *testing.T) {
 		t.Fatalf("Only = %+v (original %+v), want strings kept, uses dropped, original intact", got.Find, n.Find)
 	}
 }
+
+func TestRegistryParsesOnce(t *testing.T) {
+	reg := Registry(t)
+	if len(reg.Releases) == 0 {
+		t.Fatal("shared registry has no releases")
+	}
+	if Registry(t) != reg {
+		t.Fatal("Registry parsed the embedded registry twice")
+	}
+}

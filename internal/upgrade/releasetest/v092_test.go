@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"testing"
@@ -11,10 +11,7 @@ import (
 // key), as is a settings section left in the app spec; an app already on
 // the settings file is quiet.
 func TestV092SettingsNoteHitsRetiredFiles(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Note(t, reg, "v0.92.0", 1)
 	const mainGo = "package main\n\nfunc main() {}\n"
 	for _, old := range []map[string]string{

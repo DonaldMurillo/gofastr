@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import "testing"
 

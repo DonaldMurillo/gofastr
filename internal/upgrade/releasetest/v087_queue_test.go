@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"strings"
@@ -46,10 +46,7 @@ func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) { return nil, n
 // concrete queue, and is silent on the calls the guidance migrates
 // them to.
 func TestV087ListJobsNoteHitsOldCalls(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	var n *upgrade.Note
 	for _, rel := range reg.Releases {
 		for i := range rel.Notes {

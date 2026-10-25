@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"strings"
@@ -28,10 +28,7 @@ func (b *Battery) RegisterRoutes(any) {}
 
 func adminNote(t *testing.T, change string) *upgrade.Note {
 	t.Helper()
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	for _, rel := range reg.Releases {
 		if rel.Version != "v0.87.0" {
 			continue

@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"testing"
@@ -10,10 +10,7 @@ import (
 // A locale file still holding a moved ui.entity refusal key is found; the
 // entityui spelling is quiet.
 func TestV094MovedEntityKeysNote(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Note(t, reg, "v0.94.0", 7)
 	const mainGo = "package main\n\nfunc main() {}\n"
 	old := `{"ui": {"entity": {"bulkOverCap": "Selecciona como máximo {cap}"}}}`
@@ -31,10 +28,7 @@ func TestV094MovedEntityKeysNote(t *testing.T) {
 // A locale entry with a single-brace or %s placeholder is found; the
 // {{name}} spelling is quiet.
 func TestV094PlaceholderSpellingNote(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Note(t, reg, "v0.94.0", 13)
 	const mainGo = "package main\n\nfunc main() {}\n"
 	for _, body := range []string{

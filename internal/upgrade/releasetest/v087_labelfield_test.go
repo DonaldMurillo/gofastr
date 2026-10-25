@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"strings"
@@ -40,10 +40,7 @@ func FieldLabel(ctx context.Context, tr *i18n.Translator, entity, field, display
 // string for display) is silent — the positive fixture is what the
 // guidance compiles to, so the note cannot fire on its own fix.
 func TestV087FieldLabelNoteHitsOldHelper(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Only(labelFieldNote(t, reg), "uses")
 
 	old := scantest.App(t, map[string]string{"labels.go": `package app

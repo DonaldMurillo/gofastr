@@ -1,4 +1,4 @@
-package upgrade_test
+package releasetest
 
 import (
 	"testing"
@@ -10,10 +10,7 @@ import (
 // A comma string under an sdk or cli entry is found; the list spelling and
 // a block list are quiet.
 func TestV093SettingsListsNote(t *testing.T) {
-	reg, err := upgrade.Load()
-	if err != nil {
-		t.Fatalf("upgrade.Load: %v", err)
-	}
+	reg := scantest.Registry(t)
 	n := scantest.Note(t, reg, "v0.93.0", 2)
 	const mainGo = "package main\n\nfunc main() {}\n"
 	const head = "codegen:\n  generators:\n    - name: sdk\n      config:\n"
