@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 )
 
 // registryFS is the migration registry: registry.yml (through and the
@@ -21,7 +22,11 @@ import (
 // (a release PR with a BREAKING change adds its file in the same PR).
 // `gofastr upgrade` reads it to guide a project from its current
 // version to a target. The format is documented for contributors in
-// framework/docs/content/cli.md, under "The migration registry".
+// framework/docs/content/cli.md, under "The migration registry". A
+// breaking note naming kit classes or attributes also changes
+// internal/retired's generated table: `go generate ./internal/retired`
+// (TestTableIsCurrent in internal/retired/internal/tablegen fails until
+// it is run).
 //
 //go:embed registry.yml releases/*.yml
 var registryFS embed.FS
@@ -71,9 +76,9 @@ func ParseFS(fsys fs.FS) (*Registry, error) {
 	}
 	slices.SortFunc(reg.Releases, func(a, b Release) int {
 		switch {
-		case SemverLess(a.Version, b.Version):
+		case semver.Less(a.Version, b.Version):
 			return -1
-		case SemverLess(b.Version, a.Version):
+		case semver.Less(b.Version, a.Version):
 			return 1
 		}
 		return 0
@@ -138,7 +143,7 @@ func parseHeader(root *coreyaml.Node, allowed ...string) (*Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateSemver(through); err != nil {
+	if err := semver.Validate(through); err != nil {
 		return nil, errAt(tn.Line, "through: %v", err)
 	}
 	reg.Through = through
@@ -166,7 +171,7 @@ func parseRelease(n *coreyaml.Node, file string) (Release, error) {
 	if err != nil {
 		return rel, err
 	}
-	if err := ValidateSemver(version); err != nil {
+	if err := semver.Validate(version); err != nil {
 		return rel, errAt(vn.Line, "release version: %v", err)
 	}
 	rel.Version = version

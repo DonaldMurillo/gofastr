@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
 )
@@ -316,12 +317,12 @@ func RunUpgrade(args []string) {
 	}
 	currentFrom := "go.mod"
 	if opts.from != "" {
-		if err := upgrade.ValidateSemver(opts.from); err != nil {
+		if err := semver.Validate(opts.from); err != nil {
 			fmt.Fprintf(os.Stderr, "upgrade: --from: %v\n", err)
 			cli.OsExit(1)
 		}
 		current, currentFrom = opts.from, "--from"
-	} else if err := upgrade.ValidateSemver(current); err != nil {
+	} else if err := semver.Validate(current); err != nil {
 		// The version is project data headed for the terminal: one that
 		// is not vX.Y.Z (escape bytes included) is refused, and the
 		// error quotes it.
@@ -337,7 +338,7 @@ func RunUpgrade(args []string) {
 			cli.OsExit(1)
 		}
 	}
-	if err := upgrade.ValidateSemver(target); err != nil {
+	if err := semver.Validate(target); err != nil {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		cli.OsExit(1)
 	}
@@ -349,7 +350,7 @@ func RunUpgrade(args []string) {
 	}
 	fmt.Printf("Target:  %s\n\n", target)
 
-	if !upgrade.SemverLess(current, target) {
+	if !semver.Less(current, target) {
 		if current == target {
 			fmt.Println("Already on the target release: nothing to do.")
 			if opts.from == "" {
@@ -364,13 +365,13 @@ func RunUpgrade(args []string) {
 		fmt.Println()
 	}
 	lo, hi := current, target
-	if upgrade.SemverLess(target, current) {
+	if semver.Less(target, current) {
 		lo, hi = target, current
 	}
 	// Key the staleness warning on the UPPER bound of the inspected
 	// range rather than only the target. A downgrade FROM a version newer
 	// than the registry also spans releases this binary doesn't know.
-	if upgrade.SemverLess(reg.Through, hi) {
+	if semver.Less(reg.Through, hi) {
 		fmt.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", reg.Through)
 		fmt.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
 		fmt.Println("know. Install the newest involved CLI first and re-run:")

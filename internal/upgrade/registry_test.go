@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 )
 
 // fullDoc exercises every matcher and both note shapes (find and
@@ -352,7 +354,7 @@ func TestEmbeddedRegistryParsesSorted(t *testing.T) {
 		t.Fatalf("registry suspiciously small: %d releases", len(reg.Releases))
 	}
 	for i, r := range reg.Releases {
-		if err := ValidateSemver(r.Version); err != nil {
+		if err := semver.Validate(r.Version); err != nil {
 			t.Errorf("release %d version %q: %v", i, r.Version, err)
 		}
 		if len(r.Notes) == 0 {
@@ -369,7 +371,7 @@ func TestEmbeddedRegistryParsesSorted(t *testing.T) {
 				t.Errorf("note %q carries no registry line", n.Change)
 			}
 		}
-		if i > 0 && !SemverLess(reg.Releases[i-1].Version, r.Version) {
+		if i > 0 && !semver.Less(reg.Releases[i-1].Version, r.Version) {
 			t.Errorf("registry not sorted ascending: %s before %s", reg.Releases[i-1].Version, r.Version)
 		}
 	}
@@ -385,12 +387,12 @@ func TestThroughCoversNewestEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if err := ValidateSemver(reg.Through); err != nil {
+	if err := semver.Validate(reg.Through); err != nil {
 		t.Fatalf("through: %v", err)
 	}
 	var pending []string
 	for _, rel := range reg.Releases {
-		if SemverLess(reg.Through, rel.Version) {
+		if semver.Less(reg.Through, rel.Version) {
 			pending = append(pending, rel.Version)
 		}
 	}
@@ -443,7 +445,7 @@ func TestShippedEntriesAreChangelogReleases(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	for _, rel := range reg.Releases {
-		if SemverLess(reg.Through, rel.Version) {
+		if semver.Less(reg.Through, rel.Version) {
 			continue // pending: the release PR names it
 		}
 		if !shipped[rel.Version] {

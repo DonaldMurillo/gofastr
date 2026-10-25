@@ -298,6 +298,16 @@ notes:
         classes: [ui-site-header]
 ```
 
+The retired-markup check that test binaries and `gofastr dev` run over
+rendered pages reads a table generated from this registry, not the
+registry itself, so a release-note edit does not re-run every package
+that serves markup. After adding or changing a breaking note whose
+`find:` names a kit class or attribute (`ui-*`, `fui-*`, `data-cui-*`,
+`data-fui-*`, `data-hui-*`; the note above names `ui-site-header`),
+run `go generate ./internal/retired` and commit
+`internal/retired/retired_table.gen.go` with the note.
+`TestTableIsCurrent` fails with that command while the table is stale.
+
 The scan type-checks every Go file the go tool would build in some
 configuration, tests included:
 

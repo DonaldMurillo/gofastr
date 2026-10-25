@@ -1,69 +1,61 @@
 package retired
 
 import (
+	"slices"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
-const fixtureRegistry = `
-through: v9.9.9
-releases:
-  - version: v9.0.0
-    title: classes go
-    notes:
-      - change: "the ui-button class is gone"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [ui-button]
-            attrs: [data-fui-signal, data-fui-toggle-]
-          css:
-            classes: [ui-hero]
-      - change: "a non-breaking note adds nothing"
-        find:
-          strings:
-            classes: [ui-kept]
-  - version: v9.1.0
-    title: more
-    notes:
-      - change: "the ui-form family is renamed"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [ui-form]
-      - change: "the kit stopped emitting two generic names"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [card, ui-form-old]
-            attrs: [data-placeholder, data-when-name, data-hui-old]
-`
+// fixtureEntries is what the table generator emits for two breaking
+// notes, plus the generic names a note can name that New must drop: the
+// generator hands New every breaking note's names, kit namespace or not.
+func fixtureEntries() []Entry {
+	button := &Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
+	form := &Note{Version: "v9.1.0", Change: "the ui-form family is renamed"}
+	generic := &Note{Version: "v9.1.0", Change: "the kit stopped emitting two generic names"}
+	return []Entry{
+		{Kind: "class", Name: "ui-button", Note: button},
+		{Kind: "attr", Name: "data-fui-signal", Note: button},
+		{Kind: "attr", Name: "data-fui-toggle-", Note: button},
+		{Kind: "class", Name: "ui-hero", Note: button},
+		{Kind: "class", Name: "ui-form", Note: form},
+		{Kind: "class", Name: "ui-button", Note: form}, // a later mention keeps the first note
+		{Kind: "class", Name: "card", Note: generic},
+		{Kind: "class", Name: "ui-form-old", Note: generic},
+		{Kind: "attr", Name: "data-placeholder", Note: generic},
+		{Kind: "attr", Name: "data-when-name", Note: generic},
+		{Kind: "attr", Name: "data-hui-old", Note: generic},
+		{Kind: "attr", Name: "DATA-FUI-SIGNAL", Note: generic}, // attribute names fold: a duplicate
+	}
+}
 
 func fixtureSet(t *testing.T) *Set {
 	t.Helper()
-	reg, err := upgrade.Parse(fixtureRegistry)
-	if err != nil {
-		t.Fatalf("parse fixture: %v", err)
-	}
-	return FromRegistry(reg)
+	return New(fixtureEntries())
 }
 
-func TestSetFromRegistryBreakingOnly(t *testing.T) {
+// The first entry naming a name wins, and Entries is exactly what the
+// set kept, in order: the list the table generator writes.
+func TestNewKeepsFirstNoteAndListsEntries(t *testing.T) {
 	set := fixtureSet(t)
-	for name := range map[string]bool{"ui-button": true, "ui-hero": true, "ui-form": true} {
-		if set.matchClass(name) == nil {
-			t.Errorf("breaking class %q missing from the set", name)
-		}
+	if note := set.matchClass("ui-button"); note == nil || note.Version != "v9.0.0" {
+		t.Errorf("ui-button matched %+v, want the v9.0.0 note", note)
 	}
-	if set.matchClass("ui-kept") != nil {
-		t.Error("non-breaking note's class leaked into the set")
+	if note := set.matchAttr([]byte("data-fui-signal")); note == nil || note.Version != "v9.0.0" {
+		t.Errorf("data-fui-signal matched %+v, want the v9.0.0 note", note)
 	}
-	if set.matchAttr([]byte("data-fui-signal")) == nil {
-		t.Error("retired attr data-fui-signal missing")
+	var got []string
+	for _, e := range set.Entries() {
+		got = append(got, e.Kind+" "+e.Name)
+	}
+	want := []string{
+		"class ui-button", "attr data-fui-signal", "attr data-fui-toggle-", "class ui-hero",
+		"class ui-form", "class ui-form-old", "attr data-hui-old",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Entries() = %q, want %q", got, want)
+	}
+	if again := New(set.Entries()).Entries(); !slices.Equal(again, set.Entries()) {
+		t.Errorf("rebuilding from Entries() changed the set: %v", again)
 	}
 }
 
@@ -182,8 +174,9 @@ func TestSetCheckEmpty(t *testing.T) {
 	}
 }
 
-// Current loads the embedded registry once and caches it: the load
-// counter proves both the caching and the "only when scanned" contract.
+// Current builds the set from the generated table once and caches it:
+// the load counter proves both the caching and the "only when scanned"
+// contract.
 func TestCurrentLoadsOnce(t *testing.T) {
 	ResetForTest(t)
 	if Loads() != 0 {

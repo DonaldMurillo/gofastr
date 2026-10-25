@@ -12,26 +12,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
-	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
-// A registry shaped like the shipped one: a breaking note retiring a
-// class family and a data-fui-* attribute, plus a non-breaking note
-// whose spellings must not leak in.
-const retiredFixtureRegistry = `
-through: v9.9.9
-releases:
-  - version: v9.0.0
-    title: retired spellings
-    notes:
-      - change: "the ui-button class is gone"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [ui-button]
-            attrs: [data-fui-signal, data-fui-toggle-]
-`
+// retiredFixtureSet is shaped like the shipped table: one breaking note
+// retiring a class and a data-fui-* attribute plus an attribute family
+// (the trailing "-" retires every extension).
+func retiredFixtureSet() *retired.Set {
+	note := &retired.Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
+	return retired.New([]retired.Entry{
+		{Kind: "class", Name: "ui-button", Note: note},
+		{Kind: "attr", Name: "data-fui-signal", Note: note},
+		{Kind: "attr", Name: "data-fui-toggle-", Note: note},
+	})
+}
 
 // retiredScreen renders its markup at run time: the classes and
 // attribute names reach the page through Sprintf, exactly the shapes a
@@ -51,11 +44,7 @@ func (s retiredScreen) Render() render.HTML {
 
 func retiredHarness(t *testing.T, s retiredScreen) (*TestApp, *renderFailureTB) {
 	t.Helper()
-	reg, err := upgrade.Parse(retiredFixtureRegistry)
-	if err != nil {
-		t.Fatalf("parse fixture registry: %v", err)
-	}
-	retired.UseForTest(t, retired.FromRegistry(reg))
+	retired.UseForTest(t, retiredFixtureSet())
 	site := uiapp.NewApp("retired-check")
 	site.Register("/", s, nil)
 	app := NewApp(WithoutDefaultMiddleware()).Mount(uihost.New(site))
@@ -111,11 +100,7 @@ func TestHarnessScansNavPartials(t *testing.T) {
 // registry is process-global, and every later page in this package
 // would SSR its chrome.)
 func TestHarnessScansIslandResponses(t *testing.T) {
-	reg, err := upgrade.Parse(retiredFixtureRegistry)
-	if err != nil {
-		t.Fatalf("parse fixture registry: %v", err)
-	}
-	retired.UseForTest(t, retired.FromRegistry(reg))
+	retired.UseForTest(t, retiredFixtureSet())
 	app := NewApp(WithoutDefaultMiddleware())
 	app.Router().Post("/api/island", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -150,11 +135,11 @@ func TestHarnessScansIslandResponses(t *testing.T) {
 	}
 }
 
-// The harness reads the live registry, once, and uihost's own page
-// shell (runtime injection, layout markers) carries nothing it retires.
-// Whether the kit's components and widget chrome are clean is
+// The harness reads the shipped retired table, once, and uihost's own
+// page shell (runtime injection, layout markers) carries nothing it
+// retires. Whether the kit's components and widget chrome are clean is
 // framework/gallery's retired_markup_test.go, which renders all of them.
-func TestHarnessUsesLiveRegistry(t *testing.T) {
+func TestHarnessUsesShippedTable(t *testing.T) {
 	retired.ResetForTest(t)
 	site := uiapp.NewApp("retired-kit-check")
 	site.Register("/", kitChromeScreen{}, nil)
@@ -166,16 +151,16 @@ func TestHarnessUsesLiveRegistry(t *testing.T) {
 		t.Fatalf("status = %d: %s", resp.Status(), resp.Body())
 	}
 	if retired.Loads() != 1 {
-		t.Fatalf("registry loads = %d, want 1: the scan must read the live registry", retired.Loads())
+		t.Fatalf("table loads = %d, want 1: the scan must read the shipped table", retired.Loads())
 	}
 	if len(reporter.messages) != 0 {
-		t.Fatalf("kit chrome reported retired markup (registry wrong or kit wrong): %q", reporter.messages)
+		t.Fatalf("kit chrome reported retired markup (table wrong or kit wrong): %q", reporter.messages)
 	}
 }
 
 // End to end through the real uihost handler: under ProductionScan
 // (and with GOFASTR_DEV unset), serving a page that carries retired
-// markup loads the registry zero times. The guard is proven by the
+// markup loads the table zero times. The guard is proven by the
 // tests above, which load it exactly once for the same page.
 func TestProductionScanServesWithoutLoad(t *testing.T) {
 	retired.ResetForTest(t)
@@ -190,7 +175,7 @@ func TestProductionScanServesWithoutLoad(t *testing.T) {
 		t.Fatalf("production serve changed: %d %s", rec.Code, rec.Body.String())
 	}
 	if n := retired.Loads(); n != 0 {
-		t.Fatalf("production posture loaded the registry %d times", n)
+		t.Fatalf("production posture loaded the table %d times", n)
 	}
 }
 

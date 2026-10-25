@@ -133,7 +133,11 @@ was needed.
   above `through`: exactly one such file, its version the next patch,
   minor or major of `through` (`TestThroughCoversNewestEntry`); the
   release PR keeps or renames it to the version that ships, and every
-  file at or below `through` must name a CHANGELOG release.
+  file at or below `through` must name a CHANGELOG release. A breaking
+  note naming kit classes or attributes (`ui-*`, `fui-*`, `data-cui-*`,
+  `data-fui-*`, `data-hui-*`) also needs `go generate ./internal/retired`
+  (the dev-mode retired-markup table; `TestTableIsCurrent` names the
+  command when it is stale).
 - SECURITY.md "Supported versions": the latest-minor line
 - If the release adds host-facing surface (a new battery, uihost
   option, or CLI capability a host-app agent should reach for):
