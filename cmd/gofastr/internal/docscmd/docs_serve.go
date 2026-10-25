@@ -30,7 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	relsemver "github.com/DonaldMurillo/gofastr/internal/semver"
 	"golang.org/x/mod/semver"
 )
 
@@ -175,7 +175,7 @@ func docsSiteTag(flagVersion string) (string, error) {
 		if !strings.HasPrefix(v, "v") {
 			v = "v" + v
 		}
-		if err := upgrade.ValidateSemver(v); err != nil {
+		if err := relsemver.Validate(v); err != nil {
 			return "", fmt.Errorf("--release: %w", err)
 		}
 		if !project.IsReleaseTag(v) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
-	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 )
 
 // InstalledFrameworkVersion returns the exact module version represented by
@@ -32,7 +32,7 @@ func normalizeFrameworkVersion(v string) string {
 	if !strings.HasPrefix(v, "v") {
 		v = "v" + v
 	}
-	if err := upgrade.ValidateSemver(v); err != nil {
+	if err := semver.Validate(v); err != nil {
 		return ""
 	}
 	return v

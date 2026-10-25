@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 )
 
 // readChangelog loads the repo's CHANGELOG.md.
@@ -116,7 +118,7 @@ func TestUnreleasedMarksPendingBreaking(t *testing.T) {
 	}
 	pending, breaking := "", false
 	for _, r := range reg.Releases {
-		if SemverLess(reg.Through, r.Version) {
+		if semver.Less(reg.Through, r.Version) {
 			pending = r.Version
 			breaking = slices.ContainsFunc(r.Notes, func(n *Note) bool { return n.Breaking })
 		}

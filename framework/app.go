@@ -1993,9 +1993,10 @@ func NewApp(opts ...AppOption) *App {
 	// Retired-markup check: in test binaries and `gofastr dev`, every
 	// response whose body is markup (pages, island RPC answers, widget
 	// chrome, JSON signal values) is scanned for names the upgrade
-	// registry retired. Installed independent of the default chain so
-	// WithoutDefaultMiddleware apps are covered; in production it hands
-	// the handler its writer untouched and never loads the registry.
+	// registry retired (internal/retired's table generated from it).
+	// Installed independent of the default chain so WithoutDefaultMiddleware
+	// apps are covered; in production it hands the handler its writer
+	// untouched and never loads the table.
 	a.router.Use(retired.Middleware(dev.Enabled))
 
 	// Propagate DB to registry and its entities

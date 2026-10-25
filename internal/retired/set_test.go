@@ -3,67 +3,50 @@ package retired
 import (
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	"github.com/DonaldMurillo/gofastr/internal/retired/names"
 )
 
-const fixtureRegistry = `
-through: v9.9.9
-releases:
-  - version: v9.0.0
-    title: classes go
-    notes:
-      - change: "the ui-button class is gone"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [ui-button]
-            attrs: [data-fui-signal, data-fui-toggle-]
-          css:
-            classes: [ui-hero]
-      - change: "a non-breaking note adds nothing"
-        find:
-          strings:
-            classes: [ui-kept]
-  - version: v9.1.0
-    title: more
-    notes:
-      - change: "the ui-form family is renamed"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [ui-form]
-      - change: "the kit stopped emitting two generic names"
-        breaking: true
-        hits: edit
-        find:
-          strings:
-            classes: [card, ui-form-old]
-            attrs: [data-placeholder, data-when-name, data-hui-old]
-`
+// fixtureEntries is what the table generator hands names.Keep for two
+// breaking notes, plus the generic names a note can name that New must
+// drop. names.Keep's own tests pin the keep rule; these pin that New
+// reads only what it keeps.
+func fixtureEntries() []names.Entry {
+	button := &names.Note{Version: "v9.0.0", Change: "the ui-button class is gone"}
+	form := &names.Note{Version: "v9.1.0", Change: "the ui-form family is renamed"}
+	generic := &names.Note{Version: "v9.1.0", Change: "the kit stopped emitting two generic names"}
+	return []names.Entry{
+		{Kind: "class", Name: "ui-button", Note: button},
+		{Kind: "attr", Name: "data-fui-signal", Note: button},
+		{Kind: "attr", Name: "data-fui-toggle-", Note: button},
+		{Kind: "class", Name: "ui-hero", Note: button},
+		{Kind: "class", Name: "ui-form", Note: form},
+		{Kind: "class", Name: "ui-button", Note: form}, // a later mention keeps the first note
+		{Kind: "class", Name: "card", Note: generic},
+		{Kind: "class", Name: "ui-form-old", Note: generic},
+		{Kind: "attr", Name: "data-placeholder", Note: generic},
+		{Kind: "attr", Name: "data-when-name", Note: generic},
+		{Kind: "attr", Name: "data-hui-old", Note: generic},
+		{Kind: "attr", Name: "DATA-FUI-SIGNAL", Note: generic}, // attribute names fold: a duplicate
+	}
+}
 
 func fixtureSet(t *testing.T) *Set {
 	t.Helper()
-	reg, err := upgrade.Parse(fixtureRegistry)
-	if err != nil {
-		t.Fatalf("parse fixture: %v", err)
-	}
-	return FromRegistry(reg)
+	return New(fixtureEntries())
 }
 
-func TestSetFromRegistryBreakingOnly(t *testing.T) {
+// The first entry naming a name wins in the built set, for classes,
+// exact attributes and attribute prefixes alike.
+func TestNewKeepsFirstNote(t *testing.T) {
 	set := fixtureSet(t)
-	for name := range map[string]bool{"ui-button": true, "ui-hero": true, "ui-form": true} {
-		if set.matchClass(name) == nil {
-			t.Errorf("breaking class %q missing from the set", name)
-		}
+	if note := set.matchClass("ui-button"); note == nil || note.Version != "v9.0.0" {
+		t.Errorf("ui-button matched %+v, want the v9.0.0 note", note)
 	}
-	if set.matchClass("ui-kept") != nil {
-		t.Error("non-breaking note's class leaked into the set")
+	if note := set.matchAttr([]byte("data-fui-signal")); note == nil || note.Version != "v9.0.0" {
+		t.Errorf("data-fui-signal matched %+v, want the v9.0.0 note", note)
 	}
-	if set.matchAttr([]byte("data-fui-signal")) == nil {
-		t.Error("retired attr data-fui-signal missing")
+	if note := set.matchAttr([]byte("data-fui-toggle-open")); note == nil || note.Version != "v9.0.0" {
+		t.Errorf("data-fui-toggle-open matched %+v, want the v9.0.0 note", note)
 	}
 }
 
@@ -182,8 +165,9 @@ func TestSetCheckEmpty(t *testing.T) {
 	}
 }
 
-// Current loads the embedded registry once and caches it: the load
-// counter proves both the caching and the "only when scanned" contract.
+// Current builds the set from the generated table once and caches it:
+// the load counter proves both the caching and the "only when scanned"
+// contract.
 func TestCurrentLoadsOnce(t *testing.T) {
 	ResetForTest(t)
 	if Loads() != 0 {

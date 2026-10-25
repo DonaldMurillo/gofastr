@@ -8,9 +8,10 @@ import (
 )
 
 // Registry parsing and validation live in internal/upgrade
-// (registry_test.go): the embedded file, the refusal table, the
-// semver helpers. What stays here is the CLI: go.mod reading, argument
-// parsing, and the renderer.
+// (registry_test.go): the embedded file and the refusal table. The
+// version helpers are tested in internal/semver (semver_test.go). What
+// stays here is the CLI: go.mod reading, argument parsing, and the
+// renderer.
 
 func TestGoModGofastrVersion(t *testing.T) {
 	dir := t.TempDir()

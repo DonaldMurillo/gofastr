@@ -8,6 +8,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Changed
+- **Editing a release note no longer re-runs most of the test suite.**
+  The retired-markup check that test binaries and `gofastr dev` run
+  over rendered pages loaded the whole migration registry, so `framework`
+  and `framework/uihost` embedded every `internal/upgrade/releases/*.yml`
+  file, and a change to any of them selected 104 packages and 10 browser
+  CI jobs. The check now reads `internal/retired/retired_table.gen.go`,
+  a table of the retired kit class and attribute names generated from
+  the registry by `go generate ./internal/retired`. A release-note edit
+  now selects 14 packages and 2 browser jobs, `gofastr-cli` and
+  `meridian` (both build the `gofastr` CLI, which ships the registry for
+  `gofastr upgrade`). `TestTableIsCurrent` fails with the regenerate
+  command when the table is out of date: a breaking note added or
+  dropped a kit name, the change text of a note that retires one was
+  edited, or a release file holding one was renamed. Regenerating it
+  then runs every package that renders through the check. The check
+  flags exactly the names it flagged before. The version checks the CLI
+  shares with the registry moved to `internal/semver`.
 - **`cmd/gofastr` is a package per subcommand (#589).** It was one
   `package main` with 1,413 tests, so a change to any subcommand, or to
   any of the 224 packages its tests reached, reran all of them: 640s of
