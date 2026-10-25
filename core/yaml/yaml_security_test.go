@@ -24,7 +24,7 @@ func inlineBomb(n int) string {
 // yaml.go:307), so an input-controlled number of frames is spent before
 // any error surfaces. Remote attacker-controlled YAML reaches Parse
 // verbatim via `gofastr generate cli --from <URL>`
-// (cmd/gofastr/generate_cli_openapi.go:168), so this is network-
+// (cmd/gofastr/internal/appgen/generate_cli_openapi.go:145), so this is network-
 // reachable, not local-file-only.
 //
 // Proven in a subprocess with a 1 MiB stack, mirroring the block-nesting

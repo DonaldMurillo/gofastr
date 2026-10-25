@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-// ---------- pre-fix: dev server binary (cmd/gofastr/dev.go) ----------
+// ---------- pre-fix: dev server binary (cmd/gofastr/internal/devcmd/dev.go) ----------
 
 type isolation struct{ id string }
 

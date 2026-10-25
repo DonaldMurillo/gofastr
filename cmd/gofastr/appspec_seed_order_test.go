@@ -1,13 +1,5 @@
 package main
 
-// Defect C regression: on a fresh DB, owner-scoped seed rows must exist after
-// first boot. The data-seed hook resolves the bootstrap admin to stamp the
-// owner column; if the admin-seed hook runs LATER (registration order), the
-// admin does not exist yet, the owner-context guard rejects the writes, and
-// the rows are silently missing. Boots a generated app against a fresh
-// SQLite file DB and queries it directly. Gated by -short (compiles + boots
-// the binary).
-
 import (
 	"context"
 	"database/sql"
@@ -18,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -59,21 +52,22 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots a generated app against a fresh DB")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	goVersion, err := repoGoVersion(repoRoot)
+	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
 	goMod := "module example.com/seedorder\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	writeTestFile(t, filepath.Join(dir, "go.mod"), goMod)
-	if err := copyGoSum(repoRoot, dir); err != nil {
+	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"), goMod)
+	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
-	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), seedOrderAppSpecYAML)
+	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.yml"), seedOrderAppSpecYAML)
 
 	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
 	generate.Dir = dir
@@ -85,7 +79,7 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 	if out, err := tidy.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy: %v\n%s", err, out)
 	}
-	appBin := testExecutablePath(filepath.Join(dir, "app"))
+	appBin := clitest.TestExecutablePath(filepath.Join(dir, "app"))
 	build := exec.Command("go", "build", "-o", appBin, ".")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {
@@ -93,10 +87,10 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 	}
 
 	dbFile := filepath.Join(dir, "seedorder.db")
-	var appOut syncBuffer
+	var appOut clitest.SyncBuffer
 	// boot starts the app, waits for it to serve, and returns its stop.
 	boot := func() (stop func()) {
-		port := nextE2EPort(t)
+		port := clitest.NextE2EPort(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		app := exec.CommandContext(ctx, appBin)
 		app.Dir = dir
@@ -110,7 +104,7 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 		)
 		app.Stdout = &appOut
 		app.Stderr = &appOut
-		configureTestProcessGroup(app)
+		clitest.ConfigureTestProcessGroup(app)
 		if err := app.Start(); err != nil {
 			cancel()
 			t.Fatalf("start app: %v", err)
@@ -119,7 +113,7 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 		stop = func() {
 			once.Do(func() {
 				cancel()
-				_ = killTestProcessTree(app)
+				_ = clitest.KillTestProcessTree(app)
 				_ = app.Wait()
 			})
 		}

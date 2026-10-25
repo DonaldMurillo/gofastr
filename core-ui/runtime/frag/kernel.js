@@ -384,10 +384,12 @@
         is the cfg-object version defined below; it owns the stack
         widget + lifecycle. */
 
-    /** Fetch partial HTML from server and inject into selector */
+    /** Fetch partial HTML from server and inject into selector. A
+        followed 3xx is another URL's page: nothing injected, ''. */
     async fetchPage(url, selector) {
       if (!this._originOK(url)) return '';
       const r = await fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
+      if (r.redirected) return '';
       const html = await r.text();
       if (selector) {
         const el = document.querySelector(selector);
@@ -430,14 +432,15 @@
     async _serverActionFor(componentId, action, params = {}) {
       const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
       const session = sessionCookie ? sessionCookie[1] : '';
-      const resp = await fetch(_lp('/__gofastr/action'), {
+      const r = await fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // page: the owning screen's Policy reads this page's route params.
         body: JSON.stringify({ action, params, session, componentId, page: _unlocalize(location.pathname) }),
       });
-      if (resp.ok) {
-        const result = await resp.json();
+      // A followed 3xx is another URL's answer: the action failed.
+      if (r.ok && !r.redirected) {
+        const result = await r.json();
         if (result.message) {
           window.__gofastr._toastOrFallback(result.message);
         }

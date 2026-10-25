@@ -138,7 +138,7 @@ pinned.
   sibling-tested); the untrusted-`.db` robustness surface now lives in
   modernc.org/sqlite — out of repo scope.
 - **Agent surface:** `framework/experimental`,
-  `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
+  `kiln/{expr,effect,render}` CSP, `cmd/gofastr/internal/{packcmd,agentscmd,docscmd}`,
   `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
 - **Browser:** most `core-ui/runtime/src/*.js` (lightbox, sortablelist,
   panehost, carousel, combobox, tree, toasts, …), the former

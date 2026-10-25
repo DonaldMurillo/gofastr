@@ -123,7 +123,8 @@
             : path;
           if (!NS._originOK?.(url)) throw new Error('cross-origin chrome');
           const r = await fetch(NS._lp?.(url) ?? url);
-          if (!r.ok) throw new Error('chrome fetch ' + r.status);
+          // A followed 3xx is another URL's markup, never this chrome.
+          if (!r.ok || r.redirected) throw new Error('chrome fetch ' + r.status);
           return await r.text();
         } catch (err) {
           delete cache[key];
@@ -344,7 +345,8 @@
     if (cfg.statePath) {
       if (!NS._originOK?.(cfg.statePath)) return;
       fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
-        .then((r) => (r.ok ? r.json() : {}))
+        // A followed 3xx answered for another URL: no state to apply.
+        .then((r) => (r.ok && !r.redirected ? r.json() : {}))
         .then((state) => {
           for (const k in state) {
             const existing = NS._signals[k];

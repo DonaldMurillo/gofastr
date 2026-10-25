@@ -24,7 +24,12 @@
   // never throws, so the caller's settlement is always exactly one of
   // the two outcomes. A 2xx is handed to the kernel's invalidation
   // hook first (X-Gofastr-Invalidate), the way src/rpc.js does, so an
-  // action refreshes the screens it changed.
+  // action refreshes the screens it changed. A 2xx that fetch reached
+  // by following a 3xx (an expired session sent the action to the
+  // sign-in page) is another URL's answer: the mutation did not happen,
+  // so it resolves false, the optimistic state reverts, and the reader
+  // goes to the target through the navigator, as src/rpc.js does for a
+  // button.
   function request(url, method) {
     if (!url) return Promise.resolve(false);
     if (!NS._originOK || !NS._originOK(url)) return Promise.resolve(false);
@@ -42,6 +47,13 @@
       credentials: 'same-origin',
       headers,
     }).then((res) => {
+      if (res.redirected) {
+        try {
+          const to = NS._followed?.(res, '');
+          if (to) NS.navigate(to, { force: true });
+        } catch (_) {}
+        return false;
+      }
       if (!res.ok) return false;
       if (NS._inval) NS._inval(res);
       return true;

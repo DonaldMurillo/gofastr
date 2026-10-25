@@ -1,0 +1,59 @@
+package agentscmd
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// The embedded copy under cmd/gofastr/internal/agentscmd/embedded/ must
+// stay byte-equal to
+// the canonical skill source in .claude/skills/gofastr-host/SKILL.md.
+// If they drift, the binary ships stale content.
+//
+//gofastr:test-reads .claude/skills/gofastr-host/SKILL.md
+func TestEmbeddedHostSkillMatchesRepo(t *testing.T) {
+	repoCopy, err := os.ReadFile("../../../../.claude/skills/gofastr-host/SKILL.md")
+	if err != nil {
+		t.Fatalf("read repo SKILL.md: %v", err)
+	}
+	if gofastrHostSkill != string(repoCopy) {
+		t.Fatalf("embedded skill drifted from .claude/skills/gofastr-host/SKILL.md — copy the latter over cmd/gofastr/internal/agentscmd/embedded/gofastr-host-skill.md")
+	}
+	for _, want := range []string{
+		"ui.RecordSummary` + `ui.MetricBand",
+		"description to one or two sentences",
+		"`Aside` for owner/presence context",
+		"first useful phone viewport",
+		"gofastr generate package siteheader",
+		"ClusterConfig.NoWrap",
+		"Host apps ship zero bespoke CSS",
+	} {
+		if !strings.Contains(gofastrHostSkill, want) {
+			t.Errorf("embedded host skill missing %q", want)
+		}
+	}
+}
+
+func TestWriteHostSkillDropsFileWithFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteHostSkill(dir); err != nil {
+		t.Fatalf("writeHostSkill: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, ".claude/skills/gofastr-host/SKILL.md"))
+	if err != nil {
+		t.Fatalf("read written skill: %v", err)
+	}
+	body := string(got)
+	normalized := strings.ReplaceAll(body, "\r\n", "\n")
+	if !strings.HasPrefix(normalized, "---\n") {
+		t.Fatalf("written skill missing frontmatter:\n%s", body[:120])
+	}
+	if !strings.Contains(body, "name: gofastr-host") {
+		t.Fatal("written skill missing name field")
+	}
+	if !strings.Contains(body, "Don't reinvent") {
+		t.Fatal("written skill missing the reinvent-guidance heading")
+	}
+}

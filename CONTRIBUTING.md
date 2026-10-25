@@ -91,6 +91,37 @@ build tag such as the `red` probes, or a test that depends on which
 files a directory holds rather than on their contents; those still need
 a directive written by hand.
 
+Selection is per package, so a test belongs in the package whose code it
+covers. `cmd/gofastr` is a dispatcher: each subcommand is its own
+package under `cmd/gofastr/internal/` (`devcmd`, `generatecmd`, …), the
+app generator is `internal/appgen`, and helpers shared by their tests
+live in `internal/clitest`. A change to one subcommand then selects that
+package and what imports it, not the whole CLI suite. `cmd/gofastr`
+itself keeps only the tests that cross subcommands, such as the
+end-to-end runs of the built binary.
+
+A test that checks generated code by compiling it builds most of the
+framework into a new binary. A pull request runs one such app build:
+`TestUnionApp` in `internal/appgen`, whose app spec
+(`internal/appgen/testdata/union/gofastr.yml`) uses every generator
+feature that fits in one app. The other generated-app tests call
+`clitest.VariantBuild` and skip unless one of these holds:
+
+- `GOFASTR_TEST_ALL=1` is set. CI sets it on every run that is not a
+  pull request (pushes to main, the merge queue, the scheduled runs),
+  and `./scripts/test-all.sh` exports it.
+- The change touches one of the inputs the test names. `cmd/affected`
+  hands the wrapped command its change set in `GOFASTR_AFFECTED_FILES`,
+  one path per line, so a pull request that edits
+  `examples/lms/gofastr.yml` still builds and boots the lms app.
+
+When you add a generator feature, add it to the union app spec. To run
+one variant locally:
+
+```sh
+GOFASTR_TEST_ALL=1 go test -run TestExampleAppSpecsBoot/lms ./cmd/gofastr/
+```
+
 Windows CI runs one build with `CGO_ENABLED=0`.
 
 ### Known isolation rules

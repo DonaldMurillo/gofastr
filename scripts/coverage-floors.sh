@@ -74,12 +74,13 @@
 # affected floor with no statements in the profile fails the gate closed.
 #
 # Exclusions:
-#   cmd/gofastr (claimed 84% full-suite) is NOT gated here: its suite is
-#   dominated by slow, environment-sensitive e2e tests (subprocess hot-reload
-#   servers, chromedp, an installed `gofastr` binary on PATH, ~7 min) that
-#   the CI test/browser-e2e jobs already run, re-running them for a floor
-#   check would double the longest part of the blocking job and import their
-#   flake surface into this gate.
+#   cmd/gofastr and its internal/ packages (claimed 84% full-suite when
+#   it was one package) are NOT gated here: the suite is dominated by
+#   slow, environment-sensitive e2e tests (subprocess hot-reload servers,
+#   chromedp, an installed `gofastr` binary on PATH, generated-app
+#   builds) that the CI test/browser-e2e jobs already run, re-running them
+#   for a floor check would double the longest part of the blocking job
+#   and import their flake surface into this gate.
 #
 # Usage:
 #   ./scripts/coverage-floors.sh                          # runs each floored package itself

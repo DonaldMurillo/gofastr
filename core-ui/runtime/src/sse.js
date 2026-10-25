@@ -64,9 +64,10 @@
   // token (Set-Cookie) and returns its bare id; we rewrite the stream
   // meta so the next connect() uses an id that matches the new cookie.
   // Same-origin + credentials so the cookie round-trips. Best-effort.
+  // A followed 3xx is another URL's JSON, never a minted id.
   function remintSession() {
     return fetch('/__gofastr/session', { method: 'POST', credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok && !r.redirected ? r.json() : null))
       .then((j) => {
         if (!j || !j.sessionId) return;
         const m = document.querySelector('meta[name="gofastr-sse"]');

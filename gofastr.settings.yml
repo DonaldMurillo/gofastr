@@ -11,10 +11,10 @@
 
 contracts:
   exempt:
-    # Test fixtures exist to be wrong. embedcheck's testdata tree holds
+    # Test fixtures exist to be wrong. check-embed's testdata tree holds
     # deliberately broken apps that the embed analyzer is tested against;
     # linting them reports the fixtures' intended defects as defects.
-    - cmd/check-embed/embedcheck/testdata/**
+    - cmd/check-embed/testdata/**
     # Same class: every vet analyzer under internal/analyzers is tested
     # against fixtures that reproduce the bug it exists to catch, so the
     # fixtures carry the exact strings the contract rules also match.
@@ -27,12 +27,12 @@ contracts:
         # web sidecar, not a GoFastr application — it does not mount the
         # design system, so it cannot compose it. It is also experimental
         # and never ships in a user's binary.
-        - cmd/gofastr/harness_http.go
+        - cmd/gofastr/internal/harnesscmd/harness_http.go
         - framework/experimental/harness/**
         # The theme editor renders a live preview of the design system.
         # Styling it *from* the design system would make the preview
         # reflect the editor's own state rather than the theme under edit.
-        - cmd/gofastr/theme_edit.go
+        - cmd/gofastr/internal/themecmd/theme_edit.go
         # The OpenAPI explorer is a standalone document viewer served
         # outside the app shell, with no host layout to inherit from.
         - core/openapi/handler.go
@@ -53,7 +53,7 @@ contracts:
         # `gofastr dev`'s hold page stands in for the app while it is
         # down and reloads into the app when its build comes up: the
         # livereload class the analyzer exempts for framework/dev.
-        - cmd/gofastr/dev_hold.go
+        - cmd/gofastr/internal/devcmd/dev_hold.go
 
     GOFASTR1804: # rendering/inline-style
       exempt:
@@ -68,12 +68,12 @@ contracts:
         # tooling (framework/dev livereload, kiln's build-mode reload):
         # the harness sidecar is a developer tool with its own stream and
         # no app surface to share a bus with.
-        - cmd/gofastr/harness_http.go
+        - cmd/gofastr/internal/harnesscmd/harness_http.go
         - framework/experimental/harness/**
         # `gofastr dev`'s hold page listens on the same /__livereload
         # stream open app tabs reconnect to; it is dev tooling, never in
         # an app binary.
-        - cmd/gofastr/dev_hold.go
+        - cmd/gofastr/internal/devcmd/dev_hold.go
 
     # The rule catalog quotes a deliberately-wrong example for each rule,
     # in a Go string literal. There is no way to write "here is what SQL

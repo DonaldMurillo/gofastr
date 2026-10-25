@@ -2,6 +2,7 @@ package embedcheck
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -9,7 +10,7 @@ import (
 // existing fixture emits, so the blast radius of "a note now fails the build"
 // is visible. Run with -v.
 func TestNoteCensus(t *testing.T) {
-	entries, err := os.ReadDir("testdata/src")
+	entries, err := os.ReadDir(filepath.Join(fixtureDir, "src"))
 	if err != nil {
 		t.Fatal(err)
 	}

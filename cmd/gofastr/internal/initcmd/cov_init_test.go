@@ -1,0 +1,304 @@
+package initcmd
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+)
+
+func TestRunInitFullProject(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	clitest.CovT_capStdout(t, func() { RunInit([]string{"myapp"}) })
+	for _, rel := range []string{
+		"myapp/main.go", "myapp/screens.go", "myapp/DESIGN.md",
+		"myapp/entities/entities.go", "myapp/.env", "myapp/.gitignore",
+		"myapp/AGENTS.md", "myapp/CLAUDE.md", "myapp/go.mod",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myapp", "screens", "styles.go")); !os.IsNotExist(err) {
+		t.Fatalf("generated app must not contain screens/styles.go: %v", err)
+	}
+	main, err := os.ReadFile(filepath.Join(dir, "myapp", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"`,
+		`app.NewApp("myapp").WithTheme(uitheme.Default())`,
+	} {
+		if !strings.Contains(string(main), want) {
+			t.Errorf("generated main.go missing adaptive framework theme %q\n%s", want, main)
+		}
+	}
+}
+
+func TestRunInitPinsFrameworkToCLIRelease(t *testing.T) {
+	oldVersion := cli.Version
+	cli.Version = "0.39.1"
+	t.Cleanup(func() { cli.Version = oldVersion })
+
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	out := clitest.CovT_capStdout(t, func() { RunInit([]string{"pinned"}) })
+	mod, err := os.ReadFile(filepath.Join(dir, "pinned", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mod), "github.com/DonaldMurillo/gofastr v0.39.1") {
+		t.Fatalf("scaffold did not pin the CLI release:\n%s", mod)
+	}
+	if !strings.Contains(out, "matching this CLI") {
+		t.Fatalf("scaffold did not explain the pin:\n%s", out)
+	}
+}
+
+// go mod init writes the local toolchain's version, which can sit below
+// the framework's own go directive (go 1.25.5 against 1.27.3). The
+// scaffold states the framework's minimum instead, and a toolchain line
+// only when it would not repeat the go line.
+func TestInitGoModNamesFrameworkGo(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	clitest.CovT_capStdout(t, func() { RunInit([]string{"golined", "--no-entity"}) })
+	mod, err := os.ReadFile(filepath.Join(dir, "golined", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkGoLines(t, "scaffold go.mod", string(mod))
+}
+
+// A release build with no go.mod to pin (go mod init refused the
+// module path) exits 1 rather than report a project that cannot build.
+func TestInitReleaseWithoutGoModExits(t *testing.T) {
+	oldVersion := cli.Version
+	cli.Version = "0.39.1"
+	t.Cleanup(func() { cli.Version = oldVersion })
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunInit([]string{"nomod", "--no-entity", "--module=bad path"}) })
+	})
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+}
+
+// The scaffold's go and toolchain lines are constants; the repo's
+// go.mod is the source they must match.
+func TestFrameworkGoMatchesGoMod(t *testing.T) {
+	mod, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkGoLines(t, "go.mod", string(mod))
+}
+
+// checkGoLines holds a go.mod to the init constants: the go line always,
+// and the toolchain line only while it names a newer release than the go
+// line. go mod tidy drops a toolchain line that repeats the go line.
+func checkGoLines(t *testing.T, name, mod string) {
+	t.Helper()
+	if want := "\ngo " + frameworkGoDirective + "\n"; !strings.Contains(mod, want) {
+		t.Errorf("%s has no %q line; update the init constants:\n%s", name, strings.TrimSpace(want), mod)
+	}
+	toolchain := "\ntoolchain " + frameworkToolchain + "\n"
+	if frameworkToolchain == "go"+frameworkGoDirective {
+		if strings.Contains(mod, "\ntoolchain ") {
+			t.Errorf("%s carries a toolchain line that repeats the go line:\n%s", name, mod)
+		}
+	} else if !strings.Contains(mod, toolchain) {
+		t.Errorf("%s has no %q line; update the init constants:\n%s", name, strings.TrimSpace(toolchain), mod)
+	}
+}
+
+func TestRunInitNoEntityPostgres(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	clitest.CovT_capStdout(t, func() { RunInit([]string{"pgapp", "--no-entity", "--db=postgres", "--module=example.com/pgapp"}) })
+	env, err := os.ReadFile(filepath.Join(dir, "pgapp", ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(env), "DATABASE_URL") {
+		t.Fatal("no-entity .env should omit DATABASE_URL")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pgapp", "entities")); !os.IsNotExist(err) {
+		t.Fatal("entities dir should not exist with --no-entity")
+	}
+}
+
+func TestRunInitNoNameExits(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunInit(nil) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestRunInitBadNameExits(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunInit([]string{"Bad Name!"}) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestRunInitExistingDirExits(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	if err := os.Mkdir(filepath.Join(dir, "dup"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunInit([]string{"dup"}) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestRunInitEmptyModuleExits(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunInit([]string{"app", "--module="}) })
+	})
+	if code != 1 {
+		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+func TestValidateProjectName(t *testing.T) {
+	good := []string{".", "myapp", "my-blog-app", "a1_b2"}
+	for _, n := range good {
+		if err := validateProjectName(n); err != nil {
+			t.Errorf("validateProjectName(%q) = %v, want nil", n, err)
+		}
+	}
+	bad := []string{"", "Bad", "with space", "-lead", "_lead", "name!"}
+	for _, n := range bad {
+		if err := validateProjectName(n); err == nil {
+			t.Errorf("validateProjectName(%q) = nil, want error", n)
+		}
+	}
+}
+
+// Windows reserves these device names in every directory: os.Stat("nul")
+// succeeds there, so init reported "already exists". Refused on every OS
+// so a project made on Linux still checks out on Windows.
+func TestInitRefusesWindowsDeviceNames(t *testing.T) {
+	for _, n := range []string{"con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"} {
+		if err := validateProjectName(n); err == nil {
+			t.Errorf("validateProjectName(%q) = nil, want error", n)
+		}
+	}
+	for _, n := range []string{"console", "com10", "coma", "auxapp", "lpt"} {
+		if err := validateProjectName(n); err != nil {
+			t.Errorf("validateProjectName(%q) = %v, want nil", n, err)
+		}
+	}
+}
+
+func TestClaudeMDContentAndWrite(t *testing.T) {
+	if body := string(claudeMDContent()); !strings.Contains(body, "GoFastr host project") || !strings.Contains(body, "DESIGN.md") {
+		t.Fatal("claudeMDContent")
+	}
+	dir := t.TempDir()
+	if err := writeCLAUDEmd(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err != nil {
+		t.Fatalf("CLAUDE.md not written: %v", err)
+	}
+}
+
+func TestDesignMDContentCapturesCompositionFailureModes(t *testing.T) {
+	body := string(designMDContent())
+	for _, want := range []string{
+		"Chosen recipe and named framework primitives",
+		"repeated across Banner/summary/header",
+		"actions stay natural-width",
+		"Opening summary is one or two sentences",
+		"Concise mobile header identity (a short wordmark",
+		"next decision/action appears in the first useful viewport",
+		"No narrow desktop detail column leaves an accidental empty half-canvas",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("DESIGN.md template missing %q", want)
+		}
+	}
+}
+
+func TestRunReinitFreshAndIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	// Fresh: no AGENTS.md / CLAUDE.md yet → both created.
+	clitest.CovT_capStdout(t, func() { runReinit(dir, false) })
+	for _, f := range []string{"AGENTS.md", "CLAUDE.md", "DESIGN.md"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("reinit did not create %s: %v", f, err)
+		}
+	}
+	// Second run: files exist & unchanged → refresh path.
+	clitest.CovT_capStdout(t, func() { runReinit(dir, false) })
+}
+
+func TestRunReinitPreservesDesignDirection(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_capStdout(t, func() { runReinit(dir, false) })
+	designPath := filepath.Join(dir, "DESIGN.md")
+	const custom = "# Product-specific direction\n\nKeep this exact composition decision.\n"
+	if err := os.WriteFile(designPath, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	clitest.CovT_capStdout(t, func() { runReinit(dir, true) })
+	got, err := os.ReadFile(designPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != custom {
+		t.Fatalf("reinit must preserve app-owned DESIGN.md; got:\n%s", got)
+	}
+}
+
+func TestRunReinitModifiedClaude(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_capStdout(t, func() { runReinit(dir, false) })
+	// User-modify CLAUDE.md.
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# my own edits\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Without force → preserved (warn path).
+	clitest.CovT_capStdout(t, func() { runReinit(dir, false) })
+	body, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if !strings.Contains(string(body), "my own edits") {
+		t.Fatal("modified CLAUDE.md should be preserved without --force")
+	}
+	// With force → overwritten.
+	clitest.CovT_capStdout(t, func() { runReinit(dir, true) })
+	body2, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if strings.Contains(string(body2), "my own edits") {
+		t.Fatal("--force should overwrite CLAUDE.md")
+	}
+}
+
+func TestRunInitReinitFlag(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	target := filepath.Join(dir, ".")
+	_ = target
+	// init . in-place with --reinit refreshes onboarding only.
+	clitest.CovT_capStdout(t, func() { RunInit([]string{".", "--reinit"}) })
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
+		t.Fatalf("reinit via runInit did not create AGENTS.md: %v", err)
+	}
+}

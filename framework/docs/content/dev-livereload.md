@@ -137,7 +137,7 @@ middleware that adds the livereload client.
 
 ## How `gofastr dev` wires it
 
-`cmd/gofastr/dev.go` injects `GOFASTR_DEV=1` into the child binary's
+`cmd/gofastr/internal/devcmd/dev.go` injects `GOFASTR_DEV=1` into the child binary's
 environment when it launches the rebuilt server. The host app doesn't
 need to forward, set, or check the flag. It's transparent.
 

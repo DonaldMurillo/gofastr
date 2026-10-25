@@ -12,10 +12,10 @@ import (
 // Property: memory files are owner-only on create AND overwrite — the
 // fixed-name MEMORY.md index is rewritten by every Save, and the repo's
 // canonical grammar for exactly that shape is documented in
-// cmd/gofastr/init.go::writeEnvFile ("os.WriteFile would truncate a
+// cmd/gofastr/internal/initcmd/init.go::writeEnvFile ("os.WriteFile would truncate a
 // pre-existing 0644 file and write the secrets into it while it is
 // still world-readable ... the mode is fixed first, on the open
-// handle") and implemented in cmd/gofastr/pack.go::writeSecretFile
+// handle") and implemented in cmd/gofastr/internal/packcmd/pack.go::writeSecretFile
 // (open→chmod-handle→write, pinned by TestPackOutOwnerOnlyOnOverwrite).
 // Surfaces: memory.go::Store.Save :108 (os.WriteFile(e.Path, ..., 0600)
 // for the per-entry file) + memory.go::writeIndexLocked :234

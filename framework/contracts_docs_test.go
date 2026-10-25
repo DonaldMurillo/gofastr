@@ -2,8 +2,6 @@ package framework
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -176,48 +174,5 @@ func TestContractsExplainRequiresARule(t *testing.T) {
 	}
 	if _, err := app.toolContractsExplain(t.Context(), map[string]any{"rule": "   "}); err == nil {
 		t.Fatal("a blank rule argument was accepted")
-	}
-}
-
-// TestAdvertisedRuleCountMatchesTheCatalog pins the numbers the docs
-// quote. A count in prose drifts the moment a rule is added, this file
-// shipped "43 rules" while the catalog held 46, and a README that
-// undersells the tool by three rules is a small lie that compounds.
-//
-// The fix when this fails is one number per document, not deleting the
-// test: the count is worth stating, and stating it is worth checking.
-//
-//gofastr:test-reads /README.md /CHANGELOG.md
-func TestAdvertisedRuleCountMatchesTheCatalog(t *testing.T) {
-	want := fmt.Sprintf("%d rules", len(contracts.AllRules()))
-	wantAlt := fmt.Sprintf("%d contract rules", len(contracts.AllRules()))
-
-	for _, doc := range []struct{ label, path string }{
-		{"README.md", "../README.md"},
-		{"CHANGELOG.md", "../CHANGELOG.md"},
-	} {
-		body, err := os.ReadFile(doc.path)
-		if err != nil {
-			t.Fatalf("read %s: %v", doc.label, err)
-		}
-		text := string(body)
-		if !strings.Contains(text, want) && !strings.Contains(text, wantAlt) {
-			t.Errorf("%s does not state the current rule count (%q)", doc.label, want)
-		}
-		// A stale count left behind next to the new one is the same bug.
-		for n := 30; n < 200; n++ {
-			if n == len(contracts.AllRules()) {
-				continue
-			}
-			for _, stale := range []string{
-				fmt.Sprintf("%d rules across", n),
-				fmt.Sprintf("runs %d contract rules", n),
-				fmt.Sprintf("the %d rules that", n),
-			} {
-				if strings.Contains(text, stale) {
-					t.Errorf("%s still says %q; the catalog has %d", doc.label, stale, len(contracts.AllRules()))
-				}
-			}
-		}
 	}
 }

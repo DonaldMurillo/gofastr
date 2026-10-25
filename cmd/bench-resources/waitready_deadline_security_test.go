@@ -14,7 +14,7 @@ import (
 //
 // Family: every outbound probe carries an operative per-attempt deadline.
 // Pinned sibling (green today): TestBootProbeClientTimesOut
-// (cmd/gofastr/examples_appspec_test.go:601) pins bootProbeClient
+// (cmd/gofastr/examples_appspec_test.go:522) pins bootProbeClient
 // (&http.Client{Timeout: 5s}) — "an app that accepts the connection but
 // never responds would block the probe forever and the deadline below
 // would never fire".

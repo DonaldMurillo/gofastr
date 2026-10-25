@@ -74,7 +74,7 @@ func createTempNamed(data []byte) error {
 
 // ---------- quiet: the fix posture ----------------------------------------
 
-// writeSecretFileFixed is the canonical fix (cmd/gofastr/pack.go):
+// writeSecretFileFixed is the canonical fix (cmd/gofastr/internal/packcmd/pack.go):
 // open O_CREATE|O_TRUNC 0o600, Chmod the HANDLE before the write — the
 // mode travels with the write, and a pre-existing looser file is
 // tightened before any content lands. No os.WriteFile site exists.

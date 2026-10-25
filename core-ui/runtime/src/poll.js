@@ -139,8 +139,10 @@
         .then((r) => {
           // An HTTP error must reach .catch so back-off applies,
           // a bare `null` return would skip both success and catch,
-          // leaving the interval untouched on 500s.
-          if (!r.ok) throw new Error('poll: HTTP ' + r.status);
+          // leaving the interval untouched on 500s. A followed 3xx is
+          // another URL's body (a sign-in page for an expired
+          // session): no answer, so it fails the same way.
+          if (!r.ok || r.redirected) throw new Error('poll: HTTP ' + r.status);
           // #192: the server ends the poll by setting
           // X-Gofastr-Poll-Stop on the terminal response. Capture it
           // before consuming the body so the apply-then-stop order is
@@ -242,8 +244,9 @@
       if (!NS._originOK?.(cfg.statePath)) { inFlight = false; return; }
       fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         .then((r) => {
-          // HTTP errors must reach .catch so back-off applies.
-          if (!r.ok) throw new Error('poll ' + r.status);
+          // HTTP errors, and a followed 3xx (another URL's state),
+          // must reach .catch so back-off applies.
+          if (!r.ok || r.redirected) throw new Error('poll ' + r.status);
           // #192: the server ends the poll by setting
           // X-Gofastr-Poll-Stop on the terminal /state response.
           // Capture before consuming the body so the final state is

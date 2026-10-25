@@ -712,8 +712,9 @@ Why a registry instead of file globs:
 
 - Importing the battery = its snippet is in scope. No central allow-list
   to update on every new battery.
-- `cmd/gofastr` blank-imports the batteries it inventories, then walks
-  `agentsinv.All()` to write `AGENTS.md` (see `framework/agentsinv/inventory.go`).
+- `cmd/gofastr/internal/agentscmd` blank-imports the batteries it
+  inventories, then walks `agentsinv.All()` to write `AGENTS.md` (see
+  `framework/agentsinv/inventory.go`).
 - An empty `agents.md` panics at init: the file is missing or the
   `//go:embed` directive is stale.
 

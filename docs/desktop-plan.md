@@ -578,7 +578,7 @@ battery/desktop/
   internal/win32/     windows: DLLs, window class, COM helpers, WebView2 discovery
   internal/gtk/       linux: fakecgo, dlopen, GObject signal glue, WebKitGTK
 core-ui/runtime/src/desktop.js     demand module, no DOM marker (ws.js precedent), <= 3 KB gzip
-cmd/gofastr/desktop.go             `gofastr desktop run|build|types`
+cmd/gofastr/internal/desktopcmd/   `gofastr desktop run|build|types`
 examples/desktop-notes/            the dogfood app
 framework/docs/content/desktop.md  the user doc, embedded in the binary
 stability/stability.go             + {"battery/desktop", Experimental}

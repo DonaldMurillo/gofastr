@@ -27,7 +27,7 @@
 // belongs here.
 //
 // Component inventory (alphabetical; kept complete by
-// TestDocGoInventoryComplete in inventory_test.go):
+// TestDocGoInventoryComplete in internal/treegate):
 //
 //	ActionList:           a list of link and button rows in a menu row's look, for a mixed panel
 //	AnchoredRail:         sticky in-page nav rail with scrollspy wiring

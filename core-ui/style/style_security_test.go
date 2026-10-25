@@ -11,7 +11,7 @@ import (
 // agent-authored values before they reach a Theme. FontFaceCSS is the
 // remaining ingestion path with no validator: the app generator
 // feeds it font family names straight out of the host app's gofastr.yml
-// theme map (cmd/gofastr/appspec.go: appSpecFontFaceCSS(theme)),
+// theme map (cmd/gofastr/internal/appgen/appspec.go: appSpecFontFaceCSS(theme)),
 // so the strings arrive file-borne, not developer-typed.
 
 // TestFontFaceCSSRejectsDeclarationBreakers asserts a WebFont field

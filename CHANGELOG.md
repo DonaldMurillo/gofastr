@@ -7,6 +7,97 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **`cmd/gofastr` is a package per subcommand (#589).** It was one
+  `package main` with 1,413 tests, so a change to any subcommand, or to
+  any of the 224 packages its tests reached, reran all of them: 640s of
+  a CI run. `main.go` now parses the command line and calls
+  `cmd/gofastr/internal/<name>cmd` (`initcmd`, `generatecmd`, `devcmd`,
+  `verifycmd`, …). The app spec parser is `internal/appspec`, the app
+  generator `internal/appgen`, and the helpers their tests share
+  `internal/clitest`. Each test moved with the code it covers, so a
+  change to one subcommand runs that package's tests, the cross-command
+  tests left in `cmd/gofastr`, and the packages that run the built
+  binary. The commands, their flags and `-ldflags "-X main.version=…"`
+  are unchanged.
+- **`cmd/check-embed/embedcheck` type-checks its fixtures once per run
+  (#589).** The tests share one load of the fixture module, plus one
+  load of the mutated fixtures, instead of loading it in every test: the
+  package runs in about 3s, down from about 40s. The fixture module
+  moved out of the package to `cmd/check-embed/testdata`, so editing a
+  fixture no longer selects `cmd/gofastr` and the other packages that
+  import `embedcheck`.
+- **`internal/upgrade`'s tests are split by what they read (#589).**
+  The parser tests and the release-recipe gates stay in
+  `internal/upgrade`. The `examples/` check is
+  `internal/upgrade/examplescan`, one scan shared by the v0.86.0 and
+  v0.87.0 assertions. The release-note scans are
+  `internal/upgrade/releasetest` (v0.86.0 on; new release tests go
+  there), `releasetest/mid` and `releasetest/old`. A CHANGELOG edit or an
+  `examples/` edit no longer reruns every scan, and none of these
+  packages takes more than about 5s, down from about 18s for the one
+  package.
+- **`cmd/affected` tells the command it wraps what changed (#589).** A
+  command run after `--` gets the change set in
+  `GOFASTR_AFFECTED_FILES`, one repo-relative path per line. When the
+  run tests every package (`-all`, `GOFASTR_TEST_ALL=1`, a `go.mod`
+  change, a base it cannot resolve, or a change set longer than 64 KiB)
+  the command gets `GOFASTR_TEST_ALL=1` instead.
+- **A pull request builds one generated app (#589).** `cmd/gofastr`'s
+  tests generated and compiled about 65 apps per run: every example
+  twice, and one small app per generator feature, each build compiling
+  most of the framework. A pull request now builds one, in
+  `TestUnionApp` (`internal/appgen`), whose app spec
+  (`internal/appgen/testdata/union/gofastr.yml`) uses every generator
+  feature that fits in one app. The others call `clitest.VariantBuild`
+  and run on every CI run that is not a pull request, under
+  `GOFASTR_TEST_ALL=1` (`./scripts/test-all.sh` sets it), or when the
+  change touches an input they name, such as an example's
+  `gofastr.yml`.
+  `TestExampleAppSpecsGenerateAndCompile` is gone:
+  `TestExampleAppSpecsBoot` builds each example the same way before it
+  boots it. On a framework change, the `cmd/gofastr` package's tests
+  take about 49s instead of 110s and `internal/appgen`'s about 28s
+  instead of 79s (local run, warm build cache).
+- **framework/ui's repo-wide gates moved to
+  `framework/ui/internal/treegate` (#589).**
+  `TestNoRemovedAliasTokenReferences` reads every non-test Go and JS
+  file under `framework`, `core-ui`, `battery`, `kiln`, `cmd/gofastr`
+  and `examples`, so a change anywhere there reran framework/ui's 68
+  browser tests. It, and the inventory checks against `doc.go` and
+  `framework/docs/content/ui-new-components.md`, now live in a package
+  of their own that such a change selects instead. That package runs in
+  under a second.
+- **A CHANGELOG edit no longer reruns the `framework` and
+  `framework/docs` tests (#589).** Every pull request edits
+  CHANGELOG.md, and three checks that read it lived in those two
+  packages, which take about 2.5 and 1.5 minutes in CI. The check that
+  README.md and CHANGELOG.md state the contract rule count moved to
+  `framework/contracts/internal/docgate`, so a README edit no longer
+  reruns `framework` either. The two checks that CHANGELOG.md and the
+  upgrade registry agree on which releases are breaking moved to
+  `internal/upgrade`, next to the CHANGELOG check already there. A
+  CHANGELOG edit now selects those two packages, which run in under a
+  second.
+
+### Fixed
+- **A redirected answer is no longer taken as the request's own
+  (#577).** fetch follows a 3xx itself, so a runtime request whose
+  session had expired got the sign-in page back as a 200 and used it.
+  `data-cui-rpc` and optimistic actions now fail: a form keeps what
+  the reader typed and shows the submit-failed toast, and any other
+  element sends the reader to the redirect target through the client
+  navigator. Polls, widget chrome, state and discovery, `fetchPage`,
+  server actions, deferred parts, the SSE session re-mint and the
+  desktop bridge ignore the redirected body, and the embed handshake
+  refuses redirects. A sortable reorder whose save redirects reverts,
+  and a selection Copy fails instead of copying the sign-in page.
+- **A generated PWA app's e2e test finds its icons.** The emitted
+  `e2e_test.go` runs the app from a temporary directory, so every icon
+  it checks under `/icons/` answered 404 and the suite failed on a
+  freshly generated app. It now copies the app's static directory there
+  before it starts the server.
+
 ## [0.94.1] - 2026-10-24
 
 ### Security

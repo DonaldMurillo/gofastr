@@ -1027,7 +1027,16 @@ const (
 	// the app loading that page (X-Gofastr-Document) measures
 	// 14841/17228; it reads the navigator's answer to every click, so the
 	// line moves to 17228.
-	coreCongestionWindowGZ = 17228
+	// 2026-10-22, #577: fetchPage, the server action and widget
+	// discovery read a followed redirect as no answer, and the server
+	// action's response local is spelled r like its siblings. Core
+	// measures 14836/17220, SMALLER on both, and a bundle padded onto
+	// the level-6 goal no longer crossed 17228 (fixture 17227 — the
+	// bracket had gone vacuous). The line moves DOWN to 17226, the
+	// largest value below the fixture's crossing, restoring the
+	// bracket [real 17220, fixture 17227]; verified by running
+	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic.
+	coreCongestionWindowGZ = 17226
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1262,7 +1271,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// say() (2026-10-21, runtime strings).
 		// 3112 measured (3110 + 2) after its chrome and state fetches
 		// carry the page's locale prefix (2026-10-21, locale prefixes).
-		"widgets": 3112,
+		// 3128 measured (3126 + 2) after a chrome or state fetch that
+		// followed a redirect is no answer (#577,
+		// TestRedirectedWidgetChromeMountsNothing,
+		// TestRedirectedWidgetStateSetsNothing).
+		"widgets": 3128,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1324,7 +1337,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// component sheets it renders have loaded, so it never paints
 		// unstyled before or after its page commits. Pinned at the
 		// measured size plus 2 clearance.
-		"parts": 2110,
+		// 2121 measured (2119 + 2) after a part fetch that followed a
+		// redirect restores the slot instead of applying the target's
+		// fills (#577, TestRedirectedPartAppliesNothing).
+		"parts": 2121,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion
@@ -1376,7 +1392,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// repeated network-error say() into a local measured 3343.
 		// 3346 measured (3344 + 2) after its form and RPC fetches carry
 		// the page's locale prefix (2026-10-21, locale prefixes).
-		"rpc": 3346,
+		// 3396 measured (3394 + 2) after a dispatch whose fetch followed
+		// a redirect fails instead of succeeding (#577): a form keeps
+		// its input and toasts submit_failed, any other node hands the
+		// target to the navigator through nav.js _followed
+		// (TestRedirectedRPCFormKeepsInput,
+		// TestRedirectedRPCButtonHandsOffToNavigator).
+		"rpc": 3396,
 	}
 	const coreOverride = 0
 

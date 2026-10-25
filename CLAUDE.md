@@ -164,7 +164,13 @@ expose them to agents connected to a live app.**
   the undeclared ones: it records every file each test binary opens
   itself (Go's test log) and fails on a file whose change would not
   select its reader. CI runs it weekly. Subprocess reads (`go run`,
-  `git`) and build-tagged tests stay invisible to it.
+  `git`) and build-tagged tests stay invisible to it. The command after
+  `--` also gets the change set in `GOFASTR_AFFECTED_FILES` (or
+  `GOFASTR_TEST_ALL=1` on a full run). `cmd/gofastr`'s generated-app
+  builds read it through `clitest.VariantBuild`: outside a full run the
+  one app that builds is appgen's `TestUnionApp`, plus any variant whose
+  named inputs changed. A new generator feature goes into that union app
+  spec (`cmd/gofastr/internal/appgen/testdata/union/gofastr.yml`).
 - **Test everything**: `./scripts/test-all.sh` (or `make test-all`), or
   `GOFASTR_TEST_ALL=1` in front of any of the gates above. Pushes to main
   and the merge queue always run everything in CI.
@@ -330,7 +336,7 @@ expose them to agents connected to a live app.**
   alive, so the prefix is load-bearing). Its live-tree probe is
   `TestStorageKeysEncodeAttrValues` in `core-ui/runtime/
   runtime_security_test.go`. The same round added the generated-code
-  gate `TestGeneratedCLIPassesRepoVettool` (`cmd/gofastr`): it
+  gate `TestGeneratedCLIPassesRepoVettool` (`cmd/gofastr/internal/generatecmd`): it
   regenerates a CLI from a fixture spec into a temp module and runs the
   repo vettool over the EMITTED code, plus a direct check that
   terminal-control summaries never ship live — that round's

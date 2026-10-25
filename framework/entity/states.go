@@ -168,9 +168,9 @@ var transitionKeyGrammar = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*
 //   - list, get, create, update, delete: the MCP tools <entity>_<verb>
 //     (framework/crud/mcp.go), the OpenAPI ids <verb>_<Schema> and the Go
 //     client methods <Verb><Entity> (framework/openapi/openapi.go,
-//     cmd/gofastr/generate_client.go); also the CLI subcommands
-//     (cmd/gofastr/generate_cli.go) and the JS resource members
-//     (cmd/gofastr/generate_sdkjs.go).
+//     cmd/gofastr/internal/appgen/generate_client.go); also the CLI subcommands
+//     (cmd/gofastr/internal/appgen/generate_cli.go) and the JS resource members
+//     (cmd/gofastr/internal/appgen/generate_sdkjs.go).
 //   - patch: the OpenAPI id patch_<Schema>, the Go client method
 //     Patch<Entity>, the CLI subcommand and the JS member of the same
 //     spelling (the MCP surface has no patch tool; the route is the

@@ -19,11 +19,29 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
 )
+
+// shipped is the embedded registry, parsed once per test binary: every
+// test reads the same shipped YAML, and none of them writes to it.
+var shipped = sync.OnceValues(upgrade.Load)
+
+// Registry returns the registry embedded in the binary (upgrade.Load),
+// parsed on the first call and shared after that, failing the test when
+// it does not parse. Callers must treat it as read-only; Only copies a
+// note before narrowing it.
+func Registry(t testing.TB) *upgrade.Registry {
+	t.Helper()
+	reg, err := shipped()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	return reg
+}
 
 // Options shape an app. The zero value is a module with no
 // dependencies.

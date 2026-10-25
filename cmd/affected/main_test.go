@@ -92,7 +92,7 @@ func run(t *testing.T, o options) []string {
 	if o.stderr == nil {
 		o.stderr = &bytes.Buffer{}
 	}
-	got, err := compute(o)
+	got, _, err := compute(o)
 	if err != nil {
 		t.Fatalf("compute: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestUnmatchableTestReadsIsAnError(t *testing.T) {
 				"w/w.go":      "package w\n",
 				"w/w_test.go": "package w\n\n" + tc.directive + "\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
 			})
-			_, err := compute(options{root: root, files: []string{"f/f.go"}, format: "import", stderr: &bytes.Buffer{}})
+			_, _, err := compute(options{root: root, files: []string{"f/f.go"}, format: "import", stderr: &bytes.Buffer{}})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("compute error = %v, want %q", err, tc.want)
 			}
@@ -487,6 +487,82 @@ func TestWrappedCommandGetsCoverageDir(t *testing.T) {
 	}
 	if want, _ := envValue(commandEnv(root), coverageDirEnv); string(out) != want {
 		t.Fatalf("wrapped command saw %s=%q, want %q", coverageDirEnv, out, want)
+	}
+}
+
+// A run that walked the graph names its change set; a run that tests
+// everything says so instead; a change set too long for one environment
+// string degrades to the full run rather than failing the exec.
+func TestChangeEnvNamesWhatTheSetCameFrom(t *testing.T) {
+	var stderr strings.Builder
+	env := changeEnv(nil, nil, &stderr)
+	if v, _ := envValue(env, "GOFASTR_TEST_ALL"); v != "1" {
+		t.Errorf("full run: GOFASTR_TEST_ALL=%q, want 1", v)
+	}
+	if _, ok := envValue(env, changedFilesEnv); ok {
+		t.Errorf("full run: %s set", changedFilesEnv)
+	}
+
+	env = changeEnv(nil, []string{"a/a.go", "b/b.go"}, &stderr)
+	if v, _ := envValue(env, changedFilesEnv); v != "a/a.go\nb/b.go" {
+		t.Errorf("graph run: %s=%q, want both paths one per line", changedFilesEnv, v)
+	}
+	if _, ok := envValue(env, "GOFASTR_TEST_ALL"); ok {
+		t.Errorf("graph run: GOFASTR_TEST_ALL set")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected note: %s", stderr.String())
+	}
+
+	// k one-byte paths join to 2k-1 bytes; a two-byte last path makes 2k,
+	// exactly the cap, and a three-byte one goes one over.
+	fits := slices.Repeat([]string{"a"}, maxChangedEnv/2)
+	fits[len(fits)-1] = "ab"
+	if v, _ := envValue(changeEnv(nil, fits, &stderr), changedFilesEnv); len(v) != maxChangedEnv {
+		t.Errorf("a %d-byte list was not handed over (got %d bytes)", maxChangedEnv, len(v))
+	}
+	over := slices.Clone(fits)
+	over[len(over)-1] = "abc"
+	env = changeEnv(nil, over, &stderr)
+	if _, ok := envValue(env, changedFilesEnv); ok {
+		t.Errorf("a %d-byte list was handed over past the cap", maxChangedEnv+1)
+	}
+	if v, _ := envValue(env, "GOFASTR_TEST_ALL"); v != "1" {
+		t.Errorf("oversized list: GOFASTR_TEST_ALL=%q, want 1", v)
+	}
+	if !strings.Contains(stderr.String(), "too many") {
+		t.Errorf("oversized list degraded silently; stderr: %q", stderr.String())
+	}
+}
+
+func TestWrappedCommandGetsTheChangeSet(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("prints the variables through sh")
+	}
+	bin := buildAffected(t)
+	root := newRepo(t)
+	show := func() string {
+		t.Helper()
+		cmd := exec.Command(bin, "-base", "main", "--", "sh", "-c", `printf '%s|%s' "$`+changedFilesEnv+`" "$GOFASTR_TEST_ALL"`)
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("affected -- sh: %v", err)
+		}
+		return string(out)
+	}
+	if err := os.WriteFile(filepath.Join(root, "c", "c.go"), []byte("package c\n\nfunc C() int { return 7 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := show(); got != "c/c.go|" {
+		t.Errorf("graph run: wrapped command saw %q, want %q", got, "c/c.go|")
+	}
+	// go.mod widens the run to every package: no list, the full-run flag.
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(fixture["go.mod"]+"\n// widened\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := show(); got != "|1" {
+		t.Errorf("widened run: wrapped command saw %q, want %q", got, "|1")
 	}
 }
 

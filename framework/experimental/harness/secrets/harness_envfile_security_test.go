@@ -8,7 +8,7 @@ package secrets
 // env that shapes process behavior — proxy selection, executable search path,
 // dynamic-library load, HOME — must not be settable from it.
 // Surfaces: secrets.go:loadFile (provider-credential allow-list,
-// isProviderCredentialKey), consumed by cmd/gofastr/harness.go (secrets.
+// isProviderCredentialKey), consumed by cmd/gofastr/internal/harnesscmd/harness.go (secrets.
 // LoadRepo at every harness boot) and the provider stack's net/http default
 // transport (honors *_PROXY), os/exec PATH resolution for the Bash/MCP
 // tooling, and os.UserHomeDir for the credential store location

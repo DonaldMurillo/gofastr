@@ -1,72 +1,21 @@
 package main
 
-// Real end-to-end tests for `gofastr dev` hot reload. These spin up a
-// full subprocess (gofastr dev + child server), modify source files, and
-// assert the server automatically rebuilds and serves updated content.
-// Gated by -short (slow, needs Go compilation + network).
-
 import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
-
-func nextE2EPort(t *testing.T) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return strconv.Itoa(port)
-}
-
-// devTempEnv points a spawned `gofastr dev` at a temp root the test
-// owns. The dev server builds its binary under os.MkdirTemp and removes
-// that dir only on a clean shutdown; the harnesses SIGKILL it, so the
-// dir would outlive every run. Under t.TempDir it goes with the test.
-// Call it before registering the kill cleanup: cleanups run last-in
-// first-out, so the process is dead before its dir is removed.
-//
-// It also gives the child an empty axe-coverage root. Strict mode checks
-// the manifest only under `gofastr dev`, and every example shares the
-// module root's manifest (or the one cmd/affected points outside the
-// module): one example's axe scans, or a run that failed midway, leave a
-// manifest missing another example's screens, and that example's strict
-// boot panics in a test about the dev loop. No manifest is the warn
-// posture.
-func devTempEnv(t *testing.T) []string {
-	t.Helper()
-	dir := t.TempDir()
-	return []string{"TMPDIR=" + dir, "TMP=" + dir, "TEMP=" + dir, "GOFASTR_AXE_COVERAGE_DIR=" + t.TempDir()}
-}
-
-// buildGofastrBinary returns the package-wide shared gofastr binary
-// (testbin_test.go); the name is kept for the e2e call sites.
-func buildGofastrBinary(t *testing.T) string {
-	t.Helper()
-	bin, err := gofastrTestBinary()
-	if err != nil {
-		t.Fatalf("build gofastr: %v", err)
-	}
-	return bin
-}
 
 type devHarness struct {
 	t          *testing.T
@@ -75,12 +24,12 @@ type devHarness struct {
 	port       string
 	cmd        *exec.Cmd
 	cancelFunc context.CancelFunc
-	output     syncBuffer
+	output     clitest.SyncBuffer
 }
 
 func newDevHarness(t *testing.T) *devHarness {
 	t.Helper()
-	bin := buildGofastrBinary(t)
+	bin := clitest.BuildGofastrBinary(t)
 	dir := t.TempDir()
 
 	initCmd := exec.Command(bin, "init", "hotreload", "--no-entity")
@@ -105,7 +54,7 @@ func newDevHarness(t *testing.T) *devHarness {
 		t.Fatalf("go mod tidy: %v\n%s", err, out)
 	}
 
-	return &devHarness{t: t, bin: bin, dir: projDir, port: nextE2EPort(t)}
+	return &devHarness{t: t, bin: bin, dir: projDir, port: clitest.NextE2EPort(t)}
 }
 
 func (h *devHarness) start() {
@@ -117,12 +66,12 @@ func (h *devHarness) start() {
 	// GOFASTR_ISOLATION=off: the child app resolves worktree isolation from
 	// its cwd, so running this suite from a linked git worktree would
 	// silently remap the port the test polls.
-	cmd.Env = append(append(os.Environ(), devTempEnv(h.t)...), "PORT=localhost:"+h.port, "GOFASTR_ISOLATION=off")
+	cmd.Env = append(append(os.Environ(), clitest.DevTempEnv(h.t)...), "PORT=localhost:"+h.port, "GOFASTR_ISOLATION=off")
 	cmd.Stdout = &h.output
 	cmd.Stderr = &h.output
 	// Set process group so we can kill the entire tree (gofastr dev + child server).
 	// Without this, SIGKILL on gofastr dev leaves the child server as an orphan.
-	configureTestProcessGroup(cmd)
+	clitest.ConfigureTestProcessGroup(cmd)
 	h.cmd = cmd
 
 	if err := cmd.Start(); err != nil {
@@ -130,7 +79,7 @@ func (h *devHarness) start() {
 	}
 	h.t.Cleanup(func() {
 		// Kill the entire process group (gofastr dev + child server).
-		_ = killTestProcessTree(cmd)
+		_ = clitest.KillTestProcessTree(cmd)
 		cancel()
 		_ = cmd.Wait()
 	})
@@ -198,13 +147,6 @@ func readAll(resp *http.Response) (string, error) {
 	return string(b), err
 }
 
-func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n] + "..."
-	}
-	return s
-}
-
 func shouldSkip(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
@@ -231,7 +173,7 @@ func TestE2E_HotReload_GoFileChange(t *testing.T) {
 	// Phase 1: initial content.
 	body := fetchBody(t, base)
 	if !strings.Contains(body, "hotreload") {
-		t.Fatalf("initial page missing 'hotreload': %s", truncate(body, 500))
+		t.Fatalf("initial page missing 'hotreload': %s", clitest.Truncate(body, 500))
 	}
 	if !strings.Contains(body, "/__livereload.js") {
 		t.Fatal("livereload script not injected — GOFASTR_DEV=1 not wired")
@@ -431,24 +373,4 @@ func TestE2E_HotReload_BrowserAutoRefreshes(t *testing.T) {
 	_ = chromedp.Run(ctx, chromedp.Text("h1", &finalTitle, chromedp.ByQuery))
 	t.Fatalf("browser never saw 'RELOADED_TITLE' after 45s. Final h1 = %q.\nDev output:\n%s",
 		finalTitle, h.output.String())
-}
-
-// syncBuffer is a mutex-guarded writer for capturing live child-process
-// output: os/exec's copy goroutine writes while the test goroutine reads on
-// failure paths, which races on a bare strings.Builder under -race.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
 }

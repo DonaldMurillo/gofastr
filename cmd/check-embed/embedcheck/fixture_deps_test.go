@@ -1,6 +1,6 @@
 package embedcheck
 
-// The fixtures under testdata are a module that replaces this repo with
+// The fixtures under ../testdata are a module that replaces this repo with
 // the working tree, and loadAll type-checks them from source, so these
 // packages and everything they import are inputs to every analyzer test.
 // The blank imports make that an import edge cmd/affected can see:
@@ -38,7 +38,7 @@ func TestFixtureImportsAreTestImports(t *testing.T) {
 			have = append(have, p)
 		}
 	}
-	err = filepath.WalkDir("testdata", func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(fixtureDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}

@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestInitGeneratedProjectsBuild(t *testing.T) {
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 
 	cases := []struct {
 		name string
@@ -53,7 +56,7 @@ func TestInitGeneratedSQLiteMigrationsRunFromCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	initCmd := exec.Command(bin, "init", "migrateapp", "--module=example.com/migrateapp")
@@ -79,7 +82,7 @@ func TestInitGeneratedSQLiteMigrationsRunFromCLI(t *testing.T) {
 }
 
 func TestInitCreatesGitRepo(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	initCmd := exec.Command(bin, "init", "gitapp", "--module=example.com/gitapp")
@@ -100,7 +103,7 @@ func TestInitCreatesGitRepo(t *testing.T) {
 }
 
 func TestInitWritesCLAUDEmd(t *testing.T) {
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 
 	initCmd := exec.Command(bin, "init", "claudeapp", "--module=example.com/claudeapp")
@@ -138,9 +141,9 @@ func TestThemeInitGeneratedPackageBuildsFromCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	project := t.TempDir()
-	goVersion, err := repoGoVersion(repoRoot)
+	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
@@ -165,7 +168,7 @@ func TestThemeInitGeneratedPackageBuildsFromCLI(t *testing.T) {
 
 func prepareGeneratedModule(t *testing.T, repoRoot, project string) {
 	t.Helper()
-	if err := copyGoSum(repoRoot, project); err != nil {
+	if err := clitest.CopyGoSum(repoRoot, project); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
 	edit := exec.Command("go", "mod", "edit",
@@ -188,11 +191,12 @@ func prepareGeneratedModule(t *testing.T, repoRoot, project string) {
 // main at the module root (main.go + screens.go), NOT a screens/ subpackage
 // or a gen/ quarantine directory. The generated project must build.
 func TestInitEmitsFlatOwnedLayout(t *testing.T) {
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := buildGofastrBin(t)
+	bin := BuildGofastrBin(t)
 	work := t.TempDir()
 	initCmd := exec.Command(bin, "init", "flatapp", "--module=example.com/flatapp")
 	initCmd.Dir = work

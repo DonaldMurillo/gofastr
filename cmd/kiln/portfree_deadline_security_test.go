@@ -11,8 +11,8 @@ import (
 
 // Family: every outbound probe carries an operative per-attempt deadline.
 // Pinned sibling (green today): TestBootProbeClientTimesOut
-// (cmd/gofastr/examples_appspec_test.go:601) pins bootProbeClient
-// (&http.Client{Timeout: 5s}, :533) — "a raw http.Get has no timeout: an
+// (cmd/gofastr/examples_appspec_test.go) pins bootProbeClient
+// (&http.Client{Timeout: 5s}, :522) — "a raw http.Get has no timeout: an
 // app that accepts the connection but never responds would block the probe
 // forever". This binary already carries the twin shape: waitReady
 // (agent.go:145) probes through a 500ms client.

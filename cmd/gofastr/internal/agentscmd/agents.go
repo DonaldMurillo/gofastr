@@ -1,0 +1,517 @@
+package agentscmd
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	_ "github.com/DonaldMurillo/gofastr/battery/admin"
+	_ "github.com/DonaldMurillo/gofastr/battery/auth"
+	_ "github.com/DonaldMurillo/gofastr/battery/cache"
+	_ "github.com/DonaldMurillo/gofastr/battery/desktop"
+	_ "github.com/DonaldMurillo/gofastr/battery/email"
+	_ "github.com/DonaldMurillo/gofastr/battery/log"
+	_ "github.com/DonaldMurillo/gofastr/battery/notify"
+	_ "github.com/DonaldMurillo/gofastr/battery/print"
+	_ "github.com/DonaldMurillo/gofastr/battery/queue"
+	_ "github.com/DonaldMurillo/gofastr/battery/relay"
+	_ "github.com/DonaldMurillo/gofastr/battery/rtc"
+	_ "github.com/DonaldMurillo/gofastr/battery/search"
+	_ "github.com/DonaldMurillo/gofastr/battery/service"
+	_ "github.com/DonaldMurillo/gofastr/battery/setup"
+	_ "github.com/DonaldMurillo/gofastr/battery/sitesearch"
+	_ "github.com/DonaldMurillo/gofastr/battery/storage"
+	_ "github.com/DonaldMurillo/gofastr/battery/webhook"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	_ "github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/agentsinv"
+	_ "github.com/DonaldMurillo/gofastr/framework/headless"
+	_ "github.com/DonaldMurillo/gofastr/framework/localentity"
+	_ "github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+const (
+	agentsAutoStart = "<!-- gofastr-batteries:start -->"
+	agentsAutoEnd   = "<!-- gofastr-batteries:end -->"
+)
+
+// RunAgents dispatches the `gofastr agents <subcommand>` family.
+func RunAgents(args []string) {
+	if cli.HasHelpFlag(args) {
+		printAgentsUsage()
+		return
+	}
+	if len(args) == 0 {
+		cli.Fail("Subcommand required.")
+		cli.Info("Usage: gofastr agents [init|sync]")
+		cli.OsExit(1)
+	}
+	switch args[0] {
+	case "init":
+		runAgentsInit(args[1:])
+	case "sync":
+		runAgentsSync(args[1:])
+	case "skill":
+		runAgentsSkill(args[1:])
+	default:
+		cli.Fail("Unknown subcommand %q.", args[0])
+		cli.Info("Try `gofastr agents init`, `gofastr agents sync`, or `gofastr agents skill`.")
+		cli.OsExit(1)
+	}
+}
+
+// runAgentsInit writes a fresh AGENTS.md in the current directory (or
+// the path given as the first argument). Errors if the file already
+// exists. Use `agents sync` to refresh.
+func runAgentsInit(args []string) {
+	dir := "."
+	if len(args) > 0 {
+		dir = args[0]
+	}
+	target := filepath.Join(dir, "AGENTS.md")
+	if _, err := os.Stat(target); err == nil {
+		cli.Fail("%s already exists. Use `gofastr agents sync` to refresh.", target)
+		cli.OsExit(1)
+	}
+	if err := os.WriteFile(target, BuildAgentsMD(), 0o644); err != nil {
+		cli.Fail("Failed to write %s: %v", target, err)
+		cli.OsExit(1)
+	}
+	if err := WriteAgentDetailFiles(dir); err != nil {
+		cli.Fail("Failed to write .agents/ details: %v", err)
+		cli.OsExit(1)
+	}
+	cli.Success("Wrote %s and %d detail file(s) under .agents/", target, len(agentsinv.All()))
+	warnMissingMarkdown()
+}
+
+// runAgentsSkill drops the gofastr-host Claude Code skill into the
+// current project's .claude/skills/ tree. Useful when a host that
+// pre-dates `gofastr init --skill` wants the skill retroactively.
+func runAgentsSkill(args []string) {
+	dir := "."
+	if len(args) > 0 {
+		dir = args[0]
+	}
+	if err := WriteHostSkill(dir); err != nil {
+		cli.Fail("Failed to write skill: %v", err)
+		cli.OsExit(1)
+	}
+	cli.Success("Wrote %s/.claude/skills/gofastr-host/SKILL.md", dir)
+}
+
+// runAgentsSync refreshes the auto section between the markers without
+// touching anything outside them. Lets host apps refresh after a
+// framework upgrade.
+func runAgentsSync(args []string) {
+	dir := "."
+	if len(args) > 0 {
+		dir = args[0]
+	}
+	target := filepath.Join(dir, "AGENTS.md")
+	existing, err := os.ReadFile(target)
+	if err != nil {
+		cli.Fail("Cannot read %s: %v", target, err)
+		cli.Info("Run `gofastr agents init` first.")
+		cli.OsExit(1)
+	}
+	refreshed, changed, err := RefreshAgentsMD(existing)
+	if err != nil {
+		cli.Fail("Refresh failed: %v", err)
+		cli.OsExit(1)
+	}
+	// Always refresh the detail files. They're framework-owned and
+	// cheap to rewrite, and treating them as "changed" tracking would
+	// duplicate the marker-protection logic for ten more files.
+	if err := WriteAgentDetailFiles(dir); err != nil {
+		cli.Fail("Failed to write .agents/ details: %v", err)
+		cli.OsExit(1)
+	}
+	if !changed {
+		cli.Info("%s TOC already up to date (.agents/ details refreshed).", target)
+		warnMissingMarkdown()
+		return
+	}
+	if err := os.WriteFile(target, refreshed, 0o644); err != nil {
+		cli.Fail("Failed to write %s: %v", target, err)
+		cli.OsExit(1)
+	}
+	cli.Success("Refreshed %s and %d detail file(s) under .agents/", target, len(agentsinv.All()))
+	warnMissingMarkdown()
+}
+
+// warnMissingMarkdown prints a non-fatal advisory for every battery
+// that registered itself with an empty agents.md. Surfaces here because
+// `agents` is the subcommand a developer hits when they ship a new
+// battery; the framework no longer panics at startup if Markdown is
+// blank (that would kill `gofastr build` too).
+func warnMissingMarkdown() {
+	miss := agentsinv.MissingMarkdown()
+	if len(miss) == 0 {
+		return
+	}
+	fmt.Println()
+	cli.Info("Warning: %d entr%s registered without agents.md content:", len(miss), pluralY(len(miss)))
+	for _, e := range miss {
+		cli.Info("  - %s:%s (%s): check //go:embed agents.md", e.Kind, e.Name, e.ImportPath)
+	}
+}
+
+func pluralY(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
+}
+
+// BuildAgentsMD assembles a full AGENTS.md from preamble + auto section
+// + tail. Used by `agents init`.
+func BuildAgentsMD() []byte {
+	var b bytes.Buffer
+	b.WriteString(agentsPreamble)
+	b.WriteString("\n")
+	b.WriteString(agentsAutoStart)
+	b.WriteString("\n\n")
+	writeAutoSection(&b)
+	b.WriteString(agentsAutoEnd)
+	b.WriteString("\n")
+	b.WriteString(agentsTail)
+	return b.Bytes()
+}
+
+// RefreshAgentsMD swaps the content between the two markers in
+// existing, leaving everything else untouched. Returns the new bytes
+// and a boolean indicating whether anything changed.
+//
+// Each marker must occur EXACTLY ONCE. A user who quotes the marker
+// literals inside the preamble (in an explanatory paragraph, say)
+// would otherwise have bytes.Index return their prose-mention, and
+// the regenerated content would clobber the user's intro.
+func RefreshAgentsMD(existing []byte) ([]byte, bool, error) {
+	startCount := bytes.Count(existing, []byte(agentsAutoStart))
+	endCount := bytes.Count(existing, []byte(agentsAutoEnd))
+	if startCount == 0 || endCount == 0 {
+		return nil, false, fmt.Errorf("missing %q / %q marker(s): was the file edited by hand without preserving them?", agentsAutoStart, agentsAutoEnd)
+	}
+	if startCount != 1 || endCount != 1 {
+		return nil, false, fmt.Errorf("expected exactly one occurrence of each marker (saw %d %q / %d %q); refusing to refresh", startCount, agentsAutoStart, endCount, agentsAutoEnd)
+	}
+	startIdx := bytes.Index(existing, []byte(agentsAutoStart))
+	endIdx := bytes.Index(existing, []byte(agentsAutoEnd))
+	if endIdx < startIdx {
+		return nil, false, fmt.Errorf("end marker %q appears before start marker %q; refusing to refresh", agentsAutoEnd, agentsAutoStart)
+	}
+	var b bytes.Buffer
+	b.Write(migrateLegacyAgentsRefs(existing[:startIdx+len(agentsAutoStart)]))
+	b.WriteString("\n\n")
+	writeAutoSection(&b)
+	b.Write(migrateLegacyAgentsRefs(existing[endIdx:]))
+	out := b.Bytes()
+	return out, !bytes.Equal(NormalizeMD(out), NormalizeMD(existing)), nil
+}
+
+// migrateLegacyAgentsRefs points the generator's own spellings of the
+// old visible agents/ folder at .agents/: a code span (`agents/ui.md`,
+// `agents/`) and a Markdown link target ((agents/battery-admin.md)).
+// AGENTS.md keeps everything outside its markers on sync, and an older
+// generator wrote those spellings into the preamble, so without this a
+// synced project would keep pointing at a folder the sync just
+// removed. Prose that merely names a folder called agents is left
+// alone.
+func migrateLegacyAgentsRefs(b []byte) []byte {
+	b = bytes.ReplaceAll(b, []byte("`"+LegacyAgentsDetailDir+"/"), []byte("`"+AgentsDetailDir+"/"))
+	return bytes.ReplaceAll(b, []byte("]("+LegacyAgentsDetailDir+"/"), []byte("]("+AgentsDetailDir+"/"))
+}
+
+// normalizeMD collapses runs of whitespace so the changed-check ignores
+// trailing newline jitter. Also folds CRLF → LF so Windows clones
+// (autocrlf=true) don't flap on every sync.
+var wsRun = regexp.MustCompile(`[ \t]+\n`)
+
+func NormalizeMD(b []byte) []byte {
+	b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+	return wsRun.ReplaceAll(b, []byte("\n"))
+}
+
+// writeAutoSection appends a TOC table linking every inventory entry
+// to its detail file under .agents/. The detail files themselves are
+// written by writeAgentDetailFiles, keeping AGENTS.md thin so an AI
+// agent can scan it in one pass and only load the detail when a row
+// matches its task.
+func writeAutoSection(b *bytes.Buffer) {
+	entries := agentsinv.All()
+	if len(entries) == 0 {
+		b.WriteString("_No inventory entries registered._\n\n")
+		return
+	}
+	b.WriteString("| Section | Use this when | Details |\n")
+	b.WriteString("|---|---|---|\n")
+	for _, e := range entries {
+		title := sectionTitle(e)
+		usewhen := extractUseWhen(e.Markdown)
+		path := agentDetailRelPath(e)
+		fmt.Fprintf(b, "| **%s** | %s | [%s](%s) |\n", title, usewhen, path, path)
+	}
+	b.WriteString("\n")
+}
+
+// sectionTitle is "framework" for framework entries, "battery/<name>"
+// for battery entries. Matches how the existing agents.md files start.
+func sectionTitle(e agentsinv.Entry) string {
+	if e.Kind == agentsinv.KindBattery {
+		return "battery/" + e.Name
+	}
+	return e.Name
+}
+
+// agentDetailRelPath is the path to the per-entry detail file, relative
+// to the AGENTS.md that links to it (both live at project root).
+func agentDetailRelPath(e agentsinv.Entry) string {
+	if e.Kind == agentsinv.KindBattery {
+		return ".agents/battery-" + e.Name + ".md"
+	}
+	return ".agents/" + e.Name + ".md"
+}
+
+// extractUseWhen pulls the **Use this when** paragraph out of a
+// battery's agents.md so the TOC row can show its full trigger-phrase
+// list. The paragraph extends until EITHER a blank line OR the next
+// `**Heading:**` on a fresh line. Markdown paragraphs canonically
+// end on a blank line, but a battery author who writes
+// `**Use this when** foo\n**Import:** pkg` (no blank line) shouldn't
+// have the trigger list slurp the **Import:** block too.
+//
+// Returns "—" when no such paragraph exists.
+func extractUseWhen(md string) string {
+	const marker = "**Use this when**"
+	start := strings.Index(md, marker)
+	if start < 0 {
+		return "—"
+	}
+	// Walk lines from the marker forward, accumulating until we hit
+	// a paragraph terminator.
+	rest := md[start+len(marker):]
+	lines := strings.Split(rest, "\n")
+	var collected []string
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Blank line ends the paragraph.
+		if i > 0 && trimmed == "" {
+			break
+		}
+		// A fresh **...:** heading on the next line ends the paragraph
+		// even without a blank separator.
+		if i > 0 && reBoldHeading.MatchString(trimmed) {
+			break
+		}
+		collected = append(collected, trimmed)
+	}
+	s := strings.Join(collected, " ")
+	s = strings.Join(strings.Fields(s), " ")
+	s = strings.TrimPrefix(s, "the prompt mentions: ")
+	s = strings.TrimPrefix(s, "the prompt mentions:")
+	s = strings.TrimSuffix(s, ".")
+	// Markdown table cells can't contain a literal pipe. Escape any.
+	s = strings.ReplaceAll(s, "|", `\|`)
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+// reBoldHeading matches a line that BEGINS with `**Word:**`, the
+// next-heading terminator used by extractUseWhen.
+var reBoldHeading = regexp.MustCompile(`^\*\*[A-Za-z][^*]*:\*\*`)
+
+// autoGenSentinel is the string we look for at the top of an existing
+// detail file to decide it's safe to overwrite. Present ⇒ previous
+// generator output; absent ⇒ user-authored file we must not clobber.
+const autoGenSentinel = "<!-- AUTO-GENERATED by `gofastr agents sync`"
+
+// WriteAgentDetailFiles writes one Markdown file per inventory entry
+// under <dir>/agents/. Each file leads with an HTML comment that
+// announces it's auto-generated AND names the upstream source, so a
+// user who finds it knows where to edit instead of clobbering the
+// local copy. Body = the entry's agents.md verbatim, followed by a
+// back-link to AGENTS.md so an agent that lands here can pivot to
+// the index.
+//
+// Refuses to overwrite an existing detail-file path that does NOT
+// carry the auto-gen sentinel. That would silently clobber a user
+// file (e.g. a hand-written `.agents/framework.md` they had before
+// running init). Other files in .agents/ are left untouched.
+func WriteAgentDetailFiles(dir string) error {
+	target := filepath.Join(dir, AgentsDetailDir)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return fmt.Errorf("create %s dir: %w", AgentsDetailDir, err)
+	}
+	for _, e := range agentsinv.All() {
+		name := agentDetailRelPath(e) // ".agents/battery-admin.md" etc.
+		path := filepath.Join(dir, name)
+
+		// Refuse to clobber a non-generated file at the same path.
+		if existing, err := os.ReadFile(path); err == nil {
+			if !bytes.HasPrefix(existing, []byte(autoGenSentinel)) {
+				return fmt.Errorf("refusing to overwrite %s: it lacks the AUTO-GENERATED header, so it looks hand-written. Move or delete it first, then re-run", path)
+			}
+		}
+
+		var b bytes.Buffer
+		fmt.Fprintf(&b,
+			"%s: edits to this file will be lost on next sync. Canonical source: %s/agents.md -->\n\n",
+			autoGenSentinel, e.ImportPath)
+		b.WriteString(strings.TrimRight(e.Markdown, "\n"))
+		b.WriteString("\n\n---\n\n")
+		b.WriteString("← Back to [AGENTS.md](../AGENTS.md)\n")
+		if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	return removeLegacyAgentDetailFiles(dir)
+}
+
+// agentsDetailDir is the hidden folder at the project root that holds
+// the generated detail files. Earlier releases wrote them to a visible
+// agents/ folder beside the app's own packages (legacyAgentsDetailDir).
+const (
+	AgentsDetailDir       = ".agents"
+	LegacyAgentsDetailDir = "agents"
+)
+
+// removeLegacyAgentDetailFiles cleans up the visible agents/ folder an
+// earlier release generated, once the same files exist under .agents/.
+// It deletes only files that carry the auto-gen sentinel, so a
+// hand-written doc in agents/ survives, and removes the folder only
+// when nothing else is left in it.
+func removeLegacyAgentDetailFiles(dir string) error {
+	// os.Root confines every read and delete to the project directory,
+	// so a symlinked agents/ or a symlinked .md cannot reach outside it.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", dir, err)
+	}
+	defer root.Close()
+	// A symlinked agents/ (say, agents -> .agents, kept for old links)
+	// stays as it is: os.Root follows a link that stays inside the
+	// root, so cleaning through it would delete the files just written.
+	fi, err := root.Lstat(LegacyAgentsDetailDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", LegacyAgentsDetailDir, err)
+	}
+	if !fi.IsDir() {
+		return nil
+	}
+	d, err := root.Open(LegacyAgentsDetailDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("open %s: %w", LegacyAgentsDetailDir, err)
+	}
+	entries, err := d.ReadDir(-1)
+	d.Close()
+	if err != nil {
+		return fmt.Errorf("read %s: %w", LegacyAgentsDetailDir, err)
+	}
+	removed := 0
+	for _, ent := range entries {
+		if !ent.Type().IsRegular() || !strings.HasSuffix(ent.Name(), ".md") {
+			continue
+		}
+		name := path.Join(LegacyAgentsDetailDir, ent.Name())
+		body, err := root.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", name, err)
+		}
+		if !bytes.HasPrefix(body, []byte(autoGenSentinel)) {
+			continue
+		}
+		if err := root.Remove(name); err != nil {
+			return fmt.Errorf("remove %s: %w", name, err)
+		}
+		removed++
+	}
+	if removed == len(entries) {
+		if err := root.Remove(LegacyAgentsDetailDir); err != nil {
+			return fmt.Errorf("remove %s: %w", LegacyAgentsDetailDir, err)
+		}
+	}
+	return nil
+}
+
+const agentsPreamble = `# AGENTS.md
+
+> **For AI agents (Claude Code / Cursor / Aider / anything else):**
+> Read this file FIRST before writing any code in this project. It
+> exists to keep you from reinventing primitives the framework
+> already provides.
+
+## Run the app while you work
+
+` + DevLoopGuidance + `
+## Two maps, then the detail
+
+Each is one page and cheaper than the topic docs it routes into. Land on the
+row for your job first; open a topic only when a row points you at one.
+
+- ` + "`" + `gofastr docs backend-capability-map` + "`" + `: data, auth, APIs, jobs,
+  deploys. Every row names the symbols to compose and a command that
+  proves the result.
+- ` + "`" + `gofastr docs ui-capability-map` + "`" + `: screens, state ownership, and
+  delivery.
+
+## Secure by default
+
+Entity CRUD requires a signed-in session until you opt out: ` + "`" + `Public: true` + "`" + `
+on the entity's Exposure opens it to anonymous requests; wire battery/auth
+for a real login flow (` + "`" + `gofastr docs auth` + "`" + `).
+
+## UI starts with product direction
+
+Before selecting UI components, complete or refresh ` + "`" + `DESIGN.md` + "`" + `: primary
+task, density, dominant element, composition model, mobile priority, and two
+patterns to avoid. Then read ` + "`" + `.agents/ui.md` + "`" + ` and
+` + "`" + `gofastr docs ui-composition-recipes` + "`" + `; use the recipe's named primitives rather
+than approximating its shape with Box/Card/Stack. For a dominant record or
+operational state, start with RecordSummary + MetricBand, keep actions in an
+Actions slot or Cluster, and do not repeat the same state in a Banner. Keep a
+RecordSummary description to one or two sentences; use its compact Aside for
+supporting owner/presence context and MetricBand hints for trends. Give a long
+product name a short phone wordmark in the app's header package. On wide detail routes, pair
+related bounded modules such as DetailLists in Grid rather than leaving a
+narrow stacked column beside an accidental empty rail; reflow the pair on
+phones. Cluster wraps whole controls by default; reserve ClusterConfig.NoWrap
+for compact chrome guaranteed to fit. Visual review at desktop and mobile is
+part of completion, not an optional polish pass.
+
+## Don't reinvent index
+
+Scan the table below. When your task matches a **Use this when**
+phrase, open the linked detail file under ` + "`.agents/`" + ` for the
+full ` + "`Use this when` / `Import` / `Shape` / `Don't reinvent`" + `
+breakdown: short enough to load on demand, kept in sync by
+` + "`gofastr agents sync`" + `.
+
+The table between the markers below is auto-generated; every detail
+file under ` + "`.agents/`" + ` is too. Edit everything OUTSIDE the
+markers (and outside ` + "`.agents/`" + `) freely.
+`
+
+const agentsTail = `
+## Project conventions
+
+> Edit this section. Document app-specific rules an agent should
+> follow (PHI hygiene, env vars, schemas it must not touch, your
+> failure posture). Anything below this heading is preserved by
+> ` + "`gofastr agents sync`" + `.
+
+`

@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // The generated app shell's sidebar is built per request so its footer and its
@@ -72,10 +75,11 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
-	repoRoot := repoRootDir(t)
+	clitest.VariantBuild(t)
+	repoRoot := clitest.RepoRootDir(t)
 
 	binDir := t.TempDir()
-	binPath := testExecutablePath(filepath.Join(binDir, "gofastr"))
+	binPath := clitest.TestExecutablePath(filepath.Join(binDir, "gofastr"))
 	build := exec.Command("go", "build", "-o", binPath, "./cmd/gofastr")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
@@ -83,32 +87,32 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	}
 
 	work := t.TempDir()
-	writeTestFile(t, filepath.Join(work, "gofastr.yml"), sidebarGateAppSpec)
+	clitest.WriteTestFile(t, filepath.Join(work, "gofastr.yml"), sidebarGateAppSpec)
 	gen := exec.Command(binPath, "generate", "app", "gofastr.yml")
 	gen.Dir = work
 	if out, err := gen.CombinedOutput(); err != nil {
 		t.Fatalf("generate: %v\n%s", err, out)
 	}
 
-	goVersion, err := repoGoVersion(repoRoot)
+	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
-	writeTestFile(t, filepath.Join(work, "go.mod"),
+	clitest.WriteTestFile(t, filepath.Join(work, "go.mod"),
 		"module local/sidebargate\n\ngo "+goVersion+
 			"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => "+repoRoot+"\n")
-	if err := copyGoSum(repoRoot, work); err != nil {
+	if err := clitest.CopyGoSum(repoRoot, work); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
 
-	appBin := testExecutablePath(filepath.Join(work, "sidebargate-app"))
+	appBin := clitest.TestExecutablePath(filepath.Join(work, "sidebargate-app"))
 	appBuild := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	appBuild.Dir = work
 	if out, err := appBuild.CombinedOutput(); err != nil {
 		t.Fatalf("generated app did not build: %v\n%s", err, out)
 	}
 
-	addr := freeAddr(t)
+	addr := clitest.FreeAddr(t)
 	cmd := exec.Command(appBin)
 	cmd.Dir = work
 	cmd.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(work, "gate.db"))
@@ -116,7 +120,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	// own goroutines until Wait returns, and Wait runs in t.Cleanup, so every
 	// read of this below races the copier. The package already has the
 	// mutex-guarded writer for exactly this.
-	var output syncBuffer
+	var output clitest.SyncBuffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start app: %v", err)
@@ -127,7 +131,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	})
 
 	baseURL := "http://" + addr
-	waitForHTTP(t, baseURL+"/notes", &output)
+	clitest.WaitForHTTP(t, baseURL+"/notes", &output)
 
 	resp, err := http.Get(baseURL + "/notes")
 	if err != nil {
@@ -244,6 +248,6 @@ func snippetAround(s, needle string) string {
 		return ""
 	}
 	start := max(0, i-200)
-	end := min(len(s), i+200)
+	end := cli.Min(len(s), i+200)
 	return s[start:end]
 }

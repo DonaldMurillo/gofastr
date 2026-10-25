@@ -1,0 +1,210 @@
+package newcmd
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+)
+
+// validateScaffoldName rejects names that would escape the project root.
+// Scaffolding commands accept a short identifier (e.g. "User", "Post") and
+// must never accept path traversal, absolute paths, or directory separators.
+func validateScaffoldName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name must not be empty")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("name %q is not a valid identifier", name)
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("name %q must not contain path separators", name)
+	}
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("name %q must not contain '..'", name)
+	}
+	if filepath.Base(name) != name {
+		return fmt.Errorf("name %q must be a bare identifier", name)
+	}
+	return nil
+}
+
+// newUsage prints the resource list for `gofastr new`.
+func newUsage() {
+	fmt.Println("Usage: gofastr new <resource> <name> [flags]")
+	fmt.Println("Resources:")
+	fmt.Println("  handler  <Name> [--method=GET] [--path=/x] [-overwrite]   Scaffold an HTTP handler")
+	fmt.Println("  route    <path>  [--method=GET] [--handler=Name]   Print a route registration snippet")
+	fmt.Println("Flags:")
+	fmt.Println("  -overwrite   Rewrite the target file if it already exists")
+	fmt.Println("  -h, --help   Show this help")
+}
+
+// RunNew handles the `gofastr new` subcommand, a lower-level scaffolding
+// alternative to kiln's visual builder.
+func RunNew(args []string) {
+	// `gofastr new -h` / `gofastr new --help` exits 0 with help.
+	for _, a := range args {
+		if a == "-h" || a == "--help" {
+			newUsage()
+			return
+		}
+	}
+
+	if len(args) == 0 {
+		newUsage()
+		cli.OsExit(1)
+	}
+
+	resource := args[0]
+	rest := args[1:]
+
+	// Strip -overwrite from rest, leaving the resource-specific args.
+	overwrite, rest := extractOverwriteFlag(rest)
+
+	switch resource {
+	case "entity":
+		cli.Fail("`gofastr new entity` has been removed.")
+		cli.Info("Declare entities in a gofastr.yml app spec instead. See `gofastr docs app-spec`.")
+		cli.OsExit(1)
+	case "handler":
+		runNewHandler(rest, overwrite)
+	case "route":
+		runNewRoute(rest)
+	default:
+		cli.Fail("Unknown resource: %s", resource)
+		cli.Info("Supported: handler, route")
+		cli.OsExit(1)
+	}
+}
+
+// extractOverwriteFlag scans args for -overwrite / --overwrite and returns
+// (true, argsWithoutFlag) if present.
+func extractOverwriteFlag(args []string) (bool, []string) {
+	out := args[:0:0]
+	overwrite := false
+	for _, a := range args {
+		if a == "-overwrite" || a == "--overwrite" {
+			overwrite = true
+			continue
+		}
+		out = append(out, a)
+	}
+	return overwrite, out
+}
+
+// runNewHandler is the CLI wrapper around scaffoldHandler.
+func runNewHandler(args []string, overwrite bool) {
+	if len(args) == 0 {
+		cli.Fail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
+		cli.OsExit(1)
+	}
+
+	name := args[0]
+	method := "GET"
+	path := "/" + strings.ToLower(name)
+
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "--method=") {
+			method = strings.ToUpper(strings.TrimPrefix(a, "--method="))
+		} else if strings.HasPrefix(a, "--path=") {
+			path = strings.TrimPrefix(a, "--path=")
+		}
+	}
+
+	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+	}
+	cli.Success("Scaffolded handler %q (%s %s)", name, method, path)
+}
+
+// runNewRoute is the CLI wrapper that prints a route registration snippet.
+func runNewRoute(args []string) {
+	if len(args) == 0 {
+		cli.Fail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
+		cli.OsExit(1)
+	}
+
+	path := args[0]
+	method := "GET"
+	handler := "handler"
+
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "--method=") {
+			method = strings.ToUpper(strings.TrimPrefix(a, "--method="))
+		} else if strings.HasPrefix(a, "--handler=") {
+			handler = strings.TrimPrefix(a, "--handler=")
+		}
+	}
+
+	cli.Info("Add this to your app setup:")
+	fmt.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
+}
+
+// routeSnippet returns the canonical app.Router().Handle(...) line for
+// the given route. Pure helper; used by both runNewRoute and golden tests.
+func routeSnippet(method, path, handler string) string {
+	return fmt.Sprintf("app.Router().Handle(%q, %q, %s)", method, path, handler)
+}
+
+// scaffoldHandler writes an HTTP handler file at <baseDir>/<name>_handler.go.
+// Returns an error when the file already exists and overwrite is false.
+func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) error {
+	if err := validateScaffoldName(rawName); err != nil {
+		return fmt.Errorf("invalid handler name: %w", err)
+	}
+	// The name lands in `func %s(...)` at identifier position and in the
+	// file name + leading comment: it must be a bare Go identifier, the
+	// same guard every generate-side sibling carries
+	// (TestScaffoldNameGuardedByValidate, TestHookHandlerMustDeriveIdentifier).
+	if !project.IsGoIdentifier(rawName) {
+		return fmt.Errorf("invalid handler name %q: must be a Go identifier (letters, digits, underscores, starting with a letter)", rawName)
+	}
+	// method+path ride the `// %s handles %s %s.` comment slot. A newline
+	// or control/bidi byte closes the comment and lands the rest at
+	// declaration position (a smuggled init() compiled and ran in the
+	// round-5 probe): refuse rather than render inert, the file names the
+	// command that supplied the bytes.
+	if textsafe.ContainsUnsafe(method) || textsafe.ContainsUnsafe(path) {
+		return fmt.Errorf("handler method %q or path %q carries control, invisible, or bidi bytes: they ride a // comment slot and cannot be scaffolded safely", method, path)
+	}
+	name := rawName
+	// Resolve the base dir before joining: a symlinked component would
+	// otherwise redirect the scaffolded file outside it undetected
+	// (lexical containment cannot see symlinks).
+	realDir, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return fmt.Errorf("resolve base dir: %w", err)
+	}
+	filename := filepath.Join(realDir, strings.ToLower(name)+"_handler.go")
+	if !overwrite {
+		if _, err := os.Stat(filename); err == nil {
+			return fmt.Errorf("handler file already exists: %s", filename)
+		}
+	}
+
+	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
+package main
+
+import (
+    "net/http"
+)
+
+// %s handles %s %s.
+func %s(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("{\"ok\": true}"))
+}
+`, name, name, method, path, name)
+
+	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", filename, err)
+	}
+	return nil
+}

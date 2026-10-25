@@ -1,0 +1,835 @@
+# The union app: one app spec that carries every feature the generator
+# emits, so a pull request builds one app instead of one per feature.
+# TestUnionApp generates it with gofastr.settings.yml beside it, vets it
+# with go vet and the repo vettool, and runs its own tests plus two
+# probes. A generator feature with no construct here is a feature no pull
+# request builds: add it.
+app:
+  name: Union
+  module: example.com/union
+  static_dir: public
+  locale_prefixes: true
+  llm_md: true
+  pwa:
+    enabled: true
+    short_name: Union
+    theme_color: "#4338CA"
+  db:
+    driver: sqlite
+    url: file:union.db
+  auth:
+    enabled: true
+    dev_mode: true
+  admin:
+    enabled: true
+    path: /admin
+    role: admin
+    login_path: /login
+    seed_email: admin@example.com
+    seed_password: roster-pw-123
+  theme:
+    font_heading: Bricolage Grotesque
+    font_body: Hanken Grotesk
+    background: "#F8F7F4"
+    surface: "#FFFFFF"
+    surface-soft: "#F2F1EC"
+    text: "#1B1B2A"
+    text-muted: "#65657A"
+    text-subtle: "#6A6A72"
+    border: "#E7E5DF"
+    border-strong: "#33334A"
+    primary: "#4338CA"
+    primary-fg: "#FFFFFF"
+    secondary: "#0E7C86"
+    accent: "#4338CA"
+    success: "#166534"
+    warning: "#854D0E"
+    danger: "#B91C1C"
+    info: "#1D4ED8"
+    dark:
+      background: "#15141B"
+      surface: "#1F1D27"
+      surface-soft: "#29262F"
+      text: "#ECEAF3"
+      text-muted: "#A29FB0"
+      text-subtle: "#9498AC"
+      border: "#322E3D"
+      border-strong: "#494457"
+      primary: "#8B80F2"
+      primary-fg: "#15141B"
+      secondary: "#2DD4BF"
+      accent: "#8B80F2"
+      success: "#4ADE80"
+      warning: "#FBBF24"
+      danger: "#F87171"
+      danger-fg: "#15141B"
+      info: "#60A5FA"
+
+entities:
+  # Relations, cursors, indices, MCP and a public read.
+  - name: authors
+    crud: true
+    fields:
+      - name: email
+        type: string
+        required: true
+        unique: true
+  - name: posts
+    crud: true
+    mcp: true
+    public: true
+    cursor_field: id
+    cursor_fields: [created_at, id]
+    indices:
+      - name: idx_posts_status
+        columns: [status]
+        unique: false
+    properties:
+      label: Posts
+      icon: newspaper
+    fields:
+      - name: title
+        type: string
+        required: true
+        max: 120
+      - name: status
+        type: enum
+        values: [draft, published]
+      - name: author_id
+        type: relation
+        to: authors
+    relations:
+      - type: belongs_to
+        name: author
+        entity: authors
+        foreign_key: author_id
+      - type: has_many
+        name: comments
+        entity: comments
+        foreign_key: post_id
+        cascade_write: true
+  - name: comments
+    crud: true
+    public: true
+    fields:
+      - name: body
+        type: string
+        required: true
+      - name: post_id
+        type: relation
+        to: posts
+    relations:
+      - type: belongs_to
+        name: post
+        entity: posts
+        foreign_key: post_id
+
+  # A composite key of two foreign keys, owned per user.
+  - name: students
+    crud: true
+    primary_key: [code]
+    fields:
+      - name: code
+        type: string
+        required: true
+      - name: name
+        type: string
+        required: true
+  - name: courses
+    crud: true
+    primary_key: [code]
+    fields:
+      - name: code
+        type: string
+        required: true
+      - name: title
+        type: string
+        required: true
+  - name: enrollments
+    crud: true
+    owner_field: user_id
+    primary_key: [student_id, course_id]
+    fields:
+      - name: student_id
+        type: string
+        required: true
+      - name: course_id
+        type: string
+        required: true
+      - name: grade
+        type: string
+        required: true
+      - name: user_id
+        type: string
+    relations:
+      - type: belongs_to
+        name: student
+        entity: students
+        foreign_key: student_id
+      - type: belongs_to
+        name: course
+        entity: courses
+        foreign_key: course_id
+
+  # A composite key whose values need escaping. It sorts first among the
+  # entities with a create screen, so the generated e2e test runs its
+  # create-read-update-delete pass on it, creating with the first enum
+  # value: the comma must survive reading the record's id back.
+  - name: bookings
+    crud: true
+    owner_field: user_id
+    primary_key: [student_id, course_id]
+    fields:
+      - name: student_id
+        type: string
+        required: true
+      - name: course_id
+        type: enum
+        values: ["c,1", "c 1"]
+        required: true
+      - name: grade
+        type: string
+        required: true
+      - name: contact_email
+        type: string
+      - name: user_id
+        type: string
+
+  # A state machine with a stamp and a system move, display views and
+  # facets, search, and owner scoping.
+  - name: invoices
+    crud: true
+    mcp: true
+    owner_field: user_id
+    search_fields: [number]
+    properties:
+      label: Invoices
+    indices:
+      - name: idx_invoices_owner_number
+        columns: [user_id, number]
+        unique: true
+    fields:
+      - name: number
+        type: string
+        required: true
+      - name: amount
+        type: decimal
+        required: true
+        min: 0
+      - name: status
+        type: enum
+        values: [draft, open, paid]
+        default: draft
+      - name: due_on
+        type: date
+      - name: paid_on
+        type: date
+    states:
+      field: status
+      initial: [draft]
+      transitions:
+        - key: issue
+          label: Issue
+          from: [draft]
+          to: open
+          variant: primary
+        - key: pay
+          label: Mark paid
+          from: [open]
+          to: paid
+          stamp: paid_on
+        - key: mark_overdue
+          from: [open]
+          to: open
+          system: true
+    display:
+      title_fields: [number]
+      description: Every invoice issued, paid or not.
+      nav:
+        group: billing
+        icon: receipt
+        order: 1
+      columns: [number, amount, status, due_on]
+      views:
+        - key: open
+          label: Open
+          where: 'status = "open"'
+          sort: due_on ASC
+      facets: [status]
+      fields:
+        amount:
+          input: money
+
+  # Soft delete and full-text search.
+  - name: documents
+    crud: true
+    soft_delete: true
+    search_fields: [title]
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: body
+        type: text
+
+  # Uploads, a generated read-only key, a hidden column, a pattern.
+  - name: customers
+    crud: true
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: slug
+        type: string
+        unique: true
+        pattern: "^[a-z0-9-]+$"
+      - name: reference
+        type: string
+        auto_generate: uuid
+        read_only: true
+      - name: cost
+        type: decimal
+        min: 0
+        hidden: true
+      - name: logo
+        type: image
+      - name: contract
+        type: file
+
+  # A column the list may show but never filter or sort on.
+  - name: cards
+    crud: true
+    fields:
+      - name: label
+        type: string
+      - name: number
+        type: string
+        no_query: true
+
+  # Per-verb roles on an owned entity.
+  - name: notes
+    crud: true
+    owner_field: user_id
+    access:
+      read: notes:read
+      create: notes:write
+      update: notes:write
+      delete: notes:admin
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: user_id
+        type: string
+
+  # An anonymous read narrowed by read_scope; writes need a role.
+  - name: lessons
+    crud: true
+    read_scope:
+      filter:
+        - field: status
+          op: eq
+          value: published
+    access:
+      read:
+      create: catalog:write
+      update: catalog:write
+      delete: catalog:admin
+    fields:
+      - name: title
+        type: string
+        required: true
+      - name: status
+        type: enum
+        values: [draft, published]
+        default: draft
+
+  # A key declared on another column than id, a seed reference to it, and
+  # every scalar field type.
+  - name: currencies
+    crud: true
+    primary_key: [currency_code]
+    fields:
+      - name: currency_code
+        type: string
+        required: true
+      - name: label
+        type: string
+  - name: products
+    crud: true
+    fields:
+      - name: name
+        type: string
+        required: true
+        min: 2
+        max: 80
+      - name: currency
+        type: relation
+        to: currencies
+      - name: price
+        type: decimal
+        default: "0"
+      - name: weight
+        type: float
+      - name: stock
+        type: int
+        default: 0
+      - name: active
+        type: bool
+        default: true
+      - name: launched_on
+        type: date
+      - name: restocked_at
+        type: timestamp
+      - name: specs
+        type: json
+      - name: condition
+        type: enum
+        values: [new, used]
+        default: new
+      - name: description
+        type: text
+
+screens:
+  # Plain blocks, node blocks, an island, a widget with a client action,
+  # and an entity list.
+  - name: home
+    route: /
+    title: Home
+    description: Union homepage
+    body:
+      - type: heading
+        level: 1
+        text: Union
+      - type: paragraph
+        text: Generated from YAML.
+      - type: link
+        text: Docs
+        href: /docs/
+        class: docs-link
+      - kind: section
+        props:
+          label: Details
+          class: details-section
+        children:
+          - kind: heading
+            props:
+              level: 3
+              text: Details
+          - kind: paragraph
+            props:
+              text: Everything is generated deterministically.
+      - kind: div
+        island: live_status
+        props:
+          class: live-status
+        children:
+          - kind: paragraph
+            props:
+              text: Island content
+      - kind: button
+        widget: save_button
+        props:
+          id: save-action
+          text: Save
+          class: primary-action
+        actions:
+          - name: save_click
+            event: click
+            client_js: "document.body.setAttribute('data-appspec-clicked', 'yes'); G.updateText('[data-action-result]', 'Saved by browser');"
+      - kind: paragraph
+        props:
+          text: Waiting
+          data-action-result: true
+      - kind: entity_list
+        text: Latest posts
+        entity: posts
+        fields: [title, status]
+        limit: 5
+        empty_text: No posts yet.
+
+  # Marketing blocks.
+  - name: welcome
+    route: /welcome
+    layout: marketing
+    title: Welcome
+    description: The marketing page.
+    body:
+      - kind: stack
+        props:
+          gap: 2xl
+        children:
+          - kind: hero
+            props:
+              eyebrow: Union
+              title: Every feature in one app.
+              subtitle: One build covers the generator.
+              cta_text: Sign up
+              cta_href: /signup
+              secondary_text: Pricing
+              secondary_href: /pricing
+          - kind: section
+            props:
+              heading: What it covers
+              eyebrow: Features
+            children:
+              - kind: card
+                props:
+                  heading: Keys
+                  text: Composite and declared keys.
+              - kind: card
+                props:
+                  heading: States
+                  text: Moves with stamps.
+          - kind: markdown
+            text: "## Union\n\nA **markdown** block with a list:\n\n- one\n- two"
+  # Control blocks: a form with every input kind, tables, a list, a
+  # button and a link group.
+  - name: contact
+    route: /contact
+    title: Contact
+    body:
+      - kind: custom_form
+        props:
+          action: /contact
+          submit: Send
+        children:
+          - kind: text_field
+            props:
+              label: Email
+              name: email
+              required: true
+          - kind: select_field
+            props:
+              label: Topic
+              name: topic
+              options: [Sales, Support]
+          - kind: radio_group
+            props:
+              legend: Plan
+              name: plan
+              options:
+                - label: Free
+                  value: free
+                  checked: true
+                - label: Pro
+                  value: pro
+      - kind: data_table
+        props:
+          caption: People
+          columns: [Name]
+          rows:
+            - [Ada]
+      - kind: item_list
+        props:
+          ordered: true
+        children:
+          - type: link
+            href: /pricing
+            text: Pricing
+      - kind: action_button
+        props:
+          label: Cancel
+          variant: Ghost
+      - kind: nav_links
+        props:
+          label: More
+        children:
+          - type: link
+            href: /welcome
+            text: Welcome
+      - kind: data_table
+        props:
+          caption: Staff
+          id: staff
+          columns: [Name]
+      - kind: custom_form
+        props:
+          action: /contact
+          method: GET
+          hide_submit: true
+  - name: pricing
+    route: /pricing
+    layout: marketing
+    title: Pricing
+    body:
+      - kind: page_header
+        props:
+          title: Pricing
+          subtitle: Start free.
+      - kind: pricing
+        props:
+          plans:
+            - name: Starter
+              price: "$29"
+              period: /mo
+              description: For one person.
+              features: ["One app", "Email support"]
+              cta_text: Start free
+              cta_href: /signup
+            - name: Pro
+              price: "$99"
+              period: /mo
+              featured: true
+              features: ["Every app"]
+              cta_text: Start free
+              cta_href: /signup
+  - name: login
+    route: /login
+    layout: marketing
+    title: Sign in
+    body:
+      - kind: login_form
+        text: Sign in to Union
+        props:
+          action: /auth/login
+          next: /app
+          register_href: /signup
+  - name: signup
+    route: /signup
+    layout: marketing
+    title: Create your account
+    body:
+      - kind: signup_form
+        text: Create your Union account
+        props:
+          action: /auth/register
+          next: /app
+          login_href: /login
+
+  # The app layout: stats, a chart, a bulk list.
+  - name: dashboard
+    route: /app
+    layout: app
+    access:
+      auth: true
+    title: Overview
+    body:
+      - kind: page_header
+        props:
+          title: Overview
+      - kind: stat_row
+        children:
+          - kind: stat_card
+            props:
+              label: Billed
+              source:
+                entity: invoices
+                agg: sum
+                field: amount
+                filter: status=paid
+              format: money
+          - kind: stat_card
+            props:
+              label: Open invoices
+              source:
+                entity: invoices
+                agg: count
+                filter: status=open
+      - kind: bar_chart
+        props:
+          title: Invoices by status
+          source:
+            entity: invoices
+            group_by: status
+      - kind: entity_list
+        entity: invoices
+        text: Recent invoices
+        fields: [number, amount, status, due_on]
+        limit: 8
+        empty_text: No invoices yet.
+  - name: invoices
+    route: /app/invoices
+    layout: app
+    access:
+      auth: true
+    title: Invoices
+    body:
+      - kind: entity_list
+        entity: invoices
+        text: Invoices
+        fields: [number, amount, status, due_on]
+        limit: 25
+        create: true
+        bulk: true
+        empty_text: No invoices yet.
+  - name: invoice
+    route: /app/invoices/{id}
+    layout: app
+    access:
+      auth: true
+    title: Invoice
+    body:
+      - kind: entity_detail
+        entity: invoices
+  - name: documents
+    route: /app/documents
+    layout: app
+    access:
+      auth: true
+    title: Documents
+    body:
+      - kind: entity_list
+        entity: documents
+        text: Documents
+        fields: [title]
+        mode: cards
+        create: true
+  - name: products
+    route: /products
+    title: Products
+    body:
+      - kind: entity_list
+        entity: products
+        fields: [name, price, stock, active]
+        mode: table
+  # A standalone create form for an entity with a relation.
+  - name: product_new
+    route: /products/new
+    title: New product
+    body:
+      - kind: entity_form
+        entity: products
+        text: Add a product
+  # A create form that names its fields, past hidden, generated and
+  # read-only columns.
+  - name: customer_new
+    route: /customers/new
+    title: New customer
+    body:
+      - kind: entity_form
+        entity: customers
+        fields: [name, slug, cost, reference, logo, contract]
+  - name: cards
+    route: /cards
+    title: Cards
+    body:
+      - kind: entity_list
+        entity: cards
+        fields: [label, number]
+
+  # Record screens at one path segment per key column.
+  - name: bookings
+    route: /bookings
+    access:
+      auth: true
+    body:
+      - type: entity_list
+        entity: bookings
+        fields: [student_id, course_id, grade]
+        create: true
+  - name: booking
+    route: /bookings/{id}
+    access:
+      auth: true
+    body:
+      - type: entity_detail
+        entity: bookings
+  # A param before the record: the base Save returns to escapes it.
+  - name: booking_edit
+    route: /{term}/bookings/{id}/edit
+    access:
+      auth: true
+    body:
+      - type: entity_form
+        entity: bookings
+        mode: edit
+  - name: enrollment
+    route: /enrollments/{id}
+    access:
+      auth: true
+    body:
+      - type: heading
+        level: 1
+        text: Enrollment record
+      - type: entity_detail
+        entity: enrollments
+
+nav:
+  - label: Overview
+    href: /app
+    icon: home
+  - label: Library
+    icon: book
+    items:
+      - label: Documents
+        href: /app/documents
+      - label: Products
+        href: /products
+  - label: Admin
+    href: /admin
+    icon: shield
+    role: admin
+
+endpoints:
+  - name: publish_post
+    entity: posts
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+    public: true
+  - name: search_posts
+    entity: posts
+    method: GET
+    path: search
+    handler: entities/posts_endpoints.go#SearchPosts
+    public: true
+  - name: clear_cache
+    entity: posts
+    method: DELETE
+    path: "{id}/cache"
+    handler: entities/posts_endpoints.go#ClearCache
+    mcp: true
+
+hooks:
+  - id: products-before-create
+    entity: products
+    when: before_create
+    handler: validateProductHook
+    description: refuse a product before it is written
+
+middleware:
+  - request_logger
+
+plugins:
+  - name: analytics
+
+helpers:
+  - name: normalize_slug
+
+seed:
+  - entity: currencies
+    rows:
+      - currency_code: EUR
+        label: Euro
+  - entity: products
+    rows:
+      - name: Lamp
+        currency: "@currencies.label=Euro"
+        price: "12.50"
+        weight: 1.5
+        stock: 3
+        active: true
+        launched_on: "2026-01-15"
+        specs:
+          watts: 40
+          color: brass
+      - name: Shelf
+        price: 30
+        active: false
+        specs: [oak, pine]
+  - entity: invoices
+    rows:
+      - number: INV-1
+        amount: "120"
+        status: draft
+      # A seeded row may start past the initial state.
+      - number: INV-2
+        amount: "80"
+        status: paid
+  - entity: lessons
+    rows:
+      - title: Published lesson
+        status: published
+      - title: Draft lesson
+        status: draft
