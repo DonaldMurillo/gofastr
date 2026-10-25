@@ -26,7 +26,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 
@@ -39,10 +38,6 @@ import (
 // positive or a documented framework-level design decision, and report it
 // prominently in the gate output + final report rather than burying it.
 var axeAllowlist = map[string]string{}
-
-// axePageSettle is the post-navigation settle before forcing the scheme +
-// scanning, so transitions from the SPA page-swap settle first.
-func axePageSettle() chromedp.Action { return chromedp.Sleep(450 * time.Millisecond) }
 
 // axeFirstDetailID navigates to listPath, finds the first table "View" link
 // pointing under basePath, and returns the record id (the last path segment).
@@ -57,7 +52,7 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+listPath),
 		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
-		chromedp.Sleep(300*time.Millisecond),
+		axetest.WaitReady(),
 		chromedp.Evaluate(`(() => {
 			const sel = '.fui-data-table a[href^="`+basePath+`/"]';
 			const links = [...document.querySelectorAll(sel)];
@@ -92,7 +87,7 @@ func axeAdminEntityTables(t *testing.T, browser context.Context, base string) []
 	var raw string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/admin/entities/customers"),
-		axePageSettle(),
+		axetest.WaitReady(),
 		// Collect entity-base hrefs (exactly /admin/entities/<table>, no /create
 		// or /<id> suffix) from the page, dedupe, sort.
 		chromedp.Evaluate(`(() => {
@@ -196,24 +191,23 @@ func meridianAdminPages(t *testing.T, browser context.Context, base string) []st
 	return pages
 }
 
-// axeScanPage opens a fresh tab, navigates, settles, forces scheme, and scans.
+// axeScanPage opens a fresh tab, loads the page once, waits for it to
+// settle, then scans it under every scheme by flipping the scheme in place.
 // Returns the allowlist-filtered violations.
-func axeScanPage(t *testing.T, browser context.Context, base, path, scheme string) []axetest.Violation {
+func axeScanPage(t *testing.T, browser context.Context, base, path string) []axetest.Violation {
 	t.Helper()
 	ctx, cancel := axetest.NewTab(t, browser)
 	defer cancel()
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+path),
-		axePageSettle(),
-		axetest.Prepare(scheme),
+		axetest.WaitReady(),
 	); err != nil {
-		t.Errorf("axe setup %s (%s): %v", path, scheme, err)
+		t.Errorf("axe setup %s: %v", path, err)
 		return nil
 	}
-	vs, err := axetest.Scan(ctx, scheme, axeAllowlist, axetest.WithEnabledRules("target-size"))
+	vs, err := axetest.ScanSchemes(ctx, axetest.Schemes, axeAllowlist, axetest.WithEnabledRules("target-size"))
 	if err != nil {
-		t.Errorf("axe scan %s (%s): %v", path, scheme, err)
-		return nil
+		t.Errorf("axe scan %s: %v", path, err)
 	}
 	return vs
 }
@@ -238,10 +232,8 @@ func TestAxeMeridianClean(t *testing.T) {
 	// public; auth pages are guest-only (an authenticated visitor is bounced
 	// to /app, so scanning them post-login would audit the dashboard instead).
 	for _, p := range meridianAnonPages {
-		for _, scheme := range axetest.Schemes {
-			if axeReport(t, "page", p, axeScanPage(t, browser, base, p, scheme)) {
-				failed = true
-			}
+		if axeReport(t, "page", p, axeScanPage(t, browser, base, p)) {
+			failed = true
 		}
 	}
 
@@ -258,10 +250,8 @@ func TestAxeMeridianClean(t *testing.T) {
 
 	// App (authenticated) screens.
 	for _, p := range meridianAppPages(customerID, invoiceID) {
-		for _, scheme := range axetest.Schemes {
-			if axeReport(t, "page", p, axeScanPage(t, browser, base, p, scheme)) {
-				failed = true
-			}
+		if axeReport(t, "page", p, axeScanPage(t, browser, base, p)) {
+			failed = true
 		}
 	}
 
@@ -272,38 +262,34 @@ func TestAxeMeridianClean(t *testing.T) {
 	// record. target-size is enabled in axeScanPage so dense admin table links
 	// and sidebar nav are audited against the WCAG 2.2 24px floor.
 	for _, p := range meridianAdminPages(t, browser, base) {
-		for _, scheme := range axetest.Schemes {
-			if axeReport(t, "page", p, axeScanPage(t, browser, base, p, scheme)) {
-				failed = true
-			}
+		if axeReport(t, "page", p, axeScanPage(t, browser, base, p)) {
+			failed = true
 		}
 	}
 
 	// OPEN-WIDGET case, the first open-state axe scan in the repo. Opens the
 	// Quick-add customer modal (preset.Modal) and scans the open DOM in both
 	// schemes, so the modal's focus trap, backdrop, labels, and contrast are
-	// audited, not just the closed-page shell.
-	for _, scheme := range axetest.Schemes {
-		ctx, cancel := axetest.NewTab(t, browser)
-		if err := chromedp.Run(ctx,
-			chromedp.Navigate(base+"/app/customers"),
-			axePageSettle(),
-			axetest.Prepare(scheme),
-			chromedp.Click(`button[data-cui-open="customer-quick-add"]`, chromedp.ByQuery),
-			chromedp.WaitVisible(`#qa-name`, chromedp.ByQuery),
-			chromedp.Sleep(250*time.Millisecond),
-		); err != nil {
-			t.Errorf("open-widget setup (%s scheme): %v", scheme, err)
-			cancel()
-			failed = true
-			continue
-		}
-		vs, err := axetest.Scan(ctx, scheme, axeAllowlist, axetest.WithEnabledRules("target-size"))
-		cancel()
+	// audited, not just the closed-page shell. The first Prepare freezes
+	// transitions before the click, so the modal opens straight into its
+	// final state; ScanSchemes then flips the scheme with the modal open.
+	ctx, cancel := axetest.NewTab(t, browser)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/app/customers"),
+		axetest.WaitReady(),
+		axetest.Prepare(axetest.Schemes[0]),
+		chromedp.Click(`button[data-cui-open="customer-quick-add"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#qa-name`, chromedp.ByQuery),
+		axetest.WaitReady(),
+	); err != nil {
+		t.Errorf("open-widget setup: %v", err)
+		failed = true
+	} else {
+		vs, err := axetest.ScanSchemes(ctx, axetest.Schemes, axeAllowlist, axetest.WithEnabledRules("target-size"))
 		if err != nil {
-			t.Errorf("open-widget scan (%s scheme): %v", scheme, err)
+			t.Errorf("open-widget scan: %v", err)
 			failed = true
-			continue
 		}
 		if axeReport(t, "open-widget:quick-add", "/app/customers (modal open)", vs) {
 			failed = true

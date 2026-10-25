@@ -94,6 +94,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `kiln/integration`'s live agent tests, which need `KILN_LIVE=1` and
   never run in CI, now also need `-tags kilnlive`, so a `cmd/gofastr`
   change no longer pulls the kiln browser job into a pull request.
+- **The axe gates load each page once for both color schemes.**
+  `framework/testkit/axetest` adds `ScanSchemes`, which switches the
+  scheme on the page already loaded and scans again, and `WaitReady`,
+  which waits until a page has loaded and every runtime module it asked
+  for has registered. `Prepare` no longer sleeps 150 ms: it returns once
+  the scheme has taken effect. `Scan` injects the axe engine once per
+  page instead of on every scan. The site and Meridian gates use them
+  in place of a second page load per scheme and fixed 400 ms and 450 ms
+  waits.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
