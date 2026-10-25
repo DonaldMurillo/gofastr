@@ -26,6 +26,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -75,15 +76,31 @@ func ModuleRoot(t testing.TB) string {
 // out os.MkdirAll (it stats the parent) and os.RemoveAll (it opens it).
 func Package(t testing.TB, name string) (dir, importPath string) {
 	t.Helper()
-	dir = filepath.Join(ModuleRoot(t), filepath.FromSlash(Root), name)
+	dir, importPath, err := Make(ModuleRoot(t), name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = Remove(dir) })
+	return dir, importPath
+}
+
+// Make is Package for a scratch package that outlives one test: it clears
+// and creates moduleRoot/Root/name and returns its directory and import
+// path, and the caller removes it with Remove when it is done.
+func Make(moduleRoot, name string) (dir, importPath string, err error) {
+	dir = filepath.Join(moduleRoot, filepath.FromSlash(Root), name)
 	if err := removeTree(dir); err != nil {
-		t.Fatalf("clear stale scratch %s: %v", dir, err)
+		return "", "", fmt.Errorf("clear stale scratch %s: %w", dir, err)
 	}
 	if err := os.Mkdir(dir, 0o700); err != nil {
-		t.Fatalf("mkdir scratch %s: %v", dir, err)
+		return "", "", fmt.Errorf("mkdir scratch %s: %w", dir, err)
 	}
-	t.Cleanup(func() { _ = removeTree(dir) })
-	return dir, modulePath + "/" + Root + "/" + name
+	return dir, modulePath + "/" + Root + "/" + name, nil
+}
+
+// Remove deletes a scratch package Make created, without opening Root.
+func Remove(dir string) error {
+	return removeTree(dir)
 }
 
 // removeTree deletes dir and everything below it, opening only dir and its

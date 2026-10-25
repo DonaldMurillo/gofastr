@@ -9,13 +9,16 @@ import (
 // the run ends. `gofastr dev` mints its build dir once per process
 // (devcmd.DevServerBinDir) and removes it only on a clean shutdown, which
 // in-process tests never reach; under this root it goes too. The root is
-// short so service IDs fit native Unix socket path limits. Main removes
-// the shared gofastr binary, runs cleanup, then exits with the tests'
-// code. A package whose tests run `go vet` with the test binary as the
-// vettool hands off (verifycmd.RunAsVettoolIfMarked) before calling Main.
+// short so service IDs fit native Unix socket path limits, and the
+// package's shared trees (SharedTree) live in it. Main removes the shared
+// gofastr binary and the shared scratch packages, runs cleanup, then exits
+// with the tests' code. A package whose tests run `go vet` with the test
+// binary as the vettool hands off (verifycmd.RunAsVettoolIfMarked) before
+// calling Main.
 func Main(m *testing.M, cleanup ...func()) {
 	tmpRoot, err := os.MkdirTemp("", "gf-")
 	if err == nil {
+		runRoot = tmpRoot
 		for _, k := range []string{"TMPDIR", "TMP", "TEMP"} {
 			_ = os.Setenv(k, tmpRoot)
 		}
@@ -24,6 +27,7 @@ func Main(m *testing.M, cleanup ...func()) {
 	if SharedGofastrBin.Dir != "" {
 		_ = os.RemoveAll(SharedGofastrBin.Dir)
 	}
+	removeSharedTrees()
 	for _, f := range cleanup {
 		f()
 	}

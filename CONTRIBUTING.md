@@ -115,8 +115,22 @@ feature that fits in one app. The other generated-app tests call
   one path per line, so a pull request that edits
   `examples/lms/gofastr.yml` still builds and boots the lms app.
 
-When you add a generator feature, add it to the union app spec. To run
-one variant locally:
+When you add a generator feature, add it to the union app spec and let
+`TestUnionApp` compile it. If the feature's own test only needs to know
+that the emitted code compiles, it checks the emitted source in process
+and leaves the build to the union app.
+
+Tests in one package that need the same generated app share it. Call
+`clitest.SharedTree(t, key, prepare)`: the first caller runs `prepare`
+(generate, `go build`, and so on) into a directory under the package's
+temp root, and every later caller gets that directory, or the same error.
+The package's `TestMain` must call `clitest.Main`. A shared tree is never
+changed after `prepare`: a test that edits files works on
+`clitest.CopyTree(t, dir)`, and a boot keeps its database in its own
+`t.TempDir()` (set `DATABASE_URL`). Each test still calls
+`clitest.VariantBuild` with its own inputs before it asks for the tree.
+
+To run one variant locally:
 
 ```sh
 GOFASTR_TEST_ALL=1 go test -run TestExampleAppSpecsBoot/lms ./cmd/gofastr/
