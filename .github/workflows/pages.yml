@@ -14,37 +14,62 @@
 name: pages
 
 on:
-  push:
-    branches: [main]
-    # A release tag usually lands after its commit's push to main, and
-    # the build stamps the version from `git describe`, so a deploy that
-    # ran before the tag existed shows the previous release. Re-deploy
-    # when a release tag is pushed.
-    tags: ['v*']
+  # The site follows releases, not main. release.yml calls this once its
+  # gate has passed and the release exists, so the site documents what
+  # `go get` installs, under that release's version number. Deploying on
+  # every push to main published unreleased docs under the previous
+  # release's version.
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build the site from, e.g. v0.95.0"
+        required: true
+        type: string
+  # A manual redeploy (a failed deploy, a Pages outage) rebuilds a
+  # published release, by default the latest one, never main's head.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (empty: the latest release)"
+        required: false
+        type: string
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve the release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$INPUT_TAG"
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --repo "$REPO" --json tagName --jq .tagName)
+          fi
+          # Same shape check as release.yml: the value reaches a shell
+          # and a checkout ref, so pin it before anything uses it.
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::refusing tag $tag — a release tag must look like v1.2.3"; exit 1 ;;
+          esac
+          if printf '%s' "$tag" | grep -q '[^A-Za-z0-9._-]'; then
+            echo "::error::refusing tag $tag — only [A-Za-z0-9._-] are allowed in a release tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          # A tag push deploys main's head, not the tagged commit: the tag
-          # may sit behind main (a release commit tagged after later
-          # merges), and deploying it would roll the site back.
-          ref: ${{ startsWith(github.ref, 'refs/tags/') && github.event.repository.default_branch || github.sha }}
-          # Need the tag history so the build can stamp the displayed version
-          # from `git describe` (default shallow checkout fetches no tags).
-          fetch-depth: 0
+          ref: ${{ steps.tag.outputs.tag }}
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -53,14 +78,14 @@ jobs:
           cache: true
 
       - name: Build the docs site
-        # Stamp siteVersion from the deployment's latest tag so the live site
-        # matches the release instead of a hand-bumped constant.
+        # Stamp siteVersion from the release tag so the live site shows the
+        # release it documents instead of a hand-bumped constant.
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          VER=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
-          LDFLAGS=""
-          [ -n "$VER" ] && LDFLAGS="-ldflags=-X=main.siteVersion=$VER"
-          echo "building site as version: ${VER:-dev}"
-          go build $LDFLAGS -o /tmp/site ./examples/site/
+          set -euo pipefail
+          echo "building site as version: ${TAG#v}"
+          go build "-ldflags=-X=main.siteVersion=${TAG#v}" -o /tmp/site ./examples/site/
 
       - name: Export static site
         # Native, declaration-driven SSG: render every route in-process and
@@ -89,6 +114,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # One deploy at a time, and a running one finishes: a release's deploy
+    # is never cancelled halfway by a manual redeploy or the next release.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

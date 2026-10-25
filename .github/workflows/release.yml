@@ -21,6 +21,10 @@
 # Fail-closed: a red / cancelled / missing check, a stale or unmerged SHA, or a
 # pre-existing release all abort before anything is published. This closes the
 # holes behind v0.61.0 (shipped a red commit) and the manual-release bypass.
+#
+# Once the release exists, the pages job deploys the docs site built from the
+# same tag (pages.yml). That is the only automatic deploy: pushes to main
+# deploy nothing, so the site never shows unreleased docs.
 name: release
 
 on:
@@ -38,6 +42,8 @@ permissions:
 jobs:
   ensure-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - name: Resolve tag
         id: tag
@@ -176,3 +182,15 @@ jobs:
             --title "$TAG" --notes-file /tmp/notes.md \
             "/tmp/gofastr-site-${TAG}.tar.gz" "/tmp/gofastr-site-${TAG}.tar.gz.sha256"
           echo "created release for $TAG from its CHANGELOG.md section"
+
+  # The docs site follows releases. This runs only when ensure-release
+  # succeeded, so a refused gate or a failed publish deploys nothing.
+  pages:
+    needs: ensure-release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      tag: ${{ needs.ensure-release.outputs.tag }}
