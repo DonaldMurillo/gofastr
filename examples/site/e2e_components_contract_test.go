@@ -77,6 +77,10 @@ func TestE2E_Modal_EscClosesAndReturnsFocus(t *testing.T) {
             const el = document.querySelector('[data-cui-widget="site-demo-modal"]');
             return !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
         })()`),
+		// Opening adds the widgetfocus module, the modal's only Escape
+		// handler, and does not wait for it. An Escape sent before it
+		// registers is lost, so wait for the page's modules again.
+		pageReady(),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))`, nil),
 		waitFor(`(() => {
             const el = document.querySelector('[data-cui-widget="site-demo-modal"]');

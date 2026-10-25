@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	cdplog "github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/runtime"
@@ -174,6 +175,11 @@ func TestE2E_InteractiveComponents_NoConsoleErrors(t *testing.T) {
 				cdplog.Enable(),
 				chromedp.Navigate(base+"/components/"+slug),
 				pageReady(), // demand-loaded modules registered
+				// A negative check: no console/CSP error may land. Idle-time
+				// modules, widgets mounted after the catalog fetch, timers and
+				// observers can log after the page reads ready, so give them
+				// a fixed window before reading the sink.
+				chromedp.Sleep(700*time.Millisecond),
 			); err != nil {
 				t.Fatalf("navigate %s: %v", slug, err)
 			}

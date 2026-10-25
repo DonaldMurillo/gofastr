@@ -186,19 +186,23 @@ func TestE2E_ThemeToggle_Renders(t *testing.T) {
 func TestE2E_ThemeToggle_ClickCyclesScheme(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-	var schemeAfter string
+	var schemeBefore, schemeAfter string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/themetoggle"),
 		pageReady(),
-		chromedp.Evaluate(`(document.querySelector('[data-hui-theme-cycle]') || document.querySelector('[data-hui-theme-toggle] [data-hui-theme-option]'))?.click()`, nil),
-		waitFor(`!!document.documentElement.getAttribute('data-color-scheme')`),
+		chromedp.Evaluate(`window.__schemeBefore = document.documentElement.getAttribute('data-color-scheme') || ''`, &schemeBefore),
+		// The cycle button changes the scheme the reader sees on every
+		// click (headless navigation.js skips a step that would look the
+		// same), so the attribute must change.
+		chromedp.Evaluate(`document.querySelector('[data-hui-theme-cycle]').click()`, nil),
+		waitFor(`(document.documentElement.getAttribute('data-color-scheme') || '') !== window.__schemeBefore`),
 		chromedp.Evaluate(`document.documentElement.getAttribute('data-color-scheme') || ''`, &schemeAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if schemeAfter == "" {
-		t.Error("expected data-color-scheme to be set on <html> after clicking ThemeToggle")
+	if schemeBefore == "" || schemeAfter == "" || schemeAfter == schemeBefore {
+		t.Errorf("data-color-scheme went %q → %q on a ThemeToggle click, want two different set values", schemeBefore, schemeAfter)
 	}
 }
 
