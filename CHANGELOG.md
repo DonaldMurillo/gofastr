@@ -94,6 +94,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `internal/upgrade`, next to the CHANGELOG check already there. A
   CHANGELOG edit now selects those two packages, which run in under a
   second.
+- **Three tests stop waiting on nothing, and two groups stop running
+  where they don't belong.** `TestExamplesAreHMRReady/backoffice`
+  waited 60s for a `/healthz` that backoffice never serves before
+  trying `/`; it now polls both and takes about 5s. A held request made
+  `TestPlaceholderPaintsWhileSourceIsPending` stall 17s in
+  `httptest.Server.Close`, and Chrome's HTTP cache made
+  `TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache` wait 20s for
+  an identical in-flight GET; each now takes 1–3s. Three Chrome-driven
+  `framework/ui` tests that import `framework` and `framework/uihost`
+  now carry the `chromium` build tag like their siblings, so a
+  `framework/uihost` change no longer reruns the whole `framework/ui`
+  package in the main test job (the chromium-ui job still runs them).
+  `kiln/integration`'s live agent tests, which need `KILN_LIVE=1` and
+  never run in CI, now also need `-tags kilnlive`, so a `cmd/gofastr`
+  change no longer pulls the kiln browser job into a pull request.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

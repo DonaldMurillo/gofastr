@@ -38,12 +38,17 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 	// intrinsic size. Pull the registered sheet in, the way a real host does.
 	css := imageStyle.Entry().CSSFor(theme.Default())
 
+	// release ends the held image request when the test returns. Without it
+	// srv.Close waits on that request until its 20s timer fires, because the
+	// browser that would cancel it closes later, in t.Cleanup.
+	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			// The real image never arrives. This is the slow-network case
 			// the placeholder exists for.
 			select {
 			case <-r.Context().Done():
+			case <-release:
 			case <-time.After(20 * time.Second):
 			}
 			return
@@ -54,6 +59,7 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 %s</style>%s`, css, string(html))
 	}))
 	defer srv.Close()
+	defer close(release) // deferred last, so it runs before srv.Close
 
 	ctx := chromedptest.Context(t)
 

@@ -1,3 +1,5 @@
+//go:build chromium
+
 package ui_test
 
 import (
