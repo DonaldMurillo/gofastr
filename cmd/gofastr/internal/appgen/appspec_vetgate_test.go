@@ -19,7 +19,7 @@ import (
 // never compiles them, and the generator ships e2e/axe tests whose
 // defects are the same class as broken app code).
 //
-// TestExampleAppSpecsGenerateAndCompile proves the emitted Go BUILDS
+// TestExampleAppSpecsBoot (cmd/gofastr) proves the emitted Go BUILDS
 // under the stdlib vet; this gate adds the repo's analyzer set, so a
 // template regression that compiles but trips a repo rule (an
 // unbounded response read, a client with no deadline — the shapes the
@@ -54,19 +54,17 @@ func TestAppSpecProjectPassesRepoVettool(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("no go toolchain to vet the generated module: %v", err)
 	}
-	vettool := clitest.TestExecutablePath(filepath.Join(t.TempDir(), "vettool"))
-	build := exec.Command("go", "build", "-o", vettool, "./cmd/vettool")
-	build.Dir = repoRoot
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building the repo vettool failed: %v\n%s", err, out)
-	}
-
 	for _, path := range paths {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
+			clitest.VariantBuild(t, "examples/"+name+"/gofastr.yml")
 			// Per-example scratch dir; the vettool binary is shared read-only.
 			t.Parallel()
+			vettool, err := clitest.RepoVettool()
+			if err != nil {
+				t.Fatal(err)
+			}
 			appDir := renderAppSpecForVet(t, repoRoot, path, name)
 			vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")
 			vet.Dir = appDir

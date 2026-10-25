@@ -415,6 +415,7 @@ poll:
 // method, then run `go test`. Anything that drifts between server contract
 // and generated client surfaces here.
 func TestGenerateClient_RoundTripAgainstLiveServer(t *testing.T) {
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

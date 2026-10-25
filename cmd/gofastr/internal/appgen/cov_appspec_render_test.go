@@ -22,6 +22,7 @@ func TestRenderAppSpecNodeOnlyScreenBuilds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skips module build in -short")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +110,7 @@ func TestRenderAppSpecNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 	if testing.Short() {
 		t.Skip("build test")
 	}
+	clitest.VariantBuild(t)
 	const repoRoot = "../../../.."
 	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {

@@ -19,6 +19,7 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("dev-loop e2e: compiles and serves a generated app")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

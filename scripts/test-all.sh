@@ -73,6 +73,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# The full run builds every generated-app variant too (cmd/gofastr's
+# clitest.VariantBuild); a pull request builds only the union app.
+export GOFASTR_TEST_ALL=1
+
 PKGS=${*:-./...}
 PARALLEL=${TEST_PARALLELISM:-2}
 

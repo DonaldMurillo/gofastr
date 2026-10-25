@@ -23,7 +23,7 @@ import (
 // generated app); this gate vets it:
 //
 //	regenerate a CLI from a fixture spec into a temp module,
-//	build ./cmd/vettool from the repo,
+//	share the repo's ./cmd/vettool build (clitest.RepoVettool),
 //	run go vet -vettool=<it> over the generated module,
 //	fail on ANY diagnostic, printing it.
 //
@@ -120,11 +120,9 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("no go toolchain to vet the generated module: %v", err)
 	}
-	vettool := clitest.TestExecutablePath(filepath.Join(dir, "vettool"))
-	build := exec.Command("go", "build", "-o", vettool, "./cmd/vettool")
-	build.Dir = repoRoot
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building the repo vettool failed: %v\n%s", err, out)
+	vettool, err := clitest.RepoVettool()
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")

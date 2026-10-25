@@ -153,6 +153,7 @@ func TestCrudScreensLiveInCrudFile(t *testing.T) {
 // TestPerScreenFilesCompile builds the generated app to confirm the seam,
 // self-registration, and the layout-var references all type-check.
 func TestPerScreenFilesCompile(t *testing.T) {
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

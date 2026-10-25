@@ -22,6 +22,7 @@ import (
 //
 //gofastr:test-reads framework/docs/content/tutorial-app-spec.md
 func TestReadmeQuickstartAppSpecRuns(t *testing.T) {
+	clitest.VariantBuild(t, "framework/docs/content/tutorial-app-spec.md")
 	yamlBlock, _, initBlock := clitest.ReadmeQuickstartBlocks(t)
 	repoRoot := clitest.RepoRootDir(t)
 	dir := t.TempDir()

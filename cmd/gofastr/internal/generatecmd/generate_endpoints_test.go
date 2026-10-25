@@ -259,6 +259,7 @@ func TestEndpointsRegisterAndCallTyped(t *testing.T) {
 	if hash == withoutEndpoints {
 		t.Fatal("the schema hash ignores the settings endpoints")
 	}
+	clitest.VariantBuild(t)
 	cmd := exec.Command("go", "test", "-mod=mod", "-count=1", "./entities/")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "WANT_SCHEMA_HASH="+hash)

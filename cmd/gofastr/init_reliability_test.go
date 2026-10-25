@@ -11,6 +11,7 @@ import (
 )
 
 func TestInitGeneratedProjectsBuild(t *testing.T) {
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +52,7 @@ func TestInitGeneratedProjectsBuild(t *testing.T) {
 }
 
 func TestInitGeneratedSQLiteMigrationsRunFromCLI(t *testing.T) {
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +192,7 @@ func prepareGeneratedModule(t *testing.T, repoRoot, project string) {
 // main at the module root (main.go + screens.go), NOT a screens/ subpackage
 // or a gen/ quarantine directory. The generated project must build.
 func TestInitEmitsFlatOwnedLayout(t *testing.T) {
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

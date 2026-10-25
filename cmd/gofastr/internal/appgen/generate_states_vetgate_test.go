@@ -49,11 +49,9 @@ func TestGeneratedCLIWithStatesPassesRepoVettool(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vettool := clitest.TestExecutablePath(filepath.Join(dir, "vettool"))
-	build := exec.Command("go", "build", "-o", vettool, "./cmd/vettool")
-	build.Dir = repoRoot
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building the repo vettool failed: %v\n%s", err, out)
+	vettool, err := clitest.RepoVettool()
+	if err != nil {
+		t.Fatal(err)
 	}
 	vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")
 	vet.Dir = dir

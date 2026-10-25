@@ -83,6 +83,7 @@ func TestAccessAppSpecBuilds(t *testing.T) {
 	if !sawAccessLiteral {
 		t.Fatal("no generated file carries the Access literal")
 	}
+	clitest.VariantBuild(t)
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()

@@ -26,8 +26,8 @@ import (
 // directory.
 const buildGateScratchPkg = "build_"
 
-// TestExampleAppSpecsGenerateAndCompile is the gate that matters: every
-// shipped app spec must emit Go that BUILDS.
+// TestExampleAppSpecsBoot is the gate that matters: every shipped app spec
+// must emit Go that builds, vets, starts and serves.
 //
 // Why this exists, generalized, rather than per-example:
 //
@@ -39,50 +39,35 @@ const buildGateScratchPkg = "build_"
 //
 // Those two were the ONLY app specs whose emitted Go was ever compiled. The
 // other five, blog, lms, portfolio, project-manager, real-estate, were
-// covered solely by TestExampleAppSpecsLoad above, which checks that the YAML
-// parses. All five emitted code that did not compile, and neither of the two
-// gated examples could catch it: ecommerce declares no home screen and no
-// `access:` role policy, so it is the one example that never reaches either
-// broken generator path.
+// covered solely by TestExampleAppSpecsLoad (internal/appspec), which checks
+// that the YAML parses. All five emitted code that did not compile, and
+// neither of the two gated examples could catch it: ecommerce declares no
+// home screen and no `access:` role policy, so it is the one example that
+// never reaches either broken generator path.
 //
 // The lesson is that a gate aimed at one fixture proves one fixture. This test
 // is aimed at all seven, so a generator path is covered the moment any
 // app spec uses it.
 //
-//gofastr:test-reads examples/*/gofastr.yml
-func TestExampleAppSpecsGenerateAndCompile(t *testing.T) {
-	if testing.Short() {
-		t.Skip("runs the generator and compiles its output; skipped under -short")
-	}
-	for _, path := range clitest.ExampleAppSpecs(t) {
-		path := path
-		name := filepath.Base(filepath.Dir(path))
-		t.Run(name, func(t *testing.T) {
-			// Each example renders into its own scratch package
-			// (_scratch/appspecs/build_<name>), so the seven compiles can
-			// overlap. The parent stays
-			// sequential: TestExampleAppSpecsBoot renders into the SAME
-			// scratch dirs and must not run alongside this test.
-			t.Parallel()
-			generateAndCompileAppSpec(t, path, name)
-		})
-	}
-}
-
-// TestExampleAppSpecsBoot is the top rung of the app spec ladder:
-// load → generate → compile → START the binary and serve. Compile-only
-// was not enough: the blog app spec rotted for a whole release while
-// passing all three lower rungs. Its seed seeded `post_id: 1` into a
-// UUID relation column, an app that builds cleanly and dies at boot
-// ("seed hooks: seed comments: validation failed"). Nothing below the
-// boot rung can see a runtime failure, so this test is the gate that
-// would have caught it.
+// Compiling was not enough either: the blog app spec rotted for a whole
+// release while it still built. Its seed seeded `post_id: 1` into a UUID
+// relation column, an app that builds cleanly and dies at boot ("seed
+// hooks: seed comments: validation failed"). So each example is generated,
+// compiled (the main package, every package, go vet), STARTED and
+// exercised. A compile-only test ran beside this one and built every
+// example a second time; nothing it checked is missing here.
 //
-// Failure modes asserted: non-zero exit before serving (the seed-death
-// class), failure to bind/serve within the deadline, and error output on
-// the way down. The child runs in its own process group and is killed by
-// tree even when the test fails mid-flight, so no app leaks past the run
-// (CI-safe on Linux and macOS via configureTestProcessGroup).
+// Failure modes asserted: broken emitted Go, non-zero exit before serving
+// (the seed-death class), failure to bind/serve within the deadline, and
+// error output on the way down. The child runs in its own process group and
+// is killed by tree even when the test fails mid-flight, so no app leaks
+// past the run (CI-safe on Linux and macOS via configureTestProcessGroup).
+//
+// Each example is a variant build (clitest.VariantBuild): a pull request
+// boots the examples whose app spec it edits, and appgen's TestUnionApp
+// checks a generator change.
+//
+//gofastr:test-reads examples/*/gofastr.yml
 func TestExampleAppSpecsBoot(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, compiles, and boots every example app spec; skipped under -short")
@@ -91,8 +76,10 @@ func TestExampleAppSpecsBoot(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
-			// Per-example scratch dir and a fresh port each; see the
-			// parallelism note on TestExampleAppSpecsGenerateAndCompile.
+			clitest.VariantBuild(t, "examples/"+name+"/gofastr.yml")
+			// Each example renders into its own scratch package
+			// (_scratch/appspecs/build_<name>) and boots on a fresh port,
+			// so the seven can overlap.
 			t.Parallel()
 			bin, appDir := generateAndCompileAppSpec(t, path, name)
 			baseURL, output := bootGeneratedApp(t, name, bin, appDir)

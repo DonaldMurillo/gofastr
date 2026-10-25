@@ -333,6 +333,7 @@ func TestGeneratedRepoRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a generated module; skipped under -short")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

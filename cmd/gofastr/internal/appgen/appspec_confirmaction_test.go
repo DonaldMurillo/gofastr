@@ -48,6 +48,7 @@ func TestSoftDeleteAppOmitsDeadConfirmAction(t *testing.T) {
 // The minimal soft-delete-only shape must still render a compiling app.go: the
 // ui/widget imports must be absent (nothing uses them), not merely unreferenced.
 func TestSoftDeleteOnlyAppCompiles(t *testing.T) {
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

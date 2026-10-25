@@ -52,6 +52,7 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots a generated app against a fresh DB")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

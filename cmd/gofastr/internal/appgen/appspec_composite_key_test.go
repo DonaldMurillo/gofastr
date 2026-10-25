@@ -57,15 +57,7 @@ func TestCompositeKeyScreens(t *testing.T) {
 		}
 		src.Write(b)
 	}
-	for _, want := range []string{
-		`app.NewScreen("/enrollments/:student_id/:course_id"`,
-		`app.NewScreen("/:term/enrollments/:student_id/:course_id/edit"`,
-		`s.id = framework.JoinKey([]string{p["student_id"], p["course_id"]})`,
-		`s.base = "/" + url.PathEscape(p["term"]) + "/enrollments"`,
-		`appUI.Record("enrollments", s.id).Base(s.base).RenderCtx(ctx)`,
-		`appUI.Record("enrollments", s.id).Delete().Duplicate().RenderCtx(ctx)`,
-		`var e2eKeyCols = []string{"studentId", "courseId"}`,
-	} {
+	for _, want := range compositeScreenWants("enrollments") {
 		if !strings.Contains(src.String(), want) {
 			t.Errorf("generated app lacks %s", want)
 		}
@@ -74,7 +66,8 @@ func TestCompositeKeyScreens(t *testing.T) {
 		return
 	}
 
-	clitest.WriteTestFile(t, filepath.Join(dir, "edit_save_test.go"), editSaveTest)
+	clitest.WriteTestFile(t, filepath.Join(dir, "edit_save_test.go"), editSaveTest("enrollments"))
+	clitest.VariantBuild(t)
 	cmd := exec.Command("go", "test", "-run", "^(TestE2E|TestEditSavesToRecord)$", "-count=1", "-v", ".")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
@@ -89,12 +82,33 @@ func TestCompositeKeyScreens(t *testing.T) {
 	}
 }
 
+// compositeScreenWants is what an app emits for entity, keyed on
+// [student_id, course_id], with a list, a record screen and an edit
+// screen at /{term}/<entity>/{id}/edit: a route segment per key column,
+// the joined key, an escaped base, and an e2e test that reads the key
+// columns back.
+func compositeScreenWants(entity string) []string {
+	return []string{
+		`app.NewScreen("/` + entity + `/:student_id/:course_id"`,
+		`app.NewScreen("/:term/` + entity + `/:student_id/:course_id/edit"`,
+		`s.id = framework.JoinKey([]string{p["student_id"], p["course_id"]})`,
+		`s.base = "/" + url.PathEscape(p["term"]) + "/` + entity + `"`,
+		`appUI.Record("` + entity + `", s.id).Base(s.base).RenderCtx(ctx)`,
+		`appUI.Record("` + entity + `", s.id).Delete().Duplicate().RenderCtx(ctx)`,
+		`var e2eKeyCols = []string{"studentId", "courseId"}`,
+	}
+}
+
 // editSaveTest joins the generated app's own e2e package: it boots the
-// app, opens the edit screen of a record whose key values need escaping
-// and reads where Save goes. The edit route continues past the record,
-// so the page's default base (the request path less one segment per key
-// column) would send Save to /enrollments/ann%20lee/ann%20lee/c%201.
-const editSaveTest = `package main
+// app, opens the edit screen of an entity record whose key values need
+// escaping and reads where Save goes. The edit route continues past the
+// record, so the page's default base (the request path less one segment
+// per key column) would send Save to /<entity>/ann%20lee/ann%20lee/c%201.
+func editSaveTest(entity string) string {
+	return strings.ReplaceAll(editSaveSource, "{entity}", entity)
+}
+
+const editSaveSource = `package main
 
 import (
 	"net/http"
@@ -131,14 +145,14 @@ func TestEditSavesToRecord(t *testing.T) {
 	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@example.com"}, "password": {"roster-pw-123"}}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	if code, body := e2eDo(t, client, "POST", base+"/api/enrollments", ` + "`" + `{"student_id": "ann lee", "course_id": "c 1", "grade": "B"}` + "`" + `); code != http.StatusCreated {
+	if code, body := e2eDo(t, client, "POST", base+"/api/{entity}", ` + "`" + `{"student_id": "ann lee", "course_id": "c 1", "grade": "B"}` + "`" + `); code != http.StatusCreated {
 		t.Fatalf("create = %d: %s", code, body)
 	}
-	code, body := e2eDo(t, client, "GET", base+"/fall%3F24/enrollments/ann%20lee/c%201/edit", "")
+	code, body := e2eDo(t, client, "GET", base+"/fall%3F24/{entity}/ann%20lee/c%201/edit", "")
 	if code != http.StatusOK {
 		t.Fatalf("edit screen = %d", code)
 	}
-	if want := ` + "`" + `data-cui-rpc-navigate="/fall%3F24/enrollments/ann%20lee/c%201"` + "`" + `; !strings.Contains(body, want) {
+	if want := ` + "`" + `data-cui-rpc-navigate="/fall%3F24/{entity}/ann%20lee/c%201"` + "`" + `; !strings.Contains(body, want) {
 		i := strings.Index(body, "data-cui-rpc-navigate")
 		t.Fatalf("Save does not land on the record (%s): %.120s", want, body[max(i, 0):])
 	}

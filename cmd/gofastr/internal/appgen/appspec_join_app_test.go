@@ -187,6 +187,7 @@ func TestOwnedJoinApp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and boots a generated app; skipped under -short")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

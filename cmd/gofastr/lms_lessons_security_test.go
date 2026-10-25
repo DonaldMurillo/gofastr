@@ -27,6 +27,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
+	clitest.VariantBuild(t, "examples/lms/gofastr.yml")
 	bin, appDir := generateAndCompileAppSpec(t, "../../examples/lms/gofastr.yml", "lms")
 	baseURL, appOut := bootGeneratedApp(t, "lms", bin, appDir)
 

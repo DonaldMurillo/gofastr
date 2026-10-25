@@ -101,6 +101,7 @@ app:
 }
 
 func TestAppSpecCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

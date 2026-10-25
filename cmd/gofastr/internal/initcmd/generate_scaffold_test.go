@@ -16,6 +16,7 @@ import (
 // replace (the harness the app spec build test uses), and build every
 // package it emitted.
 func TestRunInitGeneratesBuildableApp(t *testing.T) {
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
 	clitest.CovT_capStdout(t, func() { RunInit([]string{"myapp"}) })

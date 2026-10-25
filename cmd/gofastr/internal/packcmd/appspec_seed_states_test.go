@@ -73,6 +73,7 @@ func bootSeededApp(t *testing.T, spec string) (string, func() string) {
 	if testing.Short() {
 		t.Skip("generates, compiles and boots an app; skipped under -short")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

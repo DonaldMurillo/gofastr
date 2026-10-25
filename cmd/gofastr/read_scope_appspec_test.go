@@ -6,6 +6,8 @@ import (
 	"net/http/cookiejar"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // TestExampleReadScopeBoots is the end-to-end posture proof on a real shipped
@@ -19,6 +21,7 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
+	clitest.VariantBuild(t, "examples/portfolio/gofastr.yml")
 	bin, appDir := generateAndCompileAppSpec(t, "../../examples/portfolio/gofastr.yml", "portfolio")
 	baseURL, _ := bootGeneratedApp(t, "portfolio", bin, appDir)
 

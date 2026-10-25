@@ -293,6 +293,7 @@ func TestRegisteredDisplayStatesMatchDeclaration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "gen", "displaystates_test.go"), []byte(gen), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	clitest.VariantBuild(t)
 	cmd := exec.Command("go", "test", "-short", "-mod=mod", "-run", "TestRegisteredDisplayStatesMatchDeclaration", "./gen")
 	cmd.Dir = dir
 	if output, err := cmd.CombinedOutput(); err != nil {

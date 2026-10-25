@@ -1,0 +1,9 @@
+codegen:
+  generators:
+    - name: cli
+      output: cmd/union
+      config:
+        binary: union
+    - name: sdk
+      config:
+        targets: [js]

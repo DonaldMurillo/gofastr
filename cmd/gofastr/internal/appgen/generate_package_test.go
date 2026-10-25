@@ -446,6 +446,7 @@ func TestGeneratePackageCopyBuilds(t *testing.T) {
 		t.Errorf("copied package is not gofmt-clean:\n%s", fmtOut)
 	}
 
+	clitest.VariantBuild(t, "cmd/gofastr/packages/")
 	env := append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off", "GOWORK=off")
 	for _, tc := range []struct {
 		name string

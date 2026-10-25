@@ -119,6 +119,7 @@ func TestE2ETemplatePostgresProvisionsDB(t *testing.T) {
 // proving the generated postgres template is valid, linkable Go: the
 // regression guard for issue #68's postgres defect.
 func TestE2ETemplatePostgresCompiles(t *testing.T) {
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

@@ -89,5 +89,6 @@ func TestAppSpecYAMLControlBlocksBuild(t *testing.T) {
 	if t.Failed() {
 		t.Logf("screen_about.go:\n%s", src)
 	}
+	clitest.VariantBuild(t)
 	clitest.BuildGenerated(t, dir)
 }

@@ -105,7 +105,10 @@ jobs:
       # merge commit, so a direct diff against the base SHA (fetched below,
       # depth 1, no merge-base needed) is exactly the change set. Every other
       # trigger (push to main, merge queue, schedule) sets GOFASTR_TEST_ALL=1
-      # and runs everything: what lands on main is proven whole.
+      # and runs everything: what lands on main is proven whole. That
+      # includes cmd/gofastr's generated-app variants (clitest.VariantBuild),
+      # which a pull request builds only when it edits their inputs; its
+      # one generated-app build is appgen's TestUnionApp.
       GOFASTR_TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
       GOFASTR_AFFECTED_DIFF_BASE: "1"
@@ -604,7 +607,9 @@ jobs:
             pkg: cmd/gofastr(/internal/devcmd)?$
             # Every cmd/gofastr test that drives a real Chrome, the
             # app spec app E2E plus the two dev livereload browser tests
-            # (all three in the main package). Kept out of the
+            # (all three in the main package; the app spec E2E is a
+            # generated-app variant, so it runs when GOFASTR_TEST_ALL=1
+            # and skips on a pull request). Kept out of the
             # deterministic step so the websocket connect isn't starved by
             # parallel package load. TestE2E_DevLoop_Examples (devcmd:
             # builds and boots every example under `gofastr dev`) rides
@@ -751,7 +756,8 @@ jobs:
     #
     # A skipped test records no reads, so this job gives the suites the
     # same environment the `test` job does: Postgres, the gofastr binary
-    # and bubblewrap.
+    # and bubblewrap. GOFASTR_TEST_ALL=1 runs cmd/gofastr's generated-app
+    # variants (clitest.VariantBuild), which skip without it.
     name: test-reads audit (weekly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -761,6 +767,7 @@ jobs:
       GOFASTR_TESTLOG_DIR: ${{ github.workspace }}/../testlogs
       TEST_POSTGRES_DSN: "postgres://test:test@localhost:5432/framework_test?sslmode=disable"
       PGTEST_REQUIRED: "1"
+      GOFASTR_TEST_ALL: "1"
     services:
       postgres:
         image: pgvector/pgvector:pg16

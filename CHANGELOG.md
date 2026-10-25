@@ -43,6 +43,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   run tests every package (`-all`, `GOFASTR_TEST_ALL=1`, a `go.mod`
   change, a base it cannot resolve, or a change set longer than 64 KiB)
   the command gets `GOFASTR_TEST_ALL=1` instead.
+- **A pull request builds one generated app (#589).** `cmd/gofastr`'s
+  tests generated and compiled about 65 apps per run: every example
+  twice, and one small app per generator feature, each build compiling
+  most of the framework. A pull request now builds one, in
+  `TestUnionApp` (`internal/appgen`), whose app spec
+  (`internal/appgen/testdata/union/gofastr.yml`) uses every generator
+  feature that fits in one app. The others call `clitest.VariantBuild`
+  and run on every CI run that is not a pull request, under
+  `GOFASTR_TEST_ALL=1` (`./scripts/test-all.sh` sets it), or when the
+  change touches an input they name, such as an example's
+  `gofastr.yml`.
+  `TestExampleAppSpecsGenerateAndCompile` is gone:
+  `TestExampleAppSpecsBoot` builds each example the same way before it
+  boots it. On a framework change, the `cmd/gofastr` package's tests
+  take about 49s instead of 110s and `internal/appgen`'s about 28s
+  instead of 79s (local run, warm build cache).
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

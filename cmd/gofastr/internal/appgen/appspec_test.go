@@ -249,6 +249,7 @@ func TestGenerateFromAppSpecDryRunJSON(t *testing.T) {
 }
 
 func TestRenderAppSpecFilesGeneratedPackagesBuild(t *testing.T) {
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

@@ -25,6 +25,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and boots a scaffolded app")
 	}
+	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot := clitest.RepoRootDir(t)
 
 	binDir := t.TempDir()

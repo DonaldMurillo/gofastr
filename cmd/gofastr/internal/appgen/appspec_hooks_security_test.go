@@ -110,6 +110,7 @@ func TestAppSpecHooksCompile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles a generated module; skipped in -short")
 	}
+	clitest.VariantBuild(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

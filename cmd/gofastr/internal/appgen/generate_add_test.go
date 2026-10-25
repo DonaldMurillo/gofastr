@@ -248,6 +248,7 @@ func TestAddRedeclaredEntitySkipped(t *testing.T) {
 // ---- Test 5: union compiles ----
 
 func TestAddUnionCompiles(t *testing.T) {
+	clitest.VariantBuild(t)
 	dir, bp := clitest.AddSetup(t, addTestAppSpec("example.com/addtest"))
 	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
 	frag := filepath.Join(dir, "fragment.yml")
@@ -446,6 +447,7 @@ func TestAddEntityFragmentEmitsCrudScreenFile(t *testing.T) {
 	if !clitest.FileExists(dir, "entities/reviews.go") {
 		t.Error("entities/reviews.go not written")
 	}
+	clitest.VariantBuild(t)
 	// The union compiles: the added crud file + entity self-register cleanly.
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir
@@ -521,6 +523,7 @@ func TestAddScreenOverExistingEntity(t *testing.T) {
 	if !clitest.FileExists(dir, "screen_archive.go") && !clitest.FileExists(dir, "screen_posts_crud.go") {
 		t.Error("no screen file written for the archive screen")
 	}
+	clitest.VariantBuild(t)
 	// The union compiles.
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir
@@ -576,6 +579,7 @@ func TestEntitySeamAlwaysEmitted(t *testing.T) {
 	if !strings.Contains(clitest.ReadFile(t, dir, "main.go"), "entities.RegisterAll(fwApp)") {
 		t.Error("main.go must call entities.RegisterAll even with no entities yet")
 	}
+	clitest.VariantBuild(t)
 	// The empty entities package + import must compile.
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir
@@ -799,6 +803,7 @@ func TestAddEntityCaseVariantIsRedeclaration(t *testing.T) {
 	if goFiles != 1 {
 		t.Errorf("want exactly 1 entity file after case-variant add, got %d", goFiles)
 	}
+	clitest.VariantBuild(t)
 	// The project must still compile; no second Posts type was emitted.
 	cmd := exec.Command("go", "build", "-mod=mod", "./...")
 	cmd.Dir = dir

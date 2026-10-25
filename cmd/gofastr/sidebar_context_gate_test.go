@@ -75,6 +75,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
+	clitest.VariantBuild(t)
 	repoRoot := clitest.RepoRootDir(t)
 
 	binDir := t.TempDir()

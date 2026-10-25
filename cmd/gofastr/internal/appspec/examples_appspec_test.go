@@ -12,7 +12,7 @@ import (
 // -short and catches an app spec that no longer decodes.
 //
 // It is NOT sufficient on its own. Parsing proves nothing about the Go the
-// generator emits from the parse. See TestExampleAppSpecsGenerateAndCompile.
+// generator emits from the parse. See TestExampleAppSpecsBoot (cmd/gofastr).
 //
 //gofastr:test-reads examples/*/gofastr.yml
 func TestExampleAppSpecsLoad(t *testing.T) {

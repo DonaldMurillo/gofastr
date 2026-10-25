@@ -64,6 +64,7 @@ func TestScaffoldEntityIntoProjectNextOrder(t *testing.T) {
 	if clitest.ReadFile(t, dir, "entities/register.go") != registerBefore {
 		t.Error("entities/register.go changed during scaffold")
 	}
+	clitest.VariantBuild(t)
 	clitest.BuildGenerated(t, dir)
 }
 
@@ -77,6 +78,7 @@ func TestScaffoldScreenIntoProjectNextOrder(t *testing.T) {
 	if !strings.Contains(contact, "screenRegistrar{order: 1, fn: mountContactScreen}") {
 		t.Errorf("screen_contact.go must continue order after the base:\n%s", contact)
 	}
+	clitest.VariantBuild(t)
 	clitest.BuildGenerated(t, dir)
 }
 
@@ -91,6 +93,7 @@ func TestScaffoldEntityIntoEmptyDirEmitsShell(t *testing.T) {
 	if !clitest.FileExists(dir, "entities/posts.go") {
 		t.Error("entities/posts.go not emitted scaffolding into an empty dir")
 	}
+	clitest.VariantBuild(t)
 	clitest.BuildGenerated(t, dir)
 }
 

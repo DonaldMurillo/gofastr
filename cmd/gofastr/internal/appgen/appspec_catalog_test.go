@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // catalogAppSpec is a one-screen app whose title and heading the
@@ -68,6 +70,7 @@ func TestGeneratedAppSpeaksItsCatalog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a generated app")
 	}
+	clitest.VariantBuild(t)
 	dir, _ := generateBaseProject(t, catalogAppSpec)
 	es := `{"shop":{"screens":{"about":{"welcome_back":"Bienvenido de nuevo","about_us":"Sobre nosotros"}}}}`
 	if err := os.WriteFile(filepath.Join(dir, "locales", "es.json"), []byte(es), 0o600); err != nil {
@@ -89,6 +92,7 @@ func TestGeneratedCatalogTestCatchesStrayKey(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a generated app")
 	}
+	clitest.VariantBuild(t)
 	dir, _ := generateBaseProject(t, catalogAppSpec)
 	run := func(es string) (string, error) {
 		t.Helper()
