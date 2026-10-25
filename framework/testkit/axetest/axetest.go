@@ -322,8 +322,12 @@ func schemeAppliedJS(scheme string) string {
 // The page loads once and axe is injected once for every scheme, where a
 // fresh tab per scheme would pay a second navigation, settle and
 // injection for the same DOM. Violations come back tagged with the
-// scheme that produced them; the first error stops the run.
+// scheme that produced them; the first error stops the run. An empty
+// scheme list is an error: it would scan nothing and pass.
 func ScanSchemes(ctx context.Context, schemes []string, ruleAllowlist map[string]string, opts ...ScanOption) ([]Violation, error) {
+	if len(schemes) == 0 {
+		return nil, fmt.Errorf("axetest: ScanSchemes got no schemes; an empty list would scan nothing and pass")
+	}
 	var kept []Violation
 	for _, scheme := range schemes {
 		if err := chromedp.Run(ctx, Prepare(scheme)); err != nil {
@@ -399,17 +403,20 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 		return nil, fmt.Errorf("axe pre-scan (%s scheme): page rendered only %d elements under <body> (need ≥%d): the page is blank or not rendered; refusing a vacuous pass", scheme, elementCount, minBodyElements)
 	}
 
-	// Inject the 553 KB engine only when this document does not hold it
-	// yet: a second scan of the same page ([ScanSchemes] flipping the
-	// scheme in place) reuses the copy the first scan evaluated.
+	// Inject the 553 KB engine only when this document does not hold the
+	// copy this harness injected: a second scan of the same page
+	// ([ScanSchemes] flipping the scheme in place) reuses it. A window.axe
+	// the page defined itself (an app bundling axe, a stub) is never
+	// trusted: the marker names the vendored engine, and the injection
+	// replaces anything else.
 	var injected bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`typeof window.axe === 'object' && typeof window.axe.run === 'function'`, &injected),
+		chromedp.Evaluate(`window.__axetestEngine !== undefined && window.__axetestEngine === window.axe && typeof window.axe.run === 'function'`, &injected),
 	); err != nil {
 		return nil, fmt.Errorf("axe scan (%s scheme): probe engine: %w", scheme, err)
 	}
 	if !injected {
-		if err := chromedp.Run(ctx, chromedp.Evaluate(";"+axeMinJS, nil)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(";"+axeMinJS+";window.__axetestEngine = window.axe;void 0", nil)); err != nil {
 			return nil, fmt.Errorf("axe scan (%s scheme): inject engine: %w", scheme, err)
 		}
 	}

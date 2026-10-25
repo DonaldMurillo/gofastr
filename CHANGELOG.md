@@ -124,8 +124,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   which waits until a page has loaded and every runtime module it asked
   for has registered. `Prepare` no longer sleeps 150 ms: it returns once
   the scheme has taken effect. `Scan` injects the axe engine once per
-  page instead of on every scan. The site and Meridian gates use them
-  in place of a second page load per scheme and fixed 400 ms and 450 ms
+  page instead of on every scan, and only reuses the copy it injected:
+  a `window.axe` the page defines itself is replaced, so a stub cannot
+  report a failing page as clean. `ScanSchemes` with no schemes is an
+  error, never an empty pass. The site and Meridian gates use them in
+  place of a second page load per scheme and fixed 400 ms and 450 ms
   waits.
 - **The site's browser tests wait for what they check, not for a fixed
   time.** `pageReady()` in `examples/site` now waits for the page to
