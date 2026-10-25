@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -38,6 +40,26 @@ func fetchedModuleURL(urls *sync.Map) string {
 	return found
 }
 
+// waitModuleFetched polls the recorded runtime-module fetch URLs until
+// the site-ping module shows up, failing after waitForTimeout with the
+// URLs that were observed.
+func waitModuleFetched(urls *sync.Map) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		deadline := time.Now().Add(waitForTimeout)
+		for time.Now().Before(deadline) {
+			if fetchedModuleURL(urls) != "" {
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(25 * time.Millisecond):
+			}
+		}
+		return fmt.Errorf("waitModuleFetched: %s never fetched; runtime urls observed: %v", pingModulePath, listedURLs(urls))
+	})
+}
+
 // listedURLs flattens the recorded runtime-module fetch URLs for
 // failure messages.
 func listedURLs(urls *sync.Map) []string {
@@ -65,7 +87,7 @@ func TestE2E_BehaviorRegistry_NoMarkerNoFetch(t *testing.T) {
 		network.Enable(),
 		chromedp.Navigate(base+"/"),
 		pageReady(),
-		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Sleep(500*time.Millisecond), // negative window: the site-ping module must not be fetched
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -92,11 +114,11 @@ func TestE2E_BehaviorRegistry_MarkerLoadsAndAttaches(t *testing.T) {
 		network.Enable(),
 		chromedp.Navigate(base+pingDemoPath),
 		chromedp.WaitVisible(`#site-ping-btn`, chromedp.ByID),
-		chromedp.Sleep(800*time.Millisecond),
+		waitFor(`document.getElementById('site-ping-btn').getAttribute('data-site-pinged') === '1'`),
 		chromedp.Evaluate(`document.getElementById('site-ping-btn').getAttribute('data-site-pinged') || ''`, &attached),
 		// The attached module must own the click: aria-pressed flips.
 		chromedp.Click(`#site-ping-btn`, chromedp.ByID),
-		chromedp.Sleep(300*time.Millisecond),
+		waitFor(`document.getElementById('site-ping-btn').getAttribute('aria-pressed') === 'true'`),
 		chromedp.Evaluate(`document.getElementById('site-ping-btn').getAttribute('aria-pressed') || ''`, &pressed),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -131,7 +153,9 @@ func TestE2E_BehaviorRegistry_ContentAddressed(t *testing.T) {
 		network.Enable(),
 		chromedp.Navigate(base+pingDemoPath),
 		chromedp.WaitVisible(`#site-ping-btn`, chromedp.ByID),
-		chromedp.Sleep(800*time.Millisecond),
+		pageReady(),
+		waitModuleFetched(urls),
+		waitFor(`document.getElementById('site-ping-btn').getAttribute('data-site-pinged') === '1'`),
 		chromedp.Evaluate(`(window.__gofastr_runtime_modules && window.__gofastr_runtime_modules['site-ping']) || ''`, &manifestV),
 		chromedp.Evaluate(`!!(window.__gofastr_behaviors && window.__gofastr_behaviors['site-ping'] && window.__gofastr_behaviors['site-ping'].s.indexOf('[data-site-ping]') >= 0) ? 'yes' : 'no'`, &hasBehaviors),
 	); err != nil {
@@ -177,7 +201,6 @@ func TestE2E_BehaviorRegistry_SPANavLoadsBehavior(t *testing.T) {
 		// Home: no marker, module must not be loaded yet (cold cache).
 		chromedp.Navigate(base+"/"),
 		pageReady(),
-		chromedp.Sleep(400*time.Millisecond),
 		// Real client navigation: the runtime intercepts the anchor
 		// click, swaps <main>, and dispatches gofastr:navigate.
 		chromedp.Evaluate(`(() => {
@@ -188,7 +211,7 @@ func TestE2E_BehaviorRegistry_SPANavLoadsBehavior(t *testing.T) {
             a.click();
         })()`, nil),
 		chromedp.WaitVisible(`#site-ping-btn`, chromedp.ByID),
-		chromedp.Sleep(800*time.Millisecond),
+		waitFor(`document.getElementById('site-ping-btn').getAttribute('data-site-pinged') === '1'`),
 		chromedp.Evaluate(`document.getElementById('site-ping-btn').getAttribute('data-site-pinged') || ''`, &attached),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -226,7 +249,7 @@ func TestE2E_BehaviorRegistry_HoverPrefetch(t *testing.T) {
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
         })()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitModuleFetched(urls),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}

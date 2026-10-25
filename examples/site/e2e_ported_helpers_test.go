@@ -17,6 +17,8 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 )
 
 // startE2EServer boots site against an httptest server and returns the base
@@ -62,6 +64,46 @@ func listenConsoleErrors(browserCtx context.Context, sink *consoleSink) {
 	})
 }
 
-// pageReady / settle are small settling delays for CSS transitions.
-func pageReady() chromedp.Action { return chromedp.Sleep(400 * time.Millisecond) }
-func settle() chromedp.Action    { return chromedp.Sleep(250 * time.Millisecond) }
+// pageReady waits until the loaded page has settled (axetest.WaitReady):
+// the load event fired, fonts loaded, the runtime booted, no client
+// navigation is in flight and every runtime module the page requested has
+// registered. It fails naming the unmet condition after 10s.
+func pageReady() chromedp.Action { return axetest.WaitReady() }
+
+// waitForTimeout bounds waitFor. Generous next to what any condition in
+// this suite needs (tens of milliseconds), small next to the 45s tab
+// deadline, so a broken condition fails with its own message.
+const waitForTimeout = 10 * time.Second
+
+// waitFor polls js, a boolean expression, until it is true, replacing a
+// fixed sleep before an assertion with a wait on the state the assertion
+// reads. An expression that throws (the element is not there yet) counts
+// as false. After waitForTimeout it fails with the expression and the last
+// evaluation error, never by hanging until the tab deadline. The loop runs
+// in Go, so a throttled tab's timers cannot stretch it.
+func waitFor(js string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		deadline := time.Now().Add(waitForTimeout)
+		var lastErr error
+		for {
+			var ok bool
+			err := chromedp.Evaluate(js, &ok).Do(ctx)
+			if err == nil && ok {
+				return nil
+			}
+			if err != nil {
+				if ctx.Err() != nil {
+					return fmt.Errorf("waitFor %s: %w", js, ctx.Err())
+				}
+				lastErr = err
+			}
+			if time.Now().After(deadline) {
+				if lastErr != nil {
+					return fmt.Errorf("waitFor: still false after %s: %s (last error: %v)", waitForTimeout, js, lastErr)
+				}
+				return fmt.Errorf("waitFor: still false after %s: %s", waitForTimeout, js)
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	})
+}

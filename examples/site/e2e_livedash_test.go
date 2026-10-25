@@ -19,14 +19,41 @@ package main
 import (
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	cdplog "github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
+
+// countIslandSwaps installs a MutationObserver on each island slot that
+// counts runtime swaps into window.__ldSwaps[id]: sse.js assigns the
+// slot's innerHTML on every push, one observer callback per swap.
+func countIslandSwaps(ids ...string) chromedp.Action {
+	js := `window.__ldSwaps={};`
+	for _, id := range ids {
+		q := strconv.Quote(id)
+		js += `window.__ldSwaps[` + q + `]=0;new MutationObserver(()=>window.__ldSwaps[` + q + `]++).observe(document.querySelector('[data-island=` + q + `]'),{childList:true});`
+	}
+	return chromedp.Evaluate(js+`true`, nil)
+}
+
+// waitIslandSwaps waits until every island countIslandSwaps watches has
+// been swapped at least n times.
+func waitIslandSwaps(n int) chromedp.Action {
+	return waitFor(`!!window.__ldSwaps&&Object.values(window.__ldSwaps).every(c=>c>=` + strconv.Itoa(n) + `)`)
+}
+
+// liveDashConnected waits for the SSE module to register and its stream
+// to open, so a push from the ticker can land.
+func liveDashConnected() chromedp.Action {
+	return chromedp.Tasks{
+		waitModule("window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sse === true"),
+		chromedp.Poll("window.__gofastr && window.__gofastr.sseStatus && window.__gofastr.sseStatus.connected === true", nil, chromedp.WithPollingInterval(100*1e6)),
+	}
+}
 
 // TestE2E_LiveDashboard_NoConsoleErrors is the keystone CSP guard for
 // the dashboard: an inline style="…" that strict CSP strips shows up as
@@ -48,10 +75,12 @@ func TestE2E_LiveDashboard_NoConsoleErrors(t *testing.T) {
 		// pushes reach this session. Without it the page still renders
 		// (SSR is complete) but no islands update.
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		// Let the SSE module load, the connection open, and one or two
-		// ticker frames arrive. 700ms tick → ~1.5s gives 2 frames.
-		chromedp.Sleep(1500*time.Millisecond),
+		pageReady(),
+		// Let the SSE connection open and two ticker frames land
+		// (their swapped-in markup is what the CSP guard must see).
+		liveDashConnected(),
+		countIslandSwaps(liveDashStatsID),
+		waitIslandSwaps(2),
 	); err != nil {
 		t.Fatalf("navigate live-dashboard: %v", err)
 	}
@@ -79,16 +108,15 @@ func TestE2E_LiveDashboard_IslandUpdatesViaSSE(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		// Make sure the SSE module is up before capturing, otherwise
-		// the initial read could race a hydration swap.
-		waitModule("window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sse === true"),
-		// Confirm the stream actually opened. sseStatus.connected is
-		// mutated in place by the SSE module on every onopen/onerror.
-		chromedp.Poll("window.__gofastr && window.__gofastr.sseStatus && window.__gofastr.sseStatus.connected === true", nil, chromedp.WithPollingInterval(100*1e6)),
-		// Initial capture: prove SSR painted metric StatCards.
-		chromedp.InnerHTML(`[data-island="`+liveDashStatsID+`"]`, &initialHTML, chromedp.ByQuery),
-		// Wait for ≥2 ticker frames (700ms tick → 1.6s).
-		chromedp.Sleep(1600*time.Millisecond),
+		// Make sure the SSE module is up and the stream open before
+		// capturing, otherwise the initial read could race a hydration
+		// swap.
+		liveDashConnected(),
+		// Initial capture: prove SSR painted metric StatCards. The page
+		// keeps it too, so the wait below can poll for the change.
+		chromedp.Evaluate(`window.__ldInitial=document.querySelector('[data-island="`+liveDashStatsID+`"]').innerHTML`, &initialHTML),
+		// Wait for a ticker frame to change the slot.
+		waitFor(`document.querySelector('[data-island="`+liveDashStatsID+`"]').innerHTML!==window.__ldInitial`),
 		// Second capture.
 		chromedp.InnerHTML(`[data-island="`+liveDashStatsID+`"]`, &laterHTML, chromedp.ByQuery),
 	); err != nil {
@@ -218,10 +246,10 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		// Confirm SSE actually connected, otherwise no push lands
 		// and the test would pass against a non-live page.
-		waitModule("window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sse === true"),
-		chromedp.Poll("window.__gofastr && window.__gofastr.sseStatus && window.__gofastr.sseStatus.connected === true", nil, chromedp.WithPollingInterval(100*1e6)),
-		// Let ≥2 ticker frames land (700ms tick → 1.6s).
-		chromedp.Sleep(1600*time.Millisecond),
+		liveDashConnected(),
+		// Let every slot be swapped by at least one ticker frame.
+		countIslandSwaps(liveDashFeedID, liveDashJobsID),
+		waitIslandSwaps(1),
 		chromedp.Evaluate(`(() => {
 			const el = document.querySelector('[data-island="`+liveDashFeedID+`"]');
 			const wrap = el ? el.closest('[data-cui-comp="ui-card"]') : null;

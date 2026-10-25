@@ -118,6 +118,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `kiln/integration`'s live agent tests, which need `KILN_LIVE=1` and
   never run in CI, now also need `-tags kilnlive`, so a `cmd/gofastr`
   change no longer pulls the kiln browser job into a pull request.
+- **The axe gates load each page once for both color schemes.**
+  `framework/testkit/axetest` adds `ScanSchemes`, which switches the
+  scheme on the page already loaded and scans again, and `WaitReady`,
+  which waits until a page has loaded and every runtime module it asked
+  for has registered. `Prepare` no longer sleeps 150 ms: it returns once
+  the scheme has taken effect. `Scan` injects the axe engine once per
+  page instead of on every scan, and only reuses the copy it injected:
+  a `window.axe` the page defines itself is replaced, so a stub cannot
+  report a failing page as clean. `ScanSchemes` with no schemes is an
+  error, never an empty pass. The site and Meridian gates use them in
+  place of a second page load per scheme and fixed 400 ms and 450 ms
+  waits.
+- **The site's browser tests wait for what they check, not for a fixed
+  time.** `pageReady()` in `examples/site` now waits for the page to
+  settle (`axetest.WaitReady`), and a new `waitFor` helper polls the
+  state a test reads next, failing after 10 s with the condition that
+  never held. Fixed sleeps remain only where a test checks that
+  something does not happen within a window, each marked with a
+  comment.
+- **The site's code-sample compile checks reuse the Go build cache.**
+  They built each sample with an empty cache, so every sample compiled
+  the framework from scratch. They now share the normal cache and skip
+  writing a binary, and still fail when a sample stops compiling.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

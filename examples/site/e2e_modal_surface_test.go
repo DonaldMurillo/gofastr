@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -25,8 +24,9 @@ func TestE2E_ModalSlotPaintsSurface(t *testing.T) {
 		chromedp.Navigate(base+"/components/modal"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
-		// Lazy-fetched widget needs time for the chrome request + mount.
-		chromedp.Sleep(700*time.Millisecond),
+		// Lazy-fetched widget: wait for the chrome request + mount and
+		// the panel's painted surface.
+		waitFor(`(s => !!s && !['rgba(0, 0, 0, 0)', 'transparent'].includes(getComputedStyle(s).backgroundColor) && getComputedStyle(s).paddingTop !== '0px' && getComputedStyle(s).borderTopLeftRadius !== '0px')(document.querySelector('[data-cui-widget="site-demo-modal"] .cui-panel'))`),
 		chromedp.Evaluate(`(() => {
             const s = document.querySelector('[data-cui-widget="site-demo-modal"] .cui-panel');
             return s ? getComputedStyle(s).backgroundColor : '';
@@ -72,7 +72,7 @@ func TestE2E_SheetPaintsSurface(t *testing.T) {
 		chromedp.Navigate(base+"/components/bottomsheet"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-bottomsheet"]').click()`, nil),
-		chromedp.Sleep(700*time.Millisecond),
+		waitFor(`(w => !!w && !['rgba(0, 0, 0, 0)', 'transparent'].includes(getComputedStyle(w).backgroundColor))(document.querySelector('[data-cui-widget="site-demo-bottomsheet"]'))`),
 		chromedp.Evaluate(`(() => {
             const w = document.querySelector('[data-cui-widget="site-demo-bottomsheet"]');
             return w ? getComputedStyle(w).backgroundColor : '';
@@ -104,7 +104,9 @@ func TestE2E_PaletteSlotUnstyled(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-cui-open="site-command-palette"]').click()`, nil),
-		chromedp.Sleep(700*time.Millisecond),
+		// Mounted, the palette painting its own surface, and every
+		// stylesheet loaded so the panel's opt-out is already in force.
+		waitFor(`(p => !!p && !!document.querySelector('[data-cui-widget="site-command-palette"] .cui-panel') && !['rgba(0, 0, 0, 0)', 'transparent', ''].includes(getComputedStyle(p).backgroundColor) && [...document.querySelectorAll('link[rel="stylesheet"]')].every(l => !!l.sheet))(document.querySelector('[data-cui-widget="site-command-palette"] [data-cui-comp="ui-cmd-palette"]'))`),
 		chromedp.Evaluate(`(() => {
             const p = document.querySelector('[data-cui-widget="site-command-palette"] .cui-panel');
             return p ? getComputedStyle(p).backgroundColor : '';

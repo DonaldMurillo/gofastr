@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -31,8 +30,8 @@ func TestE2E_ConditionalField_HiddenUntilTheWatchedControlMatches(t *testing.T) 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/conditionalfield"),
 		pageReady(),
-		// Give the module a tick to load and run its first sync.
-		chromedp.Sleep(400*time.Millisecond),
+		// The module arms with its first sync: region hidden, coupon off.
+		waitFor(`document.querySelector('[data-hui-when]').hidden && document.querySelector('input[name="coupon"]').disabled`),
 		chromedp.Evaluate(`document.querySelector('[data-hui-when]')?.hidden || false`, &regionHidden),
 		chromedp.Evaluate(`document.querySelector('input[name="coupon"]')?.disabled || false`, &couponDisabled),
 	); err != nil {
@@ -53,7 +52,7 @@ func TestE2E_ConditionalField_HiddenUntilTheWatchedControlMatches(t *testing.T) 
 			const pro = document.querySelector('input[name="plan"][value="pro"]');
 			if (pro) pro.click();
 		})()`, nil),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(`!document.querySelector('[data-hui-when]').hidden && !document.querySelector('input[name="coupon"]').disabled`),
 		chromedp.Evaluate(`!document.querySelector('[data-hui-when]').hidden`, &shown),
 		chromedp.Evaluate(`!document.querySelector('input[name="coupon"]').disabled`, &couponEnabled),
 	); err != nil {
@@ -84,9 +83,9 @@ func TestE2E_FileDropzone_PreviewStripRendersThumbnails(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/dropzone"),
 		pageReady(),
-		// Let the marker scan idle-load the filedropzone and headless
-		// modules (same budget the other module e2e tests use).
-		chromedp.Sleep(700*time.Millisecond),
+		// The marker scan idle-loads the filedropzone (thumbnails) and
+		// headless (names list) modules; both must be bound before change.
+		waitFor(`!!window.__gofastr.loadedModules?.filedropzone && !!window.__gofastr.loadedModules?.headless`),
 		chromedp.Evaluate(`(() => {
 			const input = document.querySelector('input[data-fui-dropzone-preview]');
 			if (!input) return '';
@@ -102,7 +101,11 @@ func TestE2E_FileDropzone_PreviewStripRendersThumbnails(t *testing.T) {
 			input.dispatchEvent(new Event('change', {bubbles: true}));
 			return '';
 		})()`, nil),
-		chromedp.Sleep(300*time.Millisecond),
+		waitFor(`(() => {
+			const img = document.querySelector('[data-fui-dropzone-preview-for] img');
+			const list = document.querySelector('[data-cui-comp="ui-dropzone"] [data-hui-drop-list]');
+			return !!img && img.src.startsWith('data:image') && !!list && list.textContent.includes('notes.txt');
+		})()`),
 		chromedp.Evaluate(`JSON.stringify((() => {
 			const strip = document.querySelector('[data-fui-dropzone-preview-for]');
 			const imgs = strip ? [...strip.querySelectorAll('img')] : [];

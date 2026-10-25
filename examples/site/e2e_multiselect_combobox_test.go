@@ -33,14 +33,14 @@ func TestE2E_MultiselectChipShowsLabel(t *testing.T) {
 		chromedp.Navigate(base+"/components/multiselect"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-multiselect'])`),
-		settle(),
+		waitFor(`(document.querySelector('[data-hui-multiselect-chip-text]')?.textContent || '') !== ''`),
 		// Go ships Selected:true, the boot scan must render its chip
 		// with the visible Label.
 		chromedp.Evaluate(`document.querySelector('[data-hui-multiselect-chip-text]')?.textContent || ''`, &bootChip),
 		// Open the disclosure and pick C++ (Value "cpp").
 		chromedp.Click(`[data-hui-multiselect] summary`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.getElementById('demo-multiselect-opt-1').click()`, nil),
-		settle(),
+		waitFor(`document.querySelectorAll('[data-hui-multiselect-chip]').length === 2`),
 		chromedp.Evaluate(`document.querySelectorAll('[data-hui-multiselect-chip]').length`, &chipCount),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-hui-multiselect-chip-text]')).map(s => s.textContent).join('|')`, &cppChip),
 	)
@@ -67,10 +67,10 @@ func TestE2E_MultiselectChipRemove(t *testing.T) {
 		chromedp.Navigate(base+"/components/multiselect"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-multiselect'])`),
-		settle(),
+		waitFor(`!!document.querySelector('[data-hui-multiselect-remove="demo-multiselect-opt-0"]')`),
 		// Remove the pre-selected Go chip via its × button.
 		chromedp.Click(`[data-hui-multiselect-remove="demo-multiselect-opt-0"]`, chromedp.ByQuery),
-		settle(),
+		waitFor(`document.querySelectorAll('[data-hui-multiselect-chip]').length === 0 && !document.getElementById('demo-multiselect-opt-0').checked`),
 		chromedp.Evaluate(`document.querySelectorAll('[data-hui-multiselect-chip]').length`, &chipCount),
 		chromedp.Evaluate(`document.getElementById('demo-multiselect-opt-0').checked`, &checked),
 	)
@@ -104,11 +104,11 @@ func TestE2E_ComboboxFilterAndSelect(t *testing.T) {
 		chromedp.Evaluate(`document.getElementById('demo-combobox-listbox').hasAttribute('hidden')`, &ssrHidden),
 		// Focus opens the listbox; typing filters down to Accordion.
 		chromedp.SendKeys(`#demo-combobox`, "acc", chromedp.ByID),
-		settle(),
+		waitFor(`Array.from(document.querySelectorAll('#demo-combobox-listbox [role="option"]')).filter(o => !o.hidden).length === 1`),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('#demo-combobox-listbox [role="option"]')).filter(o => !o.hidden).length`, &visibleOpts),
 		// Pick the surviving option.
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('#demo-combobox-listbox [role="option"]')).find(o => !o.hidden).click()`, nil),
-		settle(),
+		waitFor(`document.getElementById('demo-combobox').value === 'accordion' && document.getElementById('demo-combobox-listbox').hasAttribute('hidden')`),
 		chromedp.Evaluate(`document.getElementById('demo-combobox').value`, &pickedValue),
 		chromedp.Evaluate(`document.getElementById('demo-combobox').getAttribute('aria-expanded')`, &expandedAfterPick),
 		chromedp.Evaluate(`document.getElementById('demo-combobox-listbox').hasAttribute('hidden')`, &listboxHidden),
@@ -142,10 +142,10 @@ func TestE2E_ComboboxEscapeDismisses(t *testing.T) {
 		// Click opens the closed-by-default listbox; Escape dismisses
 		// it again.
 		chromedp.Click(`#demo-combobox`, chromedp.ByID),
-		settle(),
+		waitFor(`document.getElementById('demo-combobox').getAttribute('aria-expanded') === 'true'`),
 		chromedp.Evaluate(`document.getElementById('demo-combobox').getAttribute('aria-expanded')`, &openedExpanded),
 		chromedp.SendKeys(`#demo-combobox`, kb.Escape, chromedp.ByID),
-		settle(),
+		waitFor(`document.getElementById('demo-combobox').getAttribute('aria-expanded') === 'false' && document.getElementById('demo-combobox-listbox').hasAttribute('hidden')`),
 		chromedp.Evaluate(`document.getElementById('demo-combobox').getAttribute('aria-expanded')`, &expanded),
 		chromedp.Evaluate(`document.getElementById('demo-combobox-listbox').hasAttribute('hidden')`, &hidden),
 	)

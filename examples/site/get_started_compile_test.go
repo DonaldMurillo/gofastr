@@ -167,9 +167,14 @@ func compileGetStartedSnippet(t *testing.T, src, label string) {
 	}
 	gsWriteFile(t, filepath.Join(dir, "main.go"), src)
 
-	build := exec.Command("go", "build", "-mod=mod", ".")
+	// The ambient build cache is shared on purpose: the module replaces the
+	// framework with this working tree, so the cache already holds its
+	// objects, and a fresh GOCACHE recompiled the framework from nothing
+	// for every snippet (seconds each; cmd/gofastr dropped the same
+	// override). -o os.DevNull type-checks and compiles without writing a
+	// binary nobody runs.
+	build := exec.Command("go", "build", "-mod=mod", "-o", os.DevNull, ".")
 	build.Dir = dir
-	build.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	out, err := build.CombinedOutput()
 	if err != nil {
 		t.Fatalf("/get-started code block %q did not compile against the local tree:\n%v\n--- source ---\n%s\n--- build output ---\n%s",
