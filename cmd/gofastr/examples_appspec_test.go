@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"io"
 	"net"
@@ -16,14 +17,12 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
-	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 )
 
 // buildGateScratchPkg prefixes the throwaway package each app spec is
-// generated into, under scratchdir.Root (see that package for why it lives
-// in the repo module and why there). The prefix differs from the vet gate's
-// because the two suites run beside each other and must not share a scratch
-// directory.
+// generated into, under internal/scratchdir's Root (see that package for
+// why it lives in the repo module and why there). The prefix keeps it apart
+// from the scratch packages other test binaries generate beside it.
 const buildGateScratchPkg = "build_"
 
 // TestExampleAppSpecsBoot is the gate that matters: every shipped app spec
@@ -53,19 +52,22 @@ const buildGateScratchPkg = "build_"
 // release while it still built. Its seed seeded `post_id: 1` into a UUID
 // relation column, an app that builds cleanly and dies at boot ("seed
 // hooks: seed comments: validation failed"). So each example is generated,
-// compiled (the main package, every package, go vet), STARTED and
-// exercised. A compile-only test ran beside this one and built every
-// example a second time; nothing it checked is missing here.
+// compiled (the main package, every package, go vet, the repo's vettool),
+// STARTED and exercised. A compile-only test ran beside this one and built
+// every example a second time, and appgen's vet gate a third; nothing they
+// checked is missing here.
 //
-// Failure modes asserted: broken emitted Go, non-zero exit before serving
-// (the seed-death class), failure to bind/serve within the deadline, and
-// error output on the way down. The child runs in its own process group and
-// is killed by tree even when the test fails mid-flight, so no app leaks
-// past the run (CI-safe on Linux and macOS via configureTestProcessGroup).
+// Failure modes asserted: broken emitted Go, emitted Go the repo's own
+// analyzers refuse, non-zero exit before serving (the seed-death class),
+// failure to bind/serve within the deadline, and error output on the way
+// down. The child runs in its own process group and is killed by tree even
+// when the test fails mid-flight, so no app leaks past the run (CI-safe on
+// Linux and macOS via configureTestProcessGroup).
 //
 // Each example is a variant build (clitest.VariantBuild): a pull request
 // boots the examples whose app spec it edits, and appgen's TestUnionApp
-// checks a generator change.
+// checks a generator change. The example's tree is shared (exampleTree):
+// the lms and portfolio security tests boot the same build.
 //
 //gofastr:test-reads examples/*/gofastr.yml
 func TestExampleAppSpecsBoot(t *testing.T) {
@@ -81,8 +83,9 @@ func TestExampleAppSpecsBoot(t *testing.T) {
 			// (_scratch/appspecs/build_<name>) and boots on a fresh port,
 			// so the seven can overlap.
 			t.Parallel()
-			bin, appDir := generateAndCompileAppSpec(t, path, name)
-			baseURL, output := bootGeneratedApp(t, name, bin, appDir)
+			bin, appDir := exampleTree(t, path, name)
+			t.Run("vettool", func(t *testing.T) { vetWithRepoVettool(t, appDir) })
+			baseURL, output, _ := bootGeneratedApp(t, name, bin, appDir)
 			exerciseGeneratedApp(t, name, baseURL, output)
 		})
 	}
@@ -519,25 +522,28 @@ const bootPortAttempts = 3
 // migration, refused bind) fails immediately with its captured output,
 // faster than burning the whole HTTP deadline, and the output is the
 // diagnostic that matters. A bind lost to another test is the one exit
-// retried, on a fresh port and a fresh database.
-func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *clitest.SyncBuffer) {
+// retried, on a fresh port and a fresh database. The database is the
+// boot's own, in the test's temp dir, never the app's tree, which other
+// tests boot too; dbPath names it for tests that read it back.
+func bootGeneratedApp(t *testing.T, name, bin, appDir string) (baseURL string, output *clitest.SyncBuffer, dbPath string) {
 	t.Helper()
 	return bootGeneratedAppOn(t, name, bin, appDir, clitest.FreeAddr)
 }
 
-func bootGeneratedAppOn(t *testing.T, name, bin, appDir string, nextAddr func(*testing.T) string) (string, *clitest.SyncBuffer) {
+func bootGeneratedAppOn(t *testing.T, name, bin, appDir string, nextAddr func(*testing.T) string) (string, *clitest.SyncBuffer, string) {
 	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "boot-gate.db")
 	for attempt := 1; ; attempt++ {
-		baseURL, output, lostPort := bootGeneratedAppOnce(t, name, bin, appDir, nextAddr(t))
+		baseURL, output, lostPort := bootGeneratedAppOnce(t, name, bin, appDir, dbPath, nextAddr(t))
 		if !lostPort {
-			return baseURL, output
+			return baseURL, output, dbPath
 		}
 		if attempt == bootPortAttempts {
 			t.Fatalf("generated %s app lost its port %d times:\n%s", name, attempt, output.String())
 		}
 		t.Logf("%s: port taken before the app bound it; retrying on a fresh port", name)
 		for _, suffix := range []string{"", "-wal", "-shm"} {
-			_ = os.Remove(filepath.Join(appDir, "boot-gate.db"+suffix))
+			_ = os.Remove(dbPath + suffix)
 		}
 	}
 }
@@ -551,15 +557,15 @@ func portTaken(output string) bool {
 
 // bootGeneratedAppOnce boots the app on addr. lostPort reports that the
 // child exited because addr was already bound.
-func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL string, output *clitest.SyncBuffer, lostPort bool) {
+func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, dbPath, addr string) (baseURL string, output *clitest.SyncBuffer, lostPort bool) {
 	t.Helper()
 	cmd := exec.Command(clitest.TestExecutablePath(bin))
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(),
 		"PORT="+addr,
-		// Scratch-scoped DB file: the scratch dir's cleanup removes it, so
-		// repeated runs never inherit a stale, already-seeded database.
-		"DATABASE_URL=file:"+filepath.Join(appDir, "boot-gate.db"),
+		// A fresh database per boot, so a boot never inherits a stale,
+		// already-seeded database from an earlier test or run.
+		"DATABASE_URL=file:"+dbPath,
 		// The scratch dir lives inside the repo module, so when the repo is
 		// checked out as a linked git worktree, framework/isolation activates
 		// by default and deterministically remaps the listen port — the app
@@ -658,7 +664,7 @@ func TestBootRetriesOnTakenPort(t *testing.T) {
 		}
 		return clitest.FreeAddr(t)
 	}
-	baseURL, _ := bootGeneratedAppOn(t, "bootprobe", bin, dir, next)
+	baseURL, _, _ := bootGeneratedAppOn(t, "bootprobe", bin, dir, next)
 	if calls != 2 || baseURL == "http://"+held.Addr().String() {
 		t.Fatalf("calls = %d, baseURL = %s; want a second port after the held one", calls, baseURL)
 	}
@@ -688,28 +694,54 @@ func TestBootProbeClientTimesOut(t *testing.T) {
 	}
 }
 
-// generateAndCompileAppSpec generates one app spec into a scratch package, compiles every package it emitted, and returns the built app
-// binary plus the directory it should run from (output_dir aware).
-func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, string) {
+// exampleTree generates one shipped app spec into a scratch package,
+// compiles every package it emitted, vets them, and returns the built app
+// binary plus the directory it should run from (output_dir aware). It does
+// this once per test binary: the boot gate and the lms and portfolio
+// security tests boot the same build, each on its own database.
+func exampleTree(t *testing.T, appSpecPath, name string) (bin, appDir string) {
 	t.Helper()
-
-	dir, scratchModule := scratchdir.Package(t, buildGateScratchPkg+name)
-
 	src, err := os.ReadFile(appSpecPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", appSpecPath, err)
 	}
+	dir, _ := clitest.SharedScratchPackage(t, buildGateScratchPkg+name, func(dir, scratchModule string) error {
+		return generateAndCompileAppSpec(dir, scratchModule, appSpecPath, string(src), name)
+	})
+	return filepath.Join(dir, exampleBinName(name)), exampleAppDir(dir, string(src))
+}
+
+// exampleBinName is the app binary's name inside the example's scratch
+// package; the leading "_" keeps it out of every `./...` walk.
+func exampleBinName(name string) string {
+	return clitest.TestExecutablePath("_" + name + "-from-app-spec")
+}
+
+// exampleAppDir is where the emitted app lives under the scratch package:
+// output_dir moves it one level down (examples/ecommerce uses it), so it is
+// resolved from the app spec rather than assuming a flat layout.
+func exampleAppDir(dir, appSpec string) string {
+	if out := clitest.AppSpecOutputDir(appSpec); out != "" {
+		return filepath.Join(dir, out)
+	}
+	return dir
+}
+
+// generateAndCompileAppSpec fills the scratch package dir (import path
+// scratchModule) from one app spec and compiles it: the main package,
+// every package, and go vet.
+func generateAndCompileAppSpec(dir, scratchModule, appSpecPath, src, name string) error {
 	// Repoint app.module at the scratch package so the generated self-imports
 	// resolve to the code just emitted rather than to whatever package is
 	// committed next door.
 	realModule := "github.com/DonaldMurillo/gofastr/examples/" + name
 	moduleLine := "module: " + realModule
-	if !strings.Contains(string(src), moduleLine) {
-		t.Fatalf("%s no longer declares %q — update this test's rewrite", appSpecPath, moduleLine)
+	if !strings.Contains(src, moduleLine) {
+		return fmt.Errorf("%s no longer declares %q — update this test's rewrite", appSpecPath, moduleLine)
 	}
-	rewritten := strings.Replace(string(src), moduleLine, "module: "+scratchModule, 1)
+	rewritten := strings.Replace(src, moduleLine, "module: "+scratchModule, 1)
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(rewritten), 0o644); err != nil {
-		t.Fatalf("write scratch app spec: %v", err)
+		return fmt.Errorf("write scratch app spec: %w", err)
 	}
 
 	// Generate with the in-tree CLI source, so a generator regression fails
@@ -718,35 +750,28 @@ func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, 
 	// re-linked the whole CLI per example.
 	cli, err := clitest.GofastrTestBinary()
 	if err != nil {
-		t.Fatalf("build gofastr: %v", err)
+		return fmt.Errorf("build gofastr: %w", err)
 	}
 	gen := exec.Command(cli, "generate", "app", "gofastr.yml")
 	gen.Dir = dir
 	if out, err := gen.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate app gofastr.yml: %v\n%s", err, out)
+		return fmt.Errorf("gofastr generate app gofastr.yml: %w\n%s", err, out)
 	}
+	appDir := exampleAppDir(dir, src)
 
-	// output_dir moves the emitted app one level down (examples/ecommerce uses
-	// it). Resolve it from the app spec rather than assuming a flat layout.
-	appDir := dir
-	if out := clitest.AppSpecOutputDir(string(src)); out != "" {
-		appDir = filepath.Join(dir, out)
-	}
-
-	// Compile the main package. The binary goes to a temp dir, never the
-	// worktree. This pulls in the generated entities package transitively;
-	// ./... below covers any package the main package does not import.
-	bin := clitest.TestExecutablePath(filepath.Join(t.TempDir(), name+"-from-app-spec"))
-	build := exec.Command("go", "build", "-o", bin, ".")
+	// Compile the main package. This pulls in the generated entities package
+	// transitively; ./... below covers any package the main package does
+	// not import.
+	build := exec.Command("go", "build", "-o", filepath.Join(dir, exampleBinName(name)), ".")
 	build.Dir = appDir
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("generated app does not compile — the generator emitted broken Go for %s:\n%s", appSpecPath, out)
+		return fmt.Errorf("generated app does not compile — the generator emitted broken Go for %s:\n%s", appSpecPath, out)
 	}
 
 	rest := exec.Command("go", "build", "./...")
 	rest.Dir = appDir
 	if out, err := rest.CombinedOutput(); err != nil {
-		t.Fatalf("generated packages do not compile for %s:\n%s", appSpecPath, out)
+		return fmt.Errorf("generated packages do not compile for %s:\n%s", appSpecPath, out)
 	}
 
 	// `go vet` reaches the emitted _test.go files, which `go build` never
@@ -755,7 +780,41 @@ func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, 
 	vet := exec.Command("go", "vet", "./...")
 	vet.Dir = appDir
 	if out, err := vet.CombinedOutput(); err != nil {
-		t.Fatalf("generated code fails go vet for %s:\n%s", appSpecPath, out)
+		return fmt.Errorf("generated code fails go vet for %s:\n%s", appSpecPath, out)
 	}
-	return bin, appDir
+	return nil
+}
+
+// vetWithRepoVettool is the generated-code gate, the app spec sibling of
+// TestGeneratedCLIPassesRepoVettool: the project emitted from a shipped
+// app spec must pass the repo's own vettool, the whole module, `_test.go`
+// files included. go vet above proves the emitted Go is sound under the
+// stdlib analyzers; this adds the repo's analyzer set, so a template
+// regression that compiles but trips a repo rule (an unbounded response
+// read, a client with no deadline) fails here instead of in every app the
+// generator touches. Every diagnostic is a finding in the emitted
+// templates (cmd/gofastr/internal/appgen), not in the app spec. Offline
+// (GOPROXY=off): a module-resolution failure skips with a message. The
+// boot test runs it as its own subtest, so that skip (or its failure)
+// leaves the boot alone.
+func vetWithRepoVettool(t *testing.T, appDir string) {
+	t.Helper()
+	vettool, err := clitest.RepoVettool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")
+	vet.Dir = appDir
+	vet.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off")
+	out, err := vet.CombinedOutput()
+	if err == nil {
+		return
+	}
+	text := string(out)
+	for _, marker := range []string{"cannot find module", "finding module for package", "dial tcp", "module lookup disabled"} {
+		if strings.Contains(text, marker) {
+			t.Skipf("generated module could not be built in this environment: %s", text)
+		}
+	}
+	t.Fatalf("GATE: generated project does not pass the repo vettool — every diagnostic is a finding in the emitted templates (cmd/gofastr/internal/appgen), not in the app spec or the customer's code:\n%s", text)
 }

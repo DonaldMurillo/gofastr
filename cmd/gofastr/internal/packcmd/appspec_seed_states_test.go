@@ -13,105 +13,24 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// seedsStatesYAML is an app whose invoices entity declares enforced states
-// and whose seed writes a row already at a non-initial state: the seed
-// runner writes under the audited state override, so this must generate,
-// boot and seed cleanly.
-const seedsStatesYAML = `app:
-  name: SeedStates
-  module: example.com/seedstates
-  db:
-    driver: sqlite
-    url: file:gofastr.db
-entities:
-  - name: invoices
-    crud: true
-    fields:
-      - name: number
-        type: string
-        required: true
-      - name: status
-        type: enum
-        values: [draft, open, paid]
-        default: draft
-      - name: paid_on
-        type: date
-    states:
-      field: status
-      initial: [draft]
-      transitions:
-        - key: send
-          from: [draft]
-          to: open
-        - key: mark_paid
-          from: [open]
-          to: paid
-          stamp: paid_on
-screens:
-  - name: invoices
-    route: /invoices
-    body:
-      - kind: entity_list
-        entity: invoices
-        fields: [number, status]
-        create: true
-seed:
-  - entity: invoices
-    rows:
-      - number: INV-0001
-        status: draft
-      - number: INV-0002
-        status: paid
-        paid_on: "2026-01-15"
-`
-
-// bootSeededApp generates the app spec into a temp module, runs it until
-// it serves (the seed hook runs before that), and returns its directory
-// and its log so far.
-func bootSeededApp(t *testing.T, spec string) (string, func() string) {
+// bootPackTree boots the package's shared app (packTree), whose invoices
+// entity declares enforced states and whose seed writes an invoice already
+// at a non-initial state (the seed runner writes it under the audited
+// state override) and a product whose currency references a declared key.
+// It runs the app on a database of its own until it serves (the seed hook
+// runs before that), and returns that database's path and the log so far.
+func bootPackTree(t *testing.T) (string, func() string) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("generates, compiles and boots an app; skipped under -short")
 	}
 	clitest.VariantBuild(t)
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goMod := "module example.com/seedstates\n\ngo " + goVersion +
-		"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatal(err)
-	}
-	bp, err := decodeAppSpecString(spec)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	for _, file := range mustRenderAppSpecFiles(t, bp) {
-		full := filepath.Join(dir, file.Name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		perm := file.Mode
-		if perm == 0 {
-			perm = 0o644
-		}
-		if err := os.WriteFile(full, []byte(file.Content), perm); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dir, bin := packTree(t)
+	dbPath := filepath.Join(t.TempDir(), "gofastr.db")
 
-	cmd := exec.Command("go", "run", "-mod=mod", ".")
+	cmd := exec.Command(bin)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "PORT=127.0.0.1:0")
+	cmd.Env = append(os.Environ(), "PORT=127.0.0.1:0", "DATABASE_URL=file:"+dbPath)
 	clitest.ConfigureTestProcessGroup(cmd)
 	var out strings.Builder
 	cmd.Stdout = &out
@@ -141,7 +60,7 @@ func bootSeededApp(t *testing.T, spec string) (string, func() string) {
 	if !ready {
 		t.Fatalf("app never reported ready:\n%s", out.String())
 	}
-	return dir, out.String
+	return dbPath, out.String
 }
 
 // TestSeededStatesBootAndAuditOverride: the generated app boots with a
@@ -150,8 +69,8 @@ func bootSeededApp(t *testing.T, spec string) (string, func() string) {
 // row per seeded row carrying the override's reason ("seed"), with the
 // non-initial state recorded in the create diff.
 func TestSeededStatesBootAndAuditOverride(t *testing.T) {
-	dir, log := bootSeededApp(t, seedsStatesYAML)
-	db, err := sql.Open("sqlite3", filepath.Join(dir, "gofastr.db"))
+	dbPath, log := bootPackTree(t)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,14 +102,10 @@ func TestSeededStatesBootAndAuditOverride(t *testing.T) {
 	}
 }
 
-const seedRefKeyYAML = `app:
-  name: SeedRefKey
-  module: example.com/seedstates
-  db:
-    driver: sqlite
-    url: file:gofastr.db
-entities:
-  - name: currencies
+// seedRefKeyEntities are the entities of the declared-key seed reference:
+// currencies keyed on currency_code, and products whose currency relation
+// a seed row fills with "@currencies.label=Euro" (packTreeYAML).
+const seedRefKeyEntities = `  - name: currencies
     crud: true
     primary_key: [currency_code]
     fields:
@@ -207,29 +122,13 @@ entities:
       - name: currency
         type: relation
         to: currencies
-screens:
-  - name: home
-    route: /
-    body:
-      - kind: entity_list
-        entity: products
-        fields: [name]
-seed:
-  - entity: currencies
-    rows:
-      - currency_code: EUR
-        label: Euro
-  - entity: products
-    rows:
-      - name: Lamp
-        currency: "@currencies.label=Euro"
 `
 
 // A seed reference to an entity keyed on another column than id
 // resolves to that column's value.
 func TestSeedRefToDeclaredKey(t *testing.T) {
-	dir, log := bootSeededApp(t, seedRefKeyYAML)
-	db, err := sql.Open("sqlite3", filepath.Join(dir, "gofastr.db"))
+	dbPath, log := bootPackTree(t)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

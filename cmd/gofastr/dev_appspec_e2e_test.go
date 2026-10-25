@@ -20,34 +20,11 @@ func TestE2E_DevLoop_AppSpecApp(t *testing.T) {
 		t.Skip("dev-loop e2e: compiles and serves a generated app")
 	}
 	clitest.VariantBuild(t)
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module example.com/demo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"), goMod)
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.yml"), clitest.TestAppSpecYAML())
-
-	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
-	generate.Dir = dir
-	if output, err := generate.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate failed: %v\n%s", err, output)
-	}
-	// The generated app pulls new imports (driver, batteries); `gofastr dev`
-	// builds with the plain toolchain, so the user flow requires a tidy first.
-	tidy := exec.Command("go", "mod", "tidy")
-	tidy.Dir = dir
-	if output, err := tidy.CombinedOutput(); err != nil {
-		t.Fatalf("go mod tidy: %v\n%s", err, output)
-	}
+	// clitest.TestAppSpecYAML's app, generated and tidied once for the
+	// package (testAppSpecTree). This test edits a generated source file,
+	// so it works on a copy of its own.
+	shared, _ := testAppSpecTree(t)
+	dir := clitest.CopyTree(t, shared)
 
 	// Boot the generated app under `gofastr dev`, the path the guidance
 	// funnels users to, and the only one that enables livereload.

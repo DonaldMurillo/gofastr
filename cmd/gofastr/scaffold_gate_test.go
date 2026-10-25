@@ -26,23 +26,9 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 		t.Skip("builds and boots a scaffolded app")
 	}
 	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
-	repoRoot := clitest.RepoRootDir(t)
-
-	binDir := t.TempDir()
-	binPath := clitest.TestExecutablePath(filepath.Join(binDir, "gofastr"))
-	build := exec.Command("go", "build", "-o", binPath, "./cmd/gofastr")
-	build.Dir = repoRoot
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build gofastr: %v\n%s", err, out)
-	}
-
-	work := t.TempDir()
-	initCmd := exec.Command(binPath, "init", "blog")
-	initCmd.Dir = work
-	if out, err := initCmd.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr init: %v\n%s", err, out)
-	}
-	appDir := filepath.Join(work, "blog")
+	// The scaffold `gofastr init blog` writes, pointed at the working tree
+	// and built (initScaffoldTree, shared with the init build checks).
+	appDir, appBin := initScaffoldTree(t)
 
 	// The sample entity is what /get-started shows: pin its shape.
 	entSrc, err := os.ReadFile(filepath.Join(appDir, "entities", "entities.go"))
@@ -55,30 +41,12 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 		}
 	}
 
-	// Point the scaffold's module at the working tree and build it.
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module local/blog\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	clitest.WriteTestFile(t, filepath.Join(appDir, "go.mod"), goMod)
-	if err := clitest.CopyGoSum(repoRoot, appDir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-
-	appBin := clitest.TestExecutablePath(filepath.Join(appDir, "scaffold-app"))
-	appBuild := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
-	appBuild.Dir = appDir
-	if out, err := appBuild.CombinedOutput(); err != nil {
-		t.Fatalf("scaffolded app did not build: %v\n%s", err, out)
-	}
-
 	addr := clitest.FreeAddr(t)
 	cmd := exec.Command(appBin)
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(),
 		"PORT="+addr,
-		"DATABASE_URL=file:"+filepath.Join(appDir, "gate.db"),
+		"DATABASE_URL=file:"+filepath.Join(t.TempDir(), "gate.db"),
 	)
 	// syncBuffer, not bytes.Buffer: os/exec copies the child's output from its
 	// own goroutines until Wait returns, and Wait runs in t.Cleanup, so every

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,10 +26,10 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 		t.Skip("generates, builds, and boots an app")
 	}
 	clitest.VariantBuild(t, "examples/lms/gofastr.yml")
-	bin, appDir := generateAndCompileAppSpec(t, "../../examples/lms/gofastr.yml", "lms")
+	bin, appDir := exampleTree(t, "../../examples/lms/gofastr.yml", "lms")
 
 	// registerAndLogin mints a fresh account exactly the way the portfolio
-	baseURL, appOut := bootGeneratedApp(t, "lms", bin, appDir)
+	baseURL, appOut, bootDBPath := bootGeneratedApp(t, "lms", bin, appDir)
 	registerAndLogin := func(email string) *http.Client {
 		t.Helper()
 		jar, err := cookiejar.New(nil)
@@ -84,8 +83,8 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 	// Seed one row per record family, keyed off the app spec's own seeded
 	// rows. students is RBAC-gated so the roster (and therefore the ids the
 	// FK columns demand) is read straight from the boot DB the harness
-	// assigns — DATABASE_URL=file:<appDir>/boot-gate.db.
-	bootDB, err := sql.Open("sqlite3", "file:"+filepath.Join(appDir, "boot-gate.db")+"?mode=ro")
+	// assigns.
+	bootDB, err := sql.Open("sqlite3", "file:"+bootDBPath+"?mode=ro")
 	if err != nil {
 		t.Fatalf("open boot db: %v", err)
 	}

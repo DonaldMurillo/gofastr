@@ -1,10 +1,8 @@
 package packcmd
 
 import (
-	"encoding/json"
-	"os"
 	"os/exec"
-	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -15,16 +13,20 @@ import (
 
 // displayStatesYAML is one entity whose display: and states: set every key
 // the YAML can express, plus a second entity covering states.advisory with
-// a minimal move. TestDisplayStatesRoundTripThroughGo decodes it, generates
-// the entity files, compiles them in a temp module, registers them on a
-// real App, and compares the registered Display and States to the decoded
-// declaration: any field the emitter drops, renames or invents fails there,
-// not in a screen.
+// a minimal move. TestDisplayStatesRoundTripThroughGo decodes it and checks
+// the emitted registration; packTree builds the same entities (packTreeYAML
+// carries displayStatesEntities), registers them on a real App, and
+// compares the registered Display and States to the decoded declaration:
+// any field the emitter drops, renames or invents fails there, not in a
+// screen.
 const displayStatesYAML = `app:
   name: DS
   module: example.com/dstest
 entities:
-  - name: invoices
+` + displayStatesEntities
+
+// displayStatesEntities is displayStatesYAML's entity list.
+const displayStatesEntities = `  - name: invoices
     crud: true
     search_fields: [number]
     fields:
@@ -206,95 +208,22 @@ func TestDisplayStatesRoundTripThroughGo(t *testing.T) {
 		}
 	}
 
-	// The compile-and-register leg: the emitted entity files must build in a
-	// temp module and, once registered, hold Display and States exactly
-	// equal to what the YAML decoded to.
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goMod := "module example.com/dstest\n\ngo " + goVersion +
-		"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatal(err)
-	}
-	bp.App.OutputDir = "gen"
-	for _, file := range mustRenderAppSpecFiles(t, bp) {
-		full := filepath.Join(dir, "gen", file.Name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(file.Content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	wantDisplay, err := json.Marshal(invoices.Display)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantStates, err := json.Marshal(invoices.States)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gen := `package main
-
-import (
-	"encoding/json"
-	"reflect"
-	"testing"
-
-	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/entity"
-
-	"` + bp.App.Module + `/gen/entities"
-)
-
-func TestRegisteredDisplayStatesMatchDeclaration(t *testing.T) {
-	app := framework.NewApp()
-	entities.RegisterAll(app)
-
-	e, err := app.Registry.Get("invoices")
-	if err != nil {
-		t.Fatalf("get invoices: %v", err)
-	}
-	var wantDisplay entity.DisplayConfig
-	if err := json.Unmarshal([]byte(` + "`" + string(wantDisplay) + "`" + `), &wantDisplay); err != nil {
-		t.Fatalf("decode expected display: %v", err)
-	}
-	if !reflect.DeepEqual(e.Config.Display, &wantDisplay) {
-		t.Fatalf("Display mismatch.\n got: %#v\nwant: %#v", e.Config.Display, &wantDisplay)
-	}
-	var wantStates entity.StatesConfig
-	if err := json.Unmarshal([]byte(` + "`" + string(wantStates) + "`" + `), &wantStates); err != nil {
-		t.Fatalf("decode expected states: %v", err)
-	}
-	if !reflect.DeepEqual(e.Config.States, &wantStates) {
-		t.Fatalf("States mismatch.\n got: %#v\nwant: %#v", e.Config.States, &wantStates)
-	}
-
-	tag, err := app.Registry.Get("tags")
-	if err != nil {
-		t.Fatalf("get tags: %v", err)
-	}
-	if tag.Config.States == nil || !tag.Config.States.Advisory {
-		t.Fatalf("tags states advisory lost: %#v", tag.Config.States)
-	}
-}
-`
-	if err := os.WriteFile(filepath.Join(dir, "gen", "displaystates_test.go"), []byte(gen), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The compile-and-register leg: the emitted entity files must build
+	// and, once registered, hold Display and States exactly equal to what
+	// the YAML decoded to. packTree builds them, with the probe
+	// (displayStatesProbe) beside them, from the same entity text.
 	clitest.VariantBuild(t)
-	cmd := exec.Command("go", "test", "-short", "-mod=mod", "-run", "TestRegisteredDisplayStatesMatchDeclaration", "./gen")
+	shared, err := decodeAppSpecString(packTreeYAML)
+	if err != nil {
+		t.Fatalf("parse packTreeYAML: %v", err)
+	}
+	for _, want := range []*framework.EntityDeclaration{invoices, tags} {
+		if got := packTreeEntity(shared.Entities, want.Name); got == nil || !reflect.DeepEqual(*got, *want) {
+			t.Fatalf("packTreeYAML's %s is not displayStatesYAML's:\n got: %+v\nwant: %+v", want.Name, got, *want)
+		}
+	}
+	dir, _ := packTree(t)
+	cmd := exec.Command("go", "test", "-short", "-mod=mod", "-run", "^TestRegisteredDisplayStatesMatchDeclaration$", ".")
 	cmd.Dir = dir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("generated display/states round-trip test failed: %v\n%s", err, output)

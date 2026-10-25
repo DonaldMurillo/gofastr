@@ -28,6 +28,13 @@ const unionCatalog = `{"union":{"screens":{"enrollments_crud":{"enrollment_recor
 // foreign keys, read in Spanish, hidden from a second user) and
 // editSaveTest (an edit screen whose key values need escaping saves back
 // to its record).
+//
+// It is the only build for several features whose own tests check the
+// emitted source in-process and no longer compile it: per-verb access
+// (TestAccessAppSpecRendersAccessLiteral), composite-key screens
+// (TestCompositeKeyScreens), app spec hooks (the hooks security tests)
+// and the per-screen file layout (generate_perscreen_test.go). Each was
+// proved by breaking the emission and watching this test fail.
 func TestUnionApp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, vets and boots the union app; skipped under -short")

@@ -159,6 +159,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `behaviorBrowserCtx` and core-ui/runtime's `boundaryBrowserCtx`, which
   said they shared one browser but started a new one per test, now use
   it.
+- **The CLI's full test run compiles fewer generated apps.** Tests in
+  one package that need the same generated app now build it once and
+  share it (`clitest.SharedTree`); a test that edits files works on a
+  copy, and each boot keeps its own database. The example apps are
+  built once each and also run the repo vettool, which replaces appgen's
+  separate vettool pass over the same seven examples. Five appgen tests
+  that only proved their feature compiles now check the emitted source
+  and leave the build to `TestUnionApp`; each was checked by breaking
+  the generator and watching `TestUnionApp` fail. Under
+  `GOFASTR_TEST_ALL=1` the directories the toolchain builds, vets or
+  tests in drop from 82 to 61: `cmd/gofastr` 32 to 26,
+  `internal/appgen` 42 to 30, `internal/packcmd` 4 to 1 (with
+  `generatecmd` at 3 and `initcmd` at 1, unchanged). On a busy machine
+  (load 20–40) `cmd/gofastr` ran in 110s instead of 120s and `appgen`
+  in 60s instead of 65s. A pull request builds nothing it did not build
+  before.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

@@ -22,38 +22,11 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 		t.Skip("mcp e2e: compiles and serves a generated app")
 	}
 	clitest.VariantBuild(t)
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module example.com/demo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"), goMod)
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	clitest.WriteTestFile(t, filepath.Join(dir, "gofastr.yml"), clitest.TestAppSpecYAML())
-
-	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
-	generate.Dir = dir
-	if output, err := generate.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate failed: %v\n%s", err, output)
-	}
-	tidy := exec.Command("go", "mod", "tidy")
-	tidy.Dir = dir
-	if output, err := tidy.CombinedOutput(); err != nil {
-		t.Fatalf("go mod tidy: %v\n%s", err, output)
-	}
-	appBin := clitest.TestExecutablePath(filepath.Join(dir, "app"))
-	build := exec.Command("go", "build", "-o", appBin, ".")
-	build.Dir = dir
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, output)
-	}
+	// clitest.TestAppSpecYAML's app, built once for the package
+	// (testAppSpecTree). Both boots below share one database, outside the
+	// tree.
+	dir, appBin := testAppSpecTree(t)
+	dbPath := filepath.Join(t.TempDir(), "mcp-e2e.db")
 
 	port := clitest.NextE2EPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -62,7 +35,7 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 	app.Dir = dir
 	app.Env = append(os.Environ(),
 		"PORT=localhost:"+port,
-		"DATABASE_URL=file:"+filepath.Join(dir, "mcp-e2e.db"),
+		"DATABASE_URL=file:"+dbPath,
 		// The dev loop's env: the generated app lights up the log MCP
 		// debug tools under it (they stay off for untrusted prod /mcp).
 		"GOFASTR_DEV=1",
@@ -176,7 +149,7 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 	prod.Dir = dir
 	prod.Env = append(os.Environ(),
 		"PORT=localhost:"+prodPort,
-		"DATABASE_URL=file:"+filepath.Join(dir, "mcp-e2e.db"),
+		"DATABASE_URL=file:"+dbPath,
 	)
 	var prodOut clitest.SyncBuffer
 	prod.Stdout = &prodOut

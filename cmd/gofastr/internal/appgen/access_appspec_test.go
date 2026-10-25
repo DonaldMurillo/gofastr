@@ -1,8 +1,6 @@
 package appgen
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,24 +38,12 @@ func TestRegisterEmitsAccessLiteral(t *testing.T) {
 	}
 }
 
-func TestAccessAppSpecBuilds(t *testing.T) {
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module example.com/accessdemo\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	path := filepath.Join(dir, "gofastr.yml")
+// TestAccessAppSpecRendersAccessLiteral loads an app spec whose
+// owner-scoped entity declares per-verb access and checks the rendered app
+// carries the Access literal. TestUnionApp compiles and vets the same
+// emission: its notes entity declares access for all four verbs.
+func TestAccessAppSpecRendersAccessLiteral(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gofastr.yml")
 	clitest.WriteTestFile(t, path, clitest.AccessAppSpecYAML())
 	bp, err := appspec.LoadAppSpec(path)
 	if err != nil {
@@ -67,27 +53,10 @@ func TestAccessAppSpecBuilds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderAppSpecFiles: %v", err)
 	}
-	sawAccessLiteral := false
 	for _, file := range files {
 		if strings.Contains(file.Content, "Access: framework.AccessControl{") {
-			sawAccessLiteral = true
-		}
-		full := filepath.Join(dir, file.Name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(file.Content), 0o644); err != nil {
-			t.Fatal(err)
+			return
 		}
 	}
-	if !sawAccessLiteral {
-		t.Fatal("no generated file carries the Access literal")
-	}
-	clitest.VariantBuild(t)
-	cmd := exec.Command("go", "build", "-mod=mod", "./...")
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("generated access app spec did not build: %v\n%s", err, output)
-	}
+	t.Fatal("no generated file carries the Access literal")
 }

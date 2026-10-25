@@ -1,14 +1,10 @@
 package appgen
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -99,50 +95,4 @@ func TestNavItemIconReachesGeneratedApp(t *testing.T) {
 		}
 	}
 	t.Fatalf("SECURITY: [nav] nav item icon %q decoded but emitted nowhere; the author's icon silently never renders. Files: %v", "home", fileNames(files))
-}
-
-// TestAppSpecHooksCompile type-checks a generated app that carries a
-// hook: the stub in stubs.go and the HookRegistry registration in
-// main.go are emitted Go that assertAppSpecGoParses only parses, and a
-// registration against the wrong framework API would parse and still
-// fail the operator's first build.
-func TestAppSpecHooksCompile(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compiles a generated module; skipped in -short")
-	}
-	clitest.VariantBuild(t)
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goVersion, err := clitest.RepoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"),
-		"module example.com/demo\n\ngo "+goVersion+"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => "+repoRoot+"\n")
-	if err := clitest.CopyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	bp := hookBp(validHook)
-	bp.App.Module = "example.com/demo"
-	bp.App.OutputDir = "gen"
-	if err := appspec.ValidateAppSpec(bp); err != nil {
-		t.Fatalf("fixture must validate: %v", err)
-	}
-	for _, file := range mustRenderAppSpecFiles(t, bp) {
-		full := filepath.Join(dir, "gen", file.Name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(file.Content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cmd := exec.Command("go", "vet", "-mod=mod", "./gen/...")
-	cmd.Dir = dir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("generated app with a hook did not compile: %v\n%s", err, output)
-	}
 }
