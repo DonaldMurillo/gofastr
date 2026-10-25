@@ -151,6 +151,10 @@
             // but omitting them here means a misconfigured route never even
             // gets the chance to honour one.
             credentials: 'omit',
+            // Before the grant exists the wrapper below passes this
+            // request through untouched, so it refuses a 3xx itself: a
+            // followed redirect's JSON is not this exchange's grant.
+            redirect: 'error',
             signal: signal,
           });
           if (r.ok) body = await r.json();
@@ -235,6 +239,9 @@
           r = await fetch(cfg.content, {
             headers: { 'X-Gofastr-Embed': grant || '' },
             credentials: 'omit',
+            // An exchange that granted nothing leaves the wrapper inert;
+            // a redirect target's markup is never this surface's content.
+            redirect: 'error',
             signal: signal,
           });
           if (r.ok) html = await r.text();

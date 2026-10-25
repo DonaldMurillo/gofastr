@@ -31,7 +31,8 @@
   // runs in the live (full) composition.
   fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(location.pathname)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
-    .then((r) => (r.ok ? r.json() : null))
+    // A followed 3xx is another URL's list: no catalog.
+    .then((r) => (r.ok && !r.redirected ? r.json() : null))
     .then(async (list) => {
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
@@ -175,7 +176,7 @@
     const path = (e && e.detail && e.detail.path) || location.pathname;
     fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok && !r.redirected ? r.json() : null))
       .then(async (list) => {
         if (!Array.isArray(list) || list.length === 0) return;
         const G = window.__gofastr;

@@ -392,10 +392,12 @@
         is the cfg-object version defined below; it owns the stack
         widget + lifecycle. */
 
-    /** Fetch partial HTML from server and inject into selector */
+    /** Fetch partial HTML from server and inject into selector. A
+        followed 3xx is another URL's page: nothing injected, ''. */
     async fetchPage(url, selector) {
       if (!this._originOK(url)) return '';
       const r = await fetch(url, { headers: { 'X-Gofastr-Partial': '1' } });
+      if (r.redirected) return '';
       const html = await r.text();
       if (selector) {
         const el = document.querySelector(selector);
@@ -438,14 +440,15 @@
     async _serverActionFor(componentId, action, params = {}) {
       const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
       const session = sessionCookie ? sessionCookie[1] : '';
-      const resp = await fetch(_lp('/__gofastr/action'), {
+      const r = await fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // page: the owning screen's Policy reads this page's route params.
         body: JSON.stringify({ action, params, session, componentId, page: _unlocalize(location.pathname) }),
       });
-      if (resp.ok) {
-        const result = await resp.json();
+      // A followed 3xx is another URL's answer: the action failed.
+      if (r.ok && !r.redirected) {
+        const result = await r.json();
         if (result.message) {
           window.__gofastr._toastOrFallback(result.message);
         }
@@ -2089,7 +2092,8 @@
   // runs in the live (full) composition.
   fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(location.pathname)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
-    .then((r) => (r.ok ? r.json() : null))
+    // A followed 3xx is another URL's list: no catalog.
+    .then((r) => (r.ok && !r.redirected ? r.json() : null))
     .then(async (list) => {
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
@@ -2233,7 +2237,7 @@
     const path = (e && e.detail && e.detail.path) || location.pathname;
     fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok && !r.redirected ? r.json() : null))
       .then(async (list) => {
         if (!Array.isArray(list) || list.length === 0) return;
         const G = window.__gofastr;

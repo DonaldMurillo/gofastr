@@ -197,7 +197,13 @@
       : postOrder(dest);
     const restoreFn = function () { restore(dest, prevOrder, srcList, srcSnap, movedItem); };
     p.then(function (res) {
-      if (!res || !res.ok) {
+      // A followed 3xx (an expired session sent the commit to the
+      // sign-in page) is another URL's 200, not this commit's: the
+      // order was not saved, so it reverts like any failed commit. No
+      // navigator hand-off here: the module sits on the shared 3 KB
+      // line, and the reverted announcement already says the save
+      // failed; the reader's next navigation meets the same redirect.
+      if (!res || !res.ok || res.redirected) {
         const is409 = res && res.status === 409;
         if (is409 && dest.hasAttribute('data-hui-sortable-version')) {
           conflictMessage(res, function (msg) {
@@ -215,8 +221,9 @@
                   // Same convention as poll.js/rpc.js: an HTTP error must
                   // reach .catch, never the innerHTML mount — an error
                   // body reflects the request URL and would replace live
-                  // page markup with reflected output.
-                  if (!r.ok) throw new Error('conflict refresh failed: ' + r.status);
+                  // page markup with reflected output. A followed 3xx is
+                  // another URL's markup (a sign-in page), never the rows.
+                  if (!r.ok || r.redirected) throw new Error('conflict refresh failed: ' + r.status);
                   return r.text();
                 })
                 .then(function (html) {

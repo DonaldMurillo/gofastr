@@ -246,7 +246,9 @@
         else st.resetPending = true;
         return;
       }
-      if (failed || !resp.ok) { restore(addr); return; }
+      // A followed 3xx is another URL's answer: applying or caching it
+      // under st.path would serve the target's fill for this address.
+      if (failed || !resp.ok || resp.redirected) { restore(addr); return; }
       // text(), never a stream reader: DevTools keeps the body.
       let text = '';
       try { text = await resp.text(); } catch (_) { restore(addr); return; }

@@ -1302,6 +1302,37 @@ redirect-following is the browser's own job, same result.
 http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 ```
 
+The redirect rule above is the intercepted plain form's (`enctype="application/json"`,
+`data-cui-spa`), whose redirect is its post/redirect/get answer. Every
+other runtime fetch reads a followed redirect as **no answer**. fetch
+follows a 3xx itself, so a request whose answer was a redirect (an
+expired session sends it to the sign-in page) resolves with a 200 for
+another URL; `response.redirected` is the only sign. The runtime never
+takes that body as the request's own (#577):
+
+- **`data-cui-rpc` and optimistic actions** fail. No success effect
+  runs, no success toast, no `data-cui-rpc-navigate`, and the response
+  signal reads `{ok: false, status: 0}`. An optimistic action rolls
+  back. A **form** stays where it is with what the reader typed
+  (`gofastr:formresult` reports `ok: false`, so a leave guard keeps the
+  form dirty) and toasts `runtime.submit_failed`: navigating away would
+  throw the input away. **Anything else** (a button, an optimistic
+  toggle) hands the redirect target to the client navigator, the way
+  the intercept overlay does, so a same-origin sign-in page opens with
+  no reload and another origin loads as a document. No server handler
+  answers a successful RPC with a 3xx; the framework's interactive
+  redirect is `X-Gofastr-Location`.
+- **Passive fetches** swap, parse and cache nothing: region and widget
+  poll (a failed poll, so it backs off), widget chrome (a failed open)
+  and state, widget discovery, `fetchPage` and server actions (empty
+  and `null`), deferred parts (the slot is restored), the SSE session
+  re-mint, and the desktop bridge (the call rejects). The embed
+  handshake's exchange and content fetches refuse redirects outright.
+- The navigators, prefetch and the intercept overlay already handled
+  it (`_followed` in `frag/nav.js`). Headless behaviours follow the
+  same rule: a sortable reorder whose commit redirects reverts, its
+  conflict refresh mounts nothing, and a selection Copy fails.
+
 ### Cookie-set + redirect: the canonical auth flow
 
 ```go

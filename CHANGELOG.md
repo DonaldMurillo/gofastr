@@ -7,6 +7,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **A redirected answer is no longer taken as the request's own
+  (#577).** fetch follows a 3xx itself, so a runtime request whose
+  session had expired got the sign-in page back as a 200 and used it.
+  `data-cui-rpc` and optimistic actions now fail: a form keeps what
+  the reader typed and shows the submit-failed toast, and any other
+  element sends the reader to the redirect target through the client
+  navigator. Polls, widget chrome, state and discovery, `fetchPage`,
+  server actions, deferred parts, the SSE session re-mint and the
+  desktop bridge ignore the redirected body, and the embed handshake
+  refuses redirects. A sortable reorder whose save redirects reverts,
+  and a selection Copy fails instead of copying the sign-in page.
+
 ## [0.94.1] - 2026-10-24
 
 ### Security

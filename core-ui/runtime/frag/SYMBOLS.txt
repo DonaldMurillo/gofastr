@@ -194,8 +194,8 @@ kernel	6	link
 kernel	6	links
 kernel	6	mk
 kernel	6	r
+kernel	6	r
 kernel	6	rIC
-kernel	6	resp
 kernel	6	self
 kernel	6	session
 kernel	6	sessionCookie

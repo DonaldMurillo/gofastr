@@ -258,6 +258,26 @@
         credentials: 'same-origin',
       });
       if (stale()) return;
+      // fetch followed a 3xx (an expired session sends the action to the
+      // sign-in page), so this 200 is another URL's answer, not the
+      // action's: it did not happen here. No success effect runs and the
+      // signal never takes the target's body. A form stays put with what
+      // the reader typed (navigating would discard it; a leave guard gets
+      // ok:false and keeps the dirt) and says the submit did not complete.
+      // Anything else hands the target to the navigator (nav.js
+      // _followed: another origin or document loads as one), the way an
+      // intercepted overlay hands it a redirect.
+      if (r.redirected) {
+        if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: 0, text: '' });
+        if (formSource) {
+          formResult(formSource, false);
+          NS._toastOrFallback?.({ variant: 'error', title: NS.say('runtime.submit_failed', 'Could not complete that submission.'), ttl: 6000 });
+        } else {
+          const to = NS._followed?.(r, '');
+          if (to) NS.navigate(to, { force: true });
+        }
+        return;
+      }
       if (!r.ok) {
         const txt = await r.text();
         if (stale()) return;

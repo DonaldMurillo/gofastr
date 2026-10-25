@@ -64,6 +64,9 @@
         res.text().then((text) => {
           let body = null;
           try { body = text ? JSON.parse(text) : null; } catch (_) { body = null; }
+          // A followed 3xx answered for another URL: neither its result
+          // nor its error is this call's.
+          if (res.redirected) body = null;
           if (res.ok && body && body.ok) return resolve(body.result);
           const err = body && body.error;
           reject(mkErr(err?.code || 'internal', err?.message || 'internal error'));
