@@ -59,6 +59,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   boots it. On a framework change, the `cmd/gofastr` package's tests
   take about 49s instead of 110s and `internal/appgen`'s about 28s
   instead of 79s (local run, warm build cache).
+- **framework/ui's repo-wide gates moved to
+  `framework/ui/internal/treegate` (#589).**
+  `TestNoRemovedAliasTokenReferences` reads every non-test Go and JS
+  file under `framework`, `core-ui`, `battery`, `kiln`, `cmd/gofastr`
+  and `examples`, so a change anywhere there reran framework/ui's 68
+  browser tests. It, and the inventory checks against `doc.go` and
+  `framework/docs/content/ui-new-components.md`, now live in a package
+  of their own that such a change selects instead. That package runs in
+  under a second.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

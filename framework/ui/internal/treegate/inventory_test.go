@@ -1,4 +1,4 @@
-package ui
+package treegate
 
 import (
 	"go/ast"
@@ -11,13 +11,18 @@ import (
 	"testing"
 )
 
-// The two inventory surfaces this package promises to keep complete:
-// the package-doc component list in doc.go, and the one-page catalog at
-// framework/docs/content/ui-new-components.md (which claims to index
-// "every UI component"). Both tests AST-walk this directory for exported
+// The two inventory surfaces framework/ui promises to keep complete:
+// the package-doc component list in its doc.go, and the one-page catalog
+// at framework/docs/content/ui-new-components.md (which claims to index
+// "every UI component"). Both tests AST-walk framework/ui for exported
 // Config-taking constructors, mirroring
 // examples/site/components_coverage_test.go, and fail on any absentee,
-// so a new component can't land without its inventory lines.
+// so a new component can't land without its inventory lines. The
+// package's test files import framework/ui, so a change to its sources
+// selects these tests.
+
+// uiDir is framework/ui, the package whose constructors are inventoried.
+var uiDir = filepath.Join("..", "..")
 
 // docCatalogExempt lists constructors deliberately absent from
 // ui-new-components.md, each with the reason. doc.go has no exemptions:
@@ -31,17 +36,17 @@ var docCatalogExempt = map[string]string{
 }
 
 func TestDocGoInventoryComplete(t *testing.T) {
-	src, err := os.ReadFile("doc.go")
+	src, err := os.ReadFile(filepath.Join(uiDir, "doc.go"))
 	if err != nil {
 		t.Fatalf("read doc.go: %v", err)
 	}
 	checkInventory(t, string(src), nil,
-		"doc.go package-doc inventory")
+		"framework/ui/doc.go package-doc inventory")
 }
 
 //gofastr:test-reads framework/docs/content/ui-new-components.md
 func TestCatalogDocListsAllComponents(t *testing.T) {
-	path := filepath.Join("..", "docs", "content", "ui-new-components.md")
+	path := filepath.Join(uiDir, "..", "docs", "content", "ui-new-components.md")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -51,7 +56,7 @@ func TestCatalogDocListsAllComponents(t *testing.T) {
 }
 
 // checkInventory fails the test for every exported Config-taking
-// constructor in this package whose name does not appear (as a whole
+// constructor in framework/ui whose name does not appear (as a whole
 // word) in doc and is not exempt.
 func checkInventory(t *testing.T, doc string, exempt map[string]string, where string) {
 	t.Helper()
@@ -72,13 +77,13 @@ func checkInventory(t *testing.T, doc string, exempt map[string]string, where st
 	}
 }
 
-// componentConstructorNames AST-walks the package directory and returns
-// every exported func whose first parameter type ends in "Config":
-// the package's component-constructor idiom. Helpers that take no
-// Config (Muted, Themed, HighlightLines, …) are out of scope.
+// componentConstructorNames AST-walks framework/ui and returns every
+// exported func whose first parameter type ends in "Config": the
+// package's component-constructor idiom. Helpers that take no Config
+// (Muted, Themed, HighlightLines, …) are out of scope.
 func componentConstructorNames(t *testing.T) []string {
 	t.Helper()
-	entries, err := os.ReadDir(".")
+	entries, err := os.ReadDir(uiDir)
 	if err != nil {
 		t.Fatalf("read package dir: %v", err)
 	}
@@ -88,7 +93,7 @@ func componentConstructorNames(t *testing.T) []string {
 		if de.IsDir() || !strings.HasSuffix(de.Name(), ".go") || strings.HasSuffix(de.Name(), "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, de.Name(), nil, 0)
+		f, err := parser.ParseFile(fset, filepath.Join(uiDir, de.Name()), nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", de.Name(), err)
 		}
