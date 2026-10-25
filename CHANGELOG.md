@@ -103,6 +103,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   page instead of on every scan. The site and Meridian gates use them
   in place of a second page load per scheme and fixed 400 ms and 450 ms
   waits.
+- **The site's browser tests wait for what they check, not for a fixed
+  time.** `pageReady()` in `examples/site` now waits for the page to
+  settle (`axetest.WaitReady`), and a new `waitFor` helper polls the
+  state a test reads next, failing after 10 s with the condition that
+  never held. Fixed sleeps remain only where a test checks that
+  something does not happen within a window, each marked with a
+  comment.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own

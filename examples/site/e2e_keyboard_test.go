@@ -354,6 +354,8 @@ func kbgateWalk(t *testing.T, ctx context.Context, maxPresses int) (kbgateEnum, 
 		// Let the browser's synchronous scroll-on-focus + any lazy hydration settle.
 		var f kbgateFocus
 		if err := chromedp.Run(ctx,
+			// deliberate: a focus indicator that transitions in reads as its
+			// blurred start value at t=0, so the style is sampled a beat in.
 			chromedp.Sleep(25*time.Millisecond),
 			chromedp.Evaluate(`window.__kbgate.recordFocus()`, &f),
 		); err != nil {
@@ -471,15 +473,14 @@ func reportGate(t *testing.T, r kbgateReport) {
 
 // ─── Page gates ───────────────────────────────────────────────────────
 
-// kbgatePage navigates to a page, settles hydration, walks the keyboard,
+// kbgatePage navigates to a page, waits for hydration, walks the keyboard,
 // analyzes, and reports.
-func kbgatePage(t *testing.T, base, path string, settle time.Duration) {
+func kbgatePage(t *testing.T, base, path string) {
 	t.Helper()
 	ctx := siteBrowserCtx(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+path),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Sleep(settle),
+		pageReady(),
 	); err != nil {
 		t.Fatalf("navigate %s: %v", path, err)
 	}
@@ -492,7 +493,7 @@ func TestKeyboardWalkHome(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := siteE2EServer(t)
-	kbgatePage(t, base, "/", 700*time.Millisecond)
+	kbgatePage(t, base, "/")
 }
 
 func TestKeyboardWalkGetStarted(t *testing.T) {
@@ -500,7 +501,7 @@ func TestKeyboardWalkGetStarted(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := siteE2EServer(t)
-	kbgatePage(t, base, "/get-started", 700*time.Millisecond)
+	kbgatePage(t, base, "/get-started")
 }
 
 func TestKeyboardWalkDatatable(t *testing.T) {
@@ -508,5 +509,5 @@ func TestKeyboardWalkDatatable(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := siteE2EServer(t)
-	kbgatePage(t, base, "/components/datatable", 900*time.Millisecond)
+	kbgatePage(t, base, "/components/datatable")
 }

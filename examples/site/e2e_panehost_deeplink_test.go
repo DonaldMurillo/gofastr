@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -124,6 +123,8 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 	const row = `document.querySelector('button[data-hui-pane-key="4021"]')`
 	const paneParam = `new URL(location.href).searchParams.get('pane')`
 	const secOpen = `document.querySelector('[data-hui-pane="secondary"]').hasAttribute('hidden') === false`
+	const terOpen = `document.querySelector('[data-hui-pane="tertiary"]').hasAttribute('hidden') === false`
+	const detail = `document.querySelector('[data-cui-signal="ws-ticket"]').textContent`
 
 	var afterOpen, afterBack, afterFwd string
 	var openState, backState, fwdState bool
@@ -131,33 +132,42 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/workspace"),
+		pageReady(),
 		chromedp.WaitVisible(`button[data-hui-pane-key="4021"]`),
 
-		// Open: pane shows and the URL records which one.
+		// Open: pane shows and the URL records which one. The row's RPC
+		// fills the detail region; it lands before the next step so it
+		// cannot race the Back below.
 		chromedp.Evaluate(row+`.click()`, nil),
-		chromedp.Sleep(time.Second),
+		waitFor(paneParam+` === 'secondary:4021' && `+secOpen+` && `+detail+`.includes('SSO login')`),
+		pageReady(),
 		chromedp.Evaluate(paneParam, &afterOpen),
 		chromedp.Evaluate(secOpen, &openState),
 
 		// The customer pane carries no key, so it must not disturb the
 		// ticket's deep link.
 		chromedp.Evaluate(`document.querySelector('[data-hui-pane-open-control="tertiary"]').click()`, nil),
-		chromedp.Sleep(time.Second),
+		// The URL write happens synchronously inside the open, so once
+		// the tertiary pane shows, any URL change it made is visible.
+		waitFor(terOpen),
+		pageReady(),
 		chromedp.Evaluate(paneParam, &paramAfterTertiary),
 
 		// Back closes.
 		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Sleep(time.Second),
+		waitFor(`!`+paneParam+` && !(`+secOpen+`)`),
+		pageReady(),
 		chromedp.Evaluate(paneParam, &afterBack),
 		chromedp.Evaluate(secOpen, &backState),
 
 		// Forward reopens, and refills, which is the part a naive
 		// implementation gets wrong (column back, content blank).
 		chromedp.Evaluate(`history.forward()`, nil),
-		chromedp.Sleep(2*time.Second),
+		waitFor(paneParam+` === 'secondary:4021' && `+secOpen+` && `+detail+`.includes('SSO login')`),
+		pageReady(),
 		chromedp.Evaluate(paneParam, &afterFwd),
 		chromedp.Evaluate(secOpen, &fwdState),
-		chromedp.Evaluate(`document.querySelector('[data-cui-signal="ws-ticket"]').textContent`, &detailAfterFwd),
+		chromedp.Evaluate(detail, &detailAfterFwd),
 	); err != nil {
 		t.Fatal(err)
 	}

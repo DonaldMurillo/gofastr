@@ -8,10 +8,10 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	cdplog "github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/runtime"
@@ -173,8 +173,7 @@ func TestE2E_InteractiveComponents_NoConsoleErrors(t *testing.T) {
 				runtime.Enable(),
 				cdplog.Enable(),
 				chromedp.Navigate(base+"/components/"+slug),
-				chromedp.WaitReady("body", chromedp.ByQuery),
-				chromedp.Sleep(700*time.Millisecond), // let demand-load modules run
+				pageReady(), // demand-loaded modules registered
 			); err != nil {
 				t.Fatalf("navigate %s: %v", slug, err)
 			}
@@ -185,6 +184,10 @@ func TestE2E_InteractiveComponents_NoConsoleErrors(t *testing.T) {
 		})
 	}
 }
+
+// dropdownPanelSettled is true once the dropdown panel is rendered and
+// its open transition (if any) has finished.
+const dropdownPanelSettled = `(p=>!!p&&p.getClientRects().length>0&&p.getAnimations().every(a=>a.playState!=='running'))(document.querySelector('[data-cui-dropdown-panel]'))`
 
 // TestE2E_InteractiveComponents_RenderCorrectly asserts the components
 // actually RENDER as UI, not just that the elements exist. It catches
@@ -243,9 +246,10 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(base+"/components/dropdown"),
 			chromedp.WaitReady(`[data-cui-dropdown]`, chromedp.ByQuery),
+			pageReady(),
 			chromedp.Evaluate(`(()=>{const c=getComputedStyle(document.querySelector('[data-cui-dropdown]'));return c.backgroundColor!=='rgba(0, 0, 0, 0)'||c.borderStyle!=='none'})()`, &triggerStyled),
 			chromedp.Click(`[data-cui-dropdown]`, chromedp.ByQuery),
-			chromedp.Sleep(150*time.Millisecond),
+			waitFor(dropdownPanelSettled),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).position`, &pos),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).boxShadow`, &shadow),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).backgroundColor`, &bg),
@@ -291,9 +295,10 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(base+"/components/dropdown"),
 			chromedp.WaitReady(`[data-cui-dropdown]`, chromedp.ByQuery),
+			pageReady(),
 			chromedp.Evaluate(`document.documentElement.setAttribute('data-color-scheme','dark')`, nil),
 			chromedp.Click(`[data-cui-dropdown]`, chromedp.ByQuery),
-			chromedp.Sleep(120*time.Millisecond),
+			waitFor(dropdownPanelSettled+`&&document.body.getAnimations().every(a=>a.playState!=='running')`),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).backgroundColor`, &panelBg),
 			chromedp.Evaluate(`(()=>{
 				const L=s=>{const m=/oklch\(([\d.]+)/.exec(s);if(m)return parseFloat(m[1]);
@@ -334,9 +339,14 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(base+"/components/toggle"),
 			chromedp.WaitReady(`.fui-toggle__thumb`, chromedp.ByQuery),
+			pageReady(),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-toggle__thumb')).transform`, &offT),
 			chromedp.Click(`[data-cui-comp="fui-toggle"]`, chromedp.ByQuery),
-			chromedp.Sleep(300*time.Millisecond),
+			// The thumb has moved off its resting transform and its
+			// transition has finished.
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return waitFor(`(t=>getComputedStyle(t).transform!==` + strconv.Quote(offT) + `&&t.getAnimations().every(a=>a.playState!=='running'))(document.querySelector('.fui-toggle__thumb'))`).Do(ctx)
+			}),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-toggle__thumb')).transform`, &onT),
 		); err != nil {
 			t.Fatal(err)
@@ -364,9 +374,17 @@ func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-store"),
 		chromedp.WaitReady(`[data-cui-scope="docsite-docpage"] .crumbs`, chromedp.ByQuery),
+		pageReady(),
 		// The category crumb is the breadcrumb link whose href has a #.
 		chromedp.Click(`[data-cui-scope="docsite-docpage"] .crumbs a[href*="#"]`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond), // SPA nav + scroll + rAF re-correct
+		// SPA nav + scroll + rAF re-correct: wait for the section to land
+		// in view below the sticky header.
+		waitFor(`location.hash==='#clientside-interactivity'`),
+		pageReady(),
+		waitFor(`(()=>{const el=document.getElementById('clientside-interactivity');if(!el)return false;
+			const top=el.getBoundingClientRect().top;const h=document.querySelector('header[role="banner"]');
+			const hb=h?h.getBoundingClientRect().bottom:0;
+			return scrollY>=50&&top<innerHeight&&top>=-20&&top>=hb-2})()`),
 		chromedp.Evaluate(`location.hash`, &hash),
 		chromedp.Evaluate(`window.scrollY`, &scrollY),
 		chromedp.Evaluate(`(()=>{const el=document.getElementById(location.hash.slice(1));return el?el.getBoundingClientRect().top:-9999})()`, &sectionTop),
@@ -408,10 +426,10 @@ func TestE2E_ScrollRevealAnimates(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/scroll-reveal"),
 		chromedp.WaitReady(`[data-cui-reveal]`, chromedp.ByQuery),
-		chromedp.Sleep(300*time.Millisecond), // reveal.js adds cui-hidden
+		waitFor(`(el=>el.classList.contains('cui-hidden')&&getComputedStyle(el).opacity==='0')(document.querySelector('[data-cui-reveal]'))`), // reveal.js adds cui-hidden
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-reveal]')).opacity`, &hiddenOpacity),
 		chromedp.Evaluate(`(()=>{document.querySelector('[data-cui-reveal]').scrollIntoView({block:'center'});return true})()`, nil),
-		chromedp.Sleep(900*time.Millisecond), // IntersectionObserver + transition
+		waitFor(`(el=>el.classList.contains('cui-revealed')&&getComputedStyle(el).opacity==='1')(document.querySelector('[data-cui-reveal]'))`), // IntersectionObserver + transition
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-reveal]')).opacity`, &revealedOpacity),
 		chromedp.Evaluate(`document.querySelector('[data-cui-reveal]').className`, &revealedClasses),
 	); err != nil {
@@ -445,12 +463,13 @@ func TestE2E_SignalAnimateExpands(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-animate"),
 		chromedp.WaitReady(`#demo-animate-panel`, chromedp.ByQuery),
+		pageReady(),
 		chromedp.Evaluate(hasOpen, &before),
 		chromedp.Click(`[data-cui-signal-toggle="demo-anim-slide"]`, chromedp.ByQuery),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(hasOpen),
 		chromedp.Evaluate(hasOpen, &on),
 		chromedp.Click(`[data-cui-signal-toggle="demo-anim-slide"]`, chromedp.ByQuery),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(`!`+hasOpen),
 		chromedp.Evaluate(hasOpen, &off),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -480,12 +499,13 @@ func TestE2E_SignalStoreFanout(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-store"),
 		chromedp.WaitReady(`#store-consumer-heading`, chromedp.ByQuery),
+		pageReady(),
 		// seeded value present before any interaction (gap #1)
 		chromedp.Evaluate(`String(window.__gofastr.getSignal('sitedemo.company'))`, &seeded),
 		chromedp.Text(`#store-consumer-heading`, &h0, chromedp.ByQuery),
 		// producer click → fan-out
 		chromedp.Click(`//button[contains(.,'Globex')]`),
-		chromedp.Sleep(150*time.Millisecond),
+		waitFor(`['#store-consumer-heading','#store-consumer-inline','#store-consumer-badge'].every(s=>document.querySelector(s).innerText.trim()==='Globex')`),
 		chromedp.Text(`#store-consumer-heading`, &h1, chromedp.ByQuery),
 		chromedp.Text(`#store-consumer-inline`, &inline1, chromedp.ByQuery),
 		chromedp.Text(`#store-consumer-badge`, &badge1, chromedp.ByQuery),

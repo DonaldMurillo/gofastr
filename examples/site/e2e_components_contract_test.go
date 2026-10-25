@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -33,7 +32,10 @@ func TestE2E_Modal_OpensWithCorrectARIA(t *testing.T) {
 		chromedp.Navigate(base+"/components/modal"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
-		chromedp.Sleep(350*time.Millisecond),
+		waitFor(`(() => {
+            const el = document.querySelector('[data-cui-widget="site-demo-modal"]');
+            return !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none' && !!document.querySelector('[data-cui-backdrop="site-demo-modal"]');
+        })()`),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('role')`, &role),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('aria-modal')`, &ariaModal),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('aria-labelledby')`, &labelledBy),
@@ -71,9 +73,16 @@ func TestE2E_Modal_EscClosesAndReturnsFocus(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').focus()`, nil),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
 		// Lazy-fetched widget needs time for the chrome request + mount.
-		chromedp.Sleep(700*time.Millisecond),
+		waitFor(`(() => {
+            const el = document.querySelector('[data-cui-widget="site-demo-modal"]');
+            return !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none';
+        })()`),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))`, nil),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(`(() => {
+            const el = document.querySelector('[data-cui-widget="site-demo-modal"]');
+            const closed = !el || el.hasAttribute('hidden') || getComputedStyle(el).display === 'none';
+            return closed && document.documentElement.style.overflow === '' && document.activeElement === document.querySelector('button[data-cui-open="site-demo-modal"]');
+        })()`),
 		// Lazy-fetched (non-hydrated) widgets are detached on close;
 		// SSR-inlined (hydrated) widgets are hidden in place. Either
 		// way the widget should NOT be visible after Esc.
@@ -109,7 +118,7 @@ func TestE2E_Modal_DeepLinkOpensFromURL(t *testing.T) {
 		// site-demo-modal deep-link: ?modal=user-edit&user_id=42
 		chromedp.Navigate(base+"/components/modal?modal=user-edit&user_id=42"),
 		pageReady(),
-		chromedp.Sleep(500*time.Millisecond), // boot-time deep-link sync
+		waitFor(`(document.querySelector('[data-cui-widget="site-demo-modal"] h3')?.textContent || '').includes('Edit user')`), // boot-time deep-link sync
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"] h3')?.textContent`, &heading),
 	); err != nil {
 		t.Fatalf("modal deeplink: %v", err)
@@ -137,7 +146,7 @@ func TestE2E_Drawer_OpensWithBackdropAndScrollLock(t *testing.T) {
 		chromedp.Navigate(base+"/components/drawer"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-drawer"]').click()`, nil),
-		chromedp.Sleep(350*time.Millisecond),
+		waitFor(`!!document.querySelector('[data-cui-widget="site-demo-drawer"]') && !!document.querySelector('[data-cui-backdrop="site-demo-drawer"]') && document.documentElement.style.overflow === 'hidden'`),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.getAttribute('role')`, &role),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.getAttribute('aria-modal')`, &ariaModal),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="site-demo-drawer"]')`, &backdrop),
@@ -174,7 +183,7 @@ func TestE2E_Toast_ServerHeaderFiresToast(t *testing.T) {
 		pageReady(),
 		// The server-toast button on site is labelled "Server: header".
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Server: header')).click()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`Array.from(document.querySelectorAll('.fui-notification__title')).some(n => n.textContent.includes('Saved'))`),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('.fui-notification__title')).map(n => n.textContent).join(',')`, &titles),
 	); err != nil {
 		t.Fatalf("toast server: %v", err)
@@ -196,7 +205,7 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 		chromedp.Navigate(base+"/components/toast"),
 		pageReady(),
 		chromedp.Evaluate(`window.__gofastr.toast({variant: 'danger', title: 'Test alert', body: 'body'})`, nil),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(`document.querySelector('.fui-notification__title')?.textContent === 'Test alert'`),
 		chromedp.Evaluate(`document.querySelector('.fui-notification__title')?.textContent`, &title),
 		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('role')`, &role),
 		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('aria-live')`, &live),
@@ -232,7 +241,11 @@ func TestE2E_Menu_RolesAndKeyboardNav(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('summary.fui-menu__trigger')?.getAttribute('aria-haspopup')`, &triggerHasPopup),
 		chromedp.Evaluate(`document.querySelector('summary.fui-menu__trigger').click()`, nil),
-		chromedp.Sleep(150*time.Millisecond),
+		waitFor(`(() => {
+            const d = document.querySelector('summary.fui-menu__trigger').closest('details');
+            const item = document.querySelector('[role="menuitem"]');
+            return d.open && !!item && item.getClientRects().length > 0;
+        })()`),
 		chromedp.Evaluate(`document.querySelector('[role="menu"]')?.getAttribute('role')`, &panelRole),
 		// Keyboard nav: dispatch on the focused item so e.target.closest works.
 		// Site menu items: Profile → Settings → Sign out
@@ -297,7 +310,7 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 		// Click via JS so the test is viewport-independent, the open is gated
 		// on the runtime handler, not CSS visibility.
 		chromedp.Evaluate(`document.querySelector('button.fui-sidebar__hamburger[data-cui-open="ui-sidebar-drawer"]')?.click()`, nil),
-		chromedp.Sleep(350*time.Millisecond),
+		waitFor(`!!document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')`),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
 		// Coalesce undefined→'' so an absent drawer fails on the assertion below
 		// rather than a chromedp "undefined value" error.

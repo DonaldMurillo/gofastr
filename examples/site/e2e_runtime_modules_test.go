@@ -74,10 +74,15 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 		// hook. (The home page no longer qualifies: its customers mock is
 		// a ui.DataTable, whose data-hui-table hook needs the module.)
 		chromedp.Navigate(base+"/philosophy"),
-		// Wait through DOMContentLoaded + the marker scanner + one
-		// idle frame. Anything fetched after this is overflow we
-		// don't want.
-		chromedp.Sleep(500*time.Millisecond),
+		// Wait through DOMContentLoaded + the marker scanner (every
+		// module script it inserted has registered), then one idle
+		// callback queued after boot (idle-time loads run first), then
+		// ready again so a module that idle pass inserted has been
+		// fetched. Anything fetched after this is overflow we don't want.
+		pageReady(),
+		chromedp.Evaluate(`window.__idleSeen = false; requestIdleCallback(() => { window.__idleSeen = true; })`, nil),
+		waitFor(`window.__idleSeen === true`),
+		pageReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -113,7 +118,8 @@ func TestE2E_RuntimeSplit_FileuploadLoadsOnMarker(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		chromedp.Navigate(base+"/components/fileupload"),
-		chromedp.Sleep(800*time.Millisecond),
+		pageReady(),
+		waitFor(`!!document.querySelector('script[src*="/runtime/headless.js"]') && !!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -147,7 +153,8 @@ func TestE2E_RuntimeSplit_DrawerLoadsOnMarker(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		chromedp.Navigate(base+"/components/drawer"),
-		chromedp.Sleep(800*time.Millisecond),
+		pageReady(),
+		waitFor(`!!document.querySelector('script[src*="/__gofastr/runtime/"]')`),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -181,7 +188,8 @@ func TestE2E_RuntimeSplit_ToastsLoadOnMarker(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		chromedp.Navigate(base+"/components/toast"),
-		chromedp.Sleep(800*time.Millisecond),
+		pageReady(),
+		waitFor(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-feedback'])`),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -215,7 +223,7 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 		// Live pages carry the module manifest via /__gofastr/manifest.js
 		// (the window global); the inline block remains only in export mode.
 		chromedp.Evaluate(`JSON.stringify(window.__gofastr_runtime_modules || null) || document.getElementById('gofastr-runtime-modules')?.textContent || ''`, &manifest),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`!!document.querySelector('script[src*="/runtime/headless.js"]')`),
 		// Pull the actual src= of any loaded headless script tag
 		chromedp.Evaluate(`(() => {
             const s = document.querySelector('script[src*="/runtime/headless.js"]');
@@ -260,7 +268,7 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 	app := newTestApp(t)
 	stall := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/__gofastr/widgets" {
-			time.Sleep(800 * time.Millisecond)
+			time.Sleep(800 * time.Millisecond) // deliberate: server-side stall the click must outlive
 		}
 		app.Router().ServeHTTP(w, r)
 	})
@@ -276,7 +284,10 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 		// Click during the catalog stall. Must be queued (awaited),
 		// not lost. After the stall + grace window, widget MUST be open.
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-drawer"]').click()`, nil),
-		chromedp.Sleep(2000*time.Millisecond),
+		waitFor(`(() => {
+            const w = document.querySelector('[data-cui-widget="site-demo-drawer"]');
+            return !!w && !w.hasAttribute('hidden');
+        })()`),
 		chromedp.Evaluate(`(() => {
             const w = document.querySelector('[data-cui-widget="site-demo-drawer"]');
             if (!w) return false;
@@ -322,7 +333,9 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	// exercise the fallback the way the kernel's own dispatcher would.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
-		pageReady(),
+		// Not pageReady: it waits for every runtime module script to
+		// register, and headless-feedback.js 500s here by design.
+		waitFor(`document.readyState === 'complete' && typeof window.__gofastr?.loadModule === 'function'`),
 		// Trigger an RPC manually that responds with X-Gofastr-Toast.
 		// We eval fetch + then poke the runtime's RPC header dispatcher
 		// to mimic what dispatchRPC does.
@@ -453,6 +466,7 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-feedback'] === true`, nil, chromedp.WithPollingInterval(100*1e6)),
 		// Let the network service commit the immutable entry before
 		// the port is handed back.
+		// deliberate: the HTTP cache commit has no page-observable signal.
 		chromedp.Sleep(500*time.Millisecond),
 	); err != nil {
 		// Drop the SSE client first: a live EventSource blocks Close()
@@ -489,7 +503,7 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 		if attempt >= 4 {
 			t.Fatalf("rebind %s: %v", addr, err)
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // deliberate: backoff before retrying the rebind
 	}
 	broken.Listener = ln500
 	broken.Start()
@@ -509,7 +523,8 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		chromedp.Navigate(broken.URL+"/"),
-		pageReady(),
+		// Not pageReady: headless-feedback.js 500s here by design.
+		waitFor(`document.readyState === 'complete' && typeof window.__gofastr?.loadModule === 'function'`),
 		// Same header-dispatch mimic as the parent test: kick
 		// loadModule('headless-feedback') and let the .catch render
 		// the fallback when the 500 lands.
@@ -612,7 +627,6 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 		// is NOT pre-loaded, exactly the cold-cache case we want.
 		chromedp.Navigate(base+"/"),
 		pageReady(),
-		chromedp.Sleep(300*time.Millisecond),
 		// Inject a fresh drop zone via DOM mutation. This is the same
 		// shape an island swap or RPC innerHTML replacement would
 		// produce: new subtree appended under document.body containing
@@ -622,7 +636,8 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
             wrap.innerHTML = '<div data-hui-drop data-hui-drop-input="mut"><input type="file" id="mut"></div>';
             document.body.appendChild(wrap);
         })()`, nil),
-		chromedp.Sleep(600*time.Millisecond),
+		waitFor(`!!document.querySelector('script[src*="/runtime/headless.js"]')`),
+		pageReady(),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -685,7 +700,7 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
             // the fresh DOM.
             window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x' } }));
         })()`, nil),
-		chromedp.Sleep(700*time.Millisecond), // TTL is 300ms, dismiss anim ~200ms
+		waitFor(`!document.querySelector('[data-hui-toast-id="rescan-target"]')`), // TTL is 300ms, dismiss anim ~200ms
 		chromedp.Evaluate(`!document.querySelector('[data-hui-toast-id="rescan-target"]')`, &dismissed),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -725,7 +740,8 @@ func TestE2E_RuntimeSplit_HoverPrefetch(t *testing.T) {
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
         })()`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`!!document.querySelector('script[src*="/runtime/popover.js"]')`),
+		pageReady(),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}

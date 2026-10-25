@@ -11,6 +11,8 @@ package main
 // the rest of examples/site's e2e convention.
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +21,34 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
+
+// waitForBuilt is waitFor with an expression built when the action runs,
+// so it can compare against a value an earlier action in the same Run
+// read into a variable.
+func waitForBuilt(build func() string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return waitFor(build()).Do(ctx)
+	})
+}
+
+// waitRejectSeen polls the console sink until Chrome has logged the
+// failed load of path (the demo's 4xx), failing after waitForTimeout.
+func waitRejectSeen(sink *consoleErrSink, path string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		deadline := time.Now().Add(waitForTimeout)
+		for !sink.rejectSeen(path) {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("waitRejectSeen: no network-error entry for %s after %s", path, waitForTimeout)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(25 * time.Millisecond):
+			}
+		}
+		return nil
+	})
+}
 
 // TestE2E_Optimistic_InlineEdit_SuccessAndRollback covers Recipe 2:
 // the Save button commits on 2xx; the Save (reject) button flips
@@ -58,14 +88,16 @@ func TestE2E_Optimistic_InlineEdit_SuccessAndRollback(t *testing.T) {
 		chromedp.Evaluate(okBtn+`.getAttribute('data-state')`, &okInitial),
 		// Click Save → flips to pending → committed (2xx).
 		chromedp.Evaluate(okBtn+`.click()`, nil),
-		settle(),
+		waitFor(okBtn+`.getAttribute('data-state') === 'committed'`),
 		chromedp.Evaluate(okBtn+`.getAttribute('data-state')`, &okAfterCommit),
 		// Click Save (reject) → flips to pending → error (4xx) → idle.
 		chromedp.Evaluate(failBtn+`.click()`, nil),
-		settle(),
+		// Poll for exactly the transient `error` shake state the runtime
+		// holds ~600ms after the 4xx, so the wait cannot skip past it.
+		waitFor(failBtn+`.getAttribute('data-state') === 'error'`),
 		chromedp.Evaluate(failBtn+`.getAttribute('data-state')`, &failAfterClick),
 		// The error path waits ~600ms then reverts to idle.
-		chromedp.Sleep(900*time.Millisecond),
+		waitFor(failBtn+`.getAttribute('data-state') === 'idle'`),
 		chromedp.Evaluate(failBtn+`.getAttribute('data-state')`, &failAfterRollback),
 	)
 	if err != nil {
@@ -80,8 +112,8 @@ func TestE2E_Optimistic_InlineEdit_SuccessAndRollback(t *testing.T) {
 	}
 	// After the 4xx the button MUST be in the deterministic `error`
 	// (shake) state, the runtime holds it ~600ms before reverting to
-	// idle. The reject endpoint fails immediately, so by `settle()` the
-	// 422 has landed and the button has flipped to error. Accepting
+	// idle. The reject endpoint fails immediately, so the 422 lands and
+	// the button flips to error inside that window. Accepting
 	// `idle` here would let a no-op click (the RPC never fired, the
 	// button never left idle) pass the test.
 	if failAfterClick != "error" {
@@ -139,7 +171,7 @@ func TestE2E_Optimistic_Create_AppendsAndPersists(t *testing.T) {
 		// Click Add. interactive.OnClick fires the POST and swaps the
 		// list region's innerHTML with the response on 2xx.
 		chromedp.Click(`button[data-cui-rpc="/__site/optimistic/create"]`, chromedp.ByQuery),
-		chromedp.Sleep(600*time.Millisecond), // wait for RPC + swap
+		waitForBuilt(func() string { return fmt.Sprintf(`%s > %d`, listItemCount, before) }), // wait for RPC + swap
 		chromedp.Evaluate(listItemCount, &after),
 		chromedp.Evaluate(lastID, &lastAfter),
 	)
@@ -212,11 +244,11 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 		chromedp.Evaluate(n1Present, &n1Before),
 		// Click the row's Delete trigger, opens the ConfirmAction modal.
 		chromedp.Evaluate(trigger+`.click()`, nil),
-		chromedp.Sleep(350*time.Millisecond),
+		waitFor(`!!document.querySelector('[data-cui-widget="opt-delete-n1"]')`),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="opt-delete-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
 		chromedp.Click(`[data-cui-widget="opt-delete-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
-		chromedp.Sleep(600*time.Millisecond), // wait for RPC + swap
+		waitFor(`!`+n1Present), // wait for RPC + swap
 		chromedp.Evaluate(listItemCount, &after),
 		chromedp.Evaluate(n1Present, &n1After),
 	)
@@ -267,15 +299,15 @@ func TestE2E_Optimistic_Slow_PendingThenCommit(t *testing.T) {
 		chromedp.Navigate(base+"/components/optimisticslow"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
-		// Click Save (slow). The endpoint sleeps 500ms before 2xx, so a
-		// 400ms sample lands inside the pending window.
+		// Click Save (slow). The endpoint sleeps 500ms before 2xx; poll
+		// for the intermediate pending state inside that window.
 		chromedp.Evaluate(slowBtn+`.click()`, nil),
-		chromedp.Sleep(400*time.Millisecond), // sample during pending
+		waitFor(slowBtn+`.getAttribute('data-state') === 'pending'`), // sample during pending
 		chromedp.Evaluate(slowBtn+`.getAttribute('data-state')`, &pendingState),
 		chromedp.Evaluate(slowBtn+`.getAttribute('aria-busy')`, &pendingBusy),
 		chromedp.Evaluate(slowBtn+`.disabled`, &pendingDisabled),
 		// Wait out the endpoint (500ms) + settlement.
-		chromedp.Sleep(2*time.Second),
+		waitFor(slowBtn+`.getAttribute('data-state') === 'committed'`),
 		chromedp.Evaluate(slowBtn+`.getAttribute('data-state')`, &committedState),
 	)
 	if err != nil {
@@ -333,10 +365,12 @@ func TestE2E_Optimistic_Fail_RollsBack(t *testing.T) {
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
 		chromedp.Evaluate(failBtn+`.click()`, nil),
-		settle(),
+		// Poll for exactly the transient `error` shake state so the wait
+		// cannot skip past it into the rollback.
+		waitFor(failBtn+`.getAttribute('data-state') === 'error'`),
 		chromedp.Evaluate(failBtn+`.getAttribute('data-state')`, &afterClick),
 		// The error path waits ~600ms then reverts to idle.
-		chromedp.Sleep(900*time.Millisecond),
+		waitFor(failBtn+`.getAttribute('data-state') === 'idle'`),
 		chromedp.Evaluate(failBtn+`.getAttribute('data-state')`, &afterRollback),
 	)
 	if err != nil {
@@ -344,7 +378,7 @@ func TestE2E_Optimistic_Fail_RollsBack(t *testing.T) {
 	}
 
 	// The reject endpoint fails immediately and the runtime holds the
-	// `error` shake state ~600ms, so by `settle()` the button MUST be
+	// `error` shake state ~600ms, so right after the 4xx the button MUST be
 	// deterministically in `error`. Accepting `idle` here would let a
 	// no-op click (the RPC never fired) pass the test.
 	if afterClick != "error" {
@@ -399,11 +433,14 @@ func TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged(t *testing.T) {
 		chromedp.Evaluate(n1Present, &n1Before),
 		// Open the dedicated "will fail" ConfirmAction modal.
 		chromedp.Evaluate(trigger+`.click()`, nil),
-		chromedp.Sleep(350*time.Millisecond),
+		waitFor(`!!document.querySelector('[data-cui-widget="opt-delete-fail-n1"]')`),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="opt-delete-fail-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
 		chromedp.Click(`[data-cui-widget="opt-delete-fail-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
-		chromedp.Sleep(600*time.Millisecond), // wait for RPC + (no) swap
+		// Wait for the 422 to land, then give the response handler time
+		// to (wrongly) write the region.
+		waitRejectSeen(sink, "/__site/optimistic/delete/fail"),
+		chromedp.Sleep(200*time.Millisecond), // negative window: the failed delete must not rewrite the list region
 		chromedp.Evaluate(listHTML, &afterHTML),
 		chromedp.Evaluate(listItemCount, &afterCount),
 		chromedp.Evaluate(n1Present, &n1After),

@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -190,9 +189,9 @@ func TestE2E_ThemeToggle_ClickCyclesScheme(t *testing.T) {
 	var schemeAfter string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/themetoggle"),
-		chromedp.Sleep(1500*time.Millisecond),
+		pageReady(),
 		chromedp.Evaluate(`(document.querySelector('[data-hui-theme-cycle]') || document.querySelector('[data-hui-theme-toggle] [data-hui-theme-option]'))?.click()`, nil),
-		settle(),
+		waitFor(`!!document.documentElement.getAttribute('data-color-scheme')`),
 		chromedp.Evaluate(`document.documentElement.getAttribute('data-color-scheme') || ''`, &schemeAfter),
 	)
 	if err != nil {
@@ -295,7 +294,8 @@ func TestE2E_BackToTop_RuntimeModuleLoads(t *testing.T) {
 	var loaded bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
-		chromedp.Sleep(1500*time.Millisecond),
+		pageReady(),
+		waitFor(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-navigation'])`),
 		chromedp.Evaluate(`(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-navigation']) || false`, &loaded),
 	)
 	if err != nil {
@@ -314,7 +314,7 @@ func TestE2E_BackToTop_ScrollShowsButton(t *testing.T) {
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
 		chromedp.Evaluate(`window.scrollTo(0, 600)`, nil),
-		chromedp.Sleep(900*time.Millisecond),
+		waitFor(`!!document.querySelector('[data-hui-back-to-top]')?.hasAttribute('data-hui-back-to-top-visible')`),
 		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]')?.hasAttribute('data-hui-back-to-top-visible') || false`, &visible),
 	)
 	if err != nil {
@@ -336,9 +336,9 @@ func TestE2E_BackToTop_ClickScrollsToTop(t *testing.T) {
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
 		chromedp.Evaluate(`window.scrollTo(0, 800)`, nil),
-		chromedp.Sleep(500*time.Millisecond),
+		waitFor(`!!document.querySelector('[data-hui-back-to-top][data-hui-back-to-top-visible]')`),
 		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top][data-hui-back-to-top-visible]')?.click()`, nil),
-		chromedp.Sleep(800*time.Millisecond),
+		waitFor(`window.scrollY <= 50`),
 		chromedp.Evaluate(`window.scrollY`, &scrollY),
 	)
 	if err != nil {

@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -228,7 +227,7 @@ func TestE2E_FileUpload_PreviewShowsFilename(t *testing.T) {
 			// Give the runtime a tick to update the preview.
 			return '';
 		})()`, nil),
-		chromedp.Sleep(200*time.Millisecond),
+		waitFor(`(document.querySelector('[data-cui-comp="ui-fileupload"] [data-hui-drop-list]')?.textContent || '').includes('photo.jpg')`),
 		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-fileupload"] [data-hui-drop-list]')?.textContent || ''`, &preview),
 	); err != nil {
 		t.Fatalf("fileupload preview: %v", err)
