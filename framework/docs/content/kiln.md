@@ -312,6 +312,7 @@ remain opt-in because they consume external model credentials.
   interface without an external authentication/network boundary exposes every
   world-editing tool.
 - **Calling a provider run verified without using it live.** The deterministic
-  suite validates adapters and protocol behavior; set `KILN_LIVE=1` and run a
-  named `TestLive_*` case to prove the selected external driver actually edits,
-  renders, freezes, and generates the current world.
+  suite validates adapters and protocol behavior; build with `-tags kilnlive`,
+  set `KILN_LIVE=1`, and run a named `TestLive_*` case to prove the selected
+  external driver actually edits, renders, freezes, and generates the current
+  world.
