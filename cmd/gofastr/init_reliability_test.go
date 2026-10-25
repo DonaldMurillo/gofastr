@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
+// TestInitGeneratedProjectsBuild builds what `gofastr init` emits for each
+// set of flags. The default (sqlite, the sample entity) is
+// initScaffoldTree, which the flat-layout check and the scaffold boot gate
+// share; the others get a tree of their own.
 func TestInitGeneratedProjectsBuild(t *testing.T) {
 	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -18,11 +23,13 @@ func TestInitGeneratedProjectsBuild(t *testing.T) {
 	}
 	bin := BuildGofastrBin(t)
 
+	t.Run("sqlite_default", func(t *testing.T) {
+		initScaffoldTree(t)
+	})
 	cases := []struct {
 		name string
 		args []string
 	}{
-		{name: "sqlite_default", args: []string{"init", "sqliteapp", "--module=example.com/sqliteapp"}},
 		{name: "no_entity", args: []string{"init", "uiapp", "--module=example.com/uiapp", "--no-entity"}},
 		{name: "postgres_compile", args: []string{"init", "pgapp", "--module=example.com/pgapp", "--db=postgres"}},
 	}
@@ -168,22 +175,24 @@ func TestThemeInitGeneratedPackageBuildsFromCLI(t *testing.T) {
 
 func prepareGeneratedModule(t *testing.T, repoRoot, project string) {
 	t.Helper()
-	if err := clitest.CopyGoSum(repoRoot, project); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
+	if err := setUpGeneratedModule(repoRoot, project); err != nil {
+		t.Fatal(err)
 	}
-	edit := exec.Command("go", "mod", "edit",
+}
+
+// setUpGeneratedModule points a generated project's go.mod at the working
+// tree and tidies it.
+func setUpGeneratedModule(repoRoot, project string) error {
+	if err := clitest.CopyGoSum(repoRoot, project); err != nil {
+		return fmt.Errorf("copy go.sum: %w", err)
+	}
+	if err := runIn(project, nil, "go", "mod", "edit",
 		"-require=github.com/DonaldMurillo/gofastr@v0.0.0",
 		"-replace=github.com/DonaldMurillo/gofastr="+repoRoot,
-	)
-	edit.Dir = project
-	if out, err := edit.CombinedOutput(); err != nil {
-		t.Fatalf("go mod edit: %v\n%s", err, out)
+	); err != nil {
+		return err
 	}
-	tidy := exec.Command("go", "mod", "tidy")
-	tidy.Dir = project
-	if out, err := tidy.CombinedOutput(); err != nil {
-		t.Fatalf("go mod tidy: %v\n%s", err, out)
-	}
+	return runIn(project, nil, "go", "mod", "tidy")
 }
 
 // TestInitEmitsFlatOwnedLayout pins the scaffold-and-own contract from
@@ -192,18 +201,9 @@ func prepareGeneratedModule(t *testing.T, repoRoot, project string) {
 // or a gen/ quarantine directory. The generated project must build.
 func TestInitEmitsFlatOwnedLayout(t *testing.T) {
 	clitest.VariantBuild(t, "cmd/gofastr/internal/initcmd/")
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	bin := BuildGofastrBin(t)
-	work := t.TempDir()
-	initCmd := exec.Command(bin, "init", "flatapp", "--module=example.com/flatapp")
-	initCmd.Dir = work
-	if out, err := initCmd.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr init: %v\n%s", err, out)
-	}
-	project := filepath.Join(work, "flatapp")
+	// The default init, built: initScaffoldTree fails here when the
+	// generated project does not build.
+	project, _ := initScaffoldTree(t)
 
 	// Flat package main at the module root.
 	for _, rel := range []string{"main.go", "screens.go", "entities/entities.go"} {
@@ -237,14 +237,5 @@ func TestInitEmitsFlatOwnedLayout(t *testing.T) {
 	}
 	if strings.Contains(string(mainSrc), `"/screens"`) || strings.Contains(string(mainSrc), "screens.HomeScreen") {
 		t.Errorf("main.go must not import a screens subpackage; HomeScreen is in package main:\n%s", mainSrc)
-	}
-
-	// The generated project builds.
-	prepareGeneratedModule(t, repoRoot, project)
-	build := exec.Command("go", "build", ".")
-	build.Dir = project
-	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("generated flat project did not build: %v\n%s", err, out)
 	}
 }

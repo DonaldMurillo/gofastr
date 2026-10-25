@@ -22,8 +22,8 @@ func TestExampleReadScopeBoots(t *testing.T) {
 		t.Skip("generates, builds, and boots an app")
 	}
 	clitest.VariantBuild(t, "examples/portfolio/gofastr.yml")
-	bin, appDir := generateAndCompileAppSpec(t, "../../examples/portfolio/gofastr.yml", "portfolio")
-	baseURL, _ := bootGeneratedApp(t, "portfolio", bin, appDir)
+	bin, appDir := exampleTree(t, "../../examples/portfolio/gofastr.yml", "portfolio")
+	baseURL, _, _ := bootGeneratedApp(t, "portfolio", bin, appDir)
 
 	anon := func(table string) []map[string]any {
 		t.Helper()
