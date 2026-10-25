@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -42,13 +41,14 @@ func TestE2E_Modal_DeepLinkPopstateCloses(t *testing.T) {
 
 		// The deep-linked trigger opens the modal AND records it.
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"][data-cui-deeplink]').click()`, nil),
-		chromedp.Sleep(time.Second),
+		waitFor(`location.search !== '' && `+modal),
 		chromedp.Evaluate(`location.search`, &urlAfterOpen),
 		chromedp.Evaluate(modal, &openAfterOpen),
 
 		// Back closes it.
-		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Sleep(time.Second),
+		chromedp.Evaluate(`window.__searchOpen = location.search; history.back()`, nil),
+		waitFor(`location.search !== window.__searchOpen && !`+modal),
+		pageReady(),
 		chromedp.Evaluate(`location.search`, &urlAfterBack),
 		chromedp.Evaluate(modal, &openAfterBack),
 	); err != nil {

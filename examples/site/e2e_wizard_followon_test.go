@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -169,24 +168,13 @@ func TestE2E_Wizard_EmptySubmitStaysOnStepOne(t *testing.T) {
 		t.Fatalf("chromedp empty submit: %v", err)
 	}
 
-	// The click is a full-page POST; the re-render can land outside the
-	// suite's settle on a loaded runner (and an evaluate that starts
-	// mid-navigation dies with "target navigated"), so probe for the
-	// failed step's summary with a bounded retry instead of one fixed
-	// sleep.
-	shown := false
-	for range 25 {
-		if err := chromedp.Run(ctx, chromedp.Evaluate(
-			`document.readyState === 'complete' && document.getElementById('wd-form-errors') !== null`,
-			&shown)); err == nil && shown {
-			break
-		}
-		if !shown {
-			time.Sleep(200 * time.Millisecond)
-		}
-	}
-	if !shown {
-		t.Fatal("the failed step's summary never rendered after the empty submit")
+	// The click is a full-page POST, and an evaluate that starts
+	// mid-navigation dies with "target navigated": waitFor counts that
+	// as false and polls on until the failed step's summary renders.
+	if err := chromedp.Run(ctx, waitFor(
+		`document.readyState === 'complete' && document.getElementById('wd-form-errors') !== null`,
+	)); err != nil {
+		t.Fatalf("the failed step's summary never rendered after the empty submit: %v", err)
 	}
 
 	err = chromedp.Run(ctx,
@@ -259,6 +247,7 @@ func TestE2E_Wizard_BackPreservesState(t *testing.T) {
 		chromedp.SetValue(`#wd-name`, "Grace", chromedp.ByQuery),
 		chromedp.SetValue(`#wd-email`, "grace@example.com", chromedp.ByQuery),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '1'`),
 		pageReady(),
 		// Step 2 → 3 (pick light)
 		chromedp.Evaluate(`(() => {
@@ -267,9 +256,11 @@ func TestE2E_Wizard_BackPreservesState(t *testing.T) {
 			return true;
 		})()`, new(bool)),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '2'`),
 		pageReady(),
 		// Step 3 → Back to step 2
 		chromedp.Click(`button[name="wizard_action"][value="back"]`, chromedp.ByQuery),
+		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '1'`),
 		pageReady(),
 		// Step 2 must show the previously-checked radio.
 		chromedp.Evaluate(`JSON.stringify((() => {
@@ -319,8 +310,10 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 		chromedp.SetValue(`#wd-name`, "Ada Lovelace", chromedp.ByQuery),
 		chromedp.SetValue(`#wd-email`, "ada@example.com", chromedp.ByQuery),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '1'`),
 		pageReady(),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		waitFor(`document.querySelector('input[type="hidden"][name="_step"]')?.value === '2'`),
 		pageReady(),
 	)
 	if err != nil {
@@ -361,6 +354,7 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	// at the final step, never advances to a non-existent step 4.
 	err = chromedp.Run(ctx,
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+		waitFor(`!!document.querySelector('[data-wizard-confirm]')`),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
 			// After submit, either confirmation page or still wizard step 2.

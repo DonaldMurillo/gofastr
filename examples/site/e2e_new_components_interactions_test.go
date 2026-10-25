@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	cdnetwork "github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -38,7 +37,7 @@ func TestE2E_SegmentedControl_ClickSlidesIndicator(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('.fui-segmented input:checked')?.value || ''`, &initialChecked),
 		// Click the 3rd option (index 2 = "Month")
 		chromedp.Evaluate(`document.querySelectorAll('.fui-segmented')[0].querySelectorAll('input[type="radio"]')[2].click()`, nil),
-		settle(),
+		waitFor(`document.querySelector('.fui-segmented input:checked')?.value === 'month'`),
 		chromedp.Evaluate(`document.querySelector('.fui-segmented input:checked')?.value || ''`, &afterClick),
 	)
 	if err != nil {
@@ -95,7 +94,11 @@ func TestE2E_Slider_OutputMirrorsValue(t *testing.T) {
 			r.value = '77';
 			r.dispatchEvent(new Event('input', {bubbles: true}));
 		})()`, nil),
-		chromedp.Sleep(150*1e6),
+		waitFor(`(function(){
+			const r = document.querySelector('input[type=range]');
+			const out = r && document.querySelector('output[for="' + r.id + '"]');
+			return !!out && out.textContent === '77';
+		})()`),
 		chromedp.Evaluate(`(function(){
 			const r = document.querySelector('input[type=range]');
 			if (!r) return '';
@@ -123,9 +126,9 @@ func TestE2E_NumberInput_PlusIncrementsValue(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/numberinput"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('input[type=number][name="qty"]')?.value || ''`, &before),
+		chromedp.Evaluate(`(window.__qty0 = document.querySelector('input[type=number][name="qty"]')?.value || '')`, &before),
 		chromedp.Evaluate(`document.querySelector('[data-hui-number-input-increment]')?.click()`, nil),
-		chromedp.Sleep(100*1e6),
+		waitFor(`document.querySelector('input[type=number][name="qty"]').value !== window.__qty0`),
 		chromedp.Evaluate(`document.querySelector('input[type=number][name="qty"]')?.value || ''`, &after),
 	)
 	if err != nil {
@@ -148,11 +151,12 @@ func TestE2E_NumberInput_MinusClampsToMin(t *testing.T) {
 		pageReady(),
 		// qty: Min=0, Value=1, click − 3x should clamp at 0
 		chromedp.Evaluate(`(function(){
+			window.__qty0 = document.querySelector('input[type=number][name="qty"]')?.value;
 			const btn = document.querySelector('[data-hui-number-input-decrement]');
 			if (!btn) return;
 			btn.click(); btn.click(); btn.click();
 		})()`, nil),
-		chromedp.Sleep(100*1e6),
+		waitFor(`document.querySelector('input[type=number][name="qty"]').value !== window.__qty0`),
 		chromedp.Evaluate(`document.querySelector('input[type=number][name="qty"]')?.value || ''`, &value),
 	)
 	if err != nil {
@@ -178,11 +182,11 @@ func TestE2E_TagInput_EnterCommitsChip(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/taginput"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsBefore),
+		chromedp.Evaluate(`(window.__chips0 = document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length)`, &chipsBefore),
 		chromedp.Focus(`[data-hui-tag-input-field]`),
 		chromedp.SendKeys(`[data-hui-tag-input-field]`, "rust"),
 		chromedp.KeyEvent(kb.Enter),
-		chromedp.Sleep(120*1e6),
+		waitFor(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length !== window.__chips0`),
 		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsAfter),
 	)
 	if err != nil {
@@ -203,7 +207,12 @@ func TestE2E_TagInput_LegitSubmitNotEatenAfterEnter(t *testing.T) {
 		chromedp.Focus(`[data-hui-tag-input-field]`),
 		chromedp.SendKeys(`[data-hui-tag-input-field]`, "first"),
 		chromedp.KeyEvent(kb.Enter),
-		chromedp.Sleep(200*1e6), // past same-tick swallow window
+		// The submit suppression is task-scoped: the Enter handler queues
+		// a setTimeout(0) that drops it. A timer queued now fires after
+		// that one, so once it has run the suppression is spent and the
+		// submit below lands in a later task, the case under test.
+		chromedp.Evaluate(`window.__laterTask = false; setTimeout(() => { window.__laterTask = true; }, 0)`, nil),
+		waitFor(`window.__laterTask === true`),
 		chromedp.Evaluate(`
 		  (function(){
 		    const f = document.querySelector('[data-hui-tag-input-field]').form;
@@ -229,10 +238,10 @@ func TestE2E_TagInput_BackspaceRemovesLast(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/taginput"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsBefore),
+		chromedp.Evaluate(`(window.__chips0 = document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length)`, &chipsBefore),
 		chromedp.Focus(`[data-hui-tag-input-field]`),
 		chromedp.KeyEvent(kb.Backspace),
-		chromedp.Sleep(120*1e6),
+		waitFor(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length !== window.__chips0`),
 		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsAfter),
 	)
 	if err != nil {
@@ -271,9 +280,9 @@ func TestE2E_Disclosure_ClickSummaryToggles(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/disclosure"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].hasAttribute('open')`, &openA),
+		chromedp.Evaluate(`(window.__open0 = document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].hasAttribute('open'))`, &openA),
 		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].querySelector('.fui-collapsible__summary').click()`, nil),
-		chromedp.Sleep(100*1e6),
+		waitFor(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].hasAttribute('open') !== window.__open0`),
 		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].hasAttribute('open')`, &openB),
 	)
 	if err != nil {
@@ -300,7 +309,7 @@ func TestE2E_RangeSlider_CrossClampPreventsCross(t *testing.T) {
 			lo.value = String(parseFloat(hi.value) + 100);
 			lo.dispatchEvent(new Event('input', {bubbles: true}));
 		})()`, nil),
-		chromedp.Sleep(120*1e6),
+		waitFor(`parseFloat(document.querySelector('input[name="price-min"]').value) <= parseFloat(document.querySelector('input[name="price-max"]').value)`),
 		chromedp.Evaluate(`document.querySelector('input[name="price-min"]')?.value || ''`, &lo),
 		chromedp.Evaluate(`document.querySelector('input[name="price-max"]')?.value || ''`, &hi),
 	)
@@ -324,14 +333,14 @@ func TestE2E_RangeSlider_ValueMirrorUpdates(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rangeslider"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-hui-range-slider-output]')?.textContent || ''`, &before),
+		chromedp.Evaluate(`(window.__out0 = document.querySelector('[data-hui-range-slider-output]')?.textContent || '')`, &before),
 		chromedp.Evaluate(`(function(){
 			const lo = document.querySelector('input[name="price-min"]');
 			if (!lo) return;
 			lo.value = '120';
 			lo.dispatchEvent(new Event('input', {bubbles: true}));
 		})()`, nil),
-		chromedp.Sleep(120*1e6),
+		waitFor(`document.querySelector('[data-hui-range-slider-output]').textContent !== window.__out0`),
 		chromedp.Evaluate(`document.querySelector('[data-hui-range-slider-output]')?.textContent || ''`, &after),
 	)
 	if err != nil {
@@ -360,7 +369,7 @@ func TestE2E_Banner_DismissHidesElement(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`(document.querySelector("[data-hui-system-id]")?.closest("[data-cui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenBefore),
 		chromedp.Evaluate(`document.querySelector("[data-hui-system-dismiss]")?.click()`, nil),
-		chromedp.Sleep(150*1e6),
+		waitFor(`document.querySelector("[data-hui-system-id]").closest("[data-cui-comp=\"ui-banner\"]").hasAttribute("hidden")`),
 		chromedp.Evaluate(`(document.querySelector("[data-hui-system-id]")?.closest("[data-cui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenAfter),
 	)
 	if err != nil {
@@ -390,7 +399,7 @@ func TestE2E_TreeView_ArrowRightExpandsLazyBranch(t *testing.T) {
 		// Site tree: vendor node is collapsed by default
 		chromedp.Evaluate(`document.getElementById('vendor')?.getAttribute('aria-expanded') || ''`, &expandedBefore),
 		chromedp.Evaluate(`document.querySelector('#vendor [data-hui-tree-toggle]')?.click()`, nil),
-		chromedp.Sleep(500*1e6),
+		waitFor(`document.getElementById('vendor').getAttribute('aria-expanded') === 'true'`),
 		chromedp.Evaluate(`document.getElementById('vendor')?.getAttribute('aria-expanded') || ''`, &expandedAfter),
 		chromedp.Evaluate(`document.querySelectorAll('#vendor > [role="group"] > [role="treeitem"]').length`, &childCountAfter),
 	)
@@ -414,9 +423,9 @@ func TestE2E_TreeView_ArrowDownMovesFocus(t *testing.T) {
 		chromedp.Navigate(base+"/components/tree"),
 		pageReady(),
 		chromedp.Focus(`#src`),
-		settle(),
+		waitFor(`document.activeElement && document.activeElement.id === 'src'`),
 		chromedp.KeyEvent(kb.ArrowDown),
-		settle(),
+		waitFor(`document.activeElement && document.activeElement.id === 'src-main'`),
 		chromedp.Evaluate(`document.activeElement.id`, &focusedID),
 	)
 	if err != nil {
@@ -445,14 +454,14 @@ func TestE2E_FileDropzone_AriaRegionAndDragoverClass(t *testing.T) {
 			const dt = new DataTransfer();
 			z.dispatchEvent(new DragEvent('dragenter', {bubbles: true, cancelable: true, dataTransfer: dt}));
 		})()`, nil),
-		chromedp.Sleep(80*1e6),
+		waitFor(`document.querySelector('.fui-drop').hasAttribute('data-hui-drop-over')`),
 		chromedp.Evaluate(`document.querySelector('.fui-drop').hasAttribute('data-hui-drop-over')`, &dragoverClassAfterEnter),
 		chromedp.Evaluate(`(function(){
 			const z = document.querySelector('.fui-drop__zone');
 			if (!z) return;
 			z.dispatchEvent(new DragEvent('dragleave', {bubbles: true, cancelable: true, relatedTarget: document.body}));
 		})()`, nil),
-		chromedp.Sleep(80*1e6),
+		waitFor(`!document.querySelector('.fui-drop').hasAttribute('data-hui-drop-over')`),
 		chromedp.Evaluate(`document.querySelector('.fui-drop').hasAttribute('data-hui-drop-over')`, &dragoverClassAfterLeave),
 	)
 	if err != nil {
@@ -484,12 +493,13 @@ func TestE2E_ToggleAction_CommitUntoggle(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &initial),
 		chromedp.Evaluate(btn+`.click()`, nil),
-		settle(),
+		// pending → committed only once the server accepted the commit.
+		waitFor(btn+`.getAttribute('data-state') === 'committed'`),
 		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &afterCommit),
 		chromedp.Evaluate(btn+`.getAttribute('aria-pressed')`, &pressed),
 		chromedp.Evaluate(`!`+btn+`.querySelector('[data-hui-action-done]').hidden`, &committedVisible),
 		chromedp.Evaluate(btn+`.click()`, nil),
-		settle(),
+		waitFor(btn+`.getAttribute('data-state') === 'idle'`),
 		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &afterUntoggle),
 	)
 	if err != nil {
@@ -524,7 +534,7 @@ func TestE2E_ToggleAction_GroupMutex(t *testing.T) {
 		chromedp.Evaluate(group+`[1].getAttribute('data-state')`, &proInitial),
 		// Committing "Pro" must optimistically revoke "Free".
 		chromedp.Evaluate(group+`[1].click()`, nil),
-		settle(),
+		waitFor(group+`[1].getAttribute('data-state') === 'committed' && `+group+`[0].getAttribute('data-state') === 'idle'`),
 		chromedp.Evaluate(group+`[0].getAttribute('data-state')`, &freeAfter),
 		chromedp.Evaluate(group+`[1].getAttribute('data-state')`, &proAfter),
 	)
@@ -558,13 +568,14 @@ func TestE2E_ToggleAction_RebindAfterSwap(t *testing.T) {
 		chromedp.Navigate(base+"/components/toggleaction"),
 		pageReady(),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
-		chromedp.Evaluate(`(() => { const b = `+btn+`; b.outerHTML = b.outerHTML; })()`, nil),
-		// The insertion scan runs as a microtask after the swap; give
-		// it a beat before the click so the test exercises the rebind,
-		// not a race.
-		chromedp.Sleep(300*time.Millisecond),
+		// The insertion scan runs in the MutationObserver microtask after
+		// the swap. A timer queued by the swap fires in a later task, so
+		// once it has run the scan has bound the new node and the click
+		// below exercises the rebind, not a race.
+		chromedp.Evaluate(`(() => { window.__swapScanned = false; const b = `+btn+`; b.outerHTML = b.outerHTML; setTimeout(() => { window.__swapScanned = true; }, 0); })()`, nil),
+		waitFor(`window.__swapScanned === true`),
 		chromedp.Evaluate(btn+`.click()`, nil),
-		settle(),
+		waitFor(btn+`.getAttribute('data-state') === 'committed'`),
 		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &state),
 	)
 	if err != nil {
@@ -595,13 +606,14 @@ func TestE2E_OptimisticAction_RebindAfterSwap(t *testing.T) {
 		cdnetwork.Enable(),
 		chromedp.Navigate(base+"/components/optimisticinlineedit"),
 		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
-		chromedp.Evaluate(`(() => { const b = `+btn+`; b.outerHTML = b.outerHTML; })()`, nil),
-		// The insertion scan runs as a microtask after the swap; give
-		// it a beat before the click so the test exercises the rebind,
-		// not a race.
-		chromedp.Sleep(300*time.Millisecond),
+		// The insertion scan runs in the MutationObserver microtask after
+		// the swap. A timer queued by the swap fires in a later task, so
+		// once it has run the scan has bound the new node and the click
+		// below exercises the rebind, not a race.
+		chromedp.Evaluate(`(() => { window.__swapScanned = false; const b = `+btn+`; b.outerHTML = b.outerHTML; setTimeout(() => { window.__swapScanned = true; }, 0); })()`, nil),
+		waitFor(`window.__swapScanned === true`),
 		chromedp.Evaluate(btn+`.click()`, nil),
-		settle(),
+		waitFor(btn+`.getAttribute('data-state') === 'committed'`),
 		chromedp.Evaluate(btn+`.getAttribute('data-state')`, &state),
 	)
 	if err != nil {

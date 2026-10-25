@@ -99,64 +99,29 @@ func axeScanOptsFor(path string) []axetest.ScanOption {
 // axe can't measure (focus traps move the active element). Empty by default.
 var axePageAllowlist = map[string]string{}
 
-// runAxeIn scans one page under every axetest.Schemes entry and returns
-// allowlist-filtered violations tagged with the scheme that produced them.
-func runAxeIn(t *testing.T, browser context.Context, base, path string) []axetest.Violation {
-	t.Helper()
-	var kept []axetest.Violation
-	for _, scheme := range axetest.Schemes {
-		kept = append(kept, runAxeScheme(t, browser, base, path, scheme)...)
-	}
-	return kept
-}
-
-// runAxeScheme opens a FRESH tab (so the previous page's SSE socket is torn
-// down), settles the page, freezes transitions, forces the color scheme, then
-// scans the current DOM state at the browser's default desktop viewport
-// (1280×800, set on the shared browser). The freeze/force + scan details live
-// in internal/axetest (Prepare + Scan); this wrapper owns only the per-page
+// runAxeIn opens a FRESH tab (so the previous page's SSE socket is torn
+// down), emulates the viewport when one is given (0×0 keeps the shared
+// browser's 1280×800 desktop window), loads the page ONCE, waits for it to
+// settle, then scans it under every axetest.Schemes entry by flipping the
+// scheme in place (axetest.ScanSchemes). The freeze/force + scan details
+// live in framework/testkit/axetest; this wrapper owns only the per-page
 // navigation + error tagging the gate's failure output depends on.
-func runAxeScheme(t *testing.T, browser context.Context, base, path, scheme string) []axetest.Violation {
+func runAxeIn(t *testing.T, browser context.Context, base, path, viewport string, w, h int64) []axetest.Violation {
 	t.Helper()
 	ctx, cancel := axetest.NewTab(t, browser)
 	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+path),
-		pageReady(),
-		axetest.Prepare(scheme),
-	); err != nil {
-		t.Errorf("axe setup on %s (%s): %v", path, scheme, err)
+	var actions []chromedp.Action
+	if w > 0 {
+		actions = append(actions, chromedp.EmulateViewport(w, h))
+	}
+	actions = append(actions, chromedp.Navigate(base+path), axetest.WaitReady())
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		t.Errorf("axe setup on %s (%s): %v", path, viewport, err)
 		return nil
 	}
-	vs, err := axetest.Scan(ctx, scheme, axeAllowlistFor(path), axeScanOptsFor(path)...)
+	vs, err := axetest.ScanSchemes(ctx, axetest.Schemes, axeAllowlistFor(path), axeScanOptsFor(path)...)
 	if err != nil {
-		t.Errorf("axe on %s (%s): %v", path, scheme, err)
-		return nil
-	}
-	return vs
-}
-
-// runAxeMobileScheme mirrors runAxeScheme but emulates a 390×844 mobile
-// viewport (iPhone-14-Pro-ish) before navigating, so responsive layouts are
-// audited at mobile width. WCAG 2.2 target-size is the rule most likely to
-// surface here (dense rows collapsing tap targets below 24px).
-func runAxeMobileScheme(t *testing.T, browser context.Context, base, path, scheme string) []axetest.Violation {
-	t.Helper()
-	ctx, cancel := axetest.NewTab(t, browser)
-	defer cancel()
-	if err := chromedp.Run(ctx,
-		chromedp.EmulateViewport(390, 844),
-		chromedp.Navigate(base+path),
-		pageReady(),
-		axetest.Prepare(scheme),
-	); err != nil {
-		t.Errorf("axe setup on %s (%s, mobile): %v", path, scheme, err)
-		return nil
-	}
-	vs, err := axetest.Scan(ctx, scheme, axeAllowlistFor(path), axeScanOptsFor(path)...)
-	if err != nil {
-		t.Errorf("axe on %s (%s, mobile): %v", path, scheme, err)
-		return nil
+		t.Errorf("axe on %s (%s): %v", path, viewport, err)
 	}
 	return vs
 }
@@ -210,12 +175,12 @@ func axeShard(t *testing.T) (shard, shards int) {
 	return shard, shards
 }
 
-// pageResult is one unit of the axe gate's work list: a page at a viewport
-// (and, for mobile, one scheme), plus the violations its scan reported.
+// pageResult is one unit of the axe gate's work list: a page at a viewport,
+// scanned under both schemes on one page load, plus the violations its
+// scans reported.
 type pageResult struct {
 	path       string
 	viewport   string // "desktop" (1280) or "mobile" (390)
-	scheme     string // mobile items scan one scheme each; desktop scans both
 	violations []axetest.Violation
 }
 
@@ -304,9 +269,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 		mobileSubset = append(mobileSubset, landingRoutePath(r.Segment), dashboardRoutePath(r.Segment))
 	}
 	for _, p := range mobileSubset {
-		for _, scheme := range axetest.Schemes {
-			items = append(items, pageResult{path: p, viewport: "mobile", scheme: scheme})
-		}
+		items = append(items, pageResult{path: p, viewport: "mobile"})
 	}
 	shard, shards := axeShard(t)
 	selected, err := shardItems(items, shard, shards)
@@ -316,9 +279,9 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	var results []pageResult
 	for _, it := range selected {
 		if it.viewport == "desktop" {
-			it.violations = runAxeIn(t, browser, base, it.path)
+			it.violations = runAxeIn(t, browser, base, it.path, it.viewport, 0, 0)
 		} else {
-			it.violations = runAxeMobileScheme(t, browser, base, it.path, it.scheme)
+			it.violations = runAxeIn(t, browser, base, it.path, it.viewport, 390, 844)
 		}
 		results = append(results, it)
 	}

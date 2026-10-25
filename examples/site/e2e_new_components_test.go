@@ -299,9 +299,9 @@ func TestE2E_Disclosure_OpenAndKeyboard(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/disclosure"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-cui-comp="fui-collapsible"]').hasAttribute('open')`, &openBefore),
+		chromedp.Evaluate(`(window.__open0 = document.querySelector('[data-cui-comp="fui-collapsible"]').hasAttribute('open'))`, &openBefore),
 		chromedp.Evaluate(`document.querySelector('[data-cui-comp="fui-collapsible"] .fui-collapsible__summary').click()`, nil),
-		chromedp.Sleep(100*1e6),
+		waitFor(`document.querySelector('[data-cui-comp="fui-collapsible"]').hasAttribute('open') !== window.__open0`),
 		chromedp.Evaluate(`document.querySelector('[data-cui-comp="fui-collapsible"]').hasAttribute('open')`, &openAfter),
 	)
 	if err != nil {
@@ -588,9 +588,16 @@ func TestE2E_Carousel_PrevNextScrollsTrack(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/carousel"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-hui-carousel] [data-hui-carousel-track]').scrollLeft`, &x1),
+		chromedp.Evaluate(`(window.__cx0 = document.querySelector('[data-hui-carousel] [data-hui-carousel-track]').scrollLeft)`, &x1),
 		chromedp.Evaluate(`document.querySelector('[data-hui-carousel] [data-hui-carousel-next]').click()`, nil),
-		chromedp.Sleep(600*1e6),
+		// Smooth scroll: wait until the track has moved and holds still
+		// across two polls.
+		waitFor(`(() => {
+			const x = document.querySelector('[data-hui-carousel] [data-hui-carousel-track]').scrollLeft;
+			const still = x === window.__cxLast;
+			window.__cxLast = x;
+			return still && x > window.__cx0;
+		})()`),
 		chromedp.Evaluate(`document.querySelector('[data-hui-carousel] [data-hui-carousel-track]').scrollLeft`, &x2),
 	)
 	if err != nil {

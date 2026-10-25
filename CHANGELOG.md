@@ -118,6 +118,47 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `kiln/integration`'s live agent tests, which need `KILN_LIVE=1` and
   never run in CI, now also need `-tags kilnlive`, so a `cmd/gofastr`
   change no longer pulls the kiln browser job into a pull request.
+- **The axe gates load each page once for both color schemes.**
+  `framework/testkit/axetest` adds `ScanSchemes`, which switches the
+  scheme on the page already loaded and scans again, and `WaitReady`,
+  which waits until a page has loaded and every runtime module it asked
+  for has registered. `Prepare` no longer sleeps 150 ms: it returns once
+  the scheme has taken effect. `Scan` injects the axe engine once per
+  page instead of on every scan, and only reuses the copy it injected:
+  a `window.axe` the page defines itself is replaced, so a stub cannot
+  report a failing page as clean. `ScanSchemes` with no schemes is an
+  error, never an empty pass. The site and Meridian gates use them in
+  place of a second page load per scheme and fixed 400 ms and 450 ms
+  waits.
+- **The site's browser tests wait for what they check, not for a fixed
+  time.** `pageReady()` in `examples/site` now waits for the page to
+  settle (`axetest.WaitReady`), and a new `waitFor` helper polls the
+  state a test reads next, failing after 10 s with the condition that
+  never held. Fixed sleeps remain only where a test checks that
+  something does not happen within a window, each marked with a
+  comment.
+- **The site's code-sample compile checks reuse the Go build cache.**
+  They built each sample with an empty cache, so every sample compiled
+  the framework from scratch. They now share the normal cache and skip
+  writing a binary, and still fail when a sample stops compiling.
+- **Browser tests start one Chrome per test binary, not one per test.**
+  `internal/chromedptest.Context` starts a headless Chrome the first
+  time a test binary needs one and reuses it for every later call with
+  the same allocator options; a call with other flags (WebMCP, an
+  explicit browser path) gets its own. Each call still gets its own
+  window in its own BrowserContext, so cookies, storage and HTTP cache
+  never carry from one test to the next, and a tab opened from the
+  returned context shares that test's state. If the shared Chrome dies,
+  or a test's window cannot be cleaned up, the next call starts a new
+  one; the old one closes once the other tests' windows on it are done.
+  A small `sh` watcher kills Chrome and deletes its profile when the
+  test binary exits, including on a panic or a `-timeout` kill. On
+  Windows, without `sh`, or with an option that installs a func or a
+  writer (`chromedp.ModifyCmdFunc`, `chromedp.CombinedOutput`), every
+  call gets its own Chrome as before. framework/headless's
+  `behaviorBrowserCtx` and core-ui/runtime's `boundaryBrowserCtx`, which
+  said they shared one browser but started a new one per test, now use
+  it.
 - **The CLI's full test run compiles fewer generated apps.** Tests in
   one package that need the same generated app now build it once and
   share it (`clitest.SharedTree`); a test that edits files works on a

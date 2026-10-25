@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -129,7 +128,7 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 		chromedp.WaitVisible(`a[href="/examples/catalog/kettle"]`),
 
 		chromedp.Click(`a[href="/examples/catalog/kettle"]`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second),
+		waitFor(`location.pathname === '`+catalogDetail+`' && (document.querySelector('[data-cui-intercept-overlay]')?.textContent || '').includes('Pour-over kettle')`),
 		chromedp.Location(&urlOpen),
 		chromedp.Evaluate(overlay, &overlayOpen),
 		chromedp.Evaluate(`document.querySelector('[data-cui-intercept-overlay] > :last-child')?.getAttribute('data-cui-intercept-as') || ""`, &overlayAs),
@@ -139,7 +138,7 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 		chromedp.Evaluate(listAlive, &listStillThere),
 
 		chromedp.KeyEvent(""), // Escape
-		chromedp.Sleep(2*time.Second),
+		waitFor(`location.pathname === '/examples/catalog' && !`+overlay),
 		chromedp.Location(&urlClosed),
 		chromedp.Evaluate(overlay, &overlayGone),
 		chromedp.Evaluate(listAlive, &listAfter),

@@ -4,8 +4,9 @@
 // It replaces the per-package copies of the browser-boot helper that had
 // drifted across the tree (core-ui/runtime's newSeedBrowserCtx,
 // newPollBrowserCtx, newComputeBrowserCtx, newFormBrowserCtx,
-// navPrefixBrowser, chromeCtxBrowser, and rtcBrowserCtx;
-// core-ui/widget's newBareBrowserCtx; framework/uihost's
+// navPrefixBrowser, chromeCtxBrowser, rtcBrowserCtx, and boundaryBrowserCtx;
+// core-ui/widget's newBareBrowserCtx; framework/headless's
+// behaviorBrowserCtx; framework/uihost's
 // newEmbedBrowserCtx, newE2EChromeForUIHost, and the PWA Chrome boot;
 // cmd/gofastr's devE2EBrowserCtx; examples/meridian's e2eBrowser;
 // examples/backoffice's backofficeBrowser; framework/uie2e's newE2EChrome;
@@ -13,24 +14,41 @@
 // srcset browser boots; kiln/integration's newChrome; and
 // battery/print/chromepdf's host-resolver browser boot), each of which
 // repeated the same allocator flags, lazy startup watchdog, and per-test
-// deadline. It depends only on chromedp and the standard library so core-ui
-// packages (which must not import framework) can use it.
+// deadline. It depends only on chromedp, cdproto, and the standard library
+// so core-ui packages (which must not import framework) can use it.
 //
-// The boot contract, carried over verbatim from those copies: allocator
-// options are chromedp's defaults plus headless, disable-gpu, no-sandbox,
-// a 90s DevTools websocket-URL deadline, and an explicit window size;
-// Chrome is started eagerly against the browser context (not the
-// deadline context) under a watchdog so a hung cold launch fails the
-// test instead of the suite; the returned context carries the per-test
-// deadline. Cleanup registration order is allocator cancel, browser
-// cancel, deadline cancel — teardown runs deadline-first.
+// The boot contract: allocator options are chromedp's defaults plus
+// headless, disable-gpu, no-sandbox, force-prefers-no-reduced-motion, a 90s
+// DevTools websocket-URL deadline, and an explicit window size. A test
+// binary starts one Chrome per distinct allocator option set, lazily, on
+// the first Context call that needs it, and every later call with the
+// same options reuses it: a Chrome launch costs about 360 ms, an isolated
+// window in a running one about 110 ms. Each Context call gets its own
+// BrowserContext (its own cookies, storage, and HTTP cache, like an
+// incognito profile) and its own window at the requested size, so tests
+// stay isolated from each other. Chrome is started against a background
+// context (not the deadline context) under a watchdog so a hung cold launch
+// fails the test instead of the suite; a shared Chrome that died or failed
+// leaves the pool at once, so the next call starts a fresh one, and closes
+// when the last window still open on it is done. Sharing needs an sh to run
+// the reaper that kills Chrome when the test binary exits; on Windows, or
+// with no sh, or for an option set that installs a func or writer (see
+// AllocatorOptions), every call gets a private Chrome that closes with its
+// window, as before sharing. The returned context carries the per-test
+// deadline. Cleanup registration order is BrowserContext disposal and
+// release of the Chrome, window close, deadline cancel — teardown runs
+// deadline-first.
 package chromedptest
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
@@ -47,6 +65,10 @@ const (
 	// deadline turns that from a flaky suite failure into a few slow
 	// seconds.
 	defaultStartTimeout = 90 * time.Second
+	// disposeTimeout bounds the cleanup that drops a test's
+	// BrowserContext. A shared Chrome that cannot answer in that long is
+	// wedged and gets replaced.
+	disposeTimeout = 10 * time.Second
 )
 
 // config holds the resolved Option values for one Context call.
@@ -76,25 +98,26 @@ func Timeout(d time.Duration) Option {
 }
 
 // StartTimeout overrides the default 90s startup patience for both the
-// DevTools websocket-URL read deadline and the initial chromedp.Run watchdog.
-// It replaces each former helper's duplicated 90s startup literal.
+// DevTools websocket-URL read deadline and the watchdogs on starting Chrome
+// and opening the test's window. It replaces each former helper's
+// duplicated 90s startup literal.
 func StartTimeout(d time.Duration) Option {
 	return func(c *config) { c.startTimeout = d }
 }
 
 // AllocatorOptions appends extra chromedp allocator options after the standard
 // flag set. It replaces the custom allocator additions in former helpers that
-// needed an explicit browser path or test-specific flags.
+// needed an explicit browser path or test-specific flags. Calls with the same
+// extra options share one Chrome; calls with different ones never do. An
+// option that installs a func, writer, or other reference (ModifyCmdFunc,
+// CombinedOutput) cannot be compared, so a call carrying one always gets a
+// private Chrome that closes with its window.
 func AllocatorOptions(opts ...chromedp.ExecAllocatorOption) Option {
 	return func(c *config) { c.extra = append(c.extra, opts...) }
 }
 
-// Context boots one headless Chrome for a chromedp-driven test and returns a
-// context carrying the per-test deadline. It replaces the duplicated browser
-// boot helpers listed in this package's documentation. Chrome starts eagerly
-// under the startup watchdog, and all cancels are registered on t.
-func Context(t testing.TB, opts ...Option) context.Context {
-	t.Helper()
+// newConfig resolves opts over the package defaults.
+func newConfig(opts ...Option) config {
 	cfg := config{
 		windowW:      defaultWindowW,
 		windowH:      defaultWindowH,
@@ -104,39 +127,134 @@ func Context(t testing.TB, opts ...Option) context.Context {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// Match the suite's normal-motion baseline on every host. Tests
-		// for reduced motion override it explicitly through flags or CDP.
-		chromedp.Flag("force-prefers-no-reduced-motion", true),
-		chromedp.WSURLReadTimeout(cfg.startTimeout),
-		chromedp.WindowSize(cfg.windowW, cfg.windowH),
-	)
-	allocOpts = append(allocOpts, cfg.extra...)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
+	return cfg
+}
 
-	// chromedp starts Chrome lazily on the first Run: allocate against
-	// the browser context so the browser's lifetime is the browser
-	// context's, passing a timeout context here would make the browser
-	// die when that deadline passed. The watchdog bounds only the
-	// startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
+// Context opens an isolated window in the test binary's headless Chrome for a
+// chromedp-driven test and returns a context carrying the per-test deadline.
+// It replaces the duplicated browser boot helpers listed in this package's
+// documentation. Chrome starts on first use under the startup watchdog; the
+// window lives in its own BrowserContext, and all cancels are registered on t.
+// A tab opened from the returned context with chromedp.NewContext lands in
+// the same BrowserContext, so it shares the test's cookies and storage.
+func Context(t testing.TB, opts ...Option) context.Context {
+	t.Helper()
+	cfg := newConfig(opts...)
+	// A shared Chrome can die between tests, or wedge without the
+	// connection dropping. The window open is what finds out, so a failed
+	// open retires that Chrome and retries once on a fresh one.
+	var lastErr error
+	for range 2 {
+		b, err := acquire(cfg)
 		if err != nil {
 			t.Fatalf("chrome did not start: %v", err)
 		}
-	case <-time.After(cfg.startTimeout):
-		t.Fatalf("chrome did not start within %v", cfg.startTimeout)
+		ctx, err := openWindow(t, b, cfg)
+		if err == nil {
+			return ctx
+		}
+		lastErr = err
+		b.retire()
+		b.release()
 	}
+	t.Fatalf("chrome did not open a window: %v", lastErr)
+	return nil
+}
 
-	ctx, cancel := context.WithTimeout(browserCtx, cfg.timeout)
+// openWindowFault, when set, fails openWindow before it touches b. It is
+// the tests' stand-in for a Chrome that wedged with its connection still
+// up, the failure only a window open finds.
+var openWindowFault func(b *browser) error
+
+// openWindow creates a BrowserContext and a window in it on b, and returns
+// the window's context with the per-test deadline. Its cleanups, which end
+// with releasing b, are registered on t only once the window is open; on
+// error it has already disposed of what it made, and b is still the
+// caller's to release.
+func openWindow(t testing.TB, b *browser, cfg config) (context.Context, error) {
+	if openWindowFault != nil {
+		if err := openWindowFault(b); err != nil {
+			return nil, err
+		}
+	}
+	opCtx, opCancel := b.command(context.Background(), cfg.startTimeout)
+	defer opCancel()
+	bcID, err := target.CreateBrowserContext().Do(opCtx)
+	if err != nil {
+		return nil, fmt.Errorf("create browser context: %w", err)
+	}
+	dispose := func() error {
+		ctx, cancel := b.command(context.Background(), disposeTimeout)
+		defer cancel()
+		return target.DisposeBrowserContext(bcID).Do(ctx)
+	}
+	// A new window, not a tab: a background tab stops running
+	// requestAnimationFrame and throttles timers, and its own window is
+	// also where the per-test size goes.
+	targetID, err := target.CreateTarget("about:blank").
+		WithBrowserContextID(bcID).
+		WithNewWindow(true).
+		WithWidth(int64(cfg.windowW)).
+		WithHeight(int64(cfg.windowH)).
+		Do(opCtx)
+	if err != nil {
+		_ = dispose()
+		return nil, fmt.Errorf("create window: %w", err)
+	}
+	tab, tabCancel := chromedp.NewContext(b.ctx, chromedp.WithTargetID(targetID))
+	// chromedp copies a parent's BrowserContextID into child contexts
+	// that do not name a target, so a tab the test opens from this
+	// context stays in this BrowserContext. NewContext refuses the ID
+	// next to WithTargetID, hence the assignment after it.
+	chromedp.FromContext(tab).BrowserContextID = bcID
+	// The first Run attaches the window and ties the session to the
+	// context it is given, so it runs on tab itself under a watchdog,
+	// never on a timeout child.
+	attached := make(chan error, 1)
+	go func() { attached <- chromedp.Run(tab) }()
+	select {
+	case err = <-attached:
+	case <-b.lost():
+		err = errors.New("chrome lost its DevTools connection")
+	case <-time.After(cfg.startTimeout):
+		err = fmt.Errorf("window did not attach within %v", cfg.startTimeout)
+	}
+	if err != nil {
+		tabCancel()
+		_ = dispose()
+		return nil, fmt.Errorf("attach window: %w", err)
+	}
+	t.Cleanup(func() {
+		// Disposing closes every tab left in the BrowserContext and
+		// drops its cookies, storage, and cache. A Chrome that cannot
+		// do that is not fit for the next test: it leaves the pool now
+		// and closes once the other windows on it are done.
+		if err := dispose(); err != nil {
+			if b.alive() {
+				t.Logf("chromedptest: dispose browser context: %v; replacing the shared Chrome", err)
+			}
+			b.retire()
+		}
+		b.release()
+	})
+	t.Cleanup(tabCancel)
+	ctx, cancel := context.WithTimeout(tab, cfg.timeout)
 	t.Cleanup(cancel)
-	return ctx
+	return ctx, nil
+}
+
+// command returns a context for one browser-level command on b (the Target
+// domain runs against Chrome rather than a page). It ends at the timeout, or
+// as soon as Chrome's connection drops: chromedp would otherwise wait out the
+// whole timeout for a reply from a dead Chrome.
+func (b *browser) command(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(parent, d)
+	go func() {
+		select {
+		case <-b.lost():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return cdp.WithExecutor(ctx, chromedp.FromContext(b.ctx).Browser), cancel
 }
