@@ -206,7 +206,7 @@
   // Object.prototype member is a string, so a key like "toString" falls
   // through to the English. A soft nav replaces the table
   // (applyDocShell, frag/nav.js).
-  const _says = _readInlineJSON('gofastr-strings') || {};
+  let _says = _readInlineJSON('gofastr-strings') || {};
   const say = (k, en, p) => {
     const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));

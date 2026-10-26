@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"io/fs"
+	"maps"
 	"os"
 	"regexp"
 	"slices"
@@ -73,6 +74,66 @@ func fragmentSymbolIndex(t *testing.T) string {
 	}
 	sort.Strings(lines)
 	return symbolManifestHeader + strings.Join(lines, "\n") + "\n"
+}
+
+// fragmentTopConst matches a fragment's top-level const: the fragments
+// are one IIFE's body, indented two spaces.
+var fragmentTopConst = regexp.MustCompile(`(?m)^  const\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
+
+var jsComments = regexp.MustCompile(`(?s:/\*.*?\*/)|//[^\n]*`)
+
+// TestFragmentConstsAreNotAssignedElsewhere: the fragments share one
+// scope once composed, so a const one fragment declares and another
+// assigns throws a TypeError when the assignment runs. The shipped
+// runtime hides it, because the minifier writes every const as let; only
+// the raw runtime (GOFASTR_DEV, `gofastr dev`) throws, and every e2e test
+// runs the minified one. #598 shipped one: kernel's `const _says`, which
+// nav's applyDocShell assigns on every soft navigation, hung each one
+// under `gofastr dev`. A per-file check cannot see it. A fragment that
+// declares the name itself, or takes it as a parameter, is shadowing it
+// and is skipped.
+func TestFragmentConstsAreNotAssignedElsewhere(t *testing.T) {
+	entries, err := fs.ReadDir(fragFS, "frag")
+	if err != nil {
+		t.Fatalf("read frag dir: %v", err)
+	}
+	srcs := map[string]string{}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".js") {
+			continue
+		}
+		b, err := fs.ReadFile(fragFS, "frag/"+e.Name())
+		if err != nil {
+			t.Fatalf("read fragment %q: %v", e.Name(), err)
+		}
+		srcs[strings.TrimSuffix(e.Name(), ".js")] = jsComments.ReplaceAllString(string(b), "")
+	}
+	consts := 0
+	for _, owner := range slices.Sorted(maps.Keys(srcs)) {
+		for _, m := range fragmentTopConst.FindAllStringSubmatch(srcs[owner], -1) {
+			name := m[1]
+			consts++
+			q := regexp.QuoteMeta(name)
+			assign := regexp.MustCompile(`(?:^|[^\w$.])` + q + `\s*(?:(?:\*\*|<<|>>>|>>|&&|\|\||\?\?|[-+*/%&|^])?=[^=>]|\+\+|--)|(?:\+\+|--)\s*` + q + `\b[^.]`)
+			param := regexp.MustCompile(`[(,]\s*` + q + `\s*[,)=]|(?:^|[^\w$.])` + q + `\s*=>`)
+			for _, other := range slices.Sorted(maps.Keys(srcs)) {
+				src := srcs[other]
+				if other == owner {
+					continue
+				}
+				if _, ok := declaredSymbols(src)[name]; ok || param.MatchString(src) {
+					continue
+				}
+				if loc := assign.FindStringIndex(src); loc != nil {
+					line := strings.Count(src[:loc[0]], "\n") + 1
+					t.Errorf("frag/%s.js:%d assigns %s, which frag/%s.js declares const: the raw runtime throws there (the minifier's let hides it); declare it with let", other, line, name, owner)
+				}
+			}
+		}
+	}
+	if consts == 0 {
+		t.Fatal("found no top-level const in any fragment: the pattern or the fragment layout changed")
+	}
 }
 
 func TestEveryFragmentHasSymbols(t *testing.T) {
