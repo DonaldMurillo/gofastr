@@ -68,9 +68,10 @@ var legacyIdiomRules = []struct {
 		// Not after a '.' (msg.arguments) unless the dots are a spread
 		// (...arguments), and not a property key. A colon after it is a
 		// key's only when '{' or ',' comes before it ({ arguments: … });
-		// after anything else it is a ternary's (ready ? x || arguments
-		// : []), and the second branch counts it.
-		regexp.MustCompile(`(?:^|[^\w$.]|\.\.\.)(arguments)\b(?:\s*[^\s:]|\s*$)|[^\w$.{,\s]\s*(arguments)\s*:`),
+		// after an operator or a keyword it is a ternary's or a case's
+		// (ready ? x || arguments : [], typeof arguments :, case
+		// arguments:), and the second and third branches count it.
+		regexp.MustCompile(`(?:^|[^\w$.]|\.\.\.)(arguments)\b(?:\s*[^\s:]|\s*$)|[^\w$.{,\s]\s*(arguments)\s*:|\b(?:typeof|void|delete|await|yield|case|in|instanceof|of|return|new)\s+(arguments)\s*:`),
 		"the `arguments` object is the pre-rest spelling; take rest parameters, function (...a), and pass them on with .apply(this, a)",
 	},
 	{

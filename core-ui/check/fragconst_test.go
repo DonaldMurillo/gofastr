@@ -29,7 +29,9 @@ var declKeywordTail = regexp.MustCompile(`\b(?:const|let|var)\s*$`)
 // neither hides a write nor makes one. A declaration (const doc = … in
 // a nested scope) is not a write. Nothing else counts as shadowing: a
 // parameter or local that reuses a shared top-level name and is then
-// assigned is reported, and the fix is to rename it.
+// assigned is reported, and the fix is to rename it. A destructuring
+// assignment (({ x } = o)) is not read: telling its targets from a
+// parameter's defaults needs a parser, and no fragment writes one.
 func crossFragmentConstWrites(files []jsSource) (writes []string, consts int) {
 	for _, owner := range files {
 		for _, m := range fragmentTopConst.FindAllStringSubmatch(owner.Blank, -1) {
