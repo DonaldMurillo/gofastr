@@ -117,7 +117,10 @@ func TestTaggedTestsScriptListsTagOnly(t *testing.T) {
 	writeTestFile(t, dir, "q/q_demo_test.go", "//go:build demo\n\npackage q\n\nimport \"testing\"\n\nfunc TestAlsoTagged(t *testing.T) {}\n")
 	// Builds only without the tag: a -tags run drops it, and the pattern
 	// must not name it either.
-	writeTestFile(t, dir, "p/p_nodemo_test.go", "//go:build !demo\n\npackage p\n\nimport \"testing\"\n\nfunc TestUntaggedOnly(t *testing.T) {}\n")
+	writeTestFile(t, dir, "p/p_nodemo_test.go", "//go:build !demo\n\npackage p\n\nimport \"testing\"\n\nfunc TestUntaggedOnly(t *testing.T) {}\n\nfunc TestVariant(t *testing.T) {}\n")
+	// The tag's own TestVariant: both lists hold the name, and the
+	// pattern must still name it so the tagged body runs.
+	writeTestFile(t, dir, "p/p_variant_demo_test.go", "//go:build demo\n\npackage p\n\nimport \"testing\"\n\nfunc TestVariant(t *testing.T) {}\n")
 	writeTestFile(t, dir, "r/r_test.go", "package r\n\nimport \"testing\"\n\nfunc TestOnlyPlain(t *testing.T) {}\n")
 
 	run := func(tag string) (string, error) {
@@ -137,7 +140,7 @@ func TestTaggedTestsScriptListsTagOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tagged-tests.sh demo: %v", err)
 	}
-	if want := "^(TestAlsoTagged|TestTagged)$"; got != want {
+	if want := "^(TestAlsoTagged|TestTagged|TestVariant)$"; got != want {
 		t.Errorf("pattern = %q, want %q", got, want)
 	}
 	if got, err := run("absent"); err == nil {

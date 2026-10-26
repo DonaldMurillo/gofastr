@@ -12,6 +12,11 @@
 # in the pattern; -run then also runs the untagged one, which costs time
 # and misses nothing.
 #
+# A `TAG` file and a `!TAG` file can both define TestFoo. Both lists then
+# hold the name, so the comparison drops it, and the tagged body would
+# never run. The pattern therefore also names every test defined in a
+# file that compiles only with the tag.
+#
 # Exits 1 when the tag adds no test, so a shard cannot pass by running
 # nothing.
 set -euo pipefail
@@ -32,10 +37,24 @@ list() {
   ' | LC_ALL=C sort -u
 }
 
+# files prints the path of each test file go list includes.
+files() {
+  go list -e -f '{{$d := .Dir}}{{range .TestGoFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}{{range .XTestGoFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}' "$@" |
+    LC_ALL=C sort -u
+}
+
 untagged=$(list "$@")
 tagged=$(list -tags "$tag" "$@")
-names=$(LC_ALL=C comm -13 <(printf '%s\n' "$untagged") <(printf '%s\n' "$tagged") |
-  awk 'NF == 2 { print $2 }' | LC_ALL=C sort -u)
+tagonly=$(LC_ALL=C comm -13 <(files "$@") <(files -tags "$tag" "$@"))
+names=$({
+  LC_ALL=C comm -13 <(printf '%s\n' "$untagged") <(printf '%s\n' "$tagged") |
+    awk 'NF == 2 { print $2 }'
+  if [ -n "$tagonly" ]; then
+    printf '%s\n' "$tagonly" | while IFS= read -r f; do
+      sed -nE 's/^func ((Test|Example|Fuzz)[A-Za-z0-9_]*)\(.*/\1/p' "$f"
+    done | grep -vx TestMain || true
+  fi
+} | LC_ALL=C sort -u)
 
 if [ -z "$names" ]; then
   echo "$0: -tags $tag adds no test to $*" >&2
