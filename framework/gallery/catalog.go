@@ -1039,13 +1039,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"image", "OptimizedImage", "Media", "Image with width/height + lazy + srcset.", func() render.HTML {
 		return ui.OptimizedImage(ui.OptimizedImageConfig{Src: "/__gofastr/app.css", Width: 320, Height: 180, Alt: "placeholder"})
 	}},
-	{"icon", "Icon", "Media", "Bundled SVG icon set with named lookup.", func() render.HTML {
-		return row(
-			ui.Icon("check", ui.IconConfig{AriaLabel: "Check"}),
-			ui.Icon("x", ui.IconConfig{AriaLabel: "Close"}),
-			ui.Icon("search", ui.IconConfig{AriaLabel: "Search"}),
-		)
-	}},
+	{"icon", "Icon", "Media", "Search Feather and Lucide icons by name or category. Click an icon to copy its name.", iconDemo},
 	{"gallery", "Gallery", "Media", "Image grid with lightbox.", func() render.HTML {
 		return note(
 			render.Text("Gallery wraps OptimizedImage thumbnails + Lightbox. Live demo needs image sources."),
@@ -1737,6 +1731,18 @@ ui.SearchResults(ui.SearchResultsConfig{
     Results: results, Total: total,
     Page: page, PerPage: 20,
 })`,
+	"icon": `// Import framework/ui/icons for discoverable name constants.
+ui.Icon(icons.Search, ui.IconConfig{Size: "20"})
+
+// Label a standalone icon. Icons beside visible text stay decorative.
+ui.Icon(icons.Check, ui.IconConfig{AriaLabel: "Saved"})
+
+ui.LinkButton(ui.LinkButtonConfig{
+    Label: "Browse files", Href: "/files", Icon: icons.Folder,
+})
+
+// Existing names and custom registration still work.
+ui.Icon("success", ui.IconConfig{})`,
 	"listdetail": `ui.ListDetail(ui.ListDetailConfig{
     ListLabel: "Layout guides",
     List: ui.Stack(ui.StackConfig{Gap: ui.GapSM},

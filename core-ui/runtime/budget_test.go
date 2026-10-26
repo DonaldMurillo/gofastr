@@ -629,7 +629,11 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 8
+	// Submitter overrides and a native replay after an unavailable RPC module
+	// must be decided before module loading, including new-window targets whose
+	// user gesture would otherwise expire. The shared bridge measured +211.
+	// Resolving an inherited <base target> before intercepting a form adds 13.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1036,7 +1040,12 @@ const (
 	// largest value below the fixture's crossing, restoring the
 	// bracket [real 17220, fixture 17227]; verified by running
 	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic.
-	coreCongestionWindowGZ = 17226
+	// Submitter-aware pre-submit routing and native fallback measured 17453
+	// at level 1. They must run before a demand module arrives. Retain the
+	// smallest two-byte margin and re-prove the cliff test below this ceiling.
+	// The inherited target check measures 17475 at level 1; keep two bytes
+	// of clearance and verify the padded fixture still crosses this line.
+	coreCongestionWindowGZ = 17477
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1091,6 +1100,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"failed-RPC signal text through say()":                                     3,   // (l1: 13)
 		"locale prefixes: unprefixed route lookups, prefixed fetches":              421, // (l1: 531)
 		"a policy redirect off the app loads that page (X-Gofastr-Document)":       46,  // (l1: 61)
+		"submitter-aware form bridge and native module-failure replay":             211,
+		"inherited base target preserves the native form browsing context":         13,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1275,7 +1286,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// followed a redirect is no answer (#577,
 		// TestRedirectedWidgetChromeMountsNothing,
 		// TestRedirectedWidgetStateSetsNothing).
-		"widgets": 3128,
+		// 3155 measured (3153 + 2): widget submit forwards the selected
+		// submitter and stands down for the native module-failure replay,
+		// matching the document bridge rather than losing button overrides.
+		"widgets": 3155,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1398,7 +1412,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// target to the navigator through nav.js _followed
 		// (TestRedirectedRPCFormKeepsInput,
 		// TestRedirectedRPCButtonHandsOffToNavigator).
-		"rpc": 3396,
+		// 3404 measured (3402 + 2) after marked GET forms reuse the
+		// client navigator (2026-10-25). The query uses the same successful-
+		// control serializer as plain POSTs; splitting this small branch
+		// into another module would duplicate that form request machinery.
+		// 3556 measured (3554 + 2): successful named submitters and form*
+		// overrides share serialization, and GET navigation asks the existing
+		// leave guard with an exact-destination retry. Includes main's followed-
+		// redirect refusal above. The pre-submit/native-fallback work stays in
+		// boot; request serialization and the guard belong with this dispatcher.
+		"rpc": 3556,
 	}
 	const coreOverride = 0
 

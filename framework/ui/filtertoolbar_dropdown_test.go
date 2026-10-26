@@ -29,6 +29,9 @@ func dropdownToolbar(extra ...func(*FilterToolbarConfig)) string {
 // in the panel, all inside the one form.
 func TestFilterToolbarDropdownLayout(t *testing.T) {
 	out := dropdownToolbar()
+	if strings.Contains(out, `data-cui-spa`) || !strings.Contains(out, `method="GET"`) {
+		t.Fatal("default filter form must preserve native GET navigation")
+	}
 	if strings.Count(out, "<form") != 1 {
 		t.Fatalf("want one form:\n%s", out)
 	}
@@ -54,6 +57,13 @@ func TestFilterToolbarDropdownLayout(t *testing.T) {
 	}
 	if t2 := strings.Index(out, "fui-filter-toolbar__tools"); t2 < strings.Index(out, "fui-filter-toolbar__filters") {
 		t.Errorf("the tools are not after the Filters button:\n%s", out)
+	}
+}
+
+func TestFilterToolbarClientNavigationIsOptIn(t *testing.T) {
+	out := dropdownToolbar(func(cfg *FilterToolbarConfig) { cfg.ClientNavigation = true })
+	if !strings.Contains(out, `data-cui-spa=""`) || !strings.Contains(out, `method="GET"`) {
+		t.Fatal("explicit client navigation lost its progressive GET contract")
 	}
 }
 

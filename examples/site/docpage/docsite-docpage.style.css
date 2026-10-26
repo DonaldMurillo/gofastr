@@ -136,7 +136,9 @@
   .rail { --ui-sheet-bar-bleed: var(--size-page-gutter); }
   .content {
     max-inline-size: none;
-    overflow-x: hidden;
+    /* Clip wide article content without creating a vertical scroll
+       container, so sticky controls follow the window below the header. */
+    overflow-x: clip;
   }
   .pager { grid-template-columns: minmax(0, 1fr); }
   .page.next { grid-column: auto; }

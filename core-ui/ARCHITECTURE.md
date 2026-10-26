@@ -1282,13 +1282,30 @@ work the moment you drop a `<form>` into the page.
 | Trigger                                | Body sent by runtime                              | Server reads via                    |
 |----------------------------------------|---------------------------------------------------|--------------------------------------|
 | `enctype="application/json"`           | `application/json` of every form input            | `json.NewDecoder(r.Body)`            |
-| `data-cui-spa` (no/urlencoded enctype) | `application/x-www-form-urlencoded`               | `r.ParseForm()` + `r.PostFormValue`  |
+| `data-cui-spa` with `method="GET"` | Successful controls become the URL query; the client navigator fetches and swaps the screen | URL query, e.g. `app.QueryFromContext` |
+| `data-cui-spa` on other methods (no/urlencoded enctype) | `application/x-www-form-urlencoded`               | `r.ParseForm()` + `r.PostFormValue`  |
 | `data-cui-rpc="/some/endpoint"`        | Per the RPC contract (see Widgets section)        | RPC handler                          |
 
 Every other form, with no special attribute and a default or `urlencoded`
 or `multipart/form-data` enctype, is **NOT intercepted**. The browser
 submits it the standard way: POST body matches enctype, Set-Cookie
 headers apply, 303→Location is followed, file inputs upload natively.
+
+`ui.FilterToolbar` with `ClientNavigation: true` emits `data-cui-spa` on its GET form. With the runtime it
+uses the existing client navigator, preserving the document and shared layout.
+Without JavaScript it submits as an ordinary GET form. The form's successful
+controls replace any query in the action, preserving repeated names, the locale
+prefix, and the action's fragment. GET forms without the marker stay native.
+Native GET is the toolbar's default: use it when a shared layout also renders
+query-dependent content, because client navigation keeps that layout.
+The plain-form bridge carries the activated submitter's name/value and its
+`formaction`, `formmethod`, `formenctype`, and `formtarget` overrides. Alternate
+browsing targets, dialog and image submissions, and plain-text POSTs stay native.
+GET client navigation asks the existing leave guard at document scope before
+discarding edits; Cancel stays put and Discard retries the complete URL. A
+plain form whose RPC module cannot load replays native submission with the
+original submitter. JSON/RPC-only forms retain their failure behavior instead
+of being sent with an unsupported native encoding.
 
 ### Server redirects (after intercept)
 
@@ -1853,6 +1870,10 @@ AnchoredRail, GlobalSearch, NetworkRetryBanner, `ui.Sticky`, FormFrame's
 side panel, an anchored Section's scroll margin) sticks at
 `calc(var(--ui-sticky-top, 0px) + <its own gap>)`, so it stops under
 the header at any layer depth with no `BelowHeader` option. A part that
+reaches the bottom of its containing block can move above that offset.
+The page header paints at `calc(var(--z-sticky) + 1)`, above content
+stickies at `var(--z-sticky)`, so they pass behind the banner at that
+boundary. Modal, popover and toast tiers retain their higher layers. A part that
 pins something above its children re-publishes the variable on a child
 it does not read it from (ContentRow's workspace adds the toolbar's
 height); redefining it on the element that reads it makes the property
@@ -2429,6 +2450,19 @@ framework/
   ui/          : opinionated semantic components on top of core-ui
                  (see full list in the cheat sheet below)
   ui/theme/    : canonical framework theme tokens
+  ui/icons/    : vendored Feather and Lucide SVGs, constants and name aliases;
+                 ui.Icon owns the shared SVG wrapper and accessibility.
+                 App registrations override exact names before built-in lookup.
+                 sources.json pins each upstream, per-file retrieval time and hashes;
+                 LICENSE.feather, LICENSE.lucide and generated data retain notices.
+                 Categories/CategoryFor expose complete curated grouping without changing SVGs.
+                 gallery.RenderIconCatalog composes Sticky + FilterToolbar for URL-backed
+                 q/category filtering on the server. The site's article uses overflow-x:clip
+                 on phones so the toolbar remains sticky against the window.
+                 Compact + Dropdown on FilterToolbar keeps its search, filter trigger and
+                 tools on one row. The icon browser uses this without a sticky heading or
+                 theme toggle. CopyButton{Tile:true} supplies each whole-tile copy
+                 control, with one 24px glyph above the name; the Grid minimum is 5rem.
 ```
 
 ---
@@ -2549,6 +2583,7 @@ your need:
 
 | You want | Use | Notes |
 | --- | --- | --- |
+| Named outline icon | `framework/ui.Icon` + `framework/ui/icons` constants | 291 canonical drawings and 13 name aliases on a 24 by 24 grid, two-unit rounded stroke, `currentColor`. Default size 20; `AriaLabel` opts into `role="img"`, otherwise decorative. Named framework icons and the site's header use this catalog. `RegisterIcon` accepts trusted app additions and exact-name overrides. |
 | Responsive lazy-loaded imagery | `framework/ui.OptimizedImage` | `<picture>` + `srcset`, lazy by default, mandatory `Width`+`Height` to eliminate CLS. |
 | Low-fidelity image placeholder | `Placeholder` on `framework/ui.OptimizedImage` / `PipelineImage` | Takes an inline raster `data:` URI (from `framework/image.BlurHashDataURL` or `Image.Placeholder`) and renders it as a stacked `<img>` behind the real one, positioned by static CSS. Zero JS: a per-instance value cannot go into CSS here (inline style attributes are blocked by the CSP and the `noinlinestyles` linter, and a data URI cannot be enumerated into a class), so an element is the only mechanism. Unusable values are dropped rather than fatal: a placeholder is data, not a caller bug. |
 | Overlapping avatar stack | `framework/ui.AvatarGroup` | Readable 10% negative-margin stack with compact corner presence dots and an adaptive-surface "+N" overflow indicator. Size propagates to children. |

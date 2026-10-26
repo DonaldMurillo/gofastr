@@ -11,6 +11,7 @@
 #
 boot	10	lm2
 boot	2	_bootstrapComponentCSS
+boot	2	_formAttr
 boot	2	_initialPass
 boot	2	_injectSignalAria
 boot	2	_interactionNode
@@ -59,10 +60,8 @@ boot	4	target
 boot	6	G
 boot	6	action
 boot	6	action
-boot	6	action
 boot	6	combo
 boot	6	el
-boot	6	enctype
 boot	6	form
 boot	6	form
 boot	6	id
@@ -80,11 +79,15 @@ boot	6	sub
 boot	6	target
 boot	6	url
 boot	6	v
+boot	8	action
+boot	8	enctype
 boot	8	lb
 boot	8	lbId
+boot	8	method
 boot	8	node
 boot	8	params
 boot	8	s
+boot	8	target
 boot-embed	4	PROTO
 boot-embed	4	REQUEST_TIMEOUT_MS
 boot-embed	4	_fetch

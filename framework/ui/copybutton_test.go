@@ -28,6 +28,29 @@ func TestCopyButtonBasic(t *testing.T) {
 	}
 }
 
+func TestCopyButtonTile(t *testing.T) {
+	out := string(CopyButton(CopyButtonConfig{Target: "icon-name-search", Label: "search", Icon: "search", Tile: true, AriaLabel: "Copy search icon name"}))
+	for _, want := range []string{`fui-copy-btn-wrap--tile`, `fui-copy-btn--tile`, `width="24"`, `title="search"`, `aria-label="Copy search icon name"`, `data-hui-copy-target="icon-name-search"`, `role="status"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in tile: %s", want, out)
+		}
+	}
+	for _, cfg := range []CopyButtonConfig{
+		{Target: "x", Tile: true, IconOnly: true},
+		{Target: "x", Tile: true, Inline: true},
+		{Target: "x", Tile: true, Ghost: true},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Error("Tile accepted an incompatible layout")
+				}
+			}()
+			CopyButton(cfg)
+		}()
+	}
+}
+
 func TestCopyButtonPanicsWithoutTarget(t *testing.T) {
 	defer func() {
 		if recover() == nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,14 +21,52 @@ import (
 //     intercepted; the browser submits natively (cookies, Location
 //     follow, file uploads, password-manager UX all work).
 //   - enctype="application/json" → intercepted as JSON RPC.
-//   - data-cui-spa → intercepted with urlencoded body + SPA navigation
-//     on response Location.
+//   - data-cui-spa GET → successful controls become a client-navigation URL.
+//   - data-cui-spa on other methods → intercepted with a urlencoded body,
+//     following a response Location as a native document navigation.
 
 type formRequest struct {
 	method      string
 	contentType string
 	formValues  map[string]string
 	jsonBody    string
+}
+
+// The dispatcher hands marked GET forms to the existing navigator with a
+// native-shaped query, rather than asking fetch to send a GET body. The site
+// icon catalog test exercises the real navigator and asserts document reuse.
+func TestFormIntercept_GETUsesClientNavigation(t *testing.T) {
+	var recv atomic.Pointer[formRequest]
+	base := startFormE2EServer(t, &recv)
+	ctx := chromedptest.Context(t)
+	var destination string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/?spa=1"),
+		chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Poll(`typeof __gofastr.navigate === 'function'`, nil),
+		chromedp.Evaluate(`(() => {
+			const form = document.getElementById('f');
+			form.method = 'post'; form.action = '/wrong';
+			form.innerHTML = '<input name="q" value="arrow &amp; down"><input name="tag" value="files"><input name="tag" value="arrows"><input name="ignored" value="disabled" disabled><button id="go" type="submit" name="view" value="grid" formaction="/landing?stale=1#results" formmethod="get" formtarget="_SELF">Search</button>';
+			window.__gofastr.navigate = async path => { window.getFormDestination = path; };
+		})()`, nil),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Poll(`typeof window.getFormDestination === 'string'`, nil),
+		chromedp.Evaluate(`window.getFormDestination`, &destination),
+	); err != nil {
+		t.Fatal(err)
+	}
+	got, err := url.Parse(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := got.Query()
+	if got.Path != "/landing" || got.Fragment != "results" || query.Get("q") != "arrow & down" || query.Get("view") != "grid" || strings.Join(query["tag"], ",") != "files,arrows" || query.Has("stale") || query.Has("ignored") {
+		t.Fatalf("GET navigation lost native form semantics: %s", destination)
+	}
+	if recv.Load() != nil {
+		t.Error("GET navigation posted to the form action")
+	}
 }
 
 // startFormE2EServer spins a tiny test app with:
@@ -71,13 +110,20 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
 		ct = strings.TrimSpace(strings.ToLower(ct))
 		switch ct {
 		case "application/x-www-form-urlencoded", "multipart/form-data":
-			_ = r.ParseForm()
+			if ct == "multipart/form-data" {
+				_ = r.ParseMultipartForm(4096)
+				if r.MultipartForm != nil {
+					defer r.MultipartForm.RemoveAll()
+				}
+			} else {
+				_ = r.ParseForm()
+			}
 			for k, v := range r.PostForm {
 				if len(v) > 0 {
 					req.formValues[k] = v[0]
 				}
 			}
-		case "application/json":
+		case "application/json", "text/plain":
 			buf := make([]byte, 4096)
 			n, _ := r.Body.Read(buf)
 			req.jsonBody = string(buf[:n])

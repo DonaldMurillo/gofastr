@@ -65,6 +65,9 @@ type CopyButtonConfig struct {
 	// fill or shadow until hover, so it sits in a row of icon buttons
 	// (the drawer bar) without standing out as the one outlined control.
 	Ghost bool
+	// Tile draws a full-width tile with its icon above the label. The whole
+	// tile copies Target. It cannot be combined with IconOnly, Inline or Ghost.
+	Tile bool
 
 	// AriaLabel overrides the screen-reader name. When IconOnly is
 	// true and AriaLabel is empty, defaults to "Copy to clipboard".
@@ -114,6 +117,9 @@ type CopyButtonConfig struct {
 
 // CopyButton renders the button.
 func CopyButton(cfg CopyButtonConfig) render.HTML {
+	if cfg.Tile && (cfg.IconOnly || cfg.Inline || cfg.Ghost) {
+		panic("ui: CopyButton Tile cannot be combined with IconOnly, Inline or Ghost")
+	}
 	if cfg.Target == "" {
 		panic("ui: CopyButton requires Target")
 	}
@@ -153,6 +159,9 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.Ghost {
 		cls += " fui-copy-btn--ghost"
 	}
+	if cfg.Tile {
+		cls += " fui-copy-btn--tile"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -163,6 +172,9 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	btnAttrs := html.Attrs{
 		"type":              "button",
 		"data-cui-internal": "",
+	}
+	if cfg.Tile {
+		btnAttrs["title"] = label
 	}
 	if cfg.ToastOnCopy {
 		variant := cfg.ToastVariant
@@ -206,8 +218,12 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	var inner []render.HTML
 	if !cfg.IconOnly {
 		if cfg.Icon != "" && IconRegistered(cfg.Icon) {
+			size := "16"
+			if cfg.Tile {
+				size = "24"
+			}
 			inner = append(inner, html.Span(html.TextConfig{Class: "fui-copy-btn__icon", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
-				Icon(cfg.Icon, IconConfig{Size: "16"})))
+				Icon(cfg.Icon, IconConfig{Size: size})))
 		}
 		inner = append(inner,
 			html.Span(html.TextConfig{Class: "fui-copy-btn__label"}, render.Text(label)),
@@ -256,8 +272,12 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
 		wrapAttrs[k] = v
 	}
+	wrapClass := "fui-copy-btn-wrap"
+	if cfg.Tile {
+		wrapClass += " fui-copy-btn-wrap--tile"
+	}
 	return copyButtonStyle.WrapHTML(html.Span(html.TextConfig{
-		Class:      "fui-copy-btn-wrap",
+		Class:      wrapClass,
 		ExtraAttrs: wrapAttrs,
 	}, btn, status))
 }
@@ -343,6 +363,34 @@ func copyButtonCSS(_ style.Theme) string {
    the icon-only button past the touch target the base rule sets. */
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn__icon {
   line-height: 1;
+}
+/* Copyable catalog tiles share the feedback and keyboard behavior of the
+   regular button. Keep one glyph, a quiet label and an even footprint. */
+:where([data-cui-comp="ui-copy-btn"]).fui-copy-btn-wrap--tile {
+  display: block;
+  block-size: 100%;
+}
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--tile {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 6rem;
+  block-size: 100%;
+  gap: var(--spacing-md, 8px);
+  padding: var(--spacing-lg, 16px) var(--spacing-sm, 4px);
+  box-shadow: none;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-normal, 400);
+}
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--tile .fui-copy-btn__icon {
+  display: flex;
+}
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--tile :is(.fui-copy-btn__label, .fui-copy-btn__copied) {
+  max-inline-size: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 `
 }

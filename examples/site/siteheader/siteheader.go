@@ -32,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/icons"
 )
 
 // Link is one destination.
@@ -58,14 +59,6 @@ type Config struct {
 	// Docs).
 	MenuLead []Link
 }
-
-// githubMark is the GitHub logo glyph; the anchor's aria-label carries
-// the meaning, the drawing stays decorative.
-const githubMark = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 0z"/></svg>`
-
-// searchGlyph is the magnifier drawn inside the phone menu's search
-// field.
-const searchGlyph = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
 
 // navLink renders one Link; data-cui-match-prefix and rel=external ride
 // the typed fields, never caller markup.
@@ -103,7 +96,7 @@ func searchButton() render.HTML {
 	attrs := searchAttrs()
 	attrs["class"] = Style.Cmd()
 	return render.Tag("a", attrs,
-		render.Raw(`<svg class="`+Style.CmdGlyph()+`" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`),
+		ui.Icon(icons.Search, ui.IconConfig{Size: "16", Class: Style.CmdGlyph()}),
 		html.Span(html.TextConfig{Class: Style.CmdPlaceholder()}, render.Text("Find docs, components, examples…")),
 		html.Kbd(html.TextConfig{},
 			html.Kbd(html.TextConfig{}, render.Text("⌘")),
@@ -119,7 +112,7 @@ func panelSearch() render.HTML {
 	attrs := searchAttrs()
 	attrs["class"] = Style.PanelSearch()
 	return render.Tag("a", attrs,
-		render.Raw(searchGlyph),
+		ui.Icon(icons.Search, ui.IconConfig{Size: "16"}),
 		html.Span(html.TextConfig{}, render.Text("Find docs, components, examples…")),
 	)
 }
@@ -133,7 +126,7 @@ func githubLink() render.HTML {
 			"aria-label": "GitHub",
 			"rel":        "external",
 		},
-		Content: render.Raw(githubMark),
+		Content: ui.Icon(icons.Github, ui.IconConfig{Size: "16"}),
 	})
 }
 
@@ -202,8 +195,8 @@ func Render(cfg Config) render.HTML {
 	if len(menuLinks) > 0 {
 		menu = headless.Disclosure(headless.DisclosureProps{
 			Summary: render.Join(
-				html.Span(html.TextConfig{Class: Style.GlyphOpen()}, ui.Icon("menu", ui.IconConfig{})),
-				html.Span(html.TextConfig{Class: Style.GlyphClose()}, ui.Icon("close", ui.IconConfig{})),
+				html.Span(html.TextConfig{Class: Style.GlyphOpen()}, ui.Icon(icons.Menu, ui.IconConfig{})),
+				html.Span(html.TextConfig{Class: Style.GlyphClose()}, ui.Icon(icons.Close, ui.IconConfig{})),
 			),
 			// Below md the bar's search, theme toggle and GitHub mark
 			// move in here: search on top, the two icons in one row

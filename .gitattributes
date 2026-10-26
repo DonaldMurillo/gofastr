@@ -1,2 +1,6 @@
 * text=auto eol=lf
 *.sh text eol=lf
+# Preserve the exact bytes recorded in the vendored icon manifest on Windows.
+framework/ui/icons/svg/*.svg -text
+framework/ui/icons/LICENSE.feather -text
+framework/ui/icons/LICENSE.lucide -text
