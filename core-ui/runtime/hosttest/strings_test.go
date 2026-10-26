@@ -1,4 +1,4 @@
-package runtime_test
+package hosttest
 
 import (
 	"context"
@@ -31,7 +31,7 @@ var sayCall = regexp.MustCompile(`\bsay\(\s*(['"])([a-z][\w.]*)(['"])\s*,\s*(['"
 //
 //gofastr:test-reads **/*.js
 func TestRuntimeSayCallsMatchPhrases(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}

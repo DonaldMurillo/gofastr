@@ -115,7 +115,7 @@ jobs:
       # The deterministic test step's scope, shared with the replay gate
       # after it. The Test step's comment says why each one runs in
       # browser-e2e instead.
-      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
       TEST_SKIP: 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
     services:
       # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
@@ -627,6 +627,12 @@ jobs:
             # out ("websocket url timeout reached", CLAUDE.md documents
             # this package as flaky under parallel load, run isolated).
             run: go test -count=1 -timeout=10m ./core-ui/runtime/
+          - suite: core-ui-runtime-hosts
+            pkg: core-ui/runtime/hosttest$
+            # The runtime's tests that boot it inside a framework, uihost
+            # or battery host. They live apart so a change to those hosts
+            # selects this short suite, not the runtime's whole one (#598).
+            run: go test -count=1 -timeout=10m ./core-ui/runtime/hosttest/
           - suite: core-ui-widget
             pkg: core-ui/widget$
             # Same class as core-ui/runtime, documented flaky when

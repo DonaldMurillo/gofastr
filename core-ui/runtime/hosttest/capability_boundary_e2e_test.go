@@ -1,4 +1,4 @@
-package runtime_test
+package hosttest
 
 // End-to-end proof for document-lifetime scripts (#372): a script the
 // host registers with a page scope installs capabilities INTO the
