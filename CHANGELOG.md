@@ -190,7 +190,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
     two tests that time the hash keep the production cost.
   - `TestDocExamplesCompile` compiles the doc snippets with
     `go list -export` and no longer links a binary for each.
-  - The upgrade scan loads its build configurations concurrently.
   - battery/sitesearch's 10,000-page test compresses the export once,
     across all cores.
   - The process-module probe timeout test runs on a one-second budget
