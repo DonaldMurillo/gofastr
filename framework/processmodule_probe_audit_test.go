@@ -118,8 +118,29 @@ func TestAuditProbeRunnerWaitUnboundedPastTimeout(t *testing.T) {
 		t.Skip("neither python3 nor setsid available to escape the process group")
 	}
 
+	// The bound under test is the WaitDelay after the timeout fires, not
+	// the timeout's length: a one-second budget proves the same thing as
+	// the production 15 s without the suite waiting it out.
+	defer func(d time.Duration) { probeTimeout = d }(probeTimeout)
+	probeTimeout = time.Second
+
 	scratch := t.TempDir()
 	backend := &escapeBackend{grandchild: grandchild}
+	// Kill the escaped grandchild whichever way the runner returns, so it
+	// never outlives the test binary.
+	defer func() {
+		gpidPath := filepath.Join(scratch, ProbeNoPrivReEscalation.String(), "gpid")
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if b, err := os.ReadFile(gpidPath); err == nil {
+				if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+					_ = syscall.Kill(pid, syscall.SIGKILL)
+					return
+				}
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
 
 	started := time.Now()
 	done := make(chan struct{})
@@ -134,18 +155,5 @@ func TestAuditProbeRunnerWaitUnboundedPastTimeout(t *testing.T) {
 		// Returned inside the bound: WaitDelay-like bounding exists (fixed).
 	case <-budget:
 		t.Errorf("FINDING: runOneProbe is still blocked %s after start — %s past its %s wall budget. probeTimeout fired and killProcessTree killed the group, but cmd.Wait (no WaitDelay) is stuck on the output pipe held by the setsid grandchild; the budget the file documents is not enforced", time.Since(started).Round(time.Millisecond), time.Since(started)-probeTimeout, probeTimeout)
-		// Clean up: kill the escaped grandchild so the leaked goroutine's
-		// Wait unblocks and no orphan outlives the test binary.
-		gpidPath := filepath.Join(scratch, ProbeNoPrivReEscalation.String(), "gpid")
-		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
-			if b, err := os.ReadFile(gpidPath); err == nil {
-				if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
-					_ = syscall.Kill(pid, syscall.SIGKILL)
-					return
-				}
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
 	}
 }

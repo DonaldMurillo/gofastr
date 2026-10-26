@@ -501,8 +501,9 @@ func runOneProbe(ctx context.Context, b SandboxBackend, p ProbeID, scratch strin
 // probeTimeout caps one probe's wall time. A sandboxed child that
 // deadlocks on a denied resource (e.g. a blocked connect()) must still
 // produce output well under this bound; exceeding it means the probe
-// cannot complete on this host.
-const probeTimeout = 15 * time.Second
+// cannot complete on this host. A var only so the runner's own timeout
+// test can shorten it; nothing else assigns it.
+var probeTimeout = 15 * time.Second
 
 // defaultProbe* are the limits the probe runner asks the backend to
 // enforce for P6. They are tight enough that an enforced cap fires before
