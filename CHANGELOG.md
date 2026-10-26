@@ -161,10 +161,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `chromedp.CombinedOutput`), every call gets its own Chrome as before. framework/headless's
   `behaviorBrowserCtx` and core-ui/runtime's `boundaryBrowserCtx`, which
   said they shared one browser but started a new one per test, now use
-  it. Code that boots Chrome itself (38 test files, `axetest`, the UI
+  it. Code that boots Chrome itself (36 test files, `axetest`, the UI
   eval runner) passes the same 90s to both start waits, and
   `TestHandBootedChromeKeepsLaunchAllowance` checks every `.go` file
-  for both. The eval runner starts its Chrome once per capture run: its
+  for both. The passkey and sitesearch browser tests, which had copied
+  one boot helper, use `chromedptest.Context`. The eval runner starts its Chrome once per capture run: its
   tabs came from a context that never ran, so each screenshot had
   started a Chrome of its own. Each shot opens a window in a browser
   context of its own, so no cookie or storage entry carries from one

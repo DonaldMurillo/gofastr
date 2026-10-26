@@ -14,6 +14,8 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // The browser module drives both ceremonies against the plugin's routes
@@ -65,7 +67,7 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 
-	ctx := passkeyBrowser(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx, webauthn.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
 		_, err := webauthn.AddVirtualAuthenticator(&webauthn.VirtualAuthenticatorOptions{
 			Protocol: webauthn.AuthenticatorProtocolCtap2, Ctap2version: webauthn.Ctap2versionCtap21,
@@ -141,16 +143,4 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 	if creds, _ := f.pk.store.ListPasskeys(context.Background(), "u-alice"); len(creds) != 0 {
 		t.Errorf("after delete: %d passkeys, want 0", len(creds))
 	}
-}
-
-func passkeyBrowser(t *testing.T) context.Context {
-	t.Helper()
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
-	t.Cleanup(cancel)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(cancelTimeout)
-	return ctx
 }

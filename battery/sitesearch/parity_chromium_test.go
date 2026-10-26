@@ -3,7 +3,6 @@
 package sitesearch
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // parityCorpus mixes what ranking has to tell apart: a term in a title,
@@ -163,7 +163,7 @@ func checkParity(t *testing.T, idx *Index, files map[string][]byte) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/"),
 		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch && window.__gofastr._sitesearch.staticSearch)`, nil)); err != nil {
 		t.Fatalf("load client: %v", err)
@@ -254,7 +254,7 @@ func TestClientShowsLoadingAndEmptyRows(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`
 	var loading, loaded, empty string
@@ -320,7 +320,7 @@ func TestExportedPageLoadsRanker(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result] .fui-cmd-palette__option-label')].map(s => s.textContent).join('|')`
 	var got, asked string
@@ -366,7 +366,7 @@ func TestClientAnswersEarlyQuery(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`
 	var got string
@@ -380,19 +380,6 @@ func TestClientAnswersEarlyQuery(t *testing.T) {
 	if got != "Found forms" {
 		t.Errorf("rows = %q, want Found forms", got)
 	}
-}
-
-// browser starts a headless Chrome that lives for the test.
-func browser(t *testing.T) context.Context {
-	t.Helper()
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
-	t.Cleanup(cancel)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(cancelTimeout)
-	return ctx
 }
 
 // A result that is still in place after the next keystroke keeps its
@@ -418,7 +405,7 @@ func TestClientKeepsRowsThatStay(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result]')]`
 	var kept []bool
@@ -464,7 +451,7 @@ func TestClientEndsOnSearchPage(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 
 	last := `[...document.querySelectorAll('#lb [data-search-result]')].pop()`
 	var label, dest, empty string
