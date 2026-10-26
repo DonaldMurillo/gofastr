@@ -106,7 +106,7 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	// cmd/<binary>/ layout, the installable-main convention runGenerateCLI
 	// defaults to; the clientImport above matches it.
 	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"),
-		"module example.com/app\n\ngo "+goVersion+"\n\nrequire github.com/DonaldMurio/gofastr v0.0.0\n\nreplace github.com/DonaldMurio/gofastr => "+repoRoot+"\n")
+		"module example.com/app\n\ngo "+goVersion+"\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => "+repoRoot+"\n")
 	for _, f := range files {
 		full := filepath.Join(dir, "cli", f.Name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
