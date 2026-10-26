@@ -240,6 +240,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   to 20 s for the first. The runtime's chrome fetch now passes
   `cache: 'no-store'`; the runtime's own chrome cache already dedupes
   the request.
+- **`battery/print/chromepdf` gives a slow Chrome start the whole
+  render `Timeout`.** chromedp waits 20 s for Chrome to print its
+  DevTools URL and 10 s for the websocket dial after it, so a render
+  on a loaded host failed with "websocket url timeout reached" or
+  "could not dial …: context deadline exceeded" while most of its 30 s
+  `Timeout` was left. Both waits now take `Options.Timeout`.
 
 ## [0.94.1] - 2026-10-24
 

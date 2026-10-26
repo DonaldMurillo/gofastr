@@ -32,7 +32,9 @@ type Options struct {
 	// chromedp auto-detects.
 	ExecPath string
 
-	// Timeout bounds a single render. Default 30s.
+	// Timeout bounds a single render, Chrome's start included: chromedp's
+	// own 20s DevTools-URL wait and 10s websocket dial take it too.
+	// Default 30s.
 	Timeout time.Duration
 
 	// ExtraFlags are extra Chromium command-line flags, each either
@@ -81,6 +83,10 @@ func New(o Options) print.PDFRenderer {
 // RenderPDF implements print.PDFRenderer.
 func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConfig, _ string) ([]byte, error) {
 	allocOpts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
+	// Timeout bounds the whole render, Chrome's start included, so
+	// chromedp's own shorter start waits (20s for the DevTools URL, 10s
+	// for the websocket dial) do not fail a slow start first.
+	allocOpts = append(allocOpts, chromedp.WSURLReadTimeout(rd.opts.Timeout))
 	if rd.opts.ExecPath != "" {
 		allocOpts = append(allocOpts, chromedp.ExecPath(rd.opts.ExecPath))
 	}
@@ -96,7 +102,8 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 	defer cancel()
 	actx, acancel := chromedp.NewExecAllocator(ctx, allocOpts...)
 	defer acancel()
-	bctx, bcancel := chromedp.NewContext(actx)
+	bctx, bcancel := chromedp.NewContext(actx,
+		chromedp.WithBrowserOption(chromedp.WithDialTimeout(rd.opts.Timeout)))
 	defer bcancel()
 
 	dataURL := "data:text/html;base64," + base64.StdEncoding.EncodeToString([]byte(html))
