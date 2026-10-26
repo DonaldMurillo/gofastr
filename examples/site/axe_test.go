@@ -164,7 +164,7 @@ func axePages(t *testing.T) []string {
 	return out
 }
 
-// axeShard reads GOFASTR_AXE_SHARD, the CI knob that splits the gate across
+// axeShard reads GOFASTR_AXE_SHARD, the knob that splits the gate across
 // runners. Empty means the whole gate (shard 0 of 1).
 func axeShard(t *testing.T) (shard, shards int) {
 	t.Helper()
@@ -245,7 +245,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	}
 	// The work list is built in full, in a deterministic order, before any
 	// page is scanned. GOFASTR_AXE_SHARD=k/n then keeps every n-th item from
-	// k on, so CI can split the gate across runners and the union of the
+	// k on, so the gate can split across runners and the union of the
 	// shards is exactly the unsharded run. Interleaving (i mod n) rather than
 	// slicing keeps the heavy docs pages spread across shards.
 	var items []pageResult

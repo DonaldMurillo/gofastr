@@ -550,7 +550,7 @@ jobs:
     # a runner (CLAUDE.md documents the flake classes); separate runners
     # don't contend, so the matrix keeps every suite exactly as isolated
     # while running them concurrently, wall clock drops from the ~28m
-    # serial sum to the slowest shard (site-axe, ~13m). fail-fast is off
+    # serial sum to the slowest shard. fail-fast is off
     # so one red suite still lets the rest report, matching the old
     # per-step `if: !cancelled()` behavior. Each shard is its own check
     # run; release.yml's gate counts checks whose name contains
@@ -578,20 +578,18 @@ jobs:
           - suite: site
             pkg: examples/site$
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
-          # The axe gate scans every page under BOTH color schemes: 11-15
-          # minutes on one runner (2026-09), the longest browser shard once
-          # the blocking job was trimmed. GOFASTR_AXE_SHARD=k/n splits its
-          # work list across runners (examples/site/axe_test.go: every n-th
-          # item from k, so the two halves are exactly the whole gate). Its
-          # own shards: CLAUDE.md documents the axe suite flaking when it
-          # shares a go-test run with the other chromedp tests. 30m: a 15m
-          # limit once failed slow runners with nothing hung.
-          - suite: site-axe-0
+          # The axe gate scans every page under BOTH color schemes. It ran
+          # as two shards while one runner took 11-15 minutes (2026-09);
+          # since each page loads once for both schemes (#595) a shard
+          # scans for about 85 s, so the gate runs whole again (#598).
+          # GOFASTR_AXE_SHARD=k/n still splits its work list
+          # (examples/site/axe_test.go) if it grows back. Its own shard:
+          # CLAUDE.md documents the axe suite flaking when it shares a
+          # go-test run with the other chromedp tests. 30m: a 15m limit
+          # once failed slow runners with nothing hung.
+          - suite: site-axe
             pkg: examples/site$
-            run: GOFASTR_AXE_SHARD=0/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
-          - suite: site-axe-1
-            pkg: examples/site$
-            run: GOFASTR_AXE_SHARD=1/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+            run: go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
           # Moved out of the blocking job's Test step (2026-10): both are
           # chromedp e2e suites and filled one of its two package slots.
           - suite: tracker
