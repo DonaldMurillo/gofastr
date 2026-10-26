@@ -1275,7 +1275,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// followed a redirect is no answer (#577,
 		// TestRedirectedWidgetChromeMountsNothing,
 		// TestRedirectedWidgetStateSetsNothing).
-		"widgets": 3128,
+		// 3139 measured (3137 + 2) after the chrome fetch skips the HTTP
+		// cache, whose one-request-per-URL lock held a second open of the
+		// same chrome for 20s (#598,
+		// TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache).
+		"widgets": 3139,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
