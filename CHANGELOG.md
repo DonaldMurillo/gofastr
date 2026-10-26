@@ -175,6 +175,45 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (load 20–40) `cmd/gofastr` ran in 110s instead of 120s and `appgen`
   in 60s instead of 65s. A pull request builds nothing it did not build
   before.
+- **The shipped JavaScript drops `var` and the pre-ES2015 idioms, and
+  a lint keeps them out (#598).** The runtime, the behavior modules, the
+  plugin host, the MCP widget client and the dev tools now use `const`
+  and `let`, spread instead of `.push.apply` and `Array.prototype.*.call`,
+  rest parameters instead of `arguments`, and class methods instead of
+  `Ctor.prototype.x = …`. `core-ui/check.LintLegacyIdioms` fails on any
+  of those four shapes. It, the no-var lint and the runtime shape lints
+  now read every shipped `.js` file in the repo; before, they read
+  `core-ui/runtime` and the registered behavior modules only. Behavior
+  is unchanged.
+- **Faster tests and CI (#598).**
+  - battery/auth's tests hash passwords at bcrypt's minimum cost; the
+    two tests that time the hash keep the production cost.
+  - `TestDocExamplesCompile` compiles the doc snippets with
+    `go list -export` and no longer links a binary for each.
+  - The upgrade scan loads its build configurations concurrently.
+  - battery/sitesearch's 10,000-page test compresses the export once,
+    across all cores.
+  - The process-module probe timeout test runs on a one-second budget
+    instead of waiting out the 15 s default.
+  - The six core-ui/runtime test files that import framework/uihost,
+    webmcp, battery/auth or localentity moved to
+    `core-ui/runtime/hosttest`, so a change to those packages runs a
+    7 s suite instead of the runtime's 6-minute one. CI runs it as the
+    `core-ui-runtime-hosts` shard.
+  - The two site axe shards are one `site-axe` shard again: each
+    scanned for about 85 s once #595 loaded every page once for both
+    color schemes.
+  - The `chromium-ui` shard runs only the tests the `chromium` tag adds
+    (`scripts/tagged-tests.sh`); the test job already ran the rest. It
+    also picks up core-ui/interactive and the acme-site and meridian
+    `siteheader` packages, whose tagged tests no CI job ran. A repolint
+    rule, `chromium-shard`, fails when a package with chromium-tagged
+    tests is missing from the shard.
+  - A browser shard decides whether the change reaches its suite before
+    it installs Chrome and the `gofastr` binary, and skips both when
+    it does not.
+  - Nine packages that read `gofastr.settings.yml` now declare it, so
+    editing it selects their tests.
 
 ### Fixed
 - **A redirected answer is no longer taken as the request's own
@@ -193,6 +232,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   it checks under `/icons/` answered 404 and the suite failed on a
   freshly generated app. It now copies the app's static directory there
   before it starts the server.
+- **Reopening a widget panel no longer waits behind its own slow fetch
+  (#598).** Chrome's HTTP cache runs one request per URL at a time, so a
+  second open of a panel whose chrome fetch was still in flight waited up
+  to 20 s for the first. The runtime's chrome fetch now passes
+  `cache: 'no-store'`; the runtime's own chrome cache already dedupes
+  the request.
 
 ## [0.94.1] - 2026-10-24
 
