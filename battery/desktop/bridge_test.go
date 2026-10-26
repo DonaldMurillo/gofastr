@@ -17,6 +17,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
+// Building an app resolves isolation settings: framework/isolation looks
+// for gofastr.settings.yml from the package directory up to the repo
+// root, so these tests read the root file.
+//
+//gofastr:test-reads /gofastr.settings.yml
+
 // Group 4: the chokepoint. Served through the real core/router so
 // {cap}/{method} path values and the 405 path behave as in production.
 

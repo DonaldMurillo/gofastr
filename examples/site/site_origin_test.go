@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+// Building an app resolves isolation settings: framework/isolation looks
+// for gofastr.settings.yml from the package directory up to the repo
+// root, so these tests read the root file.
+//
+//gofastr:test-reads /gofastr.settings.yml
+
 // The site declares one public origin (siteOrigin) that drives og:url, the
 // sitemap, robots.txt's Sitemap line, the per-page canonicals, and every
 // agent-ready discovery URL. Nothing in the page-level test suite could catch

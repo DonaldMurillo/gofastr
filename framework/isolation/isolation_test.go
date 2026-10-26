@@ -9,6 +9,12 @@ import (
 	"testing"
 )
 
+// Resolve looks for gofastr.settings.yml from the directory it is given up
+// to the repo root, so tests that resolve the package directory read the
+// root file.
+//
+//gofastr:test-reads /gofastr.settings.yml
+
 func TestResolveActivatesOnlyForLinkedWorktreeByDefault(t *testing.T) {
 	clearIsolationEnv(t)
 	main := t.TempDir()
