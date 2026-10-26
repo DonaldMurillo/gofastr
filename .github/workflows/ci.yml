@@ -652,7 +652,7 @@ jobs:
             # surface need a budget well past the local ~2m runtime.
             run: go test -count=1 -timeout=25m ./examples/meridian/
           - suite: chromium-ui
-            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?)$
+            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?|core-ui/interactive|examples/acme-site/siteheader|examples/meridian/siteheader)$
             # Go build tags for cmd/affected's go list; named apart from a
             # git tag trigger on purpose.
             buildtags: chromium
@@ -683,9 +683,15 @@ jobs:
             # through the file:// page `service open` writes and checks
             # the browser lands on the app with its session.
             # battery/auth's tagged test runs both passkey ceremonies
-            # through Chrome's virtual authenticator; the package's
-            # untagged suite (~50s) rides along with it.
-            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/...
+            # through Chrome's virtual authenticator.
+            # Only the tests the tag adds run here: scripts/tagged-tests.sh
+            # lists them, and the test job has already run the rest of
+            # each package. cmd/repolint fails when a package with
+            # chromium-tagged tests is missing from this list or from pkg.
+            run: |
+              pkgs="./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/... ./core-ui/interactive/ ./examples/acme-site/siteheader/ ./examples/meridian/siteheader/"
+              run_re=$(scripts/tagged-tests.sh chromium $pkgs)
+              go test -count=1 -timeout=10m -p 1 -tags chromium -run "$run_re" $pkgs
           - suite: ui-quality-evals
             pkg: evals/ui-quality(/|$)
             # Its capture tests drive a real headless Chrome; kept out of

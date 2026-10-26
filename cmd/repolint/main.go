@@ -138,6 +138,11 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, binFindings...)
+	shardFindings, err := lintChromiumShard(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, shardFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
