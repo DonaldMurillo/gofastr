@@ -8,13 +8,18 @@ import (
 	"testing"
 )
 
-// TestHandBootedChromeKeepsLaunchAllowance: a test that boots Chrome
-// itself instead of through Context must still raise chromedp's 20s
-// DevTools websocket-URL wait. Under parallel package load a cold Chrome
-// on a CI runner misses 20s, and the test fails with "websocket url
-// timeout reached" while asserting nothing (core-ui/ownstyle, PR #482).
+// TestHandBootedChromeKeepsLaunchAllowance: code that boots Chrome itself
+// instead of through Context must still raise chromedp's two start waits,
+// the 20s DevTools websocket-URL read and the 10s websocket dial after it.
+// Under parallel package load a cold Chrome on a CI runner misses either:
+// the test fails with "websocket url timeout reached" (core-ui/ownstyle,
+// PR #482) or "could not dial …: context deadline exceeded"
+// (core-ui-runtime-hosts on main, run 40344295152) while asserting
+// nothing. It reads every .go file, not only tests: the axe gate, the eval
+// runner and the PDF battery boot Chrome from library code. This
+// package's own launcher is left out; its tests cover it directly.
 //
-//gofastr:test-reads *_test.go
+//gofastr:test-reads *_test.go importers:github.com/chromedp/chromedp
 func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 	root := filepath.Join("..", "..")
 	var bad []string
@@ -32,9 +37,12 @@ func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 			case "node_modules", "dist", "testdata":
 				return filepath.SkipDir
 			}
+			if path == filepath.Join(root, "internal", "chromedptest") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		if !strings.HasSuffix(path, "_test.go") {
+		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
 		src, err := os.ReadFile(path)
@@ -50,21 +58,25 @@ func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range bad {
-		t.Errorf("%s boots Chrome with chromedp's 20s launch wait: use chromedptest.Context, or pass chromedp.WSURLReadTimeout", p)
+		t.Errorf("%s boots Chrome on chromedp's short start waits: use chromedptest.Context, or pass chromedp.WSURLReadTimeout to the allocator and chromedp.WithBrowserOption(chromedp.WithDialTimeout(…)) to the context that starts Chrome", p)
 	}
 }
 
 // lacksLaunchAllowance reports whether a file boots Chrome more times
-// than it raises the launch wait. Counting per call, not per file: a
+// than it raises either start wait. Counting per call, not per file: a
 // file with two allocators and one allowance still has a call on the
-// 20s default.
+// default.
 func lacksLaunchAllowance(src string) bool {
-	return strings.Count(src, "chromedp.NewExecAllocator(") > strings.Count(src, "chromedp.WSURLReadTimeout(")
+	boots := strings.Count(src, "chromedp.NewExecAllocator(")
+	return boots > strings.Count(src, "chromedp.WSURLReadTimeout(") ||
+		boots > strings.Count(src, "chromedp.WithDialTimeout(")
 }
 
 func TestLaunchAllowanceCountsEachAllocator(t *testing.T) {
 	const boot = "chromedp.NewExecAllocator(ctx, opts...)\n"
-	const allow = "chromedp.WSURLReadTimeout(90*time.Second),\n"
+	const allow = "chromedp.WSURLReadTimeout(90*time.Second),\nchromedp.WithDialTimeout(90*time.Second),\n"
+	const urlOnly = "chromedp.WSURLReadTimeout(90*time.Second),\n"
+	const dialOnly = "chromedp.WithDialTimeout(90*time.Second),\n"
 	for _, tc := range []struct {
 		name string
 		src  string
@@ -75,6 +87,8 @@ func TestLaunchAllowanceCountsEachAllocator(t *testing.T) {
 		{"one boot, allowance", allow + boot, false},
 		{"two boots, one allowance", allow + boot + boot, true},
 		{"two boots, two allowances", allow + boot + allow + boot, false},
+		{"url wait only", urlOnly + boot, true},
+		{"dial wait only", dialOnly + boot, true},
 	} {
 		if got := lacksLaunchAllowance(tc.src); got != tc.want {
 			t.Errorf("%s: lacksLaunchAllowance = %v, want %v", tc.name, got, tc.want)

@@ -104,7 +104,7 @@ func paletteChromeCtx(t *testing.T, w, h int64) context.Context {
 			chromedp.WSURLReadTimeout(90*time.Second),
 			chromedp.NoSandbox)...)
 	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	t.Cleanup(cancel)
 	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 	t.Cleanup(cancelTimeout)

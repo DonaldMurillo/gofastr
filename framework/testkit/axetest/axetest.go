@@ -115,7 +115,7 @@ func NewBrowserContext(parent context.Context) (context.Context, context.CancelF
 		chromedp.WindowSize(1280, 800),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(parent, opts...)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithErrorf(filteredErrorf))
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)), chromedp.WithErrorf(filteredErrorf))
 	// Allocate the browser NOW, on this context. WithErrorf is a
 	// browser-allocation option: it must bind to the context that
 	// actually starts Chrome. Left lazy, the first tab would allocate

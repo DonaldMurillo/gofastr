@@ -62,7 +62,7 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 			chromedp.WSURLReadTimeout(90*time.Second),
 			chromedp.NoSandbox, chromedp.WindowSize(800, 600))...)
 	defer cancelAlloc()
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	defer cancel()
 	// 60s to match every other chromium test in this package, which is the
 	// evidence: the four siblings use 60s and none of them flakes, while

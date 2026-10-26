@@ -56,7 +56,7 @@ func themeBrowserCtx(t *testing.T) context.Context {
 			chromedp.WindowSize(1280, 800),
 		)
 		allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+		browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 		if err := chromedp.Run(browserCtx); err != nil {
 			themeBrowserErr = err
 			browserCancel()

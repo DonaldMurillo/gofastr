@@ -56,7 +56,7 @@ func callBrowserCtx(t *testing.T) context.Context {
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(allocCancel)
-	root, cancel := chromedp.NewContext(allocCtx)
+	root, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	t.Cleanup(cancel)
 	if err := chromedp.Run(root); err != nil {
 		t.Fatalf("browser failed to start: %v", err)

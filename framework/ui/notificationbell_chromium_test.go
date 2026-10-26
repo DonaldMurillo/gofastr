@@ -38,7 +38,7 @@ func TestBellBadgeCoversAtMostAQuarterOfTheGlyph(t *testing.T) {
 			chromedp.WSURLReadTimeout(90*time.Second),
 			chromedp.NoSandbox)...)
 	defer cancelAlloc()
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	defer cancel()
 	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelTimeout()
@@ -122,7 +122,7 @@ func TestBellOpenUnderPointerKeepsGlyphContrast(t *testing.T) {
 			append(chromedp.DefaultExecAllocatorOptions[:],
 				chromedp.WSURLReadTimeout(90*time.Second),
 				chromedp.NoSandbox)...)
-		ctx, cancel := chromedp.NewContext(allocCtx)
+		ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 		ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 
 		const measure = `(() => {
