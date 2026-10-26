@@ -14,7 +14,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -284,29 +283,9 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 		}
 		return order[i].cfg < order[j].cfg
 	})
-	// The loads are independent go command runs, so they run at once,
-	// up to maxConfigLoads; their results are read back in order, so
-	// the report is the same as one load after another.
-	type outcome struct {
-		pkgs []*packages.Package
-		err  error
-	}
-	results := make([]outcome, len(order))
-	sem := make(chan struct{}, maxConfigLoads)
-	var wg sync.WaitGroup
-	for i, k := range order {
+	for _, k := range order {
 		g := groups[k]
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			pkgs, err := runLoad(g.dir, g.patterns, g.env, g.buildFlags)
-			results[i] = outcome{pkgs, err}
-		})
-	}
-	wg.Wait()
-	for i, k := range order {
-		g := groups[k]
-		pkgs, err := results[i].pkgs, results[i].err
+		pkgs, err := runLoad(g.dir, g.patterns, g.env, g.buildFlags)
 		if err != nil {
 			for _, f := range g.files {
 				rel, _ := e.fileRel(f)
@@ -340,10 +319,6 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 		}
 	}
 }
-
-// maxConfigLoads caps the build-configuration loads that run at once,
-// each a go command plus a type-check.
-var maxConfigLoads = min(runtime.GOMAXPROCS(0), 4)
 
 // walkMissed visits every .go file under the scan root the loads may
 // have missed, with the module directory its package belongs to: a

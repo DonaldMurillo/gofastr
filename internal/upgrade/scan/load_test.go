@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -311,12 +310,10 @@ func TestScanNestedModuleInWorkOnce(t *testing.T) {
 
 	tools := filepath.Join(dir, "tools")
 	old := packagesLoad
-	// Atomic: the build-configuration loads call packagesLoad
-	// concurrently.
-	var toolsLoads atomic.Int32
+	toolsLoads := 0
 	packagesLoad = func(cfg *packages.Config, patterns ...string) ([]*packages.Package, error) {
 		if cfg.Dir == tools {
-			toolsLoads.Add(1)
+			toolsLoads++
 		}
 		return old(cfg, patterns...)
 	}
@@ -332,8 +329,8 @@ func TestScanNestedModuleInWorkOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := toolsLoads.Load(); got != 1 {
-		t.Errorf("the nested module must be loaded exactly once, got %d", got)
+	if toolsLoads != 1 {
+		t.Errorf("the nested module must be loaded exactly once, got %d", toolsLoads)
 	}
 	wantHits(t, res, n, hitAt(toolsUse, "SiteHeader", "tools/main.go", siteHeaderSym.String()))
 }
