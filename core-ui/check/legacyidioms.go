@@ -39,8 +39,11 @@ func LintLegacyIdioms(roots ...string) (*Result, error) {
 				// The arguments rule captures the identifier itself;
 				// the rest report the whole match.
 				at := loc[0]
-				if len(loc) > 2 && loc[2] >= 0 {
-					at = loc[2]
+				for g := 2; g < len(loc); g += 2 {
+					if loc[g] >= 0 {
+						at = loc[g]
+						break
+					}
 				}
 				res.add(f.Path, f.lineOf(at), fmt.Sprintf("[legacy-idiom] %s", r.msg))
 			}
@@ -64,8 +67,10 @@ var legacyIdiomRules = []struct {
 	{
 		// Not after a '.' (msg.arguments) unless the dots are a spread
 		// (...arguments), and not a property key: `arguments:` in an
-		// object literal is a name, not the arguments object.
-		regexp.MustCompile(`(?:^|[^\w$.]|\.\.\.)(arguments)\b(?:\s*[^\s:]|\s*$)`),
+		// object literal is a name, not the arguments object. After a
+		// '?' the colon is a ternary's (ready ? arguments : []), so the
+		// second branch counts it; ?.arguments is a property read.
+		regexp.MustCompile(`(?:^|[^\w$.]|\.\.\.)(arguments)\b(?:\s*[^\s:]|\s*$)|\?\s*(arguments)\b`),
 		"the `arguments` object is the pre-rest spelling; take rest parameters, function (...a), and pass them on with .apply(this, a)",
 	},
 	{

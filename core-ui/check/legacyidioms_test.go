@@ -17,6 +17,7 @@ function wrap() { return orig.apply(this, arguments); }
 Store.prototype.get = function (k) { return this.m[k]; };
 Store.prototype = { get(k) { return this.m[k]; } };
 function fwd() { return orig(...arguments); }
+function opt() { return ready ? arguments : []; }
 `)
 	res, err := LintLegacyIdioms(dir)
 	if err != nil {
@@ -27,7 +28,7 @@ function fwd() { return orig(...arguments); }
 		lines = append(lines, v.Line)
 	}
 	slices.Sort(lines)
-	want := []int{2, 3, 4, 5, 6, 7, 8}
+	want := []int{2, 3, 4, 5, 6, 7, 8, 9}
 	if len(lines) != len(want) {
 		t.Fatalf("want violations on lines %v, got %v:\n%s", want, lines, res.Error())
 	}
@@ -48,6 +49,7 @@ try { HTMLFormElement.prototype.submit.call(form); } catch (_) {}
 function wrap(...a) { return orig.apply(this, a); }
 send({ name: 'search', arguments: { q: 'hi' } });
 const args = msg.arguments;
+const maybe = msg?.arguments;
 if (Store.prototype.get === undefined) {}
 if (Store.prototype === proto) {}
 const rest = (...a) => a.length;
