@@ -815,7 +815,7 @@ func TestBackupCode_GetIsNotBlockedByConsume(t *testing.T) {
 	// Pre-hash 10 random backup codes, the typical default.
 	codes := make([]string, 10)
 	for i := range codes {
-		h, err := bcrypt.GenerateFromPassword([]byte("code"+string(rune('0'+i))), bcrypt.DefaultCost)
+		h, err := bcrypt.GenerateFromPassword([]byte("code"+string(rune('0'+i))), bcryptCost)
 		if err != nil {
 			t.Fatalf("bcrypt: %v", err)
 		}

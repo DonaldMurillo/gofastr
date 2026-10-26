@@ -564,6 +564,9 @@ func TestMagicLink_SendThenVerify_EndToEnd(t *testing.T) {
 // digit ms). With the bug, every first signup pays a full bcrypt.
 
 func TestMagicLinkVerify_NewUser_DoesNotRunBcryptPerSignup(t *testing.T) {
+	// The guard is the per-signup hash's own time, so hash at the
+	// production cost.
+	withDefaultBcryptCost(t)
 	userStore := newMemoryUserStore()
 	mgr := New(AuthConfig{
 		SessionTTL:    time.Hour,
