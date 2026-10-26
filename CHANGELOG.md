@@ -151,7 +151,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   returned context shares that test's state. If the shared Chrome dies,
   or a test's window cannot be cleaned up, the next call starts a new
   one; the old one closes once the other tests' windows on it are done.
-  A small `sh` watcher kills Chrome and deletes its profile when the
+  Starting Chrome waits up to the startup allowance (90s by default,
+  `StartTimeout`) for both the DevTools URL and the websocket dial that
+  follows it; chromedp's own dial limit is 10s, which a cold Chrome on
+  a loaded runner can miss. A small `sh` watcher kills Chrome and deletes its profile when the
   test binary exits, including on a panic or a `-timeout` kill. On
   Windows, without `sh`, or with an option that installs a func or a
   writer (`chromedp.ModifyCmdFunc`, `chromedp.CombinedOutput`), every
