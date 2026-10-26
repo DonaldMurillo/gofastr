@@ -52,12 +52,16 @@ pass "go build ./..."
 #          not ours to police) ----
 # Skip files deleted in the working tree but still in the index: a split
 # commit stages a deletion for the NEXT commit, and gofmt fails on the stat.
-gofmt_output=$(for f in $(git ls-files '*.go'); do [ -f "$f" ] && printf '%s\n' "$f"; done | xargs gofmt -l)
+# The toolchain's gofmt, not the one on PATH: go.mod's toolchain line can
+# pick a newer Go than the installed one, gofmt's output differs between
+# releases, and CI formats with the toolchain's.
+gofmt_bin="$(go env GOROOT)/bin/gofmt"
+gofmt_output=$(for f in $(git ls-files '*.go'); do [ -f "$f" ] && printf '%s\n' "$f"; done | xargs "$gofmt_bin" -l)
 if [ -n "$gofmt_output" ]; then
   fail "Files not formatted:"
   echo "$gofmt_output"
   echo ""
-  echo "  Fix: gofmt -w <files>"
+  echo "  Fix: $gofmt_bin -w <files>"
   exit 1
 fi
 pass "Code formatted"
@@ -169,7 +173,7 @@ else
   coverprofile=$(mktemp)
   trap 'rm -f "$coverprofile"' EXIT
   go run ./cmd/affected \
-    -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
+    -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
     -- go test -timeout=20m -coverprofile="$coverprofile" \
     -skip 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
   pass "Deterministic tests passed"

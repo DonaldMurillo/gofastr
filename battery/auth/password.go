@@ -117,7 +117,7 @@ func (BcryptHasher) Hash(password string) (string, error) {
 		sum := sha256.Sum256(input)
 		input = []byte(base64.RawStdEncoding.EncodeToString(sum[:]))
 	}
-	b, err := bcrypt.GenerateFromPassword(input, bcrypt.DefaultCost)
+	b, err := bcrypt.GenerateFromPassword(input, bcryptCost)
 	if err != nil {
 		return "", err
 	}
@@ -271,6 +271,12 @@ func parseArgon2PHC(hash string) (argon2PHC, bool) {
 	return p, true
 }
 
+// bcryptCost is the work factor every bcrypt hash in this package uses:
+// passwords, backup codes and the timing dummies below. A var only so
+// the package's tests can hash at bcrypt.MinCost; nothing else assigns
+// it.
+var bcryptCost = bcrypt.DefaultCost
+
 // dummyBcryptHash is a pre-computed bcrypt hash used to keep loginHandler
 // timing-safe. When a username does not exist (or FindByEmail errors), we
 // run CheckPassword against this hash so the response time is the same
@@ -324,7 +330,7 @@ func dummyHashFor(h PasswordHasher) string {
 var passwordPlaceholderHash string
 
 func init() {
-	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password-for-timing"), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password-for-timing"), bcryptCost)
 	if err != nil {
 		panic(fmt.Sprintf("auth: precomputing dummy bcrypt hash: %v", err))
 	}
@@ -334,7 +340,7 @@ func init() {
 	if _, err := rand.Read(secret); err != nil {
 		panic(fmt.Sprintf("auth: generating placeholder secret: %v", err))
 	}
-	hp, err := bcrypt.GenerateFromPassword(secret, bcrypt.DefaultCost)
+	hp, err := bcrypt.GenerateFromPassword(secret, bcryptCost)
 	if err != nil {
 		panic(fmt.Sprintf("auth: precomputing placeholder hash: %v", err))
 	}

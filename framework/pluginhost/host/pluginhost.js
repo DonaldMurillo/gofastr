@@ -53,24 +53,24 @@
   'use strict';
 
   // --- Protocol constants (protocol-v1.md §3 — frozen) ----------------------
-  var ENVELOPE_VERSION = 1;
-  var RESPONSE_TIMEOUT_MS = 5000;  // request → response (§3)
-  var TEARDOWN_TIMEOUT_MS = 200;   // SPA teardown ack budget (§6.9)
-  var MAX_INFLIGHT = 64;           // pending-request bound, both directions
+  const ENVELOPE_VERSION = 1;
+  const RESPONSE_TIMEOUT_MS = 5000;  // request → response (§3)
+  const TEARDOWN_TIMEOUT_MS = 200;   // SPA teardown ack budget (§6.9)
+  const MAX_INFLIGHT = 64;           // pending-request bound, both directions
 
-  var DEFAULT_CAPS = ["document:read", "document:write", "upload:images", "theme:read"];
-  var DEFAULT_MIN_HEIGHT = "240px";
-  var DEFAULT_TITLE = "Plugin";
+  const DEFAULT_CAPS = ["document:read", "document:write", "upload:images", "theme:read"];
+  const DEFAULT_MIN_HEIGHT = "240px";
+  const DEFAULT_TITLE = "Plugin";
 
   // Per-iframe instance state, keyed by the iframe element (framework
   // per-instance-state rule). `live` mirrors the set so we can iterate for
   // source lookup and SPA teardown — a WeakMap is not iterable.
-  var states = new WeakMap();
-  var live = [];
-  var reqCounter = 0;
+  const states = new WeakMap();
+  const live = [];
+  let reqCounter = 0;
 
   // Registered adapters: plugin name → registration.
-  var adapters = Object.create(null);
+  const adapters = Object.create(null);
 
   // Expose the registry SYNCHRONOUSLY so adapter <script>s that follow this one
   // in document order can register before boot (both are parser-inserted, so
@@ -85,7 +85,7 @@
   // --- Helpers --------------------------------------------------------------
 
   function csrfToken() {
-    var meta = document.querySelector('meta[name="csrf-token"]');
+    const meta = document.querySelector('meta[name="csrf-token"]');
     return meta && meta.getAttribute("content") ? meta.getAttribute("content") : null;
   }
 
@@ -94,7 +94,7 @@
    * mirrored from style.TokenNames() and pinned by a Go test
    * (token_bridge_test.go) so it cannot drift from the theme emitter.
    */
-  var THEME_TOKENS = [
+  const THEME_TOKENS = [
     "--breakpoint-2xl", "--breakpoint-lg", "--breakpoint-md", "--breakpoint-sm", "--breakpoint-xl",
     "--color-accent", "--color-background", "--color-border", "--color-border-strong",
     "--color-code-border", "--color-code-surface", "--color-code-text",
@@ -136,11 +136,11 @@
    * neither failure mode.
    */
   function resolveTokens() {
-    var cs = getComputedStyle(document.documentElement);
-    var tokens = {};
-    for (var i = 0; i < THEME_TOKENS.length; i++) {
-      var name = THEME_TOKENS[i];
-      var val = cs.getPropertyValue(name);
+    const cs = getComputedStyle(document.documentElement);
+    const tokens = {};
+    for (let i = 0; i < THEME_TOKENS.length; i++) {
+      const name = THEME_TOKENS[i];
+      let val = cs.getPropertyValue(name);
       if (val == null) continue;
       val = String(val).trim();
       if (val !== "") tokens[name] = val;
@@ -154,7 +154,7 @@
   }
 
   function envelope(type, method, params, id) {
-    var env = { v: ENVELOPE_VERSION, type: type, src: "host", result: null, error: null };
+    const env = { v: ENVELOPE_VERSION, type: type, src: "host", result: null, error: null };
     if (id) env.id = id;
     if (method) env.method = method;
     if (params) env.params = params;
@@ -174,9 +174,9 @@
   // --- Per-marker wiring ----------------------------------------------------
 
   function parseCaps(marker, manifest) {
-    var raw = marker.getAttribute("data-fui-plugin-capabilities");
+    const raw = marker.getAttribute("data-fui-plugin-capabilities");
     if (raw && raw.trim()) {
-      var caps = raw.split(/[,\s]+/).filter(function (s) { return s.length > 0; });
+      const caps = raw.split(/[,\s]+/).filter(function (s) { return s.length > 0; });
       if (caps.length) return caps;
     }
     if (manifest && manifest.capabilities && manifest.capabilities.length) {
@@ -186,13 +186,13 @@
   }
 
   function parseDoc(marker) {
-    var raw = marker.getAttribute("data-fui-plugin-doc");
+    const raw = marker.getAttribute("data-fui-plugin-doc");
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (e) { return null; }
   }
 
   function minHeightFor(marker, manifest) {
-    var raw = marker.getAttribute("data-fui-plugin-minheight");
+    const raw = marker.getAttribute("data-fui-plugin-minheight");
     if (raw && raw.trim()) return raw.trim();
     if (manifest && manifest.minHeight) return manifest.minHeight;
     return DEFAULT_MIN_HEIGHT;
@@ -209,7 +209,7 @@
   // too. A deny-list has to enumerate every way out of the box and loses the
   // moment the HTML spec adds one; the manifest ships with the third-party
   // plugin, so it is attacker-influenced by construction.
-  var ALLOWED_SANDBOX = {
+  const ALLOWED_SANDBOX = {
     "allow-scripts": true,
     "allow-forms": true,
     "allow-modals": true,
@@ -225,24 +225,22 @@
   // attribute, so the opaque-origin guarantee lives HERE, not in a Go-side
   // Validate() a plugin author might forget to call.
   function sandboxFor(manifest) {
-    var tokens = (manifest && manifest.sandbox && manifest.sandbox.length)
+    const tokens = (manifest && manifest.sandbox && manifest.sandbox.length)
       ? manifest.sandbox : [];
-    var seen = {};
-    var out = [];
-    for (var i = 0; i < tokens.length; i++) {
+    const seen = new Set();
+    const out = [];
+    for (const t of tokens) {
       // The sandbox attribute is ASCII-case-insensitive and whitespace-
       // separated: lowercase + split each element so a case-variant or an
       // element with embedded whitespace can't smuggle a same-origin grant
       // past the filter (round-4 bypass).
-      var parts = String(tokens[i] || "").toLowerCase().split(/\s+/);
-      for (var j = 0; j < parts.length; j++) {
-        var tok = parts[j];
-        if (!tok || ALLOWED_SANDBOX[tok] !== true || seen[tok]) continue;
-        seen[tok] = true;
+      for (const tok of String(t || "").toLowerCase().split(/\s+/)) {
+        if (!tok || ALLOWED_SANDBOX[tok] !== true || seen.has(tok)) continue;
+        seen.add(tok);
         out.push(tok);
       }
     }
-    if (!seen["allow-scripts"]) out.unshift("allow-scripts");
+    if (!seen.has("allow-scripts")) out.unshift("allow-scripts");
     return out.join(" ");
   }
 
@@ -260,20 +258,20 @@
   // someone else's document. This is the sink that sets src, so the check
   // lives HERE too, not only in a Go-side Validate() a plugin author may skip.
   function safeEntry(raw) {
-    var entry = String(raw || "");
+    const entry = String(raw || "");
     if (!entry) return "";
     if (/[\u0000-\u001f\u007f]/.test(entry)) return "";
     // Normalise backslashes the way a browser does before reading the
     // authority: "/\\evil.example/x" is "//evil.example/x".
-    var norm = entry.replace(/\\/g, "/");
+    const norm = entry.replace(/\\/g, "/");
     if (norm.charAt(0) !== "/") return "";   // scheme or relative path
     if (norm.charAt(1) === "/") return "";   // protocol-relative
     return entry;
   }
 
   function createIframe(marker, manifest) {
-    var entry = safeEntry(manifest && manifest.entry);
-    var frame = document.createElement("iframe");
+    const entry = safeEntry(manifest && manifest.entry);
+    const frame = document.createElement("iframe");
     if (!entry) {
       // Fail closed: no src at all beats loading an off-origin document into
       // a frame the host is about to hand a capability grant.
@@ -363,8 +361,8 @@
     }
     timeoutMs = validTimeout(timeoutMs);
     return new Promise(function (resolve, reject) {
-      var id = "h-" + (++reqCounter);
-      var timer = setTimeout(function () {
+      const id = "h-" + (++reqCounter);
+      const timer = setTimeout(function () {
         if (st.pending[id]) {
           delete st.pending[id];
           reject({ code: "E_TIMEOUT", message: "request " + method + " timed out" });
@@ -385,7 +383,7 @@
   }
 
   function buildApi(st) {
-    var form = st.marker.closest ? st.marker.closest("form") : null;
+    const form = st.marker.closest ? st.marker.closest("form") : null;
     return {
       iframe: st.frame,
       marker: st.marker,
@@ -411,8 +409,8 @@
   function sendInit(st) {
     st.ready = true;
     st.frame.__pluginReady = true; // generic handshake signal
-    var m = st.adapter.manifest || {};
-    var env = envelope("event", "init", {
+    const m = st.adapter.manifest || {};
+    const env = envelope("event", "init", {
       doc: parseDoc(st.marker),
       markdown: null,
       tokens: resolveTokens(),
@@ -493,7 +491,7 @@
     // DETACHED frame has a null contentWindow: nobody can receive the reply,
     // so drop silently in exactly that case.
     if (!st.frame.contentWindow) return;
-    var env = envelope("response", null, null, id);
+    const env = envelope("response", null, null, id);
     if (err) env.error = err;
     else env.result = result;
     try {
@@ -505,7 +503,7 @@
       // pending entry to time out — the "always answered" contract. A
       // second throw here means the frame detached in the meantime;
       // then there is genuinely nothing to deliver to.
-      var fb = envelope("response", null, null, id);
+      const fb = envelope("response", null, null, id);
       fb.error = { code: "E_HANDLER", message: "response not cloneable: " + String(e && e.message || e) };
       try {
         postTo(st.frame, fb);
@@ -527,8 +525,8 @@
       });
       return;
     }
-    var handler = st.requestHandlers[msg.method];
-    var run;
+    const handler = st.requestHandlers[msg.method];
+    let run;
     if (typeof handler === "function") {
       run = function () { return handler(msg.params || {}, st.api); };
     } else if (st.adapter && typeof st.adapter.onRequest === "function") {
@@ -558,18 +556,18 @@
   function onMessage(event) {
     // Find the instance this message came from. We accept ONLY messages whose
     // source is one of our iframe contentWindows — NOT event.origin (§3).
-    var st = null;
-    for (var i = 0; i < live.length; i++) {
+    let st = null;
+    for (let i = 0; i < live.length; i++) {
       if (live[i].frame.contentWindow === event.source) { st = live[i]; break; }
     }
     if (!st) return;
-    var msg = event.data;
+    const msg = event.data;
     if (!msg || typeof msg !== "object") return;
     if (msg.v !== ENVELOPE_VERSION) return;
     if (msg.src !== "plugin") return;
 
     if (msg.type === "response") {
-      var p = st.pending[msg.id];
+      const p = st.pending[msg.id];
       if (!p) return;
       clearTimeout(p.timer);
       delete st.pending[msg.id];
@@ -590,7 +588,7 @@
 
   function observeTheme(st) {
     if (typeof MutationObserver !== "function") return;
-    var obs = new MutationObserver(function () {
+    const obs = new MutationObserver(function () {
       // data-color-scheme on <html> flipped — re-resolve and re-bridge.
       postTo(st.frame, envelope("event", "themeChanged", {
         scheme: currentScheme(),
@@ -612,14 +610,14 @@
     // lingers (teardown ahead of a replacement), the static node shows
     // instead of a gap where the frame was.
     showFallback(st);
-    var parent = st.frame.parentNode;
+    const parent = st.frame.parentNode;
     if (parent) parent.removeChild(st.frame);
-    var i = live.indexOf(st);
+    const i = live.indexOf(st);
     if (i !== -1) live.splice(i, 1);
     states["delete"](st.frame);
     // Reject any pending requests so no promise leaks unresolved forever,
     // then clear the map — callers get E_TEARDOWN, not a hang.
-    for (var id in st.pending) {
+    for (const id in st.pending) {
       if (Object.prototype.hasOwnProperty.call(st.pending, id)) {
         clearTimeout(st.pending[id].timer);
         st.pending[id].reject({ code: "E_TEARDOWN", message: "instance torn down" });
@@ -644,23 +642,23 @@
   }
 
   function onNavigate() {
-    var snap = live.slice(); // snapshot before mutating during iteration
-    for (var i = 0; i < snap.length; i++) teardownInstance(snap[i]);
+    const snap = live.slice(); // snapshot before mutating during iteration
+    for (let i = 0; i < snap.length; i++) teardownInstance(snap[i]);
   }
 
   // --- Boot -----------------------------------------------------------------
 
   function mountMarker(marker) {
-    var name = marker.getAttribute("data-fui-plugin");
-    var adapter = adapters[name];
+    const name = marker.getAttribute("data-fui-plugin");
+    const adapter = adapters[name];
     if (!adapter) {
       if (typeof console !== "undefined" && console.warn) {
         console.warn("[pluginhost] no adapter registered for plugin '" + name + "'; mount skipped");
       }
       return;
     }
-    var frame = createIframe(marker, adapter.manifest);
-    var st = createState(marker, frame, adapter);
+    const frame = createIframe(marker, adapter.manifest);
+    const st = createState(marker, frame, adapter);
     st.api = buildApi(st);
     // Loading state: hide the freshly-created frame behind the
     // server-rendered fallback until the frame reports ready. No-op
@@ -672,8 +670,8 @@
   }
 
   function boot() {
-    var markers = document.querySelectorAll("[data-fui-plugin]");
-    for (var i = 0; i < markers.length; i++) mountMarker(markers[i]);
+    const markers = document.querySelectorAll("[data-fui-plugin]");
+    for (let i = 0; i < markers.length; i++) mountMarker(markers[i]);
     window.addEventListener("message", onMessage);
     window.addEventListener("gofastr:navigate", onNavigate);
     // Host-interaction relay (additive protocol event `hostPointerdown`, no
@@ -686,8 +684,8 @@
     document.addEventListener(
       "pointerdown",
       function (e) {
-        for (var i = 0; i < live.length; i++) {
-          var st = live[i];
+        for (let i = 0; i < live.length; i++) {
+          const st = live[i];
           if (st.frame && e.target !== st.frame) {
             st.api.sendEvent("hostPointerdown", {});
           }

@@ -1057,7 +1057,7 @@ func generateBackupCodes(n int) (plain []string, hashed []string, err error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		h, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+		h, err := bcrypt.GenerateFromPassword([]byte(code), bcryptCost)
 		if err != nil {
 			return nil, nil, err
 		}

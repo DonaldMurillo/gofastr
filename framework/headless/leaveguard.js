@@ -282,9 +282,10 @@
   // position.
   const push = NS._pushURL;
   if (typeof push === 'function') {
-    NS._pushURL = function (url, o) {
+    NS._pushURL = function (...args) {
+      const o = args[1];
       const left = tagOf();
-      const r = push.apply(this, arguments);
+      const r = push.apply(this, args);
       here = location.pathname + location.search;
       tag(left ? left.i + (o && o.replace ? 0 : 1) : null);
       return r;

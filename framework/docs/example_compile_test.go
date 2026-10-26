@@ -1,7 +1,9 @@
 package docs
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -251,7 +253,8 @@ replace github.com/DonaldMurillo/gofastr => %s
 
 	index := map[string]snippet{}
 	for i, s := range snippets {
-		pkg := fmt.Sprintf("s%02d", i)
+		// Fixed width, so no package name is a prefix of another.
+		pkg := fmt.Sprintf("s%03d", i)
 		if err := os.MkdirAll(filepath.Join(dir, pkg), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", pkg, err)
 		}
@@ -261,24 +264,26 @@ replace github.com/DonaldMurillo/gofastr => %s
 		index[pkg] = s
 	}
 
-	// Binaries go to their own directory: `go build ./...` would otherwise try
-	// to write an executable named after each package dir, onto that dir.
-	binDir := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("mkdir bin: %v", err)
-	}
-	cmd := exec.Command("go", "build", "-o", binDir+string(os.PathSeparator), "./...")
+	// Compile without linking: `go list -export` type-checks and compiles
+	// every package for its export data, which is all a compile gate needs.
+	// `go build ./...` links each snippet's main package into a binary, and
+	// linking the whole framework once per snippet was most of the run.
+	// It lists every package on stdout; the compile errors go to stderr.
+	cmd := exec.Command("go", "list", "-export", "-f", "{{.ImportPath}}", "./...")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
+	var stderr bytes.Buffer
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
 		return
 	}
+	out := stderr.String()
 
 	// Map each failing package back to the doc that produced it.
 	t.Errorf("doc examples failed to compile:\n%s", out)
 	for pkg, s := range index {
-		if strings.Contains(string(out), pkg) {
+		if strings.Contains(out, pkg+"/") {
 			t.Errorf("\n--- %s (generated from %s) ---\n%s", pkg, s.doc, s.body)
 		}
 	}

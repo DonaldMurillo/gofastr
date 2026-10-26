@@ -228,7 +228,7 @@ func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	}
 	// Timeout path: the entry is freed BEFORE the reject, so the timer
 	// slot does not leak and a late response is dropped by id.
-	to := jsBody(code, "var timer = setTimeout(function () {", "}, timeoutMs);")
+	to := jsBody(code, "const timer = setTimeout(function () {", "}, timeoutMs);")
 	if to == "" {
 		t.Fatal("request() timeout callback not found")
 	}
@@ -281,7 +281,7 @@ func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	}
 	// And the routing: teardown is dispatched on the REQUEST path, ahead
 	// of the unknown-request drop.
-	om := jsBody(code, "function onWindowMessage(", "var p = pending[msg.id];")
+	om := jsBody(code, "function onWindowMessage(", "const p = pending[msg.id];")
 	if om == "" {
 		t.Fatal("onWindowMessage() dispatch not found")
 	}
@@ -460,7 +460,7 @@ func TestWidgetClientJS_HostContextReturnsACopy(t *testing.T) {
 	if body == "" {
 		t.Fatal("hostContext() not found in widget client")
 	}
-	if !strings.Contains(body, "var copy = {}") {
+	if !strings.Contains(body, "const copy = {}") {
 		t.Error("hostContext() must build a copy; returning hostContextState aliases the merge state")
 	}
 	if strings.Contains(body, "return hostContextState") {

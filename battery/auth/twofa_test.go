@@ -812,7 +812,10 @@ func TestBackupCode_GetIsNotBlockedByConsume(t *testing.T) {
 	store := NewMemoryTwoFAStore()
 	ctx := context.Background()
 
-	// Pre-hash 10 random backup codes, the typical default.
+	// Pre-hash 10 random backup codes, the typical default. At
+	// bcrypt.DefaultCost, not the package tests' bcryptCost: a comparison
+	// runs at its hash's cost, and at MinCost the ten finish before
+	// GetTwoFA starts, so a lock held across them would pass.
 	codes := make([]string, 10)
 	for i := range codes {
 		h, err := bcrypt.GenerateFromPassword([]byte("code"+string(rune('0'+i))), bcrypt.DefaultCost)

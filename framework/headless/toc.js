@@ -18,7 +18,7 @@
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
-    if (root.querySelectorAll) out.push.apply(out, root.querySelectorAll(sel));
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
     return out;
   }
 

@@ -77,7 +77,7 @@ else
   coverprofile=$(mktemp)
   trap 'rm -f "$coverprofile"' EXIT
   go run ./cmd/affected \
-    -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
+    -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
     -- go test -timeout=20m -coverprofile="$coverprofile" \
     -skip 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
   pass "Deterministic tests passed"

@@ -1,4 +1,4 @@
-package runtime_test
+package hosttest
 
 // TestOverlayDoesNotMoveRouteSignals (docs/DESIGN-layout-outlets.md
 // "Route signals": "Never at click time, never on an intercept overlay

@@ -20,7 +20,7 @@
  *
  * Usage (inside the frame document, after this script loads):
  *
- *   var client = window.__gofastrPluginFrame;
+ *   const client = window.__gofastrPluginFrame;
  *   client.onEvent("init", function (params) { … });
  *   client.onRequest("getState", function (params) { return {…}; });
  *   client.ready({ domReady: true }).then(function (init) { … });
@@ -31,26 +31,26 @@
 
   // --- Protocol constants (must match host/pluginhost.js; the pair is
   //     pinned by TestEnvelopeVersionsAgree) ---------------------------------
-  var ENVELOPE_VERSION = 1;
-  var RESPONSE_TIMEOUT_MS = 5000;  // request → response default
-  var MAX_INFLIGHT = 64;           // pending-request bound, both directions
+  const ENVELOPE_VERSION = 1;
+  const RESPONSE_TIMEOUT_MS = 5000;  // request → response default
+  const MAX_INFLIGHT = 64;           // pending-request bound, both directions
 
   // id -> {resolve, reject, timer} for OUR outbound (frame → host) requests.
-  var pending = Object.create(null);
+  let pending = Object.create(null);
   // method -> handler, for inbound host → frame traffic.
-  var eventHandlers = Object.create(null);
-  var requestHandlers = Object.create(null);
-  var reqCounter = 0;
+  const eventHandlers = Object.create(null);
+  const requestHandlers = Object.create(null);
+  let reqCounter = 0;
 
   // ready() → init handshake state: every outstanding ready() promise
   // resolves ONCE with the first init's params; later inits only dispatch
   // through the onEvent handlers.
-  var initArrived = false;
-  var initParams = null;
-  var initWaiters = [];
+  let initArrived = false;
+  let initParams = null;
+  let initWaiters = [];
 
   function envelope(type, method, params, id) {
-    var env = { v: ENVELOPE_VERSION, type: type, src: "plugin", result: null, error: null };
+    const env = { v: ENVELOPE_VERSION, type: type, src: "plugin", result: null, error: null };
     if (id) env.id = id;
     if (method) env.method = method;
     if (params) env.params = params;
@@ -74,7 +74,7 @@
   // Fail every outstanding sendRequest (host teardown ack, pagehide) so
   // nothing hangs; responses arriving after this are dropped by id.
   function rejectOutstanding(err) {
-    for (var id in pending) {
+    for (const id in pending) {
       if (Object.prototype.hasOwnProperty.call(pending, id)) {
         clearTimeout(pending[id].timer);
         pending[id].reject(err);
@@ -86,7 +86,7 @@
   // --- Inbound dispatch (host → frame) --------------------------------------
 
   function reply(id, result, err) {
-    var env = envelope("response", null, null, id);
+    const env = envelope("response", null, null, id);
     if (err) env.error = err;
     else env.result = result;
     try {
@@ -96,7 +96,7 @@
       // DataCloneError here; without this guard the host waits out its
       // full timeout instead of learning the handler misbehaved. Error
       // envelopes are plain strings, so the fallback always clones.
-      var fallback = envelope("response", null, null, id);
+      const fallback = envelope("response", null, null, id);
       fallback.error = {
         code: "E_HANDLER",
         message: "response not cloneable: " + String(e && e.message || e)
@@ -108,7 +108,7 @@
   }
 
   function handleRequest(msg) {
-    var handler = requestHandlers[msg.method];
+    const handler = requestHandlers[msg.method];
     if (typeof handler !== "function") {
       // Never silence: the host holds a pending entry per request id and a
       // dropped reply would hang it until its own timeout.
@@ -133,12 +133,12 @@
       if (!initArrived) {
         initArrived = true;
         initParams = params;
-        var waiters = initWaiters;
+        const waiters = initWaiters;
         initWaiters = [];
-        for (var i = 0; i < waiters.length; i++) waiters[i](params);
+        for (let i = 0; i < waiters.length; i++) waiters[i](params);
       }
     }
-    var h = eventHandlers[method];
+    const h = eventHandlers[method];
     if (typeof h === "function") {
       try { h(params); } catch (e) {
         if (typeof console !== "undefined" && console.error) {
@@ -154,8 +154,8 @@
   // (awaited), ACK the request, THEN fail every outstanding sendRequest —
   // in that order, so the ACK is on the wire before the host removes us.
   function handleTeardown(msg) {
-    var handler = requestHandlers["teardown"];
-    var run = (typeof handler === "function")
+    const handler = requestHandlers["teardown"];
+    const run = (typeof handler === "function")
       ? function () { return handler(msg.params || {}); }
       : function () { return null; }; // no plugin teardown hook — still ACK
     Promise.resolve().then(run).then(
@@ -174,15 +174,15 @@
     // Security mirror of the broker: accept ONLY the parent window — NOT
     // event.origin (opaque origins report "null"; source identity is the
     // gate, §3).
-    var fromParent = event.source === window.parent;
+    const fromParent = event.source === window.parent;
     if (!fromParent) return;
-    var msg = event.data;
+    const msg = event.data;
     if (!msg || typeof msg !== "object") return;
     if (msg.v !== ENVELOPE_VERSION) return;
     if (msg.src !== "host") return;
 
     if (msg.type === "response") {
-      var p = pending[msg.id];
+      const p = pending[msg.id];
       if (!p) return; // late (post-timeout / post-teardown): dropped by id
       clearTimeout(p.timer);
       delete pending[msg.id];
@@ -230,8 +230,8 @@
       }
       timeoutMs = validTimeout(timeoutMs);
       return new Promise(function (resolve, reject) {
-        var id = "p-" + (++reqCounter);
-        var timer = setTimeout(function () {
+        const id = "p-" + (++reqCounter);
+        const timer = setTimeout(function () {
           if (pending[id]) {
             delete pending[id];
             reject({ code: "E_TIMEOUT", message: "request " + method + " timed out" });

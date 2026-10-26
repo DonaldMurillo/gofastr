@@ -301,7 +301,7 @@ fmt-check:
 	@# Tracked files only: `gofmt -l .` descends into agent-managed
 	@# worktrees (.claude/worktrees/, .pi/worktrees/) whose checkouts
 	@# aren't this branch's code and would fail the gate spuriously.
-	@gofmt_output=$$(git ls-files '*.go' | xargs gofmt -l); \
+	@gofmt_output=$$(git ls-files '*.go' | xargs "$$(go env GOROOT)/bin/gofmt" -l); \
 	if [ -n "$$gofmt_output" ]; then \
 		echo "✗ Files not formatted:"; \
 		echo "$$gofmt_output"; \

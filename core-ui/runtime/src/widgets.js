@@ -122,7 +122,10 @@
             ? path + (path.includes('?') ? '&' : '?') + 'ctx=' + encodeURIComponent(ctx)
             : path;
           if (!NS._originOK?.(url)) throw new Error('cross-origin chrome');
-          const r = await fetch(NS._lp?.(url) ?? url);
+          // no-store: the HTTP cache runs one request per URL at a time,
+          // so a held fetch for this chrome would stall a second open of
+          // it for up to 20s; the runtime's own cache above dedupes.
+          const r = await fetch(NS._lp?.(url) ?? url, { cache: 'no-store' });
           // A followed 3xx is another URL's markup, never this chrome.
           if (!r.ok || r.redirected) throw new Error('chrome fetch ' + r.status);
           return await r.text();

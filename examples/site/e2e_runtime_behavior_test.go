@@ -115,9 +115,12 @@ func TestE2E_AnchorDownloadSkipsSPA(t *testing.T) {
 
 // Item 3c: hovering an element with data-cui-prefetch="popover" must
 // trigger a fetch for the popover module exactly once even when the
-// pointerover fires twice (the delegator de-dupes per element via a
-// WeakSet). The local `loadModule` is closure-bound, so we observe the
-// network fetch rather than monkey-patching.
+// pointerover fires twice: the second hover lands while the first fetch
+// is in flight, and loadModule hands it the cached promise. The local
+// `loadModule` is closure-bound, so we count what it leaves behind: one
+// <script> element per load. The network log cannot count them: Chrome
+// folds a second in-flight request for the same script URL into the
+// first, so a duplicate load shows as one request.
 func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -127,7 +130,7 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
 
 	urls, cancel := collectRuntimeModuleURLs(ctx)
 	defer cancel()
-
+	var loads int
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		chromedp.Navigate(base+"/"),
@@ -143,24 +146,25 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
         })()`, nil),
 		waitFor(`!!window.__gofastr.loadedModules?.popover`),
+		// The module registered, so both hovers' loads have run: a
+		// duplicate's script element went in beside the first.
+		chromedp.Evaluate(`document.querySelectorAll('script[src*="/runtime/popover.js"]').length`, &loads),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 
-	popoverFetches := 0
+	fetched := false
 	urls.Range(func(k, _ any) bool {
-		if strings.Contains(k.(string), "/runtime/popover.js") {
-			popoverFetches++
-		}
+		fetched = fetched || strings.Contains(k.(string), "/runtime/popover.js")
 		return true
 	})
-	if popoverFetches == 0 {
+	if !fetched {
 		var listed []string
 		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
 		t.Errorf("hover on data-cui-prefetch did not fetch popover module; urls: %v", listed)
 	}
-	if popoverFetches > 1 {
-		t.Errorf("popover fetched %d times — delegator must de-dup per element", popoverFetches)
+	if loads != 1 {
+		t.Errorf("popover loaded %d times — a hover during an in-flight load must reuse it", loads)
 	}
 }
 

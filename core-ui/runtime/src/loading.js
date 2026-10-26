@@ -76,10 +76,6 @@
     if (e.el.isConnected) e.el.removeAttribute('data-cui-loadstate');
     e.shown = false;
   };
-  // The apply sweep: every live loading entry's region is one this
-  // navigation replaces (entries are only created for such regions),
-  // including entries a superseded navigation left behind.
-  const _sweepLoading = () => { while (_liveLoading.length) _settleLoading(_liveLoading[0]); };
   // P9-ANIM helpers shared by the loading apply paths: claimEntry
   // retires a region's PENDING entry (its After timer never fired
   // because the content beat it) so the timer cannot park freshly

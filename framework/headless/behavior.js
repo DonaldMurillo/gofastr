@@ -381,9 +381,7 @@
   function selectGroup(all) {
     const x = all.closest('[data-hui-table]'), name = all.getAttribute('data-hui-table-select-all');
     if (!x) return [];
-    return Array.prototype.filter.call(x.querySelectorAll('input[type="checkbox"]'), function (b) {
-      return b !== all && b.name === name && !b.disabled;
-    });
+    return [...x.querySelectorAll('input[type="checkbox"]')].filter((b) => b !== all && b.name === name && !b.disabled);
   }
   function syncSelectAll(all) {
     const boxes = selectGroup(all), on = boxes.filter(function (b) { return b.checked; }).length;

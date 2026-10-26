@@ -12,6 +12,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
+// Building an app resolves isolation settings: framework/isolation looks
+// for gofastr.settings.yml from the package directory up to the repo
+// root, so these tests read the root file.
+//
+//gofastr:test-reads /gofastr.settings.yml
+
 // AccountStore + /auth/accounts + /auth/unlink/:provider.
 //
 // The reviews flagged that the 409 collision message tells users to
