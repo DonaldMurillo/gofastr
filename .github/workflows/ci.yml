@@ -728,14 +728,8 @@ jobs:
           # per-SHA cache instead.
           cache: false
 
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
-        with:
-          install-dependencies: true
-
-      - name: Install the gofastr binary
-        run: go install ./cmd/gofastr
-
+      # Before the Chrome and gofastr installs: a suite the change does
+      # not reach skips them too, not only the test run (#598).
       - name: Is this suite affected?
         id: scope
         env:
@@ -748,6 +742,16 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::$PKG is not in this change's import-graph closure; suite skipped (runs on main)."
           fi
+
+      - name: Install Chrome
+        if: steps.scope.outputs.run == 'true'
+        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        with:
+          install-dependencies: true
+
+      - name: Install the gofastr binary
+        if: steps.scope.outputs.run == 'true'
+        run: go install ./cmd/gofastr
 
       - name: Run suite
         if: steps.scope.outputs.run == 'true'
