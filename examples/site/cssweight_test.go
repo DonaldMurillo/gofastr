@@ -8,7 +8,7 @@ import (
 )
 
 // siteCSSCap is the most CSS, gzip-compressed, one site page may ship.
-// The heaviest page on 2026-10-26 was /components/icon at 21,210 B after
+// The heaviest page on 2026-10-26 was /components/icon at 21,215 B after
 // adding the searchable catalog's filter toolbar, dropdown, form controls
 // and copy tiles. The cap sits a little above it, so further CSS growth
 // has to raise it in the same change instead of arriving unnoticed.

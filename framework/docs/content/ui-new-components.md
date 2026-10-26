@@ -627,6 +627,7 @@ ignoring case and treating hyphens and underscores as spaces. The `q` and
 above `Label`. It retains the usual `Target` element ID, accessible name,
 keyboard handling, and announced confirmation. Tile icons render at 24px;
 the native title exposes the full label when it is visually truncated.
+`--ui-copy-btn-tile-min-height` controls the tile's minimum height, defaulting to `6rem`.
 Tile cannot be combined with `IconOnly`, `Inline`, or `Ghost`; those
 combinations panic. Supply the target text in a separate element, as with any
 other CopyButton.

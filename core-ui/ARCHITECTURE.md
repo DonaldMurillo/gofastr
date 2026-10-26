@@ -2463,6 +2463,7 @@ framework/
                  tools on one row. The icon browser uses this without a sticky heading or
                  theme toggle. CopyButton{Tile:true} supplies each whole-tile copy
                  control, with one 24px glyph above the name; the Grid minimum is 5rem.
+                 --ui-copy-btn-tile-min-height sets its minimum height (default 6rem).
 ```
 
 ---

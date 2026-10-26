@@ -375,7 +375,7 @@ func copyButtonCSS(_ style.Theme) string {
   flex-direction: column;
   inline-size: 100%;
   min-inline-size: 0;
-  min-block-size: 6rem;
+  min-block-size: var(--ui-copy-btn-tile-min-height, 6rem);
   block-size: 100%;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px) var(--spacing-sm, 4px);
