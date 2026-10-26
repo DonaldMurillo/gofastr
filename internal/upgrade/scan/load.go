@@ -341,8 +341,8 @@ func (e *engine) loadConfigurations(loads []loadOutcome) {
 	}
 }
 
-// maxConfigLoads caps the build-configuration loads that run at once:
-// each holds a type-checked package graph until it is read back.
+// maxConfigLoads caps the build-configuration loads that run at once,
+// each a go command plus a type-check.
 var maxConfigLoads = min(runtime.GOMAXPROCS(0), 4)
 
 // walkMissed visits every .go file under the scan root the loads may
