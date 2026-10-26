@@ -758,6 +758,40 @@ func requireBrowser(t *testing.T) {
 	}
 }
 
+// TestCaptureShotsShareNoCookies: the shots of one capture run share a
+// Chrome but not its state. Each used to get a Chrome of its own; a cookie,
+// storage or cache entry one shot's page set must still not reach the
+// next shot's.
+func TestCaptureShotsShareNoCookies(t *testing.T) {
+	requireBrowser(t)
+	var carried atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only the page load counts: a shot's own later requests
+		// (favicon.ico) carry the cookie its page just set.
+		if _, err := r.Cookie("seen"); err == nil && r.URL.Path == "/" {
+			carried.Add(1)
+		}
+		http.SetCookie(w, &http.Cookie{Name: "seen", Value: "1", Path: "/", MaxAge: 3600})
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!doctype html><html><head><style>
+			body{margin:0} main{min-height:900px;background:linear-gradient(135deg,#10233f,#d77752);color:white;padding:24px}
+			.item{min-height:80px;border:1px solid rgba(255,255,255,.5);padding:12px;margin:8px 0}
+		</style></head><body><main><h1>Shot</h1>` + strings.Repeat(`<div class="item">Inspection reading and technician notes</div>`, 8) + `</main></body></html>`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	viewports := []Viewport{{ID: "desktop", Width: 1280, Height: 800, Scheme: "light"}, {ID: "desktop-dark", Width: 1280, Height: 800, Scheme: "dark"}}
+	_, issues := captureCandidate(ctx, server.URL, t.TempDir(), Scenario{Pages: []Page{{Name: "home", Path: "/", ReadySelector: "main"}}}, viewports)
+	if len(issues) > 0 {
+		t.Fatalf("capture issues: %v", issues)
+	}
+	if n := carried.Load(); n > 0 {
+		t.Fatalf("%d requests carried a cookie an earlier shot set", n)
+	}
+}
+
 func TestMobileCaptureUsesTouchPortraitDPRAndFullDocument(t *testing.T) {
 	requireBrowser(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

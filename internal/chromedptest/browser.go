@@ -166,7 +166,11 @@ func launch(cfg config, key string, reap bool) (*browser, error) {
 	)
 	opts = append(opts, cfg.extra...)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	// The websocket dial after Chrome prints its URL has its own 10s
+	// default in chromedp; a cold Chrome on a loaded runner can take
+	// longer to answer it, so it gets the same startup allowance.
+	ctx, cancel := chromedp.NewContext(allocCtx,
+		chromedp.WithBrowserOption(chromedp.WithDialTimeout(cfg.startTimeout)))
 	b := &browser{key: key, ctx: ctx, cancel: cancel, allocCancel: allocCancel, dataDir: dir}
 
 	// chromedp starts Chrome on the first Run, and the process lives as

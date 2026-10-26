@@ -363,7 +363,7 @@ func widgetE2EChrome(t *testing.T) (context.Context, *widgetE2EConsole) {
 			chromedp.ExecPath(path),
 		)...)
 	t.Cleanup(cancelAlloc)
-	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx)
+	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	t.Cleanup(cancelBrowser)
 
 	con := &widgetE2EConsole{}

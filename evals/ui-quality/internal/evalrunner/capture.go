@@ -23,6 +23,7 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/device"
 )
@@ -345,6 +346,54 @@ const hydrateFullPageAssetsJS = `(async () => {
 	return Array.from(new Set(failures)).join("\n");
 })()`
 
+// browserStartBudget bounds startBrowser's wait. The URL read and the dial
+// have 90s of their own; this also covers the target attach after them.
+const browserStartBudget = 150 * time.Second
+
+// startBrowser starts the Chrome behind browser and waits up to budget for
+// it. The start runs on browser itself, since a deadline on the context
+// that starts Chrome would kill it when it fired, so the watchdog bounds
+// only the wait; on a timeout the caller's cancel kills the half-started
+// Chrome.
+func startBrowser(browser context.Context, budget time.Duration) error {
+	started := make(chan error, 1)
+	go func() { started <- chromedp.Run(browser) }()
+	select {
+	case err := <-started:
+		return err
+	case <-time.After(budget):
+		return fmt.Errorf("no answer within %v", budget)
+	}
+}
+
+// openShotWindow opens a window on browser's running Chrome in a browser
+// context of its own, so no cookie, storage or cache entry from one shot
+// reaches the next, and returns its chromedp context. It is a window, not
+// a tab: a background tab never fires requestAnimationFrame, and every
+// nextPaint in the capture scripts would wait out the budget. closeWindow
+// closes it and disposes of its browser context.
+func openShotWindow(browser context.Context) (_ context.Context, closeWindow func(), _ error) {
+	c := chromedp.FromContext(browser)
+	opCtx, opCancel := context.WithTimeout(cdp.WithExecutor(browser, c.Browser), 30*time.Second)
+	defer opCancel()
+	bcID, err := target.CreateBrowserContext().Do(opCtx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create browser context: %w", err)
+	}
+	dispose := func() {
+		ctx, cancel := context.WithTimeout(cdp.WithExecutor(context.WithoutCancel(browser), c.Browser), 10*time.Second)
+		defer cancel()
+		_ = target.DisposeBrowserContext(bcID).Do(ctx)
+	}
+	targetID, err := target.CreateTarget("about:blank").WithBrowserContextID(bcID).WithNewWindow(true).Do(opCtx)
+	if err != nil {
+		dispose()
+		return nil, nil, fmt.Errorf("create window: %w", err)
+	}
+	window, cancel := chromedp.NewContext(browser, chromedp.WithTargetID(targetID))
+	return window, func() { cancel(); dispose() }, nil
+}
+
 func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Scenario, viewports []Viewport) ([]ScreenshotResult, []string) {
 	if err := os.MkdirAll(blindDir, 0o700); err != nil {
 		return nil, []string{err.Error()}
@@ -360,8 +409,16 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 	)
 	alloc, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
 	defer allocCancel()
-	browser, browserCancel := chromedp.NewContext(alloc)
+	browser, browserCancel := chromedp.NewContext(alloc,
+		chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	defer browserCancel()
+	// Start Chrome now, on the root context. A tab made from a root that
+	// has never run starts a Chrome of its own, so without this every shot
+	// launched a fresh browser and paid its startup inside the shot's
+	// budget.
+	if err := startBrowser(browser, browserStartBudget); err != nil {
+		return nil, []string{fmt.Sprintf("start browser: %v", err)}
+	}
 
 	var viewportResults []ScreenshotResult
 	var fullPageResults []ScreenshotResult
@@ -377,39 +434,14 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			var audit browserLayoutAudit
 			// A cancellable chromedp task context also owns its target. Reusing it
 			// after cancel closes the shared tab and makes every later shot fail
-			// with context canceled. Give each screenshot its own tab instead.
-			tab, closeTab := chromedp.NewContext(browser)
-			// Named so the diagnostic below cannot drift from them. Writing
-			// "45s" into the message and the duration separately is how a
-			// number goes stale the first time someone tunes the budget.
-			//
-			// #342: on the FIRST shot the budget starts before the browser
-			// exists. chromedp launches Chrome lazily on the first action,
-			// and the first action here is the guard's fetch.Enable — so a
-			// slow launch is billed to a budget meant for the capture, and
-			// the deadline surfaces pointing at the guard rather than at
-			// startup. Later shots reuse that browser: a new tab inherits
-			// the running process, so their number is guard time only.
-			//
-			// The diagnostic this block emits settled which fix applies:
-			// CI failed at ~45.04s of 45s — the whole budget gone at the
-			// guard, on the first shot — while a quiet local run is 3.3s
-			// and a CPU-saturated one 7.5s. That is a launch problem, so
-			// the first shot's allowance covers a slow launch and later
-			// shots stay tight. Attempts to instead move the launch out of
-			// the budget (chromedp.Run with no actions, warming the tab
-			// with about:blank) are recorded refuted on #342 — chromedp
-			// does not launch without a real action. 150s follows the
-			// pattern that fixed the chromium-ui flakes: chromedp's own
-			// websocket allowance is 90s (WSURLReadTimeout above), and a
-			// launch that outlives handshake plus session setup needs
-			// headroom past it, not a number tuned to a fast idle box.
-			const captureBudget = 45 * time.Second
-			const firstShotBudget = 150 * time.Second
-			budget := captureBudget
-			if shotIndex == 1 {
-				budget = firstShotBudget
+			// with context canceled. Give each screenshot its own window instead.
+			tab, closeTab, err := openShotWindow(browser)
+			if err != nil {
+				issues = append(issues, fmt.Sprintf("%s %s: open window: %v", page.Name, vp.ID, err))
+				continue
 			}
+			// Named so the diagnostic below cannot drift from it.
+			const budget = 45 * time.Second
 			captureCtx, cancel := context.WithTimeout(tab, budget)
 			guardStart := time.Now()
 			networkGuard, guardErr := newCandidateNetworkGuard(baseURL)
@@ -420,17 +452,8 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 			if guardErr != nil {
 				cancel()
 				closeTab()
-				// Attribute honestly: only the first shot pays for the
-				// browser launch. Saying "includes the browser launch" on
-				// shot 5 would point the reader at a startup that happened
-				// four shots ago — the exact misattribution this diagnostic
-				// exists to remove.
-				launchNote := "browser already running, so this is guard time only"
-				if shotIndex == 1 {
-					launchNote = "first shot, so this includes the browser launch"
-				}
-				issues = append(issues, fmt.Sprintf("%s %s: install network guard after %s of the %s budget (%s): %v",
-					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), budget, launchNote, guardErr))
+				issues = append(issues, fmt.Sprintf("%s %s: install network guard after %s of the %s budget: %v",
+					page.Name, vp.ID, budgetUsed.Round(time.Millisecond), budget, guardErr))
 				continue
 			}
 			emulationActions := []chromedp.Action{chromedp.EmulateReset()}
@@ -456,7 +479,7 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 				// produces JPEG bytes, regardless of the destination filename.
 				chromedp.FullScreenshot(&fullPagePNG, 100),
 			)
-			err := chromedp.Run(captureCtx, actions...)
+			err = chromedp.Run(captureCtx, actions...)
 			blockedURLs := networkGuard.blockedURLs()
 			cancel()
 			closeTab()

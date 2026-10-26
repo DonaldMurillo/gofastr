@@ -13,6 +13,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 const (
@@ -35,7 +36,7 @@ func TestPageUpdatesInPlace(t *testing.T) {
 	app, _ := searchSite(t, 25)
 	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 
 	var search string
 	var kept, sameInput, histKept bool
@@ -99,7 +100,7 @@ func TestPageDropsStaleAnswer(t *testing.T) {
 		h.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	var status string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/search"),
@@ -166,7 +167,7 @@ func staticPage(t *testing.T, path string, perPage int) *httptest.Server {
 // with runs on load, ranked in the browser, in the server's markup.
 func TestPageRanksOnExport(t *testing.T) {
 	srv := staticPage(t, "/search", 20)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	var value, titles, href string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/search?q=server+errors"),
@@ -192,7 +193,7 @@ func TestPageRanksOnExport(t *testing.T) {
 // behind a button, there being no server to page.
 func TestPageShowsMoreOnExport(t *testing.T) {
 	srv := staticPage(t, "/search", 1)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	var before, after int
 	var status string
 	if err := chromedp.Run(ctx,
@@ -250,7 +251,7 @@ func TestPageLeavingDropsPendingQuery(t *testing.T) {
 		h.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	var addr string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/search"),
@@ -300,7 +301,7 @@ func TestPageFollowsRouterHeaders(t *testing.T) {
 		h.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	var meta string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/search"),
@@ -322,7 +323,7 @@ func TestPageFollowsRouterHeaders(t *testing.T) {
 // form stays a plain GET there.
 func TestPageLeavesOtherPagesAlone(t *testing.T) {
 	srv := staticPage(t, "/components/searchresults", 20)
-	ctx := browser(t)
+	ctx := chromedptest.Context(t)
 	var value, titles string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/components/searchresults?q=form"),

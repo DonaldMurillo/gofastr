@@ -38,7 +38,7 @@ func TestCardRowHoverTintsOnlyInteractiveRows(t *testing.T) {
 			chromedp.WSURLReadTimeout(90*time.Second),
 			chromedp.NoSandbox)...)
 	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 	t.Cleanup(cancelTimeout)
 	t.Cleanup(cancel)

@@ -151,14 +151,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   returned context shares that test's state. If the shared Chrome dies,
   or a test's window cannot be cleaned up, the next call starts a new
   one; the old one closes once the other tests' windows on it are done.
-  A small `sh` watcher kills Chrome and deletes its profile when the
-  test binary exits, including on a panic or a `-timeout` kill. On
-  Windows, without `sh`, or with an option that installs a func or a
-  writer (`chromedp.ModifyCmdFunc`, `chromedp.CombinedOutput`), every
-  call gets its own Chrome as before. framework/headless's
+  Starting Chrome waits up to the startup allowance (90s by default,
+  `StartTimeout`) for both the DevTools URL and the websocket dial that
+  follows it; chromedp's own dial limit is 10s, which a cold Chrome on
+  a loaded runner can miss. A small `sh` watcher kills Chrome and
+  deletes its profile when the test binary exits, including on a panic
+  or a `-timeout` kill. On Windows, without `sh`, or with an option
+  that installs a func or a writer (`chromedp.ModifyCmdFunc`,
+  `chromedp.CombinedOutput`), every call gets its own Chrome as before. framework/headless's
   `behaviorBrowserCtx` and core-ui/runtime's `boundaryBrowserCtx`, which
   said they shared one browser but started a new one per test, now use
-  it.
+  it. Code that boots Chrome itself (36 test files, `axetest`, the UI
+  eval runner) passes the same 90s to both start waits, and
+  `TestHandBootedChromeKeepsLaunchAllowance` checks every `.go` file
+  for both. The passkey and sitesearch browser tests, which had copied
+  one boot helper, use `chromedptest.Context`. The eval runner starts its Chrome once per capture run: its
+  tabs came from a context that never ran, so each screenshot had
+  started a Chrome of its own. Each shot opens a window in a browser
+  context of its own, so no cookie or storage entry carries from one
+  shot to the next.
 - **The CLI's full test run compiles fewer generated apps.** Tests in
   one package that need the same generated app now build it once and
   share it (`clitest.SharedTree`); a test that edits files works on a
@@ -237,6 +248,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   to 20 s for the first. The runtime's chrome fetch now passes
   `cache: 'no-store'`; the runtime's own chrome cache already dedupes
   the request.
+- **`battery/print/chromepdf` gives a slow Chrome start the whole
+  render `Timeout`.** chromedp waits 20 s for Chrome to print its
+  DevTools URL and 10 s for the websocket dial after it, so a render
+  on a loaded host failed with "websocket url timeout reached" or
+  "could not dial …: context deadline exceeded" while most of its 30 s
+  `Timeout` was left. Both waits now take `Options.Timeout`.
 
 ## [0.94.1] - 2026-10-24
 
