@@ -122,6 +122,9 @@ func TestTaggedTestsScriptListsTagOnly(t *testing.T) {
 	// pattern must still name it so the tagged body runs.
 	writeTestFile(t, dir, "p/p_variant_demo_test.go", "//go:build demo\n\npackage p\n\nimport \"testing\"\n\nfunc TestVariant(t *testing.T) {}\n")
 	writeTestFile(t, dir, "r/r_test.go", "package r\n\nimport \"testing\"\n\nfunc TestOnlyPlain(t *testing.T) {}\n")
+	// A tag whose file declares only an Example with no output comment:
+	// it compiles and never runs, so the tag adds no test.
+	writeTestFile(t, dir, "r/r_co_test.go", "//go:build compileonly\n\npackage r\n\nfunc Example() {}\n")
 
 	run := func(tag string) (string, error) {
 		cmd := exec.Command("bash", "tagged-tests.sh", tag, "./...")
@@ -143,7 +146,9 @@ func TestTaggedTestsScriptListsTagOnly(t *testing.T) {
 	if want := "^(TestAlsoTagged|TestTagged|TestVariant)$"; got != want {
 		t.Errorf("pattern = %q, want %q", got, want)
 	}
-	if got, err := run("absent"); err == nil {
-		t.Errorf("a tag that adds no test printed %q and exited 0", got)
+	for _, tag := range []string{"absent", "compileonly"} {
+		if got, err := run(tag); err == nil {
+			t.Errorf("tag %s adds no test, but the script printed %q and exited 0", tag, got)
+		}
 	}
 }

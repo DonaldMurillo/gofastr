@@ -15,7 +15,9 @@
 # A `TAG` file and a `!TAG` file can both define TestFoo. Both lists then
 # hold the name, so the comparison drops it, and the tagged body would
 # never run. The pattern therefore also names every test defined in a
-# file that compiles only with the tag.
+# file that compiles only with the tag, kept only where the tagged list
+# reports it in that package: an Example with no output comment
+# compiles and never runs, and must not stand in for a test.
 #
 # Exits 1 when the tag adds no test, so a shard cannot pass by running
 # nothing.
@@ -37,24 +39,24 @@ list() {
   ' | LC_ALL=C sort -u
 }
 
-# files prints the path of each test file go list includes.
+# files prints "<import path> <file>" for each test file go list includes.
 files() {
-  go list -e -f '{{$d := .Dir}}{{range .TestGoFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}{{range .XTestGoFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}' "$@" |
+  go list -e -f '{{$p := .ImportPath}}{{$d := .Dir}}{{range .TestGoFiles}}{{$p}} {{$d}}/{{.}}{{"\n"}}{{end}}{{range .XTestGoFiles}}{{$p}} {{$d}}/{{.}}{{"\n"}}{{end}}' "$@" |
     LC_ALL=C sort -u
 }
 
 untagged=$(list "$@")
 tagged=$(list -tags "$tag" "$@")
-tagonly=$(LC_ALL=C comm -13 <(files "$@") <(files -tags "$tag" "$@"))
+# defined prints "<import path> <name>" for each test function declared in
+# a test file that compiles only with the tag.
+defined=$(LC_ALL=C comm -13 <(files "$@") <(files -tags "$tag" "$@") |
+  while IFS=' ' read -r pkg f; do
+    sed -nE 's/^func ((Test|Example|Fuzz)[A-Za-z0-9_]*)\(.*/\1/p' "$f" | sed "s|^|$pkg |"
+  done | LC_ALL=C sort -u)
 names=$({
-  LC_ALL=C comm -13 <(printf '%s\n' "$untagged") <(printf '%s\n' "$tagged") |
-    awk 'NF == 2 { print $2 }'
-  if [ -n "$tagonly" ]; then
-    printf '%s\n' "$tagonly" | while IFS= read -r f; do
-      sed -nE 's/^func ((Test|Example|Fuzz)[A-Za-z0-9_]*)\(.*/\1/p' "$f"
-    done | grep -vx TestMain || true
-  fi
-} | LC_ALL=C sort -u)
+  LC_ALL=C comm -13 <(printf '%s\n' "$untagged") <(printf '%s\n' "$tagged")
+  LC_ALL=C comm -12 <(printf '%s\n' "$defined") <(printf '%s\n' "$tagged")
+} | awk 'NF == 2 { print $2 }' | LC_ALL=C sort -u)
 
 if [ -z "$names" ]; then
   echo "$0: -tags $tag adds no test to $*" >&2
