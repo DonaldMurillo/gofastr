@@ -15,8 +15,8 @@ import (
 //     array, [...list], or call Array.from;
 //   - the `arguments` object: take rest parameters, function (...a),
 //     and pass them on with .apply(this, a);
-//   - an assignment to `<Ctor>.prototype.<name>`: declare the method in
-//     a class body.
+//   - an assignment to `<Ctor>.prototype.<name>` or to `<Ctor>.prototype`
+//     itself: declare the methods in a class body.
 //
 // Silent on:
 //   - Object.prototype.hasOwnProperty.call(o, k): the own-key check the
@@ -62,15 +62,17 @@ var legacyIdiomRules = []struct {
 		"borrowing an Array.prototype method onto a list is the pre-spread spelling; spread it, [...list], or call Array.from(list)",
 	},
 	{
-		// Not after a '.', and not a property key: `arguments:` in an
+		// Not after a '.' (msg.arguments) unless the dots are a spread
+		// (...arguments), and not a property key: `arguments:` in an
 		// object literal is a name, not the arguments object.
-		regexp.MustCompile(`(?:^|[^\w$.])(arguments)\b(?:\s*[^\s:]|\s*$)`),
+		regexp.MustCompile(`(?:^|[^\w$.]|\.\.\.)(arguments)\b(?:\s*[^\s:]|\s*$)`),
 		"the `arguments` object is the pre-rest spelling; take rest parameters, function (...a), and pass them on with .apply(this, a)",
 	},
 	{
-		// An assignment, not a comparison: one '=' not followed by
-		// another '=' or a '>'.
-		regexp.MustCompile(`\.\s*prototype\s*\.\s*[A-Za-z_$][\w$]*\s*=[^=>]`),
-		"assigning to `<Ctor>.prototype.<name>` is the pre-class spelling; declare the method in a class body",
+		// Ctor.prototype.name = … or a whole Ctor.prototype = { … }. An
+		// assignment, not a comparison: one '=' not followed by another
+		// '=' or a '>'.
+		regexp.MustCompile(`\.\s*prototype\s*(?:\.\s*[A-Za-z_$][\w$]*\s*)?=[^=>]`),
+		"assigning to `<Ctor>.prototype` or `<Ctor>.prototype.<name>` is the pre-class spelling; declare the methods in a class body",
 	},
 }

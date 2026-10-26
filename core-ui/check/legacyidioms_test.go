@@ -2,6 +2,7 @@ package check
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,8 @@ const kids = Array.prototype.slice.call(node.children);
 const hit = Array.prototype.find.apply(list, [pred]);
 function wrap() { return orig.apply(this, arguments); }
 Store.prototype.get = function (k) { return this.m[k]; };
+Store.prototype = { get(k) { return this.m[k]; } };
+function fwd() { return orig(...arguments); }
 `)
 	res, err := LintLegacyIdioms(dir)
 	if err != nil {
@@ -23,7 +26,8 @@ Store.prototype.get = function (k) { return this.m[k]; };
 	for _, v := range res.Violations {
 		lines = append(lines, v.Line)
 	}
-	want := []int{2, 3, 4, 5, 6}
+	slices.Sort(lines)
+	want := []int{2, 3, 4, 5, 6, 7, 8}
 	if len(lines) != len(want) {
 		t.Fatalf("want violations on lines %v, got %v:\n%s", want, lines, res.Error())
 	}
@@ -45,6 +49,8 @@ function wrap(...a) { return orig.apply(this, a); }
 send({ name: 'search', arguments: { q: 'hi' } });
 const args = msg.arguments;
 if (Store.prototype.get === undefined) {}
+if (Store.prototype === proto) {}
+const rest = (...a) => a.length;
 // out.push.apply(out, list) and arguments in a comment
 const s = 'Array.prototype.slice.call(x)';
 class Store { get(k) { return this.m[k]; } }
