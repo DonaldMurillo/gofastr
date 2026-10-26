@@ -3,6 +3,7 @@ package check
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -129,13 +130,15 @@ func TestLintNoVarJS_RepoIsClean(t *testing.T) {
 }
 
 // runtimeLintRoots is what every clean-tree lint walks: the runtime
-// package and every JavaScript file a registry.RegisterBehavior call in
-// the tree embeds. A registered behaviour is a runtime module the host
-// serves and the kernel loads, so the rules that hold the kernel's own
-// modules hold it; before this helper existed the lints walked
-// core-ui/runtime alone and a module beside its Go package was held to
-// nothing.
+// package and every other JavaScript file the repository ships. The
+// lints first walked core-ui/runtime alone, then grew to the registered
+// behaviours, and each step found modules held to nothing: the MCP
+// widget client, the plugin host's broker and frame client, the dev
+// layout layer and the example apps' scripts sat outside both. The walk
+// takes every .js file, so a new one is linted the day it lands; the
+// census below proves the registered behaviours are among them.
 //
+//gofastr:test-reads *.js
 //gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func runtimeLintRoots(t *testing.T, runtimeDir string) []string {
 	t.Helper()
@@ -143,11 +146,64 @@ func runtimeLintRoots(t *testing.T, runtimeDir string) []string {
 	if err != nil {
 		t.Skipf("can't locate repo root: %v", err)
 	}
-	files, err := RegisteredBehaviorSources(repoRoot)
+	files, err := shippedJSFiles(repoRoot, runtimeDir)
+	if err != nil {
+		t.Fatalf("walking the shipped JavaScript: %v", err)
+	}
+	behaviors, err := RegisteredBehaviorSources(repoRoot)
 	if err != nil {
 		t.Fatalf("enumerating registered behaviours: %v", err)
 	}
+	for _, b := range behaviors {
+		if !slices.Contains(files, b) {
+			t.Fatalf("registered behaviour %s is outside the lint walk", b)
+		}
+	}
 	return append([]string{runtimeDir}, files...)
+}
+
+// shippedJSFiles lists every .js file under repoRoot outside the
+// runtime package, plus the runtime package's own top-level modules.
+// The runtime root is linted through its frag/ and src/ directories,
+// which loadJSSources expands it to, so its files beside them would go
+// unseen; runtime.js is the bundle composed from frag/ and is skipped.
+// Vendored code, fixtures and build output are skipped the way every
+// walker in this package skips them.
+func shippedJSFiles(repoRoot, runtimeDir string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(repoRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if path == runtimeDir {
+				return filepath.SkipDir
+			}
+			if path != repoRoot && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") ||
+				name == "vendor" || name == "node_modules" || name == "testdata" || name == "dist") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(name, ".js") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	top, err := filepath.Glob(filepath.Join(runtimeDir, "*.js"))
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range top {
+		if filepath.Base(f) != "runtime.js" {
+			out = append(out, f)
+		}
+	}
+	return out, nil
 }
 
 func writeJS(t *testing.T, dir, name, body string) {
