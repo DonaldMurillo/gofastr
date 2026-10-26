@@ -462,19 +462,20 @@ func lineContaining(body, needle string) int {
 
 // rootMarkdownAllowlist is the complete set of markdown files permitted
 // at the repository root: the GitHub-recognized community-health files
-// plus the roadmap and the agent entry points. Everything else is a
-// process artifact that belongs in git history, a gate, or a skill,
-// not on the repo's front porch.
+// plus license notices, the roadmap and the agent entry points. Everything
+// else is a process artifact that belongs in git history, a gate, or a
+// skill, not on the repo's front porch.
 var rootMarkdownAllowlist = map[string]bool{
-	"README.md":          true,
-	"CHANGELOG.md":       true,
-	"CONTRIBUTING.md":    true,
-	"SECURITY.md":        true,
-	"CODE_OF_CONDUCT.md": true,
-	"SUPPORT.md":         true,
-	"ROADMAP.md":         true,
-	"CLAUDE.md":          true,
-	"AGENTS.md":          true,
+	"README.md":              true,
+	"CHANGELOG.md":           true,
+	"CONTRIBUTING.md":        true,
+	"SECURITY.md":            true,
+	"CODE_OF_CONDUCT.md":     true,
+	"SUPPORT.md":             true,
+	"ROADMAP.md":             true,
+	"CLAUDE.md":              true,
+	"AGENTS.md":              true,
+	"THIRD_PARTY_NOTICES.md": true,
 }
 
 func lintRootMarkdown(root string) ([]finding, error) {

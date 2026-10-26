@@ -667,7 +667,9 @@ The aliases are `alert-octagon` to `danger`, `alert-triangle` to `warning`,
 `card` to `credit-card`, `chart` to `bar-chart`, `edit-2` to `edit`, `fire` to
 `flame`, `more` to `more-horizontal`, `panel-left` to `sidebar`, `pencil` to
 `edit`, `sliders` to `settings`, `success` to `check`, `trash-2` to `trash`, and
-`x` to `close`. Aliases are separate exact-name application registrations.
+`x` to `close`. These are catalog aliases. An application override through
+`ui.RegisterIcon` applies only to the exact registered name, so overriding a
+canonical name does not change its aliases.
 
 | API | Behavior |
 | --- | --- |
