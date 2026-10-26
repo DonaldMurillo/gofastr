@@ -217,14 +217,14 @@
   // itself folds into take: entry ids are monotonic, so the id the
   // take reads off history.state names the move — no popstate seam.
   const _origPush = NS._pushURL;
-  NS._pushURL = function () {
+  NS._pushURL = function (...a) {
     _pushed = true;
-    return _origPush.apply(this, arguments);
+    return _origPush.apply(this, a);
   };
   const _origRefresh = NS.refresh;
-  NS.refresh = function () {
+  NS.refresh = function (...a) {
     _pending = { types: ['reload'] };
-    return _origRefresh.apply(this, arguments);
+    return _origRefresh.apply(this, a);
   };
   window.addEventListener('gofastr:navigate', (e) => {
     const root = e.detail && e.detail.root;

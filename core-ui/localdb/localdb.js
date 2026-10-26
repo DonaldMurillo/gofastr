@@ -419,14 +419,19 @@
       this._w.get(s).add(fn);
       return () => this._w.get(s).delete(fn);
     }
-  }
 
-  // The single-operation methods, each its own transaction: get(s,
-  // key), put(s, record), add(s, record), delete(s, key), clear(s),
-  // count(s, q), list(s, q).
-  for (const m of ['get', 'put', 'add', 'delete', 'clear', 'count', 'list']) {
-    const mode = OPS.includes(m) ? 'readwrite' : 'readonly';
-    Handle.prototype[m] = function (s, a) { return this._run(s, mode, (t) => t[m](s, a)); };
+    // The single-operation methods, each its own transaction.
+    get(s, a) { return this._one('get', s, a); }
+    put(s, a) { return this._one('put', s, a); }
+    add(s, a) { return this._one('add', s, a); }
+    delete(s, a) { return this._one('delete', s, a); }
+    clear(s) { return this._one('clear', s); }
+    count(s, a) { return this._one('count', s, a); }
+    list(s, a) { return this._one('list', s, a); }
+
+    _one(m, s, a) {
+      return this._run(s, OPS.includes(m) ? 'readwrite' : 'readonly', (t) => t[m](s, a));
+    }
   }
 
   // range builds the IDBKeyRange a query names: only, or lower/upper

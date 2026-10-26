@@ -17,7 +17,7 @@ import (
 // go unbridged — the exact partial-palette failure the walker had.
 func TestBrokerThemeTokenListMatchesTheme(t *testing.T) {
 	js := string(brokerJSBytes)
-	start := strings.Index(js, "var THEME_TOKENS = [")
+	start := strings.Index(js, "const THEME_TOKENS = [")
 	if start == -1 {
 		t.Fatal("THEME_TOKENS array missing from broker JS")
 	}

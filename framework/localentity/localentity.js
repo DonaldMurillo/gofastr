@@ -118,7 +118,7 @@
     const active = document.activeElement;
     const oldItem = active && active.closest && active.closest(ITEM);
     const hook = oldItem && oldItem.parentElement === el && active.closest(HOOKS);
-    const focusAt = hook ? Array.prototype.indexOf.call(items(), oldItem) : -1;
+    const focusAt = hook ? [...items()].indexOf(oldItem) : -1;
     const focusHook = hook && (hook.matches(DELETE) ? DELETE : EDIT);
     items().forEach((n) => n.remove());
 

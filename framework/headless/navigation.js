@@ -26,7 +26,7 @@
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
-    if (root.querySelectorAll) out.push.apply(out, root.querySelectorAll(sel));
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
     return out;
   }
 
@@ -115,7 +115,7 @@
   };
 
   function markRadios(group, attr, value) {
-    const opts = Array.prototype.slice.call(group.querySelectorAll(RADIO_SEL[attr]));
+    const opts = [...group.querySelectorAll(RADIO_SEL[attr])];
     let hit = opts.find(function (o) { return o.getAttribute(attr) === value; });
     if (!hit) hit = opts.find(function (o) { return o.getAttribute(attr) === ''; });
     for (const o of opts) {
@@ -195,7 +195,7 @@
     }
     if (!done) {
       const root = document.documentElement;
-      for (const c of Array.prototype.slice.call(root.classList)) {
+      for (const c of [...root.classList]) {
         if (c.indexOf('cui-theme-') === 0) root.classList.remove(c);
       }
       if (cls) root.classList.add(cls);
@@ -253,7 +253,7 @@
     const group = opt && opt.closest('[data-hui-theme-picker],[data-hui-theme-toggle][role="radiogroup"]');
     if (!group) return;
     const attr = opt.hasAttribute('data-hui-theme-pick') ? 'data-hui-theme-pick' : 'data-hui-theme-option';
-    const opts = Array.prototype.slice.call(group.querySelectorAll(RADIO_SEL[attr]));
+    const opts = [...group.querySelectorAll(RADIO_SEL[attr])];
     const i = opts.indexOf(opt);
     let j;
     switch (e.key) {

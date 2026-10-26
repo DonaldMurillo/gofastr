@@ -214,7 +214,7 @@
   // Object.prototype member is a string, so a key like "toString" falls
   // through to the English. A soft nav replaces the table
   // (applyDocShell, frag/nav.js).
-  let _says = _readInlineJSON('gofastr-strings') || {};
+  const _says = _readInlineJSON('gofastr-strings') || {};
   const say = (k, en, p) => {
     const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
@@ -1535,7 +1535,7 @@
     // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
     // into whichever navigation ran finishNav next.
-    let ps = restore;
+    const ps = restore;
     // Surface "I heard you" feedback to assistive tech and screen
     // readers while the fetch is in flight. The CSS hook can show a
     // progress strip via [aria-busy="true"] on documentElement.
@@ -1686,7 +1686,8 @@
 
       // Compute title BEFORE swapping content so document.title is
       // already correct when AT or extensions observe the new state.
-      let title, body, partial = resp.headers.get('X-Gofastr-Partial') === 'true';
+      const partial = resp.headers.get('X-Gofastr-Partial') === 'true';
+      let title, body;
       let swapKey = (partial && resp.headers.get('X-Gofastr-Swap')) || '';
       if (partial) {
         title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);

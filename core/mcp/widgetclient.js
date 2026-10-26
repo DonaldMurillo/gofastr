@@ -20,7 +20,7 @@
  *
  * Usage (inside the widget document, after this script loads):
  *
- *   var app = window.__gofastrMcpApp;
+ *   const app = window.__gofastrMcpApp;
  *   app.connect({ availableDisplayModes: ["inline"] }).then(function (host) {
  *     // host.protocolVersion / hostCapabilities / hostInfo / hostContext
  *   });
@@ -38,23 +38,23 @@
 
   // --- Protocol constants (pinned by widgetclient_test.go) -------------------
 
-  var JSON_RPC_VERSION = "2.0";    // the envelope; there is no other framing
-  var RESPONSE_TIMEOUT_MS = 30000; // request → response default; tools/call
+  const JSON_RPC_VERSION = "2.0";    // the envelope; there is no other framing
+  const RESPONSE_TIMEOUT_MS = 30000; // request → response default; tools/call
                                    // turns can be slow — pass an explicit
                                    // timeoutMs when they are slower still
-  var MAX_INFLIGHT = 64;           // pending-request bound
+  const MAX_INFLIGHT = 64;           // pending-request bound
 
   // id -> {resolve, reject, timer} for OUR outbound (widget → host)
   // requests. Null-proto so a "__proto__"/"constructor" id looks up as
   // undefined instead of a truthy Object.prototype member.
-  var pending = Object.create(null);
+  let pending = Object.create(null);
   // method -> handler, for inbound host → widget traffic: the
   // notifications, plus the ui/resource-teardown request handler.
-  var inboundHandlers = Object.create(null);
-  var reqCounter = 0;
+  const inboundHandlers = Object.create(null);
+  let reqCounter = 0;
 
   function message(method, params, id) {
-    var msg = { jsonrpc: JSON_RPC_VERSION, method: method };
+    const msg = { jsonrpc: JSON_RPC_VERSION, method: method };
     if (params) msg.params = params;
     if (id !== undefined) msg.id = id;
     return msg;
@@ -77,7 +77,7 @@
   // Fail every outstanding request (host teardown, pagehide) so nothing
   // hangs; responses arriving after this are dropped by id.
   function rejectOutstanding(err) {
-    for (var id in pending) {
+    for (const id in pending) {
       if (Object.prototype.hasOwnProperty.call(pending, id)) {
         clearTimeout(pending[id].timer);
         pending[id].reject(err);
@@ -97,8 +97,8 @@
     }
     timeoutMs = validTimeout(timeoutMs);
     return new Promise(function (resolve, reject) {
-      var id = ++reqCounter;
-      var timer = setTimeout(function () {
+      const id = ++reqCounter;
+      const timer = setTimeout(function () {
         if (pending[id]) {
           delete pending[id];
           reject({ code: "E_TIMEOUT", message: "request " + method + " timed out" });
@@ -157,14 +157,14 @@
   // Widgets have no styling of their own to undo here: a widget that
   // ignores theming simply does not reference the variables or the
   // data-theme selector, and the applied state is inert markup.
-  var hostContextState = Object.create(null);
+  const hostContextState = Object.create(null);
   // Custom properties the last applyHostTheme set on the root: the
   // diff base for removing ones a later update no longer lists.
-  var appliedThemeVars = Object.create(null);
+  let appliedThemeVars = Object.create(null);
 
   function mergeHostContext(partial) {
     if (!partial || typeof partial !== "object") return;
-    for (var k in partial) {
+    for (const k in partial) {
       if (Object.prototype.hasOwnProperty.call(partial, k)) {
         hostContextState[k] = partial[k];
       }
@@ -173,20 +173,20 @@
 
   function applyHostTheme() {
     if (typeof document === "undefined") return;
-    var root = document.documentElement;
-    var theme = hostContextState.theme;
+    const root = document.documentElement;
+    const theme = hostContextState.theme;
     if (theme === "light" || theme === "dark") {
       root.setAttribute("data-theme", theme);
       root.style.colorScheme = theme;
     }
-    var styles = hostContextState.styles;
+    const styles = hostContextState.styles;
     if (!styles || typeof styles !== "object") return;
-    var vars = styles.variables;
-    var seen = Object.create(null);
+    const vars = styles.variables;
+    const seen = Object.create(null);
     if (vars && typeof vars === "object") {
-      for (var name in vars) {
+      for (const name in vars) {
         if (!Object.prototype.hasOwnProperty.call(vars, name)) continue;
-        var value = vars[name];
+        const value = vars[name];
         // Standardized variable names all start with "--"; anything else
         // (or a non-string value) is not a theme signal, skip it.
         if (name.indexOf("--") === 0 && typeof value === "string") {
@@ -197,14 +197,14 @@
     }
     // Theme application is state, not a pile: what the previous context
     // set and this one no longer lists comes off the root.
-    for (var prev in appliedThemeVars) {
+    for (const prev in appliedThemeVars) {
       if (!seen[prev]) root.style.removeProperty(prev);
     }
     appliedThemeVars = seen;
 
-    var css = styles.css;
-    var fonts = (css && typeof css === "object" && typeof css.fonts === "string") ? css.fonts : "";
-    var el = document.querySelector("style[data-mcpapp-fonts]");
+    const css = styles.css;
+    const fonts = (css && typeof css === "object" && typeof css.fonts === "string") ? css.fonts : "";
+    let el = document.querySelector("style[data-mcpapp-fonts]");
     if (fonts) {
       if (!el) {
         el = document.createElement("style");
@@ -238,7 +238,7 @@
   // A JSON-RPC response to a host request. Results here are always {}
   // or a plain error object, so the post cannot throw DataCloneError.
   function reply(id, result, err) {
-    var msg = { jsonrpc: JSON_RPC_VERSION, id: id };
+    const msg = { jsonrpc: JSON_RPC_VERSION, id: id };
     if (err) msg.error = err;
     else msg.result = result;
     postToHost(msg);
@@ -253,7 +253,7 @@
     if (method === "ui/notifications/host-context-changed") {
       applyHostContext(params);
     }
-    var h = inboundHandlers[method];
+    const h = inboundHandlers[method];
     if (typeof h !== "function") return; // unknown method → ignored, not thrown
     try { h(params || {}); } catch (e) {
       if (typeof console !== "undefined" && console.error) {
@@ -269,8 +269,8 @@
   // then — with the response on the wire — is every outstanding request
   // failed. Same ordering as pluginhost's frame client teardown.
   function handleTeardown(msg) {
-    var handler = inboundHandlers["ui/resource-teardown"];
-    var run = (typeof handler === "function")
+    const handler = inboundHandlers["ui/resource-teardown"];
+    const run = (typeof handler === "function")
       ? function () { return handler(msg.params || {}); }
       : function () { return undefined; }; // no hook — still respond
     Promise.resolve().then(run).then(
@@ -289,9 +289,9 @@
     // Security gate: accept ONLY the parent window — NOT event.origin
     // (the sandboxed widget reports origin "null"; source identity is
     // the gate).
-    var fromParent = event.source === window.parent;
+    const fromParent = event.source === window.parent;
     if (!fromParent) return;
-    var msg = event.data;
+    const msg = event.data;
     if (!msg || typeof msg !== "object") return;
     if (msg.jsonrpc !== JSON_RPC_VERSION) return;
 
@@ -313,7 +313,7 @@
     // A response to one of OUR requests, correlated by id. A late
     // response — already timed out or torn down — finds no pending
     // entry and is dropped.
-    var p = pending[msg.id];
+    const p = pending[msg.id];
     if (!p) return;
     clearTimeout(p.timer);
     delete pending[msg.id];
@@ -380,8 +380,8 @@
     // every host-context-changed update). Read-only by convention: the
     // client keeps the authoritative state for the next apply.
     hostContext: function () {
-      var copy = {};
-      for (var k in hostContextState) {
+      const copy = {};
+      for (const k in hostContextState) {
         if (Object.prototype.hasOwnProperty.call(hostContextState, k)) {
           copy[k] = hostContextState[k];
         }

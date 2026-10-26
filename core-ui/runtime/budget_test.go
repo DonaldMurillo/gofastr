@@ -232,7 +232,7 @@ const (
 	// div, restores them exactly on failure or a superseded
 	// navigation, and honors the no-flash Min hold across the apply
 	// transaction (findLoadingTpl/_showLoading/_settleLoading/
-	// _restoreLoading/_sweepLoading + the busy-marks loop's scheduling
+	// _restoreLoading + the busy-marks loop's scheduling
 	// in frag/nav.js). Uncarvable: the show must be schedulable at
 	// click time, before the fetch — the same class as the busy marks
 	// it extends. The bundle measures 14474 at level 6; 8 bytes of
