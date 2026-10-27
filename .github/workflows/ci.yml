@@ -220,6 +220,11 @@ jobs:
         # restricted on the runner the probes still skip cleanly, never fail.
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
+      - name: Install Linux desktop runtime and virtual display
+        # Runtime libraries only: the shell must still build with CGO=0,
+        # without GTK headers or a C wrapper. Keep WebKit's sandbox enabled.
+        run: sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth
+
       - name: Install the gofastr binary
         # cmd/gofastr e2e tests (migrate diff/generate, app spec) skip
         # silently when the binary is absent, install it so they run.
@@ -266,6 +271,12 @@ jobs:
           mkdir -p dist/ci/linux-arm64
           GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
           go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
+
+      - name: Linux desktop graphical tests (CGO-free GTK and WebKit)
+        timeout-minutes: 5
+        # Separate processes for the two GTK lifetimes, with fail-closed
+        # pass checks: an opt-in skip must never satisfy this blocking gate.
+        run: ./scripts/test-linux-desktop.sh
 
       - name: gofmt (tracked files must be clean)
         run: |

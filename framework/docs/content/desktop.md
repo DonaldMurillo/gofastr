@@ -1964,15 +1964,23 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^Test
 CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^TestNativeGoFastrBridge$' -count=1 -v
 ```
 
-For a headless CI worker with GTK/WebKitGTK, Xvfb and a session bus installed:
+For a headless Linux worker with GTK/WebKitGTK, `dbus`, `xvfb` and `xauth`
+installed, the repository's runner executes both tests in separate processes:
 
 ```sh
-dbus-run-session -- xvfb-run -a env CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run TestNativeGTKWebKit -count=1 -v
+./scripts/test-linux-desktop.sh
 ```
 
-Do not disable WebKit's process sandbox to run the test. Ordinary `go test`
-runs the no-display tests and skips this opt-in graphical test. Set
-`GOFASTR_LINUX_TEST_OUTPUT` to a writable directory to retain its PNG capture.
+The blocking Linux CI job runs this script with `CGO_ENABLED=0`, an
+authenticated Xvfb display and a session bus. Logs and the PNG capture go to
+`dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
+coverage does not validate Wayland, compositor effects, notification delivery,
+or interactive file selection and overwrite confirmation.
+
+Do not disable WebKit's process sandbox to run the tests. Ordinary `go test`
+runs the no-display tests and skips these opt-in graphical tests. When running
+them directly, set `GOFASTR_LINUX_TEST_OUTPUT` to a writable directory to retain
+the PNG capture.
 
 ## What does not work yet
 
