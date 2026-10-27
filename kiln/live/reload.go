@@ -28,7 +28,11 @@ import (
 // those, an undo of one, and a session reset load the document again,
 // the way framework/dev's livereload does on a new build. So does a
 // reconnect after a dropped connection: the bus has no replay, so the
-// client cannot know whether it missed a shell edit.
+// client cannot know whether it missed a shell edit. For the same reason
+// a first connection compares worlds: the script's URL names the world
+// the page was rendered from (kilnrender.WorldStamp), the stream's ready
+// event names the world served now, and a mismatch means an edit landed
+// between the render and the subscription, so the document reloads.
 const reloadJS = `// kiln build-mode reload (dev only)
 (() => {
   'use strict';
@@ -59,10 +63,19 @@ const reloadJS = `// kiln build-mode reload (dev only)
   // so the first 'ready' after a drop reloads the document: an SPA
   // refresh would keep a stale theme or nav.
   let dirty = false;
+  // rendered: the world this document was rendered from, carried on this
+  // script's URL. A page with none (the chat host page) skips the check.
+  const rendered = (() => {
+    try { return new URL(document.currentScript.src).searchParams.get('w') || ''; } catch (_) { return ''; }
+  })();
+  const worldOf = (ev) => { try { return (JSON.parse(ev.data) || {}).world || ''; } catch (_) { return ''; } };
   const connect = () => {
     const es = new EventSource('/.kiln/events');
     es.onopen = () => mark(true);
-    es.addEventListener('ready', () => { if (dirty) { dirty = false; reloadDocument(); } });
+    es.addEventListener('ready', (ev) => {
+      const now = worldOf(ev);
+      if (dirty || (rendered && now && now !== rendered)) { dirty = false; reloadDocument(); }
+    });
     es.addEventListener('world_edit', onEdit);
     es.addEventListener('` + EventUndo + `', onEdit);
     es.addEventListener('session_reset', reloadDocument);

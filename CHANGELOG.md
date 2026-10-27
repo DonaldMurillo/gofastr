@@ -1785,7 +1785,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a nav edit, an undo of either, and a reset load the page again, since
   they change its stylesheet and sidebar. A page that reconnects after
   losing the event stream loads again too, so a shell edit made while it
-  was away shows. `world_get` masks
+  was away shows, and so does a page whose first connection finds a
+  newer world than the one it was rendered from. `world_get` masks
   `jwt_secret`, `seed_password` and a credentialed `db_url` as
   `[redacted]`, as `GET /kiln/world` already did.
 - **BREAKING: Kiln refuses hooks, routes and pages it would never run.**

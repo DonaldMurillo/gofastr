@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -138,4 +139,64 @@ func TestBrowser_ShellEditRefreshesDocument(t *testing.T) {
 	}
 	waitJS(t, ctx, `[...document.querySelectorAll('nav a')].some(a => a.textContent.includes('Quarterly reports'))`,
 		"nav edit did not reach the page's sidebar")
+}
+
+// An edit that lands after a page is rendered but before its event
+// stream connects reaches no one: the broadcaster has no replay. The
+// stream's ready event names the world the server holds now, the page
+// names the world it was rendered from, and a mismatch reloads the
+// document. The test holds the page's stream request while the edit
+// lands, the window a reload after a shell edit opened in CI.
+func TestBrowser_EditBeforeConnectReloads(t *testing.T) {
+	urlBase, tools := startKiln(t)
+	ctx := chromedptest.Context(t)
+
+	if res := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
+		Path: "/dashboard", Title: "Dashboard",
+		Tree: world.Node{Kind: "div", Children: []world.Node{
+			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "Dashboard"}},
+		}},
+	}}); !res.OK {
+		t.Fatalf("add_page: %+v", res)
+	}
+
+	held := make(chan fetch.RequestID, 8)
+	chromedp.ListenTarget(ctx, func(ev any) {
+		if e, ok := ev.(*fetch.EventRequestPaused); ok {
+			held <- e.RequestID
+		}
+	})
+	if err := chromedp.Run(ctx,
+		fetch.Enable().WithPatterns([]*fetch.RequestPattern{{URLPattern: "*/.kiln/events*"}}),
+		chromedp.Navigate(urlBase+"/dashboard"),
+		chromedp.WaitVisible(`h1`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	var first fetch.RequestID
+	select {
+	case first = <-held:
+	case <-time.After(6 * time.Second):
+		t.Fatal("the page never opened its event stream")
+	}
+
+	const themed = `[...document.querySelectorAll('style')].some(s => s.textContent.includes('--color-primary:#123456'))`
+	if res := tools.SetTheme(t.Context(), protocol.SetThemeArgs{Theme: map[string]string{"primary": "#123456"}}); !res.OK {
+		t.Fatalf("set_theme: %+v", res)
+	}
+	// Release the held stream, and every later one (the reloaded page's).
+	go func() {
+		id := first
+		for {
+			if err := chromedp.Run(ctx, fetch.ContinueRequest(id)); err != nil {
+				return
+			}
+			select {
+			case id = <-held:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	waitJS(t, ctx, themed, "an edit made before the stream connected never reached the page")
 }

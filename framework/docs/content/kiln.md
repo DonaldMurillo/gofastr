@@ -222,7 +222,11 @@ shared layout, so `set_app_config` (theme), `set_scaffold` (nav), an
 undo of either, and `reset_session` reload the document instead, as
 `framework/dev`'s livereload does on a new build. So does the first
 connection after a dropped one: `/.kiln/events` does not replay missed
-events, so the client cannot tell whether it missed a shell edit.
+events, so the client cannot tell whether it missed a shell edit. A
+page's first connection checks too: the `w` query on its
+`/.kiln/reload.js` names the world it was rendered from, the stream's
+`ready` event carries `{"world": …}` for the world served now, and the
+page reloads when they differ.
 
 Prefer design-system kinds:
 

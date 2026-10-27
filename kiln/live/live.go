@@ -28,6 +28,7 @@ type Live struct {
 	sess         *journal.Session
 	factory      AppFactory
 	app          *framework.App
+	stamp        string // kilnrender.WorldStamp of the world app was built from
 	bus          *Broadcaster
 	aux          *router.Router
 	sseSeats     sseSeatRegistry
@@ -420,6 +421,7 @@ func (l *Live) rebuild() (err error) {
 		app.Router().Get("/api/docs/", openapi.DocsHandler(spec, "/api/docs", true))
 	}
 	l.app = app
+	l.stamp = kilnrender.WorldStamp(l.sess.World)
 	return nil
 }
 
