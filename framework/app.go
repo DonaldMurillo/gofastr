@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -759,6 +760,19 @@ func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 		}
 	}
 	return crud.MountInfo{Mounted: true, Path: path}
+}
+
+// pageIndexPath is where the app serves its page index, or "" when it
+// serves none. Only a UI host built with WithPublicLLMMD registers
+// /llm-pages.md (behind its mount prefix, when it has one), so the
+// /api/llm.md index asks the route table rather than assuming a host.
+func (a *App) pageIndexPath() string {
+	for _, rt := range a.router.Routes() {
+		if rt.Method == http.MethodGet && path.Base(rt.Pattern) == "llm-pages.md" {
+			return rt.Pattern
+		}
+	}
+	return ""
 }
 
 // WithRouter sets a custom router.
@@ -3454,6 +3468,7 @@ func (a *App) Start(addr string) error {
 		// API entity index under /api/ alongside /api/docs/.
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
+			pagesIndex := a.pageIndexPath()
 			// PublicOpenAPI serves the index without the auth gate, the
 			// same opt-in and exposure class as the public /openapi.json
 			// above (llm.md derives from the same schema information, and
@@ -3465,7 +3480,7 @@ func (a *App) Start(addr string) error {
 			// per-request-filtered crud handler, and per-entity
 			// /{table}/llm.md routes keep their own scope gate either way.
 			if a.Config.PublicOpenAPI {
-				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount))
+				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount, pagesIndex))
 				a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Cache-Control", "no-store")
 					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -3473,7 +3488,7 @@ func (a *App) Start(addr string) error {
 					w.Write(doc)
 				}))
 			} else {
-				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount))
+				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount, pagesIndex))
 			}
 			hasLLMMD = true
 		}

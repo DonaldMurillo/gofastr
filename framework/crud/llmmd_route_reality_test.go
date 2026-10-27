@@ -29,7 +29,7 @@ func TestRegistryLLMMD_RouteReality(t *testing.T) {
 	}}
 	crudMount := func(e *entity.Entity) MountInfo { return MountInfo{Mounted: e.GetTable() == "posts"} }
 
-	md := RegistryLLMMD(reg, "MyApp", crudMount)
+	md := RegistryLLMMD(reg, "MyApp", crudMount, "")
 
 	if !strings.Contains(md, "[posts](/posts/llm.md)") {
 		t.Errorf("CRUD-mounted entity should keep its linked row:\n%s", md)
@@ -46,7 +46,7 @@ func TestRegistryLLMMD_RouteReality(t *testing.T) {
 
 	// nil predicate keeps the historical Exposure-blind behavior for
 	// direct callers.
-	legacy := RegistryLLMMD(reg, "MyApp", nil)
+	legacy := RegistryLLMMD(reg, "MyApp", nil, "")
 	if !strings.Contains(legacy, "secrets") {
 		t.Errorf("nil predicate must keep the pre-#266 behavior:\n%s", legacy)
 	}

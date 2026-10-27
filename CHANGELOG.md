@@ -7,6 +7,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **BREAKING: `/api/llm.md` links the page index only when the app
+  serves one.** The index's Pages section always linked `/llm-pages.md`,
+  which only a UI host built with `uihost.WithPublicLLMMD` serves, so an
+  API-only app (or a host without the opt-in) published a link that
+  answered 404. The app now passes the path its route table holds, and
+  the section is left out when there is none.
+  `crud.RegistryLLMMD` and `crud.RegistryLLMMDHandler` take a trailing
+  `pagesIndex string` for that path; pass `""` from a hand-rolled mount
+  with no page index.
+
 ## [0.95.0] - 2026-10-26
 
 ### Added

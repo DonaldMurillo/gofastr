@@ -1,0 +1,13 @@
+version: v0.96.0
+title: unreleased
+notes:
+  - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
+    breaking: true
+    hits: review
+    guidance: "The framework's own /api/llm.md passes the path the UI host registered, so apps that never call these change nothing. A hand-rolled mount passes \"/llm-pages.md\" only when a UI host built with WithPublicLLMMD serves it, and \"\" otherwise."
+    find:
+      shapes:
+        - symbol: gofastr/framework/crud.RegistryLLMMD
+          type: '^func\(registry entity\.Registry, appName string, crudMount func\(\*entity\.Entity\) crud\.MountInfo\) string$'
+        - symbol: gofastr/framework/crud.RegistryLLMMDHandler
+          type: '^func\(registry entity\.Registry, appName string, crudMount func\(\*entity\.Entity\) crud\.MountInfo\) http\.Handler$'
