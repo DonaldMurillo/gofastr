@@ -38,6 +38,25 @@ func TestDocLang(t *testing.T) {
 	}
 }
 
+// CatalogLocale answers a catalog locale or the fallback, never the tag
+// the request carried, so per-locale caches stay bounded by the catalog.
+func TestCatalogLocale(t *testing.T) {
+	cat := NewMapCatalog()
+	cat.Set("es", "k", Message{Text: "v"})
+	cat.Set("fr-ca", "k", Message{Text: "v"})
+	tr := NewTranslator(cat, "en")
+	at := func(tag string) context.Context {
+		return WithTranslator(WithContext(context.Background(), Locale{Tag: tag}), tr)
+	}
+	for tag, want := range map[string]string{
+		"es": "es", "es-mx": "es", "fr-ca": "fr-ca", "zz-attacker": "en", "": "en",
+	} {
+		if got := CatalogLocale(at(tag)); got != want {
+			t.Errorf("CatalogLocale(%q) = %q; want %q", tag, got, want)
+		}
+	}
+}
+
 func TestEnvLocale(t *testing.T) {
 	cat := NewMapCatalog()
 	cat.Set("fr", "k", Message{Text: "v"})

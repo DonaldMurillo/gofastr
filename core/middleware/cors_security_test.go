@@ -21,6 +21,7 @@ func TestCORS_SanitizesConfigTokens(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	req.Header.Set("Origin", "https://good.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -68,6 +69,7 @@ func TestCORS_RejectedOriginPreflightReturnsForbidden(t *testing.T) {
 	}))
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -257,5 +259,48 @@ func TestCORS_OriginMatchIsExactNotSubstring(t *testing.T) {
 	}
 	if !varyOrigin {
 		t.Fatal("echoed ACAO response missing Vary: Origin (shared-cache cross-origin replay)")
+	}
+}
+
+// A preflight is OPTIONS with an Origin AND Access-Control-Request-Method.
+// Any other OPTIONS (curl -X OPTIONS, WebDAV, a gateway probe) belongs to
+// the app's own handler, for an allow-list and for "*".
+func TestCORS_PlainOptionsReachesHandler(t *testing.T) {
+	for _, origins := range [][]string{{"https://good.example"}, {"*"}} {
+		for _, origin := range []string{"", "https://good.example"} {
+			h := CORS(CORSConfig{AllowedOrigins: origins})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Allow", "GET, OPTIONS")
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest(http.MethodOptions, "/", nil)
+			if origin != "" {
+				req.Header.Set("Origin", origin)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK || rec.Header().Get("Allow") == "" {
+				t.Errorf("origins %v, Origin %q: plain OPTIONS answered %d, want the handler's 200", origins, origin, rec.Code)
+			}
+		}
+	}
+}
+
+// Under an allow-list the response depends on Origin whether or not it
+// matched, so every response says so: a shared cache that stored the
+// no-ACAO variant must not replay it to an allowed origin.
+func TestCORS_VaryOriginOnEveryResponse(t *testing.T) {
+	h := CORS(CORSConfig{AllowedOrigins: []string{"https://good.example"}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for _, origin := range []string{"", "https://evil.example", "https://good.example"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Values("Vary"); len(got) != 1 || got[0] != "Origin" {
+			t.Errorf("Origin %q: Vary = %q, want exactly Origin", origin, got)
+		}
 	}
 }

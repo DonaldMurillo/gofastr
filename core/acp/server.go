@@ -180,9 +180,10 @@ func (c *Client) Update(u Update) error {
 }
 
 // RequestPermission asks the user to approve a tool call and blocks
-// until the client answers, ctx ends, or the connection dies. The
-// outcome is the user's decision; on a transport error the caller
-// should treat the turn as failed.
+// until the client answers, ctx ends, or the connection dies. It works
+// from any handler, session/load included. The outcome is the user's
+// decision; on a transport error the caller should treat the turn as
+// failed.
 func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate, options []PermissionOption) (RequestPermissionOutcome, error) {
 	var zero RequestPermissionOutcome
 	id := c.conn.nextID.Add(1)
@@ -240,7 +241,7 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 	case <-ctx.Done():
 		return zero, ctx.Err()
 	case <-c.conn.closed:
-		return zero, errors.New("acp: connection closed")
+		return zero, errConnClosed
 	}
 }
 
@@ -263,6 +264,12 @@ func newConn(w io.Writer) *conn {
 	return &conn{w: w, pending: map[int64]chan pendingResp{}, closed: make(chan struct{})}
 }
 
+// errConnClosed is what a Client call made after Serve returned gets.
+var errConnClosed = errors.New("acp: connection closed")
+
+// writeFrame refuses once the connection is closed: Serve has returned
+// and its caller owns w again, and a write to an output nobody reads
+// any more would block the turn that a retained Client is writing for.
 func (c *conn) writeFrame(v any) error {
 	buf, err := json.Marshal(v)
 	if err != nil {
@@ -270,6 +277,11 @@ func (c *conn) writeFrame(v any) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	select {
+	case <-c.closed:
+		return errConnClosed
+	default:
+	}
 	if c.werr != nil {
 		return c.werr
 	}
@@ -330,6 +342,10 @@ type session struct {
 	mu     sync.Mutex
 	busy   bool
 	cancel context.CancelFunc
+	// responding is closed once the last turn's response is written;
+	// nil when no response is pending. The next prompt on the session
+	// waits for it (startPrompt).
+	responding chan struct{}
 }
 
 // serverState is per-Serve state; a Server may serve sequential
@@ -343,32 +359,69 @@ type serverState struct {
 	// sessionOrder is the same set as a FIFO of ids (mint order) the
 	// EvictOldest session policy pops; guarded by mu like sessions.
 	sessionOrder []string
-	ready        bool
+	// draining holds sessions EvictOldest dropped mid-turn until the
+	// turn returns, so a reload of the id still sees it busy; guarded
+	// by mu.
+	draining map[string]*session
+	ready    bool
 }
 
 // Serve reads newline-delimited JSON-RPC 2.0 frames from in and writes
 // responses, notifications, and server-to-client requests to out. It
 // returns nil on EOF of in and ctx.Err() if ctx is canceled first.
 //
-// Requests other than session/prompt are answered inline in read
-// order. session/prompt runs in its own goroutine so the reader keeps
+// Requests other than session/prompt are answered one at a time in read
+// order; while one runs, the reader still delivers permission answers
+// and holds every other frame until it is answered (runRequest). A
+// session/cancel is acted on at once and held too. At most 256 frames
+// or 16 MiB wait; past that a request is refused with an internal
+// error. EOF cancels the running request's context. session/prompt runs in its own goroutine so the reader keeps
 // accepting session/cancel notifications and permission responses
 // while the turn is in flight; its response is written when the turn
 // ends, after every update the turn produced.
+//
+// Prompt turns run under a context Serve cancels when it returns, so
+// a turn still in flight at EOF ends with the connection instead of
+// outliving it for as long as the caller's ctx lives.
+//
+// A cancel returns while a read is still blocked: the read runs in its
+// own goroutine, which ends when in next yields a line, EOF or an
+// error. Close in (a pipe, a socket) to end it sooner.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	st := &serverState{
 		srv:      s,
 		conn:     newConn(out),
 		sessions: map[string]*session{},
+		draining: map[string]*session{},
 	}
 	defer st.conn.close()
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
+	r := &reader{}
+	r.lines, r.readErr = readLines(ctx, in)
+	for {
+		var line []byte
+		switch {
+		case r.ended:
+			// Frames still held were read before the input ended, but
+			// nobody is left to answer them, and a handler run now
+			// would hold Serve open on a live context.
+			return r.endErr
+		case len(r.held) > 0:
+			line, r.held = r.held[0], r.held[1:]
+			r.heldBytes -= len(line)
+		default:
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case err := <-r.readErr:
+				return err
+			case line = <-r.lines:
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
@@ -384,7 +437,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		// pair inside params is an invalid-params refusal answered WITH
 		// the request id, which a frame-level refusal here cannot be —
 		// it would answer id-less and hang the client's matching. The
-		// 4 MiB scanner buffer above is the size cap.
+		// 4 MiB scanner buffer in readLines is the size cap.
 		if err := decodeEnvelope(line, &frame); err != nil {
 			st.respond(frame.ID, wireResponse{
 				JSONRPC: "2.0",
@@ -392,16 +445,22 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			})
 			continue
 		}
+		// A frame carrying a method must be a JSON-RPC 2.0 Request
+		// object (§4): jsonrpc exactly "2.0", and an id that is absent
+		// (a notification), a string, a number, or null. Anything else
+		// is refused before dispatch with -32600 and a null id, since
+		// an id of the wrong type cannot be echoed back as one (§5).
+		if frame.Method != "" && !validRequestEnvelope(frame) {
+			st.respond(json.RawMessage("null"), wireResponse{
+				JSONRPC: "2.0",
+				Error:   &wireRespError{Code: ErrInvalidRequest, Message: "invalid request: not a JSON-RPC 2.0 request object"},
+			})
+			continue
+		}
 		// A frame with no method is the client ANSWERING one of our
 		// requests (session/request_permission).
 		if frame.Method == "" {
-			if frame.ID == nil {
-				continue // neither a valid request nor a response
-			}
-			var id int64
-			if err := json.Unmarshal(frame.ID, &id); err == nil {
-				st.conn.deliver(id, pendingResp{Result: frame.Result, Error: frame.Error})
-			}
+			st.deliverAnswer(frame)
 			continue
 		}
 		if frame.ID == nil {
@@ -412,9 +471,131 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			st.startPrompt(ctx, frame) // responds asynchronously
 			continue
 		}
-		st.respond(frame.ID, st.handleRequest(ctx, frame))
+		st.respond(frame.ID, st.runRequest(ctx, frame, r))
 	}
-	return scanner.Err()
+}
+
+// reader is Serve's input: the line channels, the lines read while a
+// request ran and still to be handled, and the read's end once seen.
+type reader struct {
+	lines     <-chan []byte
+	readErr   <-chan error
+	held      [][]byte
+	heldBytes int
+	ended     bool
+	endErr    error
+}
+
+// runRequest answers one request in read order, while the reader keeps
+// going: the handler may ask the client for permission (a load, or
+// any handler through a Client kept from a turn), and only this loop
+// reads the answer. Answers are delivered as they arrive; any other
+// frame waits in r.held until the request is answered, so requests
+// still run one at a time in the order they were read.
+func (st *serverState) runRequest(ctx context.Context, frame wireRequest, r *reader) wireResponse {
+	// The handler's context also ends at EOF: Serve's own cancel runs
+	// only after this returns, which waits for the handler.
+	hctx, hcancel := context.WithCancel(ctx)
+	defer hcancel()
+	done := make(chan wireResponse, 1)
+	go func() { done <- st.handleRequest(hctx, frame) }()
+	for {
+		var lines <-chan []byte
+		var readErr <-chan error
+		var stop <-chan struct{}
+		if !r.ended && ctx.Err() == nil {
+			lines, readErr, stop = r.lines, r.readErr, ctx.Done()
+		}
+		select {
+		case resp := <-done:
+			return resp
+		case <-stop:
+			// The handler runs under ctx, so it ends; wait for it.
+		case err := <-readErr:
+			// No answer can arrive now: fail a pending permission
+			// request rather than wait for one.
+			r.ended, r.endErr = true, err
+			hcancel()
+			st.conn.close()
+		case line := <-lines:
+			st.holdLine(line, r)
+		}
+	}
+}
+
+// maxHeldFrames and maxHeldBytes bound what a running request holds
+// back. Past either, a request is refused at once instead of held, and
+// reading goes on, so a permission answer behind it still arrives.
+const (
+	maxHeldFrames = 256
+	maxHeldBytes  = 16 << 20
+)
+
+// holdLine takes one frame read while a request runs: an answer is
+// delivered, anything else waits in r.held for its turn.
+func (st *serverState) holdLine(line []byte, r *reader) {
+	var f wireRequest
+	parsed := decodeEnvelope(line, &f) == nil
+	if parsed && f.Method == "" {
+		st.deliverAnswer(f)
+		return
+	}
+	// A cancel stops a running turn now, or it waits as long as the
+	// request does. It is held as well, so a prompt still waiting here
+	// that the client sent before it is cancelled once it starts.
+	if parsed && f.ID == nil && f.Method == "session/cancel" && validRequestEnvelope(f) {
+		st.handleNotification(f)
+	}
+	if len(r.held) >= maxHeldFrames || r.heldBytes+len(line) > maxHeldBytes {
+		if parsed && f.ID != nil && validRequestEnvelope(f) {
+			st.respond(f.ID, st.errResp(ErrInternalError, "server busy: too many frames waiting behind a running request"))
+		}
+		return
+	}
+	r.held = append(r.held, line)
+	r.heldBytes += len(line)
+}
+
+// deliverAnswer routes a client frame with no method, an answer to one
+// of our requests, to the request waiting on it.
+func (st *serverState) deliverAnswer(frame wireRequest) {
+	if frame.ID == nil {
+		return // neither a valid request nor a response
+	}
+	var id int64
+	if err := json.Unmarshal(frame.ID, &id); err != nil {
+		return
+	}
+	resp := pendingResp{Result: frame.Result, Error: frame.Error}
+	if frame.JSONRPC != "2.0" {
+		// Not a JSON-RPC 2.0 Response object (§5). It still settles the
+		// request it names, as a refusal: dropping it would leave the
+		// request waiting, and its result must never read as an approval.
+		resp = pendingResp{Error: &wireRespError{Code: ErrInvalidRequest, Message: "invalid response: not a JSON-RPC 2.0 response object"}}
+	}
+	st.conn.deliver(id, resp)
+}
+
+// readLines scans in on its own goroutine so Serve can stop on ctx
+// while a read blocks. Each line is a copy (the scanner reuses its
+// buffer). The error channel carries the scan's end, nil on EOF, and is
+// sent only after every line was taken, so no line is lost behind it.
+func readLines(ctx context.Context, in io.Reader) (<-chan []byte, <-chan error) {
+	lines := make(chan []byte)
+	readErr := make(chan error, 1)
+	go func() {
+		scanner := bufio.NewScanner(in)
+		scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+		for scanner.Scan() {
+			select {
+			case lines <- bytes.Clone(scanner.Bytes()):
+			case <-ctx.Done():
+				return
+			}
+		}
+		readErr <- scanner.Err()
+	}()
+	return lines, readErr
 }
 
 // decodeEnvelope applies the strict decode to the frame's own boundary:
@@ -438,6 +619,29 @@ func decodeEnvelope(line []byte, frame *wireRequest) error {
 		return errors.New("trailing data after the JSON-RPC envelope")
 	}
 	return nil
+}
+
+// validRequestEnvelope reports whether a frame that names a method is
+// a JSON-RPC 2.0 Request object: jsonrpc is exactly "2.0" and the id,
+// when present, is a string, a number, or null.
+func validRequestEnvelope(frame wireRequest) bool {
+	if frame.JSONRPC != "2.0" {
+		return false
+	}
+	if frame.ID == nil {
+		return true // a notification
+	}
+	id := bytes.TrimSpace(frame.ID)
+	if len(id) == 0 {
+		return false
+	}
+	switch id[0] {
+	case '"', 'n', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		// The envelope decode already proved the value is valid JSON,
+		// so its first byte names its type: string, null, or number.
+		return true
+	}
+	return false
 }
 
 // decodeParams applies the no-ambiguity rule to one frame's params at
@@ -707,7 +911,7 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/new: agent returned an empty session ID")
 	}
-	if e := st.recordSession(&session{impl: impl}, impl.ID()); e != nil {
+	if e := st.recordSession(&session{impl: impl}, impl.ID(), true); e != nil {
 		return wireResponse{Error: e}
 	}
 	return wireResponse{Result: struct {
@@ -725,6 +929,15 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 	p, e := st.decodeSessionParams(frame, "session/load")
 	if e != nil {
 		return wireResponse{Error: e}
+	}
+	// A session with a prompt turn in flight cannot be reloaded:
+	// replacing its entry would clear the busy flag (a second prompt
+	// would then run concurrently with the first) and drop the turn's
+	// cancel handle (session/cancel would no longer reach it). The
+	// check is race-free because turns start only on this reader loop,
+	// which is busy with this frame.
+	if st.sessionBusy(p.SessionID) {
+		return st.errResp(ErrInvalidRequest, "session/load: a prompt turn is in progress for session %q", p.SessionID)
 	}
 	// Same pre-check as session/new: never make the embedder load a
 	// session this connection cannot seat. Reloading an id this
@@ -744,7 +957,13 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/load: agent returned an empty session ID")
 	}
-	if e := st.recordSession(&session{impl: impl}, impl.ID()); e != nil {
+	// The busy and seat checks above ran for the requested id. A loader
+	// answering with a different one would be recorded over that other
+	// session, replacing its state mid-turn.
+	if impl.ID() != p.SessionID {
+		return st.errResp(ErrInternalError, "session/load: agent returned a different session ID than the one requested")
+	}
+	if e := st.recordSession(&session{impl: impl}, p.SessionID, false); e != nil {
 		return wireResponse{Error: e}
 	}
 	return wireResponse{Result: map[string]any{}}
@@ -786,6 +1005,22 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 	}
 
 	sess.mu.Lock()
+	// The last turn released busy before its response went out (see
+	// below), and that response may still be waiting on a write the
+	// client is not reading. Deciding this prompt only once it is
+	// written keeps one parked responder per session: a client that
+	// stopped reading and kept sending prompts parked one goroutine per
+	// prompt. A stalled write holds this reader loop instead, as a
+	// refusal written from here already does.
+	if pending := sess.responding; pending != nil {
+		sess.mu.Unlock()
+		select {
+		case <-pending:
+		case <-ctx.Done():
+			return
+		}
+		sess.mu.Lock()
+	}
 	if sess.busy {
 		sess.mu.Unlock()
 		st.respond(frame.ID, st.errResp(ErrInvalidRequest, "session/prompt: a prompt turn is already in progress for session %q", p.SessionID))
@@ -807,7 +1042,9 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 				// stop reason even if the implementation errored out.
 				return wireResponse{Result: promptResult{StopReason: StopCancelled}}
 			case err != nil:
-				return st.errResp(ErrInternalError, "session/prompt: %v", err)
+				// As in session/new: the embedder's error text stays
+				// inside.
+				return st.errResp(ErrInternalError, "session/prompt: internal error")
 			default:
 				if reason == "" {
 					reason = StopEndTurn
@@ -818,11 +1055,27 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 		// Release the turn BEFORE the response goes out: a client may
 		// send its next session/prompt the moment it reads this
 		// response, and a still-set busy flag refuses it spuriously.
+		// The next prompt waits on written instead, so it is never
+		// refused for this turn and never decided before this response
+		// is out.
+		written := make(chan struct{})
 		sess.mu.Lock()
 		sess.busy = false
 		sess.cancel = nil
+		sess.responding = written
 		sess.mu.Unlock()
+		st.mu.Lock()
+		if st.draining[p.SessionID] == sess {
+			delete(st.draining, p.SessionID)
+		}
+		st.mu.Unlock()
 		st.respond(frame.ID, resp)
+		sess.mu.Lock()
+		if sess.responding == written {
+			sess.responding = nil
+		}
+		sess.mu.Unlock()
+		close(written)
 	}()
 }
 

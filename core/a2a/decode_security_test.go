@@ -66,6 +66,30 @@ func TestPartDecodeTypeConfusionRefused(t *testing.T) {
 	}
 }
 
+// A JSON-RPC id is a string or a number (JSON-RPC 2.0 §4; A2A has no
+// notifications, so not null either). An id of another type is refused
+// with -32600 and a null id, since it cannot be echoed back as one.
+func TestRequestIDTypeRefused(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, id := range []string{`true`, `false`, `{}`, `[]`, `[1]`, `{"a":1}`} {
+		body := `{"jsonrpc":"2.0","id":` + id + `,"method":"GetTask","params":{"id":"x"}}`
+		_, e, _ := postRaw(h.t, h.ts.URL, body)
+		if e.Error == nil || e.Error.Code != CodeInvalidRequest {
+			t.Errorf("id %s: err=%+v, want -32600", id, e.Error)
+		}
+		if string(e.ID) != "null" {
+			t.Errorf("id %s: echoed id %s, want null", id, e.ID)
+		}
+	}
+	for _, id := range []string{`"a"`, `7`, `-1.5`} {
+		body := `{"jsonrpc":"2.0","id":` + id + `,"method":"GetTask","params":{"id":"x"}}`
+		_, e, _ := postRaw(h.t, h.ts.URL, body)
+		if e.Error != nil && e.Error.Code == CodeInvalidRequest {
+			t.Errorf("id %s refused as an invalid request: %+v", id, e.Error)
+		}
+	}
+}
+
 // TestBadParamsShapesRefused pins that malformed params — non-object
 // shapes, mistyped part fields, and unparsable client-borne timestamps
 // — are refused with -32602 at the decode boundary, and a refused send

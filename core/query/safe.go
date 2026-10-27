@@ -46,6 +46,44 @@ func QuoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
+// QuoteFolded quotes a declared identifier the way the schema stores it.
+// AutoMigrate writes its DDL unquoted, so Postgres folds a declared
+// "Widgets" to widgets, and a quoted "Widgets" then names no table. Folding
+// ASCII letters before quoting keeps the quotes (a reserved word such as
+// order still works) and names what the DDL created. SQLite compares
+// identifiers without case, so the folded spelling names the same table
+// there. Each dot-separated part is quoted on its own. The caller validates
+// the identifier first (via SafeIdent), so it is ASCII.
+//
+//	QuoteFolded("Widgets")        → "widgets"
+//	QuoteFolded("app.UserEvents") → "app"."userevents"
+func QuoteFolded(s string) string {
+	parts := strings.Split(s, ".")
+	for i, part := range parts {
+		b := []byte(part)
+		for j, c := range b {
+			if 'A' <= c && c <= 'Z' {
+				b[j] = c + ('a' - 'A')
+			}
+		}
+		parts[i] = QuoteIdent(string(b))
+	}
+	return strings.Join(parts, ".")
+}
+
+// QuoteIndexName quotes the name of an index or trigger built from a
+// table name. Postgres puts an index in its table's schema and refuses a
+// schema-qualified name, so only the part after the last dot is kept,
+// folded the way QuoteFolded folds it.
+//
+//	QuoteIndexName("app.UserEvents_idx") → "userevents_idx"
+func QuoteIndexName(s string) string {
+	if i := strings.LastIndexByte(s, '.'); i >= 0 {
+		s = s[i+1:]
+	}
+	return QuoteFolded(s)
+}
+
 // SafeQuote validates and quotes a SQL identifier in one step.
 func SafeQuote(s string) (string, error) {
 	if _, err := SafeIdent(s); err != nil {

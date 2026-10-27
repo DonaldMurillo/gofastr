@@ -3,6 +3,7 @@ package a2a
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -274,5 +275,39 @@ func TestStoreTablePrefix(t *testing.T) {
 	}
 	if _, err := b.GetTask(ctx, "alice", "t1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("prefixed stores share rows: %v", err)
+	}
+}
+
+// TestStoreKeepsBigIntegers pins that a number past 2^53 in task
+// metadata or a data part comes back from every store with its digits:
+// the stores copy and persist the task through JSON, which read every
+// such number as a float64 and rounded 9007199254740993 down by one.
+func TestStoreKeepsBigIntegers(t *testing.T) {
+	const big = int64(9007199254740993)
+	for _, ctor := range storeConstructors(t) {
+		t.Run(ctor.name, func(t *testing.T) {
+			st := ctor.new(t)
+			ctx := context.Background()
+			r := rec("alice", "t1", "TASK_STATE_COMPLETED", time.Now())
+			r.Task.Metadata["n"] = big
+			p := DataPart(map[string]any{"n": big})
+			p.Metadata = map[string]any{"n": big}
+			r.Task.History[0].Parts = append(r.Task.History[0].Parts, p)
+			r.Task.History[0].Metadata = map[string]any{"n": big}
+			if err := st.CreateTask(ctx, r); err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			got, err := st.GetTask(ctx, "alice", "t1")
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			b, err := json.Marshal(got.Task)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n := strings.Count(string(b), "9007199254740993"); n != 4 {
+				t.Fatalf("task holds the big integer %d times, want 4: %s", n, b)
+			}
+		})
 	}
 }

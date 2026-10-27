@@ -53,13 +53,9 @@ func bindToolParams(params map[string]any, dst any) error {
 	rest := maps.Clone(params)
 	rv := reflect.ValueOf(dst).Elem()
 	if rv.Kind() == reflect.Struct {
-		rt := rv.Type()
 		for _, source := range []string{"query", "path"} {
-			for i := 0; i < rt.NumField(); i++ {
-				tag := rt.Field(i).Tag.Get(source)
-				if tag == "" || tag == "-" {
-					continue
-				}
+			for _, tf := range taggedFields(rv.Type(), source) {
+				tag := tf.tag
 				raw, ok := rest[tag]
 				if !ok {
 					continue
@@ -76,8 +72,8 @@ func bindToolParams(params map[string]any, dst any) error {
 				if clean != s {
 					return Fail(400, ReasonParameterControlByte, map[string]any{"source": source, "name": strconv.Quote(tag)})
 				}
-				fv := rv.Field(i)
-				if !fv.CanSet() {
+				fv := settableField(rv, tf.index)
+				if !fv.IsValid() {
 					continue
 				}
 				if err := setField(fv, s); err != nil {

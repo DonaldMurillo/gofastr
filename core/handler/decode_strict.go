@@ -45,9 +45,29 @@ func DecodeStrict(r io.Reader, dst any) error {
 	return UnmarshalStrict(body, dst)
 }
 
+// StrictOption adjusts how UnmarshalStrict decodes a body that passed
+// the key checks. The key rules themselves never change.
+type StrictOption func(*strictConfig)
+
+type strictConfig struct {
+	useNumber bool
+}
+
+// UseNumber decodes numbers held in interface values (any,
+// map[string]any, []any) as json.Number instead of float64, so an
+// integer past 2^53 keeps its exact digits. Typed numeric fields are
+// unaffected.
+func UseNumber() StrictOption {
+	return func(c *strictConfig) { c.useNumber = true }
+}
+
 // UnmarshalStrict is DecodeStrict over bytes already in memory (a
 // websocket frame, a buffered body).
-func UnmarshalStrict(data []byte, dst any) error {
+func UnmarshalStrict(data []byte, dst any, opts ...StrictOption) error {
+	var cfg strictConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	if err := validateBodyKeys(data, dst); err != nil {
 		return err
 	}
@@ -60,6 +80,9 @@ func UnmarshalStrict(data []byte, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	if isStructPointer(dst) {
 		dec.DisallowUnknownFields()
+	}
+	if cfg.useNumber {
+		dec.UseNumber()
 	}
 	if err := dec.Decode(dst); err != nil {
 		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
@@ -126,6 +149,10 @@ func CheckTopLevelKeys(data []byte, fold func(string) string) error {
 // them under its own error contract.
 func CheckObjectKeys(data []byte, fold func(string) string) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
+	// Numbers stay text: read as float64, 1e309 failed the walk before a
+	// later duplicate was seen, and a caller decoding with UseNumber
+	// accepted the body.
+	dec.UseNumber()
 	err := walkObjectKeys(dec, fold)
 	if _, tokenErr := err.(*Error); err != nil && !tokenErr {
 		return nil

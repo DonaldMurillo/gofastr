@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 type sqlDialect int
@@ -117,6 +118,9 @@ func (s *SQLStore) ensureTables() error {
 	tsType := "DATETIME"
 	if s.dialect == dialectPostgres {
 		tsType = "TIMESTAMPTZ"
+		if err := query.RefuseCaseKeptTables(context.Background(), s.db, s.taskTable, s.pushTable); err != nil {
+			return fmt.Errorf("a2a: %w", err)
+		}
 	}
 	tasks := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id         TEXT PRIMARY KEY,
@@ -129,7 +133,7 @@ func (s *SQLStore) ensureTables() error {
 		task_json  TEXT NOT NULL,
 		created_at %s NOT NULL,
 		updated_at %s NOT NULL
-	)`, query.QuoteIdent(s.taskTable), tsType, tsType, tsType)
+	)`, query.QuoteFolded(s.taskTable), tsType, tsType, tsType)
 	if _, err := s.db.Exec(tasks); err != nil {
 		return err
 	}
@@ -140,13 +144,13 @@ func (s *SQLStore) ensureTables() error {
 		config_json TEXT NOT NULL,
 		created_at  %s NOT NULL,
 		PRIMARY KEY (task_id, id)
-	)`, query.QuoteIdent(s.pushTable), tsType)
+	)`, query.QuoteFolded(s.pushTable), tsType)
 	if _, err := s.db.Exec(push); err != nil {
 		return err
 	}
 	// Serves ListTasks' owner filter plus its newest-first ordering.
 	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (owner, status_ts)",
-		query.QuoteIdent(s.taskTable+"_owner_ts_idx"), query.QuoteIdent(s.taskTable))
+		query.QuoteIndexName(s.taskTable+"_owner_ts_idx"), query.QuoteFolded(s.taskTable))
 	if _, err := s.db.Exec(idx); err != nil {
 		return err
 	}
@@ -178,7 +182,7 @@ func (s *SQLStore) CreateTask(ctx context.Context, rec *TaskRecord) error {
 	stmt := fmt.Sprintf(
 		`INSERT INTO %s (id, owner, context_id, skill_id, state, status_ts, version, task_json, created_at, updated_at)
 		 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)`,
-		query.QuoteIdent(s.taskTable),
+		query.QuoteFolded(s.taskTable),
 		s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5), s.ph(6), s.ph(7), s.ph(8), s.ph(9), s.ph(10))
 	_, err = s.db.ExecContext(ctx, stmt,
 		rec.Task.ID, rec.Owner, rec.Task.ContextID, rec.SkillID,
@@ -203,7 +207,7 @@ func scanTask(row interface{ Scan(dest ...any) error }, owner string) (*TaskReco
 		return nil, err
 	}
 	var task Task
-	if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
+	if err := jsonexact.Unmarshal([]byte(taskJSON), &task); err != nil {
 		return nil, fmt.Errorf("a2a: unmarshal task: %w", err)
 	}
 	return &TaskRecord{
@@ -218,7 +222,7 @@ func scanTask(row interface{ Scan(dest ...any) error }, owner string) (*TaskReco
 
 func (s *SQLStore) GetTask(ctx context.Context, owner, id string) (*TaskRecord, error) {
 	stmt := fmt.Sprintf(`SELECT %s FROM %s WHERE id = %s AND owner = %s`,
-		taskCols, query.QuoteIdent(s.taskTable), s.ph(1), s.ph(2))
+		taskCols, query.QuoteFolded(s.taskTable), s.ph(1), s.ph(2))
 	return scanTask(s.db.QueryRowContext(ctx, stmt, id, owner), owner)
 }
 
@@ -239,7 +243,7 @@ func (s *SQLStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
 		`UPDATE %s SET context_id = %s, skill_id = %s, state = %s, status_ts = %s,
 		 version = version + 1, task_json = %s, updated_at = %s
 		 WHERE id = %s AND owner = %s AND version = %s`,
-		query.QuoteIdent(s.taskTable),
+		query.QuoteFolded(s.taskTable),
 		s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5), s.ph(6), s.ph(7), s.ph(8), s.ph(9))
 	res, err := s.db.ExecContext(ctx, stmt,
 		rec.Task.ContextID, rec.SkillID, string(rec.Task.Status.State), statusTsOf(rec.Task),
@@ -256,7 +260,7 @@ func (s *SQLStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
 		// failures, with different meanings to the caller.
 		var stored int64
 		stmt := fmt.Sprintf(`SELECT version FROM %s WHERE id = %s AND owner = %s`,
-			query.QuoteIdent(s.taskTable), s.ph(1), s.ph(2))
+			query.QuoteFolded(s.taskTable), s.ph(1), s.ph(2))
 		err := s.db.QueryRowContext(ctx, stmt, rec.Task.ID, rec.Owner).Scan(&stored)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
@@ -283,23 +287,26 @@ func (s *SQLStore) ListTasks(ctx context.Context, owner string, q ListQuery) ([]
 		w.and("status_ts > %s", q.After)
 	}
 	countStmt := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s`,
-		query.QuoteIdent(s.taskTable), w.sql())
+		query.QuoteFolded(s.taskTable), w.sql())
 	var total int
 	if err := s.db.QueryRowContext(ctx, countStmt, w.args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	listStmt := fmt.Sprintf(`SELECT %s FROM %s WHERE %s ORDER BY status_ts DESC, updated_at DESC, id DESC`,
-		taskCols, query.QuoteIdent(s.taskTable), w.sql())
+		taskCols, query.QuoteFolded(s.taskTable), w.sql())
 	args := append([]any(nil), w.args...)
 	if q.Limit > 0 {
 		w.n++
 		listStmt += fmt.Sprintf(" LIMIT %s", s.ph(w.n))
 		args = append(args, q.Limit)
-		if q.Offset > 0 {
-			w.n++
-			listStmt += fmt.Sprintf(" OFFSET %s", s.ph(w.n))
-			args = append(args, q.Offset)
-		}
+	} else if q.Offset > 0 && s.dialect == dialectSQLite {
+		// SQLite takes OFFSET only after a LIMIT; -1 is none.
+		listStmt += " LIMIT -1"
+	}
+	if q.Offset > 0 {
+		w.n++
+		listStmt += fmt.Sprintf(" OFFSET %s", s.ph(w.n))
+		args = append(args, q.Offset)
 	}
 	rows, err := s.db.QueryContext(ctx, listStmt, args...)
 	if err != nil {
@@ -329,7 +336,7 @@ func (s *SQLStore) CreatePushConfig(ctx context.Context, rec *PushConfigRecord) 
 		return fmt.Errorf("a2a: marshal push config: %w", err)
 	}
 	stmt := fmt.Sprintf(`INSERT INTO %s (task_id, id, owner, config_json, created_at) VALUES (%s,%s,%s,%s,%s)`,
-		query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5))
+		query.QuoteFolded(s.pushTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5))
 	_, err = s.db.ExecContext(ctx, stmt, rec.Config.TaskID, rec.Config.ID, rec.Owner, string(cfgJSON), rec.CreatedAt)
 	if err != nil && isDuplicateRowErr(err) {
 		return ErrConflict
@@ -356,13 +363,13 @@ func (s *SQLStore) scanPushConfig(row interface{ Scan(dest ...any) error }) (*Pu
 
 func (s *SQLStore) GetPushConfig(ctx context.Context, owner, taskID, id string) (*PushConfigRecord, error) {
 	stmt := fmt.Sprintf(`SELECT config_json, owner, created_at FROM %s WHERE task_id = %s AND id = %s AND owner = %s`,
-		query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2), s.ph(3))
+		query.QuoteFolded(s.pushTable), s.ph(1), s.ph(2), s.ph(3))
 	return s.scanPushConfig(s.db.QueryRowContext(ctx, stmt, taskID, id, owner))
 }
 
 func (s *SQLStore) ListPushConfigs(ctx context.Context, owner, taskID string) ([]*PushConfigRecord, error) {
 	stmt := fmt.Sprintf(`SELECT config_json, owner, created_at FROM %s WHERE task_id = %s AND owner = %s ORDER BY created_at, id`,
-		query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2))
+		query.QuoteFolded(s.pushTable), s.ph(1), s.ph(2))
 	rows, err := s.db.QueryContext(ctx, stmt, taskID, owner)
 	if err != nil {
 		return nil, err
@@ -381,7 +388,7 @@ func (s *SQLStore) ListPushConfigs(ctx context.Context, owner, taskID string) ([
 
 func (s *SQLStore) DeletePushConfig(ctx context.Context, owner, taskID, id string) error {
 	stmt := fmt.Sprintf(`DELETE FROM %s WHERE task_id = %s AND id = %s AND owner = %s`,
-		query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2), s.ph(3))
+		query.QuoteFolded(s.pushTable), s.ph(1), s.ph(2), s.ph(3))
 	res, err := s.db.ExecContext(ctx, stmt, taskID, id, owner)
 	if err != nil {
 		return err
@@ -404,8 +411,8 @@ func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, keep int
 	if keep < 0 {
 		return nil
 	}
-	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE owner = %s AND state IN (%s,%s,%s,%s) ORDER BY status_ts DESC, id`,
-		query.QuoteIdent(s.taskTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5))
+	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE owner = %s AND state IN (%s,%s,%s,%s) ORDER BY status_ts DESC, updated_at DESC, id DESC`,
+		query.QuoteFolded(s.taskTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5))
 	rows, err := s.db.QueryContext(ctx, stmt,
 		owner, TaskStateCompleted, TaskStateFailed, TaskStateCanceled, TaskStateRejected)
 	if err != nil {
@@ -427,29 +434,67 @@ func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, keep int
 		return err
 	}
 	rows.Close()
-	return s.deleteTasksByID(ctx, owner, pastKeep)
+	if len(pastKeep) == 0 {
+		return nil
+	}
+	if err := s.deleteTasksByID(ctx, owner, pastKeep); err != nil {
+		return err
+	}
+	// A config registered while a trim deleted its task lands after the
+	// task and its configs are gone: the handler's task check ran first.
+	// Sweep the owner's configs whose task no longer exists, so a client
+	// racing the trim cannot grow the table past the bound. A config newer
+	// than orphanPushGrace may be a send whose task row is still to come.
+	pt, tt := query.QuoteFolded(s.pushTable), query.QuoteFolded(s.taskTable)
+	sweep := fmt.Sprintf(`DELETE FROM %s WHERE owner = %s AND created_at < %s AND NOT EXISTS (SELECT 1 FROM %s WHERE %s.id = %s.task_id)`,
+		pt, s.ph(1), s.ph(2), tt, tt, pt)
+	_, err = s.db.ExecContext(ctx, sweep, owner, time.Now().Add(-orphanPushGrace))
+	return err
 }
 
-// deleteTasksByID removes owner-scoped rows by id in bounded batches.
+// deleteTasksByID removes owner-scoped rows by id in bounded batches,
+// each batch's push configs with it in one transaction: a config whose
+// task is gone can never fire again, and leaving it behind grew the
+// push table without bound.
 func (s *SQLStore) deleteTasksByID(ctx context.Context, owner string, ids []string) error {
 	for len(ids) > 0 {
 		n := min(len(ids), 100)
-		batch := ids[:n]
-		ph := make([]string, len(batch))
-		args := make([]any, 0, len(batch)+1)
-		args = append(args, owner)
-		for i, id := range batch {
-			ph[i] = s.ph(i + 2)
-			args = append(args, id)
-		}
-		stmt := fmt.Sprintf(`DELETE FROM %s WHERE owner = %s AND id IN (%s)`,
-			query.QuoteIdent(s.taskTable), s.ph(1), strings.Join(ph, ","))
-		if _, err := s.db.ExecContext(ctx, stmt, args...); err != nil {
+		if err := s.deleteTaskBatch(ctx, owner, ids[:n]); err != nil {
 			return err
 		}
 		ids = ids[n:]
 	}
 	return nil
+}
+
+func (s *SQLStore) deleteTaskBatch(ctx context.Context, owner string, batch []string) (err error) {
+	ph := make([]string, len(batch))
+	args := make([]any, 0, len(batch)+1)
+	args = append(args, owner)
+	for i, id := range batch {
+		ph[i] = s.ph(i + 2)
+		args = append(args, id)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	pushStmt := fmt.Sprintf(`DELETE FROM %s WHERE owner = %s AND task_id IN (%s)`,
+		query.QuoteFolded(s.pushTable), s.ph(1), strings.Join(ph, ","))
+	if _, err = tx.ExecContext(ctx, pushStmt, args...); err != nil {
+		return err
+	}
+	taskStmt := fmt.Sprintf(`DELETE FROM %s WHERE owner = %s AND id IN (%s)`,
+		query.QuoteFolded(s.taskTable), s.ph(1), strings.Join(ph, ","))
+	if _, err = tx.ExecContext(ctx, taskStmt, args...); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // TrimPushConfigs implements RetentionTrimmer: it keeps the newest
@@ -460,7 +505,7 @@ func (s *SQLStore) TrimPushConfigs(ctx context.Context, owner, taskID string, ke
 		return nil
 	}
 	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE task_id = %s AND owner = %s ORDER BY created_at, id`,
-		query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2))
+		query.QuoteFolded(s.pushTable), s.ph(1), s.ph(2))
 	rows, err := s.db.QueryContext(ctx, stmt, taskID, owner)
 	if err != nil {
 		return err
@@ -499,7 +544,7 @@ func (s *SQLStore) deletePushConfigsByID(ctx context.Context, owner, taskID stri
 			args = append(args, id)
 		}
 		stmt := fmt.Sprintf(`DELETE FROM %s WHERE task_id = %s AND owner = %s AND id IN (%s)`,
-			query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2), strings.Join(ph, ","))
+			query.QuoteFolded(s.pushTable), s.ph(1), s.ph(2), strings.Join(ph, ","))
 		if _, err := s.db.ExecContext(ctx, stmt, args...); err != nil {
 			return err
 		}

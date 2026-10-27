@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"context"
 	"io"
 	"testing"
 	"time"
@@ -44,5 +45,34 @@ func TestConnCloseIsRaceFreeUnderReaders(t *testing.T) {
 	c.close()
 	for i := 0; i < 8; i++ {
 		<-done
+	}
+}
+
+// A Client an embedder kept past Serve's return writes nothing: the
+// caller owns out again, and a write to an output nobody reads any more
+// blocked forever, past RequestPermission's own deadline.
+func TestClientAfterCloseWritesNothing(t *testing.T) {
+	r, w := io.Pipe() // nothing reads r: any write blocks
+	defer r.Close()
+	c := newConn(w)
+	c.close()
+	client := &Client{conn: c, sessionID: "s1"}
+	errs := make(chan error, 2)
+	go func() { errs <- client.Update(AgentMessageChunk("m1", "late")) }()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_, err := client.RequestPermission(ctx, ToolCallUpdate{ToolCallID: "t1"}, nil)
+		errs <- err
+	}()
+	for range 2 {
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Error("a write after close succeeded")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a Client call after close blocked writing to an unread output")
+		}
 	}
 }

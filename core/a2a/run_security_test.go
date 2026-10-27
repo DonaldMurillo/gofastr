@@ -57,7 +57,7 @@ func TestBusSubscriberLifecycleNoLeak(t *testing.T) {
 	bus := newTaskBus(h.srv.log)
 	slow := bus.subscribe()
 	fast := bus.subscribe()
-	ev := StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{TaskID: "t", Status: TaskStatus{State: TaskStateWorking}}}
+	ev := busEvent{ev: StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{TaskID: "t", Status: TaskStatus{State: TaskStateWorking}}}}
 
 	// Publish with a synchronous drain of fast, so only slow fills.
 	got := 0

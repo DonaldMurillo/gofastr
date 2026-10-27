@@ -108,55 +108,59 @@ func (t *Translator) T(ctx context.Context, key string, params ...map[string]any
 	}
 	p := mergeParams(params)
 	tag := FromContext(ctx).Tag
-	if msg, ok := t.lookup(tag, key); ok {
-		return t.render(tag, msg, p)
+	if s, ok := t.translate(tag, key, p); ok {
+		return s
 	}
 	if t.fallback != "" {
-		if msg, ok := t.lookup(t.fallback, key); ok {
-			return t.render(t.fallback, msg, p)
+		if s, ok := t.translate(t.fallback, key, p); ok {
+			return s
 		}
 	}
 	return key
 }
 
-// lookup walks the catalog with progressive language tag truncation
-// (so "fr-CA" falls back to "fr" before missing entirely).
-func (t *Translator) lookup(tag, key string) (Message, bool) {
+// translate renders key for tag, walking the catalog with progressive
+// language tag truncation (so "fr-CA" falls back to "fr" before missing
+// entirely). An entry with no form for the request (see render) is a
+// miss like an absent one, so the walk goes on to the next candidate.
+func (t *Translator) translate(tag, key string, params map[string]any) (string, bool) {
 	if t.catalog == nil {
-		return Message{}, false
+		return "", false
 	}
 	for _, candidate := range tagFallbacks(tag) {
 		if m, ok := t.catalog.Get(candidate, key); ok {
-			return m, true
+			if s, ok := t.render(tag, m, params); ok {
+				return s, true
+			}
 		}
 	}
-	return Message{}, false
+	return "", false
 }
 
 // render applies plural selection and interpolates placeholders, a
 // number param written the way tag's locale writes numbers. The plural
-// form is picked from the raw count, before it is formatted.
-func (t *Translator) render(tag string, m Message, params map[string]any) string {
+// form is picked from the raw count, before it is formatted. ok is false
+// for a plural message holding neither the selected form nor "other",
+// with no Text to fall back on: it has nothing to say for this count,
+// and rendering "" would pass for a translation.
+func (t *Translator) render(tag string, m Message, params map[string]any) (string, bool) {
 	loc := resolveCLDR(tag).loc
 	if len(m.Plural) > 0 {
-		ops, ok := countOperands(params)
-		if !ok {
-			// No count supplied. Pick the "other" variant if present;
-			// otherwise fall through to interpolate whatever Text was.
-			if v, has := m.Plural["other"]; has {
-				return fill(v, params, loc)
-			}
-			return fill(m.Text, params, loc)
+		cat := "other" // no count supplied: the "other" variant
+		if ops, ok := countOperands(params); ok {
+			cat = pluralCategory(tag, ops)
 		}
-		cat := pluralCategory(tag, ops)
 		if v, has := m.Plural[cat]; has {
-			return fill(v, params, loc)
+			return fill(v, params, loc), true
 		}
 		if v, has := m.Plural["other"]; has {
-			return fill(v, params, loc)
+			return fill(v, params, loc), true
+		}
+		if m.Text == "" {
+			return "", false
 		}
 	}
-	return fill(m.Text, params, loc)
+	return fill(m.Text, params, loc), true
 }
 
 // ----- catalog implementations ---------------------------------------------
@@ -247,6 +251,7 @@ func LoadJSONCatalog(fsys fs.FS, dir string) (*MapCatalog, error) {
 			return nil, fmt.Errorf("i18n: read %s: %w", e.Name(), err)
 		}
 		var doc map[string]any
+		//gofastr:allow(floatnum) flatten keeps only strings and nested maps; a number in a catalog is never read
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			return nil, fmt.Errorf("i18n: parse %s: %w", e.Name(), err)
 		}
@@ -366,13 +371,27 @@ func T(ctx context.Context, key string, params ...map[string]any) string {
 type NegotiateOption func(*negotiateConfig)
 
 type negotiateConfig struct {
-	resolvers []func(*http.Request) (string, bool)
+	resolvers []LocaleResolver
+}
+
+// LocaleResolver reads a stored per-user locale preference off a
+// request (see [WithLocaleResolver]).
+type LocaleResolver struct {
+	// Resolve returns a BCP 47 tag and ok=true when the request names a
+	// preference; ok=false falls through to header-based negotiation.
+	Resolve func(*http.Request) (string, bool)
+	// Vary names every request header Resolve reads ("Cookie" for a
+	// cookie). [Middleware] adds each to the response's Vary, beside
+	// Accept-Language and X-Locale, so a shared cache (a CDN, the cache
+	// battery) keys its copies on them instead of replaying one
+	// reader's language to the next.
+	Vary []string
 }
 
 // WithLocaleResolver installs a custom locale resolver consulted BEFORE
-// the X-Locale / Accept-Language headers. The resolver returns a BCP 47
-// tag and ok=true when it has a preference (e.g. a stored per-user
-// locale cookie); ok=false falls through to header-based negotiation.
+// the X-Locale / Accept-Language headers, for a preference such as a
+// stored per-user locale cookie. A resolver with no Resolve func is
+// ignored.
 //
 // The returned tag is matched against the catalog's locales (with the
 // same tag fallbacks as Accept-Language: "fr-ca" → "fr"). An unknown,
@@ -380,29 +399,32 @@ type negotiateConfig struct {
 // rather than producing an unmatched locale. Resolver values are
 // attacker-controlled (cookies), so they are length- and
 // character-bounded before any matching.
-func WithLocaleResolver(f func(*http.Request) (string, bool)) NegotiateOption {
+func WithLocaleResolver(r LocaleResolver) NegotiateOption {
 	return func(c *negotiateConfig) {
-		if f != nil {
-			c.resolvers = append(c.resolvers, f)
+		if r.Resolve != nil {
+			c.resolvers = append(c.resolvers, r)
 		}
 	}
 }
 
 // CookieLocale returns a resolver that reads the caller's preferred
-// locale from the named cookie. A missing or empty cookie returns
-// ok=false so negotiation falls through to the headers. Pair with
-// [WithLocaleResolver] and a set-cookie handler for per-user locale
-// switching.
-func CookieLocale(name string) func(*http.Request) (string, bool) {
-	return func(r *http.Request) (string, bool) {
-		if r == nil || name == "" {
-			return "", false
-		}
-		c, err := r.Cookie(name)
-		if err != nil {
-			return "", false
-		}
-		return c.Value, c.Value != ""
+// locale from the named cookie and names Cookie in its Vary. A missing
+// or empty cookie returns ok=false so negotiation falls through to the
+// headers. Pair with [WithLocaleResolver] and a set-cookie handler for
+// per-user locale switching.
+func CookieLocale(name string) LocaleResolver {
+	return LocaleResolver{
+		Resolve: func(r *http.Request) (string, bool) {
+			if r == nil || name == "" {
+				return "", false
+			}
+			c, err := r.Cookie(name)
+			if err != nil {
+				return "", false
+			}
+			return c.Value, c.Value != ""
+		},
+		Vary: []string{"Cookie"},
 	}
 }
 
@@ -477,9 +499,32 @@ func matchCatalog(tag string, available map[string]struct{}) string {
 // Locale negotiation falls through to the Translator's fallback when no
 // Accept-Language entry matches any catalog locale.
 func Middleware(tr *Translator, opts ...NegotiateOption) func(http.Handler) http.Handler {
+	cfg := negotiateConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	vary := []string{"Accept-Language", "X-Locale"}
+	for _, res := range cfg.resolvers {
+		for _, h := range res.Vary {
+			if h = http.CanonicalHeaderKey(strings.TrimSpace(h)); h != "" && !slices.Contains(vary, h) {
+				vary = append(vary, h)
+			}
+		}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			loc := Negotiate(tr, r, opts...)
+			// A locale read from the request makes every response
+			// depend on what it was read from: the locale headers and
+			// each header a resolver names (a cookie). Without the Vary
+			// a shared cache (a CDN, or the cache battery) stores the
+			// first reader's language and serves it to everyone. A
+			// locale from the URL needs none: the URL already differs.
+			if _, _, fromPath := PathLocale(r.Context()); !fromPath {
+				for _, h := range vary {
+					w.Header().Add("Vary", h)
+				}
+			}
 			ctx := WithTranslator(WithContext(r.Context(), loc), tr)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -512,10 +557,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 	// 1. Custom resolver(s): a stored per-user locale wins when it
 	//    matches the catalog; a garbage/unknown value falls through.
 	for _, res := range cfg.resolvers {
-		if res == nil {
-			continue
-		}
-		tag, ok := res(r)
+		tag, ok := res.Resolve(r)
 		if !ok {
 			continue
 		}
@@ -552,14 +594,22 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 		// No catalog to match against. Take the highest-quality entry
 		// that survives bounding, NOT the whole raw header, which used
 		// to be handed back as a "tag" verbatim.
-		for _, want := range parseAcceptLanguage(r.Header.Get("Accept-Language")) {
-			if tag := sanitizeTag(want); tag != "" {
+		tags, _ := parseAcceptLanguage(r.Header.Get("Accept-Language"))
+		for _, want := range tags {
+			if tag := sanitizeTag(want); tag != "" && tag != "*" {
 				return Locale{Tag: tag}
 			}
 		}
 		return Locale{}
 	}
-	for _, want := range parseAcceptLanguage(r.Header.Get("Accept-Language")) {
+	tags, refused := parseAcceptLanguage(r.Header.Get("Accept-Language"))
+	for _, want := range tags {
+		if want == "*" {
+			if hit := wildcardMatch(tr.fallback, available, refused); hit != "" {
+				return Locale{Tag: hit}
+			}
+			continue
+		}
 		if hit := matchCatalog(want, available); hit != "" {
 			return Locale{Tag: hit}
 		}
@@ -574,11 +624,32 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 
 // ----- helpers -------------------------------------------------------------
 
-// parseAcceptLanguage returns tags ordered by q-value (highest first).
-// Bad or zero-q entries are skipped.
-func parseAcceptLanguage(header string) []string {
+// wildcardMatch answers an Accept-Language "*": any catalog locale the
+// header did not refuse with q=0, the fallback first, else the first in
+// sorted order. "" when every locale was refused.
+func wildcardMatch(fallback string, available map[string]struct{}, refused []string) string {
+	ok := func(l string) bool {
+		_, has := available[l]
+		return has && !slices.Contains(refused, l)
+	}
+	if ok(fallback) {
+		return fallback
+	}
+	for _, l := range slices.Sorted(maps.Keys(available)) {
+		if ok(l) {
+			return l
+		}
+	}
+	return ""
+}
+
+// parseAcceptLanguage returns tags ordered by q-value (highest first),
+// and the tags refused with q=0. An entry whose q is not a number in
+// [0, 1] is skipped: kept at the default q=1 it outranked every
+// well-formed entry.
+func parseAcceptLanguage(header string) (tags, refused []string) {
 	if header == "" {
-		return nil
+		return nil, nil
 	}
 	type entry struct {
 		tag string
@@ -600,7 +671,7 @@ func parseAcceptLanguage(header string) []string {
 	)
 	var out []entry
 	rest := header
-	for segments := 0; rest != "" && len(out) < maxEntries && segments < maxSegments; segments++ {
+	for segments := 0; rest != "" && len(out)+len(refused) < maxEntries && segments < maxSegments; segments++ {
 		part := rest
 		if i := strings.IndexByte(rest, ','); i >= 0 {
 			part, rest = rest[:i], rest[i+1:]
@@ -611,7 +682,7 @@ func parseAcceptLanguage(header string) []string {
 		if seg == "" {
 			continue
 		}
-		tag, q := seg, 1.0
+		tag, q, valid := seg, 1.0, true
 		if before, after, ok := strings.Cut(seg, ";"); ok {
 			tag = strings.TrimSpace(before)
 			params := after
@@ -624,37 +695,48 @@ func parseAcceptLanguage(header string) []string {
 				}
 				kv = strings.TrimSpace(kv)
 				if strings.HasPrefix(kv, "q=") {
-					if f, err := strconv.ParseFloat(kv[2:], 64); err == nil {
-						q = f
-					}
+					f, err := strconv.ParseFloat(kv[2:], 64)
+					// NaN fails both bounds, so this refuses it too.
+					valid = err == nil && f >= 0 && f <= 1
+					q = f
 				}
 			}
 		}
-		if q <= 0 {
+		if !valid {
+			continue
+		}
+		if q == 0 {
+			refused = append(refused, normalize(tag))
 			continue
 		}
 		out = append(out, entry{tag: normalize(tag), q: q})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].q > out[j].q })
-	tags := make([]string, 0, len(out))
+	tags = make([]string, 0, len(out))
 	for _, e := range out {
 		tags = append(tags, e.tag)
 	}
-	return tags
+	return tags, refused
 }
 
-// tagFallbacks returns progressively shorter forms of a BCP 47 tag:
-// "fr-ca" → ["fr-ca", "fr"]. Empty input yields nil.
+// tagFallbacks returns progressively shorter forms of a BCP 47 tag, one
+// subtag off the right at a time: "zh-hant-hk" → ["zh-hant-hk",
+// "zh-hant", "zh"], so a script catalog ("zh-hant") is tried before the
+// bare language. Empty input yields nil.
 func tagFallbacks(tag string) []string {
 	tag = normalize(tag)
 	if tag == "" {
 		return nil
 	}
 	out := []string{tag}
-	if i := strings.IndexByte(tag, '-'); i > 0 {
-		out = append(out, tag[:i])
+	for {
+		i := strings.LastIndexByte(tag, '-')
+		if i <= 0 {
+			return out
+		}
+		tag = tag[:i]
+		out = append(out, tag)
 	}
-	return out
 }
 
 // normalize lower-cases a tag and trims surrounding whitespace.

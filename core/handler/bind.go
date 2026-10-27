@@ -10,10 +10,12 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // Bind populates dst by merging values from all sources:
@@ -137,6 +139,9 @@ func bindBody(r *http.Request, dst any) error {
 
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
+	// UseNumber, then Settle: a number under an interface (a
+	// map[string]any field) keeps its digits past 2^53.
+	decoder.UseNumber()
 	if err := decoder.Decode(dst); err != nil {
 		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
@@ -147,6 +152,9 @@ func bindBody(r *http.Request, dst any) error {
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return Fail(400, ReasonJSONMultipleValues)
+	}
+	if err := jsonexact.Settle(dst); err != nil {
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	return nil
 }
@@ -280,33 +288,89 @@ func sanitizeQueryParam(s string) string {
 	return s
 }
 
+// taggedField is a struct field carrying a binding tag, reached from the
+// top-level struct through index (an embedded struct adds a step).
+type taggedField struct {
+	tag   string
+	index []int
+}
+
+// taggedFields lists t's fields tagged with key, descending into an
+// untagged embedded struct (value or pointer) the way encoding/json
+// promotes its fields. A struct already on the path is skipped.
+func taggedFields(t reflect.Type, key string) []taggedField {
+	var out []taggedField
+	collectTagged(t, key, nil, map[reflect.Type]bool{}, &out)
+	return out
+}
+
+func collectTagged(t reflect.Type, key string, prefix []int, active map[reflect.Type]bool, out *[]taggedField) {
+	if active[t] {
+		return
+	}
+	active[t] = true
+	defer delete(active, t)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get(key)
+		index := append(slices.Clone(prefix), i)
+		if tag == "" && f.Anonymous {
+			ft := f.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				collectTagged(ft, key, index, active, out)
+			}
+			continue
+		}
+		if tag == "" || tag == "-" {
+			continue
+		}
+		*out = append(*out, taggedField{tag: tag, index: index})
+	}
+}
+
+// settableField returns the field at index under rv, allocating a nil
+// embedded pointer on the way, or an invalid Value when the field (or a
+// nil unexported embedded pointer before it) cannot be set.
+func settableField(rv reflect.Value, index []int) reflect.Value {
+	v := rv
+	for _, i := range index {
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				if !v.CanSet() {
+					return reflect.Value{}
+				}
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		v = v.Field(i)
+	}
+	if !v.CanSet() {
+		return reflect.Value{}
+	}
+	return v
+}
+
 // bindQuery binds query parameters to struct fields tagged with `query:"name"`.
 func bindQuery(r *http.Request, rv reflect.Value) error {
-	rt := rv.Type()
 	q := r.URL.Query()
 
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
-		tag := field.Tag.Get("query")
-		if tag == "" {
-			continue
-		}
-		if tag == "-" {
-			continue
-		}
-
-		values, ok := q[tag]
+	for _, tf := range taggedFields(rv.Type(), "query") {
+		values, ok := q[tf.tag]
 		if !ok || len(values) == 0 {
 			continue
 		}
 
-		fv := rv.Field(i)
-		if !fv.CanSet() {
+		fv := settableField(rv, tf.index)
+		if !fv.IsValid() {
 			continue
 		}
 
 		if err := setField(fv, sanitizeQueryParam(values[0])); err != nil {
-			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "query", "name": strconv.Quote(tag), "detail": err.Error()})
+			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "query", "name": strconv.Quote(tf.tag), "detail": err.Error()})
 		}
 	}
 
@@ -326,36 +390,29 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 // matched request reads through router.Params, which holds only the
 // declared names, rather than router.Param, which panics on the others.
 func bindPath(r *http.Request, rv reflect.Value) error {
-	rt := rv.Type()
 	var declared map[string]string
 	if r.Pattern != "" {
 		declared = router.Params(r)
 	}
 
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
-		tag := field.Tag.Get("path")
-		if tag == "" || tag == "-" {
-			continue
-		}
-
+	for _, tf := range taggedFields(rv.Type(), "path") {
 		var value string
 		if declared != nil {
-			value = declared[tag]
+			value = declared[tf.tag]
 		} else {
-			value = router.Param(r, tag)
+			value = router.Param(r, tf.tag)
 		}
 		if value == "" {
 			continue
 		}
 
-		fv := rv.Field(i)
-		if !fv.CanSet() {
+		fv := settableField(rv, tf.index)
+		if !fv.IsValid() {
 			continue
 		}
 
 		if err := setField(fv, value); err != nil {
-			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "path", "name": strconv.Quote(tag), "detail": err.Error()})
+			return Fail(400, ReasonInvalidParameter, map[string]any{"source": "path", "name": strconv.Quote(tf.tag), "detail": err.Error()})
 		}
 	}
 
@@ -364,27 +421,19 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 
 // bindHeaders binds header values to struct fields tagged with `header:"X-Request-ID"`.
 func bindHeaders(r *http.Request, rv reflect.Value) error {
-	rt := rv.Type()
-
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
-		tag := field.Tag.Get("header")
-		if tag == "" || tag == "-" {
-			continue
-		}
-
-		value := r.Header.Get(tag)
+	for _, tf := range taggedFields(rv.Type(), "header") {
+		value := r.Header.Get(tf.tag)
 		if value == "" {
 			continue
 		}
 
-		fv := rv.Field(i)
-		if !fv.CanSet() {
+		fv := settableField(rv, tf.index)
+		if !fv.IsValid() {
 			continue
 		}
 
 		if err := setField(fv, value); err != nil {
-			return Fail(400, ReasonInvalidHeader, map[string]any{"name": strconv.Quote(tag), "detail": err.Error()})
+			return Fail(400, ReasonInvalidHeader, map[string]any{"name": strconv.Quote(tf.tag), "detail": err.Error()})
 		}
 	}
 

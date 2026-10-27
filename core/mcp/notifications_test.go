@@ -10,9 +10,57 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
+
+type revocableUser struct{}
+
+func (revocableUser) GetID() string { return "u1" }
+
+// A stream whose session is revoked stops at its next delivery: the
+// write loop re-establishes the caller through handler.RecheckPrincipal
+// the auth middleware installed. Delivery checked only the connect-time
+// user, and enrichContext's SetUser dropped the installed check anyway.
+func TestRevokedPrincipalClosesStream(t *testing.T) {
+	var revoked atomic.Bool
+	s := NewServer()
+	s.SetGate(func(ctx context.Context) error {
+		if _, ok := handler.GetUser(ctx); !ok {
+			return fmt.Errorf("authentication required")
+		}
+		return nil
+	})
+	h := s.ServeSSE("/mcp")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := handler.SetUser(r.Context(), revocableUser{})
+		ctx = handler.WithPrincipalCheck(ctx, func(ctx context.Context) (context.Context, bool) {
+			return ctx, !revoked.Load()
+		})
+		h.ServeHTTP(w, r.WithContext(ctx))
+	}))
+	t.Cleanup(ts.Close)
+	events := openStream(t, ts, false)
+	waitForSubscribers(t, s, 1)
+
+	s.NotifyToolsListChanged()
+	if ev := awaitSSE(t, events, "list_changed before revocation"); ev.event != "message" {
+		t.Fatalf("event = %q, want message", ev.event)
+	}
+	revoked.Store(true)
+	s.NotifyToolsListChanged()
+	select {
+	case ev, ok := <-events:
+		if ok {
+			t.Fatalf("SECURITY: [revocation] revoked session still received %+v", ev)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("revoked session's stream stayed open")
+	}
+}
 
 // streamSSEEvents parses an SSE response body as it arrives and yields
 // dispatched events on the returned channel (the streaming counterpart
@@ -754,4 +802,15 @@ func TestGatedRegistrationWithholdsListChanged(t *testing.T) {
 		t.Errorf("allowed stream got %q (uri %q), want payload-free resources list_changed", method, uri)
 	}
 	expectNoSSE(t, anonEvents, "resources list_changed for a caller the template gate refuses")
+
+	if err := s.RegisterPrompt("hidden_prompt", func(context.Context, map[string]string) ([]PromptMessage, error) {
+		return nil, nil
+	}, WithPromptGate(requireUser)); err != nil {
+		t.Fatal(err)
+	}
+	method, uri = decodeNotification(t, awaitSSE(t, authedEvents, "prompts list_changed on the allowed stream"))
+	if method != "notifications/prompts/list_changed" || uri != "" {
+		t.Errorf("allowed stream got %q (uri %q), want payload-free prompts list_changed", method, uri)
+	}
+	expectNoSSE(t, anonEvents, "prompts list_changed for a caller the prompt gate refuses")
 }

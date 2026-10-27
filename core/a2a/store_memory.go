@@ -89,7 +89,11 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	next.CreatedAt = stored.CreatedAt
 	next.UpdatedAt = time.Now()
 	m.tasks[key] = next
-	*rec = *next
+	// Hand back a fresh clone, never next itself: copying next's
+	// fields shared its History, Artifacts and Metadata with the stored
+	// record, so a caller mutating its copy changed stored state with
+	// no version bump.
+	*rec = *next.Clone()
 	return nil
 }
 
@@ -241,7 +245,14 @@ func (m *MemoryStore) DeletePushConfig(_ context.Context, owner, taskID, id stri
 // TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
 // `keep` terminal rows for owner and deletes the older ones.
 // Non-terminal rows (a task in flight, or paused on input) are never
-// retention's to touch.
+// retention's to touch. A trimmed task's push configs go with it: no
+// event can reach them again.
+// orphanPushGrace is how old a push config with no task must be before a
+// trim sweeps it. A send stores its config just before its task row, so a
+// younger one may be a send in flight; the grace also covers clock skew
+// between the replica that wrote created_at and the one trimming.
+const orphanPushGrace = 10 * time.Minute
+
 func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, keep int) error {
 	if keep < 0 {
 		return nil
@@ -258,8 +269,23 @@ func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, keep in
 		return nil
 	}
 	sortRecsNewestFirst(terminal)
+	trimmed := make(map[string]bool, len(terminal)-keep)
 	for _, rec := range terminal[keep:] {
 		delete(m.tasks, taskKey{owner, rec.Task.ID})
+		trimmed[rec.Task.ID] = true
+	}
+	// A trimmed task's configs go with it, and so does any of the owner's
+	// configs whose task has been gone longer than orphanPushGrace: one
+	// registered while an earlier trim deleted its task landed after that
+	// trim's sweep.
+	cutoff := time.Now().Add(-orphanPushGrace)
+	for key, rec := range m.push {
+		if key.owner != owner {
+			continue
+		}
+		if _, live := m.tasks[taskKey{owner, key.taskID}]; trimmed[key.taskID] || (!live && rec.CreatedAt.Before(cutoff)) {
+			delete(m.push, key)
+		}
 	}
 	return nil
 }

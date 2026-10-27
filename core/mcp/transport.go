@@ -48,11 +48,12 @@ func isMCPJSONContentType(ct string) bool {
 
 // decodeMCPRequest enforces the content-type and body-size policy for
 // the JSON-RPC HTTP transport. It writes an HTTP error response on
-// failure and reports whether the caller should continue.
-func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) bool {
+// failure and reports whether the caller should continue; notification
+// reports a message with no id member, which the caller must not answer.
+func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) (ok, notification bool) {
 	if !isMCPJSONContentType(r.Header.Get("Content-Type")) {
 		i18n.HTTPError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
-		return false
+		return false, false
 	}
 	body := http.MaxBytesReader(w, r.Body, maxMCPBodyBytes)
 	defer body.Close()
@@ -61,39 +62,66 @@ func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) bool
 		var maxErr *http.MaxBytesError
 		if errorAsMaxBytes(err, &maxErr) {
 			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return false
+			return false, false
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(Response{
-			JSONRPC: "2.0",
-			ID:      nil,
-			Error: &RPCError{
-				Code:    ErrInvalidParams,
-				Message: "invalid JSON: " + err.Error(),
-			},
-		})
-		return false
+		writeEnvelopeError(w, newErrorResponse(nil, ErrParse, "invalid JSON: "+err.Error()))
+		return false, false
 	}
-	// handler.UnmarshalStrict (DecodeStrict over the capped body)
-	// refuses duplicate and case-folded top-level envelope keys —
-	// stdlib json keeps the last duplicate and folds key case — so no
-	// first-occurrence parser (proxy, WAF, audit logger) can disagree
-	// with the dispatcher's decode.
+	notification, errResp := decodeEnvelope(raw, req)
+	if errResp != nil {
+		writeEnvelopeError(w, *errResp)
+		return false, false
+	}
+	return true, notification
+}
+
+// writeEnvelopeError answers a message the transport could not decode.
+func writeEnvelopeError(w http.ResponseWriter, resp Response) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// decodeEnvelope is the one envelope decode every transport runs.
+//
+// Malformed JSON is a parse error (-32700). A well-formed message that
+// handler.UnmarshalStrict refuses is an invalid request (-32600): it
+// rejects duplicate and case-folded top-level keys, because stdlib json
+// keeps the last duplicate and folds key case, and no first-occurrence
+// parser (proxy, WAF, audit logger) may disagree with the dispatcher's
+// decode.
+//
+// notification reports a message with no "id" member. JSON-RPC defines a
+// notification by that absence, whatever the method, and forbids a reply;
+// "id": null is present, so it is a request and is answered. The id the
+// decode keeps is the literal the client sent when it is a number: a
+// float64 rounds an id above 2^53, and the client could not match the
+// reply to its request.
+func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Response) {
+	if !json.Valid(raw) {
+		resp := newErrorResponse(nil, ErrParse, "invalid JSON")
+		return false, &resp
+	}
+	//gofastr:allow(floatnum) the reply's id is rebuilt from the raw "id" bytes below; req.ID's float64 is never echoed
 	if err := handler.UnmarshalStrict(raw, req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(Response{
-			JSONRPC: "2.0",
-			ID:      nil,
-			Error: &RPCError{
-				Code:    ErrInvalidParams,
-				Message: "invalid JSON: " + err.Error(),
-			},
-		})
-		return false
+		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
+		return false, &resp
 	}
-	return true
+	var env struct {
+		ID json.RawMessage `json:"id"`
+	}
+	//gofastr:allow(GOFASTR1407) raw already passed handler.UnmarshalStrict above, so both decodes read the one "id" key; this pass only reads its presence and digits
+	if err := json.Unmarshal(raw, &env); err != nil {
+		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
+		return false, &resp
+	}
+	if env.ID == nil {
+		return true, nil
+	}
+	if _, isNum := req.ID.(float64); isNum {
+		req.ID = json.Number(env.ID)
+	}
+	return false, nil
 }
 
 // errorAsMaxBytes is a tiny shim so we can use errors.As without
@@ -229,14 +257,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	var req Request
-	if !decodeMCPRequest(w, r, &req) {
+	ok, notification := decodeMCPRequest(w, r, &req)
+	if !ok {
+		return
+	}
+	// A notification gets 202 and no body, as stdio sends no reply.
+	if notification {
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
 	// Propagate request context with user/tenant info
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, contextKey{}, r)
-	ctx = enrichContext(ctx)
 
 	resp := s.HandleRequest(ctx, req)
 
@@ -284,36 +317,25 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 			return bufio.ErrTooLong
 		}
 
-		// Same envelope rule as the HTTP transports (decodeMCPRequest):
-		// handler.UnmarshalStrict refuses duplicate and case-folded
-		// top-level keys — stdlib json keeps the last duplicate and
-		// folds key case — so the executor can never resolve an
-		// envelope a first-occurrence parser (audit logger, WAF,
-		// stdio wrapper) read differently. The ambiguity itself is
-		// the bug; refusing it is the only resolution that does not
-		// privilege one parser's pick.
+		// Same envelope rule as the HTTP transports (decodeEnvelope):
+		// the executor can never resolve an envelope a
+		// first-occurrence parser (audit logger, WAF, stdio wrapper)
+		// read differently.
 		var req Request
-		if err := handler.UnmarshalStrict(line, &req); err != nil {
-			encoder.Encode(Response{
-				JSONRPC: "2.0",
-				ID:      nil,
-				Error: &RPCError{
-					Code:    ErrInvalidParams,
-					Message: "invalid JSON: " + err.Error(),
-				},
-			})
+		notification, errResp := decodeEnvelope(line, &req)
+		if errResp != nil {
+			encoder.Encode(*errResp)
 			continue
 		}
 
-		// A notification (no id, notifications/*) gets no reply:
-		// JSON-RPC forbids one, and a stdio client reads an id-less
-		// error line as a protocol fault. The client sends
+		// A notification (no id member) gets no reply: JSON-RPC
+		// forbids one, and a stdio client reads an id-less error line
+		// as a protocol fault. The client sends
 		// notifications/initialized right after the handshake.
-		if req.ID == nil && strings.HasPrefix(req.Method, "notifications/") {
+		if notification {
 			continue
 		}
 
-		ctx := enrichContext(ctx)
 		resp := s.HandleRequest(ctx, req)
 		encoder.Encode(resp)
 	}
@@ -359,13 +381,18 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	var req Request
-	if !decodeMCPRequest(w, r, &req) {
+	ok, notification := decodeMCPRequest(w, r, &req)
+	if !ok {
+		return
+	}
+	// A notification gets 202 and no body, as stdio sends no reply.
+	if notification {
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, contextKey{}, r)
-	ctx = enrichContext(ctx)
 
 	// Check if client wants SSE streaming via Accept header
 	if wantsSSE(r) {
@@ -404,11 +431,9 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The caller identity the gate, the delivery-time filters, and the
-	// seat cap all evaluate against: the request context, enriched like
-	// the POST path enriches it, with the inbound *http.Request stashed
-	// via WithRequest.
+	// seat cap all evaluate against: the request context, with the
+	// inbound *http.Request stashed via WithRequest.
 	ctx := context.WithValue(r.Context(), contextKey{}, r)
-	ctx = enrichContext(ctx)
 
 	// Server-wide gate at CONNECT time too. The per-notification
 	// evaluation in the write loop below stays (a gate can depend on
@@ -498,7 +523,17 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 				// is to reconnect and re-list. See notifySubscribers.
 				return
 			}
-			if !s.subscriberMayReceive(sub, n) {
+			// Re-establish the caller before every delivery: the
+			// context was built at connect, so on its own it keeps
+			// answering for a session since revoked or a token since
+			// expired. A caller a fresh request would no longer carry
+			// has the stream closed, as framework/crud's event stream
+			// does.
+			live, held := handler.RecheckPrincipal(sub.ctx)
+			if !held {
+				return
+			}
+			if !s.subscriberMayReceive(live, n) {
 				continue
 			}
 			data, err := json.Marshal(jsonrpcNotification{

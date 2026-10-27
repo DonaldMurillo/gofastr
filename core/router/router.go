@@ -63,7 +63,7 @@ type Router struct {
 	// mu, so a rebuild never blocks route registration. See probe().
 	probeMu      sync.Mutex
 	probeMux     *http.ServeMux
-	probeMethods map[string][]string
+	probeMethods []string
 	probeN       int
 
 	// root is the topmost ancestor; chainVersion lives there. Any Use
@@ -817,37 +817,45 @@ func (r *Router) gateAllows(key string) bool {
 //
 // This runs only on the cold 404/405 fallback path, never on a matched
 // route, so the per-call mux build is not on the request hot path.
+//
+// A path can match several patterns: /foo matches both "POST /foo" and
+// "GET /{id}". So each registered method is resolved on its own, the way
+// the real mux would dispatch it, and the route it lands on is
+// gate-checked: a method whose route is gated answers 404 there (the mux
+// never falls back to a less specific pattern), so it is not allowed.
+// An empty result means the path exists but every method on it is gated
+// off, which is a 404 by design (advertising Allow for a method that
+// answers 404 would be a lie, and would leak the disabled module).
 func (r *Router) allowedMethods(req *http.Request) []string {
-	probeMux, methodsByPath := r.probe()
+	probeMux, methods := r.probe()
 	if probeMux == nil {
 		return nil
 	}
 
 	probe := req.Clone(req.Context())
-	probe.Method = http.MethodGet
-	_, matchedPattern := probeMux.Handler(probe)
-	if matchedPattern == "" {
-		return nil // path doesn't match any registered route
-	}
-
-	// Gate-filter only the handful of methods on the matched pattern,
-	// NOT every route in the table. An empty result means the path
-	// exists but every method on it is gated off, which is a 404 by
-	// design (advertising Allow for a method that answers 404 would be
-	// a lie, and would leak the disabled module).
-	var methods []string
-	for _, m := range methodsByPath[matchedPattern] {
-		if r.gateAllows(m + " " + matchedPattern) {
-			methods = append(methods, m)
+	var allowed []string
+	for _, m := range methods {
+		probe.Method = m
+		h, _ := probeMux.Handler(probe)
+		// Anything other than a probeRoute is the mux's own 404/405 or a
+		// synthesised redirect: the path has no route under m.
+		if pr, ok := h.(probeRoute); ok && r.gateAllows(string(pr)) {
+			allowed = append(allowed, m)
 		}
 	}
-	sort.Strings(methods)
-	return methods
+	return allowed
 }
 
-// probe returns the memoised method-agnostic probe mux and its
-// pattern→methods index, rebuilding only when new routes have been
-// registered since the last build.
+// probeRoute stands in for a registered route in the probe mux. Its value
+// is the route's gate key, so a probe lookup names the route it hit.
+type probeRoute string
+
+func (probeRoute) ServeHTTP(http.ResponseWriter, *http.Request) {}
+
+// probe returns the memoised probe mux, holding every registered
+// "METHOD pattern" as the real mux does, and the sorted set of registered
+// methods, rebuilding only when new routes have been registered since
+// the last build.
 //
 // This used to be rebuilt from scratch on EVERY unmatched request:
 // cloning the request and re-parsing plus tree-inserting every
@@ -857,7 +865,7 @@ func (r *Router) allowedMethods(req *http.Request) []string {
 // AHEAD of the rate limiter (which lives in the middleware chain the
 // fallback only enters afterwards). r.root.patterns is append-only, so
 // its length is a sufficient cache version.
-func (r *Router) probe() (*http.ServeMux, map[string][]string) {
+func (r *Router) probe() (*http.ServeMux, []string) {
 	root := r.root
 	root.probeMu.Lock()
 	defer root.probeMu.Unlock()
@@ -878,24 +886,27 @@ func (r *Router) probe() (*http.ServeMux, map[string][]string) {
 	root.mu.RUnlock()
 
 	probeMux := http.NewServeMux()
-	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
-	methodsByPath := make(map[string][]string)
-	registered := make(map[string]bool)
+	seen := make(map[string]bool)
+	var methods []string
 	for _, rt := range allPatterns {
-		methodsByPath[rt.Pattern] = append(methodsByPath[rt.Pattern], rt.Method)
-		if !registered[rt.Pattern] {
-			registered[rt.Pattern] = true
-			func() {
-				defer func() { _ = recover() }()
-				probeMux.Handle(rt.Pattern, noop)
-			}()
+		if !seen[rt.Method] {
+			seen[rt.Method] = true
+			methods = append(methods, rt.Method)
 		}
+		key := rt.Method + " " + rt.Pattern
+		func() {
+			// The real mux already accepted this pattern; a recover here
+			// only guards a duplicate the real mux would also have refused.
+			defer func() { _ = recover() }()
+			probeMux.Handle(key, probeRoute(key))
+		}()
 	}
+	sort.Strings(methods)
 
 	root.probeMux = probeMux
-	root.probeMethods = methodsByPath
+	root.probeMethods = methods
 	root.probeN = n
-	return probeMux, methodsByPath
+	return probeMux, methods
 }
 
 // Use adds middleware to the router. Middleware is applied in the order
