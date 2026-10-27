@@ -94,6 +94,30 @@ type badTagRow struct {
 	HookCount `json:"bad\\name"`
 }
 
+type ProfileHolder struct {
+	profileFields `json:"profile"`
+}
+
+type heldProfileRow struct {
+	*ProfileHolder
+}
+
+// Dropping the pointer that holds a tagged unexported embed clears it.
+func TestTypedHookNilHolderClears(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	OnBeforeCreate[heldProfileRow](app, "held", func(_ context.Context, v *heldProfileRow) error {
+		v.ProfileHolder = nil
+		return nil
+	})
+	p := map[string]any{"profile": map[string]any{"secret": "leak"}}
+	if err := app.HookRegistry("held").ExecuteHooks(context.Background(), hook.BeforeCreate, p); err != nil {
+		t.Fatal(err)
+	}
+	if p["profile"] != nil {
+		t.Errorf("profile = %v, want it cleared with its holder", p["profile"])
+	}
+}
+
 // A tagged unexported embed and an invalid tag name map to the key JSON
 // uses.
 func TestTypedHookJSONNamesMatch(t *testing.T) {

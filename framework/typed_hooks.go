@@ -297,8 +297,10 @@ func mergeFields(bv, av reflect.Value, keys []string, dest map[string]any) error
 	var wireB, wireA map[string]json.RawMessage
 	for _, f := range jsonFields(av.Type()) {
 		var b []byte
-		if nv := fieldOrZero(av, f.index); nv.CanInterface() {
-			oldVal := fieldOrZero(bv, f.index).Interface()
+		// A nil pointer on one side gives a readable zero value while the
+		// other side still holds the unexported field, so both must read.
+		if ov, nv := fieldOrZero(bv, f.index), fieldOrZero(av, f.index); ov.CanInterface() && nv.CanInterface() {
+			oldVal := ov.Interface()
 			newVal := nv.Interface()
 			if reflect.DeepEqual(oldVal, newVal) {
 				continue // hook left this field untouched, don't widen the body
