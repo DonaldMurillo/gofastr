@@ -15,44 +15,13 @@ import (
 // inside the subquery: that compares staged keys with themselves, and
 // every row of the table matches.
 func TestEraseTableNamedLikeAlias(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db))
-		app.Registry.Register(entity.Define("d", entity.EntityConfig{
-			Table:  "d",
-			Scope:  &entity.ScopeConfig{OwnerField: "owner_id"},
-			Fields: []schema.Field{{Name: "owner_id", Type: schema.String}},
-		}.WithTimestamps(false)))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("AutoMigrate: %v", err)
-		}
-		cascadeExec(t, db, `INSERT INTO d (id, owner_id) VALUES ('a','u1'), ('b','u2')`)
-
-		if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
-			t.Fatalf("EraseUserData: %v", err)
-		}
-		wantIDs(t, db, "d", "b")
-	})
+	eraseOwnerTable(t, "d", "owner_id")
 }
 
 // Erasure names a mixed-case owner-scoped table the way AutoMigrate's
 // unquoted DDL stored it, so Postgres finds it.
 func TestEraseMixedCaseEntity(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db))
-		app.Registry.Register(entity.Define("Notes", entity.EntityConfig{
-			Table:  "Notes",
-			Scope:  &entity.ScopeConfig{OwnerField: "OwnerID"},
-			Fields: []schema.Field{{Name: "OwnerID", Type: schema.String}},
-		}.WithTimestamps(false)))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("AutoMigrate: %v", err)
-		}
-		cascadeExec(t, db, `INSERT INTO Notes (id, OwnerID) VALUES ('a','u1'), ('b','u2')`)
-		if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
-			t.Fatalf("EraseUserData: %v", err)
-		}
-		wantIDs(t, db, "Notes", "b")
-	})
+	eraseOwnerTable(t, "Notes", "OwnerID")
 }
 
 // The audit log stores a record id with its control bytes stripped, so
@@ -204,22 +173,7 @@ func TestEraseKeylessRawChild(t *testing.T) {
 // A staging table hides an app table of the same name from every
 // unqualified reference, so a staging name never reuses a graph table's.
 func TestEraseStagingNameAvoidsTables(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db))
-		app.Registry.Register(entity.Define("gofastr_erase_0", entity.EntityConfig{
-			Table:  "gofastr_erase_0",
-			Scope:  &entity.ScopeConfig{OwnerField: "owner_id"},
-			Fields: []schema.Field{{Name: "owner_id", Type: schema.String}},
-		}.WithTimestamps(false)))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("AutoMigrate: %v", err)
-		}
-		cascadeExec(t, db, `INSERT INTO gofastr_erase_0 (id, owner_id) VALUES ('a','u1'), ('b','u2')`)
-		if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
-			t.Fatalf("EraseUserData: %v", err)
-		}
-		wantIDs(t, db, "gofastr_erase_0", "b")
-	})
+	eraseOwnerTable(t, "gofastr_erase_0", "owner_id")
 }
 
 // An entity whose table and column names carry capitals: AutoMigrate's
@@ -245,5 +199,27 @@ func TestExportMixedCaseEntity(t *testing.T) {
 		if err := dst.QueryRow(`SELECT UserName FROM Widgets WHERE id = 'w1'`).Scan(&name); err != nil || name != "alice" {
 			t.Errorf("restored UserName = %q, %v; want alice", name, err)
 		}
+	})
+}
+
+// eraseOwnerTable declares table as an entity owner-scoped by owner,
+// stores rows a (u1) and b (u2), erases u1 and wants only b left.
+func eraseOwnerTable(t *testing.T, table, owner string) {
+	t.Helper()
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db))
+		app.Registry.Register(entity.Define(table, entity.EntityConfig{
+			Table:  table,
+			Scope:  &entity.ScopeConfig{OwnerField: owner},
+			Fields: []schema.Field{{Name: owner, Type: schema.String}},
+		}.WithTimestamps(false)))
+		if err := AutoMigrate(db, app.Registry); err != nil {
+			t.Fatalf("AutoMigrate: %v", err)
+		}
+		cascadeExec(t, db, `INSERT INTO `+table+` (id, `+owner+`) VALUES ('a','u1'), ('b','u2')`)
+		if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+			t.Fatalf("EraseUserData: %v", err)
+		}
+		wantIDs(t, db, table, "b")
 	})
 }

@@ -150,6 +150,27 @@ func DB(t *testing.T) *sql.DB {
 	return db
 }
 
+// Replica opens a second pool on the schema db (from DB) is scoped to,
+// the way another replica reaches the same tables. It is closed on
+// t.Cleanup, before db's schema is dropped.
+func Replica(t *testing.T, db *sql.DB) *sql.DB {
+	t.Helper()
+	var schema string
+	if err := db.QueryRow(`SELECT current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	dsn, err := dsnWithSearchPath(BaseDSN(t), schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { other.Close() })
+	return other
+}
+
 func dsnWithSearchPath(base, schema string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {

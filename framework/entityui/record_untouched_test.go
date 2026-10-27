@@ -65,16 +65,18 @@ func itemUI(t *testing.T) *testUI {
 	return x
 }
 
-func putItem(t *testing.T, x *testUI, fields map[string]string) {
+// putRecord saves fields to the row id of entity as user u1, through the
+// entity's CRUD update handler.
+func putRecord(t *testing.T, x *testUI, entity, id string, fields map[string]string) {
 	t.Helper()
-	ch, err := x.host.Crud(mustEntity(t, x, "items"))
+	ch, err := x.host.Crud(mustEntity(t, x, entity))
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(fields)
-	req := httptest.NewRequest(http.MethodPut, "/api/items/it-1", strings.NewReader(string(raw)))
+	req := httptest.NewRequest(http.MethodPut, "/api/"+entity+"/"+id, strings.NewReader(string(raw)))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "it-1")
+	req.SetPathValue("id", id)
 	req = req.WithContext(asUser(req.Context(), "u1"))
 	rec := httptest.NewRecorder()
 	ch.Update().ServeHTTP(rec, req)
@@ -134,7 +136,7 @@ func TestUntouchedEditSaveKeepsValues(t *testing.T) {
 	if !regexp.MustCompile(`<input[^>]*name="at"[^>]*step="1"|<input[^>]*step="1"[^>]*name="at"`).MatchString(body) {
 		t.Errorf("a timestamp with seconds needs step=1, or the browser refuses the save:\n%s", body)
 	}
-	putItem(t, x, fields)
+	putRecord(t, x, "items", "it-1", fields)
 	if after := storedItem(t, x); fmt.Sprint(after) != fmt.Sprint(before) {
 		t.Fatalf("an untouched save changed the row\nbefore %v\nafter  %v\nsent   %v", before, after, fields)
 	}
@@ -152,7 +154,7 @@ func TestOptionalEnumClears(t *testing.T) {
 	}
 	fields := formFields(body, "eui-items-form")
 	fields["kind"] = ""
-	putItem(t, x, fields)
+	putRecord(t, x, "items", "it-1", fields)
 	if got := storedItem(t, x)["kind"]; got != "<nil>" {
 		t.Fatalf("kind = %q after picking the empty choice, want NULL", got)
 	}
@@ -173,7 +175,7 @@ func TestMaskedRelationReplaceForm(t *testing.T) {
 		t.Fatalf("the Replace form carries %v, want only a blank patron", fields)
 	}
 	fields["patron"] = "cus-1"
-	putItem(t, x, fields)
+	putRecord(t, x, "items", "it-1", fields)
 	if got := storedItem(t, x)["patron"]; got != "cus-1" {
 		t.Fatalf("patron = %q after Replace, want cus-1", got)
 	}

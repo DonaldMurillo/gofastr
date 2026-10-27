@@ -2,9 +2,7 @@ package search
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"net/url"
 	"slices"
 	"sync"
 	"testing"
@@ -279,29 +277,6 @@ func TestPostgresBackfillLeavesTableOpen(t *testing.T) {
 	}
 }
 
-// otherReplicaDB opens a second pool on the schema db is scoped to, the
-// way another replica reaches the same table.
-func otherReplicaDB(t *testing.T, db *sql.DB) *sql.DB {
-	t.Helper()
-	var schema string
-	if err := db.QueryRow(`SELECT current_schema()`).Scan(&schema); err != nil {
-		t.Fatal(err)
-	}
-	u, err := url.Parse(pgtest.BaseDSN(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := u.Query()
-	q.Set("options", "-c search_path="+schema)
-	u.RawQuery = q.Encode()
-	other, err := sql.Open("postgres", u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { other.Close() })
-	return other
-}
-
 // Another replica fills a row this backfill's batch had picked: the batch
 // fills nothing, and the backfill still fills the rows left before it
 // marks the column. After the first batch, the other replica takes the
@@ -310,7 +285,7 @@ func otherReplicaDB(t *testing.T, db *sql.DB) *sql.DB {
 func TestPostgresBackfillOutlastsLostBatch(t *testing.T) {
 	ctx := context.Background()
 	db := openSearchPG(t)
-	replica := otherReplicaDB(t, db)
+	replica := pgtest.Replica(t, db)
 	if _, err := db.Exec(`CREATE TABLE search_documents (
 		id TEXT PRIMARY KEY, type TEXT NOT NULL, text TEXT NOT NULL,
 		fields JSONB, tsv TSVECTOR NOT NULL, tsv_prefix TSVECTOR)`); err != nil {

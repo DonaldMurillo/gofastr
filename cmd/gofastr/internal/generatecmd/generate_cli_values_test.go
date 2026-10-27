@@ -4,15 +4,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 const cliValuesFixtureYAML = `app:
@@ -69,22 +64,6 @@ func (s *valuesServer) last() string {
 	return s.body
 }
 
-// buildValuesCLI generates and builds the fixture CLI.
-func buildValuesCLI(t *testing.T) (bin string, env []string) {
-	t.Helper()
-	dir := cliModuleFromYAML(t, cliValuesFixtureYAML)
-	appgen.RunGenerateCLI([]string{"--binary=myapp"})
-	bin = clitest.TestExecutablePath(filepath.Join(dir, "myapp"))
-	build := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
-	build.Dir = dir
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build CLI: %v\n%s", err, out)
-	}
-	home := t.TempDir()
-	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "XDG_CONFIG_HOME=" + filepath.Join(home, ".config")}
-	return bin, env
-}
-
 // runValuesCLI runs the CLI and returns its combined output whatever the
 // exit code.
 func runValuesCLI(bin string, env []string, args ...string) string {
@@ -98,7 +77,7 @@ func runValuesCLI(bin string, env []string, args ...string) string {
 // json field's flag decoded into any, so 2^53+1 went out as ...992, and a
 // record read back printed the rounded value too.
 func TestCLIKeepsBigIntegers(t *testing.T) {
-	bin, env := buildValuesCLI(t)
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
 	srv := newValuesServer(t)
 	runValuesCLI(bin, env, "widgets", "create", "--url", srv.URL, "--json", `{"meta":{"n":`+bigInt+`}}`)
 	if got := srv.last(); !strings.Contains(got, bigInt) {
@@ -117,7 +96,7 @@ func TestCLIKeepsBigIntegers(t *testing.T) {
 // terminal without control bytes: a stored title "\x1b[2J..." cleared the
 // operator's screen on `list -o table`.
 func TestCLITableStripsControlBytes(t *testing.T) {
-	bin, env := buildValuesCLI(t)
+	bin, env := buildFixtureCLI(t, cliValuesFixtureYAML)
 	srv := newValuesServer(t)
 	out := runValuesCLI(bin, env, "widgets", "list", "--url", srv.URL, "-o", "table")
 	if !strings.Contains(out, "forged") {

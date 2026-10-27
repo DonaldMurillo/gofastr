@@ -1,10 +1,7 @@
 package entityui
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -51,24 +48,6 @@ func renderGadget(t *testing.T, x *testUI) string {
 		RenderCtx(x.userCtx("/rec/gadgets/g-1", "", "u1")))
 }
 
-func putGadget(t *testing.T, x *testUI, fields map[string]string) {
-	t.Helper()
-	ch, err := x.host.Crud(mustEntity(t, x, "gadgets"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(fields)
-	req := httptest.NewRequest(http.MethodPut, "/api/gadgets/g-1", strings.NewReader(string(raw)))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "g-1")
-	req = req.WithContext(asUser(req.Context(), "u1"))
-	rec := httptest.NewRecorder()
-	ch.Update().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("save %v = %d: %s", fields, rec.Code, rec.Body.String())
-	}
-}
-
 func storedGadget(t *testing.T, x *testUI) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -94,7 +73,7 @@ func TestUntouchedSaveKeepsStoredShapes(t *testing.T) {
 	x := gadgetUI(t)
 	before := storedGadget(t, x)
 	fields := formFields(renderGadget(t, x), "eui-gadgets-form")
-	putGadget(t, x, fields)
+	putRecord(t, x, "gadgets", "g-1", fields)
 	after := storedGadget(t, x)
 	for _, c := range []string{"flag", "live", "tint", "shade", "paint", "at", "sec"} {
 		if after[c] != before[c] {
@@ -127,7 +106,7 @@ func TestNullBoolDrawsUnsetChoice(t *testing.T) {
 	}
 	fields := formFields(body, "eui-gadgets-form")
 	fields["flag"] = "true"
-	putGadget(t, x, fields)
+	putRecord(t, x, "gadgets", "g-1", fields)
 	if got := storedGadget(t, x)["flag"]; got != "1" && got != "true" {
 		t.Fatalf("flag = %q after picking yes", got)
 	}

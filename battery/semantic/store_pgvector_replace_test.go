@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"math"
-	"net/url"
 	"slices"
 	"sync"
 	"testing"
@@ -80,29 +79,6 @@ func TestPgReplaceFailKeepsOldDoc(t *testing.T) {
 	}
 }
 
-// secondDB opens another pool on the schema db is scoped to: a second
-// replica sharing the table.
-func secondDB(t *testing.T, db *sql.DB) *sql.DB {
-	t.Helper()
-	var schema string
-	if err := db.QueryRow(`SELECT current_schema()`).Scan(&schema); err != nil {
-		t.Fatal(err)
-	}
-	u, err := url.Parse(pgtest.BaseDSN(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := u.Query()
-	q.Set("options", "-c search_path="+schema)
-	u.RawQuery = q.Encode()
-	db2, err := sql.Open("postgres", u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db2.Close() })
-	return db2
-}
-
 // Two replicas replacing one document over a shared table leave one whole
 // version. Replica A pauses after its delete; replica B replaces the same
 // document meanwhile. Without a cross-process lock the two deletes run
@@ -110,7 +86,7 @@ func secondDB(t *testing.T, db *sql.DB) *sql.DB {
 func TestPgReplaceSerializesReplicas(t *testing.T) {
 	emb := NewStubEmbedder(8)
 	dbA := openPgVector(t)
-	dbB := secondDB(t, dbA)
+	dbB := pgtest.Replica(t, dbA)
 	mk := func(db *sql.DB) *PgVectorStore {
 		s, err := NewPgVector(db, PgVectorConfig{Dim: emb.Dim()})
 		if err != nil {

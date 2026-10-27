@@ -53,11 +53,12 @@ func (r *wireRecorder) last() (auth, query string, hits int) {
 	return r.auth, r.query, r.hits
 }
 
-// buildWireCLI generates and builds the fixture CLI, returning the binary
-// and an environment whose config directory is empty.
-func buildWireCLI(t *testing.T) (bin string, env []string) {
+// buildFixtureCLI generates and builds the CLI for the spec in yaml,
+// returning the binary and an environment whose config directory is
+// empty.
+func buildFixtureCLI(t *testing.T, yaml string) (bin string, env []string) {
 	t.Helper()
-	dir := cliModuleFromYAML(t, cliWireFixtureYAML)
+	dir := cliModuleFromYAML(t, yaml)
 	appgen.RunGenerateCLI([]string{"--binary=myapp"})
 	bin = clitest.TestExecutablePath(filepath.Join(dir, "myapp"))
 	build := exec.Command("go", "build", "-o", bin, "./cmd/myapp")
@@ -85,7 +86,7 @@ func runWireCLI(t *testing.T, bin string, env []string, stdin string, args ...st
 // The stored login token belongs to the origin it was stored for: a --url
 // or $MYAPP_URL naming another host must not receive it.
 func TestCLITokenOnlyToItsOrigin(t *testing.T) {
-	bin, env := buildWireCLI(t)
+	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
 	prod, other := newWireRecorder(t), newWireRecorder(t)
 	runWireCLI(t, bin, env, "tok-prod\n", "login", "--url", prod.URL, "--with-token")
 
@@ -119,7 +120,7 @@ func TestCLITokenOnlyToItsOrigin(t *testing.T) {
 // The server enters keyset mode on the cursor key's presence, so an
 // empty --cursor must still send cursor=.
 func TestCLIEmptyCursorStartsKeyset(t *testing.T) {
-	bin, env := buildWireCLI(t)
+	bin, env := buildFixtureCLI(t, cliWireFixtureYAML)
 	srv := newWireRecorder(t)
 	env = append(env, "MYAPP_URL="+srv.URL)
 
