@@ -38,7 +38,9 @@ import (
 //   - Source is the owning module ("auth", "queue", …) recorded in the manifest
 //     for provenance; it is never used to build SQL.
 //   - Table is the physical SQL table name.
-//   - PrimaryKey is the keyset-paging column (defaults to "id" when empty).
+//   - PrimaryKey is the keyset-paging column, or a comma-joined list for a
+//     composite key ("provider,provider_id"). Leave it empty for a table
+//     with no key: the export then reads the table in one statement.
 //   - Columns are the physical column names in a stable order.
 //
 // Table, PrimaryKey, and every Column are validated by the framework via

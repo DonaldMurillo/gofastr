@@ -61,7 +61,7 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 	if s.dialect == migrate.DialectPostgres {
 		ts = "TIMESTAMPTZ"
 	}
-	jobs := query.QuoteIdent(bulkJobsTable)
+	jobs := query.QuoteFolded(bulkJobsTable)
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			id          TEXT PRIMARY KEY,
@@ -85,16 +85,16 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 		// One queued job per confirmed run: a second confirm of the same
 		// run while it waits finds the first instead of racing it in.
 		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (run_key) WHERE status = 'queued'`,
-			query.QuoteIdent(bulkJobsTable+"_run_key"), jobs),
+			query.QuoteFolded(bulkJobsTable+"_run_key"), jobs),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			job_id    TEXT NOT NULL,
 			record_id TEXT NOT NULL,
 			seq       INTEGER NOT NULL,
 			outcome   TEXT,
 			PRIMARY KEY (job_id, record_id)
-		)`, query.QuoteIdent(bulkItemsTable)),
+		)`, query.QuoteFolded(bulkItemsTable)),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (job_id, seq)`,
-			query.QuoteIdent(bulkItemsTable+"_seq"), query.QuoteIdent(bulkItemsTable)),
+			query.QuoteFolded(bulkItemsTable+"_seq"), query.QuoteFolded(bulkItemsTable)),
 	}
 	for _, q := range stmts {
 		if _, err := db.ExecContext(ctx, q); err != nil {
@@ -116,7 +116,7 @@ func scanJob(row interface{ Scan(...any) error }) (entityui.BulkJob, error) {
 // queuedByKey reads the queued job holding key, if one does.
 func (s *sqlBulkStore) queuedByKey(ctx context.Context, key string) (entityui.BulkJob, bool, error) {
 	j, err := scanJob(s.db.QueryRowContext(ctx, fmt.Sprintf(
-		`SELECT %s FROM %s WHERE run_key = $1 AND status = $2`, bulkJobColumns, query.QuoteIdent(bulkJobsTable)),
+		`SELECT %s FROM %s WHERE run_key = $1 AND status = $2`, bulkJobColumns, query.QuoteFolded(bulkJobsTable)),
 		key, entityui.BulkQueued))
 	if errors.Is(err, sql.ErrNoRows) {
 		return entityui.BulkJob{}, false, nil
@@ -154,7 +154,7 @@ func (s *sqlBulkStore) create(ctx context.Context, job entityui.BulkJob, ids []s
 	}()
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(
 		`INSERT INTO %s (id, entity, action, count, creator, tenant, filter_hash, run_key, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		query.QuoteIdent(bulkJobsTable)),
+		query.QuoteFolded(bulkJobsTable)),
 		job.ID, job.Entity, job.Action, job.Count, job.Creator, job.Tenant, job.FilterHash, job.Key, entityui.BulkQueued, time.Now().UTC(),
 	); err != nil {
 		return entityui.BulkJob{}, err
@@ -171,7 +171,7 @@ func (s *sqlBulkStore) create(ctx context.Context, job entityui.BulkJob, ids []s
 			sb.WriteString("($" + strconv.Itoa(n+1) + ", $" + strconv.Itoa(n+2) + ", $" + strconv.Itoa(n+3) + ")")
 			args = append(args, job.ID, id, start+i)
 		}
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s (job_id, record_id, seq) VALUES `, query.QuoteIdent(bulkItemsTable))+sb.String(), args...); err != nil {
+		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s (job_id, record_id, seq) VALUES `, query.QuoteFolded(bulkItemsTable))+sb.String(), args...); err != nil {
 			return entityui.BulkJob{}, err
 		}
 	}
@@ -181,7 +181,7 @@ func (s *sqlBulkStore) create(ctx context.Context, job entityui.BulkJob, ids []s
 
 // Enqueued marks the job handed to the JobRunner.
 func (s *sqlBulkStore) Enqueued(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET enqueued = 1 WHERE id = $1`, query.QuoteIdent(bulkJobsTable)), id)
+	res, err := s.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET enqueued = 1 WHERE id = $1`, query.QuoteFolded(bulkJobsTable)), id)
 	if err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ var errBulkJobUnknown = errors.New("bulk store: unknown job")
 // Job reads one job.
 func (s *sqlBulkStore) Job(ctx context.Context, id string) (entityui.BulkJob, error) {
 	j, err := scanJob(s.db.QueryRowContext(ctx, fmt.Sprintf(
-		`SELECT %s FROM %s WHERE id = $1`, bulkJobColumns, query.QuoteIdent(bulkJobsTable)), id))
+		`SELECT %s FROM %s WHERE id = $1`, bulkJobColumns, query.QuoteFolded(bulkJobsTable)), id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return entityui.BulkJob{}, errBulkJobUnknown
 	}
@@ -214,7 +214,7 @@ func (s *sqlBulkStore) Claim(ctx context.Context, id, runner string, now, until 
 	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		`UPDATE %s SET claim_token = $1, lease_until = $2
 		 WHERE id = $3 AND status = $4 AND (claim_token = $1 OR claim_token = '' OR lease_until <= $5)`,
-		query.QuoteIdent(bulkJobsTable)),
+		query.QuoteFolded(bulkJobsTable)),
 		runner, until.UTC(), id, entityui.BulkQueued, now.UTC())
 	if err != nil {
 		return false, err
@@ -230,7 +230,7 @@ func (s *sqlBulkStore) Pending(ctx context.Context, id string, limit int) ([]str
 	}
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT record_id FROM %s WHERE job_id = $1 AND outcome IS NULL ORDER BY seq LIMIT %d`,
-		query.QuoteIdent(bulkItemsTable), limit), id)
+		query.QuoteFolded(bulkItemsTable), limit), id)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func (s *sqlBulkStore) Pending(ctx context.Context, id string, limit int) ([]str
 func (s *sqlBulkStore) holdLease(ctx context.Context, tx *sql.Tx, id, runner string) error {
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(
 		`UPDATE %s SET claim_token = claim_token WHERE id = $1 AND claim_token = $2 AND status = $3`,
-		query.QuoteIdent(bulkJobsTable)), id, runner, entityui.BulkQueued)
+		query.QuoteFolded(bulkJobsTable)), id, runner, entityui.BulkQueued)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (s *sqlBulkStore) Settle(ctx context.Context, id, runner string, outcomes m
 	if err = s.holdLease(ctx, tx, id, runner); err != nil {
 		return err
 	}
-	q := fmt.Sprintf(`UPDATE %s SET outcome = $1 WHERE job_id = $2 AND record_id = $3 AND outcome IS NULL`, query.QuoteIdent(bulkItemsTable))
+	q := fmt.Sprintf(`UPDATE %s SET outcome = $1 WHERE job_id = $2 AND record_id = $3 AND outcome IS NULL`, query.QuoteFolded(bulkItemsTable))
 	for _, rid := range slices.Sorted(maps.Keys(outcomes)) {
 		if _, err = tx.ExecContext(ctx, q, outcomes[rid], id, rid); err != nil {
 			return err
@@ -302,7 +302,7 @@ func (s *sqlBulkStore) Settle(ctx context.Context, id, runner string, outcomes m
 func (s *sqlBulkStore) Tally(ctx context.Context, id string) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT outcome, COUNT(*) FROM %s WHERE job_id = $1 AND outcome IS NOT NULL GROUP BY outcome`,
-		query.QuoteIdent(bulkItemsTable)), id)
+		query.QuoteFolded(bulkItemsTable)), id)
 	if err != nil {
 		return nil, err
 	}
@@ -346,14 +346,14 @@ func (s *sqlBulkStore) Finish(ctx context.Context, id, runner, status string, at
 		}
 		return err
 	}
-	items := query.QuoteIdent(bulkItemsTable)
+	items := query.QuoteFolded(bulkItemsTable)
 	count := func(n int) string {
 		return fmt.Sprintf(`(SELECT COUNT(*) FROM %s WHERE job_id = $%d AND outcome = $%d)`, items, n, n+1)
 	}
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(
 		`UPDATE %s SET status = $1, finished_at = $2, claim_token = '', lease_until = NULL, done = %s, skipped = %s, failed = %s
 		 WHERE id = $3 AND claim_token = $4 AND status = $5`,
-		query.QuoteIdent(bulkJobsTable), count(6), count(8), count(10)),
+		query.QuoteFolded(bulkJobsTable), count(6), count(8), count(10)),
 		status, at.UTC(), id, runner, entityui.BulkQueued,
 		id, entityui.BulkRowDone, id, entityui.BulkRowSkipped, id, entityui.BulkRowFailed,
 	); err != nil {
@@ -370,7 +370,7 @@ func (s *sqlBulkStore) Finish(ctx context.Context, id, runner, status string, at
 func (s *sqlBulkStore) Unenqueued(ctx context.Context, before time.Time) ([]entityui.BulkJob, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT %s FROM %s WHERE status = $1 AND enqueued = 0 AND created_at < $2 ORDER BY created_at, id`,
-		bulkJobColumns, query.QuoteIdent(bulkJobsTable)), entityui.BulkQueued, before.UTC())
+		bulkJobColumns, query.QuoteFolded(bulkJobsTable)), entityui.BulkQueued, before.UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -398,10 +398,10 @@ func (s *sqlBulkStore) Prune(ctx context.Context, before time.Time) (_ int, err 
 			_ = tx.Rollback()
 		}
 	}()
-	jobs := query.QuoteIdent(bulkJobsTable)
+	jobs := query.QuoteFolded(bulkJobsTable)
 	finished := `status <> $1 AND finished_at < $2`
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE job_id IN (SELECT id FROM %s WHERE %s)`,
-		query.QuoteIdent(bulkItemsTable), jobs, finished), entityui.BulkQueued, before.UTC()); err != nil {
+		query.QuoteFolded(bulkItemsTable), jobs, finished), entityui.BulkQueued, before.UTC()); err != nil {
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE %s`, jobs, finished), entityui.BulkQueued, before.UTC())

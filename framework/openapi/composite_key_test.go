@@ -100,3 +100,20 @@ func TestCompositeIntKeyBatchItemTypes(t *testing.T) {
 		}
 	}
 }
+
+// A batch update item is sparse, like a single PATCH: only its key
+// columns are required, never the entity's other required fields.
+func TestBatchItemRequiresOnlyKey(t *testing.T) {
+	ent := keyedEntity("posts", []string{"id"},
+		schema.Field{Name: "id", Type: schema.String, Required: true},
+		schema.Field{Name: "title", Type: schema.String, Required: true},
+		schema.Field{Name: "views", Type: schema.Int},
+	)
+	doc := EntityOpenAPI(reg(ent), "Test", "1.0.0", nil).Build()
+	batch := requestBodyProps(t, getMap(t, getMap(t, getMap(t, doc, "paths"), "/posts/_batch"), "patch"))
+	items := getMap(t, getMap(t, batch, "properties"), "items")
+	allOf := getMap(t, items, "items")["allOf"].([]any)
+	if req, has := allOf[0].(map[string]any)["required"]; has {
+		t.Errorf("batch item body requires %v, want only the key", req)
+	}
+}

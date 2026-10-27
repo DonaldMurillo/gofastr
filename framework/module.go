@@ -237,6 +237,13 @@ type ModuleManager struct {
 	// in-process module manager. nil when the app has no process modules.
 	// Wired by App.RegisterProcessModule (framework/app.go).
 	processCoordinator processModuleCoordinator
+
+	// process names the modules a process supervisor owns. Their enabled
+	// state lives in the supervisor's desired-state row
+	// (gofastr_process_modules), not in store/enabled: Enabled, Enable and
+	// Disable route them through the coordinator, so the route gate, the
+	// module-tool gate and the supervisor all read one value.
+	process map[string]bool
 }
 
 // NewModuleManager creates a manager backed by the appropriate store.
@@ -252,6 +259,7 @@ func NewModuleManager(db *sql.DB, f fanout.Fanout) *ModuleManager {
 		routes:   make(map[string]string),
 		tools:    make(map[string]string),
 		entities: make(map[string]string),
+		process:  make(map[string]bool),
 		fanout:   f,
 		nodeID:   fanout.NewNodeID(),
 		db:       db,
@@ -337,7 +345,9 @@ func (mm *ModuleManager) recordEntity(entityName string) {
 // loadFromStore populates the enabled cache from the persisted store.
 // Called once at boot, after batteries init. Modules absent from the
 // store are enabled by default; store rows for unknown modules are
-// kept but never read.
+// kept but never read. The cache entry this writes for a process module
+// is never read: Enabled answers those from the supervisor's row, so a
+// process module nobody enabled stays closed (404) after boot.
 func (mm *ModuleManager) loadFromStore(ctx context.Context) error {
 	if mm.storeErr != nil {
 		return mm.storeErr
@@ -359,9 +369,16 @@ func (mm *ModuleManager) loadFromStore(ctx context.Context) error {
 }
 
 // Enabled is the hot-path read the dispatch gates use. A single map
-// read under RLock; absent modules are enabled by default.
+// read under RLock; absent modules are enabled by default. A process
+// module answers from its supervisor's desired state.
 func (mm *ModuleManager) Enabled(name string) bool {
 	mm.mu.RLock()
+	if mm.process[name] {
+		pt, _ := mm.processCoordinator.(processModuleToggler)
+		mm.mu.RUnlock()
+		// No toggler means nothing could spawn the child: closed.
+		return pt != nil && pt.DesiredEnabled(name)
+	}
 	defer mm.mu.RUnlock()
 	v, ok := mm.enabled[name]
 	if !ok {
@@ -464,13 +481,33 @@ func (mm *ModuleManager) Enable(ctx context.Context, name string) error {
 			return fmt.Errorf("cannot enable module %q: dependency %q is disabled", name, dep)
 		}
 	}
-	if err := mm.store.SetEnabled(ctx, name, true); err != nil {
+	if err := mm.setEnabled(ctx, name, true); err != nil {
 		return fmt.Errorf("persist enable for %q: %w", name, err)
 	}
-	mm.mu.Lock()
-	mm.enabled[name] = true
-	mm.mu.Unlock()
 	mm.publish(ctx, name, true)
+	return nil
+}
+
+// setEnabled persists a toggle and flips the cache. A process module's
+// toggle goes to its supervisor instead, which writes the desired-state
+// row and wakes the supervise loop to spawn or drain the child.
+func (mm *ModuleManager) setEnabled(ctx context.Context, name string, enabled bool) error {
+	mm.mu.RLock()
+	isProcess := mm.process[name]
+	pt, _ := mm.processCoordinator.(processModuleToggler)
+	mm.mu.RUnlock()
+	if isProcess {
+		if pt == nil {
+			return fmt.Errorf("process module %q has no supervisor", name)
+		}
+		return pt.SetDesiredEnabled(ctx, name, enabled)
+	}
+	if err := mm.store.SetEnabled(ctx, name, enabled); err != nil {
+		return err
+	}
+	mm.mu.Lock()
+	mm.enabled[name] = enabled
+	mm.mu.Unlock()
 	return nil
 }
 
@@ -488,12 +525,9 @@ func (mm *ModuleManager) Disable(ctx context.Context, name string) error {
 	if len(deps) > 0 {
 		return fmt.Errorf("cannot disable module %q: enabled modules %v depend on it", name, deps)
 	}
-	if err := mm.store.SetEnabled(ctx, name, false); err != nil {
+	if err := mm.setEnabled(ctx, name, false); err != nil {
 		return fmt.Errorf("persist disable for %q: %w", name, err)
 	}
-	mm.mu.Lock()
-	mm.enabled[name] = false
-	mm.mu.Unlock()
 	mm.publish(ctx, name, false)
 	return nil
 }
@@ -613,6 +647,10 @@ func (mm *ModuleManager) List() []ModuleInfo {
 		if _, ok := mm.enabled[name]; !ok {
 			enabled = true
 		}
+		if mm.process[name] {
+			pt, _ := mm.processCoordinator.(processModuleToggler)
+			enabled = pt != nil && pt.DesiredEnabled(name)
+		}
 		info := ModuleInfo{
 			Name:           name,
 			Version:        m.Version,
@@ -656,6 +694,28 @@ type processModuleCoordinator interface {
 	// Info returns the operator introspection snapshot for name, or
 	// ok=false if name is not a process module supervised here.
 	Info(name string) (ProcessModuleInfo, bool)
+}
+
+// processModuleToggler is the enable/disable half a process supervisor's
+// coordinator adds to [processModuleCoordinator]. The module manager
+// routes a process module's Enabled read and its Enable/Disable writes
+// through it, so the supervisor's desired-state row is the one source of
+// truth whichever API toggled it.
+type processModuleToggler interface {
+	// DesiredEnabled is this replica's view of the module's desired
+	// state: the supervisor's row as of its last write or reconcile.
+	DesiredEnabled(name string) bool
+	// SetDesiredEnabled writes the desired state and wakes the
+	// supervise loop, which spawns or drains the child.
+	SetDesiredEnabled(ctx context.Context, name string, enabled bool) error
+}
+
+// markProcess records that name is a process module whose enabled state
+// the coordinator owns. Called by App.RegisterProcessModule.
+func (mm *ModuleManager) markProcess(name string) {
+	mm.mu.Lock()
+	mm.process[name] = true
+	mm.mu.Unlock()
 }
 
 // SetProcessCoordinator installs the process-module coordinator. Called

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -99,6 +100,97 @@ func TestMCPAppRoutinesReportsMissingLedgerRow(t *testing.T) {
 	if !strings.Contains(text, "missing") {
 		t.Errorf("expected ledger state 'missing'; got:\n%s", text)
 	}
+}
+
+// A ledger that exists but cannot be read is not an empty ledger: the
+// routine's state is unknown, not missing.
+func TestRoutinesUnreadableLedgerUnknown(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := NewApp(WithDB(db), WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	app.Routine(migrate.Routine{Name: "f1", Up: "DROP VIEW IF EXISTS f1;\nCREATE VIEW f1 AS SELECT 1"})
+	// A ledger table the SELECT cannot read: no checksum column.
+	if _, err := db.Exec(`CREATE TABLE gofastr_routines (name TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	res, err := app.MCP.CallTool(context.Background(), "app_routines", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if state := routineField(t, res, "f1", "ledger_state"); state != "unknown" {
+		t.Errorf("ledger_state = %q, want unknown", state)
+	}
+}
+
+// The ledger read runs under the caller's context: a call whose request
+// is gone does not hold a connection waiting on the ledger.
+func TestRoutinesLedgerReadUsesCallerCtx(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := NewApp(WithDB(db), WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	app.Routine(migrate.Routine{Name: "f1", Up: "DROP VIEW IF EXISTS f1;\nCREATE VIEW f1 AS SELECT 1"})
+	plan := migrate.Plan{Registry: app.Registry, Routines: app.migrationRoutines}
+	if err := migrate.AutoMigratePlanContext(context.Background(), db, plan); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, err := app.toolRoutines(ctx, nil)
+	if err != nil {
+		t.Fatalf("toolRoutines: %v", err)
+	}
+	if state := routineField(t, res, "f1", "ledger_state"); state != "unknown" {
+		t.Errorf("ledger_state under a canceled context = %q, want unknown", state)
+	}
+}
+
+// After boot, a call does not probe the dialect again: the probe ran on a
+// background context with three 5s attempts, so a call on an exhausted
+// pool held its caller about 15s whatever its context said. The boot's
+// seed-hook probe fills the App's dialect cache, and the tool reads it.
+func TestRoutinesNoDialectProbeAfterBoot(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := NewApp(WithDB(db), WithMCPIntrospection())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	app.Routine(migrate.Routine{Name: "f1", Up: "DROP VIEW IF EXISTS f1;\nCREATE VIEW f1 AS SELECT 1"})
+	if err := app.runSeedHooksSerialized(); err != nil {
+		t.Fatalf("seed hooks: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	held, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	if _, err := app.toolRoutines(ctx, nil); err != nil {
+		t.Fatalf("toolRoutines: %v", err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("app_routines on a canceled context took %s, want it to return at once", took)
+	}
+}
+
+// routineField returns one field of the named routine's entry.
+func routineField(t *testing.T, res any, name, field string) any {
+	t.Helper()
+	m, _ := res.(map[string]any)
+	routines, _ := m["routines"].([]map[string]any)
+	for _, r := range routines {
+		if r["name"] == name {
+			return r[field]
+		}
+	}
+	t.Fatalf("routine %q not in %#v", name, res)
+	return nil
 }
 
 // TestMCPAppRoutinesSurvivesNilDB proves the tool returns the static fields

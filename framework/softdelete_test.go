@@ -27,8 +27,8 @@ func TestSoftDelete(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectExec(`UPDATE "posts" SET deleted_at = NOW\(\) WHERE id = \$1`).
-		WithArgs("123").
+	mock.ExpectExec(`UPDATE "posts" SET deleted_at = \$2 WHERE id = \$1`).
+		WithArgs("123", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	err = softdelete.SoftDelete(context.Background(), db, "posts", "123")

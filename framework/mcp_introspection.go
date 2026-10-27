@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -106,8 +107,17 @@ func (a *App) registerIntrospectionTools() error {
 			handler:     a.toolUnmounted,
 		},
 	}
+	// Under the dev implication these tools are ungated and disclose the
+	// app's routes, config, goroutine stacks and module state. That is
+	// only safe on a loopback listener: mark them dev-implied so the bind
+	// guard withdraws them on an exposed bind, as it does battery/log's
+	// read tools. An explicit WithMCPIntrospection keeps them.
+	var opts []mcp.ToolOption
+	if a.mcpIntrospectionDevImplied {
+		opts = append(opts, mcp.WithDevImplied())
+	}
 	for _, t := range tools {
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler); err != nil {
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP tool %q: %w", t.name, err)
 		}
 	}
@@ -302,7 +312,7 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 // SQLite (no pg_proc/pg_views) or when the catalog query errors, the tool
 // never fails, it just degrades gracefully so an agent always gets the
 // static fields.
-func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
+func (a *App) toolRoutines(ctx context.Context, _ map[string]any) (any, error) {
 	registered := a.migrationRoutines
 	out := make([]map[string]any, 0, len(registered))
 
@@ -325,28 +335,14 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 		}, nil
 	}
 
-	ctx := context.Background()
-	dialect := migrate.DetectDialect(a.DB)
-
-	// Read the ledger in one shot. On error, every entry gets ledger_state
-	// "unknown", we still surface the registered set + checksums.
-	ledger := map[string]string{}
-	if rows, err := a.DB.QueryContext(ctx,
-		`SELECT name, checksum FROM gofastr_routines`); err == nil {
-		for rows.Next() {
-			var name, checksum string
-			if err := rows.Scan(&name, &checksum); err == nil {
-				ledger[name] = checksum
-			}
-		}
-		// The documented contract is "on error, every entry reads
-		// unknown". A failure part-way through Next would otherwise leave
-		// the rows already scanned in the map, so some routines report a
-		// confident ledger_state derived from a read that did not finish.
-		if rows.Err() != nil {
-			clear(ledger)
-		}
-		_ = rows.Close()
+	// The cached dialect, filled at boot: DetectDialect probes on a
+	// background context, three 5s attempts, and held a canceled call
+	// about 15s on an exhausted pool. A failed probe leaves the ledger
+	// unread, so every state reads unknown.
+	dialect, dialectErr := a.txDialect()
+	ledger, ledgerRead := map[string]string{}, false
+	if dialectErr == nil {
+		ledger, ledgerRead = a.readRoutineLedger(ctx, dialect)
 	}
 
 	for _, r := range registered {
@@ -360,8 +356,10 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 		// declared PG-only running against SQLite will never have a ledger row
 		// for this engine, report "skipped_for_dialect" so an agent doesn't
 		// read it as drift.
-		if r.Dialect != "" && r.Dialect != dialect {
+		if dialectErr == nil && r.Dialect != "" && r.Dialect != dialect {
 			entry["ledger_state"] = "skipped_for_dialect"
+		} else if !ledgerRead {
+			entry["ledger_state"] = "unknown"
 		} else if oldSum, ok := ledger[r.Name]; ok {
 			if oldSum == newSum {
 				entry["ledger_state"] = "present"
@@ -380,6 +378,32 @@ func (a *App) toolRoutines(_ context.Context, _ map[string]any) (any, error) {
 		"count":    len(out),
 		"db_wired": true,
 	}, nil
+}
+
+// readRoutineLedger reads the routine ledger in one shot under the
+// caller's context. ok is false when the read failed: every entry then
+// reads "unknown", because an unread ledger is not an empty one and
+// "missing" would claim a routine never applied. A ledger table that does
+// not exist yet is a read that succeeded: no routine has been applied.
+func (a *App) readRoutineLedger(ctx context.Context, dialect migrate.Dialect) (map[string]string, bool) {
+	ledger := map[string]string{}
+	rows, err := a.DB.QueryContext(ctx, `SELECT name, checksum FROM gofastr_routines`)
+	if err != nil {
+		exists, xerr := migrate.TableExistsBulk(ctx, a.DB, []string{"gofastr_routines"}, dialect)
+		return ledger, xerr == nil && !exists["gofastr_routines"]
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var name, checksum string
+		if err := rows.Scan(&name, &checksum); err != nil {
+			return nil, false
+		}
+		ledger[name] = checksum
+	}
+	if rows.Err() != nil {
+		return nil, false
+	}
+	return ledger, true
 }
 
 // probeRoutineLiveness asks the DB whether a routine object with the given

@@ -98,6 +98,11 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 	if err != nil {
 		return fmt.Errorf("audit: invalid table name %q: %w", table, err)
 	}
+	if dialect == migrate.DialectPostgres {
+		if err := query.RefuseCaseKeptTables(context.Background(), db, safeTable); err != nil {
+			return fmt.Errorf("audit: %w", err)
+		}
+	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id          TEXT PRIMARY KEY,
 		entity      TEXT NOT NULL,
@@ -108,7 +113,7 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 		created_at  %s NOT NULL,
 		diff        TEXT,
 		reason      TEXT
-	)`, query.QuoteIdent(safeTable), tsType)
+	)`, query.QuoteFolded(safeTable), tsType)
 	if _, err = db.Exec(stmt); err != nil {
 		return err
 	}
@@ -140,7 +145,7 @@ func addAuditColumns(db *sql.DB, safeTable string, dialect migrate.Dialect, live
 		if dialect == migrate.DialectPostgres {
 			clause = "ADD COLUMN IF NOT EXISTS"
 		}
-		alter := fmt.Sprintf("ALTER TABLE %s %s %s TEXT", query.QuoteIdent(safeTable), clause, col)
+		alter := fmt.Sprintf("ALTER TABLE %s %s %s TEXT", query.QuoteFolded(safeTable), clause, col)
 		if _, err := db.Exec(alter); err != nil {
 			now, rerr := migrate.ReadLiveColumns(context.Background(), db, safeTable, dialect)
 			if _, ok := now[col]; rerr != nil || !ok {
@@ -749,13 +754,13 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditO
 	// keeps taking every other row.
 	if reason := sanitizeAuditField(crud.StateOverrideReason(ctx)); reason != "" {
 		_, err = exec.ExecContext(ctx,
-			fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", query.QuoteIdent(safeTable)),
+			fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", query.QuoteFolded(safeTable)),
 			id, ent, string(op), recordID, nullIfEmpty(actor), nullIfEmpty(tenantID), time.Now().UTC(), diffArg, reason,
 		)
 		return err
 	}
 	_, err = exec.ExecContext(ctx,
-		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", query.QuoteIdent(safeTable)),
+		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", query.QuoteFolded(safeTable)),
 		id, ent, string(op), recordID, nullIfEmpty(actor), nullIfEmpty(tenantID), time.Now().UTC(), diffArg,
 	)
 	return err
