@@ -1231,11 +1231,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   on the connection's reader, the goroutine that delivers the client's
   answer, and the connection stopped answering. Handlers now run beside
   the reader, and frames that arrive meanwhile are answered in order
-  after it. At most 256 frames or 16 MiB wait. Past that the server
-  stops reading, so a client pipelining requests is held back rather
-  than refused; while a permission request waits on its answer, a
-  request past the bound is refused with an internal error. A
-  `session/cancel` still stops a
+  after it. At most 256 frames or 16 MiB wait; past that a request is
+  refused with an internal error. A `session/cancel` still stops a
   running turn at once. Input EOF cancels the waiting handler and drops
   the frames still waiting behind it, since nobody is left to answer.
 - **An ACP tool-call patch can clear a field.** `ToolCallUpdateFrame`
