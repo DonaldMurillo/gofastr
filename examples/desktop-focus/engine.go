@@ -474,10 +474,11 @@ func stamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// remainingSeconds is the seconds left until end, floored at 0.
+// remainingSeconds is the seconds left until end, a part second counted
+// as a whole one, and 0 once end has passed.
 func remainingSeconds(end, now time.Time) int {
-	if d := int(end.Sub(now) / time.Second); d > 0 {
-		return d
+	if d := end.Sub(now); d > 0 {
+		return int((d + time.Second - 1) / time.Second)
 	}
 	return 0
 }

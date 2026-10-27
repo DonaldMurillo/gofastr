@@ -92,6 +92,27 @@ func sessionRows(t *testing.T, app *framework.App, owner string) []map[string]an
 	return listed.Data
 }
 
+// A part second still counts: a Timestamp column keeps microseconds, so
+// a minute-long break read back on a clock with nanoseconds below that
+// (Linux) is a hair under 60s, and rounding down showed 00:59 at its
+// start and ended a session up to a second early.
+func TestRemainingSecondsRoundsUp(t *testing.T) {
+	end := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		before time.Duration
+		want   int
+	}{
+		{60*time.Second - 123*time.Nanosecond, 60},
+		{time.Nanosecond, 1},
+		{0, 0},
+		{-time.Second, 0},
+	} {
+		if got := remainingSeconds(end, end.Add(-c.before)); got != c.want {
+			t.Errorf("remainingSeconds %v before the end = %d, want %d", c.before, got, c.want)
+		}
+	}
+}
+
 func TestStartCreatesWorkSessionWithDeclaredMinutes(t *testing.T) {
 	app, _, _, eng, clock := newEngineApp(t)
 	taskID := createTask(t, app, "u1", "Write the brief")
