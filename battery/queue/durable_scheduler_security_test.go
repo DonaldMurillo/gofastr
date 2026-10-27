@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -103,6 +104,58 @@ func TestLeaseSkewStillFencesOldOwner(t *testing.T) {
 	}
 	if got := occurrenceStatuses(t, q1)["enqueued"]; got != 1 {
 		t.Fatalf("lagged reclaim occurrences = %d, want 1", got)
+	}
+}
+
+// TestLeaseStealFencesWithoutVersionBump: B takes the lease while A is
+// paused before its commit, but B commits nothing, so the schedule's
+// version is still the one A read. The version CAS cannot stop A here;
+// only the owner+fence re-check can. The handoff tests above let B commit
+// first, and B's version bump rejects A on its own.
+func TestLeaseStealFencesWithoutVersionBump(t *testing.T) {
+	assertLeaseStealFencesAlone(t, openDurableSchedulerDB(t))
+}
+
+func assertLeaseStealFencesAlone(t *testing.T, db *sql.DB) {
+	t.Helper()
+	q1 := newDurableTestQueue(t, db)
+	q2 := newDurableTestQueue(t, db)
+	base := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	lease := 30 * time.Second
+	sA, err := NewDurableScheduler(q1, DurableSchedulerConfig{OwnerID: "steal-a", LeaseDuration: lease})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sB, err := NewDurableScheduler(q2, DurableSchedulerConfig{OwnerID: "steal-b", LeaseDuration: lease})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sA.Every("digest", time.Minute).Job("send-digest", nil).RegisterAt(base); err != nil {
+		t.Fatal(err)
+	}
+
+	stolen := false
+	sA.beforeOccurrenceCommit = func() {
+		// B's clock is a lease ahead of A's, so the takeover fires and
+		// B's expires_at stays in A's future: the expiry clause passes
+		// for A. B only takes the lease; it evaluates no schedule.
+		_, owned, err := sB.acquireLease(context.Background(), base.Add(time.Minute+65*time.Second))
+		if err != nil || !owned {
+			t.Fatalf("B lease takeover: owned=%v err=%v", owned, err)
+		}
+		stolen = true
+	}
+	if err := sA.RunOnce(context.Background(), base.Add(time.Minute)); err != nil {
+		t.Fatalf("stale owner RunOnce: %v", err)
+	}
+	if !stolen {
+		t.Fatal("the seam never ran, so this asserts nothing")
+	}
+	if jobs := pendingJobs(t, q1); len(jobs) != 0 {
+		t.Fatalf("stale owner enqueued %d jobs after losing the lease, want 0", len(jobs))
+	}
+	if got := occurrenceStatuses(t, q1); len(got) != 0 {
+		t.Fatalf("stale owner wrote occurrences %v after losing the lease, want none", got)
 	}
 }
 

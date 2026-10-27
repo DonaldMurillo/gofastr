@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/netguard"
@@ -44,6 +45,12 @@ type PushOptions struct {
 // events quickly from opening an unbounded number of connections.
 const pushConcurrency = 16
 
+// pushBacklog caps the events queued process-wide behind a config's
+// in-flight delivery. Deliveries to one config go one at a time, in
+// event order; past this bound an event is dropped like one past
+// pushConcurrency.
+const pushBacklog = pushConcurrency
+
 // pushDeliveryTimeout bounds one push POST. A hung receiver must not
 // accumulate goroutines for the TaskTimeout duration.
 const pushDeliveryTimeout = 10 * time.Second
@@ -57,6 +64,45 @@ type pusher struct {
 	allowPrivate bool
 	sem          chan struct{}
 	log          *slog.Logger
+
+	mu sync.Mutex
+	// queues holds, per config with a delivery in flight, the events
+	// waiting behind it. A key present with an empty queue is a config
+	// whose drain goroutine is still posting.
+	queues map[pushQueueKey][]pushItem
+	queued int // events across all queues, bounded by pushBacklog
+	// marks holds, per config, the newest task version enqueued for it.
+	// Two publications of one task race between their persist and their
+	// enqueue (a run's WORKING against a CancelTask's CANCELED), so the
+	// older one can arrive second; serializing the POSTs alone kept that
+	// reversed order and left a receiver's last word on a canceled task
+	// at WORKING. An event older than the mark is dropped. A mark
+	// outlives its config's queue by pushMarkRetention, past the longest
+	// a publication can sit between persist and enqueue.
+	marks     map[pushQueueKey]pushMark
+	lastSweep time.Time
+}
+
+// pushMark is the newest version enqueued for one config, and when its
+// queue last drained (zero while a delivery is in flight).
+type pushMark struct {
+	version int64
+	idle    time.Time
+}
+
+// pushMarkRetention is how long a config's mark is kept once its queue
+// drains. A publication lists its push configs under storeOpTimeout
+// after it persists, so a stale event reaches enqueue within that bound
+// of the newer one; twice the bound leaves margin.
+func pushMarkRetention() time.Duration { return 2 * storeOpTimeout }
+
+// pushQueueKey names one config of one owner's task.
+type pushQueueKey struct{ owner, taskID, configID string }
+
+type pushItem struct {
+	cfg     PushNotificationConfig
+	payload []byte
+	version int64
 }
 
 func newPusher(opts PushOptions, log *slog.Logger) *pusher {
@@ -78,15 +124,34 @@ func newPusher(opts PushOptions, log *slog.Logger) *pusher {
 		allowPrivate: opts.AllowPrivate,
 		sem:          make(chan struct{}, pushConcurrency),
 		log:          log,
+		queues:       map[pushQueueKey][]pushItem{},
+		marks:        map[pushQueueKey]pushMark{},
 	}
 }
 
-// deliver POSTs ev to every config, each in its own goroutine so the
-// run never waits on a webhook. Delivery is best effort by design: one
-// attempt, no retry, a non-2xx or transport error is logged once at
-// Warn. Reliable delivery with backoff is battery/queue's job; task
-// progress must never stall on a receiver that is down.
-func (p *pusher) deliver(recs []*PushConfigRecord, ev StreamResponse) {
+// deliver POSTs ev to every config so the run never waits on a
+// webhook. Delivery is best effort by design: one attempt, no retry, a
+// non-2xx or transport error is logged once at Warn. Reliable delivery
+// with backoff is battery/queue's job; task progress must never stall
+// on a receiver that is down.
+//
+// Deliveries to one config go one at a time, in event order: appended
+// artifact chunks carry no sequence number, so a receiver handed C
+// before B rebuilds the wrong artifact. Each config with a delivery in
+// flight holds one of pushConcurrency slots and drains its own queue,
+// so a slow receiver delays only its own config's events.
+//
+// The slot is taken BEFORE the drain goroutine starts and without
+// blocking, and the queues are bounded by pushBacklog: past either
+// bound the delivery is dropped with a Warn line. Waiting for a slot
+// let goroutines and payloads pile up without limit behind one hung
+// receiver.
+//
+// version is the task version the event's write produced. An event
+// older than one already enqueued for a config is dropped for that
+// config: delivery never goes backwards, so a terminal state stays the
+// last thing a receiver sees.
+func (p *pusher) deliver(recs []*PushConfigRecord, ev StreamResponse, version int64) {
 	if p.disable || len(recs) == 0 {
 		return
 	}
@@ -97,13 +162,92 @@ func (p *pusher) deliver(recs []*PushConfigRecord, ev StreamResponse) {
 	}
 	for _, rec := range recs {
 		cfg := rec.Config
-		go func() {
-			p.sem <- struct{}{}
-			defer func() { <-p.sem }()
-			if err := p.post(cfg, payload); err != nil {
-				p.log.Warn("a2a: push notification not delivered", "taskId", cfg.TaskID, "url", cfg.URL, "err", err)
-			}
-		}()
+		switch p.enqueue(pushQueueKey{rec.Owner, cfg.TaskID, cfg.ID}, pushItem{cfg, payload, version}) {
+		case pushFull:
+			p.log.Warn("a2a: push notification dropped: delivery backlog full", "taskId", cfg.TaskID, "url", cfg.URL, "inFlight", cap(p.sem))
+		case pushStale:
+			p.log.Debug("a2a: push notification dropped: a newer event was already enqueued", "taskId", cfg.TaskID, "version", version)
+		}
+	}
+}
+
+// enqueue queues it behind the config's in-flight delivery, or starts a
+// drain for the config when none is in flight. It reports pushFull or
+// pushStale when the event is dropped.
+func (p *pusher) enqueue(key pushQueueKey, it pushItem) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	p.sweepMarks(now)
+	mark, seen := p.marks[key]
+	if seen && it.version < mark.version {
+		return pushStale
+	}
+	mark.version = max(mark.version, it.version)
+	if pending, busy := p.queues[key]; busy {
+		p.marks[key] = pushMark{version: mark.version}
+		if p.queued >= pushBacklog {
+			return pushFull
+		}
+		p.queues[key] = append(pending, it)
+		p.queued++
+		return pushQueued
+	}
+	select {
+	case p.sem <- struct{}{}:
+	default:
+		p.marks[key] = pushMark{version: mark.version, idle: now}
+		return pushFull
+	}
+	p.marks[key] = pushMark{version: mark.version}
+	p.queues[key] = nil
+	go p.drain(key, it)
+	return pushQueued
+}
+
+// enqueue outcomes.
+const (
+	pushQueued = iota
+	pushFull
+	pushStale
+)
+
+// sweepMarks forgets the marks of configs idle past pushMarkRetention,
+// at most once per retention period. Called with p.mu held.
+func (p *pusher) sweepMarks(now time.Time) {
+	keep := pushMarkRetention()
+	if now.Sub(p.lastSweep) < keep {
+		return
+	}
+	p.lastSweep = now
+	for key, m := range p.marks {
+		if !m.idle.IsZero() && now.Sub(m.idle) >= keep {
+			delete(p.marks, key)
+		}
+	}
+}
+
+// drain posts it, then each event queued behind it for the same config,
+// and gives the slot back once the config's queue is empty.
+func (p *pusher) drain(key pushQueueKey, it pushItem) {
+	defer func() { <-p.sem }()
+	for {
+		if err := p.post(it.cfg, it.payload); err != nil {
+			p.log.Warn("a2a: push notification not delivered", "taskId", it.cfg.TaskID, "url", it.cfg.URL, "err", err)
+		}
+		p.mu.Lock()
+		pending := p.queues[key]
+		if len(pending) == 0 {
+			delete(p.queues, key)
+			p.marks[key] = pushMark{version: p.marks[key].version, idle: time.Now()}
+			p.mu.Unlock()
+			return
+		}
+		it = pending[0]
+		pending[0] = pushItem{}
+		p.queues[key] = pending[1:]
+		p.queued--
+		p.mu.Unlock()
 	}
 }
 
@@ -228,22 +372,44 @@ func rejectInternal(ip net.IP) error {
 
 // guardedClient returns a shallow copy of c with redirects disabled and
 // the SSRF guard applied without disturbing the caller's routing: a nil
-// transport gets the guarded dial-time hook (strongest); a custom
-// transport is left untouched and wrapped with a per-request
+// transport gets the guarded dial-time hook (strongest); a plain
+// *http.Transport with no proxy and no custom dialer is cloned and given
+// the same dial-time hook, so the address the guard checks is the
+// address dialed (its TLS and pool settings survive the clone). Any
+// other transport (a proxy, a custom dialer, a non-*http.Transport
+// RoundTripper) is left untouched and wrapped with a per-request
 // resolved-IP check, because swapping its dialer would silently break
 // an egress proxy or unix-socket transport that dials internal
-// addresses by design.
+// addresses by design. That wrapper resolves once to check and the
+// inner transport resolves again to dial, so a name that rebinds
+// between the two passes it: it is the weaker posture, kept only where
+// the dialer cannot be replaced.
 func guardedClient(c *http.Client, allowPrivate bool) *http.Client {
 	cc := *c
 	cc.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	if c.Transport == nil && !allowPrivate {
+	if allowPrivate {
+		return &cc
+	}
+	if c.Transport == nil {
 		cc.Transport = netguard.GuardedTransport(false, "a2a")
-	} else if !allowPrivate {
+	} else if guarded, ok := plainGuarded(c.Transport); ok {
+		cc.Transport = guarded
+	} else {
 		cc.Transport = &guardedRoundTripper{inner: c.Transport}
 	}
 	return &cc
+}
+
+// plainGuarded returns the dial-guarded clone of rt when it is a plain
+// *http.Transport (netguard.GuardPlainTransport).
+func plainGuarded(rt http.RoundTripper) (*http.Transport, bool) {
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		return nil, false
+	}
+	return netguard.GuardPlainTransport(tr, "a2a")
 }
 
 // guardedRoundTripper is the fallback guard for custom RoundTrippers

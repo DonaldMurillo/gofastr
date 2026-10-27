@@ -5,6 +5,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -135,16 +136,30 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 		if shouldExcludePath(route.Path, cfg.ExcludePaths) {
 			continue
 		}
-		paths := expandRouteForSitemap(ds.App, route.Path)
-		for _, p := range paths {
-			if !ds.sitemapPublic(p) {
-				continue
+		if ds.pathLocales != nil {
+			// Each locale lists the pages its own StaticPaths name: a
+			// localized catalogue gives /es/ its own slugs.
+			set := *ds.pathLocales
+			listed := map[string]map[string]bool{}
+			var paths []string
+			for _, tag := range set.All() {
+				listed[tag] = map[string]bool{}
+				for _, p := range expandRouteForSitemap(sitemapLocaleContext(set, tag), ds.App, route.Path) {
+					if !slices.Contains(paths, p) {
+						paths = append(paths, p)
+					}
+					listed[tag][p] = true
+				}
 			}
-			if ds.pathLocales != nil {
-				// One entry per locale, each naming every alternate, the
-				// way the protocol's xhtml:link extension asks.
-				links := localeLinks(*ds.pathLocales, base, p)
-				for _, l := range links[:len(links)-1] {
+			for _, p := range paths {
+				// One entry per locale the page is listed and readable
+				// in, each naming every such alternate, the way the
+				// protocol's xhtml:link extension asks.
+				links := ds.readableLocaleLinks(base, p, listed)
+				for _, l := range links {
+					if l.Lang == "x-default" {
+						continue
+					}
 					b.WriteString("  <url>\n")
 					fmt.Fprintf(&b, "    <loc>%s</loc>\n", stdhtml.EscapeString(l.URL))
 					fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
@@ -154,10 +169,15 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 					}
 					b.WriteString("  </url>\n")
 				}
+			}
+			continue
+		}
+		for _, p := range expandRouteForSitemap(context.Background(), ds.App, route.Path) {
+			if !ds.sitemapPublic(context.Background(), p) {
 				continue
 			}
 			b.WriteString("  <url>\n")
-			fmt.Fprintf(&b, "    <loc>%s%s</loc>\n", base, stdhtml.EscapeString(p))
+			fmt.Fprintf(&b, "    <loc>%s%s</loc>\n", base, stdhtml.EscapeString(app.EscapeRoutePath(p)))
 			fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
 			b.WriteString("  </url>\n")
 		}
@@ -167,13 +187,6 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 	return b.String(), true
 }
 
-// sitemapPublic reports whether an anonymous visitor gets the page at the
-// concrete path p: the screen's policy chain, evaluated for a bare GET with
-// no session, ends in Allow or RenderAlt. A Redirect or Block is the same
-// outcome that makes the static exporter skip the page (PolicyBlockedError),
-// so the sitemap never lists a URL the export left out or a crawler cannot
-// read. The evaluation ignores the sitemap request's own credentials: the
-// document is the same for every caller.
 // joinBaseURL inserts a static deploy's basePath after baseURL, unless
 // baseURL already ends in it: a site whose canonical URL names its
 // mount ("https://x.github.io/gofastr") exported with
@@ -187,19 +200,64 @@ func joinBaseURL(baseURL, basePath string) string {
 	return base + sub
 }
 
-func (ds *UIHost) sitemapPublic(p string) bool {
-	screen, _, ok := ds.App.Router.Resolve(p)
-	if !ok {
-		return true // nothing to gate; the route list already vouched for it
+// pageRequest is the GET a page at the routing path p arrives as when
+// no live request exists (an export, the sitemap): p's segments
+// escaped the way its live URL is (app.EscapeRoutePath), so a "?" or
+// "#" a param holds stays in the request path instead of starting a
+// query or a fragment.
+func pageRequest(ctx context.Context, p string) (*http.Request, error) {
+	return http.NewRequestWithContext(ctx, http.MethodGet, app.EscapeRoutePath(p), nil)
+}
+
+// readableLocaleLinks is localeLinks for the page at p, cut to the
+// locales whose expansion lists p (listed, by tag) and an anonymous
+// visitor can read it in. Each locale is judged in the context its
+// prefixed request carries, so a policy that reads i18n.PathLocale
+// decides per locale; x-default is the unprefixed page, the default
+// locale's, and stays only when that one does.
+func (ds *UIHost) readableLocaleLinks(base, p string, listed map[string]map[string]bool) []HreflangLink {
+	set := *ds.pathLocales
+	readable := map[string]bool{}
+	for _, tag := range set.All() {
+		readable[tag] = listed[tag][p] && ds.sitemapPublic(sitemapLocaleContext(set, tag), p)
 	}
-	ctx := context.Background()
-	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, p, nil); err == nil {
+	readable["x-default"] = readable[set.Default]
+	var out []HreflangLink
+	for _, l := range localeLinks(set, base, p) {
+		if readable[l.Lang] {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// sitemapPublic reports whether an anonymous visitor gets the page at the
+// concrete path p: the screen's policy phase, evaluated in ctx for a bare
+// GET with no session, ends in Allow or RenderAlt. A Redirect or Block is
+// the same outcome that makes the static exporter skip the page
+// (PolicyBlockedError), so the sitemap never lists a URL the export left
+// out or a crawler cannot read. The evaluation ignores the sitemap
+// request's own credentials: the document is the same for every caller.
+// ctx carries only what the page request would: the locale its prefix
+// names, or nothing.
+func (ds *UIHost) sitemapPublic(ctx context.Context, p string) bool {
+	if req, err := pageRequest(ctx, p); err == nil {
 		ctx = app.WithRequest(ctx, req)
 	}
 	if m, ok := ds.App.Router.MatchFor(p); ok {
 		ctx = app.WithMatch(ctx, m)
 	}
-	switch app.ResolvePolicy(ctx, screen).Kind {
+	// The render's policy phase, resolver state included: a policy that
+	// reads a resolver got ErrNoResolver from a bare ResolvePolicy, and
+	// a public page vanished. A failed resolver read fails the page.
+	d, ok, err := ds.App.PagePolicy(ctx, p)
+	if !ok {
+		return true // nothing to gate; the route list already vouched for it
+	}
+	if err != nil {
+		return false
+	}
+	switch d.Kind {
 	case app.DecisionRedirect, app.DecisionBlock:
 		return false
 	}
@@ -304,11 +362,17 @@ func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 	return b.String(), true
 }
 
+// sitemapLocaleContext is the context a request under tag's prefix
+// carries, as the router and the static exporter build it.
+func sitemapLocaleContext(set i18n.PathLocales, tag string) context.Context {
+	return i18n.WithPathLocale(i18n.WithContext(context.Background(), i18n.Locale{Tag: tag}), set, tag)
+}
+
 // expandRouteForSitemap returns the concrete URLs to emit. Static
 // routes return themselves; dynamic routes (with ":param") are
-// expanded via StaticPathsProvider when the screen supports it,
-// otherwise skipped.
-func expandRouteForSitemap(a *app.App, pattern string) []string {
+// expanded via StaticPathsProvider, under ctx (the locale a page
+// request carries), when the screen supports it, otherwise skipped.
+func expandRouteForSitemap(ctx context.Context, a *app.App, pattern string) []string {
 	if !strings.Contains(pattern, ":") {
 		return []string{pattern}
 	}
@@ -321,23 +385,10 @@ func expandRouteForSitemap(a *app.App, pattern string) []string {
 		return nil
 	}
 	var out []string
-	for _, params := range provider.StaticPaths(context.Background()) {
-		out = append(out, applyParams(pattern, params))
+	for _, params := range provider.StaticPaths(ctx) {
+		out = append(out, app.PatternPath(pattern, params))
 	}
 	return out
-}
-
-func applyParams(pattern string, params map[string]string) string {
-	parts := strings.Split(pattern, "/")
-	for i, part := range parts {
-		if !strings.HasPrefix(part, ":") || len(part) <= 1 {
-			continue
-		}
-		if v, ok := params[app.ParamName(part)]; ok {
-			parts[i] = v
-		}
-	}
-	return strings.Join(parts, "/")
 }
 
 func shouldExcludePath(p string, excludes []string) bool {

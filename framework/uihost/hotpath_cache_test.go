@@ -19,9 +19,9 @@ import (
 // route table exactly once.
 func TestRouteScriptMarshaledOnce(t *testing.T) {
 	ds := newTestUIHostWithMultipleRoutes()
-	want := ds.buildRouteScript()
+	want := ds.buildRouteScript(context.Background())
 	for range 4 {
-		if got := ds.buildRouteScript(); got != want {
+		if got := ds.buildRouteScript(context.Background()); got != want {
 			t.Errorf("cached route script diverged from the first build — behavior must be preserved")
 		}
 	}

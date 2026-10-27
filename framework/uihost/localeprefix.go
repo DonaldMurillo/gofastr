@@ -64,6 +64,23 @@ func localeLinks(set i18n.PathLocales, base, pagePath string) []HreflangLink {
 	return append(out, HreflangLink{Lang: "x-default", URL: base + p})
 }
 
+// localizeSEO is a page's resolved SEO as the request's locale serves
+// it: generated hreflang alternates when the page declares none, and
+// the prefix on its canonical and og:url. The HTML head and the page's
+// markdown both read it; the markdown kept the English canonical.
+func (ds *UIHost) localizeSEO(ctx context.Context, pagePath string, s SEO) SEO {
+	if len(s.Hreflangs) == 0 {
+		s.Hreflangs = ds.localeAlternates(pagePath)
+	}
+	s.Canonical = ds.localizeURL(ctx, s.Canonical)
+	if s.OG != nil && s.OG.URL != "" {
+		og := *s.OG
+		og.URL = ds.localizeURL(ctx, og.URL)
+		s.OG = &og
+	}
+	return s
+}
+
 // localizeURL puts the request's locale prefix on a URL a page declares
 // for itself (canonical, og:url), root-relative or absolute on the
 // BaseURL; the response rewriter leaves <link> and <meta> alone.

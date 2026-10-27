@@ -144,7 +144,7 @@
   // and writes data-color-scheme AND the color-scheme meta the native
   // controls follow. A page without the bootstrap gets the same
   // storage and a resolved attribute written here.
-  function applyScheme(scheme, root) {
+  function applyScheme(scheme) {
     const api = window.__gofastr_colorScheme;
     let done = false;
     if (api && typeof api.set === 'function') {
@@ -157,8 +157,8 @@
       } catch (_) {}
       document.documentElement.setAttribute('data-color-scheme', resolveScheme(scheme));
     }
-    const scope = root && root.querySelectorAll ? root : document;
-    for (const group of within(scope, '[data-hui-theme-toggle]')) markRadios(group, 'data-hui-theme-option', scheme);
+    // Every toggle on the page shows the same choice.
+    for (const group of within(document, '[data-hui-theme-toggle]')) markRadios(group, 'data-hui-theme-option', scheme);
   }
 
   // ─── page theme ──────────────────────────────────────────────────
@@ -219,7 +219,7 @@
     if (opt) {
       const scheme = opt.getAttribute('data-hui-theme-option');
       if (scheme === 'light' || scheme === 'dark' || scheme === 'auto') {
-        applyScheme(scheme, opt.closest('[data-hui-theme-toggle]') || document);
+        applyScheme(scheme);
       }
       return;
     }
@@ -239,7 +239,7 @@
         next = order[i];
         if (resolveScheme(next) !== shown) break;
       }
-      applyScheme(next, cycle.closest('[data-hui-theme-toggle]') || document);
+      applyScheme(next);
     }
   });
 

@@ -200,6 +200,11 @@ type SetThemeArgs struct {
 type ChatArgs struct {
 	Role string `json:"role"` // "user" | "assistant"
 	Text string `json:"text"`
+	// ACPSession tags the message with the ACP session that wrote it
+	// (journal.ChatMessagePayload.ACPSession). Set in process by
+	// kiln/acp only: it never decodes from a tool call, so no transport
+	// can file a message under another session's replay.
+	ACPSession string `json:"-"`
 }
 
 // --- Tool methods -----------------------------------------------------
@@ -210,10 +215,16 @@ func (t *Tools) WorldGet(_ context.Context, args WorldGetArgs) Result {
 	// the very maps being walked here. Values that escape the lock are
 	// copied (cloneWorld / the entity copy) because add_field and
 	// delete_field mutate an existing entity's Fields slice in place.
+	//
+	// The whole world goes out redacted, the same mask GET /kiln/world
+	// applies: this result reaches the HTTP tool API, MCP, and ACP
+	// callers, and it handed out the JWT secret, the admin seed password,
+	// and a credentialed DB URL verbatim. Freeze reads the replayed
+	// journal, never this result, so it still sees the real values.
 	var res Result
 	t.live.ReadSession(func(sess *journal.Session) {
 		if args.Path == "" {
-			res = ok(cloneWorld(sess.World))
+			res = ok(world.Redacted(cloneWorld(sess.World)))
 			return
 		}
 		switch args.Path {
@@ -372,21 +383,26 @@ func (t *Tools) AddEntity(_ context.Context, args AddEntityArgs) Result {
 			res = conflict("entity %q already exists", args.Entity.Name).withHint("use update_entity to modify")
 			return
 		}
-		// Bare CRUD routes can collide with a page. The current default API
-		// prefix is /api, so this guard is only needed when the app explicitly
-		// opts out of namespacing.
-		if sess.World.App.APIPrefix == "" {
-			if _, hasPage := sess.World.Pages["/"+args.Entity.Name]; hasPage {
-				res = conflict("entity %q would collide with existing page at /%s",
-					args.Entity.Name, args.Entity.Name).
-					withHint("rename the entity (e.g. add a suffix) or delete the page first")
-			}
-		}
+		res = entityPageConflict(sess.World, args.Entity)
 	})
 	if !res.OK && res.Error != "" {
 		return res
 	}
 	return t.applyEdit(journal.OpAddEntity, journal.AddEntityPayload{Entity: args.Entity})
+}
+
+// entityPageConflict refuses an entity whose CRUD mount (prefix + table)
+// lands on an existing page. App.Mount panics on it, so the rebuild
+// failed and the agent got kind "internal". The check used to run only
+// with an empty api_prefix, which normalization never leaves, and
+// compared the entity NAME, not the table the mount uses.
+func entityPageConflict(w *world.World, e *world.Entity) Result {
+	page := world.EntityCollidesWithPage(w, e)
+	if page == "" {
+		return Result{OK: true}
+	}
+	return conflict("entity %q would mount its CRUD routes at %s, where a page already is", e.Name, page).
+		withHint("set a different entity table, change app.api_prefix, or delete the page first")
 }
 
 // snapshotEntity returns a copy of the named entity safe to hold as a
@@ -418,6 +434,12 @@ func (t *Tools) UpdateEntity(_ context.Context, args UpdateEntityArgs) Result {
 	prev := t.snapshotEntity(args.Entity.Name)
 	if prev == nil {
 		return notFound("entity %q not found", args.Entity.Name)
+	}
+	// A changed table moves the CRUD mount, possibly onto a page.
+	var mountRes Result
+	t.live.ReadSession(func(sess *journal.Session) { mountRes = entityPageConflict(sess.World, args.Entity) })
+	if !mountRes.OK {
+		return mountRes
 	}
 	target := journal.PlanTarget{Op: "update_entity", Name: args.Entity.Name}
 	if r := t.requirePlan(args.PlanID, target); !r.OK {
@@ -491,6 +513,14 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 	if args.Page == nil || args.Page.Path == "" {
 		return invalid("missing page or page.path")
 	}
+	// The checks replay applies, run here first: a refusal from inside
+	// Apply answers kind "internal" with no detail.
+	if err := world.ValidatePagePath(args.Page.Path); err != nil {
+		return invalid("%v", err)
+	}
+	if err := world.ValidatePageActions(args.Page); err != nil {
+		return invalid("page %q: %v", args.Page.Path, err)
+	}
 	if args.Page.Tree.Kind == "" {
 		return invalid("page.tree.kind must be set (e.g. \"div\"): the tree is the root element and nothing renders without a kind").
 			withHint(`minimal page: {"path":"/x","tree":{"kind":"div","children":[{"kind":"heading","props":{"level":1,"text":"Hello"}}]}}`)
@@ -504,17 +534,15 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 			conflictRes = conflict("page %q already exists", args.Page.Path)
 			return
 		}
-		// Bare CRUD is an explicit compatibility mode. With the current /api
-		// default, a page and an entity may intentionally share the same name.
-		if sess.World.App.APIPrefix == "" {
-			for _, ent := range sess.World.Entities {
-				if "/"+ent.Name == args.Page.Path {
-					conflictRes = conflict("page path %q collides with entity %q's bare CRUD list endpoint at GET %q",
-						args.Page.Path, ent.Name, args.Page.Path).
-						withHint("set app.api_prefix to api (recommended), or choose a different page path")
-					return
-				}
-			}
+		// The rule replay applies: a page on an entity's CRUD mount
+		// (prefix + table, so /api/posts) panics App.Mount. A page and an
+		// entity may share a NAME (/posts beside /api/posts). This used
+		// to compare names with an empty prefix only, which normalization
+		// never leaves, so the refusal came from replay as "internal".
+		if ent := world.PageCollidesWithEntity(sess.World, args.Page.Path); ent != "" {
+			conflictRes = conflict("page path %q is entity %q's CRUD list endpoint (GET %s)",
+				args.Page.Path, ent, args.Page.Path).
+				withHint("choose a different page path; the entity's CRUD routes own that path")
 		}
 	})
 	if !conflictRes.OK && conflictRes.Error != "" {
@@ -557,7 +585,7 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 		if args.IfMatch != nil && *args.IfMatch != page.Version {
 			versionRes = conflict("page %q has version %d, if_match=%d: refetch and retry",
 				args.Path, page.Version, *args.IfMatch).
-				withHint("GET $KILN_URL/kiln/world to read the new tree, then re-emit the patch with the current _id and version")
+				withHint(pageRefetchHint)
 			return
 		}
 		// Clone under the read lock: the clone walks the live tree, which
@@ -585,6 +613,9 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 	}
 	if err := world.ValidatePageTree(next.Tree); err != nil {
 		return invalid("page tree: %v", err).withHint("use a typed design-system node kind instead of app-local class/style props")
+	}
+	if err := world.ValidatePageActions(next); err != nil {
+		return invalid("%v", err)
 	}
 	// Re-assign IDs in case the patch introduced fresh subtrees that
 	// lacked _id. Existing IDs are preserved by AssignNodeIDs.
@@ -707,6 +738,9 @@ func (t *Tools) AddHook(_ context.Context, args AddHookArgs) Result {
 	if args.Hook == nil || args.Hook.ID == "" {
 		return invalid("missing hook or hook.id")
 	}
+	if err := world.ValidateHook(args.Hook); err != nil {
+		return invalid("%v", err)
+	}
 	var dup bool
 	t.live.ReadSession(func(sess *journal.Session) {
 		for _, h := range sess.World.Hooks {
@@ -746,6 +780,12 @@ func (t *Tools) AddRoute(_ context.Context, args AddRouteArgs) Result {
 	if args.Route == nil || args.Route.Method == "" || args.Route.Path == "" {
 		return invalid("route.method and route.path required")
 	}
+	if err := world.ValidateRoute(args.Route); err != nil {
+		return invalid("%v", err)
+	}
+	if err := world.ValidateRouteAction(args.Route.Action); err != nil {
+		return invalid("route %s %s: %v", args.Route.Method, args.Route.Path, err)
+	}
 	var dup bool
 	t.live.ReadSession(func(sess *journal.Session) {
 		for _, r := range sess.World.Routes {
@@ -757,6 +797,23 @@ func (t *Tools) AddRoute(_ context.Context, args AddRouteArgs) Result {
 	})
 	if dup {
 		return conflict("route %s %s already exists", args.Route.Method, args.Route.Path)
+	}
+	// Valid alone is not enough: the rebuild registers the route beside
+	// every pattern the running app already serves (other routes, pages,
+	// entity CRUD), and the mux panics on an overlap with neither pattern
+	// more specific. That surfaced as kind "internal".
+	var serving []string
+	for _, rt := range t.live.App().Router().Routes() {
+		if rt.Method == "" {
+			serving = append(serving, rt.Pattern)
+			continue
+		}
+		serving = append(serving, rt.Method+" "+rt.Pattern)
+	}
+	if other := world.OverlappingPattern(serving, args.Route.Method+" "+args.Route.Path); other != "" {
+		return conflict("route %s %s overlaps %s: both match some of the same paths and neither is more specific",
+			args.Route.Method, args.Route.Path, other).
+			withHint("make one path strictly more specific than the other (a literal segment where the other has a wildcard), or choose a different path")
 	}
 	return t.applyEdit(journal.OpAddRoute, journal.AddRoutePayload{Route: args.Route})
 }
@@ -791,11 +848,28 @@ func (t *Tools) AddSeed(_ context.Context, args AddSeedArgs) Result {
 	// validation kind the other shape errors carry, so the agent sees
 	// a fixable argument problem, not a runtime failure.
 	var known bool
+	fields := map[string]bool{}
 	t.live.ReadSession(func(sess *journal.Session) {
-		_, known = sess.World.Entities[args.Seed.Entity]
+		ent := sess.World.Entities[args.Seed.Entity]
+		if known = ent != nil; known {
+			for _, f := range ent.Fields {
+				fields[f.Name] = true
+			}
+		}
 	})
 	if !known {
 		return invalid("seed entity %q not found: add_entity first", args.Seed.Entity)
+	}
+	// A row key the entity does not declare fails the INSERT, and the
+	// generator refuses it at graduation. It is the agent's argument
+	// error, so it answers here, naming the column; "id" is the one
+	// undeclared column both the table and the generator take.
+	for i, row := range args.Seed.Rows {
+		for _, col := range slices.Sorted(maps.Keys(row)) {
+			if col != "id" && !fields[col] {
+				return invalid("seed row %d for entity %q sets %q, which is not a field of %s: add_field first, or fix the key", i+1, args.Seed.Entity, col, args.Seed.Entity)
+			}
+		}
 	}
 	return t.applyEdit(journal.OpAddSeed, journal.AddSeedPayload{Seed: args.Seed})
 }
@@ -918,8 +992,8 @@ func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
 }
 
 func (t *Tools) Undo(_ context.Context, _ UndoArgs) Result {
-	// Len→truncate→reload runs inside Live under its mutex so the cut
-	// is computed against a log a concurrent Apply cannot rewrite.
+	// Read→cut→truncate→reload runs inside Live under its mutex so the
+	// cut is computed against a log a concurrent Apply cannot rewrite.
 	if err := t.live.UndoLast(); err != nil {
 		if errors.Is(err, live.ErrNothingToUndo) {
 			return invalid("nothing to undo")
@@ -937,7 +1011,7 @@ func (t *Tools) Chat(_ context.Context, args ChatArgs) Result {
 	if args.Role == "assistant" {
 		kind = journal.KindChatAssistant
 	}
-	return t.applyEntry(kind, "", journal.ChatMessagePayload{Text: args.Text})
+	return t.applyEntry(kind, "", journal.ChatMessagePayload{Text: args.Text, ACPSession: args.ACPSession})
 }
 
 // --- helpers ----------------------------------------------------------
@@ -952,9 +1026,28 @@ func (t *Tools) applyEntry(kind journal.Kind, op journal.Op, payload any) Result
 		return internalFailure("build entry", err)
 	}
 	if err := t.live.Apply(entry); err != nil {
+		// A page patch that lost a race to another edit of the same page
+		// is the agent's to retry, the same answer a stale if_match gets.
+		if pc, ok := errors.AsType[*journal.PageConflictError](err); ok {
+			return pageConflict(pc)
+		}
 		return internalFailure("apply entry", err)
 	}
 	return Result{OK: true, Result: map[string]any{"entry_id": entry.ID}}
+}
+
+const pageRefetchHint = "GET $KILN_URL/kiln/world to read the new tree, then re-emit the patch with the current _id and version"
+
+// pageConflict answers a page patch that another edit of the same page
+// beat to the apply: the patch was built from a version the world no
+// longer holds.
+func pageConflict(pc *journal.PageConflictError) Result {
+	if pc.Have < 0 {
+		return conflict("page %q was deleted while the patch was being applied", pc.Path).
+			withHint("GET $KILN_URL/kiln/world to see the current pages")
+	}
+	return conflict("page %q changed while the patch was being applied (now version %d, patch built from version %d): refetch and retry",
+		pc.Path, pc.Have, pc.Want).withHint(pageRefetchHint)
 }
 
 // internalErr is the generic message every internal failure of the tool

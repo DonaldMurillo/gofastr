@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"testing"
 	"time"
 
@@ -91,6 +92,90 @@ func TestCronSpringForwardFiresAtTransition(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatalf("spring-forward day enqueued %d jobs, want exactly 1 (fired at the transition)", len(jobs))
 	}
+}
+
+// wantFallBackSteps registers spec in zone, then heartbeats at each
+// instant in steps, draining between them, and wants want[i] jobs from
+// heartbeat i.
+func wantFallBackSteps(t *testing.T, zone, spec string, base time.Time, want []int, steps ...time.Time) {
+	t.Helper()
+	s := dstScheduler(t, "fallback-steps")
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Cron("night", spec).Job("job", nil).RegisterAt(base.In(loc)); err != nil {
+		t.Fatal(err)
+	}
+	counts := make([]int, 0, len(steps))
+	for _, at := range steps {
+		if err := s.RunOnce(context.Background(), at); err != nil {
+			t.Fatalf("RunOnce at %s: %v", at, err)
+		}
+		counts = append(counts, len(pendingJobs(t, s.queue)))
+		drainPending(t, s.queue)
+	}
+	if !slices.Equal(counts, want) {
+		t.Fatalf("jobs per heartbeat = %v, want %v", counts, want)
+	}
+}
+
+// Two firing minutes in the repeated hour: "0,30 1" fires at 01:00 EDT and
+// 01:30 EDT, and the repeat of 01:00 (EST) must not fire. The heartbeat
+// after the 01:30 fire used to remember only 01:30 and fire 01:00 again.
+func TestCronFallBackTwoMinutesStepwise(t *testing.T) {
+	base := time.Date(2026, 10, 31, 16, 0, 0, 0, time.UTC)
+	wantFallBackSteps(t, "America/New_York", "0,30 1 * * *", base, []int{1, 1, 0, 0, 1},
+		time.Date(2026, 11, 1, 5, 0, 0, 0, time.UTC),  // 01:00 EDT
+		time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC), // 01:30 EDT
+		time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC),  // 01:00 EST, repeat
+		time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC), // 01:30 EST, repeat
+		time.Date(2026, 11, 2, 6, 0, 0, 0, time.UTC),  // next day, 01:00 EST
+	)
+}
+
+// One heartbeat after the whole night records both fires, not four. The
+// catch-up enqueues the newest and marks the older one missed.
+func TestCronFallBackTwoMinutesCatchUp(t *testing.T) {
+	s := dstScheduler(t, "fallback-catchup")
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 31, 12, 0, 0, 0, loc)
+	if err := s.Cron("night", "0,30 1 * * *").Job("job", nil).RegisterAt(base); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RunOnce(context.Background(), time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	got := occurrenceStatuses(t, s.queue)
+	if got["enqueued"] != 1 || got["skipped"] != 1 || len(got) != 2 {
+		t.Fatalf("occurrences = %v, want 1 enqueued + 1 skipped", got)
+	}
+}
+
+// Lord Howe falls back by 30 minutes (02:00 +11 -> 01:30 +10:30) on
+// 2026-04-05, so only 01:30-01:59 repeats and 02:00 right after it fires.
+func TestCronFallBackHalfHourShift(t *testing.T) {
+	base := time.Date(2026, 4, 4, 14, 10, 0, 0, time.UTC)
+	wantFallBackSteps(t, "Australia/Lord_Howe", "0,30,45 1,2 * * *", base, []int{1, 1, 0, 0, 1},
+		time.Date(2026, 4, 4, 14, 30, 0, 0, time.UTC), // 01:30 +11
+		time.Date(2026, 4, 4, 14, 45, 0, 0, time.UTC), // 01:45 +11
+		time.Date(2026, 4, 4, 15, 0, 0, 0, time.UTC),  // 01:30 +10:30, repeat
+		time.Date(2026, 4, 4, 15, 15, 0, 0, time.UTC), // 01:45 +10:30, repeat
+		time.Date(2026, 4, 4, 15, 30, 0, 0, time.UTC), // 02:00 +10:30
+	)
+}
+
+// Lord Howe springs forward by 30 minutes (02:00 +10:30 -> 02:30 +11) on
+// 2026-10-04: a 02:15 spec fires once, at the transition.
+func TestCronSpringForwardHalfHourShift(t *testing.T) {
+	base := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
+	wantFallBackSteps(t, "Australia/Lord_Howe", "15 2 * * *", base, []int{1, 0},
+		time.Date(2026, 10, 3, 15, 30, 0, 0, time.UTC), // 02:30 +11, transition
+		time.Date(2026, 10, 3, 16, 0, 0, 0, time.UTC),
+	)
 }
 
 // drainPending consumes every pending job so subsequent assertions count

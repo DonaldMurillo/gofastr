@@ -20,6 +20,10 @@ const (
 	// ProblemMissing is a phrase under a [Require]d prefix that the
 	// locale does not translate.
 	ProblemMissing CatalogProblem = "missing"
+	// ProblemNoOther is a plural translation with no "other" form. Every
+	// locale's plural rules end in other, so a count whose form the
+	// entry lacks renders the fallback locale's text or the English.
+	ProblemNoOther CatalogProblem = "plural without other"
 )
 
 // CatalogIssue is one place a locale's catalog disagrees with the
@@ -102,6 +106,9 @@ func CheckCatalog(c *MapCatalog, locale string, opts ...CheckOption) []CatalogIs
 		if !ok {
 			out = append(out, CatalogIssue{Locale: locale, Key: key, Problem: ProblemUnknown, Text: text})
 			continue
+		}
+		if _, other := m.Plural["other"]; len(m.Plural) > 0 && !other {
+			out = append(out, CatalogIssue{Locale: locale, Key: key, Problem: ProblemNoOther, English: en, Text: text})
 		}
 		if !placeholdersAgree(en, m) {
 			out = append(out, CatalogIssue{Locale: locale, Key: key, Problem: ProblemPlaceholders, English: en, Text: text})

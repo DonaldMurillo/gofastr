@@ -3,7 +3,23 @@ package buildcmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
+
+// Every switch flag parseBuildOptions accepts is in --help: --no-generate
+// and --no-contracts were parsed but missing from the usage text.
+func TestBuildUsageListsEveryFlag(t *testing.T) {
+	usage := clitest.CovT_capStdout(t, printBuildUsage)
+	for _, flag := range []string{"--no-generate", "--no-a11y", "--no-embed-check", "--no-contracts", "--allow-unverified-embeds"} {
+		if _, err := parseBuildOptions([]string{flag}); err != nil {
+			t.Fatalf("parseBuildOptions(%q) = %v", flag, err)
+		}
+		if !strings.Contains(usage, flag) {
+			t.Errorf("build usage does not mention %s", flag)
+		}
+	}
+}
 
 func TestBuildRejectsUnknownFlag(t *testing.T) {
 	_, err := parseBuildOptions([]string{"--pgk", "./cmd/example"})

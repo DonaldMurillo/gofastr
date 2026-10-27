@@ -32,8 +32,9 @@ import (
 //	revoked_at    <ts> NULL
 //	created_at    <ts> NOT NULL
 type SQLAPITokenStore struct {
-	db    *sql.DB
-	table string
+	db      *sql.DB
+	table   string
+	dialect storeDialect
 }
 
 // SQLAPITokenStoreOption tunes NewSQLAPITokenStore.
@@ -64,8 +65,11 @@ func NewSQLAPITokenStore(db *sql.DB, opts ...SQLAPITokenStoreOption) (*SQLAPITok
 }
 
 func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
+		return err
+	}
 	tsType := "DATETIME"
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		tsType = "TIMESTAMP"
 	}
 	stmt := fmt.Sprintf(
@@ -73,22 +77,22 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 			`id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_kind TEXT NOT NULL, owner_id TEXT NOT NULL, `+
 			`prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL DEFAULT '[]', `+
 			`expires_at %s NULL, last_used_at %s NULL, revoked_at %s NULL, created_at %s NOT NULL)`,
-		query.QuoteIdent(s.table), tsType, tsType, tsType, tsType,
+		query.QuoteFolded(s.table), tsType, tsType, tsType, tsType,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
 	// Listing a single owner's tokens is the hot path; index it.
 	idxName, _ := query.SafeIdent(s.table + "_owner_idx")
-	idx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (owner_kind, owner_id)`,
-		query.QuoteIdent(idxName), query.QuoteIdent(s.table))
+	idx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s (owner_kind, owner_id)`,
+		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, query.QuoteIndexName(idxName), query.QuoteFolded(s.table)))
 	_, err := s.db.ExecContext(ctx, idx)
 	return err
 }
 
 // q wraps a statement template with the validated table name.
 func (s *SQLAPITokenStore) q(stmt string) string {
-	return fmt.Sprintf(stmt, query.QuoteIdent(s.table))
+	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
 // Create inserts a token row. sha256Hash is the hash of the plaintext;
@@ -224,8 +228,9 @@ func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
 //	disabled    <bool> NOT NULL DEFAULT false
 //	created_at  <ts> NOT NULL
 type SQLServiceAccountStore struct {
-	db    *sql.DB
-	table string
+	db      *sql.DB
+	table   string
+	dialect storeDialect
 }
 
 // SQLServiceAccountStoreOption tunes NewSQLServiceAccountStore.
@@ -279,20 +284,23 @@ func initSQLStore[S any](db *sql.DB, ctorName, kind, table string, build func(db
 }
 
 func (s *SQLServiceAccountStore) ensureSchema(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
+		return err
+	}
 	tsType, boolType, boolFalse := "DATETIME", "INTEGER", "0"
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		tsType, boolType, boolFalse = "TIMESTAMP", "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, roles TEXT NOT NULL DEFAULT '[]', disabled %s NOT NULL DEFAULT %s, created_at %s NOT NULL)`,
-		query.QuoteIdent(s.table), boolType, boolFalse, tsType,
+		query.QuoteFolded(s.table), boolType, boolFalse, tsType,
 	)
 	_, err := s.db.ExecContext(ctx, stmt)
 	return err
 }
 
 func (s *SQLServiceAccountStore) q(stmt string) string {
-	return fmt.Sprintf(stmt, query.QuoteIdent(s.table))
+	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
 func (s *SQLServiceAccountStore) Create(ctx context.Context, sa ServiceAccount) error {

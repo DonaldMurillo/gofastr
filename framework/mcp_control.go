@@ -63,8 +63,10 @@ func WithMCPGate(gate func(ctx context.Context) error) AppOption {
 	if gate == nil {
 		panic("framework.WithMCPGate: nil gate: a nil precondition would silently allow every caller")
 	}
+	// NewApp installs it after every option has run, so WithMCPServer
+	// may come before or after this option.
 	return func(a *App) {
-		a.MCP.SetGate(gate)
+		a.mcpGate = gate
 	}
 }
 
@@ -217,18 +219,6 @@ func controlToolGate(devImplied bool) func(ctx context.Context) error {
 func (a *App) routerHasMCPRoute() bool {
 	for _, r := range a.router.Routes() {
 		if r.Pattern == "/mcp" && r.Method == http.MethodPost {
-			return true
-		}
-	}
-	return false
-}
-
-// routerHasWidgetClientRoute reports whether the host already serves the
-// MCP Apps widget client script, so the WithMCPApp auto-mount can yield
-// to it instead of panicking with a route conflict.
-func (a *App) routerHasWidgetClientRoute() bool {
-	for _, r := range a.router.Routes() {
-		if r.Pattern == mcp.WidgetClientScriptURL && r.Method == http.MethodGet {
 			return true
 		}
 	}

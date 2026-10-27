@@ -355,6 +355,7 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI strin
 		return nil, errors.New("oidc: malformed id_token payload")
 	}
 	var claims map[string]any
+	//gofastr:allow(floatnum) claims are read as strings, plus exp/nbf/iat times far below 2^53
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
 		return nil, errors.New("oidc: malformed id_token payload")
 	}

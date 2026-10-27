@@ -18,7 +18,8 @@ func covItems(t *testing.T, cfg func(*entity.EntityConfig), n int) (*CrudHandler
 	base := entity.EntityConfig{
 		Name: "items", Table: "items",
 		Fields: []schema.Field{
-			{Name: "seq", Type: schema.Int},
+			// Required: a keyset column must never hold NULL (Define).
+			{Name: "seq", Type: schema.Int, Required: true},
 			{Name: "name", Type: schema.String},
 		},
 	}.WithTimestamps(false)
@@ -234,5 +235,22 @@ func TestDecodeCursorAny_ShapeMismatch(t *testing.T) {
 	// Single-field consumer fed a non-cursor → error.
 	if _, err := decodeCursorAny("garbage", []string{"id"}); err == nil {
 		t.Error("garbage cursor should error")
+	}
+}
+
+// A NULL keyset value in the last row is an error, never a cursor that
+// spells it "null": no keyset comparison against NULL is true, so the next
+// page would silently come back empty.
+func TestCursorPageRefusesNullKeyset(t *testing.T) {
+	same := func(s string) string { return s }
+	rows := []map[string]any{{"id": "a", "seq": 1}, {"id": "b", "seq": nil}, {"id": "c", "seq": 3}}
+	for _, fields := range [][]string{{"seq"}, {"seq", "id"}} {
+		if _, err := buildCursorPage(rows, fields, same, nil, 2); err == nil {
+			t.Errorf("fields %v: a NULL keyset value in the last row minted a cursor", fields)
+		}
+	}
+	page, err := buildCursorPage(rows[:1:1], []string{"seq"}, same, nil, 2)
+	if err != nil || page.HasMore {
+		t.Fatalf("a short last page: %+v, %v", page, err)
 	}
 }

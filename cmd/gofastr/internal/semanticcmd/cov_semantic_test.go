@@ -167,6 +167,22 @@ func TestEmbedRemoteQueryAndStats(t *testing.T) {
 	}
 }
 
+// A remote hit's metadata past 2^53 prints with its digits: decoding the
+// peer's response into map[string]any read it as a float64 and printed
+// 9007199254740992.
+func TestRemoteQueryKeepsBigIntegers(t *testing.T) {
+	covT_embedSandbox(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"hits":[{"chunk":{"doc_id":"a.go","text":"x","metadata":{"row_id":9007199254740993,"line":12}},"score":0.9}]}`))
+	}))
+	defer srv.Close()
+	t.Setenv("GOFASTR_URL", srv.URL)
+	out := clitest.CovT_capStdout(t, func() { RunSemantic([]string{"query", "x"}) })
+	if !strings.Contains(out, `"row_id": 9007199254740993`) || !strings.Contains(out, `"line": 12`) {
+		t.Fatalf("remote query printed:\n%s", out)
+	}
+}
+
 func TestRemoteQueryHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad", http.StatusInternalServerError)

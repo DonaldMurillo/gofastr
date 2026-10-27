@@ -52,7 +52,7 @@ func TestServeLocaleResolverPanicRecovers(t *testing.T) {
 	cat.Set("fr", "x.hello", i18n.Message{Text: "bonjour"})
 	app := NewApp(
 		WithI18n(i18n.NewTranslator(cat, "en")),
-		WithLocaleResolver(func(*http.Request) (string, bool) { panic("resolver") }),
+		WithLocaleResolver(i18n.LocaleResolver{Resolve: func(*http.Request) (string, bool) { panic("resolver") }}),
 	)
 	addr, stop := startOnRandomPort(t, app)
 	defer stop()

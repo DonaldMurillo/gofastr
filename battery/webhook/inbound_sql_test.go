@@ -109,14 +109,21 @@ func TestSQLInbound_ClearedDedupeKeyPersists(t *testing.T) {
 	ctx := context.Background()
 	_ = s.AddEnvelope(ctx, sampleEnvelope("e-9"))
 
-	// The ingest handler clears the dedupe key when an enqueue failure
-	// strands an envelope, the SQL store must persist that, or the
-	// sender's redelivery stays dedupe-blocked forever.
+	// A keyless UpdateEnvelope keeps the stored key: a worker's settle
+	// carries the snapshot it loaded before the key was registered.
+	// Clearing is explicit, through RegisterDedupeKey, and must persist
+	// or the sender's redelivery stays dedupe-blocked forever.
 	up, _ := s.GetEnvelope(ctx, "e-9")
 	up.Status = InboundStatusFailed
 	up.DedupeKey = ""
 	if err := s.UpdateEnvelope(ctx, *up); err != nil {
 		t.Fatalf("update: %v", err)
+	}
+	if got, _ := s.GetEnvelope(ctx, "e-9"); got.DedupeKey != "del-e-9" {
+		t.Fatalf("dedupe key = %q after a keyless update, want del-e-9 kept", got.DedupeKey)
+	}
+	if err := s.RegisterDedupeKey(ctx, "e-9", ""); err != nil {
+		t.Fatalf("clear: %v", err)
 	}
 
 	got, _ := s.GetEnvelope(ctx, "e-9")

@@ -280,6 +280,7 @@ func bodyHasNUL(body []byte) bool {
 	// The strict binder, not encoding/json: the top-level keys were
 	// already checked, and GOFASTR1407 wants every body decode to go
 	// through the same duplicate- and case-refusing path.
+	//gofastr:allow(floatnum) decoded only to scan strings for NUL; the value is discarded
 	if err := handler.UnmarshalStrict(body, &v); err != nil {
 		// Already refused by the strict decode above.
 		return false

@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -27,10 +28,27 @@ import (
 // pages keep the inline blocks: exports must be self-contained files,
 // and variant catalogs vary per request.
 //
+// The route graph carries each route's loading content in the reader's
+// language, so an app with a translator has one body per catalog
+// locale, each with its own hash. A page links the body of its own
+// locale (?v=<hash>), and the handler serves the body that hash names:
+// the request for the script carries no locale prefix, so the hash is
+// what says which page asked. An app without a translator has one body.
+//
 // The manifest carries only public data: component names, style paths,
 // and content hashes. It is deliberately ungated.
-func (ds *UIHost) manifestJS() (body, hash string) {
-	ds.manifestOnce.Do(func() {
+type manifestEntry struct {
+	body, hash string
+}
+
+// manifestJS returns the manifest body and hash for the reader's locale.
+func (ds *UIHost) manifestJS(ctx context.Context) (body, hash string) {
+	m := ds.manifestFor(ds.renderLocale(ctx))
+	return m.body, m.hash
+}
+
+func (ds *UIHost) manifestFor(lr localeRender) manifestEntry {
+	return ds.manifests.get(lr.key, func() manifestEntry {
 		// The body freezes the route graph, document scripts included,
 		// so registration closes here as it does on the first render: a
 		// script added later would be missing from the graph.
@@ -67,7 +85,7 @@ func (ds *UIHost) manifestJS() (body, hash string) {
 		// The route graph rides here too on live pages (the page head
 		// drops its inline block), so a 185-route app stops shipping
 		// ~15 KB of route JSON in every document.
-		if rs := strings.TrimSpace(ds.buildRouteScript()); rs != "" {
+		if rs := strings.TrimSpace(ds.routeScriptFor(lr)); rs != "" {
 			b = append(b, rs...)
 			b = append(b, '\n')
 		}
@@ -79,13 +97,30 @@ func (ds *UIHost) manifestJS() (body, hash string) {
 			b = append(b, loc...)
 			b = append(b, ";\n"...)
 		}
-		ds.manifestBody = string(b)
-		ds.manifestHash = hashStrings(ds.manifestBody)
+		body := string(b)
+		return manifestEntry{body: body, hash: hashStrings(body)}
 	})
-	return ds.manifestBody, ds.manifestHash
+}
+
+// manifestByHash finds the body whose hash is v among the app's locales,
+// building any not built yet: a page another replica rendered can name
+// a locale this one has not served. The search is bounded by the
+// catalog's locale set, never by v.
+func (ds *UIHost) manifestByHash(ctx context.Context, v string) (manifestEntry, bool) {
+	for _, lr := range ds.renderLocales(ctx) {
+		if m := ds.manifestFor(lr); m.hash == v {
+			return m, true
+		}
+	}
+	return manifestEntry{}, false
 }
 
 func (ds *UIHost) handleManifestJS(w http.ResponseWriter, r *http.Request) {
-	body, hash := ds.manifestJS()
-	serveVersionedText(w, r, "application/javascript; charset=utf-8", body, hash, false)
+	m := ds.manifestFor(ds.renderLocale(r.Context()))
+	if v := r.URL.Query().Get("v"); v != "" && v != m.hash {
+		if hit, ok := ds.manifestByHash(r.Context(), v); ok {
+			m = hit
+		}
+	}
+	serveVersionedText(w, r, "application/javascript; charset=utf-8", m.body, m.hash, false)
 }

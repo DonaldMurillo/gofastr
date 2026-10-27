@@ -474,3 +474,29 @@ entities:
 		t.Fatalf("registry path did not emit a valid manifest: %v", err)
 	}
 }
+
+// An explicit empty selection flag clears the settings entry's list:
+// --only= is "no filter", not "unset", so it selects every entity again.
+func TestSDKEmptyOnlyClearsSettings(t *testing.T) {
+	dir := t.TempDir()
+	clitest.WriteSettings(t, dir, "codegen:\n  generators:\n    - name: sdk\n      config:\n        only: [posts]\n        exclude: [tags]\n        api_prefix: api\n")
+	t.Chdir(dir)
+	opts, err := parseSDKOptions([]string{"--only=", "--exclude=", "--api-prefix="})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplySDKConfigDefaults(&opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(opts.only) != 0 || len(opts.exclude) != 0 || opts.apiPrefix != "" {
+		t.Errorf("only %q, exclude %q, api prefix %q; want the empty flags to win", opts.only, opts.exclude, opts.apiPrefix)
+	}
+	// Unset flags still take the entry.
+	opts, _ = parseSDKOptions(nil)
+	if err := ApplySDKConfigDefaults(&opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(opts.only) != 1 || opts.apiPrefix != "api" {
+		t.Errorf("unset flags: only %q, api prefix %q; want the entry's", opts.only, opts.apiPrefix)
+	}
+}

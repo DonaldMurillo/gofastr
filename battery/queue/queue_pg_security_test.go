@@ -151,6 +151,13 @@ func TestPGDequeueConcurrentNoBusy(t *testing.T) {
 	}
 }
 
+// TestPGLeaseStealFencesWithoutVersionBump is the Postgres twin of
+// TestLeaseStealFencesWithoutVersionBump: only the owner+fence re-check
+// stops a stale owner when the thief has not committed a schedule yet.
+func TestPGLeaseStealFencesWithoutVersionBump(t *testing.T) {
+	assertLeaseStealFencesAlone(t, pgtest.DB(t))
+}
+
 // TestPGLeaseSkewStillFencesOldOwner is the Postgres twin of
 // TestLeaseSkewStillFencesOldOwner (durable_scheduler_security_test.go):
 // replica B's clock runs >= leaseDuration ahead of A's, B legitimately

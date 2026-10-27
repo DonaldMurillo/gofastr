@@ -41,8 +41,11 @@ import (
 )
 
 // Agent is the identity established by a verified signature: the
-// resolved directory URL (the draft's identifier, query and fragment
-// discarded) plus the key thumbprint that verified the request.
+// resolved directory URL (the draft's identifier: the well-known URL of
+// a directory-type origin, or a jwks_uri as sent minus its fragment)
+// plus the key thumbprint that verified the request. The signer picks
+// that URL, so one sender can present as many identities as it has
+// paths, queries or hostnames to publish keys at.
 type Agent struct {
 	URL   string
 	KeyID string

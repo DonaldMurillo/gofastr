@@ -663,3 +663,45 @@ func TestTrailingSlashTailForwarded(t *testing.T) {
 		t.Fatalf("upstream saw %q, want /cdn/i/v0/e/ (slash preserved)", uri)
 	}
 }
+
+// An exact route forwards to its upstream path as configured. Its tail
+// is empty, path.Join dropped the base's trailing slash, and the restore
+// looked only at the tail: ".../events/" went out as ".../events", and a
+// vendor redirecting to the slash form drew a 502 from the relay.
+func TestExactRouteKeepsBaseSlash(t *testing.T) {
+	base, cap := startRelayCap(t, func(up string) Config {
+		return Config{Routes: []Route{{
+			Prefix: "ev", Upstream: up + "/api/events/", Methods: []string{"POST"},
+		}}}
+	})
+	res, err := http.Post(base+DefaultPath+"/ev?v=1", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("exact route: got %d, want 200", res.StatusCode)
+	}
+	_, uri, _, _, _ := cap.snapshot()
+	if uri != "/cdn/api/events/?v=1" {
+		t.Fatalf("upstream saw %q, want /cdn/api/events/?v=1 (the configured path)", uri)
+	}
+}
+
+// The slash on the upstream path is the configured one: kept for an
+// empty tail, never added to a slashless base, and never carried onto a
+// tail that has none of its own.
+func TestJoinUpstreamPathSlash(t *testing.T) {
+	for _, c := range []struct{ base, tail, want string }{
+		{"/api/events/", "", "/api/events/"},
+		{"/cdn", "", "/cdn"},
+		{"", "", "/"},
+		{"/api/", "lib/app.js", "/api/lib/app.js"},
+		{"/api/", "i/v0/e/", "/api/i/v0/e/"},
+		{"/cdn", "i/v0/e/", "/cdn/i/v0/e/"},
+	} {
+		if got := joinUpstreamPath(c.base, c.tail); got != c.want {
+			t.Errorf("joinUpstreamPath(%q, %q) = %q, want %q", c.base, c.tail, got, c.want)
+		}
+	}
+}

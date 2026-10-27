@@ -112,7 +112,7 @@ Each `Transition`:
 
 | Setting | What it does |
 | --- | --- |
-| `Key` | Names the move in its route (`POST <api>/<entity>/<id>/transitions/<key>`), its MCP tool and its generated client calls. Lowercase segments joined by single underscores, each led by a letter (`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$`), so no two keys turn into one generated name (`mark__paid` and `mark_paid` would both be `MarkPaid`). Unique on the entity, and not a name the entity's own surfaces use: `list`, `get`, `create`, `update`, `delete`, `patch`, `watch`, `batch_create`, `batch_update`, `batch_delete`, `events`, `remove`, `transition`, and the JS resource's own `client`, `table` and `constructor`. The boot error names the surface a reserved key collides with. |
+| `Key` | Names the move in its route (`POST <api>/<entity>/<id>/transitions/<key>`), its MCP tool and its generated client calls. Lowercase segments joined by single underscores, each led by a letter (`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$`), so no two keys turn into one generated name (`mark__paid` and `mark_paid` would both be `MarkPaid`). Unique on the entity, and not a name the entity's own surfaces use: `list`, `get`, `create`, `update`, `delete`, `patch`, `watch`, `batch_create`, `batch_update`, `batch_delete`, `events`, `remove`, `transition`, and the JS resource's own `client`, `table`, `columns` and `constructor`. The boot error names the surface a reserved key collides with. |
 | `Label` | The button text. Empty draws the key. |
 | `From` | The values the move starts from; never empty. |
 | `To` | The value the move writes. |

@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,66 +21,59 @@ import (
 
 // --- Soft Delete Tests ---
 
-func TestSoftDelete(t *testing.T) {
+// softMock is a regexp-matching sqlmock whose expectations must all be
+// met when the test ends.
+func softMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
+	t.Helper()
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	if err != nil {
 		t.Fatalf("failed to create sqlmock: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+		db.Close()
+	})
+	return db, mock
+}
 
-	mock.ExpectExec(`UPDATE "posts" SET deleted_at = NOW\(\) WHERE id = \$1`).
-		WithArgs("123").
+func TestSoftDelete(t *testing.T) {
+	db, mock := softMock(t)
+
+	mock.ExpectExec(`UPDATE "posts" SET deleted_at = \$2 WHERE id = \$1`).
+		WithArgs("123", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = softdelete.SoftDelete(context.Background(), db, "posts", "123")
+	err := softdelete.SoftDelete(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("SoftDelete returned error: %v", err)
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unfulfilled expectations: %v", err)
 	}
 }
 
 func TestSoftRestore(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
-	if err != nil {
-		t.Fatalf("failed to create sqlmock: %v", err)
-	}
-	defer db.Close()
+	db, mock := softMock(t)
 
 	mock.ExpectExec(`UPDATE "posts" SET deleted_at = NULL WHERE id = \$1`).
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = softdelete.Restore(context.Background(), db, "posts", "123")
+	err := softdelete.Restore(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("Restore returned error: %v", err)
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unfulfilled expectations: %v", err)
 	}
 }
 
 func TestSoftForceDelete(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
-	if err != nil {
-		t.Fatalf("failed to create sqlmock: %v", err)
-	}
-	defer db.Close()
+	db, mock := softMock(t)
 
 	mock.ExpectExec(`DELETE FROM posts WHERE \(id = \$1\)`).
 		WithArgs("123").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = softdelete.ForceDelete(context.Background(), db, "posts", "123")
+	err := softdelete.ForceDelete(context.Background(), db, "posts", "123")
 	if err != nil {
 		t.Fatalf("ForceDelete returned error: %v", err)
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatalf("unfulfilled expectations: %v", err)
 	}
 }
 

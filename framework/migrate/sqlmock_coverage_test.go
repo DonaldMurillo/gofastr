@@ -52,15 +52,16 @@ func expectSQLiteDialect(m sqlmock.Sqlmock) {
 }
 
 // The SQLite arm of coremig.WithAdvisoryLock takes the _gofastr_migrate_lock
-// lease around the plan apply (acquire before pinning, DELETE after). Bracket
-// AutoMigratePlanContext expectations with it so the tests still exercise the
-// apply branches rather than failing on the lock statements.
+// lease around the plan apply (the upsert returns the expiry it wrote, the
+// DELETE after is fenced on it). Bracket AutoMigratePlanContext expectations
+// with it so the tests still exercise the apply branches rather than failing
+// on the lock statements.
 func expectSQLiteMigrateLease(m sqlmock.Sqlmock) {
 	m.ExpectExec(`CREATE TABLE IF NOT EXISTS "_gofastr_migrate_lock"`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
-	m.ExpectExec(`INSERT INTO "_gofastr_migrate_lock"`).
+	m.ExpectQuery(`INSERT INTO "_gofastr_migrate_lock"`).
 		WithArgs(int64(60)).
-		WillReturnResult(sqlmock.NewResult(1, 1))
+		WillReturnRows(sqlmock.NewRows([]string{"expires_at"}).AddRow(int64(1000)))
 }
 
 func expectSQLiteMigrateLeaseRelease(m sqlmock.Sqlmock) {
@@ -527,7 +528,7 @@ func TestRunSeeds_CancelledLoopAndSeedNilSkip(t *testing.T) {
 // release DELETE after whatever it expects from the seed body itself.
 func expectSQLiteSeedLockAcquire(m sqlmock.Sqlmock) {
 	m.ExpectExec("CREATE TABLE IF NOT EXISTS \"_gofastr_seed_lock\"").WillReturnResult(sqlmock.NewResult(0, 0))
-	m.ExpectExec("INSERT INTO \"_gofastr_seed_lock\"").WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectQuery("INSERT INTO \"_gofastr_seed_lock\"").WillReturnRows(sqlmock.NewRows([]string{"expires_at"}).AddRow(int64(1000)))
 }
 
 // errOnlyCtx reports a non-nil Err() while never closing Done(), so DB calls

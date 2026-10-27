@@ -42,6 +42,19 @@ func TestSortDroppedTables_ForeignKeyDependency(t *testing.T) {
 	}
 }
 
+// A string literal that spells a reference is no dependency: read as one,
+// it made the two tables a cycle, and the parent could drop before the
+// child that really references it.
+func TestDropOrderSkipsLiterals(t *testing.T) {
+	tableDDL := map[string]string{
+		"a": `CREATE TABLE a (id TEXT PRIMARY KEY, note TEXT DEFAULT 'REFERENCES b(id)')`,
+		"b": `CREATE TABLE b (id TEXT PRIMARY KEY, a_id TEXT REFERENCES a(id))`,
+	}
+	if got := sortDroppedTables([]string{"a", "b"}, tableDDL); strings.Join(got, ",") != "b,a" {
+		t.Fatalf("drop order = %v, want [b a]", got)
+	}
+}
+
 // TestGeneratePlan_DropEntityAndPivot_PostgresOrdering asserts that when an entity
 // with an M2M pivot table is removed, GeneratePlan emits:
 // - UP: child pivot table is dropped BEFORE the referenced parent table

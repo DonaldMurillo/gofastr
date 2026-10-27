@@ -80,16 +80,16 @@ func TestBoolInFilterValuesBindAsBools(t *testing.T) {
 	}
 }
 
-// TestNonBoolFiltersStillBindStrings pins the unchanged paths: string
-// fields bind raw strings, and a Bool field carrying a non-ParseBool
-// value binds the raw string rather than erroring or guessing.
+// TestNonBoolFiltersStillBindStrings pins the unchanged path: string
+// fields bind raw strings. A Bool field carrying a non-ParseBool value is
+// refused (TestBoolFilterRefusesNonParseBool), never bound as text: on
+// Postgres that bind failed as a 500 while SQLite answered an empty 200.
 func TestNonBoolFiltersStillBindStrings(t *testing.T) {
 	for _, tc := range []struct {
 		q     string
 		field string
 	}{
 		{"/?title=it's", "title"},
-		{"/?published=maybe", "published"},
 	} {
 		fields := []schema.Field{
 			{Name: "published", Type: schema.Bool},
@@ -110,6 +110,23 @@ func TestNonBoolFiltersStillBindStrings(t *testing.T) {
 			t.Errorf("%s: bound %T(%v), want the raw string", tc.q, args[0], args[0])
 		} else if s == "" {
 			t.Errorf("%s: bound empty string", tc.q)
+		}
+	}
+}
+
+// A Bool filter accepts exactly what strconv.ParseBool accepts.
+func TestBoolFilterRefusesNonParseBool(t *testing.T) {
+	fields := []schema.Field{{Name: "published", Type: schema.Bool}}
+	for _, v := range []string{"maybe", "yes", "on", "2", ""} {
+		req := httptest.NewRequest(http.MethodGet, "/?published="+v, nil)
+		if _, err := ParseFilters(req, fields); err == nil {
+			t.Errorf("published=%q accepted, want a refusal", v)
+		}
+	}
+	for _, v := range []string{"1", "t", "T", "TRUE", "true", "True", "0", "f", "F", "FALSE", "false", "False"} {
+		req := httptest.NewRequest(http.MethodGet, "/?published="+v, nil)
+		if _, err := ParseFilters(req, fields); err != nil {
+			t.Errorf("published=%q refused: %v", v, err)
 		}
 	}
 }

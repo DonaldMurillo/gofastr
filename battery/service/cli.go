@@ -414,7 +414,9 @@ func (b *Battery) status(inst layout, installed bool) error {
 
 // waitReady polls the control channel until the daemon answers. A
 // daemon that exits at once (port taken) never answers, and the error
-// points at the log, where it said why.
+// points at the log, where it said why. A starting daemon has bound its
+// socket but answers only once the app is ready, so a probe that dials
+// and then times out waiting for the reply is starting, not failed.
 func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 	deadline := time.Now().Add(startWait)
 	for {
@@ -422,7 +424,8 @@ func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 		if err == nil {
 			return resp, nil
 		}
-		if !errors.Is(err, errNotRunning) || time.Now().After(deadline) {
+		starting := errors.Is(err, errNotRunning) || errors.Is(err, os.ErrDeadlineExceeded)
+		if !starting || time.Now().After(deadline) {
 			return controlResponse{}, fmt.Errorf("service: %s did not come up within %s; see `%s service logs`", b.cfg.Name, startWait, b.cfg.Name)
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -449,6 +452,11 @@ func (b *Battery) runningPID() (int, error) {
 // stopWait bounds how long a stop waits for the process to exit: the
 // daemon's own drain bound plus slack for the exit itself.
 var stopWait = stopTimeout + 10*time.Second
+
+// startingWait is how long stop keeps asking a daemon that dials but
+// does not answer, the silence of one still building its app, before
+// treating it as wedged.
+var startingWait = startWait
 
 // waitExit waits until the installed daemon's control channel is gone
 // and process pid has exited. The daemon keeps the channel open until

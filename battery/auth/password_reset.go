@@ -137,6 +137,11 @@ func (p *PasswordResetPlugin) Init(mgr *AuthManager) error {
 	if why := invalidLinkBaseURL(p.cfg.BaseURL); why != "" {
 		return fmt.Errorf("auth: password-reset plugin: BaseURL %q %s", p.cfg.BaseURL, why)
 	}
+	if p.cfg.TokenStore == nil {
+		if err := refuseInMemoryTokenStore(mgr, "password-reset"); err != nil {
+			return err
+		}
+	}
 	p.mgr = mgr
 	return nil
 }
@@ -479,6 +484,15 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// own reset completes, and the account returns to the attacker.
 	p.dropLinks(r.Context(), userID, "password_reset", remoteHost(r))
 	p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r))
+	// A magic link mailed before the reset signs in like a session does.
+	// A failed purge answers 500, as the API token and passkey purges
+	// below do: a fresh reset link retries safely.
+	if err := p.mgr.dropMagicLinks(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
+		slog.Warn("password-reset magic-link purge failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
+		return
+	}
 	// API tokens are credentials too: one minted by whoever held the
 	// account before the reset kept working after it.
 	// A failure answers 500 rather than a reset that looks complete; the

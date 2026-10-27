@@ -106,6 +106,7 @@ func (rp webauthnRP) checkClientData(raw []byte, wantType string) (string, error
 	// unknown keys are allowed; a duplicate or case-folded key pair is
 	// refused, since two readers could disagree about which one counts.
 	var m map[string]any
+	//gofastr:allow(floatnum) clientData members are read as strings and a bool only
 	if err := handler.UnmarshalStrict(raw, &m); err != nil {
 		return "", fmt.Errorf("client data: %w", err)
 	}

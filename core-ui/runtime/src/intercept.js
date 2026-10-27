@@ -117,6 +117,8 @@
   // other swap path does.
   function swap(t, res) {
     t.el.innerHTML = res.html;
+    // The pane's page signals, as an in-page navigation seeds them.
+    if (NS._mergeSeed) NS._mergeSeed(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(t.el);
   }

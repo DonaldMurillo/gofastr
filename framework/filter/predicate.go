@@ -29,10 +29,13 @@ type Predicate struct {
 	Op     FilterOp
 	Value  string   // for scalar ops
 	Values []string // for OpIn
-	// isBool marks a leaf on a Bool-typed column, set by ParseWhere from
-	// the schema. BuildPredicate coerces true/false spellings to Go
-	// bools at bind time, same rationale as ParsedFilter's typed value.
-	isBool bool
+	// colType is the leaf column's schema type, set by validation (ParseWhere,
+	// ValidatePredicate) after every value passed CoerceValue. BuildPredicate
+	// binds TypedBind(colType, v): a Go bool, int64 or float64 where the
+	// column wants one, same rationale as ParsedFilter's typed value. The
+	// zero value (String) binds the raw text, so an unvalidated tree binds
+	// as it always did.
+	colType schema.FieldType
 
 	// Group fields (Children != nil):
 	Or       bool // false = AND, true = OR
@@ -215,15 +218,16 @@ func buildPredSQL(p Predicate, args *[]any) string {
 	case OpIn:
 		ph := make([]string, len(p.Values))
 		for i, v := range p.Values {
-			*args = append(*args, BoolBind(p.isBool, v))
+			*args = append(*args, TypedBind(p.colType, v))
 			ph[i] = "$" + strconv.Itoa(len(*args))
 		}
 		return "(" + p.Field + " IN (" + strings.Join(ph, ",") + "))"
 	case OpLike:
-		*args = append(*args, escapeLikePattern(p.Value))
-		return "(" + p.Field + ` LIKE $` + strconv.Itoa(len(*args)) + ` ESCAPE '\')`
+		clause, arg := LikeClause(p.Field, len(*args)+1, p.Value)
+		*args = append(*args, arg)
+		return "(" + clause + ")"
 	default:
-		*args = append(*args, BoolBind(p.isBool, p.Value))
+		*args = append(*args, TypedBind(p.colType, p.Value))
 		return "(" + p.Field + " " + sqlOp(p.Op) + " $" + strconv.Itoa(len(*args)) + ")"
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -223,5 +224,116 @@ func TestBuildDumpsAppIcons(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("res.Assets missing icon entries: %v", res.Assets)
+	}
+}
+
+// TestSitemapListsOnlyExportedPages: a page the export skipped (an
+// excluded route, one that answers 410) has no file on the static
+// host, so the sitemap must not send a crawler to it. A skipped page
+// whose path ends in an exported one's (/docs/about, /about) is told
+// apart wherever the site URL is mounted.
+func TestSitemapListsOnlyExportedPages(t *testing.T) {
+	for _, c := range []struct{ baseURL, basePath, site string }{
+		{"https://example.com", "", "https://example.com"},
+		{"https://example.com", "/sub", "https://example.com/sub"},
+		{"https://example.com/sub", "/sub", "https://example.com/sub"},
+		{"https://example.com/docs", "", "https://example.com/docs"},
+	} {
+		t.Run(c.baseURL+c.basePath, func(t *testing.T) {
+			a := coreapp.NewApp("SitemapSkips")
+			a.Register("/", &homeScreen{}, nil)
+			a.Register("/about", &homeScreen{}, nil)
+			a.Register("/docs/about", &homeScreen{}, nil)
+			a.Register("/broken", &homeScreen{}, nil)
+			a.RegisterScreen(coreapp.NewScreen("/gone", nfDeclaredGone{}), nil)
+			host := uihost.New(a, uihost.WithSitemap(uihost.SitemapConfig{BaseURL: c.baseURL}))
+			out := t.TempDir()
+			b := &Builder{Host: host, OutDir: out, BasePath: c.basePath, ExcludeRoutes: []string{"/broken", "/docs"}}
+			if _, err := b.Build(context.Background()); err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			sm := readOut(t, out, "sitemap.xml")
+			for _, want := range []string{"<loc>" + c.site + "/</loc>", "<loc>" + c.site + "/about/</loc>"} {
+				if !strings.Contains(sm, want) {
+					t.Errorf("sitemap lacks %s:\n%s", want, sm)
+				}
+			}
+			for _, gone := range []string{"/broken", "/gone", "/docs/about"} {
+				if strings.Contains(sm, c.site+gone) {
+					t.Errorf("sitemap lists %s, which the export skipped:\n%s", gone, sm)
+				}
+			}
+			if n := strings.Count(sm, "<url>"); n != 2 {
+				t.Errorf("sitemap has %d entries, want 2:\n%s", n, sm)
+			}
+		})
+	}
+}
+
+// TestSitemapLocalesListOnlyExported: an app that routes by locale
+// prefix lists one entry per locale; a skipped page drops from every
+// locale's list.
+func TestSitemapLocalesListOnlyExported(t *testing.T) {
+	a := coreapp.NewApp("SitemapLocales")
+	a.Register("/", &helloScreen{}, nil)
+	a.Register("/about", &helloScreen{}, nil)
+	a.Register("/broken", &helloScreen{}, nil)
+	host := uihost.New(a, uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}))
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", exportHello.Key(), i18n.Message{Text: "Hola"})
+	tr := i18n.NewTranslator(cat, "en")
+	set, err := i18n.NewPathLocales(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.SetPathLocales(set)
+	out := t.TempDir()
+	b := &Builder{Host: host, OutDir: out, ExcludeRoutes: []string{"/broken"}}
+	if _, err := b.Build(i18n.WithTranslator(context.Background(), tr)); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	sm := readOut(t, out, "sitemap.xml")
+	for _, want := range []string{"<loc>https://example.com/es/about/</loc>", "<loc>https://example.com/about/</loc>"} {
+		if !strings.Contains(sm, want) {
+			t.Errorf("sitemap lacks %s:\n%s", want, sm)
+		}
+	}
+	if strings.Contains(sm, "broken") {
+		t.Errorf("sitemap lists the excluded /broken:\n%s", sm)
+	}
+}
+
+// flipScreen's StaticPaths answers in the opposite order on each call,
+// as a map's keys may.
+type flipScreen struct {
+	productScreen
+	calls *int
+}
+
+func (f *flipScreen) StaticPaths(context.Context) []map[string]string {
+	*f.calls++
+	if *f.calls%2 == 0 {
+		return []map[string]string{{"slug": "beta"}, {"slug": "alpha"}}
+	}
+	return []map[string]string{{"slug": "alpha"}, {"slug": "beta"}}
+}
+
+// TestSitemapPairsEntriesByPage: StaticPaths that change order between
+// the sitemap's two renders must not pair one page's entry with another
+// page's verdict. A redirected /products/beta used to keep its entry
+// while the exported /products/alpha lost its own.
+func TestSitemapPairsEntriesByPage(t *testing.T) {
+	a := coreapp.NewApp("SitemapFlip")
+	a.Register("/", &homeScreen{}, nil)
+	calls := 0
+	a.Register("/products/:slug", &flipScreen{calls: &calls}, nil)
+	a.Redirect("/products/beta", "/")
+	host := uihost.New(a, uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if sm := readOut(t, out, "sitemap.xml"); !strings.Contains(sm, "https://example.com/products/alpha") {
+		t.Errorf("sitemap dropped the exported /products/alpha:\n%s", sm)
 	}
 }

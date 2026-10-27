@@ -154,6 +154,12 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 			}
 		}
 		c.mgr.revokeUserSessions(ctx, sess.UserID, "password_change", remoteHost(r))
+		// The change stands either way, and the other purges here log
+		// rather than fail, so a failed link purge does too.
+		if err := c.mgr.dropMagicLinks(ctx, sess.UserID, "password_change", remoteHost(r)); err != nil {
+			slog.Warn("magic-link purge failed", "reason", "password_change",
+				"user_hash", hashedIdentifier(sess.UserID), "err", err)
+		}
 		_ = c.mgr.SessionStore().Delete(ctx, sess.Token)
 
 		writeCredentialHeaders(w)
@@ -228,6 +234,46 @@ func (m *AuthManager) revokeUserSessions(ctx context.Context, userID, reason, re
 		Kind: "session.revoked", UserID: userID, Remote: remote,
 		Meta: map[string]string{"reason": reason, "count": strconv.Itoa(n)},
 	})
+}
+
+// dropMagicLinks spends every outstanding magic link mailed to the user.
+// A link mailed before a password change or reset, the one an attacker
+// with mailbox access may hold, otherwise still signs in afterwards. The
+// magic-link store keys on the canonical address the send handler wrote,
+// so the stored address is canonicalized first: a raw "Mixed@Example.com"
+// matched no row. A token store without MagicLinkTokenPurger keeps the
+// links, and that gap is logged; the error is a purge that failed.
+func (m *AuthManager) dropMagicLinks(ctx context.Context, userID, reason, remote string) error {
+	p, ok := m.Plugin("magic-link")
+	if !ok {
+		return nil
+	}
+	mp, ok := p.(*MagicLinkPlugin)
+	if !ok {
+		return nil
+	}
+	user, err := m.UserStore().FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	email, err := m.canonicalizeEmail(user.GetEmail())
+	if err != nil {
+		email = user.GetEmail()
+	}
+	n, supported, err := purgePurposeTokens(ctx, mp.tokenStore, purposeMagicLink, email)
+	switch {
+	case err != nil:
+		return err
+	case !supported:
+		slog.Warn("could not drop outstanding magic links: token store does not implement MagicLinkTokenPurger",
+			"reason", reason, "user_hash", hashedIdentifier(userID))
+	case n > 0:
+		m.emitSecurity(ctx, SecurityEvent{
+			Kind: "magiclink_tokens.purged", UserID: userID, Remote: remote,
+			Meta: map[string]string{"reason": reason, "count": strconv.Itoa(n)},
+		})
+	}
+	return nil
 }
 
 // writeAuthFieldError answers 422 with the form-errors envelope: the

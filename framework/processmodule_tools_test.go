@@ -119,6 +119,24 @@ func TestModuleToolRegistry_Namespacing(t *testing.T) {
 	}
 }
 
+// TestModuleToolSchemaKeepsBigIntegers: a module schema number past 2^53
+// is listed with the digits the module declared, not a rounded float64.
+func TestModuleToolSchemaKeepsBigIntegers(t *testing.T) {
+	srv := mcp.NewServer()
+	reg := NewModuleToolRegistry(srv, nil)
+	schema := json.RawMessage(`{"properties":{"n":{"maximum":9007199254740993,"minimum":3}}}`)
+	if err := reg.RegisterTools("alpha", []moduleproto.Tool{{ID: "s", Name: "S", InputSchema: schema}}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	got, err := json.Marshal(findMCPTool(t, srv, "module.alpha.s").InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(schema) {
+		t.Fatalf("listed schema = %s, want %s", got, schema)
+	}
+}
+
 // TestModuleToolRegistry_Collides: a namespaced name already owned by a
 // different module is a hard collision.
 func TestModuleToolRegistry_Collides(t *testing.T) {

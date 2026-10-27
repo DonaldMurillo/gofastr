@@ -426,7 +426,7 @@ func SidebarDrawerTrigger(cfg SidebarConfig) render.HTML {
 	}
 	drawerLabel := i18nui.SidebarOpenDrawer.Text(cfg.Ctx)
 	if cfg.Compact {
-		drawerLabel = cfg.navLabel()
+		drawerLabel = cfg.navLabel(cfg.Ctx)
 		classes[headless.PartRoot] += " fui-sidebar__hamburger--labelled"
 	}
 	if cfg.NativeMobile {
@@ -541,7 +541,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	}
 	if cfg.Compact {
 		classes[headless.PartRoot] += " fui-sidebar--compact"
-		drawerLabel = cfg.navLabel()
+		drawerLabel = cfg.navLabel(ctx)
 		classes[headless.PartSidebarDrawer] += " fui-sidebar__hamburger--labelled"
 	}
 	checkSidebarVariant(cfg.Variant)
@@ -604,7 +604,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	}
 
 	out := headless.Sidebar(headless.SidebarProps{
-		NavLabel:           cfg.navLabel(),
+		NavLabel:           cfg.navLabel(ctx),
 		Title:              cfg.Title,
 		Items:              sidebarNavItems(cfg),
 		Variant:            string(cfg.Variant),
@@ -632,7 +632,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 		return html.Div(html.DivConfig{Class: nativeClass},
 			sidebarStyle.WrapHTML(out),
 			html.Div(html.DivConfig{Class: "fui-sidebar-native__mobile"},
-				Collapsible(CollapsibleConfig{Summary: cfg.navLabel()},
+				Collapsible(CollapsibleConfig{Summary: cfg.navLabel(ctx)},
 					// The mobile disclosure sits OUTSIDE the marked
 					// inline root, so it carries its own marker: the
 					// sheet's [data-cui-comp]-scoped rules (link
@@ -643,10 +643,10 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	return sidebarStyle.WrapHTML(out)
 }
 
-// navLabel is the nav landmark's name, defaulted.
-func (c SidebarConfig) navLabel() string {
+// navLabel is the nav landmark's name, defaulted in ctx's language.
+func (c SidebarConfig) navLabel(ctx context.Context) string {
 	if c.NavLabel == "" {
-		return "Primary"
+		return i18nui.NavPrimary.Text(ctx)
 	}
 	return c.NavLabel
 }
@@ -748,7 +748,7 @@ func sidebarBodyRegion(ctx context.Context, cfg SidebarConfig, idPrefix, rootCla
 		classes[headless.PartRoot] += " fui-sidebar--compact"
 	}
 	out := headless.SidebarRegion(headless.SidebarProps{
-		NavLabel:      cfg.navLabel(),
+		NavLabel:      cfg.navLabel(ctx),
 		Title:         cfg.Title,
 		Items:         sidebarNavItems(cfg),
 		GroupMarkup:   string(cfg.GroupMarkup),

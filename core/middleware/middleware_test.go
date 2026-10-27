@@ -374,6 +374,7 @@ func TestCORSPreflight(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodOptions, "/api", nil)
 	req.Header.Set("Origin", "http://example.com")
+	req.Header.Set("Access-Control-Request-Method", "POST")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

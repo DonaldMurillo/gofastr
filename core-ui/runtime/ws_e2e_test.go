@@ -475,6 +475,50 @@ func TestWSReducerAppliesSequenceZeroSnapshot(t *testing.T) {
 	}
 }
 
+// A new connection's snapshot always hydrates a reducer kept across the
+// reconnect: generation 2's snapshot at 3 applies though generation 1
+// applied 9 (a restarted server, another replica), and inside a
+// generation the strict rule holds again. A call without a generation
+// keeps the plain rule.
+func TestWSReducerNewGenerationHydrates(t *testing.T) {
+	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
+	script := wsConsoleTap + `
+    __gofastr.loadModule('ws').then(() => {
+      const reduce = __gofastr.createSequencedReducer({ n: -1 }, (s, env) => ({ n: env.payload.n }));
+      const snap = (seq) => ({ sequence: seq, type: 'snapshot', payload: { n: seq } });
+      const ev = (seq) => ({ sequence: seq, type: 'ev', payload: { n: seq } });
+      window.__res = [
+        reduce(snap(5), 1), reduce(ev(9), 1),
+        reduce(snap(3), 2), reduce(snap(3), 2), reduce(ev(2), 2), reduce(ev(4), 2),
+        reduce(snap(7), 1), reduce(ev(20), 1),
+        reduce(snap(1)),
+      ];
+      window.__done = true;
+    });
+  `
+	base := wsTestPage(t, mux, script)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__done === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	var raw string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify(window.__res.map(r => [r.applied, r.state.n]))`, &raw)); err != nil {
+		t.Fatal(err)
+	}
+	// A late message from generation 1 after generation 2 hydrated is
+	// refused: an old snapshot must not re-hydrate, an old event must
+	// not apply on its higher sequence.
+	const want = `[[true,5],[true,9],[true,3],[false,3],[false,3],[true,4],[false,4],[false,4],[false,4]]`
+	if raw != want {
+		t.Fatalf("generation hydration: %s, want %s", raw, want)
+	}
+}
+
 // hydrated and resyncComplete are bound to the generation the caller
 // names and to the phase order open → hydrated → resynced: a stale
 // completion from an earlier generation, or a resync before hydration,

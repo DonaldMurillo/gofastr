@@ -71,6 +71,37 @@ func TestQuoteIdent(t *testing.T) {
 	}
 }
 
+func TestQuoteFolded(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"users", `"users"`},
+		{"Widgets", `"widgets"`},
+		{"app.UserEvents", `"app"."userevents"`},
+		{"order", `"order"`},
+	}
+	for _, tt := range tests {
+		if got := QuoteFolded(tt.input); got != tt.want {
+			t.Errorf("QuoteFolded(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestQuoteIndexName(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"users_idx", `"users_idx"`},
+		{"Widgets_idx", `"widgets_idx"`},
+		{"app.UserEvents_idx", `"userevents_idx"`},
+	}
+	for _, tt := range tests {
+		if got := QuoteIndexName(tt.input); got != tt.want {
+			t.Errorf("QuoteIndexName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestSafeQuote(t *testing.T) {
 	got, err := SafeQuote("users")
 	if err != nil {

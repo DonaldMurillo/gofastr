@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,7 @@ type EntityUserStore struct {
 	db       *sql.DB
 	table    string
 	fieldMap UserFieldMap
+	dialect  storeDialect
 }
 
 // UserFieldMap maps logical auth fields to actual DB column names.
@@ -115,18 +117,23 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 // calls this. Idempotent. Boolean columns use the native PostgreSQL BOOLEAN
 // type so CreateUser's Go bool bindings work on a fresh Postgres database.
 func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
+	fm := s.fieldMap
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table,
+		fm.ID, fm.Email, fm.PasswordHash, fm.Roles, fm.PasswordSet, fm.EmailVerified, fm.Name); err != nil {
+		return err
+	}
 	boolType, boolFalse := "INTEGER", "0"
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		boolType, boolFalse = "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT UNIQUE NOT NULL, %s TEXT NOT NULL DEFAULT '', %s TEXT NOT NULL DEFAULT '[]', %s %s NOT NULL DEFAULT %s)",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.ID),
-		query.QuoteIdent(s.fieldMap.Email),
-		query.QuoteIdent(s.fieldMap.PasswordHash),
-		query.QuoteIdent(s.fieldMap.Roles),
-		query.QuoteIdent(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.Roles),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
 		boolType,
 		boolFalse,
 	)
@@ -140,7 +147,7 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	if err := s.ensureNameColumn(ctx); err != nil {
 		return err
 	}
-	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet, s.fieldMap.EmailVerified); err != nil {
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.PasswordSet, s.fieldMap.EmailVerified); err != nil {
 		return err
 	}
 	// The OAuth link table backs OAuthLinker / AccountLister / AccountUnlinker
@@ -150,24 +157,164 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	return s.EnsureOAuthLinksSchema(ctx)
 }
 
+// refuseCaseKeptTable stops EnsureSchema when Postgres holds what an older
+// auth battery made for table. Those stores quoted the configured name
+// whole, so "Members" got its own case-kept table beside the folded
+// members that AutoMigrate creates, "q.TwoFA" became one table literally
+// named q.TwoFA in the current schema, and a mapped column such as
+// "PasswordHash" kept its case even on a lowercase table. The stores now
+// name the folded objects (table twofa in schema q, column passwordhash);
+// booting on would hide every account, session, OAuth link, enrolment or
+// password hash the old objects hold, so the operator moves them first.
+// cols are the store's configured column names.
+func refuseCaseKeptTable(ctx context.Context, db *sql.DB, d migrate.Dialect, table string, cols ...string) error {
+	if d != migrate.DialectPostgres {
+		return nil
+	}
+	schema, name := foldedTableRef(table)
+	folded := query.QuoteFolded(table)
+	// The old table: the configured string whole in the current schema,
+	// or a case-kept last part inside the named schema.
+	var legacy, legacySchema, legacyName string
+	//gofastr:allow(quoteident) the case-kept spelling an older battery created, compared to detect it
+	if query.QuoteIdent(table) != folded {
+		cands := [][2]string{{"", table}}
+		if i := strings.LastIndexByte(table, '.'); i >= 0 && table[i+1:] != name {
+			cands = append(cands, [2]string{table[:i], table[i+1:]})
+		}
+		for _, c := range cands {
+			found, ok, err := pgFindTable(ctx, db, c[0], c[1])
+			if err != nil {
+				return err
+			}
+			if ok {
+				legacySchema, legacyName = found, c[1]
+				legacy = quoteQualified(found, legacyName)
+				break
+			}
+		}
+	}
+	// Columns the old store created with their case kept: on the old table
+	// when there is one, else on the table the store now uses.
+	colSchema, colTable := schema, name
+	if legacy != "" {
+		colSchema, colTable = legacySchema, legacyName
+	}
+	var keptCols []string
+	for _, col := range cols {
+		if col == strings.ToLower(col) || slices.Contains(keptCols, col) {
+			continue
+		}
+		var n int
+		//gofastr:allow(GOFASTR1502) one catalog read per configured mixed-case column, once at boot
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns
+			WHERE table_schema = COALESCE(NULLIF($1, ''), current_schema()) AND table_name = $2 AND column_name = $3`,
+			colSchema, colTable, col).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			keptCols = append(keptCols, col)
+		}
+	}
+	if legacy == "" && len(keptCols) == 0 {
+		return nil
+	}
+	// Every name in the advice is quoted: a folded target such as order is
+	// a reserved word.
+	var steps []string
+	if legacy != "" {
+		steps = append(steps, fmt.Sprintf("ALTER TABLE %s RENAME TO %s", quoteQualified(legacySchema, legacyName), query.QuoteFolded(name)))
+		if legacySchema != schema {
+			steps = append(steps, fmt.Sprintf("ALTER TABLE %s SET SCHEMA %s", quoteQualified(legacySchema, name), query.QuoteFolded(schema)))
+		}
+	}
+	for _, col := range keptCols {
+		steps = append(steps, fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s",
+			//gofastr:allow(quoteident) col is the case-kept column an older battery created
+			folded, query.QuoteIdent(col), query.QuoteFolded(col)))
+	}
+	advice := strings.Join(steps, "; ")
+	if legacy == "" {
+		return fmt.Errorf("auth: Postgres table %s holds columns with their upper case kept (%s), made by an older auth battery; "+
+			"the store now reads the folded names AutoMigrate creates. Rename them, then restart: %s",
+			folded, strings.Join(keptCols, ", "), advice)
+	}
+	how := "with its upper case kept"
+	if legacySchema == "" && strings.Contains(table, ".") {
+		how = "as one name with the dot inside"
+	}
+	return fmt.Errorf("auth: Postgres holds table %s %s, made by an older auth battery; "+
+		"the store now uses %s, the table AutoMigrate creates. Move the rows into %s and drop %s "+
+		"(when %s does not exist: %s), then restart",
+		legacy, how, folded, folded, legacy, folded, advice)
+}
+
+// foldedTableRef splits a configured table the way QuoteFolded names it:
+// "q.Members" is table members in schema q, and an undotted name lives in
+// the current schema (schema "").
+func foldedTableRef(table string) (schema, name string) {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		return strings.ToLower(table[:i]), strings.ToLower(table[i+1:])
+	}
+	return "", strings.ToLower(table)
+}
+
+// quoteQualified quotes name, behind its quoted schema unless schema is ""
+// (the current schema).
+func quoteQualified(schema, name string) string {
+	if schema == "" {
+		//gofastr:allow(quoteident) name was found in the catalog with its case kept
+		return query.QuoteIdent(name)
+	}
+	//gofastr:allow(quoteident) schema and name were found in the catalog with their case kept
+	return query.QuoteIdent(schema) + "." + query.QuoteIdent(name)
+}
+
+// indexName quotes prefix+table+suffix as an index name. Postgres refuses a
+// schema-qualified index name (an index lands in its table's schema), so a
+// dotted "q.Members" contributes only its folded last part.
+func indexName(prefix, table, suffix string) string {
+	_, name := foldedTableRef(table)
+	return query.QuoteFolded(prefix + name + suffix)
+}
+
+// pgFindTable reports the schema holding a table named exactly name: the
+// current schema when schema is "" (reported back as ""), else schema as
+// written or folded.
+func pgFindTable(ctx context.Context, db *sql.DB, schema, name string) (string, bool, error) {
+	var found string
+	err := db.QueryRowContext(ctx, `SELECT CASE WHEN $1 = '' THEN '' ELSE table_schema END
+		FROM information_schema.tables
+		WHERE table_schema IN (COALESCE(NULLIF($1, ''), current_schema()), lower(COALESCE(NULLIF($1, ''), current_schema())))
+		  AND table_name = $2 LIMIT 1`, schema, name).Scan(&found)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	return found, err == nil, err
+}
+
 // ensurePostgresBoolColumns upgrades legacy INTEGER boolean columns owned by
 // the auth battery. The conversion is lossless for the old 0/1 representation
 // and keeps existing deployments compatible with native Go bool bindings.
-func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, table string, columns ...string) error {
-	if migrate.DetectDialect(db) != migrate.DialectPostgres {
+func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, d migrate.Dialect, table string, columns ...string) error {
+	if d != migrate.DialectPostgres {
 		return nil
 	}
 	query.MustIdent(table)
+	// A dotted "q.Members" is table members in schema q, the table the
+	// store writes; matching the whole string never found it.
+	schema, name := foldedTableRef(table)
 	for _, column := range columns {
 		query.MustIdent(column)
 		var dataType string
+		//gofastr:allow(GOFASTR1502) one catalog read per battery-owned column, once at boot; the list is a handful of names, not rows
 		err := db.QueryRowContext(ctx, `
 			SELECT data_type
 			FROM information_schema.columns
-			WHERE table_schema = current_schema()
-			  AND lower(table_name) = lower($1)
+			WHERE table_schema = COALESCE(NULLIF($3, ''), current_schema())
+			  AND table_name = $1
 			  AND lower(column_name) = lower($2)
-		`, table, column).Scan(&dataType)
+		`, name, column, schema).Scan(&dataType)
 		if err == sql.ErrNoRows || dataType == "boolean" {
 			continue
 		}
@@ -179,7 +326,7 @@ func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, table string, co
 		default:
 			continue
 		}
-		qt, qc := query.QuoteIdent(table), query.QuoteIdent(column)
+		qt, qc := query.QuoteFolded(table), query.QuoteFolded(column)
 		for _, ddl := range []string{
 			fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT", qt, qc),
 			fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE BOOLEAN USING (%s <> 0)", qt, qc, qc),
@@ -197,23 +344,23 @@ func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, table string, co
 // validated at construction time in NewEntityUserStore.
 func (s *EntityUserStore) q(stmt string) string {
 	return fmt.Sprintf(stmt,
-		query.QuoteIdent(s.fieldMap.ID),
-		query.QuoteIdent(s.fieldMap.Email),
-		query.QuoteIdent(s.fieldMap.PasswordHash),
-		query.QuoteIdent(s.fieldMap.Roles),
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.Roles),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.Email),
 	)
 }
 
 // qByID builds a query selecting by ID.
 func (s *EntityUserStore) qByID(stmt string) string {
 	return fmt.Sprintf(stmt,
-		query.QuoteIdent(s.fieldMap.ID),
-		query.QuoteIdent(s.fieldMap.Email),
-		query.QuoteIdent(s.fieldMap.Roles),
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.Roles),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 }
 
@@ -266,11 +413,11 @@ func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error)
 func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) ([]User, int, error) {
 	listQ := fmt.Sprintf(
 		"SELECT %s, %s, %s FROM %s ORDER BY %s LIMIT $1 OFFSET $2",
-		query.QuoteIdent(s.fieldMap.ID),
-		query.QuoteIdent(s.fieldMap.Email),
-		query.QuoteIdent(s.fieldMap.Roles),
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.Roles),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.Email),
 	)
 	rows, err := s.db.QueryContext(ctx, listQ, opts.Limit, opts.Offset)
 	if err != nil {
@@ -295,7 +442,7 @@ func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) 
 	}
 
 	var total int
-	countQ := fmt.Sprintf("SELECT COUNT(*) FROM %s", query.QuoteIdent(s.table))
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM %s", query.QuoteFolded(s.table))
 	if err := s.db.QueryRowContext(ctx, countQ).Scan(&total); err != nil {
 		return nil, 0, err
 	}
@@ -328,12 +475,12 @@ func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword stri
 	rolesJSON := formatRoles(roles)
 	q := fmt.Sprintf(
 		"INSERT INTO %s (%s, %s, %s, %s, %s) VALUES ($1, $2, $3, $4, $5)",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.ID),
-		query.QuoteIdent(s.fieldMap.Email),
-		query.QuoteIdent(s.fieldMap.PasswordHash),
-		query.QuoteIdent(s.fieldMap.Roles),
-		query.QuoteIdent(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.Email),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.Roles),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
 	)
 	_, err = s.db.ExecContext(ctx, q, id, email, hashedPassword, rolesJSON, passwordSet)
 	if err != nil {
@@ -354,10 +501,10 @@ func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword stri
 func (s *EntityUserStore) SetPassword(ctx context.Context, userID, hashedPassword string) error {
 	q := fmt.Sprintf(
 		"UPDATE %s SET %s = $1, %s = TRUE WHERE %s = $2",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.PasswordHash),
-		query.QuoteIdent(s.fieldMap.PasswordSet),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	res, err := s.db.ExecContext(ctx, q, hashedPassword, userID)
 	if err != nil {
@@ -375,9 +522,9 @@ func (s *EntityUserStore) SetPassword(ctx context.Context, userID, hashedPasswor
 func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
 	q := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteIdent(s.fieldMap.PasswordSet),
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	var has bool
 	err := s.db.QueryRowContext(ctx, q, userID).Scan(&has)
@@ -394,10 +541,10 @@ func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool,
 // uses ADD COLUMN IF NOT EXISTS; SQLite checks PRAGMA table_info first.
 func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolType, boolFalse string) error {
 	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
-		query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.EmailVerified), boolType, boolFalse)
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		ddl = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s NOT NULL DEFAULT %s",
-			query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.EmailVerified), boolType, boolFalse)
+			query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
 	} else {
 		has, err := sqliteTableHasColumn(ctx, s.db, s.table, s.fieldMap.EmailVerified)
 		if err != nil || has {
@@ -412,9 +559,9 @@ func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolTyp
 // address. Implements EmailVerifier.
 func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) error {
 	q := fmt.Sprintf("UPDATE %s SET %s = TRUE WHERE %s = $1",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.EmailVerified),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.EmailVerified),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	res, err := s.db.ExecContext(ctx, q, userID)
 	if err != nil {
@@ -430,9 +577,9 @@ func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) 
 // EmailVerifiedChecker.
 func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteIdent(s.fieldMap.EmailVerified),
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.EmailVerified),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	var v bool
 	err := s.db.QueryRowContext(ctx, q, userID).Scan(&v)
@@ -442,17 +589,22 @@ func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (b
 	return v, err
 }
 
-// ClearPassword replaces the user's hash with the placeholder and records
-// password_set=false, so no password signs in until the owner sets one.
-// Implements PasswordClearer.
+// ClearPassword replaces the user's hash with a new unusable one and
+// records password_set=false, so no password signs in until the owner
+// sets one, and no JWT issued before the clear validates. Implements
+// PasswordClearer.
 func (s *EntityUserStore) ClearPassword(ctx context.Context, userID string) error {
+	placeholder, err := newPlaceholderHash()
+	if err != nil {
+		return err
+	}
 	q := fmt.Sprintf("UPDATE %s SET %s = $1, %s = FALSE WHERE %s = $2",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.PasswordHash),
-		query.QuoteIdent(s.fieldMap.PasswordSet),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
-	res, err := s.db.ExecContext(ctx, q, passwordPlaceholderHash, userID)
+	res, err := s.db.ExecContext(ctx, q, placeholder, userID)
 	if err != nil {
 		return err
 	}
@@ -563,8 +715,9 @@ func (uf UserFields) With(extra ...schema.Field) UserFields {
 //	})
 //	mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 type EntitySessionStore struct {
-	db    *sql.DB
-	table string
+	db      *sql.DB
+	table   string
+	dialect storeDialect
 
 	sweepMu   sync.Mutex
 	lastSweep time.Time
@@ -585,34 +738,33 @@ func NewEntitySessionStore(db *sql.DB, table string) *EntitySessionStore {
 // datetime and boolean column types are chosen per dialect (SQLite vs
 // PostgreSQL) so the same battery boots on either.
 func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
+		return err
+	}
 	tsType, boolType, boolFalse := "DATETIME", "INTEGER", "0"
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		tsType, boolType, boolFalse = "TIMESTAMP", "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (id TEXT NOT NULL, token TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL, created_at %s NOT NULL, expires_at %s NOT NULL, two_factor_verified %s NOT NULL DEFAULT %s, pending_two_factor %s NOT NULL DEFAULT %s)",
-		query.QuoteIdent(s.table), tsType, tsType, boolType, boolFalse, boolType, boolFalse,
+		query.QuoteFolded(s.table), tsType, tsType, boolType, boolFalse, boolType, boolFalse,
 	)
 	_, err := s.db.ExecContext(ctx, stmt)
 	if err != nil {
 		return err
 	}
-	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, "two_factor_verified", "pending_two_factor"); err != nil {
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "two_factor_verified", "pending_two_factor"); err != nil {
 		return err
 	}
-	idxName, err := query.SafeIdent("idx_" + s.table + "_expires")
-	if err != nil {
-		return err
-	}
-	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (expires_at)",
-		query.QuoteIdent(idxName), query.QuoteIdent(s.table))
+	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (expires_at)",
+		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, indexName("idx_", s.table, "_expires"), query.QuoteFolded(s.table)))
 	_, err = s.db.ExecContext(ctx, idx)
 	return err
 }
 
 // qTable wraps a statement template with the validated table name.
 func (s *EntitySessionStore) qTable(stmt string) string {
-	return fmt.Sprintf(stmt, query.QuoteIdent(s.table))
+	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
 // Create generates a random token, inserts a session row, and returns it.

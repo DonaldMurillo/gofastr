@@ -57,15 +57,27 @@ order   := field [ASC|DESC]
 | `=`         | `field = $1`                                                       |
 | `!=`        | `field != $1`                                                      |
 | `>` `<` `>=` `<=` | `field > $1` etc.                                            |
-| `contains`  | `field LIKE $1 ESCAPE '\\'` with `%value%` (wildcards escaped)     |
+| `contains`  | `LOWER(field) LIKE $1 ESCAPE '\\'` with `%value%` lowered (wildcards escaped) |
 | `in`        | `field IN ($1, $2, …)` over `[a, b, c]` syntax                     |
 
 `contains` escapes `%`, `_`, and `\` in the user input so a query like
 `name contains "50%_off"` matches that literal string instead of
-acting as a wildcard pattern.
+acting as a wildcard pattern. It ignores case, the same shape `?q=` and
+`?field_like=` use: Postgres `LIKE` is case-sensitive and SQLite's folds
+ASCII only, so a bare `LIKE` answered differently per dialect. The case
+contract is the one `?q=` documents: ASCII-case-insensitive everywhere,
+Unicode folding a Postgres bonus (SQLite's `LOWER` folds ASCII only, so
+a stored `É` is not matched there). `contains` on a column that is not text (a number,
+date, Bool or JSON) is refused.
 
-`in` accepts either `field in ["a","b"]` or `field in [1,2,3]`. Values
-are type-coerced based on the field's declared `schema.FieldType`.
+`in` accepts either `field in ["a","b"]` or `field in [1,2,3]`. Every
+value, under every operator but `contains`, must be of the field's
+declared `schema.FieldType` and is bound as that type
+(`filter.CoerceValue`: an integer for Int, a decimal literal for Float
+and Decimal, exactly the `strconv.ParseBool` spellings for Bool, RFC 3339
+or a bare date for Timestamp, `YYYY-MM-DD` for Date). A value of another
+type is an error naming the field, never a text bind that Postgres
+refuses at query time while SQLite compares it as text.
 
 ## Clauses
 
@@ -98,7 +110,9 @@ Forward keyset pagination. `BuildDSLQuery` wires `after(value)` into a
 `field > value` predicate on the entity's cursor column
 (`Pagination.CursorField` when set, otherwise the primary key). Unlike the HTTP cursor API (which
 round-trips an opaque base64 token), the DSL takes the **bare keyset
-value**: `posts.after(1024)` means "rows after id 1024".
+value**: `posts.after(1024)` means "rows after id 1024". The value
+must be of the cursor column's type, the same check a `where()` value
+gets: `after("abc")` on an integer key is an error.
 
 ```
 posts.where(status="published").order(id).after(1024).limit(20)
@@ -186,6 +200,38 @@ arguments, so a caller can check the rows before it writes:
 del := query.Delete("notes").Where("slug = $1", slug).Where("deleted_at IS NOT NULL")
 sel, args := del.Matching("slug") // SELECT slug FROM notes WHERE (slug = $1) AND (deleted_at IS NOT NULL)
 ```
+
+Raw SQL that names a declared table or column quotes it with
+`query.QuoteFolded`, after `query.SafeIdent` has checked it.
+AutoMigrate writes its DDL with names unquoted, so Postgres stores an
+entity declared as `Widgets` under `widgets`. `QuoteFolded("Widgets")`
+gives `"widgets"`, which finds it; `QuoteIdent("Widgets")` gives
+`"Widgets"`, which does not. A dotted name folds each part:
+`QuoteFolded("app.UserEvents")` gives `"app"."userevents"`.
+An index or trigger named after a table takes `query.QuoteIndexName`,
+which keeps only the folded part after the last dot: Postgres puts an
+index in its table's schema and refuses a qualified name, so
+`QuoteIndexName("app.UserEvents_idx")` gives `"userevents_idx"`.
+SQLite is the other way round: it takes the schema on the index name
+and refuses it on the indexed table. `query.IndexOn(sqlite, name,
+table)` renders the `<index> ON <table>` part for either engine. For
+the index `"x_idx"` on `"main"."events"` it gives
+`"main"."x_idx" ON "events"` on SQLite and `"x_idx" ON "main"."events"`
+on Postgres. `query.SQLitePragma("table_info", table)`
+puts the schema on the pragma the same way:
+`PRAGMA "main".table_info("events")`.
+`QuoteIdent` keeps the name as given and is for a name read back from
+the database catalog; the `quoteident` vet check refuses it anywhere
+else outside `core/query`.
+
+A store that creates its own table takes a configured name through
+`QuoteFolded` too. Builds before v0.96.0 quoted such names whole, so a
+`"Jobs"` table kept its case and `"app.Jobs"` was one table named
+`app.Jobs`. On Postgres, call `query.RefuseCaseKeptTables(ctx, db,
+table)` before the `CREATE TABLE IF NOT EXISTS`: when the older table
+is still there it returns an error that holds the `ALTER TABLE ...
+RENAME` statements to move it, instead of starting an empty table beside
+it. The framework's stores and batteries make that call.
 
 ## Common mistakes
 

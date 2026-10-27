@@ -66,6 +66,10 @@ func (m *Migrator) trackingRowWhere(mig Migration, ga bool) (string, []any) {
 	return "version = " + m.placeholder(1), []any{mig.Version}
 }
 
+// testHookAfterMigration, when set, runs after each migration Up applies:
+// a test stands in for a slow migration there without a slow statement.
+var testHookAfterMigration func(Migration)
+
 // connish is the subset of *sql.DB / *sql.Conn the runner needs. Threading it
 // lets Up/Down run every statement, tracking-table DDL, applied-version
 // reads, and each migration's transaction, on the single connection that
@@ -87,7 +91,7 @@ func (m *Migrator) qtable() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("migrate: invalid table name %q: %w", m.tableName, err)
 	}
-	return query.QuoteIdent(safe), nil
+	return query.QuoteFolded(safe), nil
 }
 
 // ---- group selection helpers ----
@@ -165,6 +169,13 @@ func (m *Migrator) CreateMigrationsTable(ctx context.Context) error {
 // ensureCompositeKey, called by Up/Down/Force only (they hold the advisory
 // lock); Status never performs group-schema DDL.
 func (m *Migrator) createMigrationsTable(ctx context.Context, x connish, tbl string, ga bool) error {
+	// A case-kept table from an older build holds every applied version;
+	// an empty folded one beside it would run them all again.
+	if m.dialect == DialectPostgres {
+		if err := query.RefuseCaseKeptTables(ctx, x, m.tableName); err != nil {
+			return fmt.Errorf("migrate: %w", err)
+		}
+	}
 	var ddl string
 	if ga {
 		ddl = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -344,12 +355,15 @@ func (m *Migrator) Up(ctx context.Context, groups ...string) error {
 		return err
 	}
 	ga := m.groupAware(groups)
-	return WithAdvisoryLock(ctx, m.db, m.dialect, func(conn *sql.Conn) error {
-		return m.up(ctx, conn, tbl, ga, groups)
+	return withLeasedLock(ctx, m.db, m.dialect, AdvisoryLockKey, func(conn *sql.Conn, keep func(context.Context) error) error {
+		return m.up(ctx, conn, tbl, ga, groups, keep)
 	})
 }
 
-func (m *Migrator) up(ctx context.Context, x connish, tbl string, ga bool, groups []string) error {
+// up applies the pending migrations. keep renews the SQLite lease on the
+// pinned connection; it runs before each migration, between transactions,
+// and stops the run once the lease is lost.
+func (m *Migrator) up(ctx context.Context, x connish, tbl string, ga bool, groups []string, keep func(context.Context) error) error {
 	if err := m.createMigrationsTable(ctx, x, tbl, ga); err != nil {
 		return fmt.Errorf("creating migrations table: %w", err)
 	}
@@ -389,8 +403,14 @@ func (m *Migrator) up(ctx context.Context, x connish, tbl string, ga bool, group
 	}
 
 	for _, mig := range pending {
+		if err := keep(ctx); err != nil {
+			return fmt.Errorf("migrate lock: %w before migration %d (%s)", err, mig.Version, mig.Name)
+		}
 		if err := m.runMigrationUp(ctx, x, tbl, mig, tableGa); err != nil {
 			return fmt.Errorf("migration %d (%s): %w", mig.Version, mig.Name, err)
+		}
+		if testHookAfterMigration != nil {
+			testHookAfterMigration(mig)
 		}
 	}
 
@@ -539,12 +559,13 @@ func (m *Migrator) Down(ctx context.Context, n int, groups ...string) error {
 		return err
 	}
 	ga := m.groupAware(groups)
-	return WithAdvisoryLock(ctx, m.db, m.dialect, func(conn *sql.Conn) error {
-		return m.down(ctx, conn, tbl, n, ga, groups)
+	return withLeasedLock(ctx, m.db, m.dialect, AdvisoryLockKey, func(conn *sql.Conn, keep func(context.Context) error) error {
+		return m.down(ctx, conn, tbl, n, ga, groups, keep)
 	})
 }
 
-func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bool, groups []string) error {
+// down rolls back n migrations; keep is up's lease renewal.
+func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bool, groups []string, keep func(context.Context) error) error {
 	if err := m.createMigrationsTable(ctx, x, tbl, ga); err != nil {
 		return fmt.Errorf("creating migrations table: %w", err)
 	}
@@ -624,6 +645,9 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 		mig, ok := lookup[keys[i]]
 		if !ok {
 			return fmt.Errorf("migration version %d in group %q is applied but not registered", keys[i].Version, groupDisplayName(keys[i].Group))
+		}
+		if err := keep(ctx); err != nil {
+			return fmt.Errorf("migrate lock: %w before rollback %d (%s)", err, mig.Version, mig.Name)
 		}
 		if err := m.runMigrationDown(ctx, x, tbl, mig, tableGa); err != nil {
 			return fmt.Errorf("rollback migration %d (%s): %w", mig.Version, mig.Name, err)

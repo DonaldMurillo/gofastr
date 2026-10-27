@@ -92,6 +92,17 @@ type MemoryQueue struct {
 	seq     uint64
 	closed  bool
 
+	// now is the clock pending jobs' ScheduledAt is compared against.
+	// Defaults to time.Now; tests substitute a fake clock.
+	now func() time.Time
+
+	// wake broadcasts on cond when the earliest job held back by its
+	// ScheduledAt comes due, so idle workers sleep until then instead of
+	// polling. wakeAt is the instant it is armed for, zero when it is not.
+	// Guarded by pmu.
+	wake   *time.Timer
+	wakeAt time.Time
+
 	// held is the set of UniqueKeys live jobs hold, from Enqueue until the
 	// job succeeds or is dead-lettered. A retry or a gate deferral puts
 	// the job back without taking its key again. Guarded by pmu.
@@ -109,8 +120,22 @@ type MemoryQueue struct {
 	// silently dropped. Ordered oldest-first. It is BOUNDED at maxDeadJobs:
 	// when the cap is reached, the oldest dead job is evicted so a flood of
 	// failing jobs can never grow memory without limit. Guarded by deadMu.
-	deadMu sync.Mutex
-	dead   []Job
+	deadMu  sync.Mutex
+	dead    []deadJob
+	deadSeq uint64
+
+	// replayEnqueued is a deterministic seam for package tests: Replay
+	// calls it between its re-enqueue and retiring the dead record.
+	// Production code leaves it nil.
+	replayEnqueued func()
+}
+
+// deadJob is one retained dead-letter record. gen identifies this
+// retention: a replayed job that fails again gets a new gen under the same
+// ID, so Replay retires only the record it replayed.
+type deadJob struct {
+	job Job
+	gen uint64
 }
 
 // uniqueSlot scopes a UniqueKey to its job type.
@@ -155,13 +180,22 @@ func (h *pendingHeap) Pop() any {
 }
 
 // removeMatching scans the heap for the highest-priority job accepted by
-// match and removes+returns it. Because heap storage order is not fully
-// sorted, this walks every item and tracks the best via Less. Returns
-// (zero, false) when no item matches. Callers must hold pmu.
-func (h *pendingHeap) removeMatching(match func(Job) bool) (pendingJob, bool) {
+// match that is due at now (ScheduledAt zero or not after now) and
+// removes+returns it. Because heap storage order is not fully sorted, this
+// walks every item and tracks the best via Less. When no due item matches it
+// returns ok false and nextDue, the earliest ScheduledAt among the matching
+// jobs still held back (zero when there are none). Callers must hold pmu.
+func (h *pendingHeap) removeMatching(match func(Job) bool, now time.Time) (pj pendingJob, nextDue time.Time, ok bool) {
 	best := -1
 	for i := range h.items {
-		if !match(h.items[i].job) {
+		job := h.items[i].job
+		if !match(job) {
+			continue
+		}
+		if job.ScheduledAt.After(now) {
+			if nextDue.IsZero() || job.ScheduledAt.Before(nextDue) {
+				nextDue = job.ScheduledAt
+			}
 			continue
 		}
 		if best == -1 || h.Less(i, best) {
@@ -169,9 +203,9 @@ func (h *pendingHeap) removeMatching(match func(Job) bool) (pendingJob, bool) {
 		}
 	}
 	if best == -1 {
-		return pendingJob{}, false
+		return pendingJob{}, nextDue, false
 	}
-	return heap.Remove(h, best).(pendingJob), true
+	return heap.Remove(h, best).(pendingJob), time.Time{}, true
 }
 
 // NewMemoryQueue creates a new in-memory queue with the given number of
@@ -186,6 +220,7 @@ func NewMemoryQueue(workers int, opts ...MemoryQueueOption) *MemoryQueue {
 		logger:         slog.Default(),
 		handlers:       make(map[string]Handler),
 		inflight:       make(map[string]Job),
+		now:            time.Now,
 	}
 	q.cond = sync.NewCond(&q.pmu)
 	for _, opt := range opts {
@@ -256,23 +291,55 @@ func (q *MemoryQueue) worker(lane string) {
 // waitAndPop blocks until a job claimable by this worker is available, then
 // removes and returns it. lane "" claims any job; a non-empty lane claims
 // only jobs whose Lane matches. On Close, shared workers drain every
-// remaining job (any lane) before exiting; lane workers exit once their lane
-// is empty (shared workers pick up the rest).
+// remaining due job (any lane) before exiting; lane workers exit once their
+// lane holds no due job (shared workers pick up the rest). A job whose
+// ScheduledAt is still ahead is not claimable: the worker arms the wake
+// timer for it and sleeps, and Close does not wait for it.
 func (q *MemoryQueue) waitAndPop(lane string) (Job, bool) {
 	q.pmu.Lock()
 	defer q.pmu.Unlock()
 	for {
-		if pj, ok := q.pending.removeMatching(matchLane(lane)); ok {
+		pj, nextDue, ok := q.pending.removeMatching(matchLane(lane), q.now())
+		if ok {
 			return pj.job, true
 		}
 		if q.closed {
 			// Nothing claimable remains for this worker. Shared workers
-			// already drained everything via removeMatching above; lane
+			// already drained every due job via removeMatching above; lane
 			// workers leave other lanes to the shared pool.
 			return Job{}, false
 		}
+		if !nextDue.IsZero() {
+			q.armWakeLocked(nextDue)
+		}
 		q.cond.Wait()
 	}
+}
+
+// armWakeLocked makes sure the wake timer fires no later than at. A timer
+// already armed for an earlier instant is left alone: its broadcast makes
+// every worker rescan and re-arm for whatever is still held back. Caller
+// must hold pmu.
+func (q *MemoryQueue) armWakeLocked(at time.Time) {
+	if !q.wakeAt.IsZero() && !at.Before(q.wakeAt) {
+		return
+	}
+	q.wakeAt = at
+	d := at.Sub(q.now())
+	if q.wake == nil {
+		q.wake = time.AfterFunc(d, q.fireWake)
+		return
+	}
+	q.wake.Reset(d)
+}
+
+// fireWake is the wake timer's callback: it disarms the timer and wakes
+// every worker to rescan for jobs that just came due.
+func (q *MemoryQueue) fireWake() {
+	q.pmu.Lock()
+	q.wakeAt = time.Time{}
+	q.cond.Broadcast()
+	q.pmu.Unlock()
 }
 
 // matchLane returns a predicate selecting jobs for a worker: any job when
@@ -424,7 +491,7 @@ func (q *MemoryQueue) enqueue(ctx context.Context, job Job, acquire bool) error 
 		job.ID = randomID()
 	}
 	if job.CreatedAt.IsZero() {
-		job.CreatedAt = time.Now()
+		job.CreatedAt = q.now()
 	}
 	if job.MaxAttempts == 0 {
 		job.MaxAttempts = 3
@@ -475,7 +542,8 @@ func (q *MemoryQueue) pushLocked(job Job) {
 // optionally filtered by type. Useful for manual consumption without the
 // automatic worker pool. It is non-blocking: returns ErrNoJob when nothing
 // matches. Jobs of every lane are eligible (dedicated lane filtering is a
-// worker-pool concept, not a manual-consumption one).
+// worker-pool concept, not a manual-consumption one); a job whose
+// ScheduledAt is still ahead is not.
 func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 	select {
 	case <-ctx.Done():
@@ -487,7 +555,7 @@ func (q *MemoryQueue) Dequeue(ctx context.Context, types ...string) (Job, error)
 		q.pmu.Unlock()
 		return Job{}, ErrQueueClosed
 	}
-	pj, ok := q.pending.removeMatching(matchTypes(types))
+	pj, _, ok := q.pending.removeMatching(matchTypes(types), q.now())
 	q.pmu.Unlock()
 	if !ok {
 		return Job{}, ErrNoJob
@@ -606,19 +674,21 @@ func (q *MemoryQueue) retainDead(job Job) {
 	job.Payload = slices.Clone(job.Payload)
 	q.deadMu.Lock()
 	defer q.deadMu.Unlock()
+	q.deadSeq++
+	entry := deadJob{job: job, gen: q.deadSeq}
 	// De-dupe by ID so a re-failed replayed job doesn't appear twice.
 	for i, d := range q.dead {
-		if d.ID == job.ID {
-			q.dead[i] = job
+		if d.job.ID == job.ID {
+			q.dead[i] = entry
 			return
 		}
 	}
-	q.dead = append(q.dead, job)
+	q.dead = append(q.dead, entry)
 	if len(q.dead) > maxDeadJobs {
 		// Drop the oldest. Copy the retained tail into a fresh slice so the
 		// dropped head can be garbage-collected (a reslice would keep it alive).
 		drop := len(q.dead) - maxDeadJobs
-		kept := make([]Job, maxDeadJobs)
+		kept := make([]deadJob, maxDeadJobs)
 		copy(kept, q.dead[drop:])
 		q.dead = kept
 	}
@@ -643,7 +713,7 @@ func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit, offset i
 	out := make([]Job, 0, min(limit, len(q.dead)-skip))
 	// Newest-first: walk the oldest-first slice in reverse.
 	for i := len(q.dead) - 1 - skip; i >= 0 && len(out) < limit; i-- {
-		job := q.dead[i]
+		job := q.dead[i].job
 		job.Payload = slices.Clone(job.Payload)
 		out = append(out, job)
 	}
@@ -672,7 +742,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	q.deadMu.Lock()
 	idx := -1
 	for i, d := range q.dead {
-		if d.ID == jobID {
+		if d.job.ID == jobID {
 			idx = i
 			break
 		}
@@ -681,7 +751,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 		q.deadMu.Unlock()
 		return nil // unknown / non-failed id, no-op
 	}
-	job := q.dead[idx]
+	job, gen := q.dead[idx].job, q.dead[idx].gen
 	q.deadMu.Unlock()
 
 	// Re-enqueue BEFORE dropping the terminal record. Removing it first
@@ -693,15 +763,21 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	if err := q.Enqueue(ctx, job); err != nil {
 		return err
 	}
+	if q.replayEnqueued != nil {
+		q.replayEnqueued()
+	}
 
 	// The job is queued; retire the terminal record. Re-find it rather
 	// than trusting idx: the dead list may have shifted while the lock
-	// was released. A concurrent Replay that already removed it leaves
-	// nothing to do here, and the duplicate enqueue is inside this
-	// queue's at-least-once contract.
+	// was released. Match the generation, not just the ID: a worker can
+	// run the replayed job out of attempts before this point, and its
+	// new dead record carries the same ID — deleting that one left the
+	// job in no queue and no dead list. A concurrent Replay that already
+	// removed the record leaves nothing to do here, and the duplicate
+	// enqueue is inside this queue's at-least-once contract.
 	q.deadMu.Lock()
 	for i, d := range q.dead {
-		if d.ID == jobID {
+		if d.gen == gen {
 			q.dead = slices.Delete(q.dead, i, i+1)
 			break
 		}
@@ -721,6 +797,10 @@ var (
 // the cond so every waiting worker wakes, processes any remaining claimable
 // job, then exits when the store is empty. Shared workers drain every lane;
 // lane workers drain only their own. No goroutine leaks, no panics.
+//
+// Jobs whose ScheduledAt is still ahead are not run early and not waited
+// for: an in-memory queue cannot keep them past Close, so they are dropped
+// and their count is logged.
 func (q *MemoryQueue) Close() error {
 	q.pmu.Lock()
 	if q.closed {
@@ -728,9 +808,24 @@ func (q *MemoryQueue) Close() error {
 		return nil
 	}
 	q.closed = true
+	if q.wake != nil {
+		q.wake.Stop()
+	}
 	q.cond.Broadcast()
 	q.pmu.Unlock()
 
 	q.wg.Wait()
+
+	q.pmu.Lock()
+	now, held := q.now(), 0
+	for _, pj := range q.pending.items {
+		if pj.job.ScheduledAt.After(now) {
+			held++
+		}
+	}
+	q.pmu.Unlock()
+	if held > 0 {
+		q.logger.Warn("queue: closed with jobs not yet due; dropped", "count", held)
+	}
 	return nil
 }

@@ -45,8 +45,8 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 	}
 	inner, args := qb.Build()
 	var total any
-	stmt := "SELECT SUM(" + query.QuoteIdent(col) + ") FROM (" + inner + ") AS agg_src"
-	if err := ch.DB.QueryRowContext(ctx, stmt, args...).Scan(&total); err != nil {
+	stmt := "SELECT SUM(" + query.QuoteFolded(col) + ") FROM (" + inner + ") AS agg_src"
+	if err := ch.conn(ctx).QueryRowContext(ctx, stmt, args...).Scan(&total); err != nil {
 		return "", err
 	}
 	switch v := total.(type) {
@@ -83,12 +83,12 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 		return nil, err
 	}
 	inner, args := qb.Build()
-	q := query.QuoteIdent(col)
+	q := query.QuoteFolded(col)
 	stmt := "SELECT " + q + ", COUNT(*) FROM (" + inner + ") AS agg_src GROUP BY " + q + " ORDER BY " + q
 	if limit > 0 {
 		stmt += " LIMIT " + strconv.Itoa(limit)
 	}
-	rows, err := ch.DB.QueryContext(ctx, stmt, args...)
+	rows, err := ch.conn(ctx).QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +104,9 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 		g.Value = convertDatabaseValue(g.Value, f.Type == schema.Bool)
 		if f.Type == schema.Decimal {
 			g.Value = decimalText(g.Value)
+		}
+		if f.Type == schema.Date {
+			g.Value = dateText(g.Value)
 		}
 		out = append(out, g)
 	}

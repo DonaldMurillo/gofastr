@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -21,7 +22,7 @@ func TestScreenLLMMD_BasicPage(t *testing.T) {
 	screen.Title = "Home"
 	screen.Description = "The homepage"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "# Home") {
 		t.Error("expected '# Home' header")
@@ -45,7 +46,7 @@ func TestScreenLLMMD_DynamicRoute(t *testing.T) {
 	screen := NewScreen("/products/:slug", &basicComp{})
 	screen.Title = "Product Detail"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "`slug`") {
 		t.Error("expected 'slug' parameter")
@@ -63,7 +64,7 @@ func TestScreenLLMMD_DrawerType(t *testing.T) {
 	screen := NewDrawer("/cart-drawer", &basicComp{})
 	screen.Title = "Shopping Cart"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "drawer") {
 		t.Error("expected 'drawer' type")
@@ -78,7 +79,7 @@ func TestScreenLLMMD_DialogType(t *testing.T) {
 	screen := NewDialog("/confirm-delete", &basicComp{})
 	screen.Title = "Confirm Delete"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "dialog") {
 		t.Error("expected 'dialog' type")
@@ -93,7 +94,7 @@ func TestScreenLLMMD_ScreenLoader(t *testing.T) {
 	screen := NewScreen("/dashboard", &loaderComp{})
 	screen.Title = "Dashboard"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "ScreenLoader") {
 		t.Error("expected ScreenLoader mention")
@@ -111,7 +112,7 @@ func TestScreenLLMMD_StaticPathsProvider(t *testing.T) {
 	screen := NewScreen("/docs/:slug", &staticPathsComp{})
 	screen.Title = "Documentation"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "StaticPathsProvider") {
 		t.Error("expected StaticPathsProvider mention")
@@ -126,7 +127,7 @@ func TestScreenLLMMD_ScreenActions(t *testing.T) {
 	screen := NewScreen("/editor", &actionsComp{})
 	screen.Title = "Editor"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "ScreenActions") {
 		t.Error("expected ScreenActions capability")
@@ -168,6 +169,27 @@ func TestAppLLMMD_Index(t *testing.T) {
 	}
 }
 
+// The index served under a locale prefix links the pages in that
+// locale: /es/llm-pages.md linked /about/llm.md, the English page.
+func TestAppLLMMDKeepsLocalePrefix(t *testing.T) {
+	a := NewApp("Test App")
+	layout := bareShell("default")
+	a.Register("/", &basicComp{}, layout)
+	a.Register("/about", &basicComp{}, layout)
+	a.Register("/products/:slug", &loaderComp{}, layout)
+	a.RegisterScreen(NewDialog("/confirm", &basicComp{}), layout)
+	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
+	md := AppLLMMDCtx(i18n.WithPathLocale(context.Background(), set, "es"), a)
+	for _, want := range []string{"(/es/llm.md)", "(/es/about/llm.md)", "(/es/products/:slug/llm.md)", "(/es/confirm/llm.md)"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("index lacks %s:\n%s", want, md)
+		}
+	}
+	if en := AppLLMMDCtx(i18n.WithPathLocale(context.Background(), set, "en"), a); !strings.Contains(en, "(/about/llm.md)") {
+		t.Errorf("default-locale index changed:\n%s", en)
+	}
+}
+
 // ============================================================================
 // AppLLMMD: empty app
 // ============================================================================
@@ -193,7 +215,7 @@ func TestScreenLLMMDHandler_HTTP(t *testing.T) {
 	screen := NewScreen("/about", &basicComp{})
 	screen.Title = "About Us"
 
-	handler := ScreenLLMMDHandler(screen)
+	handler := ScreenLLMMDHandler(NewApp("t"), screen)
 	req := httptest.NewRequest("GET", "/about/llm.md", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -269,7 +291,7 @@ func TestScreenLLMMD_ContentRendered(t *testing.T) {
 	screen := NewScreen("/test", &comp)
 	screen.Title = "Test Page"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 
 	if !strings.Contains(md, "## Page Content") {
 		t.Error("expected Page Content section")
@@ -383,7 +405,7 @@ func TestScreenLLMMD_PanicGuard(t *testing.T) {
 	screen.Title = "Crash"
 
 	// Should NOT panic, should produce a generic fallback message
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 	if !strings.Contains(md, "# Crash") {
 		t.Error("expected title to still appear")
 	}
@@ -437,7 +459,7 @@ func TestScreenLLMMD_ScreenLoaderFallback(t *testing.T) {
 	screen := NewScreen("/dashboard", &emptyRenderLoader{})
 	screen.Title = "Dashboard"
 
-	md := ScreenLLMMD(screen)
+	md := ScreenLLMMD(context.Background(), screen)
 	if !strings.Contains(md, "dynamically") {
 		t.Error("expected dynamic content note for ScreenLoader, got:", md)
 	}
@@ -452,8 +474,8 @@ func TestScreenLLMMDWithMeta_EmptyPrefixMatchesBase(t *testing.T) {
 	screen.Title = "Home"
 	screen.Description = "The homepage"
 
-	got := ScreenLLMMDWithMeta(screen, "")
-	want := ScreenLLMMD(screen)
+	got := ScreenLLMMDWithMeta(context.Background(), screen, "")
+	want := ScreenLLMMD(context.Background(), screen)
 	if got != want {
 		t.Errorf("empty prefix must equal ScreenLLMMD output\ngot:  %q\nwant: %q", got, want)
 	}
@@ -465,7 +487,7 @@ func TestScreenLLMMDWithMeta_InsertsPrefixBeforeTitle(t *testing.T) {
 	screen.Description = "The homepage"
 
 	meta := "---\ntitle: \"Home\"\ndescription: \"Front-matter desc\"\n---"
-	md := ScreenLLMMDWithMeta(screen, meta)
+	md := ScreenLLMMDWithMeta(context.Background(), screen, meta)
 
 	// Front-matter must appear at the very top of the document.
 	if !strings.HasPrefix(md, meta+"\n") {

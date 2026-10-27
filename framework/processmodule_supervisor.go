@@ -261,6 +261,11 @@ type ProcessModuleSupervisor struct {
 	closeCh chan struct{}
 	wg      sync.WaitGroup // supervise + heartbeat loops
 
+	// loopsStarted is set by StartLoops. Before it, Enable records the
+	// desired state and leaves the loop to StartLoops; after it, Enable
+	// starts a loop for a module registered late.
+	loopsStarted atomic.Bool
+
 	// lease is the fail-closed bound (design §8). Last successful
 	// GetDesired refresh per module. Guarded by leaseMu (separate from mu
 	// so the proxy path does not contend on slot construction).
@@ -297,6 +302,7 @@ type moduleSlot struct {
 	circuitOpen  bool
 	lastExit     string
 	leaseFailing bool // fail-closed: lease expired, drain in progress
+	loopStarted  bool // the supervise + heartbeat goroutines are running
 }
 
 // snapshot is an RLock'd read of the slot's mutable state, for proxy /
@@ -514,20 +520,29 @@ var errClosedSup = errors.New("processmodule: supervisor closed")
 var _ ReverseBroker = NopBroker{}
 
 // RegisterResult is the return value of [ProcessModuleSupervisor.Register]:
-// the validated descriptor, the computed effective grants, and the initial
-// desired-generation the store row was written at.
+// the validated descriptor, the computed effective grants, the stored
+// desired-generation, and what the store did with an existing row.
 type RegisterResult struct {
 	Descriptor      ProcessModuleDescriptor
 	EffectiveGrants []access.Permission
 	Generation      uint64
+	// Outcome is the store's [InstallOutcome]: created on a first
+	// install, otherwise how an existing row was reconciled.
+	Outcome InstallOutcome
+	// PreviousGrants is the stored grant set a grants change replaced;
+	// nil otherwise.
+	PreviousGrants []access.Permission
 }
 
-// Register validates the descriptor, installs a desired-state row in the
-// store, and registers the module for supervision. It is idempotent on the
-// descriptor, calling it twice for the same name returns
-// [ErrModuleInstalled] (the store row already exists). The supervisor's
-// per-module loop is started lazily by [ProcessModuleSupervisor.StartLoops]
-// or implicitly by [ProcessModuleSupervisor.Enable].
+// Register validates the descriptor, installs or reconciles its
+// desired-state row in the store, and registers the module for
+// supervision. A row from an earlier boot or another replica is
+// reconciled by [ProcessModuleStore.InstallOrUpdate], so an app restarts
+// against a persistent database. Registering the same name twice on one
+// supervisor returns [ErrModuleInstalled] and leaves the row alone. The
+// supervisor's per-module loop is started lazily by
+// [ProcessModuleSupervisor.StartLoops] or implicitly by
+// [ProcessModuleSupervisor.Enable].
 //
 // The caller is responsible for route registration (attributing routes to
 // the module name so the existing route gate 404s when disabled). The
@@ -552,19 +567,11 @@ func (s *ProcessModuleSupervisor) Register(ctx context.Context, d ProcessModuleD
 	if err != nil {
 		return RegisterResult{}, &UntrustedNoSandboxError{Module: d.Name, cause: err}
 	}
-	// Install the desired-state row at generation 1.
-	if err := s.store.Install(ctx, DesiredState{
-		Module:            d.Name,
-		DesiredGeneration: 1,
-		Enabled:           false,
-		ArtifactSHA256:    d.ArtifactSHA256,
-		EffectiveGrants:   effective,
-	}); err != nil {
-		return RegisterResult{}, err
-	}
-	// Create the slot. The supervise loop is NOT started yet, it starts
-	// (lazily) when StartLoops is called by the app wiring, or the first
-	// time the module is Enabled.
+	// Create the slot and claim the name before touching the store: a
+	// second Register of a name in this process is a wiring mistake and
+	// must not rewrite the row the first one supervises. The supervise
+	// loop is NOT started yet, it starts (lazily) when StartLoops is
+	// called by the app wiring, or the first time the module is Enabled.
 	slot := &moduleSlot{
 		name:   d.Name,
 		desc:   d,
@@ -581,8 +588,40 @@ func (s *ProcessModuleSupervisor) Register(ctx context.Context, d ProcessModuleD
 	}
 	s.slots[d.Name] = slot
 	s.mu.Unlock()
-	s.logf("processmodule: registered %q gen=1 grants=%d", d.Name, len(effective))
-	return RegisterResult{Descriptor: d, EffectiveGrants: effective, Generation: 1}, nil
+	// Install the desired-state row at generation 1, or reconcile the
+	// row an earlier boot or another replica wrote: same descriptor keeps
+	// its enabled flag and generation, a new artifact keeps it enabled,
+	// a grant change disables it (see [InstallOutcome]).
+	inst, err := s.store.InstallOrUpdate(ctx, DesiredState{
+		Module:            d.Name,
+		DesiredGeneration: 1,
+		Enabled:           false,
+		ArtifactSHA256:    d.ArtifactSHA256,
+		EffectiveGrants:   effective,
+	})
+	if err != nil {
+		s.mu.Lock()
+		delete(s.slots, d.Name)
+		s.mu.Unlock()
+		return RegisterResult{}, err
+	}
+	// Seed the cached flag from the row, so the route gate reads the
+	// stored state from the first request rather than a false default
+	// until the first reconcile.
+	slot.mu.Lock()
+	slot.enabled = inst.Row.Enabled
+	slot.mu.Unlock()
+	if inst.Outcome == InstallGrantsChanged {
+		s.logf("processmodule: %q grants changed (%v -> %v): disabled until an operator re-enables it", d.Name, inst.PreviousGrants, effective)
+	}
+	s.logf("processmodule: registered %q %s gen=%d grants=%d", d.Name, inst.Outcome, inst.Row.DesiredGeneration, len(effective))
+	return RegisterResult{
+		Descriptor:      d,
+		EffectiveGrants: effective,
+		Generation:      inst.Row.DesiredGeneration,
+		Outcome:         inst.Outcome,
+		PreviousGrants:  inst.PreviousGrants,
+	}, nil
 }
 
 // UntrustedNoSandboxError is returned by Register when a descriptor with
@@ -625,6 +664,7 @@ func (s *ProcessModuleSupervisor) Slot(name string) *moduleSlot {
 // StartLoops, a subsequently-Registered module has its loop started by
 // Enable (which itself wakes the slot).
 func (s *ProcessModuleSupervisor) StartLoops() {
+	s.loopsStarted.Store(true)
 	s.mu.Lock()
 	slots := make([]*moduleSlot, 0, len(s.slots))
 	for _, sl := range s.slots {
@@ -636,10 +676,17 @@ func (s *ProcessModuleSupervisor) StartLoops() {
 	}
 }
 
-// startLoop spawns the supervise + heartbeat goroutines for one slot. It
-// is safe to call only once per slot (guarded by the once-guard pattern of
-// setting state to a non-Absent value before the call).
+// startLoop spawns the supervise + heartbeat goroutines for one slot,
+// once: the slot's loopStarted flag makes a second call (StartLoops run
+// twice, or racing Enable) a no-op.
 func (s *ProcessModuleSupervisor) startLoop(sl *moduleSlot) {
+	sl.mu.Lock()
+	started := sl.loopStarted
+	sl.loopStarted = true
+	sl.mu.Unlock()
+	if started {
+		return
+	}
 	s.wg.Add(2)
 	go sl.supervise()
 	go sl.heartbeat()
@@ -649,13 +696,7 @@ func (s *ProcessModuleSupervisor) startLoop(sl *moduleSlot) {
 // supervise loop. Returns [ErrNoDesiredRow] (wrapped) if the module is not
 // registered.
 func (s *ProcessModuleSupervisor) Enable(ctx context.Context, name string) error {
-	if s.closed.Load() {
-		return errClosedSup
-	}
-	if s.Slot(name) == nil {
-		return fmt.Errorf("processmodule: %w: %q", ErrNoDesiredRow, name)
-	}
-	if err := s.store.SetEnabled(ctx, name, true); err != nil {
+	if err := s.setDesiredEnabled(ctx, name, true); err != nil {
 		return err
 	}
 	s.startLoopIfAbsent(name)
@@ -666,16 +707,33 @@ func (s *ProcessModuleSupervisor) Enable(ctx context.Context, name string) error
 // Disable marks a module desired-disabled in the store and wakes its
 // supervise loop (which drains the child).
 func (s *ProcessModuleSupervisor) Disable(ctx context.Context, name string) error {
-	if s.closed.Load() {
-		return errClosedSup
-	}
-	if s.Slot(name) == nil {
-		return fmt.Errorf("processmodule: %w: %q", ErrNoDesiredRow, name)
-	}
-	if err := s.store.SetEnabled(ctx, name, false); err != nil {
+	if err := s.setDesiredEnabled(ctx, name, false); err != nil {
 		return err
 	}
 	s.wake(name)
+	return nil
+}
+
+// setDesiredEnabled writes the desired state to the store and, once the
+// write lands, to the slot's cached copy. The route gate and the
+// module-tool gate read that copy ([ModuleManager.Enabled],
+// [ModuleToolRegistry.GateForModule]), so a toggle closes or opens both
+// before this returns rather than on the next reconcile; reconcile then
+// keeps it in step with the store for toggles made on other replicas.
+func (s *ProcessModuleSupervisor) setDesiredEnabled(ctx context.Context, name string, enabled bool) error {
+	if s.closed.Load() {
+		return errClosedSup
+	}
+	sl := s.Slot(name)
+	if sl == nil {
+		return fmt.Errorf("processmodule: %w: %q", ErrNoDesiredRow, name)
+	}
+	if err := s.store.SetEnabled(ctx, name, enabled); err != nil {
+		return err
+	}
+	sl.mu.Lock()
+	sl.enabled = enabled
+	sl.mu.Unlock()
 	return nil
 }
 
@@ -717,26 +775,20 @@ func (s *ProcessModuleSupervisor) BumpGeneration(ctx context.Context, name strin
 }
 
 // startLoopIfAbsent starts the supervise loop for name if it has not been
-// started yet. Used by Enable so a lazily-Registered module comes online.
+// started yet. Used by Enable so a module Registered after StartLoops
+// comes online. Before StartLoops it does nothing: StartLoops starts every
+// slot, and an app does not spawn children before App.Start.
 func (s *ProcessModuleSupervisor) startLoopIfAbsent(name string) {
+	if !s.loopsStarted.Load() {
+		return
+	}
 	s.mu.Lock()
 	sl := s.slots[name]
 	s.mu.Unlock()
 	if sl == nil {
 		return
 	}
-	// Use a once-guard: if state == Absent, we never started. Otherwise
-	// the loop is already running (it sets state to InstalledDisabled at
-	// construction; Absent is only the zero value of ProcessState).
-	sl.mu.Lock()
-	start := sl.state == StateAbsent
-	sl.mu.Unlock()
-	if start {
-		sl.mu.Lock()
-		sl.state = StateInstalledDisabled
-		sl.mu.Unlock()
-		s.startLoop(sl)
-	}
+	s.startLoop(sl)
 }
 
 // Reconcile pokes the named module's supervise loop. It is the single
@@ -1248,39 +1300,63 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	sl.state = StateReady
 	sl.mu.Unlock()
 
-	// Exit watcher: charge circuit on unexpected exit, transition to
-	// Crashed. The supervise loop then drives Backoff → Starting.
-	sup := sl.sup
-	go func() {
-		waitErr := child.Wait()
-		sl.mu.Lock()
-		expected := sl.state == StateDrainingDisable ||
-			sl.state == StateDrainingUpgrade ||
-			sl.state == StateInstalledDisabled ||
-			sl.state == StateFailed
-		curState := sl.state
-		// Clear runtime handles; they are no longer valid.
-		sl.child = nil
-		sl.peer = nil
-		sl.codec = nil
-		sl.lastExit = exitLabel(waitErr, expected)
-		sl.mu.Unlock()
-		if expected {
-			// Drained exit: no restart, no charge.
-			sup.logf("processmodule: %s expected exit: %v", sl.name, waitErr)
-			return
-		}
-		sup.logf("processmodule: %s UNEXPECTED exit in %s: %v", sl.name, curState, waitErr)
-		// Crashed; the supervise loop will pick it up.
-		sl.mu.Lock()
-		sl.state = StateCrashed
-		sl.mu.Unlock()
-		select {
-		case sl.wake <- struct{}{}:
-		default:
-		}
-	}()
+	go sl.watchExit(child, instanceID)
 	return nil
+}
+
+// watchExit waits for child and records its exit: a crash charges the
+// circuit and moves the slot to Crashed, and the supervise loop then
+// drives Backoff → Starting. A slot that no longer holds child was
+// already settled by a drain, which recorded the exit and may have
+// started a replacement; this late watcher leaves that slot alone. The
+// slot is matched by instanceID, minted per spawn, not by comparing
+// children: a runner may return an uncomparable RunningChild value.
+func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
+	sup := sl.sup
+	waitErr := child.Wait()
+	sl.mu.Lock()
+	if sl.child == nil || sl.instanceID != instanceID {
+		sl.mu.Unlock()
+		return
+	}
+	// leaseFailing: handleLeaseExpired killed this child on purpose
+	// and keeps state=Ready for the recovery arm. Its exit is a
+	// drain, not a crash: charging the circuit for it let a few
+	// store outages wedge a healthy module in Crashed.
+	leaseDrain := sl.leaseFailing
+	expected := sl.state == StateDrainingDisable ||
+		sl.state == StateDrainingUpgrade ||
+		sl.state == StateInstalledDisabled ||
+		sl.state == StateFailed ||
+		leaseDrain
+	curState := sl.state
+	// Clear runtime handles; they are no longer valid.
+	sl.child = nil
+	sl.peer = nil
+	sl.codec = nil
+	sl.lastExit = exitLabel(waitErr, expected)
+	if leaseDrain {
+		sl.lastExit = "lease-expired-drain"
+	}
+	if !expected {
+		// Crashed, in the same critical section that clears the child: a
+		// childless Ready in between is the lease-drain recovery case,
+		// and the supervise loop would spawn a replacement this watcher
+		// then marked Crashed.
+		sl.state = StateCrashed
+	}
+	sl.mu.Unlock()
+	if expected {
+		// Drained exit: no restart, no charge.
+		sup.logf("processmodule: %s expected exit: %v", sl.name, waitErr)
+		return
+	}
+	sup.logf("processmodule: %s UNEXPECTED exit in %s: %v", sl.name, curState, waitErr)
+	// The supervise loop picks the crash up.
+	select {
+	case sl.wake <- struct{}{}:
+	default:
+	}
 }
 
 // verifyToolSurface fetches module.tool.list and requires byte-equality

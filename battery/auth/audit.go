@@ -23,6 +23,7 @@ type SecurityEvent struct {
 	// login.failed, login.pending_2fa, register.succeeded,
 	// password.reset_requested, password.reset_completed,
 	// reset_tokens.purged, magiclink.requested, magiclink.consumed,
+	// magiclink_tokens.purged,
 	// oauth.linked, oauth.login, oauth.refused, oauth.unlinked,
 	// email.verified, 2fa.enrolled, 2fa.challenge_succeeded,
 	// 2fa.challenge_failed, 2fa.challenge_locked, 2fa.disabled,

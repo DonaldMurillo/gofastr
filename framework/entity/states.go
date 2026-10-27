@@ -188,11 +188,13 @@ var transitionKeyGrammar = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*
 //     client.<table>.transition(id, key), which every per-move member sits
 //     beside; a move keyed transition would rebind it to a function that
 //     calls itself.
-//   - client, table, constructor: the JS resource's own instance fields
-//     (the Client it calls through and its table path) and its
-//     constructor. Each per-move member is an instance property, so a
-//     move keyed client or table would overwrite the field every request
-//     reads.
+//   - client, table, columns, constructor: the JS resource's own instance
+//     fields (the Client it calls through, its table path, and the
+//     upload column map its writes read) and its constructor. Each
+//     per-move member is an instance property, so a move keyed client,
+//     table or columns would overwrite the field every request reads.
+//     appgen's TestJSResourceMembersReserved reads the Resource class
+//     and fails on a member this set misses.
 //
 // The value names the collision in the boot error.
 var reservedTransitionKeys = map[string]string{
@@ -211,6 +213,7 @@ var reservedTransitionKeys = map[string]string{
 	"transition":   "the JS SDK resource's own transition method",
 	"client":       "the JS SDK resource's own client field",
 	"table":        "the JS SDK resource's own table field",
+	"columns":      "the JS SDK resource's own columns field",
 	"constructor":  "the JS SDK resource's constructor",
 }
 

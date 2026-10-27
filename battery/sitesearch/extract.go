@@ -66,15 +66,32 @@ const IgnoreAttr = "data-search-ignore"
 // hidden content, and reports false for a page that opts out with
 // <meta name="robots" content="noindex">.
 func Extract(url string, r io.Reader) (Page, bool, error) {
+	return extractPage(url, r, func(*html.Node) bool { return true })
+}
+
+// extractHosted is Extract for a page uihost rendered, where a robots
+// tag counts only when it is the page's own: a ScreenRobots or
+// SEO.Robots tag (marked data-cui-page-meta) or one in the body. An
+// unmarked <head> tag is sitewide (WithRobotsMeta, WithHeadHTML): it
+// steers crawlers off a whole deploy, and honouring it here empties the
+// site's own search on every staging deploy.
+func extractHosted(url string, r io.Reader) (Page, bool, error) {
+	return extractPage(url, r, pageOwnedMeta)
+}
+
+func extractPage(url string, r io.Reader, counts func(*html.Node) bool) (Page, bool, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
 		return Page{}, false, err
 	}
-	if noindex(doc) {
+	if noindex(doc, counts) {
 		return Page{}, false, nil
 	}
+	// A hidden or ignored <main>, or one a hidden or ignored ancestor
+	// holds, is not the page's: the walk starts at the root, so it would
+	// never see that ancestor, and taking it drops the visible <main>.
 	root := find(doc, func(n *html.Node) bool {
-		return n.DataAtom == atom.Main || attr(n, "role") == "main"
+		return (n.DataAtom == atom.Main || attr(n, "role") == "main") && !outOfIndex(n)
 	})
 	if root == nil {
 		root = find(doc, func(n *html.Node) bool { return n.DataAtom == atom.Body })
@@ -164,6 +181,17 @@ func skipped(n *html.Node) bool {
 	return false
 }
 
+// outOfIndex reports an element that it or an ancestor keeps out of the
+// index.
+func outOfIndex(n *html.Node) bool {
+	for p := n; p != nil; p = p.Parent {
+		if p.Type == html.ElementNode && skipped(p) {
+			return true
+		}
+	}
+	return false
+}
+
 // visibleText is n's text without its skipped descendants (a heading's
 // aria-hidden permalink glyph).
 func visibleText(n *html.Node) string {
@@ -195,11 +223,43 @@ func textOf(n *html.Node) string {
 	return b.String()
 }
 
-func noindex(doc *html.Node) bool {
+func noindex(doc *html.Node, counts func(*html.Node) bool) bool {
 	return find(doc, func(n *html.Node) bool {
 		return n.DataAtom == atom.Meta && strings.EqualFold(attr(n, "name"), "robots") &&
-			strings.Contains(strings.ToLower(attr(n, "content")), "noindex")
+			strings.Contains(strings.ToLower(attr(n, "content")), "noindex") && counts(n) && !inIgnored(n)
 	}) != nil
+}
+
+// inIgnored reports a node inside an IgnoreAttr subtree: content the page
+// keeps out of the index (sample markup, a demo) does not steer it either.
+func inIgnored(n *html.Node) bool {
+	for p := n.Parent; p != nil; p = p.Parent {
+		for _, a := range p.Attr {
+			if a.Namespace == "" && a.Key == IgnoreAttr {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// pageMetaAttr is the marker uihost sets on every per-screen head tag.
+const pageMetaAttr = "data-cui-page-meta"
+
+// pageOwnedMeta reports a tag the page set itself: marked as a
+// per-screen head tag, or outside <head>.
+func pageOwnedMeta(n *html.Node) bool {
+	for _, a := range n.Attr {
+		if a.Namespace == "" && a.Key == pageMetaAttr {
+			return true
+		}
+	}
+	for p := n.Parent; p != nil; p = p.Parent {
+		if p.DataAtom == atom.Head {
+			return false
+		}
+	}
+	return true
 }
 
 func find(n *html.Node, match func(*html.Node) bool) *html.Node {

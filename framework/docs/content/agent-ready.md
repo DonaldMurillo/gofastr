@@ -236,6 +236,12 @@ on the Accept header and never replays the markdown body to a browser (or
 the HTML body to an agent). Pages on hosts without the opt-in carry no
 `Vary`, since the URL has a single representation.
 
+The markdown answers with the status the HTML would: a page that draws
+its not-found state answers 404 in either, a page whose policy blocks
+answers the block's status over the withheld doc, and a page whose
+policy redirects answers the same 303. The per-screen `/llm.md` route is
+a catalog entry and keeps answering 200 with the withheld doc.
+
 ### Agent-friendly 404s  (RFC 9457 + markdown recovery)
 
 A request that matches no route gets a 404 shaped like the client asked:
@@ -326,6 +332,12 @@ or a fill's policy) that redirects, serves a metadata-free "withheld" doc
 content),
 and the `/llm-pages.md` index lists policy-gated screens path-only. An
 authenticated agent whose request passes the policy sees the full docs.
+The pattern-level surfaces (the index, the `/llm.md` beside a route
+pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
+path runs its full policy phase, region guards and resolvers included,
+and a dynamic pattern under a layout that carries any region guard is
+withheld, because a guard decides per URL. The per-URL doc of such a
+page still runs its guards and serves.
 
 ### Rendered values cannot inject markdown structure
 
@@ -408,6 +420,8 @@ framework.NewApp(
 )
 ```
 
+`NewApp` installs the gate after every option has run, so it lands on the
+server `WithMCPServer` supplies whichever option comes first.
 `WithMCPGate` covers the whole data surface: `tools/list`, `tools/call`,
 `resources/list`, `resources/read`, `resources/templates/list`,
 `prompts/list` and `prompts/get`. The `initialize` handshake and `ping` stay open by
@@ -419,6 +433,8 @@ configured at all, so a gate would only lock the dev loop out of its own
 app. Its exposure is bounded on the other axis instead: dev **refuses
 to register the control tools when the listener is not loopback**. Bind
 to `localhost`, or set `GOFASTR_DEV_MCP_EXPOSE=1` to accept the risk.
+The same applies to the `app_*` introspection tools and `contracts_verify`
+when dev turned them on; an explicit `WithMCPIntrospection()` keeps them.
 The check reads the address the server actually binds: `Start("")`,
 `":8080"` and a bare `"8080"` all listen on every interface (`Start("")`
 binds `:http`, port 80), so each counts as exposed.

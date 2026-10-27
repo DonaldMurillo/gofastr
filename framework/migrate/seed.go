@@ -51,7 +51,7 @@ func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		entity_name TEXT NOT NULL PRIMARY KEY,
 		seeded_at TIMESTAMP NOT NULL DEFAULT %s
-	)`, query.QuoteIdent(safe), now)
+	)`, query.QuoteFolded(safe), now)
 	_, err := db.ExecContext(ctx, ddl)
 	return err
 }
@@ -61,7 +61,7 @@ func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
 // dominated boot latency against managed-Postgres deployments.
 func readSeededSet(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
 	safe := query.MustIdent(seedLedgerTable)
-	q := fmt.Sprintf("SELECT entity_name FROM %s", query.QuoteIdent(safe))
+	q := fmt.Sprintf("SELECT entity_name FROM %s", query.QuoteFolded(safe))
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string)
 	// so the dialect mapping is the only thing that has to change.
 	q := fmt.Sprintf(
 		"INSERT INTO %s (entity_name) VALUES (%s) ON CONFLICT (entity_name) DO NOTHING",
-		query.QuoteIdent(safe), placeholder,
+		query.QuoteFolded(safe), placeholder,
 	)
 	_, err := db.ExecContext(ctx, q, name)
 	return err

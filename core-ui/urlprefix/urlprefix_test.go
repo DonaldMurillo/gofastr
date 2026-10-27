@@ -52,6 +52,39 @@ func TestPathRule(t *testing.T) {
 	}
 }
 
+// TestPathKeep: a path Keep claims stays as written, its query and
+// fragment ignored for the question, on an origin URL too; any other
+// path takes the prefix.
+func TestPathKeep(t *testing.T) {
+	r := es
+	r.Origins = []string{"https://shop.example"}
+	var asked []string
+	r.Keep = func(p string) bool {
+		asked = append(asked, p)
+		return strings.HasPrefix(p, "/files/")
+	}
+	for in, want := range map[string]string{
+		"/files/report.pdf":                "/files/report.pdf",
+		"/files/report.pdf?v=2#p3":         "/files/report.pdf?v=2#p3",
+		"https://shop.example/files/a.pdf": "https://shop.example/files/a.pdf",
+		"/pricing":                         "/es/pricing",
+		"/es/files/report.pdf":             "/es/files/report.pdf",
+	} {
+		if got := Path(in, r); got != want {
+			t.Errorf("Path(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, p := range asked {
+		if strings.ContainsAny(p, "?#") {
+			t.Errorf("Keep was asked about %q, query or fragment attached", p)
+		}
+	}
+	got := string(HTML([]byte(`<a href="/files/x.pdf">x</a><a href="/about">a</a>`), r))
+	if want := `<a href="/files/x.pdf">x</a><a href="/es/about">a</a>`; got != want {
+		t.Errorf("HTML = %s, want %s", got, want)
+	}
+}
+
 func TestPathOnOrigin(t *testing.T) {
 	r := es
 	r.Origins = []string{"https://shop.example"}

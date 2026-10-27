@@ -44,7 +44,7 @@ func (a *App) serveLocale(next http.Handler) http.Handler {
 		return next
 	}
 	var opts []i18n.NegotiateOption
-	if a.localeResolver != nil {
+	if a.localeResolver.Resolve != nil {
 		opts = append(opts, i18n.WithLocaleResolver(a.localeResolver))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

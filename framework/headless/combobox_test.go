@@ -7,6 +7,20 @@ import (
 
 func renderCombobox(p ComboboxProps) string { return string(Combobox(p, nil)) }
 
+// Two comboboxes sharing one options slice each derive their own
+// option ids: a render never writes its ids into the caller's slice.
+func TestComboboxSharedOptionsKeepOwnIDs(t *testing.T) {
+	opts := []ComboboxOption{{Label: "Docs"}}
+	a := renderCombobox(ComboboxProps{ID: "a", Name: "a", Label: "A", Options: opts})
+	b := renderCombobox(ComboboxProps{ID: "b", Name: "b", Label: "B", Options: opts})
+	if !strings.Contains(a, `id="a-listbox-opt-0"`) || !strings.Contains(b, `id="b-listbox-opt-0"`) {
+		t.Errorf("a shared options slice carried one render's ids into the next:\n%s\n%s", a, b)
+	}
+	if opts[0].ID != "" {
+		t.Errorf("the render wrote %q into the caller's options", opts[0].ID)
+	}
+}
+
 func TestComboboxRendersTheARIAContract(t *testing.T) {
 	h := renderCombobox(ComboboxProps{ID: "q", Name: "q", Label: "Search", Options: []ComboboxOption{
 		{Label: "Docs", Meta: "/docs"},

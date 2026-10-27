@@ -19,16 +19,30 @@ const defaultResolverTTL = 30 * time.Second
 // user count.
 const maxResolverEntries = 100_000
 
-// CachedResolver caches resolved roles by the authenticated user's ID.
-// Contexts without a user exposing GetID() are resolved without caching so
-// anonymous callers can never share an entry.
+// CachedResolver caches resolved roles by the authenticated user's ID and the
+// request's tenant. Contexts without a user exposing GetID() are resolved
+// without caching so anonymous callers can never share an entry.
 type CachedResolver struct {
 	resolve   func(context.Context) []string
 	ttl       time.Duration
 	lastSweep time.Time
 
 	mu      sync.Mutex
-	entries map[string]*cachedRoleEntry
+	entries map[resolverKey]*cachedRoleEntry
+}
+
+// resolverKey partitions the cache. A user's roles may depend on the tenant
+// the request runs in (admin in one, viewer in another), so the tenant is
+// part of the key: keyed by user alone, the first tenant's answer was served
+// to the user's requests in every other tenant for a TTL. Both tenant slots
+// count: the resolved tenant ID (handler.SetTenantID, which
+// framework/tenant.SetTenantID writes) and the auth-seeded handler.SetTenant
+// value when it is a string. A struct key, not a joined string, so no
+// separator can make two different tuples collide.
+type resolverKey struct {
+	user       string
+	tenant     string
+	authTenant string
 }
 
 type cachedRoleEntry struct {
@@ -58,7 +72,7 @@ func NewCachedResolver(resolve func(context.Context) []string, opts ...CachedRes
 	resolver := &CachedResolver{
 		resolve: resolve,
 		ttl:     defaultResolverTTL,
-		entries: make(map[string]*cachedRoleEntry),
+		entries: make(map[resolverKey]*cachedRoleEntry),
 	}
 	for _, opt := range opts {
 		opt(resolver)
@@ -73,12 +87,13 @@ func (r *CachedResolver) Resolve(ctx context.Context) []string {
 	if !ok {
 		return cloneRoles(r.resolve(ctx))
 	}
+	key := resolverKey{user: userID, tenant: handler.GetTenantID(ctx), authTenant: resolverAuthTenant(ctx)}
 
 	r.sweep()
 
 	for {
 		r.mu.Lock()
-		entry := r.entries[userID]
+		entry := r.entries[key]
 		if entry != nil {
 			if entry.ready != nil {
 				ready := entry.ready
@@ -94,20 +109,20 @@ func (r *CachedResolver) Resolve(ctx context.Context) []string {
 		}
 
 		flight := &cachedRoleEntry{ready: make(chan struct{})}
-		r.entries[userID] = flight
+		r.entries[key] = flight
 		r.mu.Unlock()
 
-		roles := r.resolveFlight(ctx, userID, flight)
+		roles := r.resolveFlight(ctx, key, flight)
 		return cloneRoles(roles)
 	}
 }
 
-func (r *CachedResolver) resolveFlight(ctx context.Context, userID string, flight *cachedRoleEntry) (roles []string) {
+func (r *CachedResolver) resolveFlight(ctx context.Context, key resolverKey, flight *cachedRoleEntry) (roles []string) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			r.mu.Lock()
-			if r.entries[userID] == flight {
-				delete(r.entries, userID)
+			if r.entries[key] == flight {
+				delete(r.entries, key)
 			}
 			close(flight.ready)
 			r.mu.Unlock()
@@ -124,15 +139,15 @@ func (r *CachedResolver) resolveFlight(ctx context.Context, userID string, fligh
 	// in-flight result uncached. One aborted request must not strip a
 	// user's permissions for a TTL window.
 	if ctx.Err() != nil {
-		if r.entries[userID] == flight {
-			delete(r.entries, userID)
+		if r.entries[key] == flight {
+			delete(r.entries, key)
 		}
 		close(flight.ready)
 		r.mu.Unlock()
 		return roles
 	}
-	if r.entries[userID] == flight {
-		r.entries[userID] = &cachedRoleEntry{
+	if r.entries[key] == flight {
+		r.entries[key] = &cachedRoleEntry{
 			roles:     roles,
 			expiresAt: time.Now().Add(r.ttl),
 		}
@@ -170,7 +185,7 @@ func (r *CachedResolver) sweep() {
 	}
 	lowWater := maxResolverEntries * 9 / 10
 	type expiring struct {
-		key     string
+		key     resolverKey
 		expires time.Time
 	}
 	pending := make([]expiring, 0, len(r.entries))
@@ -183,18 +198,30 @@ func (r *CachedResolver) sweep() {
 		}
 		// Same-clock ties (a flood resolves in one tick): fall back to key
 		// order so the shed is deterministic despite randomized iteration.
-		return pending[i].key < pending[j].key
+		a, b := pending[i].key, pending[j].key
+		if a.user != b.user {
+			return a.user < b.user
+		}
+		if a.tenant != b.tenant {
+			return a.tenant < b.tenant
+		}
+		return a.authTenant < b.authTenant
 	})
 	for i := 0; i < len(pending) && len(r.entries) > lowWater; i++ {
 		delete(r.entries, pending[i].key)
 	}
 }
 
-// Invalidate removes one user's cached roles. An in-flight result is not
-// cached; calls waiting on it observe the invalidation and resolve again.
+// Invalidate removes one user's cached roles in every tenant. An in-flight
+// result is not cached; calls waiting on it observe the invalidation and
+// resolve again.
 func (r *CachedResolver) Invalidate(userID string) {
 	r.mu.Lock()
-	delete(r.entries, userID)
+	for key := range r.entries {
+		if key.user == userID {
+			delete(r.entries, key)
+		}
+	}
 	r.mu.Unlock()
 }
 
@@ -202,7 +229,7 @@ func (r *CachedResolver) Invalidate(userID string) {
 // not cached, and calls waiting on them resolve again.
 func (r *CachedResolver) InvalidateAll() {
 	r.mu.Lock()
-	r.entries = make(map[string]*cachedRoleEntry)
+	r.entries = make(map[resolverKey]*cachedRoleEntry)
 	r.mu.Unlock()
 }
 
@@ -220,6 +247,15 @@ func resolverUserID(ctx context.Context) (string, bool) {
 	}
 	userID := identified.GetID()
 	return userID, userID != ""
+}
+
+// resolverAuthTenant is the auth-seeded tenant (handler.SetTenant) when it is
+// a string. Other types are left out of the key rather than formatted: a
+// pointer formats to its address and would split the cache per request.
+func resolverAuthTenant(ctx context.Context) string {
+	v, _ := handler.GetTenant(ctx)
+	s, _ := v.(string)
+	return s
 }
 
 func cloneRoles(roles []string) []string {

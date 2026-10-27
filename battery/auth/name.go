@@ -49,10 +49,10 @@ func CleanName(name string) (string, error) {
 // it existed, as ” for every row.
 func (s *EntityUserStore) ensureNameColumn(ctx context.Context) error {
 	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''",
-		query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.Name))
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.Name))
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		ddl = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s TEXT NOT NULL DEFAULT ''",
-			query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.Name))
+			query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.Name))
 	} else {
 		has, err := sqliteTableHasColumn(ctx, s.db, s.table, s.fieldMap.Name)
 		if err != nil || has {
@@ -66,9 +66,9 @@ func (s *EntityUserStore) ensureNameColumn(ctx context.Context) error {
 // UserName reads the user's display name. Implements NameStore.
 func (s *EntityUserStore) UserName(ctx context.Context, userID string) (string, error) {
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteIdent(s.fieldMap.Name),
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.Name),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	var name string
 	err := s.db.QueryRowContext(ctx, q, userID).Scan(&name)
@@ -86,9 +86,9 @@ func (s *EntityUserStore) SetUserName(ctx context.Context, userID, name string) 
 		return err
 	}
 	q := fmt.Sprintf("UPDATE %s SET %s = $1 WHERE %s = $2",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.Name),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.Name),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	res, err := s.db.ExecContext(ctx, q, name, userID)
 	if err != nil {

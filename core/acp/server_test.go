@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,7 +37,8 @@ func (s *fakeSession) Prompt(ctx context.Context, prompt []acp.ContentBlock, out
 // SessionLoader interface; use fakeLoadingAgent where session/load
 // must be available.
 type fakeAgent struct {
-	newFn func(ctx context.Context, cwd string) (acp.Session, error)
+	newFn  func(ctx context.Context, cwd string) (acp.Session, error)
+	minted atomic.Int64
 }
 
 func (a *fakeAgent) Info() acp.Implementation {
@@ -46,7 +49,8 @@ func (a *fakeAgent) NewSession(ctx context.Context, cwd string) (acp.Session, er
 	if a.newFn != nil {
 		return a.newFn(ctx, cwd)
 	}
-	return &fakeSession{id: "sess_1"}, nil
+	// Each session gets its own id, as the Agent contract requires.
+	return &fakeSession{id: fmt.Sprintf("sess_%d", a.minted.Add(1))}, nil
 }
 
 // fakeLoadingAgent wraps fakeAgent with SessionLoader support.
@@ -430,6 +434,243 @@ func TestSessionLoadReplaysHistoryBeforeResponding(t *testing.T) {
 	}
 }
 
+// A load can ask permission, through its own Client or one kept from
+// earlier: the reader keeps delivering answers while the load runs. It
+// used to run the load itself, so the answer was never read and the
+// connection hung.
+func TestLoadCanAskPermission(t *testing.T) {
+	agent := &fakeLoadingAgent{}
+	d := startDialog(t, agent, nil)
+	id := d.newSession("/tmp/p")
+
+	outcomes := make(chan acp.RequestPermissionOutcome, 2)
+	var kept *acp.Client
+	agent.loadFn = func(ctx context.Context, sid, cwd string, out *acp.Client) (acp.Session, error) {
+		// The second load asks through the Client the first one kept.
+		asker := out
+		if kept != nil {
+			asker = kept
+		}
+		kept = out
+		got, err := asker.RequestPermission(ctx, acp.ToolCallUpdate{ToolCallID: "c1"},
+			[]acp.PermissionOption{{OptionID: "allow-once", Name: "Allow once", Kind: acp.PermissionAllowOnce}})
+		if err != nil {
+			return nil, err
+		}
+		outcomes <- got
+		return &fakeSession{id: sid}, nil
+	}
+	for _, loadID := range []int{4, 6} {
+		d.request(loadID, "session/load", map[string]any{"sessionId": id, "cwd": "/tmp/p", "mcpServers": []any{}})
+		ask := d.frame()
+		if ask["method"] != "session/request_permission" {
+			t.Fatalf("frame = %v, want session/request_permission", ask)
+		}
+		// A request sent while the load waits is answered after it, in
+		// the order it was read.
+		d.request(loadID+1, "session/new", map[string]any{"cwd": "/tmp/q", "mcpServers": []any{}})
+		d.send(map[string]any{
+			"jsonrpc": "2.0", "id": int(ask["id"].(float64)),
+			"result": map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow-once"}},
+		})
+		if r := d.frame(); r["id"] != float64(loadID) || r["error"] != nil {
+			t.Fatalf("frame = %v, want the session/load %d result", r, loadID)
+		}
+		if got := <-outcomes; got.Outcome != acp.OutcomeSelected {
+			t.Errorf("load %d: outcome %+v, want selected", loadID, got)
+		}
+		if r := d.untilResponseID(loadID + 1); r["error"] != nil {
+			t.Fatalf("session/new after load errored: %v", r["error"])
+		}
+	}
+}
+
+// askingLoad is a loader that asks permission and waits for the answer.
+func askingLoad(ctx context.Context, sid, cwd string, out *acp.Client) (acp.Session, error) {
+	if _, err := out.RequestPermission(ctx, acp.ToolCallUpdate{ToolCallID: "c1"},
+		[]acp.PermissionOption{{OptionID: "allow-once", Name: "Allow once", Kind: acp.PermissionAllowOnce}}); err != nil {
+		return nil, err
+	}
+	return &fakeSession{id: sid}, nil
+}
+
+// A load waiting on its context ends when the input does. EOF failed
+// only the pending permission request, and the load's context lived on
+// until Serve returned, which waited for the load.
+func TestLoadEndsAtEOF(t *testing.T) {
+	started := make(chan struct{})
+	agent := &fakeLoadingAgent{loadFn: func(ctx context.Context, sid, cwd string, out *acp.Client) (acp.Session, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	d := startDialog(t, agent, nil)
+	d.initialize()
+	d.request(2, "session/load", map[string]any{"sessionId": "b", "cwd": "/tmp/p", "mcpServers": []any{}})
+	<-started
+	d.w.Close()
+	select {
+	case <-d.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve stayed in the load after EOF")
+	}
+}
+
+// A request held behind a waiting load does not start after EOF: it
+// ran with a live context and nobody left to answer, so Serve waited
+// on it forever.
+func TestHeldLoadDroppedAtEOF(t *testing.T) {
+	started := make(chan string, 2)
+	agent := &fakeLoadingAgent{loadFn: func(ctx context.Context, sid, cwd string, out *acp.Client) (acp.Session, error) {
+		started <- sid
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	d := startDialog(t, agent, nil)
+	d.initialize()
+	d.request(2, "session/load", map[string]any{"sessionId": "a", "cwd": "/tmp/p", "mcpServers": []any{}})
+	<-started
+	d.request(3, "session/load", map[string]any{"sessionId": "b", "cwd": "/tmp/p", "mcpServers": []any{}})
+	// The second load is read and held before the input ends.
+	d.request(4, "session/new", map[string]any{"cwd": "/tmp/q", "mcpServers": []any{}})
+	time.Sleep(50 * time.Millisecond)
+	d.w.Close()
+	select {
+	case <-d.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve ran a held load after EOF and waited on it")
+	}
+}
+
+// A cancel reaches a running turn while another request waits on the
+// client: held behind a load asking permission, it waited for the
+// answer the user might give only after the turn stopped.
+func TestCancelPassesWaitingLoad(t *testing.T) {
+	started := make(chan struct{})
+	agent := &fakeLoadingAgent{loadFn: askingLoad}
+	agent.newFn = func(ctx context.Context, cwd string) (acp.Session, error) {
+		return &fakeSession{id: "a", promptFn: func(ctx context.Context, prompt []acp.ContentBlock, out *acp.Client) (string, error) {
+			close(started)
+			<-ctx.Done()
+			return acp.StopEndTurn, nil
+		}}, nil
+	}
+	d := startDialog(t, agent, nil)
+	id := d.newSession("/tmp/p")
+	d.request(5, "session/prompt", map[string]any{"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "slow"}}})
+	<-started
+	d.request(6, "session/load", map[string]any{"sessionId": "b", "cwd": "/tmp/p", "mcpServers": []any{}})
+	ask := d.frame()
+	if ask["method"] != "session/request_permission" {
+		t.Fatalf("frame = %v, want session/request_permission", ask)
+	}
+	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": id}})
+	if got := respResult(t, d.untilResponseID(5))["stopReason"]; got != acp.StopCancelled {
+		t.Errorf("stopReason = %v, want cancelled", got)
+	}
+	d.send(map[string]any{"jsonrpc": "2.0", "id": int(ask["id"].(float64)),
+		"result": map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}})
+	d.untilResponseID(6)
+}
+
+// A cancel sent after a prompt that is still waiting behind a load
+// cancels that prompt once it starts.
+func TestCancelFollowsHeldPrompt(t *testing.T) {
+	agent := &fakeLoadingAgent{loadFn: askingLoad}
+	agent.newFn = func(ctx context.Context, cwd string) (acp.Session, error) {
+		return &fakeSession{id: "a", promptFn: func(ctx context.Context, prompt []acp.ContentBlock, out *acp.Client) (string, error) {
+			<-ctx.Done()
+			return acp.StopEndTurn, nil
+		}}, nil
+	}
+	d := startDialog(t, agent, nil)
+	id := d.newSession("/tmp/p")
+	d.request(6, "session/load", map[string]any{"sessionId": "b", "cwd": "/tmp/p", "mcpServers": []any{}})
+	ask := d.frame()
+	if ask["method"] != "session/request_permission" {
+		t.Fatalf("frame = %v, want session/request_permission", ask)
+	}
+	d.request(5, "session/prompt", map[string]any{"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "slow"}}})
+	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": id}})
+	d.send(map[string]any{"jsonrpc": "2.0", "id": int(ask["id"].(float64)),
+		"result": map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}})
+	if got := respResult(t, d.untilResponseID(5))["stopReason"]; got != acp.StopCancelled {
+		t.Errorf("stopReason = %v, want cancelled", got)
+	}
+}
+
+// Frames held behind a waiting request are bounded by count and by
+// bytes. Past the bound a request is refused at once and reading goes
+// on, so the permission answer still gets through.
+func TestHeldFramesBounded(t *testing.T) {
+	for name, pad := range map[string]int{"count": 0, "bytes": 3 << 20} {
+		t.Run(name, func(t *testing.T) {
+			d := startDialog(t, &fakeLoadingAgent{loadFn: askingLoad}, nil)
+			d.initialize()
+			d.request(2, "session/load", map[string]any{"sessionId": "b", "cwd": "/tmp/p", "mcpServers": []any{}})
+			ask := d.frame()
+			if ask["method"] != "session/request_permission" {
+				t.Fatalf("frame = %v, want session/request_permission", ask)
+			}
+			n := 300
+			if pad > 0 {
+				n = 8
+			}
+			go func() {
+				for i := range n {
+					d.request(100+i, "session/new", map[string]any{"cwd": "/tmp/q", "mcpServers": []any{}, "pad": strings.Repeat("x", pad)})
+				}
+			}()
+			// Refusals arrive while the load still waits.
+			first := d.frame()
+			if e := respError(t, first); e["code"] != float64(acp.ErrInternalError) {
+				t.Fatalf("refusal code = %v", e["code"])
+			}
+			d.send(map[string]any{"jsonrpc": "2.0", "id": int(ask["id"].(float64)),
+				"result": map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}})
+			// Every request gets one answer: the load, then each
+			// session/new, refused or run.
+			seen := map[float64]bool{first["id"].(float64): true}
+			for len(seen) < n {
+				if id, _ := d.frame()["id"].(float64); id >= 100 {
+					seen[id] = true
+				}
+			}
+		})
+	}
+}
+
+// The byte bound counts frames still held, not every frame ever held:
+// two waits holding 12 MiB each both run every request.
+func TestHeldBytesReleased(t *testing.T) {
+	d := startDialog(t, &fakeLoadingAgent{loadFn: askingLoad}, nil)
+	d.initialize()
+	for round := range 2 {
+		loadID := 10 * (round + 1)
+		d.request(loadID, "session/load", map[string]any{"sessionId": "b", "cwd": "/tmp/p", "mcpServers": []any{}})
+		ask := d.frame()
+		if ask["method"] != "session/request_permission" {
+			t.Fatalf("frame = %v, want session/request_permission", ask)
+		}
+		go func() {
+			for i := range 4 {
+				d.request(loadID+1+i, "session/new", map[string]any{"cwd": "/tmp/q", "mcpServers": []any{}, "pad": strings.Repeat("x", 3<<20)})
+			}
+			d.send(map[string]any{"jsonrpc": "2.0", "id": int(ask["id"].(float64)),
+				"result": map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}})
+		}()
+		for seen := 0; seen < 5; {
+			r := d.frame()
+			if r["error"] != nil && r["id"] != float64(loadID) {
+				t.Fatalf("round %d: frame %v refused", round, r)
+			}
+			if id, _ := r["id"].(float64); id >= float64(loadID) && id <= float64(loadID+4) {
+				seen++
+			}
+		}
+	}
+}
+
 func TestSessionLoadUnknownIDIsResourceNotFound(t *testing.T) {
 	d := startDialog(t, &fakeLoadingAgent{}, nil)
 	d.initialize()
@@ -586,6 +827,76 @@ func TestSessionCancelReturnsCancelledStopReason(t *testing.T) {
 	}
 }
 
+// An Agent whose NewSession hands back an id this connection already
+// holds broke its contract: session/new refuses it and the running
+// session keeps its busy flag and cancel handle. Replacing the entry
+// let a second prompt run beside the first and left session/cancel
+// unable to reach the running turn.
+func TestNewSessionRefusesHeldID(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts *acp.Options
+		// evict mints a second id first, so EvictOldest drops the busy
+		// s1 into draining before the duplicate arrives.
+		evict bool
+	}{
+		{name: "live"},
+		{name: "draining", opts: &acp.Options{MaxSessions: 1, SessionOverflow: acp.SessionOverflowEvictOldest}, evict: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var minted atomic.Int64
+			started, release := make(chan struct{}), make(chan struct{})
+			agent := &fakeAgent{newFn: func(ctx context.Context, cwd string) (acp.Session, error) {
+				n := minted.Add(1)
+				if tc.evict && n == 2 {
+					return &fakeSession{id: "s2"}, nil
+				}
+				return &fakeSession{id: "s1", promptFn: func(ctx context.Context, _ []acp.ContentBlock, _ *acp.Client) (string, error) {
+					if n == 1 {
+						close(started)
+						if tc.evict {
+							<-release // an evicted turn that ignores its cancel drains
+						} else {
+							<-ctx.Done()
+						}
+					}
+					return acp.StopEndTurn, nil
+				}}, nil
+			}}
+			d := startDialog(t, agent, tc.opts)
+			defer close(release)
+			id := d.newSession("/tmp/p")
+			d.request(5, "session/prompt", map[string]any{
+				"sessionId": id,
+				"prompt":    []any{map[string]any{"type": "text", "text": "slow"}},
+			})
+			<-started
+			if tc.evict {
+				d.request(6, "session/new", map[string]any{"cwd": "/tmp/p", "mcpServers": []any{}})
+				respResult(t, d.untilResponseID(6))
+			}
+			d.request(7, "session/new", map[string]any{"cwd": "/tmp/p", "mcpServers": []any{}})
+			if e := respError(t, d.untilResponseID(7)); e["code"] != float64(acp.ErrInternalError) {
+				t.Fatalf("duplicate session id error = %v, want internal error", e)
+			}
+			if tc.evict {
+				return
+			}
+			d.request(8, "session/prompt", map[string]any{
+				"sessionId": id,
+				"prompt":    []any{map[string]any{"type": "text", "text": "again"}},
+			})
+			if e := respError(t, d.untilResponseID(8)); e["code"] != float64(acp.ErrInvalidRequest) {
+				t.Errorf("second prompt on the busy session = %v, want a turn-in-progress refusal", e)
+			}
+			d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": id}})
+			if got := respResult(t, d.untilResponseID(5))["stopReason"]; got != acp.StopCancelled {
+				t.Errorf("stopReason = %v, want cancelled: session/cancel lost the running turn", got)
+			}
+		})
+	}
+}
+
 // session/cancel for an unknown session is a notification: no
 // response, no error, the stream stays usable.
 func TestSessionCancelUnknownSessionIgnored(t *testing.T) {
@@ -732,6 +1043,20 @@ func TestUpdateFramesMarshalToSpecShape(t *testing.T) {
 			"plan",
 			acp.PlanUpdate([]acp.PlanEntry{{Content: "Add posts", Priority: acp.PlanPriorityHigh, Status: acp.PlanStatusPending}}),
 			`{"sessionUpdate":"plan","entries":[{"content":"Add posts","priority":"high","status":"pending"}]}`,
+		},
+		{
+			// An empty plan still carries entries: the schema requires the
+			// field, and a client reads it as the plan now being empty.
+			"plan_empty",
+			acp.PlanUpdate(nil),
+			`{"sessionUpdate":"plan","entries":[]}`,
+		},
+		{
+			// A patch that sets a field to empty clears it: an absent
+			// field means "unchanged", so the empty value must be sent.
+			"tool_call_update_clears",
+			acp.ToolCallUpdateFrame(acp.ToolCallUpdate{ToolCallID: "c1", Title: new(""), Content: []acp.ToolCallContent{}, RawInput: map[string]any{}, RawOutput: map[string]any{}}),
+			`{"sessionUpdate":"tool_call_update","toolCallId":"c1","title":"","content":[],"rawInput":{},"rawOutput":{}}`,
 		},
 	}
 	for _, tc := range cases {

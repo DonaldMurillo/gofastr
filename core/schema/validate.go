@@ -223,6 +223,13 @@ func validateBool(value any) error {
 			return nil
 		}
 		return violate(ReasonNotTrueFalse, nil)
+	case int64:
+		// crud decodes an integer literal to int64, so a body's 1 arrives
+		// here as one.
+		if v == 0 || v == 1 {
+			return nil
+		}
+		return violate(ReasonNotTrueFalse, nil)
 	case string:
 		switch strings.ToLower(v) {
 		case "true", "false", "1", "0":

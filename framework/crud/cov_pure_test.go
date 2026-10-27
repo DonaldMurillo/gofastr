@@ -77,7 +77,7 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 		"posts": covRelEntity(),
 		"acct":  entity.Define("acct", entity.EntityConfig{Name: "acct", Table: "acct", Scope: &entity.ScopeConfig{MultiTenant: true, SoftDelete: true}, Fields: []schema.Field{{Name: "n", Type: schema.String}}}.WithTimestamps(false)),
 	}}
-	md := RegistryLLMMD(reg, "MyApp", nil)
+	md := RegistryLLMMD(reg, "MyApp", nil, "")
 	for _, want := range []string{"MyApp: API Reference", "posts", "acct", "soft-delete", "multi-tenant", "Quick Reference"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("RegistryLLMMD missing %q", want)
@@ -87,7 +87,7 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 
 func TestRegistryLLMMD_EmptyAndDefaultTitle(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{}}
-	md := RegistryLLMMD(reg, "", nil)
+	md := RegistryLLMMD(reg, "", nil, "")
 	if !strings.Contains(md, "API: API Reference") {
 		t.Errorf("default title missing: %s", md[:40])
 	}
@@ -133,9 +133,8 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 	}{
 		{schema.Field{Type: schema.Int}, "integer"},
 		{schema.Field{Type: schema.Float}, "number"},
-		{schema.Field{Type: schema.Decimal}, "number"},
+		{schema.Field{Type: schema.Decimal}, "string"},
 		{schema.Field{Type: schema.Bool}, "boolean"},
-		{schema.Field{Type: schema.JSON}, "object"},
 		{schema.Field{Type: schema.Enum, Values: []string{"a"}}, "string"},
 		{schema.Field{Type: schema.String}, "string"},
 	}
@@ -144,6 +143,10 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 		if got["type"] != c.want {
 			t.Errorf("mcpFieldSchema(%v) type = %v, want %v", c.f.Type, got["type"], c.want)
 		}
+	}
+	// A JSON field takes any JSON value, as the HTTP route does.
+	if got := mcpFieldSchema(schema.Field{Type: schema.JSON}); len(got) != 0 {
+		t.Errorf("mcpFieldSchema(JSON) = %v, want the empty schema", got)
 	}
 }
 

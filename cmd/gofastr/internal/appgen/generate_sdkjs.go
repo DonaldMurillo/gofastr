@@ -109,7 +109,7 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 func tsKeyType(decl framework.EntityDeclaration) string {
 	cols := declKeyCols(decl)
 	if len(cols) == 1 {
-		if appspec.DeclKeyIsID(decl) {
+		if appspec.DeclKeyIsID(decl) && !intID(decl) {
 			return "string"
 		}
 		return tsTypeForField(cols[0].Field.Type, cols[0].Field.Values)
@@ -122,8 +122,11 @@ func tsKeyType(decl framework.EntityDeclaration) string {
 }
 
 // tsKeyArgs is the TKey and TItemKey arguments of an entity's Resource,
-// empty for the generated id (the defaults).
+// empty for the generated string id (the defaults).
 func tsKeyArgs(decl framework.EntityDeclaration) string {
+	if intID(decl) {
+		return ", number, { id: number }"
+	}
 	if appspec.DeclKeyIsID(decl) {
 		return ""
 	}
@@ -172,6 +175,11 @@ var jsIdentRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
 func isJSIdentifier(s string) bool { return jsIdentRe.MatchString(s) }
 
+// jsClientMembers are the names the client.js Client class defines: the
+// fields its constructor sets and its methods. A resource property binds
+// on the Client itself, so a table deriving one of these overwrites it.
+var jsClientMembers = []string{"baseURL", "token", "_fetch", "do", "_readBody", "_sse"}
+
 // writeJSEntity emits one entity's typed surface into both builders: the
 // d.ts interfaces (walking the declaration exactly like renderClientEntity,
 // so Go and TS types describe the same wire shape) and the snake_case
@@ -183,7 +191,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	keyIsID := appspec.DeclKeyIsID(decl)
 	fmt.Fprintf(dts, "export interface %s {\n", ent.Struct)
 	if keyIsID {
-		dts.WriteString("  id: string;\n")
+		fmt.Fprintf(dts, "  id: %s;\n", tsKeyType(decl))
 	}
 	for _, fd := range decl.Fields {
 		if (keyIsID && fd.Name == "id") || fd.Hidden {

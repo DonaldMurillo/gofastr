@@ -19,6 +19,7 @@ shared store) or run on exactly one replica.
 |---|---|---|---|
 | Auth sessions | in-memory `MemorySessionStore` | login on A, logged-out on B; all sessions lost on restart | `auth.NewEntitySessionStore(db, "sessions")` |
 | 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | `auth.NewEntityTwoFAStore(db, "auth_twofa")`; the plugin creates the table itself |
+| Magic-link, password-reset and email-verification tokens | in-memory `MemoryMagicLinkTokenStore`, one per plugin | link emailed from A is "invalid or expired" on B; a restart drops every pending link | `auth.NewSQLMagicLinkTokenStore(db)` as each plugin's `TokenStore` |
 | Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | set `RateLimiterConfig.Store: auth.NewSQLRateLimitStore(db, "auth_rate_limits")`; one budget across replicas, blocks propagate |
 | `framework/cron` scheduler | ticks in every process | every replica fires every job | one `GOFASTR_ROLE=worker` process owns it (see "Serve/worker roles"), or use `battery/queue`'s `DBQueue` (see below) |
 | `battery/queue` in-memory queue + Scheduler | per-process | duplicate jobs, lost jobs on restart | `queue.DBQueue`: `FOR UPDATE SKIP LOCKED` makes competing workers safe |
@@ -27,12 +28,13 @@ shared store) or run on exactly one replica.
 | File uploads on local storage | per-replica disk (`storage.NewLocalStorage`, `upload.NewLocalStorage`) | upload lands on A, download from B 404s | S3-compatible backend (`battery/storage`'s S3 client), or a shared volume mounted on every replica |
 | Runtime RBAC grants (`access.GrantStore`) | in-memory `RolePolicy` cache per process | editor granted on A still denied on B until B restarts; a revoked code-seeded grant re-appears on peers and on restart | `framework.WithGrantStore(store)` + `framework.WithFanout(...)`; grant/revoke publishes a refresh-signal on the `gofastr.access` lane; every replica re-reads the role's grants from `access_grants`. A revoke also writes a revocation tombstone to `access_grants_revoked`, so revokes propagate to peers AND survive replica restarts even for grants declared in code; re-granting via `GrantStore.Grant` lifts the tombstone |
 
-Auth enforces the first two at boot in production mode (`DevMode:
-false`): **both** the in-memory session store and the in-memory 2FA
-store **refuse to boot**; a warn-only start lets a broken multi-replica
-deployment go unnoticed. Setting `AuthConfig.AllowInMemoryStores: true`
-acknowledges a deliberate single-node deployment: both stores then boot,
-and the 2FA store still leaves a WARN trace.
+Auth enforces the first three at boot in production mode (`DevMode:
+false`): the in-memory session store, the in-memory 2FA store and a link
+plugin with no `TokenStore` **refuse to boot**; a warn-only start lets a
+broken multi-replica deployment go unnoticed. Setting
+`AuthConfig.AllowInMemoryStores: true` acknowledges a deliberate
+single-node deployment: the stores then boot, and the 2FA store still
+leaves a WARN trace.
 
 ## What is already replica-safe
 

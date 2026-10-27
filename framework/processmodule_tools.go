@@ -20,6 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // Module tool namespacing (design §5.1): every tool a process module
@@ -279,7 +280,7 @@ func decodeModuleToolSchema(raw json.RawMessage) map[string]any {
 		return map[string]any{}
 	}
 	var schema map[string]any
-	if err := json.Unmarshal(raw, &schema); err != nil {
+	if err := jsonexact.Unmarshal(raw, &schema); err != nil {
 		return map[string]any{}
 	}
 	return schema

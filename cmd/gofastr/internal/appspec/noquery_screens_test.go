@@ -287,6 +287,40 @@ entities:
 	}
 }
 
+// A keyset column that can hold NULL skips those rows; entity.Define panics
+// on it, so decode reports it first. required: true and the system columns
+// (created_at, the id key) pass.
+func TestCursorFieldRejectsNullableColumn(t *testing.T) {
+	spec := func(required string) string {
+		return `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: cards
+    crud: true
+    cursor_fields: [published_at, id]
+    fields:
+      - name: published_at
+        type: timestamp` + required + `
+`
+	}
+	node, perr := coreyaml.Parse(spec(""))
+	if perr != nil {
+		t.Fatalf("parse: %v", perr)
+	}
+	if _, err := DecodeAppSpec(node); err == nil || !strings.Contains(err.Error(), "can hold NULL") {
+		t.Fatalf("nullable cursor column: err = %v, want a can-hold-NULL refusal", err)
+	}
+	node, perr = coreyaml.Parse(spec("\n        required: true"))
+	if perr != nil {
+		t.Fatalf("parse: %v", perr)
+	}
+	if _, err := DecodeAppSpec(node); err != nil {
+		t.Fatalf("required cursor column refused: %v", err)
+	}
+}
+
 // The third framework-managed class appSpecColumn's own comment names: a FK
 // declared by a top-level relations: block rather than a type: relation field.
 

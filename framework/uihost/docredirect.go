@@ -40,6 +40,17 @@ func escapeNonASCII(s string) string {
 	return b.String()
 }
 
+// escapeLayerKey percent-encodes a layer key for X-Gofastr-Swap: every
+// byte >= 0x80, and % itself, so the runtime's decodeURIComponent gives
+// back exactly the key the DOM holds (a {param} value's %25 included).
+// An ASCII key with no % goes out unchanged.
+func escapeLayerKey(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return r == '%' || r >= 0x80 }) {
+		return s
+	}
+	return escapeNonASCII(strings.ReplaceAll(s, "%", "%25"))
+}
+
 // scriptFetch reports whether a request came from a script's fetch
 // rather than a document load. Sec-Fetch-Mode is "navigate" for the
 // latter and cannot be set by script; a request without it (curl, a

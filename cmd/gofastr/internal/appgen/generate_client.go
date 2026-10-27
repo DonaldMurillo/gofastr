@@ -87,6 +87,9 @@ func renderClient(decls []framework.EntityDeclaration) string {
 	if uploads {
 		sb.WriteString("\t\"sort\"\n")
 	}
+	if slices.ContainsFunc(decls, intID) {
+		sb.WriteString("\t\"strconv\"\n")
+	}
 	sb.WriteString("\t\"strings\"\n)\n")
 	sb.WriteString(`
 // maxBodyBytes caps the bytes buffered from any one response body: the
@@ -186,7 +189,26 @@ func (c *Client) send(ctx context.Context, method, path string, body io.Reader, 
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(out)
+	dec := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes))
+	dec.UseNumber()
+	return dec.Decode(out)
+}
+
+// decodeExact is json.Unmarshal with UseNumber: a number landing in an
+// any (a json field, a map[string]any row) stays a json.Number holding
+// the server's digits. Decoded as a float64, 9007199254740993 became
+// ...992 and went back to the server that way. Like json.Unmarshal, it
+// refuses bytes after the value.
+func decodeExact(data []byte, out any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("json: invalid data after top-level value")
+	}
+	return nil
 }
 
 // doSingleJSON decodes the {"data": {...}} envelope used by single-record
@@ -196,7 +218,7 @@ func (c *Client) doSingleJSON(ctx context.Context, method, path string, body, ou
 	if err := c.doJSON(ctx, method, path, body, &envelope); err != nil {
 		return err
 	}
-	return json.Unmarshal(envelope["data"], out)
+	return decodeExact(envelope["data"], out)
 }
 
 // Do is the raw escape hatch under the typed methods: it sends method+path
@@ -251,7 +273,7 @@ func (c *Client) doBatch(ctx context.Context, method, path string, body any) (Ba
 	if err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest {
-			if jsonErr := json.Unmarshal(apiErr.Body, &out); jsonErr == nil && len(out.Results) > 0 {
+			if jsonErr := decodeExact(apiErr.Body, &out); jsonErr == nil && len(out.Results) > 0 {
 				return out, nil
 			}
 		}
@@ -314,11 +336,116 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 }
 
 `)
+	if slices.ContainsFunc(decls, func(d framework.EntityDeclaration) bool { return len(clientRelationFields(d)) > 0 }) {
+		sb.WriteString(clientRelationKeySource)
+	}
 
 	for _, decl := range decls {
-		sb.WriteString(renderClientEntity(decl))
+		sb.WriteString(renderClientEntity(decl, decls))
 	}
 	return sb.String()
+}
+
+// clientRelationKeySource is the runtime half of a relation field's
+// decode. The server sends the field as the referenced key, a string or,
+// for an int key on Postgres, a number; ?include=<field> sends the
+// related record under the same JSON key, since the BelongsTo a relation
+// field derives takes the field's name.
+const clientRelationKeySource = `// relationKey reads a relation field off the wire: the referenced key,
+// sent as a string or a number, or, under ?include=<field>, the record the
+// server sends in its place. That record lands in included under the
+// field's JSON name, and its keyField is the key.
+func relationKey(raw json.RawMessage, keyField, name string, included *map[string]json.RawMessage) (string, error) {
+	if len(raw) > 0 && raw[0] == '{' {
+		var rec map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return "", err
+		}
+		if *included == nil {
+			*included = map[string]json.RawMessage{}
+		}
+		(*included)[name] = raw
+		raw = rec[keyField]
+	}
+	switch {
+	case len(raw) == 0 || string(raw) == "null":
+		return "", nil
+	case raw[0] == '"':
+		var s string
+		err := json.Unmarshal(raw, &s)
+		return s, err
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return "", err
+	}
+	return n.String(), nil
+}
+
+`
+
+// clientRelationFields are the fields the Go client decodes through
+// relationKey: the relation fields with a target that hold a key column
+// the server sends (a many relation keeps its key on the other table).
+func clientRelationFields(decl framework.EntityDeclaration) []framework.FieldDeclaration {
+	var out []framework.FieldDeclaration
+	for _, f := range decl.Fields {
+		if strings.EqualFold(f.Type, "relation") && f.To != "" && !f.Many && !f.Hidden && !(appspec.DeclKeyIsID(decl) && f.Name == "id") {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// relationKeyField is the JSON name of the key in a record ?include=
+// expands a relation field to: the target's one key column, id when decls
+// does not hold the target.
+func relationKeyField(to string, decls []framework.EntityDeclaration) string {
+	for _, d := range decls {
+		if d.Name != to && d.Table != to {
+			continue
+		}
+		if cols := declKeyCols(d); len(cols) == 1 {
+			return appspec.ToCamelJSON(cols[0].Name)
+		}
+	}
+	return "id"
+}
+
+// renderClientRelationDecode emits the struct's Included field and the
+// UnmarshalJSON that reads each relation field through relationKey, so
+// ?include=<field> fills Included instead of failing the decode. The
+// field stays the key, typed as before.
+func renderClientRelationDecode(decl framework.EntityDeclaration, decls []framework.EntityDeclaration, struct_ string) (field, method string) {
+	rels := clientRelationFields(decl)
+	if len(rels) == 0 {
+		return "", ""
+	}
+	taken := map[string]bool{"ID": true}
+	for _, f := range decl.Fields {
+		taken[appspec.ToCamelCase(f.Name)] = true
+	}
+	included := "Included"
+	for taken[included] {
+		included += "_"
+	}
+	field = fmt.Sprintf("\t// %s holds the records ?include=<field> sent in place of a\n"+
+		"\t// relation field's key, by the field's JSON name.\n\t%s map[string]json.RawMessage `json:\"-\"`\n", included, included)
+	var mb strings.Builder
+	fmt.Fprintf(&mb, "// UnmarshalJSON reads each relation field as its key, whether the server\n"+
+		"// sends the key or, under ?include=<field>, the record it names.\n"+
+		"func (r *%s) UnmarshalJSON(data []byte) error {\n\ttype plain %s\n\tvar wire struct {\n\t\t*plain\n", struct_, struct_)
+	for _, f := range rels {
+		fmt.Fprintf(&mb, "\t\t%s json.RawMessage `json:\"%s\"`\n", appspec.ToCamelCase(f.Name), appspec.ToCamelJSON(f.Name))
+	}
+	mb.WriteString("\t}\n\twire.plain = (*plain)(r)\n\tif err := decodeExact(data, &wire); err != nil {\n\t\treturn err\n\t}\n")
+	for _, f := range rels {
+		name, tag := appspec.ToCamelCase(f.Name), appspec.ToCamelJSON(f.Name)
+		fmt.Fprintf(&mb, "\tif wire.%[1]s != nil {\n\t\tkey, err := relationKey(wire.%[1]s, %[2]q, %[3]q, &r.%[4]s)\n\t\tif err != nil {\n\t\t\treturn fmt.Errorf(\"%[3]s: %%w\", err)\n\t\t}\n\t\tr.%[1]s = key\n\t}\n",
+			name, relationKeyField(f.To, decls), tag, included)
+	}
+	mb.WriteString("\treturn nil\n}\n\n")
+	return field, mb.String()
 }
 
 // goPatchPointerTypeForField returns the PATCH payload field type: a pointer
@@ -393,7 +520,7 @@ func inputTakesValue(f framework.FieldDeclaration) bool {
 // a create may start at an initial value, and a PUT writing the stored
 // value back passes. writeShapeDrops also keeps auto-generated columns out
 // of every shape, and the owner and tenant columns out of the patches.
-func renderClientEntity(decl framework.EntityDeclaration) string {
+func renderClientEntity(decl framework.EntityDeclaration, decls []framework.EntityDeclaration) string {
 	dropCreate, dropUpdate := writeShapeDrops(decl)
 	struct_ := appspec.ToCamelCase(decl.Name)
 	table := decl.Table
@@ -418,7 +545,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	keyIsID := appspec.DeclKeyIsID(decl)
 	sb.WriteString(fmt.Sprintf("type %s struct {\n", struct_))
 	if keyIsID {
-		sb.WriteString("\tID string `json:\"id\"`\n")
+		sb.WriteString("\tID " + goIDType(decl) + " `json:\"id\"`\n")
 	}
 	for _, field := range decl.Fields {
 		if (keyIsID && field.Name == "id") || field.Hidden {
@@ -429,7 +556,10 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 			goTypeForField(field.Type),
 			appspec.ToCamelJSON(field.Name)))
 	}
+	relField, relDecode := renderClientRelationDecode(decl, decls, struct_)
+	sb.WriteString(relField)
 	sb.WriteString("}\n\n")
+	sb.WriteString(relDecode)
 	// Input struct (PostInput): same shape minus the ID. We intentionally
 	// drop ID even on update: the server uses the URL path parameter for
 	// addressing, and including it in the body invites mismatch bugs. A
@@ -563,7 +693,7 @@ func (c *Client) Delete%s(ctx context.Context, %s) error {
 	// target id plus the same presence-aware pointer fields as <Entity>Patch.
 	sb.WriteString(fmt.Sprintf("type %sBatchPatch struct {\n", struct_))
 	if keyIsID {
-		sb.WriteString("\tID string `json:\"id\"`\n")
+		sb.WriteString("\tID " + goIDType(decl) + " `json:\"id\"`\n")
 	} else {
 		// A composite-key item names its target by its key fields.
 		for _, k := range declKeyCols(decl) {
@@ -596,12 +726,14 @@ func (c *Client) BatchUpdate%s(ctx context.Context, items []%sBatchPatch) (Batch
 	return c.doBatch(ctx, http.MethodPatch, "/%s/_batch", map[string]any{"items": items})
 }
 
-// BatchDelete%s deletes the given %s atomically.
-func (c *Client) BatchDelete%s(ctx context.Context, ids []string) (BatchResponse, error) {
-	return c.doBatch(ctx, http.MethodDelete, "/%s/_batch", map[string]any{"ids": ids})
+`, struct_, struct_, struct_, route, struct_, batchKeyDoc(decl), struct_, struct_, route))
+	// The route takes its ids as strings; an integer id goes in decimal.
+	sb.WriteString(fmt.Sprintf(`// BatchDelete%s deletes the given %s atomically.
+func (c *Client) BatchDelete%s(ctx context.Context, ids %s) (BatchResponse, error) {
+	%sreturn c.doBatch(ctx, http.MethodDelete, "/%s/_batch", map[string]any{"ids": %s})
 }
 
-`, struct_, struct_, struct_, route, struct_, batchKeyDoc(decl), struct_, struct_, route, struct_, batchIDsDoc(decl), struct_, route))
+`, struct_, batchIDsDoc(decl), struct_, goIDsType(decl), keyStrings(decl), route, keysVar(decl)))
 	if len(declKeyCols(decl)) > 1 {
 		// A batch delete names each record by its id: the key values
 		// path-escaped and joined with "/", the URL tail of its record.

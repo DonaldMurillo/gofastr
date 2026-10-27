@@ -114,21 +114,6 @@ type TwoFAState struct {
 	LastUsedStep uint64
 }
 
-// TwoFAStore is the interface for persisting 2FA state per user.
-// TwoFACompareAndSetter is the optional TwoFAStore extension that writes
-// only while 2FA is still enabled for the user.
-//
-// Regenerating backup codes is a read-modify-write, and a /2fa/disable
-// landing between the read and the write is enough for the write to
-// resurrect the row the disable just removed. Checking before writing does
-// not help — the condition has to be part of the write. A store that
-// cannot offer that keeps the blind Set.
-type TwoFACompareAndSetter interface {
-	// CompareAndSetTwoFA stores next only if the user still has an
-	// enabled 2FA row, reporting whether the write happened.
-	CompareAndSetTwoFA(ctx context.Context, userID string, next *TwoFAState) (bool, error)
-}
-
 // TwoFAStateSwapper is the optional TwoFAStore extension that writes next
 // only while the stored row still EQUALS the state the caller read (a nil
 // expect means the row must be absent). It is the atomic read-modify-write
@@ -144,6 +129,9 @@ type TwoFACompareAndSetter interface {
 //     409 instead of silently re-enabling a factor the user removed.
 //   - enroll's fresh pending row: inserted only while the row is still in
 //     the state the guard checked.
+//   - backup-code regeneration: the new codes land only over the row read
+//     after they were generated, so a step consumed or a disable committed
+//     meanwhile is kept rather than written over.
 //
 // A store that cannot offer this keeps the blind Set and the lost-update
 // window it comes with.
@@ -151,6 +139,7 @@ type TwoFAStateSwapper interface {
 	CompareAndSwapTwoFA(ctx context.Context, userID string, expect, next *TwoFAState) (bool, error)
 }
 
+// TwoFAStore is the interface for persisting 2FA state per user.
 type TwoFAStore interface {
 	// GetTwoFA retrieves the 2FA state for a user. Returns nil if not enrolled.
 	GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error)
@@ -208,20 +197,6 @@ func cloneTwoFAState(st *TwoFAState) *TwoFAState {
 		cp.BackupCodes = append([]string(nil), st.BackupCodes...)
 	}
 	return &cp
-}
-
-// CompareAndSetTwoFA writes next only while the row is still present and
-// still Enabled. Implements [TwoFACompareAndSetter].
-func (m *MemoryTwoFAStore) CompareAndSetTwoFA(_ context.Context, userID string, next *TwoFAState) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	cur, ok := m.states[userID]
-	if !ok || cur == nil || !cur.Enabled {
-		return false, nil
-	}
-	cp := *next
-	m.states[userID] = &cp
-	return true, nil
 }
 
 func (m *MemoryTwoFAStore) DeleteTwoFA(_ context.Context, userID string) error {
@@ -912,28 +887,7 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Generating codes takes real time, and a /2fa/disable landing in that
-	// gap deletes the row — after which a blind Set writes an Enabled
-	// state straight back, so 2FA silently re-enables itself moments after
-	// the user turned it off, holding codes only the earlier request saw.
-	//
-	// A re-read before the write does not fix this: the delete can still
-	// land between the check and the write. The condition has to travel
-	// WITH the write, which is what TwoFACompareAndSetter is for. A store
-	// without it keeps the blind write and the window it comes with.
-	state.BackupCodes = hashedCodes
-	if cas, ok := p.store.(TwoFACompareAndSetter); ok {
-		wrote, err := cas.CompareAndSetTwoFA(r.Context(), userID, state)
-		if err != nil {
-			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
-			return
-		}
-		if !wrote {
-			writeAuthError(w, r, http.StatusConflict, reason2faGone)
-			return
-		}
-	} else if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
+	if !p.replaceBackupCodes(w, r, userID, state.Secret, hashedCodes) {
 		return
 	}
 
@@ -948,6 +902,55 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]any{
 		"backup_codes": plainCodes,
 	})
+}
+
+// regenSwapAttempts bounds replaceBackupCodes' retries. Each lost swap
+// means another write landed (a challenge consuming a step, a backup code
+// spent); a user cannot outpace a handful of re-reads.
+const regenSwapAttempts = 4
+
+// replaceBackupCodes swaps codes into the user's enrollment and changes
+// nothing else. Generating the codes took bcrypt time after the handler
+// read the row, and writing that stale row back undid whatever landed
+// meanwhile: a challenge's consumed TOTP step (so one code stepped up a
+// second session), a spent backup code, or a disable (the row came back
+// Enabled). So the write is built on a fresh read and lands only over that
+// read through the state swap, retried a few times when another write
+// wins; it refuses when the enrollment is gone, disabled, or re-keyed to
+// another secret since the codes were asked for. A store with no
+// swap re-reads and writes blind, keeping the window it always had.
+func (p *TwoFAPlugin) replaceBackupCodes(w http.ResponseWriter, r *http.Request, userID, secret string, codes []string) bool {
+	swapper, canSwap := p.store.(TwoFAStateSwapper)
+	for attempt := 0; attempt < regenSwapAttempts; attempt++ {
+		cur, err := p.store.GetTwoFA(r.Context(), userID)
+		if err != nil {
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
+			return false
+		}
+		if cur == nil || !cur.Enabled || subtle.ConstantTimeCompare([]byte(cur.Secret), []byte(secret)) != 1 {
+			writeAuthError(w, r, http.StatusConflict, reason2faGone)
+			return false
+		}
+		next := cloneTwoFAState(cur)
+		next.BackupCodes = codes
+		if !canSwap {
+			if err := p.store.SetTwoFA(r.Context(), userID, next); err != nil {
+				writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
+				return false
+			}
+			return true
+		}
+		wrote, err := swapper.CompareAndSwapTwoFA(r.Context(), userID, cur, next)
+		if err != nil {
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
+			return false
+		}
+		if wrote {
+			return true
+		}
+	}
+	writeAuthError(w, r, http.StatusConflict, reason2faConflict)
+	return false
 }
 
 // ─── TOTP implementation (RFC 6238, HMAC-SHA1) ─────────────────────────

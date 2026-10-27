@@ -52,3 +52,25 @@ func DocLang(ctx context.Context) string {
 	}
 	return "en"
 }
+
+// CatalogLocale is the catalog locale a phrase rendered under ctx reads
+// in: the locale on ctx when the translator's catalog has it, its
+// language when the catalog has only that ("es" for "es-mx"), and the
+// translator's fallback otherwise. It is "" when no translator runs,
+// since every phrase then renders its English text. Every answer is one
+// of the catalog's locales or the fallback, whatever tag the request
+// carried, so a cache of output rendered per locale can be keyed on it
+// without a request value growing the cache.
+func CatalogLocale(ctx context.Context) string {
+	tr := TranslatorFrom(ctx)
+	if tr == nil {
+		tr = Default()
+	}
+	if tr == nil {
+		return ""
+	}
+	if hit := matchCatalog(FromContext(ctx).Tag, availableLocales(tr)); hit != "" {
+		return hit
+	}
+	return tr.fallback
+}

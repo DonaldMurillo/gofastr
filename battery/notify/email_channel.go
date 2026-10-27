@@ -59,10 +59,11 @@ func (c *EmailChannel) Name() string { return c.channel }
 // data source.
 //
 // HTMLBody is passed through verbatim: the channel does not escape it.
-// The bundled MapTemplater already escapes interpolated values at its
-// sink (see its Render doc); a CUSTOM Templater owns the same
-// obligation — hand the channel a body whose user-controlled parts are
-// escaped, webmail is an HTML application and an unescaped value is a
+// The bundled MapTemplater already escapes interpolated values for
+// their context, attribute and URL included (see its Render doc); a
+// CUSTOM Templater owns the same obligation — hand the channel a body
+// whose user-controlled parts are escaped (html/template does it),
+// webmail is an HTML application and an unescaped value is a
 // session-theft-class XSS.
 func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (err error) {
 	// The wrapped email.Sender is host-supplied code invoked from

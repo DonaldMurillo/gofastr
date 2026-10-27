@@ -3,12 +3,13 @@ package crud
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -29,8 +30,9 @@ import (
 //   - decode: request bodies are decoded with json.Decoder.UseNumber and
 //     normalized so an integer JSON literal becomes an exact int64 before
 //     validation or a hook ever sees it (decodeStrictUseNumber +
-//     normalizeJSONNumbers). A literal that is neither an exact integer
-//     nor a parseable float (1e999) is refused, matching stdlib.
+//     normalizeJSONNumbers). A literal past float64's range (1e999) stays
+//     a json.Number: a JSON field stores its text, and every other column
+//     refuses it (coerceNumberColumnValues).
 //
 //   - bind: a float64 that REACHES an Int column through some other route
 //     (a host json.Unmarshal before CreateOne, the MCP argument bridge)
@@ -87,41 +89,81 @@ func exactFloatInt64(f float64) (int64, bool) {
 
 // normalizeJSONNumbers walks a decoded JSON value and returns the same
 // structure with every json.Number replaced by its exact Go spelling:
-// int64 when the literal is an integer, float64 otherwise. A number that
-// is neither (1e999) returns an error so the caller can refuse the body,
-// the same answer stdlib's float64 decode would have given.
-func normalizeJSONNumbers(v any) (any, error) {
+// int64 when the literal is an integer, float64 otherwise. A number
+// neither can hold stays the json.Number.
+func normalizeJSONNumbers(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, item := range x {
-			norm, err := normalizeJSONNumbers(item)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", k, err)
-			}
-			x[k] = norm
+			x[k] = normalizeJSONNumbers(item)
 		}
-		return x, nil
+		return x
 	case []any:
 		for i, item := range x {
-			norm, err := normalizeJSONNumbers(item)
-			if err != nil {
-				return nil, fmt.Errorf("[%d]: %w", i, err)
-			}
-			x[i] = norm
+			x[i] = normalizeJSONNumbers(item)
 		}
-		return x, nil
+		return x
 	case json.Number:
 		if i, err := x.Int64(); err == nil {
-			return i, nil
+			return i
 		}
 		fl, err := x.Float64()
 		if err != nil {
-			return nil, fmt.Errorf("number %s is out of range", x.String())
+			// Past float64's range (1e999). A JSON field's document may
+			// hold it, validation takes the text and a read emits it as
+			// stored, so refusing it here refused the value a read had
+			// just returned. coerceNumberColumnValues refuses it for
+			// every other column.
+			return x
 		}
-		return fl, nil
+		// An integer a float64 cannot hold exactly stays json.Number:
+		// a JSON field stores its text, and coerceNumberColumnValues
+		// gives every other column the float64 or refusal it had. So
+		// does a fraction that rounds to an integer (1.0000000000000001
+		// is exactly 1.0), or an Int column could not tell it from 1.
+		if roundsInteger(fl) || (fl == math.Trunc(fl) && !integerText(x.String())) {
+			return x
+		}
+		return fl
 	default:
-		return v, nil
+		return v
 	}
+}
+
+// integerText reports whether s, a JSON number literal, names an integer.
+// It reads the digits, not a float64: 1.0000000000000001 parses to
+// exactly 1.0, and an Int column stored 1 for it. 1.0 and 1e3 are
+// integers. It never builds the number, so an exponent like 1e-999999999
+// costs its length, not a 10^999999999 the way big.Rat.SetString would.
+func integerText(s string) bool {
+	mant, exp := s, ""
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		mant, exp = s[:i], s[i+1:]
+	}
+	mant = strings.TrimLeft(mant, "+-")
+	intPart, frac, _ := strings.Cut(mant, ".")
+	digits := strings.TrimRight(intPart+frac, "0")
+	if strings.Trim(digits, "0") == "" {
+		return true // zero, at any exponent
+	}
+	// value = digits × 10^(e - len(frac) + trailing zeros dropped)
+	shift := len(intPart+frac) - len(digits) - len(frac)
+	if exp == "" {
+		return shift >= 0
+	}
+	e, err := strconv.Atoi(exp)
+	if err != nil || e > 1<<30 || e < -(1<<30) {
+		// An exponent this large outweighs any literal's digits: a
+		// positive one leaves an integer, a negative one a fraction.
+		return !strings.HasPrefix(exp, "-")
+	}
+	return e+shift >= 0
+}
+
+// roundsInteger reports an integral float at or past ±2^53, where a
+// float64 no longer holds every integer.
+func roundsInteger(f float64) bool {
+	return f == math.Trunc(f) && math.Abs(f) >= 1<<53
 }
 
 // decodeStrictUseNumber decodes an already-gated JSON object body into a
@@ -144,11 +186,13 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	if err := dec.Decode(&body); err != nil {
 		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
-	norm, err := normalizeJSONNumbers(body)
-	if err != nil {
-		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+	// A body is one JSON value: a second object after the first was
+	// dropped while the request succeeded.
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": "unexpected data after the JSON object"})
 	}
-	return norm.(map[string]any), nil
+	normalizeJSONNumbers(body)
+	return body, nil
 }
 
 // redecodeUseNumber re-decodes a body that already passed the strict
@@ -156,15 +200,37 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 // UseNumber + number normalization, so integer literals inside it keep
 // their exact values. Used by the batch endpoints, whose envelope decode
 // is struct-shaped and therefore float64-based.
-func redecodeUseNumber(data []byte, v any) error {
+func redecodeUseNumber(data []byte, items *[]map[string]any) error {
 	//gofastr:allow(GOFASTR1407) the strict struct decode already gated this body (see doc comment); this re-decode only preserves integer precision via UseNumber.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
-	if err := dec.Decode(v); err != nil {
+	env := struct {
+		Items *[]map[string]any `json:"items"`
+	}{items}
+	if err := dec.Decode(&env); err != nil {
 		return handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
-	_, err := normalizeJSONNumbers(v)
-	return err
+	// Each item, not the envelope: the walk does not enter structs, so
+	// passing the envelope left every item number a json.Number.
+	for _, item := range *items {
+		normalizeJSONNumbers(item)
+	}
+	return nil
+}
+
+// zonelessTimestamp reads s as the date and time an <input
+// type=datetime-local> submits, to the minute or the second (time.Parse
+// takes a fraction after the seconds), as UTC, and returns it in RFC 3339
+// with the fraction kept. The Timestamp filter reads the same spellings
+// as UTC (filter.CoerceValue), so a form value written and then filtered
+// on names one instant. RFC 3339 text is not zone-less and returns false.
+func zonelessTimestamp(s string) (string, bool) {
+	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Format(time.RFC3339Nano), true
+		}
+	}
+	return "", false
 }
 
 // floatTextRe is the canonical decimal spelling a number input submits.
@@ -184,12 +250,43 @@ func floatText(s string) (float64, bool) {
 	return n, true
 }
 
-// coerceNumberColumnValues normalizes the numeric columns present in a
-// write body. A Float column takes canonical decimal text as the number
+// boolSpelling is the boolean a Bool field's accepted value names: true,
+// false, "true"/"false" in any case, and 1 or 0 as a number or string.
+func boolSpelling(v any) (bool, bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case string:
+		switch strings.ToLower(x) {
+		case "true", "1":
+			return true, true
+		case "false", "0":
+			return false, true
+		}
+	case json.Number:
+		if f, err := x.Float64(); err == nil && (f == 0 || f == 1) {
+			return f == 1, true
+		}
+	case int64:
+		if x == 0 || x == 1 {
+			return x == 1, true
+		}
+	case float64:
+		if x == 0 || x == 1 {
+			return x == 1, true
+		}
+	}
+	return false, false
+}
+
+// coerceNumberColumnValues normalizes the numeric and boolean columns
+// present in a write body. A Bool column binds every spelling validation
+// accepts as the boolean (boolSpelling). A Float column takes canonical decimal text as the number
 // it spells: an HTML form carries every value as a string, and the
 // runtime's form RPC posts it as one (dropEmptyFormValues has already
 // taken out the blanks). Any other string is left for schema validation,
-// which refuses it.
+// which refuses it. A Timestamp column takes the zone-less date and time
+// an <input type=datetime-local> submits as UTC (zonelessTimestamp).
 //
 // An integer column can never be bound from a value that lost precision
 // on its way in:
@@ -212,9 +309,24 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 		if !ok {
 			continue
 		}
+		if f.Type == schema.Bool {
+			// Every spelling validation accepts binds as the boolean:
+			// SQLite kept "true" as text, which a boolean filter (bound
+			// as 1) never matched. Anything else is left for validation.
+			if b, ok := boolSpelling(raw); ok {
+				body[f.Name] = b
+			}
+			continue
+		}
 		if s, isText := raw.(string); isText && f.Type == schema.Float {
 			if n, ok := floatText(s); ok {
 				body[f.Name] = n
+			}
+			continue
+		}
+		if s, isText := raw.(string); isText && f.Type == schema.Timestamp {
+			if ts, ok := zonelessTimestamp(s); ok {
+				body[f.Name] = ts
 			}
 			continue
 		}
@@ -233,6 +345,16 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			body[f.Name] = s
 			continue
 		}
+		if n, isNum := raw.(json.Number); isNum && f.Type != schema.Int && f.Type != schema.JSON {
+			// Only a JSON field stores a number's text. Elsewhere it is
+			// the float64 it always was, for validation to judge.
+			fl, err := n.Float64()
+			if err != nil {
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotFinite}}}}
+			}
+			body[f.Name] = fl
+			continue
+		}
 		if f.Type != schema.Int {
 			continue
 		}
@@ -243,7 +365,9 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				continue
 			}
 			fl, err := x.Float64()
-			if err != nil {
+			// The digits decide, not the float64 they round to:
+			// 1.0000000000000001 reads as exactly 1.
+			if err != nil || !integerText(x.String()) {
 				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
 			}
 			if i, ok := exactFloatInt64(fl); ok {

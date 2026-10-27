@@ -21,7 +21,7 @@ func TestInitGeneratedMainUsesIsolationHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	writeMainGo("demo", "example.com/demo", false, "sqlite", "file:demo.db")
+	writeMainGo("demo", "app", "example.com/demo", false, "sqlite", "file:demo.db")
 	data, err := os.ReadFile(filepath.Join("demo", "main.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestInitSQLiteDriverAgreesEndToEnd(t *testing.T) {
 			if err := os.Mkdir(project, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			writeMainGo(project, "example.com/app", false, dbDriver, "file:app.db")
+			writeMainGo(project, "app", "example.com/app", false, dbDriver, "file:app.db")
 			got, err := os.ReadFile(filepath.Join(project, "main.go"))
 			if err != nil {
 				t.Fatal(err)
@@ -78,8 +78,8 @@ func TestInitGeneratedUIIsFrameworkComposed(t *testing.T) {
 	if err := os.Mkdir(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeMainGo(project, "example.com/demo", true, "sqlite", "")
-	writeScreensGo(project, true)
+	writeMainGo(project, "app", "example.com/demo", true, "sqlite", "")
+	writeScreensGo(project, "app", true)
 
 	mainBody, err := os.ReadFile(filepath.Join(project, "main.go"))
 	if err != nil {

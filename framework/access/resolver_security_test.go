@@ -66,7 +66,7 @@ func TestResolverShedsPastEntryCap(t *testing.T) {
 	resolver := NewCachedResolver(func(context.Context) []string { return nil })
 	resolver.mu.Lock()
 	for i := range maxResolverEntries + 500 {
-		resolver.entries[fmt.Sprintf("u-%06d", i)] = &cachedRoleEntry{
+		resolver.entries[resolverKey{user: fmt.Sprintf("u-%06d", i)}] = &cachedRoleEntry{
 			roles:     []string{"member"},
 			expiresAt: time.Now().Add(time.Hour), // all live: only the cap forces the shed
 		}

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -692,12 +693,22 @@ func decodeAppSpecAdmin(node *coreyaml.Node) (AppSpecAdmin, error) {
 	if err != nil {
 		return AppSpecAdmin{}, err
 	}
+	// seed_email reaches the generated FindByEmail/CreateUser literals.
+	// Login canonicalizes the submitted address and FindByEmail matches
+	// exactly, so the seed is stored in the spelling login looks up: a
+	// raw "Ops@Example.com" would mint an admin nobody can sign in as.
+	// Generated apps install no AuthConfig.CanonicalizeEmail override,
+	// so the package default is the one login applies.
+	seedEmail, err := auth.CanonicalEmail(stringValue(m["seed_email"]))
+	if err != nil {
+		return AppSpecAdmin{}, fmt.Errorf("app.admin.seed_email: %w", err)
+	}
 	return AppSpecAdmin{
 		Enabled:      boolValue(m["enabled"]),
 		Path:         stringValue(m["path"]),
 		Role:         adminRole,
 		LoginPath:    stringValue(m["login_path"]),
-		SeedEmail:    stringValue(m["seed_email"]),
+		SeedEmail:    seedEmail,
 		SeedPassword: stringValue(m["seed_password"]),
 	}, nil
 }
@@ -940,6 +951,12 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			}
 			if found.NoQuery {
 				return nil, fmt.Errorf("app spec: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
+			}
+			// The rule entity.Define enforces, reported at spec time: a
+			// keyset column that can hold NULL skips those rows.
+			isKey := slices.Contains(decl.PrimaryKey, cf) || (len(decl.PrimaryKey) == 0 && cf == "id")
+			if !isKey && !found.Required && found.AutoGenerate == "" {
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q can hold NULL (keyset paging skips NULL rows); mark it required", decl.Name, cf)
 			}
 		}
 		relations, err := decodeRelations(m["relations"])

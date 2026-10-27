@@ -566,6 +566,7 @@ func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string
 		return nil, err
 	}
 	var m map[string]any
+	//gofastr:allow(floatnum) userinfo is read through claimString; numeric members are never used
 	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, err
 	}

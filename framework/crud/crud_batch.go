@@ -202,6 +202,9 @@ type batchCreateRequest struct {
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller rows, as on the single-row routes: never stored by a
+		// shared cache, on every arm (Delete in crud.go says why).
+		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
@@ -211,6 +214,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchCreateRequest
+		//gofastr:allow(floatnum) redecodeUseNumber re-reads req.Items exactly below; the envelope holds nothing else
 		raw, err := decodeBatchEnvelope(r, &req, "items")
 		if err != nil {
 			if errors.Is(err, errBodyTooLarge) {
@@ -224,7 +228,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		// pass replaces the float64 items with exact int64/float64
 		// spellings so an integer literal above 2^53 survives to the
 		// INSERT (the struct decode would have rounded it).
-		if err := redecodeUseNumber(raw, &req); err != nil {
+		if err := redecodeUseNumber(raw, &req.Items); err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
@@ -251,7 +255,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		// hidden marks items whose created row the caller's ReadScope hides;
 		// they answer with the id only, as the single Create route does.
 		hidden := make([]bool, len(req.Items))
-		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				res, err := ch.doCreate(ctx, r, body)
@@ -327,6 +331,9 @@ type batchUpdateRequest struct {
 // fields are the partial update. All items share one transaction.
 func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller rows, as on the single-row routes: never stored by a
+		// shared cache, on every arm (Delete in crud.go says why).
+		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
@@ -336,6 +343,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchUpdateRequest
+		//gofastr:allow(floatnum) redecodeUseNumber re-reads req.Items exactly below; the envelope holds nothing else
 		raw, err := decodeBatchEnvelope(r, &req, "items")
 		if err != nil {
 			if errors.Is(err, errBodyTooLarge) {
@@ -345,7 +353,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
-		if err := redecodeUseNumber(raw, &req); err != nil {
+		if err := redecodeUseNumber(raw, &req.Items); err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
@@ -370,7 +378,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		// hidden marks items whose written row the caller's ReadScope hides;
 		// they answer with the id only, as the single Update route does.
 		hidden := make([]bool, len(req.Items))
-		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				id, ok := entity.RowKey(body, ch.keyCols(), nil)
@@ -457,6 +465,9 @@ type batchDeleteRequest struct {
 // with {ids:[...]}. All deletes share one transaction.
 func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller rows, as on the single-row routes: never stored by a
+		// shared cache, on every arm (Delete in crud.go says why).
+		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
@@ -484,7 +495,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.IDs))
-		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			for i, id := range req.IDs {
 				if !ch.itemPermitted(ctx, opDelete, id) {
 					results[i] = batchResult{Index: i, Error: reasonAccessDenied.Text(ctx), Reason: reasonAccessDenied.Code()}

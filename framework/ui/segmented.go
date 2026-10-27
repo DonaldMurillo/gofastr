@@ -48,8 +48,9 @@ type SegmentedControlConfig struct {
 	// Options must contain at least two segments. Required.
 	Options []SegmentedOption
 
-	// Selected is the initially selected Value. When empty or not
-	// matching any option, defaults to Options[0].Value.
+	// Selected is the initially selected Value. Empty defaults to
+	// Options[0].Value. A value matching no option checks no segment,
+	// so the group submits nothing rather than a value nobody chose.
 	Selected string
 
 	// Label is the aria-label on the radiogroup wrapper. Required
@@ -92,15 +93,11 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			panic("ui: SegmentedControl option requires Label and Value")
 		}
 	}
+	// An empty Selected starts on the first segment. A value no segment
+	// lists checks none: falling back to the first submitted a value
+	// nobody chose, and no segment can draw the one that was given.
 	selected := cfg.Selected
-	found := false
-	for _, o := range cfg.Options {
-		if o.Value == selected {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if selected == "" {
 		selected = cfg.Options[0].Value
 	}
 
@@ -295,6 +292,9 @@ func segmentedCSS(_ style.Theme) string {
 [data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 4); }
 [data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 5); }
 [data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 6); }
+/* With no segment checked the pill would sit under the first one and
+   claim a choice the group does not hold. */
+[data-cui-comp="ui-segmented"]:not(:has(.fui-segmented__input:checked)) .fui-segmented__indicator { visibility: hidden; }
 
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 100%)); }

@@ -341,12 +341,12 @@ func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 		t.Errorf("mutation-only posts.go should need no imports:\n%s", posts)
 	}
 	verbs := files["verbs.gen.go"]
-	for _, w := range []string{`"encoding/json"`, `"fmt"`, `"net/http"`, "func runMutationVerb("} {
+	for _, w := range []string{`"fmt"`, `"net/http"`, "func runMutationVerb("} {
 		if !strings.Contains(verbs, w) {
 			t.Errorf("mutation-only verbs.go missing %q\n%s", w, verbs)
 		}
 	}
-	for _, absent := range []string{`"context"`, "func runListVerb(", "func runWatchVerb("} {
+	for _, absent := range []string{`"context"`, `"encoding/json"`, "func runListVerb(", "func runWatchVerb("} {
 		if strings.Contains(verbs, absent) {
 			t.Errorf("mutation-only verbs.go should not carry %q", absent)
 		}

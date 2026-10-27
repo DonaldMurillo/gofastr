@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,8 +53,15 @@ type ProcessModuleStore interface {
 	// Install writes a new desired-state row for module. Returns
 	// [ErrModuleInstalled] if a row already exists, re-install is an
 	// explicit generation bump via [SetEffectiveGrants] /
-	// [BumpGeneration].
+	// [BumpGeneration], or the boot-time [InstallOrUpdate].
 	Install(ctx context.Context, d DesiredState) error
+
+	// InstallOrUpdate inserts the row when absent and otherwise
+	// reconciles the stored row with d: the path a module takes when the
+	// app boots again against a database an earlier boot (or another
+	// replica) wrote. [InstallOutcome] spells out each case; a grant-set
+	// change disables the module.
+	InstallOrUpdate(ctx context.Context, d DesiredState) (InstallResult, error)
 
 	// GetDesired returns the desired-state row for module. Returns
 	// [ErrNoDesiredRow] if no row exists, and the underlying SQL error if
@@ -202,7 +210,7 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 			artifact_sha256   TEXT NOT NULL,
 			effective_grants  %s,
 			migrations_applied_at %s NULL
-		)`, query.QuoteIdent(desiredTable), intType, boolType, boolDefault, grantsType, intType),
+		)`, query.QuoteFolded(desiredTable), intType, boolType, boolDefault, grantsType, intType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			module            TEXT NOT NULL,
 			replica_id        TEXT NOT NULL,
@@ -210,7 +218,7 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 			phase             TEXT NOT NULL DEFAULT '',
 			updated_at_ms     %s NOT NULL,
 			PRIMARY KEY (module, replica_id)
-		)`, query.QuoteIdent(heartbeatTable), intType, intType),
+		)`, query.QuoteFolded(heartbeatTable), intType, intType),
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
@@ -233,37 +241,188 @@ func (s *SQLProcessModuleStore) Install(ctx context.Context, d DesiredState) err
 	if err != nil {
 		return fmt.Errorf("processmodule: Install %q: %w", d.Module, err)
 	}
-	enabledInt := boolToInt(d.Enabled)
-	// INSERT OR FAIL semantics: on the PK collision, return ErrModuleInstalled.
-	// On Postgres we use ON CONFLICT DO NOTHING + check affected rows; on
-	// SQLite we use INSERT OR IGNORE + check. Both let us distinguish
-	// "row existed" from a real SQL error.
-	var q string
-	var args []any
-	if s.dialect == migrate.DialectPostgres {
-		q = fmt.Sprintf(`INSERT INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at)
-			VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (module) DO NOTHING`, query.QuoteIdent(desiredTable))
-		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, grantsJSON, timeToMillis(d.MigrationsAppliedAt)}
-	} else {
-		q = fmt.Sprintf(`INSERT OR IGNORE INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at)
-			VALUES (?, ?, ?, ?, ?, ?)`, query.QuoteIdent(desiredTable))
-		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, string(grantsJSON), timeToMillis(d.MigrationsAppliedAt)}
-	}
-	res, err := s.db.ExecContext(ctx, q, args...)
+	inserted, err := s.insertIfAbsent(ctx, s.db, d, grantsJSON)
 	if err != nil {
 		return fmt.Errorf("processmodule: Install %q: %w", d.Module, err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if !inserted {
 		return fmt.Errorf("processmodule: %w: %q", ErrModuleInstalled, d.Module)
 	}
 	return nil
 }
 
+// execer is the ExecContext half shared by *sql.DB and *sql.Tx.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// insertIfAbsent inserts d's row unless one exists for the module, and
+// reports whether it inserted. On Postgres it is ON CONFLICT DO NOTHING, on
+// SQLite INSERT OR IGNORE; both tell "row existed" apart from a SQL error
+// through the affected-row count.
+func (s *SQLProcessModuleStore) insertIfAbsent(ctx context.Context, ex execer, d DesiredState, grantsJSON []byte) (bool, error) {
+	enabledInt := boolToInt(d.Enabled)
+	var q string
+	var args []any
+	if s.dialect == migrate.DialectPostgres {
+		q = fmt.Sprintf(`INSERT INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at)
+			VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (module) DO NOTHING`, query.QuoteFolded(desiredTable))
+		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, grantsJSON, timeToMillis(d.MigrationsAppliedAt)}
+	} else {
+		q = fmt.Sprintf(`INSERT OR IGNORE INTO %s (module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at)
+			VALUES (?, ?, ?, ?, ?, ?)`, query.QuoteFolded(desiredTable))
+		args = []any{d.Module, int64(d.DesiredGeneration), enabledInt, d.ArtifactSHA256, string(grantsJSON), timeToMillis(d.MigrationsAppliedAt)}
+	}
+	res, err := ex.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// InstallOutcome says what [ProcessModuleStore.InstallOrUpdate] did with
+// the row it found.
+type InstallOutcome int
+
+const (
+	// InstallCreated: no row existed; one was inserted as by Install.
+	InstallCreated InstallOutcome = iota + 1
+	// InstallUnchanged: the row's artifact digest and grant set match;
+	// nothing was written, so the enabled flag and generation stand.
+	InstallUnchanged
+	// InstallArtifactChanged: only the artifact digest differs (a
+	// deploy). The digest is updated and the generation bumped; the
+	// enabled flag stands.
+	InstallArtifactChanged
+	// InstallGrantsChanged: the effective grant set differs, wider or
+	// narrower. Grants and digest are updated, the generation bumped,
+	// and the module disabled until an operator re-enables it.
+	InstallGrantsChanged
+)
+
+// String names the outcome for logs.
+func (o InstallOutcome) String() string {
+	switch o {
+	case InstallCreated:
+		return "created"
+	case InstallUnchanged:
+		return "unchanged"
+	case InstallArtifactChanged:
+		return "artifact-changed"
+	case InstallGrantsChanged:
+		return "grants-changed"
+	}
+	return "unknown"
+}
+
+// InstallResult is what [ProcessModuleStore.InstallOrUpdate] returns.
+type InstallResult struct {
+	Outcome InstallOutcome
+	// Row is the desired-state row as stored after the call.
+	Row DesiredState
+	// PreviousGrants is the grant set the row held before a
+	// grants change; nil for every other outcome.
+	PreviousGrants []access.Permission
+}
+
+// InstallOrUpdate is the boot-time install: the same module registering
+// again (a restart, or another replica) against a row an earlier boot
+// wrote. It inserts the row when absent and otherwise reconciles it with
+// d in one transaction, by the rules on [InstallOutcome]. d.Enabled is
+// used only for a new row; an existing row's flag is never raised here.
+func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredState) (InstallResult, error) {
+	if d.Module == "" {
+		return InstallResult{}, errors.New("processmodule: InstallOrUpdate: empty module name")
+	}
+	if d.DesiredGeneration == 0 {
+		d.DesiredGeneration = 1
+	}
+	grantsJSON, err := marshalGrants(d.EffectiveGrants)
+	if err != nil {
+		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: %w", d.Module, err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: begin: %w", d.Module, err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+	inserted, err := s.insertIfAbsent(ctx, tx, d, grantsJSON)
+	if err != nil {
+		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: insert: %w", d.Module, err)
+	}
+	if inserted {
+		if err := tx.Commit(); err != nil {
+			return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: commit: %w", d.Module, err)
+		}
+		return InstallResult{Outcome: InstallCreated, Row: d}, nil
+	}
+	// The row exists. Lock it (Postgres) so a concurrent boot of another
+	// replica reconciles against this one's write, not a stale read.
+	// SQLite's write lock is already held: the INSERT OR IGNORE took it.
+	sel := fmt.Sprintf(`SELECT module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at FROM %s WHERE module = %s`,
+		query.QuoteFolded(desiredTable), place(s.dialect, 1))
+	if s.dialect == migrate.DialectPostgres {
+		sel += " FOR UPDATE"
+	}
+	prev, err := scanDesired(tx.QueryRowContext(ctx, sel, d.Module), s.dialect)
+	if err != nil {
+		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: read: %w", d.Module, err)
+	}
+	res := InstallResult{Outcome: InstallUnchanged}
+	var upd string
+	var args []any
+	switch {
+	case !sameGrantSet(prev.EffectiveGrants, d.EffectiveGrants):
+		res.Outcome = InstallGrantsChanged
+		res.PreviousGrants = prev.EffectiveGrants
+		upd = fmt.Sprintf(`UPDATE %s SET effective_grants = %s, artifact_sha256 = %s, enabled = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
+			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3), place(s.dialect, 4))
+		args = []any{string(grantsJSON), d.ArtifactSHA256, boolToInt(false), d.Module}
+	case prev.ArtifactSHA256 != d.ArtifactSHA256:
+		res.Outcome = InstallArtifactChanged
+		upd = fmt.Sprintf(`UPDATE %s SET artifact_sha256 = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
+			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
+		args = []any{d.ArtifactSHA256, d.Module}
+	}
+	if upd != "" {
+		r, err := tx.ExecContext(ctx, upd, args...)
+		if err != nil {
+			return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: update: %w", d.Module, err)
+		}
+		if err := AssertRow(r, d.Module); err != nil {
+			return InstallResult{}, err
+		}
+		prev, err = scanDesired(tx.QueryRowContext(ctx, sel, d.Module), s.dialect)
+		if err != nil {
+			return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: readback: %w", d.Module, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return InstallResult{}, fmt.Errorf("processmodule: InstallOrUpdate %q: commit: %w", d.Module, err)
+	}
+	res.Row = prev
+	return res, nil
+}
+
+// sameGrantSet reports whether a and b hold the same permissions,
+// ignoring order and repeats.
+func sameGrantSet(a, b []access.Permission) bool {
+	norm := func(g []access.Permission) []access.Permission {
+		out := slices.Clone(g)
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	return slices.Equal(norm(a), norm(b))
+}
+
 // GetDesired returns the desired-state row, or ErrNoDesiredRow if absent.
 func (s *SQLProcessModuleStore) GetDesired(ctx context.Context, module string) (DesiredState, error) {
 	q := fmt.Sprintf(`SELECT module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at FROM %s WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	row := s.db.QueryRowContext(ctx, q, module)
 	d, err := scanDesired(row, s.dialect)
 	if err != nil {
@@ -278,7 +437,7 @@ func (s *SQLProcessModuleStore) GetDesired(ctx context.Context, module string) (
 // ListDesired returns every desired-state row, ordered by module name.
 func (s *SQLProcessModuleStore) ListDesired(ctx context.Context) ([]DesiredState, error) {
 	q := fmt.Sprintf(`SELECT module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at FROM %s ORDER BY module ASC`,
-		query.QuoteIdent(desiredTable))
+		query.QuoteFolded(desiredTable))
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("processmodule: ListDesired: %w", err)
@@ -298,7 +457,7 @@ func (s *SQLProcessModuleStore) ListDesired(ctx context.Context) ([]DesiredState
 // SetEnabled toggles enabled without bumping generation.
 func (s *SQLProcessModuleStore) SetEnabled(ctx context.Context, module string, enabled bool) error {
 	q := fmt.Sprintf(`UPDATE %s SET enabled = %s WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
 	res, err := s.db.ExecContext(ctx, q, boolToInt(enabled), module)
 	if err != nil {
 		return fmt.Errorf("processmodule: SetEnabled %q: %w", module, err)
@@ -317,7 +476,7 @@ func (s *SQLProcessModuleStore) BumpGeneration(ctx context.Context, module strin
 	}
 	defer tx.Rollback() //nolint:errcheck
 	upd := fmt.Sprintf(`UPDATE %s SET desired_generation = desired_generation + 1 WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	res, err := tx.ExecContext(ctx, upd, module)
 	if err != nil {
 		return 0, fmt.Errorf("processmodule: BumpGeneration %q: update: %w", module, err)
@@ -327,7 +486,7 @@ func (s *SQLProcessModuleStore) BumpGeneration(ctx context.Context, module strin
 	}
 	var gen int64
 	sel := fmt.Sprintf(`SELECT desired_generation FROM %s WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	if err := tx.QueryRowContext(ctx, sel, module).Scan(&gen); err != nil {
 		return 0, fmt.Errorf("processmodule: BumpGeneration %q: readback: %w", module, err)
 	}
@@ -349,7 +508,7 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 	}
 	defer tx.Rollback() //nolint:errcheck
 	upd := fmt.Sprintf(`UPDATE %s SET effective_grants = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
 	res, err := tx.ExecContext(ctx, upd, string(grantsJSON), module)
 	if err != nil {
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: update: %w", module, err)
@@ -359,7 +518,7 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 	}
 	var gen int64
 	sel := fmt.Sprintf(`SELECT desired_generation FROM %s WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	if err := tx.QueryRowContext(ctx, sel, module).Scan(&gen); err != nil {
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: readback: %w", module, err)
 	}
@@ -372,7 +531,7 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 // SetMigrationsAppliedAt records (or clears) the migrations-applied timestamp.
 func (s *SQLProcessModuleStore) SetMigrationsAppliedAt(ctx context.Context, module string, at *time.Time) error {
 	q := fmt.Sprintf(`UPDATE %s SET migrations_applied_at = %s WHERE module = %s`,
-		query.QuoteIdent(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
 	res, err := s.db.ExecContext(ctx, q, timeToMillis(at), module)
 	if err != nil {
 		return fmt.Errorf("processmodule: SetMigrationsAppliedAt %q: %w", module, err)
@@ -395,7 +554,7 @@ func (s *SQLProcessModuleStore) RecordHeartbeat(ctx context.Context, module, rep
 				observed_generation = EXCLUDED.observed_generation,
 				phase = EXCLUDED.phase,
 				updated_at_ms = EXCLUDED.updated_at_ms`,
-			query.QuoteIdent(heartbeatTable))
+			query.QuoteFolded(heartbeatTable))
 		args = []any{module, replicaID, int64(observedGen), phase, now}
 	} else {
 		q = fmt.Sprintf(`INSERT INTO %s (module, replica_id, observed_generation, phase, updated_at_ms)
@@ -404,7 +563,7 @@ func (s *SQLProcessModuleStore) RecordHeartbeat(ctx context.Context, module, rep
 				observed_generation = excluded.observed_generation,
 				phase = excluded.phase,
 				updated_at_ms = excluded.updated_at_ms`,
-			query.QuoteIdent(heartbeatTable))
+			query.QuoteFolded(heartbeatTable))
 		args = []any{module, replicaID, int64(observedGen), phase, now}
 	}
 	if _, err := s.db.ExecContext(ctx, q, args...); err != nil {
@@ -418,7 +577,7 @@ func (s *SQLProcessModuleStore) LiveReplicas(ctx context.Context, module string,
 	cutoff := time.Now().Add(-ttl).UnixMilli()
 	q := fmt.Sprintf(`SELECT module, replica_id, observed_generation, phase, updated_at_ms FROM %s
 		WHERE module = %s AND updated_at_ms >= %s ORDER BY replica_id ASC`,
-		query.QuoteIdent(heartbeatTable), place(s.dialect, 1), place(s.dialect, 2))
+		query.QuoteFolded(heartbeatTable), place(s.dialect, 1), place(s.dialect, 2))
 	rows, err := s.db.QueryContext(ctx, q, module, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("processmodule: LiveReplicas %q: %w", module, err)
@@ -440,7 +599,7 @@ func (s *SQLProcessModuleStore) LiveReplicas(ctx context.Context, module string,
 // DeleteHeartbeat removes a replica's heartbeat row.
 func (s *SQLProcessModuleStore) DeleteHeartbeat(ctx context.Context, module, replicaID string) error {
 	q := fmt.Sprintf(`DELETE FROM %s WHERE module = %s AND replica_id = %s`,
-		query.QuoteIdent(heartbeatTable), place(s.dialect, 1), place(s.dialect, 2))
+		query.QuoteFolded(heartbeatTable), place(s.dialect, 1), place(s.dialect, 2))
 	_, err := s.db.ExecContext(ctx, q, module, replicaID)
 	if err != nil {
 		return fmt.Errorf("processmodule: DeleteHeartbeat %q/%q: %w", module, replicaID, err)

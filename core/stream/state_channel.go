@@ -42,9 +42,12 @@ const SnapshotEnvelopeType = "snapshot"
 // Sequences share ONE space per channel, across roles. SnapshotFor must
 // return the snapshot payload and its sequence from a single immutable
 // read (copy-on-read), where the sequence is the channel-wide version of
-// the state returned. FilterEvent then sees only events; the channel
-// reconciles its own event counter to every snapshot sequence it sends,
-// so events published after a snapshot always sort above it.
+// the state returned. FilterEvent then sees only events. A snapshot goes
+// out at the larger of that version and one above every sequence the
+// channel already sent, and the event counter continues above it: a
+// reconnect's snapshot always sorts above whatever the client applied on
+// its previous connection, and events published after a snapshot always
+// sort above it.
 //
 // Minimization happens here, at the source: FilterEvent runs BEFORE
 // serialization, so a field the source strips never crosses the
@@ -97,21 +100,30 @@ type SnapshotSource[Role comparable, Snapshot any, Event any] interface {
 // its hydration snapshot at all is closed (it cannot catch up on its
 // own, so it reconnects and hydrates again). Publish never blocks; when
 // the channel's job queue is full the event is dropped, mirroring
-// Hub.Broadcast.
+// Hub.Broadcast. CloseOnOverflow turns both drops into closes.
 type StateChannel[Role comparable, Snapshot any, Event any] struct {
 	source SnapshotSource[Role, Snapshot, Event]
 
 	mu    sync.RWMutex
 	conns map[*WebSocketConn]Role
 
-	jobs    chan stateJob[Role, Snapshot, Event]
+	// queue is the job FIFO, guarded by qmu; wake (capacity 1) tells
+	// the Run loop it is non-empty. A slice rather than a buffered
+	// channel so the CloseOnOverflow depth costs memory only while a
+	// burst is queued, and so a lost-event marker can go in behind the
+	// last job a full queue accepted.
+	qmu     sync.Mutex
+	queue   []stateJob[Role, Snapshot, Event]
+	wake    chan struct{}
 	stop    chan struct{}
 	stopped atomic.Bool
 
-	// nextSeq is the next sequence an event will carry. Owned by the
-	// Run loop alone (assignment happens between job dequeues), so it
-	// needs no lock; it is reconciled to every snapshot sequence sent,
-	// which is what keeps post-snapshot events above it.
+	// nextSeq is the next sequence an event will carry, one above
+	// everything sent so far. Owned by the Run loop alone (assignment
+	// happens between job dequeues), so it needs no lock. A snapshot
+	// takes max(source version, nextSeq) and moves nextSeq past it,
+	// which keeps every snapshot above earlier events and every later
+	// event above the snapshot.
 	nextSeq uint64
 
 	// closeOnOverflow selects the disposition of an event that finds
@@ -119,15 +131,20 @@ type StateChannel[Role comparable, Snapshot any, Event any] struct {
 	closeOnOverflow atomic.Bool
 }
 
-// CloseOnOverflow selects what happens when an event cannot be queued
-// on a connection because its send buffer is full. Off (the default)
-// the event is dropped for that connection alone, the Hub.Run posture,
-// which is right for presence-shaped sources: the next snapshot or
-// event corrects the view. On, the connection is closed instead, so
-// the client reconnects and re-hydrates. That is right for a source
-// whose events are not recoverable from a snapshot (addressed
-// signaling: a dropped SDP answer leaves the far side waiting for ever,
-// and nothing tells either side). Call before Run.
+// CloseOnOverflow selects what happens when an event cannot be queued.
+// Off (the default) the event is dropped: for one connection when its
+// send buffer is full, for every connection when the channel's job
+// queue is full (lossyQueueDepth jobs). That is the Hub posture, right
+// for presence-shaped sources: the next snapshot or event corrects the
+// view. On, nothing is dropped in silence. A connection whose send
+// buffer is full is closed, and the job queue holds up to
+// losslessQueueDepth jobs; past that the event is lost and every
+// connection that would have received it (each one registered when the
+// lost event would have been dequeued) is closed. A closed client
+// reconnects and re-hydrates. That is right for a source whose events
+// are not recoverable from a snapshot (addressed signaling: a dropped
+// SDP answer leaves the far side waiting for ever, and nothing tells
+// either side). Call before Run.
 func (c *StateChannel[Role, Snapshot, Event]) CloseOnOverflow(on bool) {
 	c.closeOnOverflow.Store(on)
 }
@@ -145,6 +162,22 @@ type stateJobKind uint8
 const (
 	stateJobEvent stateJobKind = iota
 	stateJobSnapshot
+	// stateJobLost marks where a full queue refused an event under
+	// CloseOnOverflow. The Run loop closes every connection registered
+	// when it reaches the marker: exactly the set the lost event would
+	// have been offered to, since registration happens in queue order.
+	stateJobLost
+)
+
+// Job queue depths. lossyQueueDepth is the historical buffered-channel
+// size. losslessQueueDepth (CloseOnOverflow) is deeper because a
+// refusal there closes every connection on the channel: battery/rtc's
+// defaults (8 peers, 128 frames/s with a burst of 256) put at most 2048
+// inbound frames in flight at once, so only a stalled Run loop reaches
+// it. The queue grows to the depth only while a burst is pending.
+const (
+	lossyQueueDepth    = 64
+	losslessQueueDepth = 4096
 )
 
 // stateJob is one unit of work for the Run loop. Snapshot and event
@@ -168,7 +201,7 @@ func NewStateChannel[Role comparable, Snapshot any, Event any](
 	return &StateChannel[Role, Snapshot, Event]{
 		source: source,
 		conns:  make(map[*WebSocketConn]Role),
-		jobs:   make(chan stateJob[Role, Snapshot, Event], 64),
+		wake:   make(chan struct{}, 1),
 		stop:   make(chan struct{}),
 	}
 }
@@ -191,12 +224,7 @@ func (c *StateChannel[Role, Snapshot, Event]) Connect(role Role, conn *WebSocket
 		role: role,
 		done: make(chan struct{}),
 	}
-	select {
-	case c.jobs <- job:
-	case <-c.stop:
-		go conn.Close()
-		return
-	default:
+	if !c.push(job) {
 		// Queue full: the loop is wedged behind a slow SnapshotFor.
 		// Refuse the connection rather than leave it unhydrated.
 		go conn.Close()
@@ -216,17 +244,62 @@ func (c *StateChannel[Role, Snapshot, Event]) Connect(role Role, conn *WebSocket
 // Publish broadcasts an event to every connected role. typ becomes the
 // envelope's Type; the payload each role receives is FilterEvent's
 // return value for that role. Non-blocking: returns immediately; the
-// event is dropped if the channel is stopped or its job queue is full.
+// event is dropped if the channel is stopped or its job queue is full
+// (with CloseOnOverflow, a full queue closes the connections the event
+// would have reached instead of dropping it in silence).
 func (c *StateChannel[Role, Snapshot, Event]) Publish(typ string, event Event) {
 	if c.stopped.Load() {
 		return
 	}
-	select {
-	case c.jobs <- stateJob[Role, Snapshot, Event]{kind: stateJobEvent, typ: typ, event: event}:
-	case <-c.stop:
-	default:
-		// Queue full; drop, mirroring Hub.Broadcast's lossy semantics.
+	c.push(stateJob[Role, Snapshot, Event]{kind: stateJobEvent, typ: typ, event: event})
+}
+
+// push appends one job and wakes the Run loop; false when the queue is
+// full. Under CloseOnOverflow a refused event leaves a lost marker at
+// the tail, one per run of refusals: no job can be queued between two
+// refusals that share a marker, so the connections registered at the
+// marker are the ones every refused event of the run would have
+// reached. The marker may take the queue one past its depth.
+func (c *StateChannel[Role, Snapshot, Event]) push(job stateJob[Role, Snapshot, Event]) bool {
+	lossless := c.closeOnOverflow.Load()
+	depth := lossyQueueDepth
+	if lossless {
+		depth = losslessQueueDepth
 	}
+	c.qmu.Lock()
+	queued := len(c.queue) < depth
+	switch {
+	case queued:
+		c.queue = append(c.queue, job)
+	case lossless && job.kind == stateJobEvent &&
+		(len(c.queue) == 0 || c.queue[len(c.queue)-1].kind != stateJobLost):
+		c.queue = append(c.queue, stateJob[Role, Snapshot, Event]{kind: stateJobLost})
+	}
+	c.qmu.Unlock()
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
+	return queued
+}
+
+// pop removes the oldest job; false when the queue is empty. An emptied
+// queue drops its backing array so one burst does not pin the deep
+// queue's memory for the life of the channel.
+func (c *StateChannel[Role, Snapshot, Event]) pop() (stateJob[Role, Snapshot, Event], bool) {
+	c.qmu.Lock()
+	defer c.qmu.Unlock()
+	var zero stateJob[Role, Snapshot, Event]
+	if len(c.queue) == 0 {
+		return zero, false
+	}
+	job := c.queue[0]
+	c.queue[0] = zero
+	c.queue = c.queue[1:]
+	if len(c.queue) == 0 {
+		c.queue = nil
+	}
+	return job, true
 }
 
 // Unregister removes a connection without closing it. Connections are
@@ -281,14 +354,45 @@ func (c *StateChannel[Role, Snapshot, Event]) Run() {
 				go conn.Close()
 			}
 			return
-		case job := <-c.jobs:
-			if job.kind == stateJobSnapshot {
-				c.runSnapshot(job)
-			} else {
-				c.runEvent(job)
+		case <-c.wake:
+			for !c.stopped.Load() {
+				job, ok := c.pop()
+				if !ok {
+					break
+				}
+				switch job.kind {
+				case stateJobSnapshot:
+					c.runSnapshot(job)
+				case stateJobLost:
+					c.runLost()
+				default:
+					c.runEvent(job)
+				}
 			}
 		}
 	}
+}
+
+// runLost closes every connection registered at a lost-event marker:
+// each would have been offered the event a full queue refused, and a
+// connection that silently missed it cannot tell. The close is the
+// signal; the client reconnects and re-hydrates.
+func (c *StateChannel[Role, Snapshot, Event]) runLost() {
+	c.mu.RLock()
+	conns := make([]*WebSocketConn, 0, len(c.conns))
+	for conn := range c.conns {
+		conns = append(conns, conn)
+	}
+	c.mu.RUnlock()
+	closed := 0
+	for _, conn := range conns {
+		if conn.closing.CompareAndSwap(false, true) {
+			closed++
+			go conn.Close()
+		}
+	}
+	slog.Default().Warn("stream: state channel queue full; closed the connections that missed an event",
+		"closed", closed)
 }
 
 // runSnapshot hydrates one new connection: one immutable read of the
@@ -310,9 +414,17 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 
 	// One read: payload and sequence below come from this call only.
 	snap, seq := c.source.SnapshotFor(job.role)
-	if seq >= c.nextSeq {
-		c.nextSeq = seq + 1
-	}
+	// The snapshot sorts above every sequence this channel already put
+	// on the wire. The source's version and the event counter are not
+	// the same count: the delayed Publish of a mutation the version
+	// already covers takes the next number, which can equal the
+	// version of the NEXT mutation. A snapshot carrying that version
+	// would tie the event a reconnecting client applied and be
+	// rejected, leaving the client stale. The read happens here, after
+	// every event already assigned was dequeued, and the app mutates
+	// before it publishes, so the snapshot contains them all.
+	seq = max(seq, c.nextSeq)
+	c.nextSeq = seq + 1
 
 	c.mu.Lock()
 	if c.conns == nil {

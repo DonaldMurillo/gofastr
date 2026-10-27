@@ -167,8 +167,8 @@ func TestInvalidJSONRPCVersion(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if resp.Error.Code != ErrInvalidParams {
-		t.Errorf("expected code %d, got %d", ErrInvalidParams, resp.Error.Code)
+	if resp.Error.Code != ErrInvalidRequest {
+		t.Errorf("expected code %d, got %d", ErrInvalidRequest, resp.Error.Code)
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"unicode"
 )
 
 // snapshotter is the optional Store capability needed for on-disk persistence
@@ -84,22 +83,33 @@ func (i *index) loadAndReplay() error {
 	}
 	i.wal = w
 	ctx := context.Background()
+	// Open is single-threaded, so replay applies through the *Locked
+	// helpers without taking i.mu. Add and remove records are what WALs
+	// written before the replace record hold.
 	if err := w.replay(func(e walEntry) error {
+		var docIDs []string
+		chunks := e.Chunks
 		switch e.Op {
 		case walOpAdd:
-			if err := i.store.Add(ctx, e.Chunks); err != nil {
-				return err
-			}
-			return i.keywordIndexChunks(ctx, e.Chunks)
 		case walOpRemove:
-			priorIDs := i.collectChunkIDs(e.DocID)
-			if err := i.store.RemoveDoc(ctx, e.DocID); err != nil {
-				return err
-			}
-			return i.keywordRemoveDoc(ctx, e.DocID, priorIDs)
+			docIDs, chunks = []string{e.DocID}, nil
+		case walOpReplace:
+			docIDs = e.DocIDs
 		default:
 			return fmt.Errorf("unknown wal op %q", e.Op)
 		}
+		if len(chunks) > 0 && e.Model != "" && e.Model != i.embedder.Name() {
+			return &ModelMismatchError{SnapshotModel: e.Model, SnapshotDim: len(chunks[0].Vec), StoreModel: i.embedder.Name(), StoreDim: i.embedder.Dim()}
+		}
+		for _, id := range docIDs {
+			if err := i.applyRemoveLocked(ctx, id); err != nil {
+				return err
+			}
+		}
+		if len(chunks) > 0 {
+			return i.applyAddLocked(ctx, chunks)
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -112,20 +122,75 @@ func (i *index) loadAndReplay() error {
 			return err
 		}
 	}
+	return nil
+}
 
-	// After replay, rebuild keyword index from any chunks loaded from
-	// the snapshot itself (the snapshot does not include keyword state).
-	// keyword != nil guarantees the store is a chunkLister (Open fails closed).
-	if i.keyword != nil {
-		if cl, ok := i.store.(chunkLister); ok {
-			if chunks := cl.AllChunks(); len(chunks) > 0 {
-				if err := i.keywordIndexChunks(ctx, chunks); err != nil {
-					return err
-				}
-			}
+// rebuildKeyword fills the keyword backend from every chunk the store
+// already holds: one loaded from a snapshot (which carries no keyword
+// state), or one a durable store such as PgVectorStore kept across a
+// restart or wrote from another replica, with no Path involved.
+// keyword != nil guarantees the store is a chunkLister (Open fails closed).
+func (i *index) rebuildKeyword() error {
+	if i.keyword == nil {
+		return nil
+	}
+	ctx := context.Background()
+	var chunks []Chunk
+	if ce, ok := i.store.(chunkEnumerator); ok {
+		var err error
+		if chunks, err = ce.allChunks(ctx); err != nil {
+			return fmt.Errorf("semantic: rebuild keyword index: %w", err)
 		}
+	} else if cl, ok := i.store.(chunkLister); ok {
+		chunks = cl.AllChunks()
+	}
+	if len(chunks) > 0 {
+		return i.keywordIndexChunks(ctx, chunks)
 	}
 	return nil
+}
+
+// chunkFilterer is a store that looks chunks up under a Filter in its
+// own query language (PgVectorStore), so the hybrid keyword leg applies
+// the predicate the vector leg does instead of rechecking decoded
+// metadata, where a JSON number has already lost precision. It returns
+// the chunks among ids that pass filter, keyed by chunk ID, in one round
+// trip.
+type chunkFilterer interface {
+	chunksByIDMatching(ctx context.Context, ids []string, filter Filter) map[string]Chunk
+}
+
+// docSourceLister lists every stored document's ID with its Source. A
+// Watcher's first scan reads it to find files deleted while no watcher
+// ran. A nil map means the store cannot enumerate its documents.
+type docSourceLister interface {
+	docSources(ctx context.Context) (map[string]string, error)
+}
+
+func (i *index) docSources(ctx context.Context) (map[string]string, error) {
+	var chunks []Chunk
+	if e, ok := i.store.(chunkEnumerator); ok {
+		var err error
+		if chunks, err = e.allChunks(ctx); err != nil {
+			return nil, err
+		}
+	} else if cl, ok := i.store.(chunkLister); ok {
+		chunks = cl.AllChunks()
+	} else {
+		return nil, nil
+	}
+	out := make(map[string]string, len(chunks))
+	for _, c := range chunks {
+		out[c.DocID] = c.Source
+	}
+	return out, nil
+}
+
+// chunkEnumerator is a store whose full read can fail (PgVectorStore).
+// rebuildKeyword reads through it so a failed read fails Open instead of
+// passing for an empty store.
+type chunkEnumerator interface {
+	allChunks(ctx context.Context) ([]Chunk, error)
 }
 
 func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
@@ -141,6 +206,7 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	if len(docs) == 0 {
 		return nil
 	}
+	docs = lastPerID(docs)
 	var chunks []Chunk
 	for _, doc := range docs {
 		if doc.ID == "" {
@@ -152,13 +218,12 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		}
 		chunks = append(chunks, cs...)
 	}
+	ids := make([]string, len(docs))
+	for j, doc := range docs {
+		ids[j] = doc.ID
+	}
 	if len(chunks) == 0 {
-		for _, doc := range docs {
-			if err := i.logAndApplyRemove(ctx, doc.ID); err != nil {
-				return err
-			}
-		}
-		return nil
+		return i.replace(ctx, ids, nil)
 	}
 	texts := make([]string, len(chunks))
 	for j, c := range chunks {
@@ -185,22 +250,29 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		chunks[j].Vec = vecs[j]
 	}
 
-	// Replace-by-doc semantics: every prior chunk for these doc IDs is
-	// removed before the new chunks land. We log the removes in the
-	// WAL so a crash mid-replace is recoverable to a consistent state.
-	// A cancel is honored only before the first remove: once one has
-	// applied, stopping would lose the document, so the rest runs to
-	// completion.
-	if err := ctx.Err(); err != nil {
-		return err
+	return i.replace(ctx, ids, chunks)
+}
+
+// lastPerID keeps the last Document for each ID, in batch order. Add
+// removes each doc once and then appends every chunk, so a batch naming
+// an ID twice would otherwise store both versions under the same chunk
+// IDs; a later write to the same ID replaces the earlier one, as two
+// separate Adds do.
+func lastPerID(docs []Document) []Document {
+	last := make(map[string]int, len(docs))
+	for j, d := range docs {
+		last[d.ID] = j
 	}
-	ctx = context.WithoutCancel(ctx)
-	for _, doc := range docs {
-		if err := i.logAndApplyRemove(ctx, doc.ID); err != nil {
-			return err
+	if len(last) == len(docs) {
+		return docs
+	}
+	out := make([]Document, 0, len(last))
+	for j, d := range docs {
+		if last[d.ID] == j {
+			out = append(out, d)
 		}
 	}
-	return i.logAndApplyAdd(ctx, chunks)
+	return out
 }
 
 // chunkError is a document the chunker refused (bad bytes, a failing
@@ -217,15 +289,137 @@ func (e *chunkError) Error() string {
 func (e *chunkError) Unwrap() error { return e.err }
 
 func (i *index) Remove(ctx context.Context, docIDs ...string) error {
-	for _, id := range docIDs {
-		if err := i.logAndApplyRemove(ctx, id); err != nil {
+	return i.replace(ctx, docIDs, nil)
+}
+
+// replace removes every prior chunk of docIDs and then stores chunks
+// (none for a plain Remove), logged as ONE WAL record before any step
+// applies, so a crash replays the whole replace or none of it. Logged as
+// a remove record and then an add record, a crash between the two
+// reopened with neither version of the document. The whole sequence runs
+// under i.mu: taking the lock per step let two replaces of one document
+// interleave as remove-A, remove-B, add-A, add-B and keep both versions.
+// A cancel is honored only before the first remove: once one has
+// applied, stopping would lose the document, so the rest runs to
+// completion.
+func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (err error) {
+	// walEncodable runs metadata values' own GobEncode methods, host
+	// code like the store and keyword backend below.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: replace panicked: %v", v)
+		}
+	}()
+	// Check that the WAL can encode the chunks before logging them: a
+	// failed gob Encode (metadata holding a type gob cannot carry) is
+	// sticky on the encoder and would refuse every later record.
+	if i.path != "" && len(chunks) > 0 {
+		if err := walEncodable(chunks); err != nil {
 			return err
 		}
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ctx = context.WithoutCancel(ctx)
+	// A store that replaces documents in one transaction of its own
+	// (PgVectorStore) does so: removing and adding as separate steps loses
+	// the old version when the add fails, and i.mu does not reach a second
+	// replica sharing the store. Such a store never has a WAL (Path needs
+	// a snapshotter, which it is not); the WAL path keeps the steps.
+	if r, ok := i.store.(docReplacer); ok && i.wal == nil {
+		if err := i.applyReplaceLocked(ctx, r, docIDs, chunks); err != nil {
+			return err
+		}
+		if i.dueSnapshotLocked() {
+			return i.snapshotLocked()
+		}
+		return nil
+	}
+	if i.wal != nil {
+		// A failed append stopped the WAL. The store holds exactly the
+		// acknowledged writes (a write whose append failed was never
+		// applied), so a snapshot of it is a clean cut and restarts the
+		// WAL; until the disk takes one, writes keep failing.
+		if i.wal.needsSnapshot() {
+			if err := i.snapshotLocked(); err != nil {
+				return err
+			}
+		}
+		e := walEntry{Op: walOpReplace, DocIDs: docIDs, Chunks: chunks}
+		if len(chunks) > 0 {
+			e.Model = i.embedder.Name()
+		}
+		if err := i.wal.append(e); err != nil {
+			return err
+		}
+	}
+	// Past this point the replace is logged: store and keyword index
+	// apply it (ctx no longer cancels), and a panic or error mid-apply
+	// is healed by replay on restart.
+	for _, id := range docIDs {
+		if err := i.applyRemoveLocked(ctx, id); err != nil {
+			return err
+		}
+	}
+	if len(chunks) > 0 {
+		if err := i.applyAddLocked(ctx, chunks); err != nil {
+			return err
+		}
+	}
+	// Snapshot only between whole replaces, never between a remove and
+	// its add.
+	if i.dueSnapshotLocked() {
+		return i.snapshotLocked()
 	}
 	return nil
 }
 
-func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) (err error) {
+// docReplacer is a store that removes documents and stores their new
+// chunks in one atomic step, serialized per document across every process
+// sharing the store.
+type docReplacer interface {
+	replaceDocs(ctx context.Context, docIDs []string, chunks []Chunk) error
+}
+
+// applyReplaceLocked replaces docIDs with chunks through the store's own
+// atomic replace, then brings the keyword backend in line. The keyword
+// backend is touched only after the store has committed, so a failed
+// replace leaves both on the old version. The caller MUST hold i.mu.
+func (i *index) applyReplaceLocked(ctx context.Context, r docReplacer, docIDs []string, chunks []Chunk) (err error) {
+	// Same net as applyAddLocked.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: apply replace panicked: %v", v)
+		}
+	}()
+	var prior []string
+	for _, id := range docIDs {
+		prior = append(prior, i.collectChunkIDs(id)...)
+	}
+	if err := r.replaceDocs(ctx, docIDs, chunks); err != nil {
+		return err
+	}
+	if err := i.keywordRemoveDoc(ctx, "", prior); err != nil {
+		return err
+	}
+	if err := i.keywordIndexChunks(ctx, chunks); err != nil {
+		return err
+	}
+	i.opsSinceSnap += len(docIDs)
+	if len(chunks) > 0 {
+		i.opsSinceSnap++
+	}
+	return nil
+}
+
+// applyAddLocked adds chunks to the store and the keyword backend. The
+// WAL record covering it is the caller's (replace logs one record for
+// the whole replace; replay applies a logged one). The caller MUST hold
+// i.mu.
+func (i *index) applyAddLocked(ctx context.Context, chunks []Chunk) (err error) {
 	// Store and keyword backend are host-supplied code on the same
 	// dispatch paths; a panic mid-apply leaves the WAL entry unapplied
 	// and replay heals it on restart, so an attributed error is the
@@ -235,19 +429,6 @@ func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) (err error) 
 			err = fmt.Errorf("semantic: apply add panicked: %v", v)
 		}
 	}()
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if i.wal != nil {
-		if err := i.wal.append(walEntry{Op: walOpAdd, Chunks: chunks}); err != nil {
-			return err
-		}
-	}
-	// Past this point the op is logged: store and keyword index apply
-	// it together or a cancel splits them.
-	ctx = context.WithoutCancel(ctx)
 	if err := i.store.Add(ctx, chunks); err != nil {
 		return err
 	}
@@ -255,34 +436,22 @@ func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) (err error) 
 		return err
 	}
 	i.opsSinceSnap++
-	if i.dueSnapshotLocked() {
-		return i.snapshotLocked()
-	}
 	return nil
 }
 
-func (i *index) logAndApplyRemove(ctx context.Context, docID string) (err error) {
-	// Same net as logAndApplyAdd.
+// applyRemoveLocked removes a document from the store and the keyword
+// backend; the WAL record is the caller's, as for applyAddLocked. The
+// caller MUST hold i.mu.
+func (i *index) applyRemoveLocked(ctx context.Context, docID string) (err error) {
+	// Same net as applyAddLocked.
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("semantic: apply remove panicked: %v", v)
 		}
 	}()
-	i.mu.Lock()
-	defer i.mu.Unlock()
 	// Collect prior chunk IDs under the same lock as the mutation so the
 	// keyword cleanup matches the exact state being removed.
 	priorChunkIDs := i.collectChunkIDs(docID)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if i.wal != nil {
-		if err := i.wal.append(walEntry{Op: walOpRemove, DocID: docID}); err != nil {
-			return err
-		}
-	}
-	// Same as logAndApplyAdd: the store and keyword removes go together.
-	ctx = context.WithoutCancel(ctx)
 	if err := i.store.RemoveDoc(ctx, docID); err != nil {
 		return err
 	}
@@ -290,9 +459,6 @@ func (i *index) logAndApplyRemove(ctx context.Context, docID string) (err error)
 		return err
 	}
 	i.opsSinceSnap++
-	if i.dueSnapshotLocked() {
-		return i.snapshotLocked()
-	}
 	return nil
 }
 
@@ -451,20 +617,24 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 
 	candidates := vecHits
 	if q.Hybrid && i.keyword != nil {
-		kwRaw, err := i.keywordSearch(ctx, boundedKeywordText(q.Text), width)
+		kwHits, err := i.scopedKeywordHits(ctx, boundedKeywordText(q.Text), q.Filter, width)
 		if err != nil {
 			return nil, fmt.Errorf("semantic: keyword search: %w", err)
 		}
-		kwHits := i.hydrateKeywordHits(kwRaw, q.Filter)
 		candidates = fuseRRF(vecHits, kwHits)
 		if len(candidates) > width {
 			candidates = candidates[:width]
 		}
 	}
 
+	// Without MMR the reranker sees the whole candidate set, at most
+	// width hits, and K cuts its output: cutting to K first left it
+	// nothing to promote (at K=1 it could only confirm the top hit).
 	if q.MMRLambda > 0 && len(candidates) > 0 {
 		candidates = mmr(qv, candidates, q.MMRLambda, k)
-	} else if len(candidates) > k {
+	} else if q.Rerank && len(candidates) > width {
+		candidates = candidates[:width]
+	} else if !q.Rerank && len(candidates) > k {
 		candidates = candidates[:k]
 	}
 
@@ -507,7 +677,7 @@ func boundedKeywordText(q string) string {
 	n := 0
 	inField := false
 	for i, r := range q {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+		if !keywordRune(r) {
 			inField = false
 		} else {
 			if !inField {
@@ -526,24 +696,66 @@ func boundedKeywordText(q string) string {
 // Hits by looking each chunk up in the store. Filtered-out chunks are
 // dropped silently. We need the lookup because the keyword backend
 // only knows the chunk IDs; the vectors and metadata live in the
-// store.
-func (i *index) hydrateKeywordHits(raw []KeywordHit, filter Filter) []Hit {
+// store. A store that filters in its own query language (PgVectorStore)
+// judges the filter itself, with the predicate its vector leg uses.
+func (i *index) hydrateKeywordHits(ctx context.Context, raw []KeywordHit, filter Filter) []Hit {
 	cl, ok := i.store.(chunkLister)
 	if !ok {
 		return nil
 	}
+	fl, filtersItself := i.store.(chunkFilterer)
+	var matched map[string]Chunk
+	if filtersItself && len(raw) > 0 {
+		ids := make([]string, len(raw))
+		for j, kh := range raw {
+			ids[j] = kh.ChunkID
+		}
+		matched = fl.chunksByIDMatching(ctx, ids, filter)
+	}
 	out := make([]Hit, 0, len(raw))
 	for _, kh := range raw {
-		c, ok := cl.ChunkByID(kh.ChunkID)
-		if !ok {
-			continue
-		}
-		if !chunkMatches(&c, filter) {
+		var c Chunk
+		if filtersItself {
+			if c, ok = matched[kh.ChunkID]; !ok {
+				continue
+			}
+		} else if c, ok = cl.ChunkByID(kh.ChunkID); !ok || !chunkMatches(&c, filter) {
 			continue
 		}
 		out = append(out, Hit{Chunk: c, Score: kh.Score, Reason: "kw"})
 	}
 	return out
+}
+
+// scopedKeywordHits returns up to width keyword hits inside filter. The
+// keyword backend knows nothing of the filter, so its top width hits can
+// all lie outside it: cutting there let out-of-scope matches crowd an
+// in-scope document out of the keyword leg. The window widens fourfold
+// until width hits pass the filter, the backend returns fewer than asked
+// (it has no more), or the window covers every chunk the store holds.
+func (i *index) scopedKeywordHits(ctx context.Context, text string, filter Filter, width int) ([]Hit, error) {
+	unfiltered := filter.Source == "" && filter.Kind == "" && len(filter.MetaMatch) == 0
+	top, ceiling := width, -1
+	for {
+		raw, err := i.keywordSearch(ctx, text, top)
+		if err != nil {
+			return nil, err
+		}
+		hits := i.hydrateKeywordHits(ctx, raw, filter)
+		if len(hits) >= width {
+			return hits[:width], nil
+		}
+		if unfiltered || len(raw) < top {
+			return hits, nil
+		}
+		if ceiling < 0 {
+			ceiling = i.store.Stats().Chunks
+		}
+		if top >= ceiling {
+			return hits, nil
+		}
+		top = min(top*4, ceiling)
+	}
 }
 
 func (i *index) Stats() Stats {
@@ -571,7 +783,7 @@ func (i *index) Close() error {
 			errs = append(errs, err)
 		}
 		// Nilled under i.mu so it is synchronized with every other i.wal
-		// reader (logAndApply*, snapshotLocked), Close no longer races an
+		// reader (replace, snapshotLocked), Close no longer races an
 		// in-flight mutation on the wal pointer.
 		i.wal = nil
 	}

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -249,6 +250,13 @@ func propInt(props map[string]any, keys ...string) int {
 			return int(value)
 		case float64:
 			return int(value)
+		case json.Number:
+			// The journal keeps an integer past 2^53 as a json.Number.
+			// Read the integer it spells; one past int64 has no int and
+			// reads as unset.
+			if i, err := value.Int64(); err == nil {
+				return int(i)
+			}
 		}
 	}
 	return 0

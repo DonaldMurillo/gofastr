@@ -141,7 +141,7 @@ func TestIndexDDL_InvalidNamePanics(t *testing.T) {
 			t.Fatal("expected panic on an invalid index name")
 		}
 	}()
-	indexDDL("t", Index{Name: "bad name;", Columns: []string{"a"}})
+	indexDDL(DialectPostgres, "t", Index{Name: "bad name;", Columns: []string{"a"}})
 }
 
 func TestForeignKeyClauses_Branches(t *testing.T) {
@@ -153,34 +153,34 @@ func TestForeignKeyClauses_Branches(t *testing.T) {
 		{Type: entity.RelManyToOne, Name: "b", Entity: "users", ForeignKey: []string{"user_id"}},
 	}
 	ent := rawEnt("posts", "posts", nil, dupRels, "id")
-	fks, err := foreignKeyClauses(ent, map[string]*entity.Entity{"users": users, "posts": ent})
+	fks, err := foreignKeyClauses(ent, map[string]*entity.Entity{"users": users, "posts": ent}, DialectPostgres)
 	if err != nil || len(fks) != 1 {
 		t.Fatalf("dup FK: got %d clauses, err %v", len(fks), err)
 	}
 
 	// Unknown target entity.
 	unk := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "ghost", ForeignKey: []string{"g_id"}}}, "id")
-	if _, err := foreignKeyClauses(unk, map[string]*entity.Entity{"p": unk}); err == nil {
+	if _, err := foreignKeyClauses(unk, map[string]*entity.Entity{"p": unk}, DialectPostgres); err == nil {
 		t.Error("expected unknown-entity error")
 	}
 
 	// Invalid FK column name.
 	badFK := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "users", ForeignKey: []string{"bad col"}}}, "id")
-	if _, err := foreignKeyClauses(badFK, map[string]*entity.Entity{"p": badFK, "users": users}); err == nil {
+	if _, err := foreignKeyClauses(badFK, map[string]*entity.Entity{"p": badFK, "users": users}, DialectPostgres); err == nil {
 		t.Error("expected invalid FK column error")
 	}
 
 	// Invalid target table name.
 	badTable := rawEnt("bt", "bad table", []schema.Field{{Name: "id"}}, nil, "id")
 	refBadTable := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "bt", ForeignKey: []string{"bt_id"}}}, "id")
-	if _, err := foreignKeyClauses(refBadTable, map[string]*entity.Entity{"p": refBadTable, "bt": badTable}); err == nil {
+	if _, err := foreignKeyClauses(refBadTable, map[string]*entity.Entity{"p": refBadTable, "bt": badTable}, DialectPostgres); err == nil {
 		t.Error("expected invalid target table error")
 	}
 
 	// Invalid target primary key name.
 	badPK := rawEnt("bp", "bp", []schema.Field{{Name: "id"}}, nil, "bad pk")
 	refBadPK := rawEnt("p", "p", nil, []entity.Relation{{Type: entity.RelManyToOne, Name: "r", Entity: "bp", ForeignKey: []string{"bp_id"}}}, "id")
-	if _, err := foreignKeyClauses(refBadPK, map[string]*entity.Entity{"p": refBadPK, "bp": badPK}); err == nil {
+	if _, err := foreignKeyClauses(refBadPK, map[string]*entity.Entity{"p": refBadPK, "bp": badPK}, DialectPostgres); err == nil {
 		t.Error("expected invalid target PK error")
 	}
 }
@@ -321,7 +321,7 @@ func TestMigrateEntity_InvalidTableExisting(t *testing.T) {
 	// A live set matching the declared fields yields no column adds, so the
 	// executor is never touched and a nil execQueryer is safe here.
 	ent := rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
-	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}, nil); err == nil {
+	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}, nil, nil); err == nil {
 		t.Error("expected invalid table name error in migrateEntity")
 	}
 }

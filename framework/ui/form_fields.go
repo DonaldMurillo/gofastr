@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -169,9 +170,10 @@ type DateTimeFieldConfig struct {
 	Disabled    bool
 	Min         string
 	Max         string
-	// Step is the precision in seconds: 1 shows seconds. Zero leaves
-	// the browser's default of one minute.
-	Step int
+	// Step is the precision in seconds: 1 shows seconds, 0.001 shows
+	// milliseconds. Zero leaves the browser's default of one minute; a
+	// negative or infinite Step draws none.
+	Step float64
 
 	// ExtraAttrs forwards additional attributes onto the field's
 	// <input>. Keys the input owns are dropped, as DateField's are, and
@@ -195,8 +197,8 @@ func DateTimeField(cfg DateTimeFieldConfig) render.HTML {
 	if cfg.Max != "" {
 		owned["max"] = cfg.Max
 	}
-	if cfg.Step > 0 {
-		owned["step"] = strconv.Itoa(cfg.Step)
+	if cfg.Step > 0 && !math.IsInf(cfg.Step, 1) {
+		owned["step"] = strconv.FormatFloat(cfg.Step, 'f', -1, 64)
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"type", "name", "value", "placeholder", "min", "max", "step",

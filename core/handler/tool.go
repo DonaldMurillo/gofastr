@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // ToolAdapter bridges a typed Handler into an MCP tool handler, the
@@ -53,13 +54,9 @@ func bindToolParams(params map[string]any, dst any) error {
 	rest := maps.Clone(params)
 	rv := reflect.ValueOf(dst).Elem()
 	if rv.Kind() == reflect.Struct {
-		rt := rv.Type()
 		for _, source := range []string{"query", "path"} {
-			for i := 0; i < rt.NumField(); i++ {
-				tag := rt.Field(i).Tag.Get(source)
-				if tag == "" || tag == "-" {
-					continue
-				}
+			for _, tf := range taggedFields(rv.Type(), source) {
+				tag := tf.tag
 				raw, ok := rest[tag]
 				if !ok {
 					continue
@@ -76,8 +73,8 @@ func bindToolParams(params map[string]any, dst any) error {
 				if clean != s {
 					return Fail(400, ReasonParameterControlByte, map[string]any{"source": source, "name": strconv.Quote(tag)})
 				}
-				fv := rv.Field(i)
-				if !fv.CanSet() {
+				fv := settableField(rv, tf.index)
+				if !fv.IsValid() {
 					continue
 				}
 				if err := setField(fv, s); err != nil {
@@ -93,7 +90,15 @@ func bindToolParams(params map[string]any, dst any) error {
 	if err != nil {
 		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
 	}
-	return UnmarshalStrict(body, dst)
+	// UseNumber, then Settle, as Bind does: MCP hands an integer past 2^53
+	// over as a json.Number, and a float64 decode would round it.
+	if err := UnmarshalStrict(body, dst, UseNumber()); err != nil {
+		return err
+	}
+	if err := jsonexact.Settle(dst); err != nil {
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
+	}
+	return nil
 }
 
 // toolParamString spells a scalar param the way it would arrive in a URL.

@@ -13,6 +13,8 @@ Kiln tools at `$KILN_URL`; do not edit the repository or start another server.
 3. Read the returned structured result. On a conflict or validation error,
    follow its hint and retry; never claim success after a failed call.
 4. Read `world_get` again and verify the exact entity/page/config state.
+   Credentials (`jwt_secret`, `seed_password`, a `db_url` with a password)
+   read back as `[redacted]`: that means set, not lost.
 5. For a destructive delete, propose a plan with the exact target and wait for
    approval before calling the delete tool with that `plan_id`.
 
@@ -141,13 +143,18 @@ Declarative behavior uses these tools (same dispatcher as everything else):
   that still has one: delete it before freezing and register the route in
   owned Go after generation.
 - `add_seed(seed)`: insert seed rows `{"entity":"posts","rows":[{...}]}`.
-- `undo`: revert the most recent journal entry.
+  `entity` names an entity already in the world; the rows go into its table.
+- `undo`: revert the most recent world edit. Rows written through the CRUD
+  API since boot are gone afterwards: the database is rebuilt from the
+  journal and only seed rows come back.
 
 Action kinds (params are action-specific): `noop`; `validate`
 `{ expression, message }`: errors with the message when false; `set_field`
 `{ field, value }` (expression) or `{ field, value_literal }`; `audit`
 `{ channel, message }`; `emit_event` `{ topic, data }`; `respond_json`
-(routes only) `{ status, body }`.
+`{ status, body }`. Hooks take `noop`, `validate`, `set_field`, `audit` and
+`emit_event`; routes take only `noop` and `respond_json`. Any other kind on
+a surface is refused with `kind: "validation"`.
 
 The expression language covers `condition`, `value`, `message`, and
 string-typed `body`: literals (numbers, strings, `true`/`false`/`null`,

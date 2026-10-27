@@ -359,7 +359,7 @@ func TestExportImportReachableBranches(t *testing.T) {
 func TestRawReadAllQueryError(t *testing.T) {
 	db := openSQLiteMem(t)
 	defer db.Close()
-	if _, err := rawReadAll(context.Background(), db, "nonexistent_table",
+	if _, err := rawReadAll(context.Background(), db, migrate.DialectSQLite, "nonexistent_table",
 		[]string{"id"}, []string{"id"}, 10); err == nil {
 		t.Error("rawReadAll on a missing table should error")
 	}

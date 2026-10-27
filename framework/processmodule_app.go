@@ -88,8 +88,18 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 		a.modules.SetProcessCoordinator(processCoordinatorAdapter{sup: sup})
 	}
 	ctx := context.Background()
-	if _, err := a.processModules.Register(ctx, desc, approved); err != nil {
+	reg, err := a.processModules.Register(ctx, desc, approved)
+	if err != nil {
 		panic(fmt.Sprintf("framework: RegisterProcessModule(%q): %v", desc.Name, err))
+	}
+	if reg.Outcome == InstallGrantsChanged {
+		// A boot against a row whose grants differ from this
+		// descriptor's: the store disabled the module so the new grants
+		// never run unseen. Say so where the operator looks.
+		a.Logger().Warn("process module grants changed; disabled until an operator re-enables it",
+			"module", desc.Name,
+			"previous_grants", grantsAsStrings(reg.PreviousGrants),
+			"grants", grantsAsStrings(reg.EffectiveGrants))
 	}
 	// Register with the in-process manager so the route gate knows the
 	// name. Manifest carries the migration group pointer; DependsOn stays
@@ -108,10 +118,12 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 		a.modules.clearCurrent()
 	}
 	// Process modules default to DISABLED (InstalledDisabled), the
-	// operator enables via [App.ProcessModules].Enable after install.
-	a.modules.mu.Lock()
-	a.modules.enabled[desc.Name] = false
-	a.modules.mu.Unlock()
+	// operator enables after install. The enabled state is the
+	// supervisor's desired-state row alone: Modules().Enable/Disable (and
+	// the app_module_* MCP tools) write it through the coordinator, and
+	// the route gate reads it back, so either API reaches the route gate,
+	// the module-tool gate and the supervisor.
+	a.modules.markProcess(desc.Name)
 	return a
 }
 
@@ -152,6 +164,21 @@ type processCoordinatorAdapter struct{ sup *ProcessModuleSupervisor }
 
 // Reconcile forwards to the supervisor.
 func (a processCoordinatorAdapter) Reconcile(name string) { a.sup.Reconcile(name) }
+
+// DesiredEnabled reports the slot's desired-enabled state, false for a
+// name the supervisor does not supervise.
+func (a processCoordinatorAdapter) DesiredEnabled(name string) bool {
+	sl := a.sup.Slot(name)
+	return sl != nil && sl.snapshot().enabled
+}
+
+// SetDesiredEnabled forwards to the supervisor's Enable or Disable.
+func (a processCoordinatorAdapter) SetDesiredEnabled(ctx context.Context, name string, enabled bool) error {
+	if enabled {
+		return a.sup.Enable(ctx, name)
+	}
+	return a.sup.Disable(ctx, name)
+}
 
 // Info returns the supervisor's introspection, or ok=false when the name
 // is not a registered process module.

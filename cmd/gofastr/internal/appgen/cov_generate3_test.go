@@ -62,7 +62,7 @@ func TestGenerateAppArgs(t *testing.T) {
 	if opts.Spec != "specs/" || opts.outputDir != "app" || !opts.outputSet || !opts.force || !opts.dryRun || !opts.json {
 		t.Fatalf("opts = %#v", opts)
 	}
-	for _, args := range [][]string{{"a.yml", "b.yml"}, {"--from=a.yml"}, {"--out"}, {"--out", "--json"}} {
+	for _, args := range [][]string{{"a.yml", "b.yml"}, {"--from=a.yml"}, {"--out"}, {"--out", "--json"}, {"--out="}, {"--out", ""}} {
 		if _, err := parseAppGenerateArgs(args); err == nil {
 			t.Errorf("parseAppGenerateArgs(%q) accepted it", args)
 		}

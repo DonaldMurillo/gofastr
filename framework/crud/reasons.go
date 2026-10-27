@@ -73,6 +73,7 @@ var (
 	reasonKeptKey        = i18n.Define("validation.kept_foreign_key", "is one column of the reference {{relation}}, and this write keeps {{kept}} as stored, so the reference cannot move here")
 	reasonAccessDenied   = i18n.Define("error.access_denied", "access denied")
 
+	reasonCascadeKeyFixed = i18n.Define("validation.cascade_key_not_writable", "links through {{column}}, which this write cannot set")
 	reasonNotObject       = i18n.Define("validation.not_object", "must be an object")
 	reasonNotArray        = i18n.Define("validation.not_array", "must be an array")
 	reasonNotObjectOrID   = i18n.Define("validation.not_object_or_id", "must be an object or ID")

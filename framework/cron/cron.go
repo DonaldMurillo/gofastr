@@ -50,10 +50,13 @@ type CronJob struct {
 // skips the tick. The built-in [PostgresAdvisoryLease] uses a Postgres
 // advisory lock; a custom implementation can back it with Redis, etcd, etc.
 //
-// This is per-tick mutual exclusion (two replicas never fire the same job in
-// the same minute), NOT exactly-once execution for a job that overruns the
-// tick interval, for durable, exactly-once background work use the DB-backed
-// queue (battery/queue.DurableScheduler).
+// Acquire alone is mutual exclusion while the lease is held: a replica whose
+// timer fires for the same minute after the leader released it can fire
+// that minute again. A lease that also implements [TickLeaderElection]
+// (PostgresAdvisoryLease does) records the claimed minute, so each tick
+// fires at most once across replicas. Neither is exactly-once execution; for
+// durable, exactly-once background work use the DB-backed queue
+// (battery/queue.DurableScheduler).
 type LeaderElection interface {
 	// Acquire attempts to take the lease for this tick. held is true when the
 	// caller is the leader and should fire jobs; in that case release (non-nil)
@@ -61,6 +64,37 @@ type LeaderElection interface {
 	// block indefinitely, a non-leader should return promptly so the replica
 	// can skip to the next tick.
 	Acquire(ctx context.Context) (held bool, release func(), err error)
+}
+
+// TickLeaderElection is an optional [LeaderElection] capability that makes
+// each tick fire at most once across replicas. Plain Acquire gives mutual
+// exclusion only while the lease is held, and the scheduler releases it as
+// soon as the tick's jobs finish: a replica whose timer fires for the same
+// minute a moment later finds the lease free and runs the jobs again.
+// AcquireTick closes that gap by recording which minute was consumed.
+//
+// When the installed lease implements it, the scheduler calls AcquireTick
+// instead of Acquire, passing the tick minute (the firing time truncated to
+// the minute, in UTC). An implementation must hold only when it took the
+// lease AND no replica sharing the lease has claimed this minute or a later
+// one, and it must record the claim atomically (a conditional write, not a
+// read followed by a write). [PostgresAdvisoryLease] implements it with a
+// small table and a conditional upsert.
+//
+// Limits: the guarantee is at most once, not exactly once. A tick whose
+// claim fails or loses is skipped, never retried, and a replica that claims
+// and then crashes leaves the minute unrun. Claims are monotonic, so a
+// replica whose clock runs behind cannot fire a minute older than one
+// already claimed, and a replica whose clock runs ahead fires its minute
+// early by its skew; skew of a minute or more skips minutes. Every replica
+// sharing the lease must register the same jobs, since one claim covers
+// the whole tick.
+type TickLeaderElection interface {
+	LeaderElection
+	// AcquireTick attempts to take the lease and claim tick. held, release
+	// and err follow Acquire's contract; a lease taken for a minute that is
+	// already claimed is released before returning (false, nil, nil).
+	AcquireTick(ctx context.Context, tick time.Time) (held bool, release func(), err error)
 }
 
 // Scheduler is a tiny in-process cron driver. It is intentionally minimal:
@@ -148,8 +182,10 @@ func (s *Scheduler) WithLeaderElection(le LeaderElection) {
 
 // runTick is one tick: acquire leadership (if configured), fire the matching
 // jobs, then release the lease once they finish. It reports whether this
-// replica fired. Extracted from the run loop so the leader-gating is testable
-// without the wall clock.
+// replica fired. A lease that implements [TickLeaderElection] also claims
+// the tick minute, so the tick fires at most once across replicas even
+// after the leader released the lease. Extracted from the run loop so the
+// leader-gating is testable without the wall clock.
 func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	s.mu.RLock()
 	leader := s.leader
@@ -158,7 +194,12 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 		s.RunOnce(ctx, now)
 		return true
 	}
-	held, release, err := s.acquireSafely(ctx, leader)
+	acquire := leader.Acquire
+	if tl, ok := leader.(TickLeaderElection); ok {
+		tick := now.UTC().Truncate(time.Minute)
+		acquire = func(ctx context.Context) (bool, func(), error) { return tl.AcquireTick(ctx, tick) }
+	}
+	held, release, err := s.acquireSafely(ctx, acquire)
 	if err != nil {
 		s.reportError("(leader-election)", err)
 		return false
@@ -183,20 +224,20 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	return true
 }
 
-// acquireSafely runs the leader-election Acquire under the same recover
-// net the per-job path gives j.Run: Acquire is driver-supplied callback
-// code (custom Redis/etcd leases are a documented extension point)
+// acquireSafely runs the leader-election Acquire (or AcquireTick) under
+// the same recover net the per-job path gives j.Run: it is driver-supplied
+// callback code (custom Redis/etcd leases are a documented extension point)
 // running on the loop goroutine, which has no per-request net — its
 // panic is routed to OnError like every other scheduler fault and the
 // tick is skipped, instead of killing the process.
-func (s *Scheduler) acquireSafely(ctx context.Context, leader LeaderElection) (held bool, release func(), err error) {
+func (s *Scheduler) acquireSafely(ctx context.Context, acquire func(context.Context) (bool, func(), error)) (held bool, release func(), err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			held, release = false, nil
 			err = fmt.Errorf("panic in leader-election acquire: %v\n%s", r, debug.Stack())
 		}
 	}()
-	return leader.Acquire(ctx)
+	return acquire(ctx)
 }
 
 // releaseSafely runs the per-tick lease release under a recover guard
@@ -353,13 +394,19 @@ func (s *Scheduler) reportError(jobName string, err error) {
 	s.OnError(jobName, err)
 }
 
+// untilNextTick is how long until the next tickEv boundary.
+func (s *Scheduler) untilNextTick() time.Duration {
+	now := time.Now()
+	return now.Truncate(s.tickEv).Add(s.tickEv).Sub(now)
+}
+
 func (s *Scheduler) run(ctx context.Context) {
 	defer close(s.stopped)
 
-	// Align to the next minute boundary so the first tick fires near :00.
-	now := time.Now()
-	next := now.Truncate(time.Minute).Add(time.Minute)
-	timer := time.NewTimer(time.Until(next))
+	// Every tick, the first included, fires at the next interval boundary
+	// (:00 of a minute): rearming one interval after a slow tick finished
+	// let the delay pile up until a whole minute was skipped.
+	timer := time.NewTimer(s.untilNextTick())
 	defer timer.Stop()
 
 	for {
@@ -370,7 +417,7 @@ func (s *Scheduler) run(ctx context.Context) {
 			return
 		case t := <-timer.C:
 			s.runTick(ctx, t)
-			timer.Reset(s.tickEv)
+			timer.Reset(s.untilNextTick())
 		}
 	}
 }

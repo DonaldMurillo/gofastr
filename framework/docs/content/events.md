@@ -121,9 +121,11 @@ defer unsubscribe()
 `app.Events()` is a method that returns the in-process `*EventBus`,
 the same bus the SSE stream subscribes to.
 
-In-process subscribers are not subject to the 32-event SSE buffer;
-they run on the emitter's goroutine via `EmitAsync`, but a slow
-handler will not block other subscribers.
+In-process subscribers are not subject to the 32-event SSE buffer.
+`EmitAsync` runs each subscriber on its own goroutine, so a slow or
+blocked handler does not hold back the others. A payload whose
+`MarshalJSON` panics skips the fanout and still reaches local
+subscribers.
 
 ## When NOT to use SSE
 
@@ -184,7 +186,9 @@ Backends: `framework/fanout.NewPostgres` (uses the DB you already have;
 payloads over the NOTIFY size limit spill to a small fallback table)
 and `core/fanout.NewRedis` (bring-your-own client, mirroring
 `cache.RedisClient`). The fanout is caller-owned: close it after the
-app shuts down.
+app shuts down, and close the Postgres one before its `*sql.DB`. Its
+`Close` cancels a fallback-row fetch in flight and returns once the
+LISTEN dispatcher has stopped and released its pool connection.
 
 **Semantics change under fanout: the bus becomes a broadcast.** Every
 `On`/`Subscribe` handler fires on **every** replica for every event.
@@ -334,6 +338,9 @@ handler)` + `ob.StartRelay(ctx)`.
   batch proceed, so a hung dependency cannot wedge the durable lane.
   A handler that ignores its cancelled context cannot be killed; its
   late side effects are the duplicate idempotency already covers.
+  The outcome is recorded under its own 10s window that opens when the
+  handler returns, detached from relay shutdown, so a handler that runs
+  longer than 10s (inside its budget) still settles `dispatched`.
 - **Completion is age-gated.** A parent is not marked `dispatched` until it
   is older than `WithHandlerGrace` (default 15m), even once every current
   delivery is terminal. This is what makes a rolling deploy that *adds* a
@@ -355,7 +362,9 @@ handler)` + `ob.StartRelay(ctx)`.
   the counter — two overlapping runners under lease overrun both count
   because both claims counted. After `MaxAttempts` (default 10) the
   delivery is marked `dead`. `Replay(rowID)` resets all dead/abandoned
-  deliveries of a row; `ReplayConsumer(rowID, name)` resets one.
+  deliveries of a row; `ReplayConsumer(rowID, name)` resets one. A reset
+  delivery's age starts over, so the handler grace below runs again from
+  the replay.
 - **Removed consumers are abandoned (time-based, not snapshot-based).** A
   delivery whose consumer has no handler on *any* replica is
   `abandoned`, settled terminal so it can't orphan the parent, but only
@@ -380,9 +389,10 @@ handler)` + `ob.StartRelay(ctx)`.
 - **Retention (optional).** `WithRetention(d)` makes the relay purge
   fully-settled (`dispatched`) parent rows and their deliveries once older
   than `d`. Pending, dead, and abandoned rows are never purged, and a
-  dispatched parent still carrying a dead or abandoned delivery is
+  dispatched parent still carrying any undispatched delivery is
   retained with it, so `Replay` keeps the payload and `last_error` it
-  needs. Retention is not a dead-letter TTL: such a parent lives until
+  needs, and a delivery `Replay` reset while the parent completed on
+  Postgres is still delivered. Retention is not a dead-letter TTL: such a parent lives until
   its delivery is replayed to completion. Unset (default) keeps every
   row forever.
 - **Stalled relays are logged.** If the relay can't claim/expand (missing
@@ -435,5 +445,12 @@ handler)` + `ob.StartRelay(ctx)`.
   consumes one attempt (`attempts = attempts + 1`) at the delivery
   grain, so a relay that dies mid-batch releases only its claimed
   deliveries after the lease expires and another relay reclaims them,
-  and every claim spent budget toward `MaxAttempts`. There is no
-  double-processing beyond the at-least-once caveat.
+  and every claim spent budget toward `MaxAttempts`. Every settle is
+  fenced on the lease its own claim wrote (`claimed_until`): a relay
+  whose lease expired and was re-claimed settles nothing, so its late
+  write cannot clear the re-claimant's lease and let a third relay claim
+  the delivery mid-run. The current claimant's outcome decides the row.
+  A relay that has less lease left than one handler run plus its settle
+  hands the rest of its batch back unstarted, attempts refunded; the
+  first delivery of a batch always runs.
+  There is no double-processing beyond the at-least-once caveat.

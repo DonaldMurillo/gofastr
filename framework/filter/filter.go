@@ -2,9 +2,11 @@ package filter
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -134,21 +136,20 @@ type ParsedFilter struct {
 	Op    FilterOp
 	Value string
 
-	// typed holds the schema-coerced form of Value (booleans today) so
-	// the query binder binds a real bool instead of its raw string.
-	// SQLite stores Bool columns as INTEGER and its affinity rules
-	// never match the TEXT 'true'/'false' spellings (only "1"/"0"
-	// happened to work), while every dialect binds a Go bool correctly
-	// (PG native boolean, SQLite 1/0). nil means "bind Value".
-	// Unexported on purpose: callers that construct ParsedFilter
-	// directly keep the legacy string-binding behavior, only
-	// ParseFiltersValues knows the field's schema type.
+	// typed holds the schema-coerced form of Value (CoerceValue: an
+	// int64, float64 or bool for those column types) so the query binder
+	// binds a typed value instead of its raw string. SQLite stores Bool
+	// columns as INTEGER and its affinity rules never match the TEXT
+	// 'true'/'false' spellings, while every dialect binds a Go bool
+	// correctly (PG native boolean, SQLite 1/0). nil means "bind Value".
+	// Unexported on purpose: only a parse that knows the field's schema
+	// type sets it (ParseFiltersValues, Typed, Coerced).
 	typed any
 }
 
 // BindValue returns what a query binder should bind for this filter:
 // the schema-coerced value when the filter carries one (set by
-// ParseFiltersValues or Coerced), the raw string otherwise. Every
+// ParseFiltersValues, Typed or Coerced), the raw string otherwise. Every
 // binder that applies a ParsedFilter to SQL must bind this, not Value,
 // binding the raw string re-opens the SQLite Bool/TEXT affinity bug.
 func (f ParsedFilter) BindValue() any {
@@ -158,37 +159,42 @@ func (f ParsedFilter) BindValue() any {
 	return f.Value
 }
 
-// boolTyped coerces raw for a Bool-typed column, returning nil when the
-// column is not Bool or raw is not a strconv.ParseBool spelling (the
-// binder then keeps the raw string, the pre-coercion behavior).
-func boolTyped(isBool bool, raw string) any {
-	if !isBool {
-		return nil
-	}
-	if b, err := strconv.ParseBool(raw); err == nil {
-		return b
-	}
-	return nil
+// Typed returns a copy of f whose bind value is checked and coerced for
+// a column of type t (see CoerceValue), or an error naming the field when
+// Value is not of that type. A filter whose value came off a request
+// goes through here; OpLike's value is a substring, never coerced.
+func (f ParsedFilter) Typed(t schema.FieldType) (ParsedFilter, error) {
+	return f.typedAs(f.Field, t)
 }
 
-// BoolBind returns the dialect-correct bind value for raw against a
-// column that may be Bool: a Go bool when isBool holds and raw parses
-// as one, the raw string otherwise. For binders that carry their own
-// filter shape (nested relation filters, ?where= predicates) instead of
-// a ParsedFilter.
-func BoolBind(isBool bool, raw string) any {
-	if t := boolTyped(isBool, raw); t != nil {
-		return t
+// typedAs is Typed with the refusal naming sent, the spelling the caller
+// used (a wire alias, say), rather than the resolved column.
+func (f ParsedFilter) typedAs(sent string, t schema.FieldType) (ParsedFilter, error) {
+	f.typed = nil
+	if f.Op == OpLike {
+		return f, nil
 	}
-	return raw
+	v, err := CoerceValue(sent, t, f.Value)
+	if err != nil {
+		return f, err
+	}
+	// A string CoerceValue rewrote binds too: a Timestamp in the stored
+	// layout, which the text sent may not be.
+	if s, isString := v.(string); !isString || s != f.Value {
+		f.typed = v
+	}
+	return f, nil
 }
 
-// Coerced returns a copy of f whose bind value is schema-coerced for
-// the field's type (booleans today). Callers that construct
-// ParsedFilter directly, facet UIs, scoped include filters, use this
-// so BindValue matches what ParseFiltersValues would have produced.
+// Coerced is Typed for a value the program controls (a facet's fixed
+// options, a read-scope constant): the coerced bind when Value is of type
+// t, the raw string otherwise. Client-borne values use Typed, which
+// refuses a mistyped one instead of binding it.
 func (f ParsedFilter) Coerced(t schema.FieldType) ParsedFilter {
-	f.typed = boolTyped(t == schema.Bool, f.Value)
+	if typed, err := f.Typed(t); err == nil {
+		return typed
+	}
+	f.typed = nil
 	return f
 }
 
@@ -341,9 +347,6 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// nothing they can't already read, unlike a Hidden field, whose very
 	// existence has to stay indistinguishable from "no such column".
 	var noQuery map[string]bool
-	// boolField records Bool-typed columns so value coercion (true/false
-	// → bool) happens once, here, instead of per-dialect in SQL.
-	boolField := make(map[string]bool, len(fields))
 	colType := make(map[string]schema.FieldType, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
@@ -367,9 +370,6 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		fieldSet[f.Name] = true
 		names = append(names, f.Name)
 		colType[f.Name] = f.Type
-		if f.Type == schema.Bool {
-			boolField[f.Name] = true
-		}
 		if f.WireName != "" {
 			wireAlias[f.WireName] = f.Name
 		}
@@ -379,34 +379,53 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 
 	var filters []ParsedFilter
 
-	// Track which query keys we've consumed so plain field=value
-	// doesn't also match a field that was handled by a suffix.
-	consumed := make(map[string]bool)
-
-	// unknown records the first rejected key when strict, surfaced as a
-	// single structured error after the loop (query-map iteration order is
-	// non-deterministic, so report deterministically: the lexically
-	// smallest bad key, with a suggestion).
+	// unknown records the lexically smallest rejected key when strict,
+	// surfaced as a single structured error after the loop, with a
+	// suggestion.
 	unknown := ""
 
 	// blocked records the first NoQuery field a caller tried to filter on,
-	// chosen lexically for the same determinism reason as unknown.
+	// chosen lexically like unknown.
 	blocked := ""
 
 	// overCapField/overCapCount record the lexically-smallest ?field_in= list
-	// that exceeds MaxINListEntries, surfaced as a single deterministic error
-	// after the loop for the same reason unknown/blocked are. Silent
-	// truncation (parts[:cap]) narrows the predicate, rows past entry N drop
-	// out of the result set without the caller knowing, so it fails closed,
-	// mirroring parseScopedFilters' cap on the include path.
+	// that exceeds MaxINListEntries, surfaced as a single error after the
+	// loop. Silent truncation (parts[:cap]) narrows the predicate, rows past
+	// entry N drop out of the result set without the caller knowing, so it
+	// fails closed, mirroring parseScopedFilters' cap on the include path.
 	overCapField := ""
 	overCapCount := 0
 
 	// mistyped records the lexically-smallest key whose operator does not
-	// suit its column's type (CheckOpType), for the same determinism reason.
+	// suit its column's type (CheckOpType) or whose value is not of that
+	// type (CoerceValue).
 	mistyped, mistypedErr := "", error(nil)
+	recordMistyped := func(key string, err error) {
+		if mistyped == "" || key < mistyped {
+			mistyped, mistypedErr = key, err
+		}
+	}
+	// add checks raw against the column's type and appends the filter. A
+	// mistyped value is refused even under Lenient: Lenient drops unknown
+	// KEYS, and binding a value of the wrong type is what made Postgres
+	// answer 500 where SQLite answered an empty 200.
+	add := func(key, sent, col string, op FilterOp, raw string) {
+		pf, err := ParsedFilter{Field: col, Op: op, Value: raw}.typedAs(sent, colType[col])
+		if err != nil {
+			recordMistyped(key, err)
+			return
+		}
+		filters = append(filters, pf)
+	}
 
-	for key, values := range q {
+	// Keys are walked in sorted order so the same query string always
+	// yields the same filter list (and the same SQL text). Every key is
+	// its own predicate: ?score=5&score_gt=3 keeps both, ANDed. An earlier
+	// version dropped a plain key whose column a suffixed key had already
+	// "consumed", which under map iteration order kept the equality on
+	// some requests and dropped it on others.
+	for _, key := range slices.Sorted(maps.Keys(q)) {
+		values := q[key]
 		if len(values) == 0 {
 			continue
 		}
@@ -447,10 +466,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 					continue
 				}
 			}
-			consumed[col] = true
 			if err := CheckOpType(fieldName, s.Op, colType[col]); err != nil {
-				if !o.lenient && (mistyped == "" || key < mistyped) {
-					mistyped, mistypedErr = key, err
+				if !o.lenient {
+					recordMistyped(key, err)
 				}
 				matched = true
 				break
@@ -460,20 +478,18 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 				if total > MaxINListEntries {
 					// Fail closed: a truncated list silently narrows the
 					// predicate (rows past entry N drop out of results)
-					// without telling the caller. Record the lexically-
-					// smallest offender for a deterministic message under
-					// randomized map iteration and error after the loop.
+					// without telling the caller.
 					if overCapField == "" || col < overCapField {
 						overCapField = col
 						overCapCount = total
 					}
 				} else {
 					for _, p := range parts {
-						filters = append(filters, ParsedFilter{Field: col, Op: OpIn, Value: p, typed: boolTyped(boolField[col], p)})
+						add(key, fieldName, col, OpIn, p)
 					}
 				}
 			} else {
-				filters = append(filters, ParsedFilter{Field: col, Op: s.Op, Value: values[0], typed: boolTyped(boolField[col], values[0])})
+				add(key, fieldName, col, s.Op, values[0])
 			}
 			matched = true
 			break
@@ -482,9 +498,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			continue
 		}
 
-		// A plain known field name. When it was already consumed by a
-		// suffixed op on the same request, drop the redundant equals, but it
-		// is still a KNOWN field, so it must never be reported as unknown.
+		// A plain known field name: equality. A key that ends in an operator
+		// suffix whose cut name is not a field (opt_in, check_in) lands here
+		// too, as the whole field name.
 		if noQuery[key] {
 			if !o.lenient && (blocked == "" || key < blocked) {
 				blocked = key
@@ -492,16 +508,12 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			continue
 		}
 		if fieldSet[key] {
-			if !consumed[key] {
-				filters = append(filters, ParsedFilter{Field: key, Op: OpEq, Value: values[0], typed: boolTyped(boolField[key], values[0])})
-			}
+			add(key, key, key, OpEq, values[0])
 			continue
 		}
 		// WireName override on a plain key (no suffix): resolve to column.
 		if col, ok := wireAlias[key]; ok {
-			if !consumed[col] {
-				filters = append(filters, ParsedFilter{Field: col, Op: OpEq, Value: values[0], typed: boolTyped(boolField[col], values[0])})
-			}
+			add(key, key, col, OpEq, values[0])
 			continue
 		}
 
@@ -512,8 +524,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 
 		// Truly unrecognized. Fail closed unless the caller opted into
-		// lenient mode. Record the lexically smallest so the error is
-		// deterministic under randomized map iteration.
+		// lenient mode.
 		if !o.lenient && (unknown == "" || key < unknown) {
 			unknown = key
 		}
@@ -765,7 +776,7 @@ func applyFilters[B interface{ Where(string, ...any) B }](b B, filters []ParsedF
 		case OpLte:
 			b.Where(f.Field+" <= $1", f.BindValue())
 		case OpLike:
-			b.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
+			b.Where(LikeClause(f.Field, 1, f.Value))
 		case OpIn:
 			vals, n := collectInRun(filters, i)
 			cond, args := inClause(f.Field, vals)

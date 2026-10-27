@@ -154,7 +154,7 @@ func TestRegistryLLMMD_ReadOnlyMountCountsReadRoutes(t *testing.T) {
 		return MountInfo{Mounted: true, ReadOnly: e.GetTable() == "widgets"}
 	}
 
-	md := RegistryLLMMD(reg, "MyApp", crudMount)
+	md := RegistryLLMMD(reg, "MyApp", crudMount, "")
 
 	wantRow := "| [widgets](/widgets/llm.md) | `/widgets` | 3 | read-only |"
 	if !strings.Contains(md, wantRow) {

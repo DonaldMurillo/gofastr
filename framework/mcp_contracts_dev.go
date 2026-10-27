@@ -94,17 +94,14 @@ func (a *App) registerContractDevTools() error {
 		},
 	}
 	for _, t := range tools {
-		var opts []mcp.ToolOption
-		if t.name == "contracts_fix" {
-			// WRITES TO DISK, and this whole pair registers only under
-			// the dev-implied introspection flag with no gate (there is
-			// no auth to satisfy in the dev loop). Mark the mutating
-			// half dev-implied so the bind guard withdraws it on a
-			// non-loopback listener, the same set the entity write
-			// tools and log_set_level belong to. contracts_verify only
-			// reads and stays.
-			opts = append(opts, mcp.WithDevImplied())
-		}
+		// contracts_fix WRITES TO DISK and contracts_verify hands out the
+		// source tree's lint findings (file paths, line numbers, code),
+		// and this pair registers only under the dev-implied
+		// introspection flag with no gate (there is no auth to satisfy
+		// in the dev loop). Both are marked dev-implied so the bind guard
+		// withdraws them on a non-loopback listener, the same set the
+		// entity write tools and battery/log's read tools belong to.
+		opts := []mcp.ToolOption{mcp.WithDevImplied()}
 		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP contract dev tool %q: %w", t.name, err)
 		}

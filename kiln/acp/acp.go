@@ -95,8 +95,10 @@ func (a *Agent) NewSession(ctx context.Context, cwd string) (acpcore.Session, er
 }
 
 // LoadSession restores a session minted by this process and replays
-// the journaled conversation (user and assistant turns) as message
-// chunks before returning. Kiln sessions do not outlive the process;
+// that session's journaled conversation (its user and assistant turns)
+// as message chunks before returning. The journal's chat timeline is
+// shared by every ACP session and the panel, so only messages tagged
+// with this session replay. Kiln sessions do not outlive the process;
 // an ID from an earlier run reports resource-not-found.
 func (a *Agent) LoadSession(ctx context.Context, sessionID, cwd string, out *acpcore.Client) (acpcore.Session, error) {
 	a.mu.Lock()
@@ -105,22 +107,29 @@ func (a *Agent) LoadSession(ctx context.Context, sessionID, cwd string, out *acp
 	if !ok {
 		return nil, fmt.Errorf("session %q: %w", sessionID, acpcore.ErrSessionNotFound)
 	}
+	// Build the replay under Live's read lock and write it after: a
+	// client slow to read would otherwise hold the lock, and every
+	// Apply in the process with it.
+	var replay []acpcore.Update
 	a.tools.Live().ReadSession(func(sess *journal.Session) {
 		for _, ev := range sess.Chat {
-			var u acpcore.Update
+			if ev.Message == nil || ev.Message.ACPSession != sessionID {
+				continue
+			}
 			switch ev.Kind {
 			case journal.KindChatUser:
-				u = acpcore.UserMessageChunk(ev.EntryID, ev.Message.Text)
+				replay = append(replay, acpcore.UserMessageChunk(ev.EntryID, ev.Message.Text))
 			case journal.KindChatAssistant:
-				u = acpcore.AgentMessageChunk(ev.EntryID, ev.Message.Text)
-			default:
-				continue // tool calls and plans replay as tool frames on demand
+				replay = append(replay, acpcore.AgentMessageChunk(ev.EntryID, ev.Message.Text))
 			}
-			if err := out.Update(u); err != nil {
-				return
-			}
+			// Tool calls and plans replay as tool frames on demand.
 		}
 	})
+	for _, u := range replay {
+		if err := out.Update(u); err != nil {
+			break
+		}
+	}
 	return s, nil
 }
 
@@ -140,13 +149,13 @@ func (s *session) Prompt(ctx context.Context, prompt []acpcore.ContentBlock, out
 	if text == "" {
 		return acpcore.StopRefusal, nil
 	}
-	if res := s.agent.tools.Chat(ctx, protocol.ChatArgs{Role: "user", Text: text}); !res.OK {
+	if res := s.agent.tools.Chat(ctx, protocol.ChatArgs{Role: "user", Text: text, ACPSession: s.id}); !res.OK {
 		return "", fmt.Errorf("journal user message: %s", res.Error)
 	}
 
 	if s.agent.provider == nil {
 		_ = out.Update(acpcore.AgentMessageChunk(s.messageID(), noProviderNote))
-		_ = s.agent.tools.Chat(context.Background(), protocol.ChatArgs{Role: "assistant", Text: noProviderNote})
+		_ = s.agent.tools.Chat(context.Background(), protocol.ChatArgs{Role: "assistant", Text: noProviderNote, ACPSession: s.id})
 		return acpcore.StopRefusal, nil
 	}
 	return s.runTurns(ctx, text, out)
@@ -184,23 +193,30 @@ func (s *session) runTurns(ctx context.Context, userText string, out *acpcore.Cl
 			},
 		}
 		t, err := s.agent.provider.Stream(ctx, req)
+		// A canceled prompt answers cancelled, so nothing may change
+		// behind that answer: a provider that finished its request
+		// after the cancel gets neither its text journaled nor its
+		// tool calls run (AddEntity and friends ignore ctx).
+		if ctx.Err() != nil {
+			return acpcore.StopCancelled, nil
+		}
 		if err != nil {
-			if ctx.Err() != nil {
-				return acpcore.StopCancelled, nil
-			}
 			return "", fmt.Errorf("provider turn %d: %w", turn, err)
 		}
 		if t.Text != "" {
 			if !streamed {
 				_ = out.Update(acpcore.AgentMessageChunk(msgID, t.Text))
 			}
-			_ = s.agent.tools.Chat(ctx, protocol.ChatArgs{Role: "assistant", Text: t.Text})
+			_ = s.agent.tools.Chat(ctx, protocol.ChatArgs{Role: "assistant", Text: t.Text, ACPSession: s.id})
 		}
 		messages = append(messages, agent.Message{Role: "assistant", Text: t.Text, ToolCalls: t.ToolCalls})
 		if len(t.ToolCalls) == 0 {
 			return acpcore.StopEndTurn, nil
 		}
 		for _, call := range t.ToolCalls {
+			if ctx.Err() != nil {
+				return acpcore.StopCancelled, nil
+			}
 			res, stop := s.runToolCall(ctx, call, out)
 			if stop != "" {
 				return stop, nil

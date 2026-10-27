@@ -73,6 +73,40 @@ type CompareAndDeleter interface {
 	HDelIfEqual(ctx context.Context, key, field, expect string) (bool, error)
 }
 
+// CompareAndMover is the optional capability a RedisClient implements when
+// it can move a claimed job in one atomic step: push value onto list and
+// delete the hash field, only while that field still holds an expected
+// value. RedisQueue uses it for the requeues Nack and Reclaim decide from
+// a snapshot of the processing entry (a retry push, a dead-letter push, a
+// lease-expiry re-delivery). Checking the claim and then pushing in
+// separate round trips lets the claim change in between: the lease
+// expires, another worker re-claims, and the stale push lands a second
+// copy on the main list. A third worker then claims that copy, consumes
+// the same attempt as the current claimant, and overwrites its processing
+// entry. [CompareAndDeleter] cannot close this: the push has already
+// happened by the time the conditional delete refuses.
+//
+// Implement it with a Lua script — go-redis:
+//
+//	if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] then
+//	  redis.call('LPUSH', KEYS[2], ARGV[3])
+//	  redis.call('HDEL', KEYS[1], ARGV[1])
+//	  return 1 end
+//	return 0
+//
+// key and field name the processing entry, list the destination. On Redis
+// Cluster a script may only touch keys in one slot, so give the queue a
+// hash-tagged name ("{jobs}") so its lists and hash share one. It returns
+// whether the move happened; false means the entry had changed, which the
+// queue treats as a fenced no-op.
+//
+// A client that does not implement it still works: RedisQueue pushes and
+// then releases the claim with the conditional delete, which leaves the
+// window above open.
+type CompareAndMover interface {
+	MoveIfEqual(ctx context.Context, key, field, expect, list, value string) (bool, error)
+}
+
 // ErrRedisEmpty is the sentinel a RedisClient implementation returns (or
 // wraps) when a read finds nothing: RPop on an empty list, HGet on a missing
 // hash or field. It is how RedisQueue distinguishes a genuinely missing
@@ -93,6 +127,9 @@ type RedisQueue struct {
 	queueName       string
 	processingQueue string
 	deadLetterQueue string
+	// delayedQueue holds jobs enqueued with a future ScheduledAt until
+	// Dequeue promotes them onto the main list.
+	delayedQueue string
 
 	// visibilityTimeout is read by Dequeue and written by SetVisibilityTimeout
 	// from independent goroutines, so it is stored as nanoseconds in an
@@ -129,6 +166,7 @@ func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
 		queueName:       queueName,
 		processingQueue: queueName + ":processing",
 		deadLetterQueue: queueName + ":dead",
+		delayedQueue:    queueName + ":delayed",
 		now:             time.Now,
 	}
 	q.visibilityTimeout.Store(int64(30 * time.Second))
@@ -143,7 +181,9 @@ func (q *RedisQueue) SetVisibilityTimeout(d time.Duration) {
 }
 
 // Enqueue pushes a job onto the Redis list, applying defaults for ID,
-// CreatedAt, and MaxAttempts when not set.
+// CreatedAt, and MaxAttempts when not set. A job whose ScheduledAt is ahead
+// of the queue clock goes onto the delayed list instead, where Dequeue
+// leaves it until it is due.
 func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 	// q.client is host-pluggable (any RedisClient implementation), and
 	// Enqueue runs on scheduler/dispatch loops with no per-request
@@ -172,6 +212,9 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 	if err != nil {
 		return fmt.Errorf("marshal job: %w", err)
 	}
+	if job.ScheduledAt.After(q.now()) {
+		return q.client.LPush(ctx, q.delayedQueue, data)
+	}
 	return q.client.LPush(ctx, q.queueName, data)
 }
 
@@ -196,7 +239,15 @@ var redisRecoveryTimeout = 5 * time.Second
 // Ack/Nack has still consumed a delivery, so a poison message cannot redeliver
 // forever. A job whose attempts exceed MaxAttempts at claim is moved to the
 // dead-letter queue instead of being handed out again.
+//
+// Before popping, Dequeue moves every delayed job that has come due onto the
+// main list (see promoteDue), so a job enqueued with a future ScheduledAt is
+// invisible until then and never sits in front of a due one.
 func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
+	if err := q.promoteDue(ctx); err != nil {
+		return Job{}, err
+	}
+
 	// RPop is destructive. Once an item has left the main list, caller
 	// cancellation must not cancel the rollback or quarantine write that
 	// gives it a durable next home. Each recovery write gets its own
@@ -205,9 +256,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	// already-dead context, and a quarantine write that spent its deadline
 	// must not leave the rollback behind it none.
 	recoveryPush := func(list string, values ...any) error {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
-		defer cancel()
-		return q.client.LPush(rctx, list, values...)
+		return q.recoveryPush(ctx, list, values...)
 	}
 
 	typeSet := make(map[string]struct{}, len(types))
@@ -368,6 +417,72 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	}
 }
 
+// recoveryPush is the LPush that gives an entry already taken off one list
+// its next home. It runs on a detached, bounded context minted at the write:
+// caller cancellation must not strand the entry in no list at all.
+func (q *RedisQueue) recoveryPush(ctx context.Context, list string, values ...any) error {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
+	defer cancel()
+	return q.client.LPush(rctx, list, values...)
+}
+
+// promoteDue moves the delayed jobs whose ScheduledAt has passed onto the
+// main list, oldest first. The delayed list is unordered by due time (the
+// RedisClient interface has no sorted set), so it is read whole, a page of
+// maxSkipDrain entries at a time from the tail so memory stays bounded; one
+// LRange covers the common case of a short or empty list.
+//
+// Each due entry is pushed onto the main list before it is LRem'd from the
+// delayed one, so a worker that dies between the two leaves the job on both
+// lists, a duplicate the at-least-once contract allows, never on neither. Of
+// two workers promoting the same entry, the one whose LRem removed nothing
+// takes its own copy back off the main list. A failed push leaves the entry
+// where it was. An entry that does not decode is promoted as-is, and the
+// claim loop dead-letters it like any malformed job.
+func (q *RedisQueue) promoteDue(ctx context.Context) error {
+	now := q.now()
+	kept := int64(0) // tail entries already read and left in place
+	for {
+		page, err := q.client.LRange(ctx, q.delayedQueue, -(kept + maxSkipDrain), -(kept + 1))
+		if err != nil {
+			if errors.Is(err, ErrRedisEmpty) {
+				return nil
+			}
+			return fmt.Errorf("dequeue: read delayed jobs: %w", err)
+		}
+		// LPush adds at the head, so the tail end of the page is oldest.
+		for i := len(page) - 1; i >= 0; i-- {
+			raw := page[i]
+			var job Job
+			if json.Unmarshal([]byte(raw), &job) == nil && job.ScheduledAt.After(now) {
+				kept++
+				continue
+			}
+			if err := q.client.LPush(ctx, q.queueName, raw); err != nil {
+				return fmt.Errorf("dequeue: promote delayed job: %w", err)
+			}
+			n, err := q.client.LRem(ctx, q.delayedQueue, 1, raw)
+			if err != nil {
+				return fmt.Errorf("dequeue: take due delayed job: %w", err)
+			}
+			if n == 0 {
+				// Another worker promoted it first: take back this copy.
+				// Counting it as read keeps the scan moving even against a
+				// client whose LRem removes nothing; at worst one entry
+				// waits a call longer.
+				if _, err := q.client.LRem(ctx, q.queueName, 1, raw); err != nil {
+					return fmt.Errorf("dequeue: drop duplicate promote: %w", err)
+				}
+				kept++
+				continue
+			}
+		}
+		if len(page) < maxSkipDrain {
+			return nil
+		}
+	}
+}
+
 // maxSkipDrain bounds how many type-miss jobs Dequeue will pull off the list
 // while looking for a matching type, so a rare-type filter cannot pull the
 // whole queue into process memory.
@@ -433,6 +548,32 @@ func (q *RedisQueue) releaseClaim(ctx context.Context, jobID, expect string) err
 		return nil
 	}
 	return q.client.HDel(ctx, q.processingQueue, jobID)
+}
+
+// moveClaim pushes value onto list and retires the processing entry for
+// jobID, only while that entry still holds exactly expect. With
+// [CompareAndMover] the check, the push and the delete are one atomic
+// step, and a claim that moved on is left alone and counted as stale.
+// Without it the push lands first and the conditional release follows,
+// which narrows the window but cannot close it (see CompareAndMover).
+// moved is false when nothing was pushed: on a refused move, or when the
+// fallback's push failed. A fallback release error comes back with moved
+// true, since the job already has its next home.
+func (q *RedisQueue) moveClaim(ctx context.Context, jobID, expect, list, value string) (moved bool, err error) {
+	if mover, ok := q.client.(CompareAndMover); ok {
+		moved, err := mover.MoveIfEqual(ctx, q.processingQueue, jobID, expect, list, value)
+		if err != nil {
+			return false, fmt.Errorf("move to %s: %w", list, err)
+		}
+		if !moved {
+			q.staleClaims.Add(1)
+		}
+		return moved, nil
+	}
+	if err := q.client.LPush(ctx, list, value); err != nil {
+		return false, fmt.Errorf("push to %s: %w", list, err)
+	}
+	return true, q.releaseClaim(ctx, jobID, expect)
 }
 
 // ownsClaim reports whether the completion being presented (job) matches the
@@ -510,12 +651,14 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 	// fails, Reclaim re-delivers the job once its visibility timeout expires.
 	// This queue is at-least-once, so a rare duplicate is within contract and
 	// losing the job is not.
+	//
+	// The token check above is a snapshot: the lease can expire and another
+	// worker re-claim before the push. moveClaim binds the push to the
+	// entry that was checked (atomically, with [CompareAndMover]), so a
+	// stale Nack pushes nothing rather than a second copy of a job that
+	// another worker is running.
 	payload, _ := json.Marshal(job)
-	if err := q.client.LPush(ctx, dest, payload); err != nil {
-		return fmt.Errorf("nack: push to %s: %w", dest, err)
-	}
-
-	if err := q.releaseClaim(ctx, claimed.ID, raw); err != nil {
+	if _, err := q.moveClaim(ctx, claimed.ID, raw, dest, string(payload)); err != nil {
 		return fmt.Errorf("nack: %w", err)
 	}
 	return nil
@@ -543,15 +686,13 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 			// ONLY durable copy. Push first and HDel only if the push
 			// landed; on push failure the entry stays in the processing
 			// hash, still observable by the next sweep.
-			if perr := q.client.LPush(ctx, q.deadLetterQueue, raw); perr != nil {
-				continue
-			}
+			//
 			// Fenced like the expiry path below: the snapshot's bytes
-			// are what got quarantined, so only that entry goes. A
+			// are what get quarantined, so only that entry goes. A
 			// newer claim that landed under this ID meanwhile (a
 			// Replay re-fired the job and a worker claimed it) keeps
 			// its processing entry.
-			_ = q.releaseClaim(ctx, jobID, raw)
+			_, _ = q.moveClaim(ctx, jobID, raw, q.deadLetterQueue, raw)
 			continue
 		}
 		if entry.ExpiresAt > now {
@@ -559,16 +700,20 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 		}
 		// Re-enqueue the original job, then clear the processing entry. Order
 		// matters: enqueue first so a crash between the two ops re-delivers
-		// (at-least-once) rather than loses the job. The delete is fenced on
-		// the snapshot's bytes (releaseClaim / CompareAndDeleter): between
-		// this push and the delete another worker can Dequeue the re-pushed
-		// job and record a fresh entry, and an unconditional HDel would
-		// remove the NEW claimant's record — the job then sits on no list,
-		// invisible to the next Reclaim, and is silently lost.
-		if err := q.client.LPush(ctx, q.queueName, entry.Job); err != nil {
+		// (at-least-once) rather than loses the job. Both are bound to the
+		// snapshot's bytes (moveClaim): the claimant can Nack and another
+		// worker re-claim after the HGetAll, and then a push would land a
+		// second copy of a job that worker is running, while an
+		// unconditional HDel would remove the NEW claimant's record — the
+		// job then sits on no list, invisible to the next Reclaim, and is
+		// silently lost.
+		moved, err := q.moveClaim(ctx, jobID, raw, q.queueName, entry.Job)
+		if err != nil && !moved {
 			return reclaimed, fmt.Errorf("reclaim: re-enqueue %s: %w", jobID, err)
 		}
-		_ = q.releaseClaim(ctx, jobID, raw)
+		if !moved {
+			continue // the claim moved on since the scan (counted as stale)
+		}
 		reclaimed++
 	}
 	return reclaimed, nil

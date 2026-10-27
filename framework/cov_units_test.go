@@ -198,20 +198,28 @@ func TestCovMergeSkipsHiddenFields(t *testing.T) {
 	}
 }
 
-// jsonFieldName covers the no-tag and skip branches.
-func TestCovJSONFieldName(t *testing.T) {
+// jsonTagName covers the no-tag, skip, named and rejected-name branches.
+func TestCovJSONTagName(t *testing.T) {
 	type s struct {
 		Plain   string
 		Skipped string `json:"-"`
+		Named   string `json:"named,omitempty"`
+		Bad     string `json:"bad\"name"`
 	}
 	tp := reflect.TypeFor[s]()
-	plain, skip := jsonFieldName(tp.Field(0))
-	if skip || plain != "Plain" {
+	plain, skip := jsonTagName(tp.Field(0))
+	if skip || plain != "" {
 		t.Fatalf("plain field: name=%q skip=%v", plain, skip)
 	}
-	_, skip = jsonFieldName(tp.Field(1))
+	_, skip = jsonTagName(tp.Field(1))
 	if !skip {
 		t.Fatal("expected json:\"-\" to skip")
+	}
+	if name, _ := jsonTagName(tp.Field(2)); name != "named" {
+		t.Fatalf("named field: name=%q", name)
+	}
+	if name, _ := jsonTagName(tp.Field(3)); name != "" {
+		t.Fatalf("invalid tag name kept: %q", name)
 	}
 }
 

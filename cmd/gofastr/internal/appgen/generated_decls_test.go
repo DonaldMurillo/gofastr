@@ -83,3 +83,24 @@ func TestCLIRefusesWrapperNameClash(t *testing.T) {
 		t.Fatalf("exit %d, output %q: want the clash refused", code, out)
 	}
 }
+
+// A field whose Go name is a method the generator gives its struct does
+// not compile: notes' unmarshal_JSON is Notes.UnmarshalJSON, which the
+// relation decode also declares.
+func TestProjectRefusesFieldMethodClash(t *testing.T) {
+	decls := []framework.EntityDeclaration{
+		{Name: "authors", Fields: []framework.FieldDeclaration{{Name: "email", Type: "string"}}},
+		{Name: "notes", Fields: []framework.FieldDeclaration{
+			{Name: "unmarshal_JSON", Type: "string"},
+			{Name: "author_id", Type: "relation", To: "authors"},
+		}},
+	}
+	_, err := RenderGeneratedProject(decls)
+	if err == nil || !strings.Contains(err.Error(), "Notes.UnmarshalJSON") {
+		t.Fatalf("RenderGeneratedProject = %v, want the field-method clash refused", err)
+	}
+	decls[1].Fields[0].Name = "unmarshal_json"
+	if _, err := RenderGeneratedProject(decls); err != nil {
+		t.Fatalf("a field beside the method refused: %v", err)
+	}
+}

@@ -141,9 +141,9 @@ func (a *App) unsharedObjectKeys(ctx context.Context, dialect migrate.Dialect, k
 	}
 	named := map[string]bool{}
 	for _, t := range tables {
-		qt := query.QuoteIdent(query.MustIdent(t.table))
+		qt := query.QuoteFolded(query.MustIdent(t.table))
 		for _, col := range t.files {
-			if err := a.markNamedInColumn(ctx, qt, query.QuoteIdent(query.MustIdent(col)), candidates, named); err != nil {
+			if err := a.markNamedInColumn(ctx, qt, query.QuoteFolded(query.MustIdent(col)), candidates, named); err != nil {
 				return nil, fmt.Errorf("check %s.%s: %w", t.table, col, err)
 			}
 		}
@@ -157,7 +157,7 @@ func (a *App) unsharedObjectKeys(ctx context.Context, dialect migrate.Dialect, k
 			if len(open) == 0 {
 				break
 			}
-			if err := a.markNamedInVariants(ctx, qt, query.QuoteIdent(query.MustIdent(col)), open, named); err != nil {
+			if err := a.markNamedInVariants(ctx, qt, query.QuoteFolded(query.MustIdent(col)), open, named); err != nil {
 				return nil, fmt.Errorf("check %s.%s: %w", t.table, col, err)
 			}
 		}
@@ -212,7 +212,8 @@ func (a *App) markNamedInColumn(ctx context.Context, qt, qc string, keys []strin
 // LIKE on a literal run of each key narrows the rows (it may over-match:
 // case folding, other keys sharing the run), and each row is then parsed
 // with file.VariantStorageRefs, the same parser the erase read and the CRUD
-// write path use, so JSON spacing or escaping cannot hide a reference. A
+// write path use, so JSON spacing cannot hide a reference. A \u escape can
+// spell the run's characters, so every row holding a \u is parsed too. A
 // chunk holding a key with no usable literal run scans every non-null row.
 func (a *App) markNamedInVariants(ctx context.Context, qt, qc string, keys []string, named map[string]bool) error {
 	const chunk = 100
@@ -236,6 +237,10 @@ func (a *App) markNamedInVariants(ctx context.Context, qt, qc string, keys []str
 		if scanAll {
 			args = nil
 		} else {
+			// A \u escape can spell any character of the run, so a row
+			// holding one is parsed whatever its literal text says.
+			args = append(args, `%\\u%`)
+			likes = append(likes, fmt.Sprintf(`CAST(%s AS TEXT) LIKE $%d ESCAPE '\'`, qc, len(args)))
 			stmt += " AND (" + strings.Join(likes, " OR ") + ")"
 		}
 		if err := a.scanVariantRefs(ctx, stmt, args, want, named); err != nil {

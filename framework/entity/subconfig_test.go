@@ -117,6 +117,32 @@ func TestEntityDeclarationFlatJSONNormalizesImmediatelyToGroups(t *testing.T) {
 	}
 }
 
+// TestDeclarationKeepsBigIntegers: a JSON declaration's default and
+// properties keep an integer past 2^53 through to the EntityConfig, and
+// an ordinary number still decodes as the float64 it always was.
+func TestDeclarationKeepsBigIntegers(t *testing.T) {
+	var d EntityDeclaration
+	raw := `{"name":"cards","fields":[{"name":"n","type":"int","default":9007199254740993},` +
+		`{"name":"m","type":"int","default":3}],"properties":{"seq":9007199254740993}}`
+	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := d.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal([]any{cfg.Fields[0].Default, cfg.Properties})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `[9007199254740993,{"seq":9007199254740993}]`; string(got) != want {
+		t.Fatalf("default, properties = %s, want %s", got, want)
+	}
+	if def, ok := cfg.Fields[1].Default.(float64); !ok || def != 3 {
+		t.Fatalf("ordinary default = %#v, want float64(3)", cfg.Fields[1].Default)
+	}
+}
+
 func TestEntityDeclarationRejectsConflictingFlatAndGroupedJSON(t *testing.T) {
 	tests := map[string]string{
 		"soft delete":      `"soft_delete":true,"scope":{"soft_delete":false}`,

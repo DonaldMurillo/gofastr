@@ -190,7 +190,22 @@ keeps the UI unchanged; without a callback the default stays
   admin mount it beside `_bulk`.
   A `JSON` field is a mono text area checked as JSON in the browser as
   it is typed (`ui.TextAreaConfig.JSON`): an invalid value stops the
-  save before it is sent; the server still validates.
+  save before it is sent; the server still validates. The area, the
+  record view and a list cell show the stored document as JSON.
+  A `Timestamp` input shows the stored instant in UTC, with seconds or
+  milliseconds when it has them (a fraction finer than a millisecond is
+  cut, since `datetime-local` cannot hold it). An optional `Int` is a
+  plain number field that may be blank, an optional bool stored NULL
+  draws a Not set / Yes / No select so an untouched save keeps it NULL
+  (a set bool keeps its switch), and an optional enum has an empty choice that clears it; an
+  enum holding a value no longer declared keeps a disabled placeholder,
+  so an untouched save does not clear it; on a required enum the
+  placeholder stops the save until a declared value is picked. A relation a read hook masks
+  changes through its own Replace button, as a masked text field does.
+  A `Decimal` field steps by `0.0001`, the column's four fraction
+  digits, or finer when the stored value has more, so any stored value
+  saves untouched. The `money` kind steps by cents, or finer when the
+  stored value has more.
   An `Image` or `File` field is an upload when the app has file storage
   (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
   named by its file name) above a `ui.FileUpload` of the types the field
@@ -435,7 +450,8 @@ appUI := fwApp.EntityUI(entityui.Extensions{
 - **Kinds** draw one field kind: `Input` on forms, `Cell` in list cells
   and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
   picks one by name. `email`, `url`, `color`, `markdown` and `code` are
-  built in, and so is `money` for an Int, Float or Decimal: a number input
+  built in (`color` draws the picker only for a stored lowercase
+  `#rrggbb`, and a text input that keeps any other value), and so is `money` for an Int, Float or Decimal: a number input
   behind the currency symbol, and the value printed as an amount (`$1,234.50`,
   `-$5.00`) in cells and read-only. The symbol is the
   `ui.entity.currency` catalog entry (`$` by default), which the

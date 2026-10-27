@@ -35,31 +35,27 @@ func TestSessionMintingPerConnIsBounded(t *testing.T) {
 	d := startDialog(t, agent, nil)
 	d.initialize()
 
-	// io.Pipe is unbuffered and the server answers inline, so the writes
-	// must overlap the reads or both sides block once the frames channel
-	// (buffered 64) fills: send from a goroutine, drain in the test.
-	const flood = 2_048
-	sent := make(chan struct{})
-	go func() {
-		defer close(sent)
-		for i := range flood {
-			d.request(100+i, "session/new", map[string]any{"cwd": "/tmp/p"})
-		}
-	}()
-
-	// session/new is answered inline in read order, so exactly `flood`
-	// frames answer the flood; count how many the server accepted.
+	// The flood goes in batches of 64, each answered before the next is
+	// sent. More frames in flight than a running request holds (256) are
+	// refused as busy, by how fast the server runs, not by the cap; a
+	// batch also fits the frames channel (buffered 64), so the writes
+	// never wait on reads.
+	const flood, batch = 2_048, 64
 	live := 0
 	refused := 0
-	for range flood {
-		f := d.frame()
-		if f["error"] == nil {
-			live++
-		} else {
-			refused++
+	for start := 0; start < flood; start += batch {
+		for i := range batch {
+			d.request(100+start+i, "session/new", map[string]any{"cwd": "/tmp/p"})
+		}
+		for range batch {
+			f := d.frame()
+			if f["error"] == nil {
+				live++
+			} else {
+				refused++
+			}
 		}
 	}
-	<-sent
 	if live != int(n.Load()) {
 		t.Fatalf("harness mismatch: server accepted %d sessions, agent minted %d (a refused frame must not reach the embedder)", live, n.Load())
 	}

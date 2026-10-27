@@ -81,8 +81,14 @@ func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	}
 	page = min(page, maxPage)
 	cfg := ui.SearchResultsConfig{Action: s.path, Query: q, Page: page, PerPage: perPage, Ctx: ctx}
+	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.SearchLabel.Text(ctx)})}
 	if strings.TrimSpace(q) != "" {
-		if idx, err := s.b.Index(ctx); err == nil {
+		idx, err := s.b.Index(ctx)
+		if err != nil {
+			// The query endpoint answers this 503; the page says so
+			// rather than drawing a failed build as zero matches.
+			body = append(body, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(reasonIndexUnavailable.Text(ctx))))
+		} else {
 			results, total := idx.SearchPage(q, (page-1)*perPage, perPage)
 			cfg.Results, cfg.Total = uiResults(results), total
 		}
@@ -90,10 +96,7 @@ func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	// A padded page column: the gutter against the viewport, which an
 	// app frame's content area supplies itself.
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage},
-		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-			ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.SearchLabel.Text(ctx)}),
-			ui.SearchResults(cfg),
-		),
+		ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(body, ui.SearchResults(cfg))...),
 	)
 }
 

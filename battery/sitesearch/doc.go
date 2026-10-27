@@ -10,6 +10,6 @@
 // sitesearch-static, which loads only on an exported page and ranks
 // results from the files with no server, the same way Search does.
 //
-// Content opts out with data-search-ignore, or a page with a robots
-// noindex meta. Guide: gofastr docs site-search.
+// Content opts out with data-search-ignore, or a page with its own
+// robots noindex (a sitewide uihost.WithRobotsMeta does not count). Guide: gofastr docs site-search.
 package sitesearch

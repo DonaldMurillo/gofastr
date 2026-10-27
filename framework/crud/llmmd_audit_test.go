@@ -3,9 +3,9 @@ package crud
 // Issue #136 audit slice: llm.md route-reality probes. The limits finding
 // documented here (the doc described caps the server did not serve, the
 // #266 class) was fixed with #358 and its test is now the standing pin;
-// the green probe below pins the /llm-pages.md link emission for the
-// dead-link finding (proof completed by uihost's
-// TestUIHost_PageLLMIndexDisabledByDefault). The read-only-mount finding
+// the dead /llm-pages.md link is fixed and pinned below, with the
+// route-table side in framework's TestLLMIndexPagesLinkMatchesRoutes.
+// The read-only-mount finding
 // that lived here was fixed by #358 and its test moved to
 // llmmd_readonly_test.go.
 
@@ -43,15 +43,10 @@ func TestLLMMD_LimitDocMustReflectEntityMaxListLimit(t *testing.T) {
 	}
 }
 
-// ── Green probe: the index links /llm-pages.md unconditionally ────────────
-//
-// registryLLMMD always writes the "## Pages" section linking /llm-pages.md;
-// there is no condition or option. That route is mounted only by a UI host
-// built with WithPublicLLMMD() (default OFF, pinned by uihost's
-// TestUIHost_PageLLMIndexDisabledByDefault returning 404) and a bare API
-// app has no UI host at all. Every default app's /api/llm.md therefore
-// contains a dead link — the #266 class on the linking side.
-func TestLLMMD_RegistryIndexAlwaysLinksPagesIndex(t *testing.T) {
+// The index links the page index only at the path the app says it serves:
+// /llm-pages.md is mounted only by a UI host built with WithPublicLLMMD, so
+// an empty path drops the Pages section rather than link a 404.
+func TestRegistryIndexPagesLinkFollowsPath(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{
 		"posts": entity.Define("posts", entity.EntityConfig{
 			Name:   "posts",
@@ -59,8 +54,10 @@ func TestLLMMD_RegistryIndexAlwaysLinksPagesIndex(t *testing.T) {
 			Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		}.WithTimestamps(false)),
 	}}
-	md := RegistryLLMMD(reg, "App", nil)
-	if !strings.Contains(md, "(/llm-pages.md)") {
-		t.Fatal("fixture broken: index no longer links /llm-pages.md; the dead-link finding needs re-deriving")
+	if md := RegistryLLMMD(reg, "App", nil, ""); strings.Contains(md, "llm-pages.md") || strings.Contains(md, "## Pages") {
+		t.Errorf("no page index served, but the index links one:\n%s", md)
+	}
+	if md := RegistryLLMMD(reg, "App", nil, "/site/llm-pages.md"); !strings.Contains(md, "[/site/llm-pages.md](/site/llm-pages.md)") {
+		t.Errorf("index does not link the served page index:\n%s", md)
 	}
 }

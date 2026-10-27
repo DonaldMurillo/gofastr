@@ -1,6 +1,7 @@
 package freeze_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -141,5 +142,30 @@ func TestAppSpecQuotesBareColonScalar(t *testing.T) {
 	}
 	if got := tags.List[0].Value; got != "09:30" {
 		t.Fatalf("colon scalar corrupted: got %v (kind %v)\n%s", got, tags.List[0].Kind, buf)
+	}
+}
+
+// An integer past 2^53 reaches the world as a json.Number (the journal
+// keeps it exact); the app spec writes it as that number, not as a
+// quoted string and not rounded.
+func TestAppSpecKeepsBigIntegers(t *testing.T) {
+	const exact int64 = 9007199254740993
+	big := json.Number("9007199254740993")
+	// Past int64 there is no integer to write; it stays the float it was.
+	huge := json.Number("100000000000000000000")
+	w := seedWorld(map[string]any{"title": big, "tags": []any{big}, "settings": huge})
+	buf, err := freeze.AppSpecYAML(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := parseSeedRow(t, buf)
+	if got := row.Map["title"].Value; got != exact {
+		t.Errorf("block scalar = %#v, want int64 %d\n%s", got, exact, buf)
+	}
+	if got := row.Map["settings"].Value; got != 1e20 {
+		t.Errorf("past-int64 scalar = %#v, want float64 1e20\n%s", got, buf)
+	}
+	if tags := row.Map["tags"]; tags == nil || len(tags.List) != 1 || tags.List[0].Value != exact {
+		t.Errorf("flow list item did not round-trip as int64 %d\n%s", exact, buf)
 	}
 }

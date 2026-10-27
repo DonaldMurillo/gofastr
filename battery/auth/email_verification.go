@@ -104,6 +104,11 @@ func (p *EmailVerificationPlugin) Init(mgr *AuthManager) error {
 	if why := invalidLinkBaseURL(p.cfg.BaseURL); why != "" {
 		return fmt.Errorf("auth: email-verification plugin: BaseURL %q %s", p.cfg.BaseURL, why)
 	}
+	if p.cfg.TokenStore == nil {
+		if err := refuseInMemoryTokenStore(mgr, "email-verification"); err != nil {
+			return err
+		}
+	}
 	p.mgr = mgr
 	return nil
 }

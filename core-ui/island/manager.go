@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -482,6 +484,7 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	m.remoteRosters = make(map[string]map[string]remoteRosterEntry)
 	m.remoteRosterTouch = make(map[string]time.Time)
 	m.presenceTTL = defaultPresenceTTL
+	m.presenceHeartbeat = defaultPresenceHeartbeat
 	m.presenceDone = make(chan struct{})
 	m.mu.Unlock()
 
@@ -571,13 +574,32 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 			presenceCancel()
 			islandStopQueue()
 			presenceStopQueue()
-			// Clear all fanout + presence state.
+			// Clear all fanout + presence state. The remote members go
+			// with it, so local viewers of a topic that held any are
+			// told, as they are for a TTL expiry.
 			m.mu.Lock()
+			topics := slices.Sorted(maps.Keys(m.remoteRosters))
+			before := make([][]PresenceMember, len(topics))
+			for i, topic := range topics {
+				before[i] = shownRosterLocked(m, topic)
+			}
 			m.fanout = nil
 			m.nodeID = ""
 			m.fanoutSend = nil
 			m.clearPresenceFanoutLocked()
+			var changed []string
+			for i, topic := range topics {
+				if !membersEqual(before[i], shownRosterLocked(m, topic)) {
+					changed = append(changed, topic)
+				}
+			}
+			cb := m.presenceCallback()
 			m.mu.Unlock()
+			if cb != nil {
+				for _, topic := range changed {
+					cb(topic)
+				}
+			}
 		})
 	}, nil
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/semantic"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // RunSemantic dispatches `gofastr semantic <subcommand>`.
@@ -320,7 +321,12 @@ func remoteQuery(base string, q semantic.Query) ([]semantic.Hit, error) {
 	var payload struct {
 		Hits []semantic.Hit `json:"hits"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, remoteMaxBodyBytes)).Decode(&payload); err != nil {
+	dec := json.NewDecoder(io.LimitReader(resp.Body, remoteMaxBodyBytes))
+	dec.UseNumber()
+	if err := dec.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if err := jsonexact.Settle(&payload); err != nil {
 		return nil, err
 	}
 	return payload.Hits, nil

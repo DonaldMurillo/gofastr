@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -28,6 +30,8 @@ import (
 
 var errGateRefusedForTest = errors.New("gate refused for seat test")
 
+var streamPort atomic.Int32
+
 // streamAttempt is one GET stream driven through ServeSSE on a
 // recorder: done closes when the handler returns (a refused or evicted
 // stream), and never while it holds the connection.
@@ -41,6 +45,9 @@ func startStream(t *testing.T, h http.Handler, ctx context.Context) *streamAttem
 	at := &streamAttempt{rec: httptest.NewRecorder(), done: make(chan struct{})}
 	req := httptest.NewRequest(http.MethodGet, "/sse", nil).WithContext(ctx)
 	req.Header.Set("Accept", "text/event-stream")
+	// One host, a fresh source port per stream, as real connections
+	// arrive: a seat key that kept the port gave each its own bucket.
+	req.RemoteAddr = fmt.Sprintf("192.0.2.1:%d", 20000+streamPort.Add(1))
 	go func() {
 		defer close(at.done)
 		h.ServeHTTP(at.rec, req)

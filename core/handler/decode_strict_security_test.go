@@ -109,3 +109,19 @@ func TestCheckObjectKeysWalksArraysAndDepth(t *testing.T) {
 		t.Fatalf("a truncated body is the decoder's business, got %v", err)
 	}
 }
+
+// A number past float64's range before a duplicate key does not end the
+// walk: the walker read numbers as float64, failed on 1e309 and returned
+// nil, while a caller decoding with UseNumber accepted the body and kept
+// the last duplicate (MCP tools/call ran the second "name").
+func TestCheckObjectKeysOverflowBeforeDup(t *testing.T) {
+	for _, body := range []string{
+		`{"arguments":{"x":1e309},"name":"safe","name":"danger"}`,
+		`{"a":[-1e400],"k":1,"k":2}`,
+		`{"a":{"x":1e309,"k":1,"k":2}}`,
+	} {
+		if err := CheckObjectKeys([]byte(body), strings.ToLower); err == nil {
+			t.Errorf("%s: duplicate after an overflowing number was not refused", body)
+		}
+	}
+}

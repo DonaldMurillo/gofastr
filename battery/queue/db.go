@@ -233,13 +233,17 @@ func detectDBDialect(db *sql.DB) dbDialect {
 
 // qt returns the validated, quoted table name. Validated once at construction.
 func (q *DBQueue) qt() string {
-	return query.QuoteIdent(q.table)
+	return query.QuoteFolded(q.table)
 }
 
 func (q *DBQueue) ensureTable() error {
 	tsType := "DATETIME"
 	if q.dialect == dialectPostgres {
 		tsType = "TIMESTAMPTZ"
+		if err := query.RefuseCaseKeptTables(context.Background(), q.db, q.table,
+			q.table+"_scheduler_schedules", q.table+"_scheduler_occurrences", q.table+"_scheduler_leases"); err != nil {
+			return fmt.Errorf("queue: %w", err)
+		}
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id            TEXT PRIMARY KEY,
@@ -310,8 +314,8 @@ func (q *DBQueue) ensureTable() error {
 		if err != nil {
 			return fmt.Errorf("queue: invalid index name %q: %w", ix.name, err)
 		}
-		idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s %s",
-			query.QuoteIdent(safeIdx), q.qt(), ix.cols)
+		idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s %s",
+			query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), q.qt()), ix.cols)
 		if _, err := q.db.Exec(idx); err != nil {
 			return err
 		}
@@ -323,8 +327,8 @@ func (q *DBQueue) ensureTable() error {
 	if err != nil {
 		return fmt.Errorf("queue: invalid index name: %w", err)
 	}
-	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (type, unique_key) WHERE %s",
-		query.QuoteIdent(safeIdx), q.qt(), liveUniqueKey))
+	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (type, unique_key) WHERE %s",
+		query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), q.qt()), liveUniqueKey))
 	return err
 }
 
@@ -842,7 +846,11 @@ func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 // 'failed' (dead-lettering a job someone is executing). Matching on the token
 // Dequeue minted makes a stale Nack touch no row, mirroring RedisQueue's
 // ownsClaim check. Rows predating the column carry ” and stay completable by
-// a caller presenting no token.
+// a caller presenting no token. Every arm also requires status='claimed', as
+// Ack and release do: the token survives the settle, so under
+// WithDoneRetention a late Nack after Ack matched the retained 'done' row
+// and re-queued completed work, and after the dead-letter sweep or a Replay
+// it rewrote a row its claim no longer held.
 func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 	return q.nack(ctx, job, "")
 }
@@ -870,7 +878,7 @@ func (q *DBQueue) nack(ctx context.Context, job Job, lastError string) error {
 		stmt := fmt.Sprintf(`UPDATE %s
 			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
 			updated_at = $1, last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
-			WHERE id = $3 AND claim_token = $4`, q.qt())
+			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt())
 		_, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
 		return err
 	}
@@ -890,14 +898,14 @@ func (q *DBQueue) nack(ctx context.Context, job Job, lastError string) error {
 	if attempts >= maxAttempts {
 		stmt := fmt.Sprintf(`UPDATE %s SET status='failed', updated_at = $1,
 			last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
-			WHERE id = $3 AND claim_token = $4`, q.qt())
+			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt())
 		_, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
 		return err
 	}
 	next := now.Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
 	stmt := fmt.Sprintf(`UPDATE %s SET status='pending', scheduled_at=$1, updated_at = $2,
 		last_error = CASE WHEN $3 = '' THEN last_error ELSE $3 END
-		WHERE id = $4 AND claim_token = $5`, q.qt())
+		WHERE id = $4 AND status='claimed' AND claim_token = $5`, q.qt())
 	_, err := q.db.ExecContext(ctx, stmt, next, now, lastError, job.ID, job.ClaimToken)
 	return err
 }

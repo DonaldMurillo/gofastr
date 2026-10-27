@@ -45,6 +45,24 @@ func TestWithMCPGateClosesDiscovery(t *testing.T) {
 	}
 }
 
+// WithMCPGate set the gate on whatever server existed when the option ran,
+// so a later WithMCPServer swapped in an ungated one: the order of two
+// options decided whether /mcp was private.
+func TestMCPGateSurvivesWithMCPServer(t *testing.T) {
+	deny := func(context.Context) error { return errAuthRequired }
+	s := mcp.NewServer()
+	app := NewApp(WithMCPGate(deny), WithMCPServer(s), WithMCP())
+	if app.MCP != s {
+		t.Fatal("WithMCPServer did not install the server")
+	}
+	resp := app.MCP.HandleRequest(context.Background(), mcp.Request{
+		JSONRPC: "2.0", ID: 1, Method: "tools/list",
+	})
+	if resp.Error == nil {
+		t.Fatal("SECURITY: [authz] WithMCPGate before WithMCPServer left the served server ungated")
+	}
+}
+
 // MCPRequireUser is the predicate the framework ships for direct-handler
 // tools. It must refuse a context with no resolved principal and accept one
 // that has one, a gate that accepted anonymous callers would be worse than

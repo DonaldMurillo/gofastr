@@ -34,7 +34,7 @@ host := uihost.New(site,
 | `WithOpenGraph(OG{…})` | `og:title/description/image/url/type` metas |
 | `WithTwitterCard(TwitterCard{…})` | `twitter:card/title/description/image/site` metas |
 | `WithCanonicalURL` | `<link rel="canonical">`, usually wrong sitewide; prefer the per-screen interface |
-| `WithRobotsMeta` | `<meta name="robots">` on every page (e.g. `"noindex"` for staging) |
+| `WithRobotsMeta` | `<meta name="robots">` on every page (e.g. `"noindex"` for staging); site search ignores it and honours only a screen's own directive |
 | `WithSitemap(SitemapConfig{…})` | the `/sitemap.xml` endpoint (see below) |
 | `WithRobots(RobotsConfig{…})` | the `/robots.txt` endpoint (see below) |
 | `WithAppIcon(source)` | every icon file the app needs (see below) |
@@ -155,7 +155,21 @@ interface static export uses; routes without it are skipped. A screen
 whose policy chain answers an anonymous visitor with a redirect or a block
 (a `/app/*` screen behind sign-in) is left out too: the sitemap evaluates
 each page's policy as a signed-out GET, whoever fetches it, which is the
-same rule static export uses to skip gated screens. A screen whose policy
+same rule static export uses to skip gated screens. It runs the policy
+through `(*App).PagePolicy(ctx, path)`, which does what a request does:
+it installs the route match and resolver state, runs the eager
+resolvers and the policy chain, and applies region-guard redirects. A
+policy that reads resolver state decides the same way here, and a
+resolver error leaves the page out, including one a region guard reads.
+Under `WithLocalePrefixes` each locale is judged in the context its
+prefixed request carries, so a policy that reads the path locale
+decides per variant; only readable variants are listed, each naming
+only readable alternates, and `x-default` follows the default locale.
+A dynamic route's `StaticPaths` runs once per locale, under that
+locale's context, so a locale lists its own slugs (`/es/p/acerca`) and
+names a variant as an alternate only where that locale's expansion
+lists it.
+A screen whose policy
 renders an alternative (a login prompt) stays listed. Exclude other
 admin/internal prefixes with `ExcludePaths`.
 
