@@ -42,7 +42,8 @@ func changelogArchives(t *testing.T) []string {
 }
 
 // readChangelog loads every release the project has shipped: CHANGELOG.md
-// followed by each archive under changelog/.
+// followed by each archive under changelog/. An archive's own header is
+// dropped, so its prose never lands in the previous file's last release.
 func readChangelog(t *testing.T) string {
 	t.Helper()
 	var b strings.Builder
@@ -52,8 +53,12 @@ func readChangelog(t *testing.T) string {
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
+		first := releaseHeading.FindIndex(body)
+		if first == nil {
+			t.Fatalf("%s holds no `## [X.Y.Z]` sections", f)
+		}
 		b.WriteString("\n")
-		b.Write(body)
+		b.Write(body[first[0]:])
 	}
 	return b.String()
 }
@@ -77,6 +82,8 @@ func releaseHeadings(body string) ([]string, map[string]releaseVersion) {
 	return order, vers
 }
 
+var archiveLink = regexp.MustCompile(`\(changelog/([^)]+)\)`)
+
 var archiveName = regexp.MustCompile(`^v(\d+)\.(\d+)-v(\d+)\.(\d+)\.md$`)
 
 // CHANGELOG.md holds Unreleased and the current ten minor versions (v0.90
@@ -94,6 +101,12 @@ func TestChangelogArchiveLayout(t *testing.T) {
 	}
 	latest := rootVers[order[0]]
 	floor := latest.minor - latest.minor%10
+
+	for _, m := range archiveLink.FindAllStringSubmatch(root, -1) {
+		if _, err := os.Stat(filepath.Join("..", "..", "changelog", m[1])); err != nil {
+			t.Errorf("CHANGELOG.md links changelog/%s, which does not exist", m[1])
+		}
+	}
 
 	where := map[string]string{}
 	for _, v := range order {
@@ -114,6 +127,12 @@ func TestChangelogArchiveLayout(t *testing.T) {
 		major, _ := strconv.Atoi(m[1])
 		lo, _ := strconv.Atoi(m[2])
 		hi, _ := strconv.Atoi(m[4])
+		// Ten minors per file, A0 to A9; the first file starts where the
+		// releases did (v0.3-v0.9.md).
+		first := major == 0 && lo == 3 && hi == 9
+		if !first && (lo%10 != 0 || hi != lo+9) {
+			t.Errorf("changelog/%s does not cover one run of ten minors, like v0.80-v0.89.md", name)
+		}
 		if !strings.Contains(root, "(changelog/"+name+")") {
 			t.Errorf("CHANGELOG.md does not link changelog/%s", name)
 		}
@@ -134,7 +153,9 @@ func TestChangelogArchiveLayout(t *testing.T) {
 				t.Errorf("changelog/%s holds %s, which belongs in CHANGELOG.md until v%d.%d.0 ships",
 					name, v, latest.major, floor+10)
 			}
-			if prev, dup := where[v]; dup {
+			if prev, dup := where[v]; dup && prev == "changelog/"+name {
+				t.Errorf("changelog/%s holds %s twice", name, v)
+			} else if dup {
 				t.Errorf("%s appears in both %s and changelog/%s", v, prev, name)
 			}
 			where[v] = "changelog/" + name
@@ -166,11 +187,11 @@ func TestChangelogAgreesWithUpgradesOnBreaking(t *testing.T) {
 		marked := marksBreaking(ver.body)
 		switch {
 		case known && !marked:
-			t.Errorf("internal/upgrade/releases/%[1]s.yml marks %[1]s breaking, but its CHANGELOG.md "+
+			t.Errorf("internal/upgrade/releases/%[1]s.yml marks %[1]s breaking, but its changelog "+
 				"section never says BREAKING — the release notes come from that section, "+
 				"so an upgrading reader is not warned", ver.version)
 		case marked && !known:
-			t.Errorf("CHANGELOG.md marks %s BREAKING, but internal/upgrade/releases/ has no "+
+			t.Errorf("the changelog marks %s BREAKING, but internal/upgrade/releases/ has no "+
 				"breaking note for it — `gofastr upgrade` will not surface the change. "+
 				"The registry's maintenance rule: a release that lands BREAKING "+
 				"changes adds releases/<version>.yml", ver.version)
@@ -198,8 +219,8 @@ type changelogSection struct {
 	body    string
 }
 
-// changelogVersions returns every `## [X.Y.Z]` section of CHANGELOG.md with
-// its body. `## [Unreleased]` is skipped: it carries no version to compare
+// changelogVersions returns every `## [X.Y.Z]` section of CHANGELOG.md and
+// the changelog/ archives with its body. `## [Unreleased]` is skipped: it carries no version to compare
 // against, and it is empty between releases.
 func changelogVersions(t *testing.T) []changelogSection {
 	t.Helper()
@@ -222,7 +243,7 @@ func changelogVersions(t *testing.T) []changelogSection {
 		}
 	}
 	if len(out) == 0 {
-		t.Fatal("CHANGELOG.md has no `## [X.Y.Z]` sections")
+		t.Fatal("neither CHANGELOG.md nor changelog/ has a `## [X.Y.Z]` section")
 	}
 	return out
 }

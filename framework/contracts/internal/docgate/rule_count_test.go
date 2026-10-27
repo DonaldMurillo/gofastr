@@ -19,14 +19,16 @@ import (
 //
 // The fix when this fails is one number per document, not deleting the
 // test: the count is worth stating, and stating it is worth checking.
+// CHANGELOG.md is not checked: a release entry records the count at that
+// release, and the entry moves to changelog/ ten minors later.
 //
-//gofastr:test-reads /README.md /CHANGELOG.md
+//gofastr:test-reads /README.md
 func TestAdvertisedRuleCountMatchesTheCatalog(t *testing.T) {
 	n := len(contracts.AllRules())
 	want := fmt.Sprintf("%d rules", n)
 	wantAlt := fmt.Sprintf("%d contract rules", n)
 
-	for _, doc := range []string{"README.md", "CHANGELOG.md"} {
+	for _, doc := range []string{"README.md"} {
 		body, err := os.ReadFile(filepath.Join("..", "..", "..", "..", doc))
 		if err != nil {
 			t.Fatalf("read %s: %v", doc, err)
