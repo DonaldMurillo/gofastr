@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -211,7 +212,8 @@ func TestPG_MixedCaseTableNameWithGroups(t *testing.T) {
 	if err := m.Register(migrate.Migration{Version: 1, Name: "core", Up: "CREATE TABLE mc_core (id INT)", Down: "DROP TABLE mc_core"}); err != nil {
 		t.Fatal(err)
 	}
-	// Apply default only. Creates the legacy table "MyMigrations".
+	// Apply default only. Creates the legacy-shaped table, folded to
+	// mymigrations.
 	if err := m.Up(ctx); err != nil {
 		t.Fatalf("Up default: %v", err)
 	}
@@ -225,9 +227,39 @@ func TestPG_MixedCaseTableNameWithGroups(t *testing.T) {
 	}
 
 	// Verify the PK was upgraded to composite.
-	cols := pgPKColumns(t, db, "MyMigrations")
+	cols := pgPKColumns(t, db, "mymigrations")
 	if len(cols) != 2 || cols[0] != "group_name" || cols[1] != "version" {
 		t.Fatalf("PK = %v, want [group_name version]", cols)
+	}
+}
+
+// An older build tracked WithTableName("MyMigrations") in a case-kept
+// "MyMigrations". This build names mymigrations; booting on would find no
+// applied versions and run every migration again, so Up refuses and prints
+// the rename.
+func TestPG_CaseKeptTrackingTableRefused(t *testing.T) {
+	db := pgtest.DB(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`CREATE TABLE "MyMigrations" (version BIGINT PRIMARY KEY, name TEXT NOT NULL DEFAULT '')`); err != nil {
+		t.Fatalf("create the older table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "MyMigrations" (version, name) VALUES (1, 'core')`); err != nil {
+		t.Fatalf("seed the older table: %v", err)
+	}
+	m := migrate.New(db, migrate.WithDialect(migrate.DialectPostgres), migrate.WithTableName("MyMigrations"))
+	if err := m.Register(migrate.Migration{Version: 1, Name: "core", Up: "CREATE TABLE ck_core (id INT)", Down: "DROP TABLE ck_core"}); err != nil {
+		t.Fatal(err)
+	}
+	err := m.Up(ctx)
+	if err == nil || !strings.Contains(err.Error(), `ALTER TABLE "MyMigrations" RENAME TO "mymigrations"`) {
+		t.Fatalf("Up over the older table: err = %v, want the rename advice", err)
+	}
+	var reran bool
+	if err := db.QueryRow(`SELECT to_regclass('ck_core') IS NOT NULL`).Scan(&reran); err != nil {
+		t.Fatal(err)
+	}
+	if reran {
+		t.Error("Up ran migration 1 again after refusing")
 	}
 }
 

@@ -135,8 +135,9 @@ func (e *Engine) Pause(ctx context.Context) error {
 	return nil
 }
 
-// Resume moves ends_at forward by exactly the stored remaining seconds
-// and clears the pause.
+// Resume moves ends_at forward by how long the pause lasted and clears
+// it. paused_left is the shown count, rounded up, so rebuilding ends_at
+// from it would give back the part second already run on every resume.
 func (e *Engine) Resume(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -151,7 +152,7 @@ func (e *Engine) Resume(ctx context.Context) error {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "not paused"}
 	}
 	updated, err := e.app.MustCrudHandler("sessions").UpdateOne(ctx, s.ID, map[string]any{
-		"ends_at":     stamp(e.now().Add(time.Duration(s.PausedLeft) * time.Second)),
+		"ends_at":     stamp(s.EndsAt.Add(e.now().Sub(s.PausedAt))),
 		"paused_at":   nil,
 		"paused_left": 0,
 	})
@@ -474,10 +475,11 @@ func stamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// remainingSeconds is the seconds left until end, floored at 0.
+// remainingSeconds is the seconds left until end, a part second counted
+// as a whole one, and 0 once end has passed.
 func remainingSeconds(end, now time.Time) int {
-	if d := int(end.Sub(now) / time.Second); d > 0 {
-		return d
+	if d := end.Sub(now); d > 0 {
+		return int((d + time.Second - 1) / time.Second)
 	}
 	return 0
 }

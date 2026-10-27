@@ -15,11 +15,16 @@ import (
 // egress shares a budget with everyone on that address, and a spoofed
 // User-Agent gets whatever the IP gets. Keyed by identity, the agent's
 // budget is its own, and an unverified caller falls back to the IP budget
-// it would have had anyway — verification never widens what a stranger
-// can do.
+// it would have had anyway.
 //
 // The identity is the directory URL, not the key id: a rotated key is the
-// same agent, so rotation does not reset the window.
+// same agent, so rotation does not reset the window. The signer chooses
+// that URL, though, and anyone with a domain and a key can verify: one
+// sender can sign each request under a new path, query or subdomain and
+// get a fresh budget each time. This limiter splits a shared egress
+// fairly; it does not cap a sender. Keep an IP-keyed limiter in front of
+// it, with a ceiling above any single agent's budget, to bound what one
+// address can send.
 //
 // Ordering matters: the verifier middleware must run before the limiter,
 // or every request is unverified at keying time. In the framework the

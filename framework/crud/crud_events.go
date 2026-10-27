@@ -74,7 +74,14 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		eventKeyRecord: ch.withoutCascadeChildren(record),
 	}
 	if ch.Entity.Config.Scope.MultiTenant {
-		if tid := tenant.GetTenantID(ctx); tid != "" {
+		// The record's own tenant column names whose row this is; the
+		// writer's tenant differs from it under tenant.AllowCrossTenant,
+		// and stamping the writer's sent the row to their tenant's
+		// subscribers. The context is the fallback for a record that does
+		// not carry the column.
+		if tid, ok := ch.recordColumn(record, ch.Entity.Config.TenantColumn()); ok && tid != nil && fmt.Sprint(tid) != "" {
+			data[eventKeyTenantID] = fmt.Sprint(tid)
+		} else if tid := tenant.GetTenantID(ctx); tid != "" {
 			data[eventKeyTenantID] = tid
 		}
 	}
@@ -86,18 +93,34 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		// compare float64 != int64 → always unequal → every cross-replica
 		// event dropped. fmt.Sprint on both stamp and filter sides keeps
 		// local and remote payloads identical.
-		// Prefer the extractor (matches the request-handling user); fall
-		// back to the record's own owner column (covers admin / background
-		// emitters whose ctx has no user).
-		if id, ok := owner.Get(ctx); ok {
+		// Prefer the record's own owner column: the event is about that
+		// row, and the subscriber filter routes it to the row's owner.
+		// The writer is not always the owner: under owner.AllowCrossOwner
+		// Alice updates Bob's row, and stamping her id delivered Bob's
+		// record to Alice's subscription and not to Bob's. The context
+		// is the fallback for a record that does not carry the column.
+		if id, ok := ch.recordColumn(record, ch.Entity.Config.Scope.OwnerField); ok && id != nil {
 			data[eventKeyOwnerID] = fmt.Sprint(id)
-		} else if rec, ok := record.(map[string]any); ok {
-			if id, ok := rec[ch.Entity.Config.Scope.OwnerField]; ok {
-				data[eventKeyOwnerID] = fmt.Sprint(id)
-			}
+		} else if id, ok := owner.Get(ctx); ok {
+			data[eventKeyOwnerID] = fmt.Sprint(id)
 		}
 	}
 	return data
+}
+
+// recordColumn reads column col from an event record, under its wire key
+// (the write's response row is JSON-cased) or, failing that, its column
+// name (a raw row).
+func (ch *CrudHandler) recordColumn(record any, col string) (any, bool) {
+	rec, ok := record.(map[string]any)
+	if !ok || col == "" {
+		return nil, false
+	}
+	if v, ok := rec[ch.convertKey(col)]; ok {
+		return v, true
+	}
+	v, ok := rec[col]
+	return v, ok
 }
 
 // withoutCascadeChildren returns record minus the cascade-written relations a
@@ -791,7 +814,7 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 		if err != nil {
 			return false, err
 		}
-		where = append(where, fmt.Sprintf("%s = $%d", query.QuoteIdent(safePK), i+1))
+		where = append(where, fmt.Sprintf("%s = $%d", query.QuoteFolded(safePK), i+1))
 		args = append(args, id[i])
 	}
 	if eventType == event.EntityUpdated {
@@ -801,13 +824,13 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 				continue
 			}
 			where = append(where, fmt.Sprintf("%s = $%d",
-				query.QuoteIdent(safeCol), len(args)+1))
+				query.QuoteFolded(safeCol), len(args)+1))
 			args = append(args, match[col])
 		}
 	}
 	var n int
 	stmt := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s",
-		query.QuoteIdent(safeTable), strings.Join(where, " AND "))
+		query.QuoteFolded(safeTable), strings.Join(where, " AND "))
 	if err := base.QueryRow(stmt, args...).Scan(&n); err != nil {
 		return false, err
 	}
@@ -832,7 +855,10 @@ func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 	}
 	out := map[string]any{}
 	for key, v := range m {
-		col := ch.unconvertKeyRaw(key)
+		// The wire-key map, not the bare case conversion: snake-casing a
+		// camel key misses a mixed-case column or a WireName, and a column
+		// left out is a value the confirm query no longer checks.
+		col := ch.wireKeyColumn(key)
 		if ch.isKeyCol(col) || !known[col] || v == nil {
 			continue
 		}

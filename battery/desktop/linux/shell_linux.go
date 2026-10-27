@@ -107,6 +107,7 @@ type linuxShell struct {
 	textCtx       context.Context
 	windows       map[string]*linuxWindow
 	webContext    uintptr
+	activation    *activationBroker
 	inLoop        bool // UI thread only
 	capGate       chan struct{}
 	promptQueue   []desktop.Decision
@@ -138,6 +139,7 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	s.cfg = cfg
 	s.mu.Unlock()
 	defer close(s.done)
+	defer s.ReleaseLaunch()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -203,6 +205,7 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if ready != nil {
 		ready(w)
 	}
+	s.attachActivation(cfg.OnDeepLink, func() { _ = w.Focus() })
 	if !s.quitting.Load() {
 		s.inLoop = true
 		call(gtk.Sym.GtkMain)

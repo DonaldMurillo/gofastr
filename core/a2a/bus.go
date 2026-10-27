@@ -10,24 +10,34 @@ import (
 // without the run ever blocking on a reader.
 const subscriberBuffer = 64
 
+// busEvent is one published event plus the task version the write that
+// produced it left in the store. A subscriber that opened with a
+// snapshot at version V skips events at or below V: the snapshot
+// already reflects them, and an artifact append forwarded on top of it
+// would double its parts.
+type busEvent struct {
+	ev      StreamResponse
+	version int64
+}
+
 // taskBus fans one task's events out to this process's subscribers. One
 // bus exists per run, not per server: a task running here owns its bus,
 // and subscribers reach it through the run registry, so two runs of the
 // same task (create, then a later resume) never share a channel set.
 type taskBus struct {
 	mu   sync.Mutex
-	subs map[chan StreamResponse]struct{}
+	subs map[chan busEvent]struct{}
 	log  *slog.Logger
 }
 
 func newTaskBus(log *slog.Logger) *taskBus {
-	return &taskBus{subs: map[chan StreamResponse]struct{}{}, log: log}
+	return &taskBus{subs: map[chan busEvent]struct{}{}, log: log}
 }
 
 // subscribe returns a buffered channel receiving every event published
 // after this call.
-func (b *taskBus) subscribe() chan StreamResponse {
-	ch := make(chan StreamResponse, subscriberBuffer)
+func (b *taskBus) subscribe() chan busEvent {
+	ch := make(chan busEvent, subscriberBuffer)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.subs[ch] = struct{}{}
@@ -36,7 +46,7 @@ func (b *taskBus) subscribe() chan StreamResponse {
 
 // unsubscribe removes ch. Safe to call twice: a dropped (closed)
 // channel is already absent from the set.
-func (b *taskBus) unsubscribe(ch chan StreamResponse) {
+func (b *taskBus) unsubscribe(ch chan busEvent) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.subs, ch)
@@ -49,7 +59,7 @@ func (b *taskBus) unsubscribe(ch chan StreamResponse) {
 // (it left the set before it was closed), so a channel is never sent on
 // or closed twice. This is the whole reason the bus is per task — a
 // slow reader harms only its own task's stream.
-func (b *taskBus) publish(ev StreamResponse) {
+func (b *taskBus) publish(ev busEvent) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for ch := range b.subs {
@@ -61,7 +71,7 @@ func (b *taskBus) publish(ev StreamResponse) {
 			// again.
 			delete(b.subs, ch)
 			close(ch)
-			b.log.Warn("a2a: event subscriber too slow, dropped", "taskId", taskIDOf(ev))
+			b.log.Warn("a2a: event subscriber too slow, dropped", "taskId", taskIDOf(ev.ev))
 		}
 	}
 }

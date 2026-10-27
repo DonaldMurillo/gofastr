@@ -43,6 +43,11 @@ import (
 // and is unconditional: lifting it would let an ?include= or an EagerLoad
 // caller reach across tenants and owners.
 //
+// With a registry a loaded row also carries the values the target's own
+// read returns, as ?include= does: each column under its declared name, a
+// Date as YYYY-MM-DD, a JSON column as its decoded document, a Decimal as
+// its text.
+//
 // Resolution is version-aware (entity.ResolveTarget against the source
 // entity) and fails closed: a target that cannot be resolved is an ERROR,
 // not a load with the scrubs turned off. Without a registry the target
@@ -185,6 +190,9 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		}
+		// The values a direct read of the target returns: a Date as
+		// YYYY-MM-DD, a JSON column as its document, a Decimal as text.
+		decodeEntityReadColumns(target, gatherLoadedRows(result, rel.Name))
 	}
 
 	return result, nil
@@ -231,10 +239,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity string, saf
 
 		row := make(map[string]any, len(cols))
 		for i, c := range cols {
-			if served.drop(c) {
-				continue
-			}
-			row[c] = convertDatabaseValue(vals[i], boolCols[i])
+			served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
 		}
 		if parentID, ok := scannedKey(cols, vals, safeFKs); ok {
 			attachChildRow(rel, parentID, row, result)
@@ -312,10 +317,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, keyCol
 		}
 		row := make(map[string]any, len(cols))
 		for i, c := range cols {
-			if served.drop(c) {
-				continue
-			}
-			row[c] = convertDatabaseValue(vals[i], boolCols[i])
+			served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
 		}
 		if id, ok := scannedKey(cols, vals, targetKey); ok {
 			targetByID[id] = row
@@ -412,8 +414,8 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, 
 		for i, c := range cols {
 			if c == "__parent_id" {
 				parentID = fmt.Sprintf("%v", vals[i])
-			} else if !served.drop(c) {
-				row[c] = convertDatabaseValue(vals[i], boolCols[i])
+			} else {
+				served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
 			}
 		}
 

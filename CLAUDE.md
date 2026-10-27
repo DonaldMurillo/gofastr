@@ -442,6 +442,29 @@ expose them to agents connected to a live app.**
   `core-ui/check.LintRuntimeProse`: literal prose into a toast,
   `textContent`, `aria-label` or `title` goes through `say()` and a
   phrase registered with `runtime.RegisterStrings`.
+  The 2026-10-26 bug bash added `embedskip`: a struct field walk
+  (`NumField()` or the `Fields()` iterator) that maps fields to keys by
+  their tags must descend into an embedded struct the way
+  `encoding/json` promotes its fields — check `f.Anonymous`, or descend
+  into every struct-kind field. Typed hooks merge, DI `Inject` and the
+  handler's query/path/header/tool binders each skipped promoted fields.
+  The same round added `floatnum` (JSON decoded into a value holding an
+  empty interface — `any`, `map[string]any`, `[]any`, a struct field of
+  one — with no `UseNumber`: every number becomes a float64 and an
+  integer past 2^53 loses digits; decode with `jsonexact.Unmarshal`
+  (`internal/jsonexact`; a stream calls `UseNumber` then
+  `jsonexact.Settle`) or pass `handler.UseNumber()`. A function that
+  decodes into its own `v any` parameter exports a fact, and the report
+  lands on the caller that passes a `*map[string]any` through it — the
+  A2A `decodeParams` and kiln journal `Entry.Decode` shape) and
+  `quoteident` (`query.QuoteIdent` outside `core/query`: AutoMigrate's
+  DDL is unquoted, so Postgres folds `Widgets` to `widgets` and a
+  case-kept quote misses it. Use `query.QuoteFolded`, and
+  `query.QuoteIndexName` for an index or trigger; a name read back from
+  the catalog carries the allow marker. A store that creates a
+  configured table calls `query.RefuseCaseKeptTables` first on Postgres,
+  so a table an older build made with its case kept stops the boot with
+  the rename instead of being shadowed by an empty one).
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

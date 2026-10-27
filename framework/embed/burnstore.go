@@ -230,11 +230,14 @@ func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStor
 	tsType := "DATETIME"
 	if migrate.DetectDialect(database) == migrate.DialectPostgres {
 		tsType = "TIMESTAMP"
+		if err := query.RefuseCaseKeptTables(context.Background(), database, s.table); err != nil {
+			return nil, fmt.Errorf("embed: %w", err)
+		}
 	}
 	stmt := fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s (`+
 			`nonce_id TEXT PRIMARY KEY, grant_token TEXT NOT NULL, expires_at %s NOT NULL)`,
-		query.QuoteIdent(s.table), tsType,
+		query.QuoteFolded(s.table), tsType,
 	)
 	if _, err := s.db.ExecContext(context.Background(), stmt); err != nil {
 		return nil, fmt.Errorf("embed: create burn table: %w", err)
@@ -252,7 +255,7 @@ func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStor
 func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires time.Time) (string, bool, error) {
 	ins := fmt.Sprintf(
 		`INSERT INTO %s (nonce_id, grant_token, expires_at) VALUES ($1, $2, $3) ON CONFLICT (nonce_id) DO NOTHING`,
-		query.QuoteIdent(s.table))
+		query.QuoteFolded(s.table))
 	res, err := s.db.ExecContext(ctx, ins, nonceID, grant, expires.UTC())
 	if err != nil {
 		return "", false, fmt.Errorf("embed: burn nonce: %w", err)
@@ -283,7 +286,7 @@ func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires 
 	// such replay as a first use. The replay flag is informational (the caller
 	// answers both cases identically), so a driver that cannot report rows
 	// affected loses only the label, never the single-use guarantee.
-	sel := fmt.Sprintf(`SELECT grant_token, expires_at FROM %s WHERE nonce_id = $1`, query.QuoteIdent(s.table))
+	sel := fmt.Sprintf(`SELECT grant_token, expires_at FROM %s WHERE nonce_id = $1`, query.QuoteFolded(s.table))
 	var stored string
 	var storedExp time.Time
 	switch err := s.db.QueryRowContext(ctx, sel, nonceID).Scan(&stored, &storedExp); {
@@ -304,7 +307,7 @@ func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires 
 
 // Prune implements BurnStore.
 func (s *SQLBurnStore) Prune(ctx context.Context, now time.Time) error {
-	stmt := fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteIdent(s.table))
+	stmt := fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteFolded(s.table))
 	if _, err := s.db.ExecContext(ctx, stmt, now.Add(-PruneGrace).UTC()); err != nil {
 		return fmt.Errorf("embed: prune burned nonces: %w", err)
 	}

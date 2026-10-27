@@ -109,12 +109,17 @@ func TestWhereRangeOnJSONRefused(t *testing.T) {
 }
 
 func TestWhereNeSuitsEveryType(t *testing.T) {
-	for _, f := range []schema.Field{
-		{Name: "s", Type: schema.String}, {Name: "i", Type: schema.Int},
-		{Name: "b", Type: schema.Bool}, {Name: "d", Type: schema.Date},
+	for _, tc := range []struct {
+		f     schema.Field
+		value string
+	}{
+		{schema.Field{Name: "s", Type: schema.String}, "x"},
+		{schema.Field{Name: "i", Type: schema.Int}, "7"},
+		{schema.Field{Name: "b", Type: schema.Bool}, "true"},
+		{schema.Field{Name: "d", Type: schema.Date}, "2026-10-27"},
 	} {
-		if _, err := ParseWhere(`{"field":"`+f.Name+`","op":"ne","value":"x"}`, []schema.Field{f}); err != nil {
-			t.Errorf("ne on %s column refused: %v", f.Name, err)
+		if _, err := ParseWhere(`{"field":"`+tc.f.Name+`","op":"ne","value":"`+tc.value+`"}`, []schema.Field{tc.f}); err != nil {
+			t.Errorf("ne on %s column refused: %v", tc.f.Name, err)
 		}
 	}
 }
@@ -160,7 +165,7 @@ func TestValidatePredicateSetsBoolMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.isBool {
+	if p.colType != schema.Bool {
 		t.Fatal("Bool leaf must get its coercion marker set so BuildPredicate binds a Go bool")
 	}
 	c := BuildPredicate(p)
@@ -169,12 +174,12 @@ func TestValidatePredicateSetsBoolMarker(t *testing.T) {
 	}
 	// And the schema is the authority: a wrongly hand-set marker on a
 	// non-Bool column is cleared.
-	q, err := ValidatePredicate(&Predicate{Field: "status", Op: OpEq, Value: "x", isBool: true}, vpFields())
+	q, err := ValidatePredicate(&Predicate{Field: "status", Op: OpEq, Value: "x", colType: schema.Bool}, vpFields())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q.isBool {
-		t.Fatal("isBool on a String column must be reset by validation")
+	if q.colType == schema.Bool {
+		t.Fatal("a Bool marker on a String column must be reset by validation")
 	}
 }
 
@@ -251,13 +256,13 @@ func TestValidatePredicateLeavesInputUntouched(t *testing.T) {
 	if in.Children[0].Field != "dueDate" {
 		t.Fatalf("input leaf's alias was resolved in place: %q", in.Children[0].Field)
 	}
-	if in.Children[1].isBool {
+	if in.Children[1].colType == schema.Bool {
 		t.Fatal("input leaf got the Bool coercion marker in place")
 	}
 	if resolved.Children[0].Field != "due_on" {
 		t.Fatalf("resolved copy did not resolve the alias: %q", resolved.Children[0].Field)
 	}
-	if !resolved.Children[1].isBool {
+	if resolved.Children[1].colType != schema.Bool {
 		t.Fatal("resolved copy did not set the Bool coercion marker")
 	}
 	// The copy owns its Values slice: appending to it cannot reach the

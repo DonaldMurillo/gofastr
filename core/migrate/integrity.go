@@ -71,8 +71,8 @@ func (m *Migrator) ensureTrackingColumns(ctx context.Context, x connish, tbl str
 	for _, a := range adds {
 		// a.col is one of three lowercase constants above, but quoting it
 		// keeps every ADD COLUMN identifier in this file visibly gated
-		// (query.QuoteIdent), the same posture entity_store.go holds.
-		col := query.QuoteIdent(a.col)
+		// (query.QuoteFolded), the same posture entity_store.go holds.
+		col := query.QuoteFolded(a.col)
 		var stmt string
 		if m.dialect == DialectPostgres {
 			stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", tbl, col, a.def)
@@ -174,6 +174,7 @@ func (m *Migrator) upgradePKPostgres(ctx context.Context, x connish, tbl string)
 		return fmt.Errorf("migrate: primary-key constraint name %q: %w", cname, err)
 	}
 	stmt := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s, ADD PRIMARY KEY (group_name, version)",
+		//gofastr:allow(quoteident) cname was read from pg_constraint with its case kept
 		tbl, query.QuoteIdent(safe))
 	if _, err := x.ExecContext(ctx, stmt); err != nil {
 		return fmt.Errorf("migrate: upgrade primary key to (group_name, version): %w", err)
@@ -190,7 +191,7 @@ func (m *Migrator) rebuildTableSQLite(ctx context.Context, x connish, tbl string
 	if err != nil {
 		return fmt.Errorf("migrate: temp table name: %w", err)
 	}
-	tmpTbl := query.QuoteIdent(tmpSafe)
+	tmpTbl := query.QuoteFolded(tmpSafe)
 
 	tx, err := x.BeginTx(ctx, nil)
 	if err != nil {

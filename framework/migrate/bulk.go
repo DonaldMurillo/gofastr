@@ -4,7 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // ReadLiveColumnsBulk reads column metadata for multiple tables in a
@@ -25,26 +26,29 @@ func ReadLiveColumnsBulk(ctx context.Context, db *sql.DB, tables []string, diale
 
 func readLiveColumnsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (map[string]map[string]string, error) {
 	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
-	// folds a mixed-case table name to lowercase in information_schema. Match
-	// case-insensitively and key the result by the ORIGINAL requested name so
-	// the caller's result[ent.GetTable()] lookup hits, same convention as
-	// TableExistsBulk. Without this, a table like "MixedAccount" reads as
-	// "doesn't exist" on every boot.
-	placeholders := make([]string, len(tables))
-	args := make([]any, len(tables))
-	byLower := make(map[string]string, len(tables))
-	for i, t := range tables {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = strings.ToLower(t)
-		byLower[strings.ToLower(t)] = t
-	}
-
+	// folds a mixed-case table name to lowercase in information_schema.
+	// Match the folded schema and name exactly and key the result by the
+	// ORIGINAL requested name so the caller's result[ent.GetTable()] lookup
+	// hits, same convention as TableExistsBulk. Without the fold, a table
+	// like "MixedAccount" reads as "doesn't exist" on every boot; matching
+	// without case instead read a hand-made quoted "MixedAccount" as the
+	// declared table, which the framework's unquoted DDL never names.
+	// A qualified app.widgets is widgets in schema app: compared whole
+	// against the bare table_name, it read as absent and boot skipped
+	// every column added later.
+	//
+	// The same holds for columns: one the framework adds is folded, so a
+	// quoted legacy "Title" is not the declared Title (whose DDL names
+	// title), and reading it as one skipped the ADD COLUMN.
+	refs, args := pgTableRefs(tables)
 	query := fmt.Sprintf(`
-		SELECT table_name, column_name, data_type
-		FROM information_schema.columns
-		WHERE table_schema = current_schema() AND lower(table_name) IN (%s)
-		ORDER BY table_name, ordinal_position
-	`, strings.Join(placeholders, ", "))
+		SELECT t.i, c.column_name, c.data_type
+		FROM %s
+		JOIN information_schema.columns c
+			ON c.table_schema = coalesce(t.s, current_schema()) AND c.table_name = t.n
+		WHERE c.column_name = lower(c.column_name)
+		ORDER BY t.i, c.ordinal_position
+	`, refs)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -54,17 +58,16 @@ func readLiveColumnsBulkPostgres(ctx context.Context, db *sql.DB, tables []strin
 
 	result := make(map[string]map[string]string, len(tables))
 	for rows.Next() {
-		var tableName, colName, colType string
-		if err := rows.Scan(&tableName, &colName, &colType); err != nil {
+		var i int
+		var colName, colType string
+		if err := rows.Scan(&i, &colName, &colType); err != nil {
 			return nil, err
 		}
-		if orig, ok := byLower[strings.ToLower(tableName)]; ok {
-			tableName = orig
+		table := tables[i]
+		if result[table] == nil {
+			result[table] = make(map[string]string)
 		}
-		if result[tableName] == nil {
-			result[tableName] = make(map[string]string)
-		}
-		result[tableName][colName] = colType
+		result[table][colName] = colType
 	}
 	return result, rows.Err()
 }
@@ -97,24 +100,17 @@ func TableExistsBulk(ctx context.Context, db *sql.DB, tables []string, dialect D
 func tableExistsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (map[string]bool, error) {
 	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
 	// folds a mixed-case table name to lowercase in pg_tables. Compare the
-	// requested names case-insensitively (lowercased $N args matched against
-	// pg_tables.tablename) and key the result by the ORIGINAL requested name
-	// so the caller's existing[ent.GetTable()] lookup hits. Without this,
-	// "MixedAccount" never matches the folded "mixedaccount" and AutoMigrate
-	// re-attempts CREATE TABLE on every boot.
-	placeholders := make([]string, len(tables))
-	args := make([]any, len(tables))
-	byLower := make(map[string]string, len(tables))
-	for i, t := range tables {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = strings.ToLower(t)
-		byLower[strings.ToLower(t)] = t
-	}
-
+	// folded schema and name exactly (a quoted "MixedAccount" is some other
+	// table; a qualified app.widgets is widgets in schema app) and key the
+	// result by the ORIGINAL requested name so the caller's
+	// existing[ent.GetTable()] lookup hits. Without this, "MixedAccount"
+	// never matches the folded "mixedaccount" and AutoMigrate re-attempts
+	// CREATE TABLE on every boot.
+	refs, args := pgTableRefs(tables)
 	query := fmt.Sprintf(`
-		SELECT tablename FROM pg_tables
-		WHERE schemaname = current_schema() AND lower(tablename) IN (%s)
-	`, strings.Join(placeholders, ", "))
+		SELECT t.i FROM %s
+		JOIN pg_tables p ON p.schemaname = coalesce(t.s, current_schema()) AND p.tablename = t.n
+	`, refs)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -124,15 +120,11 @@ func tableExistsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (
 
 	existing := make(map[string]bool)
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var i int
+		if err := rows.Scan(&i); err != nil {
 			return nil, err
 		}
-		if orig, ok := byLower[strings.ToLower(name)]; ok {
-			existing[orig] = true
-		} else {
-			existing[name] = true
-		}
+		existing[tables[i]] = true
 	}
 	return existing, rows.Err()
 }
@@ -140,9 +132,15 @@ func tableExistsBulkPostgres(ctx context.Context, db *sql.DB, tables []string) (
 func tableExistsBulkSQLite(ctx context.Context, db *sql.DB, tables []string) (map[string]bool, error) {
 	existing := make(map[string]bool)
 	for _, t := range tables {
+		if _, err := query.SafeIdent(t); err != nil {
+			return nil, err
+		}
+		// SQLite resolves a table name without case, so Tasks names an
+		// existing tasks; sqlite_master's name compares exactly unless told
+		// otherwise. A qualified main.tasks is tasks in main's catalog.
 		var count int
 		err := db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", t).Scan(&count)
+			"SELECT COUNT(*) FROM "+sqliteMaster(t)+" WHERE type='table' AND name = ? COLLATE NOCASE", tableBase(t)).Scan(&count)
 		if err != nil {
 			return nil, err
 		}

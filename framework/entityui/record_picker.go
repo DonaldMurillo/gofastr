@@ -39,8 +39,9 @@ func pickerID(field string) string { return "eui-f-" + field }
 
 // relationPicker draws a belongs-to field. cur is the stored id; a
 // record the caller may not read is labelled with the em dash and keeps
-// its id, so a save does not clear the column.
-func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label, help, id, cur string) render.HTML {
+// its id, so a save does not clear the column. form, when set, is the
+// Replace form the picked id submits with (a masked relation).
+func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label, help, id, cur, form string) render.HTML {
 	if !fb.m.hasAPI {
 		return fb.readOnly(ctx, f, label)
 	}
@@ -68,6 +69,7 @@ func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label
 		Required:    f.Required && !fb.masked[f.Name],
 		Value:       cur,
 		ValueLabel:  valueLabel,
+		Form:        form,
 		Placeholder: i18nui.EntityPickerSearch.Text(ctx, map[string]any{"entities": plural}),
 		Options:     opts,
 		More:        more,

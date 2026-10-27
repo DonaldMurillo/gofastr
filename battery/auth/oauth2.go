@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"maps"
@@ -20,6 +21,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -366,6 +370,9 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// Validate state. linkUserID is non-empty only for the authenticated
 		// link-account flow (linkHandler bound it into the signed state).
 		stateParam := r.URL.Query().Get("state")
+		if p.sameSiteHop(w, r, stateParam, providerName) {
+			return
+		}
 		// Browser binding first: a callback URL replayed into another
 		// browser carries no cookie, and refusing before
 		// validateAndConsumeState means the replay cannot burn the
@@ -562,6 +569,87 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// Redirect to a sensible landing page
 		http.Redirect(w, r, "/", http.StatusFound)
 	}
+}
+
+// sameSiteHop answers the IdP's return from a link flow with a page that
+// loads the same callback URL again, and reports whether it did.
+//
+// The IdP redirects the browser back here on a cross-site navigation, and
+// a browser withholds SameSite=Strict cookies on one, so the link branch
+// never saw the session it must match and every link answered 401. The
+// session cookie stays Strict. Instead, the first, cross-site arrival gets
+// a page from this origin that navigates to the same URL; that navigation
+// starts on this site, so the session cookie rides it and the link
+// completes with the usual session-user match.
+//
+// The hop changes nothing on its own: it neither consumes the state nor
+// clears the state cookie, and it is offered only to the browser that
+// started the flow (its state cookie matches) on a validly signed,
+// unexpired, unspent link state, and only when no session resolved. A
+// link flow starts only from a same-site request carrying the session
+// (linkHandler), so the hop cannot turn a third party's navigation into
+// an authenticated one. The follow-up is same-origin, so it never hops
+// again, and without a session it gets the 401 it always did.
+func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state, providerName string) bool {
+	if !handler.IsCrossSiteRequest(r) {
+		return false
+	}
+	if _, err := p.mgr.requestSession(r, false); err == nil {
+		return false
+	}
+	c, err := r.Cookie(oauthStateCookie)
+	if err != nil || c.Value == "" || subtle.ConstantTimeCompare([]byte(c.Value), []byte(state)) != 1 {
+		return false
+	}
+	userID, nonce, _, ok := p.verifyState(state, providerName)
+	if !ok || userID == "" || !p.stateUnspent(nonce) {
+		return false
+	}
+	path := r.URL.EscapedPath()
+	// A scheme-relative "//host" would leave this origin. A backslash
+	// needs no check: EscapedPath writes it as %5C.
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return false
+	}
+	target := path
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	writeSameSiteHop(w, r, target)
+	return true
+}
+
+// writeSameSiteHop writes the hop page: a meta refresh to target, plus a
+// link for a browser that does not follow it. It ships no CSS and no
+// script, like the magic-link fallback page, and its words are phrases in
+// the caller's locale. target is a same-origin path built by sameSiteHop.
+func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string) {
+	ctx := r.Context()
+	lang := i18n.DocLang(ctx)
+	href := html.EscapeString(urlsafe.CleanAnchor(target))
+	title := html.EscapeString(oauthHopTitle.Text(ctx))
+	body := `<!doctype html>
+<html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="refresh" content="0;url=` + href + `">
+<title>` + title + `</title>
+</head>
+<body>
+<main>
+<h1>` + title + `</h1>
+<p><a href="` + href + `">` + html.EscapeString(oauthHopContinue.Text(ctx)) + `</a></p>
+</main>
+</body>
+</html>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The URL carries the authorization code and the state.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, body)
 }
 
 // errOAuthEmailCollision means: a local account with this email already
@@ -860,39 +948,8 @@ func (p *OAuth2Plugin) generateState(providerName, userID string) (string, error
 // an ordinary login flow; the logged-in user's id for the link-account flow).
 // ok is false on any failure.
 func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (userID string, ok bool) {
-	parts := strings.SplitN(state, ".", 5)
-	if len(parts) != 5 {
-		return "", false
-	}
-	nonceB64, provider, expiryStr, userB64, sig := parts[0], parts[1], parts[2], parts[3], parts[4]
-	if provider != expectedProvider {
-		return "", false
-	}
-
-	// Verify HMAC over (nonce.provider.expiry.userID) before trusting any of
-	// the other fields, including the expiry and the bound userID. HMAC-first
-	// ordering keeps an attacker from getting the validate path to do work on
-	// an unsigned token (also avoids leaking timing oracles via the expiry
-	// compare) and, critically, means the link-flow userID cannot be forged.
-	payload := nonceB64 + "." + provider + "." + expiryStr + "." + userB64
-	mac := hmac.New(sha256.New, p.stateKey)
-	mac.Write([]byte(payload))
-	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
-		return "", false
-	}
-
-	expiryUnix, err := strconv.ParseInt(expiryStr, 10, 64)
-	if err != nil {
-		return "", false
-	}
-	expiry := time.Unix(expiryUnix, 0)
-	if time.Now().After(expiry) {
-		return "", false
-	}
-
-	uidBytes, err := base64.RawURLEncoding.DecodeString(userB64)
-	if err != nil {
+	userID, nonceB64, expiry, ok := p.verifyState(state, expectedProvider)
+	if !ok {
 		return "", false
 	}
 
@@ -911,7 +968,59 @@ func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (
 		return "", false
 	}
 	p.usedNonces[nonceB64] = expiry
-	return string(uidBytes), true
+	return userID, true
+}
+
+// stateUnspent reports whether state's nonce has not been consumed yet.
+func (p *OAuth2Plugin) stateUnspent(nonceB64 string) bool {
+	p.noncesMu.Lock()
+	defer p.noncesMu.Unlock()
+	_, spent := p.usedNonces[nonceB64]
+	return !spent
+}
+
+// verifyState checks state's signature, provider binding and expiry
+// without consuming it, and returns the bound user id, the nonce and the
+// expiry. validateAndConsumeState is the consuming spelling every flow
+// completes through.
+func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonceB64 string, expiry time.Time, ok bool) {
+	parts := strings.SplitN(state, ".", 5)
+	if len(parts) != 5 {
+		return "", "", time.Time{}, false
+	}
+	nonceB64 = parts[0]
+	provider, expiryStr, userB64, sig := parts[1], parts[2], parts[3], parts[4]
+	if provider != expectedProvider {
+		return "", "", time.Time{}, false
+	}
+
+	// Verify HMAC over (nonce.provider.expiry.userID) before trusting any of
+	// the other fields, including the expiry and the bound userID. HMAC-first
+	// ordering keeps an attacker from getting the validate path to do work on
+	// an unsigned token (also avoids leaking timing oracles via the expiry
+	// compare) and, critically, means the link-flow userID cannot be forged.
+	payload := nonceB64 + "." + provider + "." + expiryStr + "." + userB64
+	mac := hmac.New(sha256.New, p.stateKey)
+	mac.Write([]byte(payload))
+	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
+		return "", "", time.Time{}, false
+	}
+
+	expiryUnix, err := strconv.ParseInt(expiryStr, 10, 64)
+	if err != nil {
+		return "", "", time.Time{}, false
+	}
+	expiry = time.Unix(expiryUnix, 0)
+	if time.Now().After(expiry) {
+		return "", "", time.Time{}, false
+	}
+
+	uidBytes, err := base64.RawURLEncoding.DecodeString(userB64)
+	if err != nil {
+		return "", "", time.Time{}, false
+	}
+	return string(uidBytes), nonceB64, expiry, true
 }
 
 // purgeExpiredNonces is retained for explicit cleanup callers (e.g. a
@@ -1123,6 +1232,7 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		EmailVerified any    `json:"email_verified"`
 		VerifiedEmail any    `json:"verified_email"`
 	}
+	//gofastr:allow(floatnum) email_verified is read as a bool or string only
 	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}

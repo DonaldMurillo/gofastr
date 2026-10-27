@@ -240,7 +240,11 @@ more than 16 anonymous viewers. Past the cap, `SeatOverflowRefuse`
 (the default) answers 429 at connect, and `SeatOverflowEvictOldest`
 closes that caller's oldest stream and seats the new one — the
 multi-tab-friendly policy for clients that reconnect faster than a
-half-open connection's seat is reclaimed. The same shape bounds
+half-open connection's seat is reclaimed. An evicted or replaced
+stream's handler returns even when it is parked in a write to a peer
+that stopped reading: the broker sets a past write deadline on its
+response, so the cap bounds goroutines and connections without a
+server `WriteTimeout`. The same shape bounds
 core/mcp's SSE notification stream (`SetSSESeatCap` /
 `SetSSESeatOverflow` there).
 

@@ -104,6 +104,8 @@ func TestStatesBootRefusalsNameOffender(t *testing.T) {
 			`key "client" is reserved: it collides with the JS SDK resource's own client field`},
 		{"reserved key table", func(_ *EntityConfig, s *StatesConfig) { s.Transitions[0].Key = "table" },
 			`key "table" is reserved: it collides with the JS SDK resource's own table field`},
+		{"reserved key columns", func(_ *EntityConfig, s *StatesConfig) { s.Transitions[0].Key = "columns" },
+			`key "columns" is reserved: it collides with the JS SDK resource's own columns field`},
 		{"reserved key constructor", func(_ *EntityConfig, s *StatesConfig) { s.Transitions[0].Key = "constructor" },
 			`key "constructor" is reserved: it collides with the JS SDK resource's constructor`},
 		{"reserved key events", func(_ *EntityConfig, s *StatesConfig) { s.Transitions[0].Key = "events" },

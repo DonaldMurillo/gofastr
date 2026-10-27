@@ -2,6 +2,7 @@ package acp_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -88,6 +89,32 @@ func TestEmbedderPanicBecomesInternalError(t *testing.T) {
 			t.Fatalf("second prompt turn never ran the implementation (calls=%d)", calls)
 		}
 	})
+}
+
+// A Prompt that returns an error keeps its text inside, as NewSession
+// and LoadSession do: the turn answered "session/prompt: <err>", and an
+// embedder's error carries paths and driver text.
+func TestPromptErrorTextStaysInside(t *testing.T) {
+	const secret = "database password=hunter2"
+	agent := &fakeAgent{newFn: func(context.Context, string) (acp.Session, error) {
+		return &fakeSession{id: "s1", promptFn: func(context.Context, []acp.ContentBlock, *acp.Client) (string, error) {
+			return "", errors.New(secret)
+		}}, nil
+	}}
+	d := startDialog(t, agent, nil)
+	id := d.newSession("/tmp/p")
+	d.request(5, "session/prompt", map[string]any{
+		"sessionId": id,
+		"prompt":    []any{map[string]any{"type": "text", "text": "go"}},
+	})
+	f := d.untilResponseID(5)
+	e, _ := f["error"].(map[string]any)
+	if e == nil {
+		t.Fatalf("failing Prompt was not refused: %v", f)
+	}
+	if msg, _ := e["message"].(string); containsSecret(msg, secret) {
+		t.Fatalf("SECURITY: prompt error text reached the client: %q", msg)
+	}
 }
 
 // containsSecret reports whether the panic detail survived into a wire

@@ -526,9 +526,15 @@ func TestOrderChildrenFirst_CycleDegradesToInputOrder(t *testing.T) {
 		Scope:     &entity.ScopeConfig{OwnerField: "owner_id"},
 		Relations: []entity.Relation{entity.BelongsTo("a", "a", "a_id")},
 	})
-	merged := map[string]*entity.Entity{"a": a, "b": b}
+	app := NewApp()
+	app.Registry.Register(a)
+	app.Registry.Register(b)
+	g, err := app.buildDataGraph()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	got := orderChildrenFirst([]string{"a", "b"}, merged, []string{"a", "b"})
+	got := orderTables([]string{"a", "b"}, g.edges, false)
 	if len(got) != 2 {
 		t.Fatalf("cycle lost a table: got %v", got)
 	}

@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -191,7 +192,7 @@ func indexHandler(idx Index) http.Handler {
 		// matches struct tags case-insensitively, so
 		// {"documents":[A],"documents":[B]} indexes batch B while any
 		// audit log records A. Refuse the ambiguity.
-		if err := handler.UnmarshalStrict(raw, &body); err != nil {
+		if err := handler.UnmarshalStrict(raw, &body, handler.UseNumber()); err != nil {
 			writeErr(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
@@ -199,11 +200,24 @@ func indexHandler(idx Index) http.Handler {
 			writeErr(w, r, http.StatusBadRequest, reasonDocumentsRequired)
 			return
 		}
+		// A document with no id, or one the chunker refuses, is the
+		// caller's to fix: a 400, not the 500 a fault in the index gets.
+		// The chunker's own error stays off the wire.
+		for _, d := range body.Documents {
+			if d.ID == "" {
+				writeErr(w, r, http.StatusBadRequest, reasonDocIdIsRequired)
+				return
+			}
+		}
 		if err := idx.Add(r.Context(), body.Documents...); err != nil {
+			if ce := (*chunkError)(nil); errors.As(err, &ce) {
+				writeErr(w, r, http.StatusBadRequest, reasonDocumentUnchunkable)
+				return
+			}
 			writeErr(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
-		writeJSON(w, http.StatusAccepted, indexResponse{Added: len(body.Documents)})
+		writeJSON(w, r, http.StatusAccepted, indexResponse{Added: len(body.Documents)})
 	})
 }
 
@@ -221,7 +235,7 @@ func queryHandler(idx Index) http.Handler {
 		}
 		// Same strict rule as /index: a duplicated or case-folded "text"
 		// key must not silently swap the query.
-		if err := handler.UnmarshalStrict(raw, &q); err != nil {
+		if err := handler.UnmarshalStrict(raw, &q, handler.UseNumber()); err != nil {
 			writeErr(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
@@ -234,13 +248,13 @@ func queryHandler(idx Index) http.Handler {
 			writeErr(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
-		writeJSON(w, http.StatusOK, queryResponse{Hits: hits})
+		writeJSON(w, r, http.StatusOK, queryResponse{Hits: hits})
 	})
 }
 
 func statsHandler(idx Index) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, idx.Stats())
+		writeJSON(w, r, http.StatusOK, idx.Stats())
 	})
 }
 
@@ -270,17 +284,28 @@ func isBodyTooLarge(err error) bool {
 	return errors.As(err, &mbe)
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, code int, v any) {
 	// Every response on this handler's path sits behind a resolved
 	// principal (the bearer-token gate), so no shared or back/forward
 	// cache may retain one — RFC 9111's storage rules cover the
 	// Authorization request, but the posture is stamped here so no
 	// route can forget it, the same choke-point spelling the admin
 	// battery's gate uses.
+	//
+	// The body is encoded before the status is sent: encoding straight
+	// to w committed the status first, so a value that cannot encode (a
+	// NaN score) answered 200 with an empty body. It answers 500 now.
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
+		buf.Reset()
+		p := i18n.StatusPhrase(http.StatusInternalServerError)
+		_ = json.NewEncoder(&buf).Encode(errorResponse{Error: p.Text(r.Context()), Reason: p.Code()})
+		code = http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(buf.Bytes())
 }
 
 type errorResponse struct {
@@ -289,7 +314,7 @@ type errorResponse struct {
 }
 
 func writeErr(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
-	writeJSON(w, code, errorResponse{Error: reason.Text(r.Context(), params...), Reason: reason.Code()})
+	writeJSON(w, r, code, errorResponse{Error: reason.Text(r.Context(), params...), Reason: reason.Code()})
 }
 
 // errMethodNotAllowed is reserved for future use when we split the

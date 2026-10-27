@@ -11,6 +11,8 @@ import (
 
 // JSON-RPC 2.0 standard error codes.
 const (
+	ErrParse          = -32700
+	ErrInvalidRequest = -32600
 	ErrMethodNotFound = -32601
 	ErrInvalidParams  = -32602
 	ErrInternalError  = -32603
@@ -47,18 +49,15 @@ func (e *RPCError) Error() string {
 // HandleRequest routes a JSON-RPC 2.0 request to the correct handler
 // and returns the appropriate response.
 func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
-	if req.JSONRPC != "2.0" {
-		return Response{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Error: &RPCError{
-				Code:    ErrInvalidParams,
-				Message: "invalid or missing jsonrpc version",
-			},
-		}
+	// An id is a string, a number or null. Any other value is refused
+	// and the reply carries a null id: echoing true, an object or an
+	// array hands the client an id it could never have sent as one.
+	if !validRequestID(req.ID) {
+		return newErrorResponse(nil, ErrInvalidRequest, "invalid request: id must be a string, a number or null")
 	}
-
-	ctx = enrichContext(ctx)
+	if req.JSONRPC != "2.0" {
+		return newErrorResponse(req.ID, ErrInvalidRequest, "invalid or missing jsonrpc version")
+	}
 
 	// Params get the same no-ambiguity rule the ENVELOPE level already
 	// enforces (transport decode runs handler.UnmarshalStrict) and a2a's
@@ -130,6 +129,18 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 			},
 		}
 	}
+}
+
+// validRequestID reports whether id is a JSON-RPC 2.0 id: a string, a
+// number (as decoded off the wire or passed in-process) or null.
+func validRequestID(id any) bool {
+	switch id.(type) {
+	case nil, string, json.Number, float64, float32,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64:
+		return true
+	}
+	return false
 }
 
 // newSuccessResponse creates a success response.

@@ -611,9 +611,13 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				itemKeys[w] = cp
 			}
 		}
+		// An item is sparse like a single PATCH: the key part below is
+		// all it must carry.
+		batchPatch := requestSchema(entitySchema, fields, st, updateSkip, true)
+		delete(batchPatch, "required")
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
-				requestSchema(entitySchema, fields, st, updateSkip, true),
+				batchPatch,
 				map[string]any{"type": "object", "properties": itemKeys, "required": keyReq},
 			},
 		}

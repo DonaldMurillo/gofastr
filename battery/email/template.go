@@ -199,6 +199,10 @@ func stripSubjectLine(subject, body string) (string, string) {
 	if !ok {
 		return subject, body
 	}
+	// A CRLF file leaves the "\r" on the first line. Kept, it reaches
+	// the Subject header, and buildMessage refuses every send of the
+	// template as header injection.
+	after = strings.TrimSuffix(after, "\r")
 	if len(lines) > 1 {
 		return after, lines[1]
 	}

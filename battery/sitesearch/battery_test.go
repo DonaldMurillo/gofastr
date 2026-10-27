@@ -325,6 +325,39 @@ func TestStopHonorsDeadlineMidBuild(t *testing.T) {
 	}
 }
 
+// A query that waits behind a slow first build gives up when its own
+// request ends; the build it waited on carries on.
+func TestIndexWaiterHonorsContext(t *testing.T) {
+	release, inBuild := make(chan struct{}), make(chan struct{})
+	bat := New(Config{Sources: []Source{func(context.Context) ([]Page, error) {
+		close(inBuild)
+		<-release
+		return nil, nil
+	}}})
+	app := newSite(t, bat)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	defer close(release)
+	go func() { _, _ = bat.Index(context.Background()) }()
+	<-inBuild
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := bat.Index(ctx)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("waiting Index = %v, want its deadline", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a waiting Index ignored its context")
+	}
+}
+
 // A build that failed partway leaves nothing behind for the next one.
 func TestExportStartsFresh(t *testing.T) {
 	bat := New(Config{})

@@ -85,7 +85,10 @@ func loadingTemplate(ctx context.Context, addr string, ld *Loading) render.HTML 
 
 // LoadingComponent adapts plain markup (ui.SkeletonRow(…), ui.Spinner(…))
 // to the Loading.Show slot: the presets return render.HTML, not a
-// component, and Loading wants a component so ANY piece composes.
+// component, and Loading wants a component so ANY piece composes. The
+// markup was rendered when it was declared, so it reads the same in
+// every locale; loading content that says words in the reader's
+// language is a NewContextComponent passing ctx to the preset's Ctx.
 func LoadingComponent(h render.HTML) component.Component {
 	return loadingMarkup{h}
 }

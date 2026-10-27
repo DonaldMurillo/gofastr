@@ -77,23 +77,26 @@ func TestSegmentedControlSelected(t *testing.T) {
 	}
 }
 
-func TestSegmentedControlInvalidSelectedFallsBack(t *testing.T) {
-	out := string(SegmentedControl(SegmentedControlConfig{
-		Name:     "view",
-		Label:    "View mode",
-		Selected: "garbage",
-		Options: []SegmentedOption{
-			{Label: "Day", Value: "day"},
-			{Label: "Week", Value: "week"},
-		},
-	}))
-	dayTag := inputTagFor(out, "day")
-	weekTag := inputTagFor(out, "week")
-	if !strings.Contains(dayTag, "checked") {
-		t.Errorf("expected default fallback to Options[0], got tag: %s", dayTag)
-	}
-	if strings.Contains(weekTag, "checked") {
-		t.Errorf("did not expect week to be checked, got tag: %s", weekTag)
+// A Selected no segment lists used to check the first segment, so the
+// form submitted a value nobody chose. No segment can draw the value,
+// so none is checked and the group submits nothing; an empty Selected
+// still starts on the first segment.
+func TestSegmentedUnlistedChecksNothing(t *testing.T) {
+	for _, tc := range []struct{ sel, want string }{{"garbage", ""}, {"", "day"}} {
+		out := string(SegmentedControl(SegmentedControlConfig{
+			Name:     "view",
+			Label:    "View mode",
+			Selected: tc.sel,
+			Options: []SegmentedOption{
+				{Label: "Day", Value: "day"},
+				{Label: "Week", Value: "week"},
+			},
+		}))
+		for _, v := range []string{"day", "week"} {
+			if got := strings.Contains(inputTagFor(out, v), "checked"); got != (v == tc.want) {
+				t.Errorf("Selected %q: %s checked = %v, want %v: %s", tc.sel, v, got, v == tc.want, inputTagFor(out, v))
+			}
+		}
 	}
 }
 

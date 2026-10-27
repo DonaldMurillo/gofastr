@@ -15,6 +15,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -22,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // auditRow is one audit entry as the admin reads it. actor_id and diff
@@ -230,18 +232,36 @@ func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error)
 // countAuditWhere counts the audit rows the filter narrows to in the
 // caller's tenant, for the page's pager.
 func (b *Battery) countAuditWhere(ctx context.Context, f auditFilter) (int, error) {
+	table, err := b.auditTableSQL()
+	if err != nil {
+		return 0, err
+	}
 	where, args := auditWhere(ctx, f)
 	var n int
-	err := b.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s`, b.cfg.AuditTable)+where, args...).Scan(&n)
+	err = b.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table+where, args...).Scan(&n)
 	return n, err
+}
+
+// auditTableSQL names the audit table the way framework.EnsureAuditTable
+// created it: validated, then folded and quoted with query.QuoteFolded.
+func (b *Battery) auditTableSQL() (string, error) {
+	safe, err := query.SafeIdent(b.cfg.AuditTable)
+	if err != nil {
+		return "", fmt.Errorf("admin: audit table: %w", err)
+	}
+	return query.QuoteFolded(safe), nil
 }
 
 // queryAuditWhere reads one page of audit rows in the caller's tenant
 // narrowed by the page's validated filter: limit rows after skipping
 // offset, newest first, the id breaking a tie so pages never overlap.
 func (b *Battery) queryAuditWhere(ctx context.Context, limit, offset int, f auditFilter) ([]auditRow, error) {
+	table, err := b.auditTableSQL()
+	if err != nil {
+		return nil, err
+	}
 	where, args := auditWhere(ctx, f)
-	q := fmt.Sprintf(`SELECT id, entity, op, record_id, actor_id, created_at, diff FROM %s`, b.cfg.AuditTable) + where +
+	q := `SELECT id, entity, op, record_id, actor_id, created_at, diff FROM ` + table + where +
 		" ORDER BY created_at DESC, id DESC LIMIT " + strconv.Itoa(limit) + " OFFSET " + strconv.Itoa(offset)
 	rows, err := b.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -503,7 +523,7 @@ func auditSides(r auditRow) (before, after map[string]any) {
 		Before map[string]any `json:"old"`
 		After  map[string]any `json:"new"`
 	}
-	if json.Unmarshal([]byte(r.Diff.String), &d) != nil {
+	if jsonexact.Unmarshal([]byte(r.Diff.String), &d) != nil {
 		return nil, nil
 	}
 	return d.Before, d.After

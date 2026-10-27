@@ -80,8 +80,17 @@ to one file, so `Save` refuses a key that folds onto an existing object
 stored under a byte-different spelling — including through a directory
 component (`tenanta/new.txt` is refused when `TenantA/` exists) — with
 an `ErrInvalidKey` error (HTTP 400 through the upload serve layer)
-naming the stored spelling. Re-saving the exact stored key stays an
-ordinary overwrite. Objects planted straight onto disk by other tools
+naming the stored spelling. The check runs again at the rename that
+commits the save, under a lock every local store in the process shares,
+so of two overlapping saves under folding spellings the second to
+commit is refused rather than overwriting the first. `Delete` refuses a
+folded spelling the same way, so erasing a row that names `A/b.png`
+cannot remove another user's `a/b.png`. On every operation a key must
+also be its own clean form: `a//b`, `a/./b`, `./a`, a trailing `/` and
+`.` are refused with `ErrInvalidKey` rather than resolved to the object
+they alias. S3 keys are byte-exact and unchanged. Saves from another
+process sharing the directory are not serialized. Re-saving the exact
+stored key stays an ordinary overwrite. Objects planted straight onto disk by other tools
 with folded spellings follow the filesystem's folding, not the store's.
 
 `LocalStorage` implements `RangeGetter`, so HTTP range requests

@@ -1,9 +1,11 @@
 package netguard
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"syscall"
 	"time"
 )
@@ -65,4 +67,39 @@ func GuardedTransport(allowPrivate bool, prefix string) *http.Transport {
 		tr.Proxy = nil
 	}
 	return tr
+}
+
+// GuardPlainTransport returns a clone of tr carrying the guarded
+// dial-time hook when tr dials directly: no proxy and no dial hook of
+// its own, so installing the guarded dialer changes nothing about where
+// it connects and its TLS and pool settings survive. It returns false
+// for any other transport (a proxy, a custom dialer), whose dialer
+// cannot be swapped without breaking routing that reaches internal
+// addresses by design; the caller wraps those in a resolve-and-check
+// RoundTripper instead, the weaker posture. The deprecated Dial and
+// DialTLS hooks still take effect when set, so they count as custom
+// dialers too. A transport that would speak HTTP/2 on its own keeps
+// speaking it.
+func GuardPlainTransport(tr *http.Transport, prefix string) (*http.Transport, bool) {
+	return withDialer(tr, GuardedTransport(false, prefix).DialContext)
+}
+
+// withDialer is GuardPlainTransport with the dialer as a parameter, so a
+// test can dial loopback through the same clone.
+func withDialer(tr *http.Transport, dial func(ctx context.Context, network, addr string) (net.Conn, error)) (*http.Transport, bool) {
+	if tr.Proxy != nil || tr.DialContext != nil || tr.DialTLSContext != nil ||
+		tr.Dial != nil || tr.DialTLS != nil {
+		return nil, false
+	}
+	guarded := tr.Clone()
+	guarded.DialContext = dial
+	// Clone() runs tr's HTTP/2 setup, which offers h2 in the TLS
+	// handshake, but a transport with its own DialContext skips that
+	// setup, so the clone would write HTTP/1.1 onto a connection the
+	// server agreed would carry h2. An h2 offer means tr speaks HTTP/2;
+	// keep it speaking it.
+	if guarded.TLSClientConfig != nil && slices.Contains(guarded.TLSClientConfig.NextProtos, "h2") {
+		guarded.ForceAttemptHTTP2 = true
+	}
+	return guarded, true
 }

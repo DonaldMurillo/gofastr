@@ -91,6 +91,36 @@ columns as fields (`EnrollmentsBatchPatch{StudentId: s, CourseId: c,
 Grade: new("A")}`), and `BatchDelete` takes ids spelled by
 `EnrollmentsID(studentId, courseId)`.
 
+An entity that declares an integer `id` (`{name: id, type: int,
+auto_generate: increment}`) gets an `ID int`, and its record methods
+and `BatchDelete` take `int` ids, since the server answers that id as
+a JSON number. The app's own `entities` package types it the same way:
+the model's `ID`, the repo's `Get`/`Update`/`Delete`/`Exists`/
+`Transition` and `BatchUpdate`/`BatchDelete`, the `<Entity>ID` column,
+a cascade child's `ID` in a patch, and the id `On<Entity>Deleted` passes,
+so `repo.Get(ctx, row.ID)` and `TicketsID.Eq(row.ID)` take the id a row
+holds as it is. Every other entity keyed on `id` keeps `ID string`.
+A cascade child keyed on one other column carries that key in the
+parent's patch instead of an `ID`: a `has_many` child declared with
+`primary_key: [isbn_code]` nests as `IsbnCode string`, since the server
+finds the child to update by its key.
+
+`?include=<field>` replaces a relation field's key with the related
+record under the same JSON name. The Go client keeps the field typed as
+the key: a record decoded from an include response still holds the key
+in `AuthorId`, and the related record's raw JSON sits in
+`Included["authorId"]` for the caller to decode. The field is never
+serialized (`json:"-"`); an entity that already has an `Included` field
+gets `Included_`.
+
+A `json` field is typed `any` in every shape: the server stores any JSON
+value there, so a row holding `[1, 2]` reads back as
+`[]any{json.Number("1"), json.Number("2")}` and an object as
+`map[string]any`. Numbers inside an `any` decode as `json.Number`, so
+an integer past 2^53 keeps its digits; call `.Int64()` or `.Float64()`
+on one rather than asserting `float64`. Set an optional one with
+`new(any([]string{"a"}))`. The `client.d.ts` twin is `unknown`.
+
 ### The JS/TS SDK
 
 Two plain files, no npm packaging, no build step; publishing to a
@@ -121,6 +151,14 @@ throws instead of buffering. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 
+Each entity is a property of `Client` named for its table (`api.posts`),
+so a table whose name the class already uses is refused: a `token`
+table would replace the bearer token with its resource. The reserved
+names are `Client`'s own (`baseURL`, `token`, `do`, `_fetch`,
+`_readBody`, `_sse`) and the `Object` prototype's (`constructor`,
+`toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`,
+`propertyIsEnumerable`, `toLocaleString`). Rename the table.
+
 A `Blob` (a `File` is one) as the value of an Image or File field sends
 that create, update or patch as multipart/form-data, every part named
 by its column; `client.d.ts` types those fields `string | Blob`. A
@@ -147,7 +185,7 @@ await api.enrollments.batchDelete([[studentId, courseId]]);
 
 Each value goes into its own path segment, escaped the way the server's
 `entity.JoinKey` escapes it, so the id the request names is the one the
-server stores.
+server stores. An entity with an integer `id` types it `number`.
 
 ## The casing contract both SDKs encode
 
@@ -185,7 +223,10 @@ codegen:
 ```
 
 The config keys are `name`, `api_prefix`, `module`, `base_url`,
-`sdk_version` (strings) and `targets`, `only`, `exclude` (YAML lists). An
+`sdk_version` (strings) and `targets`, `only`, `exclude` (YAML lists).
+A flag passed empty still wins: `--only=` generates every entity and
+`--api-prefix=` means no prefix, whatever the settings entry says.
+An
 unknown key, a value of the wrong type, or a comma string where a list
 belongs fails the run with the entry named, from `gofastr generate`,
 `gofastr build` and `gofastr generate sdk` alike.

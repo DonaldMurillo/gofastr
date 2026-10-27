@@ -19,16 +19,14 @@ package mcp
 // sends back. It does NOT prove interop with Claude or ChatGPT — only that
 // a spec-faithful host and this client agree on the wire.
 //
-// Why the negatives exist: WidgetClientHandler sets
-// Cross-Origin-Resource-Policy: cross-origin because the opaque ("null")
-// origin frame's <script src> is a cross-origin no-cors fetch — the repo's
-// global security middleware defaults every response to CORP same-origin,
-// which blocks that fetch (verified in this very browser by the probe run
-// during development: same-origin blocked, absent header allowed). And
-// agent-host.md's #1 authoring mistake is a one-character typo in the
-// client script URL: a widget that renders and silently never receives
-// anything, with no error anywhere. Both failures are invisible to every
-// existing test; here they are asserted by watching initialize never come.
+// The host page lives on its own origin, apart from the MCP server, as a
+// real chat host does. That separation is load-bearing: the widget client
+// used to be linked by a root-relative <script src> served from the MCP
+// server, and this test passed only because the host page shared that
+// origin. In production the srcdoc frame resolved the path against the
+// chat host, the script 404ed, and the widget silently never initialized.
+// The negative subtest keeps that document shape and watches initialize
+// never come.
 //
 // Harness rules: build tag chromium (plain `go test ./core/mcp/` never
 // launches a browser), no t.Parallel, one Chrome per subtest closed in
@@ -39,8 +37,10 @@ package mcp
 // outcome here.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,14 +84,14 @@ if (!app) {
 
 // widgetE2EHostPage is the host shim: a plain parent page that plays the
 // chat host. It fetches the widget HTML through the REAL protocol (a
-// JSON-RPC resources/read POST to /mcp, the transport's content-type and
-// Accept gates included), embeds it in a sandbox="allow-scripts" srcdoc
-// iframe — opaque origin, exactly what a host does and exactly why the
-// client script needs the CORP relaxation — and answers the client per
-// widgetclient.js's expectations: ui/initialize gets a host result with a
-// dark hostContext, tools/call is forwarded to the MCP endpoint over
-// fetch and the JSON-RPC response posted back verbatim, ui/message is
-// recorded and acked. Everything the frame sends lands in window.__log.
+// JSON-RPC resources/read POST that its backend, /rpc, relays to /mcp,
+// the transport's content-type and Accept gates included), embeds it in a
+// sandbox="allow-scripts" srcdoc iframe — opaque origin, exactly what a
+// host does — and answers the client per widgetclient.js's expectations:
+// ui/initialize gets a host result with a dark hostContext, tools/call is
+// forwarded to the MCP endpoint the same way and the JSON-RPC response
+// posted back verbatim, ui/message is recorded and acked. Everything the
+// frame sends lands in window.__log.
 const widgetE2EHostPage = `<!doctype html>
 <meta charset="utf-8">
 <title>mcp apps host shim</title>
@@ -105,7 +105,7 @@ const widgetE2EHostPage = `<!doctype html>
   window.__widgetHTML = "";
 
   function rpc(method, params) {
-    return fetch("/mcp", {
+    return fetch("/rpc", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -124,6 +124,21 @@ const widgetE2EHostPage = `<!doctype html>
     var src = ev.source;
     function reply(msg) { src.postMessage(msg, "*"); }
     if (d.method === "ui/initialize" && d.id !== undefined) {
+      // A spec host validates McpUiInitializeRequest params: appInfo is
+      // an Implementation (name, version), appCapabilities an object,
+      // protocolVersion the spec the app speaks. A malformed request is
+      // refused, so the widget never connects and the test sees why.
+      var p = d.params || {};
+      var bad = [];
+      if (!p.appInfo || typeof p.appInfo.name !== "string" || p.appInfo.name === "" ||
+          typeof p.appInfo.version !== "string" || p.appInfo.version === "") bad.push("appInfo");
+      if (!p.appCapabilities || typeof p.appCapabilities !== "object") bad.push("appCapabilities");
+      if (p.protocolVersion !== "2026-01-26") bad.push("protocolVersion");
+      if (bad.length) {
+        window.__harnessErrors.push("ui/initialize params invalid: " + bad.join(", ") + " in " + JSON.stringify(p));
+        reply({ jsonrpc: "2.0", id: d.id, error: { code: -32602, message: "invalid ui/initialize params: " + bad.join(", ") } });
+        return;
+      }
       reply({ jsonrpc: "2.0", id: d.id, result: {
         protocolVersion: "2026-01-26",
         hostCapabilities: {},
@@ -155,8 +170,8 @@ const widgetE2EHostPage = `<!doctype html>
   });
 
   // Boot through the real protocol: resources/read, then embed exactly as
-  // a host does. srcdoc resolves the widget's relative <script src>
-  // against this page's base URL, so the client loads from this origin.
+  // a host does. srcdoc resolves any relative URL in the widget against
+  // this page's base URL, the host's origin, never the MCP server's.
   rpc("resources/read", { uri: "ui://demo/widget.html" }).then(function (resp) {
     if (resp.error) throw new Error("resources/read: " + JSON.stringify(resp.error));
     window.__widgetHTML = resp.result.contents[0].text;
@@ -173,24 +188,19 @@ const widgetE2EHostPage = `<!doctype html>
 
 // ── Harness ─────────────────────────────────────────────────────────────────
 
-// widgetE2EClient modes for serving the client script. The default is the
-// shipped behavior (WidgetClientHandler, CORP cross-origin). The negative
-// modes each break exactly one property:
-//
-//   - "corp-same-origin": same client bytes, but the CORP header is forced
-//     to same-origin — the state the widget would be in if the handler
-//     stopped overriding the repo-wide security middleware default. That
-//     default BLOCKS the opaque-origin frame's script fetch (probed in a
-//     real Chrome: an absent header allows the load, same-origin refuses
-//     it), so "delete the header" is NOT a failing mutation and the
-//     negative must pin same-origin instead.
-//   - "typo-src": the widget HTML's client <script src> gets a
-//     one-character typo — agent-host.md's #1 authoring mistake.
+// widgetE2EClient modes for how the document carries the client. The
+// default is the shipped behavior: WidgetDocument inlines it. The negative
+// swaps the inline client for the old hot-link — a root-relative
+// <script src> that the MCP server DOES serve — to prove the separate
+// host origin is what the test stands on.
 const (
-	widgetE2EClientIntact      = "intact"
-	widgetE2EClientCORPBlocked = "corp-same-origin"
-	widgetE2EClientTypo        = "typo-src"
+	widgetE2EClientIntact  = "intact"
+	widgetE2EClientHotLink = "hot-link"
 )
+
+// widgetE2EHotLinkPath is where the negative mode serves the client on
+// the MCP server's origin, the shape the retired route had.
+const widgetE2EHotLinkPath = "/__gofastr/mcp/app/widgetclient.js"
 
 // widgetE2EEnv is one subtest's world: the MCP server (with the echo-tool
 // witness), the host shim, and the Chrome tab driving it.
@@ -216,8 +226,8 @@ func (e *widgetE2EEnv) echoCalls() []map[string]any {
 func startWidgetE2E(t *testing.T, clientMode string) *widgetE2EEnv {
 	t.Helper()
 
-	// The widget document, assembled by the real builder so the client
-	// <script src> comes from WidgetClientScriptURL by construction.
+	// The widget document, assembled by the real builder, which inlines
+	// the client.
 	html, err := WidgetDocument{
 		Title:  "Demo widget",
 		Body:   `<p id="status">idle</p>`,
@@ -226,18 +236,13 @@ func startWidgetE2E(t *testing.T, clientMode string) *widgetE2EEnv {
 	if err != nil {
 		t.Fatalf("build widget document: %v", err)
 	}
-	if n := strings.Count(html, WidgetClientScriptURL); n != 1 {
-		t.Fatalf("widget document must reference the client script exactly once, got %d", n)
+	inline := "<script>" + string(WidgetClientJS()) + "</script>"
+	if n := strings.Count(html, inline); n != 1 {
+		t.Fatalf("widget document must inline the client exactly once, got %d", n)
 	}
-	switch clientMode {
-	case widgetE2EClientTypo:
-		// The one-character typo agent-host.md warns about. The count
-		// check above guarantees this replacement bites exactly once.
-		typo := strings.TrimSuffix(WidgetClientScriptURL, "js") + "jz"
-		html = strings.Replace(html, WidgetClientScriptURL, typo, 1)
-		if strings.Contains(html, WidgetClientScriptURL) {
-			t.Fatalf("typo mutation failed: intact URL still present")
-		}
+	if clientMode == widgetE2EClientHotLink {
+		// The count check above guarantees this replacement bites.
+		html = strings.Replace(html, inline, `<script src="`+widgetE2EHotLinkPath+`"></script>`, 1)
 	}
 
 	env := &widgetE2EEnv{}
@@ -289,41 +294,44 @@ func startWidgetE2E(t *testing.T, clientMode string) *widgetE2EEnv {
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", s)
-	switch clientMode {
-	case widgetE2EClientCORPBlocked:
-		// Same bytes as WidgetClientHandler, one header mutated to the
-		// value the global security middleware would leave on the
-		// response if the handler stopped overriding it.
-		mux.Handle(WidgetClientScriptURL, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := w.Header()
-			h.Set("Content-Type", "text/javascript; charset=utf-8")
-			h.Set("X-Content-Type-Options", "nosniff")
-			h.Set("Cache-Control", "no-store, max-age=0")
-			h.Set("Cross-Origin-Resource-Policy", "same-origin")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(widgetClientJSBytes)
-		}))
-	default:
-		mux.Handle(WidgetClientScriptURL, WidgetClientHandler())
-	}
-	mux.HandleFunc("/host", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(widgetE2EHostPage))
-	})
-	// Chrome probes /favicon.ico on every navigation; a 404 here would
-	// pollute the console capture the failure paths print.
-	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+	// Every mode serves the hot-link path, with the CORP relaxation the
+	// retired route set, so the negative's failure can only come from
+	// where the frame resolves the URL.
+	mux.HandleFunc(widgetE2EHotLinkPath, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+		_, _ = w.Write(WidgetClientJS())
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	// Pin the transport's Host check to the real listener authority, the
-	// way an embedder would; the shim's fetches are same-origin, so no
-	// Origin allowlist is needed.
+	// way an embedder would; the host reaches /mcp from its backend, so
+	// no Origin allowlist is needed.
 	s.SetAllowedHosts([]string{strings.TrimPrefix(srv.URL, "http://")})
 
+	// The chat host is a DIFFERENT origin from the MCP server, as in
+	// production: the widget's srcdoc frame resolves any relative URL
+	// against the host page, never against the MCP server. Its backend
+	// forwards the page's JSON-RPC to /mcp, the way a real host's server
+	// talks to an MCP server.
+	hostMux := http.NewServeMux()
+	hostMux.HandleFunc("/host", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(widgetE2EHostPage))
+	})
+	hostMux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
+		forwardWidgetE2ERPC(w, r, srv.URL+"/mcp")
+	})
+	// Chrome probes /favicon.ico on every navigation; a 404 here would
+	// pollute the console capture the failure paths print.
+	hostMux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	host := httptest.NewServer(hostMux)
+	t.Cleanup(host.Close)
+
 	env.ctx, env.console = widgetE2EChrome(t)
-	if err := chromedp.Run(env.ctx, chromedp.Navigate(srv.URL+"/host")); err != nil {
+	if err := chromedp.Run(env.ctx, chromedp.Navigate(host.URL+"/host")); err != nil {
 		t.Fatalf("navigate host shim: %v", err)
 	}
 
@@ -343,6 +351,32 @@ func startWidgetE2E(t *testing.T, clientMode string) *widgetE2EEnv {
 		t.Fatalf("host shim never armed (resource read / iframe embed failed): %v", err)
 	}
 	return env
+}
+
+// forwardWidgetE2ERPC is the chat host's backend: it relays one JSON-RPC
+// POST from the host page to the MCP endpoint and copies the answer back.
+func forwardWidgetE2ERPC(w http.ResponseWriter, r *http.Request, mcpURL string) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, mcpURL, bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
 }
 
 // widgetE2EChrome boots one headless Chrome and returns a bounded tab
@@ -546,12 +580,22 @@ func TestWidgetClientE2E(t *testing.T) {
 		// The client's ui/initialize params, per widgetclient.js.
 		var initParams struct {
 			AppCapabilities map[string]any `json:"appCapabilities"`
+			AppInfo         struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"appInfo"`
+			ProtocolVersion string `json:"protocolVersion"`
 		}
 		if err := json.Unmarshal(entries[iInit].Params, &initParams); err != nil {
 			t.Fatalf("decode ui/initialize params %s: %v", entries[iInit].Params, err)
 		}
 		if _, ok := initParams.AppCapabilities["availableDisplayModes"]; !ok {
 			t.Errorf("ui/initialize params must carry the appCapabilities the widget passed, got %s", entries[iInit].Params)
+		}
+		// The widget passed no appInfo, so the client's default goes out.
+		if initParams.AppInfo.Name != "gofastr-mcp-app" || initParams.AppInfo.Version != "0.0.0" ||
+			initParams.ProtocolVersion != "2026-01-26" {
+			t.Errorf("ui/initialize params must carry the default appInfo and protocolVersion 2026-01-26, got %s", entries[iInit].Params)
 		}
 
 		// The tools/call the HOST saw on the wire, exactly as the client
@@ -612,15 +656,13 @@ func TestWidgetClientE2E(t *testing.T) {
 		}
 	})
 
-	// Negative (a), hard rule 11: the CORP relaxation on the client asset
-	// is load-bearing. Served with Cross-Origin-Resource-Policy:
-	// same-origin (what the repo-wide security middleware defaults every
-	// response to), the opaque-origin frame's <script src> is refused, so
-	// the handshake can never start. An ABSENT header does not block
-	// (probed in Chrome during development) — same-origin is the failing
-	// mutation that pins this property.
-	t.Run("client without CORP relaxation never initializes", func(t *testing.T) {
-		env := startWidgetE2E(t, widgetE2EClientCORPBlocked)
+	// Negative, hard rule 11: the retired hot-link. The MCP server serves
+	// the client at the root-relative path, CORP relaxed, yet the srcdoc
+	// frame resolves the path against the chat host's origin, where it
+	// 404s: the client never loads and the handshake never starts. This
+	// is the production failure the same-origin harness used to hide.
+	t.Run("hot-linked client never initializes", func(t *testing.T) {
+		env := startWidgetE2E(t, widgetE2EClientHotLink)
 
 		var arrived string
 		err := chromedp.Run(env.ctx,
@@ -629,12 +671,7 @@ func TestWidgetClientE2E(t *testing.T) {
 		)
 		if err == nil || arrived == "arrived" {
 			env.dump(t)
-			t.Fatalf("ui/initialize arrived although the client script was CORP-blocked")
-		}
-		// Liveness proof: the page still answers (the poll timed out
-		// because the condition never held, not because the tab died).
-		if got := env.eval(t, `JSON.stringify(window.__log)`); got == "[]" {
-			t.Logf("shim log stayed empty for 3s (expected)")
+			t.Fatalf("ui/initialize arrived although the client was hot-linked from the MCP server")
 		}
 		// The frame RAN but its client never loaded — the exact silent
 		// failure mode, reported by the frame's own instrumentation.
@@ -643,30 +680,5 @@ func TestWidgetClientE2E(t *testing.T) {
 			env.dump(t)
 			t.Errorf("the frame must report the missing client, got harness errors %s", errs)
 		}
-		env.dump(t)
-	})
-
-	// Negative (b), hard rule 11: a one-character typo in the client
-	// script URL — agent-host.md's #1 authoring mistake ("a widget that
-	// renders and silently never receives anything"). The URL 404s, the
-	// widget client never loads, and no handshake ever starts.
-	t.Run("typo'd client script URL never initializes", func(t *testing.T) {
-		env := startWidgetE2E(t, widgetE2EClientTypo)
-
-		var arrived string
-		err := chromedp.Run(env.ctx,
-			chromedp.Poll(`window.__log.some(function (m) { return m.method === "ui/initialize"; }) ? "arrived" : ""`,
-				&arrived, chromedp.WithPollingInterval(50*time.Millisecond), chromedp.WithPollingTimeout(3*time.Second)),
-		)
-		if err == nil || arrived == "arrived" {
-			env.dump(t)
-			t.Fatalf("ui/initialize arrived although the client script URL was typo'd")
-		}
-		errs := env.eval(t, `JSON.stringify(window.__harnessErrors)`)
-		if !strings.Contains(errs, "widget client missing") {
-			env.dump(t)
-			t.Errorf("the frame must report the missing client, got harness errors %s", errs)
-		}
-		env.dump(t)
 	})
 }

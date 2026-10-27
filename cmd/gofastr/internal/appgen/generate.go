@@ -372,6 +372,10 @@ func parseAppGenerateArgs(args []string) (GenerateOptions, error) {
 			positionals = append(positionals, arg)
 		}
 	}
+	if options.outputSet && options.outputDir == "" {
+		// An empty value is a typo, not the module root: that is --out=.
+		return options, fmt.Errorf("--out must not be empty; use --out=. for the module root")
+	}
 	switch len(positionals) {
 	case 0:
 		options.Spec = "gofastr.yml"
@@ -1480,7 +1484,7 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 	// Preserve the caller's entity order (the app spec's authored order) so
 	// scaffolds are reproducible byte-for-byte and gofastr pack round-trips.
 	for i, decl := range decls {
-		content, err := renderEntityFile(decl, orderOffset+i)
+		content, err := renderEntityFile(decl, orderOffset+i, decls)
 		if err != nil {
 			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
@@ -1535,15 +1539,22 @@ func RegisterAll(app *framework.App) {
 
 // renderEntityFile emits the single entities/<snake_name>.go for one entity:
 // its model struct, column constants, typed repository, event helpers, and a
-// registration func that self-registers via init().
-func renderEntityFile(decl framework.EntityDeclaration, order int) (string, error) {
+// registration func that self-registers via init(). decls are the
+// project's entities, for the types of cascade children's ids.
+func renderEntityFile(decl framework.EntityDeclaration, order int, decls []framework.EntityDeclaration) (string, error) {
 	var sb strings.Builder
+	strconvImport := ""
+	if intID(decl) {
+		// The repo and the deleted event turn an integer id into the
+		// string key CrudHandler takes, and back.
+		strconvImport = "\t\"strconv\"\n"
+	}
 	sb.WriteString(`package entities
 
 import (
 	"context"
 	"database/sql"
-
+` + strconvImport + `
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -1551,7 +1562,7 @@ import (
 `)
 	sb.WriteString(renderEntityModel(decl))
 	sb.WriteString(renderEntityEnums(decl))
-	sb.WriteString(renderEntityWriteShapes(decl))
+	sb.WriteString(renderEntityWriteShapes(decl, decls))
 	sb.WriteString(renderEntityColumns(decl))
 	sb.WriteString(renderEntityRepo(decl))
 	sb.WriteString(renderEntityEvents(decl))
@@ -2295,7 +2306,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 	sb.WriteString(fmt.Sprintf("type %s struct {\n", structName))
 	keyIsID := appspec.DeclKeyIsID(decl)
 	if keyIsID {
-		sb.WriteString("\tID string `json:\"id\"`\n")
+		sb.WriteString("\tID " + goIDType(decl) + " `json:\"id\"`\n")
 	}
 	for _, field := range decl.Fields {
 		if keyIsID && field.Name == "id" {
@@ -2373,6 +2384,11 @@ func autoGenerateConstName(value string) (string, error) {
 	}
 }
 
+// goTypeForField is a field's Go type in the generated entity model, write
+// shapes and HTTP client. A JSON field holds any JSON value (crud stores
+// arrays, numbers and strings as well as objects), so it is any: a
+// map[string]any fails the decode of every row whose value is an array,
+// and a list fails for the whole page.
 func goTypeForField(value string) string {
 	switch strings.ToLower(value) {
 	case "int", "integer":
@@ -2382,7 +2398,7 @@ func goTypeForField(value string) string {
 	case "bool", "boolean":
 		return "bool"
 	case "json":
-		return "map[string]any"
+		return "any"
 	default:
 		return "string"
 	}

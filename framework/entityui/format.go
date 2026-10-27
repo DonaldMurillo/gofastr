@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -45,6 +46,13 @@ func cell(v any) string {
 		return strconv.FormatFloat(t, 'f', -1, 64)
 	case float32:
 		return strconv.FormatFloat(float64(t), 'f', -1, 32)
+	case map[string]any, []any:
+		// A JSON field reads back decoded. Its text is the document,
+		// never Go's map[k:v], which the form's JSON check refused.
+		if b, err := json.Marshal(t); err == nil {
+			return string(b)
+		}
+		return fmt.Sprint(v)
 	default:
 		return fmt.Sprint(v)
 	}

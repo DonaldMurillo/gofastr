@@ -22,6 +22,11 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 		return nil
 	}
 
+	// An enqueued occurrence goes only once its job is gone or done. A
+	// failed job is kept for Replay, which makes it pending again, and the
+	// overlap check (commitOccurrences) finds a schedule's active jobs only
+	// through their occurrences: pruning the occurrence of a failed job let
+	// the tick after a Replay enqueue a second run beside the replayed one.
 	_, err := s.queue.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s
 		WHERE created_at < $1 AND (
 			status='skipped'
@@ -30,7 +35,7 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 				AND NOT EXISTS (
 					SELECT 1 FROM %s j
 					WHERE j.id=enqueued_job_id
-					AND j.status IN ('pending','claimed')
+					AND j.status <> 'done'
 				)
 			)
 		)`, s.queue.schedulerOccurrencesTable(), s.queue.qt()),
@@ -70,12 +75,10 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 		return err
 	}
 	for _, statement := range []string{
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (schedule_id, enqueued_job_id)",
-			s.queue.schedulerIndex("scheduler_occurrences_schedule_job_idx"),
-			s.queue.schedulerOccurrencesTable()),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (created_at)",
-			s.queue.schedulerIndex("scheduler_occurrences_created_at_idx"),
-			s.queue.schedulerOccurrencesTable()),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (schedule_id, enqueued_job_id)",
+			s.queue.indexOn("scheduler_occurrences_schedule_job_idx", s.queue.schedulerOccurrencesTable())),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (created_at)",
+			s.queue.indexOn("scheduler_occurrences_created_at_idx", s.queue.schedulerOccurrencesTable())),
 	} {
 		if _, err := s.queue.db.Exec(statement); err != nil {
 			return err
@@ -115,7 +118,7 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	}
 	// SQLite has no IF NOT EXISTS for ADD COLUMN: probe PRAGMA once and
 	// ALTER only the missing columns, tolerating the duplicate-column race.
-	rows, err := s.queue.db.Query("PRAGMA table_info(" + table + ")")
+	rows, err := s.queue.db.Query(query.SQLitePragma("table_info", table))
 	if err != nil {
 		return err
 	}
@@ -155,10 +158,12 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	return nil
 }
 
-func (q *DBQueue) schedulerIndex(suffix string) string {
+// indexOn renders "<index> ON <table>" for the scheduler index named by
+// the queue table and suffix, on table (already quoted).
+func (q *DBQueue) indexOn(suffix, table string) string {
 	name, err := query.SafeIdent(q.table + "_" + suffix)
 	if err != nil {
 		panic(err)
 	}
-	return query.QuoteIdent(name)
+	return query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(name), table)
 }

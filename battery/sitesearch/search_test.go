@@ -1,6 +1,7 @@
 package sitesearch
 
 import (
+	"io"
 	"math"
 	"strings"
 	"testing"
@@ -59,6 +60,40 @@ func TestExtractNoindex(t *testing.T) {
 	doc := `<html><head><meta name="robots" content="NOINDEX, follow"></head><body><main><h1>X</h1></main></body></html>`
 	if _, ok, _ := Extract("/x", strings.NewReader(doc)); ok {
 		t.Error("a noindex page was indexed")
+	}
+}
+
+// A robots tag inside content the page keeps out of the index (sample
+// markup in a docs page, a demo) does not drop the page.
+func TestExtractIgnoredNoindexKeepsPage(t *testing.T) {
+	doc := `<html><body><main><h1>Robots</h1><pre data-search-ignore><meta name="robots" content="noindex"></pre></main></body></html>`
+	for name, extract := range map[string]func(string, io.Reader) (Page, bool, error){"Extract": Extract, "hosted": extractHosted} {
+		if _, ok, _ := extract("/x", strings.NewReader(doc)); !ok {
+			t.Errorf("%s: an ignored robots tag dropped the page", name)
+		}
+	}
+}
+
+// A <main> under a hidden or ignored ancestor is not the page's: taking
+// it as the root started the walk below the ancestor that hides it,
+// indexing its text and dropping the visible <main>. A hidden <main>
+// itself indexed nothing and dropped the visible one too.
+func TestExtractSkipsHiddenMain(t *testing.T) {
+	for _, hidden := range []string{
+		`<div hidden><main>secretword</main></div>`,
+		`<div data-search-ignore><main>secretword</main></div>`,
+		`<section aria-hidden="true"><main>secretword</main></section>`,
+		`<main hidden>secretword</main>`,
+	} {
+		doc := `<html><body>` + hidden + `<main>publicword</main></body></html>`
+		p := extract(t, "/x", doc)
+		var text strings.Builder
+		for _, s := range p.Sections {
+			text.WriteString(s.Text + " ")
+		}
+		if got := text.String(); strings.Contains(got, "secretword") || !strings.Contains(got, "publicword") {
+			t.Errorf("%s: indexed %q", hidden, got)
+		}
 	}
 }
 
@@ -410,6 +445,15 @@ func TestBuildDropsOffSiteURLs(t *testing.T) {
 		t.Fatalf("indexed %d pages, want only /ok", idx.Len())
 	}
 	if rs := idx.Search("walrus", 10); len(rs) != 1 || rs[0].URL != "/ok" {
+		t.Fatalf("results = %+v", rs)
+	}
+}
+
+// A page passed to Build with a title and no sections is found by its
+// title: title terms were indexed only inside the sections loop.
+func TestBuildIndexesTitleOnlyPage(t *testing.T) {
+	idx := Build([]Page{{URL: "/a", Title: "Zanzibar"}})
+	if rs := idx.Search("zanzibar", 10); len(rs) != 1 || rs[0].URL != "/a" {
 		t.Fatalf("results = %+v", rs)
 	}
 }

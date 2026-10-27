@@ -14,8 +14,9 @@ import (
 // An HTML form posts every control, so a number the user left blank
 // arrives as "". The validator used to answer "must be an integer" for a
 // field the user never touched and the form failed silently; a blank
-// optional field now takes its default (create) or is left alone
-// (update), and a blank required one says "is required".
+// optional field now takes its default (create) or clears to null
+// (update: blanking the control is how an edit form clears it), and a
+// blank required one says "is required".
 func TestEmptyFormValuesForNonTextFields(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
@@ -52,15 +53,16 @@ func TestEmptyFormValuesForNonTextFields(t *testing.T) {
 			t.Fatalf("blank required int error = %s, want is required", refused.Body())
 		}
 
-		// On update a blank optional number leaves the column alone.
+		// On update a blank optional number clears the column; the fields
+		// the body leaves out keep their values.
 		var row map[string]any
 		if err := decodeCrudData(body, &row); err != nil {
 			t.Fatal(err)
 		}
 		id, _ := row["id"].(string)
 		updated := ta.Put("/gadgets/"+id, map[string]any{"name": "one again", "estimate": ""}).AssertStatus(t, http.StatusOK)
-		if !strings.Contains(updated.Body(), `"estimate":3`) {
-			t.Fatalf("blank optional int on update changed the column: %s", updated.Body())
+		if !strings.Contains(updated.Body(), `"estimate":null`) || !strings.Contains(updated.Body(), `"slots":2`) {
+			t.Fatalf("blank optional int on update = %s, want estimate null and slots kept", updated.Body())
 		}
 	})
 }

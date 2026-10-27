@@ -37,7 +37,7 @@ func TestAcceptLanguageBounded(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parseAcceptLanguage(tc.header)
+			got, _ := parseAcceptLanguage(tc.header)
 			if len(got) > cap {
 				t.Fatalf("parseAcceptLanguage returned %d entries; want <= %d (unbounded parse is a DoS amplifier)", len(got), cap)
 			}
@@ -45,7 +45,7 @@ func TestAcceptLanguageBounded(t *testing.T) {
 	}
 
 	// The happy path must still negotiate correctly (preferred tag first).
-	if got := parseAcceptLanguage("fr-CA,fr;q=0.8,en;q=0.5"); len(got) == 0 || got[0] != "fr-ca" {
+	if got, _ := parseAcceptLanguage("fr-CA,fr;q=0.8,en;q=0.5"); len(got) == 0 || got[0] != "fr-ca" {
 		t.Fatalf("happy-path ordering broken: got %v", got)
 	}
 }
@@ -88,7 +88,7 @@ func TestAcceptLangWorkIsBounded(t *testing.T) {
 	}
 
 	// Correctness survives the bounding.
-	if got := parseAcceptLanguage("fr-CA,fr;q=0.8,en;q=0.5"); len(got) == 0 || got[0] != "fr-ca" {
+	if got, _ := parseAcceptLanguage("fr-CA,fr;q=0.8,en;q=0.5"); len(got) == 0 || got[0] != "fr-ca" {
 		t.Fatalf("[i18n] happy-path ordering broken: got %v", got)
 	}
 }

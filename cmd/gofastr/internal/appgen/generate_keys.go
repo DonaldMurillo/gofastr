@@ -21,7 +21,7 @@ type keyCol struct {
 // gains a "Key" suffix until it is free.
 func declKeyCols(decl framework.EntityDeclaration) []keyCol {
 	if appspec.DeclKeyIsID(decl) {
-		return []keyCol{{Name: "id", Param: "id", Field: framework.FieldDeclaration{Name: "id", Type: "string"}}}
+		return []keyCol{{Name: "id", Param: "id", Field: idField(decl)}}
 	}
 	out := make([]keyCol, len(decl.PrimaryKey))
 	taken := map[string]bool{}
@@ -39,6 +39,81 @@ func declKeyCols(decl framework.EntityDeclaration) []keyCol {
 		}
 	}
 	return out
+}
+
+// idField is the generated key's field: the "id" the entity declares, an
+// integer the database assigns say, or a string id when it declares none.
+func idField(decl framework.EntityDeclaration) framework.FieldDeclaration {
+	for _, f := range decl.Fields {
+		if f.Name == "id" {
+			return f
+		}
+	}
+	return framework.FieldDeclaration{Name: "id", Type: "string"}
+}
+
+// intID reports whether the entity keys on a declared integer "id". The
+// server answers it as a JSON number, so the generated Go code types it
+// int (number in TypeScript), not string: the model's ID, every repo and
+// client method that takes an id, the batch calls, the ID column, a
+// cascade child's ID and the deleted event's id, so an id read off a row
+// passes back anywhere unconverted. int, not int64, because the other
+// int fields and framework.IntColumn are int.
+func intID(decl framework.EntityDeclaration) bool {
+	return appspec.DeclKeyIsID(decl) && goTypeForField(idField(decl).Type) == "int"
+}
+
+// goIDType is the Go type of the generated key's ID field.
+func goIDType(decl framework.EntityDeclaration) string {
+	if intID(decl) {
+		return "int"
+	}
+	return "string"
+}
+
+// goIDsType is the Go type of the ids a batch call takes.
+func goIDsType(decl framework.EntityDeclaration) string {
+	return "[]" + goIDType(decl)
+}
+
+// keyStrings is the Go statement that turns a batch call's ids into the
+// string keys CrudHandler and the HTTP route take, binding them to keys,
+// or "" when ids already are strings.
+func keyStrings(decl framework.EntityDeclaration) string {
+	if !intID(decl) {
+		return ""
+	}
+	return `keys := make([]string, len(ids))
+	for i, id := range ids {
+		keys[i] = strconv.Itoa(id)
+	}
+	`
+}
+
+// keysVar names what keyStrings leaves the string keys in.
+func keysVar(decl framework.EntityDeclaration) string {
+	if intID(decl) {
+		return "keys"
+	}
+	return "ids"
+}
+
+// nestedKey is the Go field, type and JSON key that address a cascade
+// child in a patch. The cascade write looks the child up by its one key
+// column (framework/crud/cascade_write.go), so a child keyed on its own
+// column carries that column, typed as its model types it; a child keyed
+// on id, or one decls does not hold, carries ID.
+func nestedKey(rel framework.Relation, decls []framework.EntityDeclaration) (name, typ, tag string) {
+	for _, d := range decls {
+		if d.Name != rel.Entity {
+			continue
+		}
+		if cols := declKeyCols(d); !appspec.DeclKeyIsID(d) && len(cols) == 1 {
+			return appspec.ToCamelCase(cols[0].Name), entityFieldGoType(appspec.ToCamelCase(d.Name), cols[0].Field), appspec.ToCamelJSON(cols[0].Name)
+		}
+		return "ID", goIDType(d), "id"
+	}
+	return "ID", "string", "id"
 }
 
 // reservedKeyParams are the names a key parameter may not take: Go and JS
@@ -74,8 +149,12 @@ var reservedKeyParams = map[string]bool{
 }
 
 // goKeyParams is the parameter list for one record's key: "id string",
-// or "studentId string, courseId string".
+// "id int" for an integer id, or "studentId string, courseId string" (a
+// declared key's values are strings whatever the columns' types).
 func goKeyParams(decl framework.EntityDeclaration) string {
+	if intID(decl) {
+		return "id int"
+	}
 	cols := declKeyCols(decl)
 	parts := make([]string, len(cols))
 	for i, k := range cols {
@@ -84,9 +163,13 @@ func goKeyParams(decl framework.EntityDeclaration) string {
 	return strings.Join(parts, ", ")
 }
 
-// goKeyPath is the Go expression for a record's path under route: one
-// escaped segment per key column, in key order.
+// goKeyPath is the Go expression for a record's path under route in the
+// generated client: one escaped segment per key column, in key order, and
+// an integer id in decimal.
 func goKeyPath(decl framework.EntityDeclaration, route string) string {
+	if intID(decl) {
+		return `"/` + route + `/"+strconv.Itoa(id)`
+	}
 	var sb strings.Builder
 	sb.WriteString(`"/` + route + `/"`)
 	for i, k := range declKeyCols(decl) {

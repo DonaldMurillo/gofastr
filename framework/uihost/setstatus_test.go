@@ -168,6 +168,37 @@ func TestRefusedLLMMDSkipsStatusCheck(t *testing.T) {
 	}
 }
 
+// A policy-refused page answers the negotiated markdown with the status
+// its HTML gets: the block's own code, or the redirect.
+func TestNegotiatedMarkdownKeepsPolicyStatus(t *testing.T) {
+	a := app.NewApp("status")
+	a.Register("/", &testHomeComp{}, nil)
+	block := app.PolicyFunc(func(context.Context) app.Decision {
+		return app.Decision{Kind: app.DecisionBlock, Status: http.StatusForbidden}
+	})
+	away := app.PolicyFunc(func(context.Context) app.Decision {
+		return app.Decision{Kind: app.DecisionRedirect, URL: "/login"}
+	})
+	a.RegisterScreen(app.NewScreen("/secret", &testHomeComp{}).WithPolicy(block), nil)
+	a.RegisterScreen(app.NewScreen("/members", &testHomeComp{}).WithPolicy(away), nil)
+	ds := New(a, WithPublicLLMMD(), WithMarkdownNegotiation())
+
+	for path, want := range map[string]int{"/secret": http.StatusForbidden, "/members": http.StatusSeeOther} {
+		for _, accept := range []string{"text/html", "text/markdown"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Accept", accept)
+			rec := httptest.NewRecorder()
+			ds.ServeHTTP(rec, req)
+			if rec.Code != want {
+				t.Errorf("%s (Accept %s) = %d, want %d", path, accept, rec.Code, want)
+			}
+			if want == http.StatusSeeOther && rec.Header().Get("Location") != "/login" {
+				t.Errorf("%s (Accept %s) Location = %q, want /login", path, accept, rec.Header().Get("Location"))
+			}
+		}
+	}
+}
+
 // The screen's own ScreenStatusCode outranks a status its render set.
 func TestScreenStatusCodeBeatsSetStatus(t *testing.T) {
 	a := app.NewApp("status")

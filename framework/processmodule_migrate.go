@@ -363,13 +363,13 @@ func provisionModuleSchemaRole(ctx context.Context, adminDB *sql.DB, schema, rol
 func moduleSchemaRoleStmts(schema, role, password string) []string {
 	return []string{
 		// Own schema (idempotent).
-		`CREATE SCHEMA IF NOT EXISTS ` + query.QuoteIdent(schema),
+		`CREATE SCHEMA IF NOT EXISTS ` + query.QuoteFolded(schema),
 		// Restricted role. CREATE ROLE fails on duplicate; DO $$ swallows
 		// the duplicate_object error so re-runs are idempotent. LOGIN +
 		// password so the coordinator can authenticate as it; every other
 		// flag strips privilege.
 		`DO $$ BEGIN
-  CREATE ROLE ` + query.QuoteIdent(role) + ` LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+  CREATE ROLE ` + query.QuoteFolded(role) + ` LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 EXCEPTION WHEN duplicate_object THEN null;
 END $$`,
 		// Re-assert the privilege flags AND the password even if the role
@@ -390,16 +390,16 @@ END $$`,
 		//
 		// The literal is safe to interpolate: password is randomHex(24), so
 		// it cannot contain a quote.
-		`ALTER ROLE ` + query.QuoteIdent(role) + ` WITH LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
+		`ALTER ROLE ` + query.QuoteFolded(role) + ` WITH LOGIN PASSWORD '` + password + `' NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
 		// USAGE+CREATE on its own schema ONLY.
-		`GRANT USAGE, CREATE ON SCHEMA ` + query.QuoteIdent(schema) + ` TO ` + query.QuoteIdent(role),
+		`GRANT USAGE, CREATE ON SCHEMA ` + query.QuoteFolded(schema) + ` TO ` + query.QuoteFolded(role),
 		// search_path = module_<M>, convenience, NOT the fence.
-		`ALTER ROLE ` + query.QuoteIdent(role) + ` SET search_path = ` + query.QuoteIdent(schema),
-		`ALTER ROLE ` + query.QuoteIdent(role) + ` SET statement_timeout = '30s'`,
-		`ALTER ROLE ` + query.QuoteIdent(role) + ` SET lock_timeout = '5s'`,
+		`ALTER ROLE ` + query.QuoteFolded(role) + ` SET search_path = ` + query.QuoteFolded(schema),
+		`ALTER ROLE ` + query.QuoteFolded(role) + ` SET statement_timeout = '30s'`,
+		`ALTER ROLE ` + query.QuoteFolded(role) + ` SET lock_timeout = '5s'`,
 		// THE FENCE: no privileges outside module_<M>. A migration that
 		// writes to public is permission-denied regardless of search_path.
-		`REVOKE ALL ON SCHEMA public FROM ` + query.QuoteIdent(role),
+		`REVOKE ALL ON SCHEMA public FROM ` + query.QuoteFolded(role),
 	}
 }
 

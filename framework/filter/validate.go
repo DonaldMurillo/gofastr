@@ -17,7 +17,6 @@ type predFieldIndex struct {
 	allow   map[string]bool
 	noQuery map[string]bool
 	alias   map[string]string
-	boolCol map[string]bool
 	colType map[string]schema.FieldType
 }
 
@@ -31,7 +30,6 @@ func newPredicateFieldIndex(fields []schema.Field) *predFieldIndex {
 	idx := &predFieldIndex{
 		allow:   make(map[string]bool, len(fields)),
 		alias:   make(map[string]string, len(fields)),
-		boolCol: make(map[string]bool, len(fields)),
 		colType: make(map[string]schema.FieldType, len(fields)),
 	}
 	for _, f := range fields {
@@ -50,9 +48,6 @@ func newPredicateFieldIndex(fields []schema.Field) *predFieldIndex {
 		}
 		idx.allow[f.Name] = true
 		idx.colType[f.Name] = f.Type
-		if f.Type == schema.Bool {
-			idx.boolCol[f.Name] = true
-		}
 		if f.WireName != "" && f.WireName != f.Name {
 			idx.allow[f.WireName] = true
 			idx.alias[f.WireName] = f.Name
@@ -161,10 +156,11 @@ func fieldTypeName(t schema.FieldType) string {
 // resolutions the tree that reaches SQL needs, on the COPY
 // ValidatePredicate built (parseNode does the same on its fresh nodes
 // at parse time): a wire alias resolves to the column name
-// (Predicate.Field reaches the WHERE clause), and isBool is (re)set
-// from the schema so BuildPredicate coerces true/false spellings to Go
-// bools. A caller that hand-set isBool on a non-Bool column loses it
-// here, the schema is the authority.
+// (Predicate.Field reaches the WHERE clause), and colType is (re)set
+// from the schema so BuildPredicate binds typed values. Every value must
+// be of the column's type (CoerceValue), the same check the flat
+// ?field_<op>= parser runs. A caller that hand-set colType loses it here,
+// the schema is the authority.
 func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 	if p.Field == "" {
 		return i18n.NewError(reasonWhereNoField)
@@ -180,6 +176,7 @@ func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 		// an absent one.
 		return i18n.NewError(reasonWhereUnknownField, map[string]any{"field": strconv.Quote(p.Field)})
 	}
+	sent := p.Field
 	if col, ok := idx.alias[p.Field]; ok {
 		p.Field = col
 	}
@@ -199,7 +196,22 @@ func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 			return i18n.NewError(reasonWhereInOverCap, map[string]any{"max": MaxINListEntries})
 		}
 	}
-	p.isBool = idx.boolCol[p.Field]
+	t := idx.colType[p.Field]
+	switch p.Op {
+	case OpLike:
+		// A substring, matched as text; never coerced.
+	case OpIn:
+		for _, v := range p.Values {
+			if _, err := CoerceValue(sent, t, v); err != nil {
+				return err
+			}
+		}
+	default:
+		if _, err := CoerceValue(sent, t, p.Value); err != nil {
+			return err
+		}
+	}
+	p.colType = t
 	return nil
 }
 

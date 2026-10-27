@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -58,5 +59,28 @@ func TestToolAdapterNumberPathParam(t *testing.T) {
 	out, err := ToolAdapter(Handler[refundInput, refundInput](echoRefund))(context.Background(), map[string]any{"id": float64(42)})
 	if err != nil || out.(refundInput).ID != "42" {
 		t.Fatalf("got %v %v", out, err)
+	}
+}
+
+type metaInput struct {
+	Meta map[string]any `json:"meta"`
+}
+
+// MCP keeps an integer past 2^53 as a json.Number; the route's Bind keeps
+// its digits under an interface, and the tool path has to as well.
+func TestToolAdapterKeepsBigIntegers(t *testing.T) {
+	echo := Handler[metaInput, metaInput](func(_ context.Context, in metaInput) (metaInput, error) { return in, nil })
+	out, err := ToolAdapter(echo)(context.Background(), map[string]any{
+		"meta": map[string]any{"n": json.Number("9007199254740993"), "small": float64(7)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := out.(metaInput).Meta
+	if n, ok := meta["n"].(json.Number); !ok || n.String() != "9007199254740993" {
+		t.Errorf("big integer = %#v, want json.Number 9007199254740993", meta["n"])
+	}
+	if s, ok := meta["small"].(float64); !ok || s != 7 {
+		t.Errorf("small number = %#v, want float64 7", meta["small"])
 	}
 }

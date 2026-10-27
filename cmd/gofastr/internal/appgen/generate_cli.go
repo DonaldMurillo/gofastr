@@ -96,7 +96,7 @@ type cliField struct {
 	Wire     string // JSON wire key (camelCase)
 	Flag     string // CLI flag name (kebab-case)
 	Type     string // normalized declaration type
-	GoType   string // string|int|float64|bool|map[string]any
+	GoType   string // string|int|float64|bool|any
 	ReadOnly bool   // excluded from mutation flags
 	NoQuery  bool   // excluded from ALL filter flags (server rejects them)
 	// FilterOps are the suffixed operator flags the list verb offers,
@@ -502,15 +502,27 @@ func parseCLIOptions(args []string) (CliOptions, error) {
 }
 
 // checkCLIOptions refuses option combinations that cannot mean anything,
-// whether flags or a settings entry set them.
+// whether flags or a settings entry set them. --api-prefix applies in
+// both modes: with --from-openapi it replaces servers[0].url's path.
 func checkCLIOptions(opts CliOptions) error {
 	if opts.FromOpenAPI != "" {
-		if len(opts.only) > 0 || len(opts.exclude) > 0 || opts.verbs != "" || opts.ApiPrefix != "api" {
-			return fmt.Errorf("--from-openapi is spec-driven: --only/--exclude/--verbs/--api-prefix apply to entity generation only")
+		if len(opts.only) > 0 || len(opts.exclude) > 0 || opts.verbs != "" {
+			return fmt.Errorf("--from-openapi is spec-driven: --only/--exclude/--verbs apply to entity generation only")
 		}
 	}
 	return nil
 }
+
+// cliAPIPrefix normalizes an API prefix to "" or "/a/b": a leading
+// slash, no trailing one.
+func cliAPIPrefix(p string) string {
+	if p = strings.Trim(strings.TrimSpace(p), "/"); p != "" {
+		return "/" + p
+	}
+	return ""
+}
+
+func isControlByte(r rune) bool { return r < 0x20 || r == 0x7f }
 
 // parseVerbSelection parses --verbs: either a bare global allow-list
 // ("list,get") or per-entity pairs ("posts=list,get;users=*"). Returns
@@ -610,10 +622,7 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 		}
 	}
 
-	apiPrefix := strings.Trim(strings.TrimSpace(opts.ApiPrefix), "/")
-	if apiPrefix != "" {
-		apiPrefix = "/" + apiPrefix
-	}
+	apiPrefix := cliAPIPrefix(opts.ApiPrefix)
 
 	binary := strings.TrimSpace(opts.Binary)
 	if binary == "" {
@@ -641,7 +650,7 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 	}
 	// The prefix is joined into every request URL; a control byte there is
 	// never a path, so refuse it here rather than ship a CLI that 404s.
-	if strings.ContainsFunc(apiPrefix, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	if strings.ContainsFunc(apiPrefix, isControlByte) {
 		return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", opts.ApiPrefix)
 	}
 	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
@@ -1354,6 +1363,7 @@ func renderCLIOutput(spec cliSpec) string {
 	return `package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1387,8 +1397,10 @@ func newFlagSet(name string) *flag.FlagSet {
 // client. Resolution order: env > stored config (the API token never
 // rides argv: there is deliberately no --token flag, the credential
 // would sit in ps/procfs world-readable state for the whole call;
-// ` + "`login --with-token`" + ` reads it from stdin instead). A nil *global
-// means don't proceed: exit 0 for --help, 2 for usage/resolution failures.
+// ` + "`login --with-token`" + ` reads it from stdin instead). The stored
+// token goes only to the origin login stored it for: a --url or $<APP>_URL
+// naming another host gets no credential. A nil *global means don't
+// proceed: exit 0 for --help, 2 for usage/resolution failures.
 func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 	urlF := fs.String("url", "", "server URL (default $"+envPrefix+"_URL, then stored config)")
 	if err := fs.Parse(args); err != nil {
@@ -1403,8 +1415,19 @@ func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url, set %s_URL, or run ` + "`%s login`" + `\n", envPrefix, binaryName)
 		return nil, 2
 	}
-	token := firstNonEmpty(os.Getenv(envPrefix+"_TOKEN"), cfg.Token)
-	c := client.NewClient(strings.TrimRight(base, "/")+apiPrefix, nil)
+	// $<APP>_TOKEN is the caller's explicit choice and goes wherever
+	// the call does. The stored token is tied to the URL it was stored
+	// with: sending it to whatever --url names would hand a production
+	// credential to a local or hostile server.
+	token := os.Getenv(envPrefix + "_TOKEN")
+	if token == "" && cfg.Token != "" {
+		if sameOrigin(base, cfg.URL) {
+			token = cfg.Token
+		} else {
+			fmt.Fprintf(os.Stderr, "%s: not sending the stored token: it was stored for %s, and this call goes to %s; run ` + "`%s login --url <url>`" + ` or set %s_TOKEN\n", binaryName, originOf(cfg.URL), originOf(base), binaryName, envPrefix)
+		}
+	}
+	c := client.NewClient(apiBase(base), nil)
 	c.Token = token
 	configureClient(c)
 	// Every verb runs under a cancellable ctx: Ctrl-C cancels the
@@ -1422,6 +1445,72 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// apiBase is base with the API prefix joined on. A base whose path
+// already ends in the prefix is used as it is: the CLI generated from an
+// OpenAPI document once kept the server URL's path in its default and
+// in what login stored, https://pets.example/api/v3 say, and appending
+// the prefix again would request /api/v3/api/v3/....
+func apiBase(base string) string {
+	base = strings.TrimRight(base, "/")
+	if apiPrefix == "" {
+		return base
+	}
+	if u, err := url.Parse(base); err == nil && strings.HasSuffix(u.EscapedPath(), apiPrefix) {
+		return base
+	}
+	return base + apiPrefix
+}
+
+// originOf is raw's scheme://host:port, the port spelled out (80 for
+// http, 443 for https when raw names none), or "" when raw is not an
+// absolute http(s) URL. The host folds ASCII case only, and a host with
+// any other byte has no origin, so the stored token goes nowhere: Go's
+// Unicode case folding is not the IDNA mapping net/http dials through
+// (strings.ToLower folds U+0130 to "i", while net/http sends that host
+// to xn--i-9bb), so folding it would let a token stored for i.test reach
+// another host. An IPv6 zone is compared as written.
+func originOf(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	port := u.Port()
+	switch {
+	case port != "":
+	case scheme == "http":
+		port = "80"
+	case scheme == "https":
+		port = "443"
+	default:
+		return ""
+	}
+	host, zone, _ := strings.Cut(u.Hostname(), "%")
+	folded := []byte(host)
+	for i, c := range folded {
+		switch {
+		case c >= 0x80:
+			return ""
+		case 'A' <= c && c <= 'Z':
+			folded[i] = c + ('a' - 'A')
+		}
+	}
+	if zone != "" {
+		zone = "%" + zone
+	}
+	host = string(folded) + zone
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return scheme + "://" + host + ":" + port
+}
+
+// sameOrigin reports whether a and b name the same scheme, host and port.
+func sameOrigin(a, b string) bool {
+	oa := originOf(a)
+	return oa != "" && oa == originOf(b)
 }
 
 // singleResponse / listResponse mirror the server's envelopes with raw maps,
@@ -1460,7 +1549,7 @@ func printListTable(headers, keys []string, rows []map[string]any) {
 		cells := make([]string, len(keys))
 		for i, k := range keys {
 			if v, ok := row[k]; ok && v != nil {
-				cells[i] = fmt.Sprintf("%v", v)
+				cells[i] = scrubTerminal(fmt.Sprintf("%v", v))
 			}
 		}
 		fmt.Fprintln(w, strings.Join(cells, "\t"))
@@ -1473,15 +1562,46 @@ func printListTable(headers, keys []string, rows []map[string]any) {
 func apiFail(err error) int {
 	var apiErr *client.APIError
 	if errors.As(err, &apiErr) {
-		fmt.Fprintln(os.Stderr, apiErr.Error())
+		fmt.Fprintln(os.Stderr, scrubTerminal(apiErr.Error()))
 		if apiErr.Status == 401 || apiErr.Status == 403 {
 			fmt.Fprintf(os.Stderr, "auth failed: mint a token in the app and run ` + "`%s login`" + `\n", binaryName)
 			return 4
 		}
 		return 1
 	}
-	fmt.Fprintln(os.Stderr, err)
+	fmt.Fprintln(os.Stderr, scrubTerminal(err.Error()))
 	return 1
+}
+
+// scrubTerminal drops what a terminal acts on instead of printing: C0
+// controls but tab, DEL, and C1 controls (0x9b is a one-byte CSI), with
+// an invalid byte read as U+FFFD. Record text and server error bodies
+// pass through it before a human-format line: a stored title
+// "\x1b[2J..." cleared the screen of whoever ran list -o table. JSON
+// output needs no scrub: its encoder escapes control bytes.
+func scrubTerminal(s string) string {
+	return strings.Map(func(r rune) rune {
+		if (r < 0x20 && r != '\t') || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// decodeJSON is json.Unmarshal with UseNumber: a number landing in an
+// any keeps its digits as a json.Number. Decoded as a float64,
+// 9007199254740993 went to the server as ...992. Like json.Unmarshal, it
+// refuses bytes after the value.
+func decodeJSON(data []byte, out any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("invalid data after the JSON value")
+	}
+	return nil
 }
 
 // takeKey pops the record's key: one leading positional argument per key
@@ -1550,7 +1670,7 @@ func buildBody(fs *flag.FlagSet, jsonArg string, apply func(flagName string, bod
 			return nil, 2
 		}
 		var body map[string]any
-		if err := json.Unmarshal(raw, &body); err != nil {
+		if err := decodeJSON(raw, &body); err != nil {
 			fmt.Fprintf(os.Stderr, "--json: %v\n", err)
 			return nil, 2
 		}
@@ -1599,7 +1719,7 @@ func doBatch(g *global, method, path string, body any) (client.BatchResponse, in
 	if err := g.client.Do(g.ctx, method, path, body, &resp); err != nil {
 		var apiErr *client.APIError
 		if errors.As(err, &apiErr) && apiErr.Status == 400 {
-			if json.Unmarshal(apiErr.Body, &resp) == nil && len(resp.Results) > 0 {
+			if decodeJSON(apiErr.Body, &resp) == nil && len(resp.Results) > 0 {
 				return resp, 0
 			}
 		}
@@ -1953,7 +2073,7 @@ func cliFieldKindConst(goType string) string {
 		return "fieldFloat"
 	case "bool":
 		return "fieldBool"
-	case "map[string]any":
+	case "any":
 		return "fieldJSON"
 	default:
 		return "fieldString"
@@ -2127,9 +2247,8 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if watch || uploads {
 		imports = append(imports, "\t\"context\"")
 	}
-	if fields {
-		imports = append(imports, "\t\"encoding/json\"") // json-typed field flags unwrap their value
-		imports = append(imports, "\t\"flag\"")
+	if fields || list {
+		imports = append(imports, "\t\"flag\"") // list visits its flags for a given --cursor
 	}
 	if list || del || batchDel || watch || fields {
 		imports = append(imports, "\t\"fmt\"")
@@ -2174,7 +2293,7 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	sortF := fs.String("sort", "", "sort field(s), comma-separated, - prefix for desc")
 	page := fs.String("page", "", "page number (offset pagination)")
 	limit := fs.String("limit", "", "page size")
-	cursor := fs.String("cursor", "", "keyset cursor (from a prior response)")
+	cursor := fs.String("cursor", "", "keyset cursor (from a prior response; --cursor \"\" starts at the first page)")
 	include := fs.String("include", "", "relations to eager-load (comma, dots for nesting)")
 	fieldsF := fs.String("fields", "", "sparse field projection (comma-separated)")
 	outF := fs.String("o", "json", "output format: json|table")
@@ -2202,7 +2321,13 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	set("sort", *sortF)
 	set("page", *page)
 	set("limit", *limit)
-	set("cursor", *cursor)
+	// The server enters keyset mode on the cursor key's presence, so a
+	// given --cursor goes even when empty: --cursor "" fetches page one.
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "cursor" {
+			q.Set("cursor", *cursor)
+		}
+	})
 	set("include", *include)
 	set("fields", *fieldsF)
 	for i, f := range filters {
@@ -2228,7 +2353,7 @@ func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string,
 	if *outF == "table" {
 		printListTable(headers, keys, resp.Data)
 		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), resp.Cursor)
+			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), scrubTerminal(resp.Cursor))
 		} else {
 			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
 		}
@@ -2322,7 +2447,7 @@ func fieldFlags(fs *flag.FlagSet, fields []mutationField) func(name string, body
 				body[f.wire] = *boolVals[i]
 			case fieldJSON:
 				var v any
-				if err := json.Unmarshal([]byte(*strVals[i]), &v); err != nil {
+				if err := decodeJSON([]byte(*strVals[i]), &v); err != nil {
 					return fmt.Errorf("--%s: %w", f.flag, err)
 				}
 				body[f.wire] = v

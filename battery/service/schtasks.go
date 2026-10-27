@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -226,6 +227,12 @@ func (t taskScheduler) stop(b *Battery) error {
 		return err
 	}
 	resp, err := callControl(inst.socketPath(), "stop")
+	// A starting daemon has bound its socket and answers once its app is
+	// ready, so silence is not yet a wedge: keep asking for up to
+	// startingWait before a hard kill lands in the middle of a migration.
+	for deadline := time.Now().Add(startingWait); errors.Is(err, os.ErrDeadlineExceeded) && time.Now().Before(deadline); {
+		resp, err = callControl(inst.socketPath(), "stop")
+	}
 	switch {
 	case errors.Is(err, errNotRunning):
 		// "Not running" is not an error from /End either.

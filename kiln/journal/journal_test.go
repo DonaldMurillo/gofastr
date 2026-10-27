@@ -1,8 +1,10 @@
 package journal_test
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,6 +348,63 @@ func TestReplayUnknownOpFails(t *testing.T) {
 	_, err := journal.ReplayEntries([]journal.Entry{e})
 	if err == nil {
 		t.Fatal("unknown op should error")
+	}
+}
+
+// Replay rebuilds the world from the journaled bytes: an integer past
+// 2^53 in a field default, a seed row, or a tool call's args comes back
+// with its digits, not rounded to 9007199254740992.
+func TestReplayKeepsBigIntegers(t *testing.T) {
+	const exact, rounded = "9007199254740993", "9007199254740992"
+	big := json.Number(exact)
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	j, err := journal.OpenJSONL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []journal.Entry{
+		mustEntry(t, "e1", t0, journal.KindWorldEdit, journal.OpAddEntity, journal.AddEntityPayload{Entity: &world.Entity{
+			Name: "items", Fields: []world.Field{{Name: "n", Type: "int"}},
+		}}),
+		mustEntry(t, "e2", t0, journal.KindWorldEdit, journal.OpAddField, journal.AddFieldPayload{
+			Entity: "items", Field: world.Field{Name: "m", Type: "int", Default: big},
+		}),
+		mustEntry(t, "e3", t0, journal.KindWorldEdit, journal.OpAddSeed, journal.AddSeedPayload{Seed: &world.Seed{
+			Entity: "items", Rows: []map[string]any{{"n": big}},
+		}}),
+		mustEntry(t, "e4", t0, journal.KindToolCall, "", journal.ToolCallPayload{
+			CallID: "c1", Name: "add_field", Args: map[string]any{"default": big},
+		}),
+	} {
+		if _, err := j.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	j, err = journal.OpenJSONL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = j.Close() })
+	sess, err := journal.Replay(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]any{
+		"field default": sess.World.Entities["items"].Fields[1].Default,
+		"seed row":      sess.World.Seeds,
+		"tool call":     sess.Chat,
+	} {
+		got, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(got), rounded) || !strings.Contains(string(got), exact) {
+			t.Errorf("%s replayed as %s, want %s", name, got, exact)
+		}
 	}
 }
 

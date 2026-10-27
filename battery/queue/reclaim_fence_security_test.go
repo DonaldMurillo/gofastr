@@ -32,17 +32,17 @@ import (
 // before the sweeper's delete". The hook disarms itself before running, so
 // pushes issued inside the script pass through untouched.
 type redInterleaveLPush struct {
-	*mockRedis
+	casOnlyClient
 	before func()
 }
 
 func (f *redInterleaveLPush) LPush(ctx context.Context, key string, values ...any) error {
 	if f.before == nil {
-		return f.mockRedis.LPush(ctx, key, values...)
+		return f.casOnlyClient.LPush(ctx, key, values...)
 	}
 	hook := f.before
 	f.before = nil
-	if err := f.mockRedis.LPush(ctx, key, values...); err != nil {
+	if err := f.casOnlyClient.LPush(ctx, key, values...); err != nil {
 		return err
 	}
 	hook()
@@ -55,7 +55,7 @@ func (f *redInterleaveLPush) LPush(ctx context.Context, key string, values ...an
 // entry — and the job must stay recoverable when W2 then crashes.
 func TestReclaimRedDoesNotDeleteNewerClaim(t *testing.T) {
 	r := newMockRedis()
-	gate := &redInterleaveLPush{mockRedis: r}
+	gate := &redInterleaveLPush{casOnlyClient: r}
 	q := NewRedisQueue(gate, "jobs")
 	now := time.Now()
 	q.now = func() time.Time { return now }

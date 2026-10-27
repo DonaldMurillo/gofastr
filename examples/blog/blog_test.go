@@ -9,6 +9,7 @@ import (
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
+	"github.com/DonaldMurillo/gofastr/battery/search"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -30,10 +31,13 @@ func bootBlog(t *testing.T) *framework.App {
 	)
 	registerEntities(app)
 	app.Router().Get("/posts/published", postsByStatus(app, "published"))
+	searchIndex := search.NewMemory()
+	app.Router().Get("/posts/search", searchPosts(searchIndex))
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	seed(db)
+	seedSearch(searchIndex)
 	return app
 }
 
@@ -73,5 +77,29 @@ func TestBlogSeedAndPublishedFilter(t *testing.T) {
 	}
 	if strings.Contains(body, "Work in progress") {
 		t.Errorf("published filter leaked a draft post: %s", body)
+	}
+}
+
+// TestBlogSearchHidesDrafts: the public search route answers only from
+// published posts, the same line /posts/published draws. The draft is
+// indexed (an editor tool could search it), so the route filters.
+func TestBlogSearchHidesDrafts(t *testing.T) {
+	app := bootBlog(t)
+	for _, q := range []string{"draft", "progress"} {
+		req := httptest.NewRequest(http.MethodGet, "/posts/search?q="+q, nil)
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("search %q = %d, want 200", q, rec.Code)
+		}
+		if body := rec.Body.String(); strings.Contains(body, `"p3"`) {
+			t.Errorf("search %q returned the draft post: %s", q, body)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/posts/search?q=hello", nil)
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), `"p1"`) {
+		t.Errorf("search hello missed the published post: %s", rec.Body)
 	}
 }

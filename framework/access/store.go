@@ -28,7 +28,7 @@ import (
 //
 // All role and permission VALUES are passed as $n bound parameters, never
 // interpolated into SQL. The table name is validated via query.SafeIdent
-// at construction time and quoted via query.QuoteIdent in every statement.
+// at construction time and quoted via query.QuoteFolded in every statement.
 //
 // Both SQLite (mattn/go-sqlite3) and PostgreSQL (lib/pq) accept $N
 // placeholders and ON CONFLICT DO NOTHING, so the same SQL works on both.
@@ -146,9 +146,14 @@ func (s *GrantStore) Policy() *RolePolicy {
 // PostgreSQL. The (role, permission) pair has a UNIQUE constraint so
 // INSERT ... ON CONFLICT DO NOTHING is a no-op for duplicates.
 func (s *GrantStore) EnsureSchema(ctx context.Context) error {
+	if query.IsPostgres(s.db) {
+		if err := query.RefuseCaseKeptTables(ctx, s.db, s.table, s.revokedTable()); err != nil {
+			return fmt.Errorf("access: %w", err)
+		}
+	}
 	stmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (role TEXT NOT NULL, permission TEXT NOT NULL, UNIQUE(role, permission))",
-		query.QuoteIdent(s.table),
+		query.QuoteFolded(s.table),
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
@@ -160,7 +165,7 @@ func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	// (WithGrantTable) so a custom name gets a matching tombstone table.
 	revStmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (role TEXT NOT NULL, permission TEXT NOT NULL, UNIQUE(role, permission))",
-		query.QuoteIdent(s.revokedTable()),
+		query.QuoteFolded(s.revokedTable()),
 	)
 	if _, err := s.db.ExecContext(ctx, revStmt); err != nil {
 		return err
@@ -216,7 +221,7 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	s.fanoutMu.Lock()
 	s.baseline = snap
 	s.fanoutMu.Unlock()
-	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteIdent(s.table))
+	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteFolded(s.table))
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return fmt.Errorf("access: load grants: %w", err)
@@ -304,7 +309,7 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	for _, permission := range prepared {
 		q := fmt.Sprintf(
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-			query.QuoteIdent(s.table),
+			query.QuoteFolded(s.table),
 		)
 		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
 			return fmt.Errorf("access: persist grant %q→%q: %w", role, permission, err)
@@ -316,7 +321,7 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	for _, permission := range prepared {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
-			query.QuoteIdent(s.revokedTable()),
+			query.QuoteFolded(s.revokedTable()),
 		)
 		if _, err := s.db.ExecContext(ctx, q, role, string(permission)); err != nil {
 			return fmt.Errorf("access: clear revoke tombstone %q→%q: %w", role, permission, err)
@@ -370,7 +375,7 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	for _, p := range prepared {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
-			query.QuoteIdent(s.table),
+			query.QuoteFolded(s.table),
 		)
 		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
 			return fmt.Errorf("access: persist revoke %q→%q: %w", role, p, err)
@@ -384,7 +389,7 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	for _, p := range prepared {
 		q := fmt.Sprintf(
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-			query.QuoteIdent(s.revokedTable()),
+			query.QuoteFolded(s.revokedTable()),
 		)
 		if _, err := s.db.ExecContext(ctx, q, role, string(p)); err != nil {
 			return fmt.Errorf("access: persist revoke tombstone %q→%q: %w", role, p, err)
@@ -678,7 +683,7 @@ func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 
 // dbPermsForRole reads one role's persisted permissions.
 func (s *GrantStore) dbPermsForRole(ctx context.Context, role string) ([]Permission, error) {
-	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteIdent(s.table))
+	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteFolded(s.table))
 	rows, err := s.db.QueryContext(ctx, q, role)
 	if err != nil {
 		return nil, fmt.Errorf("access: reload role %q: %w", role, err)
@@ -700,7 +705,7 @@ func (s *GrantStore) dbPermsForRole(ctx context.Context, role string) ([]Permiss
 
 // allDBPerms reads every persisted grant grouped by role.
 func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, error) {
-	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteIdent(s.table))
+	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteFolded(s.table))
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("access: reload all: %w", err)
@@ -756,7 +761,7 @@ func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission
 // revokedTable is the revocation-tombstone table name, derived from the
 // configured grants table. The grants table is validated at construction
 // (query.MustIdent) and the "_revoked" suffix is all safe-identifier
-// characters, so the result is safe to pass to query.QuoteIdent.
+// characters, so the result is safe to pass to query.QuoteFolded.
 func (s *GrantStore) revokedTable() string {
 	return s.table + "_revoked"
 }
@@ -764,7 +769,7 @@ func (s *GrantStore) revokedTable() string {
 // tombstonesForRole reads one role's revocation tombstones. Mirrors
 // dbPermsForRole against the <table>_revoked table.
 func (s *GrantStore) tombstonesForRole(ctx context.Context, role string) ([]Permission, error) {
-	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteIdent(s.revokedTable()))
+	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteFolded(s.revokedTable()))
 	rows, err := s.db.QueryContext(ctx, q, role)
 	if err != nil {
 		return nil, fmt.Errorf("access: reload tombstones %q: %w", role, err)
@@ -787,7 +792,7 @@ func (s *GrantStore) tombstonesForRole(ctx context.Context, role string) ([]Perm
 // allTombstones reads every revocation tombstone grouped by role. Mirrors
 // allDBPerms against the <table>_revoked table.
 func (s *GrantStore) allTombstones(ctx context.Context) (map[string][]Permission, error) {
-	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteIdent(s.revokedTable()))
+	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteFolded(s.revokedTable()))
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("access: load tombstones: %w", err)

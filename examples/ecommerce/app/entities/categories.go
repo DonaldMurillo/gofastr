@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=12e2ea0b05371660
+//gofastr:generated generator=app kind=scaffold version=dev sum=8e23bf77440134fa
 
 package entities
 
@@ -35,8 +35,8 @@ type CategoriesInput struct {
 
 // CategoriesPatch is the update payload for CategoriesRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type CategoriesPatch struct {
 	Name        *string `json:"name,omitempty"`
 	Slug        *string `json:"slug,omitempty"`

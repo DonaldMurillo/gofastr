@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -17,7 +18,7 @@ func TestRouteManifestOmitsLayoutFieldsWhenEmpty(t *testing.T) {
 	a := app.NewApp("M")
 	a.RegisterScreen(app.NewScreen("/", &plainSiteComp{marker: "H"}).WithTitle("Home"), nil)
 	h := New(a)
-	s := h.buildRouteScriptUncached()
+	s := h.buildRouteScriptUncached(context.Background())
 	for _, field := range []string{"layouts", "deferred", "loading", "loadingAfter", "loadingMin", "docScripts", "preload"} {
 		if strings.Contains(s, `"`+field+`"`) {
 			t.Errorf("plain route's manifest carries %q: %s", field, s)

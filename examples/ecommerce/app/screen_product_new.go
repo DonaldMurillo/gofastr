@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=e79fd04db6d1f190
+//gofastr:generated generator=app kind=scaffold version=dev sum=51d3d02117e74177
 
 package main
 
@@ -47,7 +47,11 @@ func (s *ProductNewScreen) RenderCtx(ctx context.Context) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "slug"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "sku", "SKU"), For: "field-sku", Required: false, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "sku"})
-		}}), ui.TextArea(ui.TextAreaConfig{Name: "description", Label: i18nui.FieldLabel(ctx, nil, "products", "description", "Description"), ID: "field-description", Required: false}), ui.NumberField(ui.NumberFieldConfig{Name: "price", Label: i18nui.FieldLabel(ctx, nil, "products", "price", "Price"), ID: "field-price", Required: true}), ui.NumberField(ui.NumberFieldConfig{Name: "stock", Label: i18nui.FieldLabel(ctx, nil, "products", "stock", "Stock"), ID: "field-stock", Required: true}), ui.Select(ui.SelectConfig{Name: "status", Label: i18nui.FieldLabel(ctx, nil, "products", "status", "Status"), ID: "field-status", Placeholder: i18nui.EntitySelect.Text(ctx), Options: []ui.SelectOption{{Value: "draft", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "draft")}, {Value: "active", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "active")}, {Value: "archived", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "archived")}}, Required: false}), ui.Checkbox(ui.ToggleConfig{Name: "featured", Label: i18nui.FieldLabel(ctx, nil, "products", "featured", "Featured"), ID: "field-featured", Required: false}))),
+		}}), ui.TextArea(ui.TextAreaConfig{Name: "description", Label: i18nui.FieldLabel(ctx, nil, "products", "description", "Description"), ID: "field-description", Required: false}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "price", "Price"), For: "field-price", Required: true, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "price", Step: "0.0001"})
+		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "stock", "Stock"), For: "field-stock", Required: true, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "stock", Step: "1"})
+		}}), ui.Select(ui.SelectConfig{Name: "status", Label: i18nui.FieldLabel(ctx, nil, "products", "status", "Status"), ID: "field-status", Placeholder: i18nui.EntitySelect.Text(ctx), Options: []ui.SelectOption{{Value: "draft", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "draft")}, {Value: "active", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "active")}, {Value: "archived", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "archived")}}, Required: false}), render.Join(html.Input(html.InputConfig{Type: "hidden", Name: "featured", Value: "false"}), ui.Checkbox(ui.ToggleConfig{Name: "featured", Label: i18nui.FieldLabel(ctx, nil, "products", "featured", "Featured"), ID: "field-featured", Value: "true", Checked: false})))),
 	)
 }
 

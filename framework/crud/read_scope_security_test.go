@@ -441,7 +441,8 @@ func TestReadScope_TypedQueryScopes(t *testing.T) {
 
 // TestReadScope_UpsertFallbackCarriesScope pins the read half of an
 // upsert: a DO NOTHING conflict on a filtered row must not read that row
-// back to an anonymous caller.
+// back to an anonymous caller. It answers the id only, as every other
+// write does (scopedReadBack); it used to fail with no rows.
 func TestReadScope_UpsertFallbackCarriesScope(t *testing.T) {
 	ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, status TEXT, body TEXT);`
 	cfg := makeEntityConfig("notes", "notes", "", []schema.Field{
@@ -462,8 +463,8 @@ func TestReadScope_UpsertFallbackCarriesScope(t *testing.T) {
 
 	// Body carries only the PK, so the conflict takes the DO NOTHING path
 	// and the row comes back through the fallback SELECT.
-	if _, err := ch.UpsertOne(context.Background(), map[string]any{"id": "n2"}); err == nil {
-		t.Errorf("SECURITY: [read-scope] anonymous upsert read back the filtered row n2, want an error")
+	if row, err := ch.UpsertOne(context.Background(), map[string]any{"id": "n2"}); err != nil || len(row) != 1 || row["id"] != "n2" {
+		t.Errorf("SECURITY: [read-scope] anonymous upsert of the filtered row n2 = (%v, %v), want only its id", row, err)
 	}
 	row, err := ch.UpsertOne(signedIn("u1"), map[string]any{"id": "n2"})
 	if err != nil || row["id"] != "n2" {

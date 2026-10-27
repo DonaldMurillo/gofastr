@@ -380,7 +380,9 @@ func requestFingerprint(r *http.Request, body []byte, principal string) string {
 	}
 	writeField(principal)
 	writeField(r.Method)
-	writeField(r.URL.Path)
+	// The escaped path, not the decoded one: /items/a%2Fb and /items/a/b
+	// decode alike but route apart, so they are different requests.
+	writeField(r.URL.EscapedPath())
 	writeField(r.URL.RawQuery)
 	writeField(r.Header.Get("Content-Type"))
 	// The body is last and already bytes: prefix it without the

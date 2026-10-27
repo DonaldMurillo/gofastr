@@ -219,6 +219,25 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// A requestBody whose required or content has the wrong type is refused
+// like every other malformed value, not read as absent: a string "true"
+// made the body optional, a string content made the operation bodyless.
+func TestOpenAPICLI_MistypedBodyFails(t *testing.T) {
+	for _, body := range []string{
+		`{"required":"true","content":{"application/json":{"schema":{"type":"object"}}}}`,
+		`{"required":true,"content":"application/json"}`,
+	} {
+		doc := `{"openapi":"3.0.3","paths":{"/a":{"post":{"operationId":"mk","requestBody":` + body + `}}}}`
+		var m map[string]any
+		if err := json.Unmarshal([]byte(doc), &m); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c"); err == nil || !strings.Contains(err.Error(), "requestBody") {
+			t.Errorf("requestBody %s: got %v, want a requestBody error", body, err)
+		}
+	}
+}
+
 func TestOpenAPICLI_ExternalRefFails(t *testing.T) {
 	doc := `{"openapi":"3.0.3","paths":{"/a":{"post":{"operationId":"mk",
 	  "requestBody":{"content":{"application/json":{"schema":{"$ref":"other.json#/X"}}}}}}}}`

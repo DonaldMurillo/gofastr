@@ -312,7 +312,7 @@ func TestSingleCursorFieldDoesNotPullInPK(t *testing.T) {
 	}()
 	entity.Define("nq_single_cursor_ok", entity.EntityConfig{Fields: []schema.Field{
 		{Name: "id", Type: schema.String, NoQuery: true},
-		{Name: "seq", Type: schema.Int},
+		{Name: "seq", Type: schema.Int, Required: true},
 	}, Pagination: &entity.PaginationConfig{CursorField: "seq"},
 	})
 }

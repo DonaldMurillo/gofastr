@@ -107,3 +107,42 @@ func TestBuildExtraDirsNeverClobber(t *testing.T) {
 		t.Errorf("extra dir clobbered a user static file: %q", got)
 	}
 }
+
+// TestExtraDirsRebuildRefreshes: Watch rebuilds into the same OutDir on
+// every change, so the previous build's copy of an extra file is not a
+// file "the export already owns" and must not keep the new one out.
+func TestExtraDirsRebuildRefreshes(t *testing.T) {
+	a := coreapp.NewApp("Rebuild")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a)
+	out := t.TempDir()
+	for _, v := range []string{"v1", "v2"} {
+		b := &Builder{Host: host, OutDir: out, ExtraDirs: map[string]fs.FS{
+			"/dl": fstest.MapFS{"go.zip": {Data: []byte(v)}},
+		}}
+		if _, err := b.Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if got := readOut(t, out, "dl/go.zip"); got != v {
+			t.Errorf("build %s left dl/go.zip = %q", v, got)
+		}
+	}
+}
+
+// TestExtraDirsKeepRenderedPage: a page the build rendered wins over an
+// extra file at the same path.
+func TestExtraDirsKeepRenderedPage(t *testing.T) {
+	a := coreapp.NewApp("PageWins")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/dl", &homeScreen{}, nil)
+	out := t.TempDir()
+	b := &Builder{Host: uihost.New(a), OutDir: out, ExtraDirs: map[string]fs.FS{
+		"/dl": fstest.MapFS{"index.html": {Data: []byte("extra-owned")}},
+	}}
+	if _, err := b.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := readOut(t, out, "dl/index.html"); got == "extra-owned" {
+		t.Error("an extra dir file replaced the rendered /dl page")
+	}
+}

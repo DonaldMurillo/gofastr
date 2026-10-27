@@ -621,9 +621,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 		m.jwtAuth.SetUserStore(m.userStore)
 	}
 
-	// Bind the erasure plane to the stores the app actually runs with
-	// (after plugins, since plugin Init can swap them in).
+	// Bind the erasure and export planes to the stores the app actually
+	// runs with (after plugins, since plugin Init can swap them in).
 	resolveEraseTables(m)
+	resolveExportTables(m)
 
 	if app != nil {
 		m.RegisterRoutes(app.Router())

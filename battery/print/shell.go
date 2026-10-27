@@ -92,6 +92,7 @@ type shellInput struct {
 	DocCSS       string      // optional Document.Stylesheet
 	AppCSSHref   string      // optional design-token stylesheet href; "" = none
 	AutoPrintSrc string      // optional external autoprint script src; "" = none
+	CSP          string      // in-document policy; "" = printCSP (the route header's)
 }
 
 // componentCSS collects the scoped stylesheets for every registered styled
@@ -150,12 +151,15 @@ func renderShell(in shellInput) string {
 	b.WriteString(`  <meta charset="utf-8">` + "\n")
 	b.WriteString(`  <meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
 	// The CSP is emitted IN the document, not only as a response header.
-	// The PDF path base64s this HTML into a `data:text/html` URL and
-	// navigates headless Chrome to it, a headerless document, so the
-	// route's Content-Security-Policy response header has no effect
-	// there at all. An in-document meta survives the transition, which
-	// is the only place it matters for PDFs.
-	fmt.Fprintf(&b, "  <meta http-equiv=\"Content-Security-Policy\" content=\"%s\">\n", render.Escape(printCSP))
+	// The PDF path sets this HTML as the content of about:blank in
+	// headless Chrome, a headerless document, so the route's
+	// Content-Security-Policy response header has no effect there at
+	// all. An in-document meta is the only policy a PDF render gets.
+	csp := in.CSP
+	if csp == "" {
+		csp = printCSP
+	}
+	fmt.Fprintf(&b, "  <meta http-equiv=\"Content-Security-Policy\" content=\"%s\">\n", render.Escape(csp))
 	fmt.Fprintf(&b, "  <title>%s</title>\n", render.Escape(in.Title))
 	if appCSSHref != "" {
 		fmt.Fprintf(&b, "  <link rel=\"stylesheet\" href=\"%s\">\n", render.Escape(appCSSHref))

@@ -3,8 +3,11 @@ package world
 import (
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // The checks in this file are the shared half of a parity contract: the
@@ -14,6 +17,12 @@ import (
 // .kiln.session.jsonl installed world state the API refuses, and the
 // running server booted a world `kiln freeze` then rejects. Keeping the
 // rules here, below both callers, is what stops them drifting again.
+//
+// One deliberate gap: replay keeps the shared action-kind set and the
+// released page-path rule, because released builds journaled routes and
+// hooks with kinds their surface cannot run, and relative page paths,
+// and a session holding one must still load. The live tool refuses new
+// ones (ValidateHook, ValidateRouteAction, ValidatePagePath).
 
 // ValidatePageTree rejects styling and event-handler props anywhere in a
 // page's element tree.
@@ -149,22 +158,129 @@ func ValidateRoute(r *Route) error {
 	if !strings.HasPrefix(r.Path, "/") {
 		return fmt.Errorf("route %q %q: path must start with /", r.Method, r.Path)
 	}
+	if err := routePatternErr(r.Method + " " + r.Path); err != nil {
+		return fmt.Errorf("route %q %q: %v", r.Method, r.Path, err)
+	}
 	return nil
+}
+
+// routePatternErr parses pattern with net/http's mux, the parser the
+// rebuild registers routes through. It panics on a bad pattern
+// ("/x/{oops"), so the panic is turned into the refusal here.
+func routePatternErr(pattern string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	http.NewServeMux().HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
+	return nil
+}
+
+// OverlappingPattern returns the first of existing that pattern cannot
+// register beside on net/http's mux: an exact duplicate, or a pattern
+// that matches some of the same paths with neither more specific
+// ("GET /x/{id}" and "GET /{name}/y"). Each is valid alone, so
+// ValidateRoute passes both, and the rebuild then panics registering the
+// second. "" means pattern registers beside every one of them. The mux's
+// own panic text names source files, so the caller words the refusal
+// from the returned pattern instead.
+func OverlappingPattern(existing []string, pattern string) string {
+	for _, p := range existing {
+		if patternsConflict(p, pattern) {
+			return p
+		}
+	}
+	return ""
+}
+
+func patternsConflict(a, b string) (conflict bool) {
+	h := func(http.ResponseWriter, *http.Request) {}
+	mux := http.NewServeMux()
+	if routePatternErr(a) != nil {
+		return false
+	}
+	mux.HandleFunc(a, h)
+	defer func() {
+		if recover() != nil {
+			conflict = true
+		}
+	}()
+	mux.HandleFunc(b, h)
+	return false
+}
+
+// HookEvents is the closed set of hook `when` values, the ones
+// kiln/render's mapHookType binds to a framework hook type. Anything else
+// fails the rebuild, so it is refused before the hook enters the world.
+var HookEvents = []string{
+	"before_create", "after_create", "before_update", "after_update",
+	"before_delete", "after_delete", "before_list", "after_list",
+}
+
+// ValidateHook checks a hook the way the render step will need it: an
+// id, an entity to attach to, a known event, and an action kind a hook
+// can run. The live tool and replay both call it, so a hook either side
+// accepts is one the rebuild can register.
+func ValidateHook(h *Hook) error {
+	if h == nil || h.ID == "" {
+		return fmt.Errorf("hook: missing id")
+	}
+	if h.Entity == "" {
+		return fmt.Errorf("hook %q: missing entity", h.ID)
+	}
+	if !slices.Contains(HookEvents, h.When) {
+		return fmt.Errorf("hook %q: unknown hook event %q (want one of %s)", h.ID, h.When, strings.Join(HookEvents, ", "))
+	}
+	if err := ValidateHookAction(h.Action); err != nil {
+		return fmt.Errorf("hook %q: %w", h.ID, err)
+	}
+	return nil
+}
+
+// ValidatePagePath refuses a page path the screen router cannot serve.
+// A relative path ("about") registers, but no request path matches it, so
+// the tool confirmed a page no browser can reach.
+func ValidatePagePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("page: missing path")
+	}
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("page %q: path must start with /", path)
+	}
+	// The screen router reads ":id" and "{id}" as parameters, and a world
+	// page cannot take any: registering one fails the rebuild.
+	if strings.ContainsAny(path, ":{}") {
+		return fmt.Errorf("page %q: path parameters are not supported; use a static path", path)
+	}
+	return nil
+}
+
+// TableName returns the table the framework registry gives e: its
+// declared Table, else the framework's default for its name (snake_case,
+// so blogPosts lives in blog_posts). It asks framework/entity.Define
+// rather than re-deriving the rule, so the seed INSERT, the CRUD mount
+// path, and the migrated table cannot disagree about where rows live.
+func (e *Entity) TableName() string {
+	if e == nil {
+		return ""
+	}
+	if e.Name == "" {
+		return e.Table
+	}
+	return entity.Define(e.Name, entity.EntityConfig{Table: e.Table}).GetTable()
 }
 
 // EntityMountPath returns the URL an entity's auto-CRUD routes mount at,
 // the same prefix+'/'+table the framework's App.Mount computes. The
 // collision guard has to key on this and not on the entity NAME: Mount
-// compares paths, and an entity whose Table differs from its Name
+// compares paths, and an entity whose table differs from its Name
 // collides at the table's path.
 func EntityMountPath(prefix string, e *Entity) string {
 	if e == nil {
 		return ""
 	}
-	table := e.Table
-	if table == "" {
-		table = e.Name
-	}
+	table := e.TableName()
 	if table == "" {
 		return ""
 	}
@@ -186,14 +302,34 @@ func PageCollidesWithEntity(w *World, path string) string {
 	if w == nil {
 		return ""
 	}
-	prefix := w.App.APIPrefix
-	if prefix == "" {
-		prefix = "api"
-	}
+	prefix := apiPrefix(w)
 	for _, name := range slices.Sorted(maps.Keys(w.Entities)) {
 		if EntityMountPath(prefix, w.Entities[name]) == path {
 			return name
 		}
 	}
 	return ""
+}
+
+// EntityCollidesWithPage is PageCollidesWithEntity's mirror: the page
+// whose path e's CRUD mount would land on, or "" when the mount is free.
+// It is the same App.Mount panic, reached by adding the entity second.
+func EntityCollidesWithPage(w *World, e *Entity) string {
+	if w == nil || e == nil {
+		return ""
+	}
+	mount := EntityMountPath(apiPrefix(w), e)
+	if _, ok := w.Pages[mount]; ok && mount != "" {
+		return mount
+	}
+	return ""
+}
+
+// apiPrefix is the prefix entity CRUD mounts under: the configured one,
+// defaulting to "api" the way NormalizeAPIPrefix does.
+func apiPrefix(w *World) string {
+	if p := strings.Trim(w.App.APIPrefix, "/"); p != "" {
+		return p
+	}
+	return "api"
 }

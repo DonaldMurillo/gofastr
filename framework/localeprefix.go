@@ -43,7 +43,7 @@ func (a *App) installLocalePrefixes() {
 	if a.translator == nil {
 		panic("framework: WithLocalePrefixes requires WithI18n: the locales come from the translator's catalog")
 	}
-	if a.localeResolver != nil {
+	if a.localeResolver.Resolve != nil {
 		panic("framework: WithLocalePrefixes is incompatible with WithLocaleResolver: the URL decides the language, " +
 			"so a stored locale has nothing to choose. Send a reader to their language with a link built by i18n.LocalePath")
 	}

@@ -539,8 +539,8 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	// lock (waiting out the busy timeout), so the read below sees the
 	// latest commit and a racing move answers a conflict. On Postgres it
 	// is a no-op; the conditional UPDATE already serializes there.
-	lock := "UPDATE " + query.QuoteIdent(ch.Entity.GetTable()) + " SET " + query.QuoteIdent(st.Field) + " = " + query.QuoteIdent(st.Field) + " WHERE 1 = 0"
-	if _, err := ch.DB.ExecContext(ctx, lock); err != nil {
+	lock := "UPDATE " + query.QuoteFolded(ch.Entity.GetTable()) + " SET " + query.QuoteFolded(st.Field) + " = " + query.QuoteFolded(st.Field) + " WHERE 1 = 0"
+	if _, err := ch.conn(ctx).ExecContext(ctx, lock); err != nil {
 		return nil, err
 	}
 	cols := ch.visibleFields()

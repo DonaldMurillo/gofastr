@@ -134,8 +134,13 @@ names.
 ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")
 if err != nil { return err }
 _, err = profiles.CreateOne(crud.WithUploadedKeys(ctx, ff.StorageRef),
-    map[string]any{"avatar": ff.URL})
+    map[string]any{"avatar": ff.StorageRef})
 ```
+
+Store `ff.StorageRef`, the literal key, in the column. `ff.URL` is the
+key escaped for a link, segment by segment, so a name holding `#` or `%`
+differs between the two, and a column holding the escaped spelling fails
+the provenance check with `key_not_uploaded`.
 
 Pass `WithUploadedKeys` only keys your own code just saved. A key taken from
 request data is what the check exists to refuse: without it, a user could
@@ -538,7 +543,11 @@ Built-in implementations:
   default APFS), a save under a key that folds onto an existing object
   stored under a byte-different spelling (`TenantA/x` vs `tenanta/x`,
   NFC vs NFD) is refused with the same key error instead of silently
-  overwriting it. Errors never carry the absolute storage path.
+  overwriting it, and a delete under such a key is refused rather than
+  removing the other spelling's object. A key that is not its own clean
+  form (`a//b`, `a/./b`, `./a`, a trailing `/`), a leading `/` and `.`
+  are refused with `ErrInvalidKey` on every operation, never cleaned to
+  the object they alias. Errors never carry the absolute storage path.
   It only *stores*; it does not serve. Wire downloads
   with `upload.ServeHandler`, which sniffs the content type, blocks
   traversal (delegated to the backend's key sanitization), and

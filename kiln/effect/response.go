@@ -69,7 +69,9 @@ func resolveJSON(a world.Action, s Scope) (Response, error) {
 			resp.Status = n
 		case int64:
 			resp.Status = int(n)
-		case float64:
+		case float64, json.Number:
+			// json.Number: the journal keeps an integer past 2^53 exact,
+			// and it is refused as the float64 it used to arrive as was.
 			i, ok := toInt(n)
 			if !ok {
 				return Response{}, fmt.Errorf("respond_json status: %v is not an integer", n)
@@ -129,5 +131,7 @@ func toInt(v any) (int, bool) {
 		}
 		return int(n), true
 	}
+	// A json.Number (the journal keeps an integer past 2^53 as one) is
+	// past every int range this accepts, so it falls through to false.
 	return 0, false
 }

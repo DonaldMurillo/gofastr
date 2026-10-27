@@ -9,7 +9,7 @@ import (
 )
 
 // UpdateRoles replaces the roles for an existing user. It writes the JSON
-// roles column via a parameterized UPDATE with query.QuoteIdent on the
+// roles column via a parameterized UPDATE with query.QuoteFolded on the
 // column name. Returns ErrUserNotFound when no row matches.
 //
 // Unlike CreateUser (which uses formatRoles and defaults empty roles to
@@ -30,9 +30,9 @@ func (s *EntityUserStore) UpdateRoles(ctx context.Context, userID string, roles 
 	rolesJSON := string(b)
 	q := fmt.Sprintf(
 		"UPDATE %s SET %s = $1 WHERE %s = $2",
-		query.QuoteIdent(s.table),
-		query.QuoteIdent(s.fieldMap.Roles),
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.Roles),
+		query.QuoteFolded(s.fieldMap.ID),
 	)
 	res, err := s.db.ExecContext(ctx, q, rolesJSON, userID)
 	if err != nil {

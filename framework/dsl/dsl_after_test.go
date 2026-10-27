@@ -38,7 +38,8 @@ func postsRegistry(t *testing.T, mut func(*entity.EntityConfig)) dslRegistry {
 		Table: "posts",
 		Fields: []schema.Field{
 			{Name: "status", Type: schema.String},
-			{Name: "seq", Type: schema.Int},
+			// Required: a keyset column must never hold NULL (Define).
+			{Name: "seq", Type: schema.Int, Required: true},
 		},
 	}
 	if mut != nil {
@@ -85,9 +86,41 @@ func TestBuildDSLAfterUsesCursorField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDSLQuery: %v", err)
 	}
-	sql, _ := qb.Build()
+	sql, args := qb.Build()
 	if !strings.Contains(sql, "seq >") {
 		t.Fatalf("after() ignored CursorField; sql=%s", sql)
+	}
+	// The bare keyset value binds as the column's type.
+	if len(args) != 1 || args[0] != int64(42) {
+		t.Fatalf("after(\"42\") on an Int cursor bound %#v, want int64(42)", args)
+	}
+	// And a value not of that type is refused, not bound as text.
+	if _, err := BuildDSLQuery(reg, `posts.after("abc")`); err == nil || !strings.Contains(err.Error(), "not a valid int") {
+		t.Fatalf("after(\"abc\") on an Int cursor: err = %v, want a not-a-valid-int refusal", err)
+	}
+}
+
+// A where() value that is not of its column's type is an error naming the
+// field, the same refusal ?field= answers, not a silent text bind that
+// Postgres refuses at query time and SQLite compares as text.
+func TestBuildDSLValueWrongTypeErrs(t *testing.T) {
+	reg := postsRegistry(t, nil)
+	for _, q := range []string{
+		`posts.where(seq="abc")`,
+		`posts.where(seq>"1.5")`,
+		`posts.where(seq in [1, x])`,
+		`posts.where(seq contains "4")`,
+	} {
+		if _, err := BuildDSLQuery(reg, q); err == nil || !strings.Contains(err.Error(), `"seq"`) {
+			t.Errorf("%s: err = %v, want a refusal naming \"seq\"", q, err)
+		}
+	}
+	qb, err := BuildDSLQuery(reg, `posts.where(seq>="7")`)
+	if err != nil {
+		t.Fatalf("well-typed where: %v", err)
+	}
+	if _, args := qb.Build(); len(args) != 1 || args[0] != int64(7) {
+		t.Fatalf("seq>=7 bound %#v, want int64(7)", args)
 	}
 }
 

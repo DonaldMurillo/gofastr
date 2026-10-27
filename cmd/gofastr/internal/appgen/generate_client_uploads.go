@@ -123,7 +123,7 @@ func (c *Client) doSingleWithFiles(ctx context.Context, method, path string, bod
 	if err := c.send(ctx, method, path, reqBody, contentType, &envelope); err != nil {
 		return err
 	}
-	return json.Unmarshal(envelope["data"], out)
+	return decodeExact(envelope["data"], out)
 }
 
 // encodeMultipart writes fields and then files, each in key order, into

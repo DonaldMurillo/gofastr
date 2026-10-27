@@ -98,11 +98,23 @@ func (a *App) A2A() *a2a.Server { return a.a2a }
 // from the MCP tool registry, which those declarations fill). Nil when
 // WithA2A was never called. Feed the result straight into
 // uihost.AgentCardConfig.Skills.
+//
+// The card is public, so its entity skills come from what an anonymous
+// tools/list would show: none when the server-wide gate (WithMCPGate)
+// refuses an anonymous caller, and only the operations whose tool gates
+// admit one. A skill's description names the entity and its field names,
+// the disclosure the gate withholds on /mcp. Hand-written skills stay:
+// the host chose to publish them. The exchange itself still serves every
+// entity skill, each call gated by CallToolFor.
 func (a *App) A2ASkills() []uihost.AgentSkill {
 	if a.a2aCfg == nil {
 		return nil
 	}
-	skills := a.a2aSkills()
+	anonymous, err := a.MCP.ListToolsFor(context.Background())
+	if err != nil {
+		anonymous = nil
+	}
+	skills := a.a2aSkillsFrom(anonymous)
 	out := make([]uihost.AgentSkill, 0, len(skills))
 	for _, sk := range skills {
 		out = append(out, uihost.AgentSkill{
@@ -198,9 +210,14 @@ type entitySkillSet struct {
 // entity tool from a custom tool whose name happens to end in "_list",
 // so the entity half must also exist in the registry.
 func (a *App) entitySkillSets() []entitySkillSet {
+	return a.entitySkillSetsFrom(a.MCP.ListTools())
+}
+
+// entitySkillSetsFrom groups the entity tools found in tools.
+func (a *App) entitySkillSetsFrom(tools []mcp.Tool) []entitySkillSet {
 	entities := a.Registry.All()
 	byKey := map[string]*entitySkillSet{}
-	for _, tool := range a.MCP.ListTools() {
+	for _, tool := range tools {
 		var key, ns, entity, action string
 		if parts := strings.Split(tool.Name, "."); len(parts) == 3 {
 			if !slices.Contains(entityActions, parts[2]) {
@@ -247,9 +264,14 @@ func (a *App) entitySkillSets() []entitySkillSet {
 // converts it for the card, so the exchange and the card advertise one
 // list from one source.
 func (a *App) a2aSkills() []a2a.Skill {
+	return a.a2aSkillsFrom(a.MCP.ListTools())
+}
+
+// a2aSkillsFrom builds the skill list with entity skills drawn from tools.
+func (a *App) a2aSkillsFrom(tools []mcp.Tool) []a2a.Skill {
 	skills := slices.Clone(a.a2aCfg.Skills)
 	if !a.a2aCfg.DisableEntitySkills {
-		for _, set := range a.entitySkillSets() {
+		for _, set := range a.entitySkillSetsFrom(tools) {
 			skills = append(skills, a.newEntitySkill(set))
 		}
 	}
@@ -326,9 +348,11 @@ func capitalize(s string) string {
 // tool call re-dispatches with the ORIGINAL request on the context
 // (mcp.WithRequest): the entity tool copies the caller's credential
 // headers onto its in-process request through the app router, so owner
-// scoping applies to A2A exactly as to MCP and REST. CallTool also runs
-// the server's call gate, so a tool the framework hides from agents (a
-// disabled module's) stays hidden here too.
+// scoping applies to A2A exactly as to MCP and REST. CallToolFor runs
+// the server-wide gate (WithMCPGate) against the A2A caller, so a host
+// that closes /mcp closes these skills too, then the call gate, so a
+// tool the framework hides from agents (a disabled module's) stays
+// hidden here as well.
 func (a *App) entitySkillHandler(set entitySkillSet) a2a.Handler {
 	available := func() string {
 		var acts []string
@@ -351,7 +375,7 @@ func (a *App) entitySkillHandler(set entitySkillSet) a2a.Handler {
 		if err := t.Working(); err != nil {
 			return err
 		}
-		result, err := a.MCP.CallTool(mcp.WithRequest(ctx, t.Request()), tool.Name, args)
+		result, err := a.MCP.CallToolFor(mcp.WithRequest(ctx, t.Request()), tool.Name, args)
 		if err != nil {
 			var ae *a2a.Error
 			if errors.As(err, &ae) {

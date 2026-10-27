@@ -2,6 +2,7 @@ package event_test
 
 import (
 	"context"
+	"encoding/json"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -366,5 +367,77 @@ func TestDerivedEventGatedExactlyOnce(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if gotA, gotB := yA.Load(), yB.Load(); gotA != 1 || gotB != 1 {
 		t.Errorf("derived y: origin A=%d, remote B=%d; want 1 each (exactly-once with IsRemote gating)", gotA, gotB)
+	}
+}
+
+// panicMarshaler's MarshalJSON panics, which json.Marshal re-panics.
+type panicMarshaler struct{}
+
+func (panicMarshaler) MarshalJSON() ([]byte, error) { panic("marshal blew up") }
+
+// A payload whose marshaler panics skips the fanout and still reaches
+// local subscribers, rather than crashing the async goroutine.
+func TestBridgeMarshalPanicIsContained(t *testing.T) {
+	bus := event.NewEventBus()
+	stop, _ := event.AttachFanout(bus, fanout.NewInProcess())
+	defer stop()
+	var local int64
+	bus.On("bad", func(context.Context, event.Event) error {
+		atomic.AddInt64(&local, 1)
+		return nil
+	})
+	bus.EmitAsync(context.Background(), event.Event{Type: "bad", Data: panicMarshaler{}})
+	waitCounter(t, &local, 1, "local delivery after a marshaler panic")
+}
+
+// One async subscriber blocking does not hold back the next.
+func TestEmitAsyncSlowHandlerIsolated(t *testing.T) {
+	bus := event.NewEventBus()
+	release := make(chan struct{})
+	defer close(release)
+	bus.On("ping", func(context.Context, event.Event) error { <-release; return nil })
+	var second int64
+	bus.On("ping", func(context.Context, event.Event) error {
+		atomic.AddInt64(&second, 1)
+		return nil
+	})
+	bus.EmitAsync(context.Background(), event.Event{Type: "ping"})
+	waitCounter(t, &second, 1, "second subscriber behind a blocked first")
+}
+
+// TestBridgeKeepsBigIntegers: a remote handler sees an integer past 2^53
+// in Event.Data with the digits the emitter sent, not a rounded float64.
+func TestBridgeKeepsBigIntegers(t *testing.T) {
+	f := fanout.NewInProcess()
+	busA := event.NewEventBus()
+	busB := event.NewEventBus()
+	stopA, _ := event.AttachFanout(busA, f)
+	defer stopA()
+	stopB, _ := event.AttachFanout(busB, f)
+	defer stopB()
+
+	got := make(chan event.Event, 1)
+	busB.On("ping", func(_ context.Context, e event.Event) error {
+		got <- e
+		return nil
+	})
+	_ = busA.Emit(context.Background(), event.Event{
+		Type: "ping",
+		Data: map[string]any{"id": int64(9007199254740993), "n": 3},
+	})
+	select {
+	case e := <-got:
+		b, err := json.Marshal(e.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `{"id":9007199254740993,"n":3}`; string(b) != want {
+			t.Fatalf("remote Data = %s, want %s", b, want)
+		}
+		if n, ok := e.Data.(map[string]any)["n"].(float64); !ok || n != 3 {
+			t.Fatalf("small number = %#v, want float64(3)", e.Data.(map[string]any)["n"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for remote delivery")
 	}
 }

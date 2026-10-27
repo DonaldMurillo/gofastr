@@ -8,8 +8,10 @@ import (
 	"iter"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
+
+// jsonNumberLiteral is the JSON number grammar, the only json.Number text
+// SQLDefault writes unquoted.
+var jsonNumberLiteral = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$`)
 
 // Dialect identifies the SQL dialect the migrator emits for. It's an alias
 // for coremig.Dialect so framework code and the lower-level migration system
@@ -323,14 +329,22 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		// the pool. The deferred rollback runs before WithAdvisoryLock closes
 		// the conn, and the panic still propagates to the caller.
 		defer func() { _ = tx.Rollback() }()
+		var deferred []SchemaChange
 		for _, ent := range ordered {
 			var lk *liveKey
 			if len(liveByTable[ent.GetTable()]) > 0 {
 				k := keysByTable[ent.GetTable()]
 				lk = &k
 			}
-			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()], lk); err != nil {
+			if err := migrateEntity(ctx, tx, ent, all, dialect, liveByTable[ent.GetTable()], lk, &deferred); err != nil {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
+			}
+		}
+		// The foreign keys a key change detached whose child gained their
+		// columns only in its own convergence above.
+		for _, c := range deferred {
+			if _, err := tx.ExecContext(ctx, c.SQL); err != nil {
+				return fmt.Errorf("migrate: %s: %w", c.Summary, err)
 			}
 		}
 		if err := migratePivotTables(ctx, tx, ordered, all, dialect); err != nil {
@@ -365,10 +379,8 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 			// bool). Adding a redundant Dialect field to View would be
 			// ambiguous (Materialized already says "PG-only"), so View
 			// stays dialect-untagged.
-			for _, v := range topoSortViews(plan.Views) {
-				if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
-					return fmt.Errorf("migrate view %s: %w", v.Name, err)
-				}
+			if err := applyViews(ctx, tx, plan.Views, dialect); err != nil {
+				return err
 			}
 			// Routines after views: a trigger/function may reference a
 			// view. CREATE OR REPLACE keeps re-runs idempotent. Every
@@ -444,10 +456,8 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 			// No routines in the plan, but views still need to run: keep
 			// the existing view-apply loop here so a plan with views but
 			// no routines doesn't silently skip its views.
-			for _, v := range topoSortViews(plan.Views) {
-				if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
-					return fmt.Errorf("migrate view %s: %w", v.Name, err)
-				}
+			if err := applyViews(ctx, tx, plan.Views, dialect); err != nil {
+				return err
 			}
 		}
 
@@ -518,13 +528,13 @@ func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil, nil)
 }
 
 // MigrateEntityDialect is the explicit-dialect variant used by callers that
 // already know the target (e.g. CLI codegen, tests).
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
-	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil)
+	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil, nil)
 }
 
 // migrateEntity is the shared implementation. When `all` is non-nil it is
@@ -536,8 +546,10 @@ func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error
 // table pre-exists and is converged additively via addMissingColumns. Column
 // adds run BEFORE index DDL so a new field and its index land in one boot.
 // lk is the existing table's pre-read primary key (nil for a new table, or
-// a single-entity caller); convergeKey checks it after the column adds.
-func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey) error {
+// a single-entity caller); convergeKey checks it after the column adds, and
+// appends to deferred the foreign keys its key change re-adds only once
+// every table has converged.
+func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey, deferred *[]SchemaChange) error {
 	// Unmanaged objects (views, FTS virtual tables, external/legacy tables) are
 	// created elsewhere. The migration system emits no DDL for them.
 	if ent.Config.Unmanaged {
@@ -560,7 +572,7 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 			return err
 		}
 		if lk != nil {
-			if err := convergeKey(ctx, exec, ent, all, dialect, *lk); err != nil {
+			if err := convergeKey(ctx, exec, ent, all, dialect, *lk, deferred); err != nil {
 				return err
 			}
 		}
@@ -579,7 +591,7 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 	// entityIndices adds the automatic belongs_to FK indices, the same list
 	// the diff, the snapshot and the SQLite rebuild use.
 	for _, idx := range entityIndices(ent) {
-		if _, err := exec.ExecContext(ctx, indexDDL(safeTable, idx)); err != nil {
+		if _, err := exec.ExecContext(ctx, indexDDL(dialect, safeTable, idx)); err != nil {
 			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
 		}
 	}
@@ -608,7 +620,7 @@ func addMissingColumns(ctx context.Context, exec execQueryer, ent *entity.Entity
 	if err != nil || len(adds) == 0 {
 		return err
 	}
-	liveNow, err := readLiveColumnsQ(ctx, exec, ent.GetTable(), dialect)
+	liveNow, err := readEntityColumnsQ(ctx, exec, ent.GetTable(), dialect)
 	if err != nil {
 		return fmt.Errorf("re-read columns for %s: %w", ent.GetTable(), err)
 	}
@@ -674,21 +686,17 @@ func isRenameChange(sql string) bool {
 // contains a semicolon or a SQL line/block comment marker, which is
 // the minimal sanity check appropriate for an operator-supplied
 // schema declaration loaded at startup.
-func indexDDL(table string, idx entity.Index) string {
+func indexDDL(dialect Dialect, table string, idx entity.Index) string {
 	name := idx.Name
 	if name == "" {
 		if idx.Expression != "" {
 			panic(fmt.Sprintf("migrate: index on %s has Expression but no Name: expression indices require an explicit Name", table))
 		}
-		name = "idx_" + table + "_" + strings.Join(idx.Columns, "_")
+		name = defaultIndexName(table, idx.Columns)
 	}
 	safeName, err := query.SafeIdent(name)
 	if err != nil {
 		panic(fmt.Sprintf("migrate: invalid index name %q: %v", name, err))
-	}
-	unique := ""
-	if idx.Unique {
-		unique = "UNIQUE "
 	}
 	var body string
 	if idx.Expression != "" {
@@ -704,8 +712,7 @@ func indexDDL(table string, idx entity.Index) string {
 		}
 		body = strings.Join(safeCols, ", ")
 	}
-	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)",
-		unique, safeName, table, body)
+	return createIndexSQL(dialect, idx.Unique, safeName, table, body)
 }
 
 // sanitizeIndexExpression rejects index expressions that contain SQL
@@ -733,8 +740,47 @@ func sanitizeIndexExpression(expr string) string {
 // every column of a foreign key that references a composite key:
 // "FOREIGN KEY (order_store, order_no) REFERENCES orders(store, no)".
 // Targets must exist in `all` or the function returns an error.
-func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]string, error) {
-	var out []string
+func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]string, error) {
+	fks, err := declaredForeignKeys(ent, all)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(fks))
+	for i, fk := range fks {
+		out[i] = fk.clause(dialect)
+	}
+	return out, nil
+}
+
+// declaredFK is one foreign key an entity's relations declare: its
+// columns, the table and key columns they reference (paired in order),
+// and the ON DELETE action ("" for none).
+type declaredFK struct {
+	cols     []string
+	target   *entity.Entity
+	refTable string
+	refCols  []string
+	onDelete entity.OnDeleteAction
+}
+
+// clause renders the foreign key as a table constraint. Identifiers are
+// validated but UNQUOTED, same convention as columnDefs. Quoting would
+// preserve case on Postgres while the referenced CREATE TABLE folded its
+// identifiers to lowercase, so a mixed-case target like "MixedAccount"
+// would resolve to a relation that doesn't exist.
+func (fk declaredFK) clause(dialect Dialect) string {
+	c := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+		strings.Join(fk.cols, ", "), referencedTable(dialect, fk.refTable), strings.Join(fk.refCols, ", "))
+	if fk.onDelete != "" {
+		c += " ON DELETE " + string(fk.onDelete)
+	}
+	return c
+}
+
+// declaredForeignKeys returns the foreign keys foreignKeyClauses renders,
+// with every identifier already validated.
+func declaredForeignKeys(ent *entity.Entity, all map[string]*entity.Entity) ([]declaredFK, error) {
+	var out []declaredFK
 	seen := make(map[string]bool)
 	for _, rel := range ent.Config.Relations {
 		fks := rel.ForeignKey
@@ -781,21 +827,18 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target key: %w", rel.Name, err)
 		}
-		// Validated but UNQUOTED, same convention as columnDefs. Quoting would
-		// preserve case on Postgres while the referenced CREATE TABLE folded its
-		// identifiers to lowercase, so a mixed-case target like "MixedAccount"
-		// would resolve to a relation that doesn't exist.
-		fkClause := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-			strings.Join(safeFKs, ", "), safeTargetTable, strings.Join(safeTargetKey, ", "))
-		if rel.OnDelete != "" {
-			switch rel.OnDelete {
-			case entity.OnDeleteCascade, entity.OnDeleteSetNull, entity.OnDeleteRestrict, entity.OnDeleteNoAction:
-				fkClause += " ON DELETE " + string(rel.OnDelete)
-			default:
-				return nil, fmt.Errorf("relation %q: invalid ON DELETE action %q", rel.Name, rel.OnDelete)
-			}
+		switch rel.OnDelete {
+		case "", entity.OnDeleteCascade, entity.OnDeleteSetNull, entity.OnDeleteRestrict, entity.OnDeleteNoAction:
+		default:
+			return nil, fmt.Errorf("relation %q: invalid ON DELETE action %q", rel.Name, rel.OnDelete)
 		}
-		out = append(out, fkClause)
+		out = append(out, declaredFK{
+			cols:     safeFKs,
+			target:   target,
+			refTable: safeTargetTable,
+			refCols:  safeTargetKey,
+			onDelete: rel.OnDelete,
+		})
 	}
 	return out, nil
 }
@@ -995,7 +1038,7 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 		for _, idx := range v.Config.Indices {
 			name := idx.Name
 			if name == "" && len(idx.Columns) > 0 {
-				name = "idx_" + v.Config.Table + "_" + strings.Join(idx.Columns, "_")
+				name = defaultIndexName(v.Config.Table, idx.Columns)
 			}
 			if name != "" && seenIdx[name] {
 				continue
@@ -1228,13 +1271,44 @@ func ColumnDefaultClause(f schema.Field, dialect Dialect) string {
 // default reaches here from kiln's add_entity op over HTTP. A
 // verified payload created and COMMITTED an extra column.
 func SQLDefault(f schema.Field, dialect Dialect) string {
+	// A schema.JSON default is JSON text whatever Go value carries it. A
+	// map or slice is the natural spelling (what crud.marshalJSONColumn
+	// writes and schema.validateJSON accepts); a bool or number is a JSON
+	// scalar, and rendering it as a SQL boolean or number put DEFAULT TRUE
+	// on a JSONB column, which Postgres refuses, and stored the integer 1
+	// on SQLite, which reads back as the JSON number 1, not true. A string
+	// is already JSON on the wire and passes through unchanged.
+	//
+	// Marshal, THEN quote. The escaping is not incidental: the old
+	// unescaped fmt.Sprintf("'%v'", v) fallback let a kiln add_entity
+	// payload close the literal and commit an extra column. Marshalling
+	// instead of quoting would reopen exactly that. An unmarshalable
+	// default is a broken declaration: it falls through so the value is
+	// still escaped rather than spliced.
+	if _, isString := f.Default.(string); f.Type == schema.JSON && !isString {
+		if b, err := json.Marshal(f.Default); err == nil {
+			return quoteSQLLiteral(string(b))
+		}
+	}
 	switch v := f.Default.(type) {
 	case string:
 		return quoteSQLLiteral(v)
 	case int:
 		return fmt.Sprintf("%d", v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case json.Number:
+		// A JSON declaration keeps a default past 2^53 this way. It is
+		// written bare only when it matches the JSON number grammar
+		// (RFC 8259 §6): a json.Number is a string type anyone can fill.
+		if jsonNumberLiteral.MatchString(string(v)) {
+			return string(v)
+		}
+		return quoteSQLLiteral(string(v))
 	case float64:
-		return fmt.Sprintf("%f", v)
+		// The shortest form that round-trips: %f rounded to six decimals,
+		// so DEFAULT 1e-7 was 0.000000.
+		return strconv.FormatFloat(v, 'g', -1, 64)
 	case bool:
 		if dialect == DialectPostgres {
 			if v {
@@ -1247,27 +1321,9 @@ func SQLDefault(f schema.Field, dialect Dialect) string {
 		}
 		return "0"
 	default:
-		// A schema.JSON default is naturally authored as a Go map or slice,
-		// that is what crud.marshalJSONColumn writes on the insert path and
-		// what schema.validateJSON accepts, so the same value is correct in
-		// both those places and only wrong here. fmt.Sprintf("%v") renders
-		// Go's debug form, which put DEFAULT 'map[a:1]' on a JSONB column and
-		// failed AutoMigrate on Postgres while storing the literal text on
-		// SQLite, whose column is TEXT.
-		//
-		// Marshal, THEN quote. The escaping below is not incidental: the old
-		// unescaped fmt.Sprintf("'%v'", v) fallback let a kiln add_entity
-		// payload close the literal and commit an extra column. Marshalling
-		// instead of quoting would reopen exactly that.
-		if f.Type == schema.JSON {
-			if b, err := json.Marshal(v); err == nil {
-				return quoteSQLLiteral(string(b))
-			}
-			// An unmarshalable default is a broken declaration, not something
-			// to paper over with Go's debug rendering: fall through so the
-			// value is still escaped rather than spliced.
-		}
-		// Render, then escape. Never splice the rendering raw.
+		// Render, then escape. Never splice the rendering raw. (A JSON
+		// map or slice was marshalled above; fmt's %v debug form put
+		// DEFAULT 'map[a:1]' on a JSONB column.)
 		return quoteSQLLiteral(fmt.Sprintf("%v", v))
 	}
 }
@@ -1419,6 +1475,7 @@ type pivotSpec struct {
 	DropDDL      string
 	IndexDDL     string // index on the target key column
 	DropIndexDDL string
+	fks          []declaredFK // the two foreign keys DDL declares
 }
 
 // buildPivotSpec renders the pivot table for rel, declared on ent: both key
@@ -1468,7 +1525,7 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 
 	sourcePKType := fkColumnSQLType(ent, sourcePK, all, dialect)
 	targetPKType := fkColumnSQLType(target, targetPK, all, dialect)
-	idxName := fmt.Sprintf("idx_%s_%s", safeThrough, safeTargetKey)
+	idxName := defaultIndexName(safeThrough, []string{safeTargetKey})
 	return pivotSpec{
 		Safe: safeThrough,
 		Cols: map[string]string{safeLocalKey: sourcePKType, safeTargetKey: targetPKType},
@@ -1478,12 +1535,16 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 			safeLocalKey, sourcePKType,
 			safeTargetKey, targetPKType,
 			safeLocalKey, safeTargetKey,
-			safeLocalKey, safeSourceTable, safeSourcePK,
-			safeTargetKey, safeTargetTable, safeTargetPK,
+			safeLocalKey, referencedTable(dialect, safeSourceTable), safeSourcePK,
+			safeTargetKey, referencedTable(dialect, safeTargetTable), safeTargetPK,
 		),
 		DropDDL:      fmt.Sprintf("DROP TABLE IF EXISTS %s", safeThrough),
-		IndexDDL:     fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s(%s)", idxName, safeThrough, safeTargetKey),
-		DropIndexDDL: fmt.Sprintf("DROP INDEX IF EXISTS %s", idxName),
+		IndexDDL:     createIndexSQL(dialect, false, idxName, safeThrough, safeTargetKey),
+		DropIndexDDL: dropIndexSQL(safeThrough, idxName),
+		fks: []declaredFK{
+			{cols: []string{safeLocalKey}, target: ent, refTable: safeSourceTable, refCols: []string{safeSourcePK}, onDelete: entity.OnDeleteCascade},
+			{cols: []string{safeTargetKey}, target: target, refTable: safeTargetTable, refCols: []string{safeTargetPK}, onDelete: entity.OnDeleteCascade},
+		},
 	}, nil
 }
 

@@ -23,11 +23,18 @@ this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON
 zero value; an omitted property preserves the value already bound.
+`header`, `query` and `path` tags on an untagged embedded struct bind as
+if declared on the outer struct, the way `encoding/json` promotes body
+keys, so a shared `Pagination` struct can be embedded in many inputs. A
+nil embedded pointer is allocated only when one of its values arrives.
+`ToolAdapter` (the MCP tool form) binds the same promoted tags.
 
 Every decode of client-controlled JSON outside `Bind` goes through the
 same strict rule: `DecodeStrict(r, &dst)` for a reader,
 `UnmarshalStrict(data, &dst)` for bytes already in memory (a websocket
-frame, a buffered body), and `CheckTopLevelKeys(data, fold)` when the
+frame, a buffered body; pass `handler.UseNumber()` to keep numbers in
+`any` and map values as `json.Number`, so an integer past 2^53 keeps its
+digits), and `CheckTopLevelKeys(data, fold)` when the
 caller normalises keys itself. Struct destinations refuse duplicate,
 case-folded, and unknown top-level keys; map destinations refuse
 duplicate and case-folded ones. Stdlib `encoding/json` keeps the last
@@ -76,7 +83,9 @@ helper (`core-ui/runtime/src/ws.js`,
 snapshot captured before a mutation cannot resurrect the state that
 mutation replaced. Your side of the contract is the `SnapshotSource`:
 `SnapshotFor` returns the snapshot payload and its sequence from ONE
-immutable read, and `FilterEvent` shapes each event per role BEFORE
+immutable read (the channel sends the larger of that version and one
+above every event it already sent, so a reconnect's snapshot never ties
+an event the old connection applied), and `FilterEvent` shapes each event per role BEFORE
 serialization. Filtering there is the minimization boundary — a field
 `FilterEvent` strips never crosses the transport, while hiding a field
 in the UI is not data minimization at all. Sequences share one space
@@ -91,7 +100,10 @@ Two knobs exist for sources whose events are not recoverable from a
 snapshot. `StateChannel.CloseOnOverflow(true)`, called before `Run`,
 closes a connection whose send buffer cannot take an event (the
 default drops the event for that connection alone, the right posture
-for presence), so the client reconnects and re-hydrates. And
+for presence), so the client reconnects and re-hydrates. It also
+deepens the channel's own job queue from 64 to 4096 events, and an
+event past that closes every connection it would have reached instead
+of vanishing. And
 `WebSocketConn.CloseWithStatus(code, reason)` closes with a status
 code and a reason in the close frame, for a server that accepted the
 handshake only to refuse the connection: a browser cannot read an
@@ -99,6 +111,19 @@ HTTP status off a failed handshake but can read a close code. The
 reason is kept to printable ASCII and 123 bytes; a reserved or
 out-of-range code goes out as 1002 and is returned as an error; a
 close the peer began first still echoes the peer's own code.
+
+`WebSocketConn` follows RFC 6455's strict readings: a text message
+that is not valid UTF-8 closes with 1007, a close reason that is not
+valid UTF-8 or a payload length in a longer form than it needs closes
+with 1002, and no data frame goes out after the connection's own Close
+frame. One read pump owns the socket and hands each message to `Read`
+through a small buffer. An app that reads must take a message at least
+once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
+(the keepalive cannot run while a message waits). `PongTimeout` counts
+from the moment the Ping is written, so a long data write that delays
+the Ping does not eat into the peer's time to answer. An app that never
+calls `Read` is push-only: once the buffer fills, further inbound data
+is dropped so pings and the Close handshake still flow.
 
 `battery/rtc`, the WebRTC signaling package, is the
 packaged StateChannel consumer for rooms of peers (see
@@ -282,7 +307,12 @@ the proxy connected to the target. A deployment that must egress
 through a proxy supplies its own client where the surface takes one
 (battery/webhook `Options.HTTPClient`, which keeps a per-request target
 check) or turns the surface's private-network opt-out on and leaves the
-egress policy to the proxy.
+egress policy to the proxy. `GuardPlainTransport` clones a
+caller-supplied `*http.Transport` that has no proxy and no dialer of its
+own and gives the clone the guarded dialer, so a custom TLS or pool
+setting keeps the dial-time check. A transport that would speak HTTP/2
+on its own still does after the swap. Any other transport gets the
+weaker per-request check.
 
 ### webbotauth
 

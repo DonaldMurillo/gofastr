@@ -139,10 +139,12 @@ func ptr[T any](v T) *T { return new(v) }
 
 func searchPosts(index search.Backend) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Public route: drafts stay indexed but never answer it.
 		results, err := index.Search(r.Context(), search.Query{
-			Text:  r.URL.Query().Get("q"),
-			Type:  "posts",
-			Limit: 10,
+			Text:        r.URL.Query().Get("q"),
+			Type:        "posts",
+			FieldEquals: map[string]string{"status": "published"},
+			Limit:       10,
 		})
 		if err != nil {
 			log.Printf("blog: %v", err)

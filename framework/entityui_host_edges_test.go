@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -168,6 +169,30 @@ func TestAuditTrailEdges(t *testing.T) {
 	}
 	if _, err := trail.Trail(ctx, "notes", id, 10); err == nil || !strings.Contains(err.Error(), "diff") {
 		t.Fatalf("malformed diff = %v, want an audit row diff error", err)
+	}
+}
+
+// TestAuditTrailKeepsBigIntegers: a diff number past 2^53 reaches the
+// record's activity with its stored digits, not a rounded float64.
+func TestAuditTrailKeepsBigIntegers(t *testing.T) {
+	db := memDB(t)
+	app := entityUIAuditApp(t, db, "notes", false)
+	ctx := context.Background()
+	id := createNote(t, app, "notes", ctx, map[string]any{"title": "first"})
+	diff := `{"old":{"n":9007199254740993},"new":{"n":3}}`
+	if _, err := db.Exec(`UPDATE audit_log SET diff = $1 WHERE record_id = $2`, diff, id); err != nil {
+		t.Fatal(err)
+	}
+	got, err := entityUIHost{a: app}.Audit().Trail(ctx, "notes", id, 10)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Trail = %d entries, %v; want 1", len(got), err)
+	}
+	b, err := json.Marshal(map[string]any{"old": got[0].Before, "new": got[0].After})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"new":{"n":3},"old":{"n":9007199254740993}}`; string(b) != want {
+		t.Fatalf("trail diff = %s, want %s", b, want)
 	}
 }
 

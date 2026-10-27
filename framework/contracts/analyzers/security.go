@@ -83,7 +83,9 @@ var (
 	// Quote-adjacent interpolation: the variable or directive sits inside
 	// SQL single-quotes. That is a VALUE position. A dynamic identifier
 	// is never quoted, so it is suspicious whatever the variable is named.
-	reSQLQuotedInterp = regexp.MustCompile(`'"\s*\+\s*\w+|'%[sv]|%[sv]'`)
+	// An escaped `%%s` (SQLite's strftime('%%s', ...)) is a literal, not
+	// a directive, so the closing-quote arm needs a non-% before it.
+	reSQLQuotedInterp = regexp.MustCompile(`'"\s*\+\s*\w+|'%[sv]|(?:^|[^%])%[sv]'`)
 )
 
 // taintMarkers are substrings that advertise request-derived data. An

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -101,8 +102,21 @@ type WebSocketConn struct {
 	// message to a slow (or absent) consumer. The keepalive skips its
 	// tick while this is set: a stalled handoff means the app is slow
 	// to drain, not that the peer is dead; killing there would
-	// recreate the very bug the pump exists to fix.
+	// recreate the very bug the pump exists to fix. The stall itself
+	// is bounded (see handoff), so the skip cannot last for ever.
 	handoffPending atomic.Bool
+	// readCalled is set by the first Read. A stall past the bound with
+	// no Read ever made marks a push-only app (discardUnread): data it
+	// never asked for is dropped so the pump keeps reading control
+	// frames. A stall in an app that did read closes the connection.
+	readCalled    atomic.Bool
+	discardUnread atomic.Bool
+
+	// closeSent is set, under mu, by the write that put our Close
+	// frame on the wire. writeFrame refuses every frame after it, so a
+	// writer queued on mu behind Close cannot follow the Close frame
+	// with data (RFC 6455 §5.5.1).
+	closeSent bool
 }
 
 // WSConfig configures the WebSocket connection.
@@ -454,21 +468,29 @@ func (c *WebSocketConn) WriteString(data string) error {
 // Messages decoded by the pump before a terminal error are delivered
 // before the error surfaces (drain-before-error). Concurrent Read
 // callers are safe: the buffer channel serializes delivery.
+//
+// An app that reads must take a message at least once per
+// ReadIdleTimeout+PongTimeout while the peer is sending: once the
+// buffer is full the pump cannot read the peer's Pongs, so a reader
+// stalled past that bound is indistinguishable from an abandoned one
+// and the connection is closed. An app that never calls Read is
+// push-only: past the same bound, data that does not fit the buffer
+// is dropped and control frames keep flowing.
 func (c *WebSocketConn) Read() ([]byte, error) {
-	// Non-blocking drain first: a message already buffered must be
-	// returned even after the pump has died (readDone closed), so a
-	// random select never lets the terminal error leapfrog a decoded
-	// message.
-	select {
-	case msg := <-c.readMsgs:
-		return msg, nil
-	default:
-	}
-	// Block for the next message or for pump termination.
+	c.readCalled.Store(true)
 	select {
 	case msg := <-c.readMsgs:
 		return msg, nil
 	case <-c.readDone:
+		// The pump's last send happens before close(readDone), so a
+		// message it handed off is in the buffer now. select picks a
+		// ready case at random: drain once more so the terminal error
+		// never leapfrogs a decoded message.
+		select {
+		case msg := <-c.readMsgs:
+			return msg, nil
+		default:
+		}
 		// readErr was stored before close(readDone); the channel-close
 		// happens-before this read, so the store is visible. Do NOT
 		// call Close() here; the pump already tore the connection down.
@@ -646,7 +668,10 @@ func (c *WebSocketConn) keepalive() {
 			// bug one layer up and kill a healthy connection. Skip the
 			// whole tick; a genuinely dead peer with an idle app still
 			// dies: no messages arrive, handoffPending stays false, a
-			// ping goes unanswered, and PongTimeout kills it.
+			// ping goes unanswered, and PongTimeout kills it. A peer
+			// that dies behind a stall is reclaimed by the pump's own
+			// bound on the stall (handoff), after which these checks
+			// resume or the connection is already closing.
 			if c.handoffPending.Load() {
 				continue
 			}
@@ -661,13 +686,17 @@ func (c *WebSocketConn) keepalive() {
 				continue
 			}
 			if now.Sub(lastRead) >= idle {
-				// Send ping and start the pong clock.
-				c.pingSentAt.Store(now.UnixNano())
+				// Send ping and start the pong clock once it is on the
+				// wire: a data write can hold the lock past PongTimeout,
+				// and a clock started before that wait expired before
+				// the peer could answer. awaitingPong goes first so a
+				// Pong that beats the Store still clears it.
 				c.awaitingPong.Store(true)
 				if err := c.writeFrame(wsopcodePing, nil); err != nil {
 					c.Close()
 					return
 				}
+				c.pingSentAt.Store(time.Now().UnixNano())
 			}
 		}
 	}
@@ -681,7 +710,12 @@ func (c *WebSocketConn) writePump() {
 			return
 		case msg := <-c.sendBuffer:
 			if err := c.writeFrame(wsopcodeText, msg); err != nil {
-				c.Close()
+				// ErrClosed means Close already wrote our Close frame and
+				// is waiting out the peer's; a second Close would park
+				// this goroutine on closeOnce for that whole wait.
+				if !errors.Is(err, ErrClosed) {
+					c.Close()
+				}
 				return
 			}
 		}
@@ -723,16 +757,87 @@ func (c *WebSocketConn) readPump() {
 			c.Close() // idempotent; mirrors the old Read() error path
 			return
 		}
-		c.handoffPending.Store(true)
-		select {
-		case c.readMsgs <- frame.payload:
-		case <-c.closed:
-			// Closing: drop undelivered data but keep reading so the
-			// peer's reciprocal Close reaches readFrame, signals
-			// peerClosed, and lets awaitPeerClose return promptly.
-		}
-		c.handoffPending.Store(false)
+		c.handoff(frame.payload)
 	}
+}
+
+// handoff gives one decoded message to Read. While the buffer is full
+// the pump cannot read, so it cannot see the peer's Pong, FIN, or Close
+// either, and the keepalive skips its checks. That skip is bounded by
+// handoffStallLimit, the same ReadIdleTimeout+PongTimeout budget a
+// silent peer gets. Past it the stall is resolved one of two ways:
+//
+//   - The app never called Read (push-only): drop the message, and
+//     every later one that finds the buffer full, so the pump keeps
+//     reading and the keepalive judges the peer again.
+//   - The app reads but has not taken a message in that time: close
+//     the connection. A reader that slow cannot be told apart from an
+//     abandoned one, and dropping its data in silence would be worse.
+func (c *WebSocketConn) handoff(msg []byte) {
+	select {
+	case c.readMsgs <- msg:
+		return
+	default:
+	}
+	if c.discardUnread.Load() && !c.readCalled.Load() {
+		return
+	}
+	c.handoffPending.Store(true)
+	defer c.endStall()
+	var stall <-chan time.Time
+	if limit := c.handoffStallLimit(); limit > 0 {
+		t := time.NewTimer(limit)
+		defer t.Stop()
+		stall = t.C
+	}
+	select {
+	case c.readMsgs <- msg:
+		return
+	case <-c.closed:
+		// Closing: drop undelivered data but keep reading so the
+		// peer's reciprocal Close reaches readFrame, signals
+		// peerClosed, and lets awaitPeerClose return promptly.
+		return
+	case <-stall:
+	}
+	if !c.readCalled.Load() {
+		c.discardUnread.Store(true)
+		return
+	}
+	// Close on its own goroutine: Close waits for the peer's Close
+	// frame, which only this pump can read.
+	go c.Close()
+	select {
+	case c.readMsgs <- msg:
+	case <-c.closed:
+	}
+}
+
+// handoffStallLimit bounds how long the pump waits on a full read
+// buffer: ReadIdleTimeout+PongTimeout, or no bound when either is
+// disabled (a connection with keepalive off is never reclaimed for
+// silence either).
+// endStall ends a blocking handoff. A Ping sent before the stall had its
+// Pong stuck behind frames the pump could not read, so the pong clock
+// restarts here: it measures the peer, not the app's stall. The restart
+// lands before handoffPending clears, so the keepalive never sees the
+// stall's age as the peer's.
+func (c *WebSocketConn) endStall() {
+	if c.awaitingPong.Load() {
+		c.pingSentAt.Store(time.Now().UnixNano())
+	}
+	c.handoffPending.Store(false)
+}
+
+func (c *WebSocketConn) handoffStallLimit() time.Duration {
+	pong := c.config.PongTimeout
+	if pong == 0 {
+		pong = 10 * time.Second // keepalive's default for an unset value
+	}
+	if c.config.ReadIdleTimeout <= 0 || pong < 0 {
+		return 0
+	}
+	return c.config.ReadIdleTimeout + pong
 }
 
 // WebSocket frame opcodes
@@ -785,10 +890,18 @@ func wsEchoableCloseCode(code uint16) bool {
 	}
 }
 
-// writeFrame writes a WebSocket frame to the connection.
+// writeFrame writes a WebSocket frame to the connection. Nothing
+// follows our Close frame: a writer that waited on mu while Close
+// wrote it gets ErrClosed and puts nothing on the wire.
 func (c *WebSocketConn) writeFrame(opcode byte, payload []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closeSent {
+		return ErrClosed
+	}
+	if opcode == wsopcodeClose {
+		c.closeSent = true
+	}
 
 	// Apply per-frame write deadline so a slow client cannot pin the
 	// writePump goroutine indefinitely. A negative WriteTimeout disables
@@ -865,19 +978,27 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			return nil, errors.New("stream: protocol error: fragmented control frame")
 		}
 
-		// Extended length
+		// Extended length. RFC 6455 §5.2: "the minimal number of bytes
+		// MUST be used to encode the length", so the 16-bit form is only
+		// for 126..65535 and the 64-bit form only above that.
 		if length == 126 {
 			ext := make([]byte, 2)
 			if _, err := io.ReadFull(c.conn, ext); err != nil {
 				return nil, err
 			}
 			length = uint64(binary.BigEndian.Uint16(ext))
+			if length < 126 {
+				return nil, c.failConn(1002, "stream: protocol error: non-minimal 16-bit payload length")
+			}
 		} else if length == 127 {
 			ext := make([]byte, 8)
 			if _, err := io.ReadFull(c.conn, ext); err != nil {
 				return nil, err
 			}
 			length = binary.BigEndian.Uint64(ext)
+			if length <= 0xFFFF {
+				return nil, c.failConn(1002, "stream: protocol error: non-minimal 64-bit payload length")
+			}
 		}
 
 		// RFC 6455: control frames MUST be <=125 bytes and not fragmented.
@@ -962,7 +1083,9 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			case len(payload) == 0:
 				// No status; echo bodyless, exactly as before.
 			case len(payload) >= 2:
-				if wsEchoableCloseCode(binary.BigEndian.Uint16(payload[:2])) {
+				// §5.5.1: a reason after the code is UTF-8; one that is
+				// not makes the frame a protocol error.
+				if wsEchoableCloseCode(binary.BigEndian.Uint16(payload[:2])) && utf8.Valid(payload[2:]) {
 					status = []byte{payload[0], payload[1]}
 				} else {
 					status = []byte{0x03, 0xEA} // 1002 protocol error
@@ -978,7 +1101,9 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			c.peerCloseOnce.Do(func() { close(c.peerClosed) })
 			return nil, io.EOF
 		case wsopcodePing:
-			if err := c.writeFrame(wsopcodePong, payload); err != nil {
+			// After our Close frame the Pong is not sent (ErrClosed),
+			// but the pump keeps reading for the peer's Close.
+			if err := c.writeFrame(wsopcodePong, payload); err != nil && !errors.Is(err, ErrClosed) {
 				return nil, err
 			}
 			continue
@@ -1008,7 +1133,7 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 			}
 			op, msg := fragOpcode, fragBuf
 			fragOpcode, fragBuf = 0, nil
-			return &wsFrame{opcode: op, payload: msg}, nil
+			return c.dataMessage(op, msg)
 		case wsopcodeText, wsopcodeBinary:
 			if fragOpcode != 0 {
 				return nil, errors.New("stream: protocol error: new data frame while a fragmented message is open")
@@ -1017,13 +1142,33 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 				fragOpcode, fragBuf = opcode, append([]byte(nil), payload...)
 				continue
 			}
-			return &wsFrame{opcode: opcode, payload: payload}, nil
+			return c.dataMessage(opcode, payload)
 		default:
 			// Reserved opcodes (0x3-0x7, 0xB-0xF) were previously
 			// delivered to the application as ordinary data frames.
 			return nil, fmt.Errorf("stream: protocol error: reserved opcode 0x%X", opcode)
 		}
 	}
+}
+
+// dataMessage returns one complete data message. A text message is
+// checked as a whole, after reassembly, so a character split across
+// fragments passes and invalid bytes fail the connection with 1007
+// (RFC 6455 §8.1, "Invalid frame payload data").
+func (c *WebSocketConn) dataMessage(opcode byte, payload []byte) (*wsFrame, error) {
+	if opcode == wsopcodeText && !utf8.Valid(payload) {
+		return nil, c.failConn(1007, "stream: text message is not valid UTF-8")
+	}
+	return &wsFrame{opcode: opcode, payload: payload}, nil
+}
+
+// failConn records the status our Close frame carries when the pump
+// tears the connection down for this error, and returns the error. A
+// status already recorded (CloseWithStatus) is kept.
+func (c *WebSocketConn) failConn(code uint16, msg string) error {
+	status := binary.BigEndian.AppendUint16(nil, code)
+	c.ownClosePayload.CompareAndSwap(nil, &status)
+	return errors.New(msg)
 }
 
 // setReadDeadline bounds a single frame-payload read. c.conn is an

@@ -232,6 +232,43 @@ func TestStateChannelSnapshotReconcilesSequence(t *testing.T) {
 		}
 	})
 }
+
+// A reconnect's snapshot must sort above every sequence the channel
+// already sent. Snapshot at version 1; the delayed Publish of that same
+// mutation goes out as event 2; the client drops; the source moves to
+// version 2 with its Publish still queued. The new snapshot carried 2,
+// which a client holding event 2 rejected as not newer, leaving it on
+// state from before the second mutation.
+func TestReconnectSnapshotAboveSentEvents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		src := newBannerSource()
+		src.set("HOLD STEADY") // version 1
+		c := startChannel(t, src)
+
+		first := newChannelConn(4)
+		c.Connect("admin", first)
+		if env := recvEnvelope(t, first); env.Sequence != 1 {
+			t.Fatalf("first snapshot Sequence = %d, want 1", env.Sequence)
+		}
+		c.Publish("banner", bannerEvent{Action: "show"}) // mutation 1, delayed
+		seen := recvEnvelope(t, first).Sequence
+		first.Close()
+		synctest.Wait()
+
+		src.set("CLEARED") // version 2, its Publish not yet dequeued
+		second := newChannelConn(4)
+		c.Connect("admin", second)
+		env := recvEnvelope(t, second)
+		if env.Sequence <= seen {
+			t.Fatalf("reconnect snapshot Sequence = %d, not above event %d the client already applied", env.Sequence, seen)
+		}
+		c.Publish("cleared", bannerEvent{Action: "clear"})
+		if next := recvEnvelope(t, second); next.Sequence <= env.Sequence {
+			t.Fatalf("event after snapshot %d carries %d", env.Sequence, next.Sequence)
+		}
+	})
+}
+
 func TestStateChannelWireOrderUnderConcurrency(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		src := newBannerSource()

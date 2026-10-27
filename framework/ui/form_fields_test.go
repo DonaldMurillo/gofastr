@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -73,6 +74,22 @@ func TestDateTimeFieldWiresBoundsAndStep(t *testing.T) {
 	}
 	if h := string(DateTimeField(DateTimeFieldConfig{Name: "at", Label: "At"})); strings.Contains(h, "step=") {
 		t.Errorf("zero Step drew a step: %s", h)
+	}
+	for _, step := range []float64{-1, math.Inf(1), math.NaN()} {
+		if h := string(DateTimeField(DateTimeFieldConfig{Name: "at", Label: "At", Step: step})); strings.Contains(h, "step=") {
+			t.Errorf("Step %v drew a step: %s", step, h)
+		}
+	}
+}
+
+// A fractional Step admits milliseconds: a value with them at a whole
+// second step is one the browser refuses to submit.
+func TestDateTimeFieldFractionalStep(t *testing.T) {
+	h := string(DateTimeField(DateTimeFieldConfig{
+		Name: "at", Label: "At", Value: "2026-10-27T10:00:00.531", Step: 0.001,
+	}))
+	if !strings.Contains(h, `step="0.001"`) {
+		t.Errorf("Step 0.001 drew no step=\"0.001\": %s", h)
 	}
 }
 

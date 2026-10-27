@@ -147,3 +147,105 @@ func TestLoadSnapshotRefusesModelMismatch(t *testing.T) {
 		t.Fatalf("err type = %T (%v), want *ModelMismatchError", err, err)
 	}
 }
+
+// TestNestedMetadataPersists: JSON-shaped metadata (a nested object or
+// array, what the /add route decodes) goes through the WAL and the
+// snapshot and comes back after a reopen.
+func TestNestedMetadataPersists(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	idx, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := map[string]any{"cfg": map[string]any{"x": 1}, "tags": []any{"a", "b"}}
+	if err := idx.Add(ctx, Document{ID: "d", Text: "alpha", Metadata: meta}); err != nil {
+		t.Fatalf("Add nested metadata: %v", err)
+	}
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
+	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx2.Close()
+	hits, err := idx2.Query(ctx, Query{Text: "alpha", K: 1})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("Query after reopen: %v %v", hits, err)
+	}
+	if cfg, ok := hits[0].Chunk.Metadata["cfg"].(map[string]any); !ok || cfg["x"] != 1 {
+		t.Fatalf("metadata after reopen = %#v", hits[0].Chunk.Metadata)
+	}
+}
+
+type unencodableMeta struct{ A int }
+
+// TestFailedReplaceKeepsOldDoc: a replacement whose chunks the WAL cannot
+// encode fails before anything is logged or applied, so the stored
+// version stays, in memory and after a reopen.
+func TestFailedReplaceKeepsOldDoc(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	idx, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Add(ctx, Document{ID: "d", Text: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	bad := Document{ID: "d", Text: "beta", Metadata: map[string]any{"v": unencodableMeta{A: 1}}}
+	if err := idx.Add(ctx, bad); err == nil {
+		t.Fatal("Add with unencodable metadata succeeded")
+	}
+	if n := idx.Stats().Chunks; n != 1 {
+		t.Fatalf("chunks after failed replace = %d, want the old 1", n)
+	}
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
+	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx2.Close()
+	hits, err := idx2.Query(ctx, Query{Text: "alpha", K: 1})
+	if err != nil || len(hits) != 1 || hits[0].Chunk.Text != "alpha" {
+		t.Fatalf("old doc after reopen: %v %v", hits, err)
+	}
+}
+
+// renamedEmbedder is the stub under another model name: same dimension,
+// different fingerprint.
+type renamedEmbedder struct {
+	*StubEmbedder
+	name string
+}
+
+func (e renamedEmbedder) Name() string { return e.name }
+
+// TestWALReplayRefusesOtherModel: writes logged under model A and never
+// snapshotted must not replay into an index opened with model B of the
+// same dimension; that is the mix the snapshot header already refuses.
+func TestWALReplayRefusesOtherModel(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	idx, err := Open(Options{Embedder: renamedEmbedder{NewStubEmbedder(64), "model-a"}, Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Add(ctx, Document{ID: "d", Text: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	// Crash before any snapshot: drop the WAL handle without Close.
+	in := idx.(*index)
+	_ = in.wal.close()
+	in.wal = nil
+	if _, err := os.Stat(filepath.Join(dir, "store.snap")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("snapshot exists before reopen: %v", err)
+	}
+	_, err = Open(Options{Embedder: renamedEmbedder{NewStubEmbedder(64), "model-b"}, Path: dir})
+	if _, ok := errors.AsType[*ModelMismatchError](err); !ok {
+		t.Fatalf("reopen with model-b: err = %v, want *ModelMismatchError", err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // fanoutTopic is the single channel every event-bus bridge publishes on and
@@ -124,7 +125,7 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 			// it back would loop. (Secondary guard behind the node-id drop.)
 			return
 		}
-		data, err := json.Marshal(ev)
+		data, err := marshalEvent(ev)
 		if err != nil {
 			logMarshalErrOnce(ev.Type, err)
 			return
@@ -158,7 +159,7 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 			return // own-node: drop to avoid echo
 		}
 		var ev Event
-		if umerr := json.Unmarshal(body, &ev); umerr != nil {
+		if umerr := jsonexact.Unmarshal(body, &ev); umerr != nil {
 			return
 		}
 		// Re-emit locally with the tap suppressed so this is not rebroadcast.
@@ -194,6 +195,18 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 // the bridged bus. The lane is documented lossy best-effort, so the
 // panic is logged like the marshal-failure path and the goroutine keeps
 // draining the queue.
+// marshalEvent is json.Marshal with a payload marshaler's panic, which
+// json.Marshal re-panics, turned into an error: the tap runs before local
+// delivery, on the emitter's goroutine or EmitAsync's, with no recover.
+func marshalEvent(ev Event) (data []byte, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			data, err = nil, fmt.Errorf("event data marshaler panicked: %s", textsafe.Recovered(rec))
+		}
+	}()
+	return json.Marshal(ev)
+}
+
 func publishSafely(ctx context.Context, f fanout.Fanout, data []byte) {
 	defer func() {
 		if r := recover(); r != nil {

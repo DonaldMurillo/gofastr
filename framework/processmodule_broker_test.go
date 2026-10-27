@@ -455,6 +455,66 @@ func TestBrokerDelegatedReadSucceeds(t *testing.T) {
 	}
 }
 
+// TestBrokerFilterKeepsBigIntegers: a module's filter number reaches the
+// CRUD list query in plain decimal with its digits: past 2^53 it is not
+// rounded, and 1234567 is not spelled 1.234567e+06, which the integer
+// filter parser refuses.
+func TestBrokerFilterKeepsBigIntegers(t *testing.T) {
+	reg := brokerRegistry(brokerEntity("tix", "tix", func(c *entity.EntityConfig) {
+		c.Fields = append(c.Fields, schema.Field{Name: "n", Type: schema.Int}, schema.Field{Name: "m", Type: schema.Int})
+	}))
+	var query atomic.Value
+	rec := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query.Store(r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+	})
+	b := NewBroker(rec, reg, nil, "")
+	handle, release := brokerMint(t, b, nil, "alice", nil)
+	defer release()
+	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"tix:read"}}
+	_, err := callReverse(t, b.entityHandler(view, opQuery), moduleproto.EntityQueryParams{
+		Entity: "tix",
+		Filter: json.RawMessage(`{"n":9007199254740993,"m":1234567,"m_gt":3}`),
+		Caller: moduleproto.CallerRef{Delegation: handle},
+	})
+	wantOK(t, err)
+	got, _ := query.Load().(string)
+	if want := "m=1234567&m_gt=3&n=9007199254740993"; got != want {
+		t.Fatalf("CRUD query = %q, want %q", got, want)
+	}
+}
+
+// TestBrokerEventKeepsBigIntegers: a module event payload number past 2^53
+// reaches host-bus subscribers with its digits, not a rounded float64.
+func TestBrokerEventKeepsBigIntegers(t *testing.T) {
+	bus := event.NewEventBus()
+	received := make(chan any, 1)
+	bus.On("alerts.fired", func(_ context.Context, e event.Event) error {
+		received <- e.Data
+		return nil
+	})
+	b := NewBroker(nil, nil, bus, "")
+	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"alerts.fired:emit"}}
+	_, err := callReverse(t, b.eventHandler(view), moduleproto.EventEmitParams{
+		Topic:   "alerts.fired",
+		Payload: json.RawMessage(`{"id":9007199254740993,"n":3}`),
+	})
+	wantOK(t, err)
+	select {
+	case data := <-received:
+		got, err := json.Marshal(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `{"id":9007199254740993,"n":3}`; string(got) != want {
+			t.Fatalf("subscriber Data = %s, want %s", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("event not delivered to bus within 1s")
+	}
+}
+
 // ----- search + event surfaces -----
 
 // TestBrokerSearchOutsideGrantDenies: a module without search:query cannot

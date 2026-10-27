@@ -20,7 +20,8 @@ import (
 // HIGH). App.Storage is set by WithFileStorage (app.go:642-650) as "the
 // default upload.Storage used by CRUD handlers to persist files for Image
 // and File entity fields", and crud's saveFilePart persists the storage key
-// into the row's column (crud_upload.go:229-236, body[key] = ff.URL). But
+// into the row's column (crud_upload.go saveFilePart, body[key] =
+// ff.StorageRef). But
 // EraseUserData (erase_data.go) is SQL-only: all three planes run
 // DELETE/UPDATE statements and the whole file never references a.Storage,
 // so the objects the erased rows referenced survive:

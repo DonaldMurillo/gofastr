@@ -3,9 +3,13 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
@@ -142,7 +146,29 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	if err != nil {
 		return
 	}
-	w.Header().Set("X-Gofastr-Toast", string(enc))
+	w.Header().Set("X-Gofastr-Toast", asciiJSON(enc))
+}
+
+// asciiJSON rewrites every non-ASCII rune in enc as a JSON \u escape. The
+// Fetch API decodes header bytes as ISO-8859-1, so raw UTF-8 in a header
+// reaches the runtime as mojibake ("Creación" as "CreaciÃ³n"); JSON.parse
+// turns the escapes back into the text. Non-ASCII can only sit inside a
+// JSON string, where an escape means the same rune.
+func asciiJSON(enc []byte) string {
+	var b strings.Builder
+	b.Grow(len(enc))
+	for _, r := range string(enc) {
+		switch {
+		case r < utf8.RuneSelf:
+			b.WriteRune(r)
+		case r > 0xFFFF:
+			r1, r2 := utf16.EncodeRune(r)
+			fmt.Fprintf(&b, `\u%04x\u%04x`, r1, r2)
+		default:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		}
+	}
+	return b.String()
 }
 
 // AddToastSuccess / AddToastError / AddToastWarning are sugar for the

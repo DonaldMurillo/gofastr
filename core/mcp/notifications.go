@@ -196,11 +196,11 @@ func (s *Server) notifySubscribers(n sseNotification) {
 //     metadata stays listed — the gate guards the read and the update
 //     notice, not the listing — while tools, prompts and resource
 //     templates ARE hidden from their list methods.)
-func (s *Server) subscriberMayReceive(sub *sseSubscriber, n sseNotification) bool {
-	if !gateAllows(s.checkServerGate, sub.ctx) {
+func (s *Server) subscriberMayReceive(ctx context.Context, n sseNotification) bool {
+	if !gateAllows(s.checkServerGate, ctx) {
 		return false
 	}
-	if n.itemGate != nil && !gateAllows(n.itemGate, sub.ctx) {
+	if n.itemGate != nil && !gateAllows(n.itemGate, ctx) {
 		return false
 	}
 	return true
@@ -258,8 +258,8 @@ func (s *Server) NotifyResourcesListChanged() {
 }
 
 // NotifyPromptsListChanged raises notifications/prompts/list_changed on
-// every eligible subscriber stream. RegisterPrompt fires it
-// automatically.
+// every eligible subscriber stream. RegisterPrompt fires the gated
+// internal form automatically, carrying the prompt's own gate.
 func (s *Server) NotifyPromptsListChanged() {
 	s.notifySubscribers(sseNotification{method: "notifications/prompts/list_changed"})
 }

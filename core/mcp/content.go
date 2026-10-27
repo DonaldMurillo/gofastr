@@ -21,11 +21,29 @@ type Content struct {
 
 // EmbeddedResource is the payload of a type=="resource" content block: an
 // inline copy of a resource (text or base64 blob) carried in a tool result.
+// Set Blob for a blob resource; otherwise it is a text resource, and an
+// empty Text still goes on the wire.
 type EmbeddedResource struct {
 	URI      string `json:"uri"`
-	MimeType string `json:"mimeType,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Blob     string `json:"blob,omitempty"` // base64
+	MimeType string `json:"mimeType"`
+	Text     string `json:"text"`
+	Blob     string `json:"blob"` // base64
+}
+
+// MarshalJSON emits exactly one of text and blob, the key a client reads
+// to tell the union's members apart. Both omitempty dropped the key of an
+// empty text resource, leaving a block no validating client could decode.
+func (r EmbeddedResource) MarshalJSON() ([]byte, error) {
+	m := map[string]any{"uri": r.URI}
+	if r.MimeType != "" {
+		m["mimeType"] = r.MimeType
+	}
+	if r.Blob != "" {
+		m["blob"] = r.Blob
+	} else {
+		m["text"] = r.Text
+	}
+	return json.Marshal(m)
 }
 
 // MarshalJSON emits exactly the fields the spec defines for the block's type,
@@ -84,7 +102,7 @@ type ToolResult struct {
 // image" case: mcp.ImageResult{Data: pngBytes, MimeType: "image/png"}.
 type ImageResult struct {
 	Data     []byte
-	MimeType string
+	MimeType string `json:"mimeType"`
 }
 
 // normalizeToolResult converts whatever a ToolHandler returned into the wire

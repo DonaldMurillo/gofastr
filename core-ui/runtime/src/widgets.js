@@ -239,6 +239,10 @@
     reg.root = w;
     reg.backdrop = backdrop;
     reg.hydrated = !!existing;
+    // A hydrated root is re-hidden on close and mounted again on reopen,
+    // so the root's listeners belong to this mount and go with it.
+    const ac = new AbortController();
+    const on = { signal: ac.signal };
     NS.scanAndLoadCSS(w);
     if (w.querySelector('[data-cui-fill-input],[data-cui-tick-elapsed],[data-cui-persist-storage],[data-cui-charcount-source],[data-cui-clear-on-esc],form[data-cui-submit-on-enter],form[data-cui-disable-when-invalid]')) NS.loadModule('widgethelpers');
     if (cfg.closeOnEscape || cfg.backdrop) NS.loadModule('widgetfocus');
@@ -282,6 +286,10 @@
       });
     }
     function dismiss() {
+      // A stale mount's dismiss (an earlier open of the same root) is
+      // spent: only the live mount closes.
+      if (NS._widgets[cfg.name] !== reg) return;
+      ac.abort();
       // #409: the close twin of fui:widget-open, dispatched before any
       // teardown so a listener can match detail.root against what it
       // bound. Every close path funnels through here (closeWidget, the
@@ -406,7 +414,7 @@
         e.preventDefault();
         dismiss();
       }
-    });
+    }, on);
     w.addEventListener('submit', async (e) => {
       // Same confirm gate as the document bridge (which respects this
       // listener's preventDefault): submitter first, then the form, including a plain
@@ -426,9 +434,9 @@
         await NS.loadModule('rpc');
         await NS.dispatchRPC(form, null, { confirmed: true, submitter: sub });
       } catch (_) { NS._rpcFormFallback?.(form, sub); }
-    });
+    }, on);
 
-    if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);
+    if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss, on);
     if (isModal) reg.closeOnEscape = !!cfg.closeOnEscape;
 
     if (!isModal && (cfg.closeOnEscape || cfg.closeOnClick)) {

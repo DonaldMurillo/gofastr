@@ -17,14 +17,44 @@ import (
 var formTagRe = regexp.MustCompile(`(?s)<(/?)(form|input|select|textarea|option)\b([^>]*)>`)
 var attrRe = regexp.MustCompile(`([a-zA-Z_:-]+)(?:="([^"]*)")?`)
 
+var (
+	simpleColorRe   = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	localDateTimeRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$`)
+)
+
+// sanitizedValue is what the browser's value sanitization leaves of an
+// input's value attribute: a color input holds a lowercase #rrggbb and
+// turns anything else into #000000, and a datetime-local input blanks a
+// value that is not a local date and time (a fraction past three
+// digits included).
+func sanitizedValue(typ, v string) string {
+	switch typ {
+	case "color":
+		if simpleColorRe.MatchString(v) {
+			return strings.ToLower(v)
+		}
+		return "#000000"
+	case "datetime-local":
+		if !localDateTimeRe.MatchString(v) {
+			return ""
+		}
+	}
+	return v
+}
+
 // formFields serializes the controls owned by the form with id formID the
 // way FormData does: a control's owner is the form its form attribute
 // names, else the form around it; disabled controls, unchecked boxes and
-// nameless controls are skipped.
+// nameless controls are skipped. A select submits its selected option
+// (the last one marked, else the first that is not disabled), and
+// nothing when that option is disabled.
 func formFields(body, formID string) map[string]string {
 	out := map[string]string{}
 	current := ""
-	var sel struct{ name, owner string }
+	var sel struct {
+		name, owner, picked, first  string
+		marked, pickedOff, hasFirst bool
+	}
 	matches := formTagRe.FindAllStringSubmatchIndex(body, -1)
 	for i, m := range matches {
 		closing, tag, raw := body[m[2]:m[3]], body[m[4]:m[5]], body[m[6]:m[7]]
@@ -41,6 +71,14 @@ func formFields(body, formID string) map[string]string {
 			continue
 		}
 		if closing != "" {
+			if tag == "select" && sel.name != "" && sel.owner == formID {
+				switch {
+				case sel.marked && !sel.pickedOff:
+					out[sel.name] = sel.picked
+				case !sel.marked && sel.hasFirst:
+					out[sel.name] = sel.first
+				}
+			}
 			if tag == "select" {
 				sel.name = ""
 			}
@@ -61,7 +99,7 @@ func formFields(body, formID string) map[string]string {
 					continue
 				}
 			}
-			out[attrs["name"]] = attrs["value"]
+			out[attrs["name"]] = sanitizedValue(attrs["type"], attrs["value"])
 		case "textarea":
 			if attrs["name"] == "" || disabled || owner != formID {
 				continue
@@ -73,18 +111,19 @@ func formFields(body, formID string) map[string]string {
 			out[attrs["name"]] = html.UnescapeString(body[m[1]:end])
 		case "select":
 			sel.name, sel.owner = "", ""
+			sel.marked, sel.pickedOff, sel.hasFirst = false, false, false
 			if attrs["name"] != "" && !disabled {
 				sel.name, sel.owner = attrs["name"], owner
-				if owner == formID {
-					out[sel.name] = ""
-				}
 			}
 		case "option":
 			if sel.name == "" || sel.owner != formID {
 				continue
 			}
 			if _, on := attrs["selected"]; on {
-				out[sel.name] = attrs["value"]
+				sel.picked, sel.pickedOff, sel.marked = attrs["value"], disabled, true
+			}
+			if !disabled && !sel.hasFirst {
+				sel.first, sel.hasFirst = attrs["value"], true
 			}
 		}
 	}

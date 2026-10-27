@@ -132,6 +132,12 @@ func Build(pages []Page) *Index {
 			continue
 		}
 		seenURL[p.URL], seenBody[body] = true, true
+		// The title is indexed with the lead section, and search reads
+		// Sections[0]; a page built with none gets an empty lead, as
+		// extraction always gives one.
+		if len(p.Sections) == 0 {
+			p.Sections = []Section{{}}
+		}
 		pi := len(idx.pages)
 		seen := map[string]bool{}
 		spans, slots := titleSlots(p.Title)

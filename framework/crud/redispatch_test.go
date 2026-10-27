@@ -33,7 +33,7 @@ func TestRedispatch_RunsThroughRouter(t *testing.T) {
 	if !ok {
 		t.Fatalf("result not envelope: %T", out)
 	}
-	if env["total"].(float64) != 1 {
+	if env["total"] != json.Number("1") {
 		t.Errorf("total = %v, want 1", env["total"])
 	}
 	if method, path := <-got, <-got; method != "method:GET" || path != "path:/api/widgets" {

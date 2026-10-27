@@ -64,10 +64,36 @@ explicitly approves after reviewing the verbatim `resource:verb` list**,
 not a signature/PKI (no signing authority, key distribution, or revocation
 is defined yet).
 
-Process modules default to **disabled** at install. The operator enables
-one via `app.ProcessModules().Enable(ctx, "billing")`; disable, grant
+Process modules default to **disabled** at install, and a never-enabled
+module's routes answer 404. The operator enables one via
+`app.ProcessModules().Enable(ctx, "billing")`; `app.Modules().Enable`, the
+`app_module_enable` / `app_module_disable` MCP tools and the supervisor all
+drive the one stored state, and a toggle takes effect before the call
+returns. Enabling after `App.Start` spawns the child. Disable, grant
 revoke, and upgrade (artifact change) are all live and propagate across
-replicas through the SQL-backed `ProcessModuleStore`.
+replicas through the SQL-backed `ProcessModuleStore`. A request body over
+the module's limit answers 413 rather than reaching the child truncated.
+
+Every boot calls `RegisterProcessModule` again, and so does every
+replica sharing the store. It compares the descriptor with the stored
+row (`ProcessModuleStore.InstallOrUpdate`, whose `InstallOutcome` it
+reports in `RegisterResult.Outcome`):
+
+- **Same artifact and grants** (order and repeats ignored): nothing is
+  written, and the module keeps its enabled state and generation.
+- **New artifact, same grants**: the digest is updated and the
+  generation bumped, and the module stays enabled, so replicas restart
+  their children on the new build.
+- **Any grant change**, wider or narrower: the grants and digest are
+  updated, the generation bumped, and the module **disabled** until an
+  operator enables it again, with a Warn naming the previous and new
+  grants (`RegisterResult.PreviousGrants`). A runtime `RevokeGrants`
+  is not remembered across this: the descriptor's grants are written
+  back, and the module stays disabled until someone re-enables it.
+
+The routes reflect the stored enabled state from the first request after
+boot. Registering one name twice in the same process is still refused
+with `ErrModuleInstalled` and leaves the row alone.
 
 ## The trust boundary
 
@@ -203,10 +229,11 @@ so two modules cannot collide and every call is attributable. At handshake
 the host fetches `module.tool.list` and requires **byte-equality** with the
 descriptor digests; a child that adds, renames, or reshapes a tool is
 quarantined. A tool invocation forwards `module.tool.call` to the live
-child through the **same capability broker** as `module.http`; the calling
-agent's authority is resolved and delegated identically, and the tool's
-reverse `host.*` calls are checked as module-grant ∩ caller-authority
-(including the `CrossOwnerRead` carve-out). A tool can do nothing an HTTP
+child through the **same capability broker** as `module.http`, but the
+calling agent's credentials are not forwarded: the tool's reverse `host.*`
+calls run as an anonymous caller within the module's grants, so
+owner-scoped reads are refused by construction. Re-attaching the agent's
+roles there would let a tool read across owners. A tool can do nothing an HTTP
 route with the same grants couldn't; there is no separate tool-permission
 vocabulary.
 

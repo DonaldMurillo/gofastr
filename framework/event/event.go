@@ -247,8 +247,9 @@ func emitStrict(ctx context.Context, h EventHandler, event Event) (err error) {
 
 // EmitAsync publishes an event in a goroutine (fire-and-forget).
 //
-// Each handler runs inside emitSafe so a panicking subscriber takes itself
-// down without crashing the process. Nil entries are skipped defensively.
+// Each handler runs on its own goroutine inside emitSafe, so a subscriber
+// that blocks holds back no other and a panicking one takes only itself
+// down. Nil entries are skipped defensively.
 func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
@@ -264,7 +265,7 @@ func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 			if h == nil {
 				continue
 			}
-			_ = emitSafe(ctx, h, event)
+			go func() { _ = emitSafe(ctx, h, event) }()
 		}
 	}()
 }

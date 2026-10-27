@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -113,8 +114,10 @@ func (s *Server) RegisterPrompt(name string, handler PromptHandler, opts ...Prom
 	s.mu.Unlock()
 
 	// Connected clients re-list. Before serving has begun this fans out
-	// to zero subscribers, so boot-time registration notifies nobody.
-	s.NotifyPromptsListChanged()
+	// to zero subscribers, so boot-time registration notifies nobody. The
+	// notice carries the prompt's own gate: a caller it refuses cannot
+	// list the prompt and is not told it appeared.
+	s.notifySubscribers(sseNotification{method: "notifications/prompts/list_changed", itemGate: p.gate})
 	return nil
 }
 
@@ -135,10 +138,12 @@ type promptsListResult struct {
 }
 
 // promptsGetParams are the params for a prompts/get request, per the MCP
-// spec: a prompt name and an arguments object (string values).
+// spec: a prompt name and an arguments object (string values). The values
+// decode as pointers so a null is seen and refused: into a plain string it
+// decoded as "", and a required argument sent as null passed as provided.
 type promptsGetParams struct {
-	Name      string            `json:"name"`
-	Arguments map[string]string `json:"arguments,omitempty"`
+	Name      string             `json:"name"`
+	Arguments map[string]*string `json:"arguments,omitempty"`
 }
 
 // promptsGetResult is the result shape for prompts/get: an optional
@@ -255,17 +260,30 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		}}
 	}
 
+	// Argument values are strings; a number or an array already failed
+	// the decode above, and a null is refused here. Like the required
+	// check below, this runs after the gate so a refused caller learns
+	// nothing about the prompt's arguments.
+	args := make(map[string]string, len(params.Arguments))
+	for _, name := range slices.Sorted(maps.Keys(params.Arguments)) {
+		v := params.Arguments[name]
+		if v == nil {
+			return newErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("argument %q must be a string, not null", name))
+		}
+		args[name] = *v
+	}
+
 	// Required-argument validation runs before the handler so a
 	// half-filled prompt never renders.
 	for _, a := range p.Arguments {
 		if a.Required {
-			if _, provided := params.Arguments[a.Name]; !provided {
+			if _, provided := args[a.Name]; !provided {
 				return newErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("missing required argument %q", a.Name))
 			}
 		}
 	}
 
-	messages, err := s.getPromptMessages(ctx, p, params.Arguments)
+	messages, err := s.getPromptMessages(ctx, p, args)
 	if err != nil {
 		return handlerErrorResponse(req, err, "mcp: prompt handler failed", "internal prompt error",
 			slog.String("prompt", p.Name))

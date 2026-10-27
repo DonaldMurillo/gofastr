@@ -156,8 +156,15 @@ func (l *Live) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	defer unsub()
 
 	// Send a hello event so the client knows the stream is open even
-	// before the first real edit lands.
-	fmt.Fprint(w, "event: ready\ndata: {}\n\n")
+	// before the first real edit lands. It names the world the app serves
+	// now: an edit broadcast after the page rendered but before this
+	// subscription reached no one, and the client reloads on a mismatch.
+	// The stamp is read after Subscribe, so a later edit arrives as an
+	// event instead.
+	l.mu.RLock()
+	stamp := l.stamp
+	l.mu.RUnlock()
+	fmt.Fprintf(w, "event: ready\ndata: {\"world\":%q}\n\n", stamp) // hex, so %q is valid JSON
 	flusher.Flush()
 
 	for {

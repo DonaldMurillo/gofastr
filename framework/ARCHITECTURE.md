@@ -271,6 +271,8 @@ framework/
 │                    module, not part of the public API)
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
+├── internal/jsonexact/ JSON decode that keeps numbers under `any` exact,
+│                    shared by typed hooks (framework) and typed reads (crud/)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
 ├── localentity/     Records kept in the visitor's browser: Define over a
 │                    core-ui/localdb store, Form/List/Count helpers that
@@ -384,7 +386,8 @@ The root package `framework/` itself contains:
 ## Layering rules (top imports bottom, reverse is forbidden)
 
 ```
-L1  internal/casing, internal/exif            (no internal deps; exif is the
+L1  internal/casing, internal/exif,           (no internal deps; exif is the
+    internal/jsonexact
                                               leaf TIFF walker shared by
                                               file/ and image/ so file
                                               never links the codecs)
@@ -418,7 +421,7 @@ L5  framework/  (facade)                     (re-exports everything for
 `go list -f '{{join .Imports "\n"}}' ./framework/<pkg>` when in doubt.
 The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate.
-Today's intra-L3 edges: `slowquery → db`, `outbox → event + db`,
+Today's intra-L3 edges: `slowquery → db`, `softdelete → db`, `outbox → event + db`,
 `embed → db + migrate + tenant`, `imagefield → file + image`,
 `contracts → agentsinv`, `headless → agentsinv`, `contracts/analyzers → access` (the one
 Levenshtein, `access.EditDistance`, behind both the capability

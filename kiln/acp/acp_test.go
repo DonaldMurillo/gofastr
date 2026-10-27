@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -271,6 +272,13 @@ func TestPromptStreamsToolCallFrames(t *testing.T) {
 	if prov.seen[len(prov.seen)-1].Messages[len(prov.seen[len(prov.seen)-1].Messages)-1].Role != "tool_result" {
 		t.Error("second turn should have seen the tool result")
 	}
+	// ...under this session, so session/load replays it.
+	tools.Live().ReadSession(func(s *journal.Session) {
+		last := s.Chat[len(s.Chat)-1]
+		if last.Message == nil || last.Message.Text != "posts added" || last.Message.ACPSession != sid {
+			t.Errorf("assistant reply journaled as %+v, want it tagged with session %s", last.Message, sid)
+		}
+	})
 }
 
 // A failing dispatch must mark the tool call failed, not completed,
@@ -417,6 +425,201 @@ func TestLoadSessionReplaysKilnChat(t *testing.T) {
 	}
 	if ups[0]["sessionUpdate"] != acpcore.UpdateUserMessageChunk || ups[1]["sessionUpdate"] != acpcore.UpdateAgentMessageChunk {
 		t.Errorf("replay order wrong: %v", ups)
+	}
+}
+
+// session/load replays only the loaded session's own turns: the
+// journal's chat timeline is shared by every ACP session and by the
+// panel, so loading an untouched session B streamed session A's
+// conversation under B's id.
+func TestLoadReplaysOnlyOwnSession(t *testing.T) {
+	tools := newTools(t)
+	d, a := handshakedDialog(t, tools)
+	d.request(3, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	b := d.untilResponseID(3)["result"].(map[string]any)["sessionId"].(string)
+
+	d.request(4, "session/prompt", promptParams(a, "secret plan for A"))
+	d.untilResponseID(4)
+	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "typed in the panel"})
+
+	d.request(5, "session/load", map[string]any{"sessionId": b, "cwd": t.TempDir(), "mcpServers": []any{}})
+	resp, notifs := d.untilResponse(5)
+	if resp["error"] != nil {
+		t.Fatalf("session/load errored: %v", resp["error"])
+	}
+	if ups := updatesOf(t, notifs); len(ups) != 0 {
+		t.Errorf("loading untouched session B replayed %v", ups)
+	}
+
+	d.request(6, "session/load", map[string]any{"sessionId": a, "cwd": t.TempDir(), "mcpServers": []any{}})
+	_, notifs = d.untilResponse(6)
+	ups := updatesOf(t, notifs)
+	if len(ups) != 2 || ups[0]["content"].(map[string]any)["text"] != "secret plan for A" {
+		t.Errorf("loading A replayed %v, want A's user message and the refusal note", ups)
+	}
+}
+
+// A chat tool call cannot file a message under a session's replay: the
+// session tag is set in process only, never decoded from tool args.
+func TestChatToolCannotTagSession(t *testing.T) {
+	tools := newTools(t)
+	var victim string
+	prov := &funcProvider{fn: func(_ context.Context, req agent.Request) (agent.Turn, error) {
+		if len(req.Messages) > 1 {
+			return agent.Turn{StopReason: "end_turn"}, nil
+		}
+		return agent.Turn{ToolCalls: []agent.ToolCall{{CallID: "c1", Name: "chat", Args: map[string]any{
+			"role": "assistant", "text": "injected", "acp_session": victim,
+		}}}, StopReason: "tool_use"}, nil
+	}}
+	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
+	d.request(3, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	victim = d.untilResponseID(3)["result"].(map[string]any)["sessionId"].(string)
+	d.request(4, "session/prompt", promptParams(sid, "say something"))
+	d.untilResponseID(4)
+	d.request(5, "session/load", map[string]any{"sessionId": victim, "cwd": t.TempDir(), "mcpServers": []any{}})
+	_, notifs := d.untilResponse(5)
+	if ups := updatesOf(t, notifs); len(ups) != 0 {
+		t.Errorf("a chat tool call reached session %s's replay: %v", victim, ups)
+	}
+}
+
+// A client that stops reading during a session/load replay does not
+// stall the world: the replay wrote to the client while holding Live's
+// read lock, so every Apply (any edit, any chat message) in the process
+// waited on that client.
+func TestLoadStalledClientKeepsApply(t *testing.T) {
+	tools := newTools(t)
+	d, sid := handshakedDialog(t, tools)
+	// More messages than the harness buffers, so the replay blocks on a
+	// client that is not reading.
+	for i := range 2 * cap(d.frames) {
+		if res := tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: fmt.Sprintf("m%d", i), ACPSession: sid}); !res.OK {
+			t.Fatalf("seed chat: %+v", res)
+		}
+	}
+	d.request(3, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
+	for deadline := time.Now().Add(3 * time.Second); len(d.frames) < cap(d.frames); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the replay never filled the client's buffer")
+		}
+	}
+	applied := make(chan protocol.Result, 1)
+	go func() {
+		applied <- tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "from the panel"})
+	}()
+	select {
+	case res := <-applied:
+		if !res.OK {
+			t.Errorf("chat during the stalled replay: %+v", res)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("an Apply waited on a client that stopped reading a session/load replay")
+		d.untilResponseID(3) // drain, so the replay and the Apply finish
+		<-applied
+		return
+	}
+	d.untilResponseID(3)
+}
+
+// cancelProvider waits out the prompt's cancel and then answers with a
+// successful turn calling add_entity, the shape of a provider that
+// finished its request before it noticed the cancel.
+type cancelProvider struct{ started chan struct{} }
+
+func (p *cancelProvider) Stream(ctx context.Context, _ agent.Request) (agent.Turn, error) {
+	close(p.started)
+	<-ctx.Done()
+	return agent.Turn{Text: "done anyway", ToolCalls: []agent.ToolCall{postsCall("c1")}, StopReason: "tool_use"}, nil
+}
+
+func postsCall(id string) agent.ToolCall {
+	return agent.ToolCall{CallID: id, Name: "add_entity", Args: map[string]any{
+		"entity": map[string]any{"name": "posts", "fields": []any{map[string]any{"name": "title", "type": "string"}}},
+	}}
+}
+
+// A provider that returns a successful turn after the prompt was
+// canceled does not get its tool calls run or its text journaled: the
+// prompt answers cancelled, so nothing may change behind that answer.
+func TestCancelAfterStreamRunsNoTools(t *testing.T) {
+	tools := newTools(t)
+	prov := &cancelProvider{started: make(chan struct{})}
+	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
+	d.request(3, "session/prompt", promptParams(sid, "add posts"))
+	<-prov.started
+	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	resp := d.untilResponseID(3)
+	if got := resp["result"].(map[string]any)["stopReason"]; got != acpcore.StopCancelled {
+		t.Errorf("stopReason = %v, want cancelled", got)
+	}
+	if _, ok := tools.Live().Session().World.Entities["posts"]; ok {
+		t.Error("add_entity ran after the prompt was canceled")
+	}
+	tools.Live().ReadSession(func(s *journal.Session) {
+		for _, ev := range s.Chat {
+			if ev.Message != nil && ev.Message.Text == "done anyway" {
+				t.Error("the canceled turn's text was journaled")
+			}
+		}
+	})
+}
+
+// funcProvider answers Stream with fn.
+type funcProvider struct {
+	fn func(ctx context.Context, req agent.Request) (agent.Turn, error)
+}
+
+func (p *funcProvider) Stream(ctx context.Context, req agent.Request) (agent.Turn, error) {
+	return p.fn(ctx, req)
+}
+
+// A cancel that lands while one tool call runs stops the turn before
+// the next: the second call must not dispatch behind a cancelled
+// answer.
+func TestCancelBetweenToolCalls(t *testing.T) {
+	tools := newTools(t)
+	held, release := make(chan struct{}), make(chan struct{})
+	prov := &funcProvider{fn: func(context.Context, agent.Request) (agent.Turn, error) {
+		// Hold Live's read lock so the first call (a chat, an Apply)
+		// blocks until the test has canceled the prompt.
+		go tools.Live().ReadSession(func(*journal.Session) {
+			close(held)
+			<-release
+		})
+		<-held
+		return agent.Turn{ToolCalls: []agent.ToolCall{
+			{CallID: "c1", Name: "chat", Args: map[string]any{"role": "assistant", "text": "first"}},
+			postsCall("c2"),
+		}, StopReason: "tool_use"}, nil
+	}}
+	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
+	d.request(3, "session/prompt", promptParams(sid, "two calls"))
+	<-held
+	// Wait for the first call's in_progress frame: the turn is past
+	// every check before it, inside the blocked dispatch.
+	for {
+		f := d.frame()
+		if f["method"] != "session/update" {
+			continue
+		}
+		u := f["params"].(map[string]any)["update"].(map[string]any)
+		if u["toolCallId"] == "c1" && u["status"] == acpcore.ToolStatusInProgress {
+			break
+		}
+	}
+	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	// Requests are handled in read order, so this answer means the
+	// cancel above has been acted on.
+	d.request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.untilResponseID(4)
+	close(release)
+	resp := d.untilResponseID(3)
+	if got := resp["result"].(map[string]any)["stopReason"]; got != acpcore.StopCancelled {
+		t.Errorf("stopReason = %v, want cancelled", got)
+	}
+	if _, ok := tools.Live().Session().World.Entities["posts"]; ok {
+		t.Error("the second tool call ran after the prompt was canceled")
 	}
 }
 

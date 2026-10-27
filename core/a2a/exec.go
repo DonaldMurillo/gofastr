@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // cloneTask deep-copies a Task so a caller mutating a returned record
@@ -26,7 +27,7 @@ func cloneTask(t Task) Task {
 		return t
 	}
 	var out Task
-	if err := json.Unmarshal(b, &out); err != nil {
+	if err := jsonexact.Unmarshal(b, &out); err != nil {
 		return t
 	}
 	return out
@@ -39,7 +40,7 @@ func cloneMessage(m Message) Message {
 		return m
 	}
 	var out Message
-	if err := json.Unmarshal(b, &out); err != nil {
+	if err := jsonexact.Unmarshal(b, &out); err != nil {
 		return m
 	}
 	return out
@@ -90,12 +91,18 @@ type taskRun struct {
 	// run starts. Its halted flag refuses every mutation once
 	// CancelTask has claimed the task.
 	rn *run
+	// runCtx is the handler's context, set with rn. Once its
+	// TaskTimeout deadline passes every mutation is refused, so a
+	// handler that outlives the ceiling cannot settle the task over
+	// finalize's "task timed out".
+	runCtx context.Context
 }
 
-func (t *taskRun) attach(rn *run) {
+func (t *taskRun) attach(rn *run, runCtx context.Context) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.rn = rn
+	t.runCtx = runCtx
 }
 
 // haltedLocked reports whether CancelTask has claimed this run. The
@@ -149,6 +156,9 @@ func (t *taskRun) Request() *http.Request { return t.req }
 // Working moves the task to TASK_STATE_WORKING with an optional agent
 // status message. Idempotent once working.
 func (t *taskRun) Working(parts ...Part) error {
+	if err := validateParts(parts); err != nil {
+		return err
+	}
 	return t.mutate(func(task *Task) (*StreamResponse, error) {
 		switch state := task.Status.State; {
 		case state.Terminal():
@@ -166,6 +176,9 @@ func (t *taskRun) Working(parts ...Part) error {
 
 // Artifact records an artifact and emits an artifact-update event.
 func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
+	if err := validateParts(a.Parts); err != nil {
+		return err
+	}
 	return t.mutate(func(task *Task) (*StreamResponse, error) {
 		if state := task.Status.State; state.Terminal() {
 			return nil, errTerminalRefusal(task.ID, state, TaskStateWorking)
@@ -242,6 +255,9 @@ func errTerminalRefusal(id string, state, want TaskState) error {
 
 func (t *taskRun) terminalFn(state TaskState, parts []Part) func(*Task) (*StreamResponse, error) {
 	return func(task *Task) (*StreamResponse, error) {
+		if err := validateParts(parts); err != nil {
+			return nil, err
+		}
 		if cur := task.Status.State; cur.Terminal() {
 			return nil, errTerminalRefusal(task.ID, cur, state)
 		}
@@ -251,6 +267,9 @@ func (t *taskRun) terminalFn(state TaskState, parts []Part) func(*Task) (*Stream
 
 func (t *taskRun) pauseFn(state TaskState, parts []Part) func(*Task) (*StreamResponse, error) {
 	return func(task *Task) (*StreamResponse, error) {
+		if err := validateParts(parts); err != nil {
+			return nil, err
+		}
 		if cur := task.Status.State; cur.Terminal() {
 			return nil, errTerminalRefusal(task.ID, cur, state)
 		}
@@ -324,6 +343,9 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	if t.haltedLocked() {
 		return fmt.Errorf("%w: task %s is being canceled", errConcurrentChange, t.rec.Task.ID)
 	}
+	if t.runCtx != nil && errors.Is(t.runCtx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("a2a: task %s timed out: %w", t.rec.Task.ID, context.DeadlineExceeded)
+	}
 	cand := t.rec.Clone()
 	ev, err := build(&cand.Task)
 	if err != nil {
@@ -340,13 +362,20 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 		return fmt.Errorf("a2a: persist task %s: %w", t.rec.Task.ID, err)
 	}
 	t.rec = cand
+	if t.interrupted && t.rn != nil {
+		t.rn.pausedAt.Store(cand.Version)
+	}
 	if ev != nil {
 		t.srv.publish(t.owner, t.rec, *ev)
 	}
 	// A persist that left the task terminal is the retention hook: the
 	// oldest terminal rows past Config.TerminalTaskRetention go now.
-	if cand.Task.Status.State.Terminal() {
+	// A pause is the paused-retention hook the same way.
+	switch state := cand.Task.Status.State; {
+	case state.Terminal():
 		t.srv.trimTerminalTasks(t.owner)
+	case state.Interrupted():
+		t.srv.trimPausedTasks(t.owner)
 	}
 	return nil
 }
@@ -433,9 +462,21 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 		if cur := rec.Task.Status.State; cur.Terminal() || cur.Interrupted() {
 			// Settled elsewhere (CancelTask, another replica): adopt the
 			// stored record, so a SendMessage waiting on this run answers
-			// with it rather than with the run's stale WORKING copy.
+			// with it rather than with the run's stale WORKING copy. A
+			// halted run's state was announced by whoever halted it (a
+			// local CancelTask, or watchRemoteCancel); an unhalted one was
+			// settled on another replica after the watch ended, so this
+			// replica's subscribers hear it here.
 			t.mu.Lock()
+			announce := t.rn != nil && !t.haltedLocked() && cur.Terminal() && rec.Version > t.rec.Version
 			t.rec = rec
+			if announce {
+				t.rn.bus.publish(busEvent{ev: StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
+					TaskID:    rec.Task.ID,
+					ContextID: rec.Task.ContextID,
+					Status:    rec.Task.Status,
+				}}, version: rec.Version})
+			}
 			t.mu.Unlock()
 			return true
 		}

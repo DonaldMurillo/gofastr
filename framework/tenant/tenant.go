@@ -9,10 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// tenantIDKey is the context key for the string tenant identifier
-// used by the framework-level tenant helpers.
-type tenantIDKey struct{}
-
 // crossTenantKey marks a context as deliberately cross-tenant. It must ONLY
 // ever be set server-side (admin routes, background jobs), never derived from
 // a client-supplied header, or it becomes a tenant-isolation bypass.
@@ -130,16 +126,17 @@ func TenantMiddleware(header string) func(http.Handler) http.Handler {
 	}
 }
 
-// SetTenantID stores the tenant ID string in the context.
+// SetTenantID stores the tenant ID string in the context. The slot is
+// core/handler's (handler.SetTenantID), so packages below this one, such as
+// access.CachedResolver, can read the same tenant.
 func SetTenantID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, tenantIDKey{}, id)
+	return handler.SetTenantID(ctx, id)
 }
 
 // GetTenantID retrieves the tenant ID string from the context.
 // Returns an empty string if no tenant ID is set.
 func GetTenantID(ctx context.Context) string {
-	id, _ := ctx.Value(tenantIDKey{}).(string)
-	return id
+	return handler.GetTenantID(ctx)
 }
 
 // InjectTenantID automatically injects the tenant_id field into a data map

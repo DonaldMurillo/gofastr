@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // RefuseFoldedKey rejects a Save whose key would land on an object stored
@@ -84,6 +85,26 @@ func RefuseFoldedKey(key, _ string, root string, rt *os.Root) error {
 		}
 	}
 	return nil
+}
+
+// foldCommitMu serializes every local backend's check-then-rename, so two
+// saves that fold together cannot both pass the check before either
+// rename lands.
+var foldCommitMu sync.Mutex
+
+// CommitUnfolded re-runs [RefuseFoldedKey] and then calls rename, both
+// under one process-wide lock. The up-front check in a Save runs before
+// the copy: a second spelling saved while the first is still a temp file
+// passes it, and the first rename would then overwrite the object the
+// second save stored. Saves from other processes sharing the directory
+// are not serialized by this lock.
+func CommitUnfolded(key, root string, rt *os.Root, rename func() error) error {
+	foldCommitMu.Lock()
+	defer foldCommitMu.Unlock()
+	if err := RefuseFoldedKey(key, "", root, rt); err != nil {
+		return err
+	}
+	return rename()
 }
 
 // foldedEntryName reports whether the parent directory holds a byte-equal

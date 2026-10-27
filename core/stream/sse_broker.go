@@ -87,6 +87,29 @@ type subscriber struct {
 	filter   string // optional event name filter
 	done     chan struct{}
 	slowMode sseSlowMode
+
+	// cut ends a write the handler is parked in (a past write deadline
+	// on the response). Closing done only reaches a handler waiting in
+	// its select; one parked inside a socket write to a peer that
+	// stopped reading never looks at done, and with no server
+	// WriteTimeout (the usual SSE setting) it stays resident after
+	// eviction gave its seat away. cutMu and returned keep cut from
+	// running once the handler has returned: the response then belongs
+	// to net/http, and a keep-alive connection may already carry the
+	// next request.
+	cutMu    sync.Mutex
+	cut      func()
+	returned bool
+}
+
+// interruptWrite unblocks a write the evicted handler may be parked in.
+// Called after the eviction released b.mu, never under it.
+func (s *subscriber) interruptWrite() {
+	s.cutMu.Lock()
+	defer s.cutMu.Unlock()
+	if !s.returned && s.cut != nil {
+		s.cut()
+	}
 }
 
 type sseEvent struct {
@@ -317,13 +340,24 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	filter := r.URL.Query().Get("event")
 
+	rc := http.NewResponseController(w)
 	sub := &subscriber{
 		requestedID: subID,
 		ch:          make(chan sseEvent, bufSize),
 		filter:      filter,
 		done:        make(chan struct{}),
 		slowMode:    b.parseSlowMode(r),
+		// A writer that cannot take a deadline (ErrNotSupported) leaves
+		// the parked write to the server's own WriteTimeout.
+		cut: func() { _ = rc.SetWriteDeadline(time.Now()) },
 	}
+	// Registered first so it runs last: no eviction can cut the
+	// response after this returns.
+	defer func() {
+		sub.cutMu.Lock()
+		sub.returned = true
+		sub.cutMu.Unlock()
+	}()
 
 	// Eviction is scoped to the SAME principal. subscriber_id exists so
 	// apps can pass a meaningful id (user, tab, device), but it is
@@ -372,6 +406,10 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// global 503 above; EvictOldest closes this principal's oldest
 	// stream instead, with the same done/map ownership the replacement
 	// path uses (close, delete, and the evicted loop's defer skips).
+	// evicted is the stream this Subscribe pushes out, if any. Closing
+	// its done ends a handler waiting in its select; interruptWrite,
+	// after the unlock, ends one parked in a write.
+	var evicted *subscriber
 	if !replacing {
 		if seats := seatsFor(b.seatCap); seats > 0 && len(b.seatOrder[sub.principal]) >= seats {
 			if b.seatOverflow != SeatOverflowEvictOldest || len(b.seatOrder[sub.principal]) == 0 {
@@ -383,17 +421,22 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 			b.spliceSeatLocked(oldest)
 			delete(b.subscribers, oldest.regID)
 			close(oldest.done)
+			evicted = oldest
 		}
 	}
 	if replacing {
 		// The incumbent's seat transfers to its replacement.
 		b.spliceSeatLocked(prev)
 		close(prev.done)
+		evicted = prev
 	}
 	sub.regID = registrationID
 	b.subscribers[registrationID] = sub
 	b.seatOrder[sub.principal] = append(b.seatOrder[sub.principal], sub)
 	b.mu.Unlock()
+	if evicted != nil {
+		evicted.interruptWrite()
+	}
 	subID = registrationID
 
 	defer func() {

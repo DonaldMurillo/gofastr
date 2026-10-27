@@ -87,12 +87,29 @@ go build -o site ./examples/site/
   (`widgets`, `headless-feedback`, `headless-navigation`, …), one file per module.
 - `/__gofastr/app.css` and `/__gofastr/comp/<name>.css`: global and
   per-component stylesheets.
-- Per-route `llm.md` (unless `NoLLMMD` is set).
+- Per-route `llm.md` (unless `NoLLMMD` is set). The exported `llm.md`
+  index links only the docs the export wrote: a dynamic route lists its
+  pattern followed by a link to each exported page's doc, and a page
+  whose doc was not written appears without a link. The builder hands
+  the written docs to the index through `app.WithExportedDocs(ctx, docs)`.
+  Each page's doc renders under the same synthetic request as its HTML,
+  so a screen that reads the request works in both.
+- `.gofastr-pages`: the list of page and `llm.md` files this build
+  wrote. The next build into the same `OutDir` removes any listed file
+  it no longer writes, such as a page that became gated or a route that
+  was dropped, so the static host stops serving it with a 200. A file
+  the builder never listed, and anything this build wrote or copied,
+  stays; a first build with no list removes nothing.
 - With `uihost.WithSitemap` / `uihost.WithRobots`: `sitemap.xml` and
-  `robots.txt`, byte-identical to what the live handlers serve (same
-  route expansion via `StaticPathsProvider`, same `ExcludePaths`, same
-  AI-bot rules). A gated screen the export skips is not in the sitemap
-  either. Under `--export-base` every sitemap `<loc>` and the
+  `robots.txt`, built by the live handlers' code (same route expansion
+  via `StaticPathsProvider`, same `ExcludePaths`, same AI-bot rules).
+  The sitemap lists only the pages the export wrote: a page it skipped
+  (a gated screen, an `ExcludeRoutes` route, a 404-outlet route, a page
+  that answers a status other than 200, a path a redirect takes) has no
+  file on the static host, so its `<url>` entry is dropped, in every
+  locale. The export renders the sitemap twice to tell the entries
+  apart; when a `StaticPaths` answers in a different order or count
+  the second time, the build warns and keeps the sitemap whole. Under `--export-base` every sitemap `<loc>` and the
   derived `Sitemap:` line in robots.txt include the subpath, once
   even when the sitemap's `BaseURL` already ends in it. A
   `sitemap.xml` or `robots.txt` in the app's static dir wins over the
@@ -101,7 +118,8 @@ go build -o site ./examples/site/
   the file is still emitted for apex/custom-domain deploys.
 - With [`uihost.WithPWA`](pwa.md): `manifest.webmanifest`,
   `service-worker.js`, `__gofastr/pwa/register.js`, and
-  `__gofastr/pwa/offline/index.html`. Under `--export-base` the
+  `__gofastr/pwa/offline/index.html` (the offline page carries the
+  export's CSP meta tag, as every page does). Under `--export-base` the
   manifest's `start_url`/`scope`/`id`/icon paths, the worker's precache
   and deny lists, and the registration target are all prefixed, so the
   exported app installs and works offline from the subpath.
@@ -124,6 +142,35 @@ go build -o site ./examples/site/
   (`/api`, `/auth`, framework session/SSE paths) are still never
   precached or intercepted, and a user-supplied `manifest.webmanifest`
   or `service-worker.js` in the static dir wins over the generated one.
+
+- `_headers` (Netlify, Cloudflare Pages) with the
+  Content-Security-Policy, `X-Content-Type-Options` and
+  `Referrer-Policy`, and the same policy as a `<meta>` in every page;
+  see [Content-Security-Policy](#content-security-policy) below.
+- For each `app.Redirect`, a page at the old path and a `_redirects`
+  rule; see [Redirects](#redirects) below.
+- Every file in the app's static dir (or embedded static FS), copied
+  to the same path, `index.html` files included. The one file refused
+  is one at the path of a page the build rendered (`about/index.html`
+  beside an `/about` route); the build log names it. A static-dir
+  `_headers` or `_redirects` replaces the generated one.
+- `Builder.ExtraDirs` files under their mount path. A page or asset
+  the build wrote (the generated `_headers` and `_redirects` included),
+  or a file the static source provides, wins over an extra file at the
+  same path. Which file wins is decided by this
+  build and the static source, never by what an earlier build left in
+  the output directory, so `Builder.Watch` (which rebuilds into the
+  same directory) picks up a changed extra file.
+
+In an app that routes by locale prefix (`framework.WithLocalePrefixes`)
+each prefixed locale gets its own page tree (`/es/about/index.html`)
+and its page links are prefixed (`/es/about/`). The static dir and
+`ExtraDirs` are copied once, to the export root, so a link from a
+Spanish page to `/files/report.pdf` keeps its root path; so does a link
+to any path that no route or redirect takes. A link is matched in its
+decoded form, so an escaped `/caf%C3%A9` to a `/café` route is a page
+link and takes the prefix. A copied file wins over a route that also
+matches its path, as it does on the live server.
 
 Dynamic routes require the screen to implement `StaticPathsProvider`, the
 static-export analogue of Next.js's `generateStaticParams`. Each returned
@@ -172,6 +219,81 @@ static host serves every file with a 200, so writing the page would
 tell every visitor it exists. The builder logs a `WARN` naming the
 route and the status (`uihost.StatusPageError`), and writes no
 `llm.md` for that page either.
+
+## Content-Security-Policy
+
+A live app sends its Content-Security-Policy as a response header
+(`core/middleware.SecurityHeaders`). A static host sets no headers of
+its own, so the export carries the policy two ways:
+
+- a `<meta http-equiv="Content-Security-Policy">` right after `<head>`
+  in every page, which every browser enforces on any host;
+- a `_headers` file at the export root, which Netlify and Cloudflare
+  Pages turn into a real response header.
+
+The policy is the one the app serves live:
+`AppConfig.SecurityHeaders.ContentSecurityPolicy` (set with
+`framework.WithSecurityHeaders`), or the built-in default
+(`default-src 'self'; img-src 'self' data:; object-src 'none';
+form-action 'self'; frame-ancestors 'none'; base-uri 'self'`) when it
+is unset. `App.ExportStatic` passes it as
+`static.Builder.ContentSecurityPolicy`; a builder built by hand sets
+that field. An app that allows `font-src https://fonts.gstatic.com`
+live gets the same font host on the static site.
+
+`_headers` carries the value as written. The `<meta>` differs in two
+ways, because a policy delivered in a `<meta>` behaves differently
+(CSP Level 3, section 3.1):
+
+- `frame-ancestors`, `report-uri` and `sandbox` are left out of the
+  meta: a browser ignores them there and logs a console warning for
+  each. The clickjacking guard (`frame-ancestors`) therefore applies
+  only on hosts that read `_headers`.
+- A comma-separated list of policies becomes one `<meta>` per policy.
+  A single meta parses one policy, so a list written into one would
+  fold the second policy's sources into the first's last directive
+  and allow more than either.
+
+The build fails on a policy it cannot write safely:
+
+- a `'nonce-…'` source. A server mints a nonce per response; written
+  into files, every visitor gets the same value, and an injected
+  script can carry it. Exported pages link every script, so no page
+  needs one. Drop the nonce source (hashes are fine).
+- a control byte (a line break would add a header line of the
+  policy's choosing to `_headers`), or a `"`, `<` or `>`, which no CSP
+  source uses and which would end the meta's attribute.
+
+## Redirects
+
+`app.Redirect("/old", "/new")` answers `/old` with a 308 on the live
+server. A static host has no route for it, so the export writes
+`old/index.html`: a `<meta http-equiv="refresh">` to the target and a
+plain link to it as the fallback, `noindex`, with the export's CSP and
+no script or style. The target is the end of the redirect chain, in
+the form the export links pages (`/new/`), under `--export-base` when
+one is set. In an app that routes by locale prefix each locale tree
+gets its own page, and its target follows the rule page links follow:
+a page target takes the tree's prefix, while a static file, a path no
+route takes, or a target that already names a locale (`/es/about`)
+keeps its path.
+
+The export also writes `_redirects` with one `/old /new/ 308` rule per
+redirect, which Netlify and Cloudflare Pages (the hosts that read
+`_headers`) answer with a real 308. An app with no redirects writes
+none, and removes one an earlier build left in the output directory.
+
+An exact redirect may take one concrete path of a dynamic screen
+(`/products/alpha` beside `/products/:slug`). The live router answers
+that path with the redirect, so the export writes the redirect page
+there, not the screen's page, and leaves the path out of
+`Result.Pages`, `llm.md` and the sitemap.
+
+`app.RedirectPattern` matches URLs no single file can stand for. The
+export skips it with a `WARN` naming the pattern; its URLs answer the
+export's `404.html`, and the live server keeps redirecting them. A
+redirect chain that never ends (the live router refuses it too) is
+skipped the same way.
 
 ## Failed fills refuse the export
 

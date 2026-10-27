@@ -11,6 +11,12 @@ var (
 	confirmSubmit      = i18n.Define("auth.confirm_submit", "Sign in")
 )
 
+// The words on the page that finishes linking a sign-in provider.
+var (
+	oauthHopTitle    = i18n.Define("auth.oauth_hop_title", "Finishing the link")
+	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
+)
+
 // The refusals this package writes, under their catalog keys.
 var (
 	reasonSessionRequired                = i18n.Define("auth.session_required", "interactive session required, not an API token")

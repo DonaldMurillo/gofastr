@@ -61,13 +61,16 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
-	dropEmptyFormValues(ch.entitySchema(), body)
+	dropEmptyFormValues(ch.entitySchema(), body, false)
 	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidateAll(ch.entitySchema(), body)
 	if !vr.Valid {
 		return nil, &ValidationError{fields: vr.Errors}
+	}
+	if err := ch.refuseBlankKeyParts(body); err != nil {
+		return nil, err
 	}
 
 	// The belongs_to FKs in this body must resolve for THIS caller: a
@@ -95,7 +98,8 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		}
 		if f.AutoGenerate != schema.AutoNone {
 			cols = append(cols, f.Name)
-			vals = append(vals, body[f.Name])
+			// A hook's time.Time lands in the stored layout, not the driver's.
+			vals = append(vals, ch.bindJSONValue(f.Name, body[f.Name]))
 			continue
 		}
 		// The owner column is framework-managed: InjectOwner stamps it
@@ -146,7 +150,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		Returning(visFields...)
 
 	sqlStr, args := ib.Build()
-	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
+	row := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...)
 
 	result, err := ch.scanOne(row, visFields)
 	if err != nil {
@@ -240,7 +244,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// columns present in the body.
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
-	dropEmptyFormValues(ch.entitySchema(), body)
+	dropEmptyFormValues(ch.entitySchema(), body, true)
 	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
@@ -459,7 +463,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 		allArgs = append(allArgs, args...)
 		allArgs = append(allArgs, readArgs...)
 		var hit any
-		if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {
+		if err := ch.conn(ctx).QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("%w: relation %q target %s/%s is not readable by this caller", errNotFound, rel.Name, rel.Entity, fk)
 			}
@@ -734,7 +738,7 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 	applyReadScopeWhere(func(sql string, args ...any) { qb.Where(sql, args...) }, preds)
 	sqlStr, args := qb.Build()
 	var hit any
-	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&hit); err != nil {
+	if err := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&hit); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return true, nil
 		}
@@ -881,12 +885,16 @@ func (ch *CrudHandler) selectStored(ctx context.Context, r *http.Request, id str
 // has, so a number, date, or relation the user left blank arrives as ""
 // (the framework's own resource-engine forms included); the validator
 // read that as "must be an integer" and the form failed on a field the
-// user never touched, with the default it declared going unused. A
-// blank optional field is removed from the body (a create takes the
-// declared default, an update leaves the column alone); a blank required
-// field becomes nil, so the error names the real problem ("is required").
-// String and Text keep "" as a value: empty text is a thing a user says.
-func dropEmptyFormValues(s schema.Schema, body map[string]any) {
+// user never touched, with the default it declared going unused. On
+// create a blank optional field is removed from the body, so the
+// declared default applies; on update it becomes nil, so blanking the
+// control clears the column (dropping it kept the value while the save
+// reported success). A blank required field becomes nil either way, so
+// the error names the real problem ("is required"). String and Text keep
+// "" as a value: empty text is a thing a user says. A file input cannot
+// carry the stored value, so a blank Image or File on update means "no
+// new file" and leaves the column alone.
+func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) {
 	for _, f := range s.Fields {
 		v, ok := body[f.Name]
 		if !ok {
@@ -900,12 +908,17 @@ func dropEmptyFormValues(s schema.Schema, body map[string]any) {
 		case schema.String, schema.Text:
 			// Empty text is a value the user can mean.
 			continue
+		case schema.Image, schema.File:
+			if update {
+				delete(body, f.Name)
+				continue
+			}
 		default:
 			// Int, Float, Decimal, Bool, Enum, UUID, Timestamp, Date,
-			// JSON, Relation, Image, File: "" is not a value of the
-			// type, only a blank control.
+			// JSON, Relation: "" is not a value of the type, only a
+			// blank control.
 		}
-		if f.Required {
+		if f.Required || update {
 			body[f.Name] = nil
 			continue
 		}

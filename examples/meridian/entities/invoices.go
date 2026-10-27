@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=95f14324c949a4b4
+//gofastr:generated generator=app kind=scaffold version=dev sum=ce4f57c8186195a1
 
 package entities
 
@@ -58,8 +58,8 @@ type InvoicesInput struct {
 
 // InvoicesPatch is the update payload for InvoicesRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type InvoicesPatch struct {
 	CustomerId *string              `json:"customerId,omitempty"`
 	Number     *string              `json:"number,omitempty"`

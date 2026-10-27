@@ -61,50 +61,49 @@ func TestOriginFamiliesNeverCrossMatch(t *testing.T) {
 // the browser-attested ancestor always matches the entry the app minted for
 // — and the v4-mapped family never widens into the unbracketed IPv4 family.
 //
-// FLAG (not asserted either way): Go's net.IP.String() renders a v4-mapped
-// literal as a bracketed dotted quad ("[127.0.0.1]"), which is not a form
-// browsers emit in an Origin header (they keep "[::ffff:127.0.0.1]") and not
-// a valid CSP host-source grammar. Matching is self-consistent because BOTH
-// sides normalize through NormalizeOrigin, so pinning holds; whether the
-// frame-ancestors directive containing "[127.0.0.1]" is usable by a browser
-// is a serialization question for a human to rule on, not this test.
+// A v4-mapped literal is refused outright: Go's net.IP.String() renders it
+// as a bracketed dotted quad ("[127.0.0.1]"), which no browser sends (they
+// serialize "[::ffff:7f00:1]"), which is not a valid CSP host-source, and
+// which does not survive a second NormalizeOrigin (Host.MintNonce normalizes
+// before MintNonce normalizes again). See TestNormalizeOriginIdempotent.
 func TestIPv6SpellingsCollapseToCanonical(t *testing.T) {
-	// Two spellings of ::1 and two of ::ffff:127.0.0.1 must dedupe to two
-	// entries, not four: enumeration surface stays minimal and no spelling
-	// silently never matches.
+	// Two spellings of ::1 must dedupe to one entry: enumeration surface
+	// stays minimal and no spelling silently never matches.
 	set, err := newOriginSet([]string{
 		"https://[::1]",
 		"https://[0:0:0:0:0:0:0:1]",
-		"https://[::ffff:127.0.0.1]",
-		"https://[::ffff:7f00:1]",
 	})
 	if err != nil {
 		t.Fatalf("newOriginSet: %v", err)
 	}
-	if got := set.List(); len(got) != 2 {
-		t.Fatalf("IPv6 spellings deduped to %d entries (%v), want 2", len(got), got)
+	if got := set.List(); len(got) != 1 {
+		t.Fatalf("IPv6 spellings deduped to %d entries (%v), want 1", len(got), got)
 	}
 
-	// Every alternate spelling of each family matches, from the candidate
-	// side, exactly like a browser-attested ancestor would send it.
+	// Every alternate spelling matches, from the candidate side, exactly
+	// like a browser-attested ancestor would send it.
 	for _, cand := range []string{
 		"https://[0:0:0:0:0:0:0:1]",
 		"https://[::1]",
 		"https://[::1]:443", // default port for the scheme folds away
-		"https://[::FFFF:127.0.0.1]",
-		"https://[::ffff:7f00:1]",
 	} {
 		if !set.Has(cand) {
 			t.Errorf("candidate %q did not match its canonical IPv6 entry", cand)
 		}
 	}
 
-	// The families do not widen into each other: a bracketed v4-mapped
-	// entry must not admit the unbracketed IPv4 host a browser uses for
-	// "https://127.0.0.1", and vice versa.
-	if set.Has("https://127.0.0.1") {
-		t.Error("unbracketed IPv4 candidate matched a v4-mapped entry")
+	// The v4-mapped family is refused as an entry on both paths.
+	for _, mapped := range []string{"https://[::ffff:127.0.0.1]", "https://[::ffff:7f00:1]"} {
+		if _, err := newOriginSet([]string{mapped}); err == nil {
+			t.Errorf("static allowlist accepted v4-mapped entry %q", mapped)
+		}
+		if _, err := buildCustomerOriginSet([]string{mapped}); err == nil {
+			t.Errorf("customer origin set accepted v4-mapped entry %q", mapped)
+		}
 	}
+
+	// The families do not widen into each other: a v4-mapped candidate
+	// never matches an IPv4 entry.
 	v4only, err := newOriginSet([]string{"https://127.0.0.1"})
 	if err != nil {
 		t.Fatalf("newOriginSet(v4): %v", err)

@@ -14,6 +14,7 @@ var (
 	reasonSortControlBytes    = i18n.Define("filter.sort_control_bytes", "invalid sort {{sort}}: control bytes not allowed")
 	reasonInvalidSortField    = i18n.Define("filter.invalid_sort_field", "invalid sort field {{field}}")
 	reasonOpTypeMismatch      = i18n.Define("filter.op_type_mismatch", "operator {{op}} cannot filter {{field}} (type {{type}})")
+	reasonValueType           = i18n.Define("filter.value_type", "filter value for {{field}} is not a valid {{type}}")
 	reasonWhereInvalidJSON    = i18n.Define("filter.where_invalid_json", "where: invalid JSON: {{detail}}")
 	reasonWhereTooDeep        = i18n.Define("filter.where_too_deep", "where: nesting exceeds max depth {{max}}")
 	reasonWhereTooManyNodes   = i18n.Define("filter.where_too_many_nodes", "where: exceeds max node count {{max}}")

@@ -2,43 +2,80 @@ package crud
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
-
+	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
+
+// leakyStore fails every Save with an error naming its storage path, as
+// a backend that does not scrub its own errors (S3, a custom one) would.
+type leakyStore struct{ upload.Storage }
+
+func (leakyStore) Save(context.Context, string, io.Reader) error {
+	return &os.PathError{Op: "open", Path: "/srv/private-bucket/uploads/doc.png", Err: syscall.ENAMETOOLONG}
+}
+
+// A storage backend's Save failure is the server's fault: the client
+// gets a 500 with the fixed phrase, never the backend's error text.
+func TestUploadSaveErrorIsFixed500(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE uploads (id TEXT PRIMARY KEY, title TEXT, doc TEXT)`)
+	ent := entity.Define("uploads", entity.EntityConfig{
+		Name:   "uploads",
+		Table:  "uploads",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "doc", Type: schema.File}},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	ch.Storage = leakyStore{teststorage.New(t, t.TempDir())}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("doc", "doc.png")
+	fw.Write([]byte("B"))
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/uploads", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	ch.Create()(rec, withTestUser(req, "u1"))
+
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "private-bucket") {
+		t.Fatalf("save failure = %d %s, want 500 without the backend's text", rec.Code, rec.Body.String())
+	}
+}
 
 // TestMultipartSaveErrorNoAbsPathLeak pins CHAIN8-R5 (information
 // disclosure via error echo, LOW). The chain:
 //
-//  1. SanitizeFilename caps the sanitized name at MaxFilenameBytes=255
-//     "to protect log lines, filesystem APIs, and database columns"
-//     (core/upload/validate.go:81-85), but UniqueFilename then appends
-//     "_"+19-digit UnixNano+"_"+16 hex before the extension
-//     (core/upload/upload.go:44-52), so a ~250-byte client filename yields
-//     a ~287-byte path component — past POSIX NAME_MAX=255.
-//  2. core/upload LocalStorage.Save wraps the resulting os.OpenFile
-//     PathError unmapped ("creating file: %w", local.go:83-89); the
-//     scrubPath discipline is applied only to Get errors (local.go:186-196:
-//     "an HTTP handler that surfaces this … would otherwise leak the
-//     storage layout").
-//  3. The CRUD handlers echo the chain verbatim into the client response:
-//     writeJSONError(w, http.StatusBadRequest, err.Error()) at
-//     crud.go:941-944 (Create) and crud.go:1003-1010 (Update).
+//  1. A LocalStorage Save fails with an os.PathError carrying the
+//     ABSOLUTE storage path.
+//  2. The CRUD handlers echoed the error chain into the client response.
+//     They now answer any storage Save failure with a fixed 500
+//     (writeBodyError), whatever the backend's text; LocalStorage still
+//     scrubs its root for the log line.
 //
-// Deterministic trigger exercised here: a multipart create whose file part
-// has a 250-byte ASCII filename. Save fails ENAMETOOLONG carrying the
-// ABSOLUTE storage path, and the 400 body must not disclose it. This is the
-// same no-internal-error-text property the neighboring leak tests pin for
-// driver errors; asserted at the multipart save-error surface.
+// The original trigger was a 250-byte client filename that UniqueFilename's
+// suffix pushed past NAME_MAX; UniqueFilename now cuts the stem to fit, so
+// that name saves. The trigger here is an unreadable directory on the
+// key's path: resolving it fails with an lstat PathError naming the
+// absolute path, and the body must not disclose the storage root.
+// Root ignores directory modes, so the test skips there.
 func TestMultipartSaveErrorNoAbsPathLeak(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions; the EACCES trigger needs a non-root user")
+	}
 	db := setupDB(t, `CREATE TABLE uploads (id TEXT PRIMARY KEY, title TEXT, doc TEXT)`)
 	ent := entity.Define("uploads", entity.EntityConfig{
 		Name:  "uploads",
@@ -53,11 +90,14 @@ func TestMultipartSaveErrorNoAbsPathLeak(t *testing.T) {
 	dir := t.TempDir()
 	ch.Storage = teststorage.New(t, dir)
 
-	// 246 letters + ".png" = 250 bytes: passes the 255-byte sanitizer cap,
-	// then UniqueFilename's +37-byte unique suffix pushes the final path
-	// component to 287 bytes > NAME_MAX, so the backend's open fails with
-	// an error that embeds the absolute destination path.
-	longName := strings.Repeat("a", 246) + ".png"
+	// Upload keys start "uploads/" (the entity's table): with that
+	// directory unreadable, the save fails resolving the key's path.
+	locked := filepath.Join(dir, "uploads")
+	if err := os.Mkdir(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	longName := "doc.png"
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -81,10 +121,10 @@ func TestMultipartSaveErrorNoAbsPathLeak(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ch.Create()(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("multipart create with over-long filename = %d, want 400. body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("multipart create into an unreadable storage dir = %d, want 500. body=%s", rec.Code, rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), dir) {
-		t.Fatalf("SECURITY: [CHAIN8-R5] multipart save error echoed the absolute storage path to the client (storage root %q disclosed in the 400 body). body=%s", dir, rec.Body.String())
+		t.Fatalf("SECURITY: [CHAIN8-R5] multipart save error echoed the absolute storage path to the client (storage root %q disclosed in the body). body=%s", dir, rec.Body.String())
 	}
 }

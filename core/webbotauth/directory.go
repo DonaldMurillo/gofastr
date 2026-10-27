@@ -131,8 +131,9 @@ func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRe
 		wk := &url.URL{Scheme: "https", Host: strings.ToLower(u.Host), Path: directoryWellKnown}
 		return &agentRef{identifier: wk.String(), fetchURL: wk.String(), typ: typ}, nil
 	case discoveryJWKS:
-		// Fetched as sent; the identifier drops the fragment so one key
-		// set cannot mint an identifier per spelling.
+		// Fetched as sent; the identifier drops only the fragment, which
+		// is never sent. The query stays because it selects what is
+		// fetched: two queries can name two key sets on a shared host.
 		id := &url.URL{Scheme: "https", Host: strings.ToLower(u.Host), Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
 		fetch := &url.URL{Scheme: "https", Host: strings.ToLower(u.Host), Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
 		return &agentRef{identifier: id.String(), fetchURL: fetch.String(), typ: typ}, nil

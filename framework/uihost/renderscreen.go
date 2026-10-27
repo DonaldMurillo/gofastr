@@ -3,6 +3,7 @@ package uihost
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -10,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ScreenResponse names the response-wide HTTP semantics for
@@ -108,32 +110,6 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Client-side navigation: same status, same cache policy, bare
-	// content. No layout, no chrome, and deliberately no session
-	// minting — the partial page path's re-mint would attach a fresh
-	// Set-Cookie to an auth-failure response.
-	if r.Header.Get("X-Gofastr-Navigate") == "1" {
-		// The same navigation contract as handlePartialPage: a runtime
-		// from before the deploy reads a different markup generation
-		// and gets the reload body instead of a screen it cannot
-		// place; a current one gets the partial marked as such, so
-		// nav.js never reads a bare screen body as a full document.
-		if staleMarkupClient(r) {
-			w.Header().Del("Cache-Control")
-			writeStaleMarkupReload(w, r, routePath(r), "")
-			return
-		}
-		w.Header().Set("X-Gofastr-Partial", "true")
-		w.WriteHeader(status)
-		fmt.Fprint(w, string(body))
-		return
-	}
-
-	if ds.App != nil && ds.App.Router != nil {
-		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-			body = layout.WrapCtx(r.Context(), body)
-		}
-	}
 	appName := "GoFastr"
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
@@ -149,6 +125,41 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 			if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
 				title += suffix
 			}
+		}
+	}
+
+	// Client-side navigation: same status, same cache policy, bare
+	// content. No layout, no chrome, and deliberately no session
+	// minting — the partial page path's re-mint would attach a fresh
+	// Set-Cookie to an auth-failure response.
+	if r.Header.Get("X-Gofastr-Navigate") == "1" {
+		// The same navigation contract as handlePartialPage: a runtime
+		// from before the deploy reads a different markup generation
+		// and gets the reload body instead of a screen it cannot
+		// place; a current one gets the partial marked as such, so
+		// nav.js never reads a bare screen body as a full document.
+		if staleMarkupClient(r) {
+			w.Header().Del("Cache-Control")
+			writeStaleMarkupReload(w, r, routePath(r), "")
+			return
+		}
+		// The title and head carrier a hard load would set: without
+		// them the previous page's tab title, language and page-owned
+		// meta stay on the recovery screen (the page partial's tail,
+		// writePartialResult).
+		w.Header().Set("X-Gofastr-Partial", "true")
+		w.Header().Set("X-Gofastr-Title", url.PathEscape(textsafe.StripInvisible(title)))
+		if ds.App != nil {
+			body = render.Join(body, ds.partialHead(ctx, routePath(r), comp))
+		}
+		w.WriteHeader(status)
+		fmt.Fprint(w, string(body))
+		return
+	}
+
+	if ds.App != nil && ds.App.Router != nil {
+		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
+			body = layout.WrapCtx(r.Context(), body)
 		}
 	}
 	// The full arm finishes through the same tail every page runs

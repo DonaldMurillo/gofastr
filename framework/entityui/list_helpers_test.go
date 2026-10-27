@@ -156,6 +156,9 @@ func newTestHost(t testing.TB, ents map[string]entity.EntityConfig, rows map[str
 	if err != nil {
 		t.Skip("sqlite3 driver not available")
 	}
+	// Every :memory: connection is its own empty database: a second
+	// pooled connection reported "no such table".
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	reg := &testRegistry{ents: map[string]*entity.Entity{}}
 	for name, cfg := range ents {

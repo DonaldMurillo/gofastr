@@ -1,9 +1,13 @@
 package crud
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -22,7 +26,9 @@ import (
 // the admin battery's textarea submits and what the image-variants
 // writer produces, and re-encoding it would double-quote the document.
 // On read, text that does not parse as JSON is returned unchanged, so a
-// legacy TEXT column promoted to schema.JSON keeps serving its rows.
+// legacy TEXT column promoted to schema.JSON keeps serving its rows, and
+// a document that is one JSON string is returned as its JSON text, so the
+// value read is the value the next write stores.
 //
 // Absent and null stay indistinguishable, both leave the column NULL
 // and read back as JSON null. An empty object is distinct: it is stored
@@ -30,11 +36,42 @@ import (
 
 // bindJSONValue prepares one column value for the driver. Values for
 // non-JSON columns pass through untouched.
+//
+// A Timestamp column's value is stored in schema.TimestampLayout, the
+// layout of the auto-managed timestamps, of a cursor token and of a bound
+// Timestamp filter. SQLite compares the column as text, so a client's
+// "...00Z" stored as sent sorted after the token "...00.000000Z" for the
+// same instant and a keyset walk on the column repeated its first page.
 func (ch *CrudHandler) bindJSONValue(col string, v any) any {
-	if v == nil || !ch.isJSONColumn(col) {
+	if v == nil {
+		return v
+	}
+	if _, ok := ch.snapshot().timestampColumns[col]; ok {
+		return storedTime(v)
+	}
+	if !ch.isJSONColumn(col) {
 		return v
 	}
 	return marshalJSONColumn(v)
+}
+
+// storedTime is v in schema.TimestampLayout when it is an instant (a
+// time.Time, or text schema validation accepted as RFC 3339), v itself
+// otherwise.
+func storedTime(v any) any {
+	switch t := v.(type) {
+	case time.Time:
+		return schema.FormatTimestamp(t)
+	case *time.Time:
+		if t != nil {
+			return schema.FormatTimestamp(*t)
+		}
+	case string:
+		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+			return schema.FormatTimestamp(parsed)
+		}
+	}
+	return v
 }
 
 // marshalJSONColumn encodes a decoded JSON value as the text a driver can
@@ -72,9 +109,9 @@ func (ch *CrudHandler) isJSONColumn(col string) bool {
 }
 
 // decodeReadFields parses every schema.JSON column of a scanned row back
-// into a JSON value and turns every schema.Decimal column into its text,
-// in place. Keys are wire keys, the shape a row has after scanRow/scanRows
-// applied convertKey.
+// into a JSON value, turns every schema.Decimal column into its text and
+// every schema.Date column into YYYY-MM-DD, in place. Keys are wire keys,
+// the shape a row has after scanRow/scanRows applied convertKey.
 func (ch *CrudHandler) decodeReadFields(row map[string]any) {
 	if row == nil {
 		return
@@ -90,6 +127,11 @@ func (ch *CrudHandler) decodeReadFields(row map[string]any) {
 			row[key] = decimalText(v)
 		}
 	}
+	for key := range snap.dateWireKeys {
+		if v, ok := row[key]; ok {
+			row[key] = dateText(v)
+		}
+	}
 }
 
 // decodeReadRows applies decodeReadFields to a slice of scanned rows.
@@ -97,7 +139,7 @@ func (ch *CrudHandler) decodeReadRows(rows []map[string]any) {
 	if len(rows) == 0 {
 		return
 	}
-	if snap := ch.snapshot(); len(snap.jsonWireKeys) == 0 && len(snap.decimalWireKeys) == 0 {
+	if snap := ch.snapshot(); len(snap.jsonWireKeys) == 0 && len(snap.decimalWireKeys) == 0 && len(snap.dateWireKeys) == 0 {
 		return
 	}
 	for _, row := range rows {
@@ -146,13 +188,15 @@ func decodeEntityReadColumns(ent *entity.Entity, rows []map[string]any) {
 	if ent == nil || len(rows) == 0 {
 		return
 	}
-	var jsonCols, decimalCols []string
+	var jsonCols, decimalCols, dateCols []string
 	for _, f := range ent.GetFields() {
 		switch f.Type {
 		case schema.JSON:
 			jsonCols = append(jsonCols, f.Name)
 		case schema.Decimal:
 			decimalCols = append(decimalCols, f.Name)
+		case schema.Date:
+			dateCols = append(dateCols, f.Name)
 		default:
 			// Every other type reads back as the driver scanned it.
 		}
@@ -168,7 +212,29 @@ func decodeEntityReadColumns(ent *entity.Entity, rows []map[string]any) {
 				row[c] = decimalText(v)
 			}
 		}
+		for _, c := range dateCols {
+			if v, ok := row[c]; ok {
+				row[c] = dateText(v)
+			}
+		}
 	}
+}
+
+// dateText is a stored date as the YYYY-MM-DD the wire carries. Both
+// drivers scan DATE into a time.Time, which marshals as a full timestamp
+// ("2026-10-27T00:00:00Z") that Date validation and the Date filter
+// refuse, so a client could not send back what it read. The date is the
+// one the driver's value names, in its own location: a DATE has no zone.
+func dateText(v any) any {
+	switch t := v.(type) {
+	case time.Time:
+		return t.Format(time.DateOnly)
+	case *time.Time:
+		if t != nil {
+			return t.Format(time.DateOnly)
+		}
+	}
+	return v
 }
 
 // decimalText is a stored decimal as the string the wire carries. SQLite
@@ -206,9 +272,53 @@ func decodeJSONColumn(v any) any {
 	default:
 		return v
 	}
+	// UseNumber: a float64 decode read a stored 9007199254740993 back as
+	// 9007199254740992.
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var out any
-	if err := json.Unmarshal(raw, &out); err != nil {
+	if err := dec.Decode(&out); err != nil {
 		return v
 	}
-	return out
+	if _, err := dec.Token(); err != io.EOF {
+		return v
+	}
+	// A document that is one JSON string reads back as its JSON text. The
+	// write path stores a Go string verbatim as the document, so reading
+	// "123" back as the string 123 made the next write store the number.
+	if _, isString := out.(string); isString {
+		return string(raw)
+	}
+	return storedJSONNumbers(out)
+}
+
+// storedJSONNumbers gives a decoded document the number types a float64
+// decode gave it, float64, except for an integer float64 cannot hold
+// exactly: past ±2^53 it reads as int64, and past int64 as the
+// json.Number that keeps its digits.
+func storedJSONNumbers(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, item := range x {
+			x[k] = storedJSONNumbers(item)
+		}
+	case []any:
+		for i, item := range x {
+			x[i] = storedJSONNumbers(item)
+		}
+	case json.Number:
+		if i, err := x.Int64(); err == nil {
+			if i > 1<<53 || i < -(1<<53) {
+				return i
+			}
+			return float64(i)
+		}
+		if strings.ContainsAny(x.String(), ".eE") {
+			if f, err := x.Float64(); err == nil && !roundsInteger(f) {
+				return f
+			}
+		}
+		return x
+	}
+	return v
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -228,6 +229,11 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.Applied < 0 {
 		panic("ui: FilterToolbar Applied must not be negative")
 	}
+	// Resolved once, so the hidden-field collision check below owns the
+	// name the sort control actually renders.
+	if cfg.SortName == "" {
+		cfg.SortName = "sort"
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -409,19 +415,28 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 		}
 		opts = append(opts, SelectOption{Value: "", Text: allLabel, Selected: f.Value == ""})
 	}
-	for _, o := range f.Options {
+	for _, o := range facetOptions(f) {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == f.Value})
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 		Select(SelectConfig{Name: f.Name, Label: f.Label, Options: opts}))
 }
 
+// facetOptions is the facet's options plus its active value when no
+// option lists it (a stale or hand-edited URL). Matching nothing, the
+// value selected no choice: the control showed "all" while the toolbar
+// counted the filter as applied, and Apply dropped it. The value draws
+// as its own choice, labelled with itself, so Apply keeps it.
+func facetOptions(f Facet) []FacetOption {
+	if f.Value == "" || slices.ContainsFunc(f.Options, func(o FacetOption) bool { return o.Value == f.Value }) {
+		return f.Options
+	}
+	return append(slices.Clip(f.Options), FacetOption{Label: f.Value, Value: f.Value})
+}
+
 // renderSortFacet composes ui.Select for the sort control.
 func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 	name := cfg.SortName
-	if name == "" {
-		name = "sort"
-	}
 	sortLabel := cfg.SortLabel
 	if sortLabel == "" {
 		sortLabel = i18nui.FilterSortBy.Text(ctx)
@@ -432,6 +447,12 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 			panic("ui: FilterToolbar SortOption requires Label and Value")
 		}
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == cfg.SortValue})
+	}
+	// An active sort no option lists (a stale or hand-edited URL) selected
+	// nothing, so the browser showed the first option and Apply replaced
+	// the sort with it. It draws as its own choice, as facetOptions does.
+	if cfg.SortValue != "" && !slices.ContainsFunc(cfg.Sort, func(o SortOption) bool { return o.Value == cfg.SortValue }) {
+		opts = append(opts, SelectOption{Value: cfg.SortValue, Text: cfg.SortValue, Selected: true})
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort",
 		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
@@ -496,7 +517,7 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 		all := FacetOption{Label: allLabel, Value: ""}
 		pills = append(pills, pill(f.Name, all, f.Value == "", pillID(all)))
 	}
-	for _, o := range f.Options {
+	for _, o := range facetOptions(f) {
 		if o.Label == "" {
 			panic("ui: FilterToolbar FacetOption requires Label")
 		}

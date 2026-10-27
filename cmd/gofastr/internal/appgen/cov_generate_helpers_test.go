@@ -67,7 +67,7 @@ func TestAutoGenerateConstNameAll(t *testing.T) {
 func TestGoTypeForFieldAll(t *testing.T) {
 	cases := map[string]string{
 		"int": "int", "integer": "int", "float": "float64", "number": "float64",
-		"bool": "bool", "boolean": "bool", "json": "map[string]any", "string": "string", "x": "string",
+		"bool": "bool", "boolean": "bool", "json": "any", "string": "string", "x": "string",
 	}
 	for in, want := range cases {
 		if got := goTypeForField(in); got != want {

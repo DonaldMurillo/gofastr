@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -84,6 +85,17 @@ type Builder struct {
 	// build writes under their root-absolute URL paths. battery/sitesearch writes its index this way.
 	// App.ExportStatic passes every registered battery that is one.
 	Contributors []Contributor
+	// ContentSecurityPolicy is the policy the export carries: a <meta>
+	// in every page (one per policy of a comma-separated list, without
+	// frame-ancestors, report-uri and sandbox, which a <meta> policy
+	// ignores) and the full value in _headers. Empty keeps the
+	// built-in policy, the one core/middleware.SecurityHeaders serves by
+	// default. App.ExportStatic passes
+	// AppConfig.SecurityHeaders.ContentSecurityPolicy. The build refuses
+	// a policy with a nonce source (a file every visitor gets publishes
+	// it; static pages link every script, so none needs one), a control
+	// byte, or a quote or angle bracket.
+	ContentSecurityPolicy string
 }
 
 // Contributor adds files to an export from the pages it renders: a
@@ -114,6 +126,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if strings.TrimSpace(b.OutDir) == "" {
 		return Result{}, fmt.Errorf("static: OutDir is required")
 	}
+	if err := checkExportCSP(b.policy()); err != nil {
+		return Result{}, err
+	}
 	if err := os.MkdirAll(b.OutDir, 0o755); err != nil {
 		return Result{}, fmt.Errorf("static: create out dir: %w", err)
 	}
@@ -122,6 +137,14 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// Route patterns with at least one exported page: the identities a
 	// document-scoped rail script's scope is asked about.
 	var renderedRoutes []string
+	// The page files this build writes (rendered pages and redirect
+	// pages), as slash paths under OutDir: no static-source or extra
+	// file replaces one.
+	rendered := map[string]bool{}
+	// The other page files this build writes (404.html, every llm.md and
+	// its index), as slash paths under OutDir: with rendered, what the
+	// page manifest records (pruneStalePages).
+	docs := map[string]bool{}
 
 	for _, c := range b.Contributors {
 		if err := c.ExportStart(ctx); err != nil {
@@ -141,7 +164,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		lctx, rule := ctx, urlprefix.Rule{}
 		if byPrefix {
 			lctx = localeContext(ctx, locales, tag)
-			rule = urlprefix.Rule{Prefix: i18n.PathPrefix(lctx), Locales: locales.All()}
+			rule = urlprefix.Rule{Prefix: i18n.PathPrefix(lctx), Locales: locales.All(), Keep: b.keepUnprefixed}
 		}
 		err := walk(lctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
 			if rule.Prefix != "" {
@@ -163,6 +186,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 			b.log("rendered %s -> %s", p, dst)
 			res.Pages = append(res.Pages, p)
+			rendered[filepath.ToSlash(pathToFile(p))] = true
 			if !slices.Contains(renderedRoutes, route) {
 				renderedRoutes = append(renderedRoutes, route)
 			}
@@ -198,8 +222,17 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// this file, but CSP Level 3 §3.1 ignores `frame-ancestors` in a
 	// meta (alongside `sandbox`/`report-uri`), so the clickjacking guard
 	// only lands where the header is read.
-	if err := writeHeadersFile(b.OutDir); err != nil {
+	if err := writeHeadersFile(b.OutDir, b.policy()); err != nil {
 		return res, fmt.Errorf("static: write _headers: %w", err)
+	}
+	// An ExtraDirs `_headers` must not replace it: that would drop the
+	// header-only frame-ancestors guard.
+	rendered["_headers"] = true
+
+	// Redirect routes: a page at each exact redirect's path, and the
+	// _redirects rules the hosts that read _headers also read.
+	if err := b.writeRedirects(ctx, pageSet(res.Pages), rendered); err != nil {
+		return res, err
 	}
 
 	// 404.html at the export root (, GitHub
@@ -221,6 +254,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			return res, err
 		}
 		res.Assets = append(res.Assets, "/404.html")
+		docs["404.html"] = true
 		b.log("rendered not-found page -> %s", dst)
 	}
 
@@ -229,83 +263,21 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
-	// LLM documentation: per-page llm.md and top-level index.
+	// LLM documentation: per-page llm.md and top-level index, once per
+	// locale tree like the pages: the live /es/about/llm.md is the
+	// Spanish doc, and the /es/ index links docs under /es/.
 	if !b.Host.App.NoLLMMD {
-		for _, route := range b.Host.App.Routes() {
-			if b.routeExcluded(route.Path) {
-				continue
+		for _, tag := range tags {
+			lctx, at := ctx, func(p string) string { return p }
+			if byPrefix {
+				// The doc links a copied file at the export root, as the pages do.
+				lctx = coreapp.WithLinkKeep(localeContext(ctx, locales, tag), b.keepUnprefixed)
+				at = func(p string) string { return locales.Path(tag, p) }
 			}
-			if route.RedirectTo != "" {
-				continue
-			}
-			screen, ok := b.Host.App.Router.ScreenByPattern(route.Path)
-			if !ok {
-				continue
-			}
-			if screen.NoLLMMD {
-				continue
-			}
-			paths, err := expandRoute(ctx, b.Host.App, route.Path)
-			if err != nil {
-				return res, fmt.Errorf("static: expand llm.md %q: %w", route.Path, err)
-			}
-			for _, p := range paths {
-				// Per-URL doc: a dynamic route expands to N pages, each
-				// with its own loaded title + content. The pattern-level
-				// ScreenLLMMD would stamp every page with one generic doc
-				// (a placeholder, for ScreenLoader screens). Fall back to
-				// the pattern doc if the concrete path doesn't resolve.
-				var md string
-				sctx, recorded := coreapp.TrackStatus(ctx)
-				if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); ok {
-					// A page that answers another status is skipped like
-					// its HTML (uihost.StatusPageError): the static host
-					// would serve its not-found body as a 200 doc.
-					if st := docStatus(doc.Component, recorded()); st != 0 {
-						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
-							"path", p, "status", st)
-						continue
-					}
-					md = doc.MD
-				} else {
-					// The URL resolves but its page answers 404 (a resolver
-					// or Load naming no row, an outlet nothing fills): no
-					// doc, like its skipped HTML.
-					if _, _, resolves := b.Host.App.Router.Resolve(p); resolves {
-						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
-							"path", p, "status", http.StatusNotFound)
-						continue
-					}
-					// The expanded URL doesn't resolve (e.g. a StaticPaths
-					// value that violates the route's constraint). The
-					// WITHHELD doc, not the pattern doc: the pattern doc
-					// carries the screen's title and rendered content with
-					// NO policy evaluation, so falling back to it would
-					// write a gated screen's content to disk ungated.
-					md = coreapp.ScreenLLMMDWithheld(screen)
-					slog.Warn("static: expanded llm.md path does not resolve: writing withheld doc; check StaticPaths values against the route's constraints",
-						"route", route.Path, "path", p)
-				}
-				dst := filepath.Join(b.OutDir, pathToLLMFile(p))
-				if err := b.ensureContained(dst); err != nil {
-					return res, err
-				}
-				if err := writeFile(dst, []byte(md)); err != nil {
-					return res, err
-				}
-				res.Assets = append(res.Assets, "/"+filepath.ToSlash(pathToLLMFile(p)))
-				b.log("wrote llm.md for %s -> %s", p, dst)
+			if err := b.writeLLMMD(lctx, &res, at, docs); err != nil {
+				return res, err
 			}
 		}
-		// Top-level page index
-		// Build-context policy evaluation: gated screens appear in the
-		// exported index metadata-free (no auth at build time).
-		indexMD := coreapp.AppLLMMDCtx(ctx, b.Host.App)
-		if err := writeFile(filepath.Join(b.OutDir, "llm-pages.md"), []byte(indexMD)); err != nil {
-			return res, err
-		}
-		res.Assets = append(res.Assets, "/llm-pages.md")
-		b.log("wrote llm-pages.md index")
 	}
 
 	// SEO surface: sitemap.xml and robots.txt, mirroring the live
@@ -402,11 +374,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// Static assets: either filesystem dir or embedded FS.
 	if dir := b.Host.StaticDir(); dir != "" {
-		if err := copyDir(dir, b.OutDir, &res, b.log); err != nil {
+		if err := copyDir(dir, b.OutDir, rendered, &res, b.log); err != nil {
 			return res, err
 		}
 	} else if fsys := b.Host.StaticFS(); fsys != nil {
-		if err := copyFS(fsys, b.OutDir, &res, b.log); err != nil {
+		if err := copyFS(fsys, b.OutDir, rendered, &res, b.log); err != nil {
 			return res, err
 		}
 	}
@@ -414,10 +386,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// Extra mounted directories (SDK artifacts, other host-declared
 	// downloads). After the user static dir so its files win; before the
 	// PWA surface so the worker fingerprints the complete export.
-	if err := b.dumpExtraDirs(&res); err != nil {
+	if err := b.dumpExtraDirs(&res, rendered); err != nil {
 		return res, err
 	}
 	if err := b.dumpRailScripts(ctx, &res, renderedRoutes); err != nil {
+		return res, err
+	}
+	// A reused OutDir holds the previous build's pages: drop the ones
+	// this build no longer writes, before the PWA worker fingerprints
+	// and precaches the tree.
+	if err := b.pruneStalePages(res, rendered, docs); err != nil {
 		return res, err
 	}
 
@@ -434,6 +412,98 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 
 	return res, nil
+}
+
+// writeLLMMD writes each exported page's llm.md and the llm-pages.md
+// index for one locale tree: ctx carries the locale, at maps a route
+// path to its URL in the tree. Each file it writes is marked in docs.
+func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) string, docs map[string]bool) error {
+	// The pages whose doc this tree holds, by route pattern: the index
+	// links those and no other (coreapp.WithExportedDocs).
+	exported := map[string][]string{}
+	for _, route := range b.Host.App.Routes() {
+		if b.routeExcluded(route.Path) {
+			continue
+		}
+		if route.RedirectTo != "" {
+			continue
+		}
+		screen, ok := b.Host.App.Router.ScreenByPattern(route.Path)
+		if !ok {
+			continue
+		}
+		if screen.NoLLMMD {
+			continue
+		}
+		paths, err := expandRoute(ctx, b.Host.App, route.Path)
+		if err != nil {
+			return fmt.Errorf("static: expand llm.md %q: %w", route.Path, err)
+		}
+		for _, p := range paths {
+			if _, redirected := b.Host.App.ResolveRedirect(p); redirected {
+				continue // a redirect page holds the path, as in walk
+			}
+			// Per-URL doc: a dynamic route expands to N pages, each
+			// with its own loaded title + content. The pattern-level
+			// ScreenLLMMD would stamp every page with one generic doc
+			// (a placeholder, for ScreenLoader screens). Fall back to
+			// the pattern doc if the concrete path doesn't resolve.
+			var md string
+			sctx, recorded := coreapp.TrackStatus(withPageRequest(ctx, p))
+			if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); ok {
+				// A page that answers another status is skipped like
+				// its HTML (uihost.StatusPageError): the static host
+				// would serve its not-found body as a 200 doc.
+				if st := docStatus(doc.Component, recorded()); st != 0 {
+					slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
+						"path", p, "status", st)
+					continue
+				}
+				md = doc.MD
+			} else {
+				// The URL resolves but its page answers 404 (a resolver
+				// or Load naming no row, an outlet nothing fills): no
+				// doc, like its skipped HTML.
+				if _, _, resolves := b.Host.App.Router.Resolve(p); resolves {
+					slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
+						"path", p, "status", http.StatusNotFound)
+					continue
+				}
+				// The expanded URL doesn't resolve (e.g. a StaticPaths
+				// value that violates the route's constraint). The
+				// WITHHELD doc, not the pattern doc: the pattern doc
+				// carries the screen's title and rendered content with
+				// NO policy evaluation, so falling back to it would
+				// write a gated screen's content to disk ungated.
+				md = coreapp.ScreenLLMMDWithheld(screen)
+				slog.Warn("static: expanded llm.md path does not resolve: writing withheld doc; check StaticPaths values against the route's constraints",
+					"route", route.Path, "path", p)
+			}
+			dst := filepath.Join(b.OutDir, pathToLLMFile(at(p)))
+			if err := b.ensureContained(dst); err != nil {
+				return err
+			}
+			if err := writeFile(dst, []byte(md)); err != nil {
+				return err
+			}
+			res.Assets = append(res.Assets, "/"+filepath.ToSlash(pathToLLMFile(at(p))))
+			docs[filepath.ToSlash(pathToLLMFile(at(p)))] = true
+			exported[route.Path] = append(exported[route.Path], p)
+			b.log("wrote llm.md for %s -> %s", p, dst)
+		}
+	}
+	// Top-level page index
+	// Build-context policy evaluation: gated screens appear in the
+	// exported index metadata-free (no auth at build time).
+	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocs(ctx, exported), b.Host.App)
+	index := at("/llm-pages.md")
+	if err := writeFile(filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
+		return err
+	}
+	res.Assets = append(res.Assets, index)
+	docs[strings.TrimPrefix(index, "/")] = true
+	b.log("wrote %s index", index)
+	return nil
 }
 
 // Walk renders every page an export of host would contain, in route
@@ -494,6 +564,13 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 			if skipPath != nil && skipPath(p) {
 				continue
 			}
+			// An exact redirect may take one concrete path of a dynamic
+			// screen; the live router answers it with the redirect, and
+			// so does the export (writeRedirects).
+			if _, redirected := host.App.ResolveRedirect(p); redirected {
+				logf("skipped %s: a redirect takes its path", p)
+				continue
+			}
 			page, fillFailures, err := host.RenderStaticPageResult(ctx, p)
 			if err != nil {
 				if blocked, ok := errors.AsType[*uihost.PolicyBlockedError](err); ok {
@@ -549,6 +626,153 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 		}
 	}
 	return nil
+}
+
+// writeRedirects gives every exact redirect route (app.Redirect) a page
+// at its path, so a link or bookmark to the old URL still lands: a meta
+// refresh to the chain's final target, with a plain link as the
+// fallback, no script and no style, under the export's own CSP. It also
+// writes a `_redirects` rule per redirect (`/old /new 308`, the live
+// status) for Netlify and Cloudflare Pages, the hosts that read the
+// `_headers` file beside it, which then answer with a real redirect. A
+// `_redirects` in the static source is copied over it.
+//
+// A pattern redirect (app.RedirectPattern) matches URLs no file can
+// stand for; it is logged as skipped and its URLs answer 404.html. A
+// redirect chain that never ends (the live router fails it closed) is
+// skipped too. With path locales each locale tree gets its own page, its
+// target under the same prefix.
+func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string]bool) error {
+	locales, byPrefix := b.Host.PathLocales()
+	tags := []string{""}
+	if byPrefix {
+		tags = locales.All()
+	}
+	var rules strings.Builder
+	for _, route := range b.Host.App.Routes() {
+		if route.RedirectTo == "" {
+			continue
+		}
+		if b.routeExcluded(route.Path) {
+			b.log("skipped excluded redirect %s", route.Path)
+			continue
+		}
+		if strings.Contains(route.Path, ":") {
+			slog.Warn("static: skipped pattern redirect: a static host cannot match a pattern, so its URLs answer the export's 404 page; the live server keeps redirecting them",
+				"from", route.Path, "to", route.RedirectTo)
+			continue
+		}
+		target, ok := b.Host.App.ResolveRedirect(route.Path)
+		if !ok {
+			slog.Warn("static: skipped redirect whose chain does not end", "from", route.Path)
+			continue
+		}
+		for _, tag := range tags {
+			from, to, lctx := route.Path, target, ctx
+			if byPrefix {
+				from, to = locales.Path(tag, from), b.localeTarget(locales, tag, to)
+				lctx = localeContext(ctx, locales, tag)
+			}
+			href := b.redirectHref(to, pages)
+			rel := filepath.ToSlash(pathToFile(from))
+			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
+			if err := b.ensureContained(dst); err != nil {
+				return err
+			}
+			if err := writeFile(dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
+				return err
+			}
+			rendered[rel] = true
+			fmt.Fprintf(&rules, "%s %s 308\n", urlBytesEscaper(b.BasePath+from), href)
+			b.log("redirect %s -> %s", from, href)
+		}
+	}
+	dst := filepath.Join(b.OutDir, "_redirects")
+	if rules.Len() == 0 {
+		// A reused OutDir may hold an earlier build's rules for
+		// redirects the app has since dropped.
+		if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("static: remove stale _redirects: %w", err)
+		}
+		return nil
+	}
+	if err := writeFile(dst, []byte(rules.String())); err != nil {
+		return err
+	}
+	rendered["_redirects"] = true
+	return nil
+}
+
+// localeTarget is a redirect target as locale tag's tree links it, by the
+// rule its page links follow: a target already naming a locale, or one
+// keepUnprefixed keeps (a static file, a path no route resolves), stays
+// as written; any other gets tag's prefix.
+func (b *Builder) localeTarget(locales i18n.PathLocales, tag, target string) string {
+	p := target
+	if i := strings.IndexAny(target, "?#"); i >= 0 {
+		p = target[:i]
+	}
+	if t, _ := locales.Split(p); t != "" || b.keepUnprefixed(p) {
+		return target
+	}
+	return locales.Path(tag, target)
+}
+
+// redirectHref is a redirect target as the export links it: the page
+// form its host serves without a 301 (slashed) when the target is an
+// exported page, under BasePath, query and fragment kept.
+func (b *Builder) redirectHref(target string, pages map[string]bool) string {
+	p, rest := target, ""
+	if i := strings.IndexAny(target, "?#"); i >= 0 {
+		p, rest = target[:i], target[i:]
+	}
+	if pages[p] || (!strings.HasSuffix(p, "/") && pages[p+"/"]) {
+		p = slashed(p)
+	}
+	return urlBytesEscaper(b.BasePath + p + rest)
+}
+
+// urlBytesEscaper percent-encodes the bytes that would end a URL early
+// where the export writes one: a control byte (a live redirect's
+// Location gets the same treatment) and a space, which separates the
+// fields of a _redirects line.
+func urlBytesEscaper(s string) string {
+	var out strings.Builder
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c <= 0x20 || c == 0x7f {
+			fmt.Fprintf(&out, "%%%02X", c)
+			continue
+		}
+		out.WriteByte(s[i])
+	}
+	return out.String()
+}
+
+// redirectPage is the document an exported redirect leaves at its old
+// path. It carries no script or style: the refresh is a meta, the
+// fallback a plain link, so the export's CSP holds for it like any
+// page.
+func redirectPage(ctx context.Context, href, policy string) string {
+	lang := i18n.FromContext(ctx).Tag
+	if lang == "" {
+		lang = "en"
+	}
+	h := stdhtml.EscapeString(href)
+	page := "<!doctype html>\n" +
+		"<html lang=\"" + stdhtml.EscapeString(lang) + "\">\n" +
+		"<head>\n" +
+		"<meta charset=\"utf-8\">\n" +
+		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
+		"<meta http-equiv=\"refresh\" content=\"0; url=" + h + "\">\n" +
+		"<meta name=\"robots\" content=\"noindex\">\n" +
+		"<link rel=\"canonical\" href=\"" + h + "\">\n" +
+		"<title>" + stdhtml.EscapeString(pageRedirectTitle.Text(ctx)) + "</title>\n" +
+		"</head>\n" +
+		"<body>\n" +
+		"<p><a href=\"" + h + "\">" + stdhtml.EscapeString(pageRedirectLink.Text(ctx)) + "</a></p>\n" +
+		"</body>\n" +
+		"</html>\n"
+	return applyStaticCSP(page, policy)
 }
 
 // routeExcluded reports whether a route pattern is covered by an
@@ -638,8 +862,7 @@ func expandParams(_ context.Context, pattern string, sets []map[string]string) (
 }
 
 func applyParams(pattern string, params map[string]string) (string, error) {
-	parts := strings.Split(pattern, "/")
-	for i, part := range parts {
+	for _, part := range strings.Split(pattern, "/") {
 		if !strings.HasPrefix(part, ":") || len(part) <= 1 {
 			continue
 		}
@@ -651,18 +874,17 @@ func applyParams(pattern string, params map[string]string) (string, error) {
 		// A catch-all segment (":name*") may legitimately carry a
 		// multi-segment remainder; any other param fills exactly one
 		// path component and is validated as such.
+		check := validateParamValue
 		if strings.HasSuffix(part, "*") {
-			if err := validateCatchAllValue(key, v); err != nil {
-				return "", err
-			}
-		} else {
-			if err := validateParamValue(key, v); err != nil {
-				return "", err
-			}
+			check = validateCatchAllValue
 		}
-		parts[i] = v
+		if err := check(key, v); err != nil {
+			return "", err
+		}
 	}
-	return strings.Join(parts, "/"), nil
+	// Routing form, as the sitemap writes it: substituted raw, the
+	// router decoded "a%2Fb" to key "a/b", another record's page.
+	return coreapp.PatternPath(pattern, params), nil
 }
 
 // validateParamValue rejects StaticPaths values that could break out of their
@@ -717,7 +939,7 @@ func validateCatchAllValue(key, v string) error {
 //     under the mount path.
 func (b *Builder) applyStaticMode(ctx context.Context, page string) string {
 	page = stampStatic(page)
-	page = applyStaticCSP(page)
+	page = applyStaticCSP(page, b.policy())
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
 		Ctx:         ctx,
@@ -793,8 +1015,9 @@ func (b *Builder) slashPageLinks(page string, pages map[string]bool) string {
 			return m
 		}
 		// A route registered with its slash (/components/) is linked
-		// without one too.
-		if !pages[rel] && !pages[rel+"/"] {
+		// without one too. The page set holds routing form and an href
+		// is escaped: /items/caf%C3%A9 names the page /items/café.
+		if key := coreapp.RoutePath(rel); !pages[key] && !pages[key+"/"] {
 			return m
 		}
 		return sub[1] + slashed(p) + sub[3] + `"`
@@ -938,7 +1161,7 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 		// same prefix, the way the live router serves it.
 		if byPrefix {
 			for _, tag := range locales.Prefixed {
-				rule := urlprefix.Rule{Prefix: "/" + tag, Locales: locales.All()}
+				rule := urlprefix.Rule{Prefix: "/" + tag, Locales: locales.All(), Keep: b.keepUnprefixed}
 				raw := widget.RenderChromeCtx(localeContext(ctx, locales, tag), d)
 				local := b.slashPageLinks(b.rewriteBaseURLs(string(urlprefix.HTML([]byte(raw), rule))), pages)
 				at := "/" + tag + "/core-ui/widget/" + d.Name + "/chrome"
@@ -957,6 +1180,66 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	return nil
 }
 
+// keepUnprefixed is the locale rule's Keep: a link a locale tree must
+// leave unprefixed. The live router serves every path under each locale
+// prefix, but the export copies the static source and ExtraDirs once,
+// to its root, and writes pages only for routes, so a link to a copied
+// file, or to any path no route or redirect takes, keeps its root path.
+// A copied file wins over a route at the same path, as it does live.
+func (b *Builder) keepUnprefixed(p string) bool {
+	dec, err := url.PathUnescape(p)
+	if err != nil {
+		dec = p
+	}
+	if rel := strings.TrimPrefix(dec, "/"); fs.ValidPath(rel) && rel != "." {
+		if b.staticSourceFile(rel) {
+			return true
+		}
+		for mount, fsys := range b.ExtraDirs {
+			sub, ok := strings.CutPrefix(rel, strings.Trim(mount, "/")+"/")
+			if strings.Trim(mount, "/") == "" {
+				sub, ok = rel, true
+			}
+			if ok && fsys != nil && isFile(fsys, sub) {
+				return true
+			}
+		}
+	}
+	// The router and redirect table key on routing form: decoded, a
+	// "/" or "%" inside one segment still %2F or %25. An href is
+	// escaped, so /caf%C3%A9 must be read as /café.
+	rp := coreapp.RoutePath(p)
+	if _, _, ok := b.Host.App.Router.Resolve(rp); ok {
+		return false
+	}
+	if _, ok := b.Host.App.ResolveRedirect(rp); ok {
+		return false
+	}
+	return true
+}
+
+// staticSourceFile reports whether the host's static source holds a
+// regular file at rel, a valid fs path (a directory named like a page
+// does not count).
+func (b *Builder) staticSourceFile(rel string) bool {
+	if dir := b.Host.StaticDir(); dir != "" {
+		return isFile(os.DirFS(dir), rel)
+	}
+	if fsys := b.Host.StaticFS(); fsys != nil {
+		return isFile(fsys, rel)
+	}
+	return false
+}
+
+// isFile reports whether fsys holds a regular file at name.
+func isFile(fsys fs.FS, name string) bool {
+	if !fs.ValidPath(name) {
+		return false
+	}
+	info, err := fs.Stat(fsys, name)
+	return err == nil && info.Mode().IsRegular()
+}
+
 // localeContext is ctx as a request for the locale tag reads it: the
 // translator's locale and the path locale the router would set.
 func localeContext(ctx context.Context, locales i18n.PathLocales, tag string) context.Context {
@@ -973,8 +1256,7 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 		body string
 		ok   bool
 	}
-	sitemap, sitemapOK := b.Host.SitemapXML(b.BasePath)
-	sitemap = slashSitemapLocs(sitemap, pageSet(res.Pages))
+	sitemap, sitemapOK := b.exportedSitemap(pageSet(res.Pages))
 	robots, robotsOK := b.Host.RobotsTXT(b.BasePath)
 	for _, f := range []seoFile{
 		{"sitemap.xml", sitemap, sitemapOK},
@@ -999,20 +1281,101 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 // sitemapLoc matches one sitemap URL.
 var sitemapLoc = regexp.MustCompile(`<loc>([^<]*)</loc>`)
 
+// sitemapEntry matches one <url> entry with its indent and line end.
+var sitemapEntry = regexp.MustCompile(`(?s)[ \t]*<url>.*?</url>\n?`)
+
+// sitemapProbe is the base path exportedSitemap asks the host to put
+// between the site URL and each page path, so it can read the page
+// path off each entry wherever the site URL is mounted.
+const sitemapProbe = "/__gofastr-sitemap-probe__"
+
+// exportedSitemap is the host's sitemap with only the pages this export
+// wrote: a page it skipped (an excluded route, a 404-outlet route, one
+// that answers a status other than 200, one a redirect takes) has no
+// file on the static host, so a crawler sent there finds 404.html.
+//
+// A <loc> is the site URL, the base path and the page path run
+// together, and the site URL can carry a path of its own, so the page
+// path cannot be cut off it reliably. The host renders the document a
+// second time with sitemapProbe as the base path, entries in the same
+// order: each probe entry's page path is what follows the marker, and
+// the real entry at the same index is kept when that path was
+// exported. Page URLs then take the slash their links carry
+// (slashSitemapLocs).
+func (b *Builder) exportedSitemap(pages map[string]bool) (string, bool) {
+	doc, ok := b.Host.SitemapXML(b.BasePath)
+	if !ok {
+		return "", false
+	}
+	escaped := escapedPageSet(pages)
+	probe, _ := b.Host.SitemapXML(sitemapProbe)
+	probeEntries := sitemapEntry.FindAllString(probe, -1)
+	docEntries := sitemapEntry.FindAllString(doc, -1)
+	// Pair by index, and check each pair names one page: the real
+	// entry's URL ends in the page path the probe's follows the marker
+	// with. StaticPaths that differ per call (a count, or an order, as
+	// a map yields) leave no pairing to trust.
+	keep := make([]bool, len(docEntries))
+	paired := len(probeEntries) == len(docEntries)
+	for i := 0; paired && i < len(docEntries); i++ {
+		pm, dm := sitemapLoc.FindStringSubmatch(probeEntries[i]), sitemapLoc.FindStringSubmatch(docEntries[i])
+		if pm == nil || dm == nil {
+			continue
+		}
+		_, p, found := strings.Cut(stdhtml.UnescapeString(pm[1]), sitemapProbe)
+		if !found {
+			continue
+		}
+		if !strings.HasSuffix(stdhtml.UnescapeString(dm[1]), p) {
+			paired = false
+			break
+		}
+		keep[i] = escaped[p]
+	}
+	if !paired {
+		slog.Warn("static: sitemap kept whole: its entries changed between two renders, so the pages the export skipped could not be told apart")
+		return slashSitemapLocs(doc, escaped), true
+	}
+	i := 0
+	doc = sitemapEntry.ReplaceAllStringFunc(doc, func(entry string) string {
+		k := keep[i]
+		i++
+		if !k {
+			return ""
+		}
+		return entry
+	})
+	return slashSitemapLocs(doc, escaped), true
+}
+
+// escapedPageSet is pages keyed by the escaped path a sitemap <loc>
+// spells (app.EscapeRoutePath), the one spelling every ID has: a
+// routing-form key keeps "%" as %25 but Unicode raw, so an ID holding
+// both ("café%") matched neither the loc nor its plain unescape.
+func escapedPageSet(pages map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(pages))
+	for p := range pages {
+		out[coreapp.EscapeRoutePath(p)] = true
+	}
+	return out
+}
+
 // slashSitemapLocs gives every sitemap URL that names an exported page
 // the trailing slash its links carry (see slashPageLinks), so a crawler
 // is not sent through the host's 301 for every page. A <loc> is the
 // site URL followed by the page path, so the page is found as a
-// segment-aligned suffix of the URL's path.
-func slashSitemapLocs(doc string, pages map[string]bool) string {
+// segment-aligned suffix of the URL's escaped path; escaped holds the
+// pages in that spelling (escapedPageSet).
+func slashSitemapLocs(doc string, escaped map[string]bool) string {
 	return sitemapLoc.ReplaceAllStringFunc(doc, func(m string) string {
 		loc := sitemapLoc.FindStringSubmatch(m)[1]
 		u, err := url.Parse(stdhtml.UnescapeString(loc))
 		if err != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/") {
 			return m
 		}
-		for i := 0; i < len(u.Path); i++ {
-			if u.Path[i] == '/' && (pages[u.Path[i:]] || pages[u.Path[i:]+"/"]) {
+		ep := u.EscapedPath()
+		for i := 0; i < len(ep); i++ {
+			if ep[i] == '/' && (escaped[ep[i:]] || escaped[ep[i:]+"/"]) {
 				return "<loc>" + loc + "/</loc>"
 			}
 		}
@@ -1075,14 +1438,17 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// Pages are precached under the URL their links name (see
 	// slashPageLinks): a client navigation is a plain fetch, which the
 	// worker matches exactly, so /about would never answer /about/.
+	// The worker fetches and matches escaped URLs: a page or file named
+	// "a?b" precached raw is fetched as /a with a query, its 404 fails
+	// the whole install, and a navigation never matches it.
 	pages := make([]string, len(res.Pages))
 	for i, p := range res.Pages {
-		pages[i] = slashed(p)
+		pages[i] = slashed(coreapp.EscapeRoutePath(p))
 	}
 	sw, err := b.Host.PWAStaticServiceWorkerJS(b.BasePath, uihost.PWAStaticExport{
 		Pages:          pages,
-		Assets:         res.Assets[:frameworkAssetCount],
-		OptionalAssets: res.Assets[frameworkAssetCount:],
+		Assets:         escapedURLs(res.Assets[:frameworkAssetCount]),
+		OptionalAssets: escapedURLs(res.Assets[frameworkAssetCount:]),
 		ContentHash:    contentHash,
 	})
 	if err != nil {
@@ -1093,8 +1459,11 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// also gets the data-cui-static stamp so the runtime's static-mode
 	// guards apply, but not the "run locally" banner. An offline
 	// fallback is not a demo page. Its page links take the slash the
-	// pages' own do (slashPageLinks).
+	// pages' own do (slashPageLinks), and it carries the export's CSP
+	// meta like every page: a host that ignores _headers serves it with
+	// no other policy.
 	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
+	offline = applyStaticCSP(offline, b.policy())
 	files := []struct {
 		urlPath string
 		relFile string
@@ -1127,6 +1496,16 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 		b.log("wrote %s", f.urlPath)
 	}
 	return nil
+}
+
+// escapedURLs is the request URL of each written file: Result.Assets
+// holds the decoded path a static host resolves to the file.
+func escapedURLs(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = (&url.URL{Path: p}).EscapedPath()
+	}
+	return out
 }
 
 // pwaRegisterJS is the WithPWA registration script, on the rail and
@@ -1220,27 +1599,29 @@ func (b *Builder) rewriteJSAsset(body []byte) []byte {
 	return []byte(strings.ReplaceAll(string(body), "/__gofastr/", b.BasePath+"/__gofastr/"))
 }
 
+// hostPath is the decoded path a static host resolves a routing-form
+// page path's URL to: /items/a%252Fb is requested as /items/a%252Fb
+// and read from items/a%2Fb, not items/a/b.
+func hostPath(p string) string {
+	if d, err := url.PathUnescape(coreapp.EscapeRoutePath(p)); err == nil {
+		return d
+	}
+	return p
+}
+
 // pathToFile turns a URL path into the relative file path SSG output uses.
 //
 //	"/"               -> "index.html"
 //	"/about"          -> "about/index.html"
 //	"/products/abc"   -> "products/abc/index.html"
 func pathToFile(p string) string {
-	clean := strings.Trim(p, "/")
+	clean := strings.Trim(hostPath(p), "/")
 	if clean == "" {
 		return "index.html"
 	}
 	return filepath.Join(clean, "index.html")
 }
 
-// pathToLLMFile turns a URL path into the relative file path for the
-// per-page LLM documentation. Dynamic routes are expected to be expanded
-// (via expandRoute) before being passed in.
-//
-//	"/"              -> "llm.md"
-//	"/about"         -> "about/llm.md"
-//	"/products/abc"  -> "products/abc/llm.md"
-//
 // docStatus is the status a page's render answers when it is not 200:
 // the screen's ScreenStatusCode first, then what the render set through
 // app.SetStatus. Zero means 200.
@@ -1256,8 +1637,33 @@ func docStatus(c any, recorded int) int {
 	return recorded
 }
 
+// withPageRequest gives ctx the GET the page at routing path p arrives
+// as, the request its exported HTML renders under
+// (uihost.RenderStaticPageResult) and its live /llm.md rebases onto: a
+// screen that reads the request (entityui.List's record links) renders
+// its doc instead of panicking into an error placeholder. The path is
+// escaped the way the live URL is, so a "?" or "#" a param holds stays
+// in the path.
+func withPageRequest(ctx context.Context, p string) context.Context {
+	if coreapp.RequestFromContext(ctx) != nil {
+		return ctx
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, coreapp.EscapeRoutePath(p), nil)
+	if err != nil {
+		return ctx
+	}
+	return coreapp.WithRequest(ctx, req)
+}
+
+// pathToLLMFile turns a URL path into the relative file path for the
+// per-page LLM documentation. Dynamic routes are expected to be expanded
+// (via expandRoute) before being passed in.
+//
+//	"/"              -> "llm.md"
+//	"/about"         -> "about/llm.md"
+//	"/products/abc"  -> "products/abc/llm.md"
 func pathToLLMFile(p string) string {
-	clean := strings.Trim(p, "/")
+	clean := strings.Trim(hostPath(p), "/")
 	if clean == "" {
 		return "llm.md"
 	}
@@ -1319,8 +1725,16 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 
 // dumpExtraDirs copies every Builder.ExtraDirs filesystem under its mount
 // path. Deterministic (sorted mounts, sorted walk) and non-clobbering:
-// files already in the export tree win.
-func (b *Builder) dumpExtraDirs(res *Result) error {
+// a file this build already wrote (a page, a framework asset, an earlier
+// mount's file) or one the static SOURCE provides wins. What decides is
+// this build and the source, never what sits in OutDir: Watch rebuilds
+// into the same directory, and the previous build's copy of an extra
+// file must not keep the new one out.
+func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
+	written := make(map[string]bool, len(res.Assets))
+	for _, p := range res.Assets {
+		written[p] = true
+	}
 	mounts := make([]string, 0, len(b.ExtraDirs))
 	for m := range b.ExtraDirs {
 		mounts = append(mounts, m)
@@ -1332,20 +1746,21 @@ func (b *Builder) dumpExtraDirs(res *Result) error {
 			continue
 		}
 		cleanMount := "/" + strings.Trim(mount, "/")
-		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return err
 			}
-			urlPath := cleanMount + "/" + filepath.ToSlash(path)
-			dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(urlPath, "/")))
+			urlPath := path.Join(cleanMount, p)
+			rel := strings.TrimPrefix(urlPath, "/")
+			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if _, statErr := os.Stat(dst); statErr == nil {
-				b.log("kept existing %s (extra dir %s skipped)", urlPath, mount)
+			if written[urlPath] || rendered[rel] || b.staticSourceHas(filepath.FromSlash(rel)) {
+				b.log("kept %s (extra dir %s skipped)", urlPath, mount)
 				return nil
 			}
-			data, err := fs.ReadFile(fsys, path)
+			data, err := fs.ReadFile(fsys, p)
 			if err != nil {
 				return err
 			}
@@ -1353,6 +1768,7 @@ func (b *Builder) dumpExtraDirs(res *Result) error {
 				return err
 			}
 			res.Assets = append(res.Assets, urlPath)
+			written[urlPath] = true
 			b.log("copied extra %s", urlPath)
 			return nil
 		})
@@ -1370,7 +1786,19 @@ func writeFile(dst string, data []byte) error {
 	return os.WriteFile(dst, data, 0o644)
 }
 
-func copyDir(src, dst string, res *Result, log func(string, ...any)) error {
+// keepRendered reports whether the static source's file at rel (a slash
+// path) is refused because the build rendered a page there, and logs
+// the refusal. Any other file, an index.html under a path no page takes
+// included, is copied.
+func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)) bool {
+	if !rendered[rel] {
+		return false
+	}
+	log("kept the rendered page /%s (static source copy refused)", rel)
+	return true
+}
+
+func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1382,8 +1810,7 @@ func copyDir(src, dst string, res *Result, log func(string, ...any)) error {
 		if err != nil {
 			return err
 		}
-		// Refuse to overwrite generated index.html files.
-		if filepath.Base(rel) == "index.html" {
+		if keepRendered(filepath.ToSlash(rel), rendered, log) {
 			return nil
 		}
 		out := filepath.Join(dst, rel)
@@ -1409,7 +1836,7 @@ func copyDir(src, dst string, res *Result, log func(string, ...any)) error {
 	})
 }
 
-func copyFS(fsys fs.FS, dst string, res *Result, log func(string, ...any)) error {
+func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
 	return fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1417,7 +1844,7 @@ func copyFS(fsys fs.FS, dst string, res *Result, log func(string, ...any)) error
 		if d.IsDir() {
 			return nil
 		}
-		if filepath.Base(path) == "index.html" {
+		if keepRendered(path, rendered, log) {
 			return nil
 		}
 		data, err := fs.ReadFile(fsys, path)
@@ -1455,18 +1882,97 @@ func copyFS(fsys fs.FS, dst string, res *Result, log func(string, ...any)) error
 const staticExportCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
 
-// applyStaticCSP inserts the policy as an in-document meta, immediately
-// after <head> so it precedes anything that can trigger a fetch. A page
-// that already carries one (the print shell, say) is left alone.
-func applyStaticCSP(page string) string {
+// policy is the Content-Security-Policy this build ships: the
+// configured one, or the built-in default.
+func (b *Builder) policy() string {
+	if p := strings.TrimSpace(b.ContentSecurityPolicy); p != "" {
+		return p
+	}
+	return staticExportCSP
+}
+
+// checkExportCSP refuses a policy the export cannot write safely. A
+// nonce source is per response on a server; baked into files every
+// visitor downloads, it is a published value that any injected script
+// can carry, and the export links every script, so none needs one. A
+// control byte would end the _headers line and start a header (or a
+// path block) of the policy's choosing. A quote or angle bracket is no
+// CSP token (RFC 9110 field values and CSP's grammar keep them out) and
+// would end the <meta> attribute.
+func checkExportCSP(policy string) error {
+	for i := 0; i < len(policy); i++ {
+		if c := policy[i]; (c < 0x20 && c != '\t') || c == 0x7f {
+			return fmt.Errorf("static: Content-Security-Policy contains control byte %#x; a header value is one line", c)
+		}
+	}
+	if strings.ContainsAny(policy, "\"<>") {
+		return fmt.Errorf("static: Content-Security-Policy contains a quote or angle bracket, which no CSP source uses: %q", policy)
+	}
+	for src := range strings.FieldsSeq(strings.NewReplacer(";", " ", ",", " ").Replace(policy)) {
+		if strings.HasPrefix(strings.ToLower(src), "'nonce-") {
+			return fmt.Errorf("static: Content-Security-Policy source %s is a nonce: a static file gives every visitor the same one, so it protects nothing; drop it (exported pages link every script)", src)
+		}
+	}
+	return nil
+}
+
+// metaIgnored names the directives a <meta>-delivered policy ignores
+// (CSP3 §3.1, "The <meta> element"): browsers log a console warning for
+// each and enforce nothing, so the meta leaves them out. _headers keeps
+// them.
+var metaIgnored = map[string]bool{"frame-ancestors": true, "report-uri": true, "sandbox": true}
+
+// metaPolicies splits a header value into the policies a <meta> can
+// carry: one per comma-separated policy, since a <meta> parses a single
+// one, with the directives a meta ignores dropped. A policy left with no
+// directive is dropped.
+func metaPolicies(policy string) []string {
+	var out []string
+	for part := range strings.SplitSeq(policy, ",") {
+		var kept []string
+		for d := range strings.SplitSeq(part, ";") {
+			d = strings.Join(strings.Fields(d), " ")
+			if d == "" {
+				continue
+			}
+			name, _, _ := strings.Cut(d, " ")
+			if metaIgnored[strings.ToLower(name)] {
+				continue
+			}
+			kept = append(kept, d)
+		}
+		if len(kept) > 0 {
+			out = append(out, strings.Join(kept, "; "))
+		}
+	}
+	return out
+}
+
+// applyStaticCSP inserts the policy as in-document metas, immediately
+// after <head> so they precede anything that can trigger a fetch. A
+// page that already carries one (the print shell, say) is left alone.
+// policy has passed checkExportCSP, so it holds no quote or bracket to
+// escape; & is escaped all the same.
+func applyStaticCSP(page, policy string) string {
 	if strings.Contains(page, "http-equiv=\"Content-Security-Policy\"") {
 		return page
 	}
-	meta := "\n<meta http-equiv=\"Content-Security-Policy\" content=\"" + staticExportCSP + "\">"
+	var meta strings.Builder
+	for _, p := range metaPolicies(policy) {
+		meta.WriteString("\n<meta http-equiv=\"Content-Security-Policy\" content=\"" + strings.ReplaceAll(p, "&", "&amp;") + "\">")
+	}
+	return insertAfterHead(page, meta.String())
+}
+
+// insertAfterHead puts s right after the document's opening <head> tag.
+func insertAfterHead(page, s string) string {
+	if s == "" {
+		return page
+	}
 	if i := strings.Index(page, "<head"); i >= 0 {
 		if j := strings.IndexByte(page[i:], '>'); j >= 0 {
 			at := i + j + 1
-			return page[:at] + meta + page[at:]
+			return page[:at] + s + page[at:]
 		}
 	}
 	return page
@@ -1479,9 +1985,9 @@ func applyStaticCSP(page string) string {
 // frame-ancestors (as well as report-uri and sandbox), so the meta covers
 // the fetch directives everywhere while the clickjacking guard lands only
 // on hosts that read this file.
-func writeHeadersFile(outDir string) error {
+func writeHeadersFile(outDir, policy string) error {
 	body := "/*\n" +
-		"  Content-Security-Policy: " + staticExportCSP + "\n" +
+		"  Content-Security-Policy: " + policy + "\n" +
 		"  X-Content-Type-Options: nosniff\n" +
 		"  Referrer-Policy: strict-origin-when-cross-origin\n"
 	return writeFile(filepath.Join(outDir, "_headers"), []byte(body))

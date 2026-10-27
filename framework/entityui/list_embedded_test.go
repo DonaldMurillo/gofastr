@@ -98,7 +98,9 @@ func TestTopPreviewsFirstRows(t *testing.T) {
 	seedInvoiceRows(t, x, "g", 5, "1.00")
 	ctx := x.userCtx("/dash", "", "u1")
 	paged := listHTML(t, x.ui.List("invoices").Base("/inv").Key("w").Embedded().PageSize(2), ctx)
-	for _, want := range []string{"w_page=2", "w_sort=", "Actions for INV-1"} {
+	// An unsorted list pages in key order (the offset tiebreak), so the
+	// seeded g1 leads.
+	for _, want := range []string{"w_page=2", "w_sort=", "Actions for g1"} {
 		if !strings.Contains(paged, want) {
 			t.Fatalf("the control lacks %q:\n%s", want, paged)
 		}
@@ -113,7 +115,9 @@ func TestTopPreviewsFirstRows(t *testing.T) {
 	if n := strings.Count(top, "<tr"); n != 3 {
 		t.Errorf("the preview drew %d table rows, want a header and 2:\n%s", n, top)
 	}
-	if !strings.Contains(top, `href="/inv/inv-1"`) {
+	// Key order gives g1, g2; the URL's page 3 of number desc would be g1
+	// and inv-1.
+	if !strings.Contains(top, `href="/inv/g2"`) || strings.Contains(top, `href="/inv/inv-1"`) {
 		t.Errorf("the preview ignored the URL's page or sort, or dropped the record link:\n%s", top)
 	}
 	if !strings.Contains(top, `<span class="fui-muted" data-cui-comp="ui-muted">6</span>`) {

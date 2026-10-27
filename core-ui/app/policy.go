@@ -157,6 +157,120 @@ func EffectivePolicies(s *Screen) []Policy {
 	return chain
 }
 
+// PagePolicy runs the policy phase of a page render of path and returns
+// its decision: the screen's policy chain, then the region guards,
+// whose Redirect moves the whole page. It installs the route match and
+// the resolver state the render installs, so a policy that reads a
+// resolver reads it here as on the page; ResolvePolicy alone gave such
+// a read ErrNoResolver. err is the render's *PageError when a resolver
+// that phase read failed. ok is false when no screen matches path. A
+// host that lists the pages a visitor can read (the sitemap) asks this
+// instead of rendering each page.
+func (a *App) PagePolicy(ctx context.Context, path string) (d Decision, ok bool, err error) {
+	screen, params, found := a.Router.Resolve(path)
+	if !found {
+		return Decision{}, false, nil
+	}
+	if _, has := MatchFromContext(ctx); !has {
+		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
+	}
+	d, err = a.policyPhase(ctx, screen, path, params)
+	return d, true, err
+}
+
+// policyPhase is PagePolicy for a resolved screen, with ctx carrying
+// its match.
+func (a *App) policyPhase(ctx context.Context, screen *Screen, path string, params map[string]string) (Decision, error) {
+	var chain []LayoutLayer
+	if screen.Type == ScreenPage {
+		chain = resolveChainKeys(a.Router.layoutChainFor(screen), params)
+	}
+	_, o := runPolicyPhase(ctx, screen, path, chain)
+	switch {
+	case o.err != nil:
+		return Decision{}, o.err
+	case o.redirect.Kind == DecisionRedirect:
+		return o.redirect, nil
+	}
+	return o.decision, nil
+}
+
+// policyOutcome is what a request's policy phase decided.
+type policyOutcome struct {
+	// decision is the screen chain's.
+	decision Decision
+	// guards holds the region guards' per-region decisions and redirect
+	// the first guard Redirect, which moves the whole page. Both stay
+	// zero when the chain redirected or blocked: the guards never ran.
+	guards   regionGuards
+	redirect Decision
+	// err is the page's *PageError when a resolver the phase read
+	// failed: an eager one, one the chain read, or one a guard read.
+	// It wins over every decision above: a reader that saw the failure
+	// decided on an error, so the page answers the error.
+	err error
+}
+
+// runPolicyPhase is the policy phase every request that answers for a
+// page runs, in the one order they share: the resolver store and the
+// eager resolvers, the screen's chain, then the region guards over
+// chain. A chain Redirect or Block ends it before the guards run;
+// otherwise it runs to the end. err is read once, when the phase ends:
+// the store keeps its cells in first-read order, so that read names the
+// earliest whole-page failure any step saw. The returned ctx carries
+// the store for the Load and region phases that follow.
+//
+// The page render, the bare partial, the deferred part, the per-URL
+// llm.md and PagePolicy all call it and check err first, so none of
+// them can check for a failure before the guards and miss the one a
+// guard's read records.
+func runPolicyPhase(ctx context.Context, screen *Screen, path string, chain []LayoutLayer) (context.Context, policyOutcome) {
+	ctx = withResolverState(ctx, screen)
+	runEagerResolvers(ctx, screen)
+	var o policyOutcome
+	o.decision = ResolvePolicy(ctx, screen)
+	if o.decision.Kind != DecisionRedirect && o.decision.Kind != DecisionBlock {
+		o.guards, o.redirect = ensureRegionGuards(ctx, screen, chain)
+	}
+	o.err = resolverPageError(ctx, path)
+	return ctx, o
+}
+
+// PatternPolicy decides a document about screen's route pattern rather
+// than one URL: the llm.md page index, a pattern doc, an action the
+// client names no page for. Anything but Allow withholds it.
+//
+// A static pattern is its own URL, so it answers what PagePolicy answers
+// for it, and a resolver failure there withholds (Block). A dynamic
+// pattern names no params: its screen chain runs as ResolvePolicy runs
+// it, but its region guards decide per URL and cannot run without one,
+// so a dynamic screen with any region guard on its chain answers Block.
+// A guard that redirects some visitor away from some URL would
+// otherwise leave that page's title and content in a pattern-level
+// document; over-withholding a public page's metadata is the safe
+// failure.
+func (a *App) PatternPolicy(ctx context.Context, screen *Screen) Decision {
+	if screen == nil {
+		return Decision{Kind: DecisionBlock}
+	}
+	if len(extractParamNames(screen.Path)) == 0 {
+		ctx = WithMatch(ctx, newMatch(screen.Path, screen.Path, nil))
+		d, err := a.policyPhase(ctx, screen, screen.Path, nil)
+		if err != nil {
+			return Decision{Kind: DecisionBlock}
+		}
+		return d
+	}
+	d := ResolvePolicy(ctx, screen)
+	if d.Kind != DecisionAllow {
+		return d
+	}
+	if len(guardRegions(screen, a.Router.layoutChainFor(screen))) > 0 {
+		return Decision{Kind: DecisionBlock}
+	}
+	return d
+}
+
 // ResolvePolicy walks the effective chain and returns the first
 // non-Allow Decision. Returns Allow when the chain is empty or every
 // policy permits the request.

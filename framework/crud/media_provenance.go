@@ -43,7 +43,7 @@ type uploadedKeysCtx struct{}
 //	ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")
 //	...
 //	row, err := profiles.CreateOne(crud.WithUploadedKeys(ctx, ff.StorageRef),
-//		map[string]any{"avatar": ff.URL})
+//		map[string]any{"avatar": ff.StorageRef})
 //
 // SECURITY: pass only keys your own code just saved. A key taken from
 // request data is exactly what this check exists to refuse.
@@ -208,7 +208,7 @@ func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id
 		for i := range vals {
 			dest[i] = &vals[i]
 		}
-		err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(dest...)
+		err := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(dest...)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}

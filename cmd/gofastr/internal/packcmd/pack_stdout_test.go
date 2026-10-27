@@ -58,3 +58,27 @@ func TestPackStdoutIsOnlyYAML(t *testing.T) {
 		t.Fatalf("stdout does not parse as an app spec: %v\n%s", err, out)
 	}
 }
+
+// A caller who meant to write a file and mistyped the flag gets an error,
+// not the YAML on stdout and exit 0.
+func TestPackRefusesBadOutFlag(t *testing.T) {
+	dir := materializeAppSpec(t, appspec.AppSpec{
+		App: appspec.AppSpecApp{Name: "Packflag", Module: "example.com/packflag"},
+		Entities: []framework.EntityDeclaration{{
+			Name:   "notes",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		}},
+	})
+	// The app dir comes last in the --output case: a skipped flag would
+	// otherwise leave x.yml as the dir and fail for the wrong reason.
+	for _, args := range [][]string{{dir, "-o"}, {dir, "--out"}, {"--output", "x.yml", dir}} {
+		exitCode := 0
+		origExit := cli.OsExit
+		cli.OsExit = func(c int) { exitCode = c }
+		out := clitest.CaptureStdout(t, func() { RunPack(args) })
+		cli.OsExit = origExit
+		if exitCode != 1 || strings.Contains(out, "entities:") {
+			t.Errorf("pack %q exited %d with stdout:\n%s", args, exitCode, out)
+		}
+	}
+}

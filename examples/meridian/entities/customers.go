@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=de57971a584dff1c
+//gofastr:generated generator=app kind=scaffold version=dev sum=7dffa518f95cb54b
 
 package entities
 
@@ -46,8 +46,8 @@ type CustomersInput struct {
 
 // CustomersPatch is the update payload for CustomersRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type CustomersPatch struct {
 	Name    *string               `json:"name,omitempty"`
 	Email   *string               `json:"email,omitempty"`

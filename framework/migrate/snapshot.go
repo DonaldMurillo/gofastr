@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -88,7 +90,7 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 			if safeTable, err := query.SafeIdent(ent.GetTable()); err == nil {
 				var idxDDLs []string
 				for _, idx := range entityIndices(ent) {
-					idxDDLs = append(idxDDLs, indexDDL(safeTable, idx))
+					idxDDLs = append(idxDDLs, indexDDL(dialect, safeTable, idx))
 				}
 				if len(idxDDLs) > 0 {
 					if snap.Indices == nil {
@@ -139,9 +141,11 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 			snap.Views[v.Name] = RoutineDef{Up: up, Down: down}
 		}
 	}
-	if len(plan.Routines) > 0 {
+	// A routine scoped to another dialect never runs on this one, at boot or
+	// in a generated file, so the snapshot does not record it.
+	if routines, _ := partitionRoutinesByDialect(plan.Routines, dialect); len(routines) > 0 {
 		snap.Routines = map[string]RoutineDef{}
-		for _, r := range plan.Routines {
+		for _, r := range routines {
 			snap.Routines[r.Name] = RoutineDef{Up: r.Up, Down: r.Down}
 		}
 	}
@@ -175,7 +179,33 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		}
 	}
 
-	var changes []SchemaChange
+	// Views and routines: new and changed ones are created after the tables
+	// (they select from them), and removed ones are dropped BEFORE any table
+	// change, since Postgres refuses to drop a table or column a view still
+	// reads. Views keep their DependsOn order, and routines the plan's
+	// order, which is the order boot applies them in; removals drop
+	// routines, then views, the reverse of creation. The Down runs the
+	// changes backwards, so it unwinds the same way.
+	viewRoutines := make([]Routine, 0, len(plan.Views))
+	for _, v := range topoSortViews(plan.Views) {
+		viewRoutines = append(viewRoutines, v.routine(dialect))
+	}
+	// Boot skips a routine scoped to another dialect, so a migration
+	// generated for this one must not carry it either.
+	routines, _ := partitionRoutinesByDialect(plan.Routines, dialect)
+	viewUpserts, viewDrops := routineChanges(viewRoutines, prev.Views)
+	if dialect == DialectPostgres {
+		viewUpserts = pgViewUpserts(topoSortViews(plan.Views), prev.Views)
+	}
+	routineUpserts, routineDrops := routineChanges(routines, prev.Routines)
+
+	changes := append(routineDrops, viewDrops...)
+	// The snapshot's column sets let a Postgres key change detach the
+	// foreign keys onto its table; it records no constraint names, so
+	// foreign keys themselves are not compared (fks stays nil). The keys a
+	// key change re-adds only after their child's own changes run after
+	// every table's.
+	env := &fkDiffEnv{tables: prev.Tables}
 	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue // views / external tables generate no table DDL
@@ -185,24 +215,36 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if cols, ok := lookupKeyCase(prev.PrimaryKeys, ent.GetTable()); ok && len(prevCols) > 0 {
 			lk = &liveKey{cols: cols, constraint: defaultPKName(ent.GetTable())}
 		}
-		entChanges, derr := diffEntity(ent, all, dialect, prevCols, lk)
+		entChanges, derr := diffEntity(ent, all, dialect, prevCols, lk, env)
 		if derr != nil {
 			return "", "", SchemaSnapshot{}, fmt.Errorf("generate %s: %w", ent.GetName(), derr)
 		}
-		changes = append(changes, entChanges...)
-
+		// The table's index drops run BEFORE its column changes and its
+		// index creates after them. Appended after the column changes, a
+		// drop came too late twice over: SQLite refuses to drop a column
+		// an index still covers, and a unique index retargeted onto a
+		// column added in this change was created by the add, dropped as
+		// the old definition, and its re-create deduplicated away. The
+		// Down runs backwards, so a dropped index is restored after the
+		// column it covers.
+		var idxDrops, idxAdds []SchemaChange
 		if len(prevCols) > 0 {
 			safeTable, err := query.SafeIdent(ent.GetTable())
 			if err == nil {
 				desiredIdxList := entityIndices(ent)
 				desiredIdxDDLs := make([]string, len(desiredIdxList))
 				for i, idx := range desiredIdxList {
-					desiredIdxDDLs[i] = indexDDL(safeTable, idx)
+					desiredIdxDDLs[i] = indexDDL(dialect, safeTable, idx)
 				}
 				if prev.Indices != nil {
 					prevIdxDDLs := lookupIndicesCase(prev.Indices, ent.GetTable())
-					idxChanges := diffTableIndices(ent.GetName(), safeTable, desiredIdxDDLs, prevIdxDDLs)
-					changes = append(changes, idxChanges...)
+					for _, c := range diffTableIndices(ent.GetName(), safeTable, desiredIdxDDLs, prevIdxDDLs) {
+						if isIndexDrop(c.SQL) {
+							idxDrops = append(idxDrops, c)
+						} else {
+							idxAdds = append(idxAdds, c)
+						}
+					}
 				} else {
 					// Legacy snapshot without Indices map: prior indices unknown.
 					// Emit idempotent CREATE INDEX IF NOT EXISTS for all desired indices
@@ -213,16 +255,21 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 						if err != nil {
 							continue
 						}
-						changes = append(changes, SchemaChange{
+						idxAdds = append(idxAdds, SchemaChange{
 							Summary: fmt.Sprintf("%s: index %s", ent.GetName(), safeIdxName),
 							SQL:     ddl,
-							Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeIdxName),
+							Down:    dropIndexSQL(safeTable, safeIdxName),
 						})
 					}
 				}
 			}
 		}
+		changes = append(changes, idxDrops...)
+		changes = append(changes, entChanges...)
+		changes = append(changes, idxAdds...)
 	}
+
+	changes = append(changes, env.deferred...)
 
 	if len(ordered) > 0 {
 		pivotChanges, err := diffPivotTables(ordered, all, dialect, prev.Tables)
@@ -232,24 +279,6 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		changes = append(changes, pivotChanges...)
 	}
 
-	// A SQLite rebuild drops its table, and the migration runner applies
-	// this file inside a transaction, where PRAGMA foreign_keys is a no-op:
-	// every ON DELETE action onto the table would fire against live rows.
-	// Refuse rather than write a file that empties a pivot.
-	for _, c := range changes {
-		if c.sqliteRebuildOf == "" {
-			continue
-		}
-		if refs := mutatingFKReferrers(all[c.sqliteRebuildOf], all); len(refs) > 0 {
-			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite column type change: rebuilding the table drops it, "+
-				"and the ON DELETE CASCADE / SET NULL foreign keys in %s would delete or unlink their rows; "+
-				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
-				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
-				c.sqliteRebuildOf, strings.Join(refs, ", "))
-		}
-	}
-
-	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
 	declaredTables := map[string]bool{}
 	for _, ent := range all {
 		declaredTables[strings.ToLower(ent.GetTable())] = true
@@ -259,6 +288,83 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			}
 		}
 	}
+
+	// SQLite names a foreign key's referenced columns, so a rebuild that
+	// moves the key (or drops the unique column a key references) strands
+	// the tables the snapshot records referencing it, unless this file
+	// rebuilds or drops them too: every later write to one would fail with
+	// "foreign key mismatch". Refuse, as boot does.
+	if dialect == DialectSQLite {
+		rebuilt := map[string]bool{}
+		for _, c := range changes {
+			if c.sqliteRebuildOf != "" {
+				rebuilt[strings.ToLower(all[c.sqliteRebuildOf].GetTable())] = true
+			}
+		}
+		for _, c := range changes {
+			if c.sqliteRebuildOf == "" {
+				continue
+			}
+			ent := all[c.sqliteRebuildOf]
+			oldKey, _ := lookupKeyCase(prev.PrimaryKeys, ent.GetTable())
+			renames := renamesApplied(ent, lookupTableCols(prev.Tables, ent.GetTable()))
+			refs := recordedReferencesOnto(prev.TableDDL, ent.GetTable())
+			var stranded []string
+			for _, t := range slices.Sorted(maps.Keys(refs)) {
+				if rebuilt[strings.ToLower(t)] || !declaredTables[strings.ToLower(t)] {
+					continue
+				}
+				for _, cols := range refs[t] {
+					named := make([]string, len(cols))
+					for i, col := range cols {
+						named[i] = col
+						if n, ok := renames[strings.ToLower(col)]; ok {
+							named[i] = n
+						}
+					}
+					if strandsReference(ent, oldKey, named) {
+						stranded = append(stranded, t)
+						break
+					}
+				}
+			}
+			if len(stranded) > 0 {
+				return "", "", SchemaSnapshot{}, fmt.Errorf("%s: %w", c.sqliteRebuildOf,
+					strandedReferrersError(ent.GetTable(), oldKey, ent.KeyColumns(), stranded, "this migration rebuilds no table but the ones whose columns change"))
+			}
+		}
+	}
+
+	// A SQLite rebuild drops its table, and the migration runner applies
+	// this file inside a transaction, where PRAGMA foreign_keys is a no-op:
+	// every ON DELETE action onto the table would fire against live rows.
+	// Refuse rather than write a file that empties a pivot. The constraints
+	// in force when the file runs are the snapshot's, not the declarations':
+	// a relation removed in this same change still holds its CASCADE key on
+	// the child table (nothing here drops a foreign key), so the tables the
+	// snapshot records with one count too, unless this file drops them.
+	for _, c := range changes {
+		if c.sqliteRebuildOf == "" {
+			continue
+		}
+		ent := all[c.sqliteRebuildOf]
+		refs := mutatingFKReferrers(ent, all)
+		for _, t := range snapshotMutatingReferrers(prev, ent.GetTable()) {
+			if declaredTables[strings.ToLower(t)] && !slices.ContainsFunc(refs, func(r string) bool { return strings.EqualFold(r, t) }) {
+				refs = append(refs, t)
+			}
+		}
+		if len(refs) > 0 {
+			sort.Strings(refs)
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite column type change: rebuilding the table drops it, "+
+				"and the ON DELETE CASCADE / SET NULL foreign keys in %s would delete or unlink their rows; "+
+				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
+				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
+				c.sqliteRebuildOf, strings.Join(refs, ", "))
+		}
+	}
+
+	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
 	dropped := make([]string, 0)
 	for table := range prev.Tables {
 		if !declaredTables[strings.ToLower(table)] {
@@ -295,15 +401,32 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		})
 	}
 
-	// Views after table changes (they SELECT from those tables), then routines
-	// after views. The reverse-ordered Down therefore drops routines, then
-	// views, then tables. Dependencies unwind cleanly.
-	viewRoutines := make([]Routine, 0, len(plan.Views))
-	for _, v := range topoSortViews(plan.Views) {
-		viewRoutines = append(viewRoutines, v.routine(dialect))
+	// A SQLite rebuild drops the table and renames its replacement into
+	// place. Boot runs it on a connection with legacy_alter_table on,
+	// because a modern RENAME re-resolves every view and trigger that names
+	// the table, finds it dropped, and fails the migration. The generated
+	// file sets the pragma around the rename alone. The DROP also takes the
+	// table's own triggers, which boot puts back by running every
+	// routine's Up, so the file runs them all too, not only the changed
+	// ones. A rebuild is irreversible, so none of this needs a Down.
+	if dialect == DialectSQLite && slices.ContainsFunc(changes, func(c SchemaChange) bool { return c.sqliteRebuildOf != "" }) {
+		for i, c := range changes {
+			if c.sqliteRebuildOf == "" {
+				continue
+			}
+			qtable, qerr := query.SafeIdent(all[c.sqliteRebuildOf].GetTable())
+			if qerr != nil {
+				return "", "", SchemaSnapshot{}, fmt.Errorf("generate: invalid table name %q: %w", all[c.sqliteRebuildOf].GetTable(), qerr)
+			}
+			rename := sqliteRebuildRename(qtable)
+			changes[i].SQL = strings.Replace(c.SQL, rename,
+				"PRAGMA legacy_alter_table=ON;\n"+rename+";\nPRAGMA legacy_alter_table=OFF", 1)
+		}
+		routineUpserts, _ = routineChanges(routines, nil)
 	}
-	changes = append(changes, routineChanges(viewRoutines, prev.Views)...)
-	changes = append(changes, routineChanges(plan.Routines, prev.Routines)...)
+
+	changes = append(changes, viewUpserts...)
+	changes = append(changes, routineUpserts...)
 
 	// Deduplicate identical SchemaChange statements (e.g. index DDL emitted
 	// both by diffEntityFromLive column additions and diffTableIndices). A
@@ -353,35 +476,95 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	return up, down, next, nil
 }
 
-// routineChanges diffs current routines against the snapshot. New or changed
-// routines emit their Up; a changed routine's Down restores the previous body,
-// a new routine's Down is its own Down. Removed routines are dropped (via the
-// snapshot's stored Down) with their recreation as the inverse. Output is
-// name-sorted for deterministic migrations.
-func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChange {
-	var changes []SchemaChange
-	seen := map[string]bool{}
+// pgViewUpserts is routineChanges for Postgres views, in dependency order.
+// Only a plain view replaces itself in place. A changed materialized view,
+// or a view changing kind, drops the existing object first, and Postgres
+// refuses that while another view reads it: the declared views that read
+// it are dropped before it, deepest first, and created again after it.
+// A view changing kind is dropped with its old kind's statement, since
+// DROP MATERIALIZED VIEW refuses a plain view and CREATE OR REPLACE VIEW a
+// materialized one. Every dropped view's Down recreates the old one, and
+// every recreated view's Down drops it, so the rollback runs the same
+// steps backwards.
+func pgViewUpserts(ordered []View, prev map[string]RoutineDef) []SchemaChange {
+	dependents := viewDependents(ordered)
+	recreated := map[string]bool{}
+	for _, v := range ordered {
+		p, ok := prev[v.Name]
+		up, down := v.render(DialectPostgres)
+		if ok && p.Up != up && (v.Materialized || p.Down != down) {
+			recreated[v.Name] = true
+		}
+	}
+	dropped := map[string]bool{}
+	var out []SchemaChange
+	for _, v := range ordered {
+		up, down := v.render(DialectPostgres)
+		p, existed := prev[v.Name]
+		switch {
+		case dropped[v.Name]:
+			out = append(out, SchemaChange{Summary: fmt.Sprintf("view %s: recreate", v.Name), SQL: up, Down: down})
+		case recreated[v.Name]:
+			for _, d := range slices.Backward(dependents[v.Name]) {
+				if dropped[d.Name] {
+					continue
+				}
+				dropped[d.Name] = true
+				dp, ok := prev[d.Name]
+				if !ok {
+					continue // new in this plan: nothing to drop
+				}
+				out = append(out, SchemaChange{
+					Summary: fmt.Sprintf("view %s: drop, it reads %s", d.Name, v.Name),
+					SQL:     dp.Down,
+					Down:    dp.Up,
+				})
+			}
+			sql, undo := up, p.Up
+			if p.Down != down {
+				sql = p.Down + ";\n" + up
+				undo = down + ";\n" + p.Up
+			}
+			out = append(out, SchemaChange{Summary: fmt.Sprintf("view %s: replace", v.Name), SQL: sql, Down: undo})
+		case !existed:
+			out = append(out, SchemaChange{Summary: fmt.Sprintf("routine %s: create", v.Name), SQL: up, Down: down})
+		case p.Up != up:
+			out = append(out, SchemaChange{Summary: fmt.Sprintf("routine %s: replace", v.Name), SQL: up, Down: p.Up})
+		}
+	}
+	return out
+}
 
-	names := make([]string, 0, len(current))
+// routineChanges diffs current routines against the snapshot. New or changed
+// routines emit their Up in the order given: a view after the views it
+// depends on, and routines in the plan's order, the order boot runs them
+// in. A changed routine's Down restores the previous body, a new routine's
+// Down is its own Down. Removed routines come back separately, name-sorted,
+// so the caller can drop them before the tables they read: each is dropped
+// via the snapshot's stored Down, with its recreation as the inverse.
+func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange) {
+	seen := map[string]bool{}
 	byName := map[string]Routine{}
 	for _, r := range current {
-		names = append(names, r.Name)
-		byName[r.Name] = r
+		byName[r.Name] = r // a repeated name keeps its last definition
 	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, r := range current {
+		name := r.Name
+		if seen[name] {
+			continue
+		}
 		seen[name] = true
-		r := byName[name]
+		r = byName[name]
 		prevDef, ok := prev[name]
 		switch {
 		case !ok:
-			changes = append(changes, SchemaChange{
+			upserts = append(upserts, SchemaChange{
 				Summary: fmt.Sprintf("routine %s: create", name),
 				SQL:     r.Up,
 				Down:    r.Down,
 			})
 		case prevDef.Up != r.Up:
-			changes = append(changes, SchemaChange{
+			upserts = append(upserts, SchemaChange{
 				Summary: fmt.Sprintf("routine %s: replace", name),
 				SQL:     r.Up,
 				Down:    prevDef.Up, // restore the previous definition
@@ -406,7 +589,7 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 		// of writing a no-op that looks applied.
 		drop := strings.TrimSpace(prev[name].Down)
 		if drop == "" {
-			changes = append(changes, SchemaChange{
+			removals = append(removals, SchemaChange{
 				Summary: fmt.Sprintf("routine %s: drop SKIPPED: the routine declares no Down; "+
 					"add one (e.g. DROP FUNCTION ...) so the removal actually runs", name),
 				SQL:  "",
@@ -414,13 +597,13 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) []SchemaChang
 			})
 			continue
 		}
-		changes = append(changes, SchemaChange{
+		removals = append(removals, SchemaChange{
 			Summary: fmt.Sprintf("routine %s: drop", name),
 			SQL:     drop,          // the drop
 			Down:    prev[name].Up, // recreate on rollback
 		})
 	}
-	return changes
+	return upserts, removals
 }
 
 // recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set,
@@ -532,10 +715,99 @@ func SaveSnapshot(path string, snap SchemaSnapshot) error {
 	// MarshalIndent cannot fail for a snapshot of string maps: no channels,
 	// funcs, or cycles, so the only real error here is the file write.
 	data, _ := json.MarshalIndent(snap, "", "  ")
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	data = append(data, '\n')
+	// Write a sibling and rename it over the snapshot. Writing in place
+	// truncated the file first, so a crash or a full disk mid-write left
+	// torn JSON that every later generate refused at LoadSnapshot, and
+	// deleting it regenerated a full CREATE that could not apply. The
+	// snapshot is a committed artifact: a new one is 0644, and an existing
+	// one keeps its mode.
+	// A symlinked snapshot is written at its target: the rename would
+	// otherwise replace the link with a regular file.
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
-var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+)`)
+// reFKReferences matches a REFERENCES clause in a recorded CREATE TABLE,
+// capturing the table it references, schema included: a reference onto
+// app.a captured as app made the child no dependency of its parent.
+var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)`)
+
+// reMutatingFK matches a foreign key in a recorded CREATE TABLE whose
+// ON DELETE action changes rows, capturing the table it references.
+var reMutatingFK = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\([^)]*\)\s*ON\s+DELETE\s+(?:CASCADE|SET\s+NULL)\b`)
+
+// ddlWithoutLiterals blanks the string literals and comments of a recorded
+// CREATE TABLE, so the patterns above read only its definitions: a text
+// DEFAULT 'REFERENCES p(id) ON DELETE CASCADE' references nothing. Quoted
+// identifiers are kept as written, so a quote inside one opens no literal.
+func ddlWithoutLiterals(ddl string) string {
+	var b strings.Builder
+	for i := 0; i < len(ddl); {
+		j := skipInert(ddl, i)
+		switch {
+		case j == i:
+			b.WriteByte(ddl[i])
+			i++
+		case ddl[i] == '\'' || ddl[i] == '-' || ddl[i] == '/':
+			b.WriteByte(' ')
+			i = j
+		default:
+			b.WriteString(ddl[i:j])
+			i = j
+		}
+	}
+	return b.String()
+}
+
+// snapshotMutatingReferrers names the tables whose CREATE TABLE in the
+// snapshot holds a CASCADE or SET NULL foreign key onto table, sorted. A
+// snapshot written before TableDDL existed records none.
+func snapshotMutatingReferrers(prev SchemaSnapshot, table string) []string {
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(prev.TableDDL)) {
+		for _, m := range reMutatingFK.FindAllStringSubmatch(ddlWithoutLiterals(prev.TableDDL[name]), -1) {
+			if strings.EqualFold(m[1], table) {
+				out = append(out, name)
+				break
+			}
+		}
+	}
+	return out
+}
 
 // sortDroppedTables orders tables for DROP TABLE so that child/referencing tables
 // (such as pivot tables or tables with foreign keys) are dropped BEFORE the tables
@@ -567,7 +839,7 @@ func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
 		if ddl == "" {
 			continue
 		}
-		matches := reFKReferences.FindAllStringSubmatch(ddl, -1)
+		matches := reFKReferences.FindAllStringSubmatch(ddlWithoutLiterals(ddl), -1)
 		seenRef := make(map[string]bool)
 		for _, m := range matches {
 			if len(m) > 1 {
@@ -685,6 +957,11 @@ func lookupIndicesCase(m map[string][]string, key string) []string {
 	return nil
 }
 
+// isIndexDrop reports whether a change's SQL drops an index.
+func isIndexDrop(sql string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "DROP INDEX")
+}
+
 // diffTableIndices compares desired index DDLs against previous index DDLs for a table,
 // emitting CREATE INDEX for new indices and DROP INDEX for removed indices.
 func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string) []SchemaChange {
@@ -716,13 +993,13 @@ func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string)
 			changes = append(changes, SchemaChange{
 				Summary: fmt.Sprintf("%s: index %s", entName, safeName),
 				SQL:     ddl,
-				Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeName),
+				Down:    dropIndexSQL(safeTable, safeName),
 			})
 		} else if strings.TrimRight(strings.TrimSpace(prevDDL), ";") != strings.TrimRight(strings.TrimSpace(ddl), ";") {
 			// Index definition changed under the same index name (e.g. Unique flip, or column change under explicit name).
 			// Drop the old index and create the new index.
 			// Down reverses this: drops the new index and restores the old index DDL.
-			dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s", safeName)
+			dropSQL := dropIndexSQL(safeTable, safeName)
 			changes = append(changes,
 				SchemaChange{
 					Summary: fmt.Sprintf("%s: drop modified index %s", entName, safeName),
@@ -750,7 +1027,7 @@ func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string)
 		if _, ok := desiredMap[strings.ToLower(name)]; !ok {
 			changes = append(changes, SchemaChange{
 				Summary:     fmt.Sprintf("%s: remove index %s", entName, safeName),
-				SQL:         fmt.Sprintf("DROP INDEX IF EXISTS %s", safeName),
+				SQL:         dropIndexSQL(safeTable, safeName),
 				Down:        ddl,
 				Destructive: true,
 			})

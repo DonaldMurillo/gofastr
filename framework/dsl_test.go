@@ -55,7 +55,7 @@ func TestBuildDSLQuery(t *testing.T) {
 	if sql != wantSQL {
 		t.Fatalf("sql:\n got: %s\nwant: %s", sql, wantSQL)
 	}
-	if !reflect.DeepEqual(args, []any{"published", 10, 20, 2}) {
+	if !reflect.DeepEqual(args, []any{"published", int64(10), int64(20), 2}) { // Int values bind as int64 (filter.CoerceValue)
 		t.Fatalf("args = %#v", args)
 	}
 }

@@ -1,6 +1,7 @@
 package freeze
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/token"
 	"maps"
@@ -57,8 +58,10 @@ func validateGraduation(w *world.World) error {
 	}
 	// Seeds must graduate only when the live runtime would apply them.
 	// Every add_seed runs through kiln/render.ApplySeeds
-	// (live.applySideEffects), which refuses a seed whose entity has no
-	// table and validates the entity name and every row key as a SQL
+	// (live.applySideEffects), which refuses a seed whose entity is not
+	// in the world, inserts into that entity's table
+	// (world.Entity.TableName: the declared table, else the framework's
+	// default), and validates that table and every row key as a SQL
 	// identifier; an app spec that ships a seed the preview refused makes
 	// the frozen app fail at first boot — the exact divergence this gate
 	// exists to prevent.
@@ -69,11 +72,12 @@ func validateGraduation(w *world.World) error {
 		if s.Entity == "" {
 			return fmt.Errorf("freeze: seed %d: empty entity", i)
 		}
-		if _, err := query.SafeIdent(s.Entity); err != nil {
-			return fmt.Errorf("freeze: seed %d (%s): %w", i, s.Entity, err)
+		ent, ok := w.Entities[s.Entity]
+		if !ok || ent == nil {
+			return fmt.Errorf("freeze: seed %d targets entity %q, which is not in the world: the live runtime refuses it too", i, s.Entity)
 		}
-		if _, ok := w.Entities[s.Entity]; !ok {
-			return fmt.Errorf("freeze: seed %d targets entity %q, which is not in the world: the live runtime refuses it too (no such table)", i, s.Entity)
+		if _, err := query.SafeIdent(ent.TableName()); err != nil {
+			return fmt.Errorf("freeze: seed %d (%s) table: %w", i, s.Entity, err)
 		}
 		for _, row := range s.Rows {
 			for k := range row {
@@ -82,6 +86,9 @@ func validateGraduation(w *world.World) error {
 				}
 			}
 		}
+	}
+	if _, err := mergeSeeds(w.Seeds); err != nil {
+		return err
 	}
 	if w.App.PWA.Enabled {
 		switch w.App.PWA.Display {
@@ -343,15 +350,49 @@ func navMaps(items []world.NavItem) []any {
 }
 
 func seedMaps(seeds []*world.Seed) []any {
-	out := make([]any, 0, len(seeds))
-	for _, seed := range seeds {
-		if seed == nil {
-			continue
-		}
+	merged, _ := mergeSeeds(seeds) // validateGraduation refused a conflict
+	out := make([]any, 0, len(merged))
+	for _, seed := range merged {
 		m := compact(map[string]any{"entity": seed.Entity, "rows": seed.Rows, "count": seed.Count, "weights": seed.Weights})
 		out = append(out, m)
 	}
 	return out
+}
+
+// mergeSeeds folds every seed for one entity into one block at the first
+// one's place: rows in order, counts summed, weights joined. Each
+// add_seed appends a seed, so a world seeding an entity twice is
+// ordinary, but the generator refuses two blocks for one entity (its
+// boot hook skips the second once the table has rows). Two seeds
+// weighting the same column differently have no merge that keeps both,
+// so that is an error naming the column.
+func mergeSeeds(seeds []*world.Seed) ([]*world.Seed, error) {
+	var out []*world.Seed
+	at := map[string]*world.Seed{}
+	for _, s := range seeds {
+		if s == nil {
+			continue
+		}
+		m := at[s.Entity]
+		if m == nil {
+			m = &world.Seed{Entity: s.Entity}
+			at[s.Entity] = m
+			out = append(out, m)
+		}
+		m.Rows = append(m.Rows, s.Rows...)
+		m.Count += s.Count
+		for _, col := range slices.Sorted(maps.Keys(s.Weights)) {
+			wt := s.Weights[col]
+			if prev, ok := m.Weights[col]; ok && !maps.Equal(prev, wt) {
+				return nil, fmt.Errorf("freeze: two seeds for entity %q weight column %q differently, and the app spec takes one seed block per entity: give both seeds the same weights for %q", s.Entity, col, col)
+			}
+			if m.Weights == nil {
+				m.Weights = map[string]map[string]int{}
+			}
+			m.Weights[col] = wt
+		}
+	}
+	return out, nil
 }
 
 // hookMaps carries the world's entity lifecycle hooks into the
@@ -430,10 +471,7 @@ func freezeEndpoints(w *world.World) ([]settings.Endpoint, error) {
 		}
 		// The app serves an entity, and the endpoints under it, at its
 		// table: /api/<table>/...
-		table := ent.Table
-		if table == "" {
-			table = entity
-		}
+		table := ent.TableName()
 		rel := strings.TrimPrefix(routePath, "/")
 		if strings.HasPrefix(routePath, "/") {
 			if rel, ok = strings.CutPrefix(rel, table+"/"); !ok {
@@ -810,6 +848,17 @@ func writeScalarInline(sb *strings.Builder, value any) {
 		sb.WriteString(formatYAMLFloat(float64(v)))
 	case float64:
 		sb.WriteString(formatYAMLFloat(v))
+	case json.Number:
+		// The journal keeps an integer past 2^53 as a json.Number. Write
+		// it as the integer it is (core/yaml reads it back as an int64);
+		// one past int64 range is written as the float it always was.
+		if i, err := v.Int64(); err == nil {
+			sb.WriteString(strconv.FormatInt(i, 10))
+		} else if f, err := v.Float64(); err == nil {
+			sb.WriteString(formatYAMLFloat(f))
+		} else {
+			sb.WriteString(quoteYAMLString(v.String()))
+		}
 	case string:
 		sb.WriteString(quoteYAMLString(v))
 	default:

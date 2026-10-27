@@ -249,6 +249,30 @@ func TestTimeoutFails(t *testing.T) {
 	}
 }
 
+// A handler that outlives TaskTimeout and then completes still fails
+// with "task timed out": the ceiling is the run's, not the handler's to
+// ignore, and the late Complete is refused.
+func TestCompleteAfterTimeoutFails(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.TaskTimeout = 30 * time.Millisecond })
+	late := make(chan error, 1)
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		<-ctx.Done()
+		err := tc.Complete(TextPart("late"))
+		late <- err
+		return err
+	})
+	task := h.send("alice")
+	if err := <-late; err == nil {
+		t.Error("Complete after the deadline succeeded")
+	}
+	if task.Status.State != TaskStateFailed {
+		t.Fatalf("state = %s, want FAILED", task.Status.State)
+	}
+	if task.Status.Message == nil || task.Status.Message.Parts[0].Text == nil || *task.Status.Message.Parts[0].Text != "task timed out" {
+		t.Fatalf("failure message = %+v, want 'task timed out'", task.Status.Message)
+	}
+}
+
 // TestHandlerErrorIsGeneric pins the no-errleak posture: a non-*Error
 // handler failure is FAILED with a generic message, while an *Error
 // keeps its own text.

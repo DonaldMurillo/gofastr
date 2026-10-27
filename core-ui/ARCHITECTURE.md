@@ -804,6 +804,14 @@ client-side with no per-consumer round-trip.
   `#gofastr-signals-partial` island; the runtime applies page-scoped values
   unconditionally but **never clobbers an app-global the user already
   mutated** (it only seeds a global the first time it is seen).
+- **Whole documents.** A full page's flat seed mixes scopes, so the host
+  also names its page-scoped keys in an inert
+  `<script type="application/json" id="gofastr-signals-page">[name,…]</script>`.
+  The navigator turns those keys into the same partial-shaped island and
+  puts it in the boot cache entry and in any fetched document it swaps
+  in, so Back to the first page of a visit and a cross-chain or
+  full-answer navigation restore page state as a partial does. A host
+  that sends no list restores none.
 - **Computed.** `store.Computed` derives a value client-side from dependency
   slices via a host-registered JS reducer (CSP-safe, no `eval`). Register
   reducers on `window.__gofastr._reducers` from a script loaded **after**
@@ -914,7 +922,16 @@ mount handlers. Runtime-module preload hints carry
 the document and its stylesheets. The route graph rides in
 `manifest.js` (`window.__gofastr_routes`, cached once per deploy) rather
 than in every document; exported pages keep the inline
-`#gofastr-routes` block because they must be self-contained.
+`#gofastr-routes` block because they must be self-contained. The graph
+carries each route's loading content, which speaks the reader's
+language, so an app with a translator builds one `manifest.js` body
+and one route graph per catalog locale (keyed by
+`i18n.CatalogLocale`, never by a raw request tag, so a forged
+`X-Locale` cannot grow the cache). A page links its locale's body by
+hash, and the handler serves whichever locale's body the `?v=` names,
+since the script request itself carries no locale prefix. An app
+without a translator keeps the one body, rendered under a bare context.
+The PWA worker precaches every locale's `manifest.js`.
 `framework/uihost/first_load_contract_test.go` pins the script and
 preload rules, and `examples/site` holds its landing pages under one
 round trip of compressed HTML.
@@ -1031,11 +1048,16 @@ DOM marker: an application loads it explicitly with
 `__gofastr.loadModule('ws')` and calls two functions.
 
 `__gofastr.createSequencedReducer(initial, apply)` returns
-`reduce(envelope)`; it applies an envelope only when
+`reduce(envelope, generation)`; it applies an envelope only when
 `envelope.sequence` is strictly greater than the last applied one, so a
 reconnect snapshot captured before a live mutation cannot resurrect the
-state that mutation replaced. Results carry `{ applied, state,
-appliedSequence }`.
+state that mutation replaced. Pass the generation `onMessage` carries:
+the first `type: 'snapshot'` envelope of a generation the reducer has
+not hydrated from applies whatever its sequence (a restarted server or
+another replica numbers from its own start), and every later envelope
+of that generation is held to the strict rule. Without a generation
+argument the strict rule applies to everything. Results carry
+`{ applied, state, appliedSequence }`.
 
 `__gofastr.connectWebSocket(url, opts)` manages one WebSocket with
 reconnect and a distinct generation per reconnect:
@@ -1313,10 +1335,19 @@ of being sent with an unsupported native encoding.
 ### Server redirects (after intercept)
 
 When the interceptor IS active and the handler responds with a `30x`
-+ `Location` header, the runtime navigates to the location via the
-SPA navigator (no hard refresh between same-app pages), falling back
-to `window.location.assign`. For the non-intercepted default path,
-redirect-following is the browser's own job, same result.
++ `Location` header, the runtime loads the location as a new document
+(`window.location.assign`): the target may not be in the SPA route
+table, and the load resets the SSE connection the way a native form
+submit would. For the non-intercepted default path, redirect-following
+is the browser's own job, same result.
+
+An answer that is not a redirect is handled as on a `data-cui-rpc`
+form. A refusal (non-2xx) renders the server's validation envelope
+(`{error, fields}`) into the fields through the `formerrors` module, or
+toasts the status when no field matches. A 2xx answer delivers its
+`X-Gofastr-Toast` and `X-Gofastr-Invalidate` headers. Every intercepted
+submit carries the page's `<meta name="csrf-token">` as `X-CSRF-Token`,
+since a JSON body has no form field for `middleware.CSRF` to read.
 
 ```go
 http.Redirect(w, r, "/dashboard", http.StatusSeeOther)

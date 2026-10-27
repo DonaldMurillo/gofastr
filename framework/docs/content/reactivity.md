@@ -213,7 +213,14 @@ serialization. In the browser, load the `ws` runtime module
 (`__gofastr.loadModule('ws')`) and fold every envelope through
 `__gofastr.createSequencedReducer(initial, apply)`, which applies only
 `sequence > appliedSequence` and rejects everything older, whatever its
-payload says.
+payload says. Call it as `reduce(envelope, generation)` with the
+generation `onMessage` hands you: the first snapshot of a new
+generation applies whatever its sequence, because a restarted server
+or another replica numbers from its own start. Inside a generation the
+strict rule holds. Generations only grow, so a late message from a
+generation older than the one hydrated is refused. On the server, a reconnect's snapshot is numbered
+above every event the channel already sent, so it never ties an event
+the old connection applied.
 
 **Generations, not "it's back".** A recovered socket does not mean the
 protocol layered on it recovered: browser state can still hold a stale

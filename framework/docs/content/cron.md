@@ -160,12 +160,32 @@ jobs finish, so the pool should allow at least two open connections when
 the jobs themselves touch the database, otherwise the leader holds the
 only connection and the jobs deadlock on it.
 
-This is **per-tick mutual exclusion**: two replicas never fire the same
-tick. It is not exactly-once execution for a job that overruns the
-interval. For durable, exactly-once background work with retries,
-dead-letters, and survival across restarts, use the DB-backed queue
-(`battery/queue`) instead. A custom lease (Redis, etcd, …) only needs to
-satisfy the `LeaderElection` interface.
+The lock is released as soon as the tick's jobs finish, so the lock alone
+does not stop a second replica whose timer fires for the same minute a
+moment later. `NewPostgresAdvisoryLease` also records the minute it fired
+in a `gofastr_cron_ticks` table (one row per key, created on first use)
+with a conditional upsert, and a replica that finds the minute, or a later
+one, already claimed skips the tick. Each tick fires **at most once**
+across replicas:
+
+- It is not exactly once. A replica that claims a minute and then crashes
+  leaves that minute unrun, and a failed claim skips the tick (reported to
+  `OnError` as `"(leader-election)"`) rather than risking a second run.
+- Claims only move forward. A replica whose clock runs behind cannot fire
+  a minute older than the last claim; one whose clock runs ahead fires its
+  minute early by the skew. Skew of a minute or more skips minutes.
+- One claim covers the whole tick, so every replica sharing a key must
+  register the same jobs.
+
+For durable, exactly-once background work with retries, dead-letters, and
+survival across restarts, use the DB-backed queue (`battery/queue`)
+instead. A custom lease (Redis, etcd, …) only needs to satisfy the
+`LeaderElection` interface; to get the at-most-once tick it also
+implements `TickLeaderElection`, whose `AcquireTick(ctx, tick)` receives
+the tick minute (UTC) and must hold only when it took the lease and
+atomically recorded that minute as newer than the last claim. A lease
+with `Acquire` alone keeps mutual exclusion while it is held, and nothing
+more.
 
 A custom lease's `Acquire` and the per-tick `release` it returns are
 treated like every other scheduler callback: a panic in either is

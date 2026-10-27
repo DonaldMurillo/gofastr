@@ -28,7 +28,8 @@ import (
 //
 // usersTable MUST match the table name passed to
 // auth.NewEntityUserStore (typically "auth_users"). The identifier is
-// validated with query.SafeIdent and quoted with query.QuoteIdent since
+// validated with query.SafeIdent and quoted with query.QuoteFolded, the
+// folded name AutoMigrate and the auth store use, since
 // it can't be parameterized. An empty or unsafe name panics, fail loud,
 // never silently fall back to a hardcoded default.
 //
@@ -37,7 +38,7 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 	if _, err := query.SafeIdent(usersTable); err != nil {
 		panic(fmt.Sprintf("setup: AdminStep usersTable is invalid: %v", err))
 	}
-	quotedTable := query.QuoteIdent(usersTable)
+	quotedTable := query.QuoteFolded(usersTable)
 
 	step := Step{
 		Name:  "Create Admin",
@@ -60,7 +61,15 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 			},
 		},
 		Run: func(ctx context.Context, values map[string]string) error {
-			email := values["ADMIN_EMAIL"]
+			// Store the address login will look up. Login canonicalizes
+			// the submitted email and FindByEmail matches exactly, so an
+			// admin stored as the raw "Ops@Example.com" could never sign
+			// in. The host's AuthConfig.CanonicalizeEmail, when set,
+			// replaces the default here exactly as it does at login.
+			email, err := canonicalAdminEmail(m, values["ADMIN_EMAIL"])
+			if err != nil {
+				return err
+			}
 			password := values["ADMIN_PASSWORD"]
 
 			hash, err := auth.HashPassword(password)
@@ -92,6 +101,25 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 	}
 
 	return step, complete
+}
+
+// canonicalAdminEmail folds raw the way m's login handler does: the
+// host's AuthConfig.CanonicalizeEmail when set, auth.CanonicalEmail
+// otherwise. An address that canonicalizes to nothing (whitespace or
+// invisible runes only) is refused like an empty one.
+func canonicalAdminEmail(m *auth.AuthManager, raw string) (string, error) {
+	canonicalize := m.Config().CanonicalizeEmail
+	if canonicalize == nil {
+		canonicalize = auth.CanonicalEmail
+	}
+	email, err := canonicalize(raw)
+	if err != nil {
+		return "", fmt.Errorf("admin email: %w", err)
+	}
+	if err := validateAdminEmail(email); err != nil {
+		return "", err
+	}
+	return email, nil
 }
 
 // validateAdminEmail refuses an empty admin address.

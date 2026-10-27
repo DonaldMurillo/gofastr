@@ -572,7 +572,8 @@ func TestSqlDefault_NonStringTypes(t *testing.T) {
 		expected string
 	}{
 		{"int", 42, "42"},
-		{"float", 3.14, "3.140000"},
+		{"float", 3.14, "3.14"},
+		{"float below 1e-6", 1e-7, "1e-07"},
 		{"bool true", true, "1"},
 		{"bool false", false, "0"},
 	}

@@ -9,9 +9,39 @@ import (
 	"time"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
+
+// TestExportStaticUsesAppCSP: ExportStatic hands the builder the policy
+// the app configured for its live responses.
+func TestExportStaticUsesAppCSP(t *testing.T) {
+	site := coreapp.NewApp("export-csp")
+	site.Register("/", &exportHomeComp{}, nil)
+	policy := "default-src 'self'; font-src https://fonts.gstatic.com"
+	fwApp := NewApp(WithoutDefaultMiddleware(), WithSecurityHeaders(middleware.SecurityHeadersConfig{
+		ContentSecurityPolicy: policy,
+	})).Mount(uihost.New(site))
+	dir := t.TempDir()
+	if err := fwApp.ExportStatic(context.Background(), dir, ""); err != nil {
+		t.Fatalf("ExportStatic: %v", err)
+	}
+	page, err := os.ReadFile(filepath.Join(dir, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(page), `content="`+policy+`"`) {
+		t.Errorf("the export ignored the app's Content-Security-Policy")
+	}
+	headers, err := os.ReadFile(filepath.Join(dir, "_headers"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(headers), policy) {
+		t.Errorf("_headers ignored the app's Content-Security-Policy:\n%s", headers)
+	}
+}
 
 type exportHomeComp struct{}
 

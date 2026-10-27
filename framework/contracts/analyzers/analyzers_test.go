@@ -303,6 +303,33 @@ func f(db *sql.DB, email string) {
 	assertNot(t, ds, contracts.RuleSQLStringConcat, "placeholders are the correct form")
 }
 
+// A `%%s` inside quotes is a literal percent-s (SQLite's strftime
+// format), not a value interpolated into quotes; `'%s'` still is.
+func TestSQLEscapedPercentIsNotQuotedInterp(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"db.go": `package main
+
+import "fmt"
+
+func f(table string) string {
+	return fmt.Sprintf("UPDATE %s SET at = CAST(strftime('%%s','now') AS INTEGER) WHERE id = 1", table)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleSQLStringConcat, "an escaped %%s is a literal")
+	ds = fixture(t, map[string]string{
+		"db.go": `package main
+
+import "fmt"
+
+func f(name string) string {
+	return fmt.Sprintf("UPDATE t SET at = 1 WHERE name = '%s'", name)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleSQLStringConcat)
+}
+
 func TestSQLConcatRespectsLegacyAnnotation(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"db.go": `package main

@@ -443,7 +443,10 @@ The key is `<app>.screens.<screen>.<slug>` in a screen file,
 `<app>.screens.<entity>_crud.<slug>` in an entity's crud file,
 `<app>.chrome.<slug>` in `app.go` and `<app>.auth.<code>` in
 `auth_hooks.go`. The slug is the English's first four words; the same
-English twice in one file is one phrase. Field labels go through
+English twice in one file is one phrase. `<screen>` is the name
+lower-cased to ASCII letters and digits; when two screens fold to the
+same one (`PostsList` and `postslist`), the later one in the spec gets
+`_2`. Field labels go through
 `i18nui.FieldLabel` and enum values through `i18nui.FieldValueLabel`, so
 they read the `entity.*` keys the admin reads.
 
@@ -678,6 +681,12 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+Pack refuses a `schema.Field` it cannot write back as a spec field,
+naming the field and key, rather than drop it: a set `WireName`,
+`RawType` or other key the spec has no field for, a `Type` with no
+spec name, a `Max` or `Min` that is not a literal, or an unknown
+`AutoGenerate`.
+
 Pack reads a phrase as its English: `homeScreenTextWelcome.Text(ctx)`
 becomes the text its `i18n.Define` in the same file gives, and an
 `i18nui.FieldLabel` call becomes its English argument. The packed spec
@@ -809,7 +818,8 @@ partial and keeps the shell).
   screen's `layout` + `access` and is not added to `nav`.
 - `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<entity>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
-  related entity) for forms not bound to one entity. The record form on
+  related entity; a number input steps by 1 for `int`, 0.0001 for
+  `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
@@ -1630,6 +1640,9 @@ The generator rejects:
   target (it must pass `urlsafe.Anchor`: http(s), relative, or
   fragment schemes only — the form posts its credentials there)
 - unsafe output directories
+- two declared names that meet in one generated identifier, such as
+  a field whose Go name matches a method the generator writes on the
+  same type (`UnmarshalJSON`)
 
 Middleware, plugin, helper, and screen `name:`s that are not valid
 identifiers are skipped at emit: the generator refuses to interpolate

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -56,6 +57,19 @@ func TestDurableSchedulerBoundsCatchUp(t *testing.T) {
 			}
 			if occurrences != limit {
 				t.Fatalf("occurrences = %d, want bounded %d", occurrences, limit)
+			}
+			// The kept occurrences are the newest: after downtime longer
+			// than the search bound, the tick nearest now must still run.
+			var raw any
+			if err := db.QueryRow("SELECT MAX(scheduled_tick) FROM " + q.schedulerOccurrencesTable()).Scan(&raw); err != nil {
+				t.Fatal(err)
+			}
+			newest, err := query.ParseDBTime(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if now.Sub(newest) > time.Minute {
+				t.Fatalf("newest occurrence = %v, %v before now: catch-up kept the oldest ticks and skipped the newest", newest, now.Sub(newest))
 			}
 		})
 	}

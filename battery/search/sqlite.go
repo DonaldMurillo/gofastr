@@ -26,7 +26,11 @@ import (
 //
 // Prefix matching is built in: the final FTS5 query term is suffixed with
 // "*" (outside the double-quote) so command-palette / search-as-you-type
-// queries ("pagin" → "pagination") work without a second round trip.
+// queries ("pagin" → "pagination") work. FTS5 runs the porter stemmer over
+// a prefix token too, so "paginat*" looks for stems starting "paginat"
+// while the index holds "pagin": a companion unstemmed index (Table +
+// "_prefix", contentless) takes the same prefix scan unstemmed, and a row
+// matches when either does (the other terms still match stemmed).
 //
 // FTS5 is an SQLite compile-time option. The mattn/go-sqlite3 driver
 // bundles FTS5 only when built with the -tags sqlite_fts5 build tag.
@@ -35,6 +39,10 @@ import (
 type SQLiteFTS struct {
 	db          *sql.DB
 	quotedTable string // validated + quoted FTS5 table identifier
+
+	prefixTable  string // unquoted name of the unstemmed companion table
+	quotedPrefix string // quoted prefixTable
+	quotedVocab  string // quoted vocabulary view earlier releases made; EnsureSchema drops it
 }
 
 // SQLiteFTSConfig configures a SQLiteFTS. The zero value is usable after
@@ -70,8 +78,11 @@ func NewSQLiteFTS(db *sql.DB, cfg SQLiteFTSConfig) (*SQLiteFTS, error) {
 		return nil, fmt.Errorf("search: invalid table name %q: %w", table, err)
 	}
 	return &SQLiteFTS{
-		db:          db,
-		quotedTable: query.QuoteIdent(safe),
+		db:           db,
+		quotedTable:  query.QuoteFolded(safe),
+		prefixTable:  safe + "_prefix",
+		quotedPrefix: query.QuoteFolded(safe + "_prefix"),
+		quotedVocab:  query.QuoteFolded(safe + "_prefix_vocab"),
 	}, nil
 }
 
@@ -95,6 +106,45 @@ func (s *SQLiteFTS) EnsureSchema(ctx context.Context) error {
 			)
 		}
 		return fmt.Errorf("search: create fts5 table: %w", err)
+	}
+	return s.ensurePrefixSchema(ctx)
+}
+
+// ensurePrefixSchema creates the unstemmed companion index and its
+// vocabulary view. The companion is contentless (it stores no text, only
+// the index) and shares the main table's rowids. A table that predates
+// it is backfilled once, in the transaction that creates it.
+func (s *SQLiteFTS) ensurePrefixSchema(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("search: begin prefix schema: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck — safe after Commit
+	// SQLite names have no case: Docs opens the docs_prefix an earlier
+	// boot made, and a case-sensitive probe would backfill it again.
+	var existed int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE`, s.prefixTable,
+	).Scan(&existed); err != nil {
+		return fmt.Errorf("search: probe prefix table: %w", err)
+	}
+	// remove_diacritics 0 keeps the index in the spelling the sanitized
+	// query uses ("café", not "cafe"). The vocabulary view earlier
+	// releases created over the companion is no longer read; drop it.
+	stmts := []string{
+		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(text, content='', contentless_delete=1, tokenize='unicode61 remove_diacritics 0')`, s.quotedPrefix),
+		fmt.Sprintf(`DROP TABLE IF EXISTS %s`, s.quotedVocab),
+	}
+	if existed == 0 {
+		stmts = append(stmts, fmt.Sprintf(`INSERT INTO %s (rowid, text) SELECT rowid, text FROM %s`, s.quotedPrefix, s.quotedTable))
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("search: create prefix index: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("search: commit prefix schema: %w", err)
 	}
 	return nil
 }
@@ -124,14 +174,22 @@ func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 	}
 	defer tx.Rollback() //nolint:errcheck — safe after Commit
 
-	delStmt := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, s.quotedTable)
-	if _, err := tx.ExecContext(ctx, delStmt, doc.ID); err != nil {
+	if err := s.deleteTx(ctx, tx, doc.ID); err != nil {
 		return fmt.Errorf("search: delete old %q: %w", doc.ID, err)
 	}
 
 	insStmt := fmt.Sprintf(`INSERT INTO %s (id, type, fields, text) VALUES (?, ?, ?, ?)`, s.quotedTable)
-	if _, err := tx.ExecContext(ctx, insStmt, doc.ID, doc.Type, fieldsArg, doc.Text); err != nil {
+	res, err := tx.ExecContext(ctx, insStmt, doc.ID, doc.Type, fieldsArg, doc.Text)
+	if err != nil {
 		return fmt.Errorf("search: index %q: %w", doc.ID, err)
+	}
+	rowid, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("search: index %q: %w", doc.ID, err)
+	}
+	prefixStmt := fmt.Sprintf(`INSERT INTO %s (rowid, text) VALUES (?, ?)`, s.quotedPrefix)
+	if _, err := tx.ExecContext(ctx, prefixStmt, rowid, doc.Text); err != nil {
+		return fmt.Errorf("search: prefix index %q: %w", doc.ID, err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -142,11 +200,29 @@ func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 
 // Delete removes a document by ID.
 func (s *SQLiteFTS) Delete(ctx context.Context, id string) error {
-	stmt := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, s.quotedTable)
-	if _, err := s.db.ExecContext(ctx, stmt, id); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("search: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck — safe after Commit
+	if err := s.deleteTx(ctx, tx, id); err != nil {
 		return fmt.Errorf("search: delete %q: %w", id, err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("search: commit delete %q: %w", id, err)
+	}
 	return nil
+}
+
+// deleteTx removes id from the companion prefix index, by the main
+// table's rowids, and then from the main table.
+func (s *SQLiteFTS) deleteTx(ctx context.Context, tx *sql.Tx, id string) error {
+	prefixStmt := fmt.Sprintf(`DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE id = ?)`, s.quotedPrefix, s.quotedTable)
+	if _, err := tx.ExecContext(ctx, prefixStmt, id); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, s.quotedTable), id)
+	return err
 }
 
 // Search runs a ranked full-text query. See buildFts5Query for the query-text
@@ -160,20 +236,29 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	if len(strings.Fields(q.Text)) == 0 {
 		return s.searchAll(ctx, q)
 	}
-	ftsQuery := buildFts5Query(q.Text)
-	if ftsQuery == "" {
+	terms := queryTerms(q.Text)
+	if len(terms) == 0 {
 		// Terms existed but none survived sanitization: nothing can match.
 		return []Result{}, nil
 	}
-
-	args := []any{ftsQuery}
+	// A row matches the stemmed query, or the last term as an unstemmed
+	// prefix in the companion table with the other terms stemmed in the
+	// main one: the shape Postgres gives tsv and tsv_prefix. The prefix
+	// leg runs the FTS5 prefix scan itself, so every word the prefix
+	// starts counts, however many there are.
+	rest, last := terms[:len(terms)-1], terms[len(terms)-1]
+	args := []any{fts5Match(terms), fts5Match([]string{last})}
+	prefixLeg := fmt.Sprintf(`SELECT rowid AS rid, -bm25(%[1]s) AS score FROM %[1]s WHERE %[1]s MATCH ?`, s.quotedPrefix)
+	if len(rest) > 0 {
+		args = append(args, quoteTerms(rest))
+		prefixLeg += fmt.Sprintf(` AND rowid IN (SELECT rowid FROM %[1]s WHERE %[1]s MATCH ?)`, s.quotedTable)
+	}
 	var where strings.Builder
-	fmt.Fprintf(&where, "%s MATCH ?", s.quotedTable)
-	extra, err := s.appendFilters(&where, args, q)
+	where.WriteString("TRUE")
+	args, err := s.appendFilters(&where, args, q)
 	if err != nil {
 		return nil, err
 	}
-	args = extra
 
 	offset := max(q.Offset, 0)
 	var paging strings.Builder
@@ -190,13 +275,19 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	}
 
 	// bm25 returns negative values (more negative = better match), so
-	// ORDER BY bm25(...) ASC puts best matches first. Score = -bm25 so
-	// callers sort descending consistently with the other backends.
-	stmt := fmt.Sprintf(`SELECT id, type, text, fields, -bm25(%s) AS score
-FROM %s
-WHERE %s
-ORDER BY bm25(%s) ASC, id ASC%s`,
-		s.quotedTable, s.quotedTable, where.String(), s.quotedTable, paging.String())
+	// each leg scores -bm25 and a row both legs match sums the two, as
+	// Postgres sums ts_rank over tsv and tsv_prefix. Callers sort
+	// descending consistently with the other backends.
+	stmt := fmt.Sprintf(`SELECT m.id, m.type, m.text, m.fields, h.score
+FROM (SELECT rid, SUM(score) AS score FROM (
+	SELECT rowid AS rid, -bm25(%[1]s) AS score FROM %[1]s WHERE %[1]s MATCH ?
+	UNION ALL
+	%[2]s
+) GROUP BY rid) AS h
+JOIN %[1]s AS m ON m.rowid = h.rid
+WHERE %[3]s
+ORDER BY h.score DESC, m.id ASC%[4]s`,
+		s.quotedTable, prefixLeg, where.String(), paging.String())
 
 	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
@@ -265,7 +356,11 @@ func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) (
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(where, " AND json_extract(fields, '$.%s') = ?", `"`+k+`"`)
+			// json_extract returns an array or object as its JSON text, so
+			// the type check is what keeps tenant=["acme"] from equalling
+			// the filter value `["acme"]`: only a JSON string matches.
+			path := `'$."` + k + `"'`
+			fmt.Fprintf(where, " AND json_type(fields, %s) = 'text' AND json_extract(fields, %s) = ?", path, path)
 			args = append(args, q.FieldEquals[k])
 		}
 	}
@@ -278,11 +373,10 @@ func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) (
 // directly.
 //
 // Rules (mirrors buildTsQuery's sanitizer character class exactly):
-//   - Split on whitespace.
-//   - From each term, keep only letters, digits, underscore, and hyphen
-//     ([\pL\pN_-]); everything else is dropped (this strips every FTS5
-//     operator, AND, OR, NOT, NEAR, column filters, parens, quotes, and
-//     SQL metacharacters).
+//   - Split at every rune that is not a letter, digit, underscore, or
+//     hyphen ([\pL\pN_-]): whitespace, an apostrophe ("won't" → "won" "t",
+//     the tokens unicode61 indexed), column-filter colons, parens, quotes,
+//     and SQL metacharacters, none of which reaches a term.
 //   - Lowercase and trim leading/trailing '-'/'_' so a term can never be
 //     pure punctuation.
 //   - Drop empties.
@@ -297,38 +391,29 @@ func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) (
 // The result is passed strictly as a parameter to the MATCH operator: query
 // text is never interpolated into SQL.
 func buildFts5Query(text string) string {
-	parts := strings.Fields(text)
-	if len(parts) == 0 {
-		return ""
-	}
-	seen := make(map[string]struct{}, len(parts))
-	terms := make([]string, 0, len(parts))
-	for _, part := range parts {
-		t := sanitizeTsTerm(part) // reuse the exact same sanitizer as Postgres
-		if t == "" {
-			continue
-		}
-		if _, ok := seen[t]; ok {
-			continue
-		}
-		seen[t] = struct{}{}
-		terms = append(terms, t)
-		if len(terms) >= maxQueryTerms {
-			break
-		}
-	}
+	return fts5Match(queryTerms(text)) // the same terms Postgres gets
+}
+
+// fts5Match renders sanitized terms as an FTS5 MATCH operand: each term
+// quoted (see quoteTerms) and the last carrying a "*" outside its quote.
+// A hyphenated last term ("load-bal") is a phrase whose final token is
+// the prefix, the way unicode61 split the indexed words.
+func fts5Match(terms []string) string {
 	if len(terms) == 0 {
 		return ""
 	}
-	// Double-quote each term so FTS5 operators, column filters, and parens
-	// in the sanitized text are treated as literal phrase content, never
-	// interpreted as query syntax.
+	return quoteTerms(terms) + "*"
+}
+
+// quoteTerms double-quotes each sanitized term so FTS5 operators, column
+// filters, and parens in it are literal phrase content, never query
+// syntax, and joins them with spaces (an implicit AND).
+func quoteTerms(terms []string) string {
+	quoted := make([]string, len(terms))
 	for i, t := range terms {
-		terms[i] = `"` + t + `"`
+		quoted[i] = `"` + t + `"`
 	}
-	// Prefix token: the * goes OUTSIDE the closing quote.
-	terms[len(terms)-1] += "*"
-	return strings.Join(terms, " ")
+	return strings.Join(quoted, " ")
 }
 
 // Compile-time interface check.

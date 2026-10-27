@@ -5,15 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // In-process typed CRUD API
@@ -35,6 +39,71 @@ import (
 func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 	r := httptest.NewRequest(method, path, nil)
 	return r.WithContext(context.WithValue(ctx, inProcessKey{}, true))
+}
+
+// bodyColumns renames, in place, each key of an in-process write body that
+// names no column: a wire key (a WireName, or the column in the handler's
+// case) is its column, as on the HTTP body path, and so is the snake key
+// MarshalEntity derives from a json tag, matched by its camel form.
+// casing.ToSnake("line2") is "line2", not the column line_2, so a typed
+// repo's Create dropped the field. Two keys naming one column are refused,
+// as the HTTP body refuses them, rather than racing in map order.
+//
+// A Date column's value that is a Go time at midnight, a time.Time or the
+// RFC 3339 text MarshalEntity spells one in, becomes its YYYY-MM-DD. A
+// typed read gives a Date held in a time.Time as that midnight, so without
+// this the typed read, MarshalEntity, UpdateOne round trip failed Date
+// validation on every row. The HTTP body never passes here and still takes
+// YYYY-MM-DD only.
+func (ch *CrudHandler) bodyColumns(body map[string]any) error {
+	snap := ch.snapshot()
+	named := make(map[string]string, len(body))
+	for _, k := range slices.Sorted(maps.Keys(body)) {
+		col := k
+		if _, isColumn := snap.wireKeyOf[k]; !isColumn {
+			if c, ok := snap.columnOfWire[k]; ok {
+				col = c
+			} else if c := snap.columnOfCamel[casing.ToCamel(k)]; c != "" {
+				col = c
+			}
+		}
+		if prev, dup := named[col]; dup {
+			return fmt.Errorf("keys %q and %q both name the field %q", prev, k, col)
+		}
+		named[col] = k
+		if col != k {
+			body[col] = body[k]
+			delete(body, k)
+		}
+		if _, isDate := snap.dateColumns[col]; isDate {
+			body[col] = goDate(body[col])
+		}
+	}
+	return nil
+}
+
+// goDate is v as the YYYY-MM-DD a Date column stores when v is a Go time at
+// midnight, the date it names in its own zone as dateText reads it. Any
+// other value is returned unchanged for Date validation to judge, so a time
+// of day is still refused.
+func goDate(v any) any {
+	var t time.Time
+	switch x := v.(type) {
+	case time.Time:
+		t = x
+	case string:
+		parsed, err := time.Parse(time.RFC3339Nano, x)
+		if err != nil {
+			return v
+		}
+		t = parsed
+	default:
+		return v
+	}
+	if h, m, s := t.Clock(); h != 0 || m != 0 || s != 0 || t.Nanosecond() != 0 {
+		return v
+	}
+	return t.Format(time.DateOnly)
 }
 
 // inProcessKey marks a syntheticRequest: the caller is Go code using the
@@ -62,6 +131,9 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 		return nil, err
 	}
 	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := ch.bodyColumns(body); err != nil {
 		return nil, err
 	}
 	req := syntheticRequest(ctx, http.MethodPost, "/")
@@ -95,6 +167,9 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 		return nil, err
 	}
 	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := ch.bodyColumns(body); err != nil {
 		return nil, err
 	}
 	req := syntheticRequest(ctx, http.MethodPut, "/")
@@ -262,7 +337,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err != nil {
 		return nil, err
 	}
-	filter.ApplySortToQuery(qb, opts.Sorts)
+	filter.ApplySortToQuery(qb, ch.withKeyTiebreak(opts.Sorts))
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
 	}
@@ -271,7 +346,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	}
 
 	sqlStr, args := qb.Build()
-	rows, err := ch.DB.QueryContext(ctx, sqlStr, args...)
+	rows, err := ch.conn(ctx).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -386,6 +461,11 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, err
 	}
+	for _, body := range bodies {
+		if err := ch.bodyColumns(body); err != nil {
+			return nil, err
+		}
+	}
 	results := make([]map[string]any, len(bodies))
 	out := make([]map[string]any, len(bodies))
 	req := syntheticRequest(ctx, "POST", "/")
@@ -422,6 +502,11 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 	}
 	if len(ids) != len(bodies) {
 		return nil, fmt.Errorf("BatchUpdateMany: ids and bodies length mismatch (%d vs %d)", len(ids), len(bodies))
+	}
+	for _, body := range bodies {
+		if err := ch.bodyColumns(body); err != nil {
+			return nil, err
+		}
 	}
 	results := make([]map[string]any, len(ids))
 	out := make([]map[string]any, len(ids))
@@ -551,7 +636,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	}
 	sqlStr, args := cb.Build()
 	var total int
-	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&total); err != nil {
+	if err := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&total); err != nil {
 		return 0, err
 	}
 	return total, nil
@@ -568,7 +653,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 // wire aliases are resolved to columns and Bool leaves carry their
 // coercion marker.
 func (ch *CrudHandler) validateWherePredicate(p *filter.Predicate) (*filter.Predicate, error) {
-	return filter.ValidatePredicate(p, ch.snapshotFields())
+	return filter.ValidatePredicate(p, ch.queryFields())
 }
 
 // validateFilters runs the operator/type rule over hand-built
@@ -583,7 +668,7 @@ func (ch *CrudHandler) validateFilters(filters []filter.ParsedFilter) ([]filter.
 	if len(filters) == 0 {
 		return nil, nil
 	}
-	fields := ch.snapshotFields()
+	fields := ch.queryFields()
 	col := make(map[string]schema.Field, 2*len(fields))
 	for _, f := range fields {
 		if f.Hidden || f.NoQuery {
@@ -603,8 +688,15 @@ func (ch *CrudHandler) validateFilters(filters []filter.ParsedFilter) ([]filter.
 		if err := filter.CheckOpType(pf.Field, pf.Op, f.Type); err != nil {
 			return nil, fmt.Errorf("filter: %w", err)
 		}
-		pf.Field = f.Name
-		out[i] = pf
+		// The value must be of the column's type too, the check the HTTP
+		// parser runs, so a mistyped value is the same error on both
+		// dialects rather than a Postgres bind failure.
+		typed, err := pf.Typed(f.Type)
+		if err != nil {
+			return nil, fmt.Errorf("filter: %w", err)
+		}
+		typed.Field = f.Name
+		out[i] = typed
 	}
 	return out, nil
 }

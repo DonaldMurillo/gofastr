@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 )
 
@@ -113,7 +114,15 @@ func normalizeArgNumbers(v any) any {
 			}
 			return x // beyond int64 — keep every digit
 		}
-		if f, err := x.Float64(); err == nil {
+		// An integral value past 2^53 spelled with a point or an exponent
+		// (9007199254740993e0) has already lost digits in a float64, and
+		// a float64 that size marshals back as a plain integer literal, so
+		// a handler forwarding it would pass the rounded number off as
+		// exact. Keep the caller's spelling instead. The same goes for a
+		// fraction that rounded to an integral float64
+		// (1.0000000000000001, 1e-999999999): as a float64 it would pass
+		// an integer schema it does not satisfy.
+		if f, err := x.Float64(); err == nil && (f != math.Trunc(f) || math.Abs(f) < 1<<53 && integralNumber(s)) {
 			return f
 		}
 		return x

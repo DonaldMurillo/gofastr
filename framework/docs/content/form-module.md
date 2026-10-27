@@ -43,7 +43,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | TextField | `ui.TextField(TextFieldConfig)` | Self-labelled native text input with typed common attributes |
 | NumberField | `ui.NumberField(NumberFieldConfig)` | Self-labelled native number input; use `NumberInput` for +/- controls |
 | DateField | `ui.DateField(DateFieldConfig)` | Self-labelled native date input with typed min/max bounds |
-| DateTimeField | `ui.DateTimeField(DateTimeFieldConfig)` | Self-labelled native date-and-time input with min/max bounds and a step in seconds |
+| DateTimeField | `ui.DateTimeField(DateTimeFieldConfig)` | Self-labelled native date-and-time input with min/max bounds and a step in seconds (`float64`; `0.001` shows milliseconds) |
 
 The typed field wrappers compose `FormField`'s builder with the styled
 native control and own the `for`/`id`, `aria-describedby`, and

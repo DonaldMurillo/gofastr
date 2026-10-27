@@ -39,6 +39,12 @@
   // --- Protocol constants (pinned by widgetclient_test.go) -------------------
 
   const JSON_RPC_VERSION = "2.0";    // the envelope; there is no other framing
+  const PROTOCOL_VERSION = "2026-01-26"; // the ext-apps spec this client speaks
+  const INTERNAL_ERROR = -32603;     // JSON-RPC internal error, for replies
+  // appInfo when connect() is given none: McpUiInitializeRequest requires
+  // an Implementation (name, version), so the handshake always carries one.
+  const DEFAULT_APP_INFO_NAME = "gofastr-mcp-app";
+  const DEFAULT_APP_INFO_VERSION = "0.0.0";
   const RESPONSE_TIMEOUT_MS = 30000; // request → response default; tools/call
                                    // turns can be slow — pass an explicit
                                    // timeoutMs when they are slower still
@@ -244,6 +250,20 @@
     postToHost(msg);
   }
 
+  // The Implementation sent as ui/initialize appInfo: the caller's name
+  // and version where it gave them as non-empty strings, the defaults
+  // otherwise, so a partial or missing appInfo still validates.
+  function initAppInfo(appInfo) {
+    const given = (appInfo && typeof appInfo === "object") ? appInfo : {};
+    const out = {};
+    for (const k in given) {
+      if (Object.prototype.hasOwnProperty.call(given, k)) out[k] = given[k];
+    }
+    if (typeof out.name !== "string" || out.name === "") out.name = DEFAULT_APP_INFO_NAME;
+    if (typeof out.version !== "string" || out.version === "") out.version = DEFAULT_APP_INFO_VERSION;
+    return out;
+  }
+
   function handleNotification(method, params) {
     // The theming convention rides the dispatch, not a registered
     // handler: the client applies host-context-changed BEFORE the app's
@@ -279,7 +299,7 @@
         rejectOutstanding({ code: "E_TEARDOWN", message: "widget torn down" });
       },
       function (err) {
-        reply(msg.id, null, { code: "E_HANDLER", message: String(err && err.message || err) });
+        reply(msg.id, null, { code: INTERNAL_ERROR, message: String(err && err.message || err) });
         rejectOutstanding({ code: "E_TEARDOWN", message: "widget torn down" });
       }
     );
@@ -325,14 +345,19 @@
 
   window.__gofastrMcpApp = {
     // Handshake (call once). Sends ui/initialize carrying the app's
-    // appCapabilities, resolves with the host's result — protocolVersion,
-    // hostCapabilities, hostInfo, hostContext — applies the result's
-    // hostContext theme signals (see applyHostContext), and only then
-    // sends the ui/notifications/initialized notification, so the host
-    // considers the app ready after the document already reflects its
-    // theme.
-    connect: function (appCapabilities, timeoutMs) {
-      return request("ui/initialize", { appCapabilities: appCapabilities || {} }, timeoutMs)
+    // appCapabilities, its appInfo ({name, version}; optional, defaulted
+    // per field) and the spec's protocolVersion, resolves with the host's
+    // result — protocolVersion, hostCapabilities, hostInfo, hostContext —
+    // applies the result's hostContext theme signals (see
+    // applyHostContext), and only then sends the
+    // ui/notifications/initialized notification, so the host considers
+    // the app ready after the document already reflects its theme.
+    connect: function (appCapabilities, timeoutMs, appInfo) {
+      return request("ui/initialize", {
+        appInfo: initAppInfo(appInfo),
+        appCapabilities: appCapabilities || {},
+        protocolVersion: PROTOCOL_VERSION
+      }, timeoutMs)
         .then(function (result) {
           if (result) applyHostContext(result.hostContext);
           notify("ui/notifications/initialized");

@@ -27,8 +27,9 @@ import (
 // (amortized, magicLinkSweepInterval) instead of relying on a host-run
 // Cleanup that nothing schedules — the SQLRateLimitStore.Allow posture.
 type SQLMagicLinkTokenStore struct {
-	db    *sql.DB
-	table string
+	db      *sql.DB
+	table   string
+	dialect storeDialect
 
 	// sweepMu + lastSweep amortize the expired-row sweep on the mint
 	// path: at most one DELETE per magicLinkSweepInterval, shared by
@@ -56,10 +57,15 @@ func NewSQLMagicLinkTokenStore(db *sql.DB, table ...string) (*SQLMagicLinkTokenS
 	return s, nil
 }
 
+// ensureTable creates the folded table erasure reads, as the other auth
+// stores do, after refusing a case-kept one an older version made.
 func (s *SQLMagicLinkTokenStore) ensureTable(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
+		return err
+	}
 	q := fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s (token TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at BIGINT NOT NULL)`,
-		query.QuoteIdent(s.table),
+		query.QuoteFolded(s.table),
 	)
 	_, err := s.db.ExecContext(ctx, q)
 	return err
@@ -68,7 +74,7 @@ func (s *SQLMagicLinkTokenStore) ensureTable(ctx context.Context) error {
 // DeleteTokensForPayload removes every unredeemed token carrying payload.
 // Implements [MagicLinkTokenPurger].
 func (s *SQLMagicLinkTokenStore) DeleteTokensForPayload(ctx context.Context, payload string) (int, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE email = $1`, query.QuoteIdent(s.table))
+	q := fmt.Sprintf(`DELETE FROM %s WHERE email = $1`, query.QuoteFolded(s.table))
 	res, err := s.db.ExecContext(ctx, q, payload)
 	if err != nil {
 		return 0, err
@@ -105,13 +111,13 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 	// share this table), so a read-only dump of it must not be a live
 	// redemption kit. Lookup keys on the digest; a presented token is
 	// hashed then matched, uniform timing.
-	q := fmt.Sprintf(`INSERT INTO %s (token, email, expires_at) VALUES ($1, $2, $3)`, query.QuoteIdent(s.table))
+	q := fmt.Sprintf(`INSERT INTO %s (token, email, expires_at) VALUES ($1, $2, $3)`, query.QuoteFolded(s.table))
 	if _, err := s.db.ExecContext(ctx, q, sha256hex(token), email, time.Now().Add(ttl).Unix()); err != nil {
 		return "", err
 	}
 	if sweep {
 		if _, err := s.db.ExecContext(ctx,
-			fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteIdent(s.table)),
+			fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteFolded(s.table)),
 			time.Now().Unix()); err != nil {
 			return "", fmt.Errorf("sweep expired tokens: %w", err)
 		}
@@ -121,14 +127,14 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 
 // RedeemToken atomically consumes a token (single-use) via DELETE … RETURNING,
 func (s *SQLMagicLinkTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE token = $1 RETURNING email, expires_at`, query.QuoteIdent(s.table))
+	q := fmt.Sprintf(`DELETE FROM %s WHERE token = $1 RETURNING email, expires_at`, query.QuoteFolded(s.table))
 	return s.tokenEmailFor(ctx, q, token)
 }
 
 // PeekToken reads a token's email without consuming it. Implements
 // [MagicLinkTokenPeeker] for the confirmation page.
 func (s *SQLMagicLinkTokenStore) PeekToken(ctx context.Context, token string) (string, error) {
-	q := fmt.Sprintf(`SELECT email, expires_at FROM %s WHERE token = $1`, query.QuoteIdent(s.table))
+	q := fmt.Sprintf(`SELECT email, expires_at FROM %s WHERE token = $1`, query.QuoteFolded(s.table))
 	return s.tokenEmailFor(ctx, q, token)
 }
 
@@ -154,7 +160,7 @@ func (s *SQLMagicLinkTokenStore) tokenEmailFor(ctx context.Context, q, token str
 
 // Cleanup deletes expired tokens and returns the count removed.
 func (s *SQLMagicLinkTokenStore) Cleanup(ctx context.Context) (int, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteIdent(s.table))
+	q := fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteFolded(s.table))
 	res, err := s.db.ExecContext(ctx, q, time.Now().Unix())
 	if err != nil {
 		return 0, err
