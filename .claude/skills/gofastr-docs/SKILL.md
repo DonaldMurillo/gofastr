@@ -121,7 +121,12 @@ was needed.
 - Don't leave dangling code samples
 
 **You landed a BREAKING change / you're cutting a release:**
-- CHANGELOG.md entry (BREAKING items called out explicitly)
+- CHANGELOG.md entry (BREAKING items called out explicitly). Keep it to
+  what changed and what a reader must do, in a few lines, and link the
+  PR or docs page for the rest.
+- A v0.N0.0 release moves the ten minor versions before it out of
+  CHANGELOG.md into `changelog/v0.A0-v0.A9.md`, unchanged, and links the
+  new file from CHANGELOG.md's header (`TestChangelogArchiveLayout`).
 - `internal/upgrade/`: every release PR bumps `through` in
   `registry.yml`; a release with BREAKING or migration-relevant changes
   also adds `releases/<version>.yml` (one-line guidance, a `find` block
