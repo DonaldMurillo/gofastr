@@ -141,7 +141,7 @@ func TestMagicLinkPlugin_Name(t *testing.T) {
 
 func TestMagicLinkPlugin_Init(t *testing.T) {
 	p := NewMagicLinkPlugin(MagicLinkConfig{BaseURL: "http://localhost:8080"})
-	mgr := New(AuthConfig{})
+	mgr := New(AuthConfig{DevMode: true})
 	if err := p.Init(mgr); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

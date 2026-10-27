@@ -302,8 +302,26 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 	if why := invalidLinkBaseURL(p.config.BaseURL); why != "" {
 		return fmt.Errorf("auth: magic-link plugin: BaseURL %q %s", p.config.BaseURL, why)
 	}
+	if p.config.TokenStore == nil {
+		if err := refuseInMemoryTokenStore(mgr, "magic-link"); err != nil {
+			return err
+		}
+	}
 	p.mgr = mgr
 	return nil
+}
+
+// refuseInMemoryTokenStore is the production gate for the link plugins
+// (magic link, password reset, email verification) running on the
+// MemoryMagicLinkTokenStore they mint when no TokenStore is set: a link
+// minted on one replica is invalid on the next, and a restart drops every
+// pending link. Same posture as the session and 2FA stores.
+func refuseInMemoryTokenStore(mgr *AuthManager, plugin string) error {
+	cfg := mgr.Config()
+	if cfg.DevMode || cfg.AllowInMemoryStores {
+		return nil
+	}
+	return fmt.Errorf("auth: %s plugin: production mode refuses the in-memory token store: a link minted on one replica is invalid on another and a restart drops every pending link; set its TokenStore (e.g. auth.NewSQLMagicLinkTokenStore(db)), or set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment", plugin)
 }
 
 // RegisterRoutes mounts the magic-link send and verify endpoints.
@@ -712,6 +730,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
+	created := false
 	if findErr != nil {
 		// User doesn't exist, auto-create. Prefer the OAuthUserCreator
 		// path so password_set=false is recorded for the unlink guard;
@@ -724,10 +743,24 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		} else {
 			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, p.mgr.DefaultRoles())
 		}
-		if err != nil {
+		if errors.Is(err, ErrEmailTaken) {
+			// A concurrent redeem for the same address created it
+			// between the lookup and the create. This token is spent,
+			// so take the existing-account path below instead of
+			// answering 500.
+			user, _, err = userStore.FindByEmail(r.Context(), email)
+			if err != nil {
+				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+				return
+			}
+		} else if err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateUser)
 			return
+		} else {
+			created = true
 		}
+	}
+	if created {
 		// The redeemed token proved the mailbox. A failure leaves the
 		// account unverified and the next magic link claims it, which
 		// is a no-op on an account nothing else has touched.

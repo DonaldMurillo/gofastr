@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -15,6 +18,10 @@ type Claims struct {
 	Roles     []string
 	ExpiresAt time.Time
 	IssuedAt  time.Time
+
+	// cred is the credential tag the token was issued under; see
+	// credentialTag.
+	cred string
 }
 
 // JWTAuth manages JWT token generation and validation.
@@ -62,8 +69,29 @@ func (j *JWTAuth) SetUserStore(users UserStore) {
 }
 
 // GenerateToken creates a signed JWT token for the given user.
-// The token contains the user's ID, email, and roles.
+// The token contains the user's ID, email, and roles. With a user store
+// wired, it is also bound to the user's current password hash (see
+// credentialTag), read from the store; a user the store cannot find gets
+// no token.
 func (j *JWTAuth) GenerateToken(user User) (string, error) {
+	if user == nil {
+		return "", ErrUnauthorized
+	}
+	hash := ""
+	if j.users != nil {
+		h, err := j.storedHash(context.Background(), user)
+		if err != nil {
+			return "", err
+		}
+		hash = h
+	}
+	return j.generateToken(user, hash)
+}
+
+// generateToken signs a token for user bound to hash, the password hash
+// the caller verified. Login passes the hash it checked, so a reset that
+// lands between the check and the signing leaves the token already dead.
+func (j *JWTAuth) generateToken(user User, hash string) (string, error) {
 	if user == nil {
 		return "", ErrUnauthorized
 	}
@@ -76,8 +104,64 @@ func (j *JWTAuth) GenerateToken(user User) (string, error) {
 		ExpiresAt: now.Add(j.Expiry),
 		IssuedAt:  now,
 	}
+	if j.users != nil {
+		claims.cred = credentialTag(j.Secret, claims.UserID, hash)
+	}
 
 	return encodeToken(j.Secret, j.Issuer, claims)
+}
+
+// credentialTag binds a token to the credential it was issued under: an
+// HMAC, under the signing key, of the user id and the stored password
+// hash. Every event that must end outstanding JWTs writes a new hash: a
+// password change or reset (bcrypt salts every hash), and an account claim
+// (the squatter's password becomes the placeholder). resolveOwner
+// recomputes the tag from the fresh row, so a token issued before any of
+// them fails on its next request. The tag is keyed, so the payload, which
+// anyone holding the token can read, says nothing about the hash.
+func credentialTag(secret, userID, hash string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("gofastr-jwt-credential\x00"))
+	mac.Write([]byte(userID))
+	mac.Write([]byte{0})
+	mac.Write([]byte(hash))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16])
+}
+
+// storedHash reads user's current password hash. UserStore returns a
+// hash only from FindByEmail, so the row is looked up by the user's
+// email and must be the same user.
+func (j *JWTAuth) storedHash(ctx context.Context, user User) (string, error) {
+	row, hash, err := j.users.FindByEmail(ctx, user.GetEmail())
+	if err != nil {
+		return "", fmt.Errorf("%w: credential lookup: %v", ErrUnauthorized, err)
+	}
+	if row == nil || row.GetID() != user.GetID() {
+		return "", fmt.Errorf("%w: credential lookup found another user", ErrUnauthorized)
+	}
+	return hash, nil
+}
+
+// credentialCurrent reports whether c was issued under user's current
+// password hash, under the signing key or any rotation key.
+func (j *JWTAuth) credentialCurrent(ctx context.Context, c Claims, user User) bool {
+	if c.cred == "" {
+		return false
+	}
+	hash, err := j.storedHash(ctx, user)
+	if err != nil {
+		return false
+	}
+	ok := false
+	for _, secret := range append([]string{j.Secret}, j.PreviousSecrets...) {
+		if secret == "" {
+			continue
+		}
+		if hmac.Equal([]byte(c.cred), []byte(credentialTag(secret, user.GetID(), hash))) {
+			ok = true
+		}
+	}
+	return ok
 }
 
 // ValidateToken parses and validates a JWT token string. It accepts the
@@ -144,6 +228,11 @@ func (j *JWTAuth) resolveOwner(ctx context.Context, c Claims) (User, bool) {
 	}
 	u, err := j.users.FindByID(ctx, c.UserID)
 	if err != nil || u == nil {
+		return nil, false
+	}
+	// The subject existing is not enough: a password change, a reset or
+	// an account claim since the token was issued ends it.
+	if !j.credentialCurrent(ctx, c, u) {
 		return nil, false
 	}
 	return u, true

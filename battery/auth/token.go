@@ -24,6 +24,9 @@ type tokenPayload struct {
 	Issuer    string   `json:"iss"`
 	ExpiresAt int64    `json:"exp"`
 	IssuedAt  int64    `json:"iat"`
+	// Cred binds the token to the credential it was issued under (see
+	// credentialTag). Absent on tokens from a JWTAuth with no user store.
+	Cred string `json:"cred,omitempty"`
 }
 
 func encodeToken(secret, issuer string, claims Claims) (string, error) {
@@ -35,6 +38,7 @@ func encodeToken(secret, issuer string, claims Claims) (string, error) {
 		Issuer:    issuer,
 		ExpiresAt: claims.ExpiresAt.Unix(),
 		IssuedAt:  claims.IssuedAt.Unix(),
+		Cred:      claims.cred,
 	}
 
 	headerJSON, err := json.Marshal(header)
@@ -101,6 +105,7 @@ func decodeToken(secret, issuer string, tokenString string) (Claims, error) {
 		Roles:     payload.Roles,
 		ExpiresAt: time.Unix(payload.ExpiresAt, 0),
 		IssuedAt:  time.Unix(payload.IssuedAt, 0),
+		cred:      payload.Cred,
 	}, nil
 }
 
