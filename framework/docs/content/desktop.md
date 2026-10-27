@@ -1031,7 +1031,10 @@ deliver the URL event before the first window finished its boot
 navigation) are queued, at most 16, oldest dropped first with a Warn,
 and replayed in arrival order right after the boot navigation. A
 queued link is validated and mapped when it arrives, so `OnDeepLink`
-runs once per link, never again at replay.
+runs once per link, never again at replay. Once the window is up, the
+pending delivery queue is also capped at 16 (in addition to the link
+currently being delivered); a busy page drops the oldest pending link
+first with a scrubbed Warn instead of allowing an unbounded backlog.
 
 ### Platform handoff
 
@@ -1045,9 +1048,31 @@ the URL to the existing window. A cold-launch URL waits until the first
 page has completed its boot navigation. The battery validates the
 scheme before it navigates or emits the event.
 
-Linux and darwin/amd64 answer `unsupported` for now. The mapping,
-queue, and event are host-independent and run against the test double
-on every OS.
+Linux's launch broker handles cold command-line URLs and forwards running-instance
+activations over an app-owned local D-Bus connection, only when the binary has an
+embedded scheme. It does not register an OS URL handler: Linux's CLI still rejects
+`--scheme`, and setting `Config.DeepLink` alone does not enable native activation.
+The mapping, queue and event remain host-independent.
+
+The Linux broker requires `DBUS_SESSION_BUS_ADDRESS` to name an **existing local**
+`unix:path=...` or `unix:abstract=...` session bus. Escaped address fields and an
+optional GUID are supported; remote/TCP, autolaunch and missing buses are refused.
+Launch from a supported desktop session with its existing bus address; the app
+never creates a session bus as a fallback. If the bus disconnects after startup,
+URL activation stops until the app restarts, but the broker does not terminate the
+normal application or alter another GIO user's connection settings. Single-instance
+coordination is scoped to that session bus, not globally across desktop sessions.
+If a replacement bus starts while the original app remains open, a new launch can
+become primary on the replacement bus; the old app must restart to regain URL
+activation. Session-bus peers are not authenticated as trusted applications: URLs still pass the normal
+validator and boot/session gates. A successful handoff acknowledges queue
+acceptance, not completed navigation. URI input is limited to 2048 bytes, with at
+most 16 pending native deliveries (plus one callback in flight); oldest pending
+items are dropped on overflow. Shutdown discards queued work; a callback already
+running is not forcibly interrupted.
+
+Darwin/amd64 has no native shell; the mapping, queue and event run against the
+test double on every OS.
 
 ### Testing
 

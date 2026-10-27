@@ -44,9 +44,9 @@ const (
 	// maxDeepLinkSchemeLen bounds the configured scheme (RFC 3986
 	// says 2 to 32 for the schemes anyone registers).
 	maxDeepLinkSchemeLen = 32
-	// maxQueuedDeepLinks bounds the pre-window queue: a cold launch
-	// delivers one link, not a stream, and a flooded queue must not
-	// grow without bound. Oldest links are dropped first.
+	// maxQueuedDeepLinks bounds both pre-window and pending delivery
+	// queues: a cold launch or a busy page must not allow a flood to
+	// grow memory without bound. Oldest pending links are dropped first.
 	maxQueuedDeepLinks = 16
 )
 
@@ -225,9 +225,19 @@ func (b *Battery) enqueueDeepLink(d deepLinkDelivery) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()
 	q.pending = append(q.pending, d)
+	var dropped string
+	over := len(q.pending) > maxQueuedDeepLinks
+	if over {
+		dropped = q.pending[0].raw
+		q.pending = q.pending[1:]
+	}
 	start := !q.draining
 	q.draining = true
 	q.mu.Unlock()
+	if over {
+		b.logger.Warn("desktop: deep-link delivery queue is full; dropping the oldest pending link",
+			"url", scrubDeepLink(dropped))
+	}
 	if start {
 		go b.drainDeepLinks()
 	}
