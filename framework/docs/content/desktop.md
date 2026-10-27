@@ -2027,6 +2027,34 @@ runs the no-display tests and skips these opt-in graphical tests. When running
 them directly, set `GOFASTR_LINUX_TEST_OUTPUT` to a writable directory to retain
 the PNG capture.
 
+### Interactive picker QA
+
+For operator-driven picker QA, run this test by itself in a visible desktop
+session (not Xvfb). Both opt-ins are required; it is excluded from the automated
+runner:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_INTERACTIVE=1 \
+  go test ./battery/desktop/linux -run '^TestNativeInteractivePickers$' \
+  -count=1 -timeout=6m -v
+```
+
+The test prints paths to private disposable fixtures and has a five-minute
+limit. Follow its four steps: open the input file, select its directory, choose
+a new save destination, then choose an existing destination. For the last
+step, refuse the first overwrite confirmation with that confirmation's Cancel
+button; verify the chooser remains open without returning a result, press Save
+again, and accept the second confirmation with Replace. Do not cancel the main
+chooser or close the parent window between steps. Only use the printed fixture
+paths, not personal files.
+
+Assertions check exact returned paths, unchanged existing fixture contents,
+and that selecting a new destination does not create a file. Seeing the
+confirmation and verifying Cancel→retry are manual observations: a passing
+final-path assertion alone does not prove either. Record those observations
+with the GTK version/session type when reporting QA. These checks exercise the
+native shell, not the authenticated browser bridge or every desktop's portal.
+
 ## What does not work yet
 
 darwin/amd64 has no native shell yet. Linux does not yet support tray icons,
@@ -2136,8 +2164,9 @@ builds) clears the table between phases that need fresh prompts.
 
 ## How tests run
 
-Everything that opens a real WebView is tagged `//go:build desktop_e2e`
-and run by hand on a Mac with a display:
+The macOS app-shell suites are tagged `//go:build desktop_e2e`
+and run by hand on a Mac with a display. The Linux native tests use the
+separate environment opt-ins described above:
 
 ```bash
 CGO_ENABLED=0 go test -count=1 -tags desktop_e2e ./battery/desktop/ ./examples/desktop-notes/
