@@ -2268,7 +2268,7 @@ fetched again, and the retry re-executes the file: a flag at the end
 leaves every listener of the first pass installed twice) — and
 registers `window.__gofastr._moduleScanners[<name>] = fn(root)`,
 idempotent, so the kernel can hand it inserted DOM and the document
-after a navigation. Design and sequence: `docs/spec-behavior-registry.md`.
+after a navigation.
 
 **Dependencies and readiness.** A behaviour may declare the modules
 that must be registered before it: `registry.Requires(names...)`,

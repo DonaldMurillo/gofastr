@@ -13,8 +13,8 @@ import (
 
 // Source-level contract gates for registered behaviours, over the
 // packages that own them rather than the registrations this test binary
-// happens to link (docs/spec-behavior-registry.md "The module
-// contract"). framework/ui's behavior_test.go covers the two action
+// happens to link (core-ui/ARCHITECTURE.md, "Component behaviour:
+// the same seam"). framework/ui's behavior_test.go covers the two action
 // adapters through the registry; this one walks the tree, so a module
 // registered by a package core-ui/runtime cannot import is held to the
 // same rule.

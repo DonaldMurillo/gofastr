@@ -24,7 +24,7 @@ func (behaviorMarkerScreen) Render() render.HTML {
 	return render.HTML(`<p data-static-probe>probe</p>`)
 }
 
-// The behaviour seam (docs/spec-behavior-registry.md) must survive the
+// The behaviour seam (core-ui/ARCHITECTURE.md) must survive the
 // static export: a registered behaviour's module is dumped under
 // /__gofastr/runtime/<name>.js (query-free, like every split module)
 // and exported pages carry the inline #gofastr-behaviors block the

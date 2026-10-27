@@ -21,7 +21,7 @@ import (
 // internal/objc. Every AppKit/WebKit call happens on the main thread
 // (asserted); every native callback lands there and hands off to Go
 // channels or goroutines immediately so the UI thread never waits on
-// Go (docs/desktop-plan.md, "The UI thread").
+// Go.
 //
 // Lazy loading: constructing this shell loads nothing. Frameworks
 // dlopen on the first Run (objc's init only locks the main thread), so
@@ -140,8 +140,8 @@ func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height in
 		// WKWebViewPrivate.h); the KVC spelling reaches the same
 		// property without naming the private selector, the way Tauri
 		// does behind its macOSPrivateApi flag. There is no public
-		// switch. See the phase 13 research in docs/desktop-plan.md
-		// before shipping this wider.
+		// switch, and a private key can break in any macOS release:
+		// check it on each new macOS before relying on it more widely.
 		setWebViewBackground(webView, false)
 	}
 	if style.AllSpaces {

@@ -16,7 +16,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Browser coverage for the behaviour seam (docs/spec-behavior-registry.md,
+// Browser coverage for the behaviour seam (core-ui/ARCHITECTURE.md,
 // "What must be tested" → browser, in core-ui/runtime). A registered
 // behaviour is a module from the host down: the kernel learns its markers
 // from the inline #gofastr-behaviors block or the

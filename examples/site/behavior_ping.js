@@ -1,5 +1,5 @@
 // site-ping: the docs site's own registered behaviour. This is the
-// first real client of the behaviour seam (docs/spec-behavior-registry.md
+// first real client of the behaviour seam (core-ui/ARCHITECTURE.md
 // sequence step 2 in miniature): the site package — NOT core-ui/runtime —
 // owns the JavaScript, embeds it beside the Go that renders its markup,
 // and declares its marker. The host serves it at

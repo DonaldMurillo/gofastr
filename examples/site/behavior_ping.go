@@ -14,6 +14,6 @@ var pingJS string
 // that renders the markup it binds (the "Registered behaviour" section
 // on /components/button), and the host serves it as the runtime module
 // site-ping at /__gofastr/runtime/site-ping.js. See
-// docs/spec-behavior-registry.md.
+// core-ui/ARCHITECTURE.md.
 var pingBehavior = registry.RegisterBehavior("site-ping", pingJS,
 	registry.Markers("[data-site-ping]"))

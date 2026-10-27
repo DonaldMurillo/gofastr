@@ -18,7 +18,7 @@ import (
 // ModuleHash versions them, and NeededModules preloads them. This file
 // is where the registry's stored source becomes served bytes, under the
 // same minification gate as the embedded modules, and where the kernel's
-// scan list is told about their markers. See docs/spec-behavior-registry.md.
+// scan list is told about their markers. See core-ui/ARCHITECTURE.md.
 
 func init() {
 	// The embedded modules' names are reserved before any component

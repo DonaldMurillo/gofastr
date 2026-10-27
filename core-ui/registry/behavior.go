@@ -23,7 +23,7 @@ import (
 // the module manifest the kernel already reads, and scanned for by the
 // markers it declares. The kernel treats a registered module and an
 // embedded one identically after the fetch. See
-// docs/spec-behavior-registry.md.
+// core-ui/ARCHITECTURE.md.
 //
 //	//go:embed runtime.js
 //	var runtimeJS string
