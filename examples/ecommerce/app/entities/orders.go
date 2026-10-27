@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=8a7aa2809c6cba78
+//gofastr:generated generator=app kind=scaffold version=dev sum=de6e4cc645ebbc54
 
 package entities
 
@@ -18,8 +18,8 @@ type Orders struct {
 	CustomerName    string            `json:"customerName,omitempty"`
 	CustomerEmail   string            `json:"customerEmail,omitempty"`
 	CustomerPhone   string            `json:"customerPhone,omitempty"`
-	ShippingAddress map[string]any    `json:"shippingAddress,omitempty"`
-	BillingAddress  map[string]any    `json:"billingAddress,omitempty"`
+	ShippingAddress any               `json:"shippingAddress,omitempty"`
+	BillingAddress  any               `json:"billingAddress,omitempty"`
 	Subtotal        string            `json:"subtotal,omitempty"`
 	Tax             string            `json:"tax,omitempty"`
 	ShippingCost    string            `json:"shippingCost,omitempty"`
@@ -64,8 +64,8 @@ type OrdersInput struct {
 	CustomerName    string             `json:"customerName"`
 	CustomerEmail   string             `json:"customerEmail"`
 	CustomerPhone   *string            `json:"customerPhone,omitempty"`
-	ShippingAddress *map[string]any    `json:"shippingAddress,omitempty"`
-	BillingAddress  *map[string]any    `json:"billingAddress,omitempty"`
+	ShippingAddress *any               `json:"shippingAddress,omitempty"`
+	BillingAddress  *any               `json:"billingAddress,omitempty"`
 	Subtotal        string             `json:"subtotal"`
 	Tax             *string            `json:"tax,omitempty"`
 	ShippingCost    *string            `json:"shippingCost,omitempty"`
@@ -75,19 +75,19 @@ type OrdersInput struct {
 
 // OrdersPatch is the update payload for OrdersRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type OrdersPatch struct {
-	CustomerName    *string         `json:"customerName,omitempty"`
-	CustomerEmail   *string         `json:"customerEmail,omitempty"`
-	CustomerPhone   *string         `json:"customerPhone,omitempty"`
-	ShippingAddress *map[string]any `json:"shippingAddress,omitempty"`
-	BillingAddress  *map[string]any `json:"billingAddress,omitempty"`
-	Subtotal        *string         `json:"subtotal,omitempty"`
-	Tax             *string         `json:"tax,omitempty"`
-	ShippingCost    *string         `json:"shippingCost,omitempty"`
-	Total           *string         `json:"total,omitempty"`
-	Notes           *string         `json:"notes,omitempty"`
+	CustomerName    *string `json:"customerName,omitempty"`
+	CustomerEmail   *string `json:"customerEmail,omitempty"`
+	CustomerPhone   *string `json:"customerPhone,omitempty"`
+	ShippingAddress *any    `json:"shippingAddress,omitempty"`
+	BillingAddress  *any    `json:"billingAddress,omitempty"`
+	Subtotal        *string `json:"subtotal,omitempty"`
+	Tax             *string `json:"tax,omitempty"`
+	ShippingCost    *string `json:"shippingCost,omitempty"`
+	Total           *string `json:"total,omitempty"`
+	Notes           *string `json:"notes,omitempty"`
 }
 
 // ====== Orders column references ======

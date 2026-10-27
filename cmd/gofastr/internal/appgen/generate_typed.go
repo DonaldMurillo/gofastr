@@ -23,7 +23,11 @@ func renderEntityColumns(decl framework.EntityDeclaration) string {
 	// columns are ordinary fields below.
 	keyIsID := appspec.DeclKeyIsID(decl)
 	if keyIsID {
-		sb.WriteString(fmt.Sprintf("\t%sID = framework.NewUUIDColumn(\"id\")\n", struct_))
+		ctor := "framework.NewUUIDColumn"
+		if intID(decl) {
+			ctor = "framework.NewIntColumn"
+		}
+		sb.WriteString(fmt.Sprintf("\t%sID = %s(\"id\")\n", struct_, ctor))
 	}
 	for _, field := range decl.Fields {
 		if keyIsID && field.Name == "id" {
@@ -112,7 +116,7 @@ func On%sUpdated(app *framework.App, fn func(ctx context.Context, row *%s) error
 // On%sDeleted subscribes to entity.deleted events scoped to %q. Callback
 // receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
-func On%sDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
+func On%sDeleted(app *framework.App, fn func(ctx context.Context, id %s) error) func() {
 	%s
 }
 
@@ -126,16 +130,37 @@ func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
 `,
 		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
 		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
-		struct_, decl.Name, struct_, deletedBody(decl),
+		struct_, decl.Name, struct_, goIDType(decl), deletedBody(decl),
 		struct_, struct_, struct_, struct_, struct_,
 	)
 }
 
-// deletedBody is On<Entity>Deleted's body. An entity keyed on "id" hands
-// off to the shared onEntityDeleted, which reads the payload's "id". A
-// declared key's payload carries each key column under its wire key
-// instead, so the body reads the record id from those.
+// deletedBody is On<Entity>Deleted's body. An entity keyed on a string
+// "id" hands off to the shared onEntityDeleted, which reads the payload's
+// "id"; an integer id reads it in its own body and parses it, since the
+// callback takes an int. A declared key's payload carries each key column
+// under its wire key instead, so the body reads the record id from those.
 func deletedBody(decl framework.EntityDeclaration) string {
+	if intID(decl) {
+		// The payload's id is the string key; the callback takes the
+		// int the row's ID holds.
+		return fmt.Sprintf(`return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
+		data, ok := ev.Data.(map[string]any)
+		if !ok || data["entity"] != %q {
+			return nil
+		}
+		record, _ := data["record"].(map[string]any)
+		key, ok := framework.RowKey(record, []string{"id"}, nil)
+		if !ok {
+			return nil
+		}
+		id, err := strconv.Atoi(key)
+		if err != nil {
+			return nil
+		}
+		return fn(ctx, id)
+	})`, decl.Name)
+	}
 	if appspec.DeclKeyIsID(decl) {
 		return fmt.Sprintf("return onEntityDeleted(app, %q, fn)", decl.Name)
 	}
@@ -405,7 +430,7 @@ func renderEntityEnums(decl framework.EntityDeclaration) string {
 // Hidden fields stay in both: the repo is server code, and WithServerWrites
 // lets it write them. writeShapeDrops removes what the CRUD path never
 // takes from a payload, the same set the HTTP client's shapes drop.
-func renderEntityWriteShapes(decl framework.EntityDeclaration) string {
+func renderEntityWriteShapes(decl framework.EntityDeclaration, decls []framework.EntityDeclaration) string {
 	struct_ := appspec.ToCamelCase(decl.Name)
 	dropCreate, dropUpdate := writeShapeDrops(decl)
 	var sb strings.Builder
@@ -431,8 +456,8 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration) string {
 	sb.WriteString("}\n\n")
 	fmt.Fprintf(&sb, "// %sPatch is the update payload for %sRepo: a nil field is left as\n"+
 		"// stored, and a pointer to false, 0 or \"\" writes it to a bool, int,\n"+
-		"// float, string or text field. \"\" for any other type is not a value:\n"+
-		"// absent on an optional field, a validation error on a required one.\n", struct_, struct_)
+		"// float, string or text field. \"\" for any other type is a blank: it\n"+
+		"// clears an optional field and fails validation on a required one.\n", struct_, struct_)
 	fmt.Fprintf(&sb, "type %sPatch struct {\n", struct_)
 	for _, field := range decl.Fields {
 		if dropUpdate(field) {
@@ -448,13 +473,19 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration) string {
 	sb.WriteString("}\n\n")
 	for _, rel := range cascadeRelations(decl) {
 		nested := struct_ + appspec.ToCamelCase(rel.Name) + "Nested"
-		empty := "an empty ID creates one"
+		// The child's own key column, not always id: the patch drops key
+		// columns, so this field is the only one that can address it.
+		key, keyType, keyTag := nestedKey(rel, decls)
+		empty := "an empty " + key + " creates one"
 		if rel.Type == framework.RelHasOne {
-			empty = "an empty ID updates the existing child, or creates one"
+			empty = "an empty " + key + " updates the existing child, or creates one"
 		}
-		fmt.Fprintf(&sb, "// %s is the %s child in a %sPatch: a set ID updates that\n"+
-			"// child, and %s.\ntype %s struct {\n\tID string `json:\"id,omitempty\"`\n\t%sPatch\n}\n\n",
-			nested, goCommentSafe(rel.Name), struct_, empty, nested, appspec.ToCamelCase(rel.Entity))
+		if keyType != "string" {
+			empty = strings.Replace(empty, "an empty", "a zero", 1)
+		}
+		fmt.Fprintf(&sb, "// %s is the %s child in a %sPatch: a set %s updates that\n"+
+			"// child, and %s.\ntype %s struct {\n\t%s %s `json:\"%s,omitempty\"`\n\t%sPatch\n}\n\n",
+			nested, goCommentSafe(rel.Name), struct_, key, empty, nested, key, keyType, keyTag, appspec.ToCamelCase(rel.Entity))
 	}
 	return sb.String()
 }
@@ -638,8 +669,8 @@ func (r *%[1]sRepo) BatchCreate(ctx context.Context, ins []%[1]sInput) ([]*%[1]s
 }
 
 // BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
-func (r *%[1]sRepo) BatchUpdate(ctx context.Context, ids []string, patches []%[1]sPatch) ([]*%[1]s, error) {
-	bodies := make([]map[string]any, len(patches))
+func (r *%[1]sRepo) BatchUpdate(ctx context.Context, ids %[7]s, patches []%[1]sPatch) ([]*%[1]s, error) {
+	%[8]sbodies := make([]map[string]any, len(patches))
 	for i, patch := range patches {
 		b, err := framework.MarshalEntity(patch)
 		if err != nil {
@@ -647,7 +678,7 @@ func (r *%[1]sRepo) BatchUpdate(ctx context.Context, ids []string, patches []%[1
 		}
 		bodies[i] = b
 	}
-	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
+	results, err := r.handler.BatchUpdateMany(ctx, %[9]s, bodies)
 	if err != nil {
 		return nil, err
 	}
@@ -655,12 +686,13 @@ func (r *%[1]sRepo) BatchUpdate(ctx context.Context, ids []string, patches []%[1
 }
 
 // BatchDelete deletes every id atomically.
-func (r *%[1]sRepo) BatchDelete(ctx context.Context, ids []string) error {
-	_, err := r.handler.BatchDeleteMany(ctx, ids)
+func (r *%[1]sRepo) BatchDelete(ctx context.Context, ids %[7]s) error {
+	%[8]s_, err := r.handler.BatchDeleteMany(ctx, %[9]s)
 	return err
 }
 
-`, appspec.ToCamelCase(decl.Name), decl.Name, goKeyParams(decl), typedKeyExpr(decl), keyDoc(decl), existsBody(decl))
+`, appspec.ToCamelCase(decl.Name), decl.Name, goKeyParams(decl), typedKeyExpr(decl), keyDoc(decl), existsBody(decl),
+		goIDsType(decl), keyStrings(decl), keysVar(decl))
 	if len(entityMoveKeys(decl)) == 0 {
 		return repo
 	}
@@ -680,17 +712,22 @@ func (r *%[1]sRepo) Transition(ctx context.Context, %[2]s, move %[1]sMove) (*%[1
 }
 
 // typedKeyExpr is the Go expression for a record's id inside a repo
-// method: the one key parameter, or <Entity>ID over a composite key's.
+// method, the string key CrudHandler takes: the one key parameter, an
+// integer id in decimal, or <Entity>ID over a composite key's.
 func typedKeyExpr(decl framework.EntityDeclaration) string {
+	if intID(decl) {
+		return "strconv.Itoa(id)"
+	}
 	if len(declKeyCols(decl)) == 1 {
 		return declKeyCols(decl)[0].Param
 	}
 	return appspec.ToCamelCase(decl.Name) + "ID(" + keyArgs(decl) + ")"
 }
 
-// existsBody is the repo's Exists body. The generated id has a typed
-// column to query; a declared key's values arrive as strings whatever the
-// columns' types, so Exists reads the record the way Get does.
+// existsBody is the repo's Exists body. The generated id, string or
+// integer, has a typed column to query; a declared key's values arrive as
+// strings whatever the columns' types, so Exists reads the record the way
+// Get does.
 func existsBody(decl framework.EntityDeclaration) string {
 	if appspec.DeclKeyIsID(decl) {
 		return fmt.Sprintf("return r.Query().Where(%sID.Eq(id)).Exists(ctx)", appspec.ToCamelCase(decl.Name))

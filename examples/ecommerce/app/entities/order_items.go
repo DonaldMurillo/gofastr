@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=b18efbc6849ce95b
+//gofastr:generated generator=app kind=scaffold version=dev sum=766cb7dd46631a60
 
 package entities
 
@@ -38,8 +38,8 @@ type OrderItemsInput struct {
 
 // OrderItemsPatch is the update payload for OrderItemsRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type OrderItemsPatch struct {
 	OrderId     *string `json:"orderId,omitempty"`
 	ProductId   *string `json:"productId,omitempty"`

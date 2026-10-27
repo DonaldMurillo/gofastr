@@ -334,8 +334,15 @@ func TestTwoOwnersNeverSeeEachOthersSessions(t *testing.T) {
 	if got := len(sessionRows(t, app, "u1")); got != 1 {
 		t.Fatalf("u1 sessions after u2's tick = %d, want 1", got)
 	}
-	u2rows := sessionRows(t, app, "u2")
-	if completed, _ := u2rows[0]["completed"].(bool); !completed {
+	// The tick also starts u2's break, and an unsorted list pages in key
+	// order, so find the work row by kind rather than by position.
+	var u2work map[string]any
+	for _, row := range sessionRows(t, app, "u2") {
+		if row["kind"] == "work" {
+			u2work = row
+		}
+	}
+	if completed, _ := u2work["completed"].(bool); !completed {
 		t.Fatal("u2's own session did not complete on u2's tick")
 	}
 	if st := eng.State(asOwner("u1")); st.Phase != phaseWork {

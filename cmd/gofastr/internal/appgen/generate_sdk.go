@@ -8,6 +8,7 @@ import (
 	"go/format"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ type SdkOptions struct {
 	noArchive  bool
 	dryRun     bool
 	json       bool
+	// set names the value flags given on the command line, empty ones
+	// included: an explicit --only= clears the settings entry's list
+	// rather than leaving it to fill in.
+	set map[string]bool
 }
 
 // sdkSpec is the derived input the SDK renderers consume: the shared
@@ -256,7 +261,7 @@ func RunGenerateSDK(args []string) {
 }
 
 func parseSDKOptions(args []string) (SdkOptions, error) {
-	opts := SdkOptions{}
+	opts := SdkOptions{set: map[string]bool{}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
@@ -304,6 +309,8 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}
+			flag, _, _ := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+			opts.set[flag] = true
 		}
 	}
 	for _, t := range opts.targets {
@@ -351,23 +358,29 @@ func ApplySDKConfigDefaults(opts *SdkOptions) error {
 			}
 			opts.OutDir = filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))
 		}
-		for _, field := range []struct{ dst, entry *string }{
-			{&opts.name, &entry.name},
-			{&opts.apiPrefix, &entry.apiPrefix},
-			{&opts.module, &entry.module},
-			{&opts.baseURL, &entry.baseURL},
-			{&opts.sdkVersion, &entry.sdkVersion},
+		for _, field := range []struct {
+			flag       string
+			dst, entry *string
+		}{
+			{"name", &opts.name, &entry.name},
+			{"api-prefix", &opts.apiPrefix, &entry.apiPrefix},
+			{"module", &opts.module, &entry.module},
+			{"base-url", &opts.baseURL, &entry.baseURL},
+			{"sdk-version", &opts.sdkVersion, &entry.sdkVersion},
 		} {
-			if *field.dst == "" {
+			if *field.dst == "" && !opts.set[field.flag] {
 				*field.dst = *field.entry
 			}
 		}
-		for _, field := range []struct{ dst, entry *[]string }{
-			{&opts.targets, &entry.targets},
-			{&opts.only, &entry.only},
-			{&opts.exclude, &entry.exclude},
+		for _, field := range []struct {
+			flag       string
+			dst, entry *[]string
+		}{
+			{"target", &opts.targets, &entry.targets},
+			{"only", &opts.only, &entry.only},
+			{"exclude", &opts.exclude, &entry.exclude},
 		} {
-			if len(*field.dst) == 0 {
+			if len(*field.dst) == 0 && !opts.set[field.flag] {
 				*field.dst = *field.entry
 			}
 		}
@@ -495,6 +508,13 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 		// (an ASCII subset of this grammar).
 		if !isJSIdentifier(jsResourceProp(ent)) {
 			return sdkSpec{}, fmt.Errorf("entity %q table %q does not produce a valid JavaScript identifier (%q); the SDK emits it as the unquoted `export const %sFields` declaration in client.js, which the docs site serves to browsers. Rename the table to letters, digits, dashes and underscores", decl.Name, ent.Table, jsResourceProp(ent), jsResourceProp(ent))
+		}
+		// The property binds on the Client (this["posts"] = new Resource),
+		// so a table named after a Client member overwrites it: "token"
+		// replaced the credential and every request sent "Bearer [object
+		// Object]".
+		if prop := jsResourceProp(ent); slices.Contains(jsClientMembers, prop) || slices.Contains(jsObjectMembers, prop) {
+			return sdkSpec{}, fmt.Errorf("entity %q table %q derives the client property %s, which is reserved: the JS Client already defines it. Rename the table", decl.Name, ent.Table, prop)
 		}
 		// Derived names must be unique per target. jsResourceProp is
 		// toCamelJSON(table), which collapses blog_posts / blog-posts /

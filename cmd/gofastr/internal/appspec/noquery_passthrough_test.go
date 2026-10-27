@@ -100,9 +100,9 @@ var x = []schema.Field{
 		t.Fatal("no composite literal found")
 	}
 
-	fields := packReadFields(lit)
-	if len(fields) != 2 {
-		t.Fatalf("packReadFields returned %d fields, want 2", len(fields))
+	fields, err := packReadFields(lit)
+	if err != nil || len(fields) != 2 {
+		t.Fatalf("packReadFields returned %d fields, %v; want 2", len(fields), err)
 	}
 	if !fields[0].NoQuery {
 		t.Error("packReadFields ignored NoQuery: true in the source literal")

@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -76,7 +77,11 @@ type cliOpParam struct {
 	GoType   string // string|int|float64|bool
 	Required bool
 	Repeated bool   // array of scalars: flag repeats
+	Joined   bool   // a Repeated query param in form style, explode false: one name=a,b
 	In       string // path|query|header
+	// Description is the spec's description folded to one line; it
+	// leads the flag's usage text.
+	Description string
 }
 
 // cliOpBodyField is one top-level scalar property of a JSON object body.
@@ -106,6 +111,10 @@ type cliOp struct {
 	// BodyRequired mirrors requestBody.required: the runner refuses to
 	// send nothing.
 	BodyRequired bool
+	// AuthHeader and AuthPrefix carry the token for an operation whose
+	// own security names another scheme than the client's default; both
+	// empty sends it the default way.
+	AuthHeader, AuthPrefix string
 }
 
 // loadOpenAPIDoc reads and decodes the spec from a local path or an
@@ -137,6 +146,7 @@ func loadOpenAPIDoc(src string) (map[string]any, error) {
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "{") {
 		var doc map[string]any
+		//gofastr:allow(floatnum) the generator reads shapes, strings and booleans; numeric keywords are never emitted
 		if err := json.Unmarshal(data, &doc); err != nil {
 			return nil, fmt.Errorf("parse %s as JSON: %w", src, err)
 		}
@@ -259,6 +269,38 @@ func oaResolve(root, node map[string]any) (map[string]any, error) {
 		return merged, nil
 	}
 	return node, nil
+}
+
+// oaParamJoined reads a parameter's style and explode and reports whether
+// an array query parameter goes out as one comma-joined value (form,
+// explode false: tags=a,b) instead of a repeated key (form, explode true:
+// tags=a&tags=b). The CLI sends form query parameters and simple path
+// and header ones; any other style is refused rather than sent as one of
+// those, which the server would read as different values.
+func oaParamJoined(pm map[string]any, name, in string, repeated bool) (bool, error) {
+	style, want := "simple", "simple"
+	if in == "query" {
+		style, want = "form", "form"
+	}
+	if v, set := pm["style"]; set {
+		s, isString := v.(string)
+		if !isString {
+			return false, fmt.Errorf("parameter %q: style is not a string", name)
+		}
+		style = s
+	}
+	if style != want {
+		return false, fmt.Errorf("parameter %q: style %q in %s is not one the CLI sends (%s only)", name, style, in, want)
+	}
+	explode := style == "form"
+	if v, set := pm["explode"]; set {
+		b, isBool := v.(bool)
+		if !isBool {
+			return false, fmt.Errorf("parameter %q: explode is not a boolean", name)
+		}
+		explode = b
+	}
+	return in == "query" && repeated && !explode, nil
 }
 
 // oaGoType maps a scalar schema type to the CLI's flag Go type.
@@ -414,13 +456,32 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 		TokenPrefix:  "Bearer ",
 	}
 
+	// servers[0].url splits in two: an absolute URL's origin seeds the
+	// default server, and its path (or a relative URL's whole path) is the
+	// API prefix every request carries, so --url takes a bare origin.
+	// Templated URLs ({host} variables) seed neither. --api-prefix wins.
 	if servers, ok := doc["servers"].([]any); ok && len(servers) > 0 {
 		if s0, ok := servers[0].(map[string]any); ok {
-			// Templated server URLs ({host} variables) can't seed a
-			// usable default; skip them like relative URLs.
-			if u, ok := s0["url"].(string); ok && strings.HasPrefix(u, "http") && !strings.Contains(u, "{") {
-				spec.DefaultURL = strings.TrimRight(u, "/")
+			if u, ok := s0["url"].(string); ok && !strings.Contains(u, "{") {
+				if strings.ContainsFunc(u, isControlByte) {
+					return cliSpec{}, fmt.Errorf("servers[0].url %q contains a control character: its path is joined into every request URL", u)
+				}
+				if pu, err := url.Parse(u); err == nil {
+					switch {
+					case (pu.Scheme == "http" || pu.Scheme == "https") && pu.Host != "":
+						spec.DefaultURL = pu.Scheme + "://" + pu.Host
+						spec.APIPrefix = cliAPIPrefix(pu.EscapedPath())
+					case pu.Scheme == "" && pu.Host == "":
+						spec.APIPrefix = cliAPIPrefix(pu.EscapedPath())
+					}
+				}
 			}
+		}
+	}
+	if opts.apiPrefixSet {
+		spec.APIPrefix = cliAPIPrefix(opts.ApiPrefix)
+		if strings.ContainsFunc(spec.APIPrefix, isControlByte) {
+			return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", opts.ApiPrefix)
 		}
 	}
 
@@ -463,6 +524,9 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 			}
 			where := strings.ToUpper(m) + " " + p
 			op, err := oaBuildOp(doc, opNode, baseParams, strings.ToUpper(m), p)
+			if err == nil {
+				err = oaOpAuth(doc, opNode, spec, &op)
+			}
 			if err != nil {
 				return spec, fmt.Errorf("%s: %w", where, err)
 			}
@@ -482,8 +546,10 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 
 // oaSecurity maps the document's security schemes onto the client's
 // token header. http bearer keeps the default; apiKey-in-header renames
-// it. Anything else fails only if it is the sole scheme (a spec offering
-// bearer OR oauth2 still generates against bearer).
+// it. The scheme is the one the document's top-level security requires
+// (oaRequiredScheme); with none named there, the first supported scheme
+// by name. Anything else fails only if it is the sole scheme (a spec
+// offering bearer OR oauth2 still generates against bearer).
 func oaSecurity(doc map[string]any, spec *cliSpec) error {
 	comps, _ := doc["components"].(map[string]any)
 	schemes, _ := comps["securitySchemes"].(map[string]any)
@@ -504,26 +570,85 @@ func oaSecurity(doc map[string]any, spec *cliSpec) error {
 			// back to the default header (the laxcoerce shape).
 			return fmt.Errorf("securityScheme %s: want an object, got %T", n, schemes[n])
 		}
-		typ, _ := s["type"].(string)
-		switch {
-		case typ == "http" && strings.EqualFold(fmt.Sprint(s["scheme"]), "bearer"):
-			spec.TokenHeader = "Authorization"
-			spec.TokenPrefix = "Bearer "
-			return nil
-		case typ == "apiKey" && s["in"] == "header":
-			name, _ := s["name"].(string)
-			if name == "" || strings.ContainsAny(name, " \t\r\n\"\\") {
-				return fmt.Errorf("apiKey security scheme %q needs a plain header name, got %q", n, name)
-			}
-			spec.TokenHeader = name
-			spec.TokenPrefix = ""
-			return nil
-		default:
+		if !oaSchemeSupported(s) {
+			typ, _ := s["type"].(string)
 			unsupported = append(unsupported, n+" ("+typ+")")
 		}
 	}
 	if len(unsupported) == len(names) {
 		return fmt.Errorf("no supported security scheme: found %s; supported are http bearer and apiKey in header", strings.Join(unsupported, ", "))
+	}
+	if n, ok := oaRequiredScheme(doc["security"], schemes); ok {
+		header, prefix, err := oaSchemeHeader(n, schemes[n].(map[string]any))
+		spec.TokenHeader, spec.TokenPrefix = header, prefix
+		return err
+	}
+	for _, n := range names {
+		if s := schemes[n].(map[string]any); oaSchemeSupported(s) {
+			header, prefix, err := oaSchemeHeader(n, s)
+			spec.TokenHeader, spec.TokenPrefix = header, prefix
+			return err
+		}
+	}
+	return nil
+}
+
+// oaSchemeSupported reports whether the CLI can send a token under the
+// scheme: http bearer, or an apiKey in a header.
+func oaSchemeSupported(s map[string]any) bool {
+	typ, _ := s["type"].(string)
+	return typ == "http" && strings.EqualFold(fmt.Sprint(s["scheme"]), "bearer") ||
+		typ == "apiKey" && s["in"] == "header"
+}
+
+// oaSchemeHeader is the header and value prefix a supported scheme sends
+// the token under.
+func oaSchemeHeader(n string, s map[string]any) (header, prefix string, err error) {
+	if s["type"] == "http" {
+		return "Authorization", "Bearer ", nil
+	}
+	name, _ := s["name"].(string)
+	if name == "" || strings.ContainsAny(name, " \t\r\n\"\\") {
+		return "", "", fmt.Errorf("apiKey security scheme %q needs a plain header name, got %q", n, name)
+	}
+	return name, "", nil
+}
+
+// oaRequiredScheme picks the scheme a security requirement list (the
+// document's or an operation's) names: the first alternative that is one
+// supported scheme. An alternative naming several schemes requires them
+// all at once, and the CLI holds one token, so it is passed over.
+func oaRequiredScheme(security any, schemes map[string]any) (string, bool) {
+	reqs, _ := security.([]any)
+	for _, r := range reqs {
+		alt, _ := r.(map[string]any)
+		if len(alt) != 1 {
+			continue
+		}
+		for n := range alt {
+			if s, ok := schemes[n].(map[string]any); ok && oaSchemeSupported(s) {
+				return n, true
+			}
+		}
+	}
+	return "", false
+}
+
+// oaOpAuth sets an operation's own token header when its security names
+// a scheme other than the one the client sends by default.
+func oaOpAuth(doc, opNode map[string]any, spec cliSpec, op *cliOp) error {
+	comps, _ := doc["components"].(map[string]any)
+	schemes, _ := comps["securitySchemes"].(map[string]any)
+	n, ok := oaRequiredScheme(opNode["security"], schemes)
+	if !ok {
+		return nil
+	}
+	header, prefix, err := oaSchemeHeader(n, schemes[n].(map[string]any))
+	if err != nil {
+		return err
+	}
+	if header != spec.TokenHeader || prefix != spec.TokenPrefix {
+		op.AuthHeader, op.AuthPrefix = header, prefix
 	}
 	return nil
 }
@@ -584,20 +709,45 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		return nil
 	}
 
-	var params []any
-	params = append(params, baseParams...)
-	if own, ok := opNode["parameters"].([]any); ok {
-		params = append(params, own...)
+	// An operation parameter overrides the path-level one with the same
+	// name and location (OpenAPI 3, Path Item "parameters"), so merge on
+	// the resolved name+in: the operation's entry takes the path-level
+	// one's place. Two entries at the same level still collide in claim.
+	var params []map[string]any
+	at := map[[2]string]int{}
+	resolveAll := func(list []any, override bool) error {
+		for _, raw := range list {
+			pm, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			pm, err := oaResolve(root, pm)
+			if err != nil {
+				return err
+			}
+			name, _ := pm["name"].(string)
+			in, _ := pm["in"].(string)
+			key := [2]string{name, in}
+			if i, ok := at[key]; ok && override {
+				params[i] = pm
+				delete(at, key)
+				continue
+			}
+			if !override {
+				at[key] = len(params)
+			}
+			params = append(params, pm)
+		}
+		return nil
 	}
-	for _, raw := range params {
-		pm, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		pm, err := oaResolve(root, pm)
-		if err != nil {
-			return op, err
-		}
+	if err := resolveAll(baseParams, false); err != nil {
+		return op, err
+	}
+	own, _ := opNode["parameters"].([]any)
+	if err := resolveAll(own, true); err != nil {
+		return op, err
+	}
+	for _, pm := range params {
 		name, _ := pm["name"].(string)
 		in, _ := pm["in"].(string)
 		if name == "" {
@@ -608,10 +758,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		}
 		schema, _ := pm["schema"].(map[string]any)
 		if schema != nil {
-			schema, err = oaResolve(root, schema)
+			resolved, err := oaResolve(root, schema)
 			if err != nil {
 				return op, err
 			}
+			schema = resolved
 		}
 		goType, repeated, ok := oaGoType(orEmpty(schema))
 		if !ok {
@@ -627,10 +778,23 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				return op, fmt.Errorf("parameter %q is an array of %s; only arrays of strings map to repeatable flags", name, goType)
 			}
 		}
+		joined, err := oaParamJoined(pm, name, in, repeated)
+		if err != nil {
+			return op, err
+		}
 		required, _ := pm["required"].(bool)
+		// The description becomes the flag's one-line usage text, printed
+		// in --help: whitespace folds to single spaces, and a terminal
+		// control byte is refused like a summary's.
+		desc, _ := pm["description"].(string)
+		desc = strings.Join(strings.Fields(desc), " ")
+		if strings.ContainsFunc(desc, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
+			return op, fmt.Errorf("parameter %q has a description carrying terminal-control bytes: descriptions are printed verbatim in the generated CLI's help output. Remove them from the spec", name)
+		}
 		cp := cliOpParam{
 			Name: name, Flag: oaKebab(name), GoType: goType,
-			Required: required || in == "path", Repeated: repeated, In: in,
+			Required: required || in == "path", Repeated: repeated, Joined: joined, In: in,
+			Description: desc,
 		}
 		if err := claim(cp.Flag, "parameter "+name); err != nil {
 			return op, err
@@ -737,8 +901,16 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				}
 			}
 		} else {
-			for ct, media := range content {
-				mm, _ := media.(map[string]any)
+			// application/octet-stream first, then by name: ranging the map
+			// picked whichever binary type its order reached first, so two
+			// runs over one document could emit different CLIs.
+			types := slices.Sorted(maps.Keys(content))
+			if i := slices.Index(types, "application/octet-stream"); i > 0 {
+				copy(types[1:i+1], types[:i])
+				types[0] = "application/octet-stream"
+			}
+			for _, ct := range types {
+				mm, _ := content[ct].(map[string]any)
 				schema, _ := orEmpty(mm)["schema"].(map[string]any)
 				format, _ := orEmpty(schema)["format"].(string)
 				if ct == "application/octet-stream" || format == "binary" {

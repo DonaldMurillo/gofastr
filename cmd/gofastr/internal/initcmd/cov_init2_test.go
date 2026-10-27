@@ -31,7 +31,7 @@ func covT_missingDir(t *testing.T) string {
 
 func TestWriteMainGoWriteFailureExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { writeMainGo(covT_missingDir(t), "m", false, "sqlite", "file:x.db") })
+		clitest.CovT_capStdout(t, func() { writeMainGo(covT_missingDir(t), "app", "m", false, "sqlite", "file:x.db") })
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)
@@ -49,7 +49,7 @@ func TestWriteIsolationConfigWriteFailureExits(t *testing.T) {
 
 func TestWriteScreensGoWriteFailureExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { writeScreensGo(covT_missingDir(t), true) })
+		clitest.CovT_capStdout(t, func() { writeScreensGo(covT_missingDir(t), "app", true) })
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)
@@ -74,9 +74,9 @@ func TestWriteEntitiesGoWriteFailureExits(t *testing.T) {
 func TestWriteScreensGoNoEntityVsEntity(t *testing.T) {
 	d1 := t.TempDir()
 	// Both branches of the noEntity hint land in flat screens.go.
-	clitest.CovT_capStdout(t, func() { writeScreensGo(d1, true) })
+	clitest.CovT_capStdout(t, func() { writeScreensGo(d1, "app", true) })
 	d2 := t.TempDir()
-	clitest.CovT_capStdout(t, func() { writeScreensGo(d2, false) })
+	clitest.CovT_capStdout(t, func() { writeScreensGo(d2, "app", false) })
 
 	// The entity hint is prose. It must land in the Section description,
 	// never inside the shell CodeBlock; a sentence concatenated onto a

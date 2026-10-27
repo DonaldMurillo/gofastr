@@ -212,7 +212,9 @@ const integrationTestSource = `package integration_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -407,6 +409,103 @@ poll:
 	}
 }
 
+// TestGeneratedClient_JSONArray stores an array in a JSON field: the server
+// keeps any JSON value there, so one such row must not fail the list.
+func TestGeneratedClient_JSONArray(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	app := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware())
+	app.Entity("prefs", framework.EntityConfig{
+		Table:    "prefs",
+		Exposure: &framework.ExposureConfig{Public: true},
+		Fields: []schema.Field{
+			{Name: "label", Type: schema.String},
+			{Name: "meta", Type: schema.JSON},
+		},
+	}.WithTimestamps(false))
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	srv := httptest.NewServer(app.Router())
+	defer srv.Close()
+
+	ctx := context.Background()
+	c := gen.NewClient(srv.URL, nil)
+	if err := c.Do(ctx, "POST", "/prefs", map[string]any{"label": "raw", "meta": []any{1, 2}}, nil); err != nil {
+		t.Fatalf("raw create: %v", err)
+	}
+	if _, err := c.CreatePrefs(ctx, gen.PrefsInput{Label: new("typed"), Meta: new(any([]string{"a"}))}); err != nil {
+		t.Fatalf("typed create: %v", err)
+	}
+	list, err := c.ListPrefs(ctx, url.Values{"sort": {"label"}})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list.Data) != 2 || fmt.Sprint(list.Data[0].Meta) != "[1 2]" || fmt.Sprint(list.Data[1].Meta) != "[a]" {
+		t.Fatalf("list lost the arrays: %+v", list.Data)
+	}
+}
+
+// TestGeneratedClient_IntID drives an entity keyed on a declared integer
+// id the database assigns: the server answers it as a JSON number, so a
+// string-typed ID fails the decode after the row is saved.
+func TestGeneratedClient_IntID(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	app := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware())
+	app.Entity("counters", framework.EntityConfig{
+		Table:    "counters",
+		Exposure: &framework.ExposureConfig{Public: true},
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement},
+			{Name: "label", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false))
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	srv := httptest.NewServer(app.Router())
+	defer srv.Close()
+
+	ctx := context.Background()
+	c := gen.NewClient(srv.URL, nil)
+	created, err := c.CreateCounters(ctx, gen.CountersInput{Label: "one"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.ID == 0 {
+		t.Fatalf("create returned no id: %+v", created)
+	}
+	got, err := c.GetCounters(ctx, created.ID)
+	if err != nil || got.ID != created.ID {
+		t.Fatalf("get: %+v, %v", got, err)
+	}
+	patched, err := c.PatchCounters(ctx, created.ID, gen.CountersPatch{Label: new("two")})
+	if err != nil || patched.Label != "two" {
+		t.Fatalf("patch: %+v, %v", patched, err)
+	}
+	list, err := c.ListCounters(ctx, nil)
+	if err != nil || len(list.Data) != 1 || list.Data[0].ID != created.ID {
+		t.Fatalf("list: %+v, %v", list, err)
+	}
+	if bu, err := c.BatchUpdateCounters(ctx, []gen.CountersBatchPatch{{ID: created.ID, Label: new("three")}}); err != nil || !bu.Committed {
+		t.Fatalf("batch update: %+v, %v", bu, err)
+	}
+	if bd, err := c.BatchDeleteCounters(ctx, []int{created.ID}); err != nil || !bd.Committed {
+		t.Fatalf("batch delete: %+v, %v", bd, err)
+	}
+}
+
 `
 
 // TestGenerateClient_RoundTripAgainstLiveServer runs the full pipeline:
@@ -446,6 +545,24 @@ entities:
         type: int
       - name: published
         type: bool
+  - name: counters
+    crud: true
+    public: true
+    fields:
+      - name: id
+        type: int
+        auto_generate: increment
+      - name: label
+        type: string
+        required: true
+  - name: prefs
+    crud: true
+    public: true
+    fields:
+      - name: label
+        type: string
+      - name: meta
+        type: json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -535,5 +652,66 @@ entities:
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("generated client did not build: %v\n%s", err, out)
+	}
+}
+
+// relationDecodeTest decodes the bodies a gofastr server sends for a
+// relation field, recorded off GET /api/posts: the key, the record that
+// ?include=author_id puts in its place (the derived BelongsTo shares the
+// field's name), null, and the number Postgres sends for an int key.
+const relationDecodeTest = `package client
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestRelationDecode(t *testing.T) {
+	var list PostsListResponse
+	body := ` + "`" + `{"data":[{"id":"n1","authorId":"o1","title":"a"},
+		{"id":"n2","authorId":{"createdAt":null,"email":"a@example.com","id":"o1"},"title":"b"},
+		{"id":"n3","authorId":null,"title":"c"},
+		{"id":"n4","authorId":7,"title":"d"}],"total":4}` + "`" + `
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatal(err)
+	}
+	got := []string{list.Data[0].AuthorId, list.Data[1].AuthorId, list.Data[2].AuthorId, list.Data[3].AuthorId}
+	if strings.Join(got, ",") != "o1,o1,,7" || list.Data[1].Title != "b" {
+		t.Fatalf("authorId = %q, rows %+v", got, list.Data)
+	}
+	if rec := string(list.Data[1].Included["authorId"]); !strings.Contains(rec, "a@example.com") {
+		t.Errorf("the included author is not kept: %q", rec)
+	}
+	if list.Data[0].Included != nil {
+		t.Errorf("a plain key expanded to %v", list.Data[0].Included)
+	}
+	out, err := json.Marshal(list.Data[1])
+	if err != nil || !strings.Contains(string(out), ` + "`" + `"authorId":"o1"` + "`" + `) {
+		t.Errorf("re-encoded row = %s, %v", out, err)
+	}
+}
+`
+
+// ?include=<relation field> replaces the field's key with the related
+// record under the same JSON key, so a client typing it string failed to
+// decode the whole response.
+func TestGoClientDecodesIncludedRelation(t *testing.T) {
+	decls := []framework.EntityDeclaration{
+		{Name: "authors", Fields: []framework.FieldDeclaration{{Name: "email", Type: "string"}}},
+		{Name: "posts", Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+			{Name: "author_id", Type: "relation", To: "authors"},
+		}},
+	}
+	dir := t.TempDir()
+	clitest.WriteTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/client\n\ngo 1.21\n")
+	clitest.WriteTestFile(t, filepath.Join(dir, "client.go"), renderClient(decls))
+	clitest.WriteTestFile(t, filepath.Join(dir, "relation_test.go"), relationDecodeTest)
+	cmd := exec.Command("go", "test", "-count=1", ".")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOTOOLCHAIN=local")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated client: %v\n%s", err, out)
 	}
 }

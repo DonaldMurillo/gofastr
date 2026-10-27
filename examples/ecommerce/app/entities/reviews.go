@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=dd301faf1882b65b
+//gofastr:generated generator=app kind=scaffold version=dev sum=354991ec7d7212e4
 
 package entities
 
@@ -35,8 +35,8 @@ type ReviewsInput struct {
 
 // ReviewsPatch is the update payload for ReviewsRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type ReviewsPatch struct {
 	ProductId  *string `json:"productId,omitempty"`
 	AuthorName *string `json:"authorName,omitempty"`

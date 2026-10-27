@@ -35,6 +35,7 @@ func TestCLIEntryYAMLRoundTrips(t *testing.T) {
 		"empty prefix":   {Binary: "shop", OutDir: "cmd/shop", ApiPrefix: ""},
 		"repeated verbs": {Binary: "shop", OutDir: "cmd/shop", ApiPrefix: "api", verbs: "posts=list;posts=get;documents=*"},
 		"global verbs":   {Binary: "shop", OutDir: "cmd/shop", ApiPrefix: "api", verbs: "list,get", only: []string{"posts"}},
+		"openapi prefix": {Binary: "oapp", OutDir: "cmd/oapp", FromOpenAPI: "openapi.json", ApiPrefix: "v9", apiPrefixSet: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()

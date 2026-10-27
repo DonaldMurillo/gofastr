@@ -1,12 +1,13 @@
 package codegen
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // LoadSource loads the source configured for a generator.
@@ -24,7 +25,7 @@ func LoadSource(projectDir string, source SourceConfig) (any, error) {
 			return nil, err
 		}
 		var out any
-		if err := json.Unmarshal(data, &out); err != nil {
+		if err := jsonexact.Unmarshal(data, &out); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", source.Path, err)
 		}
 		return out, nil
@@ -57,7 +58,7 @@ func LoadSource(projectDir string, source SourceConfig) (any, error) {
 				return nil, err
 			}
 			var value any
-			if err := json.Unmarshal(data, &value); err != nil {
+			if err := jsonexact.Unmarshal(data, &value); err != nil {
 				return nil, fmt.Errorf("parse %s: %w", rel, err)
 			}
 			out = append(out, JSONDocument{Path: rel, Data: value})

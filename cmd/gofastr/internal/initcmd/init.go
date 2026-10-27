@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	goversion "go/version"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -42,7 +45,62 @@ func RunInit(args []string) {
 		cli.OsExit(1)
 	}
 
-	// Check if directory already exists (skip for "." which is init-in-place)
+	modulePath := ""
+	dbDriver := "sqlite3"
+	noEntity := false
+	reinit := false
+	force := false
+
+	// Allow overriding via flags
+	for _, arg := range args[1:] {
+		switch {
+		case arg == "--reinit":
+			reinit = true
+		case arg == "--force":
+			force = true
+		case strings.HasPrefix(arg, "--module="):
+			modulePath = strings.TrimPrefix(arg, "--module=")
+			if modulePath == "" {
+				cli.Fail("--module requires a non-empty value.")
+				cli.OsExit(1)
+			}
+		case arg == "--no-entity":
+			noEntity = true
+		case strings.HasPrefix(arg, "--db="):
+			// Accept the docs-canonical spellings (sqlite, postgres) plus the
+			// wire/alias spellings (sqlite3, postgresql) the framework already
+			// honors, and map them to the real driver name. Anything else used
+			// to fall through and silently scaffold SQLite (dbDriver set, dbURL
+			// left as a SQLite file): a broken app that looked configured.
+			// canonicalDBDriver is the alias table migrate --db= shares.
+			switch driver := project.CanonicalDBDriver(strings.TrimPrefix(arg, "--db=")); driver {
+			case "sqlite3", "postgres":
+				dbDriver = driver
+			default:
+				choice := strings.TrimPrefix(arg, "--db=")
+				cli.Fail("--db=%q is not a recognized database driver. Accepted values: sqlite, postgres (aliases: sqlite3, postgresql).", choice)
+				cli.OsExit(1)
+			}
+		default:
+			// A misspelled flag used to be skipped, so `--noentty`
+			// scaffolded the default app and exited 0.
+			cli.Fail("Unknown flag %q.", arg)
+			cli.Info("Run 'gofastr init --help' for the accepted flags.")
+			cli.OsExit(2)
+		}
+	}
+
+	// --reinit: refresh AI onboarding files only (no Go code, no git). It
+	// refreshes a project that exists, so it runs before the guard that
+	// refuses one.
+	if reinit {
+		runReinit(name, force)
+		return
+	}
+
+	// projName names the app, its module and its database; name is the
+	// directory the files go to. They differ only for init-in-place.
+	projName := name
 	if name != "." {
 		if _, err := os.Stat(name); err == nil {
 			cli.Fail("Directory %q already exists.", name)
@@ -50,13 +108,40 @@ func RunInit(args []string) {
 			cli.Info("Use a different name for a new project, or inspect the existing directory before running init again.")
 			cli.OsExit(1)
 		}
-	} else if envTrackedByGit(".") {
-		// init . rewrites .env with a fresh JWT_SECRET. The .gitignore entry
-		// the scaffold adds does not untrack a file git already tracks, so
-		// the next commit would publish the key. Refuse before writing.
-		cli.Fail(".env is tracked by git; init would write a signing key into it.")
-		cli.Info("Untrack it first: git rm --cached .env")
-		cli.OsExit(1)
+	} else {
+		if envTrackedByGit(".") {
+			// init . rewrites .env with a fresh JWT_SECRET. The .gitignore entry
+			// the scaffold adds does not untrack a file git already tracks, so
+			// the next commit would publish the key. Refuse before writing.
+			cli.Fail(".env is tracked by git; init would write a signing key into it.")
+			cli.Info("Untrack it first: git rm --cached .env")
+			cli.OsExit(1)
+		}
+		// The project is named after its directory. "." itself named the
+		// module local/., which go mod init refuses, after every other
+		// file was written.
+		wd, err := os.Getwd()
+		if err != nil {
+			cli.Fail("Could not read the current directory: %v", err)
+			cli.OsExit(1)
+		}
+		projName = filepath.Base(wd)
+		if modulePath != "" && validateProjectName(projName) != nil {
+			projName = path.Base(modulePath)
+		}
+		if err := validateProjectName(projName); err != nil {
+			cli.Fail("This directory's name %q is not a valid project name: %v", projName, err)
+			cli.Info("Rename the directory, or pass --module=<path> whose last element is a valid name.")
+			cli.OsExit(1)
+		}
+		// A repeat `init <name>` writes nothing; init . holds the same
+		// line over the files a project already has, unless asked.
+		if existing := existingScaffoldFiles(noEntity); len(existing) > 0 && !force {
+			cli.Fail("init . would replace files this directory already has: %s", strings.Join(existing, ", "))
+			cli.Info("This invocation has not written any files.")
+			cli.Info("Move them aside, or pass --force to overwrite them.")
+			cli.OsExit(1)
+		}
 	}
 
 	// Check for 'go' in PATH
@@ -68,57 +153,15 @@ func RunInit(args []string) {
 	}
 	_ = goPath
 
-	modulePath := "local/" + name
-	dbDriver := "sqlite3"
-	dbURL := "file:" + name + ".db"
-	noEntity := false
-	reinit := false
-	force := false
-
-	// Allow overriding via flags
-	for i := 1; i < len(args); i++ {
-		switch {
-		case args[i] == "--reinit":
-			reinit = true
-		case args[i] == "--force":
-			force = true
-		case strings.HasPrefix(args[i], "--module="):
-			modulePath = strings.TrimPrefix(args[i], "--module=")
-			if modulePath == "" {
-				cli.Fail("--module requires a non-empty value.")
-				cli.OsExit(1)
-			}
-		case args[i] == "--no-entity":
-			noEntity = true
-		case strings.HasPrefix(args[i], "--db="):
-			// Accept the docs-canonical spellings (sqlite, postgres) plus the
-			// wire/alias spellings (sqlite3, postgresql) the framework already
-			// honors, and map them to the real driver name. Anything else used
-			// to fall through and silently scaffold SQLite (dbDriver set, dbURL
-			// left as a SQLite file): a broken app that looked configured.
-			// canonicalDBDriver is the alias table migrate --db= shares.
-			switch project.CanonicalDBDriver(strings.TrimPrefix(args[i], "--db=")) {
-			case "sqlite3":
-				dbDriver = "sqlite3"
-				dbURL = "file:" + name + ".db"
-			case "postgres":
-				dbDriver = "postgres"
-				dbURL = "postgres://user:password@localhost:5432/" + name + "?sslmode=disable"
-			default:
-				choice := strings.TrimPrefix(args[i], "--db=")
-				cli.Fail("--db=%q is not a recognized database driver. Accepted values: sqlite, postgres (aliases: sqlite3, postgresql).", choice)
-				cli.OsExit(1)
-			}
-		}
+	if modulePath == "" {
+		modulePath = "local/" + projName
+	}
+	dbURL := "file:" + projName + ".db"
+	if dbDriver == "postgres" {
+		dbURL = "postgres://user:password@localhost:5432/" + projName + "?sslmode=disable"
 	}
 
-	// --reinit: refresh AI onboarding files only (no Go code, no git).
-	if reinit {
-		runReinit(name, force)
-		return
-	}
-
-	fmt.Printf("\n  Creating %s project %s...\n\n", cli.Bold("GoFastr"), cli.Bold(name))
+	fmt.Printf("\n  Creating %s project %s...\n\n", cli.Bold("GoFastr"), cli.Bold(projName))
 
 	// Create directory structure
 	dirs := []string{
@@ -139,10 +182,10 @@ func RunInit(args []string) {
 	}
 
 	// Write main.go
-	writeMainGo(name, modulePath, noEntity, dbDriver, dbURL)
+	writeMainGo(name, projName, modulePath, noEntity, dbDriver, dbURL)
 
 	// Write screens.go (owned package main: HomeScreen beside main.go).
-	writeScreensGo(name, noEntity)
+	writeScreensGo(name, projName, noEntity)
 
 	// Write entities/entities.go and the sign-in screens (only when
 	// --no-entity is not set: auth needs the database).
@@ -210,7 +253,7 @@ PORT=localhost:8080
 .env
 bin/
 `
-	if err := os.WriteFile(filepath.Join(name, ".gitignore"), []byte(gitignoreContent), 0o644); err != nil {
+	if err := writeGitignore(filepath.Join(name, ".gitignore"), gitignoreContent); err != nil {
 		cli.Fail("Failed to write .gitignore: %v", err)
 		cli.OsExit(1)
 	}
@@ -313,7 +356,7 @@ bin/
 		cli.Info("You may need to run 'git init' manually.")
 	}
 
-	cli.Success("Created project %s in ./%s/", name, name)
+	cli.Success("Created project %s in ./%s/", projName, name)
 	fmt.Println()
 	fmt.Printf("  %s:\n", cli.Bold("App files"))
 	fmt.Println("    main.go              : Application entry point + UI host")
@@ -407,14 +450,17 @@ func printInitHelp() {
 
 Usage:
   gofastr init <name> [flags]
+  gofastr init . [flags]
   gofastr init . --reinit [--force]
 
 Flags:
-  --module=<path>  Go module path (default: local/<name>)
+  --module=<path>  Go module path (default: local/<name>, or
+                   local/<directory name> for init .)
   --db=<driver>    sqlite (default) or postgres (aliases: sqlite3, postgresql)
   --no-entity      Omit the sample entity and database wiring
   --reinit         Refresh AI onboarding files in an existing project
-  --force          With --reinit, overwrite customized onboarding files
+  --force          With --reinit, overwrite customized onboarding files;
+                   with init ., overwrite the files the project already has
 
 The generated go.mod pins the GoFastr release matching this CLI and
 carries GoFastr's go line, not the local Go version, plus a toolchain
@@ -436,7 +482,7 @@ const (
 )
 
 // writeMainGo generates the application entry point.
-func writeMainGo(name, modulePath string, noEntity bool, dbDriver, dbURL string) {
+func writeMainGo(name, appName, modulePath string, noEntity bool, dbDriver, dbURL string) {
 	var content string
 	if noEntity {
 		content = fmt.Sprintf(`package main
@@ -500,7 +546,7 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
-`, modulePath, name)
+`, modulePath, appName)
 	} else {
 		driverImport := `_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`
 		migrateDialect := "migrate.DialectSQLite"
@@ -668,7 +714,7 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
-`, modulePath, name, driverImport, sqlDriver, dsnFallback, migrateDialect)
+`, modulePath, appName, driverImport, sqlDriver, dsnFallback, migrateDialect)
 	}
 	if err := os.WriteFile(filepath.Join(name, "main.go"), []byte(content), 0o644); err != nil {
 		cli.Fail("Failed to write main.go: %v", err)
@@ -713,6 +759,53 @@ func writeEnvFile(path, content string) error {
 	return f.Close()
 }
 
+// existingScaffoldFiles lists the files init . would replace that the
+// current directory already holds. .gitignore is not one: it is merged.
+func existingScaffoldFiles(noEntity bool) []string {
+	files := []string{"main.go", "screens.go", ".env", settings.FileName, "AGENTS.md", "CLAUDE.md", "DESIGN.md"}
+	if !noEntity {
+		files = append(files, "screens_auth.go", filepath.Join("entities", "entities.go"))
+	}
+	var existing []string
+	for _, f := range files {
+		if _, err := os.Lstat(f); err == nil {
+			existing = append(existing, f)
+		}
+	}
+	return existing
+}
+
+// writeGitignore writes the scaffold's ignore rules, or appends the ones
+// an existing .gitignore lacks: a repo's own rules stay, and .env is
+// ignored either way.
+func writeGitignore(path, content string) error {
+	existing, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return os.WriteFile(path, []byte(content), 0o644)
+	}
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for _, line := range strings.Split(string(existing), "\n") {
+		have[strings.TrimSpace(line)] = true
+	}
+	var add strings.Builder
+	for _, line := range strings.Split(strings.TrimSpace(content), "\n") {
+		if !have[line] {
+			add.WriteString(line + "\n")
+		}
+	}
+	if add.Len() == 0 {
+		return nil
+	}
+	merged := string(existing)
+	if merged != "" && !strings.HasSuffix(merged, "\n") {
+		merged += "\n"
+	}
+	return os.WriteFile(path, []byte(merged+add.String()), 0o644)
+}
+
 // writeSettingsFile writes gofastr.settings.yml with the isolation
 // section a new project starts from.
 func writeSettingsFile(name, _ string) {
@@ -740,7 +833,7 @@ isolation:
 // main, beside main.go at the module root, with no screens/ subpackage, matching
 // the scaffold-and-own flat layout in project-structure.md. The scaffold owns
 // no CSS or hand-rolled structural markup.
-func writeScreensGo(name string, noEntity bool) {
+func writeScreensGo(name, appName string, noEntity bool) {
 	// The entity hint is prose for the Section description; the CodeBlock
 	// stays commands-only so nothing nonsensical is copy-pasteable.
 	var entityHint, actions string
@@ -787,7 +880,7 @@ func (h *HomeScreen) Render() render.HTML {
 // app name. Add ScreenTitle (and ScreenDescription) on inner pages,
 // where the screen name differs from the site's.
 func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
-`, name, entityHint, actions)
+`, appName, entityHint, actions)
 	if err := os.WriteFile(filepath.Join(name, "screens.go"), []byte(content), 0o644); err != nil {
 		cli.Fail("Failed to write screens.go: %v", err)
 		cli.OsExit(1)

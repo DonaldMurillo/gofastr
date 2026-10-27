@@ -287,7 +287,12 @@ func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 		opts.FromOpenAPI = picked.FromOpenAPI
 	} else if opts.FromOpenAPI != "" {
 		// --from-openapi is spec-driven: the entry's entity selection does
-		// not apply, and copying it would refuse flags nobody typed.
+		// not apply, and copying it would refuse flags nobody typed. An
+		// entry for the same document lends its api_prefix, so the flag
+		// builds the CLI a settings run does.
+		if !opts.apiPrefixSet && picked.apiPrefixSet && sameOpenAPISource(picked.FromOpenAPI, opts.FromOpenAPI) {
+			opts.ApiPrefix, opts.apiPrefixSet = picked.ApiPrefix, true
+		}
 		return true, checkCLIOptions(*opts)
 	}
 	if !opts.apiPrefixSet && picked.apiPrefixSet {
@@ -304,6 +309,18 @@ func ApplyCLIConfigDefaults(opts *CliOptions) (bool, error) {
 		opts.verbs = picked.verbs
 	}
 	return true, checkCLIOptions(*opts)
+}
+
+// sameOpenAPISource reports whether two --from-openapi values name the
+// same document: equal URLs, or local paths equal once cleaned.
+func sameOpenAPISource(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if strings.Contains(a, "://") || strings.Contains(b, "://") {
+		return a == b
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 func sameDir(a, b string) bool {
@@ -325,6 +342,9 @@ func cliEntryYAML(opts CliOptions, binary string) string {
 			b.WriteString("        from_openapi: openapi.json  # save the document in the project; an entry never fetches a URL\n")
 		} else {
 			fmt.Fprintf(&b, "        from_openapi: %s\n", yamlScalar(opts.FromOpenAPI))
+		}
+		if opts.apiPrefixSet {
+			fmt.Fprintf(&b, "        api_prefix: %s\n", yamlScalar(opts.ApiPrefix))
 		}
 		return b.String()
 	}

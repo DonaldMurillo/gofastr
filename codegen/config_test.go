@@ -327,6 +327,39 @@ func TestLoadSourceJSONDirAndFile(t *testing.T) {
 	}
 }
 
+// A source number past 2^53 reaches generators and extension requests
+// with its digits: decoding into any read it as a float64 and forwarded
+// 9007199254740992.
+func TestLoadSourceKeepsBigIntegers(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "entities"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const doc = `{"count":2,"id":9007199254740993}`
+	for _, p := range []string{"one.json", "entities/posts.json"} {
+		if err := os.WriteFile(filepath.Join(dir, p), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := LoadSource(dir, SourceConfig{Type: "json_file", Path: "one.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := json.Marshal(file); string(b) != doc {
+		t.Errorf("json_file source = %s, want %s", b, doc)
+	}
+	if c := file.(map[string]any)["count"]; c != float64(2) {
+		t.Errorf("ordinary number decodes as %T %v, want float64 2", c, c)
+	}
+	docs, err := LoadSource(dir, SourceConfig{Type: "json_dir", Path: "entities"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := json.Marshal(docs.([]JSONDocument)[0].Data); string(b) != doc {
+		t.Errorf("json_dir source = %s, want %s", b, doc)
+	}
+}
+
 func TestLoadSourceRejectsSymlinkOutsideProject(t *testing.T) {
 	project := t.TempDir()
 	outside := t.TempDir()
