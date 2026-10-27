@@ -20,7 +20,7 @@ func TestLinuxDesktopBuildRejectsUnsupportedOptions(t *testing.T) {
 		{"no-sign", desktopBuildFlags{noSign: true}, "App"},
 		{"notarize", desktopBuildFlags{notarize: true}, "App"},
 		{"entitlements", desktopBuildFlags{entitlements: "rights.plist"}, "App"},
-		{"scheme", desktopBuildFlags{scheme: "example"}, "App"},
+		{"invalid scheme", desktopBuildFlags{scheme: "Invalid Scheme"}, "App"},
 		{"icon", desktopBuildFlags{icon: "icon.png"}, "App"},
 		{"dot", desktopBuildFlags{}, "."},
 		{"parent", desktopBuildFlags{}, ".."},

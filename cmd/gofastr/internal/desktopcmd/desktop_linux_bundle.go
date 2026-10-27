@@ -10,8 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
-// buildLinuxDesktop emits a plain ELF executable. Runtime shared libraries
-// belong to the distribution; this command does not bundle or install GTK.
+// buildLinuxDesktop defaults to a plain ELF executable. The opt-in tar.gz
+// format packages release artifacts, never runtime libraries or an installer.
 func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	arch := os.Getenv("GOARCH")
 	if arch == "" {
@@ -26,8 +26,15 @@ func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	if f.sign != "" || f.noSign || f.notarize || f.entitlements != "" {
 		return fmt.Errorf("signing and notarization flags are macOS-only")
 	}
-	if f.scheme != "" {
-		return fmt.Errorf("Linux desktop URL-scheme registration is not implemented")
+	ldflags, err := linuxDesktopLinkerFlags(f.scheme)
+	if err != nil {
+		return err
+	}
+	if f.format == "tar.gz" {
+		return buildLinuxDesktopArchive(f, name, arch)
+	}
+	if f.format != "" && f.format != "executable" {
+		return fmt.Errorf("--format supports executable or tar.gz on Linux only")
 	}
 	if f.icon != "" {
 		return fmt.Errorf("Linux desktop icon packaging is not implemented; the output is a plain executable")
@@ -38,7 +45,7 @@ func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	}
 	exe := filepath.Join(f.out, name)
 	cli.Info("Building %s (linux/%s, CGO_ENABLED=0)...", f.pkg, arch)
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", exe, f.pkg)
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", exe, f.pkg)
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -47,5 +54,22 @@ func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	}
 	cli.Success("Wrote %s", exe)
 	cli.Info("Runtime requires GTK 3 and WebKitGTK 4.1 in a graphical Linux session")
+	if f.scheme != "" {
+		cli.Info("URL activation requires an existing local Unix session bus; no OS protocol association is installed")
+	}
 	return nil
+}
+
+// Embed the same opt-in launch gate used by the native battery, without
+// installing a protocol handler. Validate here too: both build helpers are
+// callable independently of the CLI's earlier flag validation.
+func linuxDesktopLinkerFlags(scheme string) (string, error) {
+	if scheme != "" && !desktopSchemeRe.MatchString(scheme) {
+		return "", fmt.Errorf("--scheme %q must match %s", scheme, desktopSchemeRe.String())
+	}
+	flags := "-s -w"
+	if scheme != "" {
+		flags += " -X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=" + scheme
+	}
+	return flags, nil
 }

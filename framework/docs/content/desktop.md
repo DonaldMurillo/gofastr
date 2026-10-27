@@ -954,8 +954,9 @@ menu. Pick a scheme nobody else claims: Apple's own Notes app already
 owns `notes:`, so a link on that scheme opens Apple Notes, never yours.
 Prefix it with your product name (`gofastr-notes`).
 
-Build with `--scheme` so the operating system can open the app for that
-URL:
+Build with `--scheme` to declare the packaged app's activation scheme.
+macOS and Windows install or claim an OS handler as described below;
+Linux embeds command-line and session-bus handoff support only:
 
 ```sh
 gofastr desktop build --id dev.gofastr.notes --name Notes --scheme gofastr-notes
@@ -968,10 +969,11 @@ whenever it starts. Windows passes each URL to the executable.
 If the app is already running, the new process forwards the URL to its
 open window. Windows refuses to replace a scheme owned by another
 per-user or machine-wide handler. The embedded scheme supplies a default
-`DeepLinkConfig` on Windows when the app has none; a custom config must
-use the same scheme. Without `--scheme`, the build claims no scheme.
-Development runs (`go run`, `gofastr desktop run`) do not register a
-scheme.
+`DeepLinkConfig` on Windows and Linux when the app has none; a custom
+config must use the same scheme. Linux does not register a handler or
+change default associations. Without `--scheme`, these builds do not
+enable native launch handoff. Development runs (`go run`, `gofastr
+desktop run`) do not register a scheme.
 
 ### What a link becomes
 
@@ -1031,7 +1033,10 @@ deliver the URL event before the first window finished its boot
 navigation) are queued, at most 16, oldest dropped first with a Warn,
 and replayed in arrival order right after the boot navigation. A
 queued link is validated and mapped when it arrives, so `OnDeepLink`
-runs once per link, never again at replay.
+runs once per link, never again at replay. Once the window is up, the
+pending delivery queue is also capped at 16 (in addition to the link
+currently being delivered); a busy page drops the oldest pending link
+first with a scrubbed Warn instead of allowing an unbounded backlog.
 
 ### Platform handoff
 
@@ -1045,9 +1050,33 @@ the URL to the existing window. A cold-launch URL waits until the first
 page has completed its boot navigation. The battery validates the
 scheme before it navigates or emits the event.
 
-Linux and darwin/amd64 answer `unsupported` for now. The mapping,
-queue, and event are host-independent and run against the test double
-on every OS.
+Linux's launch broker handles cold command-line URLs and forwards running-instance
+activations over an app-owned local D-Bus connection, only when the binary has an
+embedded scheme from `gofastr desktop build --scheme=...`. Both plain ELF and
+tar.gz builds support this opt-in. Pass a URL as one argument to the executable
+or archive's `launch.sh`; setting `Config.DeepLink` alone does not enable native
+launch handoff. No OS handler, desktop association or D-Bus activation service
+is installed. The mapping, queue and event remain host-independent.
+
+The Linux broker requires `DBUS_SESSION_BUS_ADDRESS` to name an **existing local**
+`unix:path=...` or `unix:abstract=...` session bus. Escaped address fields and an
+optional GUID are supported; remote/TCP, autolaunch and missing buses are refused.
+Launch from a supported desktop session with its existing bus address; the app
+never creates a session bus as a fallback. If the bus disconnects after startup,
+URL activation stops until the app restarts, but the broker does not terminate the
+normal application or alter another GIO user's connection settings. Single-instance
+coordination is scoped to that session bus, not globally across desktop sessions.
+If a replacement bus starts while the original app remains open, a new launch can
+become primary on the replacement bus; the old app must restart to regain URL
+activation. Session-bus peers are not authenticated as trusted applications:
+URLs still pass the normal validator and boot/session gates. A successful handoff acknowledges queue
+acceptance, not completed navigation. URI input is limited to 2048 bytes, with at
+most 16 pending native deliveries (plus one callback in flight); oldest pending
+items are dropped on overflow. Shutdown discards queued work; a callback already
+running is not forcibly interrupted.
+
+Darwin/amd64 has no native shell; the mapping, queue and event run against the
+test double on every OS.
 
 ### Testing
 
@@ -1913,6 +1942,7 @@ WKWebView through `desktoptest.NativeMain`.
 |---|---|
 | `build ...` on macOS/arm64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.app`: Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |
 | `build ...` on Windows/amd64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.exe` beside `WebView2Loader.dll`. The executable includes file and product version details, a multi-size icon from `--icon` (PNG; generated by default), and no console window. `--scheme` embeds the URL scheme; the app registers it for the current user at startup. The target machine needs the Evergreen WebView2 Runtime. |
+| `build ...` on Linux/amd64 or Linux/arm64 | Writes a plain ELF executable by default. `--format=tar.gz` opts into a release archive with an icon, launcher, desktop-entry template, runtime README and checksum manifest. `--scheme` embeds command-line/session-bus activation, not an OS handler. It does not install the app or bundle system libraries. |
 | `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. |
 | `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies. |
@@ -1930,9 +1960,67 @@ file chooser labels use the calling request's language.
 On Linux, `gofastr desktop build --id=dev.example.app --name=MyApp`
 writes `dist/MyApp`, a plain ELF executable. It uses the current architecture;
 set `GOARCH=amd64` or `GOARCH=arm64` to select the other supported target.
-No installer or `.desktop` launcher is generated. Linux rejects `--icon`,
-`--scheme` and macOS signing/notarization options rather than ignoring them.
-`--version` is accepted but does not add Linux executable metadata.
+This default (also selected by `--format=executable`) remains unchanged:
+no installer or desktop entry, and `--icon` is rejected. `--version` is
+accepted but does not add Linux executable metadata. Both Linux formats
+accept `--scheme` to embed opt-in activation support and reject macOS
+signing/notarization options rather than ignoring them. An explicit
+`--format` is supported on Linux only.
+
+For artifact-only packaging, opt into a tar archive:
+
+```sh
+gofastr desktop build --id=dev.example.app --name=MyApp \
+  --version=1.2.3 --format=tar.gz --icon=app.png
+```
+
+This writes `dist/dev.example.app-1.2.3-linux-amd64.tar.gz` (or `arm64`),
+with a same-named root directory containing:
+
+- `bin/dev.example.app`: the CGO-free executable; its filename uses the
+  stable app ID, not the display name.
+- `launch.sh`: an executable launcher that forwards arguments unchanged
+  and preserves the working directory. Keep it beside `bin/`; it is not
+  designed to be moved alone or invoked through a symlink elsewhere.
+- `icon.png`: a validated, re-encoded PNG from `--icon`, or the same
+  generated flat-square default used by the other desktop builders.
+  Input PNGs are limited to 16 MiB and 4096 pixels per dimension.
+- `dev.example.app.desktop.in`: an **inert template**, not an installable
+  desktop entry. Its `@BUNDLE_ROOT@` paths require a packager to render
+  the final absolute installation path. No renderer or installer is
+  provided; do not install or trust the template as-is. Rendering must
+  apply the Desktop Entry Specification's string escaping and separate
+  `Exec` argument quoting/field-code escaping, not naive text replacement.
+  In particular, literal `%` in `Exec` becomes `%%`, and executable paths
+  containing `=` are unsupported by the specification.
+- `README.txt`: runtime prerequisites and the packaging limitations.
+- `manifest.json`: schema version 1, app identity/version/platform,
+  `entry_point`, required runtime descriptions, and a sorted `files` list
+  with each payload's relative `path`, octal `mode`, byte `size` and
+  `sha256`. The manifest does not list itself; checksums are not signatures
+  or proof of publisher identity. An opted-in scheme adds `embedded_scheme`
+  and the existing-local-session-bus runtime prerequisite.
+
+Extract the full archive and run its `launch.sh`. This does not register a
+menu entry, URL scheme, default handler or updater. No GTK, WebKit or other
+shared libraries are copied into the archive; retain the application's own
+licenses and notices when distributing it. Archive entry order, modes and
+timestamps are deterministic for identical payload bytes. Reproducible Go
+executables additionally require pinned source, modules, toolchain, build
+settings and VCS metadata. Archive versions use `[0-9]+(\.[0-9A-Za-z]+)*`
+(at most 64 characters); the complete archive filename must fit 255 bytes.
+
+For explicit URL handoff, build with a scheme and pass the URL as one argument:
+
+```sh
+gofastr desktop build --id=dev.example.app --name=MyApp --scheme=my-app
+./dist/MyApp 'my-app://notes/123'
+```
+
+This requires an existing local session bus even on the first launch. A second
+launch on the same bus forwards to the primary before starting another app or
+GTK shell. It does not make the scheme clickable in a browser: OS handler
+installation and default-association policy remain outside this artifact builder.
 
 Linux builds require no C compiler or GTK development headers:
 
@@ -1964,15 +2052,67 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^Test
 CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^TestNativeGoFastrBridge$' -count=1 -v
 ```
 
-For a headless CI worker with GTK/WebKitGTK, Xvfb and a session bus installed:
+Two further opt-in tests cover the private activation transport and actual
+cold/warm GTK navigation, including the boot/session gate. They require a
+test-only embedded scheme; the graphical check also needs a display:
 
 ```sh
-dbus-run-session -- xvfb-run -a env CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run TestNativeGTKWebKit -count=1 -v
+CGO_ENABLED=0 GOFASTR_LINUX_ACTIVATION=1 dbus-run-session -- \
+  go test ./battery/desktop/linux -run '^TestNativeActivation$' -count=1 -timeout=120s -v \
+  -ldflags '-X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=gofastr605test'
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_ACTIVATION=1 dbus-run-session -- \
+  go test ./battery/desktop/linux -run '^TestNativeActivationGraphical$' -count=1 -timeout=150s -v \
+  -ldflags '-X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=gofastr605test'
 ```
 
-Do not disable WebKit's process sandbox to run the test. Ordinary `go test`
-runs the no-display tests and skips this opt-in graphical test. Set
-`GOFASTR_LINUX_TEST_OUTPUT` to a writable directory to retain its PNG capture.
+For a headless Linux worker with GTK/WebKitGTK, `dbus` (including
+`dbus-daemon`), `xvfb` and `xauth` installed, the repository's runner
+executes all four tests in separate processes:
+
+```sh
+./scripts/test-linux-desktop.sh
+```
+
+The blocking Linux CI job runs this script with `CGO_ENABLED=0`, a private
+session bus per invocation and an authenticated Xvfb for graphical cases.
+Only the activation tests get the test-only embedded scheme; the two original
+smoke tests retain unembedded defaults. Logs and the PNG captures go to
+`dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
+coverage does not validate Wayland, compositor effects, notification delivery,
+or interactive file selection and overwrite confirmation.
+
+Do not disable WebKit's process sandbox to run the tests. Ordinary `go test`
+runs the no-display tests and skips these opt-in graphical tests. When running
+them directly, set `GOFASTR_LINUX_TEST_OUTPUT` to a writable directory to retain
+the PNG capture.
+
+### Interactive picker QA
+
+For operator-driven picker QA, run this test by itself in a visible desktop
+session (not Xvfb). Both opt-ins are required; it is excluded from the automated
+runner:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_INTERACTIVE=1 \
+  go test ./battery/desktop/linux -run '^TestNativeInteractivePickers$' \
+  -count=1 -timeout=6m -v
+```
+
+The test prints paths to private disposable fixtures and has a five-minute
+limit. Follow its four steps: open the input file, select its directory, choose
+a new save destination, then choose an existing destination. For the last
+step, refuse the first overwrite confirmation with that confirmation's Cancel
+button; verify the chooser remains open without returning a result, press Save
+again, and accept the second confirmation with Replace. Do not cancel the main
+chooser or close the parent window between steps. Only use the printed fixture
+paths, not personal files.
+
+Assertions check exact returned paths, unchanged existing fixture contents,
+and that selecting a new destination does not create a file. Seeing the
+confirmation and verifying Cancel→retry are manual observations: a passing
+final-path assertion alone does not prove either. Record those observations
+with the GTK version/session type when reporting QA. These checks exercise the
+native shell, not the authenticated browser bridge or every desktop's portal.
 
 ## What does not work yet
 
@@ -2083,8 +2223,9 @@ builds) clears the table between phases that need fresh prompts.
 
 ## How tests run
 
-Everything that opens a real WebView is tagged `//go:build desktop_e2e`
-and run by hand on a Mac with a display:
+The macOS app-shell suites are tagged `//go:build desktop_e2e`
+and run by hand on a Mac with a display. The Linux native tests use the
+separate environment opt-ins described above:
 
 ```bash
 CGO_ENABLED=0 go test -count=1 -tags desktop_e2e ./battery/desktop/ ./examples/desktop-notes/

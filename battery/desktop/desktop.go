@@ -934,7 +934,7 @@ func (b *Battery) Run(app *framework.App) error {
 	if os.Getenv(ManifestEnv) == "1" {
 		return b.runManifestMode(app, os.Stdout)
 	}
-	// A packaged Windows app claims its protocol when the user starts it.
+	// A packaged native app may forward activation to a running instance.
 	// Check for an existing instance before app.Start opens the database or
 	// listener, so a second activation can be forwarded without starting a
 	// duplicate app process.
@@ -944,10 +944,18 @@ func (b *Battery) Run(app *framework.App) error {
 		}); ok {
 			handled, startupURLs, err := activator.PrepareLaunch(b.cfg.ID, b.windowTitle(), builtDeepLinkScheme)
 			if err != nil {
-				return fmt.Errorf("desktop: prepare Windows launch: %w", err)
+				return fmt.Errorf("desktop: prepare native launch: %w", err)
 			}
 			if handled {
 				return nil
+			}
+			// Primary launch resources can outlive PrepareLaunch before Run
+			// ever starts (for example, a native activation broker). Release
+			// them on every later return or panic, including app.Start failure.
+			// Implementations must make ReleaseLaunch idempotent. A handled
+			// secondary launch, or failed preparation, cleans up before return.
+			if launch, ok := b.shell.(interface{ ReleaseLaunch() }); ok {
+				defer launch.ReleaseLaunch()
 			}
 			for _, rawURL := range startupURLs {
 				b.handleDeepLink(rawURL)
