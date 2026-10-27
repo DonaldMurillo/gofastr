@@ -237,6 +237,12 @@ framework/
 │                    showcase: renders every design-system component
 │                    against an arbitrary theme. Composes framework/ui, so
 │                    like sdkdocs it is deliberately NOT a uihost option.
+│                    The icon demo composes ui with ui/icons; ui/icons owns
+│                    generated Feather and Lucide SVG data and imports no framework packages.
+│                    Its source manifest pins upstream provenance and checksums;
+│                    generation retains the full upstream license notice.
+│                    RenderIconCatalog takes request search/category values;
+│                    ui/icons owns complete category assignments separately from SVG provenance.
 ├── headless/        The structure half of a design system: components
 │                    that render tags, roles, labelling and data-hui-*
 │                    hooks with no classes, a Classes value that maps

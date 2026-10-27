@@ -165,16 +165,16 @@ var bannerClasses = headless.Classes{
 var bannerStyle = registry.RegisterStyle("ui-banner", bannerCSS)
 
 func bannerIcon(v BannerVariant) string {
+	name := "info"
 	switch v {
 	case BannerSuccess:
-		return `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16.667 5l-7.5 7.5L5 8.333" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+		name = "check"
 	case BannerWarn:
-		return `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 7v4m0 3h.01M2.5 16.667h15a1.667 1.667 0 001.443-2.5l-7.5-12.5a1.667 1.667 0 00-2.886 0l-7.5 12.5a1.667 1.667 0 001.443 2.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+		name = "warning"
 	case BannerDanger:
-		return `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8.333" stroke="currentColor" stroke-width="2"/><path d="M10 6.667v3.333M10 13.333h.008" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
-	default: // info
-		return `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8.333" stroke="currentColor" stroke-width="2"/><path d="M10 13.333V10M10 6.667h.008" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
+		name = "danger"
 	}
+	return string(Icon(name, IconConfig{Size: "20"}))
 }
 
 func bannerCSS(_ style.Theme) string {

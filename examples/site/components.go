@@ -204,6 +204,11 @@ func (s *ComponentShowcaseScreen) Render() render.HTML {
 // demo is stateless and ignores it.
 func (s *ComponentShowcaseScreen) renderDemo(ctx context.Context) render.HTML {
 	switch s.Entry.Slug {
+	case "icon":
+		query := app.QueryFromContext(ctx)
+		return gallery.RenderIconCatalog(gallery.IconCatalogConfig{
+			Action: "/components/icon", Search: query.Get("q"), Category: query.Get("category"),
+		})
 	case "sortablelist":
 		return kanbanDemo(ctx)
 	case "optimisticcreate":

@@ -79,47 +79,58 @@
     if (form) { try { form.dispatchEvent(new CustomEvent('gofastr:formresult', { bubbles: true, detail: { ok } })); } catch (_) {} }
   };
 
-  async function _dispatchPlainForm(form) {
-    const action = form.getAttribute('action');
+  async function _dispatchPlainForm(form, opts) {
+    const submitter = opts?.submitter;
+    const attr = (name) => NS._formAttr(form, submitter, name);
+    const action = attr('action') || location.href;
     // Re-check in the module even though core checks before preventing the
     // native submit. The DOM can change while the script is downloading.
-    if (!action || !NS._sameOrigin(action)) return;
-    const enctype = (form.getAttribute('enctype') || '').toLowerCase();
+    if (!NS._sameOrigin(new URL(action, document.baseURI))) return;
+    const enctype = (attr('enctype') || '').toLowerCase();
     const wantsJSON = enctype === 'application/json';
     const explicitSPA = form.hasAttribute('data-cui-spa');
     if (!wantsJSON && !explicitSPA) return;
 
-    const wantsForm = enctype === 'application/x-www-form-urlencoded' ||
-                      enctype === 'multipart/form-data';
-    const fd = new FormData(form);
+    const fd = new FormData(form, submitter);
+    const params = new URLSearchParams();
+    fd.forEach((value, key) => params.append(key, typeof value === 'string' ? value : value.name));
+    // A control named "method" shadows form.method. Read attributes instead.
+    // Only an explicit GET navigates: a missing method stays the POST this
+    // bridge has always sent, so its fields never land in the URL.
+    const method = (attr('method') || 'POST').toUpperCase();
+    if (method === 'GET') {
+      // GET filters are route navigation, not a mutation fetch with a body.
+      // Match native GET forms: successful controls replace the action query,
+      // repeated names stay repeated, and the action's fragment is retained.
+      const dest = new URL(NS._lp?.(action) ?? action, document.baseURI);
+      dest.search = params.toString();
+      const path = dest.pathname + dest.search + dest.hash;
+      // Programmatic navigation replaces the page instead of opening an
+      // intercept layer. Ask the existing guard about that discard scope;
+      // its dialog can replay this exact destination after Discard.
+      const navigate = () => NS.navigate(path);
+      if (!NS._leaveGuard || NS._leaveGuard.ok(document, navigate)) navigate();
+      return;
+    }
     let body, headers;
     if (wantsJSON) {
       const obj = {};
       fd.forEach((v, k) => { obj[k] = v; });
       body = JSON.stringify(obj);
       headers = { 'Content-Type': 'application/json' };
-    } else if (wantsForm) {
-      if (enctype === 'multipart/form-data') {
-        body = fd;
-        headers = {};
-      } else {
-        const params = new URLSearchParams();
-        fd.forEach((v, k) => params.append(k, v));
-        body = params;
-        headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-      }
+    } else if (enctype === 'multipart/form-data') {
+      body = fd;
+      headers = {};
     } else {
       // data-cui-spa with no enctype defaults to urlencoded so r.ParseForm()
       // sees the same shape as a native form submit.
-      const params = new URLSearchParams();
-      fd.forEach((v, k) => params.append(k, v));
       body = params;
       headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
     }
 
     try {
       const resp = await fetch(NS._lp?.(action) ?? action, {
-        method: form.getAttribute('method') || 'POST',
+        method,
         headers,
         body,
         redirect: 'follow',
@@ -441,7 +452,7 @@
       return;
     }
     if (node.hasAttribute('data-kiln-tool')) return _dispatchKiln(node);
-    if (!node.hasAttribute('data-cui-rpc')) return _dispatchPlainForm(node);
+    if (!node.hasAttribute('data-cui-rpc')) return _dispatchPlainForm(node, opts);
     return _dispatchRPC(node, opts);
   }
 

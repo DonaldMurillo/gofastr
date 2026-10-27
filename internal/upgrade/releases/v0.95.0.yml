@@ -1,0 +1,11 @@
+version: v0.95.0
+title: Sourced icon catalog, searchable icon browser, experimental Linux desktop shell
+notes:
+  - change: "ui.Icon draws every built-in name from the vendored Feather and Lucide catalog in framework/ui/icons, replacing the framework's hand-drawn set; the old names resolve, some as aliases (card, chart, more, panel-left, pencil, sliders, success)"
+    nodetect: "same names and markup wrapper; only the drawn paths differ"
+    breaking: false
+    guidance: "Nothing to change. Icons look slightly different where the upstream drawing differs, danger becomes an octagon. A name passed to ui.RegisterIcon still wins, but only for that exact name: overriding check leaves the success alias on the catalog drawing, so register the alias too if it should match."
+  - change: "the runtime's form bridge sends the clicked submit button's name and value and honours its formaction, formmethod, formenctype and formtarget; a form inside a widget that the widget leaves alone goes through the document bridge"
+    nodetect: "runtime behaviour; the markup an app writes is unchanged"
+    breaking: false
+    guidance: "Nothing to change. A handler that read only the form's own fields now also sees the submit button's name=value pair, as it would from a native submit. A data-cui-spa or JSON form submitted with an explicit GET navigates to the action with the fields as the query, where it used to fail; a marked form with no method still POSTs."

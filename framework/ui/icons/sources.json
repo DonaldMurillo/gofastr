@@ -1,0 +1,2958 @@
+{
+  "schema_version": 2,
+  "sources": [
+    {
+      "id": "feather",
+      "name": "Feather",
+      "repository_url": "https://github.com/feathericons/feather",
+      "commit": "3dc050d97405062eba78aa57115c0a15c63abdaa",
+      "retrieved_at": "2026-10-24T22:26:54Z",
+      "license": {
+        "spdx": "MIT",
+        "vendored_path": "LICENSE.feather",
+        "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/LICENSE",
+        "sha256": "308028e93fcf84972523cdf6e616f73168546b4953895f516d01287f16fe7bee"
+      }
+    },
+    {
+      "id": "lucide",
+      "name": "Lucide",
+      "repository_url": "https://github.com/lucide-icons/lucide",
+      "commit": "7faf87628a1ad6175975bc595344337ce14a7db4",
+      "retrieved_at": "2026-10-25T05:59:29Z",
+      "license": {
+        "spdx": "ISC AND MIT",
+        "vendored_path": "LICENSE.lucide",
+        "source_url": "https://raw.githubusercontent.com/lucide-icons/lucide/7faf87628a1ad6175975bc595344337ce14a7db4/LICENSE",
+        "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57"
+      }
+    }
+  ],
+  "icons": [
+    {
+      "name": "activity",
+      "source": "feather",
+      "vendored_path": "svg/activity.svg",
+      "upstream_path": "icons/activity.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/activity.svg",
+      "sha256": "709c447f937c500c82f7d02361fd27e618493bd40c77960ef03325a68a773fdb",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "airplay",
+      "source": "feather",
+      "vendored_path": "svg/airplay.svg",
+      "upstream_path": "icons/airplay.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/airplay.svg",
+      "sha256": "09958f1362d44ff3bc3e25942b25ccb6eac9702d96e8866c5d6f8e3149b5bf4d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "alert-circle",
+      "source": "feather",
+      "vendored_path": "svg/alert-circle.svg",
+      "upstream_path": "icons/alert-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/alert-circle.svg",
+      "sha256": "e47498ca4bedaef470e42a6a70cbac15373869853a82f38642998887edf6cfc6",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "align-center",
+      "source": "feather",
+      "vendored_path": "svg/align-center.svg",
+      "upstream_path": "icons/align-center.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/align-center.svg",
+      "sha256": "acfa0fb322b5ff5b38573ea47e119e73485490ccbc7e0e94c8a55fa8fab23b2e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "align-justify",
+      "source": "feather",
+      "vendored_path": "svg/align-justify.svg",
+      "upstream_path": "icons/align-justify.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/align-justify.svg",
+      "sha256": "4b1a1b390ca4c7e32d2567f8412a9487eacb9f63c8abd6d663344900f7189d90",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "align-left",
+      "source": "feather",
+      "vendored_path": "svg/align-left.svg",
+      "upstream_path": "icons/align-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/align-left.svg",
+      "sha256": "7cfb9de0d35bf52acfa257c8574c33736dc08cb20abb6ff3b19afdbdc533d97d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "align-right",
+      "source": "feather",
+      "vendored_path": "svg/align-right.svg",
+      "upstream_path": "icons/align-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/align-right.svg",
+      "sha256": "76603a1516a027562c4fccc602c7273bc6fbb1025e300f414fc5fa099daa645b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "anchor",
+      "source": "feather",
+      "vendored_path": "svg/anchor.svg",
+      "upstream_path": "icons/anchor.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/anchor.svg",
+      "sha256": "7f9ecff330f6021d93b6ba0b9db54013013bb68e4e9ac04300c85722aff4db82",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "aperture",
+      "source": "feather",
+      "vendored_path": "svg/aperture.svg",
+      "upstream_path": "icons/aperture.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/aperture.svg",
+      "sha256": "3d6c859251f304def7b87c36fcd658a0df61d0c6892b671f6a9b8fd090b893de",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "archive",
+      "source": "feather",
+      "vendored_path": "svg/archive.svg",
+      "upstream_path": "icons/archive.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/archive.svg",
+      "sha256": "ee38593b95022410828aa9a470993081c9975631b39b99e32190f197a1841519",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-down",
+      "source": "feather",
+      "vendored_path": "svg/arrow-down.svg",
+      "upstream_path": "icons/arrow-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-down.svg",
+      "sha256": "3f29863763fc54959505027b57a36bb97925b3329fc38642ba9a51b4780894e3",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-down-circle",
+      "source": "feather",
+      "vendored_path": "svg/arrow-down-circle.svg",
+      "upstream_path": "icons/arrow-down-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-down-circle.svg",
+      "sha256": "0bb9f6ebb8cb7c9bb93136eb5e90368472c285eb852e39c7e0c3ae699880f145",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-down-left",
+      "source": "feather",
+      "vendored_path": "svg/arrow-down-left.svg",
+      "upstream_path": "icons/arrow-down-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-down-left.svg",
+      "sha256": "51a105eacab1b5428eca4920e6334cb4e6194ac8c884d6edea76156bad47753e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-down-right",
+      "source": "feather",
+      "vendored_path": "svg/arrow-down-right.svg",
+      "upstream_path": "icons/arrow-down-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-down-right.svg",
+      "sha256": "d9c7c2fbe6dab82526a9c95daa08c5b8151fedd2f9bd9fb253b3f54474858cad",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-left",
+      "vendored_path": "svg/arrow-left.svg",
+      "upstream_path": "icons/arrow-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-left.svg",
+      "sha256": "a71d26dae8d7bd2c172a502258e13793ecf3fa80935d42f7fa692b8d182d0794",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "arrow-left-circle",
+      "source": "feather",
+      "vendored_path": "svg/arrow-left-circle.svg",
+      "upstream_path": "icons/arrow-left-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-left-circle.svg",
+      "sha256": "f7db6bc6597319ccb115b8b298ac510afb6e2fb818fcaea25853536f42692159",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-right",
+      "vendored_path": "svg/arrow-right.svg",
+      "upstream_path": "icons/arrow-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-right.svg",
+      "sha256": "f341a7b2b0f0ce280c2ff80ba7b4519323e2503d66575443ffe07c8f0a87123d",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "arrow-right-circle",
+      "source": "feather",
+      "vendored_path": "svg/arrow-right-circle.svg",
+      "upstream_path": "icons/arrow-right-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-right-circle.svg",
+      "sha256": "94871939966302a21826c7f89cc9505acca6a17bb9cdaf35d2f02881e8b5d423",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-up",
+      "source": "feather",
+      "vendored_path": "svg/arrow-up.svg",
+      "upstream_path": "icons/arrow-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-up.svg",
+      "sha256": "ffc1c4db4af402a55a4f3796b0f3c60f69ffde81975730c5f926396ea6ff9274",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-up-circle",
+      "source": "feather",
+      "vendored_path": "svg/arrow-up-circle.svg",
+      "upstream_path": "icons/arrow-up-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-up-circle.svg",
+      "sha256": "7cfa08727c86341d82ac988f2e8e9bca19aba782c4c1a8e840bfd39d3832deef",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-up-left",
+      "source": "feather",
+      "vendored_path": "svg/arrow-up-left.svg",
+      "upstream_path": "icons/arrow-up-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-up-left.svg",
+      "sha256": "386ced99ac8d02c462c8ec60e88c2d190b65c00ea90f393db2e1f01e7899a9a0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "arrow-up-right",
+      "source": "feather",
+      "vendored_path": "svg/arrow-up-right.svg",
+      "upstream_path": "icons/arrow-up-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/arrow-up-right.svg",
+      "sha256": "e5086417d2709c5d4033a8861c4b69953e1cc6c37b84547eb91aa9ad5dfa05fc",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "at-sign",
+      "source": "feather",
+      "vendored_path": "svg/at-sign.svg",
+      "upstream_path": "icons/at-sign.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/at-sign.svg",
+      "sha256": "c57a86de719c5f5dabb0734d73fac568d7ba63bfcd5c698e474a9517fd33a005",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "award",
+      "source": "feather",
+      "vendored_path": "svg/award.svg",
+      "upstream_path": "icons/award.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/award.svg",
+      "sha256": "e7f7415885207b98c5c59d3ebd07fa8affbf27248fde22be1a21a4d5589b7b1b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bar-chart",
+      "source": "feather",
+      "vendored_path": "svg/bar-chart.svg",
+      "upstream_path": "icons/bar-chart.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bar-chart.svg",
+      "sha256": "7cfcc0e9f97329122f4ca5599f36149766bf6c709ed10171a5fc2a89dd621fb2",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bar-chart-2",
+      "source": "feather",
+      "vendored_path": "svg/bar-chart-2.svg",
+      "upstream_path": "icons/bar-chart-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bar-chart-2.svg",
+      "sha256": "2cb18ce3a2eadcf27affa79565467e5174674b9e523caf264eed2bcbf2e36429",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "battery",
+      "source": "feather",
+      "vendored_path": "svg/battery.svg",
+      "upstream_path": "icons/battery.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/battery.svg",
+      "sha256": "1c25c92e12d68bd74f13b782c3ed9b5f87f797535a26009e8055afe4cc54f8b8",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "battery-charging",
+      "source": "feather",
+      "vendored_path": "svg/battery-charging.svg",
+      "upstream_path": "icons/battery-charging.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/battery-charging.svg",
+      "sha256": "aaa841c3179274dd7a3cba28922c4020ad8a3f0dd1b4cb79c57e7bcbd752c19b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bell",
+      "source": "feather",
+      "vendored_path": "svg/bell.svg",
+      "upstream_path": "icons/bell.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bell.svg",
+      "sha256": "8051ddb74439c1b1814a2d2307e95ae6a43786df1b6d46797d11974328f33ff1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bell-off",
+      "source": "feather",
+      "vendored_path": "svg/bell-off.svg",
+      "upstream_path": "icons/bell-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bell-off.svg",
+      "sha256": "8d02f20eb56bc3d99b2ae80133b823877c5902d9dd73f8c2078b964a8412845a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bluetooth",
+      "source": "feather",
+      "vendored_path": "svg/bluetooth.svg",
+      "upstream_path": "icons/bluetooth.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bluetooth.svg",
+      "sha256": "47f280a7ca06ca27dc53dabfdf572060b54d0f4664222c702ffbada9c533953c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bold",
+      "source": "feather",
+      "vendored_path": "svg/bold.svg",
+      "upstream_path": "icons/bold.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bold.svg",
+      "sha256": "71837228ce9534121441ed0df109b5188f868fc4543c96b37d6f7bb7f56c74dd",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "book",
+      "source": "feather",
+      "vendored_path": "svg/book.svg",
+      "upstream_path": "icons/book.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/book.svg",
+      "sha256": "6c5fb9137190c59f5ddb7fdf631f44d27a9a8075d06892a534c513bbdce4dbc5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "book-open",
+      "source": "feather",
+      "vendored_path": "svg/book-open.svg",
+      "upstream_path": "icons/book-open.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/book-open.svg",
+      "sha256": "df29753e646e9bff5e40c80de8703478a779571e672e61ae65ca6b14fe80cf11",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "bookmark",
+      "source": "feather",
+      "vendored_path": "svg/bookmark.svg",
+      "upstream_path": "icons/bookmark.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/bookmark.svg",
+      "sha256": "cc25f3f32004c76d1821efc019ea8ff229f771efb7ab2fc20650d4aca9f53b3b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "box",
+      "source": "feather",
+      "vendored_path": "svg/box.svg",
+      "upstream_path": "icons/box.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/box.svg",
+      "sha256": "3ec8d5953391afc84aceb98e8245b132206c890653e02f77a65d6500d33125af",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "briefcase",
+      "source": "feather",
+      "vendored_path": "svg/briefcase.svg",
+      "upstream_path": "icons/briefcase.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/briefcase.svg",
+      "sha256": "abbc92b9516db24adee1e582af9f61e82ac18149c6921da94fa639e8b29fbfeb",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "calendar",
+      "source": "feather",
+      "vendored_path": "svg/calendar.svg",
+      "upstream_path": "icons/calendar.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/calendar.svg",
+      "sha256": "2bd66f90b4c777fa450b98a90241c5beca13195e1c295e1657e5cef7e8cf2d9f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "camera",
+      "source": "feather",
+      "vendored_path": "svg/camera.svg",
+      "upstream_path": "icons/camera.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/camera.svg",
+      "sha256": "f969592e01193efeed652846132585aa38ed6717d3dbc518466c4d811267fe7e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "camera-off",
+      "source": "feather",
+      "vendored_path": "svg/camera-off.svg",
+      "upstream_path": "icons/camera-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/camera-off.svg",
+      "sha256": "a89cf7c64087f8e1e1459825fc6366a20cc1331e668561db87b5355e8c309101",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cast",
+      "source": "feather",
+      "vendored_path": "svg/cast.svg",
+      "upstream_path": "icons/cast.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cast.svg",
+      "sha256": "64d5d0dffb07e15fb8001f06db1923a6057d868ea7f9ccd82b6ef2f2706aee1c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "check",
+      "vendored_path": "svg/check.svg",
+      "upstream_path": "icons/check.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/check.svg",
+      "sha256": "1df722c1758fb0cb4868c38eb038fecf64c3717fe09ceaeb43783b70d027a1c4",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "check-circle",
+      "source": "feather",
+      "vendored_path": "svg/check-circle.svg",
+      "upstream_path": "icons/check-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/check-circle.svg",
+      "sha256": "0954a83db1736bb3e7108a00111ba5fccae9e16c6c711993cbe3c9984dc8aaec",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "check-square",
+      "source": "feather",
+      "vendored_path": "svg/check-square.svg",
+      "upstream_path": "icons/check-square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/check-square.svg",
+      "sha256": "44fa3ffa2362d3c9ed7f1dfad59fd24c70fc61e84c45d721d20b3674a2d68e8e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "chevron-down",
+      "vendored_path": "svg/chevron-down.svg",
+      "upstream_path": "icons/chevron-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevron-down.svg",
+      "sha256": "f87ec5c0083b3c327ea98215231e77d642976263c9f2f57f182ef87cf071588e",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "chevron-left",
+      "vendored_path": "svg/chevron-left.svg",
+      "upstream_path": "icons/chevron-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevron-left.svg",
+      "sha256": "a40f90f5da06f7262eb42f7926e85737853ac0db5ad6a71e88a19dff3b0cfb7e",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "chevron-right",
+      "vendored_path": "svg/chevron-right.svg",
+      "upstream_path": "icons/chevron-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevron-right.svg",
+      "sha256": "e37a663fc7cc5d1a0540e27ecb567d70e4706eb32f07e47f212369881bd999bc",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "chevron-up",
+      "vendored_path": "svg/chevron-up.svg",
+      "upstream_path": "icons/chevron-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevron-up.svg",
+      "sha256": "185e8665dd1cb409377f28f23323b35f098fcfcd6b657d8f85991f0a9bc1dcfe",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "chevrons-down",
+      "source": "feather",
+      "vendored_path": "svg/chevrons-down.svg",
+      "upstream_path": "icons/chevrons-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevrons-down.svg",
+      "sha256": "cd231b63f3b8cadccbb5543459ba8a4a4cf790be23134752dffd7fdb5a5c4c0f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "chevrons-left",
+      "source": "feather",
+      "vendored_path": "svg/chevrons-left.svg",
+      "upstream_path": "icons/chevrons-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevrons-left.svg",
+      "sha256": "81c8e2bdfdef4ded5576e74f615c63685cd7f183f5d42434d738ebd0d1660cca",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "chevrons-right",
+      "source": "feather",
+      "vendored_path": "svg/chevrons-right.svg",
+      "upstream_path": "icons/chevrons-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevrons-right.svg",
+      "sha256": "4a0e71b56831e3181dfccacee856429e0ee9a5ce3e11a693301a21a5886f9021",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "chevrons-up",
+      "source": "feather",
+      "vendored_path": "svg/chevrons-up.svg",
+      "upstream_path": "icons/chevrons-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chevrons-up.svg",
+      "sha256": "ed1348a6497b341a1f490e89d7f35f3a4da4b4c49b84e44770757d218d838b48",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "chevrons-up-down",
+      "source": "lucide",
+      "vendored_path": "svg/chevrons-up-down.svg",
+      "upstream_path": "icons/chevrons-up-down.svg",
+      "source_url": "https://raw.githubusercontent.com/lucide-icons/lucide/7faf87628a1ad6175975bc595344337ce14a7db4/icons/chevrons-up-down.svg",
+      "sha256": "edc561e007cfab9b6b45301a8cb02711fd7c901e53e30ee29c5491b74dbe6bcc",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "chrome",
+      "source": "feather",
+      "vendored_path": "svg/chrome.svg",
+      "upstream_path": "icons/chrome.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/chrome.svg",
+      "sha256": "d9f79fded8d298aab0886fb4cdfdc190b2bda72212a1290b1d5d69f0ac1492a1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "circle",
+      "source": "feather",
+      "vendored_path": "svg/circle.svg",
+      "upstream_path": "icons/circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/circle.svg",
+      "sha256": "8d4932d902c2a59c7ab573d727059cd7da329a25a50a993d6f169d3cb3ef0dff",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "clipboard",
+      "source": "feather",
+      "vendored_path": "svg/clipboard.svg",
+      "upstream_path": "icons/clipboard.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/clipboard.svg",
+      "sha256": "eddf9e18f1c24b3c7830b2a1d726c512e4de86cc3481c5277feeb3084de2e755",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "clock",
+      "source": "feather",
+      "vendored_path": "svg/clock.svg",
+      "upstream_path": "icons/clock.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/clock.svg",
+      "sha256": "1c9bbf4c26cdb34f1eea393f6b151c2d962b7c252ce451ae58ae83621aeebcfc",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "close",
+      "vendored_path": "svg/close.svg",
+      "upstream_path": "icons/x.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/x.svg",
+      "sha256": "9d855cf8aab176e80a0448bee43c56338d28c59ec91637ce034cced006e282a2",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "cloud",
+      "source": "feather",
+      "vendored_path": "svg/cloud.svg",
+      "upstream_path": "icons/cloud.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cloud.svg",
+      "sha256": "45a52d3b54fb60f3fcdfedf60644bf36348b1db1dfff3b11c40746584fbdee25",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cloud-drizzle",
+      "source": "feather",
+      "vendored_path": "svg/cloud-drizzle.svg",
+      "upstream_path": "icons/cloud-drizzle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cloud-drizzle.svg",
+      "sha256": "d73c653fef1b166082435498f7e63ca78c5b714f53e452d1d7e14f85274484ca",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cloud-lightning",
+      "source": "feather",
+      "vendored_path": "svg/cloud-lightning.svg",
+      "upstream_path": "icons/cloud-lightning.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cloud-lightning.svg",
+      "sha256": "51232f1fdb0c2dbfc9accf274b5d20dc1eae3454b1abc0fc545f5d0bcc3c9995",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cloud-off",
+      "source": "feather",
+      "vendored_path": "svg/cloud-off.svg",
+      "upstream_path": "icons/cloud-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cloud-off.svg",
+      "sha256": "6e688d72d46a35a20a12918bec795d0ddc39f443b2801f88d4032ed68f169366",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cloud-rain",
+      "source": "feather",
+      "vendored_path": "svg/cloud-rain.svg",
+      "upstream_path": "icons/cloud-rain.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cloud-rain.svg",
+      "sha256": "95ebeda8ccac3d9411f3049a887ae2753e27eba7b50795e1fbc2e8a1b410d1ea",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cloud-snow",
+      "source": "feather",
+      "vendored_path": "svg/cloud-snow.svg",
+      "upstream_path": "icons/cloud-snow.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cloud-snow.svg",
+      "sha256": "d4f296750eccc435013b463e35964eec0f5f5239b1bb1d6b2ab0e4efd2db41b4",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "code",
+      "source": "feather",
+      "vendored_path": "svg/code.svg",
+      "upstream_path": "icons/code.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/code.svg",
+      "sha256": "c48ef4e5b91e5c306f71f06cfb283e4aafa4561fa1e8ef11b95b4461166fe3ee",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "codepen",
+      "source": "feather",
+      "vendored_path": "svg/codepen.svg",
+      "upstream_path": "icons/codepen.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/codepen.svg",
+      "sha256": "7f95b847c25d6b7e485f11f7dc53925f387ea94256b5bd8f892ceb5e93dfb12c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "codesandbox",
+      "source": "feather",
+      "vendored_path": "svg/codesandbox.svg",
+      "upstream_path": "icons/codesandbox.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/codesandbox.svg",
+      "sha256": "ec337231457f9d0f7b7136c18b4844453cca74ba9a2f8b221684f77e01115952",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "coffee",
+      "source": "feather",
+      "vendored_path": "svg/coffee.svg",
+      "upstream_path": "icons/coffee.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/coffee.svg",
+      "sha256": "7c0cfa9dceaf1bc3dfcca17cfd4fba18853d981ff2c783d7c54e9da8e98a2b8a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "columns",
+      "source": "feather",
+      "vendored_path": "svg/columns.svg",
+      "upstream_path": "icons/columns.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/columns.svg",
+      "sha256": "f1cccd55d9394e8c9256f7ffd97570170a673bfeaa84c477037ff1f43b104d3f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "command",
+      "source": "feather",
+      "vendored_path": "svg/command.svg",
+      "upstream_path": "icons/command.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/command.svg",
+      "sha256": "8b10f738422cffefa8d5fe8eeaac52db52b73b64bf79f4199b619d79aa561493",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "compass",
+      "source": "feather",
+      "vendored_path": "svg/compass.svg",
+      "upstream_path": "icons/compass.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/compass.svg",
+      "sha256": "6eab4bc4d8108e88e56b74477c99c6b627cab520a8052d2be8f5f757bb333e54",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "copy",
+      "source": "feather",
+      "vendored_path": "svg/copy.svg",
+      "upstream_path": "icons/copy.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/copy.svg",
+      "sha256": "a32de6b675efb2d05a19455cde9d7350706257069e0a52d0a99fdf51a565fe91",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-down-left",
+      "source": "feather",
+      "vendored_path": "svg/corner-down-left.svg",
+      "upstream_path": "icons/corner-down-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-down-left.svg",
+      "sha256": "9ea7b4b36120e70a4dfd8b63fb016e07f9a3c1750d2d10d034084944636558c3",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-down-right",
+      "source": "feather",
+      "vendored_path": "svg/corner-down-right.svg",
+      "upstream_path": "icons/corner-down-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-down-right.svg",
+      "sha256": "0f6781e55e23f3181be7e3d4aca944994dbdf978b405c31e80f6b9eb119bfc17",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-left-down",
+      "source": "feather",
+      "vendored_path": "svg/corner-left-down.svg",
+      "upstream_path": "icons/corner-left-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-left-down.svg",
+      "sha256": "2165ab745968245921d5bd3aa7493814cdbce529e18fcc91ee7d2922112f37ef",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-left-up",
+      "source": "feather",
+      "vendored_path": "svg/corner-left-up.svg",
+      "upstream_path": "icons/corner-left-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-left-up.svg",
+      "sha256": "1b03db65d292837dd07886833a1bcc4756310957346f17c062f641a66edcf048",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-right-down",
+      "source": "feather",
+      "vendored_path": "svg/corner-right-down.svg",
+      "upstream_path": "icons/corner-right-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-right-down.svg",
+      "sha256": "0f6f156e9ef3db5a5cd080b2c9cb257762985110080a81a49209e2a4531cfdfa",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-right-up",
+      "source": "feather",
+      "vendored_path": "svg/corner-right-up.svg",
+      "upstream_path": "icons/corner-right-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-right-up.svg",
+      "sha256": "66e422f28ce9739cb9b6e65771c9c000185f8da37fe2965c94e03182b2f6947c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-up-left",
+      "source": "feather",
+      "vendored_path": "svg/corner-up-left.svg",
+      "upstream_path": "icons/corner-up-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-up-left.svg",
+      "sha256": "a243934e92314f517ed796b76909edd43f1c44368b9fbd9409605d7ef6580a9d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "corner-up-right",
+      "source": "feather",
+      "vendored_path": "svg/corner-up-right.svg",
+      "upstream_path": "icons/corner-up-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/corner-up-right.svg",
+      "sha256": "6e3dd3e7fa96fc8d17460caf3a3ddad4617feb0d32eeb04b86935977ecccda79",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "cpu",
+      "source": "feather",
+      "vendored_path": "svg/cpu.svg",
+      "upstream_path": "icons/cpu.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/cpu.svg",
+      "sha256": "20f650b937fc207f97de6254c3c090c4112084219da2e9699448412d6f32fb8a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "credit-card",
+      "source": "feather",
+      "vendored_path": "svg/credit-card.svg",
+      "upstream_path": "icons/credit-card.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/credit-card.svg",
+      "sha256": "ef6d4bcbf7e1a17e5531550d889ec6f9ee9671e9f0973c0044bdce89e4160e1e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "crop",
+      "source": "feather",
+      "vendored_path": "svg/crop.svg",
+      "upstream_path": "icons/crop.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/crop.svg",
+      "sha256": "45518c8d58b2c34faf40450db347408ee115e032b19c13117a7892729ca08a8c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "crosshair",
+      "source": "feather",
+      "vendored_path": "svg/crosshair.svg",
+      "upstream_path": "icons/crosshair.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/crosshair.svg",
+      "sha256": "f4ffa1e69a44f990e936628c6e9d1be254bd9efe7166d3e89cfd2bbd0ab4d563",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "danger",
+      "vendored_path": "svg/danger.svg",
+      "upstream_path": "icons/alert-octagon.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/alert-octagon.svg",
+      "sha256": "75b6f1dec21f5b1caa89f1892887f930a140e3908aa7a49c66086815e7f5d379",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "database",
+      "source": "feather",
+      "vendored_path": "svg/database.svg",
+      "upstream_path": "icons/database.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/database.svg",
+      "sha256": "14849e004d723bd007500edfed9f754faf06be47b87fdd63e74718ac039ca12c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "delete",
+      "source": "feather",
+      "vendored_path": "svg/delete.svg",
+      "upstream_path": "icons/delete.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/delete.svg",
+      "sha256": "37b5ea46c67e90a8788cd34c54e1622b1a9218b14aca24e04c8aae5a40823b47",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "diamond",
+      "source": "lucide",
+      "vendored_path": "svg/diamond.svg",
+      "upstream_path": "icons/diamond.svg",
+      "source_url": "https://raw.githubusercontent.com/lucide-icons/lucide/7faf87628a1ad6175975bc595344337ce14a7db4/icons/diamond.svg",
+      "sha256": "2a2f4ccad87409bed020191ebfb30ff806dca49a1b687d0be96f4d7343da8d7c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "disc",
+      "source": "feather",
+      "vendored_path": "svg/disc.svg",
+      "upstream_path": "icons/disc.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/disc.svg",
+      "sha256": "15e7080672c999b97c9de65e3367758d92dba5ccb4302f887bced78574d35649",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "divide",
+      "source": "feather",
+      "vendored_path": "svg/divide.svg",
+      "upstream_path": "icons/divide.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/divide.svg",
+      "sha256": "56c80408a9f18645858def37cbb49c7db38429f36433e454bd511dba5274328c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "divide-circle",
+      "source": "feather",
+      "vendored_path": "svg/divide-circle.svg",
+      "upstream_path": "icons/divide-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/divide-circle.svg",
+      "sha256": "b99343ff1eb262f680dcec6c393fc8a727606ae84f5e7227c551f501410937a9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "divide-square",
+      "source": "feather",
+      "vendored_path": "svg/divide-square.svg",
+      "upstream_path": "icons/divide-square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/divide-square.svg",
+      "sha256": "1e580ab8532e7cb44a1084af36c457e2be38b4554b604b981f27c8cd92223bbf",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "dollar-sign",
+      "source": "feather",
+      "vendored_path": "svg/dollar-sign.svg",
+      "upstream_path": "icons/dollar-sign.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/dollar-sign.svg",
+      "sha256": "0716eff55bca52a7ac5ea9fe8e3fb68b9117cbf2e2e038f01aac9a827d1f15c8",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "download",
+      "source": "feather",
+      "vendored_path": "svg/download.svg",
+      "upstream_path": "icons/download.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/download.svg",
+      "sha256": "26e60cb6ec402216b27e2eeac412841b1ef8e6d36e770f85888f55b01c8a37f5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "download-cloud",
+      "source": "feather",
+      "vendored_path": "svg/download-cloud.svg",
+      "upstream_path": "icons/download-cloud.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/download-cloud.svg",
+      "sha256": "de2b48611d323dca7e7b1ecd3a1556b2aab62ee67468a2d045c50eb5202f0cc6",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "dribbble",
+      "source": "feather",
+      "vendored_path": "svg/dribbble.svg",
+      "upstream_path": "icons/dribbble.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/dribbble.svg",
+      "sha256": "141be99b7d4ff4087b3bd8819559a6b2d2494642e4880744fa573f7ba90e2edb",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "droplet",
+      "source": "feather",
+      "vendored_path": "svg/droplet.svg",
+      "upstream_path": "icons/droplet.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/droplet.svg",
+      "sha256": "254957f2c4694de6f6e0b22cd408d128233411a3443a5e27915515e807037775",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "edit",
+      "vendored_path": "svg/edit.svg",
+      "upstream_path": "icons/edit-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/edit-2.svg",
+      "sha256": "36c3d3437075ba4a5c03b43646ce7548814b83bfcd46838ad898b9554e918d85",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "edit-3",
+      "source": "feather",
+      "vendored_path": "svg/edit-3.svg",
+      "upstream_path": "icons/edit-3.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/edit-3.svg",
+      "sha256": "9f2ac8efda551f724247e2d3a2431ec1194dc1087e8d571ea764edd5f8a8a6ca",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "edit-square",
+      "source": "feather",
+      "vendored_path": "svg/edit-square.svg",
+      "upstream_path": "icons/edit.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/edit.svg",
+      "sha256": "58c1cb5b506bfd85b13c3d8741e6cdd2b93e217e8ff4a2b2e4af28e1760bcc21",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "external-link",
+      "source": "feather",
+      "vendored_path": "svg/external-link.svg",
+      "upstream_path": "icons/external-link.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/external-link.svg",
+      "sha256": "7fcd915bcba5fee19051b4200c4e3de485fe11c8c261feb167f34b5c3bb26122",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "eye",
+      "source": "feather",
+      "vendored_path": "svg/eye.svg",
+      "upstream_path": "icons/eye.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/eye.svg",
+      "sha256": "3e6c211d83ca5a71baec90ec51a97ff52ce1df17307e3c56254958bc5e54daaf",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "eye-off",
+      "source": "feather",
+      "vendored_path": "svg/eye-off.svg",
+      "upstream_path": "icons/eye-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/eye-off.svg",
+      "sha256": "4779dff867c499511e91c773c922ec74da69c76e139277a9875d02ef0a593327",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "facebook",
+      "source": "feather",
+      "vendored_path": "svg/facebook.svg",
+      "upstream_path": "icons/facebook.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/facebook.svg",
+      "sha256": "73a5bf780c98f6601e7dd5f450408a648df1ec416f17fb1a0b42bbc1936a88b0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "fast-forward",
+      "source": "feather",
+      "vendored_path": "svg/fast-forward.svg",
+      "upstream_path": "icons/fast-forward.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/fast-forward.svg",
+      "sha256": "f194f0b6933f9e5a7762693d6f989d17b5b759368b0b73188d6e9534d63a63ca",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "feather",
+      "source": "feather",
+      "vendored_path": "svg/feather.svg",
+      "upstream_path": "icons/feather.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/feather.svg",
+      "sha256": "691db93b4188412b968d0c40c3e88f857daa207dcf4ce0b3ae69423daee5f7b5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "figma",
+      "source": "feather",
+      "vendored_path": "svg/figma.svg",
+      "upstream_path": "icons/figma.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/figma.svg",
+      "sha256": "924e7ce72f2c0317cbd2f252b1d39d41302787c00340e697036247d27d0dbd41",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "file",
+      "vendored_path": "svg/file.svg",
+      "upstream_path": "icons/file.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/file.svg",
+      "sha256": "59c9d107d7e8123b24645e24ffa23e255e81c332f0ecb2c7277d0fd74d0ed277",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "file-minus",
+      "source": "feather",
+      "vendored_path": "svg/file-minus.svg",
+      "upstream_path": "icons/file-minus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/file-minus.svg",
+      "sha256": "6e348168e003f0890fa6eb15eccab71fa732a57b9cc6cb96268f46dc4acd83d1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "file-plus",
+      "source": "feather",
+      "vendored_path": "svg/file-plus.svg",
+      "upstream_path": "icons/file-plus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/file-plus.svg",
+      "sha256": "199ed2b70a3fefdfcb509ea2007e64de86d64d251fb0a2740f261507a984481b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "file-text",
+      "source": "feather",
+      "vendored_path": "svg/file-text.svg",
+      "upstream_path": "icons/file-text.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/file-text.svg",
+      "sha256": "2d2602aaaf18c691bd579bdc7fb07604cb70ff8b5b1db1e5e7997975824a9446",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "film",
+      "source": "feather",
+      "vendored_path": "svg/film.svg",
+      "upstream_path": "icons/film.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/film.svg",
+      "sha256": "cdc70078f11b09013e4e7c4cce6e4c672c6e712939f2b3b66477e7d3b481001a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "filter",
+      "source": "feather",
+      "vendored_path": "svg/filter.svg",
+      "upstream_path": "icons/filter.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/filter.svg",
+      "sha256": "244d81a7bcb14546f2e5e4f6cbb48b0ce1a99172a91a865664f524d65fb0fb4d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "flag",
+      "source": "feather",
+      "vendored_path": "svg/flag.svg",
+      "upstream_path": "icons/flag.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/flag.svg",
+      "sha256": "07104ec4551b0d83a24d27d2b2f729c91ef0a1ed04532dfcfaa34495108f8df0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "flame",
+      "source": "lucide",
+      "vendored_path": "svg/flame.svg",
+      "upstream_path": "icons/flame.svg",
+      "source_url": "https://raw.githubusercontent.com/lucide-icons/lucide/7faf87628a1ad6175975bc595344337ce14a7db4/icons/flame.svg",
+      "sha256": "cede1462a46a7a3b3daf9d101f0b59484b1d882a4c42a75670810a6d4f8d42fb",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "folder",
+      "vendored_path": "svg/folder.svg",
+      "upstream_path": "icons/folder.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/folder.svg",
+      "sha256": "d479596013ee6703bb7bb30515c5306e8624499643d947d9b9576d9003650b33",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "folder-minus",
+      "source": "feather",
+      "vendored_path": "svg/folder-minus.svg",
+      "upstream_path": "icons/folder-minus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/folder-minus.svg",
+      "sha256": "ab3a83c810c83225e8b84c3f4d2c2a2d434644d2645fab39549499e2ddb7b5a1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "folder-plus",
+      "source": "feather",
+      "vendored_path": "svg/folder-plus.svg",
+      "upstream_path": "icons/folder-plus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/folder-plus.svg",
+      "sha256": "073b575a0bd10300e1163dc4386da60b46802dc318d9979395dde6c045e70cdf",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "framer",
+      "source": "feather",
+      "vendored_path": "svg/framer.svg",
+      "upstream_path": "icons/framer.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/framer.svg",
+      "sha256": "f513041bc4734ad6b4ee560e7bf40d3ad537d7bb150d2eb141a206eb57056ce9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "frown",
+      "source": "feather",
+      "vendored_path": "svg/frown.svg",
+      "upstream_path": "icons/frown.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/frown.svg",
+      "sha256": "f4dbb1e795f7951db50c99056118f8802f11276f40e72254da7ec3066f56fd0e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "gift",
+      "source": "feather",
+      "vendored_path": "svg/gift.svg",
+      "upstream_path": "icons/gift.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/gift.svg",
+      "sha256": "6172d1350c52e2828003cd54d7fba2d70e178571923f5f455a09302f8f4e4c4e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "git-branch",
+      "source": "feather",
+      "vendored_path": "svg/git-branch.svg",
+      "upstream_path": "icons/git-branch.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/git-branch.svg",
+      "sha256": "a4c57087b5e1f511e84982b5c7295035a602023768e45c8c5f93d1632a0d9a6d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "git-commit",
+      "source": "feather",
+      "vendored_path": "svg/git-commit.svg",
+      "upstream_path": "icons/git-commit.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/git-commit.svg",
+      "sha256": "56e9014e6eabcd5b2ad6e2e0f2dc9e8754f905fe5c4d2a1ea9f271387a76d150",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "git-merge",
+      "source": "feather",
+      "vendored_path": "svg/git-merge.svg",
+      "upstream_path": "icons/git-merge.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/git-merge.svg",
+      "sha256": "73a937b01b2e59b608f1e6f44d07b4e3d791a9dab66aa6e628028627ab59dbfa",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "git-pull-request",
+      "source": "feather",
+      "vendored_path": "svg/git-pull-request.svg",
+      "upstream_path": "icons/git-pull-request.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/git-pull-request.svg",
+      "sha256": "2c7b4ed3519c1d1d1ad6d48a3e216c7d64b57b5b61470bfefe63c8894722b5f0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "github",
+      "source": "feather",
+      "vendored_path": "svg/github.svg",
+      "upstream_path": "icons/github.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/github.svg",
+      "sha256": "c36005fa0c9acc686418569a4a23c7a4d34ba753267a39dcdf953c63937783db",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "gitlab",
+      "source": "feather",
+      "vendored_path": "svg/gitlab.svg",
+      "upstream_path": "icons/gitlab.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/gitlab.svg",
+      "sha256": "eb8e8fa2897fd02e18643cb915b90db308839d56a89ea17bf72496d69a21f5ff",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "globe",
+      "source": "feather",
+      "vendored_path": "svg/globe.svg",
+      "upstream_path": "icons/globe.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/globe.svg",
+      "sha256": "68f2f1eeac609b6edae282ec5b5846b35bbecd5993fcefec1308aa0533410fe3",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "grid",
+      "source": "feather",
+      "vendored_path": "svg/grid.svg",
+      "upstream_path": "icons/grid.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/grid.svg",
+      "sha256": "7730d689eb30a103d531592c9a5700ff70b09f27235df7adee7732d2ef4d6c88",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "hard-drive",
+      "source": "feather",
+      "vendored_path": "svg/hard-drive.svg",
+      "upstream_path": "icons/hard-drive.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/hard-drive.svg",
+      "sha256": "6ffc0d9a3b7c64970a2b2e57152b9a17f67164c3a2959cd8f44de2cd67572e88",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "hash",
+      "source": "feather",
+      "vendored_path": "svg/hash.svg",
+      "upstream_path": "icons/hash.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/hash.svg",
+      "sha256": "4059e306705e0e9ecd4d7955b56defa423a26c02a98894c5ed6b1247a647567a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "headphones",
+      "source": "feather",
+      "vendored_path": "svg/headphones.svg",
+      "upstream_path": "icons/headphones.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/headphones.svg",
+      "sha256": "9d4399c09662c80e4bb1d9e29d65dcbbaf18cca54a7aef071263ce506a784bce",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "heart",
+      "source": "feather",
+      "vendored_path": "svg/heart.svg",
+      "upstream_path": "icons/heart.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/heart.svg",
+      "sha256": "edfe493d0a62b84e25f4e2d1c2df8a47dfe2a637a554b44970196f52c191eaae",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "help-circle",
+      "source": "feather",
+      "vendored_path": "svg/help-circle.svg",
+      "upstream_path": "icons/help-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/help-circle.svg",
+      "sha256": "0fe14a3e1e00e2941c1d57189fd1514a7ce171b5520f8671148fb89152248703",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "hexagon",
+      "source": "feather",
+      "vendored_path": "svg/hexagon.svg",
+      "upstream_path": "icons/hexagon.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/hexagon.svg",
+      "sha256": "5e9d015a8b6d914ee67af6fdd40734279ecbef1b4cd1b7e9d778f8659ec4b5b0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "home",
+      "source": "feather",
+      "vendored_path": "svg/home.svg",
+      "upstream_path": "icons/home.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/home.svg",
+      "sha256": "2b633ad9144db455c1cb08dd75f6e47a1cbbb0aaa747205012db3578830e0541",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "image",
+      "source": "feather",
+      "vendored_path": "svg/image.svg",
+      "upstream_path": "icons/image.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/image.svg",
+      "sha256": "89eef0760a6c98898c331e0e489f59f1b2a1199367326b2367ceb0963b1492ad",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "inbox",
+      "source": "feather",
+      "vendored_path": "svg/inbox.svg",
+      "upstream_path": "icons/inbox.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/inbox.svg",
+      "sha256": "4d343cee83a9cf83c40e4c9bee0a1e58cacab182c40c18bef706cb6f704a8647",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "info",
+      "vendored_path": "svg/info.svg",
+      "upstream_path": "icons/info.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/info.svg",
+      "sha256": "75e0cc23431cd121e2e9183937c34ebd3278a4185d643187b4da532aa9714853",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "instagram",
+      "source": "feather",
+      "vendored_path": "svg/instagram.svg",
+      "upstream_path": "icons/instagram.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/instagram.svg",
+      "sha256": "a1e0453c55733919169b031f70fad73c49076b301898e00bc8d38e4a95dc897e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "italic",
+      "source": "feather",
+      "vendored_path": "svg/italic.svg",
+      "upstream_path": "icons/italic.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/italic.svg",
+      "sha256": "0cfa0fb635fff6d1dccd84357a43edcd19d3fb2bedfca33a5c0de4b3fc433cca",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "key",
+      "source": "feather",
+      "vendored_path": "svg/key.svg",
+      "upstream_path": "icons/key.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/key.svg",
+      "sha256": "ab53f8a5c64b6a5d66c07781e9c49f3063e77072be75ed977eea9fe9e1c273c1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "layers",
+      "source": "feather",
+      "vendored_path": "svg/layers.svg",
+      "upstream_path": "icons/layers.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/layers.svg",
+      "sha256": "4803c6dfbe4b6440e8695d86aefc2fdd98392e51fae2e590e993d94f8ce59d1c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "layout",
+      "source": "feather",
+      "vendored_path": "svg/layout.svg",
+      "upstream_path": "icons/layout.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/layout.svg",
+      "sha256": "2e500071f58d6201c0aed4713c33346816eaa53ec304a36d3b3b0d42c3d7a88e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "life-buoy",
+      "source": "feather",
+      "vendored_path": "svg/life-buoy.svg",
+      "upstream_path": "icons/life-buoy.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/life-buoy.svg",
+      "sha256": "d8d4750398e57b88d3a1dcfdc006d2eb1997dd47d8440c0ad4359126b6d2828b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "link",
+      "source": "feather",
+      "vendored_path": "svg/link.svg",
+      "upstream_path": "icons/link.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/link.svg",
+      "sha256": "49a50faa4dd66581290286e93b5437eef2eb53e5d2b1056b465819e90d13d06e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "link-2",
+      "source": "feather",
+      "vendored_path": "svg/link-2.svg",
+      "upstream_path": "icons/link-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/link-2.svg",
+      "sha256": "1041d6c0691aec7ab70fdde0afd40f94e84b87ec02b4f1255cc483e925a02805",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "linkedin",
+      "source": "feather",
+      "vendored_path": "svg/linkedin.svg",
+      "upstream_path": "icons/linkedin.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/linkedin.svg",
+      "sha256": "4e75a2063b007b8021c1739c27f69cf93e563dfc590a41be38a3889e4cceb5c1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "list",
+      "source": "feather",
+      "vendored_path": "svg/list.svg",
+      "upstream_path": "icons/list.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/list.svg",
+      "sha256": "68a7c1e3da5ae2883c3d3d77514461f8c73f0c51ad6ac87beb381417e01b9cf5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "loader",
+      "source": "feather",
+      "vendored_path": "svg/loader.svg",
+      "upstream_path": "icons/loader.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/loader.svg",
+      "sha256": "ee604296b5ed01e909a7604c930a5a97792b3c12dcc477da1c11cf48842b1ad8",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "lock",
+      "source": "feather",
+      "vendored_path": "svg/lock.svg",
+      "upstream_path": "icons/lock.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/lock.svg",
+      "sha256": "ab5282d46ac4f40654e5bc56cfca5df0a92eaa48f0671a719cc9aa7f241a5e38",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "log-in",
+      "source": "feather",
+      "vendored_path": "svg/log-in.svg",
+      "upstream_path": "icons/log-in.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/log-in.svg",
+      "sha256": "6ece20d7198ca8fa73f4f5b904d58bdb2e759fd50934a43c8f5615e4209af4a1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "log-out",
+      "source": "feather",
+      "vendored_path": "svg/log-out.svg",
+      "upstream_path": "icons/log-out.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/log-out.svg",
+      "sha256": "6e034f6502bc9fed7f700ba033d08de5497413a1b08a29387ad0c32cf5c2dc6e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "mail",
+      "source": "feather",
+      "vendored_path": "svg/mail.svg",
+      "upstream_path": "icons/mail.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/mail.svg",
+      "sha256": "21de9fe1c0255a74313e7856c8ca70cae602b7e585eb621847becadaf0700b28",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "map",
+      "source": "feather",
+      "vendored_path": "svg/map.svg",
+      "upstream_path": "icons/map.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/map.svg",
+      "sha256": "57776cec294acd035b7ea01b4c222f54360481dee1f58fc12a3ad6da6cbcf0e9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "map-pin",
+      "source": "feather",
+      "vendored_path": "svg/map-pin.svg",
+      "upstream_path": "icons/map-pin.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/map-pin.svg",
+      "sha256": "4ab2f7ab8bf88d5f0a37d23f5f0d98f91319a2857cb89cbc81dd596df227aa05",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "maximize",
+      "source": "feather",
+      "vendored_path": "svg/maximize.svg",
+      "upstream_path": "icons/maximize.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/maximize.svg",
+      "sha256": "965509978e1ddddb2508616c6b84f98e72b6afec0d9be8ea267c9e90059d986f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "maximize-2",
+      "source": "feather",
+      "vendored_path": "svg/maximize-2.svg",
+      "upstream_path": "icons/maximize-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/maximize-2.svg",
+      "sha256": "d6e18a63330e4e4b17c2082fefcaf0a1be7d87090bb894ca7c1e7a14553baf16",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "meh",
+      "source": "feather",
+      "vendored_path": "svg/meh.svg",
+      "upstream_path": "icons/meh.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/meh.svg",
+      "sha256": "b628eba70147887f9a9570e844e37d4b779e1ba461039a391b8cb218315961fe",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "menu",
+      "vendored_path": "svg/menu.svg",
+      "upstream_path": "icons/menu.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/menu.svg",
+      "sha256": "896faf98953d6732f4286114a14401a0c881674d0d6f41d8253db24193ac51a5",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "message-circle",
+      "source": "feather",
+      "vendored_path": "svg/message-circle.svg",
+      "upstream_path": "icons/message-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/message-circle.svg",
+      "sha256": "3e2f0d542a3d1d35bfb20ae560a714cf8483b912f5c96aeb3ce168a04163156a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "message-square",
+      "source": "feather",
+      "vendored_path": "svg/message-square.svg",
+      "upstream_path": "icons/message-square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/message-square.svg",
+      "sha256": "6b348b2fb5661dd43e4cedc32c167a4b389809660037f91cf6351667967202d9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "mic",
+      "source": "feather",
+      "vendored_path": "svg/mic.svg",
+      "upstream_path": "icons/mic.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/mic.svg",
+      "sha256": "851ae601ee1770cd607014492487d7d985d7567d07528e3b3ff37d1a39c698c5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "mic-off",
+      "source": "feather",
+      "vendored_path": "svg/mic-off.svg",
+      "upstream_path": "icons/mic-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/mic-off.svg",
+      "sha256": "24fbf832db2d9666b84dacbfa1a6512070e57ba766c6da06119f1c15c2b28ab9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "minimize",
+      "source": "feather",
+      "vendored_path": "svg/minimize.svg",
+      "upstream_path": "icons/minimize.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/minimize.svg",
+      "sha256": "e581e6cbdf304de2eb0fafc2426b44f3e8f5125affcf1f256e4839c3e03ea0e5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "minimize-2",
+      "source": "feather",
+      "vendored_path": "svg/minimize-2.svg",
+      "upstream_path": "icons/minimize-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/minimize-2.svg",
+      "sha256": "b6e44c8d7493991a5db6604520f5cf74920422f7443f9e970f37a121ccb166aa",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "minus",
+      "source": "feather",
+      "vendored_path": "svg/minus.svg",
+      "upstream_path": "icons/minus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/minus.svg",
+      "sha256": "ce71ed3e13c6443c048a8d68d87e2b13228b2917b5d9ac7f8850ad09cf39997e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "minus-circle",
+      "source": "feather",
+      "vendored_path": "svg/minus-circle.svg",
+      "upstream_path": "icons/minus-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/minus-circle.svg",
+      "sha256": "36532edb3eaabe2f60d35925ac0b0585a0b52dd42ee1dcdf92414787cb22e97b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "minus-square",
+      "source": "feather",
+      "vendored_path": "svg/minus-square.svg",
+      "upstream_path": "icons/minus-square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/minus-square.svg",
+      "sha256": "04fc01002e0317dbb30ade9182f967d36c60b1148d0f4ba94606476d4b620f17",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "monitor",
+      "source": "feather",
+      "vendored_path": "svg/monitor.svg",
+      "upstream_path": "icons/monitor.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/monitor.svg",
+      "sha256": "090983067d10480735aff75a22dd85314ca97cc266e6ca70db6d6676863acaac",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "moon",
+      "source": "feather",
+      "vendored_path": "svg/moon.svg",
+      "upstream_path": "icons/moon.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/moon.svg",
+      "sha256": "ff41660bed6944d45049192d789b6c453ec133bd3e3ccb232907013c1a5ac2af",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "more-horizontal",
+      "source": "feather",
+      "vendored_path": "svg/more-horizontal.svg",
+      "upstream_path": "icons/more-horizontal.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/more-horizontal.svg",
+      "sha256": "5044256f6c9ad7066e96b21c54ec8531b6666e919797bfef1e9cb42f30dd9fa9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "more-vertical",
+      "source": "feather",
+      "vendored_path": "svg/more-vertical.svg",
+      "upstream_path": "icons/more-vertical.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/more-vertical.svg",
+      "sha256": "5f70784d8117db9b22015acf96e94689f013de6f68b592dd9a52eb78aa790b9c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "mouse-pointer",
+      "source": "feather",
+      "vendored_path": "svg/mouse-pointer.svg",
+      "upstream_path": "icons/mouse-pointer.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/mouse-pointer.svg",
+      "sha256": "04adec89a038ad16f71a18060193945e3bfca76df7a7125e58b2fe62e5bc4f99",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "move",
+      "source": "feather",
+      "vendored_path": "svg/move.svg",
+      "upstream_path": "icons/move.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/move.svg",
+      "sha256": "f64c87a51a5994b16f7e8057f61220f899e3a2537c9091e4eaa8836a70e6e189",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "music",
+      "source": "feather",
+      "vendored_path": "svg/music.svg",
+      "upstream_path": "icons/music.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/music.svg",
+      "sha256": "3c53d3e342c7251d0b5ac3630b799f4ab6461062271072cf070aadcb59ae49c0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "navigation",
+      "source": "feather",
+      "vendored_path": "svg/navigation.svg",
+      "upstream_path": "icons/navigation.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/navigation.svg",
+      "sha256": "6044471ecbf9041da7d9c5eb50417f147d220959148c25598fb722280fc04a86",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "navigation-2",
+      "source": "feather",
+      "vendored_path": "svg/navigation-2.svg",
+      "upstream_path": "icons/navigation-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/navigation-2.svg",
+      "sha256": "3a0806af4d05bef50b03f42d16281584cfeb025e0015c1b77447a08f4f7873cc",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "octagon",
+      "source": "feather",
+      "vendored_path": "svg/octagon.svg",
+      "upstream_path": "icons/octagon.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/octagon.svg",
+      "sha256": "a65b21e4d4b14793906fcc5c7ab006b8f3df50b9cfaee3926c270679dc990194",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "package",
+      "source": "feather",
+      "vendored_path": "svg/package.svg",
+      "upstream_path": "icons/package.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/package.svg",
+      "sha256": "a1506e19f18c10c30b85a6a1be927551bf56b9026e976777894f546828bb6c51",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "paperclip",
+      "source": "feather",
+      "vendored_path": "svg/paperclip.svg",
+      "upstream_path": "icons/paperclip.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/paperclip.svg",
+      "sha256": "30f63092d0ac317388ab630f329115ca27b5a3b01e1dd7b1ce864e523ed1dec9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "pause",
+      "source": "feather",
+      "vendored_path": "svg/pause.svg",
+      "upstream_path": "icons/pause.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/pause.svg",
+      "sha256": "1c5a5dea28076b4e4c0e0f9ee9dfd87eb1b17a01fc72788504ba5a7da2692fb1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "pause-circle",
+      "source": "feather",
+      "vendored_path": "svg/pause-circle.svg",
+      "upstream_path": "icons/pause-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/pause-circle.svg",
+      "sha256": "337d6897b596e493624a28b6fcc4e898950908d6388e4bda499cf70328f53637",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "pen-tool",
+      "source": "feather",
+      "vendored_path": "svg/pen-tool.svg",
+      "upstream_path": "icons/pen-tool.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/pen-tool.svg",
+      "sha256": "47bd67f8d5ab977450bcf7784e3cff699789ab49d9a711f5a3783e2fa45bf412",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "percent",
+      "source": "feather",
+      "vendored_path": "svg/percent.svg",
+      "upstream_path": "icons/percent.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/percent.svg",
+      "sha256": "e9438be3c0f6c246e9277cbaf6acafa81de0124775153964bb99634f1fe47861",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone",
+      "source": "feather",
+      "vendored_path": "svg/phone.svg",
+      "upstream_path": "icons/phone.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone.svg",
+      "sha256": "a53581cb0370067a943736cea87801a12d1f1a11f3085a925012a961b148d5a3",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone-call",
+      "source": "feather",
+      "vendored_path": "svg/phone-call.svg",
+      "upstream_path": "icons/phone-call.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone-call.svg",
+      "sha256": "575b4db2a28de6d41444f0b483281d74ac26fdb68c52799db94ddb750c31f835",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone-forwarded",
+      "source": "feather",
+      "vendored_path": "svg/phone-forwarded.svg",
+      "upstream_path": "icons/phone-forwarded.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone-forwarded.svg",
+      "sha256": "4f7a889b5e587a32478b9df317d7f61e414745b04b24cee5f5aa57b060432309",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone-incoming",
+      "source": "feather",
+      "vendored_path": "svg/phone-incoming.svg",
+      "upstream_path": "icons/phone-incoming.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone-incoming.svg",
+      "sha256": "416414f09b4a57237e86b3918a7eba9b9bf45c0323d93ccb61b4ae1d8377721b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone-missed",
+      "source": "feather",
+      "vendored_path": "svg/phone-missed.svg",
+      "upstream_path": "icons/phone-missed.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone-missed.svg",
+      "sha256": "d63d0ee41b3708da17ffa368856b9f6e1065cb1a366f202161248fc7b252025f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone-off",
+      "source": "feather",
+      "vendored_path": "svg/phone-off.svg",
+      "upstream_path": "icons/phone-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone-off.svg",
+      "sha256": "83f72aebe944b630ab9febddb39da8364e580dec2290ec4a8d2502de34584677",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "phone-outgoing",
+      "source": "feather",
+      "vendored_path": "svg/phone-outgoing.svg",
+      "upstream_path": "icons/phone-outgoing.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/phone-outgoing.svg",
+      "sha256": "cfbe3d09150029a2c8a26a205dfaa3b23e695c7430e061effc428e865be47301",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "pie-chart",
+      "source": "feather",
+      "vendored_path": "svg/pie-chart.svg",
+      "upstream_path": "icons/pie-chart.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/pie-chart.svg",
+      "sha256": "f0679967d43df4505f3d30c41289c9d096fdef38187613f4e59c52ba1d38a167",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "play",
+      "source": "feather",
+      "vendored_path": "svg/play.svg",
+      "upstream_path": "icons/play.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/play.svg",
+      "sha256": "b3cde412ae4265af95b9d3f2833ba674498a2c8c4eeefdf0d51e7e2ed9cbaeb5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "play-circle",
+      "source": "feather",
+      "vendored_path": "svg/play-circle.svg",
+      "upstream_path": "icons/play-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/play-circle.svg",
+      "sha256": "c28e8199498d8f2083022a1af3cf67481806a96d069ff918b263f6d80e0e0990",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "plus",
+      "vendored_path": "svg/plus.svg",
+      "upstream_path": "icons/plus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/plus.svg",
+      "sha256": "85779cf0106427ed7943bf3a296243b1cfa5dacc13d0f7683e96a0aa4e3176a8",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "plus-circle",
+      "source": "feather",
+      "vendored_path": "svg/plus-circle.svg",
+      "upstream_path": "icons/plus-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/plus-circle.svg",
+      "sha256": "e35c52238830e7fb69215c6a36eea879a7de3a297b3a4e44d1118a5423abaa57",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "plus-square",
+      "source": "feather",
+      "vendored_path": "svg/plus-square.svg",
+      "upstream_path": "icons/plus-square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/plus-square.svg",
+      "sha256": "77bbd99f084186f4e4b4ac292eb236ec231ace430db489cabc6a89fad73bfd7b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "pocket",
+      "source": "feather",
+      "vendored_path": "svg/pocket.svg",
+      "upstream_path": "icons/pocket.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/pocket.svg",
+      "sha256": "f8d786c452aa6168e140cce7aa53f3a4307957dbefe0ea611f7bc69a7829106d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "power",
+      "source": "feather",
+      "vendored_path": "svg/power.svg",
+      "upstream_path": "icons/power.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/power.svg",
+      "sha256": "65e12b42d0af9ccb82de5870eec85a9b07eeafd8be18c0bd6b48c753ab478c8f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "printer",
+      "source": "feather",
+      "vendored_path": "svg/printer.svg",
+      "upstream_path": "icons/printer.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/printer.svg",
+      "sha256": "365e9fabd32528c013d510691dabed50b33e8506043c6893b852fcfe433620d5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "radio",
+      "source": "feather",
+      "vendored_path": "svg/radio.svg",
+      "upstream_path": "icons/radio.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/radio.svg",
+      "sha256": "43b35ecb9d0eacd8388515ebae9d6f15ae81e15e2f396b70d944fa9e49ddb6b4",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "receipt",
+      "source": "lucide",
+      "vendored_path": "svg/receipt.svg",
+      "upstream_path": "icons/receipt.svg",
+      "source_url": "https://raw.githubusercontent.com/lucide-icons/lucide/7faf87628a1ad6175975bc595344337ce14a7db4/icons/receipt.svg",
+      "sha256": "26b4af2c5ea5aef9578c765a01585d9c8726ce00928dc64175a0d7d9f7c5f0a0",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "refresh-ccw",
+      "source": "feather",
+      "vendored_path": "svg/refresh-ccw.svg",
+      "upstream_path": "icons/refresh-ccw.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/refresh-ccw.svg",
+      "sha256": "5ed323ef5d0bf70c1f1537be4c7063cf7db1fe9b1a5e7c6c65a55bf567971c11",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "refresh-cw",
+      "source": "feather",
+      "vendored_path": "svg/refresh-cw.svg",
+      "upstream_path": "icons/refresh-cw.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/refresh-cw.svg",
+      "sha256": "919af710371124a9af7bd719ca7cffa725011bb07431ae4345f4499c6d316b73",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "repeat",
+      "source": "feather",
+      "vendored_path": "svg/repeat.svg",
+      "upstream_path": "icons/repeat.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/repeat.svg",
+      "sha256": "e8e0b6c4ed2693c6f7362e5035acef0009005b8caab00c390d9b9df12956e8d9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "rewind",
+      "source": "feather",
+      "vendored_path": "svg/rewind.svg",
+      "upstream_path": "icons/rewind.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/rewind.svg",
+      "sha256": "5898829ba982db68ddb8c51871c8fbeedc5b06c97455dfffcc27ef56aae196be",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "rotate-ccw",
+      "source": "feather",
+      "vendored_path": "svg/rotate-ccw.svg",
+      "upstream_path": "icons/rotate-ccw.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/rotate-ccw.svg",
+      "sha256": "bbd1916b01dca1c1b6cc411369c4f578c6e1126da171f17bd5ab4e5be421bcc1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "rotate-cw",
+      "source": "feather",
+      "vendored_path": "svg/rotate-cw.svg",
+      "upstream_path": "icons/rotate-cw.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/rotate-cw.svg",
+      "sha256": "9f231590e39c2d9b2a20a40bc9e3d5cc4a3fc06c424569bb43afd3316efe28c3",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "rss",
+      "source": "feather",
+      "vendored_path": "svg/rss.svg",
+      "upstream_path": "icons/rss.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/rss.svg",
+      "sha256": "f54763360c3d1f86be7fa2b8b6a26f17621d0b1181f16a7ddd2cc810873f5afa",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "save",
+      "source": "feather",
+      "vendored_path": "svg/save.svg",
+      "upstream_path": "icons/save.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/save.svg",
+      "sha256": "dd18a10ef788fadb8e504b773c6e52acbefa817ba7ae922d8f931367ea174336",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "scissors",
+      "source": "feather",
+      "vendored_path": "svg/scissors.svg",
+      "upstream_path": "icons/scissors.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/scissors.svg",
+      "sha256": "9a44e077e60f863dcf23dd9d9add0e552d47cfbdaaa5824ae7f715190a9b07d1",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "search",
+      "vendored_path": "svg/search.svg",
+      "upstream_path": "icons/search.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/search.svg",
+      "sha256": "5f27d6498c8d1746ef65458aedc42b51052a4ef1c52fb5d0cd900c19676a9db3",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "send",
+      "source": "feather",
+      "vendored_path": "svg/send.svg",
+      "upstream_path": "icons/send.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/send.svg",
+      "sha256": "472ea3d73068866c9d1ffd7cc58bf0cc8859be80624fb5810b8f89574ee9426a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "server",
+      "source": "feather",
+      "vendored_path": "svg/server.svg",
+      "upstream_path": "icons/server.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/server.svg",
+      "sha256": "a7ea7f2453972787495fe8f0901891dceb6f9f94187f0d67999dca06ca39f413",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "settings",
+      "vendored_path": "svg/settings.svg",
+      "upstream_path": "icons/sliders.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/sliders.svg",
+      "sha256": "59c71dcbe60e73e453a49139cc6cfbf9df0f908227b951b1739c88133e9ecb72",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "settings-gear",
+      "source": "feather",
+      "vendored_path": "svg/settings-gear.svg",
+      "upstream_path": "icons/settings.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/settings.svg",
+      "sha256": "8fe83a7900335105bedd742225ac0d96454a96670a186774532df41414c9cfbb",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "share",
+      "source": "feather",
+      "vendored_path": "svg/share.svg",
+      "upstream_path": "icons/share.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/share.svg",
+      "sha256": "effae7164671d39452a674f414ce0536e21e266632ddc7d8ec90d4fe7f1e7043",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "share-2",
+      "source": "feather",
+      "vendored_path": "svg/share-2.svg",
+      "upstream_path": "icons/share-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/share-2.svg",
+      "sha256": "cd7854a77157d1f8f2c2f99472e8177eb3e912f8dfc176323789c8a501407712",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "shield",
+      "source": "feather",
+      "vendored_path": "svg/shield.svg",
+      "upstream_path": "icons/shield.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/shield.svg",
+      "sha256": "4c7125a51403ca1cb4b8ced412fd54e4c831aacefb2e5b6a21164192f83ce887",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "shield-off",
+      "source": "feather",
+      "vendored_path": "svg/shield-off.svg",
+      "upstream_path": "icons/shield-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/shield-off.svg",
+      "sha256": "14b52b3a63f89e1e26084960feb1fdc9876b7827828f3551436ab0a337f40f12",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "shopping-bag",
+      "source": "feather",
+      "vendored_path": "svg/shopping-bag.svg",
+      "upstream_path": "icons/shopping-bag.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/shopping-bag.svg",
+      "sha256": "55420fda6a8eb69e831bb730820bee1834b8e06e1f335026efc13a57326ac466",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "shopping-cart",
+      "source": "feather",
+      "vendored_path": "svg/shopping-cart.svg",
+      "upstream_path": "icons/shopping-cart.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/shopping-cart.svg",
+      "sha256": "725e392facdf1f466d46d1a5a36fd7d092795deb59c84a900f5e6bc4205581b9",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "shuffle",
+      "source": "feather",
+      "vendored_path": "svg/shuffle.svg",
+      "upstream_path": "icons/shuffle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/shuffle.svg",
+      "sha256": "e6237c6014a0b3bc3c865bee41d2a0db607c00e49e5e54bbc4aef1ecba9b920e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "sidebar",
+      "source": "feather",
+      "vendored_path": "svg/sidebar.svg",
+      "upstream_path": "icons/sidebar.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/sidebar.svg",
+      "sha256": "be6897d2c2af1db6286047e1f88d5162a714ac16fae9d95d98e68acaadc8b087",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "skip-back",
+      "source": "feather",
+      "vendored_path": "svg/skip-back.svg",
+      "upstream_path": "icons/skip-back.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/skip-back.svg",
+      "sha256": "2dbe413815858dad1148ddc31c7b03d4e42ad24a4c963739073cbbd06314d6b7",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "skip-forward",
+      "source": "feather",
+      "vendored_path": "svg/skip-forward.svg",
+      "upstream_path": "icons/skip-forward.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/skip-forward.svg",
+      "sha256": "5a0112d68b19b71f3f11ca728fb18f404dc358a7ea8e3b047e0a82259986408a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "slack",
+      "source": "feather",
+      "vendored_path": "svg/slack.svg",
+      "upstream_path": "icons/slack.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/slack.svg",
+      "sha256": "db9ad09739e31903d2638e8383e723605de19cdf36f6ffcf10eba6379b55d92d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "slash",
+      "source": "feather",
+      "vendored_path": "svg/slash.svg",
+      "upstream_path": "icons/slash.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/slash.svg",
+      "sha256": "4abd2f28a0639c18b4d1863eccdc8f020c6172dea57986f415dc8c63252e0207",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "smartphone",
+      "source": "feather",
+      "vendored_path": "svg/smartphone.svg",
+      "upstream_path": "icons/smartphone.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/smartphone.svg",
+      "sha256": "8ad752483c9019047c331f7db739c5bdd931c6ae3ea36cd09fbb0f1a050a1680",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "smile",
+      "source": "feather",
+      "vendored_path": "svg/smile.svg",
+      "upstream_path": "icons/smile.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/smile.svg",
+      "sha256": "30a84466dd917591fc3d6f2828e33756aa1edb95c0b60fa293f5b8e461292681",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "speaker",
+      "source": "feather",
+      "vendored_path": "svg/speaker.svg",
+      "upstream_path": "icons/speaker.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/speaker.svg",
+      "sha256": "98c2e398aede48e7cb0bafa1b7c4c686d7f7f732734b7f6e1296cda3fd38050b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "square",
+      "source": "feather",
+      "vendored_path": "svg/square.svg",
+      "upstream_path": "icons/square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/square.svg",
+      "sha256": "f0e379ea210aeac63306055dec59dfc5b079bd81f383a57bd25769f465e5100f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "star",
+      "source": "feather",
+      "vendored_path": "svg/star.svg",
+      "upstream_path": "icons/star.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/star.svg",
+      "sha256": "270f826c022a34610f8ce0d608503ecadfe8b6e5a873ee06006a9838e3a512e5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "stop-circle",
+      "source": "feather",
+      "vendored_path": "svg/stop-circle.svg",
+      "upstream_path": "icons/stop-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/stop-circle.svg",
+      "sha256": "f9cf5ceb45839346d06124bb120b6d767f8ee70c2125f583a9d0149d2ac9adec",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "sun",
+      "source": "feather",
+      "vendored_path": "svg/sun.svg",
+      "upstream_path": "icons/sun.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/sun.svg",
+      "sha256": "6c346fdb49a8af368b91a07fb43a8b8d9419af84ca005a06ac075679a9ee2380",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "sunrise",
+      "source": "feather",
+      "vendored_path": "svg/sunrise.svg",
+      "upstream_path": "icons/sunrise.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/sunrise.svg",
+      "sha256": "27c9e8e92a2bda471fb605b4cfa896258a21aae9e1bd37bc3d2fe8b619da9ed7",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "sunset",
+      "source": "feather",
+      "vendored_path": "svg/sunset.svg",
+      "upstream_path": "icons/sunset.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/sunset.svg",
+      "sha256": "e094416982bc5289a0049e7991fe0401f9ad3bc63651a19beb64bc274793a60c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "table",
+      "source": "feather",
+      "vendored_path": "svg/table.svg",
+      "upstream_path": "icons/table.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/table.svg",
+      "sha256": "5aca00611ec8e9230ef40fc95d68b2abc200d805ad24ebded99aee69e05571b2",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "tablet",
+      "source": "feather",
+      "vendored_path": "svg/tablet.svg",
+      "upstream_path": "icons/tablet.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/tablet.svg",
+      "sha256": "a39542689ed35476d4a9abafd5ea9c6bf35d0b43698de39477b14cf394b50c32",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "tag",
+      "source": "feather",
+      "vendored_path": "svg/tag.svg",
+      "upstream_path": "icons/tag.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/tag.svg",
+      "sha256": "2187ab274a475132a44161243cec893cd4f6561705372da6e871aea23aaa1b27",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "target",
+      "source": "feather",
+      "vendored_path": "svg/target.svg",
+      "upstream_path": "icons/target.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/target.svg",
+      "sha256": "64633eb86485fc63c02cec374ebdcc9fd82e3d20ad647e32bd13f4ec3f847e59",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "terminal",
+      "source": "feather",
+      "vendored_path": "svg/terminal.svg",
+      "upstream_path": "icons/terminal.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/terminal.svg",
+      "sha256": "50bd627b68b0ef3c1c5146ccc4a462f0705d566cdf0aa34f0e33b3d51a2ea13e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "thermometer",
+      "source": "feather",
+      "vendored_path": "svg/thermometer.svg",
+      "upstream_path": "icons/thermometer.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/thermometer.svg",
+      "sha256": "e1648f4b967c554d50efbda6e880861df6331dca021eebba22e36f9e16c61041",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "thumbs-down",
+      "source": "feather",
+      "vendored_path": "svg/thumbs-down.svg",
+      "upstream_path": "icons/thumbs-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/thumbs-down.svg",
+      "sha256": "df5184a0f2631099de589a384503e7824d8c4cefec1b6ce2cb95c48d5bcca196",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "thumbs-up",
+      "source": "feather",
+      "vendored_path": "svg/thumbs-up.svg",
+      "upstream_path": "icons/thumbs-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/thumbs-up.svg",
+      "sha256": "ef4cdd1d4edfc1afeb7a207f36c43ea3c0a06d04b2e3e2e79c5c13e6e85c0aad",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "toggle-left",
+      "source": "feather",
+      "vendored_path": "svg/toggle-left.svg",
+      "upstream_path": "icons/toggle-left.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/toggle-left.svg",
+      "sha256": "d1816ac48095a4a82d752b49265d91f5f8fe519e77f2964c05c2d50db5355f58",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "toggle-right",
+      "source": "feather",
+      "vendored_path": "svg/toggle-right.svg",
+      "upstream_path": "icons/toggle-right.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/toggle-right.svg",
+      "sha256": "7a635b1a820142ba6793cf7b742d1718a15fd2fb11abf3f79d06cb4dccfcb6a5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "tool",
+      "source": "feather",
+      "vendored_path": "svg/tool.svg",
+      "upstream_path": "icons/tool.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/tool.svg",
+      "sha256": "a3921501d5e3199111cdb2df87eb23a657c3340d10b1201c75567e325a509050",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "trash",
+      "vendored_path": "svg/trash.svg",
+      "upstream_path": "icons/trash-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/trash-2.svg",
+      "sha256": "d8bc68160668de5e1eea9ac399122e539658f1481d197f0dbea66e26e9afa12f",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "trash-simple",
+      "source": "feather",
+      "vendored_path": "svg/trash-simple.svg",
+      "upstream_path": "icons/trash.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/trash.svg",
+      "sha256": "35eb564ba43cdb6c5b7e77828df2fdaaafdf33921becd7a21d680a9c19623b10",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "trello",
+      "source": "feather",
+      "vendored_path": "svg/trello.svg",
+      "upstream_path": "icons/trello.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/trello.svg",
+      "sha256": "4d328b5afd592d57a51b0790dd1e92747625cdaefc84bc7a6d6ce834f35f448a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "trending-down",
+      "source": "feather",
+      "vendored_path": "svg/trending-down.svg",
+      "upstream_path": "icons/trending-down.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/trending-down.svg",
+      "sha256": "dd2270dd4503fcf48dcec09bd93b6db47a7481b705f02e246b8a02f848eb1665",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "trending-up",
+      "source": "feather",
+      "vendored_path": "svg/trending-up.svg",
+      "upstream_path": "icons/trending-up.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/trending-up.svg",
+      "sha256": "5f33acefa1f16a1b0057b4bfc88300d5717170947624edb0f17a59edd073c000",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "triangle",
+      "source": "feather",
+      "vendored_path": "svg/triangle.svg",
+      "upstream_path": "icons/triangle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/triangle.svg",
+      "sha256": "bf83a3b9ea4b99387aee0b65371a4b7dc2c2e3ada3ba56776a10e0a2b7fd338e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "truck",
+      "source": "feather",
+      "vendored_path": "svg/truck.svg",
+      "upstream_path": "icons/truck.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/truck.svg",
+      "sha256": "405fc8f5fb2fa11a639b291ffe384dc0464659b70a1a0631284925b0e6b8626e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "tv",
+      "source": "feather",
+      "vendored_path": "svg/tv.svg",
+      "upstream_path": "icons/tv.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/tv.svg",
+      "sha256": "860dce3c8ebeb12b750be428a1d883343f83401a4bfec6893e52032b763e2f05",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "twitch",
+      "source": "feather",
+      "vendored_path": "svg/twitch.svg",
+      "upstream_path": "icons/twitch.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/twitch.svg",
+      "sha256": "5f8978038ec1f6d2cbe33fa06eb02156b06643378d6e4f241c082f0c8cfff1c7",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "twitter",
+      "source": "feather",
+      "vendored_path": "svg/twitter.svg",
+      "upstream_path": "icons/twitter.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/twitter.svg",
+      "sha256": "2b8d092bd4c9d5d550237524f4d07ed510ae22cbc21fe1c129b6d5d6c3d47f2d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "type",
+      "source": "feather",
+      "vendored_path": "svg/type.svg",
+      "upstream_path": "icons/type.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/type.svg",
+      "sha256": "47dc5d011fc63219a5d6c1d671bdb24ee189fed7a736e2471bb19faa5504bfa4",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "umbrella",
+      "source": "feather",
+      "vendored_path": "svg/umbrella.svg",
+      "upstream_path": "icons/umbrella.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/umbrella.svg",
+      "sha256": "aeca2b7745bf59353032a14a047314cb253d42753bf7c79628b66bf21141ef75",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "underline",
+      "source": "feather",
+      "vendored_path": "svg/underline.svg",
+      "upstream_path": "icons/underline.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/underline.svg",
+      "sha256": "e5ab6f91a5b45aadd91ecfc524928de5a4ce880b5de4a93d4232b4d15c0b794f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "unlock",
+      "source": "feather",
+      "vendored_path": "svg/unlock.svg",
+      "upstream_path": "icons/unlock.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/unlock.svg",
+      "sha256": "dcf44db5ccf9ab4037c56edd6bcbd641ba513c516433a92fa15d4c5f3339eb43",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "upload",
+      "source": "feather",
+      "vendored_path": "svg/upload.svg",
+      "upstream_path": "icons/upload.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/upload.svg",
+      "sha256": "064372f5e25f78f8187888761abd8c61fa6e6620ee68adc9871416363d1ff983",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "upload-cloud",
+      "source": "feather",
+      "vendored_path": "svg/upload-cloud.svg",
+      "upstream_path": "icons/upload-cloud.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/upload-cloud.svg",
+      "sha256": "648b99277c297e9604e140d5ed55ac486579ee3387a528b6a48039be52765db2",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "user",
+      "vendored_path": "svg/user.svg",
+      "upstream_path": "icons/user.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/user.svg",
+      "sha256": "9702770af562da1cc2cc970f54c61253a4271959e76f30b865132de63189526b",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "user-check",
+      "source": "feather",
+      "vendored_path": "svg/user-check.svg",
+      "upstream_path": "icons/user-check.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/user-check.svg",
+      "sha256": "53d8bb9e9785061867d09d7547f7b6722e3cdf9f26246dfea718cdab9b656f32",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "user-minus",
+      "source": "feather",
+      "vendored_path": "svg/user-minus.svg",
+      "upstream_path": "icons/user-minus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/user-minus.svg",
+      "sha256": "21ecbabce653a7b3d95c4d2f147d6815c7537fa13e37d4a97dd1a95757feca1f",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "user-plus",
+      "source": "feather",
+      "vendored_path": "svg/user-plus.svg",
+      "upstream_path": "icons/user-plus.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/user-plus.svg",
+      "sha256": "a8a2c482507f4bd9b2f1cdd4864c2beda36a59c1e94f7de98a81fd962aae569e",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "user-x",
+      "source": "feather",
+      "vendored_path": "svg/user-x.svg",
+      "upstream_path": "icons/user-x.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/user-x.svg",
+      "sha256": "48bdfa87080fae1faa3ad6df49491542f4f5b9e2ca2e8171c19c7b8b422c3e96",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "users",
+      "source": "feather",
+      "vendored_path": "svg/users.svg",
+      "upstream_path": "icons/users.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/users.svg",
+      "sha256": "243fdb4e387832bca0a9085dece53772cb35c0bf08b02994da9d190195fb9a4a",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "video",
+      "source": "feather",
+      "vendored_path": "svg/video.svg",
+      "upstream_path": "icons/video.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/video.svg",
+      "sha256": "34394850a913a2714fe58c1d56f2bdb1cc72fa288cfad6764e9a6b79087f5c17",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "video-off",
+      "source": "feather",
+      "vendored_path": "svg/video-off.svg",
+      "upstream_path": "icons/video-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/video-off.svg",
+      "sha256": "f8c1d1652e048a0a500371e6ff29e6580dc6aa422932d040242c93982344d099",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "voicemail",
+      "source": "feather",
+      "vendored_path": "svg/voicemail.svg",
+      "upstream_path": "icons/voicemail.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/voicemail.svg",
+      "sha256": "d37ad8b6c82ce9e772fe235b4939a2bf542ddd7a00d297e54b5797f13fbd0449",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "volume",
+      "source": "feather",
+      "vendored_path": "svg/volume.svg",
+      "upstream_path": "icons/volume.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/volume.svg",
+      "sha256": "ee1dd246649e5beff8a08070e499891116e8a75385e402603bd332a08dfae9c5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "volume-1",
+      "source": "feather",
+      "vendored_path": "svg/volume-1.svg",
+      "upstream_path": "icons/volume-1.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/volume-1.svg",
+      "sha256": "fb4f688b85ead8572982734757ba41afc9aa6d01e3c71b810389aab2d87ce811",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "volume-2",
+      "source": "feather",
+      "vendored_path": "svg/volume-2.svg",
+      "upstream_path": "icons/volume-2.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/volume-2.svg",
+      "sha256": "a030d363dfadf5d28639fefa2fad279b3098c30ca065b6c6388ba32922b682be",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "volume-x",
+      "source": "feather",
+      "vendored_path": "svg/volume-x.svg",
+      "upstream_path": "icons/volume-x.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/volume-x.svg",
+      "sha256": "16fbc62feeeb9be90a4dd3488fd5e44e824c0ec5bde45c676bf48c72ad9ef2b5",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "warning",
+      "vendored_path": "svg/warning.svg",
+      "upstream_path": "icons/alert-triangle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/alert-triangle.svg",
+      "sha256": "e39e7c659afaa9e714dfd419cf3a2e0bc732ee31f003eb8a78dd248afc6b2d72",
+      "modifications": [],
+      "source": "feather",
+      "retrieved_at": "2026-10-24T22:26:54Z"
+    },
+    {
+      "name": "watch",
+      "source": "feather",
+      "vendored_path": "svg/watch.svg",
+      "upstream_path": "icons/watch.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/watch.svg",
+      "sha256": "e578a55bdd6bde5589c54353afc9d48c931291b51803ef26ab35dae5de56fdff",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "wifi",
+      "source": "feather",
+      "vendored_path": "svg/wifi.svg",
+      "upstream_path": "icons/wifi.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/wifi.svg",
+      "sha256": "a98729d0f3bf26a516674f27727560884bea5756c61b762e7b56ad7f8a807571",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "wifi-off",
+      "source": "feather",
+      "vendored_path": "svg/wifi-off.svg",
+      "upstream_path": "icons/wifi-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/wifi-off.svg",
+      "sha256": "3c74c8444ffb91876b056ca2c783f0fee31db14e00486589d41e1e1f6039ec80",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "wind",
+      "source": "feather",
+      "vendored_path": "svg/wind.svg",
+      "upstream_path": "icons/wind.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/wind.svg",
+      "sha256": "f7fe4e549bf9c93499bb8aad9d857923b236cf674b180b1810db10aff5985b84",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "x-circle",
+      "source": "feather",
+      "vendored_path": "svg/x-circle.svg",
+      "upstream_path": "icons/x-circle.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/x-circle.svg",
+      "sha256": "cd5d613719b79b032dedfc66f412fe6b2cea69120ca83b32d40edfe62cd04c1c",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "x-octagon",
+      "source": "feather",
+      "vendored_path": "svg/x-octagon.svg",
+      "upstream_path": "icons/x-octagon.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/x-octagon.svg",
+      "sha256": "fb0b85be13a36bfaa3aad9b03ef59bc4ee9cd9cabd0ed8dec4600492b20ffc07",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "x-square",
+      "source": "feather",
+      "vendored_path": "svg/x-square.svg",
+      "upstream_path": "icons/x-square.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/x-square.svg",
+      "sha256": "042871fecbea8e82b95ba16257739c9850ddb8dc58b3ea43454f2779ddac87c3",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "youtube",
+      "source": "feather",
+      "vendored_path": "svg/youtube.svg",
+      "upstream_path": "icons/youtube.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/youtube.svg",
+      "sha256": "21e90723f9d20c5ec29aa71c46664b5e3c3e680ef881b6a5a660ff30846fc8ad",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "zap",
+      "source": "feather",
+      "vendored_path": "svg/zap.svg",
+      "upstream_path": "icons/zap.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/zap.svg",
+      "sha256": "85afd3069e5d060ee77624281756c923b972db40bef65e1d7a7669b58e185f1d",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "zap-off",
+      "source": "feather",
+      "vendored_path": "svg/zap-off.svg",
+      "upstream_path": "icons/zap-off.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/zap-off.svg",
+      "sha256": "7626b8b4ece4048e81e5dd65d5ed7b8ccc53a168aec33ccce371accf73062688",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "zoom-in",
+      "source": "feather",
+      "vendored_path": "svg/zoom-in.svg",
+      "upstream_path": "icons/zoom-in.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/zoom-in.svg",
+      "sha256": "a9ce220a9ecea75c623c9947ac47c88099852f17328d66e02326c280346e6ed6",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    },
+    {
+      "name": "zoom-out",
+      "source": "feather",
+      "vendored_path": "svg/zoom-out.svg",
+      "upstream_path": "icons/zoom-out.svg",
+      "source_url": "https://raw.githubusercontent.com/feathericons/feather/3dc050d97405062eba78aa57115c0a15c63abdaa/icons/zoom-out.svg",
+      "sha256": "878f22d4b1408fd5c3acdb4153acb111162696d472191fca92fdeb1eea66fa8b",
+      "modifications": [],
+      "retrieved_at": "2026-10-25T05:59:29Z"
+    }
+  ],
+  "aliases": {
+    "alert-octagon": "danger",
+    "alert-triangle": "warning",
+    "card": "credit-card",
+    "chart": "bar-chart",
+    "edit-2": "edit",
+    "fire": "flame",
+    "more": "more-horizontal",
+    "panel-left": "sidebar",
+    "pencil": "edit",
+    "sliders": "settings",
+    "success": "check",
+    "trash-2": "trash",
+    "x": "close"
+  }
+}

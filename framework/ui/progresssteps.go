@@ -178,7 +178,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 }
 
 func progressStepsCheckIcon() string {
-	return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11.667 3.5L5.25 9.917 2.333 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+	return string(Icon("check", IconConfig{Size: "14"}))
 }
 
 var progressStepsStyle = registry.RegisterStyle("ui-progress-steps", progressStepsCSS)

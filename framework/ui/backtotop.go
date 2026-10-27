@@ -117,9 +117,6 @@ type BackToTopConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// defaultArrowUpSVG is the chevron-up icon shown by default.
-const defaultArrowUpSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`
-
 // BackToTop renders a smooth-scroll "back to top" button that appears
 // after the user scrolls past the configured threshold.
 //
@@ -174,7 +171,7 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 
 	icon := cfg.Icon
 	if icon == "" {
-		icon = headless.Own(render.HTML(defaultArrowUpSVG))
+		icon = headless.Own(Icon("chevron-up", IconConfig{Size: "20"}))
 	}
 
 	return backToTopStyle.WrapHTML(headless.BackToTop(headless.BackToTopProps{

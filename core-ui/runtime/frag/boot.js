@@ -249,7 +249,12 @@
   const _rpcUnavailable = () => {
     console.warn('[gofastr] RPC module unavailable — serve /__gofastr/runtime/rpc.js');
   };
-  const _rpcFormFallback = (form) => {
+  // A submit button can override the form's action, encoding and browsing
+  // context. Resolve those before deciding whether the browser should own it.
+  const _formAttr = (form, submitter, name) => submitter && submitter.hasAttribute('form' + name)
+    ? submitter.getAttribute('form' + name) : form.getAttribute(name);
+  window.__gofastr._formAttr = _formAttr;
+  const _rpcFormFallback = (form, submitter) => {
     _rpcUnavailable();
     // Native submit is correct ONLY for a form the browser could have
     // submitted itself, a data-cui-spa form with an ordinary enctype.
@@ -262,17 +267,27 @@
     // than staying put. An application/json enctype is unsendable natively
     // for the same reason. In those cases the warning is the whole remedy.
     if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) return;
-    if ((form.getAttribute('enctype') || '').toLowerCase() === 'application/json') return;
+    // The bridge POSTs a form with no method and fetches PUT/PATCH as given;
+    // the browser would send either as a GET with the fields in the URL.
+    // A GET carries no body, so its enctype never blocks the replay.
+    const method = (_formAttr(form, submitter, 'method') || '').toLowerCase();
+    if (method !== 'get' && (method !== 'post' || (_formAttr(form, submitter, 'enctype') || '').toLowerCase() === 'application/json')) return;
     // Call the prototype method, not form.submit: HTML named-property
     // lookup shadows it with any control named "submit", so a form
     // carrying <button name="submit"> would throw here and the catch
     // would swallow the user's submission after we already prevented it.
-    try { HTMLFormElement.prototype.submit.call(form); } catch (_) {}
+    // Re-enter the native submission algorithm with the original submitter:
+    // its name/value and form* overrides are lost by form.submit(). The flag
+    // lets both delegated bridges stand down on this synchronous replay.
+    form._cuiNativeSubmit = true;
+    try { HTMLFormElement.prototype.requestSubmit.call(form, submitter || undefined); }
+    catch (_) {}
+    finally { delete form._cuiNativeSubmit; }
   };
   // Widget-scoped listeners live in the widgets MODULE and prevent the
-  // default before awaiting rpc too, so they need the same recovery, the
-  // document bridge deliberately skips anything inside [data-cui-widget]
-  // and cannot cover for them.
+  // default before awaiting rpc too, so they need the same recovery. The
+  // document bridge respects their preventDefault, while handling plain
+  // SPA forms that widget listeners leave to the document.
   window.__gofastr._rpcUnavailable = _rpcUnavailable;
   window.__gofastr._rpcFormFallback = _rpcFormFallback;
 
@@ -296,7 +311,7 @@
 
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
-      if (!form || form.closest('[data-cui-widget]')) return;
+      if (!form || e.defaultPrevented || form._cuiNativeSubmit === true) return;
       // Confirm gate runs BEFORE every branch below, so a plain native
       // POST form (which leaves at the enctype check) is gated too. The
       // submitter wins over the form: one form can carry several submit
@@ -312,24 +327,23 @@
         loadModule('confirm').then(() => window.__gofastr.confirm(form, sub));
         return;
       }
-      if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) {
-        e.preventDefault();
-        try {
-          await loadModule('rpc');
-          await window.__gofastr.dispatchRPC(form, null, { confirmed: true });
-        } catch (_) { _rpcFormFallback(form); }
-        return;
+      if (!form.hasAttribute('data-cui-rpc') && !form.hasAttribute('data-kiln-tool')) {
+        const target = _formAttr(form, sub, 'target') ?? document.querySelector('base[target]')?.getAttribute('target');
+        const method = (_formAttr(form, sub, 'method') || '').toLowerCase();
+        const enctype = (_formAttr(form, sub, 'enctype') || '').toLowerCase();
+        // Preserve native browsing contexts, dialog submits, image coordinates
+        // and plain-text POSTs before any asynchronous module loading.
+        if ((target && target.toLowerCase() !== '_self') || method === 'dialog' ||
+            (sub && sub.type === 'image') || (method !== 'get' && enctype === 'text/plain')) return;
+        const action = _formAttr(form, sub, 'action') || location.href;
+        if (!window.__gofastr._sameOrigin(new URL(action, document.baseURI))) return;
+        if (enctype !== 'application/json' && !form.hasAttribute('data-cui-spa')) return;
       }
-
-      const action = form.getAttribute('action');
-      if (!action || !window.__gofastr._sameOrigin(action)) return;
-      const enctype = (form.getAttribute('enctype') || '').toLowerCase();
-      if (enctype !== 'application/json' && !form.hasAttribute('data-cui-spa')) return;
       e.preventDefault();
       try {
         await loadModule('rpc');
-        await window.__gofastr.dispatchRPC(form, null, { confirmed: true });
-      } catch (_) { _rpcFormFallback(form); }
+        await window.__gofastr.dispatchRPC(form, null, { confirmed: true, submitter: sub });
+      } catch (_) { _rpcFormFallback(form, sub); }
     });
 
     document.addEventListener('input', (e) => {

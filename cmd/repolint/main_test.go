@@ -180,6 +180,18 @@ func TestLintRepoFlagsStrayRootMarkdown(t *testing.T) {
 	mustFindRule(t, findings, "root-markdown")
 }
 
+func TestLintRootMarkdownAcceptsLicenseNotices(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "THIRD_PARTY_NOTICES.md", "# Third-party notices\n")
+	findings, err := lintRootMarkdown(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("license notices must be allowed at the repository root: %+v", findings)
+	}
+}
+
 func TestLintRepoFlagsProcessArtifactMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, filepath.Join("pkg", "AI_TEST_AUDIT.md"), "# ledger\n")

@@ -408,11 +408,11 @@
       }
     });
     w.addEventListener('submit', async (e) => {
-      // Same confirm gate as the document bridge (which skips widget-scoped
-      // forms): submitter first, then the form, and it covers a plain
+      // Same confirm gate as the document bridge (which respects this
+      // listener's preventDefault): submitter first, then the form, including a plain
       // native form too, not just form[data-cui-rpc].
       const form = e.target.closest('form');
-      if (!form || !w.contains(form)) return;
+      if (!form || !w.contains(form) || form._cuiNativeSubmit === true) return;
       const sub = e.submitter;
       const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
       if (msg && !form._ok) {
@@ -424,8 +424,8 @@
       e.preventDefault();
       try {
         await NS.loadModule('rpc');
-        await NS.dispatchRPC(form, null, { confirmed: true });
-      } catch (_) { NS._rpcFormFallback?.(form); }
+        await NS.dispatchRPC(form, null, { confirmed: true, submitter: sub });
+      } catch (_) { NS._rpcFormFallback?.(form, sub); }
     });
 
     if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss);

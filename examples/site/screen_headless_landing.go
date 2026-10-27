@@ -45,6 +45,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/icons"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
@@ -834,11 +835,11 @@ func landingVariantsSection() render.HTML {
 			ui.Button(ui.ButtonConfig{Label: "Disabled", Variant: ui.ButtonPrimary, Disabled: true}),
 			ui.LinkButton(ui.LinkButtonConfig{
 				Label: "With an icon", Href: "/docs/theming", Variant: ui.ButtonSecondary,
-				Icon: "hl-arrow",
+				Icon: icons.ArrowRight,
 			}),
 			ui.LinkButton(ui.LinkButtonConfig{
 				Label: "External ↗", Href: "https://github.com/DonaldMurillo/gofastr",
-				Variant: ui.ButtonSecondary, External: true, Icon: "hl-arrow",
+				Variant: ui.ButtonSecondary, External: true, Icon: icons.ArrowRight,
 			}),
 		),
 	))
@@ -1068,10 +1069,4 @@ func serveHeadlessLate(w http.ResponseWriter, _ *http.Request) {
 		ID:      "hl-late-fragment",
 		Title:   "Late fragment",
 	}, render.Text("This callout arrived after a click, and its stylesheet was fetched on arrival: the marker the runtime scans for is what loaded it, not the page.")))
-}
-
-// init registers the single icon the fixtures use. The icon registry is
-// process-wide; package init keeps it ahead of any render.
-func init() {
-	ui.RegisterIcon("hl-arrow", `<path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`)
 }

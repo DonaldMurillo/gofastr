@@ -28,6 +28,9 @@ import (
 // filtered list server-side. Refresh, share, and back-button all reduce
 // to "same URL → same view" with no client state, exactly the
 // "URL params are the source of truth" contract in core-ui/ARCHITECTURE.md.
+// ClientNavigation opts the GET submit into the client navigator when the
+// filtered view belongs to the screen. Native GET remains the default for
+// hosts whose kept layouts also render query-dependent content.
 // Reset is a plain <a> back to the bare action, so it clears every param
 // with zero JavaScript.
 //
@@ -128,6 +131,11 @@ type HiddenField struct {
 type FilterToolbarConfig struct {
 	// Action is the list route the form GETs to. Required.
 	Action string
+	// ClientNavigation opts into a client-side GET navigation. Use it when the
+	// filtered content lives in the screen's replaced cell. Leave it false if a
+	// shared layout also renders filter-dependent content: layouts are kept.
+	// Without JavaScript the form always submits natively.
+	ClientNavigation bool
 
 	// Facets are the filter dimensions, rendered left-to-right and
 	// wrapping as width shrinks.
@@ -157,7 +165,8 @@ type FilterToolbarConfig struct {
 	// an active-filter chip bar with its own "Clear all").
 	HideReset bool
 	// Compact keeps search and actions on one row in narrow record lists.
-	// Below 18rem the controls still stack so none are clipped.
+	// With Dropdown, search shares that row with the filter trigger and tools.
+	// Without Dropdown, controls still stack below 18rem so none are clipped.
 	Compact bool
 
 	// Dropdown moves the facets, the sort, Extra and the Apply/Reset
@@ -372,6 +381,9 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		"action":     action,
 		"role":       "search",
 		"aria-label": label,
+	}
+	if cfg.ClientNavigation {
+		formAttrs["data-cui-spa"] = ""
 	}
 	if cfg.ID != "" {
 		formAttrs["id"] = cfg.ID
@@ -700,6 +712,11 @@ func filterToolbarCSS(_ style.Theme) string {
    controls stack full width, Apply/Reset last. */
 [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--dropdown .fui-filter-toolbar__search {
   flex: 0 1 var(--ui-filter-toolbar-search-width, 22.5rem);
+}
+/* A compact dropdown toolbar spends its one row on search and controls.
+   Keep the search flexible even in a phone-width containing block. */
+[data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--dropdown.fui-filter-toolbar--compact .fui-filter-toolbar__search {
+  flex: 1 1 0;
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__filters,
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {

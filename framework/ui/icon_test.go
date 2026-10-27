@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui/icons"
 )
 
 func TestIcon_BuiltInsRegistered(t *testing.T) {
@@ -92,5 +94,32 @@ func TestIconExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("icon root missing data-test:\n%s", root)
+	}
+}
+
+func TestIconBuiltinOverrideKeepsAliasIndependent(t *testing.T) {
+	before := string(Icon(icons.Check, IconConfig{}))
+	alias := string(Icon("success", IconConfig{}))
+	if before == "" || alias != before {
+		t.Fatal("check and success must initially share a built-in drawing")
+	}
+	iconRegistryMu.RLock()
+	previous, existed := iconRegistry[icons.Check]
+	iconRegistryMu.RUnlock()
+	t.Cleanup(func() {
+		iconRegistryMu.Lock()
+		defer iconRegistryMu.Unlock()
+		if existed {
+			iconRegistry[icons.Check] = previous
+		} else {
+			delete(iconRegistry, icons.Check)
+		}
+	})
+	RegisterIcon(icons.Check, `<path d="M2 2h3"/>`)
+	if got := string(Icon(icons.Check, IconConfig{})); !strings.Contains(got, `d="M2 2h3"`) || got == before {
+		t.Fatal("application registration did not override the built-in")
+	}
+	if got := string(Icon("success", IconConfig{})); got != alias {
+		t.Fatal("overriding check changed the independent success name")
 	}
 }

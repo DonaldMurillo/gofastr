@@ -8,10 +8,11 @@ import (
 )
 
 // siteCSSCap is the most CSS, gzip-compressed, one site page may ship.
-// The heaviest of the 298 pages on 2026-10-17 was /components/rpc-navigate
-// at 15,663 B; the cap sits a little above it, so CSS growth has to raise
-// it in the same change instead of arriving unnoticed.
-const siteCSSCap = 17 << 10
+// The heaviest page on 2026-10-26 was /components/icon at 21,215 B after
+// adding the searchable catalog's filter toolbar, dropdown, form controls
+// and copy tiles. The cap sits a little above it, so further CSS growth
+// has to raise it in the same change instead of arriving unnoticed.
+const siteCSSCap = 22 << 10
 
 // siteCSSFloor is the least CSS a styled page can ship: the theme alone
 // is several times this. A page under it lost its stylesheets, and a

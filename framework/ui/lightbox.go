@@ -169,9 +169,9 @@ func (s *lightboxSlot) RenderCtx(ctx context.Context) render.HTML {
 		Nav:          s.navArrows,
 		Caption:      s.showCaption,
 		Download:     s.allowDownload,
-		PrevIcon:     lightboxChevronLeft,
-		NextIcon:     lightboxChevronRight,
-		DownloadIcon: lightboxDownloadIcon,
+		PrevIcon:     Icon("chevron-left", IconConfig{Size: "22"}),
+		NextIcon:     Icon("chevron-right", IconConfig{Size: "22"}),
+		DownloadIcon: Icon("download", IconConfig{Size: "22"}),
 		Wiring:       headless.LightboxWiring{Viewer: s.name, Nav: s.navArrows},
 		ExtraAttrs:   s.extraAttrs,
 		Strings:      StringsFor(ctx),
@@ -179,10 +179,6 @@ func (s *lightboxSlot) RenderCtx(ctx context.Context) render.HTML {
 }
 
 var _ component.ContextComponent = (*lightboxSlot)(nil)
-
-const lightboxChevronLeft render.HTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-const lightboxChevronRight render.HTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-const lightboxDownloadIcon render.HTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 
 var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 

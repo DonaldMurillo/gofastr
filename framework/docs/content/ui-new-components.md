@@ -62,7 +62,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **avatar**: `framework/ui.Avatar`, circular avatar with image → initials fallback (sm/md/lg/xl); `Square` rounds it to the medium radius for a logo tile, and `--ui-avatar-bg` / `--ui-avatar-fg` recolour the initials surface
 - **avatargroup**: `framework/ui.AvatarGroup`, readable 10% overlap, compact corner presence dots, and an adaptive-surface overflow chip
 - **thumbnail**: `framework/ui.Thumbnail`, a square lazily loaded image preview (sm 2rem / md 4rem / lg 8rem, `object-fit: cover`); a `Src` the image URL policy refuses draws nothing, so the caller draws its own empty mark
-- **icon**: `framework/ui.Icon`, inline-SVG primitive backed by `RegisterIcon`; built-ins cover chevrons, close, menu, more, search, the status family and a navigation set (home, user, users, file, receipt, card, box, layers, activity, shield, key, lock, sliders, chart, calendar, clock, plus, list, grid, database, inbox, folder, tag, mail, bell, globe, repeat, cpu, star, pencil, trash, rotate-ccw), `currentColor` stroke, `AriaLabel` flips to `role="img"`
+- **icon**: `framework/ui.Icon`, 291 vendored Feather and Lucide drawings and 13 name aliases from `framework/ui/icons`. Existing site, navigation, and toolbar names resolve through the same catalog. `currentColor` stroke; `AriaLabel` opts into `role="img"`. See [Icons](#icons).
 - **languagemenu**: `framework/ui.LanguageMenu`, the language switcher for an app built with `framework.WithLocalePrefixes`: a Menu with a globe trigger naming the current language, and one radio row per catalog locale linking this page in that language (`rel="alternate" hreflang`). Each language is named in itself (`i18n.LanguageName`; `Names` overrides). The runtime retargets the rows after each client-side navigation, so it can sit in persistent chrome. Renders nothing without path locales on `Ctx`
 - **link**: `framework/ui.Link`, typed anchor with external-link affordances + unsafe-scheme href sanitizing
 - **muted**: `framework/ui.Muted`, subdued inline `<span>` for secondary text
@@ -377,7 +377,13 @@ share, and back-button all reduce to "same URL → same view" with no client
 state. This is the "URL params are the source of truth" contract from
 `core-ui/ARCHITECTURE.md`. Reset is a plain link back to the bare action, so
 it clears every param with zero JavaScript. It works with the runtime
-disabled; the runtime just makes the Reset link a soft SPA nav.
+disabled. `ClientNavigation: true` opts submit into client navigation through
+`data-cui-spa`; its successful controls become the destination URL query.
+Use this when the filtered content belongs to the screen's replaced cell.
+Leave it false when a kept layout also renders query-dependent content, so the
+native GET reloads that layout too. Reset remains a normal link.
+Client navigation honors the clicked submit button's name/value and form
+overrides and asks the existing leave guard before discarding unsaved edits.
 
 Facets render as a native `<select>` (default) or, per `Kind: FacetPills`,
 a wrapping radio-pill group (short, glanceable choices). The toolbar is
@@ -435,6 +441,8 @@ button and no Apply; the search submits on Enter. `Tools` are links and
 link menus (a Columns menu, a layout switch) drawn at the row's end;
 they render inside the form, so a tool holding a `<form>` panics.
 `--ui-filter-toolbar-panel-width` sets the panel's minimum width.
+Set `Compact: true` with `Dropdown: true` to keep search, the filter trigger,
+and tools on one row, including on phones. Search takes the remaining width.
 
 > **`SearchFields` integration.** When the entity declares
 > `SearchFields`, `FilterSearch{Name: "q"}` maps 1:1 onto the list
@@ -601,6 +609,137 @@ helpful pre-flight read for human reviewers.
    `core-ui/ARCHITECTURE.md` "Component behaviour".
 
 ---
+
+## Icons
+
+`framework/ui/icons` exposes 291 vendored drawings as string constants: all 287
+Feather icons plus Lucide's `chevrons-up-down`, `receipt`, `flame`, and `diamond`.
+`ui.Icon` renders them inline with no JavaScript or image request. Each drawing
+uses a 24 by 24 viewBox, a two-unit stroke, and rounded caps and joins. The
+stroke inherits the surrounding text color. The live `/components/icon` page
+shows each drawing as a centered 24px icon above its name. Click anywhere on
+a tile to copy the name. The copied confirmation appears in that tile.
+Its sticky header is a single row with search, a Filters dropdown for categories,
+and an icon submit button. The result count scrolls above it. Each
+drawing has one of 19 categories. Submit Search to combine the controls; Clear
+removes both. Search matches words in names and aliases, or category labels,
+ignoring case and treating hyphens and underscores as spaces. The `q` and
+`category` URL parameters survive refresh, sharing, and browser history.
+
+`ui.CopyButton` with `Tile: true` draws this full-width layout, with its `Icon`
+above `Label`. It retains the usual `Target` element ID, accessible name,
+keyboard handling, and announced confirmation. Tile icons render at 24px;
+the native title exposes the full label when it is visually truncated.
+`--ui-copy-btn-tile-min-height` controls the tile's minimum height, defaulting to `6rem`.
+Tile cannot be combined with `IconOnly`, `Inline`, or `Ghost`; those
+combinations panic. Supply the target text in a separate element, as with any
+other CopyButton.
+
+```go
+package example
+
+import (
+    "github.com/DonaldMurillo/gofastr/core/render"
+    "github.com/DonaldMurillo/gofastr/framework/ui"
+    "github.com/DonaldMurillo/gofastr/framework/ui/icons"
+)
+
+func SearchGlyph() render.HTML {
+    return ui.Icon(icons.Search, ui.IconConfig{Size: "20"})
+}
+```
+
+`icons.Categories()` returns a caller-owned slice of `Category{ID, Label}`
+values in display order. IDs are the filter values. `icons.CategoryFor(name)`
+returns `(Category, bool)`, resolves aliases, and returns false for unknown
+names. Category assignments live in `categories.go`, independently of the
+unmodified upstream artwork.
+
+To embed the same browser, call
+`gallery.RenderIconCatalog(gallery.IconCatalogConfig{Action: "/icons", Search: q, Category: category})`
+from `framework/gallery`. `Action` is the required GET route. Read `q` and
+`category` from that route's request on each render. Empty or unknown category
+IDs select all categories. An empty result shows a message with the controls
+still available. The default gallery demo uses `/components/icon`.
+
+`icons.Names()` lists every canonical name. The Go constants use PascalCase,
+such as `icons.ArrowLeft`, `icons.Search`, and `icons.Receipt`. Alias constants
+work the same way, including `icons.Card` and `icons.PanelLeft`. The gallery
+searches aliases and shows canonical names on the tiles. Existing string names remain valid.
+
+The aliases are `alert-octagon` to `danger`, `alert-triangle` to `warning`,
+`card` to `credit-card`, `chart` to `bar-chart`, `edit-2` to `edit`, `fire` to
+`flame`, `more` to `more-horizontal`, `panel-left` to `sidebar`, `pencil` to
+`edit`, `sliders` to `settings`, `success` to `check`, `trash-2` to `trash`, and
+`x` to `close`. These are catalog aliases. An application override through
+`ui.RegisterIcon` applies only to the exact registered name, so overriding a
+canonical name does not change its aliases.
+
+| API | Behavior |
+| --- | --- |
+| `ui.Icon(name, cfg)` | Renders one SVG. Unknown names return empty markup. |
+| `ui.IconRegistered(name)` | Reports whether a built-in, alias, or app registration exists. |
+| `ui.RegisterIcon(name, body)` | Adds or replaces an exact name with trusted inner SVG markup. Safe for concurrent use. Never pass user-supplied SVG. |
+| `icons.Names()` | Returns a caller-owned, sorted slice of canonical names; excludes aliases and app registrations. |
+| `icons.Aliases()` | Returns a caller-owned map of alternate names to canonical names. Alias targets are always canonical drawings. |
+| `icons.Lookup(name)` | Returns trusted built-in inner SVG markup and a boolean. Includes aliases; ignores app registrations. Custom renderers must supply the shared wrapper attributes. |
+
+| `ui.IconConfig` field | Default | Behavior |
+| --- | --- | --- |
+| `Size` | `"20"` | Width and height, as a numeric value or CSS length such as `"1.25rem"`. |
+| `AriaLabel` | empty | Empty makes the SVG decorative with `aria-hidden="true"`. A label sets `role="img"` and `aria-label`. |
+| `ID` | empty | ID on the SVG root. |
+| `Class` | empty | Additional classes beside `fui-icon`. |
+| `ExtraAttrs` | nil | Extra root attributes. Owned drawing and accessibility attributes, class, id, style, and `data-cui-*` are filtered. |
+
+`ui.LinkButtonConfig.Icon` accepts the same names and renders the icon before
+the visible label at 18 pixels. Leave that icon decorative. A standalone
+meaningful icon needs `AriaLabel`; an icon-only control needs its accessible
+name on the control itself.
+
+App registrations take precedence over built-ins for the exact name. Overriding
+`check` does not replace `success`. Registrations contain inner geometry only,
+without an outer `<svg>`. The shared renderer supplies the wrapper.
+
+The SVG files are unmodified copies from
+[Feather commit 3dc050d](https://github.com/feathericons/feather/tree/3dc050d97405062eba78aa57115c0a15c63abdaa)
+and [Lucide commit 7faf876](https://github.com/lucide-icons/lucide/tree/7faf87628a1ad6175975bc595344337ce14a7db4).
+The initial 20 Feather files were retrieved October 24, 2026 at 22:26:54 UTC;
+the remaining files were retrieved October 25, 2026 at 05:59:29 UTC. Feather's
+MIT license and Lucide's ISC license with its retained MIT notice are copied
+verbatim into `LICENSE.feather` and `LICENSE.lucide` in the icon package, the
+generated Go header, and `THIRD_PARTY_NOTICES.md`. Include the relevant upstream
+notices when redistributing bundled artwork or generated drawing data.
+
+`framework/ui/icons/sources.json` records the upstream commit, original file
+path, pinned download URL, local path, SHA-256, and modifications for every SVG,
+plus each file's source ID and retrieval timestamp. Each source has its own
+repository, commit, retrieval time and license record. Aliases map to canonical
+names without duplicating drawing files. Local names map to upstream
+names: `close` uses `x`, `danger` uses `alert-octagon`, `edit` uses `edit-2`,
+`settings` uses `sliders`, `trash` uses `trash-2`, and `warning` uses
+`alert-triangle`. The upstream `edit`, `settings`, and `trash` variants are
+available as `edit-square`, `settings-gear`, and `trash-simple`, preserving
+the original 20 local names. Coordinates are unchanged. Generation extracts inner geometry
+and normalizes XML serialization for the shared SVG wrapper.
+
+To update the set, vendor files from a full upstream commit SHA and update the
+manifest, license, and source documentation. Run `go generate ./framework/ui/icons`
+from the repository root. Generation is offline and verifies the recorded
+checksums and provenance before writing Go data. It rejects unsupported markup,
+scripts, links, styles, inconsistent drawing attributes, and Go identifier
+collisions with another icon or a handwritten declaration. Commit the sources,
+manifest, notices, and `icons_gen.go` together. Do not redraw vendored SVGs;
+register custom artwork through `ui.RegisterIcon` with its own provenance.
+
+The site's header/search/GitHub glyphs and shared framework outline helpers
+render through the catalog. A source-level test checks literal icon references
+in the site, embedded app specs, gallery, and framework components. It also
+refuses private site registrations and inline site SVGs. Charts, app artwork,
+and filled rating shapes are separate component drawing code.
+
+**Common mistake:** assuming any icon name exists. Check `icons.Names()` or
+`ui.IconRegistered` before accepting a dynamic name. A typo renders no icon.
 
 ## Common mistakes
 

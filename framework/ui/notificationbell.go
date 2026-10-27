@@ -171,7 +171,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 }
 
 func bellIcon() string {
-	return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 11-6 0m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+	return string(Icon("bell", IconConfig{Size: "20"}))
 }
 
 type notificationBellSlot struct {

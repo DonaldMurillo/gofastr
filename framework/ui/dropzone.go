@@ -257,7 +257,7 @@ func dropzoneHelp(cfg FileDropzoneConfig, ctx context.Context) string {
 }
 
 func dropzoneIcon() string {
-	return `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 16V4M12 4l-4 4m4-4l4 4M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+	return string(Icon("upload", IconConfig{Size: "40"}))
 }
 
 var dropzoneStyle = registry.RegisterStyle("ui-dropzone", dropzoneCSS)
