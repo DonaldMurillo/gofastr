@@ -244,7 +244,7 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		// location's next spring-forward will skip lands at the transition
 		// instant (vixie/cronie parity), not silently a day later. See
 		// durable_scheduler_dst.go.
-		next = nextFire(sc, base.Location(), base, time.Time{})
+		next = nextFire(sc, base.Location(), base)
 	} else {
 		if b.interval <= 0 {
 			return errors.New("queue: durable interval must be positive")
@@ -654,7 +654,7 @@ func (q *DBQueue) schedulerTable(suffix string) string {
 	if err != nil {
 		panic(err)
 	}
-	return query.QuoteIdent(name)
+	return query.QuoteFolded(name)
 }
 
 func (s *DurableScheduler) ensureTables() error {

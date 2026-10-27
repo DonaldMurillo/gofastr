@@ -241,6 +241,9 @@ func TestLockInstanceRefusesSecondHolder(t *testing.T) {
 // A daemon that accepts the stop request and never answers is wedged:
 // Windows stop ends the task instead of failing, so uninstall can go on.
 func TestTaskSchedulerStopEndsAWedgedDaemon(t *testing.T) {
+	prev := startingWait
+	startingWait = 0 // no grace for a starting daemon: one silent probe is a wedge
+	t.Cleanup(func() { startingWait = prev })
 	b, ft, _ := testBattery(t, "windows", Config{})
 	inst, err := b.layoutFor(false)
 	if err != nil {
@@ -282,6 +285,42 @@ func TestTaskSchedulerStopEndsAWedgedDaemon(t *testing.T) {
 	want := []string{"schtasks /End /TN dev.gofastr.svctest-S-1-5-21-7"}
 	if got := ft.got(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv\n got %q\nwant %q", got, want)
+	}
+}
+
+// A daemon still building its app has bound its socket but answers only
+// once ready. Windows stop waits for that answer and lets it drain,
+// instead of hard-killing it, possibly mid-migration, as wedged.
+func TestTaskSchedulerStopWaitsOutStartup(t *testing.T) {
+	b, ft, _ := testBattery(t, "windows", Config{})
+	inst, err := b.layoutFor(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inst.ensure(); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := listenControl(inst.socketPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &controlServer{ln: ln, log: slog.New(slog.DiscardHandler),
+		handle: func(op string) controlResponse {
+			if op == "stop" {
+				go ln.Close() // the drain: the control channel goes away
+			}
+			return controlResponse{OK: true}
+		}}
+	t.Cleanup(s.Close)
+	go func() {
+		time.Sleep(controlDeadline + time.Second) // the first stop goes unanswered
+		s.serve()
+	}()
+	if err := (taskScheduler{}).stop(b); err != nil {
+		t.Fatalf("stop of a starting daemon: %v", err)
+	}
+	if got := ft.got(); len(got) != 0 {
+		t.Fatalf("stop hard-killed a starting daemon: %q", got)
 	}
 }
 

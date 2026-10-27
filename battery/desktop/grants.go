@@ -72,7 +72,7 @@ func (s *sqlGrantStore) ensureSchema(ctx context.Context) error {
 	stmt := fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s (capability TEXT NOT NULL, permission TEXT NOT NULL, `+
 			`decision TEXT NOT NULL, granted_at %s NOT NULL, PRIMARY KEY (capability, permission))`,
-		query.QuoteIdent(grantsTable), tsType,
+		query.QuoteFolded(grantsTable), tsType,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return fmt.Errorf("desktop: create %s table: %w", grantsTable, err)
@@ -83,7 +83,7 @@ func (s *sqlGrantStore) ensureSchema(ctx context.Context) error {
 func (s *sqlGrantStore) Get(ctx context.Context, capability, permission string) (string, bool, error) {
 	var decision string
 	err := s.db.QueryRowContext(ctx,
-		fmt.Sprintf(`SELECT decision FROM %s WHERE capability = $1 AND permission = $2`, query.QuoteIdent(grantsTable)),
+		fmt.Sprintf(`SELECT decision FROM %s WHERE capability = $1 AND permission = $2`, query.QuoteFolded(grantsTable)),
 		capability, permission).Scan(&decision)
 	if err == sql.ErrNoRows {
 		return "", false, nil
@@ -101,7 +101,7 @@ func (s *sqlGrantStore) Set(ctx context.Context, capability, permission, decisio
 	stmt := fmt.Sprintf(
 		`INSERT INTO %s (capability, permission, decision, granted_at) VALUES ($1, $2, $3, $4) `+
 			`ON CONFLICT(capability, permission) DO UPDATE SET decision = excluded.decision, granted_at = excluded.granted_at`,
-		query.QuoteIdent(grantsTable))
+		query.QuoteFolded(grantsTable))
 	_, err := s.db.ExecContext(ctx, stmt, capability, permission, decision, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("desktop: write grant: %w", err)
@@ -111,7 +111,7 @@ func (s *sqlGrantStore) Set(ctx context.Context, capability, permission, decisio
 
 func (s *sqlGrantStore) Reset(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s`, query.QuoteIdent(grantsTable))); err != nil {
+		fmt.Sprintf(`DELETE FROM %s`, query.QuoteFolded(grantsTable))); err != nil {
 		return fmt.Errorf("desktop: reset grants: %w", err)
 	}
 	return nil

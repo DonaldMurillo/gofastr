@@ -222,7 +222,12 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 		return fmt.Errorf("%w: close failed: %v", ErrSendFailed, err)
 	}
 
-	return client.Quit()
+	// w.Close returned the relay's 250 to the message: it is queued.
+	// QUIT is courtesy from here; a relay that drops the connection or
+	// stalls on it has still accepted the mail, and reporting that as a
+	// send error makes a retrying queue deliver the message twice.
+	_ = client.Quit()
+	return nil
 }
 
 // buildMessage constructs the raw email message bytes. It refuses
@@ -287,42 +292,55 @@ func buildMessage(email Email) ([]byte, error) {
 		buf.WriteString(scrubHeaderValue(k) + ": " + scrubHeaderValue(email.Headers[k]) + "\r\n")
 	}
 
-	// Determine if we need MIME multipart.
+	// Determine if we need MIME multipart. Text plus HTML are two
+	// renderings of one body: multipart/alternative, plain text first
+	// and HTML last (RFC 2046 5.1.4: the last part is the preferred
+	// one). Attachments wrap the body, alternative or single, in
+	// multipart/mixed. A mixed text+HTML container told clients to show
+	// both renderings, one after the other.
 	hasAttachments := len(email.Attachments) > 0
 	hasTextAndHTML := email.TextBody != "" && email.HTMLBody != ""
 
 	if hasAttachments || hasTextAndHTML {
-		// Use a cryptographically random boundary per message so body
+		// Use a cryptographically random boundary per container so body
 		// content (which may be rendered from attacker-influenced
 		// templates) cannot predict and forge the delimiter to inject a
 		// new MIME part or terminate the container early.
-		boundary, err := randomBoundary()
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrSendFailed, err)
-		}
-		// Defense in depth: even with an unguessable boundary, refuse to
-		// serialise a body that contains a line forming the delimiter.
-		if bodyContainsBoundary(email.TextBody, boundary) || bodyContainsBoundary(email.HTMLBody, boundary) {
-			return nil, fmt.Errorf("%w: message body contains the MIME boundary delimiter (refusing to send to prevent MIME part injection)", ErrSendFailed)
+		newChecked := func() (string, error) {
+			boundary, err := newBoundary()
+			if err != nil {
+				return "", fmt.Errorf("%w: %v", ErrSendFailed, err)
+			}
+			// Defense in depth: even with an unguessable boundary, refuse
+			// to serialise a body that contains a line forming the
+			// delimiter.
+			if bodyContainsBoundary(email.TextBody, boundary) || bodyContainsBoundary(email.HTMLBody, boundary) {
+				return "", fmt.Errorf("%w: message body contains the MIME boundary delimiter (refusing to send to prevent MIME part injection)", ErrSendFailed)
+			}
+			return boundary, nil
 		}
 		buf.WriteString("MIME-Version: 1.0\r\n")
+
+		if !hasAttachments {
+			if err := writeBodyEntity(&buf, email, newChecked); err != nil {
+				return nil, err
+			}
+			return []byte(buf.String()), nil
+		}
+
+		boundary, err := newChecked()
+		if err != nil {
+			return nil, err
+		}
 		buf.WriteString("Content-Type: multipart/mixed; boundary=" + boundary + "\r\n")
 		buf.WriteString("\r\n")
 
-		// Text body part
-		if email.TextBody != "" {
+		// The body: one alternative part, or the single text/HTML part.
+		if email.TextBody != "" || email.HTMLBody != "" {
 			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
-			buf.WriteString("\r\n")
-			buf.WriteString(email.TextBody + "\r\n")
-		}
-
-		// HTML body part
-		if email.HTMLBody != "" {
-			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
-			buf.WriteString("\r\n")
-			buf.WriteString(email.HTMLBody + "\r\n")
+			if err := writeBodyEntity(&buf, email, newChecked); err != nil {
+				return nil, err
+			}
 		}
 
 		// Attachments
@@ -375,6 +393,43 @@ func buildMessage(email Email) ([]byte, error) {
 	return []byte(buf.String()), nil
 }
 
+// writeBodyEntity writes the message body as one complete MIME entity
+// (its Content-Type header, the blank line, then the content): a
+// multipart/alternative of text then HTML when both are set, otherwise
+// the single text/plain or text/html part. mint returns the
+// alternative container's checked boundary.
+func writeBodyEntity(buf *strings.Builder, email Email, mint func() (string, error)) error {
+	textPart := func() {
+		buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+		buf.WriteString("\r\n")
+		buf.WriteString(email.TextBody + "\r\n")
+	}
+	htmlPart := func() {
+		buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
+		buf.WriteString("\r\n")
+		buf.WriteString(email.HTMLBody + "\r\n")
+	}
+	switch {
+	case email.TextBody != "" && email.HTMLBody != "":
+		boundary, err := mint()
+		if err != nil {
+			return err
+		}
+		buf.WriteString("Content-Type: multipart/alternative; boundary=" + boundary + "\r\n")
+		buf.WriteString("\r\n")
+		buf.WriteString("--" + boundary + "\r\n")
+		textPart()
+		buf.WriteString("--" + boundary + "\r\n")
+		htmlPart()
+		buf.WriteString("--" + boundary + "--\r\n")
+	case email.HTMLBody != "":
+		htmlPart()
+	default:
+		textPart()
+	}
+	return nil
+}
+
 // encodeBase64 wraps base64-encoded content at 76 characters per line.
 func encodeBase64(data []byte) string {
 	return b64Encode(data)
@@ -384,6 +439,11 @@ func encodeBase64(data []byte) string {
 // token. The token uses only RFC 2046 boundary characters (hex), so it
 // never needs quoting and cannot be predicted by an attacker crafting
 // body content.
+// newBoundary mints each MIME container's boundary. A variable so a
+// test can fix the boundaries to forge them; production never reassigns
+// it.
+var newBoundary = randomBoundary
+
 func randomBoundary() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

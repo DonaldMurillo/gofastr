@@ -168,14 +168,18 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 		// matches no row and Exec reports nil: the stale write is a
 		// no-op, not a failure, the same fenced no-op the queue's
 		// completions report.
-		if s.dialect == "postgres" {
-			q += ` AND status NOT IN ($7,$8)`
-		} else {
-			q += ` AND status NOT IN (?,?)`
-		}
-		args = append(args, InboundStatusProcessed, InboundStatusFailed)
+		q += ` AND status <> ` + s.placeholder(7)
+		args = append(args, InboundStatusProcessed)
 	}
 	_, err = s.db.ExecContext(ctx, q, args...)
+	return err
+}
+
+// RegisterDedupeKey sets the envelope's dedupe key and nothing else, at any
+// status (see dedupeKeyRegistrar). A missing id matches no row.
+func (s *SQLInboundStore) RegisterDedupeKey(ctx context.Context, id, key string) error {
+	q := fmt.Sprintf("UPDATE %s SET dedupe_key = %s WHERE id = %s", s.table, s.placeholder(1), s.placeholder(2))
+	_, err := s.db.ExecContext(ctx, q, key, id)
 	return err
 }
 
@@ -195,14 +199,10 @@ func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string)
 	// Terminal fence, the same predicate UpdateEnvelope settles with: a
 	// stale runner marking an already-settled envelope processing would
 	// regress the row AND consume an attempt against it. Non-terminal
-	// rows (received, processing) match as before; a missing id is
-	// still a no-op.
-	if s.dialect == "postgres" {
-		q += fmt.Sprintf(" AND status NOT IN (%s,%s)", s.placeholder(4), s.placeholder(5))
-	} else {
-		q += " AND status NOT IN (?,?)"
-	}
-	args = append(args, InboundStatusProcessed, InboundStatusFailed)
+	// rows (received, processing, and failed: a failed attempt's queue
+	// retry lands here) match; a missing id is still a no-op.
+	q += " AND status <> " + s.placeholder(4)
+	args = append(args, InboundStatusProcessed)
 	_, err := s.db.ExecContext(ctx, q, args...)
 	return err
 }
@@ -302,14 +302,15 @@ func (s *SQLInboundStore) selectOne() string {
 }
 
 func (s *SQLInboundStore) update() string {
-	// dedupe_key is updatable: on the queue path the ingest handler writes
-	// it only AFTER a successful enqueue (see IngestHandler), so the durably-
-	// queued event can dedupe-ack the sender's redeliveries. attempts is
+	// dedupe_key is updatable, but an empty value keeps the stored key: on
+	// the queue path the ingest handler registers the key only AFTER a
+	// successful enqueue (RegisterDedupeKey), so a worker's settle carries
+	// the keyless snapshot it loaded first and must not erase it. attempts is
 	// deliberately absent: the processing transition owns the counter
 	// (MarkEnvelopeProcessing), and an absolute settle write is the
 	// lost-update that under-counted overlapping processing passes.
 	return fmt.Sprintf(`UPDATE %s SET
-		dedupe_key = %s, headers = %s, status = %s, last_error = %s, updated_at = %s
+		dedupe_key = COALESCE(NULLIF(CAST(%s AS TEXT), ''), dedupe_key), headers = %s, status = %s, last_error = %s, updated_at = %s
 		WHERE id = %s`,
 		s.table,
 		s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5),

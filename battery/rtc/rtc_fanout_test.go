@@ -18,12 +18,18 @@ import (
 // their bases. Short heartbeat/TTL so the tests converge fast.
 func twoReplicas(t *testing.T, cfg func() Config) (string, string, *Signaler, *Signaler) {
 	t.Helper()
+	return twoReplicasTTL(t, cfg, 300*time.Millisecond)
+}
+
+// twoReplicasTTL is twoReplicas with the remote-roster TTL set.
+func twoReplicasTTL(t *testing.T, cfg func() Config, ttl time.Duration) (string, string, *Signaler, *Signaler) {
+	t.Helper()
 	f := fanout.NewInProcess()
 	s1 := newTestSignaler(t, cfg())
 	s2 := newTestSignaler(t, cfg())
 	for _, s := range []*Signaler{s1, s2} {
 		s.heartbeatEvery = 60 * time.Millisecond
-		s.remoteTTL = 300 * time.Millisecond
+		s.remoteTTL = ttl
 		if _, err := s.SetFanout(f); err != nil {
 			t.Fatalf("SetFanout: %v", err)
 		}
@@ -183,9 +189,11 @@ func TestRoomCapCountsRemote(t *testing.T) {
 }
 
 // TestClosePublishesEmptyRosters: a graceful Close converges the other
-// replica's roster without waiting out the TTL.
+// replica's roster without waiting out the TTL. The TTL is a minute so
+// expiry cannot pass for the published empty roster: Close emptied its
+// room map before reading it, and published nothing.
 func TestClosePublishesEmptyRosters(t *testing.T) {
-	base1, _, s1, s2 := twoReplicas(t, func() Config { return Config{} })
+	base1, _, s1, s2 := twoReplicasTTL(t, func() Config { return Config{} }, time.Minute)
 
 	a, _ := join(t, base1, "room1", "pA")
 	defer a.close()

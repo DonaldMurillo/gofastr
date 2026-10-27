@@ -47,25 +47,45 @@ func (m *MemoryInboundStore) GetEnvelope(_ context.Context, id string) (*Inbound
 // the counter is owned by the processing transition (MarkEnvelopeProcessing),
 // so an existing row's count survives the write. Persisting a caller
 // snapshot absolutely let two overlapping processing passes both write the
-// same snapshot+1 and record two invocations as one.
+// same snapshot+1 and record two invocations as one. A stored dedupe key
+// also survives a keyless write: a worker's settle carries the snapshot it
+// loaded before IngestHandler registered the key. A missing envelope is a
+// no-op, as SQLInboundStore's UPDATE is: retention may have reaped a
+// processed one, and a stale runner's settle must not put it back.
 func (m *MemoryInboundStore) UpdateEnvelope(_ context.Context, e InboundEnvelope) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cur, ok := m.envelopes[e.ID]; ok {
-		e.Attempts = cur.Attempts
-		if isTerminalInboundStatus(cur.Status) && e.Status != InboundStatusProcessed {
-			// Fenced no-op: a stale runner's late settle must not
-			// regress a terminal row (isTerminalInboundStatus) — the
-			// memory twin of the outbound UpdateDelivery fence. Only
-			// a processed settle lands on a terminal row (a runner
-			// that really did succeed); the stale runner's failure
-			// write is dropped. No error: the write is stale, not
-			// failed, the same fenced no-op the queue's completions
-			// report.
-			return nil
-		}
+	cur, ok := m.envelopes[e.ID]
+	if !ok {
+		return nil
+	}
+	e.Attempts = cur.Attempts
+	if e.DedupeKey == "" {
+		e.DedupeKey = cur.DedupeKey
+	}
+	if isTerminalInboundStatus(cur.Status) && e.Status != InboundStatusProcessed {
+		// Fenced no-op: a stale runner's late settle must not regress a
+		// terminal row (isTerminalInboundStatus) — the memory twin of the
+		// outbound UpdateDelivery fence. Only a processed settle lands on
+		// a terminal row (a runner that really did succeed); the stale
+		// runner's failure write is dropped. No error: the write is
+		// stale, not failed, the same fenced no-op the queue's
+		// completions report.
+		return nil
 	}
 	m.envelopes[e.ID] = cloneEnvelope(e)
+	return nil
+}
+
+// RegisterDedupeKey sets the envelope's dedupe key and nothing else, at any
+// status (see dedupeKeyRegistrar). A missing id is a no-op.
+func (m *MemoryInboundStore) RegisterDedupeKey(_ context.Context, id, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e, ok := m.envelopes[id]; ok {
+		e.DedupeKey = key
+		m.envelopes[id] = e
+	}
 	return nil
 }
 

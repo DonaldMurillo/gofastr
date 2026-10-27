@@ -191,20 +191,23 @@ func (rc *RedisCache) prefixedKey(key string) string {
 	return rc.keyPrefix() + key
 }
 
-// escapeKeySegment doubles ':' inside a prefix so that joining it to a
-// key with a single ':' is injective.
+// escapeKeySegment percent-encodes '%' and ':' inside a prefix, so the
+// escaped prefix holds no ':' and the first ':' of a key is always the
+// join between prefix and key.
 //
-// Plain concatenation is not. WithPrefix("u:alice") and
-// WithPrefix("u:alice:admin") both produce "u:alice:admin:x" — the
-// first from key "admin:x", the second from key "x" — so one tenant
+// Plain concatenation is not injective. WithPrefix("u:alice") and
+// WithPrefix("u:alice:admin") both produce "u:alice:admin:x", the
+// first from key "admin:x", the second from key "x", so one tenant
 // could read, overwrite, or Delete another's entries by choosing a key
-// that spans the boundary. Doubling the separator inside the prefix
-// makes the prefix segment unambiguous, since a single ':' can then
-// only be the join.
+// that spans the boundary. Doubling ':' was not injective either:
+// WithPrefix("u") with key ":alice:x" and WithPrefix("u:alice") with
+// key "x" both gave "u::alice:x", and Clear on "u" deleted the other's
+// entry. '%' is encoded first so an escaped ':' cannot meet a literal
+// "%3A" in another prefix.
 //
-// Keys change shape for a prefix that CONTAINS ':'. A prefix without
-// one is unaffected, which is every prefix that was unambiguous
-// already.
+// Keys change shape for a prefix that contains ':' or '%'. Any other
+// prefix keeps its keys as they were.
 func escapeKeySegment(s string) string {
-	return strings.ReplaceAll(s, ":", "::")
+	s = strings.ReplaceAll(s, "%", "%25")
+	return strings.ReplaceAll(s, ":", "%3A")
 }

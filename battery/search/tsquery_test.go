@@ -26,6 +26,8 @@ func TestBuildTsQuery(t *testing.T) {
 		{"pure punctuation dropped", "---", ""},
 		{"underscore kept", "foo_bar baz", "foo_bar & baz:*"},
 		{"unicode letters kept", "café résumé", "café & résumé:*"},
+		{"apostrophe splits", "won't", "won & t:*"},
+		{"curly apostrophe splits", "won’t", "won & t:*"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

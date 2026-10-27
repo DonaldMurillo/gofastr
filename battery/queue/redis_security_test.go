@@ -28,6 +28,14 @@ import (
 // documented idempotent no-op) — silent loss with Ack returning nil.
 // ============================================================================
 
+// casOnlyClient is mockRedis without [CompareAndMover]: a client with
+// only the conditional delete, which takes RedisQueue's push-then-release
+// fallback. The seams below sit on that fallback's calls.
+type casOnlyClient interface {
+	RedisClient
+	CompareAndDeleter
+}
+
 // interleaveHDel wraps mockRedis and fires a scripted callback just before
 // its FIRST delete — the deterministic seam standing in for "another
 // goroutine/server event landed between the completion's HGet and its
@@ -40,7 +48,7 @@ import (
 // otherwise the interleave lands somewhere the completion never observes and
 // the test proves nothing.
 type interleaveHDel struct {
-	*mockRedis
+	casOnlyClient
 	before func()
 }
 
@@ -54,12 +62,12 @@ func (f *interleaveHDel) fire() {
 
 func (f *interleaveHDel) HDel(ctx context.Context, key string, fields ...string) error {
 	f.fire()
-	return f.mockRedis.HDel(ctx, key, fields...)
+	return f.casOnlyClient.HDel(ctx, key, fields...)
 }
 
 func (f *interleaveHDel) HDelIfEqual(ctx context.Context, key, field, expect string) (bool, error) {
 	f.fire()
-	return f.mockRedis.HDelIfEqual(ctx, key, field, expect)
+	return f.casOnlyClient.HDelIfEqual(ctx, key, field, expect)
 }
 
 // raceClaimInterleave arms the delete seam so that between the presenter's
@@ -120,7 +128,7 @@ func assertNewerClaimSurvives(t *testing.T, r *mockRedis, jobID string, newer *J
 // before its HDel. The HDel must not delete the newer claim's entry.
 func TestAckDoesNotDeleteNewerClaimEntry(t *testing.T) {
 	r := newMockRedis()
-	gate := &interleaveHDel{mockRedis: r}
+	gate := &interleaveHDel{casOnlyClient: r}
 	q := NewRedisQueue(gate, "jobs")
 	now := time.Now()
 	q.now = func() time.Time { return now }
@@ -161,7 +169,7 @@ func TestAckDoesNotDeleteNewerClaimEntry(t *testing.T) {
 // contract; deleting the newer claim's processing entry is not.
 func TestNackDoesNotDeleteNewerClaimEntry(t *testing.T) {
 	r := newMockRedis()
-	gate := &interleaveHDel{mockRedis: r}
+	gate := &interleaveHDel{casOnlyClient: r}
 	q := NewRedisQueue(gate, "jobs")
 	now := time.Now()
 	q.now = func() time.Time { return now }

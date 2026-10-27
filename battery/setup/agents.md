@@ -43,6 +43,11 @@ app := framework.NewApp(framework.WithSetup(runner), …)
 - Completion is **derived**, never a marker file. A crash mid-setup
   re-enters setup on next boot. Worker-role processes refuse to start
   while setup is incomplete.
+- Every declared step runs, including the ones after the step that
+  flips `Complete` (`HealthStep` after `AdminStep`). Under `force` the
+  wizard stays up until its last step has re-run.
+- Several replicas: finish on any one; the others re-check `Complete`
+  on their next request (at most once a second) and swap.
 
 **Rules for agents:**
 - Never render the completion page yourself or claim setup is done.

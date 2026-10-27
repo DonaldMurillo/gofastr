@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -42,6 +43,12 @@ func baseDir() (string, error) {
 	if v := os.Getenv(dataDirEnv); v != "" {
 		if !filepath.IsAbs(v) {
 			return "", fmt.Errorf("service: %s must be absolute, got %q", dataDirEnv, v)
+		}
+		// The base is written into the service definition (a systemd
+		// ExecStart word, a plist string, a task argument); a line break
+		// there could add a directive the user never wrote.
+		if strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			return "", fmt.Errorf("service: %s must not contain control characters, got %q", dataDirEnv, v)
 		}
 		return v, nil
 	}

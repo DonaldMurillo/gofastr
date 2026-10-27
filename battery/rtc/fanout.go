@@ -136,7 +136,7 @@ func (s *Signaler) SetFanout(f fanout.Fanout) (func(), error) {
 
 	var once sync.Once
 	return func() {
-		once.Do(func() { s.stopFanout() })
+		once.Do(func() { s.stopFanout(nil) })
 	}, nil
 }
 
@@ -156,8 +156,10 @@ func (s *Signaler) clearFanoutLocked() {
 
 // stopFanout is the graceful detach behind Close and the SetFanout
 // cancel: publish empty rosters synchronously, then unsubscribe, stop
-// the publish queue, and stop the heartbeat.
-func (s *Signaler) stopFanout() {
+// the publish queue, and stop the heartbeat. rooms is the room map to
+// announce empty; nil means the live one. Close passes the snapshot it
+// took before emptying the live map, or nothing would be announced.
+func (s *Signaler) stopFanout(rooms map[string]*room) {
 	s.mu.Lock()
 	f := s.fanout
 	if f == nil {
@@ -168,9 +170,12 @@ func (s *Signaler) stopFanout() {
 	nodeID := s.nodeID
 	cancel := s.fanoutCancel
 	stopQ := s.fanoutStopQ
-	names := make([]string, 0, len(s.rooms))
-	for _, name := range slices.Sorted(maps.Keys(s.rooms)) {
-		if len(s.rooms[name].peers) > 0 {
+	if rooms == nil {
+		rooms = s.rooms
+	}
+	names := make([]string, 0, len(rooms))
+	for _, name := range slices.Sorted(maps.Keys(rooms)) {
+		if len(rooms[name].peers) > 0 {
 			names = append(names, name)
 		}
 	}
@@ -199,7 +204,9 @@ func publishEmptyRosters(f fanout.Fanout, nodeID string, roomNames []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), rtcGraceTimeout)
 	defer cancel()
 	for _, name := range roomNames {
-		msg := fanoutMsg{Kind: evRoster, Room: name, Members: []PeerInfo{}}
+		// Node and At as publishFanout stamps them: a receiver drops a
+		// message naming no node.
+		msg := fanoutMsg{Node: nodeID, Kind: evRoster, Room: name, Members: []PeerInfo{}, At: time.Now().UnixNano()}
 		body, err := json.Marshal(msg)
 		if err != nil {
 			continue
@@ -405,6 +412,7 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 	if !known && len(s.mergedPeersLocked(msg.Room, now)) >= s.cfg.MaxPeers {
 		return
 	}
+	prev := s.remoteViewLocked(msg.Room, time.Time{})
 	if rm := s.rooms[msg.Room]; rm != nil {
 		if old := rm.peers[msg.Peer.ID]; old != nil {
 			// A mirror published before this socket joined is the peer's
@@ -416,12 +424,20 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 				return
 			}
 			delete(rm.peers, msg.Peer.ID)
+			rm.listed.forget(msg.Peer.ID)
 			s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: msg.Peer.ID})
+			// The displaced socket's peerGone no-ops (the room no longer
+			// holds it), so its seat frees here, or the FIFO keeps a dead
+			// socket that the cap later counts against a live one.
+			s.spliceSeatLocked(old.seat)
 			if len(rm.peers) == 0 {
 				s.markEmptyLocked(rm)
 			}
 			s.broadcastRosterLocked(msg.Room)
 			*kick = append(*kick, old.conn)
+			// The room just heard a leave, so the join below is owed
+			// whatever the remote view held for the id.
+			delete(prev, msg.Peer.ID)
 		}
 	}
 	peer := *msg.Peer
@@ -440,9 +456,12 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 	} else {
 		entry.members = append(entry.members, peer)
 	}
-	if rm := s.localRoomLocked(msg.Room); rm != nil {
-		s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: peer})
-	}
+	// A roster beat from the joining replica can list the peer before
+	// its own join mirror lands (another socket's announce, or a seat
+	// eviction, beat first). The delta then publishes nothing for the
+	// mirror: rtc.js reads a second join for a known peer as a
+	// reconnect and rebuilds the connection it just made.
+	s.announceRemoteDeltaLocked(msg.Room, prev, s.remoteViewLocked(msg.Room, time.Time{}))
 }
 
 // remoteLeaveLocked drops one remote member and tells the local room.
@@ -460,12 +479,12 @@ func (s *Signaler) remoteLeaveLocked(origin string, msg *fanoutMsg) {
 	}
 	entry.expires = time.Now().Add(s.remoteTTL)
 	if i := slices.IndexFunc(entry.members, func(m PeerInfo) bool { return m.ID == msg.ID }); i >= 0 {
+		prev := s.remoteViewLocked(msg.Room, time.Time{})
 		entry.members = slices.Delete(entry.members, i, i+1)
-		// A peer this replica holds locally is not gone: the remote copy
-		// was the stale seat of a tab that migrated here.
-		if rm := s.localRoomLocked(msg.Room); rm != nil && rm.peers[msg.ID] == nil {
-			s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: msg.ID})
-		}
+		// The delta, not the mirror, decides: a peer another replica
+		// still holds (it reconnected there with the same id), or this
+		// replica holds locally, has not left the room.
+		s.announceRemoteDeltaLocked(msg.Room, prev, s.remoteViewLocked(msg.Room, time.Time{}))
 	}
 }
 
@@ -537,7 +556,7 @@ func (s *Signaler) remoteRosterLocked(origin string, msg *fanoutMsg) {
 		}
 	}
 	now := time.Now()
-	prev := s.remoteViewLocked(msg.Room, now)
+	prev := s.remoteViewLocked(msg.Room, time.Time{})
 	replicas := s.remote[msg.Room]
 	entry, ok := replicas[origin]
 	if !ok {
@@ -557,31 +576,50 @@ func (s *Signaler) remoteRosterLocked(origin string, msg *fanoutMsg) {
 	} else {
 		entry.members = append(entry.members[:0], msg.Members...)
 	}
-	after := s.remoteViewLocked(msg.Room, now)
 	// Mirror the delta against the PREVIOUS remote view (not the
 	// local roster) so a periodic beat that changes nothing publishes
 	// nothing.
-	if rm := s.localRoomLocked(msg.Room); rm != nil {
-		for _, id := range slices.Sorted(maps.Keys(after)) {
-			// Local wins on the join mirror as on the leave mirror: a
-			// beat cannot restate the identity of a peer this replica
-			// holds (its name, user, and role are server-derived here).
-			if _, had := prev[id]; !had && rm.peers[id] == nil {
-				s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: after[id]})
-			}
+	s.announceRemoteDeltaLocked(msg.Room, prev, s.remoteViewLocked(msg.Room, time.Time{}))
+}
+
+// announceRemoteDeltaLocked tells the local room how its remote view
+// moved from prev to after: the one place a remote membership change
+// reaches local sockets. A join goes out for an id new to the view or
+// whose Order rose (the peer reconnected on another replica with the
+// same id, which is what rtc.js reads a repeated join as). A leave
+// goes out only when no remote entry holds the id any more. Local wins
+// both ways: a beat cannot restate a peer this replica holds (its
+// name, user, and role are server-derived here), and a peer that
+// migrated onto this replica leaves the remote view but not the room.
+// Caller holds s.mu.
+func (s *Signaler) announceRemoteDeltaLocked(roomName string, prev, after map[string]PeerInfo) {
+	rm := s.localRoomLocked(roomName)
+	if rm == nil {
+		return
+	}
+	for _, id := range slices.Sorted(maps.Keys(after)) {
+		if rm.peers[id] != nil {
+			continue
 		}
-		for _, id := range slices.Sorted(maps.Keys(prev)) {
-			// Local wins, as in mergedPeersLocked: a peer that migrated
-			// onto this replica leaves the remote view but not the room.
-			if _, still := after[id]; !still && rm.peers[id] == nil {
-				s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: id})
-			}
+		if was, had := prev[id]; !had || after[id].Order > was.Order {
+			s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: after[id]})
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(prev)) {
+		if _, still := after[id]; !still && rm.peers[id] == nil {
+			s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: id})
 		}
 	}
 }
 
 // remoteViewLocked returns the merged id->PeerInfo view of a room's
-// live remote entries. Caller holds s.mu.
+// remote entries. When replicas disagree on an id, the latest seat
+// (greatest Order; ties go to the first node in sort order) stands for
+// it, so the view does not flip between two replicas' copies as their
+// beats interleave. A zero now keeps entries past their TTL that the
+// sweep has not removed yet: that is the view local sockets were last
+// told, and only the sweep (sweepExpiredRemoteLocked) announces an
+// expiry. Caller holds s.mu.
 func (s *Signaler) remoteViewLocked(roomName string, now time.Time) map[string]PeerInfo {
 	view := map[string]PeerInfo{}
 	replicas, ok := s.remote[roomName]
@@ -590,11 +628,11 @@ func (s *Signaler) remoteViewLocked(roomName string, now time.Time) map[string]P
 	}
 	for _, node := range slices.Sorted(maps.Keys(replicas)) {
 		entry := replicas[node]
-		if now.After(entry.expires) {
+		if !now.IsZero() && now.After(entry.expires) {
 			continue
 		}
 		for _, m := range entry.members {
-			if _, seen := view[m.ID]; !seen {
+			if seen, ok := view[m.ID]; !ok || m.Order > seen.Order {
 				view[m.ID] = m
 			}
 		}
@@ -608,24 +646,19 @@ func (s *Signaler) remoteViewLocked(roomName string, now time.Time) map[string]P
 func (s *Signaler) sweepExpiredRemoteLocked(now time.Time) {
 	for _, roomName := range slices.Sorted(maps.Keys(s.remote)) {
 		replicas := s.remote[roomName]
-		gone := []PeerInfo{}
+		prev := s.remoteViewLocked(roomName, time.Time{})
 		for _, node := range slices.Sorted(maps.Keys(replicas)) {
-			entry := replicas[node]
-			if now.After(entry.expires) {
-				gone = append(gone, entry.members...)
+			if now.After(replicas[node].expires) {
 				delete(replicas, node)
 			}
 		}
+		// The delta, not the expired entries' members: a peer that
+		// reconnected on another live replica with the same id is still
+		// in the room, and nothing that replica beats later would
+		// announce it again.
+		s.announceRemoteDeltaLocked(roomName, prev, s.remoteViewLocked(roomName, time.Time{}))
 		if len(replicas) == 0 {
 			delete(s.remote, roomName)
-		}
-		if rm := s.localRoomLocked(roomName); rm != nil {
-			for _, m := range gone {
-				if rm.peers[m.ID] != nil {
-					continue // held locally now; the expired copy was stale
-				}
-				s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: m.ID})
-			}
 		}
 	}
 }

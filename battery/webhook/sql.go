@@ -254,29 +254,40 @@ func (s *SQLStore) AddDelivery(ctx context.Context, d Delivery) error {
 // touches the counter — d.Attempts is a claim-time snapshot, and persisting
 // it absolutely let a stale claimant's settle rewind the attempts a
 // re-claimant's claim had consumed (two overlapping runners recorded one
-// attempt instead of two, silently doubling the MaxAttempts budget).
+// attempt instead of two, silently doubling the MaxAttempts budget). The
+// one exception is a delivery the Manager's plain DueDeliveries fallback
+// dequeued (a store reached without its LeasedStore method): no claim ran,
+// so this settle consumes the attempt, as attempts = attempts + 1 in SQL.
 func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 	var nextAt any
 	if !d.NextAttemptAt.IsZero() {
 		nextAt = d.NextAttemptAt
 	}
-	q := s.deliveryUpdate()
+	q := s.deliveryUpdate(d.unclaimedAttempt)
 	args := []any{string(d.Status), d.LastError, nextAt, d.UpdatedAt, d.ID}
-	if !isTerminalStatus(d.Status) {
-		// Fence: a non-terminal settle must not overwrite a terminal
-		// row (isTerminalStatus) — a worker that overran its lease
-		// had the row re-claimed under it, and its late failure write
-		// must not re-queue the delivered row nor a triaged
-		// dead-letter. The WHERE clause matches no row, Exec reports
+	if fence := settleFence(d.Status); len(fence) > 0 {
+		// Fence (settleFence): a worker that overran its lease had the
+		// row re-claimed under it, and its late write must not re-queue
+		// the delivered row nor a triaged dead-letter, nor dead-letter
+		// a delivery. The WHERE clause matches no row, Exec reports
 		// nil: the stale write is a no-op, not a failure, mirroring
 		// the fenced completions in battery/queue.
-		if s.dialect == "postgres" {
-			q += ` AND status NOT IN ($6,$7)`
-			args = append(args, string(StatusSuccess), string(StatusDead))
-		} else {
-			q += ` AND status NOT IN (?,?)`
-			args = append(args, string(StatusSuccess), string(StatusDead))
+		marks := make([]string, len(fence))
+		for i, st := range fence {
+			marks[i] = s.placeholder(len(args) + 1)
+			args = append(args, string(st))
 		}
+		q += ` AND status NOT IN (` + strings.Join(marks, ",") + `)`
+	}
+	if leaseFenced(d) {
+		// Claim fence (claimFenced): a retry or dead settle lands only
+		// while the row still holds the lease its claim wrote. Without
+		// it a stale claimant's backoff replaced the live claim's lease,
+		// and a stale give-up dead-lettered an operator's replay. The bound value
+		// is the one the claim wrote (sqlite) or read back (postgres),
+		// so the driver encodes both sides identically.
+		q += ` AND next_attempt_at = ` + s.placeholder(len(args)+1)
+		args = append(args, d.claimedUntil)
 	}
 	_, err := s.db.ExecContext(ctx, q, args...)
 	return err
@@ -388,6 +399,22 @@ func (s *SQLStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (in
 		string(StatusSuccess), cutoff)
 }
 
+// releaseClaim hands back a claim the worker never started (see
+// claimReleaser): pending, due at now, and the attempt the claim consumed
+// refunded in SQL. The next_attempt_at predicate is the claim fence (see
+// claimFenced): once the lease expired and another worker re-claimed the
+// row, the release matches nothing and refunds nothing. Every settle and
+// replay moves next_attempt_at off the lease too, so the fence alone also
+// keeps the release off a settled row.
+func (s *SQLStore) releaseClaim(ctx context.Context, d Delivery, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET
+		next_attempt_at = %s, updated_at = %s, attempts = attempts - 1
+		WHERE id = %s AND next_attempt_at = %s`,
+		s.delTable, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4)),
+		now, now, d.ID, d.claimedUntil)
+	return err
+}
+
 // reapTerminalSQL runs the retention DELETE both SQL stores share: rows
 // in the given terminal status whose updated_at is older than cutoff.
 // The caller passes the fully built statement (the placeholder style is
@@ -429,24 +456,48 @@ func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, 
 		return nil, err
 	}
 	defer rows.Close()
-	return scanDeliveries(rows)
+	claimed, err := scanDeliveries(rows)
+	// The lease as stored (microsecond precision), for the settle fence.
+	for i := range claimed {
+		claimed[i].claimedUntil = claimed[i].NextAttemptAt
+	}
+	return claimed, err
 }
 
 func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
-	// BEGIN IMMEDIATE acquires the database write lock up-front so two
-	// concurrent workers serialize cleanly. The SELECT-then-UPDATE
-	// sequence inside the tx sees a consistent snapshot.
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	// BEGIN IMMEDIATE takes the write lock before the SELECT, so two
+	// concurrent workers serialize cleanly (busy_timeout applies to the
+	// wait). database/sql's BeginTx issues a plain BEGIN, which SQLite reads
+	// as DEFERRED whatever isolation level is asked for: both workers ran
+	// the SELECT, and the loser's UPDATE could not upgrade its read snapshot
+	// and failed with SQLITE_BUSY at once. The statement is issued on one
+	// pinned connection, the battery/queue dequeueSQLite shape.
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			// best-effort: the claim already failed with the error the caller gets; a failed rollback means a broken connection the pool discards on its own.
+			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+		}
+	}()
+	commit := func() error {
+		_, err := conn.ExecContext(ctx, "COMMIT")
+		committed = err == nil
+		return err
+	}
 
 	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
 		last_error, next_attempt_at, created_at, updated_at FROM %s
 		WHERE status = ? AND next_attempt_at <= ?
 		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
-	rows, err := tx.QueryContext(ctx, selQ, string(StatusPending), now)
+	rows, err := conn.QueryContext(ctx, selQ, string(StatusPending), now)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +507,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 		return nil, err
 	}
 	if len(claimed) == 0 {
-		return nil, tx.Commit()
+		return nil, commit()
 	}
 	// Push next_attempt_at forward for every claimed row and consume one
 	// attempt per claim (see claimPostgres for the contract).
@@ -470,7 +521,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 		s.delTable, strings.Join(placeholders, ","))
 	// Insert the second timestamp arg after the first.
 	args = append([]any{args[0], now.Add(leasePeriod)}, args[1:]...)
-	if _, err := tx.ExecContext(ctx, updQ, args...); err != nil {
+	if _, err := conn.ExecContext(ctx, updQ, args...); err != nil {
 		return nil, err
 	}
 	// Reflect the new lease and the consumed attempt in the in-memory
@@ -480,8 +531,12 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 		claimed[i].Attempts++
 		claimed[i].NextAttemptAt = now.Add(leasePeriod)
 		claimed[i].UpdatedAt = now.Add(leasePeriod)
+		claimed[i].claimedUntil = now.Add(leasePeriod)
 	}
-	return claimed, tx.Commit()
+	if err := commit(); err != nil {
+		return nil, err
+	}
+	return claimed, nil
 }
 
 // ----- scan + statements ----------------------------------------------------
@@ -534,9 +589,13 @@ func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
 	return out, rows.Err()
 }
 
+// subUpsert aliases its target: a subscribers table named excluded
+// otherwise collides with the EXCLUDED pseudo-row (Postgres refuses the
+// reference as ambiguous; SQLite reads the target row and the update keeps
+// the old values).
 func (s *SQLStore) subUpsert() string {
 	if s.dialect == "postgres" {
-		return fmt.Sprintf(`INSERT INTO %s (id, url, secret, events, active, created)
+		return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created)
 			VALUES ($1,$2,$3,$4,$5,$6)
 			ON CONFLICT (id) DO UPDATE SET
 				url     = EXCLUDED.url,
@@ -544,7 +603,7 @@ func (s *SQLStore) subUpsert() string {
 				events  = EXCLUDED.events,
 				active  = EXCLUDED.active`, s.subTable)
 	}
-	return fmt.Sprintf(`INSERT INTO %s (id, url, secret, events, active, created)
+	return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created)
 		VALUES (?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			url     = excluded.url,
@@ -564,18 +623,24 @@ func (s *SQLStore) deliveryInsert() string {
 		VALUES (?,?,?,?,?,?,?,?,?,?)`, s.delTable)
 }
 
-func (s *SQLStore) deliveryUpdate() string {
-	// No attempts column on purpose: the claim consumes attempts (see
-	// UpdateDelivery), a settle writing its claim-time snapshot absolutely
-	// is the lost-update that under-counted overlapping runners.
+func (s *SQLStore) deliveryUpdate(unclaimed bool) string {
+	// The settle never writes the attempts value: the claim consumes
+	// attempts (see UpdateDelivery), and a settle writing its claim-time
+	// snapshot absolutely is the lost-update that under-counted
+	// overlapping runners. A fallback dequeue's attempt is counted in SQL,
+	// relative to the row.
+	bump := ""
+	if unclaimed {
+		bump = ", attempts = attempts + 1"
+	}
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(`UPDATE %s SET
-			status = $1, last_error = $2, next_attempt_at = $3, updated_at = $4
-			WHERE id = $5`, s.delTable)
+			status = $1, last_error = $2, next_attempt_at = $3, updated_at = $4%s
+			WHERE id = $5`, s.delTable, bump)
 	}
 	return fmt.Sprintf(`UPDATE %s SET
-		status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?
-		WHERE id = ?`, s.delTable)
+		status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?%s
+		WHERE id = ?`, s.delTable, bump)
 }
 
 func (s *SQLStore) placeholder(n int) string {

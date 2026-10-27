@@ -79,19 +79,33 @@ func (m *MemoryStore) AddDelivery(_ context.Context, d Delivery) error {
 // per claim), so an existing row's attempts survive this write: d.Attempts
 // is a claim-time snapshot, and overwriting it absolutely let a stale
 // claimant's settle rewind the attempts a re-claimant's claim had consumed.
+// A delivery the Manager's plain DueDeliveries fallback dequeued had no
+// claim, so its settle adds the one attempt (see SQLStore.UpdateDelivery).
+// A missing row is a no-op, as SQLStore's UPDATE is: retention may have
+// reaped a delivered row, and a stale settle inserting it again made
+// completed work deliverable again.
 func (m *MemoryStore) UpdateDelivery(_ context.Context, d Delivery) error {
 	m.mu.Lock()
-	if cur, ok := m.deliveries[d.ID]; ok {
-		d.Attempts = cur.Attempts
-		if isTerminalStatus(cur.Status) && !isTerminalStatus(d.Status) {
-			// Fenced no-op: a stale claimant's non-terminal settle must
-			// not regress a terminal row (isTerminalStatus). No error:
-			// the write is stale, not failed — the same fenced no-op the
-			// queue's completions report for an outrun claim.
-			m.mu.Unlock()
-			return nil
-		}
+	cur, ok := m.deliveries[d.ID]
+	if !ok {
+		m.mu.Unlock()
+		return nil
 	}
+	if slices.Contains(settleFence(d.Status), cur.Status) || claimFenced(d, cur.NextAttemptAt) {
+		// Fenced no-op: a stale claimant's settle must not regress a
+		// terminal row (settleFence) nor replace a newer claim's lease
+		// (claimFenced). No error: the write is stale, not failed —
+		// the same fenced no-op the queue's completions report for an
+		// outrun claim.
+		m.mu.Unlock()
+		return nil
+	}
+	d.Attempts = cur.Attempts
+	if d.unclaimedAttempt {
+		d.Attempts++
+		d.unclaimedAttempt = false
+	}
+	d.claimedUntil = time.Time{}
 	d.Payload = cloneBytes(d.Payload)
 	m.deliveries[d.ID] = d
 	m.mu.Unlock()
@@ -223,8 +237,26 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 		// The store keeps its own payload; the caller gets one copy.
 		m.deliveries[d.ID] = *d
 		d.Payload = cloneBytes(d.Payload)
+		d.claimedUntil = leaseUntil
 	}
 	return candidates, nil
+}
+
+// releaseClaim hands back a claim the worker never started (see
+// claimReleaser): pending, due at now, its attempt refunded. It touches the
+// row only while it still holds d's lease.
+func (m *MemoryStore) releaseClaim(_ context.Context, d Delivery, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.deliveries[d.ID]
+	if !ok || !cur.NextAttemptAt.Equal(d.claimedUntil) {
+		return nil
+	}
+	cur.Attempts--
+	cur.NextAttemptAt = now
+	cur.UpdatedAt = now
+	m.deliveries[d.ID] = cur
+	return nil
 }
 
 // ReapTerminalBefore implements [RetentionSweeper]: it deletes successful

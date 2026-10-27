@@ -18,6 +18,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -143,6 +145,13 @@ type Runner struct {
 	// Computed once in CanRunHeadless.
 	preResolved bool
 	preChecked  bool
+
+	// lastRecheck is the clock reading (UnixNano) of the last
+	// rate-limited Complete probe (recheckElsewhere). Zero means never.
+	lastRecheck atomic.Int64
+	// now is the clock recheckElsewhere reads; nil means time.Now.
+	// Tests set it.
+	now func() time.Time
 }
 
 // New constructs a Runner from cfg. Panics if cfg.Complete is nil,

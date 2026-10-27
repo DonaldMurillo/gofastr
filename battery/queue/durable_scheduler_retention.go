@@ -22,6 +22,11 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 		return nil
 	}
 
+	// An enqueued occurrence goes only once its job is gone or done. A
+	// failed job is kept for Replay, which makes it pending again, and the
+	// overlap check (commitOccurrences) finds a schedule's active jobs only
+	// through their occurrences: pruning the occurrence of a failed job let
+	// the tick after a Replay enqueue a second run beside the replayed one.
 	_, err := s.queue.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s
 		WHERE created_at < $1 AND (
 			status='skipped'
@@ -30,7 +35,7 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 				AND NOT EXISTS (
 					SELECT 1 FROM %s j
 					WHERE j.id=enqueued_job_id
-					AND j.status IN ('pending','claimed')
+					AND j.status <> 'done'
 				)
 			)
 		)`, s.queue.schedulerOccurrencesTable(), s.queue.qt()),
@@ -160,5 +165,5 @@ func (q *DBQueue) schedulerIndex(suffix string) string {
 	if err != nil {
 		panic(err)
 	}
-	return query.QuoteIdent(name)
+	return query.QuoteIndexName(name)
 }

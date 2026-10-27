@@ -28,6 +28,56 @@ const autoPrintSuffix = "/__autoprint.js"
 // served from autoPrintSuffix), so no script injection vector is opened.
 const printCSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'"
 
+// pdfCSP is printCSP with style-src widened by origin, the policy the PDF
+// document carries when Config.BaseURL makes its app.css link absolute.
+// Chromium renders that document as about:blank, an opaque origin, so
+// 'self' matches nothing there and the stylesheet would be refused. Only
+// style-src is widened: images, fonts and scripts stay 'self'.
+func pdfCSP(origin string) string {
+	return strings.Replace(printCSP, "style-src 'self' 'unsafe-inline'",
+		"style-src 'self' 'unsafe-inline' "+origin, 1)
+}
+
+// cspOrigin returns base's scheme://host[:port] when base is an absolute
+// http(s) URL whose host is a plain DNS name or IPv4 address, and "" for
+// anything else. The result is spliced into a CSP, so a host carrying
+// any byte outside [A-Za-z0-9.-] (a space, a ';', a quote, userinfo)
+// is refused rather than escaped: a refused origin leaves the stylesheet
+// blocked, never the policy widened.
+func cspOrigin(base string) string {
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Opaque != "" {
+		return ""
+	}
+	host, port := u.Hostname(), u.Port()
+	if host == "" || !cspHostChars(host) || (port != "" && !allDigits(port)) {
+		return ""
+	}
+	if port != "" {
+		host += ":" + port
+	}
+	return u.Scheme + "://" + host
+}
+
+func cspHostChars(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func allDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // Config configures the print battery.
 type Config struct {
 	// PathPrefix is the URL prefix for all print documents.
@@ -51,14 +101,17 @@ type Config struct {
 
 	// BaseURL is the canonical, host-configured origin of the app (e.g.
 	// "https://app.example.com"), used ONLY on the PDF path to make the
-	// app.css link absolute so headless Chromium, which renders an
-	// in-memory data: document with no origin, can fetch the tokens.
+	// app.css link absolute so headless Chromium, which renders the
+	// document as about:blank with no origin of its own, can fetch the
+	// tokens. The PDF document's CSP adds this origin to style-src, and
+	// the renderer must be allowed to reach its host (chromepdf
+	// Options.AllowedHosts).
 	// It is deliberately NOT derived from the request Host header, which
 	// is client-controlled and would otherwise let a spoofed Host point
 	// the server-side fetch at an arbitrary/internal address (SSRF).
 	// When empty, the PDF app.css link stays relative (and simply won't
-	// resolve in the data: document. PDFs render with the print base
-	// only). The HTML path never needs this.
+	// resolve in the about:blank document. PDFs render with the print
+	// base only). The HTML path never needs this.
 	BaseURL string
 
 	// PDFRenderer is the pluggable PDF backend. nil = PDF routes return
@@ -248,7 +301,15 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 		return "", PageConfig{}, false
 	}
 
-	body, _ := component.SafeRenderCtx(r.Context(), comp)
+	// A render panic fails the request like a Build error. SafeRenderCtx
+	// has already reported it; its fallback box carries the panic text,
+	// and serving that as the document (or as a PDF) would hand it to
+	// the client with a 200.
+	body, err := component.SafeRenderCtx(r.Context(), comp)
+	if err != nil {
+		writeBuildError(w, r, err)
+		return "", PageConfig{}, false
+	}
 
 	title := doc.Title
 	if doc.TitleFunc != nil {
@@ -269,13 +330,18 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 	if b.cfg.AppCSSURL != "" {
 		switch {
 		case forPDF && b.cfg.BaseURL != "":
-			// A data:-URL document (headless Chromium) can't resolve a
-			// relative link, so make it absolute against the host-
-			// configured canonical origin, NOT the request Host header.
+			// The about:blank document (headless Chromium) can't resolve
+			// a relative link, so make it absolute against the host-
+			// configured canonical origin, NOT the request Host header,
+			// and let the document's CSP fetch a stylesheet from it. A
+			// BaseURL that is not a clean http(s) origin keeps printCSP.
 			in.AppCSSHref = b.cfg.BaseURL + b.cfg.AppCSSURL
+			if origin := cspOrigin(b.cfg.BaseURL); origin != "" {
+				in.CSP = pdfCSP(origin)
+			}
 		case forPDF:
 			// No trusted base configured: keep it relative. It won't
-			// resolve in the data: document (PDF gets the print base
+			// resolve in the about:blank document (PDF gets the print base
 			// only), but we never emit a Host-derived absolute URL.
 			in.AppCSSHref = b.cfg.AppCSSURL
 		default:

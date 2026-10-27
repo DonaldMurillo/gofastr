@@ -87,6 +87,12 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if v := recover(); v != nil {
+					// net/http's abort signal, not a bug: re-raise it so the
+					// server drops the connection, the way core/middleware's
+					// Recovery does.
+					if v == http.ErrAbortHandler {
+						panic(v)
+					}
 					reporter.Report(ErrorReport{
 						Message:   "http.panic",
 						Error:     textsafe.Truncate(textsafe.ScrubControlBytes(fmt.Sprint(v)), maxPanicValueLen),

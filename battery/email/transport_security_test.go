@@ -183,6 +183,14 @@ type recordingSMTP struct {
 	mu       sync.Mutex
 	mailFrom string
 	rcptTo   []string
+
+	// dropOnQuit closes the connection on QUIT without the 221 reply:
+	// a relay that already queued the message and then times out or
+	// resets. Set before the first Send.
+	dropOnQuit bool
+	// dataReply replaces the 250 sent after the message body when set
+	// (e.g. "554 rejected"). Set before the first Send.
+	dataReply string
 }
 
 func newRecordingSMTP(t *testing.T) *recordingSMTP {
@@ -260,8 +268,15 @@ func (s *recordingSMTP) handle(conn net.Conn) {
 					break
 				}
 			}
+			if s.dataReply != "" {
+				w(s.dataReply + "\r\n")
+				continue
+			}
 			w("250 OK\r\n")
 		case strings.HasPrefix(cmd, "QUIT"):
+			if s.dropOnQuit {
+				return
+			}
 			w("221 bye\r\n")
 			return
 		default:

@@ -67,9 +67,9 @@ func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedView
 			filter     TEXT NOT NULL DEFAULT '',
 			columns    TEXT NOT NULL DEFAULT '',
 			created_at %s NOT NULL
-		)`, query.QuoteIdent(table), ts),
+		)`, query.QuoteFolded(table), ts),
 		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (owner, tenant, entity, name)`,
-			query.QuoteIdent(table+"_owner"), query.QuoteIdent(table)),
+			query.QuoteIndexName(table+"_owner"), query.QuoteFolded(table)),
 	}
 	for _, q := range stmts {
 		if _, err := db.ExecContext(ctx, q); err != nil {
@@ -102,7 +102,7 @@ func (s *sqlSavedViews) List(ctx context.Context, entity string) ([]entityui.Sav
 	}
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT id, name, filter, columns FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3 ORDER BY name`,
-		query.QuoteIdent(s.table)), owner, ten, entity)
+		query.QuoteFolded(s.table)), owner, ten, entity)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (s *sqlSavedViews) Get(ctx context.Context, entity, id string) (entityui.Sa
 	}
 	v, err := scanView(s.db.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT id, name, filter, columns FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3 AND id = $4`,
-		query.QuoteIdent(s.table)), owner, ten, entity, id), entity)
+		query.QuoteFolded(s.table)), owner, ten, entity, id), entity)
 	if errors.Is(err, sql.ErrNoRows) {
 		return entityui.SavedView{}, entityui.ErrSavedViewNotFound
 	}
@@ -205,7 +205,7 @@ func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, 
 	var n int
 	if err = tx.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3`,
-		query.QuoteIdent(s.table)), owner, ten, v.Entity).Scan(&n); err != nil {
+		query.QuoteFolded(s.table)), owner, ten, v.Entity).Scan(&n); err != nil {
 		return err
 	}
 	if n >= entityui.SavedViewCap {
@@ -213,7 +213,7 @@ func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, 
 	}
 	if _, err = tx.ExecContext(ctx, fmt.Sprintf(
 		`INSERT INTO %s (id, owner, tenant, entity, name, filter, columns, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		query.QuoteIdent(s.table)),
+		query.QuoteFolded(s.table)),
 		v.ID, owner, ten, v.Entity, v.Name, v.Filter, cols, time.Now().UTC()); err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func savedViewLockKey(parts ...string) string {
 func (s *sqlSavedViews) nameHeld(ctx context.Context, entity, name, owner, ten string) (entityui.SavedView, bool) {
 	v, err := scanView(s.db.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT id, name, filter, columns FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3 AND name = $4`,
-		query.QuoteIdent(s.table)), owner, ten, entity, name), entity)
+		query.QuoteFolded(s.table)), owner, ten, entity, name), entity)
 	if err != nil {
 		return entityui.SavedView{}, false
 	}
@@ -254,7 +254,7 @@ func (s *sqlSavedViews) Delete(ctx context.Context, entity, id string) error {
 	}
 	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		`DELETE FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3 AND id = $4`,
-		query.QuoteIdent(s.table)), owner, ten, entity, id)
+		query.QuoteFolded(s.table)), owner, ten, entity, id)
 	if err != nil {
 		return err
 	}

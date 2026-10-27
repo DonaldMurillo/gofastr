@@ -417,6 +417,19 @@ func (m *mockRedis) HDelIfEqual(_ context.Context, key, field, expect string) (b
 	return true, nil
 }
 
+// MoveIfEqual implements [CompareAndMover] under the same single mutex, the
+// atomicity the Lua script gives on a real server.
+func (m *mockRedis) MoveIfEqual(_ context.Context, key, field, expect, list, value string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.hashes[key][field]; !ok || v != expect {
+		return false, nil
+	}
+	m.lists[list] = append([]string{value}, m.lists[list]...)
+	delete(m.hashes[key], field)
+	return true, nil
+}
+
 func (m *mockRedis) Del(_ context.Context, keys ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

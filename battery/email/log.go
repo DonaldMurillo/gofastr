@@ -25,7 +25,12 @@ var sensitiveHeaderNames = map[string]struct{}{
 // sensitive parameter (token / code / key / secret / password). The
 // whole URL is redacted because both the path (e.g. /reset-password)
 // and the secret are sensitive together.
-var urlWithSecretPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]*[?&](?:token|code|key|secret|password|access_token|reset[_-]?token)=[^\s"'<>]*`)
+//
+// The separator before the parameter may be an HTML entity: html/template
+// writes '&' inside an href as "&amp;", so ?next=home&token=S reaches the
+// log as ?next=home&amp;token=S. The named and numeric spellings of '&'
+// (&amp; &#38; &#x26;) all count, or an HTML body logged the live token.
+var urlWithSecretPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]*(?:[?&]|&amp;|&#0*38;|&#x0*26;)(?:token|code|key|secret|password|access_token|reset[_-]?token)=[^\s"'<>]*`)
 
 // bearerPattern catches `Bearer <token>` substrings anywhere in the body.
 var bearerPattern = regexp.MustCompile(`(?i)Bearer\s+\S+`)

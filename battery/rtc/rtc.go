@@ -583,7 +583,7 @@ func (s *Signaler) Close() {
 	// Graceful leave first (inside stopFanout: empty rosters are
 	// published synchronously before the subscription drops), then
 	// stop the rooms.
-	s.stopFanout()
+	s.stopFanout(rooms)
 	for _, rm := range rooms {
 		rm.channel.Stop()
 	}

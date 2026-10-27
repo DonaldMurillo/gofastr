@@ -137,12 +137,15 @@ type roomSource struct {
 // browser module reads a join for a peer it already knows as a
 // reconnect and rebuilds the connection it just made, so FilterEvent
 // drops one join per listed peer, and a leave clears the mark so a
-// real rejoin still arrives. Only the channel's Run loop touches it
+// real rejoin still arrives. The mark holds the seat the snapshot
+// listed (its Order): a join for a newer seat of the same id, the peer
+// reconnecting on another replica, is not the one the snapshot already
+// carried, and is delivered. Only the channel's Run loop touches it
 // (SnapshotFor and FilterEvent both run there); the mutex keeps that
 // an implementation detail rather than a proof obligation.
 type listedPeers struct {
 	mu sync.Mutex
-	by map[string]map[string]struct{}
+	by map[string]map[string]int64 // socket -> listed peer id -> Order
 }
 
 // SnapshotFor builds the peer's view: itself, the other members
@@ -175,30 +178,32 @@ func (l *listedPeers) record(peerID string, peers []PeerInfo) {
 	if l == nil {
 		return
 	}
-	set := make(map[string]struct{}, len(peers))
+	set := make(map[string]int64, len(peers))
 	for _, p := range peers {
-		set[p.ID] = struct{}{}
+		set[p.ID] = p.Order
 	}
 	l.mu.Lock()
 	l.by[peerID] = set
 	l.mu.Unlock()
 }
 
-// consume reports whether subject was on peerID's listed set and
-// removes it either way. A join consumes the mark (true means the
-// snapshot already carried it); a leave only clears it.
-func (l *listedPeers) consume(peerID, subject string) bool {
+// consume reports whether subject's seat at order is the one on
+// peerID's listed set, and removes the mark either way. A join consumes
+// it (true means the snapshot already carried that seat); a leave only
+// clears it, so its result is ignored.
+func (l *listedPeers) consume(peerID, subject string, order int64) bool {
 	if l == nil {
 		return false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	set := l.by[peerID]
-	if _, ok := set[subject]; !ok {
+	listed, ok := set[subject]
+	if !ok {
 		return false
 	}
 	delete(set, subject)
-	return true
+	return listed == order
 }
 
 // forget drops a departed socket's set.
@@ -236,7 +241,7 @@ func (src roomSource) FilterEvent(peerID string, ev roomEvent) (any, bool) {
 	case evICEServers:
 		return iceServersPayload{ICEServers: src.s.iceServersFor(peerID, time.Now())}, true
 	case evJoin:
-		if peerID == ev.peer.ID || src.listed.consume(peerID, ev.peer.ID) {
+		if peerID == ev.peer.ID || src.listed.consume(peerID, ev.peer.ID, ev.peer.Order) {
 			return nil, false
 		}
 		return ev.peer, true
@@ -244,7 +249,7 @@ func (src roomSource) FilterEvent(peerID string, ev roomEvent) (any, bool) {
 		if peerID == ev.id {
 			return nil, false
 		}
-		src.listed.consume(peerID, ev.id)
+		src.listed.consume(peerID, ev.id, 0)
 		return leavePayload{ID: ev.id}, true
 	case evStatus:
 		if peerID == ev.id {
@@ -469,8 +474,17 @@ func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 	// roster (local wins while local exists; remote carries it after), so
 	// the wire says nothing: the room never lost the peer. Other replicas
 	// still hear the leave mirror and drop this replica's copy.
-	if !s.remoteHasPeerLocked(roomName, p.info.ID) {
+	//
+	// A remote seat newer than this socket is the peer reconnected
+	// elsewhere with the same id. Its roster beat was swallowed while
+	// this socket lived (local wins), and its join mirror, if it lands
+	// later, finds the seat already in the remote view and says nothing,
+	// so the reconnect is announced here, as the join rtc.js reads as
+	// one. An older copy is the stale seat this socket replaced: silence.
+	if remote, held := s.remoteViewLocked(roomName, time.Now())[p.info.ID]; !held {
 		s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: p.info.ID})
+	} else if remote.Order > p.info.Order {
+		s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: remote})
 	}
 	s.mirrorLocked(roomName, fanoutMsg{Kind: evLeave, ID: p.info.ID})
 	// The seat frees with the socket: the FIFO never retains a departed
@@ -560,7 +574,7 @@ func isObjectJSON(data []byte) bool {
 // The first room with TURN configured also starts the credential
 // refresh loop. Caller holds s.mu.
 func (s *Signaler) newRoomLocked(name string) *room {
-	rm := &room{name: name, peers: make(map[string]*roomPeer), listed: &listedPeers{by: map[string]map[string]struct{}{}}}
+	rm := &room{name: name, peers: make(map[string]*roomPeer), listed: &listedPeers{by: map[string]map[string]int64{}}}
 	rm.channel = stream.NewStateChannel[string, roomSnapshot, roomEvent](roomSource{s: s, name: name, listed: rm.listed})
 	// Signals are not in the snapshot: a peer that cannot take a
 	// frame must reconnect and re-hydrate (the far side then sees a
@@ -640,19 +654,13 @@ func (s *Signaler) mergedPeersLocked(roomName string, now time.Time) []PeerInfo 
 			seen[id] = true
 		}
 	}
-	if replicas, ok := s.remote[roomName]; ok {
-		for _, node := range slices.Sorted(maps.Keys(replicas)) {
-			entry := replicas[node]
-			if now.After(entry.expires) {
-				continue
-			}
-			for _, m := range entry.members {
-				if seen[m.ID] {
-					continue
-				}
-				out = append(out, m)
-				seen[m.ID] = true
-			}
+	// The live remote view picks the same copy of an id the join and
+	// leave deltas announce (the latest seat), so a snapshot and the
+	// events around it agree.
+	remote := s.remoteViewLocked(roomName, now)
+	for _, id := range slices.Sorted(maps.Keys(remote)) {
+		if !seen[id] {
+			out = append(out, remote[id])
 		}
 	}
 	slices.SortStableFunc(out, func(a, b PeerInfo) int {

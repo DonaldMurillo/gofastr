@@ -53,7 +53,7 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 	if err != nil {
 		return fmt.Errorf("service: open log: %w", err)
 	}
-	defer f.Close()
+	defer func() { f.Close() }() // follow may swap f for a recreated log
 	fi, err := f.Stat()
 	if err != nil {
 		return err
@@ -77,11 +77,27 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 		return nil
 	}
 	off := fi.Size()
+	cur := fi
 	for {
 		time.Sleep(500 * time.Millisecond)
 		fi, err := os.Stat(path)
 		if err != nil {
 			continue
+		}
+		// The path names another file (the log was removed and written
+		// anew, by uninstall --purge and a reinstall): follow the new
+		// one from its start, never the deleted one.
+		if !os.SameFile(cur, fi) {
+			nf, err := os.Open(path)
+			if err != nil {
+				continue
+			}
+			if nfi, err := nf.Stat(); err != nil || !os.SameFile(nfi, fi) {
+				nf.Close()
+				continue
+			}
+			f.Close()
+			f, cur, off = nf, fi, 0
 		}
 		if fi.Size() < off {
 			off = 0
