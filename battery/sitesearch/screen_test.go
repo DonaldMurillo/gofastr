@@ -43,6 +43,23 @@ func TestScreenRendersResults(t *testing.T) {
 	}
 }
 
+// A failed build says the search is unavailable, never "no results".
+func TestScreenSaysIndexUnavailable(t *testing.T) {
+	bat := New(Config{Sources: []Source{func(context.Context) ([]Page, error) {
+		return nil, fmt.Errorf("source down")
+	}}})
+	app := newSite(t, bat)
+	site := app.Mountables()[0].(*uihost.UIHost).App
+	site.Register("/search", Screen(bat), nil)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, app.Router(), "/search?q=walrus").Body.String()
+	if !strings.Contains(body, "search index unavailable") || strings.Contains(body, "source down") {
+		t.Fatalf("failed build: no unavailable notice, or the error leaked:\n%s", body)
+	}
+}
+
 // The index build renders the search page too, with no query: it
 // must not wait on the build rendering it, nor index itself.
 func TestScreenDoesNotBlockItsBuild(t *testing.T) {

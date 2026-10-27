@@ -74,8 +74,10 @@ type Battery struct {
 	cfg Config
 	app atomic.Pointer[framework.App]
 
-	// building serializes builds: one renders the site at a time.
-	building sync.Mutex
+	// building serializes builds: one renders the site at a time. It is
+	// a one-slot channel, not a mutex, so a query waiting behind a build
+	// gives up when its request ends (see lockBuild).
+	building chan struct{}
 	// mu guards the index state. It is held to read or swap it, never
 	// across a render, so a query waits only for the first build.
 	mu      sync.Mutex
@@ -110,8 +112,30 @@ func New(cfg Config) *Battery {
 	if cfg.MaxAge < 0 {
 		panic("sitesearch: negative Config.MaxAge")
 	}
-	return &Battery{cfg: cfg}
+	return &Battery{cfg: cfg, building: make(chan struct{}, 1)}
 }
+
+// lockBuild takes the build slot, or returns ctx's error when ctx ends
+// first: a slow Source holds the slot for the whole first build.
+func (b *Battery) lockBuild(ctx context.Context) error {
+	// A free slot is taken even under a done ctx, the way the mutex did:
+	// the build itself honours ctx, and a select over two ready cases
+	// would pick between them at random.
+	select {
+	case b.building <- struct{}{}:
+		return nil
+	default:
+	}
+	select {
+	case b.building <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// unlockBuild gives the build slot back.
+func (b *Battery) unlockBuild() { <-b.building }
 
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "sitesearch" }
@@ -178,8 +202,10 @@ func (b *Battery) OnStop(ctx context.Context) error {
 // old index until the new one is built. A failed Refresh keeps the old
 // index and returns the error.
 func (b *Battery) Refresh(ctx context.Context) error {
-	b.building.Lock()
-	defer b.building.Unlock()
+	if err := b.lockBuild(ctx); err != nil {
+		return err
+	}
+	defer b.unlockBuild()
 	idx, files, err := b.render(ctx)
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -208,8 +234,10 @@ func (b *Battery) current(ctx context.Context) (*Index, map[string][]byte, error
 	}
 	b.mu.Unlock()
 
-	b.building.Lock()
-	defer b.building.Unlock()
+	if err := b.lockBuild(ctx); err != nil {
+		return nil, nil, err
+	}
+	defer b.unlockBuild()
 	// The build this one waited behind may have made the index, or
 	// failed recently enough to answer for this one.
 	b.mu.Lock()
@@ -271,8 +299,10 @@ func (b *Battery) rebuild() {
 			b.rebuilding = false
 			b.mu.Unlock()
 		}()
-		b.building.Lock()
-		defer b.building.Unlock()
+		if b.lockBuild(ctx) != nil {
+			return // OnStop ended it while it waited
+		}
+		defer b.unlockBuild()
 		idx, files, err := b.render(ctx)
 		b.mu.Lock()
 		b.settle(ctx, idx, files, err)
@@ -343,7 +373,7 @@ func mountedHost(app *framework.App) *uihost.UIHost {
 
 // extract reads one rendered page and labels its group.
 func (b *Battery) extract(path, page string) (Page, bool, error) {
-	p, ok, err := Extract(path, strings.NewReader(page))
+	p, ok, err := extractHosted(path, strings.NewReader(page))
 	if err != nil {
 		return Page{}, false, fmt.Errorf("sitesearch: extract %q: %w", path, err)
 	}

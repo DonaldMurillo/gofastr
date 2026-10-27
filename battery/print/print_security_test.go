@@ -87,8 +87,9 @@ func TestSecCSPInlineStyleNotScript(t *testing.T) {
 // TestPDFBlocksInternalSubresource pins the half of the print CSP story
 // the PDF path depends on.
 //
-// Attack: chromepdf base64s the shelled print HTML into a
-// `data:text/html;base64,…` URL and navigates headless Chrome to it.
+// Attack: chromepdf base64ed the shelled print HTML into a
+// `data:text/html;base64,…` URL and navigated headless Chrome to it (it
+// now sets the HTML as about:blank's content, equally headerless).
 // printCSP was applied only as an HTTP *response header* on the print
 // routes, and a `data:` document has no headers, so on the PDF path the
 // CSP had exactly zero effect. First-party components put caller strings
@@ -112,7 +113,7 @@ func TestPDFBlocksInternalSubresource(t *testing.T) {
 		t.Errorf("SECURITY: [ssrf] the in-document CSP differs from the route header policy — the PDF and HTML paths must not diverge. Shell:\n%s", out)
 	}
 	// default-src 'self' is what makes an absolute cross-origin
-	// subresource unreachable. On a data: URL the document origin is
+	// subresource unreachable. On about:blank the document origin is
 	// opaque, so 'self' matches nothing, which is the intent.
 	if !strings.Contains(printCSP, "default-src 'self'") {
 		t.Errorf("print CSP no longer restricts default-src: %q", printCSP)

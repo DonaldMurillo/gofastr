@@ -421,14 +421,15 @@ func TestRunTransitionRaceConflict(t *testing.T) {
 	if tce.Current != "void" {
 		t.Fatalf("conflict current = %q, want void (the hook's value)", tce.Current)
 	}
-	// The caller owns the ambient transaction: commit keeps the hook's
-	// write, proving the move did not clobber it.
+	// The hook's write stands in for the concurrent writer, but it ran
+	// inside the move, and a failed operation undoes its own writes, its
+	// hooks' included: the caller's commit keeps the row as it was.
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	status, paidOn := readStateInvoice(t, db, "i1")
-	if status != "void" {
-		t.Fatalf("row status = %q, want the concurrent writer's void", status)
+	if status != "open" {
+		t.Fatalf("row status = %q, want open (the failed move undone)", status)
 	}
 	if paidOn.Valid {
 		t.Fatalf("raced move still stamped paid_on = %q", paidOn.String)

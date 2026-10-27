@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/upload"
@@ -347,7 +349,7 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 	}
 
 	ff := &FileField{
-		URL: path,
+		URL: keyURLPath(path),
 		// The SAME sanitizer that produced the storage key. This used to
 		// be filepath.Base(stripControlBytes(...)), which leaves ".."
 		// intact, so ProcessFileField returned a FileField its own
@@ -397,6 +399,12 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 // useful one. derived may be non-nil even on a deriver error, since a
 // deriver that fails midway can report what it had already saved.
 func cleanupOrphans(ctx context.Context, store upload.Storage, primary string, derived *ImageDerivatives, written []string) {
+	// Detached from cancellation: a client that disconnected mid-upload
+	// canceled ctx, and a backend refuses a canceled Delete, which would
+	// leave every object this exists to remove. Bounded so a dead backend
+	// cannot pin the request.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	seen := map[string]bool{}
 	del := func(key string) {
 		if key == "" || seen[key] {
@@ -756,6 +764,18 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 			len(failed), strings.Join(failed, "; "))
 	}
 	return nil
+}
+
+// keyURLPath is a storage key written as a relative URL path: each
+// segment escaped, so a name that kept '#' or '%' is fetched as itself
+// rather than read as a fragment or a broken escape. The key itself
+// (StorageRef) stays literal.
+func keyURLPath(key string) string {
+	parts := strings.Split(key, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }
 
 // GenerateFilePath produces a safe, unique file path for storage.

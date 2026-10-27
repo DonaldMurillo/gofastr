@@ -20,7 +20,8 @@ import (
 // existing row's variants.
 type DerivedVariant struct {
 	// StorageRef is the storage backend key the rendition was saved under.
-	// It doubles as the URL path, matching FileField.URL/StorageRef.
+	// Like FileField.StorageRef it is the literal key: escape each
+	// segment before using it as a URL path (FileField.URL does).
 	StorageRef string `json:"storage_ref"`
 
 	// MIME is the rendition's content type (e.g. "image/webp").

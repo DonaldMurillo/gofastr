@@ -182,3 +182,55 @@ func TestHookRejectionIncludesMessage(t *testing.T) {
 		t.Errorf("response missing message: %q", string(out))
 	}
 }
+
+// --- big integers ------------------------------------------------------
+
+// An integer past 2^53 reaches action params as a json.Number (the
+// journal keeps it exact). A respond_json body serves its digits; a
+// set_field literal stores them.
+func TestActionParamsKeepBigIntegers(t *testing.T) {
+	const exact = "9007199254740993"
+	app, db := newTestApp(t)
+	w := world.New()
+	w.Entities["items"] = &world.Entity{Name: "items", Fields: []world.Field{
+		{Name: "title", Type: "string"}, {Name: "n", Type: "int"},
+	}}
+	w.Hooks = append(w.Hooks, &world.Hook{ID: "h1", Entity: "items", When: "before_create", Action: world.Action{
+		Kind: world.ActionSetField, Params: map[string]any{"field": "n", "value_literal": json.Number(exact)},
+	}})
+	w.Routes = append(w.Routes, &world.Route{Method: "GET", Path: "/big", Action: world.Action{
+		Kind: world.ActionRespondJSON, Params: map[string]any{"body": map[string]any{"n": json.Number(exact)}},
+	}})
+	if err := render.Apply(app, w); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if _, body := get(t, app.Router(), "/big"); !strings.Contains(body, exact) {
+		t.Errorf("GET /big = %s, want n %s", body, exact)
+	}
+	res := postJSON(t, app.Router(), "/api/items", bytes.NewBufferString(`{"title":"x"}`))
+	if out, _ := io.ReadAll(res.Body); res.StatusCode >= 300 {
+		t.Fatalf("POST /api/items = %d %s", res.StatusCode, out)
+	}
+	if _, body := get(t, app.Router(), "/api/items"); !strings.Contains(body, exact) {
+		t.Errorf("GET /api/items = %s, want n %s", body, exact)
+	}
+}
+
+// A respond_json status past 2^53 arrives as a json.Number. It is refused
+// like the same status as a float64, never served as a silent 200.
+func TestRespondJSONRefusesBigStatus(t *testing.T) {
+	app, _ := newTestApp(t)
+	w := world.New()
+	w.Routes = append(w.Routes, &world.Route{Method: "GET", Path: "/big", Action: world.Action{
+		Kind: world.ActionRespondJSON, Params: map[string]any{"status": json.Number("9007199254740993")},
+	}})
+	if err := render.Apply(app, w); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if res, body := get(t, app.Router(), "/big"); res.StatusCode < 500 {
+		t.Errorf("GET /big = %d %q, want a server error", res.StatusCode, body)
+	}
+}

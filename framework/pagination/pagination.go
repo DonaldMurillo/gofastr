@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 const (
@@ -347,10 +349,27 @@ func parseIntDefault(r *http.Request, key string, def int) int {
 }
 
 // toString converts any value to its string representation for cursor encoding.
+//
+// A time.Time keyset value is written in schema.TimestampLayout, the
+// layout crud stores every Timestamp in, so on SQLite, which compares
+// DATETIME columns as text, the cursor value compares against the stored
+// string byte for byte. json.Marshal kept the quotes and RFC3339Nano
+// drops trailing zeros; either way the keyset predicate ran against a
+// different string and a walk could repeat a page forever.
 func toString(v any) string {
 	switch val := v.(type) {
 	case string:
 		return val
+	case time.Time:
+		return schema.FormatTimestamp(val)
+	case *time.Time:
+		if val != nil {
+			return schema.FormatTimestamp(*val)
+		}
+		// A nil pointer is a NULL keyset value. crud refuses a nullable
+		// cursor column at Define and a NULL last row at encode time, so
+		// this spelling is never compared against a stored row there.
+		return "null"
 	case int:
 		return strconv.Itoa(val)
 	case int64:

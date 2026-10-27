@@ -163,6 +163,7 @@ pb := print.New(print.Config{
     BaseURL:     "https://app.example.com", // for PDF token fidelity; see below
     AppCSSURL:   "/__gofastr/app.css",
     PDFRenderer: chromepdf.New(chromepdf.Options{
+        AllowedHosts: []string{"app.example.com"}, // BaseURL's host, so app.css loads
         // ExecPath:   "/usr/bin/chromium",   // "" → auto-detect
         // Timeout:    30 * time.Second,
         // ExtraFlags: []string{"no-sandbox"}, // common in containers
@@ -170,10 +171,13 @@ pb := print.New(print.Config{
 })
 ```
 
-`RenderPDF` feeds the already-shelled HTML to Chromium via an in-memory
-`data:` URL; the document bytes never touch disk, which matters for
-per-user invoices. It prints with `WithPreferCSSPageSize`, so the shell's
-`@page` size and margins win. Without a renderer, `/pdf` returns
+`RenderPDF` opens `about:blank` in Chromium and sets the already-shelled
+HTML as the page's content over the DevTools protocol. The document bytes
+never touch disk, which matters for per-user invoices, and no URL length
+cap applies, so a long report prints the same as a short receipt. It
+waits for the document's load event, so its stylesheets, images and
+fonts have loaded or failed, then prints with
+`WithPreferCSSPageSize`, so the shell's `@page` size and margins win. Without a renderer, `/pdf` returns
 `501 Not Implemented` (the route exists, the capability is unwired) rather
 than a misleading 404.
 
@@ -185,11 +189,28 @@ document's `Build` runs — instead of queueing another browser the node
 has to find room for. Raise it only on hardware that can actually run
 that many Chromiums concurrently.
 
-**`Config.BaseURL` and PDF tokens.** A `data:` document has no origin, so
-it can't resolve a relative `/__gofastr/app.css` link; design tokens would
-be missing from the PDF. Set `BaseURL` to your app's canonical origin and
-the battery makes the app.css link absolute against it on the PDF path
-only. This origin is taken from `BaseURL` and **never** from the request
+**`Config.BaseURL` and PDF tokens.** The PDF document is `about:blank` to
+Chromium, with no origin of its own, so it can't resolve a relative
+`/__gofastr/app.css` link; design tokens would be missing from the PDF.
+Set `BaseURL` to your app's canonical origin and the battery makes the
+app.css link absolute against it on the PDF path only. The PDF
+document's CSP then adds that origin to `style-src` (its `'self'` matches
+nothing under an opaque origin); images, fonts and scripts stay
+`'self'`, and the HTML route's policy is unchanged. A `BaseURL` that is
+not a plain `http(s)://host[:port]` origin (userinfo, an IPv6 literal,
+any byte outside `[A-Za-z0-9.-]` in the host) leaves the policy as it
+is, so the stylesheet stays blocked. Two more pieces have to line up for
+the fetch to happen:
+
+- `chromepdf` resolves no hostname by default, so name `BaseURL`'s host
+  in `Options.AllowedHosts`.
+- Chrome's Local Network Access check refuses a subresource on a
+  loopback or private address from the print document regardless of the
+  allow-list. A `BaseURL` that resolves to `127.0.0.1` or an RFC1918
+  address (a sidecar Chromium pointed at `http://localhost:8080`, say)
+  does not load; point it at the app's public origin.
+
+This origin is taken from `BaseURL` and **never** from the request
 `Host` header; trusting `Host` would let a spoofed header point the
 server-side stylesheet fetch at an internal/arbitrary address (an SSRF).
 If `BaseURL` is unset, the PDF link stays relative (PDFs render with the

@@ -95,13 +95,18 @@ func VerifiedAgent(ctx context.Context) *webbotauth.Agent {
 // that gives every verified Web Bot Auth agent its own budget and keys
 // everything else by client IP, honouring X-Forwarded-For only when
 // trustXFF is set (the same rule as ratelimit.ClientIP). Add the limiter
-// with app.Router().Use after WithWebBotAuth so the verifier runs first:
+// with app.Router().Use after WithWebBotAuth so the verifier runs first,
+// behind an IP-keyed ceiling: a signer chooses its identity URL, so one
+// sender can mint a fresh agent budget per request, and only the IP cap
+// bounds it:
 //
-//	limiter := ratelimit.NewLimiter(ratelimit.Config{MaxAttempts: 600, Window: time.Minute})
-//	app.Router().Use(limiter.MiddlewareByKey(framework.AgentRateLimitKey(false)))
+//	perIP := ratelimit.NewLimiter(ratelimit.Config{MaxAttempts: 3000, Window: time.Minute})
+//	perAgent := ratelimit.NewLimiter(ratelimit.Config{MaxAttempts: 600, Window: time.Minute})
+//	app.Router().Use(perIP.MiddlewareByKey(nil))
+//	app.Router().Use(perAgent.MiddlewareByKey(framework.AgentRateLimitKey(false)))
 //
 // See webbotauth.RateLimitKey for why identity, not IP, is the honest
-// budget for agent traffic.
+// budget for agent traffic behind a shared egress.
 func AgentRateLimitKey(trustXFF bool) func(*http.Request) string {
 	return webbotauth.RateLimitKey(func(r *http.Request) string {
 		return ratelimit.ClientIP(r, trustXFF)

@@ -83,7 +83,7 @@ func seedExportRows(t *testing.T, db *sql.DB) {
 
 func readAllRows(t *testing.T, db *sql.DB, table string, cols []string) []map[string]any {
 	t.Helper()
-	rows, err := rawReadAll(context.Background(), db, table, cols, []string{"id"}, 1000)
+	rows, err := rawReadAll(context.Background(), db, migrate.DialectSQLite, table, cols, []string{"id"}, 1000)
 	if err != nil {
 		t.Fatalf("rawReadAll %s: %v", table, err)
 	}

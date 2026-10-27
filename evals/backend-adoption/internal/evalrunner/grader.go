@@ -412,6 +412,7 @@ func commandOutput(ctx context.Context, dir, program string, args ...string) (st
 
 func findStringField(body, key string) string {
 	var value any
+	//gofastr:allow(floatnum) the grader reads only string fields from the decoded body
 	if json.Unmarshal([]byte(body), &value) != nil {
 		return ""
 	}

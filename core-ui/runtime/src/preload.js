@@ -16,7 +16,8 @@
 //   - A route that would present as an overlay from the CURRENT page is
 //     never prefetched: overlay HTML never enters any cache.
 //   - invalidate() selectors evict prefetched entries too (core calls
-//     _invalPreload alongside its own cache sweep).
+//     _invalPreload alongside its own cache sweep), and a matching
+//     prefetch still in flight is never stored.
 (function () {
   'use strict';
   const NS = window.__gofastr;
@@ -63,19 +64,23 @@
 
   // Same selector semantics as the screen cache: "*" clears; a selector
   // with "?" is exact; a bare path drops the path and its query variants.
+  // A prefetch still in flight holds the same stale answer, so a match
+  // marks it too and its response is dropped when it lands.
+  const hit = (s, k) => {
+    // Keys keep the locale prefix; selectors never carry one.
+    const u = NS._unlocalize?.(k) ?? k;
+    return s === '*' || (s.includes('?') ? u === s : u === s || u.startsWith(s + '?'));
+  };
   NS._invalPreload = function (sels) {
     for (const s of sels) {
-      if (s === '*') { store.clear(); return; }
-      if (!s || s[0] !== '/') continue;
-      // Keys keep the locale prefix; selectors never carry one.
-      for (const k of store.keys()) {
-        const u = NS._unlocalize?.(k) ?? k;
-        if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) store.delete(k);
-      }
+      if (s !== '*' && (!s || s[0] !== '/')) continue;
+      for (const k of store.keys()) if (hit(s, k)) store.delete(k);
+      for (const k of inFlight) if (hit(s, k)) stale.add(k);
     }
   };
 
   const inFlight = new Set();
+  const stale = new Set(); // in-flight paths an invalidation reached
   const prefetch = (path, warm) => {
     if (!NS._originOK || !NS._originOK(path)) return;
     if (store.has(path) || inFlight.has(path)) return;
@@ -135,7 +140,7 @@
       // <template> fills, which the kernel's scan does not enter, so
       // each one's content is scanned too.
       .then((e) => {
-        if (!e) return;
+        if (!e || stale.has(path)) return;
         put(path, e);
         if (!warm) return;
         const t = document.createElement('template');
@@ -143,7 +148,7 @@
         for (const r of [t, ...t.content.querySelectorAll('template')]) NS.scanAndLoadCSS(r.content);
       })
       .catch(() => {})
-      .finally(() => inFlight.delete(path));
+      .finally(() => { inFlight.delete(path); stale.delete(path); });
   };
 
   const modeFor = (href) => {

@@ -34,8 +34,11 @@ func (s *EntityUserStore) oauthLinksTable() string {
 // hand-roll the DDL. Idempotent. Timestamp type is chosen per dialect so the
 // same battery boots on SQLite and Postgres.
 func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.oauthLinksTable()); err != nil {
+		return err
+	}
 	tsType := "DATETIME"
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		tsType = "TIMESTAMPTZ"
 	}
 	stmt := fmt.Sprintf(
@@ -49,7 +52,7 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 			"created_at %s NOT NULL DEFAULT CURRENT_TIMESTAMP,"+
 			"PRIMARY KEY (provider, provider_id)"+
 			")",
-		query.QuoteIdent(s.oauthLinksTable()),
+		query.QuoteFolded(s.oauthLinksTable()),
 		tsType,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -58,10 +61,10 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 	// user_id index powers ListAccounts / UnlinkOAuth, without it both
 	// degenerate to full scans of a table that grows with the user count.
 	idx := fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
-		query.QuoteIdent(s.oauthLinksTable()+"_user_idx"),
-		query.QuoteIdent(s.oauthLinksTable()),
-		query.QuoteIdent("user_id"),
+		"CREATE INDEX IF NOT EXISTS %s (%s)",
+		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite,
+			indexName("", s.oauthLinksTable(), "_user_idx"), query.QuoteFolded(s.oauthLinksTable())),
+		query.QuoteFolded("user_id"),
 	)
 	if _, err := s.db.ExecContext(ctx, idx); err != nil {
 		return err
@@ -83,7 +86,7 @@ func (s *EntityUserStore) FindByOAuth(ctx context.Context, provider, providerID 
 	var userID string
 	err := s.db.QueryRowContext(ctx, fmt.Sprintf(
 		"SELECT user_id FROM %s WHERE provider = $1 AND provider_id = $2",
-		query.QuoteIdent(s.oauthLinksTable()),
+		query.QuoteFolded(s.oauthLinksTable()),
 	), provider, providerID).Scan(&userID)
 	if err == sql.ErrNoRows {
 		return nil, ErrUserNotFound
@@ -124,7 +127,7 @@ func (s *EntityUserStore) linkOAuth(ctx context.Context, userID, provider, provi
 			"VALUES ($1, $2, $3, $4, $5, $6) "+
 			"ON CONFLICT (provider, provider_id) DO UPDATE SET "+
 			"email = EXCLUDED.email, name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url",
-		query.QuoteIdent(s.oauthLinksTable()),
+		query.QuoteFolded(s.oauthLinksTable()),
 	)
 	_, err := s.db.ExecContext(ctx, q, provider, providerID, userID,
 		nullable(profile.Email), nullable(profile.Name), nullable(profile.AvatarURL))
@@ -138,7 +141,7 @@ func (s *EntityUserStore) ListAccounts(ctx context.Context, userID string) ([]Ac
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		"SELECT provider, provider_id, email, name, avatar_url, created_at FROM %s "+
 			"WHERE user_id = $1 ORDER BY provider",
-		query.QuoteIdent(s.oauthLinksTable()),
+		query.QuoteFolded(s.oauthLinksTable()),
 	), userID)
 	if err != nil {
 		return nil, err
@@ -175,7 +178,7 @@ func (s *EntityUserStore) ListAccounts(ctx context.Context, userID string) ([]Ac
 func (s *EntityUserStore) UnlinkOAuth(ctx context.Context, userID, provider string) error {
 	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		"DELETE FROM %s WHERE user_id = $1 AND provider = $2",
-		query.QuoteIdent(s.oauthLinksTable()),
+		query.QuoteFolded(s.oauthLinksTable()),
 	), userID, provider)
 	return err
 }
@@ -195,9 +198,9 @@ func (s *EntityUserStore) UnlinkOAuth(ctx context.Context, userID, provider stri
 // read-back that only distinguishes NotLinked from RefusedLast for the
 // response code; the guard itself never depends on it.
 func (s *EntityUserStore) UnlinkOAuthGuarded(ctx context.Context, userID, provider string) (UnlinkOutcome, error) {
-	links := query.QuoteIdent(s.oauthLinksTable())
-	users := query.QuoteIdent(s.table)
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	links := query.QuoteFolded(s.oauthLinksTable())
+	users := query.QuoteFolded(s.table)
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		return s.unlinkGuardedPostgres(ctx, userID, provider, links, users)
 	}
 	return s.unlinkGuardedSingleStatement(ctx, userID, provider, links, users)
@@ -270,8 +273,8 @@ func (s *EntityUserStore) unlinkGuardedSingleStatement(ctx context.Context, user
 	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		"DELETE FROM %s WHERE user_id = $1 AND provider = $2 AND (EXISTS (SELECT 1 FROM %s l WHERE l.user_id = $1 AND l.provider <> $2) OR EXISTS (SELECT 1 FROM %s u WHERE u.%s = $1 AND u.%s = 1))",
 		links, links, users,
-		query.QuoteIdent(s.fieldMap.ID),
-		query.QuoteIdent(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
 	), userID, provider)
 	if err != nil {
 		return UnlinkNotLinked, err
@@ -301,8 +304,8 @@ func (s *EntityUserStore) txHasPassword(ctx context.Context, tx *sql.Tx, users, 
 	var hasPW bool
 	err := tx.QueryRowContext(ctx, fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteIdent(s.fieldMap.PasswordSet), users,
-		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.PasswordSet), users,
+		query.QuoteFolded(s.fieldMap.ID),
 	), userID).Scan(&hasPW)
 	if err == sql.ErrNoRows {
 		return false, nil
@@ -327,7 +330,7 @@ func (s *EntityUserStore) countLinksForProvider(ctx context.Context, provider, p
 	var n int
 	err := s.db.QueryRowContext(ctx, fmt.Sprintf(
 		"SELECT COUNT(*) FROM %s WHERE provider = $1 AND provider_id = $2",
-		query.QuoteIdent(s.oauthLinksTable()),
+		query.QuoteFolded(s.oauthLinksTable()),
 	), provider, providerID).Scan(&n)
 	return n, err
 }

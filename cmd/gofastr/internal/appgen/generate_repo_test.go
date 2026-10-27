@@ -54,7 +54,7 @@ func TestEnumConstsAvoidFileNames(t *testing.T) {
 			{Name: "status_title", Type: "string"},
 		},
 	}
-	out, err := renderEntityFile(decl, 0)
+	out, err := renderEntityFile(decl, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestFieldNamedPatchFailsGenerate(t *testing.T) {
 	out, err := renderEntityFile(framework.EntityDeclaration{
 		Name:   "releases",
 		Fields: []framework.FieldDeclaration{{Name: "major", Type: "int"}, {Name: "patch", Type: "int"}},
-	}, 0)
+	}, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,8 +119,8 @@ func TestWriteShapesDropServerFields(t *testing.T) {
 			{Name: "tenant_id", Type: "string"},
 		},
 	}
-	shapes := renderEntityWriteShapes(decl)
-	client := renderClientEntity(decl)
+	shapes := renderEntityWriteShapes(decl, nil)
+	client := renderClientEntity(decl, nil)
 	input := between(t, shapes, "type NotesInput struct {", "}")
 	patch := between(t, shapes, "type NotesPatch struct {", "}")
 	clientInput := between(t, client, "type NotesInput struct {", "}")
@@ -165,6 +165,39 @@ func TestWriteShapesDropServerFields(t *testing.T) {
 	}
 	if want := `export type NotesPatch = Partial<Omit<NotesInput, "userId" | "tenantId">>;`; !strings.Contains(dts, want) {
 		t.Errorf("client.d.ts is missing %q:\n%s", want, shapeBody(t, dts, "export type NotesPatch"))
+	}
+}
+
+// A nested child is addressed by its own key column: the cascade write
+// looks the child up under target.KeyColumn(), so a child keyed on code
+// that is sent under "id" lands in the create branch. The patch drops
+// the key, so the nested shape is the only place it can ride.
+func TestNestedChildCarriesItsOwnKey(t *testing.T) {
+	shelves := framework.EntityDeclaration{
+		Name:   "shelves",
+		Fields: []framework.FieldDeclaration{{Name: "label", Type: "string"}},
+		Relations: []framework.Relation{
+			{Type: framework.RelHasMany, Name: "books", Entity: "books", ForeignKey: []string{"shelf_id"}, CascadeWrite: true},
+			{Type: framework.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: []string{"shelf_id"}, CascadeWrite: true},
+		},
+	}
+	books := framework.EntityDeclaration{
+		Name:       "books",
+		PrimaryKey: []string{"isbn_code"},
+		Fields: []framework.FieldDeclaration{
+			{Name: "isbn_code", Type: "string", Required: true},
+			{Name: "title", Type: "string"},
+			{Name: "shelf_id", Type: "string"},
+		},
+	}
+	notes := framework.EntityDeclaration{Name: "notes", Fields: []framework.FieldDeclaration{{Name: "body", Type: "string"}, {Name: "shelf_id", Type: "string"}}}
+	shapes := renderEntityWriteShapes(shelves, []framework.EntityDeclaration{shelves, books, notes})
+	keyed := between(t, shapes, "type ShelvesBooksNested struct {", "}")
+	if !strings.Contains(keyed, "IsbnCode string `json:\"isbnCode,omitempty\"`") || strings.Contains(keyed, `json:"id`) {
+		t.Errorf("nested child keyed on isbn_code does not carry it:\n%s", keyed)
+	}
+	if plain := between(t, shapes, "type ShelvesNotesNested struct {", "}"); !strings.Contains(plain, "ID string `json:\"id,omitempty\"`") {
+		t.Errorf("nested child keyed on id lost its ID:\n%s", plain)
 	}
 }
 

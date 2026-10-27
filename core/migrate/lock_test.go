@@ -11,21 +11,22 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-// expectSQLiteLease registers the two statements AcquireSQLiteLease
-// issues before WithAdvisoryLockKey pins its connection: the idempotent
-// lease-table create and the winning upsert (60s lease, 1 row affected).
+// expectSQLiteLease registers the two statements the SQLite lease issues
+// on the pinned connection: the idempotent lease-table create and the
+// winning upsert (60s lease), which returns the expiry it wrote.
 func expectSQLiteLease(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS "_gofastr_migrate_lock"`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(`INSERT INTO "_gofastr_migrate_lock"`).
+	mock.ExpectQuery(`INSERT INTO "_gofastr_migrate_lock"`).
 		WithArgs(int64(60)).
-		WillReturnResult(sqlmock.NewResult(1, 1))
+		WillReturnRows(sqlmock.NewRows([]string{"expires_at"}).AddRow(int64(1000)))
 }
 
 // expectSQLiteLeaseRelease registers the DELETE the deferred release runs
-// after fn has returned and the pinned connection was closed.
+// after fn has returned, fenced on the expiry the upsert returned.
 func expectSQLiteLeaseRelease(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`DELETE FROM "_gofastr_migrate_lock"`).
+		WithArgs(int64(1000)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 }
 

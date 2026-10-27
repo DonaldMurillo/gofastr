@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=9c412ad98dd94327
+//gofastr:generated generator=app kind=scaffold version=dev sum=2b2be50b0c0329f7
 
 package entities
 
@@ -25,7 +25,7 @@ type Products struct {
 	Featured       bool                `json:"featured,omitempty"`
 	Weight         float64             `json:"weight,omitempty"`
 	Image          string              `json:"image,omitempty"`
-	Tags           map[string]any      `json:"tags,omitempty"`
+	Tags           any                 `json:"tags,omitempty"`
 	Category       *Categories         `json:"category,omitempty"`
 	Reviews        []*Reviews          `json:"reviews,omitempty"`
 	OrderItems     []*OrderItems       `json:"orderItems,omitempty"`
@@ -57,13 +57,13 @@ type ProductsInput struct {
 	Featured       *bool                `json:"featured,omitempty"`
 	Weight         *float64             `json:"weight,omitempty"`
 	Image          *string              `json:"image,omitempty"`
-	Tags           *map[string]any      `json:"tags,omitempty"`
+	Tags           *any                 `json:"tags,omitempty"`
 }
 
 // ProductsPatch is the update payload for ProductsRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type ProductsPatch struct {
 	Name           *string              `json:"name,omitempty"`
 	Slug           *string              `json:"slug,omitempty"`
@@ -78,7 +78,7 @@ type ProductsPatch struct {
 	Featured       *bool                `json:"featured,omitempty"`
 	Weight         *float64             `json:"weight,omitempty"`
 	Image          *string              `json:"image,omitempty"`
-	Tags           *map[string]any      `json:"tags,omitempty"`
+	Tags           *any                 `json:"tags,omitempty"`
 }
 
 // ====== Products column references ======

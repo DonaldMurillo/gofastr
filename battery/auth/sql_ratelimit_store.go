@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
@@ -53,8 +54,9 @@ type RateLimitStore interface {
 // replicas: Allow records the attempt before it counts (see Allow), so a
 // burst on one key admits at most MaxAttempts callers.
 type SQLRateLimitStore struct {
-	db    *sql.DB
-	table string
+	db      *sql.DB
+	table   string
+	dialect storeDialect
 
 	schemaReady atomic.Bool // lock-free fast path once the schema exists
 	schemaMu    sync.Mutex  // serializes first-time schema creation
@@ -75,13 +77,19 @@ func NewSQLRateLimitStore(db *sql.DB, table string) *SQLRateLimitStore {
 // EnsureSchema creates both tables if absent. Idempotent; invoked
 // lazily by Allow, exported for hosts that migrate eagerly at boot.
 func (s *SQLRateLimitStore) EnsureSchema(ctx context.Context) error {
+	for _, table := range []string{s.table, s.table + "_attempts"} {
+		if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), table); err != nil {
+			return err
+		}
+	}
 	stmts := []string{
 		fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (rl_key TEXT PRIMARY KEY, blocked_until_ms BIGINT NOT NULL)",
-			query.QuoteIdent(s.table)),
+			query.QuoteFolded(s.table)),
 		fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (rl_key TEXT NOT NULL, attempted_at_ms BIGINT NOT NULL)",
-			query.QuoteIdent(s.table+"_attempts")),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (rl_key, attempted_at_ms)",
-			query.QuoteIdent("idx_"+s.table+"_attempts_key_time"), query.QuoteIdent(s.table+"_attempts")),
+			query.QuoteFolded(s.table+"_attempts")),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (rl_key, attempted_at_ms)",
+			query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite,
+				query.QuoteIndexName("idx_"+s.table+"_attempts_key_time"), query.QuoteFolded(s.table+"_attempts"))),
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -148,8 +156,8 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	now := time.Now()
 	nowMs := now.UnixMilli()
 	cutoffMs := now.Add(-cfg.Window).UnixMilli()
-	blocks := query.QuoteIdent(s.table)
-	attempts := query.QuoteIdent(s.table + "_attempts")
+	blocks := query.QuoteFolded(s.table)
+	attempts := query.QuoteFolded(s.table + "_attempts")
 
 	// Amortized sweep so abandoned keys (attacker-minted emails, rotated
 	// XFF) don't accumulate forever. At most once per Window PER SCOPE, and

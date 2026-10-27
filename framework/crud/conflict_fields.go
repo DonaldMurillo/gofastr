@@ -58,11 +58,12 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 	case err == nil:
 		return nil
 	case isNotNullViolation(err):
-		c := notNullColumn(ch.Entity.Config.Table, err.Error())
-		if f, declared := fieldNamed(ch.Entity, c); !declared || f.Hidden {
+		c := notNullColumn(tableBase(ch.Entity.Config.Table), err.Error())
+		f, declared := fieldNamed(ch.Entity, c)
+		if !declared || f.Hidden {
 			return err
 		}
-		return &constraintFieldsError{err: err, fields: map[string][]schema.Violation{ch.convertKey(c): {{Reason: schema.ReasonRequired}}}}
+		return &constraintFieldsError{err: err, fields: map[string][]schema.Violation{ch.convertKey(f.Name): {{Reason: schema.ReasonRequired}}}}
 	case isUniqueViolation(err):
 	case isForeignKeyViolation(err):
 		msg = reasonMissingTarget
@@ -108,9 +109,13 @@ func sentKeys(body map[string]any) map[string]bool {
 	return out
 }
 
+// fieldNamed finds the field a driver named. Postgres names a column of
+// AutoMigrate's unquoted DDL folded, so the match ignores ASCII case; no
+// two fields can differ by case alone, since neither engine tells such
+// columns apart.
 func fieldNamed(e *entity.Entity, col string) (schema.Field, bool) {
 	for _, f := range e.Config.Fields {
-		if f.Name == col {
+		if f.Name == col || f.Name == foldIdent(col) || foldIdent(f.Name) == col {
 			return f, true
 		}
 	}
@@ -118,23 +123,28 @@ func fieldNamed(e *entity.Entity, col string) (schema.Field, bool) {
 }
 
 // constraintGroup is one declared constraint: the columns it covers and
-// the names a driver may report it by.
+// the names a driver may report it by. keys are names only MySQL reports
+// (a unique field's key is its column): Postgres reading them would take
+// an index the folded column name happens to name for the field.
 type constraintGroup struct {
 	cols  []string
 	names []string
+	keys  []string
 }
 
 // uniqueGroups lists the entity's unique constraints: each Unique field
 // alone (Postgres names it <table>_<col>_key, MySQL by the column), then
 // each unique column index under its name or the idx_<table>_<cols>
-// name AutoMigrate gives it. An expression index names no columns and
-// is skipped.
+// name AutoMigrate gives it. <table> is tableBase: a constraint name
+// never carries the schema. An expression index names no columns and
+// is skipped. Each name is also listed folded: AutoMigrate's DDL is
+// unquoted, so Postgres reports a mixed-case name in lower case.
 func uniqueGroups(e *entity.Entity) []constraintGroup {
-	table := e.Config.Table
+	table := tableBase(e.Config.Table)
 	var gs []constraintGroup
 	for _, f := range e.Config.Fields {
 		if f.Unique {
-			gs = append(gs, constraintGroup{cols: []string{f.Name}, names: []string{table + "_" + f.Name + "_key", f.Name}})
+			gs = append(gs, constraintGroup{cols: []string{f.Name}, names: withFolded(table + "_" + f.Name + "_key"), keys: withFolded(f.Name)})
 		}
 	}
 	for _, ix := range e.Config.Indices {
@@ -145,9 +155,15 @@ func uniqueGroups(e *entity.Entity) []constraintGroup {
 		if name == "" {
 			name = "idx_" + table + "_" + strings.Join(ix.Columns, "_")
 		}
-		gs = append(gs, constraintGroup{cols: ix.Columns, names: []string{name}})
+		gs = append(gs, constraintGroup{cols: ix.Columns, names: withFolded(name)})
 	}
 	return gs
+}
+
+// mysqlKeyIs reports whether a MySQL duplicate-entry refusal names key n,
+// bare or table-qualified.
+func mysqlKeyIs(msg, table, n string) bool {
+	return strings.HasSuffix(msg, "for key '"+n+"'") || strings.HasSuffix(msg, "for key '"+table+"."+n+"'")
 }
 
 // conflictColumns returns the columns of the declared constraint a
@@ -156,7 +172,7 @@ func uniqueGroups(e *entity.Entity) []constraintGroup {
 // the constraint or key, and name a foreign key by its column. SQLite's
 // foreign-key refusal names nothing, so it stays bare.
 func conflictColumns(e *entity.Entity, msg string) []string {
-	table := e.Config.Table
+	table := tableBase(e.Config.Table)
 	if i := strings.Index(msg, sqliteUniqueLead); i >= 0 {
 		rest := msg[i+len(sqliteUniqueLead):]
 		if j := strings.Index(rest, " ("); j >= 0 {
@@ -176,14 +192,19 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 	if isUniqueViolation(errString(msg)) {
 		for _, g := range uniqueGroups(e) {
 			for _, n := range g.names {
-				if strings.Contains(msg, `constraint "`+n+`"`) || strings.HasSuffix(msg, "for key '"+n+"'") || strings.HasSuffix(msg, "for key '"+table+"."+n+"'") {
+				if strings.Contains(msg, `constraint "`+n+`"`) || mysqlKeyIs(msg, table, n) {
+					return g.cols
+				}
+			}
+			for _, n := range g.keys {
+				if mysqlKeyIs(msg, table, n) {
 					return g.cols
 				}
 			}
 		}
 		return nil
 	}
-	pg := strings.Contains(msg, pgForeignKeyLead+`"`+table+`"`)
+	pg := strings.Contains(msg, pgForeignKeyLead+`"`+table+`"`) || strings.Contains(msg, pgForeignKeyLead+`"`+foldIdent(table)+`"`)
 	my := strings.Contains(msg, mysqlForeignChild) && strings.Contains(msg, "`"+table+"`")
 	if !pg && !my {
 		return nil
@@ -192,12 +213,21 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 		if f.Type != schema.Relation || f.Many {
 			continue
 		}
-		if (pg && strings.Contains(msg, `"`+table+"_"+f.Name+`_fkey"`)) ||
+		fkey := table + "_" + f.Name + "_fkey"
+		if (pg && (strings.Contains(msg, `"`+fkey+`"`) || strings.Contains(msg, `"`+foldIdent(fkey)+`"`))) ||
 			(my && strings.Contains(msg, "FOREIGN KEY (`"+f.Name+"`)")) {
 			return []string{f.Name}
 		}
 	}
 	return nil
+}
+
+// tableBase is a table's own name, without the schema a qualified one
+// carries: app.inv is inv. The drivers name a table's constraints and
+// relation by it (Postgres's inv_email_key, SQLite's inv.email), never
+// by the qualified spelling.
+func tableBase(table string) string {
+	return table[strings.LastIndex(table, ".")+1:]
 }
 
 // isNotNullViolation reports whether err is a NOT NULL refusal: SQLite
@@ -225,7 +255,8 @@ func notNullColumn(table, msg string) string {
 	}
 	if i := strings.Index(msg, pgNotNullLead); i >= 0 {
 		col, rest, ok := strings.Cut(msg[i+len(pgNotNullLead):], `"`)
-		if !ok || (strings.Contains(rest, ` of relation "`) && !strings.Contains(rest, ` of relation "`+table+`"`)) {
+		if !ok || (strings.Contains(rest, ` of relation "`) && !strings.Contains(rest, ` of relation "`+table+`"`) &&
+			!strings.Contains(rest, ` of relation "`+foldIdent(table)+`"`)) {
 			return ""
 		}
 		return col
@@ -252,3 +283,14 @@ func sameSet(a, b []string) bool {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// withFolded lists names, then each one's folded spelling when it differs.
+func withFolded(names ...string) []string {
+	out := names
+	for _, n := range names {
+		if f := foldIdent(n); f != n {
+			out = append(out, f)
+		}
+	}
+	return out
+}

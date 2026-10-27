@@ -615,9 +615,10 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 
 // maskedControl draws a hook-masked column as write-only: the value
 // never renders, a blank input keeps the stored value, and the help
-// says whether one is set. A masked enum, bool or relation cannot use
-// its native control (it would submit a value the user never saw), so
-// it becomes a select with an explicit "unchanged" option.
+// says whether one is set. A masked enum or bool cannot use its native
+// control (it would submit a value the user never saw), so it becomes a
+// select with an explicit "unchanged" option. Every other masked field
+// changes through a Replace form of its own.
 func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label, help, id string) render.HTML {
 	state := i18nui.EntityNotSet.Text(ctx)
 	if v := fb.value(f); v != "" {
@@ -641,7 +642,18 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 			},
 		})
 	case schema.Relation:
-		return fb.relationPicker(ctx, f, label, help, id, "")
+		// The picker's hidden input submits "" until a pick, and a
+		// blank relation clears the column on update, so the picker
+		// belongs to a Replace form, as a masked text input does.
+		if !fb.m.hasAPI {
+			return fb.readOnly(ctx, f, label)
+		}
+		formID := fb.replaceFormID(f.Name)
+		fb.replace = append(fb.replace, f.Name)
+		help = state + " · " + i18nui.EntityReplaceHint.Text(ctx)
+		return ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart},
+			fb.relationPicker(ctx, f, label, help, id, "", formID),
+			replaceButton(ctx, formID))
 	default:
 		// A blank text input cannot mean "keep": CRUD stores "" for
 		// String and Text, so a record form that carried this input
@@ -673,12 +685,17 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 			})
 		}
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, input,
-			ui.Button(ui.ButtonConfig{
-				Ctx:   ctx,
-				Label: i18nui.EntityReplace.Text(ctx), Type: "submit",
-				Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, ExtraAttrs: owner,
-			}))
+			replaceButton(ctx, formID))
 	}
+}
+
+// replaceButton submits a masked field's Replace form.
+func replaceButton(ctx context.Context, formID string) render.HTML {
+	return ui.Button(ui.ButtonConfig{
+		Ctx:   ctx,
+		Label: i18nui.EntityReplace.Text(ctx), Type: "submit",
+		Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, ExtraAttrs: html.Attrs{"form": formID},
+	})
 }
 
 // typedInput draws the input the field's own type picks.
@@ -707,10 +724,13 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required, Monospace: true, JSON: true, Ctx: ctx,
 		})
 	case schema.Int:
-		if fb.compact {
+		// The stepper always holds a number, so an unset optional int
+		// drew 0 and an untouched save wrote it. A field that may be
+		// blank takes the plain number field.
+		if fb.compact || !required {
 			step := 1.0
 			return ui.NumberField(ui.NumberFieldConfig{
-				Name: f.Name, Label: label, ID: id, Value: val, LabelHidden: true,
+				Name: f.Name, Label: label, ID: id, Value: val, LabelHidden: fb.compact,
 				Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 			})
 		}
@@ -721,7 +741,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.Float, schema.Decimal:
 		// step must let the type's precision through: a bare number
 		// input steps by 1 and refuses 0.5.
-		step := 0.01
+		step := decimalStep(val)
 		if f.Type == schema.Float {
 			step = 1e-9
 		}
@@ -730,6 +750,21 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 		})
 	case schema.Bool:
+		if !required && !fb.create && val == "" {
+			// A switch has no unset state: its hidden "false" saved a
+			// NULL as false on every save of the record. A stored NULL
+			// draws a select whose selected empty choice submits blank,
+			// which keeps the column NULL on update; yes or no sets it,
+			// and the switch returns on the next edit.
+			return ui.Select(ui.SelectConfig{
+				Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
+				Options: []ui.SelectOption{
+					{Value: "", Text: i18nui.EntityNotSet.Text(ctx), Selected: true},
+					{Value: "true", Text: i18nui.EntityYes.Text(ctx)},
+					{Value: "false", Text: i18nui.EntityNo.Text(ctx)},
+				},
+			})
+		}
 		// The hidden-false pair: the browser submits "on" for a
 		// checked box and nothing for an unchecked one, and the
 		// runtime's serializer folds exactly this pair into one
@@ -739,18 +774,34 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			ui.Switch(ui.ToggleConfig{Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
 		)
 	case schema.Enum:
-		if len(f.Values) <= 4 && required && !fb.compact {
+		stale := val != "" && !slices.Contains(f.Values, val)
+		if len(f.Values) <= 4 && required && !fb.compact && !stale {
 			return ui.SegmentedControl(ui.SegmentedControlConfig{
 				Name: f.Name, ID: id, Label: label,
 				Options:  enumSegments(ctx, fb.m, f),
 				Selected: val,
 			})
 		}
+		opts, ph := enumOptions(ctx, fb.m, f, val), ""
+		switch {
+		case stale:
+			// A stored value the field no longer lists matches no
+			// option, and the browser would select the first one. The
+			// disabled placeholder submits nothing, so an optional
+			// field keeps it and a required one asks for a listed
+			// value instead of rewriting it.
+			ph = i18nui.EntitySelect.Text(ctx)
+		case required || len(f.Values) == 0:
+		default:
+			// The empty choice is a real option, not a disabled
+			// placeholder: picking it again clears the column.
+			opts = append([]ui.SelectOption{{
+				Value: "", Text: i18nui.EntitySelect.Text(ctx), Selected: val == "",
+			}}, opts...)
+		}
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
-			Placeholder: selectPlaceholder(ctx, f, required),
-			Options:     enumOptions(ctx, fb.m, f, val),
-			Required:    required,
+			Placeholder: ph, Options: opts, Required: required,
 		})
 	case schema.Date:
 		return ui.DateField(ui.DateFieldConfig{
@@ -758,12 +809,13 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required, LabelHidden: fb.compact,
 		})
 	case schema.Timestamp:
+		v := timestampInputValue(val)
 		return ui.DateTimeField(ui.DateTimeFieldConfig{
-			Name: f.Name, Label: label, ID: id, Value: timestampInputValue(val),
+			Name: f.Name, Label: label, ID: id, Value: v, Step: timestampStep(v),
 			Help: help, Required: required,
 		})
 	case schema.Relation:
-		return fb.relationPicker(ctx, f, label, help, id, val)
+		return fb.relationPicker(ctx, f, label, help, id, val, "")
 	case schema.Image, schema.File:
 		if fb.m.uploads() {
 			return fb.uploadInput(ctx, f, label, help, id, val, required)
@@ -936,13 +988,6 @@ func enumSegments(ctx context.Context, m *meta, f schema.Field) []ui.SegmentedOp
 	return opts
 }
 
-func selectPlaceholder(ctx context.Context, f schema.Field, required bool) string {
-	if required || len(f.Values) == 0 {
-		return ""
-	}
-	return i18nui.EntitySelect.Text(ctx)
-}
-
 // formValueText renders a stored value for an <input> of the field's
 // type: dates as YYYY-MM-DD (an input[type=date] silently blanks
 // anything else, and a round-tripped date column came back empty and
@@ -966,12 +1011,12 @@ func formValueText(f schema.Field, v any) string {
 	case schema.Timestamp:
 		switch t := v.(type) {
 		case time.Time:
-			return t.Format("2006-01-02T15:04")
+			return timestampInput(t)
 		case *time.Time:
 			if t == nil {
 				return ""
 			}
-			return t.Format("2006-01-02T15:04")
+			return timestampInput(*t)
 		}
 	case schema.Bool:
 		return boolText(v)
@@ -997,7 +1042,8 @@ func boolText(v any) string {
 		}
 		return "false"
 	case nil:
-		return "false"
+		// Unset is not false: the form keeps it unset (typedInput).
+		return ""
 	}
 	return cell(v)
 }
@@ -1052,6 +1098,25 @@ func patternAttr(p string) html.Attrs {
 	return html.Attrs{"pattern": `[\s\S]*(?:` + p + `)[\s\S]*`}
 }
 
+// decimalStep is a Decimal input's step: the column's four fraction
+// digits (DECIMAL(19,4)), or the stored value's own when it has more,
+// as SQLite keeps. A step of 0.01 made a stored 19.995 fail the
+// browser's step check, so the form could not be saved untouched.
+func decimalStep(val string) float64 {
+	return fractionStep(val, 4)
+}
+
+// fractionStep is 10^-digits, or finer when val holds more fraction
+// digits, so a stored value always passes the browser's step check.
+func fractionStep(val string, digits int) float64 {
+	if _, frac, ok := strings.Cut(strings.TrimSpace(val), "."); ok && len(frac) > digits && len(frac) <= 15 {
+		if _, err := strconv.ParseUint(frac, 10, 64); err == nil {
+			digits = len(frac)
+		}
+	}
+	return math.Pow10(-digits)
+}
+
 func intInputValue(s string) int {
 	n, _ := strconv.Atoi(strings.TrimSpace(s))
 	return n
@@ -1072,9 +1137,45 @@ func dateInputValue(s string) string {
 	return ""
 }
 
+// timestampInputValue is a stored timestamp's text as a datetime-local
+// value. The input has no zone and the write reads it as UTC, so the
+// instant is drawn in UTC whatever offset it was stored or scanned with:
+// slicing the stored text showed 12:00 for 12:00+02:00, and an untouched
+// save moved the value two hours.
 func timestampInputValue(s string) string {
-	if len(s) >= 16 && s[4] == '-' && s[7] == '-' {
-		return s[:16]
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return timestampInput(t)
+		}
 	}
 	return ""
+}
+
+// timestampInput draws t in UTC to the minute, to the second when it has
+// seconds, or to the millisecond when it has a fraction: dropping any of
+// them moved the instant on every untouched save. Milliseconds are the
+// finest a datetime-local value holds (the browser blanks a longer
+// fraction), so a sub-millisecond part is not drawn.
+func timestampInput(t time.Time) string {
+	t = t.UTC().Truncate(time.Millisecond)
+	switch {
+	case t.Nanosecond() != 0:
+		return t.Format("2006-01-02T15:04:05.000")
+	case t.Second() != 0:
+		return t.Format("2006-01-02T15:04:05")
+	}
+	return t.Format("2006-01-02T15:04")
+}
+
+// timestampStep is the step a datetime-local value needs to submit: the
+// browser refuses a value finer than its step, and the default step is
+// a minute.
+func timestampStep(v string) float64 {
+	switch {
+	case strings.Contains(v, "."):
+		return 0.001
+	case len(v) > len("2006-01-02T15:04"):
+		return 1
+	}
+	return 0
 }

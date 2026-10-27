@@ -103,7 +103,7 @@ func TestLLMMDFilterExampleSkipsLeadingNoQueryField(t *testing.T) {
 	ent := entity.Define("llm_noquery_order", entity.EntityConfig{Fields: []schema.Field{
 		{Name: "id", Type: schema.UUID, Hidden: true},
 		{Name: "secret", Type: schema.String, NoQuery: true},
-		{Name: "name", Type: schema.String},
+		{Name: "name", Type: schema.String, Required: true},
 	}, Pagination: &entity.PaginationConfig{CursorField: "name"},
 	}.WithTimestamps(false))
 

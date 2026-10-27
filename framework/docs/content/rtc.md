@@ -88,8 +88,12 @@ socket closes. Outbound, a peer whose send buffer overflows
 (`WS.SendBuffer`, default 128 frames) is closed rather than starved:
 signals are not in the snapshot, so a dropped answer could never be
 recovered, while a closed socket reconnects, re-hydrates, and the far
-side renegotiates. A `signal`'s `to` must be a current member of the room
-and not the sender. A `status` document must be a JSON object within
+side renegotiates. The same rule covers the room's own event queue: it
+holds up to 4096 pending events (the defaults put at most 2048 inbound
+frames in flight at once, so only a stalled server reaches it), and an
+event it cannot take closes every socket that would have received it
+instead of vanishing while they stay open. A `signal`'s `to` must be a
+current member of the room and not the sender. A `status` document must be a JSON object within
 `MaxStatusBytes` (default 1 KiB). Rooms cap at `MaxPeers` members
 (default 8): a join past the cap is refused with 409 before the upgrade,
 and the cap is checked again under the lock that registers the peer, so
@@ -345,7 +349,22 @@ NTP posture; a sender whose clock lags by more than that has its genuine
 move-away mirror dropped too, so the peer's old socket here stays in the
 roster until it closes, and that close publishes no leave because the
 remote seat holds the id. A local socket that closes while a live remote seat holds
-the same id publishes no leave: the merged roster never lost the peer. A room's local state is dropped
+the same id publishes no leave: the merged roster never lost the peer.
+When that remote seat is newer than the closed socket (the peer
+reconnected on another replica and its roster beat arrived while the
+old socket still held the id here), the close announces the newer seat
+as a join instead, so local peers reconnect to it.
+Local sockets hear what changed in the merged remote view, never the raw
+lane message: a join goes out once per seat (a roster beat that lists a
+peer before its own join mirror arrives leaves the mirror nothing to
+say), and again only when the peer reconnects with the same id on
+another replica, which the module handles as a reconnect. A leave goes
+out only when no replica holds the id any more, so a crashed replica's
+expiry, or an old seat's leave mirror, says nothing about a peer that
+reconnected elsewhere with a stable `PeerID`. When replicas disagree on
+an id, the latest seat stands for it. A peer that moves to another
+replica frees its seat on this one, so it never counts against
+`MaxSocketsPerUser` here. A room's local state is dropped
 `RoomIdleTTL` (default 1m) after its last local peer leaves, on its own
 timer, whether the last peer left or migrated to another replica; what
 other replicas hold for that name stays under the remote TTL. Signals

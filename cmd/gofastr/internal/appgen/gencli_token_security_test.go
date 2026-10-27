@@ -62,7 +62,7 @@ func TestGenCLIRedNoTokenFlag(t *testing.T) {
 	if window == "" {
 		t.Fatalf("setup broken: no parseGlobals func in emitted output.go")
 	}
-	if !strings.Contains(window, `os.Getenv(envPrefix+"_TOKEN")`) {
+	if !strings.Contains(window, `os.Getenv(envPrefix + "_TOKEN")`) {
 		t.Fatalf("setup broken: emitted parseGlobals lost the env token resolution:\n%s", window)
 	}
 	if !strings.Contains(authSrc, `fs.Bool("with-token"`) || !strings.Contains(authSrc, "io.ReadAll(os.Stdin)") {

@@ -33,6 +33,19 @@ func invoicesEntity(advisory bool) *entity.Entity {
 	})
 }
 
+// enumValues returns a field schema's string enum values. An optional
+// field's enum also lists null, which is not a value the field holds.
+func enumValues(field map[string]any) []string {
+	var out []string
+	values, _ := field["enum"].([]any)
+	for _, v := range values {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func schemaProps(t *testing.T, s map[string]any) map[string]any {
 	t.Helper()
 	props, ok := s["properties"].(map[string]any)
@@ -52,7 +65,7 @@ func TestWriteToolSchemaNarrowsStates(t *testing.T) {
 	if !ok {
 		t.Fatal("create tool dropped the state field entirely; a create may start at an initial value")
 	}
-	enum, _ := status["enum"].([]string)
+	enum := enumValues(status)
 	if len(enum) != 2 || enum[0] != "draft" || enum[1] != "open" {
 		t.Errorf("create tool status enum = %v, want [draft open]", enum)
 	}
@@ -79,7 +92,7 @@ func TestWriteToolSchemaUnchangedWithoutEnforcement(t *testing.T) {
 	advisory := writeToolSchema(invoicesEntity(true))
 	props := schemaProps(t, advisory)
 	status, _ := props["status"].(map[string]any)
-	enum, _ := status["enum"].([]string)
+	enum := enumValues(status)
 	if len(enum) != 4 {
 		t.Errorf("advisory create status enum = %v, want the full value set", enum)
 	}
@@ -94,7 +107,7 @@ func TestWriteToolSchemaUnchangedWithoutEnforcement(t *testing.T) {
 	})
 	plainProps := schemaProps(t, writeToolSchema(plain))
 	status, _ = plainProps["status"].(map[string]any)
-	enum, _ = status["enum"].([]string)
+	enum = enumValues(status)
 	if len(enum) != 2 {
 		t.Errorf("no-states status enum = %v, want untouched [draft live]", enum)
 	}

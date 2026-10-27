@@ -563,7 +563,7 @@ func TestPanickingGateFailsClosedEverywhere(t *testing.T) {
 					panicked = true
 				}
 			}()
-			return false, s.subscriberMayReceive(sub, sseNotification{method: "notifications/tools/list_changed"})
+			return false, s.subscriberMayReceive(sub.ctx, sseNotification{method: "notifications/tools/list_changed"})
 		}()
 		if panicked {
 			t.Error("SECURITY: a panicking server gate must be recovered at delivery time (gateAllows), not unwind the stream loop")

@@ -9,9 +9,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
@@ -102,15 +104,26 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		if direction == "backward" {
 			op = "<"
 		}
+		// The cursor is client-borne: a tampered value of the wrong type
+		// for its column (?cursor= naming id "abc" on an int key) is a
+		// 400 here on both dialects. Bound raw, Postgres refused it as a
+		// 500 and SQLite compared it as text and answered a 200.
+		args := make([]any, len(fields))
+		for i, f := range fields {
+			v, err := filter.CoerceValue(f, ch.queryField(f).Type, decoded[f])
+			if err != nil {
+				writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, err), i18n.Phrase{})
+				return
+			}
+			args[i] = v
+		}
 		if len(fields) == 1 {
-			qb.Where(fmt.Sprintf("%s %s $1", fields[0], op), decoded[fields[0]])
+			qb.Where(fmt.Sprintf("%s %s $1", fields[0], op), args[0])
 		} else {
 			cols := strings.Join(fields, ", ")
 			placeholders := make([]string, len(fields))
-			args := make([]any, len(fields))
-			for i, f := range fields {
+			for i := range fields {
 				placeholders[i] = fmt.Sprintf("$%d", i+1)
-				args[i] = decoded[f]
 			}
 			qb.Where(fmt.Sprintf("(%s) %s (%s)", cols, op, strings.Join(placeholders, ", ")), args...)
 		}
@@ -128,7 +141,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	qb.Limit(limit + 1)
 
 	dataSQL, dataArgs := qb.Build()
-	rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
+	rows, err := ch.conn(ctx).QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
 		// Redact: raw driver text must not reach the client. Mirrors the
 		// non-cursor List and streaming paths.
@@ -145,18 +158,29 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		return
 	}
 
-	if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
-		writeIncludeError(w, r, "cursor", err)
-		return
-	}
-
 	// Compute next cursor from the last row using all cursor field columns.
 	// buildCursorPage runs against the raw fetch order (DESC for backward),
 	// so it trims the extra sentinel row and derives the continue-cursor from
 	// the true last row of the keyset window. Only AFTER that do we flip a
 	// backward page back into ascending order so a "prev" page reads the same
 	// way a "next" page does.
-	page := buildCursorPage(results, fields, ch.convertKey, limit)
+	page, err := buildCursorPage(results, fields, ch.convertKey, func(f string) bool {
+		return ch.queryField(f).Type == schema.Date
+	}, limit)
+	if err != nil {
+		log.Printf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
+
+	// Includes run on the page after the cursor is taken: including a
+	// relation that is itself a cursor column (a composite key's
+	// team_id) replaces its stored value with the related row, and a
+	// cursor encoded from that object pages on garbage.
+	if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), page.Data, includes); err != nil {
+		writeIncludeError(w, r, "cursor", err)
+		return
+	}
 	if direction == "backward" {
 		for i, j := 0, len(page.Data)-1; i < j; i, j = i+1, j-1 {
 			page.Data[i], page.Data[j] = page.Data[j], page.Data[i]
@@ -249,30 +273,47 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 // buildCursorPage assembles the CursorPage envelope. Single-field
 // cursors use the compact EncodeCursor shape; composite cursors emit
 // the multi-field encoding.
-func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, limit int) pagination.CursorPage {
+//
+// A NULL keyset value in the last row is an error, never a cursor: no
+// tuple comparison against NULL is true, so the next page would come
+// back empty (or, spelled "null", compare as text on SQLite). Define
+// refuses a nullable cursor column, so reaching this means the stored
+// data broke the column's NOT NULL contract.
+//
+// isDate names the schema.Date cursor fields. Both drivers read DATE as
+// a time.Time, which the token would carry as a full timestamp that the
+// Date check on the next request refuses; it carries the date instead.
+func buildCursorPage(data []map[string]any, fields []string, convertKey func(string) string, isDate func(string) bool, limit int) (pagination.CursorPage, error) {
 	hasMore := len(data) > limit
 	if hasMore {
 		data = data[:limit]
 	}
 	page := pagination.CursorPage{Data: data, HasMore: hasMore}
 	if !hasMore || len(data) == 0 {
-		return page
+		return page, nil
 	}
 	last := data[len(data)-1]
-	if len(fields) == 1 {
-		key := convertKey(fields[0])
-		if val, ok := last[key]; ok {
-			page.Cursor = pagination.EncodeCursor(fields[0], val)
-		}
-		return page
-	}
 	// Composite, build a map keyed by DB column name for EncodeMultiCursor.
 	dbRow := map[string]any{}
 	for _, f := range fields {
-		if v, ok := last[convertKey(f)]; ok {
-			dbRow[f] = v
+		v, ok := last[convertKey(f)]
+		if !ok {
+			continue
 		}
+		if v == nil {
+			return page, fmt.Errorf("cursor field %q is NULL in the last row", f)
+		}
+		if t, isTime := v.(time.Time); isTime && isDate != nil && isDate(f) {
+			v = t.Format(time.DateOnly)
+		}
+		dbRow[f] = v
+	}
+	if len(fields) == 1 {
+		if val, ok := dbRow[fields[0]]; ok {
+			page.Cursor = pagination.EncodeCursor(fields[0], val)
+		}
+		return page, nil
 	}
 	page.Cursor = pagination.EncodeMultiCursor(fields, dbRow)
-	return page
+	return page, nil
 }

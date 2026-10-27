@@ -2008,7 +2008,7 @@ func RenderAppSpecScreens(bp appspec.AppSpec) string {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, "screens"))
+	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, "screens", "screens"))
 	var bodies strings.Builder
 	for _, screen := range bp.Screens {
 		bodies.WriteString(appSpecScreenBody(bp, screen, entityMap, apiBase))
@@ -2454,7 +2454,7 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, screen.Name))
+	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, screen.Name, appSpecScreenScope(bp, screen.Name)))
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
 	needs := appSpecScreensImportNeeds(bp, []appspec.AppSpecScreen{screen}, entityMap, apiBase)
 	needs.readCode(body, bp.PhraseCollector())
@@ -2495,7 +2495,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 		}
 	}
 	screens = kept
-	bp.SetPhraseCollector(appSpecCrudPhrases(bp.App.Name, entity))
+	bp.SetPhraseCollector(appSpecCrudPhrases(bp.App.Name, entity, appSpecCrudScope(bp, entity)))
 	var bodies strings.Builder
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
@@ -3620,11 +3620,27 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)
 		case "bool", "boolean":
-			expr = fmt.Sprintf("ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
-				field.Name, label, fieldID, req)
+			// entityui's pair: a checked box submits "true" (with no
+			// Value it posted "on", which the bool validator refuses),
+			// and the hidden "false" before it is what an unchecked box
+			// leaves, so unticked writes false rather than the declared
+			// default. The box starts as that default. Required stays off
+			// the checkbox: it would make unticked unsubmittable.
+			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
+				field.Name, field.Name, label, fieldID, fmt.Sprint(field.Default) == "true")
 		case "int", "integer", "float", "decimal":
-			expr = fmt.Sprintf("ui.NumberField(ui.NumberFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
-				field.Name, label, fieldID, req)
+			// The step admits what the column holds, as entityui's form
+			// does: at the browser's default of 1, native validation
+			// refused 12.99 before the RPC ran. A decimal column keeps
+			// four fraction digits; a float takes "any", which
+			// NumberField's numeric Step cannot say, so every number
+			// draws the styled control with a text step.
+			step := map[string]string{"float": "any", "decimal": "0.0001"}[field.Type]
+			if step == "" {
+				step = "1"
+			}
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q, Step: %q}) }})",
+				label, fieldID, req, field.Name, step)
 		case "date":
 			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
 				field.Name, label, fieldID, req)

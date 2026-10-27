@@ -3,6 +3,7 @@ package semantic
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -142,5 +143,57 @@ func TestCloseConcurrentWithMutationsNoRace(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 		_ = idx.Close()
 		wg.Wait()
+	}
+}
+
+// slowRemoveStore holds every RemoveDoc for a while and signals the first
+// one, so a second writer is parked on the index lock long enough for Go's
+// mutex to hand ownership straight to it (starvation mode) when the first
+// writer lets go between its remove and its add.
+type slowRemoveStore struct {
+	*FlatStore
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (s *slowRemoveStore) RemoveDoc(ctx context.Context, docID string) error {
+	s.once.Do(func() { close(s.entered) })
+	time.Sleep(20 * time.Millisecond)
+	return s.FlatStore.RemoveDoc(ctx, docID)
+}
+
+// TestConcurrentReplaceKeepsOneVersion: two Adds of the same document must
+// each replace it whole. With the lock released anywhere inside a replace,
+// the other Add's remove and add ran in the gap: B stored its three
+// chunks, then A overwrote chunk 0 with its one, leaving a mix.
+func TestConcurrentReplaceKeepsOneVersion(t *testing.T) {
+	ctx := context.Background()
+	emb := NewStubEmbedder(64)
+	store := &slowRemoveStore{FlatStore: NewFlatStore(emb.Dim(), emb.Name()), entered: make(chan struct{})}
+	idx, err := Open(Options{Embedder: emb, Store: store, Chunker: NewFixedWindow(4, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	errs := make(chan error, 2)
+	// A's first remove (x) sleeps while B waits on the lock long enough
+	// to starve, so any unlock in A hands the lock straight to B.
+	go func() {
+		errs <- idx.Add(ctx, Document{ID: "x", Text: "other"}, Document{ID: "d", Text: "aaaa"})
+	}()
+	<-store.entered
+	go func() { errs <- idx.Add(ctx, Document{ID: "d", Text: "bbbbbbbbbbbb"}) }()
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var texts []string
+	for _, id := range store.ChunkIDsForDoc("d") {
+		c, _ := store.ChunkByID(id)
+		texts = append(texts, c.Text)
+	}
+	if got := strings.Join(texts, ""); got != "aaaa" && got != "bbbbbbbbbbbb" {
+		t.Fatalf("doc d holds chunks %q, a mix of two versions", texts)
 	}
 }

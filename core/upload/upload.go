@@ -55,7 +55,23 @@ func UniqueFilename(filename string) string {
 	if name == "" {
 		name = "upload"
 	}
-	return fmt.Sprintf("%s_%d_%s%s", name, time.Now().UnixNano(), randomSuffix(), ext)
+	suffix := fmt.Sprintf("_%d_%s", time.Now().UnixNano(), randomSuffix())
+	// SanitizeFilename lets the name reach MaxFilenameBytes, and the
+	// suffix comes on top: cut the stem (on a rune boundary, keeping the
+	// extension) so the whole component still fits the filesystem's
+	// name limit. An extension that leaves no room for a stem is dropped,
+	// as SanitizeFilename drops one past the cap.
+	budget := MaxFilenameBytes - len(suffix)
+	if len(name)+len(ext) > budget {
+		if len(ext) >= budget {
+			ext = ""
+		}
+		name = truncateRunes(name, budget-len(ext))
+		if name == "" {
+			name = "u"
+		}
+	}
+	return name + suffix + ext
 }
 
 // randomSuffix returns a hex-encoded 8-byte crypto-random token. It has no

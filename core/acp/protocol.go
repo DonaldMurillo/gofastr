@@ -108,6 +108,27 @@ type ContentBlock struct {
 	Name string `json:"name,omitempty"` // resource_link
 }
 
+// MarshalJSON writes the fields the block's type requires even when
+// empty: omitempty would turn an empty text block into {"type":"text"},
+// which the schema refuses.
+func (b ContentBlock) MarshalJSON() ([]byte, error) {
+	type plain ContentBlock
+	switch b.Type {
+	case ContentText:
+		return json.Marshal(struct {
+			plain
+			Text string `json:"text"`
+		}{plain(b), b.Text})
+	case ContentResourceLink:
+		return json.Marshal(struct {
+			plain
+			URI  string `json:"uri"`
+			Name string `json:"name"`
+		}{plain(b), b.URI, b.Name})
+	}
+	return json.Marshal(plain(b))
+}
+
 // Content block type constants.
 const (
 	ContentText         = "text"
@@ -149,6 +170,26 @@ type ToolCallContent struct {
 	OldText    *string       `json:"oldText,omitempty"` // diff
 	NewText    string        `json:"newText,omitempty"` // diff
 	TerminalID string        `json:"terminalId,omitempty"`
+}
+
+// MarshalJSON writes the fields the item's type requires even when
+// empty, as ContentBlock does: a diff that clears a file has newText "".
+func (c ToolCallContent) MarshalJSON() ([]byte, error) {
+	type plain ToolCallContent
+	switch c.Type {
+	case "diff":
+		return json.Marshal(struct {
+			plain
+			Path    string `json:"path"`
+			NewText string `json:"newText"`
+		}{plain(c), c.Path, c.NewText})
+	case "terminal":
+		return json.Marshal(struct {
+			plain
+			TerminalID string `json:"terminalId"`
+		}{plain(c), c.TerminalID})
+	}
+	return json.Marshal(plain(c))
 }
 
 // TextToolContent wraps text as a tool-call content item.
@@ -266,7 +307,14 @@ type Update struct {
 	Status        string         `json:"status,omitempty"`
 	RawInput      map[string]any `json:"rawInput,omitempty"`
 	RawOutput     map[string]any `json:"rawOutput,omitempty"`
+
+	// set marks patch fields ToolCallUpdateFrame received as empty but
+	// present: a tool_call_update omits a field to mean "unchanged", so
+	// clearing one has to send the empty value.
+	set patchFields
 }
+
+type patchFields struct{ title, content, rawInput, rawOutput bool }
 
 // MarshalJSON emits the sessionUpdate discriminator first, then the
 // fields in schema order, omitting everything the constructor left
@@ -304,7 +352,7 @@ func (u Update) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 	}
-	if u.Title != "" {
+	if u.Title != "" || u.set.title {
 		if err := appendKV("title", u.Title); err != nil {
 			return nil, err
 		}
@@ -323,7 +371,7 @@ func (u Update) MarshalJSON() ([]byte, error) {
 	case nil:
 		// omit
 	case []ToolCallContent:
-		if len(c) > 0 {
+		if len(c) > 0 || u.set.content {
 			if err := appendKV("content", c); err != nil {
 				return nil, err
 			}
@@ -337,17 +385,27 @@ func (u Update) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 	}
-	if len(u.Entries) > 0 {
+	if u.SessionUpdate == UpdatePlan {
+		// A plan frame always carries entries, [] for an empty plan: the
+		// schema requires the field, and its absence cleared nothing.
+		entries := u.Entries
+		if entries == nil {
+			entries = []PlanEntry{}
+		}
+		if err := appendKV("entries", entries); err != nil {
+			return nil, err
+		}
+	} else if len(u.Entries) > 0 {
 		if err := appendKV("entries", u.Entries); err != nil {
 			return nil, err
 		}
 	}
-	if len(u.RawInput) > 0 {
+	if len(u.RawInput) > 0 || u.set.rawInput {
 		if err := appendKV("rawInput", u.RawInput); err != nil {
 			return nil, err
 		}
 	}
-	if len(u.RawOutput) > 0 {
+	if len(u.RawOutput) > 0 || u.set.rawOutput {
 		if err := appendKV("rawOutput", u.RawOutput); err != nil {
 			return nil, err
 		}
@@ -406,9 +464,16 @@ func NewToolCall(call ToolCall) Update {
 }
 
 // ToolCallUpdateFrame patches a tool call reported earlier. Only the
-// fields set on u are transmitted.
+// fields set on u are transmitted; a title, content, rawInput or
+// rawOutput set to an empty value is sent empty, which clears it.
 func ToolCallUpdateFrame(u ToolCallUpdate) Update {
 	return Update{
+		set: patchFields{
+			title:     u.Title != nil,
+			content:   u.Content != nil,
+			rawInput:  u.RawInput != nil,
+			rawOutput: u.RawOutput != nil,
+		},
 		SessionUpdate: UpdateToolCallUpdate,
 		ToolCallID:    u.ToolCallID,
 		Title:         strOrEmpty(u.Title),

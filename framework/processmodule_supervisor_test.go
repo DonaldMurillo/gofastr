@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -373,32 +372,14 @@ func TestSupervisor_RemoteToggleCrossReplica(t *testing.T) {
 	if _, err := sup1.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	// sup2 registers the same descriptor. Install returns ErrModuleInstalled
-	// (the row exists), which we treat as "already known": manually create
-	// sup2's slot pointing at the existing row.
-	if _, err := sup2.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err == nil {
-		t.Fatal("sup2 Register should fail with ErrModuleInstalled (row exists)")
-	} else if !errors.Is(err, ErrModuleInstalled) {
-		t.Fatalf("sup2 Register: want ErrModuleInstalled, got %v", err)
+	// sup2 registers the same descriptor against the shared store: the
+	// row exists and matches, so sup2 adopts it unchanged and supervises
+	// independently against it.
+	if res, err := sup2.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
+		t.Fatalf("sup2 Register: %v", err)
+	} else if res.Outcome != InstallUnchanged {
+		t.Fatalf("sup2 Register outcome = %s, want unchanged", res.Outcome)
 	}
-	// Create sup2's slot directly (cross-replica: each replica supervises
-	// independently against the shared store). The runner is selected via
-	// SelectRunner, the same path Register uses, so the slot's runner
-	// field is populated and spawnOnce does not nil-deref.
-	selectedRunner, selErr := SelectRunner(d.TrustTier, sup2.runner, sup2.sandbox)
-	if selErr != nil {
-		t.Fatalf("sup2 select runner: %v", selErr)
-	}
-	sup2.mu.Lock()
-	if sup2.slots[d.Name] == nil {
-		sup2.slots[d.Name] = &moduleSlot{
-			name: d.Name, desc: d, sup: sup2,
-			runner: selectedRunner,
-			wake:   make(chan struct{}, 1),
-			done:   make(chan struct{}),
-		}
-	}
-	sup2.mu.Unlock()
 
 	sup1.StartLoops()
 	sup2.StartLoops()

@@ -18,6 +18,14 @@
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
 
+  // X-Gofastr-Swap, decoded: uihost percent-encodes a layer key holding
+  // non-ASCII or %, since fetch reads header bytes as Latin-1. A key an
+  // older server sent raw stays as it came.
+  const swapKeyOf = (r) => {
+    const k = r.headers.get('X-Gofastr-Swap') || '';
+    try { return decodeURIComponent(k); } catch (_) { return k; }
+  };
+
   // Attribute-compare in a loop, like core's findSlot: addresses
   // contain ':' / '/' / '#' / '~', and getAttribute needs no selector
   // escaping.
@@ -836,7 +844,9 @@
       if (!cached && !bypassCache && !forceFull && NS._takePrefetched) {
         const pf = NS._takePrefetched(path);
         if (pf) {
-          const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0) ? _mainEl() : null);
+          // A layout-less entry swaps into <main> only when the live DOM
+          // is layout-less too, as for the screen cache above.
+          const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0 && domChainKeys().length === 0) ? _mainEl() : null);
           if (slot) {
             let body = pf.html, pfFills = null, pfSeed = null;
             if (pf.envelope) {
@@ -994,7 +1004,7 @@
       // buffer, so nothing they carry paints ahead of the page — an
       // outlet below the swap boundary only exists after the commit.
       if (resp.headers.get('X-Gofastr-Envelope') === '2') {
-        const envSwapKey = resp.headers.get('X-Gofastr-Swap') || '';
+        const envSwapKey = swapKeyOf(resp);
         const snap = parseEnvelope(html, envSwapKey);
         const envSlot = envSwapKey ? findSlot(envSwapKey) : null;
         const resolved = envSlot ? resolveFillTargets(snap.fills) : null;
@@ -1022,7 +1032,7 @@
 
       const partial = resp.headers.get('X-Gofastr-Partial') === 'true';
       let title, body;
-      let swapKey = (partial && resp.headers.get('X-Gofastr-Swap')) || '';
+      let swapKey = (partial && swapKeyOf(resp)) || '';
       if (partial) {
         title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
         body = html;

@@ -1,7 +1,9 @@
 package crud
 
 import (
+	"bytes"
 	"database/sql"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -48,6 +50,18 @@ func TestNumberTextRefusesOddSpellings(t *testing.T) {
 		ch, _ := priceList(t)
 		if rr := createPrice(t, ch, `{"price":"`+v+`"}`); rr.Code != http.StatusBadRequest {
 			t.Errorf("price %q: status=%d body=%s, want 400", v, rr.Code, rr.Body.String())
+		}
+		// A multipart form takes the same spellings as the JSON string.
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		_ = mw.WriteField("price", v)
+		_ = mw.Close()
+		req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/price_list", Body: buf.String(), UserID: "alice"})
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		rr := httptest.NewRecorder()
+		ch.Create()(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("multipart price %q: status=%d body=%s, want 400", v, rr.Code, rr.Body.String())
 		}
 	}
 }

@@ -34,6 +34,34 @@ func newSearchIndex(t *testing.T, weightedFields map[string]byte) *PostgresSearc
 	return idx
 }
 
+// TestPostgresFieldsKeepBigIntegers pins that a document field past 2^53
+// comes back from Search with its digits. JSONB stores the number
+// exactly; decoding it into map[string]any read it as a float64 and
+// rounded 9007199254740993 to 9007199254740992.
+func TestPostgresFieldsKeepBigIntegers(t *testing.T) {
+	ctx := context.Background()
+	idx := newSearchIndex(t, nil)
+	if err := idx.Index(ctx, Document{
+		ID: "1", Type: "orders", Text: "gofastr order",
+		Fields: map[string]any{"external_id": int64(9007199254740993), "qty": 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := idx.Search(ctx, Query{Text: "gofastr", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 {
+		t.Fatalf("got %d results, want 1", len(res))
+	}
+	if got := fmt.Sprint(res[0].Document.Fields["external_id"]); got != "9007199254740993" {
+		t.Errorf("external_id = %s, want 9007199254740993", got)
+	}
+	if q := res[0].Document.Fields["qty"]; q != float64(2) {
+		t.Errorf("ordinary number decodes as %T %v, want float64 2", q, q)
+	}
+}
+
 func TestPostgresEnsureSchemaIdempotent(t *testing.T) {
 	idx := newSearchIndex(t, nil)
 	// Calling again on the already-created table/index must be a no-op.
@@ -218,10 +246,13 @@ func TestPostgresPrefixMatch(t *testing.T) {
 func TestPostgresAdversarialQuery(t *testing.T) {
 	ctx := context.Background()
 	idx := newSearchIndex(t, nil)
-	for i := range 3 {
+	// Spelled numbers: the sanitizer splits "'1'='1" into the word "1",
+	// which a digit in the text would match honestly; the docs hold none
+	// of the hostile strings' words, so any hit is a sanitizer failure.
+	for i, n := range []string{"one", "two", "three"} {
 		_ = idx.Index(ctx, Document{
 			ID:   fmt.Sprintf("safe-%d", i),
-			Text: fmt.Sprintf("benign document number %d about gofastr", i),
+			Text: fmt.Sprintf("benign document number %s about gofastr", n),
 		})
 	}
 

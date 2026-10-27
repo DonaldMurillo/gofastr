@@ -109,8 +109,40 @@ func (c *Container) Resolve(target any) error {
 	return nil
 }
 
+// InjectTagCount reports how many inject-tagged fields Inject would fill
+// in a value of type t (or of the struct t points to), counting fields
+// promoted from an embedded struct. It is 0 for a non-struct type.
+func InjectTagCount(t reflect.Type) int {
+	return injectTagCount(t, map[reflect.Type]bool{})
+}
+
+// injectTagCount counts through embeds, skipping a struct already on
+// the path (type T struct{ *T } embeds itself).
+func injectTagCount(t reflect.Type, active map[reflect.Type]bool) int {
+	if t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || t.Kind() != reflect.Struct || active[t] {
+		return 0
+	}
+	active[t] = true
+	defer delete(active, t)
+	n := 0
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if _, ok := f.Tag.Lookup("inject"); ok {
+			n++
+		} else if f.Anonymous {
+			n += injectTagCount(f.Type, active)
+		}
+	}
+	return n
+}
+
 // Inject fills struct fields tagged with `inject:""` using the container.
-// target must be a pointer to a struct.
+// target must be a pointer to a struct. Fields promoted from an embedded
+// struct are filled too; a nil embedded pointer whose struct holds
+// inject tags is allocated first.
 //
 // Lazy first-time resolution of a func-provider writes the shared
 // singletons/resolved maps, so the whole method takes the full write
@@ -130,11 +162,24 @@ func (c *Container) Inject(target any) error {
 	if ev.Kind() != reflect.Struct {
 		return fmt.Errorf("di: target must point to a struct, got %s", ev.Kind())
 	}
+	return c.injectStruct(ev, map[reflect.Type]bool{})
+}
 
+// injectStruct fills the inject-tagged fields of the struct value ev,
+// descending into embedded structs not already on the path (active).
+// The caller holds c.mu.
+func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool) error {
 	et := ev.Type()
+	active[et] = true
+	defer delete(active, et)
 	for i := 0; i < et.NumField(); i++ {
 		field := et.Field(i)
 		if _, ok := field.Tag.Lookup("inject"); !ok {
+			if field.Anonymous {
+				if err := c.injectEmbedded(ev.Field(i), active); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		fieldType := field.Type
@@ -176,6 +221,31 @@ func (c *Container) Inject(target any) error {
 		} else {
 			return fmt.Errorf("di: no provider registered for injected field %s of type %v", field.Name, fieldType)
 		}
+	}
+	return nil
+}
+
+// injectEmbedded fills an embedded struct field: a value struct in
+// place, a pointer through its target. A nil pointer is allocated when
+// its struct holds inject tags; one that cannot be set (an unexported
+// embedded pointer type) is reported, since its tags would stay empty.
+// A struct already on the path is left alone: it is a cycle, not a
+// second set of fields.
+func (c *Container) injectEmbedded(fv reflect.Value, active map[reflect.Type]bool) error {
+	switch {
+	case fv.Kind() == reflect.Struct:
+		return c.injectStruct(fv, active)
+	case fv.Kind() == reflect.Pointer && fv.Type().Elem().Kind() == reflect.Struct:
+		if active[fv.Type().Elem()] || InjectTagCount(fv.Type()) == 0 {
+			return nil
+		}
+		if fv.IsNil() {
+			if !fv.CanSet() {
+				return fmt.Errorf("di: embedded %v holds inject-tagged fields but is nil and unexported, so it cannot be allocated", fv.Type())
+			}
+			fv.Set(reflect.New(fv.Type().Elem()))
+		}
+		return c.injectStruct(fv.Elem(), active)
 	}
 	return nil
 }

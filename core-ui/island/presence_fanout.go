@@ -217,7 +217,10 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 		reps = make(map[string]remoteRosterEntry)
 		m.remoteRosters[msg.Topic] = reps
 	}
-	before := mergedRosterLocked(m, msg.Topic, now)
+	// "before" is the roster viewers were last told about, expired
+	// entries included, as in sweepExpiredRemote: an announcement that
+	// removes an expired, unswept roster is the departure's only report.
+	before := shownRosterLocked(m, msg.Topic)
 	if len(msg.Members) == 0 {
 		delete(reps, origin)
 	} else if _, exists := reps[origin]; !exists && len(reps) >= maxRemoteReplicasPerTopic {
@@ -261,7 +264,7 @@ func (m *Manager) evictStalestRemoteTopicLocked(now time.Time) string {
 	if stalest == "" {
 		return ""
 	}
-	before := mergedRosterLocked(m, stalest, now)
+	before := shownRosterLocked(m, stalest)
 	delete(m.remoteRosters, stalest)
 	delete(m.remoteRosterTouch, stalest)
 	// No entry remains, so the merged roster after is empty by definition;
@@ -281,7 +284,11 @@ func (m *Manager) sweepExpiredRemote() []string {
 	var changed []string
 	m.mu.Lock()
 	for topic, reps := range m.remoteRosters {
-		before := mergedRosterLocked(m, topic, now)
+		// The sweep is what reports a TTL departure, so "before" is the
+		// roster viewers were last told about, expired entries included:
+		// filtering them here made before == after and the departure was
+		// never reported.
+		before := shownRosterLocked(m, topic)
 		for origin, entry := range reps {
 			if now.After(entry.expiresAt) {
 				delete(reps, origin)
@@ -427,10 +434,18 @@ func localTopicsLocked(m *Manager) []string {
 	return out
 }
 
+// shownRosterLocked is the merged roster as viewers last heard it: remote
+// entries past their TTL but not yet swept still count, because no
+// OnPresenceChange has reported their departure yet. Caller holds mu.
+func shownRosterLocked(m *Manager, topic string) []PresenceMember {
+	return mergedRosterLocked(m, topic, time.Time{})
+}
+
 // mergedRosterLocked returns the deduped, sorted union of LOCAL and remote
 // (unexpired) members for a topic. This is the heart of PresenceRoster.
 // Caller holds mu. Expired remote entries are filtered at read time so a
-// roster read between sweeps never surfaces stale members.
+// roster read between sweeps never surfaces stale members. A zero now
+// keeps them (shownRosterLocked).
 func mergedRosterLocked(m *Manager, topic string, now time.Time) []PresenceMember {
 	seen := make(map[string]string)
 	for _, c := range m.presenceConns {
@@ -445,7 +460,7 @@ func mergedRosterLocked(m *Manager, topic string, now time.Time) []PresenceMembe
 	}
 	if reps, ok := m.remoteRosters[topic]; ok {
 		for _, entry := range reps {
-			if now.After(entry.expiresAt) {
+			if !now.IsZero() && now.After(entry.expiresAt) {
 				continue
 			}
 			for _, mem := range entry.members {

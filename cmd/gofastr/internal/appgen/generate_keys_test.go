@@ -32,7 +32,7 @@ func TestCompositeKeyWriteShapes(t *testing.T) {
 		},
 	}
 	client := renderClient([]framework.EntityDeclaration{decl})
-	typed := renderEntityWriteShapes(decl)
+	typed := renderEntityWriteShapes(decl, nil)
 	for _, c := range []struct{ src, name, want string }{
 		{client, "EnrollmentsPatch", "\tGrade *string `json:\"grade,omitempty\"`"},
 		{typed, "EnrollmentsPatch", "\tGrade *string `json:\"grade,omitempty\"`"},

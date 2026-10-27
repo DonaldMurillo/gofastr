@@ -54,12 +54,12 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	// Advance the watermark past `now`, fenced against the LAST fired tick so
-	// a fall-back repeat immediately after a fire is skipped (prevFire is the
-	// wall-minute already consumed).
+	// Advance the watermark to the next fire strictly after `now`. nextFire
+	// skips fall-back repeats on its own, so the watermark never lands on
+	// the repeat of a wall minute an earlier heartbeat already fired.
 	var next time.Time
 	if len(ticks) > 0 {
-		next = nextFire(parsed, loc, now, ticks[len(ticks)-1])
+		next = nextFire(parsed, loc, now)
 	} else {
 		// Cadence-change recovery: the stored cursor is not an occurrence of
 		// the current spec (typical after re-registering an existing schedule
@@ -70,7 +70,7 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 		// the recovered watermark so the schedule keeps firing on the new
 		// cadence without operator intervention. With DST-aware nextFire this
 		// also self-corrects across a spring-forward inside the gap.
-		next = nextFire(parsed, loc, cursor, time.Time{})
+		next = nextFire(parsed, loc, cursor)
 	}
 	if next.IsZero() || !next.After(now) {
 		return nil, time.Time{}, fmt.Errorf("queue: schedule %q did not advance", schedule.id)

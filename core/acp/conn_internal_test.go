@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"context"
 	"io"
 	"testing"
 	"time"
@@ -44,5 +45,64 @@ func TestConnCloseIsRaceFreeUnderReaders(t *testing.T) {
 	c.close()
 	for i := 0; i < 8; i++ {
 		<-done
+	}
+}
+
+// A Client an embedder kept past Serve's return writes nothing: the
+// caller owns out again, and a write to an output nobody reads any more
+// blocked forever, past RequestPermission's own deadline.
+func TestClientAfterCloseWritesNothing(t *testing.T) {
+	r, w := io.Pipe() // nothing reads r: any write blocks
+	defer r.Close()
+	c := newConn(w)
+	c.close()
+	client := &Client{conn: c, sessionID: "s1"}
+	errs := make(chan error, 2)
+	go func() { errs <- client.Update(AgentMessageChunk("m1", "late")) }()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_, err := client.RequestPermission(ctx, ToolCallUpdate{ToolCallID: "t1"}, nil)
+		errs <- err
+	}()
+	for range 2 {
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Error("a write after close succeeded")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a Client call after close blocked writing to an unread output")
+		}
+	}
+}
+
+// A write stuck on an output nobody reads holds the write slot. Closing
+// the connection must still release the calls queued behind it: the
+// closed check ran only after the lock, so a queued call never reached it.
+func TestCloseFreesCallsQueuedOnStall(t *testing.T) {
+	r, w := io.Pipe() // nothing reads r: the first write blocks
+	defer r.Close()
+	c := newConn(w)
+	client := &Client{conn: c, sessionID: "s1"}
+	go func() { _ = client.Update(AgentMessageChunk("m1", "stuck")) }()
+	time.Sleep(20 * time.Millisecond) // the first write takes the slot
+	errs := make(chan error, 2)
+	go func() { errs <- client.Update(AgentMessageChunk("m2", "queued")) }()
+	go func() {
+		_, err := client.RequestPermission(context.Background(), ToolCallUpdate{ToolCallID: "t1"}, nil)
+		errs <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	c.close()
+	for range 2 {
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Error("a queued write succeeded after close")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a call queued behind a stalled write stayed blocked after close")
+		}
 	}
 }

@@ -154,7 +154,7 @@
           onSignal(env.payload || {});
           return;
         }
-        const res = reduce(env);
+        const res = reduce(env, info.generation);
         if (res.applied) {
           if (dbg.applied.length < 64) dbg.applied.push(env.type + ':' + env.sequence);
           renderState(res.state);

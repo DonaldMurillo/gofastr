@@ -75,7 +75,10 @@ func joinUpstreamPath(base, tail string) string {
 	// path.Join drops a trailing slash; the upstream may distinguish
 	// /e from /e/ (or redirect one to the other, which the relay
 	// refuses), so a validated trailing slash is preserved verbatim.
-	if strings.HasSuffix(tail, "/") && !strings.HasSuffix(joined, "/") {
+	// An empty tail (an exact route, or a subtree's own root) forwards
+	// to the base path as configured, slash included.
+	keepSlash := strings.HasSuffix(tail, "/") || (tail == "" && strings.HasSuffix(base, "/"))
+	if keepSlash && !strings.HasSuffix(joined, "/") {
 		joined += "/"
 	}
 	return joined

@@ -113,6 +113,23 @@ func TestSQLiteIndexSearchRoundTrip(t *testing.T) {
 	}
 }
 
+// A document's own text finds it when the text holds an other-number
+// rune: the query split H₂O at ₂, unicode61 indexed one token.
+func TestSQLiteFindsOtherNumberText(t *testing.T) {
+	ctx := context.Background()
+	idx := newSQLiteFTS(t)
+	if err := idx.Index(ctx, Document{ID: "1", Type: "notes", Text: "H₂O"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := idx.Search(ctx, Query{Text: "H₂O", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Document.ID != "1" {
+		t.Fatalf("got %#v, want doc 1", res)
+	}
+}
+
 func TestSQLiteDelete(t *testing.T) {
 	ctx := context.Background()
 	idx := newSQLiteFTS(t)
@@ -226,6 +243,37 @@ func TestSQLiteFieldEqualsStringOnly(t *testing.T) {
 	}
 	if len(res) != 1 || res[0].Document.ID != "2" {
 		t.Fatalf("string field should match: got %#v", res)
+	}
+}
+
+// TestSQLiteFieldEqualsSkipsJSONText: json_extract hands an array or object
+// back as its JSON text, so without a type check a stored
+// tenant=["acme"] equals the filter value `["acme"]`. Memory and Postgres
+// refuse it; so must SQLite, with and without query text.
+func TestSQLiteFieldEqualsSkipsJSONText(t *testing.T) {
+	ctx := context.Background()
+	idx := newSQLiteFTS(t)
+	for id, v := range map[string]any{"arr": []string{"acme"}, "obj": map[string]any{"a": 1}} {
+		if err := idx.Index(ctx, Document{ID: id, Text: "hello", Fields: map[string]any{"tenant": v}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []string{`["acme"]`, `{"a":1}`} {
+		q := Query{Text: "hello", FieldEquals: map[string]string{"tenant": want}}
+		res, err := idx.Search(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res) != 0 {
+			t.Errorf("Search tenant=%s matched %#v", want, res)
+		}
+		all, err := idx.Search(ctx, Query{FieldEquals: q.FieldEquals})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(all) != 0 {
+			t.Errorf("empty-query tenant=%s matched %#v", want, all)
+		}
 	}
 }
 

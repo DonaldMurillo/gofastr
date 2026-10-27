@@ -110,6 +110,14 @@ func (ls *LocalStorage) validateKey(key string) error {
 	if strings.HasPrefix(cleaned, "..") {
 		return fmt.Errorf("%w: key %q escapes the base directory", upload.ErrInvalidKey, key)
 	}
+	// A key must already be its clean, slash-separated form: "a//b.png",
+	// "a/./b.png" and "a/b.png/" name the file of "a/b.png", and erasure
+	// deletes the keys a row names, so a row naming an alias deleted
+	// another key's file. Every key this store hands out is clean, and an
+	// object saved under an alias is still reached by the clean spelling.
+	if cleaned == "." || filepath.ToSlash(cleaned) != key {
+		return fmt.Errorf("%w: key %q is not in its clean form", upload.ErrInvalidKey, key)
+	}
 	return nil
 }
 
@@ -347,8 +355,13 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := rt.Rename(tmpRel, rel); err != nil {
-			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+		if err := upload.CommitUnfolded(key, root, rt, func() error {
+			if err := rt.Rename(tmpRel, rel); err != nil {
+				return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		if err := fileperm.Restrict(dstPath, false); err != nil {
 			return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
@@ -405,8 +418,13 @@ func (ls *LocalStorage) saveResolveThenOpen(ctx context.Context, key, dstPath, t
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, dstPath); err != nil {
-		return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+	if err := upload.CommitUnfolded(key, root, nil, func() error {
+		if err := os.Rename(tmpPath, dstPath); err != nil {
+			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	if err := fileperm.Restrict(dstPath, false); err != nil {
 		return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
@@ -428,17 +446,25 @@ func (ls *LocalStorage) Delete(ctx context.Context, key string) error {
 		return err
 	}
 
-	if rt := ls.rootFor(root); rt != nil {
-		// Kernel-contained unlink: a parent directory swapped for a
-		// symlink after resolution is refused here instead of followed.
-		err = rt.Remove(rootRel(path, root))
-	} else {
-		err = os.Remove(path)
-	}
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("storage: delete %q: %w", key, scrubPathError(err))
-	}
-	return nil
+	// On a case- or normalization-insensitive filesystem "A/b.png" opens
+	// the file stored as "a/b.png": a key spelled other than the stored
+	// object is refused, as Save refuses it, rather than deleting the
+	// other key's file. The check and the unlink share Save's commit lock.
+	rt := ls.rootFor(root)
+	return upload.CommitUnfolded(key, root, rt, func() error {
+		var err error
+		if rt != nil {
+			// Kernel-contained unlink: a parent directory swapped for a
+			// symlink after resolution is refused here instead of followed.
+			err = rt.Remove(rootRel(path, root))
+		} else {
+			err = os.Remove(path)
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("storage: delete %q: %w", key, scrubPathError(err))
+		}
+		return nil
+	})
 }
 
 // Get opens the file identified by key and returns a ReadCloser for its contents.
@@ -466,8 +492,17 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 		return nil, err
 	}
 
+	// On a case- or normalization-insensitive filesystem "tenanta/x"
+	// opens the file stored as "TenantA/x": refuse a spelling other than
+	// the stored one, as Save and Delete do, rather than hand one key's
+	// bytes to a caller who asked for another.
+	rt := ls.rootFor(root)
+	if err := upload.RefuseFoldedKey(key, path, root, rt); err != nil {
+		return nil, err
+	}
+
 	var f *os.File
-	if rt := ls.rootFor(root); rt != nil {
+	if rt != nil {
 		// Kernel-contained open: a symlink planted at the leaf (or a
 		// parent swapped) after resolution is refused here instead of
 		// streamed.
@@ -495,7 +530,13 @@ func (ls *LocalStorage) Exists(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 
-	if rt := ls.rootFor(root); rt != nil {
+	// A folded spelling would report the other key's object; see open.
+	rt := ls.rootFor(root)
+	if err := upload.RefuseFoldedKey(key, path, root, rt); err != nil {
+		return false, err
+	}
+
+	if rt != nil {
 		// Kernel-contained stat: no existence oracle for paths a
 		// post-resolution symlink plant funnels outside the root.
 		_, err = rt.Stat(rootRel(path, root))

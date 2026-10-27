@@ -9,16 +9,18 @@
 //		PDFRenderer: chromepdf.New(chromepdf.Options{}),
 //	})
 //
-// The renderer feeds the battery's already-shelled print HTML to a
-// headless Chromium via an in-memory data: URL (no temp file, per-user
-// document bytes never touch disk) and prints it to PDF, honoring the
-// shell's CSS @page size and margins (WithPreferCSSPageSize).
+// The renderer opens about:blank in a headless Chromium, sets the
+// battery's already-shelled print HTML as the page's content over the
+// DevTools protocol (no temp file, no URL: per-user document bytes never
+// touch disk, and no URL length cap applies), and prints it to PDF,
+// honoring the shell's CSS @page size and margins
+// (WithPreferCSSPageSize).
 package chromepdf
 
 import (
 	"context"
-	"encoding/base64"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/print"
@@ -50,9 +52,9 @@ type Options struct {
 	// every hostname is resolved to NOTFOUND before Chrome can connect.
 	//
 	// This is the network half of the SSRF gate. The print document is
-	// navigated as a `data:` URL, which has no response headers, so the
-	// print route's Content-Security-Policy does not reach it (the shell
-	// now also emits the policy as an in-document meta). Without a
+	// set as the content of about:blank, which has no response headers,
+	// so the print route's Content-Security-Policy does not reach it (the
+	// shell also emits the policy as an in-document meta). Without a
 	// resolver rule, a caller-supplied URL that reaches a URL attribute,
 	// ui.Avatar{Src} on a receipt, say, is fetched by a browser sitting
 	// inside the trust boundary, and the response is rendered into the
@@ -64,6 +66,11 @@ type Options struct {
 	// host here only when a PDF genuinely must pull a remote asset, and
 	// note that an allowed host's DNS still decides which IP it reaches,
 	// so allow only hosts you control.
+	//
+	// print.Config.BaseURL is one such case: the app.css link it makes
+	// absolute is fetched from BaseURL's host, so name that host here
+	// (AllowedHosts: []string{"app.example.com"}) for the PDF to carry
+	// the app's design tokens.
 	AllowedHosts []string
 }
 
@@ -106,12 +113,17 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 		chromedp.WithBrowserOption(chromedp.WithDialTimeout(rd.opts.Timeout)))
 	defer bcancel()
 
-	dataURL := "data:text/html;base64," + base64.StdEncoding.EncodeToString([]byte(html))
 	w, h := paperInches(p)
 
 	var pdf []byte
 	err := chromedp.Run(bctx,
-		chromedp.Navigate(dataURL),
+		// The document goes in as content, never as a URL: Chrome caps
+		// URLs at 2 MiB, so a data: URL of the whole document failed
+		// any print HTML past about 1.5 MB with net::ERR_ABORTED.
+		chromedp.Navigate("about:blank"),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return setContentAndWaitLoad(ctx, html)
+		}),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var e error
 			// Margins are 0 here: the shell's CSS @page margin is the
@@ -134,6 +146,39 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 		return nil, err
 	}
 	return pdf, nil
+}
+
+// setContentAndWaitLoad replaces the current page's document with html
+// and returns once that document's load event fires, the point a URL
+// navigation waits for: its stylesheets, images and fonts have loaded or
+// failed. document.readyState is no substitute here, since it can still
+// read "complete" from about:blank after the content is set while a
+// stylesheet is in flight. The caller's deadline bounds the wait.
+func setContentAndWaitLoad(ctx context.Context, html string) error {
+	tree, err := page.GetFrameTree().Do(ctx)
+	if err != nil {
+		return err
+	}
+	// Listen before setting the content so the load event cannot slip
+	// past. Navigate already waited out about:blank's own load event.
+	lctx, stop := context.WithCancel(ctx)
+	defer stop()
+	loaded := make(chan struct{})
+	var once sync.Once
+	chromedp.ListenTarget(lctx, func(ev any) {
+		if _, ok := ev.(*page.EventLoadEventFired); ok {
+			once.Do(func() { close(loaded) })
+		}
+	})
+	if err := page.SetDocumentContent(tree.Frame.ID, html).Do(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-loaded:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // parseFlag splits an ExtraFlags entry into a chromedp flag name + value.

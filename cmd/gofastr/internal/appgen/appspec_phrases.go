@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -9,16 +10,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
-// appSpecScreenPhrases starts the collector for one screen's file.
-// The variable prefix comes from the screen's Go type name, which is
-// unique across the app, so two screens never declare one variable.
-func appSpecScreenPhrases(app, screen string) *appspec.AppSpecPhrases {
-	return newAppSpecPhrases(appSpecPhraseApp(app)+".screens."+appSpecPhraseScope(screen), lowerFirst(appspec.ToCamelCase(screen))+"ScreenText")
+// appSpecScreenPhrases starts the collector for one screen's file, under
+// the key scope appSpecPhraseScopes gave it. The variable prefix comes
+// from the screen's Go type name, which is unique across the app, so two
+// screens never declare one variable.
+func appSpecScreenPhrases(app, screen, scope string) *appspec.AppSpecPhrases {
+	return newAppSpecPhrases(appSpecPhraseApp(app)+".screens."+scope, lowerFirst(appspec.ToCamelCase(screen))+"ScreenText")
 }
 
 // appSpecCrudPhrases starts the collector for an entity's crud file.
-func appSpecCrudPhrases(app, entity string) *appspec.AppSpecPhrases {
-	return newAppSpecPhrases(appSpecPhraseApp(app)+".screens."+appSpecPhraseScope(entity)+"_crud", lowerFirst(appspec.ToCamelCase(entity))+"CrudText")
+func appSpecCrudPhrases(app, entity, scope string) *appspec.AppSpecPhrases {
+	return newAppSpecPhrases(appSpecPhraseApp(app)+".screens."+scope, lowerFirst(appspec.ToCamelCase(entity))+"CrudText")
 }
 
 func appSpecPhraseScope(name string) string {
@@ -26,6 +28,53 @@ func appSpecPhraseScope(name string) string {
 		return seg
 	}
 	return "screen"
+}
+
+// appSpecPhraseScopes gives every screen file its key scope, keyed
+// "screen:<name>" or "crud:<entity>". A scope is lower-cased, so
+// screens with distinct types and files can fold onto one ("PostsList"
+// and "postslist"), and
+// i18n.Define panics at boot on one key with two English texts. A repeat
+// is numbered in spec order; a scope nothing else claims stays as it was.
+func appSpecPhraseScopes(bp appspec.AppSpec) map[string]string {
+	scopes := map[string]string{}
+	used := map[string]bool{}
+	claim := func(owner, base string) {
+		if _, done := scopes[owner]; done {
+			return
+		}
+		scope := base
+		for n := 2; used[scope]; n++ {
+			scope = fmt.Sprintf("%s_%d", base, n)
+		}
+		used[scope] = true
+		scopes[owner] = scope
+	}
+	for _, s := range bp.Screens {
+		if e, ok := appspec.ScreenEntityRef(s); ok {
+			claim("crud:"+e, appSpecPhraseScope(e)+"_crud")
+		} else {
+			claim("screen:"+s.Name, appSpecPhraseScope(s.Name))
+		}
+	}
+	return scopes
+}
+
+// appSpecScreenScope is a standalone screen's key scope; a screen the
+// spec does not list (a rendered fragment) keeps the unnumbered one.
+func appSpecScreenScope(bp appspec.AppSpec, screen string) string {
+	if s, ok := appSpecPhraseScopes(bp)["screen:"+screen]; ok {
+		return s
+	}
+	return appSpecPhraseScope(screen)
+}
+
+// appSpecCrudScope is an entity crud file's key scope.
+func appSpecCrudScope(bp appspec.AppSpec, entity string) string {
+	if s, ok := appSpecPhraseScopes(bp)["crud:"+entity]; ok {
+		return s
+	}
+	return appSpecPhraseScope(entity) + "_crud"
 }
 
 // appSpecChromePhrases starts the collector for app.go: the header,

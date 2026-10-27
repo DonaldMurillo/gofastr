@@ -84,19 +84,29 @@ func validateSubscriberURL(raw string, allowPrivate bool) error {
 //   - nil transport → the guarded default transport (dial-time hook,
 //     strongest: the Control callback sees the actual resolved IP at
 //     connect time).
-//   - any caller-supplied transport → left untouched and wrapped with a
-//     per-request resolved-IP check on the request TARGET that refuses
-//     before the inner transport runs. Swapping the transport's dialer
-//     instead would silently break legitimate custom routing, an
+//   - a plain *http.Transport (no proxy, no dial hook) → cloned with the
+//     same dial-time hook, so the address checked is the address
+//     dialed; its TLS and pool settings survive the clone.
+//   - any other caller-supplied transport → left untouched and wrapped
+//     with a per-request resolved-IP check on the request TARGET that
+//     refuses before the inner transport runs. Swapping the transport's
+//     dialer instead would silently break legitimate custom routing, an
 //     egress proxy on a private IP, an SSH tunnel, a unix-socket or
 //     custom-DNS dialer, because those dial addresses are internal by
 //     design while the delivery target is not. The per-request check
-//     resolves once up front, so unlike the dialer hook it cannot see a
-//     mid-flight re-resolve, still strictly safer than no guard.
+//     resolves once up front and the inner transport resolves again to
+//     dial, so a name that rebinds between the two passes it: the
+//     weaker posture, kept only where the dialer cannot be replaced.
 func ssrfGuardClient(c *http.Client) *http.Client {
 	cc := *c
 	if c.Transport == nil {
 		cc.Transport = netguard.GuardedTransport(false, "webhook")
+	} else if tr, ok := c.Transport.(*http.Transport); ok {
+		if guarded, plain := netguard.GuardPlainTransport(tr, "webhook"); plain {
+			cc.Transport = guarded
+		} else {
+			cc.Transport = &ssrfGuardedRoundTripper{inner: c.Transport}
+		}
 	} else {
 		cc.Transport = &ssrfGuardedRoundTripper{inner: c.Transport}
 	}

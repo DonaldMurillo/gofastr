@@ -84,6 +84,13 @@ type PostgresFanout struct {
 	closed atomic.Bool
 	done   chan struct{}
 
+	// fetchCtx bounds the dispatcher's fallback-row SELECT; Close cancels
+	// it so a fetch stuck on a slow or locked table cannot outlive the
+	// fanout. dispatched closes when the dispatcher returns.
+	fetchCtx   context.Context
+	stopFetch  context.CancelFunc
+	dispatched chan struct{}
+
 	// Onset-once guards for receive-path drops (lossy lane): each category
 	// logs the first occurrence at Warn so a recurring symptom is observable
 	// without flooding on every message.
@@ -166,6 +173,9 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 	// "t:<id>" pointers and re-deliver wrong/foreign payloads. The table
 	// name is SafeIdent-validated, so it is a legal LISTEN channel name.
 	p.channel = p.table
+	if err := query.RefuseCaseKeptTables(context.Background(), db, p.table); err != nil {
+		return nil, fmt.Errorf("fanout: %w", err)
+	}
 	if !p.skipEnsure {
 		if err := p.ensureTable(); err != nil {
 			return nil, fmt.Errorf("fanout: ensure table: %w", err)
@@ -192,13 +202,15 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 		return nil, fmt.Errorf("fanout: listen %q: timed out after %s waiting for the listener connection (is the DSN reachable and the database up?)",
 			p.channel, p.listenTimeout)
 	}
+	p.fetchCtx, p.stopFetch = context.WithCancel(context.Background())
+	p.dispatched = make(chan struct{})
 	go p.dispatch()
 	return p, nil
 }
 
 // qt returns the validated, double-quoted fallback table name.
 func (p *PostgresFanout) qt() string {
-	return query.QuoteIdent(p.table)
+	return query.QuoteFolded(p.table)
 }
 
 func (p *PostgresFanout) ensureTable() error {
@@ -288,6 +300,7 @@ func (p *PostgresFanout) maybePurge(ctx context.Context) {
 // dispatch reads notifications from the listener and routes them to topic
 // subscribers. Exits when Close drains the listener.
 func (p *PostgresFanout) dispatch() {
+	defer close(p.dispatched)
 	notify := p.listener.NotificationChannel()
 	for {
 		select {
@@ -318,7 +331,10 @@ func (p *PostgresFanout) handleNotify(extra string) {
 			return
 		}
 		var row string
-		if err := p.db.QueryRow(fmt.Sprintf(`SELECT payload FROM %s WHERE id = $1`, p.qt()), id).Scan(&row); err != nil {
+		if err := p.db.QueryRowContext(p.fetchCtx, fmt.Sprintf(`SELECT payload FROM %s WHERE id = $1`, p.qt()), id).Scan(&row); err != nil {
+			if p.fetchCtx.Err() != nil {
+				return // Close cancelled the fetch; nothing was lost that a closed fanout could deliver
+			}
 			p.logRecvDrop(&p.dropMissingRow, "dropped NOTIFY table-pointer: fallback row already purged or gone", err)
 			return
 		}
@@ -451,7 +467,8 @@ func (p *PostgresFanout) onListenerEvent(ev pq.ListenerEventType, err error) {
 	}
 }
 
-// Close tears down the listener, the dispatch goroutine, and every
+// Close tears down the listener, the dispatch goroutine (cancelling a
+// fallback-row fetch in flight and waiting for it to return), and every
 // subscriber queue, including those whose cancel func the caller dropped,
 // which would otherwise park their goroutines forever. Subscribe refuses new
 // registrations after Close (it checks closed under the same mu, so no
@@ -470,7 +487,12 @@ func (p *PostgresFanout) Close() error {
 	p.subs = map[string]map[uint64]*pgSub{}
 	p.mu.Unlock()
 	close(p.done)
+	p.stopFetch()
 	p.listener.Close()
+	// Delivery only enqueues onto subscriber queues, so once the fetch is
+	// cancelled nothing holds the dispatcher: Close returns with it gone
+	// and its pool connection released.
+	<-p.dispatched
 	return nil
 }
 

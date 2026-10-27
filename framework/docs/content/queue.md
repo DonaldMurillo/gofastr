@@ -132,8 +132,16 @@ type Job struct {
 ```
 
 Scheduled jobs (future `ScheduledAt`) are invisible to `Dequeue` until
-the moment passes. This lets you implement delayed processing without a
-separate scheduler.
+the moment passes, on every backend, and a due job enqueued behind one is
+still handed out. This lets you implement delayed processing without a
+separate scheduler. `MemoryQueue` workers sleep until the earliest held-back
+job comes due; `Close` does not wait for jobs that are not due yet, and drops
+them with a WARN log naming the count. `RedisQueue` keeps them on a
+`<queue>:delayed` list and moves the due ones onto the main list at the
+start of each `Dequeue`; that list is read whole on every call, so it suits
+hundreds of delayed jobs, not millions. A due job is pushed onto the main
+list before it leaves the delayed one, so a worker that dies mid-move
+leaves a duplicate (within the at-least-once contract), never a lost job.
 
 ### `UserID` and the right to be forgotten
 
@@ -336,7 +344,8 @@ By default `Ack` deletes a finished job. `queue.WithDoneRetention(d)`
 keeps it as `"done"` for `d` instead, so an admin can list what ran;
 the claim loop deletes done jobs older than `d`, at most once a minute.
 A kept job still holds its ID, so enqueuing the same ID again fails
-until the retention has passed.
+until the retention has passed. A `Nack` that arrives after the job is
+done, dead-lettered or replayed changes nothing.
 
 ## Crash safety and auto-reclaim
 
@@ -532,6 +541,13 @@ if err := durable.Cron("nightly-rollup", "0 2 * * *").
 }
 ```
 
+Across DST shifts the schedule behaves like vixie cron. When clocks go
+back, a wall-clock minute in the repeated hour fires once, at its first
+occurrence: `"0,30 1 * * *"` in New York fires at 01:00 and 01:30 EDT and
+not again at 01:00 or 01:30 EST, however the scheduler's heartbeats split
+the night. When clocks go forward, a minute the jump skips fires once, at
+the transition.
+
 The zone name persists with the schedule (a `tz` column added by the same
 idempotent migration as the options columns). UTC, fixed-offset zones
 (`time.FixedZone`), and `time.Local` store the empty default and evaluate
@@ -574,8 +590,9 @@ Occurrence history is bounded automatically. `OccurrenceRetention` defaults
 to 30 days; zero selects that default and a negative duration disables
 automatic pruning. After evaluating due work, at most once per hour per
 scheduler process, the scheduler deletes old `skipped` rows and old `enqueued`
-rows only after their queue job is no longer pending or claimed; live work is
-never pruned. A newly elected replica may sweep immediately. The occurrence
+rows only after their queue job is done or gone; live work and a failed
+job that may be replayed are never pruned, so a replay still blocks an
+overlapping tick. A newly elected replica may sweep immediately. The occurrence
 table includes
 `(schedule_id, enqueued_job_id)` and `created_at` indexes for overlap checks and
 retention sweeps. Set a longer retention when occurrence IDs feed an external
@@ -681,6 +698,38 @@ fenced no-op and counts it in `StaleClaimCount()`. An adapter that does
 not implement it still works — `RedisQueue` falls back to re-reading
 immediately before the delete, which narrows the window but cannot
 close it.
+
+### Optional: `CompareAndMover`
+
+```go
+type CompareAndMover interface {
+    MoveIfEqual(ctx, key, field, expect, list, value string) (moved bool, err error)
+}
+```
+
+`Nack` and `Reclaim` decide a requeue (a retry, a dead-letter, a
+lease-expiry re-delivery) from a snapshot of the processing entry, then
+push. `HDelIfEqual` cannot fence that: the push has already landed when
+the conditional delete refuses. If the lease expired and another worker
+re-claimed in between, the stale push puts a second copy on the main
+list, and a third worker claims it while the second still holds the job.
+
+`MoveIfEqual` pushes `value` onto `list` and deletes the processing
+field only while the field still holds `expect`, in one step:
+
+```lua
+if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] then
+  redis.call('LPUSH', KEYS[2], ARGV[3])
+  redis.call('HDEL', KEYS[1], ARGV[1])
+  return 1 end
+return 0
+```
+
+On Redis Cluster a script may only touch keys in one slot: give the
+queue a hash-tagged name (`{jobs}`) so its lists and hash share one.
+Return `false` when the entry had changed; the queue counts it in
+`StaleClaimCount()` and pushes nothing. Without it, `RedisQueue` pushes
+and then releases with `HDelIfEqual`, which leaves that window open.
 
 **`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
 signal "nothing there" with their own sentinel (go-redis returns

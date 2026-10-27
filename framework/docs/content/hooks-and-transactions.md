@@ -106,6 +106,11 @@ app.HookRegistry("users").RegisterHook(framework.AfterList,
 > refused with **400**. An auto-streamed request (a very large `limit`)
 > instead falls back to the buffered path so the hook still runs. Net:
 > `AfterList` is never bypassed.
+>
+> A stream's status line goes out before the first row, so a failure
+> midway cannot change it. The stream stops instead, without closing
+> the JSON envelope: a client sees a body that does not parse, never a
+> shorter list with a `total` that looks complete.
 
 For the common case of per-user row scoping, use
 `EntityConfig.Scope.OwnerField` instead: it's a single line and covers
@@ -181,6 +186,12 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 })
 ```
 
+A CRUD operation that joins the transaction (`CreateOne`, `UpdateOne`,
+`DeleteOne` and the rest called with the `InTx` context) runs under its
+own savepoint the same way. One that fails, whether on a constraint, a
+validator or a refusing hook, undoes every write it made, its hooks'
+included, so the code around it can handle the error and still commit.
+
 ### Isolation level and read-only transactions
 
 Pass options after `fn` to set how the transaction opens:
@@ -236,6 +247,12 @@ transaction-agnostic, so any hand-written `query.QueryBuilder` SQL you run
 on the provided `tx` is part of the same unit. Without an ambient
 transaction (the normal HTTP path), each CRUD write opens and commits its
 own transaction as before.
+
+Reads join it too: `GetOne`, `ListAll`, `CountAll`, the aggregates,
+`?include=` loads and typed queries called with the `InTx` context run on
+the transaction, so they see rows it wrote and not yet committed. The
+`softdelete` helpers (`SoftDelete`, `Restore`, `ForceDelete`) write on
+the transaction as well, and a rollback undoes them.
 
 Lifecycle events for writes joined to the ambient transaction are held
 until it resolves and published only on commit; a rollback publishes
@@ -316,13 +333,13 @@ paths that skip hooks entirely; by design, not accident:
 
 | Operation | Hooks skipped | Why |
 |---|---|---|
-| `TypedQuery.UpdateAll` | all Before/AfterUpdate | Bulk SQL UPDATE; no per-row callback, no tx wrapping per row |
-| `TypedQuery.DeleteAll` | all Before/AfterDelete | Bulk SQL DELETE/soft-delete; same reason |
+| `TypedQuery.UpdateAll` | all Before/AfterUpdate | Bulk SQL UPDATE; no per-row callback, and no lifecycle event or outbox row. It runs on the transaction the context carries (`App.InTx`, a hook's), so a rollback undoes it |
+| `TypedQuery.DeleteAll` | all Before/AfterDelete | Bulk SQL DELETE/soft-delete; same reason, no event either, and it joins the context's transaction the same way |
 | Upsert (`UpsertOne`) that inserts | BeforeCreate/AfterCreate fire | An upsert-as-insert IS a Create |
-| Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks |
+| Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks. The event is `entity.updated`: the upsert probes the key inside its transaction and announces a create only when no row held it. The conflict arm sets only the columns the caller sent (plus the tenant), so an omitted column keeps its stored value rather than its default |
 | Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
 | Cursor list (`?cursor=`) | none: AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
-| Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire over its rows: AfterList always, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
+| Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
 | `_events` payloads | none: AfterGet fires at delivery | Redacting per subscriber keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass through untouched; a hook error omits the record rather than publishing it raw. |
 | Create/update/patch responses | none; AfterGet fires over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. |
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
@@ -409,6 +426,11 @@ change the stored row (Create/Update has already committed it) but DO redact
 the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
 path. See "Redaction implication" below for the surfaces this covers.
+
+A JSON number in a `map[string]any` or `any` field of `T` arrives as an
+`int64` when it is an integer and a `float64` otherwise, and merges back
+into the body the same way, so an id above 2^53 survives the hook
+unrounded. Assert `.(int64)` on a nested integer, or switch over both.
 
 ### Typed List and Get hooks
 

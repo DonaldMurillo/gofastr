@@ -100,12 +100,50 @@ func TestCursorCleanColumnsDefine(t *testing.T) {
 	e := Define("posts", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
-			{Name: "created_at", Type: schema.Timestamp},
+			{Name: "created_at", Type: schema.Timestamp, Required: true},
 		},
 		Pagination: &PaginationConfig{CursorFields: []string{"created_at"}},
 	})
 	if e.Config.Pagination.CursorFields[0] != "created_at" {
 		t.Fatalf("CursorFields = %v", e.Config.Pagination.CursorFields)
+	}
+}
+
+// A keyset column that can hold NULL breaks the walk: SQLite sorts NULLs
+// first and Postgres last, and the row comparison (a, id) > ($1, $2) is
+// never true for a NULL a, so those rows are skipped. A cursor column must
+// be a key column, Required, or framework-generated (AutoGenerate).
+func TestCursorNullableColumnPanics(t *testing.T) {
+	expectCursorPanic(t, "cursor field \"published_at\" can hold NULL", EntityConfig{
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "published_at", Type: schema.Timestamp},
+		},
+		Pagination: &PaginationConfig{CursorFields: []string{"published_at"}},
+	})
+	expectCursorPanic(t, "cursor field \"rank\" can hold NULL", EntityConfig{
+		Fields:     []schema.Field{{Name: "rank", Type: schema.Int}},
+		Pagination: &PaginationConfig{CursorField: "rank"},
+	})
+}
+
+// The non-NULL spellings all define: Required, AutoGenerate (the injected
+// created_at), and a key column.
+func TestCursorNonNullColumnsDefine(t *testing.T) {
+	for _, cfg := range []EntityConfig{
+		{Fields: []schema.Field{{Name: "rank", Type: schema.Int, Required: true}},
+			Pagination: &PaginationConfig{CursorField: "rank"}},
+		{Fields: []schema.Field{{Name: "title", Type: schema.String}},
+			Pagination: &PaginationConfig{CursorFields: []string{"created_at", "id"}}},
+		{Fields: []schema.Field{{Name: "title", Type: schema.String}},
+			Pagination: &PaginationConfig{CursorField: "id"}},
+		// A declared key column carries a value though nothing marks it
+		// Required.
+		{PrimaryKey: []string{"code"},
+			Fields:     []schema.Field{{Name: "code", Type: schema.String}, {Name: "title", Type: schema.String}},
+			Pagination: &PaginationConfig{CursorField: "code"}},
+	} {
+		Define("ok", cfg)
 	}
 }
 

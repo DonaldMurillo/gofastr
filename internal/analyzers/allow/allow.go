@@ -70,6 +70,18 @@ type lineKey struct {
 	line int
 }
 
+// Allowed reports whether pos sits on a line a marker naming name
+// covers. Guard drops diagnostics on its own; an analyzer calls this
+// only where a site exports a fact instead of reporting, so a marked
+// site does not go on to flag its callers.
+func Allowed(pass *analysis.Pass, name string) func(token.Pos) bool {
+	allowed := collect(pass, name)
+	return func(pos token.Pos) bool {
+		p := pass.Fset.Position(pos)
+		return allowed[lineKey{p.Filename, p.Line}]
+	}
+}
+
 // collect returns the lines that carry a marker naming name with a
 // non-empty reason. A trailing marker covers its own line; a marker on
 // a line of its own covers the next line as well.

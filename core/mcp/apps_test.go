@@ -227,6 +227,60 @@ func TestResourcesRead_Blob(t *testing.T) {
 	}
 }
 
+// The read result is a union a client tells apart by which of text and
+// blob is present: an empty body still names its member, or a validating
+// client cannot decode the item at all.
+func TestResourcesRead_EmptyKeepsUnionKey(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		contents  ResourceContents
+		want, not string
+	}{
+		{"empty text", ResourceContents{Text: ""}, "text", "blob"},
+		{"empty blob", ResourceContents{Blob: []byte{}}, "blob", "text"},
+	} {
+		s := NewServer()
+		_ = s.RegisterResource("res://e", "E", "application/octet-stream", func(context.Context) (ResourceContents, error) {
+			return tc.contents, nil
+		})
+		p, _ := json.Marshal(map[string]any{"uri": "res://e"})
+		resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
+		c := wireResult(t, resp)["contents"].([]any)[0].(map[string]any)
+		if v, ok := c[tc.want]; !ok || v != "" {
+			t.Errorf("%s: want %q present and empty, got %v", tc.name, tc.want, c)
+		}
+		if _, ok := c[tc.not]; ok {
+			t.Errorf("%s: %q must be absent, got %v", tc.name, tc.not, c)
+		}
+	}
+}
+
+// An embedded resource block is the same union inside a tool result:
+// exactly one of text and blob, even when the body is empty.
+func TestEmbeddedResource_EmptyKeepsUnionKey(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		block     Content
+		want, not string
+	}{
+		{"empty text", ResourceContent("res://e", "text/plain", ""), "text", "blob"},
+		{"blob", Content{Type: "resource", Resource: &EmbeddedResource{URI: "res://b", Blob: "AA=="}}, "blob", "text"},
+	} {
+		s := NewServer()
+		_ = s.RegisterTool("emb", "", nil, func(context.Context, map[string]any) (any, error) {
+			return tc.block, nil
+		})
+		m := wireResult(t, callTool(t, s, "emb", nil))
+		r := m["content"].([]any)[0].(map[string]any)["resource"].(map[string]any)
+		if _, ok := r[tc.want]; !ok {
+			t.Errorf("%s: want %q present, got %v", tc.name, tc.want, r)
+		}
+		if _, ok := r[tc.not]; ok {
+			t.Errorf("%s: %q must be absent, got %v", tc.name, tc.not, r)
+		}
+	}
+}
+
 func TestResourcesRead_ContentsFuncSeesContext(t *testing.T) {
 	// The contents func receives the request context, so a host can self-gate
 	// sensitive resources by inspecting the caller (documented affordance:

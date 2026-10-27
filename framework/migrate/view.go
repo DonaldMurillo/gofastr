@@ -1,7 +1,10 @@
 package migrate
 
 import (
+	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -100,6 +103,129 @@ func (v View) ToEntity() *entity.Entity {
 		Exposure:   &entity.ExposureConfig{},
 	}}
 	return ent
+}
+
+// applyViews runs every view's Up at boot, a view after the views it
+// depends on. A plain view replaces itself in place on Postgres, and SQLite
+// drops a view other views read without complaint.
+//
+// A Postgres materialized view cannot be replaced in place, so its Up drops
+// and recreates it (which also refreshes its rows), and Postgres refuses to
+// drop one another view reads: the second boot of any plan with a view over
+// a materialized one failed. Before recreating a materialized view, boot
+// drops the plan's views that depend on it, deepest first; each comes after
+// it in dependency order and is recreated in the same pass. A dependent view
+// the plan does not declare still blocks the drop, and the boot fails
+// naming the materialized view.
+func applyViews(ctx context.Context, exec execQueryer, views []View, dialect Dialect) error {
+	ordered := topoSortViews(views)
+	dependents := viewDependents(ordered)
+	for _, v := range ordered {
+		if dialect == DialectPostgres {
+			stale, err := pgStaleViewKind(ctx, exec, v)
+			if err != nil {
+				return fmt.Errorf("migrate view %s: %w", v.Name, err)
+			}
+			if v.Materialized || stale != "" {
+				for _, d := range slices.Backward(dependents[v.Name]) {
+					if err := pgDropView(ctx, exec, d); err != nil {
+						return fmt.Errorf("migrate view %s: drop dependent view %s: %w", v.Name, d.Name, err)
+					}
+				}
+			}
+			if stale != "" {
+				// The declared kind's Up refuses the other kind's object.
+				if _, err := exec.ExecContext(ctx, stale); err != nil {
+					return fmt.Errorf("migrate view %s: drop the old kind: %w", v.Name, err)
+				}
+			}
+		}
+		if _, err := exec.ExecContext(ctx, v.routine(dialect).Up); err != nil {
+			return fmt.Errorf("migrate view %s: %w", v.Name, err)
+		}
+	}
+	return nil
+}
+
+// pgLiveViewKind returns the kind of the live relation named like v: "v"
+// for a plain view, "m" for a materialized one, "" when there is none
+// (or it is some other kind of relation, which the view's Up reports).
+func pgLiveViewKind(ctx context.Context, q execQueryer, v View) (string, error) {
+	rows, err := q.QueryContext(ctx, `SELECT relkind::text FROM pg_class WHERE oid = to_regclass($1) AND relkind IN ('v', 'm')`, v.Name)
+	if err != nil {
+		return "", fmt.Errorf("read the live kind: %w", err)
+	}
+	defer rows.Close()
+	kind := ""
+	if rows.Next() {
+		if err := rows.Scan(&kind); err != nil {
+			return "", fmt.Errorf("read the live kind: %w", err)
+		}
+	}
+	return kind, rows.Err()
+}
+
+// pgStaleViewKind returns the statement that drops the live relation named
+// like v when it is the other kind of view, or "" when it is absent or
+// already v's kind.
+func pgStaleViewKind(ctx context.Context, q execQueryer, v View) (string, error) {
+	live, err := pgLiveViewKind(ctx, q, v)
+	if err != nil || live == "" {
+		return "", err
+	}
+	other := v
+	other.Materialized = live == "m"
+	if other.Materialized == v.Materialized {
+		return "", nil
+	}
+	_, down := other.render(DialectPostgres)
+	return down, nil
+}
+
+// pgDropView drops the live relation named like v with the statement for
+// the kind it is, which may not be the kind v declares.
+func pgDropView(ctx context.Context, exec execQueryer, v View) error {
+	live, err := pgLiveViewKind(ctx, exec, v)
+	if err != nil || live == "" {
+		return err
+	}
+	as := v
+	as.Materialized = live == "m"
+	_, down := as.render(DialectPostgres)
+	_, err = exec.ExecContext(ctx, down)
+	return err
+}
+
+// viewDependents maps each view to the views that read it, directly or
+// through another view, in the dependency order of ordered.
+func viewDependents(ordered []View) map[string][]View {
+	pos := make(map[string]int, len(ordered))
+	for i, v := range ordered {
+		pos[v.Name] = i
+	}
+	out := map[string][]View{}
+	for i, v := range ordered {
+		// reads holds every view v reads, transitively.
+		reads := map[string]bool{}
+		var walk func(View)
+		walk = func(x View) {
+			for _, d := range x.DependsOn {
+				j, ok := pos[d]
+				if !ok || reads[d] {
+					continue
+				}
+				reads[d] = true
+				walk(ordered[j])
+			}
+		}
+		walk(v)
+		for _, d := range slices.Sorted(maps.Keys(reads)) {
+			if d != v.Name {
+				out[d] = append(out[d], ordered[i])
+			}
+		}
+	}
+	return out
 }
 
 // topoSortViews orders views so that a view depending on another view (via

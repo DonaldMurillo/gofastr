@@ -92,6 +92,27 @@ func sessionRows(t *testing.T, app *framework.App, owner string) []map[string]an
 	return listed.Data
 }
 
+// A part second still counts: a Timestamp column keeps microseconds, so
+// a minute-long break read back on a clock with nanoseconds below that
+// (Linux) is a hair under 60s, and rounding down showed 00:59 at its
+// start and ended a session up to a second early.
+func TestRemainingSecondsRoundsUp(t *testing.T) {
+	end := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		before time.Duration
+		want   int
+	}{
+		{60*time.Second - 123*time.Nanosecond, 60},
+		{time.Nanosecond, 1},
+		{0, 0},
+		{-time.Second, 0},
+	} {
+		if got := remainingSeconds(end, end.Add(-c.before)); got != c.want {
+			t.Errorf("remainingSeconds %v before the end = %d, want %d", c.before, got, c.want)
+		}
+	}
+}
+
 func TestStartCreatesWorkSessionWithDeclaredMinutes(t *testing.T) {
 	app, _, _, eng, clock := newEngineApp(t)
 	taskID := createTask(t, app, "u1", "Write the brief")
@@ -183,13 +204,38 @@ func TestPauseStoresRemainingAndResumeMovesEndsAt(t *testing.T) {
 	ends, _ := rows[0]["endsAt"].(string)
 	want := clock.now().Add(15 * time.Minute).UTC().Format(time.RFC3339Nano)
 	if ends != want {
-		t.Fatalf("endsAt after resume = %q, want %q (moved by the stored remainder)", ends, want)
+		t.Fatalf("endsAt after resume = %q, want %q (moved by the pause)", ends, want)
 	}
 	if v, present := rows[0]["pausedAt"]; !present || v != nil {
 		t.Fatalf("pausedAt after resume = %v, want cleared", v)
 	}
 	if st := eng.State(ctx); st.Phase != phaseWork || st.Remaining != 15*60 {
 		t.Fatalf("resumed state = %+v", st)
+	}
+}
+
+// Running time under a second still counts across a pause: resume shifts
+// the deadline by the pause, so two half-second runs spend one second.
+// Rebuilding it from the shown seconds, which round up, gave the part
+// second back on every resume.
+func TestPauseKeepsPartSecondsSpent(t *testing.T) {
+	_, _, _, eng, clock := newEngineApp(t)
+	ctx := asOwner("u1")
+	if err := eng.Start(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		clock.advance(500 * time.Millisecond)
+		if err := eng.Pause(ctx); err != nil {
+			t.Fatal(err)
+		}
+		clock.advance(time.Minute)
+		if err := eng.Resume(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := eng.State(ctx); st.Remaining != 25*60-1 {
+		t.Fatalf("remaining after two half-second runs = %d, want %d", st.Remaining, 25*60-1)
 	}
 }
 
@@ -334,8 +380,15 @@ func TestTwoOwnersNeverSeeEachOthersSessions(t *testing.T) {
 	if got := len(sessionRows(t, app, "u1")); got != 1 {
 		t.Fatalf("u1 sessions after u2's tick = %d, want 1", got)
 	}
-	u2rows := sessionRows(t, app, "u2")
-	if completed, _ := u2rows[0]["completed"].(bool); !completed {
+	// The tick also starts u2's break, and an unsorted list pages in key
+	// order, so find the work row by kind rather than by position.
+	var u2work map[string]any
+	for _, row := range sessionRows(t, app, "u2") {
+		if row["kind"] == "work" {
+			u2work = row
+		}
+	}
+	if completed, _ := u2work["completed"].(bool); !completed {
 		t.Fatal("u2's own session did not complete on u2's tick")
 	}
 	if st := eng.State(asOwner("u1")); st.Phase != phaseWork {

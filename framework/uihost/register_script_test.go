@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -315,7 +316,7 @@ func TestDocumentScriptScopeSeesRoutePattern(t *testing.T) {
 	if strings.Contains(body, `src="/concrete.js"`) {
 		t.Errorf("a predicate written against a concrete path must not match: the scope identity is the route pattern:\n%s", truncate(body, 400))
 	}
-	manifest := ds.buildRouteScriptUncached()
+	manifest := ds.buildRouteScriptUncached(context.Background())
 	if !strings.Contains(manifest, `"docScripts":["/pat.js"]`) {
 		t.Errorf("manifest must list the pattern-scoped script for /session/:id:\n%s", truncate(manifest, 600))
 	}

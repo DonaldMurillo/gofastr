@@ -24,6 +24,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // MaxValueBytes caps one value, measured on its encoded JSON.
@@ -126,7 +127,7 @@ func (s *Store) Get(key string, out any) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	if err := json.Unmarshal(data, out); err != nil {
+	if err := jsonexact.Unmarshal(data, out); err != nil {
 		return false, fmt.Errorf("appstate: decode %q: %w", key, err)
 	}
 	return true, nil

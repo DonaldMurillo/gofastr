@@ -330,6 +330,16 @@ var midGoAPICases = []midGoAPICase{
 		},
 	},
 	{
+		name:    "llm.md index takes the page-index path",
+		version: "v0.96.0",
+		index:   0,
+		oldKit:  mid78NewKit,
+		newKit:  mid96NewKit,
+		oldApp:  mid78NewApp,
+		newApp:  mid96NewApp,
+		wantHit: []string{"crud.RegistryLLMMD", "crud.RegistryLLMMDHandler"},
+	},
+	{
 		name:    "two-fa store takes a config",
 		version: "v0.82.0",
 		index:   0,
@@ -736,6 +746,31 @@ func main() {
 	_ = crud.LLMMDHandlerFor(nil, crud.LLMMDOptions{ReadOnly: true})
 	_ = crud.RegistryLLMMD(nil, "demo", mountInfo)
 	_ = crud.RegistryLLMMDHandler(nil, "demo", mountInfo)
+}
+`}
+
+// mid96NewKit adds the trailing pagesIndex to the registry pair.
+var mid96NewKit = func() map[string]string {
+	kit := maps.Clone(mid78NewKit)
+	src := kit["framework/crud/llmmd.go"]
+	src = strings.Replace(src, "crudMount func(*entity.Entity) MountInfo) string", "crudMount func(*entity.Entity) MountInfo, pagesIndex string) string", 1)
+	src = strings.Replace(src, "crudMount func(*entity.Entity) MountInfo) http.Handler", "crudMount func(*entity.Entity) MountInfo, pagesIndex string) http.Handler", 1)
+	kit["framework/crud/llmmd.go"] = src
+	return kit
+}()
+
+var mid96NewApp = map[string]string{"main.go": `package main
+
+import (
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+func mountInfo(*entity.Entity) crud.MountInfo { return crud.MountInfo{} }
+
+func main() {
+	_ = crud.RegistryLLMMD(nil, "demo", mountInfo, "")
+	_ = crud.RegistryLLMMDHandler(nil, "demo", mountInfo, "/llm-pages.md")
 }
 `}
 

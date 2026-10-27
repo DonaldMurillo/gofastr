@@ -50,8 +50,43 @@ func TestReplayClearsDeadTail(t *testing.T) {
 	}
 	q.deadMu.Lock()
 	defer q.deadMu.Unlock()
-	if tail := q.dead[:cap(q.dead)]; len(tail) > 0 && tail[0].Payload != nil {
+	if tail := q.dead[:cap(q.dead)]; len(tail) > 0 && tail[0].job.Payload != nil {
 		t.Fatal("replayed dead job still referenced past len")
+	}
+}
+
+// A replayed job that dies again before Replay retires the record it
+// replayed keeps its new dead record: Replay removes the record it took,
+// not whatever record holds the ID by then.
+func TestReplayKeepsRefailedDeadRecord(t *testing.T) {
+	q := NewMemoryQueue(0)
+	defer q.Close()
+	ctx := context.Background()
+	q.retainDead(Job{ID: "d", Type: "x", MaxAttempts: 1})
+	refailed := false
+	q.replayEnqueued = func() {
+		job, err := q.Dequeue(ctx)
+		if err != nil {
+			t.Fatalf("dequeue replayed job: %v", err)
+		}
+		// MaxAttempts 1: this Nack exhausts the job and retains it dead.
+		if err := q.Nack(ctx, job); err != nil {
+			t.Fatalf("nack replayed job: %v", err)
+		}
+		refailed = true
+	}
+	if err := q.Replay(ctx, "d"); err != nil {
+		t.Fatal(err)
+	}
+	if !refailed {
+		t.Fatal("the seam never ran, so this asserts nothing")
+	}
+	jobs, err := q.ListJobs(ctx, "failed", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].ID != "d" || jobs[0].Attempts != 1 {
+		t.Fatalf("failed jobs = %+v; want the re-failed job: Replay deleted its new dead record and the job is in no queue and no dead list", jobs)
 	}
 }
 

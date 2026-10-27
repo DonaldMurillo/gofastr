@@ -22,8 +22,10 @@ func TestUpdateAllKeepsSuppliedUpdatedAt(t *testing.T) {
 	if _, err := ch.CreateOne(ctx, map[string]any{"title": "a"}); err != nil {
 		t.Fatal(err)
 	}
-	const want = "2001-02-03T04:05:06Z"
-	n, err := NewTypedQuery[covNote](ch).UpdateAll(ctx, map[string]any{"updated_at": want})
+	// The supplied instant is kept, stored in the fixed-width layout every
+	// Timestamp write uses.
+	const sent, want = "2001-02-03T04:05:06Z", "2001-02-03T04:05:06.000000Z"
+	n, err := NewTypedQuery[covNote](ch).UpdateAll(ctx, map[string]any{"updated_at": sent})
 	if err != nil || n != 1 {
 		t.Fatalf("UpdateAll = %d, %v; want 1 row", n, err)
 	}

@@ -2,12 +2,12 @@ package outbox
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // StartRelay launches the Relay goroutine. The relay delivers each pending
@@ -133,10 +133,25 @@ func (o *Outbox) pump(ctx context.Context) int {
 	if len(deliveries) == 0 {
 		return 0
 	}
-	for _, d := range deliveries {
+	for i, d := range deliveries {
 		if ctx.Err() != nil {
 			// Shutdown mid-batch: claimed deliveries stay leased and are
 			// recovered after the lease expires (at-least-once).
+			break
+		}
+		// The batch shares one lease and runs one delivery after another.
+		// A delivery started with less lease left than its handler budget
+		// plus its settle can see the lease run out mid-run: another
+		// relay re-claims and runs it too, or its budget sweep
+		// dead-letters it (MaxAttempts reached by the claim alone). The
+		// rest of the batch goes back unstarted, its attempts refunded,
+		// and the next pump (immediately, n > 0) claims it afresh. The
+		// first delivery always runs, so a lease shorter than one budget
+		// still makes progress.
+		if i > 0 && o.now().UTC().Add(o.handlerTimeout+o.settleTimeout).After(d.ClaimedUntil) {
+			settleCtx, cancel := o.settleContext(ctx)
+			o.releaseUnstarted(settleCtx, deliveries[i:])
+			cancel()
 			break
 		}
 		o.processDelivery(ctx, d)
@@ -147,16 +162,6 @@ func (o *Outbox) pump(ctx context.Context) int {
 // processDelivery invokes one claimed delivery's consumer handler and
 // settles the delivery row, then attempts to complete the parent.
 func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
-	// Settle/complete writes must survive shutdown: the handler may already
-	// have run to completion, so its outcome must be recorded durably even if
-	// the relay ctx is being cancelled, otherwise a delivery that SUCCEEDED
-	// is left pending and needlessly redelivered after the lease expires. The
-	// handler itself still runs under ctx (a cooperative handler stops on
-	// shutdown); only the bookkeeping writes are detached, bounded so a dead
-	// DB can't hang shutdown.
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
-
 	handler, ok := o.lookupHandler(d.Type, d.Consumer)
 	if !ok {
 		// Declared on another replica mid rolling-deploy: leave it pending
@@ -164,6 +169,8 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 		// replica may hold the handler.
 		slog.Default().Debug("outbox: delivery has no handler on this replica; requeued",
 			"row_id", d.RowID, "consumer", d.Consumer, "type", d.Type)
+		settleCtx, cancel := o.settleContext(ctx)
+		defer cancel()
 		o.requeueNoHandler(settleCtx, d)
 		return
 	}
@@ -172,10 +179,14 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	// whatever Append accepted and staged inside the business transaction
 	// must be deliverable, a payload that stages cleanly can't be an
 	// undeliverable poison row (objects arrive as map[string]any, numbers
-	// as float64, arrays as []any — the encoding/json shapes).
+	// as float64, arrays as []any — the encoding/json shapes). An integer
+	// past 2^53 arrives as a json.Number with the staged digits, which a
+	// float64 would round.
 	var payload any
 	if len(d.Payload) > 0 {
-		if err := json.Unmarshal(d.Payload, &payload); err != nil {
+		if err := jsonexact.Unmarshal(d.Payload, &payload); err != nil {
+			settleCtx, cancel := o.settleContext(ctx)
+			defer cancel()
 			o.markDeliveryFailure(settleCtx, d, fmt.Errorf("unmarshal payload: %w", err))
 			o.completeParent(settleCtx, d.RowID)
 			return
@@ -195,13 +206,32 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	// unrelated event types — proceed. invokeHandler itself recovers a
 	// panic into a delivery error, so a panicking consumer is
 	// retried/dead-lettered, never silently marked dispatched.
-	if err := o.runHandler(ctx, handler, ev, d); err != nil {
-		o.markDeliveryFailure(settleCtx, d, err)
+	herr := o.runHandler(ctx, handler, ev, d)
+	settleCtx, cancel := o.settleContext(ctx)
+	defer cancel()
+	if herr != nil {
+		o.markDeliveryFailure(settleCtx, d, herr)
 		o.completeParent(settleCtx, d.RowID)
 		return
 	}
 	o.markDeliveryDispatched(settleCtx, d)
 	o.completeParent(settleCtx, d.RowID)
+}
+
+// settleContext returns the context for one delivery's bookkeeping writes
+// (settle + parent completion). They must survive shutdown: the handler
+// may already have run to completion, so its outcome must be recorded
+// durably even if the relay ctx is being cancelled, otherwise a delivery
+// that SUCCEEDED is left pending and needlessly redelivered after the
+// lease expires. The handler itself still runs under ctx (a cooperative
+// handler stops on shutdown); only the bookkeeping writes are detached,
+// bounded by settleTimeout so a dead DB can't hang shutdown. Call it once
+// the handler has returned: the window measures the writes, never the
+// handler (a handler slower than the window would otherwise settle under
+// an expired context, stay pending, and be redelivered until it
+// dead-letters).
+func (o *Outbox) settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), o.settleTimeout)
 }
 
 // runHandler invokes one consumer handler with a wall-clock budget

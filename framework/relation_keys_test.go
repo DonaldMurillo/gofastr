@@ -478,6 +478,15 @@ func TestRelationFieldToIntegerKey(t *testing.T) {
 		if len(rows) != 1 || relField(rows[0], "teamId", "name") != "Owls" {
 			t.Errorf("players include team = %v", rows)
 		}
+		// The column holds an integer, so a filter value is checked as one.
+		for _, path := range []string{"/players?team_id=abc", "/teams?players.team_id=abc", "/teams?include=players(team_id=abc)"} {
+			if rec := serveKeyedAs(t, app, "", "GET", path, nil); rec.Code != http.StatusBadRequest {
+				t.Errorf("%s = %d, want 400: %s", path, rec.Code, rec.Body)
+			}
+		}
+		if got := len(relDo(t, app, "", "GET", "/players?team_id="+tid, nil).([]any)); got != 1 {
+			t.Errorf("?team_id=%s matched %d players, want 1", tid, got)
+		}
 		players := relField(relDo(t, app, "", "GET", "/teams/"+tid+"?include=players", nil), "players")
 		if got := relList(players, "name"); !slices.Equal(got, []string{"Ann"}) {
 			t.Errorf("team players = %v", got)

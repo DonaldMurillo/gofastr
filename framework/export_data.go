@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -44,7 +47,7 @@ import (
 // placeholders) and are therefore whitelisted: every table/column name is
 // derived from the registry schema (entity.GetTable / entity.GetFields) or a
 // registered DataExporter, and each is passed through core/query.SafeIdent
-// before QuoteIdent. An archive's table/column names are NEVER trusted into
+// before QuoteFolded. An archive's table/column names are NEVER trusted into
 // SQL, they are validated against the live known set first and unknown ones
 // are rejected. All VALUES are $n bound arguments.
 //
@@ -55,10 +58,37 @@ import (
 // is staged: the whole archive is validated BEFORE any row is written, and
 // the write phase runs inside a single transaction that rolls back on any
 // error.
+//
+// # Order and coverage (design decision D4)
+//
+// The archive holds every entity table, every many_to_many pivot table
+// AutoMigrate creates (source "pivot", named by its table), and every
+// registered battery table. Sources are listed, and restored, parents
+// first: a table comes after every table its BelongsTo foreign keys
+// reference, and a pivot after both its ends, so a restore into an empty
+// database never trips a foreign key. Rows of a self-referencing table are
+// written parents first too. Two tables that reference each other have no
+// such order: the one written first goes in with that reference empty, set
+// once every source is in. ImportData orders by the live schema, not the
+// archive's listing, so an archive written before this order existed
+// restores the same way. On Postgres the sequence behind each
+// auto-increment column is moved past the restored ids, so the next insert
+// does not collide with one.
 
 // exportFormatVersion is the manifest "format" marker. Bump on incompatible
-// manifest-shape changes; ImportData rejects anything else.
-const exportFormatVersion = "gofastr-data-v1"
+// manifest-shape changes; ImportData rejects anything it does not read.
+//
+// v2 writes a binary value (a SQLite BLOB, a Postgres bytea) as the object
+// {"$bytes": "<base64>"}: as a JSON string it lost every byte that is not
+// UTF-8 and restored as TEXT. A v1 archive holds no objects, and its
+// binary values restore as the strings they were written as.
+const (
+	exportFormatVersion = "gofastr-data-v2"
+	exportFormatV1      = "gofastr-data-v1"
+)
+
+// bytesTag is the one key of the object a binary value is archived as.
+const bytesTag = "$bytes"
 
 // ExportOption configures ExportData.
 type ExportOption func(*exportConfig)
@@ -93,7 +123,7 @@ type exportManifest struct {
 // manifestEntry describes one dumped source.
 type manifestEntry struct {
 	Name       string   `json:"name"`        // archive key + ndjson stem
-	Source     string   `json:"source"`      // "entity" | battery name
+	Source     string   `json:"source"`      // "entity" | "pivot" | battery name
 	Table      string   `json:"table"`       // physical table (provenance)
 	PrimaryKey string   `json:"primary_key"` // keyset columns, comma-joined
 	RowCount   int      `json:"row_count"`
@@ -109,12 +139,26 @@ type exportSource struct {
 	table      string
 	primaryKey []string
 	columns    []string
+	// selfRefs are the table's foreign keys into itself; a restore writes
+	// the row each one names before the row holding it.
+	selfRefs []fkEdge
+	// laterRefs are the foreign keys into a table restored at or after this
+	// one, which only a cycle of tables produces: a restore writes them
+	// once every source is in.
+	laterRefs []fkEdge
+	// serial are the auto-increment columns, whose Postgres sequences a
+	// restore moves past the restored ids.
+	serial []string
+	// raw is a registered battery table: no field declares its
+	// auto-increment columns, so a restore asks the catalog for them.
+	raw bool
 }
 
 // ExportData dumps every entity's rows plus every registered battery table to
 // a portable archive under dir: one <name>.ndjson per source plus a
 // manifest.json. Reads are raw (all physical columns, all rows including
-// soft-deleted), paged by primary-key keyset. See the package comment for the
+// soft-deleted), paged by primary-key keyset (a table with no key is read in
+// one statement). See the package comment for the
 // fidelity and SQL-safety contracts.
 func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) error {
 	if a == nil {
@@ -148,7 +192,10 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	}
 
 	dialect := migrate.DetectDialect(a.DB)
-	sources := a.collectSources()
+	sources, err := a.collectSources()
+	if err != nil {
+		return err
+	}
 
 	manifest := exportManifest{
 		Format:    exportFormatVersion,
@@ -161,13 +208,15 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		// quoted at the single raw-SQL boundary (rawReadAll / tableExists) via
 		// query.MustIdent, a misconfigured registration fails loud (panic)
 		// there rather than silently interpolating an unsafe name.
+		// A raw table may declare no key. It is read in one pass: paging by
+		// a guessed "id" read a string literal on SQLite and stopped after
+		// the first page.
 		pk := src.primaryKey
-		if len(pk) == 0 {
-			pk = []string{"id"}
-		}
 		cols := src.columns
 
-		exists, err := tableExists(ctx, a.DB, src.table, dialect)
+		// An entity table is spelled as AutoMigrate folded it; a battery
+		// table as the catalog has it.
+		phys, exists, err := physicalTable(ctx, a.DB, src.table, dialect, !src.raw)
 		if err != nil {
 			return fmt.Errorf("framework: export probe %q: %w", src.table, err)
 		}
@@ -184,7 +233,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 			fmt.Fprintf(os.Stderr, "framework: export: table %q absent, skipping\n", src.table)
 			continue
 		}
-		rows, err := rawReadAll(ctx, a.DB, src.table, cols, pk, cfg.pageSize)
+		rows, err := rawReadAll(ctx, a.DB, dialect, phys, cols, pk, cfg.pageSize)
 		if err != nil {
 			return fmt.Errorf("framework: export read %q: %w", src.table, err)
 		}
@@ -209,8 +258,9 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 // It validates the WHOLE archive before writing a single row (missing
 // manifest, unknown source, incompatible columns, checksum mismatch are all
 // rejected up front), then writes every source inside a single transaction,
-// rolling back on any error. Original ids/timestamps/owner/tenant and
-// soft-deleted rows are preserved verbatim.
+// rolling back on any error, parents before children (decision D4).
+// Original ids/timestamps/owner/tenant and soft-deleted rows are preserved
+// verbatim.
 func (a *App) ImportData(ctx context.Context, dir string) error {
 	if a == nil {
 		return fmt.Errorf("framework: ImportData on nil App")
@@ -226,7 +276,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 	if err := json.Unmarshal(mb, &manifest); err != nil {
 		return fmt.Errorf("framework: import: parse manifest: %w", err)
 	}
-	if manifest.Format != exportFormatVersion {
+	if manifest.Format != exportFormatVersion && manifest.Format != exportFormatV1 {
 		return fmt.Errorf("framework: import: unsupported archive format %q (want %q)",
 			manifest.Format, exportFormatVersion)
 	}
@@ -235,17 +285,24 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 	// registry or a registered exporter may be restored. Archive entries that
 	// don't match a live source are rejected, a malicious archive's table
 	// names never reach this map as keys and therefore never reach SQL.
-	live := a.collectSources()
-	liveByID := make(map[string]exportSource, len(live))
-	for _, s := range live {
-		liveByID[s.name] = s
+	live, err := a.collectSources()
+	if err != nil {
+		return err
 	}
+	liveByID := make(map[string]exportSource, len(live))
+	liveOrder := make(map[string]int, len(live))
+	for i, s := range live {
+		liveByID[s.name] = s
+		liveOrder[s.name] = i
+	}
+	dialect := migrate.DetectDialect(a.DB)
 
 	// ---- Staged validation: nothing is written until every source checks out.
 	type planned struct {
 		src  exportSource // live source (trusted table + columns)
 		cols []string     // archive columns, confirmed ⊆ live.columns
 		path string
+		phys string // the table as the catalog spells it (physicalTable)
 	}
 	plans := make([]planned, 0, len(manifest.Entities))
 	for _, ent := range manifest.Entities {
@@ -280,8 +337,22 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		if sum := sha256Hex(data); sum != ent.SHA256 {
 			return fmt.Errorf("framework: import: source %q checksum mismatch (archive corrupt or tampered)", ent.Name)
 		}
-		plans = append(plans, planned{src: src, cols: cols, path: ndjsonPath})
+		// Resolved before the transaction opens: a single-connection pool
+		// would deadlock reading the catalog while the tx holds it.
+		phys, exists, err := physicalTable(ctx, a.DB, src.table, dialect, !src.raw)
+		if err != nil {
+			return fmt.Errorf("framework: import: probe %q: %w", src.table, err)
+		}
+		if !exists {
+			return fmt.Errorf("framework: import: source %q table %q is not in the database", ent.Name, src.table)
+		}
+		plans = append(plans, planned{src: src, cols: cols, path: ndjsonPath, phys: phys})
 	}
+	// Parents first, by the live schema (decision D4): the archive's own
+	// listing may predate that order.
+	slices.SortStableFunc(plans, func(x, y planned) int {
+		return liveOrder[x.src.name] - liveOrder[y.src.name]
+	})
 
 	// ---- Write phase: one transaction, rollback on any error.
 	tx, err := a.DB.BeginTx(ctx, nil)
@@ -294,13 +365,49 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 			_ = tx.Rollback()
 		}
 	}()
+	// The references a cycle of tables keeps out of the inserts, set once
+	// every source is written.
+	type heldRefs struct {
+		src  exportSource
+		phys string
+		refs []deferredRef
+	}
+	var held []heldRefs
 	for _, p := range plans {
 		rows, err := readNDJSON(p.path)
 		if err != nil {
 			return fmt.Errorf("framework: import: parse %q: %w", p.src.name, err)
 		}
-		if err := rawWriteAll(ctx, tx, p.src.table, p.cols, rows); err != nil {
+		var deferred []deferredRef
+		if len(p.src.selfRefs) > 0 {
+			rows, deferred = parentRowsFirst(rows, p.src.primaryKey, p.src.selfRefs)
+		}
+		if len(p.src.laterRefs) > 0 {
+			var later []deferredRef
+			if rows, later, err = holdLaterRefs(rows, p.src.primaryKey, p.src.laterRefs); err != nil {
+				return fmt.Errorf("framework: import: write %q: %w", p.src.name, err)
+			}
+			held = append(held, heldRefs{src: p.src, phys: p.phys, refs: later})
+		}
+		if err := rawWriteAll(ctx, tx, p.phys, p.cols, rows); err != nil {
 			return fmt.Errorf("framework: import: write %q: %w", p.src.name, err)
+		}
+		if err := applyDeferredRefs(ctx, tx, p.phys, p.src.primaryKey, deferred); err != nil {
+			return fmt.Errorf("framework: import: write %q: %w", p.src.name, err)
+		}
+		serial := p.src.serial
+		if p.src.raw {
+			if serial, err = sequencedColumns(ctx, tx, dialect, p.phys, p.cols); err != nil {
+				return fmt.Errorf("framework: import: write %q: %w", p.src.name, err)
+			}
+		}
+		if err := resetSerialSequences(ctx, tx, dialect, p.phys, serial); err != nil {
+			return fmt.Errorf("framework: import: write %q: %w", p.src.name, err)
+		}
+	}
+	for _, h := range held {
+		if err := applyDeferredRefs(ctx, tx, h.phys, h.src.primaryKey, h.refs); err != nil {
+			return fmt.Errorf("framework: import: write %q: %w", h.src.name, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -327,12 +434,20 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 // also collapsed to one source (the lex-first name) whose column list is the
 // union across every entity sharing the table, a faithful backup reads every
 // physical column, not just one name's projection.
-func (a *App) collectSources() []exportSource {
+//
+// Pivot tables follow (source "pivot"), then every entity and pivot source
+// is ordered parents first (decision D4); battery tables come last, in
+// registration order.
+func (a *App) collectSources() ([]exportSource, error) {
 	var out []exportSource
 	seenTable := make(map[string]bool)
 	seenName := make(map[string]bool)
 
 	if a.Registry != nil {
+		g, err := a.buildDataGraph()
+		if err != nil {
+			return nil, err
+		}
 		merged := migrate.UnionEntities(a.registryView())
 		// Sort by name for a deterministic archive, then group by physical
 		// table so each table appears exactly once.
@@ -344,13 +459,25 @@ func (a *App) collectSources() []exportSource {
 		tableCols := map[string][]string{} // table → unioned column names
 		tableName := map[string]string{}   // table → lex-first entity name
 		tablePK := map[string][]string{}   // table → primary-key columns
+		tableSerial := map[string][]string{}
+		// The maps are keyed by the folded table: Widgets and widgets are one
+		// table to the unquoted DDL, and two sources for it exported its rows
+		// twice and failed the restore on the second copy's keys. A source
+		// keeps the spelling of its lex-first entity.
+		tableSpell := map[string]string{}
 		for _, n := range names {
 			ent := merged[n]
-			table := ent.GetTable()
+			table := foldASCII(ent.GetTable())
 			if _, first := tableCols[table]; !first {
+				tableSpell[table] = ent.GetTable()
 				tableName[table] = n
 				tablePK[table] = ent.KeyColumns()
 				tableCols[table] = []string{}
+			}
+			for _, f := range ent.GetFields() {
+				if f.AutoGenerate == schema.AutoIncrement {
+					tableSerial[table] = appendUnique(tableSerial[table], f.Name)
+				}
 			}
 			// Union this entity's columns into the table's set. Duplicates are
 			// deduped by lowercased name (Postgres folds unquoted identifiers),
@@ -368,39 +495,299 @@ func (a *App) collectSources() []exportSource {
 				tableCols[table] = append(tableCols[table], f.Name)
 			}
 		}
-		// Emit one source per table, table-name-sorted for deterministic output.
+		// Pivot tables: no entity describes them, so their link columns are
+		// their columns and their key.
+		pivot := map[string]bool{}
+		for _, raw := range g.sorted {
+			dt, t := g.tables[raw], foldASCII(raw)
+			if !dt.pivot || tableCols[t] != nil {
+				continue
+			}
+			pivot[t] = true
+			tableSpell[t] = raw
+			tableName[t] = dt.name
+			tablePK[t] = dt.key
+			tableCols[t] = slices.Clone(dt.key)
+		}
+		edges := make([]fkEdge, len(g.edges))
+		for i, e := range g.edges {
+			e.child, e.parent = foldASCII(e.child), foldASCII(e.parent)
+			edges[i] = e
+		}
+		// Emit one source per table, parents first; tables with no
+		// dependency between them stay table-name-sorted for deterministic
+		// output.
 		tables := make([]string, 0, len(tableCols))
 		for t := range tableCols {
 			tables = append(tables, t)
 		}
 		sort.Strings(tables)
-		for _, t := range tables {
+		emitted := map[string]bool{}
+		for _, t := range orderTables(tables, edges, true) {
 			n := tableName[t]
-			out = append(out, exportSource{
+			src := exportSource{
 				name: n, source: "entity",
-				table: t, primaryKey: tablePK[t], columns: tableCols[t],
-			})
+				table: tableSpell[t], primaryKey: tablePK[t], columns: tableCols[t],
+				serial: tableSerial[t],
+			}
+			if pivot[t] {
+				src.source = "pivot"
+			}
+			for _, e := range edges {
+				switch {
+				case e.child != t:
+				case e.parent == t:
+					src.selfRefs = append(src.selfRefs, e)
+				case tableCols[e.parent] != nil && !emitted[e.parent]:
+					src.laterRefs = append(src.laterRefs, e)
+				}
+			}
+			emitted[t] = true
+			out = append(out, src)
 			seenTable[t] = true
 			seenName[n] = true
 		}
 	}
 	for _, ex := range datexport.All() {
-		if seenTable[ex.Table] || seenName[ex.Name] {
+		if seenTable[foldASCII(ex.Table)] || seenName[ex.Name] {
 			// Already covered by an entity (or a name collision), registry wins.
+			// Tables compare folded, as the entity sources do.
 			continue
 		}
-		pk := []string{ex.PrimaryKey}
-		if ex.PrimaryKey == "" {
-			pk = []string{"id"}
+		// An empty PrimaryKey means the table has no key: rawReadAll reads
+		// it in one statement. Defaulting to "id" paged a keyless SQLite
+		// table by the string literal 'id' and stopped after one page. A
+		// composite key is comma-joined, the manifest's own spelling.
+		var pk []string
+		if ex.PrimaryKey != "" {
+			pk = strings.Split(ex.PrimaryKey, ",")
+			for i := range pk {
+				pk[i] = strings.TrimSpace(pk[i])
+			}
 		}
 		out = append(out, exportSource{
 			name: ex.Name, source: ex.Source,
 			table: ex.Table, primaryKey: pk, columns: append([]string(nil), ex.Columns...),
+			raw: true,
 		})
-		seenTable[ex.Table] = true
+		seenTable[foldASCII(ex.Table)] = true
 		seenName[ex.Name] = true
 	}
-	return out
+	return out, nil
+}
+
+// deferredRef is a reference a cycle of rows kept out of its row's INSERT:
+// the row went in with cols empty, and an UPDATE sets them to vals once
+// every row of the table exists.
+type deferredRef struct {
+	key  []any
+	cols []string
+	vals []any
+}
+
+// parentRowsFirst orders a self-referencing table's rows so each row comes
+// after the row its own foreign keys name: keyset order would write a reply
+// before the comment it answers whenever the reply's key sorts first, and
+// the insert would trip the constraint. Rows keep their order otherwise.
+// No insert order satisfies a cycle of rows (two comments naming each
+// other), so the reference that closes the cycle is emptied in a copy of
+// its row and returned as a deferredRef for applyDeferredRefs.
+func parentRowsFirst(rows []map[string]any, key []string, refs []fkEdge) ([]map[string]any, []deferredRef) {
+	idOf := func(row map[string]any, cols []string) (string, bool) {
+		vals := make([]any, len(cols))
+		for i, c := range cols {
+			vals[i] = row[c]
+		}
+		return keyString(vals)
+	}
+	index := make(map[string]int, len(rows))
+	for i, r := range rows {
+		if k, ok := idOf(r, key); ok {
+			index[k] = i
+		}
+	}
+	state := make([]int, len(rows)) // 0 unvisited, 1 in progress, 2 done
+	out := make([]map[string]any, 0, len(rows))
+	var deferred []deferredRef
+	var visit func(int)
+	visit = func(i int) {
+		if state[i] != 0 {
+			return
+		}
+		state[i] = 1
+		row := rows[i]
+		for _, e := range refs {
+			k, ok := idOf(row, e.cols)
+			if !ok {
+				continue
+			}
+			j, ok := index[k]
+			if !ok || j == i {
+				continue
+			}
+			if state[j] == 1 {
+				// j is waiting on this row: the edge closes a cycle.
+				ref := deferredRef{cols: e.cols, vals: make([]any, len(e.cols))}
+				for _, c := range key {
+					ref.key = append(ref.key, row[c])
+				}
+				row = maps.Clone(row)
+				for n, c := range e.cols {
+					ref.vals[n] = row[c]
+					row[c] = nil
+				}
+				deferred = append(deferred, ref)
+				continue
+			}
+			visit(j)
+		}
+		state[i] = 2
+		out = append(out, row)
+	}
+	for i := range rows {
+		visit(i)
+	}
+	return out, deferred
+}
+
+// holdLaterRefs empties, in a copy of each row, the foreign keys that name a
+// table not yet written (a cycle of tables), and returns them as
+// deferredRefs to set once every table is in. A table with no key cannot be
+// referenced, so it is never in a cycle; one that still reaches here is
+// refused rather than written with its references lost.
+func holdLaterRefs(rows []map[string]any, key []string, refs []fkEdge) ([]map[string]any, []deferredRef, error) {
+	if len(key) == 0 {
+		return nil, nil, fmt.Errorf("references to a later table need a primary key to set them by")
+	}
+	for _, e := range refs {
+		for _, c := range e.cols {
+			if slices.Contains(key, c) {
+				return nil, nil, fmt.Errorf("relation %q closes a cycle of tables through key column %q, which cannot be written empty", e.label, c)
+			}
+		}
+	}
+	var deferred []deferredRef
+	out := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		// Values are read from the row as archived: two references that
+		// share a column (a tenant) each keep it, though the first empties
+		// it on the row written.
+		orig := rows[i]
+		for _, e := range refs {
+			ref := deferredRef{cols: e.cols, vals: make([]any, len(e.cols))}
+			set := false
+			for n, c := range e.cols {
+				ref.vals[n] = orig[c]
+				set = set || orig[c] != nil
+			}
+			if !set {
+				continue
+			}
+			if out[i] == nil {
+				row = maps.Clone(row)
+			}
+			for _, c := range key {
+				if orig[c] == nil {
+					// UPDATE ... WHERE key = NULL would match nothing.
+					return nil, nil, fmt.Errorf("relation %q is set on a row whose key column %q is NULL, so it cannot be restored after the row", e.label, c)
+				}
+				ref.key = append(ref.key, orig[c])
+			}
+			for _, c := range e.cols {
+				row[c] = nil
+			}
+			out[i] = row
+			deferred = append(deferred, ref)
+		}
+		out[i] = row
+	}
+	return out, deferred, nil
+}
+
+// applyDeferredRefs sets the references parentRowsFirst kept out of their
+// rows' INSERTs, now that every row they name exists.
+func applyDeferredRefs(ctx context.Context, tx *sql.Tx, table string, key []string, refs []deferredRef) error {
+	for _, ref := range refs {
+		sets := make([]string, len(ref.cols))
+		for i, c := range ref.cols {
+			sets[i] = fmt.Sprintf("%s = $%d", query.QuoteFolded(query.MustIdent(c)), i+1)
+		}
+		where := make([]string, len(key))
+		for i, c := range key {
+			where[i] = fmt.Sprintf("%s = $%d", query.QuoteFolded(query.MustIdent(c)), len(ref.cols)+i+1)
+		}
+		stmt := fmt.Sprintf("UPDATE %s SET %s WHERE %s", quotePhysical(table),
+			strings.Join(sets, ", "), strings.Join(where, " AND "))
+		res, err := tx.ExecContext(ctx, stmt, append(slices.Clone(ref.vals), ref.key...)...)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n != 1 {
+			return fmt.Errorf("restoring a reference of %s row %v updated %d rows, want 1", table, ref.key, n)
+		}
+	}
+	return nil
+}
+
+// sqlExecer is the slice of *sql.Tx the sequence reset needs.
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// resetSerialSequences moves the Postgres sequence behind each of table's
+// auto-increment columns past the restored ids: an INSERT naming the id
+// never calls nextval, so without this the next generated id is 1 and
+// collides with a restored row. An empty table restarts at the sequence's
+// minimum, and so does a table whose ids all sit below it (an id of 0 or a
+// negative one): setval refuses a value under the minimum, and the minimum
+// is already above every restored id. A column with no sequence joins no
+// pg_sequence row and nothing is set. SQLite needs nothing: its rowid
+// allocation follows the largest id present.
+//
+// table is a physicalTable spelling. pg_get_serial_sequence parses its table
+// argument as an identifier, so it gets the quoted spelling, case kept; the
+// column argument is taken literally and is lowered to match.
+func resetSerialSequences(ctx context.Context, ex sqlExecer, dialect migrate.Dialect, table string, cols []string) error {
+	if dialect != migrate.DialectPostgres {
+		return nil
+	}
+	qt := quotePhysical(table)
+	for _, c := range cols {
+		qc := query.QuoteFolded(query.MustIdent(c))
+		stmt := fmt.Sprintf("SELECT setval(s.seqrelid, GREATEST(COALESCE(m.v, s.seqmin), s.seqmin), m.v IS NOT NULL AND m.v >= s.seqmin) "+
+			"FROM pg_sequence s CROSS JOIN (SELECT MAX(%s) AS v FROM %s) m "+
+			"WHERE s.seqrelid = pg_get_serial_sequence($1, $2)::regclass", qc, qt)
+		if _, err := ex.ExecContext(ctx, stmt, qt, strings.ToLower(c)); err != nil {
+			return fmt.Errorf("advance the sequence of %s.%s: %w", table, c, err)
+		}
+	}
+	return nil
+}
+
+// sequencedColumns returns the columns of a raw table that own a Postgres
+// sequence: a SERIAL or an identity column, which pg_get_serial_sequence
+// answers for both. A registered battery table declares no field, so its
+// restore would otherwise leave every sequence at 1. Arguments are spelled
+// as resetSerialSequences spells them. SQLite has no sequence to find.
+func sequencedColumns(ctx context.Context, tx *sql.Tx, dialect migrate.Dialect, table string, cols []string) ([]string, error) {
+	if dialect != migrate.DialectPostgres {
+		return nil, nil
+	}
+	var out []string
+	for _, c := range cols {
+		var owned bool
+		//gofastr:allow(GOFASTR1502) one catalog read per column of a restored table, not per row
+		if err := tx.QueryRowContext(ctx, "SELECT pg_get_serial_sequence($1, $2) IS NOT NULL",
+			quotePhysical(table), strings.ToLower(c)).Scan(&owned); err != nil {
+			return nil, fmt.Errorf("find the sequence of %s.%s: %w", table, c, err)
+		}
+		if owned {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // registryView returns the App's registry as the entity.Registry interface
@@ -414,15 +801,20 @@ func (a *App) registryView() entity.Registry {
 
 // rawReadAll reads every physical row of table, all columns, ordered and paged
 // by primary-key keyset. No soft-delete filter, no owner/tenant scope, a full
-// backup. Scanned values are normalized so the JSON form round-trips: []byte →
-// string, time.Time → RFC3339 string; int64/float64/bool/nil pass through.
+// backup. Scanned values are normalized so the JSON form round-trips: a binary
+// value → {"$bytes": base64}, any other []byte → string, time.Time → RFC3339
+// string; int64/float64/bool/nil pass through.
 //
 // A composite key pages by row value, (a, b) > ($1, $2), which Postgres and
-// SQLite both compare column by column.
-func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string, keys []string, pageSize int) ([]map[string]any, error) {
-	// Identifiers are registry-derived; MustIdent validates + fails fast on the
-	// impossible (a malformed name never reaches here from a valid registry).
-	qt := query.MustIdent(table)
+// SQLite both compare column by column. A table with no key has nothing to
+// page by and is read in one statement.
+func rawReadAll(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table string, columns []string, keys []string, pageSize int) ([]map[string]any, error) {
+	// table is a physicalTable spelling; quotePhysical validates it and keeps
+	// its case.
+	qt := quotePhysical(table)
+	if len(keys) == 0 {
+		return rawReadUnkeyed(ctx, db, dialect, qt, columns)
+	}
 	// readCols is the column list we SELECT. It always includes the keyset
 	// columns; a key column that isn't declared is appended for paging only
 	// and kept OUT of the emitted row map.
@@ -434,7 +826,7 @@ func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string,
 	}
 	selList := make([]string, len(readCols))
 	for i, c := range readCols {
-		selList[i] = query.QuoteIdent(query.MustIdent(c))
+		selList[i] = query.QuoteFolded(query.MustIdent(c))
 	}
 	colList := strings.Join(selList, ", ")
 	keyIdx := make([]int, len(keys))
@@ -442,7 +834,7 @@ func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string,
 	marks := make([]string, len(keys))
 	for i, k := range keys {
 		keyIdx[i] = indexOf(readCols, k)
-		quotedKeys[i] = query.QuoteIdent(query.MustIdent(k))
+		quotedKeys[i] = query.QuoteFolded(query.MustIdent(k))
 		marks[i] = "$" + strconv.Itoa(i+1)
 	}
 	orderBy := strings.Join(quotedKeys, ", ")
@@ -459,49 +851,92 @@ func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string,
 		var args []any
 		if first {
 			q = fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT $1",
-				colList, query.QuoteIdent(qt), orderBy)
+				colList, qt, orderBy)
 			args = []any{pageSize}
 		} else {
 			q = fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s LIMIT $%d",
-				colList, query.QuoteIdent(qt), after, orderBy, len(keys)+1)
+				colList, qt, after, orderBy, len(keys)+1)
 			args = append(slices.Clone(lastVals), pageSize)
 		}
-		rows, err := db.QueryContext(ctx, q, args...)
+		nullKey := false
+		page, err := scanExportRows(ctx, db, dialect, q, args, len(readCols), columns, func(vals []any) {
+			for i, ki := range keyIdx {
+				lastVals[i] = vals[ki]
+				nullKey = nullKey || vals[ki] == nil
+			}
+		})
 		if err != nil {
 			return nil, err
 		}
-		n := 0
-		for rows.Next() {
-			vals := make([]any, len(readCols))
-			ptrs := make([]any, len(readCols))
-			for i := range vals {
-				ptrs[i] = &vals[i]
-			}
-			if err := rows.Scan(ptrs...); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			row := make(map[string]any, len(columns))
-			for i, c := range columns {
-				row[c] = normalizeScan(vals[i])
-			}
-			for i, ki := range keyIdx {
-				lastVals[i] = vals[ki]
-			}
-			out = append(out, row)
-			n++
+		// SQLite lets a non-INTEGER key hold NULL. Paging past one asks
+		// for key > NULL, which matches nothing: the rest of the table
+		// was dropped under a valid checksum.
+		if nullKey {
+			return nil, fmt.Errorf("table %q has a row with a NULL primary key, which the export cannot page past; give the row a key", table)
 		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
+		out = append(out, page...)
 		first = false
-		if n < pageSize {
+		if len(page) < pageSize {
 			break
 		}
 	}
 	return out, nil
+}
+
+// rawReadUnkeyed reads every row of a table with no key in one statement.
+func rawReadUnkeyed(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt string, columns []string) ([]map[string]any, error) {
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("no columns to read for table %q", qt)
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s", quotedCols("", columns), qt)
+	return scanExportRows(ctx, db, dialect, q, nil, len(columns), columns, nil)
+}
+
+// scanExportRows runs q and returns its rows as maps of the first
+// len(columns) values, normalized for JSON. seen, when set, sees each row's
+// raw values.
+//
+// A binary value is tagged (see exportFormatVersion). On SQLite every
+// []byte the driver returns is a BLOB; on Postgres the driver returns
+// numeric, uuid and json as []byte text too, so only a bytea column is.
+func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q string, args []any, width int, columns []string, seen func(vals []any)) ([]map[string]any, error) {
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	binary := make([]bool, len(columns))
+	for i := range columns {
+		binary[i] = dialect != migrate.DialectPostgres || strings.EqualFold(types[i].DatabaseTypeName(), "BYTEA")
+	}
+	var out []map[string]any
+	for rows.Next() {
+		vals := make([]any, width)
+		ptrs := make([]any, width)
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		row := make(map[string]any, len(columns))
+		for i, c := range columns {
+			if b, ok := vals[i].([]byte); ok && binary[i] {
+				row[c] = map[string]string{bytesTag: base64.StdEncoding.EncodeToString(b)}
+				continue
+			}
+			row[c] = normalizeScan(vals[i])
+		}
+		if seen != nil {
+			seen(vals)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 // rawWriteAll inserts every row into table (all values verbatim) inside the
@@ -513,17 +948,17 @@ func rawWriteAll(ctx context.Context, tx *sql.Tx, table string, columns []string
 	if len(columns) == 0 {
 		return fmt.Errorf("no columns to write for table %q", table)
 	}
-	qt := query.MustIdent(table)
+	qt := quotePhysical(table)
 	quotedCols := make([]string, len(columns))
 	for i, c := range columns {
-		quotedCols[i] = query.QuoteIdent(query.MustIdent(c))
+		quotedCols[i] = query.QuoteFolded(query.MustIdent(c))
 	}
 	phs := make([]string, len(columns))
 	for i := range columns {
 		phs[i] = fmt.Sprintf("$%d", i+1)
 	}
 	stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-		query.QuoteIdent(qt), strings.Join(quotedCols, ", "), strings.Join(phs, ", "))
+		qt, strings.Join(quotedCols, ", "), strings.Join(phs, ", "))
 	for _, row := range rows {
 		args := make([]any, len(columns))
 		for i, c := range columns {
@@ -557,24 +992,105 @@ func indexOf(ss []string, s string) int {
 	return -1
 }
 
-// tableExists reports whether table exists in the live DB. Dialect-aware so it
-// works on both SQLite and Postgres without raising on a missing table.
+// tableExists reports whether table exists in the live DB, spelled as its
+// owner may have created it (see physicalTable).
 func tableExists(ctx context.Context, db *sql.DB, table string, dialect migrate.Dialect) (bool, error) {
-	qt := query.MustIdent(table)
-	if dialect == migrate.DialectPostgres {
-		var ok bool
+	_, ok, err := physicalTable(ctx, db, table, dialect, false)
+	return ok, err
+}
+
+// rowQueryer is the slice of *sql.DB and *sql.Tx physicalTable needs.
+type rowQueryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// physicalTable finds the table a declared name stands for and returns its
+// catalog spelling, for quotePhysical. Dialect-aware so it works on both
+// SQLite and Postgres without raising on a missing table.
+//
+// On Postgres a name's spelling depends on the DDL that made it. AutoMigrate
+// writes it unquoted, so an entity's Widgets is widgets, and folded says
+// the caller knows that. The batteries fold their tables too, but a host
+// registers tables its own migrations made, and those may be quoted with
+// their case kept ("Jobs"), so otherwise the name matches its own
+// spelling first and its folded one second, never another case variant.
+// A schema part ("app.widgets") is matched
+// the same way; without one the probe reads the current schema only, as
+// migrate.ReadLiveColumns does, because a same-named table elsewhere is not
+// on the search path the later queries use.
+//
+// SQLite identifiers have no case, so the name matches without it.
+func physicalTable(ctx context.Context, db rowQueryer, table string, dialect migrate.Dialect, folded bool) (string, bool, error) {
+	name := query.MustIdent(table)
+	if dialect != migrate.DialectPostgres {
+		var phys string
 		err := db.QueryRowContext(ctx,
-			"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)", table).Scan(&ok)
-		return ok, err
+			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = $1 COLLATE NOCASE", name).Scan(&phys)
+		if err == sql.ErrNoRows {
+			return "", false, nil
+		}
+		return phys, err == nil, err
 	}
-	// SQLite: probe the sqlite_master catalog by quoted name.
-	var name string
-	err := db.QueryRowContext(ctx,
-		"SELECT name FROM sqlite_master WHERE type = 'table' AND name = $1", qt).Scan(&name)
+	schemaPart, rel := "", name
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		schemaPart, rel = name[:i], name[i+1:]
+	}
+	// spellings is the owner's spelling first, then the folded one.
+	spellings := func(s string) (string, string) {
+		if folded {
+			return foldASCII(s), foldASCII(s)
+		}
+		return s, foldASCII(s)
+	}
+	relA, relB := spellings(rel)
+	var physSchema, physRel string
+	var err error
+	if schemaPart == "" {
+		err = db.QueryRowContext(ctx,
+			"SELECT table_schema, table_name FROM information_schema.tables "+
+				"WHERE table_schema = current_schema() AND table_name IN ($1, $2) "+
+				"ORDER BY table_name = $1 DESC LIMIT 1", relA, relB).Scan(&physSchema, &physRel)
+	} else {
+		schemaA, schemaB := spellings(schemaPart)
+		err = db.QueryRowContext(ctx,
+			"SELECT table_schema, table_name FROM information_schema.tables "+
+				"WHERE table_schema IN ($1, $2) AND table_name IN ($3, $4) "+
+				"ORDER BY table_schema = $1 DESC, table_name = $3 DESC LIMIT 1",
+			schemaA, schemaB, relA, relB).Scan(&physSchema, &physRel)
+	}
 	if err == sql.ErrNoRows {
-		return false, nil
+		return "", false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return "", false, err
+	}
+	if schemaPart == "" {
+		return physRel, true, nil
+	}
+	return physSchema + "." + physRel, true, nil
+}
+
+// quotePhysical quotes a physicalTable spelling as it is, each
+// dot-separated part on its own.
+func quotePhysical(phys string) string {
+	parts := strings.Split(query.MustIdent(phys), ".")
+	for i, p := range parts {
+		//gofastr:allow(quoteident) phys is the spelling read back from the catalog
+		parts[i] = query.QuoteIdent(p)
+	}
+	return strings.Join(parts, ".")
+}
+
+// foldASCII lowers ASCII letters, the folding Postgres applies to an
+// unquoted identifier.
+func foldASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // writeNDJSON writes rows one JSON object per line and returns the hex sha256
@@ -598,7 +1114,12 @@ func writeNDJSON(path string, rows []map[string]any) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// readNDJSON reads one JSON object per line into a slice of maps.
+// readNDJSON reads one JSON object per line into a slice of maps. Numbers
+// decode exactly (see jsonNumberValue): a float64 holds integers only up to
+// 2^53, so a BIGINT id or an amount in cents above that would restore as a
+// different value. A {"$bytes": base64} object decodes to the []byte it
+// tags, which binds as a BLOB or bytea; any other object or array is
+// refused.
 func readNDJSON(path string) ([]map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -606,14 +1127,61 @@ func readNDJSON(path string) ([]map[string]any, error) {
 	}
 	var out []map[string]any
 	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.UseNumber()
 	for dec.More() {
 		var m map[string]any
 		if err := dec.Decode(&m); err != nil {
 			return nil, err
 		}
+		for k, v := range m {
+			switch x := v.(type) {
+			case json.Number:
+				m[k] = jsonNumberValue(x)
+			case map[string]any:
+				b, err := taggedBytes(x)
+				if err != nil {
+					return nil, fmt.Errorf("column %q: %w", k, err)
+				}
+				m[k] = b
+			case []any:
+				return nil, fmt.Errorf("column %q: an array is not a column value", k)
+			}
+		}
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// taggedBytes decodes the {"$bytes": base64} object a binary value is
+// archived as.
+func taggedBytes(obj map[string]any) ([]byte, error) {
+	s, ok := obj[bytesTag].(string)
+	if !ok || len(obj) != 1 {
+		return nil, fmt.Errorf("an object value must be {%q: <base64>}", bytesTag)
+	}
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("bytes value: %w", err)
+	}
+	return b, nil
+}
+
+// jsonNumberValue is the value a restored number binds as: an int64 when the
+// number is an integer that fits, a float64 when it is not an integer, and
+// its decimal text when it is an integer too large for int64 (the database
+// parses the text exactly; a float64 would round it).
+func jsonNumberValue(n json.Number) any {
+	if i, err := n.Int64(); err == nil {
+		return i
+	}
+	s := n.String()
+	if !strings.ContainsAny(s, ".eE") {
+		return s
+	}
+	if f, err := n.Float64(); err == nil {
+		return f
+	}
+	return s
 }
 
 func sha256Hex(data []byte) string {

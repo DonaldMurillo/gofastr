@@ -158,9 +158,10 @@ type SQLOAuthTokenStoreConfig struct {
 // key, sealed access/refresh token columns, and an expiry stored as a unix
 // timestamp (portable across SQLite and Postgres).
 type SQLOAuthTokenStore struct {
-	db     *sql.DB
-	table  string
-	sealer *aeadSealer
+	db      *sql.DB
+	table   string
+	sealer  *aeadSealer
+	dialect storeDialect
 }
 
 // NewSQLOAuthTokenStore creates the token table (IF NOT EXISTS) and returns
@@ -196,6 +197,9 @@ func NewSQLOAuthTokenStore(db *sql.DB, cfg ...SQLOAuthTokenStoreConfig) (*SQLOAu
 }
 
 func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
+		return err
+	}
 	q := fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s (
 			user_id TEXT NOT NULL,
@@ -206,7 +210,7 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 			expires_at BIGINT NOT NULL,
 			PRIMARY KEY (user_id, provider)
 		)`,
-		query.QuoteIdent(s.table),
+		query.QuoteFolded(s.table),
 	)
 	if _, err := s.db.ExecContext(ctx, q); err != nil {
 		return err
@@ -224,21 +228,21 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 // fails CAS closed: its refresh writes are refused until a login
 // callback re-persists the row through Save.
 func (s *SQLOAuthTokenStore) migrateRefreshSHA(ctx context.Context) error {
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteIdent(s.table))
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
-		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteIdent(s.table))
+	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table))
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
+		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table))
 	}
 	if _, err := s.db.ExecContext(ctx, alter); err != nil {
 		// SQLite has no IF NOT EXISTS for columns; a duplicate-column
 		// error is the column already being there, the migration's goal.
-		if migrate.DetectDialect(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
+		if s.dialect.of(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
 			// fall through to the backfill
 		} else {
 			return err
 		}
 	}
 	rows, err := s.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT user_id, provider, refresh_token FROM %s WHERE refresh_sha = ''`, query.QuoteIdent(s.table)))
+		fmt.Sprintf(`SELECT user_id, provider, refresh_token FROM %s WHERE refresh_sha = ''`, query.QuoteFolded(s.table)))
 	if err != nil {
 		return err
 	}
@@ -257,7 +261,7 @@ func (s *SQLOAuthTokenStore) migrateRefreshSHA(ctx context.Context) error {
 			continue
 		}
 		if _, err := s.db.ExecContext(ctx,
-			fmt.Sprintf(`UPDATE %s SET refresh_sha = $1 WHERE user_id = $2 AND provider = $3`, query.QuoteIdent(s.table)),
+			fmt.Sprintf(`UPDATE %s SET refresh_sha = $1 WHERE user_id = $2 AND provider = $3`, query.QuoteFolded(s.table)),
 			sha256hex(refresh), k.user, k.provider); err != nil {
 			return err
 		}
@@ -290,7 +294,7 @@ func (s *SQLOAuthTokenStore) Save(ctx context.Context, rec OAuthTokenRecord) err
 		               refresh_token = EXCLUDED.refresh_token,
 		               refresh_sha = EXCLUDED.refresh_sha,
 		               expires_at = EXCLUDED.expires_at`,
-		query.QuoteIdent(s.table),
+		query.QuoteFolded(s.table),
 	)
 	_, err = s.db.ExecContext(ctx, q, rec.UserID, rec.Provider, access, refresh, sha256hex(rec.RefreshToken), rec.Expiry.Unix())
 	return err
@@ -315,7 +319,7 @@ func (s *SQLOAuthTokenStore) SaveIfRefreshUnchanged(ctx context.Context, rec OAu
 	q := fmt.Sprintf(
 		`UPDATE %s SET access_token = $3, refresh_token = $4, refresh_sha = $5, expires_at = $6
 		 WHERE user_id = $1 AND provider = $2 AND refresh_sha = $7`,
-		query.QuoteIdent(s.table),
+		query.QuoteFolded(s.table),
 	)
 	res, err := s.db.ExecContext(ctx, q,
 		rec.UserID, rec.Provider, access, refresh, sha256hex(rec.RefreshToken), rec.Expiry.Unix(), sha256hex(from))
@@ -330,7 +334,7 @@ func (s *SQLOAuthTokenStore) SaveIfRefreshUnchanged(ctx context.Context, rec OAu
 func (s *SQLOAuthTokenStore) Get(ctx context.Context, userID, provider string) (OAuthTokenRecord, error) {
 	q := fmt.Sprintf(
 		`SELECT access_token, refresh_token, expires_at FROM %s WHERE user_id = $1 AND provider = $2`,
-		query.QuoteIdent(s.table),
+		query.QuoteFolded(s.table),
 	)
 	var access, refresh string
 	var exp int64
@@ -360,7 +364,7 @@ func (s *SQLOAuthTokenStore) Get(ctx context.Context, userID, provider string) (
 
 // Delete removes the stored token; deleting a missing row is not an error.
 func (s *SQLOAuthTokenStore) Delete(ctx context.Context, userID, provider string) error {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE user_id = $1 AND provider = $2`, query.QuoteIdent(s.table))
+	q := fmt.Sprintf(`DELETE FROM %s WHERE user_id = $1 AND provider = $2`, query.QuoteFolded(s.table))
 	_, err := s.db.ExecContext(ctx, q, userID, provider)
 	return err
 }

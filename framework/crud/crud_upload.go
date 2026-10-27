@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -15,10 +14,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -323,7 +325,7 @@ func (ch *CrudHandler) isBoolColumn(name string) bool {
 }
 
 // saveFilePart opens one multipart file header, runs ProcessFileField, and
-// stores the resulting URL on body[key]. For a schema.Image field with an
+// stores the resulting storage key on body[key]. For a schema.Image field with an
 // ImageDeriver configured, renditions and placeholder metadata are derived
 // too and spread across whichever sibling columns the entity declares.
 // store is the (possibly recording) storage view the parse writes through.
@@ -352,7 +354,10 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, ke
 	if err != nil {
 		return fmt.Errorf("upload %q: %w", key, err)
 	}
-	body[key] = ff.URL
+	// The column holds the storage key: provenance, erasure and the
+	// screens' link builder (which escapes it) all read it as one. ff.URL
+	// is the escaped URL form and differs for a name with '#' or '%'.
+	body[key] = ff.StorageRef
 	if ff.Image != nil {
 		applyDerivedColumns(ch.Entity, key, ff.Image, body)
 	}
@@ -437,9 +442,10 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 			// would round it, and the decimal validator refuses one.
 			return raw
 		case schema.Float:
-			// Reject NaN/Inf so a form value like "NaN" cannot land in a
-			// numeric column; the raw string then fails schema validation.
-			if n, err := strconv.ParseFloat(raw, 64); err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {
+			// The JSON path's canonical spelling: no NaN/Inf, hex or
+			// underscores. Anything else stays a string, which schema
+			// validation refuses.
+			if n, ok := floatText(raw); ok {
 				return n
 			}
 		case schema.Bool:
@@ -515,9 +521,34 @@ type savedKeyLedger struct {
 	keys []string
 }
 
+// storageSaveError is the storage backend failing a Save during the
+// multipart parse. It is the server's failure, not the request's, and its
+// text is the backend's (a path, a bucket, a host), so the handler answers
+// it with a fixed 500 and logs the detail; see writeBodyError.
+type storageSaveError struct{ err error }
+
+func (e *storageSaveError) Error() string { return "storage save: " + e.err.Error() }
+func (e *storageSaveError) Unwrap() error { return e.err }
+
+// writeBodyError answers a readRequestBody failure: 413 for an oversized
+// body, a fixed 500 for a storage backend failure, and 400 with the
+// detail for anything the request itself got wrong.
+func writeBodyError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errBodyTooLarge) {
+		writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+		return
+	}
+	if _, ok := errors.AsType[*storageSaveError](err); ok {
+		log.Printf("crud: upload save failed: %s", textsafe.ScrubControlBytes(err.Error()))
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
+	writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
+}
+
 func (l *savedKeyLedger) Save(ctx context.Context, key string, src io.Reader) error {
 	if err := l.Storage.Save(ctx, key, src); err != nil {
-		return err
+		return &storageSaveError{err: err}
 	}
 	l.mu.Lock()
 	l.keys = append(l.keys, key)
@@ -569,6 +600,12 @@ func (ch *CrudHandler) deleteSavedUploads(ctx context.Context, keys []string) {
 	if len(keys) == 0 || ch.Storage == nil {
 		return
 	}
+	// The rollback outlives the request: a client that disconnected
+	// mid-write canceled ctx, and a storage backend refuses a canceled
+	// Delete, which left exactly the orphans this cleans up. Bounded so
+	// a dead backend cannot pin the handler.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	for _, key := range keys {
 		if err := ch.Storage.Delete(ctx, key); err != nil {
 			log.Printf("crud: compensating delete of orphaned upload %q failed: %v", key, err)

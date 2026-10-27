@@ -32,8 +32,7 @@ Everything on this surface follows from three settled decisions:
 
 `GOFASTR_ROLE=agent` (or `framework.WithRole(framework.RoleAgent)`)
 serves the agent surface only: `/mcp` (POST JSON-RPC + GET SSE, plus its
-spec-reserved subpaths), `/healthz` and `/readyz`, and the widget client
-script at `mcp.WidgetClientScriptURL`. Entity CRUD routes, OpenAPI,
+spec-reserved subpaths), `/healthz` and `/readyz`. Entity CRUD routes, OpenAPI,
 docs, admin, and well-known discovery are not served; worker consumers
 (cron, queues, the outbox relay) do not start.
 
@@ -41,9 +40,8 @@ docs, admin, and well-known discovery are not served; worker consumers
 session/bearer auth, owner scoping context, recovery — behaves exactly
 as on a full serve process. A role-split deployment gives agent traffic
 a dedicated, narrow listener (a tunnel, an allow-listed load balancer)
-without exposing the browser surface on it. The widget client script
-rides the same listener because a widget document fetches it from the
-same public origin that serves `/mcp`.
+without exposing the browser surface on it. Widgets need nothing else
+from it: each widget document carries its client inline.
 
 See [horizontal scaling](scaling.md) for the full role split and
 [MCP](mcp.md) for the `/mcp` transport itself.
@@ -52,11 +50,12 @@ See [horizontal scaling](scaling.md) for the full role split and
 
 A widget is a single HTML document served as a `ui://` resource, plus
 the tool that launches it. `mcp.WidgetDocument` assembles the document
-so the boilerplate is right by construction — and above all so the
-`<script src>` that loads the widget client comes from the same constant
-the server mounts the route at. A one-character typo in a hand-written
-script URL is a widget that renders and silently never receives
-anything: no error, no console message, nothing to grep for.
+so the boilerplate is right by construction, and above all so the widget
+client is inlined. The host renders the document in a frame on its own
+origin, so a `<script src>` path resolves against the host, not your
+app: a linked client is a widget that renders and silently never
+receives anything, with no error, no console message, nothing to grep
+for.
 <!-- gofastr:compile
 import (
 	"context"
@@ -96,8 +95,8 @@ _ = opt
 
 The emitted document is exactly: doctype, `<html lang>`, charset and
 viewport, `<title>`, one root `<div id="app">` wrapping `Body`, the
-widget client `<script src="/__gofastr/mcp/app/widgetclient.js">`, and
-`Script` in a classic inline `<script>` after it — so
+widget client in an inline `<script>`, and `Script` in a classic inline
+`<script>` after it, so
 `window.__gofastrMcpApp` exists when your code runs. No CSS, no design
 tokens, no default styling of any kind: the builder emits structure
 only, because the palette belongs to the host (decision 2).
@@ -109,7 +108,8 @@ document content and pass through verbatim, exactly as a hand-written
 HTML string would. One guard `HTML()` enforces: `Script` must not
 contain `</script` (case-insensitive) or `<!--` — either can make the
 HTML parser close (or stop closing) the script element early. The builder
-rejects the document with an error naming the sequence. Inside the
+rejects the document with an error naming the sequence and its byte
+offset in `Script`; it holds the inlined client to the same rule. Inside the
 JavaScript string literals in `Script`, write `"<\/script>"`: `\/` is a
 valid JavaScript escape for `/`. Keep `Script` in a Go raw string
 literal (backticks) so the backslash reaches JavaScript as written. In
@@ -117,8 +117,7 @@ an interpreted string literal, double it (`"<\\/script>"`); a lone `\/`
 is not a legal Go escape, so the code will not compile.
 
 `framework.WithMCPApp` registers the resource and the linking tool in
-one call and serves the widget client script at
-`mcp.WidgetClientScriptURL` automatically. The client's full method
+one call; it mounts no script route. The client's full method
 surface — the `ui/initialize` handshake, `callTool`, the notification
 registrars, teardown — is in [MCP](mcp.md).
 
@@ -187,10 +186,10 @@ the host's design language wins.
 
 ## Common mistakes
 
-- **Hand-writing the client `<script src>`.** The URL must be exactly
-  `mcp.WidgetClientScriptURL` (`/__gofastr/mcp/app/widgetclient.js`). A
-  one-character typo renders a widget that silently never receives
-  anything. Use `mcp.WidgetDocument`, which bakes in the constant.
+- **Linking the client with `<script src>`.** The host resolves the URL
+  on its own origin, so the widget renders and silently never receives
+  anything. Use `mcp.WidgetDocument`, or inline `mcp.WidgetClientJS()`
+  in hand-written HTML.
 - **Shipping your app's brand into the widget.** App tokens, theme CSS,
   design-system styles: none of it belongs in a chat-host widget. The
   host's design language wins, and a dark-mode host will render light

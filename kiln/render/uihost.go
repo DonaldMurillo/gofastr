@@ -84,8 +84,10 @@ func applyUIHostPages(fwApp *framework.App, w *world.World) error {
 
 	// Build-mode reload client: page-structure world edits force an SPA
 	// refresh of the current page (kiln/live/reload.go). Dev-mode SSE,
-	// same exception class as framework/dev livereload.
-	opts := []uihost.Option{uihost.WithExtraScripts("/.kiln/reload.js")}
+	// same exception class as framework/dev livereload. The query names
+	// the world this page renders, which the client checks against the
+	// stream's ready event.
+	opts := []uihost.Option{uihost.WithExtraScripts("/.kiln/reload.js?w=" + WorldStamp(w))}
 	if w.App.StaticDir != "" {
 		opts = append(opts, uihost.WithStaticDir(w.App.StaticDir))
 	}

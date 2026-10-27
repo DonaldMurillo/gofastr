@@ -2,7 +2,9 @@ package migrate
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -44,11 +46,12 @@ func keyHas(cols []string, col string) bool {
 }
 
 // defaultPKName is the name Postgres gives an unnamed primary-key
-// constraint: the folded table name cut to 58 bytes, then "_pkey". The
-// snapshot path, which never sees the live constraint, drops it by this
-// name; SafeIdent has already limited the table name to ASCII.
+// constraint: the table's own folded name (without its schema) cut to 58
+// bytes, then "_pkey". The snapshot path, which never sees the live
+// constraint, drops it by this name; SafeIdent has already limited the
+// table name to ASCII.
 func defaultPKName(table string) string {
-	t := strings.ToLower(table)
+	t := strings.ToLower(tableBase(table))
 	if len(t) > 58 {
 		t = t[:58]
 	}
@@ -66,10 +69,11 @@ func readLiveKeysQ(ctx context.Context, q queryer, tables []string, dialect Dial
 		return readLiveKeysPostgres(ctx, q, tables)
 	}
 	for _, table := range tables {
-		if _, err := query.SafeIdent(table); err != nil {
+		pragma, err := sqlitePragma("table_info", table)
+		if err != nil {
 			return nil, err
 		}
-		rows, err := q.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+		rows, err := q.QueryContext(ctx, pragma)
 		if err != nil {
 			return nil, err
 		}
@@ -111,37 +115,29 @@ func readLiveKeysQ(ctx context.Context, q queryer, tables []string, dialect Dial
 }
 
 func readLiveKeysPostgres(ctx context.Context, q queryer, tables []string) (map[string]liveKey, error) {
-	placeholders := make([]string, len(tables))
-	args := make([]any, len(tables))
-	byLower := make(map[string]string, len(tables))
-	for i, t := range tables {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = strings.ToLower(t)
-		byLower[strings.ToLower(t)] = t
-	}
+	refs, args := pgTableRefs(tables)
 	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
-		SELECT c.relname, con.conname, a.attname
-		FROM pg_constraint con
-		JOIN pg_class c ON c.oid = con.conrelid
-		JOIN pg_namespace n ON n.oid = c.relnamespace
+		SELECT t.i, con.conname, a.attname
+		FROM %s
+		JOIN pg_namespace n ON n.nspname = coalesce(t.s, current_schema())
+		JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = t.n
+		JOIN pg_constraint con ON con.conrelid = c.oid AND con.contype = 'p'
 		CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
 		JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
-		WHERE con.contype = 'p' AND n.nspname = current_schema() AND lower(c.relname) IN (%s)
-		ORDER BY c.relname, k.ord
-	`, strings.Join(placeholders, ", ")), args...)
+		ORDER BY t.i, k.ord
+	`, refs), args...)
 	if err != nil {
 		return nil, fmt.Errorf("read primary keys: %w", err)
 	}
 	defer rows.Close()
 	out := make(map[string]liveKey, len(tables))
 	for rows.Next() {
-		var table, constraint, col string
-		if err := rows.Scan(&table, &constraint, &col); err != nil {
+		var i int
+		var constraint, col string
+		if err := rows.Scan(&i, &constraint, &col); err != nil {
 			return nil, err
 		}
-		if orig, ok := byLower[strings.ToLower(table)]; ok {
-			table = orig
-		}
+		table := tables[i]
 		k := out[table]
 		k.constraint = constraint
 		k.cols = append(k.cols, col)
@@ -174,12 +170,26 @@ func keyChangeSummary(from, to []string) string {
 // NOT NULL on the new key columns itself, and fails on a table whose rows
 // repeat a key or leave a key column NULL.
 //
+// Postgres refuses to drop a key constraint another table's foreign key
+// depends on, so with tables (the live or snapshot column sets) the change
+// first detaches the foreign keys the entity's declared referrers and its
+// generated pivots hold onto the key, and re-adds each declared one, now
+// naming the new key, once the key is back. A declared key whose columns the
+// child gains only in its own changes (a rename, an added column) cannot be
+// re-added here; it rides in deferredFKs, which the caller runs after every
+// table's changes. The detach drops only the keys a relation declares and
+// those in extraKeep (fkKeepKey values the caller reported as destructive
+// drops of their own); any other key onto the old key fails the change. A
+// nil tables map skips all that (boot's additive pass, which filters the
+// change out anyway).
+//
 // The Down mirrors it: drop the new key, clear the NOT NULL the new key gave
 // a column outside the old one, and add the old key back. It is empty when
 // an old key column leaves the entity, because the diff drops that column
 // and its values, and no key can be restored on the empty column a Down
-// re-adds.
-func postgresKeyChange(ent *entity.Entity, qtable string, lk liveKey) (SchemaChange, error) {
+// re-adds, and when foreign keys were detached, whose old definitions
+// neither the live nor the snapshot column set records.
+func postgresKeyChange(ent *entity.Entity, all map[string]*entity.Entity, qtable string, lk liveKey, tables map[string]map[string]string, extraKeep []string) (SchemaChange, error) {
 	newKey := ent.KeyColumns()
 	quoteAll := func(cols []string) (string, error) {
 		safe := make([]string, len(cols))
@@ -200,7 +210,21 @@ func postgresKeyChange(ent *entity.Entity, qtable string, lk liveKey) (SchemaCha
 	}
 	var up, down []string
 	reversible := true
+	var readd []string
+	var deferred []SchemaChange
+	if tables != nil && len(lk.cols) > 0 {
+		in, err := incomingForeignKeys(ent, all, tables, extraKeep)
+		if err != nil {
+			return SchemaChange{}, err
+		}
+		if len(in.children) > 0 {
+			up = append(up, detachForeignKeysSQL(qtable, in.children, in.keep))
+			readd, deferred = in.readd, in.deferred
+			reversible = false
+		}
+	}
 	if len(lk.cols) > 0 {
+		//gofastr:allow(quoteident) lk.constraint was read from pg_constraint with its case kept
 		up = append(up, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", qtable, query.QuoteIdent(lk.constraint)))
 	}
 	for _, col := range lk.cols {
@@ -247,6 +271,7 @@ func postgresKeyChange(ent *entity.Entity, qtable string, lk liveKey) (SchemaCha
 		}
 		down = append(down, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", qtable, cols))
 	}
+	up = append(up, readd...)
 	downSQL := ""
 	if reversible {
 		downSQL = strings.Join(down, ";\n")
@@ -257,6 +282,7 @@ func postgresKeyChange(ent *entity.Entity, qtable string, lk liveKey) (SchemaCha
 		Down:         downSQL,
 		Destructive:  true,
 		irreversible: !reversible,
+		deferredFKs:  deferred,
 	}, nil
 }
 
@@ -279,7 +305,11 @@ func declaredField(ent *entity.Entity, col string) (schema.Field, bool) {
 // keyed one way do not satisfy another, and with no key at all nothing
 // holds the declared one unique, so a create or update by id could touch
 // several rows.
-func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, pre liveKey) error {
+//
+// On Postgres a declared foreign key onto the table whose child gains its
+// columns only later in the boot (a column the child adds) is appended to
+// deferred, for the caller to run once every table has converged.
+func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, pre liveKey, deferred *[]SchemaChange) error {
 	declared := ent.KeyColumns()
 	if sameKey(pre.cols, declared) {
 		return nil
@@ -319,10 +349,48 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 	}
 	var change SchemaChange
 	if dialect == DialectPostgres {
-		change, err = postgresKeyChange(ent, qtable, cur)
+		// The tables holding a declared foreign key onto this one, entity
+		// tables and generated pivots, read on the lock-holding connection,
+		// so the change can detach and re-add those keys around the key swap.
+		var referrers []string
+		for _, name := range slices.Sorted(maps.Keys(all)) {
+			other := all[name]
+			if other.Config.Unmanaged {
+				continue
+			}
+			fks, ferr := declaredForeignKeys(other, all)
+			if ferr != nil {
+				return ferr
+			}
+			if slices.ContainsFunc(fks, func(fk declaredFK) bool { return fk.target == ent }) {
+				referrers = append(referrers, other.GetTable())
+			}
+		}
+		pivots, perr := pivotTablesOnto(ent, all)
+		if perr != nil {
+			return perr
+		}
+		tables := map[string]map[string]string{}
+		for _, t := range append(referrers, pivots...) {
+			cols, rerr := readEntityColumnsQ(ctx, exec, t, dialect)
+			if rerr != nil {
+				return fmt.Errorf("re-read columns for %s: %w", t, rerr)
+			}
+			tables[t] = cols
+		}
+		// Boot drops no foreign key a relation does not declare: no
+		// extraKeep, so the detach refuses one.
+		change, err = postgresKeyChange(ent, all, qtable, cur, tables, nil)
 	} else {
+		stranded, serr := sqliteStrandedReferrers(ctx, exec, ent, cur.cols)
+		if serr != nil {
+			return serr
+		}
+		if len(stranded) > 0 {
+			return strandedReferrersError(table, cur.cols, declared, stranded, "boot rebuilds no table but the one whose key changes")
+		}
 		var live map[string]string
-		if live, err = readLiveColumnsQ(ctx, exec, table, dialect); err != nil {
+		if live, err = readEntityColumnsQ(ctx, exec, table, dialect); err != nil {
 			return fmt.Errorf("re-read columns for %s: %w", table, err)
 		}
 		change, err = sqliteRebuildChange(ent, all, dialect, live, nil, keyChangeSummary(cur.cols, declared), true)
@@ -333,5 +401,97 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 	if _, err := exec.ExecContext(ctx, change.SQL); err != nil {
 		return fmt.Errorf("%s: %w", change.Summary, err)
 	}
+	if deferred != nil {
+		*deferred = append(*deferred, change.deferredFKs...)
+	} else if len(change.deferredFKs) > 0 {
+		return fmt.Errorf("%s: %s needs running after the other tables converge, and this caller runs none", change.Summary, change.deferredFKs[0].Summary)
+	}
 	return nil
+}
+
+// uniqueColumnSets lists the column sets the entity's table holds unique
+// once built from its declaration: its key, each Unique field, and each
+// unique column index. A SQLite foreign key must reference one of them.
+func uniqueColumnSets(ent *entity.Entity) [][]string {
+	sets := [][]string{ent.KeyColumns()}
+	for _, f := range ent.Config.Fields {
+		if f.Unique {
+			sets = append(sets, []string{f.Name})
+		}
+	}
+	for _, idx := range ent.Config.Indices {
+		if idx.Unique && idx.Expression == "" && len(idx.Columns) > 0 {
+			sets = append(sets, idx.Columns)
+		}
+	}
+	return sets
+}
+
+// strandsReference reports whether a foreign key referencing refCols of a
+// table keyed on oldKey stops resolving once the table is rebuilt from
+// ent's declaration. An empty refCols references the key, whatever its
+// columns, so only a change in its width strands it.
+func strandsReference(ent *entity.Entity, oldKey, refCols []string) bool {
+	if len(refCols) == 0 {
+		return len(oldKey) != len(ent.KeyColumns())
+	}
+	return !slices.ContainsFunc(uniqueColumnSets(ent), func(set []string) bool { return sameColumnSet(set, refCols) })
+}
+
+// sqliteStrandedReferrers lists the other tables whose live foreign keys
+// onto ent's table would no longer resolve once a key change rebuilds it:
+// SQLite names a foreign key's referenced columns, so a key that moves
+// leaves them pointing at columns no key or unique index holds, and every
+// later write to those tables fails with "foreign key mismatch".
+func sqliteStrandedReferrers(ctx context.Context, exec execQueryer, ent *entity.Entity, oldKey []string) ([]string, error) {
+	table := ent.GetTable()
+	rows, err := exec.QueryContext(ctx, `SELECT m.name, f.id, f."table", f."to"
+		FROM sqlite_master m JOIN pragma_foreign_key_list(m.name) f
+		WHERE m.type = 'table' AND lower(m.name) <> lower(?) AND lower(f."table") = lower(?)
+		ORDER BY m.name, f.id, f.seq`, table, table)
+	if err != nil {
+		return nil, fmt.Errorf("read foreign keys onto %s: %w", table, err)
+	}
+	defer rows.Close()
+	type fkRef struct {
+		child string
+		id    int
+	}
+	var order []fkRef
+	refs := map[fkRef][]string{}
+	for rows.Next() {
+		var k fkRef
+		var ref string
+		var to sql.NullString
+		if err := rows.Scan(&k.child, &k.id, &ref, &to); err != nil {
+			return nil, fmt.Errorf("read foreign keys onto %s: %w", table, err)
+		}
+		if _, ok := refs[k]; !ok {
+			order = append(order, k)
+			refs[k] = nil
+		}
+		if to.Valid && to.String != "" {
+			refs[k] = append(refs[k], to.String)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read foreign keys onto %s: %w", table, err)
+	}
+	var out []string
+	for _, k := range order {
+		if strandsReference(ent, oldKey, refs[k]) && !slices.Contains(out, k.child) {
+			out = append(out, k.child)
+		}
+	}
+	return out, nil
+}
+
+// strandedReferrersError refuses a SQLite key change that would strand the
+// foreign keys of the named tables.
+func strandedReferrersError(table string, oldKey, newKey, stranded []string, why string) error {
+	return fmt.Errorf("table %s is keyed on (%s) but the entity declares (%s), and %s reference the old key: "+
+		"SQLite cannot repoint a foreign key in place, and %s, so those tables would fail every later write with \"foreign key mismatch\"; "+
+		"apply DiffSchema's changes with ApplySchemaDiffWithOptions and AllowDestructive, which rebuilds the entity tables that reference it "+
+		"(not a generated many_to_many pivot), or write the migration by hand",
+		table, strings.Join(oldKey, ", "), strings.Join(newKey, ", "), strings.Join(stranded, ", "), why)
 }

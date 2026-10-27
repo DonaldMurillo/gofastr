@@ -126,7 +126,7 @@ func TestMapMutationResult_rawValue(t *testing.T) {
 func TestMapSearchResult_envelopeData(t *testing.T) {
 	r := mapSearchResult(map[string]any{
 		"data":  []any{"x"},
-		"total": float64(3),
+		"total": json.Number("3"),
 	}).(moduleproto.SearchQueryResult)
 	if r.Total != 3 || string(r.Results) == "" {
 		t.Errorf("data-envelope search result = %+v", r)
@@ -138,7 +138,7 @@ func TestMapSearchResult_envelopeWithoutData(t *testing.T) {
 	// fires when Marshal returns nil bytes, which it never does).
 	r := mapSearchResult(map[string]any{
 		"results": []any{"y"},
-		"total":   float64(2),
+		"total":   json.Number("2"),
 	}).(moduleproto.SearchQueryResult)
 	if r.Total != 2 {
 		t.Errorf("Total = %d, want 2", r.Total)
@@ -160,7 +160,7 @@ func TestMapSearchResult_rawValue(t *testing.T) {
 func TestMapQueryResult_envelopeWithTotal(t *testing.T) {
 	res, err := mapQueryResult(map[string]any{
 		"data":  []any{map[string]any{"id": 1}},
-		"total": float64(5),
+		"total": json.Number("5"),
 	})
 	if err != nil {
 		t.Fatalf("mapQueryResult: %v", err)

@@ -80,5 +80,7 @@ func InvalidateScreens(w http.ResponseWriter, paths ...string) {
 	if err != nil {
 		return
 	}
-	w.Header().Set("X-Gofastr-Invalidate", string(enc))
+	// ASCII only, like X-Gofastr-Toast: a /café prefix sent as raw UTF-8
+	// reaches the runtime decoded as ISO-8859-1 and matches nothing.
+	w.Header().Set("X-Gofastr-Invalidate", asciiJSON(enc))
 }

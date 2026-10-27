@@ -66,13 +66,16 @@ checks. The gate runs BEFORE `Build`, so unauthorized callers never hit
 the DB.
 
 **PDF is opt-in and dependency-isolated:** only `battery/print/chromepdf`
-imports chromedp. It feeds the shelled HTML to headless Chromium via an
-in-memory `data:` URL (no temp file) and honors the shell's CSS `@page`
-via `WithPreferCSSPageSize`. Containers usually need
-`Options{ExtraFlags: []string{"no-sandbox"}}`. For PDF token fidelity set
-`Config.BaseURL` to the app's canonical origin (used to make the app.css
-link absolute on the PDF path). The battery never derives this from the
-request `Host` header (that would be an SSRF vector).
+imports chromedp. It opens about:blank in headless Chromium, sets the
+shelled HTML as the page's content (no temp file, no URL length cap) and
+honors the shell's CSS `@page` via `WithPreferCSSPageSize`. Containers
+usually need `Options{ExtraFlags: []string{"no-sandbox"}}`. For PDF token
+fidelity set `Config.BaseURL` to the app's canonical origin (used to make
+the app.css link absolute on the PDF path, and added to the PDF
+document's CSP `style-src`) and name its host in chromepdf
+`Options.AllowedHosts`; the renderer resolves no host by default. The
+battery never derives this from the request `Host` header (that would be
+an SSRF vector).
 
 **Component styles render in print:** the shell scans the body for
 `data-cui-comp` markers and inlines the scoped CSS for every registered

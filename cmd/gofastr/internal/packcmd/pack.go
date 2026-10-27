@@ -2965,10 +2965,14 @@ func RunPack(args []string) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-o", "--out":
-			if i+1 < len(args) {
-				out = args[i+1]
-				i++
+			// A missing value or an unknown flag would print the YAML to
+			// stdout and exit 0 while the caller expected a file.
+			if i+1 >= len(args) {
+				packFail(true, "pack: %s needs a file name", args[i])
+				return
 			}
+			out = args[i+1]
+			i++
 		case "-h", "--help":
 			cli.Info("Usage: gofastr pack [app-dir] [-o out.yml]")
 			cli.Info("Reconstructs a best-effort gofastr.yml from a generated app's Go source")
@@ -2980,9 +2984,11 @@ func RunPack(args []string) {
 			cli.Info("does not reproduce, could not read, or left out as hand-written.")
 			return
 		default:
-			if !strings.HasPrefix(args[i], "-") {
-				dir = args[i]
+			if strings.HasPrefix(args[i], "-") {
+				packFail(true, "pack: unknown flag %s (usage: gofastr pack [app-dir] [-o out.yml])", args[i])
+				return
 			}
+			dir = args[i]
 		}
 	}
 	// With no -o the YAML is stdout, so everything else goes to stderr.

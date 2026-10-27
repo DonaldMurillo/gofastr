@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,73 @@ func TestToolCallArgsSchemaKeywords(t *testing.T) {
 		}
 	})
 
+	// A Go []string type union is checked like the []any one: it fell
+	// through to the unsupported branch and accepted any value.
+	t.Run("string slice type union", func(t *testing.T) {
+		schema := map[string]any{"type": "object", "properties": map[string]any{
+			"note": map[string]any{"type": []string{"string", "null"}},
+		}}
+		if err, ran := call(t, schema, `{"note":{}}`); err == nil || ran {
+			t.Fatalf("SECURITY: [tool-args] object passed a string|null union (err=%v ran=%v)", err, ran)
+		}
+		if _, ran := call(t, schema, `{"note":null}`); !ran {
+			t.Fatal("null refused by a string|null union")
+		}
+	})
+
+	// Integers above 2^53 compare by their digits: the neighbour that
+	// rounds to the same float64 is refused, and the declared value is
+	// accepted though it arrives as a json.Number.
+	t.Run("integer enum exact", func(t *testing.T) {
+		schema := map[string]any{"type": "object", "properties": map[string]any{
+			"id": map[string]any{"type": "integer", "enum": []any{int64(9007199254740993), 7}},
+		}}
+		if err, ran := call(t, schema, `{"id":9007199254740992}`); err == nil || ran {
+			t.Fatalf("SECURITY: [tool-args] integer outside the enum matched by float rounding (err=%v ran=%v)", err, ran)
+		}
+		if _, ran := call(t, schema, `{"id":9007199254740993}`); !ran {
+			t.Fatal("the declared big integer was refused")
+		}
+		if _, ran := call(t, schema, `{"id":7}`); !ran {
+			t.Fatal("small in-enum integer refused")
+		}
+		if _, ran := call(t, schema, `{"id":7.0}`); !ran {
+			t.Fatal("7.0 is the integer 7 and is in the enum")
+		}
+		// In-process callers pass Go natives of any numeric type.
+		for _, v := range []any{int32(7), uint8(7), uint64(7), float32(7)} {
+			if err := validateToolArgs(schema, map[string]any{"id": v}); err != nil {
+				t.Errorf("%T(7) refused: %v", v, err)
+			}
+		}
+	})
+
+	// An integral value past 2^53 keeps its caller's spelling as a
+	// json.Number (normalizeArgNumbers), so integer-ness is read from the
+	// digits: a point or an exponent does not make it fractional. The
+	// tiny exponent must be answered from its text, never by building
+	// 10^999999999.
+	t.Run("integer spelled with point or exp", func(t *testing.T) {
+		schema := map[string]any{"type": "object", "properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		}}
+		for _, ok := range []string{
+			"9007199254740993", "9007199254740993e0", "9007199254740993.0",
+			"9007199254740993E+0", "90071992547409930e-1", "1e999", "1e99999999999", "10e9223372036854775807", "0e-5", "-9007199254740993.000",
+		} {
+			if err, ran := call(t, schema, `{"id":`+ok+`}`); !ran {
+				t.Errorf("integral %s refused as an integer: %v", ok, err)
+			}
+		}
+		for _, bad := range []string{
+			"9007199254740993.5", "9007199254740993e-1", "1e-999999999", "1.5", "1.0000000000000001", "1e-99999999999", "1.5e-9223372036854775808",
+		} {
+			if err, ran := call(t, schema, `{"id":`+bad+`}`); err == nil || ran {
+				t.Errorf("SECURITY: [tool-args] fractional %s passed an integer schema (err=%v ran=%v)", bad, err, ran)
+			}
+		}
+	})
+
 	t.Run("array items enforced", func(t *testing.T) {
 		schema := map[string]any{"type": "object", "properties": map[string]any{
 			"ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
@@ -235,6 +303,70 @@ func TestToolCallArgsInProcessChokepoint(t *testing.T) {
 	}
 	if !ran {
 		t.Fatal("conforming in-process call did not run")
+	}
+}
+
+// An enum check compares numbers by their decimal value, never by
+// building them: 1e999999 survives the wire as a json.Number (it
+// overflows float64), and big.Rat.SetString turned it into a ~415 KB
+// integer per enum member it was compared with.
+func TestToolArgsEnumHugeExponent(t *testing.T) {
+	schema := map[string]any{"type": "object", "properties": map[string]any{
+		"n": map[string]any{"enum": []any{1, 2.5, json.Number("7")}},
+	}}
+	for _, huge := range []string{"1e999999", "-1e999999", "1e-999999", "1e99999999999999999999"} {
+		args := map[string]any{"n": json.Number(huge)}
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		err := validateToolArgs(schema, args)
+		runtime.ReadMemStats(&after)
+		if err == nil {
+			t.Errorf("%s matched an enum of small numbers", huge)
+		}
+		if grew := after.TotalAlloc - before.TotalAlloc; grew > 64<<10 {
+			t.Errorf("SECURITY: [tool-args] enum check of %s allocated %d bytes; it must compare text, not build the number", huge, grew)
+		}
+	}
+}
+
+// Text comparison keeps the exactness the enum check needs: equal
+// values in any spelling match, neighbours past 2^53 do not.
+func TestToolArgsEnumExactText(t *testing.T) {
+	cases := []struct {
+		arg, member any
+		want        bool
+	}{
+		{json.Number("9007199254740993"), int64(9007199254740993), true},
+		{json.Number("9007199254740992"), int64(9007199254740993), false},
+		{json.Number("9007199254740993e0"), int64(9007199254740993), true},
+		{json.Number("9007199254740992.0"), int64(9007199254740993), false},
+		{json.Number("9007199254740993"), float64(1 << 53), false},
+		{json.Number("9007199254740992"), float64(1 << 53), true},
+		{json.Number("1.0"), 1, true},
+		{json.Number("1e2"), 100, true},
+		{json.Number("10.0e1"), uint8(100), true},
+		{json.Number("1.0000000000000001"), 1, false},
+		{json.Number("0.5"), 0.5, true},
+		{json.Number("0.1"), 0.1, false}, // 0.1 as a float64 is not one tenth
+		{json.Number("-1.0"), -1, true},
+		{json.Number("1"), -1, false},
+		{json.Number("-0.0e5"), 0, true},
+		{json.Number("1e999999"), json.Number("10e999998"), true},
+		{json.Number("1e999999"), json.Number("1e1000000"), false},
+		{json.Number("1e99999999999999999999"), json.Number("0.1e100000000000000000000"), true},
+		{json.Number("1e99999999999999999999"), json.Number("1e99999999999999999998"), false},
+		{float64(1e300), json.Number("1e300"), false}, // the float is not exactly 10^300
+		{float64(1 << 60), json.Number("1152921504606846976"), true},
+		{int64(-5), float32(-5), true},
+		{json.Number("1E+2"), 100, true},
+		{json.Number(""), 0, false},
+		{json.Number("1e"), 1, false},
+	}
+	for _, c := range cases {
+		if got := jsonEqual(c.arg, c.member); got != c.want {
+			t.Errorf("jsonEqual(%v %T, %v %T) = %v, want %v", c.arg, c.arg, c.member, c.member, got, c.want)
+		}
 	}
 }
 

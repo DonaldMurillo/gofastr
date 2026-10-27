@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -189,22 +190,60 @@ func (e *ModelMismatchError) Error() string {
 	)
 }
 
+// Metadata arriving as JSON (the /add route, a watcher callback that
+// decodes a config) holds nested objects and arrays. gob carries a value
+// inside an interface only when its concrete type is registered, so
+// without these the WAL and the snapshot refuse every nested value.
+// The HTTP routes decode numbers as json.Number so a large integer keeps
+// its digits, which makes json.Number a value the WAL must carry too.
+func init() {
+	gob.Register(map[string]any{})
+	gob.Register([]any{})
+	gob.Register(json.Number(""))
+}
+
+// walEncodable reports whether the WAL can encode chunks. Only Metadata
+// varies in type (the other Chunk fields are fixed), so only it is
+// encoded, into a throwaway stream.
+func walEncodable(chunks []Chunk) error {
+	enc := gob.NewEncoder(io.Discard)
+	for j := range chunks {
+		if len(chunks[j].Metadata) == 0 {
+			continue
+		}
+		if err := enc.Encode(chunks[j].Metadata); err != nil {
+			return fmt.Errorf("semantic: chunk %q metadata cannot be persisted: %w", chunks[j].ID, err)
+		}
+	}
+	return nil
+}
+
 // walOp is the discriminator for [walEntry].
 type walOp string
 
 const (
+	// walOpAdd and walOpRemove are no longer written: a WAL from an
+	// earlier release holds them, and replay still applies them.
 	walOpAdd    walOp = "add"
 	walOpRemove walOp = "remove"
+	// walOpReplace removes every document in DocIDs, then stores Chunks
+	// (none for a plain Remove): one record, so a crash replays all of a
+	// replace or none of it.
+	walOpReplace walOp = "replace"
 )
 
-// walEntry is one record in the write-ahead log. Add carries a copy of
-// the chunks (including their vectors) so replay does not need to call
-// the embedder. Remove carries the doc ID; chunk-level deletion is
-// always doc-scoped.
+// walEntry is one record in the write-ahead log. Chunks carry their
+// vectors so replay does not need to call the embedder, and Model names
+// the embedder, so replay refuses vectors from another model the way
+// LoadSnapshot does (an entry written before the field existed has none
+// and replays unchecked). Deletion is always doc-scoped: DocIDs for a
+// replace, DocID for a legacy remove.
 type walEntry struct {
 	Op     walOp
 	DocID  string
+	DocIDs []string
 	Chunks []Chunk
+	Model  string
 }
 
 // wal is a tiny append-only write-ahead log. It is not high-performance.
@@ -215,6 +254,33 @@ type wal struct {
 	path string
 	f    *os.File
 	enc  *gob.Encoder
+	// writeFn and syncFn, when set, replace the file write under the
+	// encoder and an append's fsync: a test injects a disk that fails
+	// partway through a record, or after it.
+	writeFn func(f *os.File, p []byte) (int, error)
+	syncFn  func(f *os.File) error
+	// broken is the failed append that stopped the WAL; see refuse.
+	broken error
+}
+
+// walSink is the encoder's writer: the WAL's current file, through
+// writeFn when one is set.
+type walSink struct{ w *wal }
+
+func (s walSink) Write(p []byte) (int, error) {
+	if s.w.writeFn != nil {
+		return s.w.writeFn(s.w.f, p)
+	}
+	return s.w.f.Write(p)
+}
+
+// sync is an append's fsync, through syncFn when one is set.
+func (s walSink) sync() error {
+	if s.w.syncFn != nil {
+		//gofastr:allow(recovercallback) test-only seam, unexported and nil outside this package's tests
+		return s.w.syncFn(s.w.f)
+	}
+	return s.w.f.Sync()
 }
 
 // Supply ReadByte so gob does not read ahead past a completed record;
@@ -239,7 +305,9 @@ func openWAL(path string) (*wal, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("semantic: restrict wal: %w", err)
 	}
-	return &wal{path: path, f: f, enc: gob.NewEncoder(f)}, nil
+	w := &wal{path: path, f: f}
+	w.enc = gob.NewEncoder(walSink{w})
+	return w, nil
 }
 
 func (w *wal) append(e walEntry) error {
@@ -248,10 +316,45 @@ func (w *wal) append(e walEntry) error {
 	if w.f == nil {
 		return errors.New("semantic: WAL is closed")
 	}
+	if w.broken != nil {
+		return fmt.Errorf("semantic: WAL takes no appends until a snapshot rewrites it: %w", w.broken)
+	}
+	st, err := w.f.Stat()
+	if err != nil {
+		return fmt.Errorf("semantic: wal stat: %w", err)
+	}
 	if err := w.enc.Encode(e); err != nil {
+		w.refuse(st.Size(), err)
 		return fmt.Errorf("semantic: wal append: %w", err)
 	}
-	return w.f.Sync()
+	if err := (walSink{w}).sync(); err != nil {
+		w.refuse(st.Size(), err)
+		return fmt.Errorf("semantic: wal sync: %w", err)
+	}
+	return nil
+}
+
+// refuse handles an append that failed partway (a full disk). The torn
+// bytes go, so the file holds exactly the acknowledged records, and the
+// WAL takes no more appends: the encoder believes it sent type
+// descriptors the file may have lost, and a fresh encoder resends them
+// mid-stream, which the replay decoder refuses as a duplicate type. A
+// record written after a torn one was read as its payload, and every
+// restart failed. truncate (after a snapshot) starts a clean stream. If
+// the cut fails too, the torn bytes stay at the tail, which replay
+// already heals.
+func (w *wal) refuse(size int64, err error) {
+	w.broken = err
+	_ = os.Truncate(w.path, size)
+	_ = w.f.Sync()
+}
+
+// needsSnapshot reports whether a failed append has stopped the WAL
+// until a snapshot rewrites it.
+func (w *wal) needsSnapshot() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.broken != nil
 }
 
 func (w *wal) replay(apply func(walEntry) error) error {
@@ -297,7 +400,7 @@ func (w *wal) replay(apply func(walEntry) error) error {
 	if _, err := w.f.Seek(0, io.SeekEnd); err != nil {
 		return fmt.Errorf("semantic: wal seek end: %w", err)
 	}
-	w.enc = gob.NewEncoder(w.f)
+	w.enc = gob.NewEncoder(walSink{w})
 	return nil
 }
 
@@ -325,12 +428,15 @@ func (w *wal) truncate() error {
 		// snapshot caller still receives the reset failure.
 		w.f, _ = os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
 		if w.f != nil {
-			w.enc = gob.NewEncoder(w.f)
+			w.enc = gob.NewEncoder(walSink{w})
 		}
 		return fmt.Errorf("semantic: wal reopen after truncate: %w", err)
 	}
 	w.f = f
-	w.enc = gob.NewEncoder(f)
+	w.enc = gob.NewEncoder(walSink{w})
+	// An empty file and a fresh encoder: the stream a failed append
+	// broke starts over.
+	w.broken = nil
 	return f.Sync()
 }
 

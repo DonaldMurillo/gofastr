@@ -338,36 +338,46 @@ type RouteEntry struct {
 	// nothing.
 	Deferred []string
 	// Loading carries a screen's (or its group's) swap-slot loading
-	// declaration for the route manifest (,
-	// the rendered loading HTML plus its
-	// After/Min in whole milliseconds. Nil when neither the screen nor
-	// any group declares one.
+	// declaration for the route manifest: the loading content, which
+	// LoadingManifest.HTML renders per reader, plus its After/Min in
+	// whole milliseconds. Nil when neither the screen nor any group
+	// declares one.
 	Loading *LoadingManifest
 }
 
 // LoadingManifest is the wire form of a Loading declaration in the
-// route manifest (, the loading content
-// rendered ONCE (the manifest is built once; loading content is
-// presentational config with no request state) and the timings the
-// client needs.
+// route manifest: the loading content and the timings the client
+// needs. Routes renders nothing; the manifest renders Show through
+// HTML under the reader's context, because loading content says words
+// ("Loading…") in the reader's language.
 type LoadingManifest struct {
-	HTML  string
+	Show  component.Component
 	After int // milliseconds
 	Min   int // milliseconds
 }
 
-// loadingManifestFor renders a Loading declaration into its manifest
+// HTML renders the loading content under ctx, which carries the
+// reader's locale. A panicking component renders as nothing, the way
+// an errored loading template does.
+func (m *LoadingManifest) HTML(ctx context.Context) string {
+	if m == nil || m.Show == nil {
+		return ""
+	}
+	html, err := component.SafeRenderCtx(ctx, m.Show)
+	if err != nil {
+		return ""
+	}
+	return string(html)
+}
+
+// loadingManifestFor carries a Loading declaration into its manifest
 // form. A nil Show yields nil (nothing to carry).
 func loadingManifestFor(ld *Loading) *LoadingManifest {
 	if ld == nil || ld.Show == nil {
 		return nil
 	}
-	html, err := component.SafeRenderCtx(context.Background(), ld.Show)
-	if err != nil {
-		html = ""
-	}
 	return &LoadingManifest{
-		HTML:  string(html),
+		Show:  ld.Show,
 		After: ld.loadingAfterMs(),
 		Min:   ld.loadingMinMs(),
 	}
@@ -408,8 +418,8 @@ func (a *App) Routes() []RouteEntry {
 			Intercept:   screen.Intercept,
 			NoSPA:       screen.NoSPA,
 			Deferred:    deferred,
-			// the screen's (or its
-			// group's) swap-slot loading declaration, rendered once.
+			// The screen's (or its group's) swap-slot loading
+			// declaration; the manifest renders it per locale.
 			Loading: loadingManifestFor(screenLoading(screen)),
 		})
 	}
@@ -530,29 +540,12 @@ func (a *App) injectComponent(comp component.Component, path string) error {
 		}
 		return nil
 	}
-	if n := injectTagCount(reflect.TypeOf(comp)); n > 0 {
+	if n := di.InjectTagCount(reflect.TypeOf(comp)); n > 0 {
 		return fmt.Errorf(
 			"app: screen component for %q has %d inject-tagged field(s) but was registered by value as %T; register a pointer (&%T{...}) so DI can fill them",
 			path, n, comp, comp)
 	}
 	return nil
-}
-
-// injectTagCount reports how many inject-tagged fields a component
-// type declares (directly, for struct types). Used to distinguish a
-// legitimately stateless value component from a value struct that
-// wanted injection and would otherwise render with nil services.
-func injectTagCount(t reflect.Type) int {
-	if t == nil || t.Kind() != reflect.Struct {
-		return 0
-	}
-	n := 0
-	for i := 0; i < t.NumField(); i++ {
-		if _, ok := t.Field(i).Tag.Lookup("inject"); ok {
-			n++
-		}
-	}
-	return n
 }
 
 func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, error) {
@@ -658,20 +651,8 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
 	}
 
-	// Resolvers the per-request store, the
-	// eager declarations, then the policy phase — a guard may read a
-	// resolver, and a whole-page failure at this stage IS the page's
-	// outcome (ErrNotFound → the not-found page, else the error page).
-	ctx = withResolverState(ctx, screen)
-	runEagerResolvers(ctx, screen)
-	if pe := resolverPageError(ctx, path); pe != nil {
-		return RenderResult{}, pe
-	}
-
-	// Evaluate policy chain BEFORE Load, a Redirect/Block decision
-	// short-circuits without touching the DB.
-	// The layout chain resolves here so the region guards (below) can
-	// walk it in the policy phase; the render reuses the same chain.
+	// The layout chain resolves first so the region guards can walk it
+	// in the policy phase; the render reuses the same chain.
 	var chain []LayoutLayer
 	if screen.Type == ScreenPage {
 		// Resolved layer keys a {param} group
@@ -685,27 +666,27 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	// no-op; it panics here naming the layout and the outlet.
 	validateFills(screen, chain)
 	validateRequires(screen)
-	decision := ResolvePolicy(ctx, screen)
-	// A guard's resolver read fails the page the same way (the phase
-	// recorded on the cell decides, and a guard reads in policy phase);
-	// the check sits BEFORE the decision switch so a guard that read a
-	// failing resolver answers with the page outcome, not whatever it
-	// decided once it saw the error.
-	if pe := resolverPageError(ctx, path); pe != nil {
-		return RenderResult{}, pe
+	// The policy phase, BEFORE Load: the resolver store and the eager
+	// declarations, the screen chain, then the region guards (outlet,
+	// area and fill policies, in declaration order). A resolver any of
+	// them read that failed IS the page's outcome (ErrNotFound → the
+	// not-found page, else the error page), whatever the reader decided
+	// once it saw the error. A chain Redirect/Block short-circuits
+	// without touching the DB; so does the first guard Redirect, which
+	// moves the whole page. A guard's RenderAlt/Block is recorded per
+	// region and applied when that region resolves.
+	ctx, phase := runPolicyPhase(ctx, screen, path, chain)
+	if phase.err != nil {
+		return RenderResult{}, phase.err
 	}
+	decision := phase.decision
 	switch decision.Kind {
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Reason: decision.Reason, Params: decision.Params}, nil
 	}
-	// Region guards outlet, area and fill
-	// policies run in the policy phase, in declaration order after the
-	// screen chain. The first Redirect moves the whole page and no
-	// Load runs; RenderAlt/Block are recorded per region and applied
-	// when that region resolves.
-	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	guards, guardRedirect := phase.guards, phase.redirect
 	if guardRedirect.Kind == DecisionRedirect {
 		return RenderResult{Kind: DecisionRedirect, URL: guardRedirect.URL}, nil
 	}
@@ -785,7 +766,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	// before (ScreenTitler, contained), just earlier: nothing between
 	// here and the old computation mutates comp.
 	titleText := a.Name
-	effectiveTitle := screen.Title
+	effectiveTitle := registeredTitle(screen, decision.Kind)
 	if titler, ok := comp.(ScreenTitler); ok {
 		if t := safeScreenTitle(ctx, titler); t != "" {
 			effectiveTitle = t
@@ -873,7 +854,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 			}
 		} else {
 			var renderErr error
-			content, renderErr = renderComponentInScreen(ctx, screen, comp)
+			content, renderErr = renderComponentInScreen(ctx, screen, comp, registeredTitle(screen, decision.Kind))
 			if renderErr != nil {
 				return RenderResult{}, screenRenderPanicError(path, renderErr)
 			}
@@ -882,7 +863,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	} else {
 		// Drawer/sheet/dialog: render with ARIA wrapping, skip layout
 		var renderErr error
-		content, renderErr = renderComponentInScreen(ctx, screen, comp)
+		content, renderErr = renderComponentInScreen(ctx, screen, comp, registeredTitle(screen, decision.Kind))
 		if renderErr != nil {
 			return RenderResult{}, screenRenderPanicError(path, renderErr)
 		}
@@ -1116,7 +1097,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	// the registered title as fallback.
 	routeTitle := res.Title
 	if routeTitle == "" {
-		routeTitle = target.Title
+		routeTitle = registeredTitle(target, res.Kind)
 	}
 	markChainArea(ctx, tChain)
 	seedRouteValues(ctx, path, target.Path, routeTitle, params, requestQuery(ctx))
@@ -1227,26 +1208,22 @@ func (a *App) RenderPartResult(ctx context.Context, path, addr string) (Fill, Pa
 	if slot == nil || !slot.spec.Deferred {
 		return Fill{}, PartReset
 	}
-	// The policy phase, resolvers included: a whole-page resolver
-	// outcome (eager, or a guard's read) is the 409 reset — the part
-	// answer must never carry one side of a disagreement.
-	ctx = withResolverState(ctx, screen)
-	runEagerResolvers(ctx, screen)
-	if resolverPageError(ctx, path) != nil {
+	// The policy phase, resolvers and region guards included: a
+	// whole-page resolver outcome (eager, the chain's read, or a
+	// guard's) is the 409 reset — the part answer must never carry one
+	// side of a disagreement. So are a chain Redirect/Block and a guard
+	// Redirect, which move the whole page. The requested region's own
+	// recorded decision (Block → its fallback, RenderAlt → the alt)
+	// applies through resolveFillSlot exactly as the page applies it.
+	ctx, phase := runPolicyPhase(ctx, screen, path, chain)
+	if phase.err != nil {
 		return Fill{}, PartReset
 	}
-	if decision := ResolvePolicy(ctx, screen); decision.Kind == DecisionRedirect || decision.Kind == DecisionBlock {
+	decision := phase.decision
+	if decision.Kind == DecisionRedirect || decision.Kind == DecisionBlock {
 		return Fill{}, PartReset
 	}
-	if resolverPageError(ctx, path) != nil {
-		return Fill{}, PartReset
-	}
-	// The region guards ran in the policy phase above (same store); a
-	// Redirect among them is a whole-page outcome the part can never
-	// carry — the reset. The requested region's own recorded decision
-	// (Block → its fallback, RenderAlt → the alt) applies through
-	// resolveFillSlot exactly as the page applies it.
-	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	guards, guardRedirect := phase.guards, phase.redirect
 	if guardRedirect.Kind == DecisionRedirect {
 		return Fill{}, PartReset
 	}
@@ -1258,7 +1235,7 @@ func (a *App) RenderPartResult(ctx context.Context, path, addr string) (Fill, Pa
 	// effective one is only known after a screen Load, which a part
 	// never runs).
 	markChainArea(ctx, chain)
-	seedRouteValues(ctx, path, screen.Path, screen.Title, params, requestQuery(ctx))
+	seedRouteValues(ctx, path, screen.Path, registeredTitle(screen, decision.Kind), params, requestQuery(ctx))
 	res := a.resolveFillSlot(ctx, path, params, *slot, guards)
 	if res.notFound {
 		// The 404-outlet outcome is a WHOLE-PAGE outcome: the page this
@@ -1354,35 +1331,30 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 		ctx = withOverlay(ctx, *overlay)
 	}
 
-	// Resolvers, the same phase ladder the full
-	// page walks: store + eager, policy, Load, then the region phase
-	// for whatever renders below (renderPartialFrom's fills re-run on
-	// the SAME store this installed — one cell per name per request).
-	ctx = withResolverState(ctx, screen)
-	runEagerResolvers(ctx, screen)
-	if pe := resolverPageError(ctx, path); pe != nil {
-		return RenderResult{}, pe
-	}
-
+	// Resolvers, the same phase ladder the full page walks: the policy
+	// phase (store + eager, the chain, the region guards), Load, then
+	// the region phase for whatever renders below (renderPartialFrom's
+	// fills re-run on the SAME store this installed — one cell per name
+	// per request). Region guards run here too: a Redirect moves the
+	// page even on the bare partial path, and the recorded per-region
+	// decisions ride the store for partialFromShared's fills pass — one
+	// set of decisions per request.
 	var chain []LayoutLayer
 	if screen.Type == ScreenPage {
 		chain = resolveChainKeys(a.Router.layoutChainFor(screen), params)
 	}
-	decision := ResolvePolicy(ctx, screen)
-	if pe := resolverPageError(ctx, path); pe != nil {
-		return RenderResult{}, pe
+	ctx, phase := runPolicyPhase(ctx, screen, path, chain)
+	if phase.err != nil {
+		return RenderResult{}, phase.err
 	}
+	decision := phase.decision
 	switch decision.Kind {
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Reason: decision.Reason, Params: decision.Params}, nil
 	}
-	// Region guards run here too a Redirect
-	// moves the page even on the bare partial path, and the recorded
-	// per-region decisions ride the store for partialFromShared's fills
-	// pass — one set of decisions per request.
-	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	guards, guardRedirect := phase.guards, phase.redirect
 	if guardRedirect.Kind == DecisionRedirect {
 		return RenderResult{Kind: DecisionRedirect, URL: guardRedirect.URL}, nil
 	}
@@ -1426,7 +1398,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	// only layouts and fills) must resolve on the partial path too.
 	// Title here is the registered one (pre-Load);
 	// RenderPartialFromResult re-seeds the effective title after Load.
-	partialRouteTitle := screen.Title
+	partialRouteTitle := registeredTitle(screen, decision.Kind)
 	markChainArea(ctx, chain)
 	seedRouteValues(ctx, path, screen.Path, partialRouteTitle, params, requestQuery(ctx))
 	effType := screen.Type
@@ -1446,7 +1418,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 		body = wrapArticle(screen, comp, html)
 	} else {
 		var renderErr error
-		body, renderErr = renderComponentAs(ctx, screen, effType, comp)
+		body, renderErr = renderComponentAs(ctx, screen, effType, comp, partialRouteTitle)
 		if renderErr != nil {
 			return RenderResult{}, screenRenderPanicError(path, renderErr)
 		}
@@ -1467,12 +1439,22 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	return out, nil
 }
 
+// registeredTitle is the screen's registration-time title, or "" when a
+// RenderAlt replaced its component: the alt's page carries the alt's
+// own words, never the title of the screen the policy refused.
+func registeredTitle(screen *Screen, kind DecisionKind) string {
+	if kind == DecisionRenderAlt {
+		return ""
+	}
+	return screen.Title
+}
+
 // renderComponentInScreen renders comp wrapped in the ARIA scaffolding
 // dictated by screen.Type. Lets the caller substitute a different
 // component (used for RenderAlt + no-layout fallback) without copying
 // the Screen struct (which embeds a sync.Mutex).
-func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component) (render.HTML, error) {
-	return renderComponentAs(ctx, screen, screen.Type, comp)
+func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component, title string) (render.HTML, error) {
+	return renderComponentAs(ctx, screen, screen.Type, comp, title)
 }
 
 // renderComponentAs renders comp wrapped in the ARIA scaffolding for an
@@ -1488,7 +1470,7 @@ func renderComponentInScreen(ctx context.Context, screen *Screen, comp component
 // it with ErrScreenPanicked so the host answers a logged 500 rather than
 // shipping the panic text inside a 200 page. An ErrorBoundary screen
 // answers with its own RenderError markup instead (renderScreen).
-func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, comp component.Component) (render.HTML, error) {
+func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, comp component.Component, title string) (render.HTML, error) {
 	content, renderErr := renderScreen(ctx, comp)
 	if renderErr != nil {
 		return "", renderErr
@@ -1502,7 +1484,7 @@ func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, 
 	if attrs := docShellAttrs(ctx); attrs != nil && effType == ScreenPage {
 		return html.Main(html.MainConfig{ExtraAttrs: attrs}, content), nil
 	}
-	return wrapByScreenType(effType, screen.Title, content), nil
+	return wrapByScreenType(effType, title, content), nil
 }
 
 // safeScreenLoad runs the ScreenLoader hook under the SSR containment: a

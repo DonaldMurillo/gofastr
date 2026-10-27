@@ -75,8 +75,9 @@ nothing shows "No matches" (both localized: `ui.combobox.loading`,
 
 ## What gets indexed
 
-Each page contributes its `<main>` (or `role="main"`), or `<body>` when it
-has none. The `<h1>` is the title, falling back to `<title>`. Each `<h2>` and
+Each page contributes its first `<main>` (or `role="main"`) that is not
+itself left out or inside something left out (the list below), or `<body>`
+when it has none. The `<h1>` is the title, falling back to `<title>`. Each `<h2>` and
 `<h3>` starts a section; a heading with an `id` becomes a deep link, so a
 result can land on `/docs/theming#dark-mode`.
 
@@ -87,7 +88,12 @@ Left out:
 - Anything `hidden`, `inert`, `popover`, `aria-hidden="true"`, or with role
   `dialog`, `alertdialog` or `navigation`.
 - Anything marked `data-search-ignore`, such as a live demo's output.
-- Pages with `<meta name="robots" content="noindex">`.
+- Pages that set their own robots `noindex`: `ScreenRobots`, `SEO.Robots`, or
+  a `<meta name="robots" content="noindex">` in the page body, outside any
+  `data-search-ignore` element (sample markup in a docs page does not drop
+  the page). A sitewide
+  `uihost.WithRobotsMeta("noindex")` (a staging deploy) keeps crawlers off
+  the deploy and leaves every page in the site's own search.
 - Pages a screen policy refuses an anonymous visitor. Every reader searches
   the same index, so it is always built as no one in particular, whoever's
   query or `Refresh` call started the build.
@@ -127,14 +133,18 @@ The live index is built at start. Content that changes without a restart
   is built.
 
 Builds run one at a time, and `OnStop` ends a background rebuild and waits
-for it.
+for it. A query or `Refresh` waiting behind a build (a slow `Source` during
+the first one) returns its context's error when its request ends first; the
+build it waited on carries on.
 
 On a live server, a page that fails to render (a panic, or a fill that
 failed) is logged and left out, and the rest of the site stays searchable.
 An export refuses such a page instead. A build that fails outright, such as
 a `Source` returning an error, is logged and no query starts another for 30
 seconds. Meanwhile queries are answered from the last good index, or with a
-503 when there is none. `Refresh` retries at once and returns the error.
+503 when there is none, and the search page shows a "search index
+unavailable" notice in place of results. `Refresh` retries at once and
+returns the error.
 
 ## Ranking
 

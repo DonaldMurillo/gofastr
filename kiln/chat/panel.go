@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
@@ -1133,8 +1134,10 @@ func summarizeWorldEdit(payload json.RawMessage) string {
 	if len(payload) == 0 {
 		return ""
 	}
+	// jsonexact: the fallback preview re-encodes the payload, and a plain
+	// decode printed 9007199254740993 as 9007199254740992.
 	var args map[string]any
-	if err := json.Unmarshal(payload, &args); err != nil {
+	if err := jsonexact.Unmarshal(payload, &args); err != nil {
 		return ""
 	}
 	return summarizeArgs(args)

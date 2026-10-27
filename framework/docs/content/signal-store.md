@@ -65,6 +65,13 @@ island; the runtime seeds `_signals` before hydration. SPA-nav partials carry a
 scope-split `#gofastr-signals-partial` island that merges without clobbering
 mutated globals. Static export (SSG) emits the same block.
 
+Beside the seed, the host emits `<script type="application/json"
+id="gofastr-signals-page">` listing the page's page-scoped signal names
+(omitted when there are none). A navigation that swaps in a whole
+document, and Back or Forward to the first page loaded, reset those
+names to that document's seed and leave globals alone, so going back to
+page A shows A's values rather than the ones page B left behind.
+
 ## Computed (derived) values
 
 ```go

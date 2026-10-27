@@ -6,6 +6,7 @@ import "context"
 
 type userKey struct{}
 type tenantKey struct{}
+type tenantIDKey struct{}
 type requestIDKey struct{}
 type loggerKey struct{}
 
@@ -38,6 +39,21 @@ func SetTenant(ctx context.Context, tenant any) context.Context {
 func GetTenant(ctx context.Context) (any, bool) {
 	t, ok := ctx.Value(tenantKey{}).(any)
 	return t, ok
+}
+
+// SetTenantID stores the resolved tenant ID string in the context: the
+// slot framework/tenant's SetTenantID and GetTenantID read and write, and
+// the one tenant scoping filters on. It lives here, below framework/tenant,
+// so a leaf package (framework/access's cached role resolver) can partition
+// by tenant without importing the tenant package.
+func SetTenantID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, tenantIDKey{}, id)
+}
+
+// GetTenantID returns the tenant ID SetTenantID stored, or "" when none was.
+func GetTenantID(ctx context.Context) string {
+	id, _ := ctx.Value(tenantIDKey{}).(string)
+	return id
 }
 
 // --- RequestID ---

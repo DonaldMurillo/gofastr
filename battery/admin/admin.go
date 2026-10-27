@@ -633,6 +633,7 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 		// Strict: a repeated or case-folded key reads one way here and
 		// another on the form surface, so the body is refused.
 		var raw map[string]any
+		//gofastr:allow(floatnum) only strings and string arrays become form values; a number is refused
 		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
 			if tooLarge(err) {
 				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))

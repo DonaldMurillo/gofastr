@@ -63,7 +63,10 @@ type claimRig struct {
 	tokens   APITokenStore
 }
 
-func newClaimRig(t *testing.T) *claimRig {
+// newClaimRig builds the rig. wrap, when given, decorates the user store
+// the manager sees (a race test's hook); the rig's own store field stays
+// the undecorated one.
+func newClaimRig(t *testing.T, wrap ...func(*EntityUserStore) UserStore) *claimRig {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -89,11 +92,15 @@ func newClaimRig(t *testing.T) *claimRig {
 			userResp:  &OAuth2UserInfo{ID: "victim-sub", Email: "victim@example.com", EmailVerified: true},
 		},
 	}
+	var users UserStore = store
+	for _, w := range wrap {
+		users = w(store)
+	}
 	rig.mgr = New(AuthConfig{
 		JWTSecret:           "claim-secret-0123456789abcdef-0123456789abcdef",
 		SessionCookie:       "session_id",
 		SessionTTL:          24 * time.Hour,
-		UserStore:           store,
+		UserStore:           users,
 		AllowInMemoryStores: true,
 	})
 	rig.mgr.Use(NewCorePlugin())

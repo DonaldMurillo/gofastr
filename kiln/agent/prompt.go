@@ -79,9 +79,9 @@ func BuildFrameworkSlab(tools []protocol.Descriptor) string {
 	}
 	b.WriteString("\nField types: string, text, int, float, decimal, bool, enum, uuid, timestamp, ")
 	b.WriteString("date, json, relation, image, file.\n")
-	b.WriteString("Hook events: before_create, after_create, before_update, after_update, ")
-	b.WriteString("before_delete, after_delete, before_list, after_list.\n")
-	b.WriteString("Action kinds: noop, validate, set_field, audit, respond_json, emit_event.\n")
+	b.WriteString("Hook events: " + strings.Join(world.HookEvents, ", ") + ".\n")
+	b.WriteString("Hook action kinds: " + strings.Join(world.HookActionKinds, ", ") + ".\n")
+	b.WriteString("Route action kinds: " + strings.Join(world.RouteActionKinds, ", ") + ".\n")
 	b.WriteString("Expressions support: + - * / %, == != < > <= >=, && || !, field access (entity.x, ctx.user.role), ")
 	b.WriteString("string/list operations (len, lower, upper, contains, starts_with, ends_with), ")
 	b.WriteString("now() for timestamps. Strings use double or single quotes.\n")

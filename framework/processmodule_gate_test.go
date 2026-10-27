@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -327,27 +326,14 @@ func TestGate_ConvergenceAndRevoke(t *testing.T) {
 	if _, err := supA.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("supA register: %v", err)
 	}
-	// B registers the same descriptor against the shared store → the row
-	// already exists (ErrModuleInstalled). Cross-replica, each replica
-	// supervises independently against the shared row, so create B's slot
-	// directly (same pattern as TestSupervisor_RemoteToggleCrossReplica).
-	if _, err := supB.Register(ctx, d, ApprovedGrants{"articles:read"}); !errors.Is(err, ErrModuleInstalled) {
-		t.Fatalf("supB register: want ErrModuleInstalled, got %v", err)
+	// B registers the same descriptor against the shared store: the row
+	// already exists and matches, so B adopts it unchanged and supervises
+	// independently against it.
+	if res, err := supB.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
+		t.Fatalf("supB register: %v", err)
+	} else if res.Outcome != InstallUnchanged {
+		t.Fatalf("supB register outcome = %s, want unchanged", res.Outcome)
 	}
-	selectedRunner, selErr := SelectRunner(d.TrustTier, supB.runner, supB.sandbox)
-	if selErr != nil {
-		t.Fatalf("supB select runner: %v", selErr)
-	}
-	supB.mu.Lock()
-	if supB.slots[d.Name] == nil {
-		supB.slots[d.Name] = &moduleSlot{
-			name: d.Name, desc: d, sup: supB,
-			runner: selectedRunner,
-			wake:   make(chan struct{}, 1),
-			done:   make(chan struct{}),
-		}
-	}
-	supB.mu.Unlock()
 
 	supA.StartLoops()
 	supB.StartLoops()

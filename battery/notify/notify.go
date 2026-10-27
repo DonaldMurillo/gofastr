@@ -35,6 +35,7 @@ import (
 	"html/template"
 	"log"
 	"maps"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -435,14 +436,18 @@ func (m *MapTemplater) Set(notifType, channel string, t Template) {
 // {{placeholder}} can neither inject header continuations nor reorder
 // what downstream transports (SMTP, push providers) render.
 //
-// HTMLBody is HTML-escaped at the interpolation sink (2026-09-04
-// red-probe round 3): every placeholder VALUE is passed through
-// html/template's escaper before insertion, so user-controlled data
-// (names, addresses, user-entered content in the notification payload)
-// cannot arrive at the HTML email body as live markup — the same
-// posture battery/email.Execute gives its HTMLBody. The template bytes
-// themselves are host-authored and trusted. To opt ONE value out (it is
-// markup you generated), type it as html/template.HTML:
+// HTMLBody renders through html/template (renderHTMLBody), the engine
+// battery/email.Execute gives its HTMLBody: every placeholder VALUE is
+// escaped for the context its placeholder sits in (element text, a
+// quoted or unquoted attribute, a URL attribute, whose javascript:
+// values are refused), so user-controlled data (names, addresses,
+// user-entered content in the notification payload) cannot arrive at
+// the HTML email body as live markup, a new attribute, or a script
+// URL. The template bytes themselves are host-authored and trusted; as
+// in battery/email, html/template drops their HTML comments once a
+// placeholder is filled, and a placeholder where no value can go (a
+// tag name) is a Render error. To opt ONE value out (it is markup you
+// generated), type it as html/template.HTML:
 //
 //	data := map[string]any{"name": user.Name, "badge": template.HTML(badgeMarkup)}
 //
@@ -454,10 +459,14 @@ func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data
 	if !ok {
 		return Rendered{}, fmt.Errorf("notify: no template for (%q, %q)", notifType, channel)
 	}
+	html, err := renderHTMLBody(t.HTMLBody, data)
+	if err != nil {
+		return Rendered{}, err
+	}
 	return Rendered{
 		Subject:  stripHeaderUnsafe(interpolate(t.Subject, data)),
 		TextBody: interpolate(t.TextBody, data),
-		HTMLBody: interpolateValues(t.HTMLBody, data, escapeHTMLValue),
+		HTMLBody: html,
 		Extra:    maps.Clone(t.Extra),
 	}, nil
 }
@@ -547,17 +556,58 @@ func interpolateValues(s string, params map[string]any, format func(any) string)
 	return b.String()
 }
 
-// escapeHTMLValue renders one placeholder value for an HTML body: the
-// value is escaped with html/template's escaper (the same text-context
-// escaping battery/email.Execute applies), so user-controlled data can
-// never arrive at the HTML sink as live markup. A value typed as
-// html/template.HTML passes through verbatim — that type is the
-// documented "this value is markup I generated" marker.
-func escapeHTMLValue(v any) string {
-	if h, ok := v.(template.HTML); ok {
-		return string(h)
+// htmlDelimL and htmlDelimR delimit the actions renderHTMLBody writes
+// into a body's source. Host markup holds no NUL (renderHTMLBody
+// refuses one), so a literal "{{" in it is never read as an action.
+const htmlDelimL, htmlDelimR = "\x00[", "]\x00"
+
+// renderHTMLBody fills body's {{placeholder}}s through html/template,
+// the engine battery/email.Execute renders its HTMLBody with, so each
+// value is escaped for the context its placeholder sits in: element
+// text, a quoted or unquoted attribute value (a space or "=" cannot
+// start another attribute), a URL attribute (a javascript: value
+// becomes "#ZgotmplZ"), a script or a style. Text-context escaping
+// for every placeholder let `<img src={{avatar}}>` take an attribute
+// from the value and `href="{{url}}"` take a javascript: URL. A value
+// typed as html/template.HTML is inserted as markup where markup can
+// go. A placeholder the data does not fill, and any other "{{", stays
+// as written, as in Subject and TextBody. Output past
+// MaxInterpolatedOutputBytes is cut off.
+func renderHTMLBody(body string, data map[string]any) (string, error) {
+	if body == "" || len(data) == 0 || !strings.Contains(body, "{{") {
+		return body, nil
 	}
-	return template.HTMLEscapeString(fmt.Sprint(v))
+	if strings.IndexByte(body, 0) >= 0 {
+		return "", errors.New("notify: HTMLBody holds a NUL byte")
+	}
+	var vals []any
+	src := interpolateValues(body, data, func(v any) string {
+		vals = append(vals, v)
+		return htmlDelimL + "index . " + strconv.Itoa(len(vals)-1) + htmlDelimR
+	})
+	t, err := template.New("html").Delims(htmlDelimL, htmlDelimR).Parse(src)
+	if err != nil {
+		return "", fmt.Errorf("notify: HTMLBody: %w", err)
+	}
+	w := &cappedWriter{max: MaxInterpolatedOutputBytes}
+	if err := t.Execute(w, vals); err != nil {
+		return "", fmt.Errorf("notify: HTMLBody: %w", err)
+	}
+	return w.b.String(), nil
+}
+
+// cappedWriter keeps the first max bytes written to it and drops the
+// rest.
+type cappedWriter struct {
+	b   strings.Builder
+	max int
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.b.Len(); room > 0 {
+		w.b.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
 }
 
 // ----- bundled LoggerChannel -----------------------------------------------

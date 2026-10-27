@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -411,7 +412,8 @@ type App struct {
 	// Optional locale resolver (set via WithLocaleResolver). Consulted
 	// before X-Locale / Accept-Language during negotiation so a stored
 	// per-user locale (cookie) can win. Only effective with WithI18n.
-	localeResolver func(*http.Request) (string, bool)
+	// Unset while its Resolve is nil.
+	localeResolver i18n.LocaleResolver
 
 	// localePrefixes is set by WithLocalePrefixes; pathLocales is the
 	// locale set NewApp reads from the translator for it.
@@ -460,6 +462,10 @@ type App struct {
 	// Set via WithMCP(). Makes the server's tools reachable at the
 	// canonical endpoint for agent-readiness.
 	mcpAutoMount bool
+	// mcpGate is WithMCPGate's precondition, held here and installed on
+	// the final a.MCP once every option has run: set on the server at
+	// option time, a later WithMCPServer swapped in an ungated one.
+	mcpGate func(ctx context.Context) error
 	// a2aCfg, when set via WithA2A, mounts the Agent2Agent task
 	// exchange during Start. Held until then because the derived entity
 	// skills read the MCP tool registry, complete only once entities,
@@ -759,6 +765,19 @@ func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 		}
 	}
 	return crud.MountInfo{Mounted: true, Path: path}
+}
+
+// pageIndexPath is where the app serves its page index, or "" when it
+// serves none. Only a UI host built with WithPublicLLMMD registers
+// /llm-pages.md (behind its mount prefix, when it has one), so the
+// /api/llm.md index asks the route table rather than assuming a host.
+func (a *App) pageIndexPath() string {
+	for _, rt := range a.router.Routes() {
+		if rt.Method == http.MethodGet && path.Base(rt.Pattern) == "llm-pages.md" {
+			return rt.Pattern
+		}
+	}
+	return ""
 }
 
 // WithRouter sets a custom router.
@@ -1172,14 +1191,17 @@ func WithI18n(tr *i18n.Translator) AppOption {
 //	    framework.WithLocaleResolver(i18n.CookieLocale("locale")),
 //	)
 //
+// A resolver of your own names the request headers it reads in its
+// Vary ([i18n.LocaleResolver]), so a shared cache keys on them.
+//
 // Panics if used without WithI18n. Locale resolution is meaningless
 // without a translator/catalog to resolve against.
-func WithLocaleResolver(f func(*http.Request) (string, bool)) AppOption {
+func WithLocaleResolver(r i18n.LocaleResolver) AppOption {
 	return func(a *App) {
 		if a.translator == nil {
 			panic("framework: WithLocaleResolver requires WithI18n: install a translator first")
 		}
-		a.localeResolver = f
+		a.localeResolver = r
 	}
 }
 
@@ -1234,7 +1256,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	timeout := 30 * time.Second
 	var idempotency *middleware.IdempotencyConfig
 	var translator *i18n.Translator
-	var localeResolver func(*http.Request) (string, bool)
+	var localeResolver i18n.LocaleResolver
 	if a != nil {
 		getLogger = a.Logger
 		if a.Config.RequestTimeout > 0 {
@@ -1253,7 +1275,7 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	// answers in the caller's language too.
 	if translator != nil {
 		var negOpts []i18n.NegotiateOption
-		if localeResolver != nil {
+		if localeResolver.Resolve != nil {
 			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
 		}
 		// A second recovery inside it answers a handler's panic in the
@@ -1810,6 +1832,10 @@ func NewApp(opts ...AppOption) *App {
 	for _, opt := range opts {
 		opt(a)
 	}
+	// The gate goes on whichever server the options left in a.MCP.
+	if a.mcpGate != nil && a.MCP != nil {
+		a.MCP.SetGate(a.mcpGate)
+	}
 	// GOFASTR_SECRET is the zero-code path to an app secret (composes
 	// with the dotenv load above). An explicit WithSecret wins.
 	if a.secret == nil {
@@ -1954,6 +1980,12 @@ func NewApp(opts ...AppOption) *App {
 		panic("framework: WithIdempotency is incompatible with WithoutDefaultMiddleware: " +
 			"the idempotency middleware lives in the default chain; mount it explicitly via " +
 			"router.Middleware(middleware.Idempotency(...)) in your custom chain instead")
+	}
+	// The default store keeps keys in this process: behind a fanout (more
+	// than one replica) a retry that reaches another replica runs again.
+	if a.idempotency != nil && a.idempotency.Store == nil && a.fanout != nil {
+		a.Logger().Warn("framework: WithIdempotency keeps its keys in this process's memory, but WithFanout runs the app on several replicas: " +
+			"a retry that reaches another replica runs the handler again; set IdempotencyConfig.Store to a shared store (middleware.NewSQLIdempotencyStore)")
 	}
 	if a.noDefaults && a.translator != nil {
 		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware: " +
@@ -3186,8 +3218,10 @@ func (a *App) runSeedHooksSerialized() error {
 	// Fail closed on an unknown dialect: whether to take the advisory lock
 	// is a coordination decision, and a transient probe failure on Postgres
 	// must not demote hooks to the unlocked branch (the same invariant
-	// AutoMigrate and RunSeeds hold).
-	dialect, err := migrate.DetectDialectStrict(a.DB)
+	// AutoMigrate and RunSeeds hold). The probe goes through the App's
+	// cache, so request paths that need the dialect (InTx, app_routines)
+	// read the boot's answer instead of probing on a background context.
+	dialect, err := a.txDialect()
 	if err != nil {
 		return fmt.Errorf("seed hooks: %w", err)
 	}
@@ -3454,6 +3488,7 @@ func (a *App) Start(addr string) error {
 		// API entity index under /api/ alongside /api/docs/.
 		// Root /llm.md is free for the homepage screen doc.
 		if !a.Config.NoLLMMD {
+			pagesIndex := a.pageIndexPath()
 			// PublicOpenAPI serves the index without the auth gate, the
 			// same opt-in and exposure class as the public /openapi.json
 			// above (llm.md derives from the same schema information, and
@@ -3465,7 +3500,7 @@ func (a *App) Start(addr string) error {
 			// per-request-filtered crud handler, and per-entity
 			// /{table}/llm.md routes keep their own scope gate either way.
 			if a.Config.PublicOpenAPI {
-				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount))
+				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount, pagesIndex))
 				a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Cache-Control", "no-store")
 					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -3473,7 +3508,7 @@ func (a *App) Start(addr string) error {
 					w.Write(doc)
 				}))
 			} else {
-				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount))
+				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount, pagesIndex))
 			}
 			hasLLMMD = true
 		}
@@ -3514,26 +3549,6 @@ func (a *App) Start(addr string) error {
 	// works under the dev auto-mount and disappears in production.
 	if len(a.mcpApps) > 0 && !a.mcpAutoMount && !a.routerHasMCPRoute() {
 		a.Logger().Warn("WithMCPApp registered but /mcp is not mounted: the widget and its tool will be unreachable; add framework.WithMCP()")
-	}
-	// The MCP Apps widget client script (mcp.WidgetClientScriptURL): the
-	// script every registered widget document hot-links. Mounted as soon
-	// as at least one MCP App is registered, the same rule the server's
-	// capabilities follow (resources/prompts advertise only when
-	// something is registered), so an app with no widgets carries no
-	// public script route. Independent of mcpAutoMount: a host that
-	// hand-wired /mcp still registered a widget whose HTML references
-	// this URL, and the iframe fetching it hits this router either way.
-	// A router already serving the URL (a host that followed the manual
-	// mount docs, or assembles its router by hand) keeps its route: the
-	// auto-mount yields with a warning instead of a route-conflict
-	// panic, and the bytes are identical either way.
-	if len(a.mcpApps) > 0 {
-		if a.routerHasWidgetClientRoute() {
-			a.Logger().Warn("widget client auto-mount skipped: " +
-				mcp.WidgetClientScriptURL + " is already mounted by the host")
-		} else {
-			a.router.Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
-		}
 	}
 	// Entity MCP tools (Exposure.MCP: true) have the same prod-only 404
 	// failure mode: dev auto-mounts /mcp so the tools work locally, a

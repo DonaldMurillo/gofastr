@@ -409,9 +409,12 @@ type MountInfo struct {
 // three routes they serve — the index must describe routes that exist. It
 // lists every (routed) entity; callers that serve this to a request (the
 // /api/llm.md index) MUST filter per request via [registryLLMMD] so the
-// index does not disclose entities the caller cannot read.
-func RegistryLLMMD(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo) string {
-	return registryLLMMD(registry, appName, nil, crudMount)
+// index does not disclose entities the caller cannot read. pagesIndex is
+// the path the app serves its page index at (a UI host with
+// WithPublicLLMMD serves /llm-pages.md); empty omits the Pages section,
+// since a link there would 404.
+func RegistryLLMMD(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo, pagesIndex string) string {
+	return registryLLMMD(registry, appName, nil, crudMount, pagesIndex)
 }
 
 // registryLLMMD renders the index, keeping only entities for which keep
@@ -419,7 +422,7 @@ func RegistryLLMMD(registry entity.Registry, appName string, crudMount func(*ent
 // per-request keep that mirrors List's read-scope predicate (owner, tenant,
 // RBAC) so an authenticated caller with no grant for an entity gets 403 on
 // its rows AND never sees its name, base path or flags in the index.
-func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.Entity) bool, crudMount func(*entity.Entity) MountInfo) string {
+func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.Entity) bool, crudMount func(*entity.Entity) MountInfo, pagesIndex string) string {
 	var b strings.Builder
 	title := appName
 	if title == "" {
@@ -499,10 +502,14 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 	}
 	b.WriteString("\n")
 
-	// Link to page documentation if available
-	b.WriteString("## Pages\n\n")
-	b.WriteString("This site also has UI pages with their own documentation. " +
-		"See [/llm-pages.md](/llm-pages.md) for a full index of all screens and pages.\n\n")
+	// The page index is served only by a UI host that opted into page
+	// docs; the app passes its path, and without one the section would
+	// be a dead link, the same rule the unmounted entity rows follow.
+	if pagesIndex != "" {
+		b.WriteString("## Pages\n\n")
+		fmt.Fprintf(&b, "This site also has UI pages with their own documentation. "+
+			"See [%s](%s) for a full index of all screens and pages.\n\n", pagesIndex, pagesIndex)
+	}
 
 	// Quick reference: common patterns
 	b.WriteString("## Quick Reference\n\n")
@@ -573,7 +580,7 @@ func LLMMDHandlerFor(ch *CrudHandler, opts ...LLMMDOptions) http.Handler {
 // instead disclosed every entity's name, base path, endpoint count and
 // soft-delete/multi-tenant flags to an authenticated caller who would get
 // 403 on the rows. The index is the disclosure, not the row.
-func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo) http.Handler {
+func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo, pagesIndex string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		ctx := r.Context()
@@ -583,7 +590,7 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount fu
 		}
 		md := registryLLMMD(registry, appName, func(ent *entity.Entity) bool {
 			return canListEntity(ctx, ent)
-		}, crudMount)
+		}, crudMount, pagesIndex)
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
 		w.Write([]byte(md))

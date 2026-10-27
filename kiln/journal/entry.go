@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
@@ -74,12 +75,16 @@ func NewEntry(id string, ts time.Time, kind Kind, op Op, payload any) (Entry, er
 	}, nil
 }
 
-// Decode unmarshals an Entry's Payload into v.
+// Decode unmarshals an Entry's Payload into v. The world is rebuilt from
+// these bytes, so an `any` slot (a field default, seed rows, page props,
+// action params, tool-call args) keeps an integer past 2^53 exact
+// (jsonexact): json.Unmarshal turned 9007199254740993 into
+// 9007199254740992 in the live world and in every replay.
 func (e Entry) Decode(v any) error {
 	if len(e.Payload) == 0 {
 		return nil
 	}
-	return json.Unmarshal(e.Payload, v)
+	return jsonexact.Unmarshal(e.Payload, v)
 }
 
 // --- Payload types for world-edit ops -----------------------------------
@@ -138,8 +143,10 @@ type DeletePagePayload struct {
 // which keeps replay deterministic and independent of how the patch
 // was originally expressed.
 //
-// Prev is the full page state before the patch, kept for undo and
-// for any future audit/diff tooling.
+// Prev is the full page state the patch was built from. Replay refuses
+// the entry with a *PageConflictError when the page's current version is
+// not Prev's: the patch was built against a page another edit has since
+// replaced, and swapping New in would silently drop that edit.
 type UpdatePageElementPayload struct {
 	Path string      `json:"path"`
 	New  *world.Page `json:"new"`
@@ -204,6 +211,11 @@ type ScaffoldSnapshot struct {
 
 type ChatMessagePayload struct {
 	Text string `json:"text"`
+	// ACPSession names the ACP session whose turn wrote the message, so
+	// session/load replays that session's turns and no other. Empty for
+	// the panel, the HTTP and MCP tools, and entries journaled before
+	// the field existed: those belong to no ACP session.
+	ACPSession string `json:"acp_session,omitempty"`
 }
 
 type ToolCallPayload struct {

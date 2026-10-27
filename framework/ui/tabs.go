@@ -115,9 +115,11 @@ func tabsCSS(_ style.Theme) string {
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-content{padding-top:var(--spacing-lg, 16px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
+	// Child combinators: a strip's index picks only its own tabs and
+	// panels, never those of a Tabs nested inside one of its panels.
 	for i := range tabsMaxPanels {
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-cui-tab-index="%d"]{color:var(--fui-foreground, var(--color-text, #09090B));background:var(--fui-surface, var(--color-surface, #FFFFFF));box-shadow:var(--shadow-xs)}`, i, i))
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-cui-tab-index="%d"]{display:block}`, i, i))
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-nav>.fui-tab[data-cui-tab-index="%d"]{color:var(--fui-foreground, var(--color-text, #09090B));background:var(--fui-surface, var(--color-surface, #FFFFFF));box-shadow:var(--shadow-xs)}`, i, i))
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]{display:block}`, i, i))
 	}
 	return b.String()
 }

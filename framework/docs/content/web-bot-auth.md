@@ -104,15 +104,26 @@ Keyed by IP, a verified agent behind a busy egress shares a budget with
 everyone on that address, and a spoofed `User-Agent` gets whatever the
 IP gets. `framework.AgentRateLimitKey` keys a `framework/ratelimit`
 limiter by the verified identity instead, and falls back to the client
-IP for everything else, so verification never widens what an
-unverified caller can do:
+IP for everything else.
+
+The identity is a URL the signer chooses, and anyone with a domain and
+a key can verify. One sender can sign each request under a new path,
+query or subdomain and get a fresh agent budget each time, so the agent
+limiter splits a shared egress fairly but does not cap a sender. Keep an
+IP-keyed limiter in front of it, with a ceiling above any one agent's
+budget:
 
 ```go
+perIP := ratelimit.NewLimiter(ratelimit.Config{
+    MaxAttempts: 3000,
+    Window:      time.Minute,
+})
 agentBudget := ratelimit.NewLimiter(ratelimit.Config{
     MaxAttempts:   600,
     Window:        time.Minute,
     BlockDuration: time.Minute,
 })
+app.Router().Use(perIP.MiddlewareByKey(nil))
 app.Router().Use(agentBudget.MiddlewareByKey(framework.AgentRateLimitKey(false)))
 ```
 

@@ -270,7 +270,9 @@ There are two ways that list is produced.
 ### Static origins (the default)
 
 `Surface.Origins` is read once at boot and ships in `frame-ancestors` on every
-shell response. It is also the universe a grant may bind: `MintNonce` refuses
+shell response. An origin whose host is an IPv4-mapped IPv6 address
+(`https://[::ffff:127.0.0.1]`) is refused at boot: no browser sends that
+form as an origin, and it normalizes to a host-source CSP does not accept. It is also the universe a grant may bind: `MintNonce` refuses
 an origin that is not on it, and `Exchange`/grant verification re-check it. An
 app that never configures anything else behaves exactly this way.
 

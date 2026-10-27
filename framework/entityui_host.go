@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // EntityUI returns this app's entity screens: lists and records drawn from
@@ -204,7 +204,7 @@ func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) 
 	if limit <= 0 || limit > 200 {
 		limit = 200
 	}
-	q := fmt.Sprintf("SELECT op, actor_id, created_at, diff, reason FROM %s WHERE entity = $1 AND record_id = $2", query.QuoteIdent(safe))
+	q := fmt.Sprintf("SELECT op, actor_id, created_at, diff, reason FROM %s WHERE entity = $1 AND record_id = $2", query.QuoteFolded(safe))
 	if t.cfg != nil {
 		recordID = t.cfg.keyID(auditKeyOf(t.reg, ent), recordID)
 	}
@@ -235,7 +235,7 @@ func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) 
 				Before map[string]any `json:"old"`
 				After  map[string]any `json:"new"`
 			}
-			if err := json.Unmarshal([]byte(diff.String), &d); err != nil {
+			if err := jsonexact.Unmarshal([]byte(diff.String), &d); err != nil {
 				return nil, fmt.Errorf("audit row diff: %w", err)
 			}
 			e.Before, e.After = d.Before, d.After

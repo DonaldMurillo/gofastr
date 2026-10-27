@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -11,7 +12,7 @@ import (
 // manifestEntries parses the route array out of the manifest script body.
 func manifestEntries(t *testing.T, ds *UIHost) []map[string]any {
 	t.Helper()
-	body := ds.buildRouteScript()
+	body := ds.buildRouteScript(context.Background())
 	start := strings.IndexByte(body, '[')
 	end := strings.LastIndexByte(body, ']')
 	if start < 0 || end <= start {
@@ -63,7 +64,7 @@ func TestAllRoutesNoSPAYieldsNoManifest(t *testing.T) {
 	only.NoSPA = true
 	a.RegisterScreen(only, nil)
 
-	if body := New(a).buildRouteScript(); strings.Contains(body, `"path":""`) {
+	if body := New(a).buildRouteScript(context.Background()); strings.Contains(body, `"path":""`) {
 		t.Errorf("manifest carries empty-path entries: %s", body)
 	}
 }

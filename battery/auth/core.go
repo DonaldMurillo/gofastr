@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -277,6 +278,21 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			failLogin(user.GetID(), "twofa_failclosed", http.StatusInternalServerError, reasonTwoFactorUnavailable)
 			return
 		}
+		// A reset, change or account claim that finished while the hash
+		// above was being verified purged this user's sessions before
+		// this one existed. Re-read the credential now the session is
+		// stored: a purge from here on reaches it, and a hash that has
+		// already moved means the password just checked is no longer the
+		// account's, so the session goes and the login fails like a
+		// wrong password.
+		if !credentialUnchanged(r.Context(), store, email, user.GetID(), hash) {
+			if err := c.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
+				slog.Warn("auth: dropping a session minted under a stale password failed",
+					"user_hash", hashedIdentifier(user.GetID()), "err", err)
+			}
+			failLogin(user.GetID(), "credential_changed", http.StatusUnauthorized, reasonInvalidCredentials)
+			return
+		}
 		if pendingTwoFA {
 			c.mgr.emitSecurity(r.Context(), SecurityEvent{
 				Kind:   "login.pending_2fa",
@@ -313,7 +329,9 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		// password-only caller skip the second factor entirely on any
 		// JWT-authenticated route.
 		if c.mgr.JWT() != nil && !pendingTwoFA && !cfg.CookieOnly {
-			token, err := c.mgr.JWT().GenerateToken(user)
+			// Bound to the hash just verified, not a fresh read: a
+			// reset landing after the check leaves this token dead.
+			token, err := c.mgr.JWT().generateToken(user, hash)
 			if err == nil {
 				resp["token"] = token
 			}
@@ -326,6 +344,17 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
+}
+
+// credentialUnchanged reports whether email still resolves to userID with
+// the password hash hash. A lookup failure counts as changed: the caller
+// is about to hand out a credential and fails closed.
+func credentialUnchanged(ctx context.Context, store UserStore, email, userID, hash string) bool {
+	row, now, err := store.FindByEmail(ctx, email)
+	if err != nil || row == nil || row.GetID() != userID {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(now), []byte(hash)) == 1
 }
 
 // logoutHandler handles POST /auth/logout. For form requests, redirects

@@ -390,6 +390,54 @@ entities:
       - name: description
         type: text
 
+  # An integer id the database assigns: the model, repo, id column, events
+  # and Go client type it int, the JS client number. Replies, keyed the
+  # same way, cascade from a ticket. intIDProbe passes the ids around.
+  # Tags cascade too, keyed on their own column: a nested update
+  # addresses one by that column, not by id.
+  - name: tickets
+    crud: true
+    fields:
+      - name: id
+        type: int
+        auto_generate: increment
+      - name: subject
+        type: string
+        required: true
+    relations:
+      - type: has_many
+        name: replies
+        entity: ticket_replies
+        foreign_key: ticket_id
+        cascade_write: true
+      - type: has_many
+        name: tags
+        entity: ticket_tags
+        foreign_key: ticket_id
+        cascade_write: true
+  - name: ticket_replies
+    crud: true
+    fields:
+      - name: id
+        type: int
+        auto_generate: increment
+      - name: ticket_id
+        type: int
+      - name: body
+        type: string
+        required: true
+  - name: ticket_tags
+    crud: true
+    primary_key: [tag_code]
+    fields:
+      - name: tag_code
+        type: string
+        required: true
+      - name: ticket_id
+        type: int
+      - name: label
+        type: string
+
 screens:
   # Plain blocks, node blocks, an island, a widget with a client action,
   # and an entity list.

@@ -126,3 +126,57 @@ func TestNormalizeOriginMatchesBrowserSerialization(t *testing.T) {
 		t.Errorf("NormalizeOrigin(dotted quad) = %q, %v", got, err)
 	}
 }
+
+// Normalizing an already-normalized origin changes nothing. Host.MintNonce
+// normalizes and then MintNonce normalizes again, so a form that moved on
+// the second pass minted for a different origin than the allowlist held:
+// "https://[::ffff:127.0.0.1]" became "https://[127.0.0.1]" and then
+// "https://127.0.0.1", the IPv4 family.
+func TestNormalizeOriginIdempotent(t *testing.T) {
+	for _, in := range []string{
+		"https://acme.com",
+		"HTTPS://Acme.Com:443/",
+		"http://acme.com:0080",
+		"https://acme.com:8443",
+		"http://localhost:3000",
+		"http://127.0.0.1:8088",
+		"https://[::1]",
+		"https://[0:0:0:0:0:0:0:1]:8443",
+		"https://[2001:DB8::1]",
+		"https://[2001:db8:0:0:1:0:0:1]:443",
+		"http://[fe80::1]",
+		"https://[::7f00:1]",
+		"https://[::ffff:127.0.0.1]",
+		"https://[::FFFF:7f00:1]",
+		"https://[::ffff:10.0.0.1]:8443",
+		"https://xn--80ak6aa92e.com",
+	} {
+		once, err := NormalizeOrigin(in)
+		if err != nil {
+			continue // refused outright: nothing to re-normalize
+		}
+		twice, err := NormalizeOrigin(once)
+		if err != nil {
+			t.Errorf("NormalizeOrigin(%q) = %q, which no longer normalizes: %v", in, once, err)
+			continue
+		}
+		if twice != once {
+			t.Errorf("NormalizeOrigin(%q) = %q, normalized again = %q", in, once, twice)
+		}
+	}
+}
+
+// An IPv4-mapped IPv6 host is refused. Go prints it as a dotted quad, which
+// is not how a browser serializes it ("[::ffff:7f00:1]") and which a second
+// normalization reads as the plain IPv4 origin.
+func TestNormalizeOriginRefusesIPv4Mapped(t *testing.T) {
+	for _, in := range []string{
+		"https://[::ffff:127.0.0.1]",
+		"https://[::FFFF:7f00:1]",
+		"http://[0:0:0:0:0:ffff:a00:1]:8080",
+	} {
+		if got, err := NormalizeOrigin(in); err == nil {
+			t.Errorf("NormalizeOrigin(%q) = %q, want an error", in, got)
+		}
+	}
+}

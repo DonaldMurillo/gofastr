@@ -39,8 +39,10 @@ type Hit struct {
 }
 
 // Filter restricts the candidate set before scoring. Empty fields are
-// ignored. MetaMatch entries are checked for exact equality against
-// the chunk's Metadata.
+// ignored. Each MetaMatch entry requires the key in the chunk's
+// Metadata with a value equal to the entry's, compared as JSON on
+// every Store: 5 equals 5.0, [] matches only an empty array, and a nil
+// value matches a stored null, never a missing key.
 type Filter struct {
 	Source    string         `json:"source,omitempty"`
 	Kind      string         `json:"kind,omitempty"`
@@ -216,7 +218,11 @@ func Open(opts Options) (Index, error) {
 		path:          opts.Path,
 		snapshotEvery: opts.SnapshotEvery,
 	}
-	if err := idx.loadAndReplay(); err != nil {
+	err := idx.loadAndReplay()
+	if err == nil {
+		err = idx.rebuildKeyword()
+	}
+	if err != nil {
 		if idx.wal != nil {
 			_ = idx.wal.close()
 		}

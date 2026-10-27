@@ -48,8 +48,8 @@ Retrieval runs in the same process as your app, instead of requiring a separate 
                                   ▼   if MMRLambda > 0:
                                 mmr(λ) ──► diverse top-K
                                   │
-                                  │   if Rerank:
-                                  ▼
+                                  │   if Rerank (sees every candidate
+                                  ▼   when MMR is off):
                               Reranker.Rerank
                                   │
                                   ▼
@@ -63,12 +63,13 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 | Event | Behaviour |
 | --- | --- |
 | `Open(Options{Path: dir})` | Load `dir/store.snap` if present; replay `dir/store.wal`, recovering a torn final record; checkpoint replayed state before new writes. |
-| `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. |
+| `Open` with `Options.Keyword` | Rebuild the keyword index from every chunk the store holds, after the snapshot and WAL load. Snapshots carry no keyword state, and a durable store (`PgVectorStore`) holds chunks a fresh process has never indexed, so without the rebuild the hybrid keyword leg starts empty. |
+| `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. An append that fails (a full disk) is cut back off the WAL and the write fails; the next write snapshots first, so a later restart still opens. Replacing a document (remove its chunks, add the new ones) runs as one step and is one WAL record, so two concurrent `Add`s of one `ID` leave one version and a crash replays all of the replace or none of it. A WAL written by an earlier release, with separate add and remove records, still replays. Metadata may hold nested JSON objects and arrays; an `Add` whose metadata the WAL cannot encode (an unregistered Go type) fails before anything is removed. A batch that names one `ID` twice keeps the last `Document`, the way a second `Add` would. |
 | `Snapshot()` | Write a unique owner-only temporary file beside `dir/store.snap`, then rename it atomically; truncate WAL. |
 | `Add` / `Remove` every `SnapshotEvery` writes | Auto-triggers `Snapshot()`. |
 | `Close()` | Final `Snapshot()`; close WAL; close store. |
 
-The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
+The snapshot's header records the embedder's `Name()` and `Dim()`, and every WAL add entry records the `Name()`, so writes that never reached a snapshot are checked on replay too. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
 
 `SnapshotEvery` sets how many operations pass between automatic
 snapshots; `0` means the default, 1000, and `-1` snapshots after every
@@ -97,7 +98,7 @@ implementation surfaces as an attributed error from `Add` / `Remove` /
 - **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default.
 - **`WrapSearchBackend(b search.Backend)`**: adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
 
-When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. The keyword leg receives at most the first 64 terms of the query text, counted as runs of letters and digits the way the keyword index tokenizes them, the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
+When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. With a `filter`, the keyword leg widens its window until enough candidates pass the filter, the backend runs out, or the window covers the whole store, so matches in scope are not cut by out-of-scope ones ranked above them. The keyword leg receives at most the first 64 terms of the query text, counted as runs of letters and Unicode numbers the way the keyword index tokenizes them (`H₂O` is one term), the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
 
 ## Diversity (MMR)
 
@@ -115,7 +116,7 @@ MMR needs the candidate vectors; the store keeps them on the chunks until the ve
 
 `Options.Reranker` is the second-stage scorer hook. The package ships **no** built-in reranker. Setting `Query.Rerank=true` without `Options.Reranker` is an error; silent quality loss is not allowed.
 
-A reranker receives the original query text and the candidate hits; it returns a reordered slice with its own scores. Typical wiring is a cross-encoder model behind an HTTP endpoint:
+A reranker receives the original query text and the candidate hits; it returns a reordered slice with its own scores, and `Query` keeps its first `K`. Without MMR the candidates are the whole first-stage set, up to `max(4K, 50)` hits, so the reranker can promote a hit from below the top `K`; with `MMRLambda > 0` they are the `K` hits MMR picked. Typical wiring is a cross-encoder model behind an HTTP endpoint:
 
 ```go
 type httpReranker struct{ url string }
@@ -140,6 +141,8 @@ w.ScanOnce(ctx, "./src")          // one-shot
 ```
 
 A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
+
+The first scan after a watcher starts also removes the documents it indexed in an earlier run for files under its roots that are gone, so a file deleted while the app was down leaves the index. Only documents whose ID is the watcher's own for that path are touched; documents the app added itself, and files under another watcher's roots, stay. An index that is not the one `Open` returns is not reconciled.
 
 `Watcher` is polling-based on purpose: no third-party deps, deterministic behaviour, and the dev-time cost on a tree of a few thousand files is well under the embedding cost of any actual file edit. For very large trees, swap the implementation for fsnotify-backed without changing the public API.
 
@@ -213,6 +216,25 @@ Or wire the bare `http.Handler` onto a `core/router.Router` or stdlib `http.Serv
 mux.Handle("/semantic/", http.StripPrefix("/semantic",
     semantic.Handler(idx, semantic.WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))))
 ```
+
+`filter.meta_match` (`Filter.MetaMatch`) is per-key equality on every store:
+each key must be present in the chunk's metadata with a value equal to the
+filter's, compared as JSON. `5` equals `5.0` (a Go `int` stored, a JSON number
+queried), `[]` matches only an empty array (never "any array"), and `null`
+matches a stored null, not a missing key. Numbers compare exactly, past
+float64 precision too: tenant `2^53+1` never matches a filter on `2^53`. On
+`PgVectorStore` the hybrid keyword leg checks the filter in SQL, as the vector
+leg does, rather than on metadata decoded to float64. The HTTP routes keep
+that precision: `/index` and `/query` decode JSON numbers exactly, so a
+document indexed over HTTP with tenant `2^53+1` matches only that tenant. Hit
+metadata `PgVectorStore` returns still decodes numbers as float64.
+
+A document whose embedding is the zero vector (text with no tokens) scores 0
+on every store; on `PgVectorStore` it sorts after documents with a negative
+score. A response the route cannot encode answers 500 with an error body,
+never a 200 with an empty one. `POST /index` answers 400 for a document with
+no id (`doc_id_is_required`) or one the chunker refuses
+(`document_unchunkable`); the chunker's error text stays in the log.
 
 `POST /index` and `POST /query` decode their bodies strictly: duplicate or
 case-folded top-level JSON keys are refused with 400 rather than silently
@@ -325,6 +347,22 @@ idx, err := semantic.Open(semantic.Options{
     Keyword:  semantic.NewMemoryKeyword(), // PgVectorStore implements chunkLister → hybrid works
 })
 ```
+
+`Open` fills `MemoryKeyword` from the table's rows, so hybrid queries in a
+fresh process or a second replica see the keyword leg. The rebuild reads the
+whole table into memory once per `Open`, with no deadline, and a read that
+fails fails `Open`: an index rebuilt from a partial read would answer hybrid
+queries without their keyword matches.
+
+**Replace is one transaction.** `Index.Add` and `Index.Remove` on a
+`PgVectorStore` delete a document's old chunks and insert its new ones in a
+single transaction. Metadata is marshalled before anything is deleted, and a
+failed insert (metadata JSON cannot carry, such as `NaN`, or a NUL byte in the
+text) rolls the delete back, so the old version stays. The transaction first
+takes a transaction-scoped advisory lock (`pg_advisory_xact_lock`) per
+document, keyed on the table and the document ID, so two replicas replacing
+the same document run one after the other and the table keeps one whole
+version. The keyword backend is updated only after the transaction commits.
 
 **Ranking parity.** `PgVectorStore` scores with pgvector's cosine-distance operator (`<=>`); because the embedder produces L2-normalized vectors, cosine equals the dot product `FlatStore` uses, so the two stores return the same top-K order given identical vectors (`Hit.Score = 1 − distance`). Default retrieval is brute-force cosine (correct, matches `FlatStore`); an operator can add an HNSW index for scale without code changes:
 

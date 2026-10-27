@@ -30,6 +30,14 @@ func TestRequestPermissionFailClosed(t *testing.T) {
 		{"unknown outcome", map[string]any{"jsonrpc": "2.0", "result": map[string]any{
 			"outcome": "defer",
 		}}},
+		// A JSON-RPC 2.0 response carries jsonrpc "2.0" (§5); an
+		// approval without it is not a response, so it approves nothing.
+		{"approval without jsonrpc", map[string]any{"result": map[string]any{
+			"outcome": map[string]any{"outcome": "selected", "optionId": "allow-once"},
+		}}},
+		{"approval with jsonrpc 1.0", map[string]any{"jsonrpc": "1.0", "result": map[string]any{
+			"outcome": map[string]any{"outcome": "selected", "optionId": "allow-once"},
+		}}},
 	} {
 		t.Run(shape.name, func(t *testing.T) {
 			outcomeCh := make(chan acp.RequestPermissionOutcome, 1)

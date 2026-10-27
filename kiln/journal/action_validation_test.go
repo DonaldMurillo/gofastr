@@ -90,3 +90,21 @@ func TestAddPageRejectsUnsupportedNodeAction(t *testing.T) {
 		},
 	}}))
 }
+
+// Released builds journaled a route with a hook-only kind, a hook with
+// respond_json and a relative page path; the live tool now refuses all
+// three, but a session that holds them must still replay, or it cannot
+// load or freeze at all.
+func TestReplayLoadsReleasedShapes(t *testing.T) {
+	s := NewSession()
+	mustApply(t, s, worldEdit(OpAddHook, AddHookPayload{Hook: &world.Hook{
+		ID: "h1", Entity: "posts", When: "before_create",
+		Action: world.Action{Kind: world.ActionRespondJSON},
+	}}))
+	mustApply(t, s, worldEdit(OpAddRoute, AddRoutePayload{Route: &world.Route{
+		Method: "GET", Path: "/x", Action: world.Action{Kind: world.ActionValidate},
+	}}))
+	mustApply(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+		Path: "about", Tree: world.Node{Kind: "div"},
+	}}))
+}

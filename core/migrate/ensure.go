@@ -77,6 +77,7 @@ func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName strin
 		return false, nil
 	}
 	// CREATE DATABASE cannot be parameterized; the name is validated by caller.
+	//gofastr:allow(quoteident) the DSN connects to its database name with the case kept
 	if _, err := admin.ExecContext(ctx, "CREATE DATABASE "+query.QuoteIdent(safeName)); err != nil {
 		return false, fmt.Errorf("ensure database: create %q: %w", dbName, err)
 	}

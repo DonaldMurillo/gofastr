@@ -89,7 +89,7 @@ func TestStaticExportShipsCSP(t *testing.T) {
 		}
 	}
 
-	page := applyStaticCSP("<!doctype html>\n<html>\n<head>\n<title>x</title>\n</head>\n<body>hi</body>\n</html>")
+	page := applyStaticCSP("<!doctype html>\n<html>\n<head>\n<title>x</title>\n</head>\n<body>hi</body>\n</html>", staticExportCSP)
 	if !strings.Contains(page, `http-equiv="Content-Security-Policy"`) {
 		t.Fatalf("SECURITY: [xss] exported pages carry no in-document CSP:\n%s", page)
 	}
@@ -120,6 +120,80 @@ func TestStaticExportShipsCSP(t *testing.T) {
 	for _, want := range []string{"X-Content-Type-Options: nosniff", "Referrer-Policy: strict-origin-when-cross-origin"} {
 		if !strings.Contains(string(buf), want) {
 			t.Errorf("_headers omits %q:\n%s", want, buf)
+		}
+	}
+}
+
+// buildCSP builds a one-page export carrying policy and returns its
+// index.html and _headers.
+func buildCSP(t *testing.T, policy string) (page, headers string, err error) {
+	t.Helper()
+	a := coreapp.NewApp("CSPConfigured")
+	a.Register("/", &homeScreen{}, nil)
+	dir := t.TempDir()
+	if _, err := (&Builder{Host: uihost.New(a), OutDir: dir, ContentSecurityPolicy: policy}).Build(context.Background()); err != nil {
+		return "", "", err
+	}
+	return readOut(t, dir, "index.html"), readOut(t, dir, "_headers"), nil
+}
+
+// TestExportUsesConfiguredCSP: an app that relaxes a directive on the
+// live server (a font host) gets the same policy on the static host,
+// in the meta and in _headers. The meta leaves out the directives a
+// <meta> policy ignores (CSP3 §3.1), which only log a console warning
+// there; _headers keeps them.
+func TestExportUsesConfiguredCSP(t *testing.T) {
+	policy := "default-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; report-uri /csp"
+	page, headers, err := buildCSP(t, policy)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(page, `content="default-src 'self'; font-src 'self' https://fonts.gstatic.com"`) {
+		t.Errorf("the page meta does not carry the configured policy:\n%s", page)
+	}
+	if strings.Contains(page, staticExportCSP) {
+		t.Errorf("the page still carries the built-in policy")
+	}
+	for _, ignored := range []string{"frame-ancestors", "report-uri"} {
+		if strings.Contains(page, ignored) {
+			t.Errorf("the meta carries %s, which a <meta> policy ignores", ignored)
+		}
+	}
+	if !strings.Contains(headers, "Content-Security-Policy: "+policy+"\n") {
+		t.Errorf("_headers does not carry the configured policy:\n%s", headers)
+	}
+}
+
+// TestExportCSPOneMetaPerPolicy: a header value can list several
+// policies, each enforced; one <meta> parses a single policy, so a list
+// written into one would fold the second policy's sources into the
+// first's last directive and widen it.
+func TestExportCSPOneMetaPerPolicy(t *testing.T) {
+	page, _, err := buildCSP(t, "default-src 'self', script-src 'self' https://cdn.example")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, want := range []string{`content="default-src 'self'"`, `content="script-src 'self' https://cdn.example"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks the meta %s:\n%s", want, page)
+		}
+	}
+}
+
+// TestExportCSPRefusesUnsafeShapes: a nonce in a file every visitor
+// gets is a published key, not a nonce; a line break would write a
+// header of the policy's choosing into _headers; a quote or angle
+// bracket is no CSP token and would end the meta's attribute.
+func TestExportCSPRefusesUnsafeShapes(t *testing.T) {
+	for _, policy := range []string{
+		"default-src 'self'; script-src 'self' 'nonce-abc123'",
+		"default-src 'self'; script-src 'NONCE-abc123'",
+		"default-src 'self'\n/*\n  Access-Control-Allow-Origin: *",
+		"default-src 'self'\r\nX-Evil: 1",
+		`default-src 'self'; img-src "><script src=/x.js></script>`,
+	} {
+		if _, _, err := buildCSP(t, policy); err == nil {
+			t.Errorf("Build accepted the policy %q", policy)
 		}
 	}
 }

@@ -1,6 +1,10 @@
 package protocol
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/DonaldMurillo/gofastr/kiln/world"
+)
 
 // Descriptor is the public schema of one tool. Transports (MCP, ACP)
 // expose Descriptor.Schema as the tool's input schema and Description
@@ -384,9 +388,9 @@ func hookSchema() map[string]any {
 	return object(map[string]any{
 		"id":        str(""),
 		"entity":    str(""),
-		"when":      enum("before_create", "after_create", "before_update", "after_update", "before_delete", "after_delete", "before_list", "after_list"),
+		"when":      enum(world.HookEvents...),
 		"condition": str("optional expression; hook runs only if true"),
-		"action":    actionSchema(),
+		"action":    actionSchema(world.HookActionKinds...),
 	}, []string{"id", "entity", "when", "action"})
 }
 
@@ -394,13 +398,19 @@ func routeSchema() map[string]any {
 	return object(map[string]any{
 		"method": enum("GET", "POST", "PUT", "DELETE", "PATCH"),
 		"path":   str(""),
-		"action": actionSchema(),
+		"action": actionSchema(world.RouteActionKinds...),
 	}, []string{"method", "path", "action"})
 }
 
-func actionSchema() map[string]any {
+// actionSchema advertises the action kinds a surface runs; with none
+// given, every kind kiln/effect implements (entity endpoints, which
+// graduate to owned-Go stubs rather than run live).
+func actionSchema(kinds ...string) map[string]any {
+	if len(kinds) == 0 {
+		kinds = []string{"noop", "validate", "set_field", "audit", "respond_json", "emit_event"}
+	}
 	return object(map[string]any{
-		"kind":   enum("noop", "validate", "set_field", "audit", "respond_json", "emit_event"),
+		"kind":   enum(kinds...),
 		"params": map[string]any{"type": "object"},
 	}, []string{"kind"})
 }

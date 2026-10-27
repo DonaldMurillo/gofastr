@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -50,6 +51,12 @@ type SchemaChange struct {
 	// one with foreign keys off, and GeneratePlan refuses one that a
 	// row-mutating ON DELETE action references.
 	sqliteRebuildOf string
+
+	// deferredFKs are the declared foreign keys this Postgres key change
+	// detaches and cannot re-add yet, because their child table gains the
+	// key's columns only in its own changes: the caller runs them after
+	// every table's changes.
+	deferredFKs []SchemaChange
 
 	// irreversible marks a change with no inverse at all (a SQLite
 	// rebuild, or a key change off a column the diff drops). A generated
@@ -111,10 +118,17 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	if err != nil {
 		return nil, err
 	}
-	keysByTable, err := readLiveKeysQ(ctx, db, existingEntityTables(ordered, liveByTable), dialect)
+	existing := existingEntityTables(ordered, liveByTable)
+	keysByTable, err := readLiveKeysQ(ctx, db, existing, dialect)
 	if err != nil {
 		return nil, err
 	}
+	fksByTable, err := readLiveForeignKeysQ(ctx, db, existing, dialect)
+	if err != nil {
+		return nil, err
+	}
+	canonicalRefTables(fksByTable, all, dialect)
+	env := &fkDiffEnv{fks: fksByTable, tables: liveByTable, keyChanged: map[string][]string{}}
 	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue
@@ -124,12 +138,13 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 			k := keysByTable[ent.GetTable()]
 			lk = &k
 		}
-		changes, err := diffEntity(ent, all, dialect, liveByTable[ent.GetTable()], lk)
+		changes, err := diffEntity(ent, all, dialect, liveByTable[ent.GetTable()], lk, env)
 		if err != nil {
 			return nil, fmt.Errorf("diff %s: %w", ent.GetName(), err)
 		}
 		out = append(out, changes...)
 	}
+	out = append(out, env.deferred...)
 
 	pivotChanges, err := diffPivotTables(ordered, all, dialect, liveByTable)
 	if err != nil {
@@ -289,13 +304,15 @@ func applySQLiteRebuild(ctx context.Context, db *sql.DB, changes []SchemaChange)
 }
 
 func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
-	return diffEntity(ent, all, dialect, live, nil)
+	return diffEntity(ent, all, dialect, live, nil, nil)
 }
 
 // diffEntity is diffEntityFromLive with the table's live (or snapshot)
 // primary key. A nil lk means the key is unknown, and the key is not
-// compared.
-func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey) ([]SchemaChange, error) {
+// compared. env carries the other tables' column sets, which a Postgres key
+// change needs to detach the foreign keys onto it, and, when its fks are
+// known (DiffSchema), the live foreign keys to compare; nil skips both.
+func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey, env *fkDiffEnv) ([]SchemaChange, error) {
 	qtable, err := query.SafeIdent(ent.GetTable())
 	if err != nil {
 		return nil, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
@@ -311,7 +328,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		var sqlParts []string
 		sqlParts = append(sqlParts, ddl)
 		for _, idx := range entityIndices(ent) {
-			sqlParts = append(sqlParts, indexDDL(qtable, idx))
+			sqlParts = append(sqlParts, indexDDL(dialect, qtable, idx))
 		}
 		return []SchemaChange{{
 			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
@@ -373,6 +390,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	}
 
 	// ADD COLUMN for declared-but-missing fields.
+	added := map[string]string{} // column → type, for the rebuild below
 	for _, f := range ent.GetFields() {
 		if _, ok := liveLower[strings.ToLower(f.Name)]; ok {
 			continue
@@ -402,14 +420,30 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
 			qtable, qcol, colType, nullable, defaultClause)
+		added[f.Name] = colType
 		changes = append(changes, SchemaChange{
 			Summary: summary,
 			SQL:     ddl,
 			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol),
 		})
+		// CREATE TABLE writes UNIQUE inline, but SQLite refuses UNIQUE on
+		// ADD COLUMN, so the added column gets a unique index instead, named
+		// the way Postgres names the inline constraint. Its Down runs before
+		// the column's, which SQLite needs to drop an indexed column.
+		if f.Unique {
+			uqName, err := query.SafeIdent(tableBase(ent.GetTable()) + "_" + f.Name + "_key")
+			if err != nil {
+				return nil, fmt.Errorf("invalid unique index name for %q: %w", f.Name, err)
+			}
+			changes = append(changes, SchemaChange{
+				Summary: fmt.Sprintf("%s: unique index %s", ent.GetName(), uqName),
+				SQL:     createIndexSQL(dialect, true, uqName, qtable, qcol),
+				Down:    dropIndexSQL(qtable, uqName),
+			})
+		}
 		for _, idx := range entityIndices(ent) {
 			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], f.Name) {
-				idxDDL := indexDDL(qtable, idx)
+				idxDDL := indexDDL(dialect, qtable, idx)
 				idxName := parseIndexName(idxDDL)
 				safeIdxName, err := query.SafeIdent(idxName)
 				if err != nil {
@@ -418,7 +452,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 				changes = append(changes, SchemaChange{
 					Summary: fmt.Sprintf("%s: index %s", ent.GetName(), safeIdxName),
 					SQL:     idxDDL,
-					Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeIdxName),
+					Down:    dropIndexSQL(qtable, safeIdxName),
 				})
 			}
 		}
@@ -465,8 +499,8 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
-			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType),
-			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType),
+			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType, ColumnDefaultClause(f, dialect)),
+			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, ""),
 			Destructive: true,
 		})
 	}
@@ -492,11 +526,33 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	keyChanged := lk != nil && !sameKey(lk.cols, ent.KeyColumns())
 	var rebuildDrops []string
 	if keyChanged && dialect == DialectPostgres {
-		c, err := postgresKeyChange(ent, qtable, *lk)
+		var tables map[string]map[string]string
+		var extraKeep []string
+		if env != nil {
+			tables = env.tables
+			// A live key no relation declares is reported by its own
+			// table's diff as a destructive drop, so the detach may drop
+			// it here: the change set does not apply without
+			// AllowDestructive.
+			for _, child := range slices.Sorted(maps.Keys(env.fks)) {
+				for _, fk := range env.fks[child] {
+					if strings.EqualFold(fk.refTable, ent.GetTable()) {
+						extraKeep = append(extraKeep, fkKeepKey(child, fk.cols))
+					}
+				}
+			}
+		}
+		c, err := postgresKeyChange(ent, all, qtable, *lk, tables, extraKeep)
 		if err != nil {
 			return nil, err
 		}
 		changes = append(changes, c)
+		if env != nil {
+			if env.keyChanged != nil {
+				env.keyChanged[strings.ToLower(ent.GetTable())] = lk.cols
+			}
+			env.deferred = append(env.deferred, c.deferredFKs...)
+		}
 	}
 
 	// DROP COLUMN for live-but-undeclared (skip framework-managed columns).
@@ -539,11 +595,24 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		})
 	}
 
+	// FOREIGN KEY changes, when the live keys are known. Postgres swaps the
+	// constraints after the columns above converged; SQLite rebuilds the
+	// table, whose CREATE renders the declared keys.
+	fkDiffer := false
+	if env != nil && env.fks != nil {
+		fkChanges, differ, err := foreignKeyChanges(ent, all, dialect, qtable, env, renameNewByOld)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, fkChanges...)
+		fkDiffer = differ && dialect == DialectSQLite
+	}
+
 	// The SQLite retype rebuild goes LAST: it recreates the table from the
 	// entity, so it must see the column set the renames/adds/drops above
 	// already converged. One change per table, no matter how many columns
 	// retyped — the rebuild converges every declared type at once.
-	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) {
+	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer {
 		var parts []string
 		for _, r := range sqliteRetypes {
 			parts = append(parts, fmt.Sprintf("%s type %s → %s", r.name, r.liveType, r.declaredType))
@@ -558,7 +627,18 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		for _, name := range rebuildDrops {
 			summary += "; drop column " + name
 		}
-		rebuild, err := sqliteRebuildChange(ent, all, dialect, live, renameOldByNew, summary, false)
+		if fkDiffer {
+			summary = strings.TrimPrefix(summary+"; change foreign keys to the declared relations", "; ")
+		}
+		// The ADD changes above run first, so by the time the rebuild runs
+		// the old table holds the columns they add, filled from their
+		// defaults, and the rebuild copies them like any other. Leaving
+		// them out of the copy left a key change onto new columns nothing
+		// to copy: the INSERT was skipped and the DROP still ran, emptying
+		// the table.
+		rebuildLive := maps.Clone(live)
+		maps.Copy(rebuildLive, added)
+		rebuild, err := sqliteRebuildChange(ent, all, dialect, rebuildLive, renameOldByNew, summary, false)
 		if err != nil {
 			return nil, err
 		}
@@ -640,12 +720,22 @@ func typesEquivalent(declared, live string, dialect Dialect) bool {
 // function — its retypes are rendered by sqliteRebuildChange, because
 // SQLite has no in-place ALTER COLUMN TYPE and a rendered comment would
 // execute as a no-op while being counted as applied.
-func alterColumnTypeSQL(qtable, qcol, fromType, newType string) string {
-	sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
+//
+// USING converts the rows but not the column's default: a text default
+// ('0') cannot be cast automatically, so the ALTER failed. The USING
+// form drops the default first and sets defaultClause (the declared
+// field's " DEFAULT …", or "" for none) after, in one ALTER TABLE, the
+// spelling the Postgres manual gives for this case.
+func alterColumnTypeSQL(qtable, qcol, fromType, newType, defaultClause string) string {
 	if isTextType(fromType) && isIntegerType(newType) {
-		sql += fmt.Sprintf(" USING %s::%s", qcol, newType)
+		sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT, ALTER COLUMN %s TYPE %s USING %s::%s",
+			qtable, qcol, qcol, newType, qcol, newType)
+		if defaultClause != "" {
+			sql += fmt.Sprintf(", ALTER COLUMN %s SET%s", qcol, defaultClause)
+		}
+		return sql
 	}
-	return sql
+	return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
 }
 
 // isTextType reports whether a Postgres column type holds text.
@@ -738,7 +828,7 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 			present = old
 		}
 		if _, ok := liveLower[present]; !ok {
-			continue // being added by a sibling ADD change; its default covers it
+			continue // not in the old table: its default fills the new one
 		}
 		q, err := query.SafeIdent(f.Name)
 		if err != nil {
@@ -773,14 +863,14 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 	}
 	defs = slices.Insert(defs, at, kept...)
 	if all != nil {
-		fks, err := foreignKeyClauses(ent, all)
+		fks, err := foreignKeyClauses(ent, all, DialectSQLite)
 		if err != nil {
 			return SchemaChange{}, err
 		}
 		defs = append(defs, fks...)
 	}
 
-	newTable := qtable + "__rebuild"
+	newTable := sqliteRebuildTable(qtable)
 	var b strings.Builder
 	fmt.Fprintf(&b, "CREATE TABLE %s (\n\t%s\n)", newTable, strings.Join(defs, ",\n\t"))
 	if len(copyCols) > 0 {
@@ -788,13 +878,13 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 		fmt.Fprintf(&b, ";\nINSERT INTO %s (%s) SELECT %s FROM %s", newTable, joined, joined, qtable)
 	}
 	fmt.Fprintf(&b, ";\nDROP TABLE %s", qtable)
-	fmt.Fprintf(&b, ";\nALTER TABLE %s RENAME TO %s", newTable, qtable)
+	fmt.Fprintf(&b, ";\n%s", sqliteRebuildRename(qtable))
 	// The DROP took every index with it. entityIndices is the set the
 	// snapshot records (declared plus the automatic belongs_to ones), so
 	// anything less leaves an index the next plan believes exists.
 	for _, idx := range entityIndices(ent) {
 		b.WriteString(";\n")
-		b.WriteString(indexDDL(qtable, idx))
+		b.WriteString(indexDDL(DialectSQLite, qtable, idx))
 	}
 	return SchemaChange{
 		Summary: fmt.Sprintf("%s: %s (destructive: SQLite cannot alter column types or a primary key in place; table is rebuilt and rows are copied with affinity conversion)",
@@ -804,6 +894,17 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 		sqliteRebuildOf: ent.GetName(),
 		irreversible:    true,
 	}, nil
+}
+
+// sqliteRebuildTable names the replacement table a SQLite rebuild fills.
+func sqliteRebuildTable(qtable string) string { return qtable + "__rebuild" }
+
+// sqliteRebuildRename is the statement that gives the replacement table
+// the original's name, the last step of a SQLite rebuild.
+// SQLite takes a schema on the table it renames but not on RENAME TO: the
+// table stays in its schema.
+func sqliteRebuildRename(qtable string) string {
+	return fmt.Sprintf("ALTER TABLE %s RENAME TO %s", sqliteRebuildTable(qtable), tableBase(qtable))
 }
 
 // queryer is the read-only subset of *sql.DB / *sql.Tx the live-schema
@@ -822,25 +923,50 @@ func ReadLiveColumns(ctx context.Context, db *sql.DB, table string, dialect Dial
 
 func readLiveColumnsQ(ctx context.Context, q queryer, table string, dialect Dialect) (map[string]string, error) {
 	if dialect == DialectPostgres {
-		return readLiveColumnsPostgresQ(ctx, q, table)
+		return readLiveColumnsPostgresQ(ctx, q, table, false)
+	}
+	return readLiveColumnsSQLiteQ(ctx, q, table)
+}
+
+// readEntityColumnsQ is readLiveColumnsQ for a table AutoMigrate created.
+// Its DDL is unquoted, so on Postgres the table is the folded name and
+// nothing else: a hand-made quoted "MixedAccount" is another table, and
+// reading its columns as the entity's skipped an ADD COLUMN for a column
+// only that table has.
+func readEntityColumnsQ(ctx context.Context, q queryer, table string, dialect Dialect) (map[string]string, error) {
+	if dialect == DialectPostgres {
+		return readLiveColumnsPostgresQ(ctx, q, table, true)
 	}
 	return readLiveColumnsSQLiteQ(ctx, q, table)
 }
 
 func ReadLiveColumnsPostgres(ctx context.Context, db *sql.DB, table string) (map[string]string, error) {
-	return readLiveColumnsPostgresQ(ctx, db, table)
+	return readLiveColumnsPostgresQ(ctx, db, table, false)
 }
 
-func readLiveColumnsPostgresQ(ctx context.Context, q queryer, table string) (map[string]string, error) {
+func readLiveColumnsPostgresQ(ctx context.Context, q queryer, table string, foldedOnly bool) (map[string]string, error) {
 	// AutoMigrate emits CREATE TABLE with UNQUOTED identifiers, so Postgres
 	// folds a mixed-case table name to lowercase in information_schema.
-	// Match case-insensitively so a registry table like "MixedAccount" finds
-	// its folded live columns instead of reading as "table doesn't exist".
+	// The exported readers match without case, so a registry table like
+	// "MixedAccount" finds its folded live columns and a table an older
+	// build created quoted (an "AuditTrail" audit table) finds its own. Boot reads
+	// its entity tables foldedOnly, and then its columns too: a quoted
+	// legacy "Title" is not the folded title the framework's DDL names.
+	// A qualified app.widgets is widgets in schema app; the bare name is
+	// in the search-path schema.
+	schema, name := splitTable(table)
+	var schemaArg any
+	if schema != "" {
+		schemaArg = schema
+	}
+	where := `lower(table_schema) = lower(coalesce($2, current_schema())) AND lower(table_name) = lower($1)`
+	if foldedOnly {
+		where = `table_schema = coalesce(lower($2), current_schema()) AND table_name = lower($1) AND column_name = lower(column_name)`
+	}
 	rows, err := q.QueryContext(ctx, `
 		SELECT column_name, data_type
 		FROM information_schema.columns
-		WHERE table_schema = current_schema() AND lower(table_name) = lower($1)
-	`, table)
+		WHERE `+where, name, schemaArg)
 	if err != nil {
 		return nil, err
 	}
@@ -873,10 +999,11 @@ func readLiveColumnsSQLiteQ(ctx context.Context, q queryer, table string) (map[s
 	// diffEntityFromLive / migrateEntity all call SafeIdent); this was
 	// the lone exception, relying on database/sql executing a single
 	// statement, a driver property, not ours.
-	if _, err := query.SafeIdent(table); err != nil {
+	pragma, err := sqlitePragma("table_info", table)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	rows, err := q.QueryContext(ctx, pragma)
 	if err != nil {
 		return nil, err
 	}
@@ -964,7 +1091,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		columns = append(columns, "PRIMARY KEY ("+strings.Join(safe, ", ")+")")
 	}
 	if all != nil {
-		fks, err := foreignKeyClauses(ent, all)
+		fks, err := foreignKeyClauses(ent, all, dialect)
 		if err != nil {
 			return nil, err
 		}
@@ -973,7 +1100,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	return columns, nil
 }
 
-var reIndexName = regexp.MustCompile(`(?i)\bINDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?([a-zA-Z0-9_]+)`)
+var reIndexName = regexp.MustCompile(`(?i)\bINDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)`)
 
 func parseIndexName(ddl string) string {
 	m := reIndexName.FindStringSubmatch(ddl)

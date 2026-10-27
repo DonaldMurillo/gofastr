@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // Name grammars. Capability names are the JS namespace and the URL
@@ -236,7 +238,7 @@ func compactJSON(in json.RawMessage) json.RawMessage {
 		return nil
 	}
 	var v any
-	if err := json.Unmarshal(in, &v); err != nil {
+	if err := jsonexact.Unmarshal(in, &v); err != nil {
 		return in
 	}
 	out, err := json.Marshal(v)

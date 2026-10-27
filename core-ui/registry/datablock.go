@@ -32,6 +32,7 @@ var (
 	// reads, or the one it reads in place of the real one.
 	reservedDataBlockIDs = map[string]bool{
 		"gofastr-signals": true, "gofastr-signals-partial": true,
+		"gofastr-signals-page":    true,
 		"gofastr-runtime-modules": true, "gofastr-behaviors": true,
 		"gofastr-compute-assets": true, "gofastr-catalog": true,
 		"gofastr-routes": true, "gofastr-embed-root": true,

@@ -19,6 +19,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
+// The sidebar's default nav name speaks the request's language.
+func TestSidebarDefaultNavLabelLocalized(t *testing.T) {
+	ctx := makeCtxWithLocale(i18nui.NavPrimary, "Principal")
+	out, err := component.SafeRenderCtx(ctx, Sidebar(SidebarConfig{Items: []SidebarItem{{Label: "Home", Href: "/"}}}))
+	if err != nil {
+		t.Fatalf("sidebar render: %v", err)
+	}
+	if !strings.Contains(string(out), `aria-label="Principal"`) || strings.Contains(string(out), `aria-label="Primary"`) {
+		t.Errorf("the default nav name stayed English:\n%s", out)
+	}
+}
+
 // makeCtxWithLocale builds a ctx carrying a French translator that maps
 // the given key to the given translated string.
 func makeCtxWithLocale(key i18n.Phrase, translated string) context.Context {

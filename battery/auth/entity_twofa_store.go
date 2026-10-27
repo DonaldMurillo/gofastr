@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -37,9 +38,10 @@ import (
 //
 // The plugin calls EnsureSchema at Init, so hosts never hand-roll the DDL.
 type EntityTwoFAStore struct {
-	db     *sql.DB
-	table  string
-	sealer *aeadSealer
+	db      *sql.DB
+	table   string
+	dialect storeDialect
+	sealer  *aeadSealer
 	// previousSealers open rows sealed under rotated-away keys (the
 	// drain window); they never seal.
 	previousSealers []*aeadSealer
@@ -177,18 +179,21 @@ func isLegacyPlaintextSeed(s string) bool {
 // boolean column type is chosen per dialect (SQLite vs PostgreSQL) so the
 // same battery boots on either.
 func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
+	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
+		return err
+	}
 	boolType, boolFalse := "INTEGER", "0"
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		boolType, boolFalse = "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (user_id TEXT PRIMARY KEY, enabled %s NOT NULL DEFAULT %s, secret TEXT NOT NULL DEFAULT '', backup_codes TEXT NOT NULL DEFAULT '[]', verified %s NOT NULL DEFAULT %s, last_used_step BIGINT NOT NULL DEFAULT 0, version BIGINT NOT NULL DEFAULT 0)",
-		query.QuoteIdent(s.table), boolType, boolFalse, boolType, boolFalse,
+		query.QuoteFolded(s.table), boolType, boolFalse, boolType, boolFalse,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
-	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, "enabled", "verified"); err != nil {
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "enabled", "verified"); err != nil {
 		return err
 	}
 	// Self-heal a table created before the version and last_used_step
@@ -211,10 +216,10 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 // file is process-local so the check-then-add is not a multi-replica
 // concern.
 func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) error {
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
 		_, err := s.db.ExecContext(ctx, fmt.Sprintf(
 			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s BIGINT NOT NULL DEFAULT 0",
-			query.QuoteIdent(s.table), query.QuoteIdent(col)))
+			query.QuoteFolded(s.table), query.QuoteFolded(col)))
 		return err
 	}
 	has, err := s.sqliteHasColumn(ctx, col)
@@ -224,7 +229,7 @@ func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) e
 	if !has {
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
 			"ALTER TABLE %s ADD COLUMN %s BIGINT NOT NULL DEFAULT 0",
-			query.QuoteIdent(s.table), query.QuoteIdent(col))); err != nil {
+			query.QuoteFolded(s.table), query.QuoteFolded(col))); err != nil {
 			return err
 		}
 	}
@@ -241,7 +246,7 @@ func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (boo
 // PRAGMA table_info (SQLite-only). table must already be a validated
 // identifier.
 func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (bool, error) {
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", query.QuoteIdent(table)))
+	rows, err := db.QueryContext(ctx, query.SQLitePragma("table_info", query.QuoteFolded(table)))
 	if err != nil {
 		return false, err
 	}
@@ -253,7 +258,9 @@ func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (b
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			return false, err
 		}
-		if name == col {
+		// SQLite column names have no case, and the store creates a
+		// mapped "DisplayName" as displayname.
+		if strings.EqualFold(name, col) {
 			return true, nil
 		}
 	}
@@ -262,7 +269,7 @@ func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (b
 
 // qTable wraps a statement template with the validated table name.
 func (s *EntityTwoFAStore) qTable(stmt string) string {
-	return fmt.Sprintf(stmt, query.QuoteIdent(s.table))
+	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
 // GetTwoFA retrieves the 2FA state for a user. Returns nil (not an error)
@@ -389,7 +396,7 @@ func (s *EntityTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *T
 	// on every write so a ConsumeBackupCode or CompareAndSwapTwoFA CAS in
 	// flight against the old state misses and re-reads (a full state
 	// replace must invalidate a concurrent per-code mutation).
-	tbl := query.QuoteIdent(s.table)
+	tbl := query.QuoteFolded(s.table)
 	q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) VALUES ($1, $2, $3, $4, $5, $6, 0) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled, secret = excluded.secret, backup_codes = excluded.backup_codes, verified = excluded.verified, last_used_step = excluded.last_used_step, version = %s.version + 1", tbl, tbl)
 	_, err = s.db.ExecContext(ctx, q, userID, state.Enabled, secret, codesJSON, state.Verified, int64(state.LastUsedStep))
 	return err
@@ -422,7 +429,7 @@ func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID strin
 		// INSERT-only-if-absent: rows-affected 0 means a row exists (a
 		// concurrent enroll or a disable racing a re-enroll), so the
 		// caller's absent-row assumption is stale.
-		tbl := query.QuoteIdent(s.table)
+		tbl := query.QuoteFolded(s.table)
 		q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) SELECT $1, $2, $3, $4, $5, $6, 0 WHERE NOT EXISTS (SELECT 1 FROM %s WHERE user_id = $1)", tbl, tbl)
 		res, err := s.db.ExecContext(ctx, q, userID, next.Enabled, secret, codesJSON, next.Verified, int64(next.LastUsedStep))
 		if err != nil {

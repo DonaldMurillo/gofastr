@@ -128,6 +128,15 @@ func TestDataDirEnvMustBeAbsolute(t *testing.T) {
 	}
 }
 
+func TestDataDirEnvRefusesControlBytes(t *testing.T) {
+	for _, v := range []string{"/opt/a\nUser=root", "/opt/a\rb", "/opt/a\tb", "/opt/a\x7fb"} {
+		t.Setenv(dataDirEnv, v)
+		if _, err := baseDir(); err == nil {
+			t.Errorf("data dir %q accepted", v)
+		}
+	}
+}
+
 func TestLayoutSeparatesDevAndInstalled(t *testing.T) {
 	b, _, _ := testBattery(t, "darwin", Config{})
 	inst, err := b.layoutFor(false)

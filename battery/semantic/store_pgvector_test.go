@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -40,6 +41,35 @@ func newPgStore(t *testing.T, dim int) *PgVectorStore {
 func vec3(a, b, c float32) []float32 { return []float32{a, b, c} }
 
 func approxEqual(a, b float64) bool { return math.Abs(a-b) < 1e-4 }
+
+// TestPgVectorMetaKeepsBigIntegers pins that chunk metadata past 2^53
+// comes back from Candidates and ChunkByID with its digits: the JSONB
+// decode into map[string]any read it as a float64 and rounded
+// 9007199254740993 to 9007199254740992.
+func TestPgVectorMetaKeepsBigIntegers(t *testing.T) {
+	s := newPgStore(t, 3)
+	ctx := context.Background()
+	if err := s.Add(ctx, []Chunk{{ID: "a", DocID: "d1", Text: "alpha", Vec: vec3(1, 0, 0),
+		Metadata: map[string]any{"row_id": int64(9007199254740993), "page": 4}}}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	hits, err := s.Candidates(ctx, vec3(1, 0, 0), Filter{}, 10)
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("Candidates = %v, %v", hits, err)
+	}
+	c, ok := s.ChunkByID("a")
+	if !ok {
+		t.Fatal("ChunkByID missed the chunk")
+	}
+	for name, meta := range map[string]map[string]any{"Candidates": hits[0].Chunk.Metadata, "ChunkByID": c.Metadata} {
+		if got := fmt.Sprint(meta["row_id"]); got != "9007199254740993" {
+			t.Errorf("%s row_id = %s, want 9007199254740993", name, got)
+		}
+		if p := meta["page"]; p != float64(4) {
+			t.Errorf("%s ordinary number decodes as %T %v, want float64 4", name, p, p)
+		}
+	}
+}
 
 func TestPgVectorAddHonorsContext(t *testing.T) {
 	store := newPgStore(t, 3)
@@ -304,6 +334,46 @@ func TestPgVectorEnsureSchemaIdempotent(t *testing.T) {
 	}
 }
 
+// A table name of 63 bytes still gets its doc_id index. The index name,
+// cut at 63 bytes by Postgres, was the table's own, so IF NOT EXISTS
+// skipped it. A shorter long name keeps the cut name it always had.
+func TestPgVectorLongTableDocIndex(t *testing.T) {
+	db := openPgVector(t)
+	for _, n := range []int{58, 63} {
+		table := "v" + strings.Repeat("z", n-1)
+		s, err := NewPgVector(db, PgVectorConfig{Dim: 3, Table: table})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.EnsureSchema(context.Background()); err != nil {
+			t.Fatalf("len %d: %v", n, err)
+		}
+		if n < 63 {
+			// Start from the index an earlier build left: its name as
+			// Postgres cut it.
+			var idx string
+			if err := db.QueryRow(`SELECT indexname FROM pg_indexes WHERE tablename = $1 AND schemaname = current_schema() AND indexdef LIKE '%(doc_id)'`, table).Scan(&idx); err != nil {
+				t.Fatal(err)
+			}
+			for _, q := range []string{`DROP INDEX "` + idx + `"`, `CREATE INDEX "` + table + `_doc_id_idx" ON "` + table + `" (doc_id)`} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.EnsureSchema(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE tablename = $1 AND schemaname = current_schema() AND indexdef LIKE '%(doc_id)'`, table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("table name of %d bytes: %d doc_id indexes, want 1", n, count)
+		}
+	}
+}
+
 // TestPgVectorHybridEndToEnd proves the store composes through embed.Open with
 // a keyword backend (chunkLister is what makes hydration work).
 func TestPgVectorHybridEndToEnd(t *testing.T) {
@@ -365,7 +435,56 @@ func TestPgVectorOpenRejectsPath(t *testing.T) {
 	}
 }
 
+// A store that cannot be read at Open fails Open: a keyword index rebuilt
+// from nothing would answer hybrid queries with no keyword half.
+func TestPgVectorOpenFailsUnreadableStore(t *testing.T) {
+	store := newPgStore(t, 3)
+	if _, err := store.db.Exec(`ALTER TABLE embed_chunks RENAME COLUMN text TO body`); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := Open(Options{Embedder: NewStubEmbedder(3), Store: store, Keyword: NewMemoryKeyword()})
+	if err == nil {
+		idx.Close()
+		t.Fatal("Open over an unreadable store succeeded with an empty keyword index")
+	}
+}
+
 // --- helpers ---
+
+// TestPgVectorHybridExactMetaFilter: the keyword leg's metadata recheck
+// must compare numbers as exactly as the vector leg's jsonb predicate.
+// Decoded to float64, tenant 2^53+1 reads as 2^53 and leaks into the
+// 2^53 tenant's hybrid results.
+func TestPgVectorHybridExactMetaFilter(t *testing.T) {
+	emb := NewStubEmbedder(16)
+	store := newPgStore(t, emb.Dim())
+	idx, err := Open(Options{Embedder: emb, Store: store, Keyword: NewMemoryKeyword()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	ctx := context.Background()
+	if err := idx.Add(ctx,
+		Document{ID: "mine", Text: "zebra ledger", Metadata: map[string]any{"tenant": int64(1 << 53)}},
+		Document{ID: "theirs", Text: "zebra ledger", Metadata: map[string]any{"tenant": int64(1<<53 + 1)}},
+	); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := idx.Query(ctx, Query{
+		Text: "zebra", K: 10, Hybrid: true,
+		Filter: Filter{MetaMatch: map[string]any{"tenant": int64(1 << 53)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docs []string
+	for _, h := range hits {
+		docs = append(docs, h.Chunk.DocID)
+	}
+	if len(docs) != 1 || docs[0] != "mine" {
+		t.Fatalf("tenant 2^53 hits = %v, want only mine", docs)
+	}
+}
 
 func hitIDs(hits []Hit) []string {
 	out := make([]string, len(hits))

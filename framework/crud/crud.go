@@ -566,7 +566,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if extra := ch.Entity.Config.AllowedFilterParams; len(extra) > 0 {
 			filterOpts = append(filterOpts, filter.Allow(extra...))
 		}
-		filters, err := filter.ParseFiltersValues(q, ch.snapshotFields(), filterOpts...)
+		filters, err := filter.ParseFiltersValues(q, ch.queryFields(), filterOpts...)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
 			return
@@ -592,7 +592,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// the ones they may to their own rows. The `nested` slice is mutated
 		// in place, and every downstream sink (count, data, cursor, stream)
 		// reads the same slice.
-		if err := ch.scopeNestedFiltersForCaller(r.Context(), nested); err != nil {
+		// The real request rides along so a target's BeforeList hook,
+		// which scopes the EXISTS subquery, sees the request it would
+		// see on its own route.
+		if err := ch.scopeNestedFiltersForCaller(withRealRequest(r.Context(), r), nested); err != nil {
 			writeIncludeError(w, r, "list", err)
 			return
 		}
@@ -709,7 +712,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			countQb.Where(c.SQL, c.Args...)
 		}
 		countSQL, countArgs := countQb.Build()
-		if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		if err := ch.conn(ctx).QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
 			log.Printf("crud: list count failed: %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
@@ -730,7 +733,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		for _, c := range listPayload.Where {
 			qb.Where(c.SQL, c.Args...)
 		}
-		filter.ApplySortToQuery(qb, sorts)
+		filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
 
 		offset := pagination.OffsetForPage(page, perPage)
 		// An explicit ?offset= overrides the page-derived offset. The
@@ -745,7 +748,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		qb.Offset(offset)
 
 		dataSQL, dataArgs := qb.Build()
-		rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
+		rows, err := ch.conn(ctx).QueryContext(ctx, dataSQL, dataArgs...)
 		if err != nil {
 			log.Printf("crud: list query failed: %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
@@ -860,7 +863,7 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, erro
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
-	p, err := filter.ParseWhere(raw, ch.snapshotFields())
+	p, err := filter.ParseWhere(raw, ch.queryFields())
 	if err != nil {
 		return nil, err
 	}
@@ -1018,11 +1021,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// written the earlier ones. No row will ever reference
 			// them, so compensate now rather than orphan them.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
+			writeBodyError(w, r, err)
 			return
 		}
 
@@ -1114,11 +1113,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		body, savedFiles, err := ch.readRequestBody(r)
 		if err != nil {
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
+			writeBodyError(w, r, err)
 			return
 		}
 
@@ -1747,7 +1742,7 @@ func generateFieldValue(strategy schema.AutoGenerate) any {
 		// bearing: SQLite compares these as strings, and a zero-stripped
 		// "…07.5Z" sorts AFTER "…07.5001Z" while being chronologically
 		// earlier, mis-ordering both the cursor keyset and ORDER BY.
-		return time.Now().UTC().Format("2006-01-02T15:04:05.000000Z07:00")
+		return schema.FormatTimestamp(time.Now())
 	case schema.AutoIncrement:
 		return 0 // placeholder, real increment handled by DB
 	default:

@@ -31,8 +31,9 @@ import (
 // guard runs before both the os.Root path and the saveResolveThenOpen
 // fallback, and covers DIRECTORY components too, so "tenanta/new.txt"
 // cannot be planted inside an existing "TenantA/" namespace). The memory
-// and S3 backends key on the exact string and cannot alias; Get/Exists/
-// Delete only observe a fold a write already created.
+// and S3 backends key on the exact string and cannot alias; Delete
+// (TestFoldedDeleteRefused) and Get/GetRange/Exists
+// (TestFoldedReadRefused) refuse a folded spelling too.
 // Skipped automatically where the filesystem is case- and
 // normalization-sensitive (Linux ext4 & friends): distinct spellings are
 // distinct files there and the property holds trivially.

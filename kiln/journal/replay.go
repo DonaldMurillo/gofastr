@@ -22,6 +22,8 @@ func Replay(j Journal) (*Session, error) {
 // the caller already has the entries in memory.
 func ReplayEntries(entries []Entry) (*Session, error) {
 	s := NewSession()
+	s.replaying = true
+	defer func() { s.replaying = false }()
 	for i, e := range entries {
 		if err := Apply(s, e); err != nil {
 			return nil, fmt.Errorf("journal: apply entry %d (id=%s kind=%s op=%s): %w", i+1, e.ID, e.Kind, e.Op, err)
@@ -214,6 +216,11 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if _, exists := w.Entities[p.Entity.Name]; exists {
 			return fmt.Errorf("add_entity: %q already exists", p.Entity.Name)
 		}
+		// add_page's collision check, from the other side: App.Mount
+		// panics on it either way round.
+		if page := world.EntityCollidesWithPage(w, p.Entity); page != "" {
+			return fmt.Errorf("add_entity %q: CRUD mount collides with page %q", p.Entity.Name, page)
+		}
 		w.Entities[p.Entity.Name] = p.Entity
 		return nil
 
@@ -234,6 +241,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if _, exists := w.Entities[p.Entity.Name]; !exists {
 			return fmt.Errorf("update_entity: %q not found", p.Entity.Name)
 		}
+		if page := world.EntityCollidesWithPage(w, p.Entity); page != "" {
+			return fmt.Errorf("update_entity %q: CRUD mount collides with page %q", p.Entity.Name, page)
+		}
 		// Wholesale replacement is destructive (every omitted field is
 		// dropped, owner_field/cross_owner_read flip to the new value),
 		// so it spends a plan target on replay exactly like the live
@@ -243,6 +253,12 @@ func applyWorldEdit(s *Session, e Entry) error {
 			return err
 		}
 		w.Entities[p.Entity.Name] = p.Entity
+		// A field the replacement omits leaves the seeds with it, as
+		// delete_field does; "id" is the one undeclared column a seed
+		// may set.
+		pruneSeedColumns(w, p.Entity.Name, func(col string) bool {
+			return col == "id" || slices.ContainsFunc(p.Entity.Fields, func(f world.Field) bool { return f.Name == col })
+		})
 		return nil
 
 	case OpDeleteEntity:
@@ -250,7 +266,24 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		return deleteSpendingPlan(s, p.PlanID, "delete_entity", p.Name, w.Entities)
+		if err := deleteSpendingPlan(s, p.PlanID, "delete_entity", p.Name, w.Entities); err != nil {
+			return err
+		}
+		// The entity's seeds go in the same edit: the live side effect
+		// drops the table they fill, and a seed naming an absent entity
+		// is one freeze refuses, so leaving them made every world that
+		// deleted a seeded entity impossible to graduate. Undo cuts this
+		// entry from the journal, so replay brings both back. There is
+		// no delete_seed tool, so refusing the delete while seeds exist
+		// would leave the entity undeletable.
+		kept := make([]*world.Seed, 0, len(w.Seeds))
+		for _, sd := range w.Seeds {
+			if sd == nil || sd.Entity != p.Name {
+				kept = append(kept, sd)
+			}
+		}
+		w.Seeds = kept
+		return nil
 
 	case OpAddField:
 		var p AddFieldPayload
@@ -274,21 +307,27 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		target := PlanTarget{Op: "delete_field", Name: p.Entity + "." + p.Field}
-		if err := s.spendPlan(p.PlanID, target); err != nil {
-			return err
-		}
 		ent, ok := w.Entities[p.Entity]
 		if !ok {
 			return fmt.Errorf("delete_field: entity %q not found", p.Entity)
 		}
-		for i, f := range ent.Fields {
-			if f.Name == p.Field {
-				ent.Fields = append(ent.Fields[:i], ent.Fields[i+1:]...)
-				return nil
-			}
+		i := slices.IndexFunc(ent.Fields, func(f world.Field) bool { return f.Name == p.Field })
+		if i < 0 {
+			return fmt.Errorf("delete_field: %s.%s not found", p.Entity, p.Field)
 		}
-		return fmt.Errorf("delete_field: %s.%s not found", p.Entity, p.Field)
+		// Spend only once the edit is certain to apply: a failed delete
+		// must not consume the approval it never used.
+		target := PlanTarget{Op: "delete_field", Name: p.Entity + "." + p.Field}
+		if err := s.spendPlan(p.PlanID, target); err != nil {
+			return err
+		}
+		ent.Fields = append(ent.Fields[:i], ent.Fields[i+1:]...)
+		// The seeds lose the column in the same edit, as delete_entity
+		// takes the entity's seeds: undo cuts this entry, so replay
+		// brings the column back to both. Refusing the delete instead
+		// would leave a seeded field undeletable, with no delete_seed.
+		pruneSeedColumns(w, p.Entity, func(col string) bool { return col != p.Field })
+		return nil
 
 	case OpAddPage:
 		var p AddPagePayload
@@ -348,8 +387,24 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := world.ValidatePageTree(p.New.Tree); err != nil {
 			return fmt.Errorf("update_page_element %q: %w", p.Path, err)
 		}
-		if _, exists := w.Pages[p.Path]; !exists {
+		cur, exists := w.Pages[p.Path]
+		if !exists {
+			if p.Prev != nil {
+				// Built against a page that has since been deleted.
+				return &PageConflictError{Path: p.Path, Want: p.Prev.Version, Have: -1}
+			}
 			return fmt.Errorf("update_page_element: page %q not found", p.Path)
+		}
+		// The protocol reads the page, patches a clone and journals the
+		// whole page, with no lock held in between. Two patches built
+		// from the same version both used to land, the second replacing
+		// the first's edit. Every released build journals Prev, and a
+		// sequential log always matches it; a nil Prev (hand-authored)
+		// keeps the old unconditional swap. Replay skips the check: a
+		// log written before it may hold two patches from one version,
+		// and it loads as it ran, the later one winning.
+		if p.Prev != nil && !s.replaying && cur.Version != p.Prev.Version {
+			return &PageConflictError{Path: p.Path, Want: p.Prev.Version, Have: cur.Version}
 		}
 		w.Pages[p.Path] = p.New
 		return nil
@@ -362,6 +417,9 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if p.Hook == nil || p.Hook.ID == "" {
 			return fmt.Errorf("add_hook: nil or unidentified hook")
 		}
+		// The shared kind set, not the per-surface one: released builds
+		// journaled a hook with respond_json, and a session holding one
+		// must still load. The live tool refuses new ones (world.ValidateHook).
 		if err := world.ValidateAction(p.Hook.Action); err != nil {
 			return fmt.Errorf("add_hook %q: %w", p.Hook.ID, err)
 		}
@@ -378,16 +436,15 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
+		i := slices.IndexFunc(w.Hooks, func(h *world.Hook) bool { return h.ID == p.ID })
+		if i < 0 {
+			return fmt.Errorf("delete_hook: id %q not found", p.ID)
+		}
 		if err := s.spendPlan(p.PlanID, PlanTarget{Op: "delete_hook", Name: p.ID}); err != nil {
 			return err
 		}
-		for i, h := range w.Hooks {
-			if h.ID == p.ID {
-				w.Hooks = append(w.Hooks[:i], w.Hooks[i+1:]...)
-				return nil
-			}
-		}
-		return fmt.Errorf("delete_hook: id %q not found", p.ID)
+		w.Hooks = append(w.Hooks[:i], w.Hooks[i+1:]...)
+		return nil
 
 	case OpAddRoute:
 		var p AddRoutePayload
@@ -400,13 +457,23 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := world.ValidateRoute(p.Route); err != nil {
 			return fmt.Errorf("add_route: %w", err)
 		}
+		// Shared kind set for the same reason as add_hook; the live tool
+		// checks routes per surface.
 		if err := world.ValidateAction(p.Route.Action); err != nil {
 			return fmt.Errorf("add_route %s %s: %w", p.Route.Method, p.Route.Path, err)
 		}
+		existing := make([]string, 0, len(w.Routes))
 		for _, r := range w.Routes {
 			if r.Method == p.Route.Method && r.Path == p.Route.Path {
 				return fmt.Errorf("add_route: %s %s already exists", p.Route.Method, p.Route.Path)
 			}
+			existing = append(existing, r.Method+" "+r.Path)
+		}
+		// Two routes the mux cannot hold together panic the rebuild; the
+		// live tool refuses them, and no journal the runtime accepted can
+		// hold such a pair.
+		if other := world.OverlappingPattern(existing, p.Route.Method+" "+p.Route.Path); other != "" {
+			return fmt.Errorf("add_route: %s %s overlaps %s", p.Route.Method, p.Route.Path, other)
 		}
 		w.Routes = append(w.Routes, p.Route)
 		return nil
@@ -416,16 +483,15 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
+		i := slices.IndexFunc(w.Routes, func(r *world.Route) bool { return r.Method == p.Method && r.Path == p.Path })
+		if i < 0 {
+			return fmt.Errorf("delete_route: %s %s not found", p.Method, p.Path)
+		}
 		if err := s.spendPlan(p.PlanID, PlanTarget{Op: "delete_route", Name: p.Method + " " + p.Path}); err != nil {
 			return err
 		}
-		for i, r := range w.Routes {
-			if r.Method == p.Method && r.Path == p.Path {
-				w.Routes = append(w.Routes[:i], w.Routes[i+1:]...)
-				return nil
-			}
-		}
-		return fmt.Errorf("delete_route: %s %s not found", p.Method, p.Path)
+		w.Routes = append(w.Routes[:i], w.Routes[i+1:]...)
+		return nil
 
 	case OpAddSeed:
 		var p AddSeedPayload
@@ -452,6 +518,23 @@ func applyWorldEdit(s *Session, e Entry) error {
 	default:
 		return fmt.Errorf("unknown world edit op %q", e.Op)
 	}
+}
+
+// PageConflictError is the refusal of an update_page_element entry built
+// against a page version the world no longer holds. Have is -1 when the
+// page has been deleted since. It is typed so the tool layer can answer
+// "conflict" with its refetch hint rather than "internal".
+type PageConflictError struct {
+	Path string
+	Want int
+	Have int
+}
+
+func (e *PageConflictError) Error() string {
+	if e.Have < 0 {
+		return fmt.Sprintf("update_page_element: page %q was deleted after version %d was read", e.Path, e.Want)
+	}
+	return fmt.Sprintf("update_page_element: page %q is at version %d, the patch was built from version %d", e.Path, e.Have, e.Want)
 }
 
 // validateEntityEndpoints rejects an entity whose custom endpoints carry an
@@ -508,19 +591,58 @@ func (s *Session) spendPlan(planID string, target PlanTarget) error {
 	return nil
 }
 
-// deleteSpendingPlan spends the plan target, then deletes name from m,
-// refusing when absent. The spend happens before the existence check —
-// the log is the authorization record, exactly as the former inlined
-// bodies ordered it. It replaces the duplicated delete blocks of the
-// OpDeleteEntity and OpDeletePage cases, which differed only in op,
-// map, and name field.
+// deleteSpendingPlan deletes name from m, refusing when absent, and
+// spends the plan target only once the delete is certain to apply. The
+// spend used to come first, so a delete of an absent name failed and
+// still marked the approval consumed in the in-memory session, with no
+// journal entry recording the spend. It replaces the duplicated delete
+// blocks of the OpDeleteEntity and OpDeletePage cases, which differed
+// only in op, map, and name field.
 func deleteSpendingPlan[V any](s *Session, planID, op, name string, m map[string]V) error {
-	if err := s.spendPlan(planID, PlanTarget{Op: op, Name: name}); err != nil {
-		return err
-	}
 	if _, exists := m[name]; !exists {
 		return fmt.Errorf("%s: %q not found", op, name)
 	}
+	if err := s.spendPlan(planID, PlanTarget{Op: op, Name: name}); err != nil {
+		return err
+	}
 	delete(m, name)
 	return nil
+}
+
+// pruneSeedColumns drops the columns keep refuses from the entity's seed
+// rows and weights, and the rows left with no column. A seed row naming a
+// column the entity no longer has fails its INSERT, so every rederive
+// (boot, undo, reset) skipped the whole seed, and the generator refuses
+// the frozen spec. Changed seeds are copies in a fresh slice: the decoded
+// Seed may be shared with a session snapshot.
+func pruneSeedColumns(w *world.World, entity string, keep func(col string) bool) {
+	seeds := slices.Clone(w.Seeds)
+	for i, sd := range seeds {
+		if sd == nil || sd.Entity != entity {
+			continue
+		}
+		cp := *sd
+		cp.Rows = nil
+		for _, row := range sd.Rows {
+			kept := map[string]any{}
+			for col, v := range row {
+				if keep(col) {
+					kept[col] = v
+				}
+			}
+			if len(kept) > 0 {
+				cp.Rows = append(cp.Rows, kept)
+			}
+		}
+		if sd.Weights != nil {
+			cp.Weights = map[string]map[string]int{}
+			for col, wt := range sd.Weights {
+				if keep(col) {
+					cp.Weights[col] = wt
+				}
+			}
+		}
+		seeds[i] = &cp
+	}
+	w.Seeds = seeds
 }

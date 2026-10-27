@@ -14,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/uinodev1"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
@@ -115,6 +116,10 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 
 	// Build the module.http params.
 	params, err := buildHTTPRequestParams(r, name, routeID, requestID, handle, sl.callDeadline())
+	if errors.Is(err, errModuleBodyTooLarge) {
+		i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+		return
+	}
 	if err != nil {
 		// Body read / base64 failure: 503 (we cannot blame the child).
 		writeProxy503(w, proxyRetryAfter)
@@ -195,9 +200,15 @@ func writeProxy503(w http.ResponseWriter, retryAfter string) {
 // context via the delegation handle (the load-bearing seam); it never trusts
 // a child-supplied value for the authorization decision.
 func buildHTTPRequestParams(r *http.Request, moduleName, routeID, requestID, delegationHandle string, deadline time.Duration) (moduleproto.HTTPRequestParams, error) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, int64(maxModuleHTTPBodyBytes)))
+	// One byte past the cap tells an oversize body from one exactly at
+	// it; forwarding the first 1 MiB would hand the module a truncated
+	// request it cannot tell apart from a whole one.
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(maxModuleHTTPBodyBytes)+1))
 	if err != nil {
 		return moduleproto.HTTPRequestParams{}, fmt.Errorf("read body: %w", err)
+	}
+	if len(body) > maxModuleHTTPBodyBytes {
+		return moduleproto.HTTPRequestParams{}, errModuleBodyTooLarge
 	}
 	headers := make(map[string]string, len(moduleProxyAllowedHeaders))
 	for k := range moduleProxyAllowedHeaders {
@@ -245,9 +256,13 @@ func subjectFromRequest(r *http.Request) string {
 
 // maxModuleHTTPBodyBytes bounds an inbound proxied body. The codec cap
 // (default 1 MiB) is the hard protocol limit; this is the per-call guard
-// before base64 inflation. A request body larger than this yields a 413.
-// (For wave 2a we 503 on read error above; tightening to 413 is a doc fix.)
+// before base64 inflation. A request body larger than this yields a 413;
+// a body that fails to read yields the usual 503.
 const maxModuleHTTPBodyBytes = 1024 * 1024
+
+// errModuleBodyTooLarge is buildHTTPRequestParams' refusal of a body over
+// maxModuleHTTPBodyBytes; serveProxy answers it with 413.
+var errModuleBodyTooLarge = errors.New("processmodule: request body over the proxy cap")
 
 // pathParamsFor extracts route path parameters via the framework router's
 // [router.Params] helper (which scans r.Pattern and r.PathValue). Returns

@@ -1,10 +1,13 @@
 package semantic
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"math"
+	"math/big"
 	"reflect"
 	"slices"
 	"sort"
@@ -223,11 +226,92 @@ func chunkMatches(c *Chunk, f Filter) bool {
 		}
 	}
 	for k, want := range f.MetaMatch {
-		if !reflect.DeepEqual(c.Metadata[k], want) {
+		got, ok := c.Metadata[k]
+		if !ok || !metaEqual(got, want) {
 			return false
 		}
 	}
 	return true
+}
+
+// metaEqual is MetaMatch equality: the two values as JSON values, the way
+// PgVectorStore's JSONB comparison sees them. Go int metadata equals the
+// float64 a JSON filter decodes to, 5 equals a json.Number "5.0", and a
+// named string type equals the plain string. Equal Go values and two
+// plain scalars settle without encoding.
+func metaEqual(got, want any) bool {
+	if reflect.DeepEqual(got, want) {
+		return true
+	}
+	if plainScalar(got) && plainScalar(want) {
+		return false
+	}
+	g, ok := asJSONValue(got)
+	if !ok {
+		return false
+	}
+	w, ok := asJSONValue(want)
+	return ok && jsonValueEqual(g, w)
+}
+
+// asJSONValue re-reads v's JSON encoding with numbers kept as json.Number.
+func asJSONValue(v any) (any, bool) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, false
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var out any
+	return out, dec.Decode(&out) == nil
+}
+
+// jsonValueEqual compares two decoded JSON values, numbers by exact value.
+func jsonValueEqual(a, b any) bool {
+	switch av := a.(type) {
+	case json.Number:
+		bv, ok := b.(json.Number)
+		if !ok {
+			return false
+		}
+		ar, aok := new(big.Rat).SetString(av.String())
+		br, bok := new(big.Rat).SetString(bv.String())
+		return aok && bok && ar.Cmp(br) == 0
+	case []any:
+		bv, ok := b.([]any)
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if !jsonValueEqual(av[i], bv[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		bv, ok := b.(map[string]any)
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for k, x := range av {
+			y, ok := bv[k]
+			if !ok || !jsonValueEqual(x, y) {
+				return false
+			}
+		}
+		return true
+	}
+	return a == b
+}
+
+// plainScalar reports a value whose JSON form has one Go spelling: two of
+// them are equal exactly when reflect.DeepEqual says so.
+func plainScalar(v any) bool {
+	switch v.(type) {
+	case nil, string, bool:
+		return true
+	}
+	return false
 }
 
 func normalize(v []float32) {

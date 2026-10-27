@@ -1,9 +1,13 @@
 package a2a
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // ProtocolVersion is the A2A protocol version this package speaks, in the
@@ -107,9 +111,9 @@ type Message struct {
 // {"data": <any JSON value>}. Filename, MediaType and Metadata are
 // optional on every kind.
 //
-// Data is a pointer so that a JSON null or false or 0 data payload is
-// distinguishable from "no data part": the pointer is non-nil whenever the
-// key was present.
+// Data is a pointer so that a JSON false or 0 data payload is
+// distinguishable from "no data part". A payload that encodes as null is
+// no data part.
 type Part struct {
 	Text      *string        `json:"text,omitempty"`
 	Raw       []byte         `json:"raw,omitempty"`
@@ -147,15 +151,46 @@ func (p Part) Kind() string {
 		return "raw"
 	case p.URL != nil:
 		return "url"
-	case p.Data != nil:
+	case p.hasData():
 		return "data"
 	}
 	return ""
 }
 
 // Validate enforces the exactly-one-content rule the spec states for Part.
+// A data payload that encodes as null is no content: {"data":null} reads
+// back as absent.
 func (p Part) Validate() error {
-	return exactlyOne("part", "text, raw, url, data", p.Text != nil, p.Raw != nil, p.URL != nil, p.Data != nil)
+	return exactlyOne("part", "text, raw, url, data", p.Text != nil, p.Raw != nil, p.URL != nil, p.hasData())
+}
+
+// hasData reports whether Data encodes as something other than null. A
+// typed nil (a nil map, slice or pointer) and a Marshaler writing null
+// encode as null just as an untyped nil does.
+func (p Part) hasData() bool {
+	if p.Data == nil || *p.Data == nil {
+		return false
+	}
+	switch v := reflect.ValueOf(*p.Data); v.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Pointer, reflect.Interface:
+		if v.IsNil() {
+			return false
+		}
+	}
+	if m, ok := (*p.Data).(json.Marshaler); ok {
+		b, err := m.MarshalJSON()
+		return err != nil || !bytes.Equal(bytes.TrimSpace(b), []byte("null"))
+	}
+	return true
+}
+
+func validateParts(parts []Part) error {
+	for i := range parts {
+		if err := parts[i].Validate(); err != nil {
+			return fmt.Errorf("a2a: part %d: %w", i, err)
+		}
+	}
+	return nil
 }
 
 // UnmarshalJSON decodes a part and enforces the exactly-one-content rule,
@@ -164,13 +199,27 @@ func (p Part) Validate() error {
 func (p *Part) UnmarshalJSON(b []byte) error {
 	type plain Part
 	var v plain
-	if err := json.Unmarshal(b, &v); err != nil {
+	if err := jsonexact.Unmarshal(b, &v); err != nil {
 		return err
 	}
 	// A present-but-null "raw" decodes to a nil slice, indistinguishable
 	// from absent; that is acceptable — null raw is not a valid part either.
 	*p = Part(v)
 	return p.Validate()
+}
+
+// MarshalJSON writes an empty file as {"raw":""}: omitempty drops an
+// empty slice, which would leave the part with no discriminator and the
+// task holding it undecodable.
+func (p Part) MarshalJSON() ([]byte, error) {
+	type plain Part
+	if p.Raw == nil || len(p.Raw) > 0 {
+		return json.Marshal(plain(p))
+	}
+	return json.Marshal(struct {
+		plain
+		Raw string `json:"raw"`
+	}{plain(p), ""})
 }
 
 // Artifact is an output produced by a task.

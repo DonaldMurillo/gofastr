@@ -83,9 +83,10 @@ func TestTypedHook_ForcedZeroOverrides(t *testing.T) {
 			if !ok {
 				t.Fatalf("forced field %q dropped from body; defensive hook is a no-op", tc.wantKey)
 			}
-			// json numbers round-trip as float64; normalise for int compare.
-			if f, isFloat := got.(float64); isFloat {
-				got = int(f)
+			// An integer merges back as int64, as crud decodes it;
+			// normalise for int compare.
+			if i, isInt := got.(int64); isInt {
+				got = int(i)
 			}
 			if got != tc.want {
 				t.Fatalf("body[%q] = %v (%T), want %v", tc.wantKey, got, got, tc.want)

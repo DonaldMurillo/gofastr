@@ -47,6 +47,37 @@ func EscapeRoutePath(p string) string {
 	return strings.Join(segs, "/")
 }
 
+// PatternPath substitutes params into a route pattern and returns the
+// routing-form path: each ":name" segment takes params[name] (see
+// [ParamName]), a param params lacks stays as written. A value fills
+// one segment, its "/" and "%" kept as %2F and %25, so "a%2Fb" stays
+// one key rather than reaching the router as "a/b". A catch-all
+// (":name*") value's "/" separates segments. The static export and the
+// sitemap both expand StaticPaths through it, so a page and its <loc>
+// name the same URL.
+func PatternPath(pattern string, params map[string]string) string {
+	parts := strings.Split(pattern, "/")
+	for i, part := range parts {
+		if !strings.HasPrefix(part, ":") || len(part) <= 1 {
+			continue
+		}
+		v, ok := params[ParamName(part)]
+		if !ok {
+			continue
+		}
+		if !strings.HasSuffix(part, "*") {
+			parts[i] = RoutePath(url.PathEscape(v))
+			continue
+		}
+		comps := strings.Split(v, "/")
+		for j, c := range comps {
+			comps[j] = RoutePath(url.PathEscape(c))
+		}
+		parts[i] = strings.Join(comps, "/")
+	}
+	return strings.Join(parts, "/")
+}
+
 var (
 	routeSegEncoder = strings.NewReplacer("%", "%25", "/", "%2F")
 	routeSegDecoder = strings.NewReplacer("%25", "%", "%2F", "/")

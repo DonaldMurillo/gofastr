@@ -200,7 +200,7 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		switch outcome {
 		case UnlinkNotLinked:
-			writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
+			p.writeNotLinked(w, r, userID, provider)
 			return
 		case UnlinkRefusedLast:
 			writeAuthError(w, r, http.StatusConflict, reasonLastLoginMethod)
@@ -236,7 +236,7 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if count == 0 {
-		writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
+		p.writeNotLinked(w, r, userID, provider)
 		return
 	}
 	remainingLinks := len(accts) - count
@@ -283,6 +283,18 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 // OAuth2 plugin's (OAuth2Config.TokenStore) — a wiring without the
 // OAuth2 plugin, or with no TokenStore configured, never persisted
 // provider tokens, so there is nothing to revoke and this is a no-op.
+// writeNotLinked answers an unlink of a provider the user has no link
+// to. An earlier unlink may have removed the link and then failed to
+// drop the stored tokens; that 500 is retried here, and this is the only
+// path that can still reach them, so the tokens are dropped first.
+func (p *AccountsPlugin) writeNotLinked(w http.ResponseWriter, r *http.Request, userID, provider string) {
+	if err := p.revokeProviderTokens(r.Context(), userID, provider); err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUnlinkRevokeFailed)
+		return
+	}
+	writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
+}
+
 func (p *AccountsPlugin) revokeProviderTokens(ctx context.Context, userID, provider string) error {
 	op, err := PluginAs[*OAuth2Plugin](p.mgr, "oauth2")
 	if err != nil {
