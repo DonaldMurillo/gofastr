@@ -267,7 +267,11 @@
     // than staying put. An application/json enctype is unsendable natively
     // for the same reason. In those cases the warning is the whole remedy.
     if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) return;
-    if ((_formAttr(form, submitter, 'enctype') || '').toLowerCase() === 'application/json') return;
+    // The bridge POSTs a form with no method and fetches PUT/PATCH as given;
+    // the browser would send either as a GET with the fields in the URL.
+    // A GET carries no body, so its enctype never blocks the replay.
+    const method = (_formAttr(form, submitter, 'method') || '').toLowerCase();
+    if (method !== 'get' && (method !== 'post' || (_formAttr(form, submitter, 'enctype') || '').toLowerCase() === 'application/json')) return;
     // Call the prototype method, not form.submit: HTML named-property
     // lookup shadows it with any control named "submit", so a form
     // carrying <button name="submit"> would throw here and the catch

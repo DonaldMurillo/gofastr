@@ -94,11 +94,11 @@
     const fd = new FormData(form, submitter);
     const params = new URLSearchParams();
     fd.forEach((value, key) => params.append(key, typeof value === 'string' ? value : value.name));
-    // A control named "method" shadows form.method. Read attributes instead;
-    // marked native-shaped forms normalize missing/invalid methods to GET.
-    let method = (attr('method') || (explicitSPA ? 'GET' : 'POST')).toUpperCase();
-    if (explicitSPA && method !== 'POST') method = 'GET';
-    if (explicitSPA && method === 'GET') {
+    // A control named "method" shadows form.method. Read attributes instead.
+    // Only an explicit GET navigates: a missing method stays the POST this
+    // bridge has always sent, so its fields never land in the URL.
+    const method = (attr('method') || 'POST').toUpperCase();
+    if (method === 'GET') {
       // GET filters are route navigation, not a mutation fetch with a body.
       // Match native GET forms: successful controls replace the action query,
       // repeated names stay repeated, and the action's fragment is retained.

@@ -44,6 +44,7 @@ boot	4	idleQueue
 boot	4	init
 boot	4	key
 boot	4	lm
+boot	4	method
 boot	4	modPromise
 boot	4	name
 boot	4	names

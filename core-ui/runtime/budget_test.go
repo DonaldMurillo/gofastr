@@ -633,7 +633,9 @@ const (
 	// must be decided before module loading, including new-window targets whose
 	// user gesture would otherwise expire. The shared bridge measured +211.
 	// Resolving an inherited <base target> before intercepting a form adds 13.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 8
+	// The module-failure replay refusing a form the browser would turn into
+	// a GET (no method, PUT, PATCH) and replaying a JSON form's GET adds 19.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1045,7 +1047,11 @@ const (
 	// smallest two-byte margin and re-prove the cliff test below this ceiling.
 	// The inherited target check measures 17475 at level 1; keep two bytes
 	// of clearance and verify the padded fixture still crosses this line.
-	coreCongestionWindowGZ = 17477
+	// The module-failure replay keeping forms the browser would send as a
+	// GET (no method, PUT, PATCH) measures 17498 at level 1. It runs exactly
+	// when the rpc module failed to load, so it cannot be carved into one.
+	// Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17500
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1102,6 +1108,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"a policy redirect off the app loads that page (X-Gofastr-Document)":       46,  // (l1: 61)
 		"submitter-aware form bridge and native module-failure replay":             211,
 		"inherited base target preserves the native form browsing context":         13,
+		"module-failure replay keeps forms the browser would send as GET":          19,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

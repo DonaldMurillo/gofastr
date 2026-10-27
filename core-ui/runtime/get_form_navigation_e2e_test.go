@@ -201,3 +201,121 @@ func TestFormIntercept_GETRespectsLeaveGuard(t *testing.T) {
 		t.Fatalf("leave guard cancel/discard failed: cancel=%v discard=%v", afterCancel, afterDiscard)
 	}
 }
+
+// A data-cui-spa form with no method, or a non-GET one, keeps the fetch
+// it had before GET forms navigated: only an explicit GET goes to the URL.
+func TestFormIntercept_SPANonGETKeepsFetch(t *testing.T) {
+	for _, method := range []string{"", "patch"} {
+		t.Run("method="+method, func(t *testing.T) {
+			var recv atomic.Pointer[formRequest]
+			base := startFormE2EServer(t, &recv)
+			ctx := chromedptest.Context(t)
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(base+"/?spa=1"), chromedp.WaitVisible(`#go`, chromedp.ByID),
+				chromedp.Evaluate(fmt.Sprintf(`(() => {
+					const form = document.getElementById('f');
+					if (%q) form.setAttribute('method', %q); else form.removeAttribute('method');
+				})()`, method, method), nil),
+				chromedp.Click(`#go`, chromedp.ByID), chromedp.WaitVisible(`#landed`, chromedp.ByID),
+			); err != nil {
+				t.Fatal(err)
+			}
+			want := "POST"
+			if method != "" {
+				want = strings.ToUpper(method)
+			}
+			got := recv.Load()
+			if got == nil || got.method != want || got.formValues["password"] != "hunter22" {
+				t.Fatalf("want a %s body, got %+v", want, got)
+			}
+		})
+	}
+}
+
+// A JSON form whose submitter picks GET navigates with the query; fetch
+// refuses a GET with a body, so the submission would otherwise be lost.
+func TestFormIntercept_JSONSubmitterGETNavigates(t *testing.T) {
+	var recv atomic.Pointer[formRequest]
+	base := startFormE2EServer(t, &recv)
+	ctx := chromedptest.Context(t)
+	var destination string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/?enctype=application/json"), chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Evaluate(`(() => {
+			const form = document.getElementById('f');
+			form.innerHTML = '<input name="q" value="files"><button id="go" formmethod="get" formaction="/landing">Search</button>';
+			window.__gofastr.navigate = path => { window.jsonFormDestination = path; };
+		})()`, nil),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Poll(`typeof window.jsonFormDestination === 'string'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(`window.jsonFormDestination`, &destination),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if destination != "/landing?q=files" {
+		t.Fatalf("JSON form's GET submitter did not navigate: %q", destination)
+	}
+}
+
+// With the rpc module down, a marked form the bridge would POST or PATCH is
+// not replayed natively: the browser would send it as a GET with its fields
+// in the URL. It stays put with the module warning.
+func TestFormIntercept_MissingModuleKeepsNonGETPut(t *testing.T) {
+	for _, method := range []string{"", "patch"} {
+		t.Run("method="+method, func(t *testing.T) {
+			var hits atomic.Int32
+			attr := ""
+			if method != "" {
+				attr = ` method="` + method + `"`
+			}
+			base := startPollServer(t, `<!doctype html><html><body>
+	<form action="/save"`+attr+` data-cui-spa><input name="password" value="hunter22"><button id="go">Save</button></form>
+	<script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
+				"/__gofastr/runtime/rpc.js": func(w http.ResponseWriter, r *http.Request) { http.Error(w, "missing", http.StatusServiceUnavailable) },
+				"/save": func(w http.ResponseWriter, r *http.Request) {
+					hits.Add(1)
+					fmt.Fprint(w, `<html><body>saved</body></html>`)
+				},
+			})
+			ctx := chromedptest.Context(t)
+			var path string
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(base+"/"), chromedp.WaitVisible(`#go`, chromedp.ByID),
+				chromedp.Evaluate(`(() => { const warn = console.warn; console.warn = (...a) => { window.rpcWarned = true; warn(...a); }; })()`, nil),
+				chromedp.Click(`#go`, chromedp.ByID),
+				chromedp.Poll(`window.rpcWarned === true`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+				chromedp.Sleep(300*time.Millisecond),
+				chromedp.Evaluate(`location.pathname + location.search`, &path),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if hits.Load() != 0 || path != "/" {
+				t.Fatalf("module failure replayed the form natively: hits=%d at %q", hits.Load(), path)
+			}
+		})
+	}
+}
+
+// A JSON form whose submitter picks GET needs no JSON body, so a module
+// failure replays it as the browser's own GET.
+func TestFormIntercept_MissingModuleJSONGETReplays(t *testing.T) {
+	var query atomic.Value
+	base := startPollServer(t, `<!doctype html><html><body>
+	<form method="post" action="/wrong" enctype="application/json">
+	<input name="q" value="notes"><button id="go" formmethod="get" formaction="/result">Search</button>
+	</form><script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
+		"/__gofastr/runtime/rpc.js": func(w http.ResponseWriter, r *http.Request) { http.Error(w, "missing", http.StatusServiceUnavailable) },
+		"/result": func(w http.ResponseWriter, r *http.Request) {
+			query.Store(r.Method + ":" + r.URL.Query().Get("q"))
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><body><div id="done">done</div></body></html>`)
+		},
+	})
+	ctx := chromedptest.Context(t)
+	if err := chromedp.Run(ctx, chromedp.Navigate(base+"/"), chromedp.WaitVisible(`#go`, chromedp.ByID), chromedp.Click(`#go`, chromedp.ByID), chromedp.WaitVisible(`#done`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if got := query.Load(); got != "GET:notes" {
+		t.Fatalf("module failure dropped the JSON form's GET: %v", got)
+	}
+}

@@ -1283,7 +1283,7 @@ work the moment you drop a `<form>` into the page.
 |----------------------------------------|---------------------------------------------------|--------------------------------------|
 | `enctype="application/json"`           | `application/json` of every form input            | `json.NewDecoder(r.Body)`            |
 | `data-cui-spa` with `method="GET"` | Successful controls become the URL query; the client navigator fetches and swaps the screen | URL query, e.g. `app.QueryFromContext` |
-| `data-cui-spa` on other methods (no/urlencoded enctype) | `application/x-www-form-urlencoded`               | `r.ParseForm()` + `r.PostFormValue`  |
+| `data-cui-spa` with no method or another method (no/urlencoded enctype) | `application/x-www-form-urlencoded`, sent with the form's method or POST | `r.ParseForm()` + `r.PostFormValue`  |
 | `data-cui-rpc="/some/endpoint"`        | Per the RPC contract (see Widgets section)        | RPC handler                          |
 
 Every other form, with no special attribute and a default or `urlencoded`
@@ -1295,7 +1295,10 @@ headers apply, 303→Location is followed, file inputs upload natively.
 uses the existing client navigator, preserving the document and shared layout.
 Without JavaScript it submits as an ordinary GET form. The form's successful
 controls replace any query in the action, preserving repeated names, the locale
-prefix, and the action's fragment. GET forms without the marker stay native.
+prefix, and the action's fragment. GET forms without the marker stay native. Only an explicit `method="get"`
+(or a submitter's `formmethod="get"`) navigates; a marked form with no
+method still POSTs, so its fields never land in the URL. A JSON form whose
+submitter picks GET navigates the same way, since fetch cannot send a GET body.
 Native GET is the toolbar's default: use it when a shared layout also renders
 query-dependent content, because client navigation keeps that layout.
 The plain-form bridge carries the activated submitter's name/value and its
