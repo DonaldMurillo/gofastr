@@ -76,3 +76,33 @@ func TestClientAfterCloseWritesNothing(t *testing.T) {
 		}
 	}
 }
+
+// A write stuck on an output nobody reads holds the write slot. Closing
+// the connection must still release the calls queued behind it: the
+// closed check ran only after the lock, so a queued call never reached it.
+func TestCloseFreesCallsQueuedOnStall(t *testing.T) {
+	r, w := io.Pipe() // nothing reads r: the first write blocks
+	defer r.Close()
+	c := newConn(w)
+	client := &Client{conn: c, sessionID: "s1"}
+	go func() { _ = client.Update(AgentMessageChunk("m1", "stuck")) }()
+	time.Sleep(20 * time.Millisecond) // the first write takes the slot
+	errs := make(chan error, 2)
+	go func() { errs <- client.Update(AgentMessageChunk("m2", "queued")) }()
+	go func() {
+		_, err := client.RequestPermission(context.Background(), ToolCallUpdate{ToolCallID: "t1"}, nil)
+		errs <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	c.close()
+	for range 2 {
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Error("a queued write succeeded after close")
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a call queued behind a stalled write stayed blocked after close")
+		}
+	}
+}

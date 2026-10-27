@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // ToolAdapter bridges a typed Handler into an MCP tool handler, the
@@ -89,7 +90,15 @@ func bindToolParams(params map[string]any, dst any) error {
 	if err != nil {
 		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
 	}
-	return UnmarshalStrict(body, dst)
+	// UseNumber, then Settle, as Bind does: MCP hands an integer past 2^53
+	// over as a json.Number, and a float64 decode would round it.
+	if err := UnmarshalStrict(body, dst, UseNumber()); err != nil {
+		return err
+	}
+	if err := jsonexact.Settle(dst); err != nil {
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
+	}
+	return nil
 }
 
 // toolParamString spells a scalar param the way it would arrive in a URL.

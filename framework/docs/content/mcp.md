@@ -579,7 +579,9 @@ What a client sees at the edges:
   (`"name"` and `"Name"`), is refused with invalid-params before any
   handler runs. A notification (a message with no `id` member, whatever its
   method) gets `202 Accepted` and no body, on this transport and on
-  `ServeSSE`'s POST; `ServeStdio` writes no line for one. `"id": null` is a
+  `ServeSSE`'s POST; `ServeStdio` writes no line for one. It must still be a
+  valid request: an id-less `{}`, or one without `"jsonrpc": "2.0"` or a
+  method, answers -32600 with a null id. `"id": null` is a
   request and gets an answer. A numeric `id`
   is echoed with every digit on all three transports, so an id above 2^53
   still matches its request.

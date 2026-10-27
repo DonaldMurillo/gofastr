@@ -105,6 +105,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   both sides after decoding numbers as float64, so a response holding
   9007199254740992 passed an assertion that expected 9007199254740993.
   Integers past 2^53 now compare by their digits.
+- **An MCP tool keeps an integer past 2^53.** `handler.ToolAdapter`
+  decoded tool params as float64, so 9007199254740993 under a
+  `map[string]any` field reached the handler as 9007199254740992, where
+  the same body through the route's `Bind` kept its digits. The tool path
+  now decodes the way `Bind` does.
 - **Tags on an embedded struct bind.** `handler.Bind` and the MCP
   `ToolAdapter` ignored `header`, `query` and `path` tags on fields of an
   embedded struct, so an input that embedded a shared `Pagination` got
@@ -465,11 +470,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `jsonrpc` version, a repeated or case-folded envelope key, or an `id`
   that is not a string, number or null answers `-32600` (new
   `mcp.ErrInvalidRequest`), all of which answered `-32602` before, and a
-  `true` or object id was echoed back. A message with no `id` member is
-  a notification whatever its method: HTTP and SSE answer `202` with no
-  body and stdio writes nothing, where HTTP used to answer every message
-  and stdio went by the `notifications/` prefix. `"id": null` is a
-  request and gets an answer.
+  `true` or object id was echoed back. A valid request with no `id`
+  member is a notification whatever its method: HTTP and SSE answer
+  `202` with no body and stdio writes nothing, where HTTP used to answer
+  every message and stdio went by the `notifications/` prefix. `"id":
+  null` is a request and gets an answer, and so does an id-less `{}` or
+  wrong version, with `-32600` and a null id.
 - **An MCP enum holding objects or arrays compares their numbers by
   value.** `reflect.DeepEqual` compared a decoded `float64` or
   `json.Number` with the declared `int`, so `{"n":1,"tags":["a",2]}` was
@@ -843,7 +849,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   ID differs from the one requested.
 - **An ACP client used after the connection closes writes nothing.**
   `Update` and `RequestPermission` blocked on an output nobody read;
-  they return "acp: connection closed".
+  they return "acp: connection closed", and so does a call that was
+  queued behind a stalled write when the connection closed.
 - **Kiln's ACP `session/load` replays only that session's chat.**
   Loading a session replayed every message in the journal, other
   sessions' prompts included. Messages an ACP turn writes carry

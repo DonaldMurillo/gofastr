@@ -250,9 +250,12 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 // conn serializes writes on the output stream and routes responses to
 // pending server-to-client requests.
 type conn struct {
-	mu        sync.Mutex
+	// wslot is the one-slot write lock. A channel rather than a mutex so a
+	// writer queued behind a stalled one can give up when the connection
+	// closes.
+	wslot     chan struct{}
 	w         io.Writer
-	werr      error // set once a frame is cut short; guarded by mu
+	werr      error // set once a frame is cut short; guarded by wslot
 	pmu       sync.Mutex
 	pending   map[int64]chan pendingResp
 	nextID    atomic.Int64
@@ -261,7 +264,7 @@ type conn struct {
 }
 
 func newConn(w io.Writer) *conn {
-	return &conn{w: w, pending: map[int64]chan pendingResp{}, closed: make(chan struct{})}
+	return &conn{wslot: make(chan struct{}, 1), w: w, pending: map[int64]chan pendingResp{}, closed: make(chan struct{})}
 }
 
 // errConnClosed is what a Client call made after Serve returned gets.
@@ -270,13 +273,19 @@ var errConnClosed = errors.New("acp: connection closed")
 // writeFrame refuses once the connection is closed: Serve has returned
 // and its caller owns w again, and a write to an output nobody reads
 // any more would block the turn that a retained Client is writing for.
+// A writer waiting behind one stuck on such an output gives up at close
+// too, instead of queueing on it forever.
 func (c *conn) writeFrame(v any) error {
 	buf, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	select {
+	case c.wslot <- struct{}{}:
+	case <-c.closed:
+		return errConnClosed
+	}
+	defer func() { <-c.wslot }()
 	select {
 	case <-c.closed:
 		return errConnClosed
@@ -327,7 +336,7 @@ func (c *conn) deliver(id int64, resp pendingResp) bool {
 
 // close signals teardown to everything selecting on c.closed. The channel
 // is never set to nil: Client.RequestPermission selects on it without
-// holding c.mu, so nilling it would both race that read and kill the arm
+// holding the write slot, so nilling it would both race that read and kill the arm
 // (a select on a nil channel never fires), leaving a permission request
 // issued after teardown blocked until its own context expires.
 func (c *conn) close() {

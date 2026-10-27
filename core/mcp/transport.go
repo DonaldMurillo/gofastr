@@ -91,8 +91,10 @@ func writeEnvelopeError(w http.ResponseWriter, resp Response) {
 // parser (proxy, WAF, audit logger) may disagree with the dispatcher's
 // decode.
 //
-// notification reports a message with no "id" member. JSON-RPC defines a
-// notification by that absence, whatever the method, and forbids a reply;
+// notification reports a valid request with no "id" member. JSON-RPC
+// defines a notification by that absence, whatever the method, and
+// forbids a reply; an id-less message with no method or a version other
+// than 2.0 is an invalid request instead;
 // "id": null is present, so it is a request and is answered. The id the
 // decode keeps is the literal the client sent when it is a number: a
 // float64 rounds an id above 2^53, and the client could not match the
@@ -116,6 +118,13 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 		return false, &resp
 	}
 	if env.ID == nil {
+		// Only a valid request object is a notification. {} or a wrong
+		// version is an invalid request, which JSON-RPC answers with a
+		// null id even though no id was sent.
+		if req.JSONRPC != "2.0" || req.Method == "" {
+			resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: a notification needs jsonrpc 2.0 and a method")
+			return false, &resp
+		}
 		return true, nil
 	}
 	if _, isNum := req.ID.(float64); isNum {

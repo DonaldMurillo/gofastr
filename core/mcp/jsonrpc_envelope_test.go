@@ -90,6 +90,24 @@ func TestNonScalarIDRefused(t *testing.T) {
 	}
 }
 
+// An id-less message is a notification only when it is a valid request
+// object. null, {} or a wrong version is an invalid request, answered
+// with -32600 and a null id, not swallowed as a notification.
+func TestIDLessInvalidRequestAnswered(t *testing.T) {
+	for _, body := range []string{`null`, `{}`, `{"jsonrpc":"1.0","method":"ping"}`, `{"jsonrpc":"2.0"}`} {
+		for transport, reply := range rpcReplies(t, body) {
+			if reply == "" {
+				t.Errorf("%s: %s got no reply, want -32600", transport, body)
+				continue
+			}
+			id, rpcErr := rpcErrorOf(t, transport, reply)
+			if rpcErr.Code != ErrInvalidRequest || id != nil {
+				t.Errorf("%s: %s = code %d id %v, want -32600 and a null id", transport, body, rpcErr.Code, id)
+			}
+		}
+	}
+}
+
 // A message with no id member is a notification whatever its method: no
 // reply on any transport. "id": null is a request and is answered.
 func TestIDLessMessageGetsNoReply(t *testing.T) {
