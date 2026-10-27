@@ -173,17 +173,21 @@ app.RegisterEntities(map[string]entity.EntityConfig{
 ## Blank form values
 
 An HTML form posts every control it has, so a number, date, or relation
-the user left blank arrives as `""`. Create and update treat that as
-"not provided" for every field type except `String` and `Text`: a blank
-optional field takes its declared `Default` on create and leaves the
-column alone on update, and a blank required field fails with
-`is required` rather than `must be an integer`. Empty text stays an
+the user left blank arrives as `""`. For every field type except
+`String` and `Text`, a blank is not a value of the type: a blank
+optional field takes its declared `Default` on create and clears the
+column to null on update, and a blank required field fails with
+`is required` rather than `must be an integer`. A blank `Image` or
+`File` on update keeps the stored file, since a file input cannot
+carry it back. Empty text stays an
 empty string, since that is a value a user can mean. A filled number
 input arrives as text too: an `Int` field takes `"42"` and a `Float`
 field takes `"42.5"` as the number each spells, and a `Float` refuses
 hex, underscore separators, `NaN` and `Inf`. `Decimal` stays a string. The
 entityui forms (`framework/entityui`) rely on this; a JSON client gets
-the same treatment.
+the same treatment. A `Timestamp` field also takes what
+`<input type=datetime-local>` sends, `YYYY-MM-DDTHH:MM` with optional
+seconds and fraction, read as UTC like the filter reads it.
 
 ## `Entity` vs `TryEntity`
 
@@ -470,12 +474,12 @@ field) declare how entities associate with one another:
 ### Cascade Writes & Atomic Nested Mutations
 When `cascade_write: true` (or `.WithCascadeWrite(true)`) is enabled, nested child maps or slices can be sent directly inside parent `POST` and `PUT`/`PATCH` payloads.
 All writes execute inside the parent's database transaction (`inTx`). If any child validation or constraint check fails, the transaction is completely rolled back, leaving zero orphaned rows.
-- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key.
+- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. A foreign key this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update) refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
 - **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
 - **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.
-- **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated.
+- **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated. A link already present is skipped; for a registered pivot entity "present" is read under the pivot's own tenant, owner and soft-delete scope, so a soft-deleted link is not present and re-linking it hits the pivot's key. A link insert that breaks a unique constraint answers **409** and rolls the whole write back, unless the link turns out to exist on a recheck: then another request wrote the same pair at the same moment and the write succeeds.
 - **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
-- **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
+- **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. Inside a caller's transaction (`App.InTx`, a handler bound to a `*sql.Tx`) they wait until the whole operation succeeds, so a failed cascade announces no child. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column
@@ -592,6 +596,28 @@ entities:
 
 Supported field types: `string`, `text`, `int`, `float`, `decimal`, `bool`,
 `enum`, `uuid`, `timestamp`, `date`, `json`, `relation`, `image`, and `file`.
+
+A `decimal` column is `DECIMAL(19,4)`. Postgres stores every digit of
+that. SQLite has no exact decimal type: it stores the value as an
+integer, or as a 64-bit float past about 15 significant digits, so
+`"90071992547409.1234"` reads back rounded there. Keep money that needs
+all 19 digits on Postgres, or store it as an `int` count of the smallest
+unit.
+
+An `int` field takes a JSON number only when its text is a whole number:
+`3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though
+it rounds to the float `1`. A `date` field reads back as `YYYY-MM-DD` on
+every read path and in hooks; a typed read into a `time.Time` field
+still decodes it as midnight UTC. An in-process write (`CreateOne`,
+`UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
+`date` as a Go `time.Time` or RFC 3339 text at exact midnight, and
+stores it as `YYYY-MM-DD`, so a row read back and saved again keeps its
+date. A `json` field reads back as the JSON
+text it holds, so a document that is the string `"123"` stays a string.
+
+A JSON number past the float64 range (`1e400`) is stored as written in a
+`json` field. Any other column answers a validation 400 naming the
+field, `not_finite` (or `not_integer` on an `int`), not `invalid_json`.
 
 A `relation` field with a `to` target (e.g. a field named `author_id`, type
 `relation`, `to: users`) declares a *BelongsTo*: the field's own column
@@ -816,6 +842,11 @@ you want for anything a user sees about *their own* data. Two hard rules:
   requirement; it does not authorize anything. Gate the caller yourself
   (a route access rule, an `access.Can` check, or the fact that it only
   runs inside trusted server code) before you widen the scope.
+
+A write made under `AllowCrossOwner` publishes its `_events` update to
+the row's owner, not the actor: the event's owner and tenant come from
+the record's own columns, so promoting another member's booking reaches
+that member's stream and not yours.
 
 ### Auth entities are NOT auto-private
 
@@ -1078,7 +1109,7 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_gte`   | `>=`                                       |
 | `_lt`    | `<`                                        |
 | `_lte`   | `<=`                                       |
-| `_like`  | literal `contains` (`LIKE '%value%'`)      |
+| `_like`  | case-insensitive literal `contains` (`LOWER(col) LIKE '%value%'`) |
 | `_in`    | `IN (…)`, comma-separated, capped at 1000 |
 
 `_ne` follows `=`'s NULL semantics rather than SQL three-valued intuition:
@@ -1088,7 +1119,15 @@ a row whose column is NULL matches neither `=` nor `!=`, and no
 
 `_like` on a number, date, Bool or JSON column, or `_gt`/`_gte`/`_lt`/`_lte`
 on a Bool or JSON column, is a 400: see "Operators must suit the field's
-type" below.
+type" below. `_like` follows the `?q=` case contract (see "Case
+contract" above): `?status_like=OPEN` matches `open` on both dialects,
+where a bare `LIKE` was case-sensitive on Postgres only.
+
+Every key is its own predicate, ANDed: `?score=5&score_gt=3` keeps both,
+and the same query string always compiles to the same SQL. A field whose
+name ends in a suffix but whose name before it is no field (`opt_in`,
+`check_in`) filters as itself, at the top level, in `?rel.field=` and in
+`include=rel(…)`.
 
 **Field names cannot shadow an operator suffix.** A queryable field whose
 name or wire name is another queryable field's plus a suffix from the
@@ -1198,6 +1237,28 @@ predicate, so no client is offered a filter the server answers 400. A
 refusal is a 400 naming the operator, the key sent and the column
 type.
 
+**Values must be of the field's type.** Every surface above, plus a
+`?cursor=` token's keyset values and the DSL's `after()`, checks each
+value with `filter.CoerceValue` and binds it as that type:
+
+| Column type | Accepted value | Bound as |
+| ----------- | -------------- | -------- |
+| Int | a base-10 integer | `int64` |
+| Float | a decimal literal (`1`, `-2.5`, `1e3`); no hex, `_`, `NaN` or `Inf` | `float64` |
+| Decimal | a decimal literal | the text sent, every digit kept |
+| Bool | exactly what `strconv.ParseBool` accepts: `1 t T TRUE true True` and `0 f F FALSE false False` | `bool` |
+| Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
+| Date | `YYYY-MM-DD` | the text sent |
+| JSON | a JSON value (`{"a":1}`, `"x"`, `3`) | the text sent |
+
+A Relation column that is a belongs_to's foreign key to an integer key
+holds that integer and is checked as an Int (`entity.ValueFields`).
+String, Text, Enum, UUID and other Relation columns take any text. A value of
+another type (`?n=abc` on an Int, `?active=yes` on a Bool) is a 400
+naming the field and the type on both dialects. `LenientFilters` does not lift it:
+lenient mode drops unknown keys, not mistyped values. A `like` value is
+a substring and is not checked.
+
 **Safety.** Every field is validated against the entity's schema
 (Hidden fields rejected; the same value-disclosure-oracle rationale as
 flat filters); every value is a bound placeholder, never string-
@@ -1239,7 +1300,7 @@ operator is known and suits the field's type, an `in` leaf carries 1 to
 1000 values, and the tree stays within the depth (8) and node (64)
 bounds. It never writes to the input — the tree may be shared across
 goroutines — and returns a resolved deep copy: wire aliases resolved to
-columns, Bool leaves carrying their coercion marker. That copy is the
+columns, each leaf carrying its column type so values bind typed. That copy is the
 tree to hand `BuildPredicate`. Field names in a predicate are spliced
 into SQL by `BuildPredicate` (values are bound placeholders), so this
 check is what keeps a hand-built tree safe to compile.
@@ -1252,7 +1313,8 @@ inside it cannot widen past a scope. The tree is validated again inside
 `ListAll`/`CountAll`, because a caller may have built it by hand; a
 refusal names the offending leaf. `ListOptions.Filters` is held to the
 flat parser's rules too: an entry naming an unknown, Hidden or NoQuery
-column, or an operator the column's type refuses, returns an error
+column, an operator the column's type refuses, or a value not of the
+column's type, returns an error
 instead of reaching SQL, and a `WireName` resolves to its column.
 `ListOptions.Fields` narrows the columns a list reads to the named subset plus `id` (always included);
 unknown and Hidden names are refused, never silently dropped (a NoQuery
@@ -1634,8 +1696,10 @@ read through the pivot applies that entity's soft delete and its owner,
 tenant and read scopes: a soft-deleted enrollment, or another owner's,
 links nothing. Boot refuses the relation when the entity does not
 declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
-creates no pivot of its own. A `cascade_write` link inserts its pivot
-row through that entity's `belongs_to` checks, reading the row as the
+creates no pivot of its own. A `cascade_write` link writes its pivot
+row through that entity's own create: its `access` create permission
+and `CRUD: false` refuse the link, its tenant and owner columns are
+stamped, its hooks run, and its `belongs_to` checks read the row as the
 two link columns (matched to its fields ignoring case, as the database
 matches them) with every other column at its default: a tagging
 that belongs to a grant keyed on its `(post_id, tag_id)` links a tag
@@ -1816,9 +1880,9 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
 - `PostsPatch` is the update payload, taken by `Update` and
   `BatchUpdate`. Every field is a pointer, and nil leaves the field as
   stored. A pointer to `false`, `0` or `""` writes it to a bool, int,
-  float, string or text field. For any other type `""` is not a value:
-  an optional field treats it as absent, and a required one fails
-  validation. A patch cannot clear a date, uuid or enum.
+  float, string or text field. For any other type `""` is a blank: it
+  clears an optional field to null, and a required one fails
+  validation.
 - A `cascade_write` relation (`has_one`, `has_many`, `belongs_to`) puts
   its children in both payloads. `PostsInput.Comments` takes
   `[]CommentsInput`; `PostsPatch.Comments` takes
@@ -1827,6 +1891,10 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   `has_one`, it updates the existing child if there is one).
 - Every write returns the row as stored, server-generated fields
   included.
+- A timestamp column's `Eq`, `Gt`, `Gte`, `Lt` and `Lte` take a
+  `time.Time`, a `*time.Time` or RFC 3339 text and bind it in the
+  layout crud stores, so `…10:00:00Z` matches the row stored as
+  `…10:00:00.000000Z` on SQLite and ranges compare instants.
 - An enum field with declared values gets a value type and one constant
   per value (`PostsStatusValue`, `PostsStatusDraft`, `PostsStatusLive`).
   The model, both payloads and the column
@@ -1972,7 +2040,8 @@ storing a different number than was sent is the one unrecoverable
 outcome. Send large integers as JSON integer literals or strings; both
 spellings round-trip exactly. The same rule covers `_batch` items,
 `UpsertOne` caller-supplied increment primary keys, and the typed query
-update paths.
+update paths. A body is one JSON value: anything but whitespace after the
+object is refused with `400`.
 
 Every successful single-record response has one stable envelope:
 
@@ -2043,6 +2112,14 @@ Three rules worth knowing:
 - **Text that is not JSON reads back unchanged**, so a legacy `TEXT` column
   promoted to `json` keeps serving its existing rows.
 
+Numbers inside the document read back as `float64` in Go (a hook or a
+`FindAll` caller sees what `encoding/json` gives), except an integer past
+±2^53, which reads as `int64` so `9007199254740993` comes back exact. An
+integer `int64` cannot hold, or one past ±2^53 spelled with a point or
+an exponent (`9007199254740993e0`), reads as the `json.Number` it was
+written as; a Before-hook sees it the same way, and it is stored as
+sent.
+
 ## MCP Tools
 
 When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
@@ -2057,6 +2134,17 @@ When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
   `{entity}_update`
 
 The tools use the same validation and CRUD handler behavior as HTTP routes.
+Their input schemas take what the route takes: a `json` field accepts any
+JSON value (an array as well as an object), a `decimal` field takes its
+text (`"12.34"`) as the route does, an optional field accepts
+`null`, and the owner and tenant columns the server stamps on create are
+never required. Results carry numbers exactly as the route wrote them, so
+an integer above 2^53 is not rounded, and an `int` argument spelled with
+a point or an exponent past 2^53 (`9007199254740993e0`) is refused as
+the route refuses it, never stored rounded. The route sees the `/mcp` caller's
+address (`RemoteAddr`, plus `X-Forwarded-For` and `X-Real-IP` as sent), so
+a per-IP rate limit on the entity routes counts each MCP caller on its
+own.
 
 Each tool carries its operation's `Exposure.Access` permission as a
 `WithToolGate` gate: `list` and `get` need `Access.Read`, `create`,

@@ -70,10 +70,32 @@ Composite cursors guarantee unique ordering by automatically appending
 each primary-key column the list does not already name. Without a
 unique tiebreak, two rows with identical sort keys break paging.
 
+**A cursor column must never hold NULL.** The keyset comparison
+`(created_at, id) > ($1, $2)` is never true for a row whose
+`created_at` is NULL, so those rows would be skipped, and SQLite sorts
+NULLs first where Postgres sorts them last. `entity.Define` panics on a
+cursor column that is not a key column, not `Required`, and not
+framework-generated (`AutoGenerate`, which covers the injected
+`created_at` and an auto id); the app spec refuses the same column at
+decode time. If a row's keyset value is NULL anyway (a raw INSERT that
+bypassed the API), the page answers 500 and logs the column rather than
+minting a cursor that compares against `null`.
+
 ## Wire format
 
 The cursor is opaque base64 JSON. Clients must not decode or modify
-it, only echo it back on the next request. The exact encoding
+it, only echo it back on the next request. A timestamp keyset value is
+written in the layout crud stores timestamps with, UTC with six
+fractional digits kept (`2026-10-27T07:05:07.500000Z`), so on SQLite,
+which compares `DATETIME` columns as text, the cursor compares against
+the stored string byte for byte. crud writes every Timestamp in that
+layout, a client's `2026-10-27T09:05:07+02:00` included (same instant,
+stored as `2026-10-27T07:05:07.000000Z`); a row written in another
+spelling before v0.96.0, or by SQL outside crud, still compares as its
+own text on SQLite. A Date keyset value is the date
+(`2026-10-27`). A value that is not of its column's
+type (an edited token naming `id` `"abc"` on an integer key) is a 400,
+the same check a filter value gets. The exact encoding
 (single-field vs multi-field) is chosen by the server based on the
 entity's `CursorField` / `CursorFields` config. A token the server
 did not mint is decoded under the same no-ambiguity rule as every
@@ -95,6 +117,15 @@ first-read intermediary parsed differently.
   requires. Use offset mode if you need a total.
 - **Backward paging starts from `hasMore`'s end.** Backward responses
   use `<` instead of `>` and reverse the ORDER BY direction.
+- **Offset pages break ties on the key.** Every offset-paged read (the
+  list endpoint, `?stream=true`, `ListAll`, and a typed query with
+  `Offset`) orders by the `?sort=` columns and then by each primary-key
+  column the sort does not name, ascending. With no `?sort=` the list
+  pages oldest first (`created_at`, then the key) when the entity has
+  timestamps, and in key order when it has none. Without the key, rows
+  tied on the sort column can come back in a different order for each
+  page on Postgres, so a walk would serve some rows twice and others
+  never.
 
 ## When to use which mode
 

@@ -507,10 +507,19 @@ headers apply, 303→Location is followed, file inputs upload natively.
 ### Server redirects (after intercept)
 
 When the interceptor IS active and the handler responds with a `30x`
-+ `Location` header, the runtime navigates to the location via the
-SPA navigator (no hard refresh between same-app pages), falling back
-to `window.location.assign`. For the non-intercepted default path,
-redirect-following is the browser's own job; same result.
++ `Location` header, the runtime loads the location as a new document
+(`window.location.assign`): the target may not be in the SPA route
+table, and the load resets the SSE connection the way a native form
+submit would. For the non-intercepted default path, redirect-following
+is the browser's own job, same result.
+
+An answer that is not a redirect is handled as on a `data-cui-rpc`
+form. A refusal (non-2xx) renders the server's validation envelope
+(`{error, fields}`) into the fields through the `formerrors` module, or
+toasts the status when no field matches. A 2xx answer delivers its
+`X-Gofastr-Toast` and `X-Gofastr-Invalidate` headers. Every intercepted
+submit carries the page's `<meta name="csrf-token">` as `X-CSRF-Token`,
+since a JSON body has no form field for `middleware.CSRF` to read.
 
 <!-- gofastr:compile
 import "net/http"

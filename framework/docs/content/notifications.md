@@ -74,13 +74,19 @@ tmpl.Set("password.reset", "email", notify.Template{
 })
 ```
 
-**`HTMLBody` values are HTML-escaped at the interpolation sink.** Data
-values are routinely user-controlled (display names, addresses,
-user-entered content), and the bundled `EmailChannel` hands
-`Rendered.HTMLBody` straight to the SMTP HTML part — webmail is an HTML
-application, so an unescaped value is a session-theft-class XSS. The
-template bytes themselves are yours and pass through untouched; to opt
-ONE value out (markup you generated), type it `html/template.HTML`:
+**`HTMLBody` values are escaped for where they sit.** Data values are
+routinely user-controlled (display names, addresses, user-entered
+content), and the bundled `EmailChannel` hands `Rendered.HTMLBody`
+straight to the SMTP HTML part. Webmail is an HTML application, so an
+unescaped value is a session-theft-class XSS. `HTMLBody` renders through
+`html/template`, as the email battery does: a value in element text is
+HTML-escaped, one in an attribute stays one attribute value even
+unquoted, and one in `href` or `src` loses a `javascript:` scheme. A
+placeholder the data does not fill, and a literal `{{` that names no
+placeholder, stay as written. Once a value is filled, HTML comments in
+the template are dropped, and a placeholder somewhere no value can go
+(a tag name) is a Render error. To opt ONE value out (markup you
+generated), type it `html/template.HTML`:
 
 ```go
 data := map[string]any{

@@ -206,21 +206,39 @@ A handler pauses its task with `RequireInput` / `RequireAuth`
 the task's history. `CancelTask` cancels a running task — the handler's
 context is cut, and the state is settled against the store so a late
 completion cannot resurrect a task the client was told was canceled.
+With a shared store the cancel may be served by another replica: the
+replica running the task polls the store while the handler runs, and on
+finding a terminal state it did not write it cuts the handler's context
+and sends the state to its own subscribers. A
+cancel that lands before the handler has started (a streaming client
+knows the task id from the first snapshot) means the handler never
+runs at all; the task settles as `TASK_STATE_CANCELED`.
 
 One handler run is bounded by `A2AConfig.TaskTimeout` (default 5
-minutes); a run that exceeds it fails with `task timed out`.
+minutes); a run that exceeds it fails with `task timed out`. Past the
+deadline every `TaskContext` mutation (`Working`, `Artifact`,
+`Complete`, …) returns an error wrapping `context.DeadlineExceeded`, so
+a handler that finishes late cannot mark the task completed. A run
+whose task another replica settled and retention then removed is
+cancelled too; its local subscribers' streams end with no status event.
 
 Terminal rows do not accumulate without end: each owner retains at most
 64 settled (completed / failed / canceled / rejected) tasks — the oldest
-terminal rows are deleted after each settle, in-flight and paused tasks
-never — and each task carries at most 8 push-notification configs, the
-oldest deleted past the bound. Every row holds the caller's message
+terminal rows are deleted after each settle, in-flight tasks never.
+Paused tasks (input or auth required) are capped at 64 per owner too:
+past the bound the oldest are canceled after each pause, and terminal
+retention then deletes them. Each task carries at most 8
+push-notification configs, the oldest deleted past the bound. A trimmed task's push configs are deleted
+with it, and each trim that deletes tasks also deletes the owner's
+configs whose task is already gone (one registered while an earlier trim
+deleted its task). Every row holds the caller's message
 body (up to the 1 MiB cap) and the default store is in-RAM, so cheap
-authenticated writes must not grow either table unbounded. Both bounds
-are `a2a.Config` knobs (`TerminalTaskRetention`, `MaxPushConfigsPerTask`;
-0 = the default, negative = the host owns retention) enforced through
-the optional `a2a.RetentionTrimmer` Store interface both built-in
-stores implement.
+authenticated writes must not grow either table unbounded. The bounds
+are `a2a.Config` knobs (`TerminalTaskRetention`, `PausedTaskRetention`,
+`MaxPushConfigsPerTask`; 0 = the default, negative = the host owns
+retention). The terminal and push-config bounds go through the optional
+`a2a.RetentionTrimmer` Store interface both built-in stores implement;
+the paused bound cancels through `UpdateTask`, so it holds on any Store.
 
 Skill-handler runs are bounded per owner too:
 `Config.MaxConcurrentRunsPerOwner` caps how many runs one owner may
@@ -248,13 +266,26 @@ deployments that bound streams elsewhere) and
 `Config.StreamSeatOverflow` select what an owner at the cap does with
 their next stream — `stream.SeatOverflowRefuse` (the default)
 answers 429 at connect, `SeatOverflowEvictOldest` closes that owner's
-oldest stream and seats the new one.
+oldest stream and seats the new one. A `SendStreamingMessage` refused
+at the seat cap is refused before anything is written: no task is
+created and no run slot is taken. A stream whose client is gone before
+the first event still runs the task it created, as if the client had
+left right after the snapshot.
+
+`SubscribeToTask` to a task running in this process sends the snapshot,
+then only the events the snapshot does not already reflect. Each event
+carries the task version its write produced, and events at or below
+the snapshot's version are skipped, so an artifact append
+(`append: true`) is never applied twice on top of a snapshot that
+already holds it.
 
 With the SQL store, `SubscribeToTask` on a task running on another
 replica falls back to polling the store and emitting a snapshot whenever
-the stored version changes — per-event fidelity across a replica
+the stored version changes, and so does a subscribe whose local run ends without settling the task, or whose local run has paused while the store holds a newer version (another replica resumed it) — per-event fidelity across a replica
 boundary would need a shared bus, which a SQL store cannot give. Events
-between polls coalesce into the next snapshot.
+between polls coalesce into the next snapshot. Its store reads run under
+the request's context, so a hung store read ends when the client leaves
+or the stream's seat is evicted.
 
 ## Push notifications
 
@@ -267,14 +298,30 @@ receiver can check the notification came from the agent it registered
 with.
 
 Delivery is best effort by design: one attempt, no retry, a non-2xx or
-transport error is logged once. Reliable delivery with backoff is
+transport error is logged once. Deliveries to one push config are sent
+one at a time, in event order, since an appended artifact chunk carries
+no sequence number. An event that reaches a config's queue after a newer
+one is dropped rather than sent late, so a terminal state is always the
+last notification a receiver gets. At most 16 configs have a delivery in flight per
+server, and up to 16 further events wait behind them process-wide;
+anything past those bounds is dropped with a Warn log line, so a hung
+receiver cannot pile up goroutines and payloads and delays only its own
+config. Reliable delivery with backoff is
 [queue](queue.md)'s job; task progress must never stall on a receiver
 that is down. The SSRF posture: push URLs targeting internal hosts
 (loopback, RFC1918, CGNAT, link-local) are refused at registration
 unless `A2AConfig.AllowPrivatePush` is set, redirects are not followed,
 and the client is dial-time guarded. The guarded client never routes
 through an `HTTP_PROXY`/`HTTPS_PROXY` proxy, because the dial check
-cannot see the connection a proxy makes.
+cannot see the connection a proxy makes. A caller-supplied
+`PushOptions.Client` whose transport is a plain `*http.Transport` (no
+`Proxy`, no custom dialer) is cloned and given the same dial-time
+guard, so the address checked is the address dialed. Any other
+transport (one with a proxy or a custom dialer, or a `RoundTripper` that
+is not an `*http.Transport`) keeps its own routing and is wrapped with a
+resolve-then-check guard instead; that guard resolves once to check and
+the transport resolves again to dial, so a DNS name that rebinds
+between the two passes it.
 
 ## Tasks are not jobs
 
@@ -295,7 +342,10 @@ in-process expecting the task row to act as a job table.
   auth, owner context, recovery, request logging — with no wiring.
 - One skill per entity with MCP tools, descriptions generated from the
   live tool registry, plus your hand-written skills.
-- `app.A2ASkills()` feeding the agent card, and
+- `app.A2ASkills()` feeding the agent card (its entity skills are the
+  ones an anonymous `tools/list` shows, none when `WithMCPGate` refuses
+  anonymous callers, since a skill names its entity and fields; every
+  skill call runs the gate), and
   `AgentCardConfig.A2AEndpoint` advertising the exchange as the card's
   JSON-RPC interface with streaming + push capabilities.
 - Card signing + JWKS + RFC 9728 metadata (see

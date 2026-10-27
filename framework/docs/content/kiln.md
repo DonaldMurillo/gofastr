@@ -64,7 +64,10 @@ tool invocations streamed as `session/update` `tool_call` frames and
 `approve_plan` gated on `session/request_permission`. The CLI attaches no
 model to ACP turns, so prompts are journaled and refused with a pointer at
 `kiln mcp` / the panel; embedders attach one with `kiln/acp.WithProvider`.
-Pass `--no-http` when a parent process owns the UI.
+Chat messages an ACP turn journals carry `acp_session` (also in the
+`/kiln/chat` JSON), and `session/load` replays only that session's own
+messages. A cancelled prompt journals no further text and runs no
+further tool calls. Pass `--no-http` when a parent process owns the UI.
 
 ## Agent adapters
 
@@ -81,7 +84,11 @@ Kiln's tools, not by editing the repository.
 
 Read and configuration:
 
-- `world_get`
+- `world_get`: the whole world, or one part of it by `path`
+  (`entities.<name>`, `pages.<path>`, `_chat`, `_plans`); the whole
+  world comes back with `jwt_secret`, `seed_password` and a credentialed
+  `db_url` masked as `[redacted]`, the same masking `GET /kiln/world`
+  applies (the in-process world keeps the real values for freeze)
 - `set_app_config`: current app spec app config; HTTP calls use
   `{"config":{...}}`, a non-empty `config.name` is required, and an
   omitted/empty API prefix resolves to `api`
@@ -91,15 +98,41 @@ Read and configuration:
 
 Entities and data:
 
-- `add_entity`, `update_entity`, `delete_entity`
-- `add_field`, `delete_field`
-- `add_seed`
+- `add_entity`, `update_entity`, `delete_entity`: an entity whose CRUD
+  mount (`/<api_prefix>/<table>`) is an existing page's path is refused
+  with `kind: "conflict"`; `delete_entity` removes the entity's seeds in
+  the same edit, and `undo` brings both back
+- `add_field`, `delete_field`: deleting a field, or an `update_entity`
+  that leaves one out, removes that column from the entity's seed rows
+  and weights in the same edit, drops a row left with no column, and
+  `undo` brings them back
+- `add_seed`: rows go into the entity's table, its declared `table` or
+  else the framework default (`blogPosts` → `blog_posts`); a seed for an
+  entity the world does not hold is refused, and so is a row key that is
+  neither a declared field nor `id` (`kind: "validation"`, naming the row
+  and the key). A seed for an entity that already has one adds rows; the
+  freeze merges them into one block
 
 Screens and behavior:
 
-- `add_page`, `update_page_element`, `delete_page`
-- `add_hook`, `delete_hook`
-- `add_route`, `delete_route`
+- `add_page`, `update_page_element`, `delete_page`: a page path starts
+  with `/` and holds no parameter (`:id`, `{id}`); an element's actions
+  are kinds the effect runtime supports; a page on an entity's CRUD
+  mount (`/api/posts`) is refused with `kind: "conflict"`
+- `add_hook`, `delete_hook`: `when` is one of `before_create`,
+  `after_create`, `before_update`, `after_update`, `before_delete`,
+  `after_delete`, `before_list`, `after_list`; a hook action is `noop`,
+  `validate`, `set_field`, `audit` or `emit_event`
+- `add_route`, `delete_route`: the method and path parse as a
+  `net/http` pattern; a route action is `noop` or `respond_json`; a route
+  that overlaps one the app already serves (`GET /x/{id}` and
+  `GET /{name}/y` both match `/x/y`, neither more specific) is refused
+  with `kind: "conflict"` naming the other pattern
+
+These are refused at the call with `kind: "validation"`. Replay keeps
+the looser rules earlier builds journaled under (any supported action
+kind on a hook or route, a relative page path), so an old session
+still loads.
 
 Safety and session:
 
@@ -111,22 +144,33 @@ and `update_entity` require an approved plan naming the exact
 operation and target (`update_entity` carries the `PlanID` in its
 journal entry; journals written before the gate existed fail replay
 with a pointer at the entry). An approval is
-single-use. `undo` truncates one journal entry and deterministically rebuilds;
+single-use, and only an edit that lands spends it: a delete refused
+because its target is absent leaves the plan unspent. `undo` reverts the
+most recent world edit and deterministically rebuilds: the journal is cut
+at that edit, with the `tool_call` envelope the HTTP tool API journals
+before it, so the edit's `tool_result` and anything journaled after it
+go too; a journal with no world edit has nothing to undo.
 `reset_session` clears the journal and ephemeral schema. The runtime
 database is derived from the journal: boot, `undo`, and `reset_session`
 drop every table, re-migrate, and re-apply the world's seeds, and an
 approved `delete_entity` drops the entity's table, so rows from a reset
-or undone world cannot resurrect through the CRUD surface. A seed's
-rows are inserted before its journal entry is durable; a seed the
-database refuses leaves nothing behind. A journal whose last line was
+or undone world cannot resurrect through the CRUD surface. That includes
+rows written through the CRUD API: after an `undo`, only seed rows
+remain. A seed's
+rows are inserted in one transaction before its journal entry is
+durable; a seed the database refuses part way (a unique conflict, say)
+lands none of its rows and leaves the rows already in the database,
+CRUD writes included, where they were. A journal whose last line was
 torn by a crash loses exactly that in-flight entry at open.
 
 Two dispatch-side postures: an internal failure of a tool (a panic, a
 filesystem error) answers the caller with a generic "internal error"
 (`Kind: internal`) while the real error is logged server-side — a
-gate refusal still names `invalid_params` — and journaled tool args
+gate refusal still names `invalid_params`, and a malformed hook, route
+or page (an unknown event or action kind, a bad method, a relative path)
+answers `Kind: validation` with the reason — and journaled tool args
 mask credentialed values (`db_url`, `jwt_secret`, `seed_password`)
-the same way `redactedWorld` does (`dsnredact.HasSecret` decides
+the same way `world.Redacted` does (`dsnredact.HasSecret` decides
 what counts), so the journal file never gains a secret the world
 itself would not carry.
 
@@ -170,8 +214,15 @@ live preview is not a production auth certification environment.
 
 Kiln pages run through `framework/uihost`: full SSR on first load, hydration of
 the existing DOM, SPA navigation across screens, and component CSS from the
-registry. Live world edits refresh the current screen through a forced SPA
-navigation, never `location.reload()`.
+registry. Every live world edit and an `undo` refresh the current screen
+through a forced SPA navigation: the build-mode client at
+`/.kiln/reload.js` listens on `/.kiln/events` for `world_edit`, `undo`
+and `session_reset`. A same-route navigation keeps the head and the
+shared layout, so `set_app_config` (theme), `set_scaffold` (nav), an
+undo of either, and `reset_session` reload the document instead, as
+`framework/dev`'s livereload does on a new build. So does the first
+connection after a dropped one: `/.kiln/events` does not replay missed
+events, so the client cannot tell whether it missed a shell edit.
 
 Prefer design-system kinds:
 
@@ -213,7 +264,13 @@ Example:
 
 `add_page` assigns stable node `_id` values and version `1`.
 `update_page_element` performs optimistic edits to that tree using those IDs
-and an optional `if_match` version.
+and an optional `if_match` version. The version is checked again when the
+patch applies, with or without `if_match`: a patch that another edit of the
+same page beat to the apply answers `kind: "conflict"` with a refetch hint,
+so concurrent patches never overwrite each other's edits. Re-read the page
+and send the patch again. A session journal written before this check may
+hold two patches built from one version; it still loads, and the later
+patch wins.
 
 ## Graduate to owned Go
 
@@ -250,6 +307,11 @@ and an endpoint whose path sits outside its entity's route: none has an app
 spec spelling, so delete it and register the route in owned Go after
 generation. The removed pre-v0.1 `entities/*.json`
 format is not emitted.
+
+Freeze writes one `seed:` block per entity: several seeds for one entity
+merge into the first one's place, rows in order, counts summed and weights
+joined. Two seeds that weight the same column differently are refused,
+naming the entity and the column.
 
 Freeze fails loudly, naming the offending key, when world data cannot
 round-trip through the app spec's YAML subset: a seed row whose every value

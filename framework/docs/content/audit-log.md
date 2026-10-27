@@ -237,6 +237,7 @@ deployments.
 | `oauth.refused` | OAuth callback refused on email collision (`reason=link_conflict`), the account-takeover defence. |
 | `magiclink.requested` | A magic link was sent. |
 | `magiclink.consumed` | A magic link token was redeemed for a session. |
+| `magiclink_tokens.purged` | A password change (`reason=password_change`) or a completed reset (`reason=password_reset`) spent the user's outstanding magic links (`count`). A token store without `MagicLinkTokenPurger` keeps them and logs a warning. |
 | `passkey.registered` | A passkey was added (`alg`, `backup_eligible`). |
 | `passkey.deleted` | A passkey was removed by its owner, or a completed reset removed all of them (`reason=password_reset`, `count`). |
 | `passkey.refused` | A passkey ceremony failed a check (`ceremony=login` or `register`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`. |

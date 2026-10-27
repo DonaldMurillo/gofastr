@@ -39,11 +39,15 @@ err := sender.Send(ctx, email.Email{
 | `Subject`     | `string`         |                                                    |
 | `TextBody`    | `string`         | Plain-text body.                                   |
 | `HTMLBody`    | `string`         | Optional HTML body. When both bodies are set the   |
-|               |                  | message is MIME multipart.                         |
+|               |                  | message is `multipart/alternative` (text first,    |
+|               |                  | HTML last), so a client shows one of them.         |
 | `Attachments` | `[]Attachment`   | Optional.                                          |
 | `Headers`     | `map[string]string` | Optional custom headers.                       |
 
 `Attachment` carries `Filename`, `Content` (`[]byte`), and `ContentType`.
+A message with attachments is `multipart/mixed`: the body comes first
+(the `multipart/alternative` part, or the single text or HTML part), then
+one base64 part per attachment.
 
 ## SMTP sender
 
@@ -71,9 +75,15 @@ The sender refuses to serialize an `Email` whose header fields (`From`,
 content type) contain any C0 control byte (including CR, LF, NUL) or DEL.
 Without that check, a value like `"foo\r\nBcc: victim@e.com"` would smuggle
 an extra recipient onto the outgoing message, and other control bytes reach
-MUAs and spam filters verbatim. MIME boundaries are cryptographically random
-and checked against the body, so template output cannot inject or terminate
-a MIME part.
+MUAs and spam filters verbatim. MIME boundaries (one per container, the
+nested alternative included) are cryptographically random and checked
+against the body, so template output cannot inject or terminate a MIME
+part.
+
+`Send` succeeds once the relay answers `250` to the message: the mail is
+queued. A failed `QUIT` after that (the relay drops the connection or
+stalls) is ignored, so a retrying queue does not deliver the message
+twice. Every failure before acceptance wraps `ErrSendFailed`.
 
 The SMTP envelope is built separately from the headers: every `From` / `To`
 / `Cc` / `Bcc` entry is parsed with `net/mail` and reaches the wire as
@@ -128,8 +138,9 @@ not per template.
 
 `LoadFromDir` pairs `welcome.txt` + `welcome.html` into one template
 named `welcome`; the subject comes from a leading `Subject: ` line in
-the `.txt` file, or a sibling `.subject` file. `LoadFromFS` does the
-same against an `fs.FS`, so an embedded template tree works.
+the `.txt` file, or a sibling `.subject` file. Files saved with CRLF line
+endings work: the `\r` is trimmed off the subject line. `LoadFromFS` does
+the same against an `fs.FS`, so an embedded template tree works.
 
 To read a template before it sends, list it in the admin's
 `Config.EmailPreviews`: the Emails page renders each one with sample

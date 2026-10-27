@@ -108,12 +108,23 @@ refuses:
 
 On success the user's other sessions are revoked (`session.revoked`,
 `reason=password_change`), their outstanding reset links are spent
-(`reset_tokens.purged`), and `password.changed` is emitted. The caller
+(`reset_tokens.purged`), every magic link mailed to them is spent
+(`magiclink_tokens.purged`), and `password.changed` is emitted. A failed
+magic-link purge is logged and the change still stands. The caller
 gets a fresh session cookie that keeps the second factor the old
 session had passed; the response is `{"updated": true}`. API tokens
 stay: the user minted them on purpose and revokes them under
 `/auth/tokens`. A failed current-password check emits
 `password.change_failed`.
+
+A JWT from `JWTAuth` with a user store carries a tag derived from the
+password hash it was issued against, checked on every request. A
+password change, a reset, and a mailbox claim of the account each write
+a new hash, so every JWT issued before them answers 401 from then on.
+The check costs one indexed lookup per JWT request, and JWTs issued by a
+version without the tag answer 401 once after the upgrade. A login that
+a reset overtakes between the password check and the new session fails
+with the ordinary invalid-credentials 401 and leaves no session.
 
 ## The plugins
 
@@ -125,7 +136,7 @@ stay: the user minted them on purpose and revokes them under
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the token or passkey store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the magic-link, token or passkey store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
@@ -629,7 +640,7 @@ The dispatcher resolves each request as one of four outcomes:
 |--------------|-----------------------------------------------------------------|
 | Allow        | Normal Load + Render.                                           |
 | Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`. A client-side navigation gets the same destination: a relative path in `X-Gofastr-Location`, an absolute http(s) URL (an identity provider's login) in `X-Gofastr-Document`, which the runtime loads as a page. |
-| RenderAlt    | The alt component takes the screen's place; its Load runs.      |
+| RenderAlt    | The alt component takes the screen's place; its Load runs. The screen's title, description and article flag stay off the page. |
 | Block        | HTTP status from `WithBlock(status)`, default 401/403. The body is the status's phrase, or `WithBlockReason(status, phrase)`'s, in the request's locale. |
 
 ### Option precedence: last-write-wins per call, alt > redirect > block on fail
@@ -717,6 +728,18 @@ their tables when `AuthManager.Init` runs. On PostgreSQL their boolean
 columns use the native `BOOLEAN` type, matching the Go `bool` values
 bound by the stores. This includes `auth_users.password_set`, the
 session 2FA flags, and the durable 2FA flags.
+
+These stores, and the `<users>_oauth_links` table beside the user table,
+name their tables and the `UserFieldMap` columns the way AutoMigrate
+stores them: folded to lowercase, then quoted (`query.QuoteFolded`). A
+host that declares its users entity with `Table: "Members"` and a
+`PasswordHash` field gets one `members` table that the entity layer and
+the store share. Older versions quoted the name as written, so on
+PostgreSQL a mixed-case name got a second, case-kept `"Members"` table
+that held the store's rows. When `Init` finds such a table it stops
+with an error naming the rename (`ALTER TABLE "Members" RENAME TO
+members`, or move the rows when `members` already exists) instead of
+booting on an empty table.
 
 Apps generated from an app spec register a configured bootstrap admin through
 `App.WithSeed`. The hook runs after auto-migration and before the server
@@ -1174,6 +1197,13 @@ user's sessions still waiting on a challenge (`SessionPendingPurger`,
 implemented by both built-in session stores), so a pending login cannot
 complete later against a newly enrolled factor.
 
+`backup-codes` regenerates against the row as it stands after the codes
+are hashed: a challenge, disable or re-enroll landing in between is kept,
+never written over. A row that was disabled, deleted or re-keyed in the
+meantime answers 409, as does a swap that keeps losing to other writes.
+It uses the store's `TwoFAStateSwapper`, which both built-in stores
+implement.
+
 ### Every login path mints through `MintSession`
 
 `AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**
@@ -1372,6 +1402,9 @@ revoked — the stored refresh token is a password-equivalent for the
 provider API and must not outlive the link. If the row cannot be
 deleted, the response is `500` ("unlink succeeded but the stored
 provider token could not be revoked") rather than a silent half-revocation.
+The link is already gone at that point, so retry the same request: an
+unlink of a provider with no link still drops its stored tokens before
+answering `404`.
 
 ### Linking a provider to a logged-in account (the recovery path)
 
@@ -1390,6 +1423,14 @@ supported way to add that provider is the **authenticated link flow**:
    that same user, refuses (`409`) if the provider identity is already
    bound to a *different* account, and otherwise links `(provider,
    provider_id)` to the proven user.
+
+   The provider's redirect back is a cross-site navigation, so the
+   browser withholds the `SameSite=Strict` session cookie. When a
+   cross-site callback carries a valid, unspent link state and its
+   state cookie but no session, it answers a small page that reloads the
+   same callback from this site (a meta refresh plus a "Continue" link,
+   phrases `auth.oauth_hop_title` and `auth.oauth_hop_continue`). That
+   second request carries the session cookie and completes the link.
 
 The user has proven ownership of both the account (session) and the
 provider (the OAuth round-trip), so this is the ONLY path that may link a
@@ -1878,7 +1919,9 @@ path.
   email-verification, and password-reset plugins each construct their
   own `MemoryMagicLinkTokenStore`. If you replace one with a Redis
   store, replace all three; they share the same shape but not the
-  same instance.
+  same instance. In production mode a plugin left on its memory store
+  refuses to boot (a link emailed from one replica would be invalid on
+  the next) unless `AuthConfig.AllowInMemoryStores` is set.
 - **Forgetting `DevMode` over plain HTTP.** Without it, browsers
   refuse to accept the production `__Host-session` cookie over an
   insecure connection, and the user appears never to log in. The

@@ -18,9 +18,9 @@ Methods the server accepts from the client:
 |---|---|
 | `initialize` | Version + capability negotiation. Responds with the agent's info, `loadSession` (true only if the agent implements `SessionLoader`), explicit `promptCapabilities` and `mcpCapabilities` (all false), and the configured `authMethods`. |
 | `authenticate` | Runs the configured `Options.Authenticate` hook for an advertised method ID. Requires `initialize` first, exactly like the session methods. With no methods advertised (the default), every `methodId` is rejected with `-32602`. |
-| `session/new` | Creates a session via `Agent.NewSession(cwd)`. Returns `{sessionId}`. |
-| `session/load` | Only when `loadSession` was advertised. Replays the conversation as `user_message_chunk` / `agent_message_chunk` updates, then returns. Unknown IDs answer `-32002`. |
-| `session/prompt` | Runs one turn via `Session.Prompt`. The response carries the stop reason (`end_turn`, `refusal`, `cancelled`, …). |
+| `session/new` | Creates a session via `Agent.NewSession(cwd)`. Returns `{sessionId}`. An agent that returns an ID this connection already holds, live or draining, gets `-32603` and the held session is kept. |
+| `session/load` | Only when `loadSession` was advertised. Replays the conversation as `user_message_chunk` / `agent_message_chunk` updates, then returns. Unknown IDs answer `-32002`; a session whose prompt turn is still running answers `-32600` (reloading it mid-turn would let a second prompt run beside the first and lose the turn's cancel handle). A loader that returns a session with a different ID answers `-32603`. |
+| `session/prompt` | Runs one turn via `Session.Prompt`. The response carries the stop reason (`end_turn`, `refusal`, `cancelled`, …). The next prompt on a session waits until the previous turn's response is written, so a client that stops reading holds at most one parked response per session. |
 | `session/cancel` | Notification. Cancels the session's in-flight prompt context; the server then answers the original `session/prompt` with stop reason `cancelled`. |
 
 What the server sends to the client during a turn:
@@ -32,7 +32,7 @@ What the server sends to the client during a turn:
 | `session/update` (`plan`) | notify | Replaces the session's execution plan (complete entry list every time). |
 | `session/update` (`tool_call`) | notify | Reports a tool invocation starting (`pending`). |
 | `session/update` (`tool_call_update`) | notify | Patches a tool call: `in_progress`, then `completed`/`failed` with content. |
-| `session/request_permission` | request | Asks the user to approve an operation (allow once / reject once …). An answer that carries neither a valid selection nor a cancellation is treated as cancelled — a malformed approval never reads as approval. |
+| `session/request_permission` | request | Asks the user to approve an operation (allow once / reject once …). An answer that carries neither a valid selection nor a cancellation is treated as cancelled — a malformed approval never reads as approval. An answer without `"jsonrpc": "2.0"` is not a JSON-RPC response; it settles the request as an error. |
 
 ## What is deliberately not implemented
 
@@ -95,14 +95,28 @@ func main() {
 
 - Stream progress with `out.Update(...)`; the constructors
   (`AgentMessageChunk`, `NewToolCall`, `ToolCallUpdateFrame`, `PlanUpdate`)
-  produce the spec-shaped frames.
+  produce the spec-shaped frames. A `ToolCallUpdate` field left nil is
+  omitted (unchanged); a title, content, `rawInput` or `rawOutput` set to
+  an empty value is sent empty, which clears it on the client.
 - Gate an operation on the human with `out.RequestPermission(ctx, toolCall,
   options)`; it blocks until the client answers and returns the selected
   option. A client answer that is neither a valid selection nor a
   cancellation comes back as `OutcomeCancelled`, so a malformed or
-  hostile answer never reads as approval.
-- Honor `ctx`: it is cancelled when the client sends `session/cancel`, and
-  the server can only answer the client once `Prompt` returns.
+  hostile answer never reads as approval. It works from every handler,
+  `LoadSession` included: handlers run beside the reader that delivers
+  the answer. Other frames that arrive while a handler waits are held,
+  up to 256 frames or 16 MiB; past that a request is refused with an
+  internal error. A `session/cancel` still reaches a running turn at
+  once. Input EOF cancels the waiting handler's `ctx` and drops the
+  frames held behind it.
+- Honor `ctx`: it is cancelled when the client sends `session/cancel` and
+  when `Serve` returns (input EOF or the caller's ctx ending), and the
+  server can only answer the client once `Prompt` returns.
+
+`Serve` returns as soon as its ctx ends, even with no input arriving. The
+read in flight runs on in a goroutine until `in` yields a line, EOF or an
+error; close `in` to end it sooner. `PlanUpdate(nil)` sends `"entries": []`,
+which tells the client the plan is now empty.
 
 `Options` has four fields: `AuthMethods` (advertised in `initialize`) and
 `Authenticate` (the hook run for `authenticate`; the connection must have
@@ -113,12 +127,13 @@ unlimited) and `SessionOverflow`
 (`acp.SessionOverflowRefuse`, the default: `session/new` past the cap is
 answered `-32602` before the embedder mints anything, mirroring the 4 MiB
 frame cap; `acp.SessionOverflowEvictOldest`: the connection's oldest
-session is dropped, its in-flight prompt turn canceled, and the new one
+session is dropped, its in-flight prompt turn canceled (a `session/load` of its id is refused until that turn returns), and the new one
 seated). Without the bound, `session/new` is a frame-cheap unbounded write
 into per-connection state that lives until the connection closes. A panic
 in any embedder hook — `Authenticate`, `NewSession`, `LoadSession`,
 `Prompt` — is recovered into an internal-error response for that one
-request; it never kills the process.
+request; it never kills the process. An error `Prompt` returns is
+answered `session/prompt: internal error`; its text stays on the server.
 
 ## Kiln's adapter (`kiln/acp`)
 
@@ -143,6 +158,10 @@ as resource-not-found.
 
 ## Common mistakes
 
+- **Loose JSON-RPC envelopes.** A frame naming a method must carry
+  `"jsonrpc": "2.0"` and an id that is a string, a number, or null (or no
+  id, for a notification). Anything else is answered `-32600` with a null
+  id before dispatch, per JSON-RPC 2.0 §4 and §5.
 - **Sending prompts before `initialize` or `session/new`.** Both are
   enforced: `session/*` before `initialize` answers `-32600`, and an unknown
   session ID answers `-32002`. ACP clients negotiate first; a test client

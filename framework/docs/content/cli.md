@@ -26,9 +26,17 @@ each command to the doc that covers it.
   limiter) follows `GOFASTR_DEV`, which `gofastr dev` sets, so a copied
   `.env` never relaxes a deployment. `init .` refuses to run when git
   already tracks `.env` (untrack it with `git rm --cached .env` first),
-  since the new secret would land in the next commit. `init . --reinit` refreshes the
-  AI-agent onboarding files in place (`--force` overwrites your edits);
-  no Go code or git changes. A released CLI pins the generated `go.mod` to its
+  since the new secret would land in the next commit. `init .` names the
+  project after its directory (module `local/<dir>` unless `--module` is
+  given), and refuses, writing nothing, when the directory already holds
+  a file it would replace (`main.go`, `screens.go`, `.env`,
+  `gofastr.settings.yml`, the onboarding files, and with the sample
+  entity `screens_auth.go` and `entities/entities.go`); `--force`
+  overwrites them. An existing `.gitignore` is kept and gains the entries
+  it lacks. `init <name> --reinit` or `init . --reinit` refreshes the
+  AI-agent onboarding files of an existing project (`--force` overwrites
+  your edits); no Go code or git changes. An unknown flag is an error
+  (exit 2). A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
   The generated `go.mod` uses this CLI release's minimum Go version, even
@@ -78,7 +86,8 @@ command's result instead of starting it again. `go mod init` and
 exit code to decide whether a command failed.
 
 Inspect a project that was already created before retrying. `init .`
-writes a new `.env` signing key and is not a way to acknowledge a
+refuses a directory that already holds the scaffold, and with `--force`
+writes a new `.env` signing key; it is not a way to acknowledge a
 successful scaffold. For a project whose scaffold completed, continue
 with `go mod tidy` from that project directory.
 
