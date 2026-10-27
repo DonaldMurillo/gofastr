@@ -216,7 +216,7 @@ func linuxBundleEntries(f desktopBuildFlags, name, arch, executable string, icon
 	launcher := "#!/bin/sh\nset -eu\ncase $0 in\n  */*) launcher=$0 ;;\n  *) launcher=$(command -v -- \"$0\") ;;\nesac\ncase $launcher in\n  */*) bundle_dir=${launcher%/*} ;;\n  *) bundle_dir=. ;;\nesac\nexec \"$bundle_dir/bin/" + f.id + "\" \"$@\"\n"
 	desktopEntry := "# TEMPLATE ONLY. Not an installed launcher. See README.txt.\n[Desktop Entry]\nType=Application\nVersion=1.0\nName=" + escapeDesktopEntryString(name) + "\nExec=\"@BUNDLE_ROOT@/launch.sh\"\nIcon=@BUNDLE_ROOT@/icon.png\nTerminal=false\n"
 	readme := `Linux desktop release artifacts
-===============================
+-------------------------------
 Extract the whole archive into one directory and run ./launch.sh there.
 The launcher may also be invoked by its absolute or relative path. Keep it
 beside bin/; do not move it alone or invoke it through a symlink elsewhere.
