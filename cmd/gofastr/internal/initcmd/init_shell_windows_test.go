@@ -8,11 +8,15 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
+func TestMain(m *testing.M) {
+	clitest.Main(m)
+}
+
 func TestInitWindowsShells(t *testing.T) {
-	bin := main.BuildGofastrBin(t)
+	bin := clitest.BuildGofastrBinary(t)
 	for _, shell := range []string{"cmd", "powershell", "git-bash"} {
 		t.Run(shell, func(t *testing.T) {
 			work := filepath.Join(t.TempDir(), "path with spaces")
@@ -69,6 +73,11 @@ func TestInitWindowsShells(t *testing.T) {
 			// A launcher retry must fail before it changes the successful
 			// scaffold, and the error must explain that this run wrote nothing.
 			sentinel := filepath.Join(work, "shell-app", "main.go")
+			envPath := filepath.Join(work, "shell-app", ".env")
+			envBefore, err := os.ReadFile(envPath)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := os.WriteFile(sentinel, []byte("keep this file\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -82,6 +91,9 @@ func TestInitWindowsShells(t *testing.T) {
 			}
 			if got, err := os.ReadFile(sentinel); err != nil || string(got) != "keep this file\n" {
 				t.Fatalf("%s repeat init changed existing file: %q, %v", shell, got, err)
+			}
+			if got, err := os.ReadFile(envPath); err != nil || string(got) != string(envBefore) {
+				t.Fatalf("%s repeat init changed the existing .env: %v", shell, err)
 			}
 		})
 	}
