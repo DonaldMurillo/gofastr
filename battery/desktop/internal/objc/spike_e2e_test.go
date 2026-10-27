@@ -13,7 +13,7 @@ package objc
 //
 //	CGO_ENABLED=0 go test -count=1 -tags desktop_e2e -run TestSpike -v ./battery/desktop/internal/objc/
 //
-// Never in CI (see the plan's testing policy).
+// Never in CI (see the testing section of framework/docs/content/desktop.md).
 
 import (
 	"context"

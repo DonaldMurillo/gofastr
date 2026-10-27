@@ -84,6 +84,8 @@ func releaseHeadings(body string) ([]string, map[string]releaseVersion) {
 
 var archiveLink = regexp.MustCompile(`\(changelog/([^)]+)\)`)
 
+var mdLink = regexp.MustCompile(`\]\(([^)\s]+)\)`)
+
 var archiveName = regexp.MustCompile(`^v(\d+)\.(\d+)-v(\d+)\.(\d+)\.md$`)
 
 // CHANGELOG.md holds Unreleased and the current ten minor versions (v0.90
@@ -139,6 +141,19 @@ func TestChangelogArchiveLayout(t *testing.T) {
 		body, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
+		}
+		// A link written for CHANGELOG.md at the repo root breaks one
+		// directory down; the move rebases it with `../`.
+		for _, l := range mdLink.FindAllStringSubmatch(string(body), -1) {
+			target, _, _ := strings.Cut(l[1], "#")
+			if target == "" || strings.Contains(target, ":") || strings.HasPrefix(target, "../") {
+				continue
+			}
+			_, fromRoot := os.Stat(filepath.Join("..", "..", target))
+			_, fromArchive := os.Stat(filepath.Join(filepath.Dir(f), target))
+			if fromRoot == nil && fromArchive != nil {
+				t.Errorf("changelog/%s links %s from the repo root; rebase it to ../%s", name, l[1], l[1])
+			}
 		}
 		vs, vers := releaseHeadings(string(body))
 		if len(vs) == 0 {

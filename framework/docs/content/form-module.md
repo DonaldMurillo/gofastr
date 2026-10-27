@@ -74,7 +74,9 @@ ui.DateField(ui.DateFieldConfig{
 ```
 
 Bound the range with `Min` and `Max`, and validate on the server as
-for any other field: the browser's bounds are a hint, not a check.
+for any other field: the browser refuses an out-of-range value before
+submitting, but a request that skips the form reaches the handler
+unchecked.
 For a date range, use two fields (`starts_on`, `ends_on`) and reject
 an end before the start in the handler.
 

@@ -16,8 +16,8 @@ file: [v0.80–v0.89](changelog/v0.80-v0.89.md),
 [v0.10–v0.19](changelog/v0.10-v0.19.md) and
 [v0.3–v0.9](changelog/v0.3-v0.9.md). This file holds Unreleased and the
 current ten. When a v0.N0.0 release ships, the ten before it move to
-`changelog/` unchanged; `TestChangelogArchiveLayout` in `internal/upgrade`
-fails until they do.
+`changelog/` unchanged except for repo-relative links, which gain `../`;
+`TestChangelogArchiveLayout` in `internal/upgrade` fails until they do.
 
 Keep each entry to what changed and what a reader must do about it, in a
 few lines, and link the PR or the docs page for the rest.
