@@ -191,6 +191,10 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 	c.conn.pmu.Lock()
 	c.conn.pending[id] = ch
 	c.conn.pmu.Unlock()
+	select {
+	case c.conn.asked <- struct{}{}:
+	default:
+	}
 	defer func() {
 		c.conn.pmu.Lock()
 		delete(c.conn.pending, id)
@@ -253,18 +257,28 @@ type conn struct {
 	// wslot is the one-slot write lock. A channel rather than a mutex so a
 	// writer queued behind a stalled one can give up when the connection
 	// closes.
-	wslot     chan struct{}
-	w         io.Writer
-	werr      error // set once a frame is cut short; guarded by wslot
-	pmu       sync.Mutex
-	pending   map[int64]chan pendingResp
+	wslot   chan struct{}
+	w       io.Writer
+	werr    error // set once a frame is cut short; guarded by wslot
+	pmu     sync.Mutex
+	pending map[int64]chan pendingResp
+	// asked gets a value when a request to the client is registered, so
+	// a reader paused on a full hold wakes to read the answer.
+	asked     chan struct{}
 	nextID    atomic.Int64
 	closeOnce sync.Once
 	closed    chan struct{}
 }
 
 func newConn(w io.Writer) *conn {
-	return &conn{wslot: make(chan struct{}, 1), w: w, pending: map[int64]chan pendingResp{}, closed: make(chan struct{})}
+	return &conn{wslot: make(chan struct{}, 1), w: w, pending: map[int64]chan pendingResp{}, asked: make(chan struct{}, 1), closed: make(chan struct{})}
+}
+
+// awaiting reports whether a request to the client waits on its answer.
+func (c *conn) awaiting() bool {
+	c.pmu.Lock()
+	defer c.pmu.Unlock()
+	return len(c.pending) > 0
 }
 
 // errConnClosed is what a Client call made after Serve returned gets.
@@ -383,8 +397,11 @@ type serverState struct {
 // order; while one runs, the reader still delivers permission answers
 // and holds every other frame until it is answered (runRequest). A
 // session/cancel is acted on at once and held too. At most 256 frames
-// or 16 MiB wait; past that a request is refused with an internal
-// error. EOF cancels the running request's context. session/prompt runs in its own goroutine so the reader keeps
+// or 16 MiB wait. Past that, reading pauses until the server asks the
+// client something, so a pipelining client is held back by its own
+// output; while a request to the client waits on its answer, a request
+// past the bound is refused with an internal error instead. EOF cancels
+// the running request's context. session/prompt runs in its own goroutine so the reader keeps
 // accepting session/cancel notifications and permission responses
 // while the turn is in flight; its response is written when the turn
 // ends, after every update the turn produced.
@@ -514,10 +531,18 @@ func (st *serverState) runRequest(ctx context.Context, frame wireRequest, r *rea
 		var stop <-chan struct{}
 		if !r.ended && ctx.Err() == nil {
 			lines, readErr, stop = r.lines, r.readErr, ctx.Done()
+			if r.full() && !st.conn.awaiting() {
+				// Nothing waits on the client, so stop reading and let
+				// the pipe hold it back; a request to it wakes us
+				// (asked) to read its answer.
+				lines = nil
+			}
 		}
 		select {
 		case resp := <-done:
 			return resp
+		case <-st.conn.asked:
+			// Re-check: the answer may now be behind the held frames.
 		case <-stop:
 			// The handler runs under ctx, so it ends; wait for it.
 		case err := <-readErr:
@@ -532,9 +557,15 @@ func (st *serverState) runRequest(ctx context.Context, frame wireRequest, r *rea
 	}
 }
 
+// full reports whether the held frames reached either bound.
+func (r *reader) full() bool {
+	return len(r.held) >= maxHeldFrames || r.heldBytes >= maxHeldBytes
+}
+
 // maxHeldFrames and maxHeldBytes bound what a running request holds
-// back. Past either, a request is refused at once instead of held, and
-// reading goes on, so a permission answer behind it still arrives.
+// back. At either, reading pauses while nothing waits on the client.
+// While something does, reading goes on so its answer still arrives, and
+// a request past the bound is refused at once instead of held.
 const (
 	maxHeldFrames = 256
 	maxHeldBytes  = 16 << 20
@@ -555,7 +586,10 @@ func (st *serverState) holdLine(line []byte, r *reader) {
 	if parsed && f.ID == nil && f.Method == "session/cancel" && validRequestEnvelope(f) {
 		st.handleNotification(f)
 	}
-	if len(r.held) >= maxHeldFrames || r.heldBytes+len(line) > maxHeldBytes {
+	// With nothing waiting on the client, a line past the bound is held:
+	// the read then pauses (runRequest), so the hold overshoots by at
+	// most one line of the 4 MiB the scanner allows.
+	if (len(r.held) >= maxHeldFrames || r.heldBytes+len(line) > maxHeldBytes) && st.conn.awaiting() {
 		if parsed && f.ID != nil && validRequestEnvelope(f) {
 			st.respond(f.ID, st.errResp(ErrInternalError, "server busy: too many frames waiting behind a running request"))
 		}

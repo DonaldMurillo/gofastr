@@ -104,9 +104,11 @@ func main() {
   cancellation comes back as `OutcomeCancelled`, so a malformed or
   hostile answer never reads as approval. It works from every handler,
   `LoadSession` included: handlers run beside the reader that delivers
-  the answer. Other frames that arrive while a handler waits are held,
-  up to 256 frames or 16 MiB; past that a request is refused with an
-  internal error. A `session/cancel` still reaches a running turn at
+  the answer. Other frames that arrive while a handler runs are held,
+  up to 256 frames or 16 MiB. Past that the server stops reading, so a
+  client that pipelines requests waits on its own writes; only while a
+  permission request waits on its answer is a request past the bound
+  refused with an internal error. A `session/cancel` still reaches a running turn at
   once. Input EOF cancels the waiting handler's `ctx` and drops the
   frames held behind it.
 - Honor `ctx`: it is cancelled when the client sends `session/cancel` and
