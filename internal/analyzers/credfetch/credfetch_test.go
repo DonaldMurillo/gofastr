@@ -9,5 +9,5 @@ import (
 )
 
 func TestCredFetch(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), credfetch.Analyzer, "a", "b", "c", "d")
+	analysistest.Run(t, analysistest.TestData(), credfetch.Analyzer, "a", "b", "c", "d", "e")
 }
