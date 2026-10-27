@@ -7,6 +7,42 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-10-26
+
+### Added
+- **An icon catalog sourced from Feather and Lucide (#599).**
+  `framework/ui/icons` holds 291 outline drawings and 13 aliases on the
+  24-unit grid, each with a PascalCase constant (`icons.Search`,
+  `icons.ArrowLeft`) and a category. `sources.json` pins every file to
+  its upstream URL, retrieval time and SHA-256, and
+  `THIRD_PARTY_NOTICES.md` plus `LICENSE.feather` and `LICENSE.lucide`
+  carry the licenses. `ui.Icon` reads the catalog, so the hand-drawn
+  framework icons are replaced by their upstream drawings, and every
+  existing name still resolves. `ui.RegisterIcon` overrides only the
+  exact name it is given: overriding `check` leaves the `success`
+  alias on the catalog drawing. `go generate ./framework/ui/icons`
+  rebuilds the catalog offline from the checked-in SVGs and fails on a
+  checksum mismatch.
+- **A searchable icon browser.** `gallery.RenderIconCatalog` renders
+  the catalog with a search box and category filter that live in the
+  URL query, and each tile copies the icon's name. The gallery shows
+  it at `/components/icon`. Two kit options came with it:
+  `CopyButtonConfig.Tile` draws a whole-tile copy control with the
+  glyph above the label, and `FilterToolbarConfig.ClientNavigation`
+  submits the toolbar's GET form through the client navigator instead
+  of a full page load. Leave `ClientNavigation` off when a shared
+  layout also renders content that depends on the query, because the
+  client navigator keeps the layout.
+- **An experimental Linux desktop shell (#561).** `battery/desktop/linux`
+  runs the app in GTK 3 and WebKitGTK 4.1 on linux/amd64 and
+  linux/arm64, built with `CGO_ENABLED=0`. It supports native menus,
+  file and folder pickers, permission dialogs, clipboard text,
+  secondary windows and PNG snapshots. `gofastr desktop build` on Linux
+  writes a plain ELF executable to `dist/<Name>`. Tray icons, deep-link
+  registration, custom title bars and transparent windows are not
+  supported yet; a configured tray returns an error. See
+  `framework/docs/content/desktop.md` for the runtime packages.
+
 ### Changed
 - **Editing a release note no longer re-runs most of the test suite.**
   The retired-markup check that test binaries and `gofastr dev` run
@@ -248,6 +284,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   to 20 s for the first. The runtime's chrome fetch now passes
   `cache: 'no-store'`; the runtime's own chrome cache already dedupes
   the request.
+- **A form's submit button keeps its overrides.** The runtime's form
+  bridge sent the form's own `action`, `method` and `enctype` and
+  dropped the clicked button's name and value. It now carries the
+  button's value and its `formaction`, `formmethod`, `formenctype` and
+  `formtarget`. A form with another browsing target, a dialog or image
+  submit, or a plain-text POST stays with the browser. When the runtime
+  module fails to load, the native replay keeps the original button, and
+  a form the bridge would POST with no `method`, or send as PUT or
+  PATCH, stays on the page with the warning: the browser would have sent
+  it as a GET with its fields in the URL. A
+  form inside a widget that the widget does not handle now goes
+  through the document bridge. A `data-cui-spa` form, or a JSON form,
+  submitted with GET used to fail with the submit-failed toast because
+  fetch refuses a GET with a body. It now navigates to the action with
+  the fields as the query, through the client navigator. A marked form
+  with no `method` still POSTs.
+- **`gofastr init <name>` explains an existing directory (#590).** It
+  said to `cd` in and run `gofastr init .`, which a duplicate launch on
+  Windows turned into a second init over the first. It now says the run
+  wrote nothing and to inspect the existing directory first.
 - **`battery/print/chromepdf` gives a slow Chrome start the whole
   render `Timeout`.** chromedp waits 20 s for Chrome to print its
   DevTools URL and 10 s for the websocket dial after it, so a render
