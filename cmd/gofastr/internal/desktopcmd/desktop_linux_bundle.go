@@ -10,8 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
-// buildLinuxDesktop emits a plain ELF executable. Runtime shared libraries
-// belong to the distribution; this command does not bundle or install GTK.
+// buildLinuxDesktop defaults to a plain ELF executable. The opt-in tar.gz
+// format packages release artifacts, never runtime libraries or an installer.
 func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	arch := os.Getenv("GOARCH")
 	if arch == "" {
@@ -28,6 +28,12 @@ func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	}
 	if f.scheme != "" {
 		return fmt.Errorf("Linux desktop URL-scheme registration is not implemented")
+	}
+	if f.format == "tar.gz" {
+		return buildLinuxDesktopArchive(f, name, arch)
+	}
+	if f.format != "" && f.format != "executable" {
+		return fmt.Errorf("--format supports executable or tar.gz on Linux only")
 	}
 	if f.icon != "" {
 		return fmt.Errorf("Linux desktop icon packaging is not implemented; the output is a plain executable")

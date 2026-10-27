@@ -19,11 +19,14 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         [--pkg=<path>] [--version=<x.y.z>]
         [--sign=<identity>|--no-sign] [-o=<dir>]
         [--notarize] [--notary-profile=<name>] [--entitlements=<plist>]
-        [--scheme=<scheme>]
+        [--scheme=<scheme>] [--format=executable|tar.gz (Linux only)]
         On Linux, writes <o>/<Name> as a CGO-free ELF executable for
         the current architecture (or GOARCH=amd64/arm64). Install GTK 3
-        and WebKitGTK 4.1 on the target machine. No installer, icon,
-        signing, or URL-scheme registration is generated on Linux.
+        and WebKitGTK 4.1 on the target machine. --format=tar.gz opts
+        into <o>/<id>-<version>-linux-<arch>.tar.gz: the executable,
+        a PNG icon (--icon or generated), launch.sh, an inert .desktop.in
+        template, manifest.json, and runtime README. No libraries,
+        installer, signing, or URL-scheme registration are bundled.
         On macOS, cross-compiles (darwin/arm64, -trimpath, -s -w) and
         writes <o>/<Name>.app with Info.plist, the binary, PkgInfo, and
         an icon.icns built in pure Go from the PNG (no iconutil). Default

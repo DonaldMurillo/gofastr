@@ -224,12 +224,14 @@ func asExitError(err error, target **exec.ExitError) bool {
 // ── gofastr desktop build ─────────────────────────────────────────────
 
 type desktopBuildFlags struct {
-	id      string
-	name    string
-	icon    string
-	pkg     string
-	version string
-	out     string
+	format    string // Linux: empty/executable preserves the plain ELF output; tar.gz is opt-in.
+	formatSet bool
+	id        string
+	name      string
+	icon      string
+	pkg       string
+	version   string
+	out       string
 	// sign is a codesign identity ("" with noSign false means the
 	// default: ad-hoc when codesign exists).
 	sign   string
@@ -255,6 +257,11 @@ func parseDesktopBuildFlags(args []string) desktopBuildFlags {
 	for i := 0; i < len(args); i++ {
 		name, value, hasValue := devcmd.SplitFlagEqual(args[i])
 		switch name {
+		case "--format":
+			f.formatSet = true
+			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
+				f.format = v
+			}
 		case "--id":
 			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
 				f.id = v
@@ -381,6 +388,11 @@ func runDesktopBuild(args []string) {
 
 func runDesktopBuildForOS(args []string, targetOS string) {
 	f := parseDesktopBuildFlags(args)
+	if f.formatSet && (targetOS != "linux" || (f.format != "executable" && f.format != "tar.gz")) {
+		cli.Fail("--format supports executable or tar.gz on Linux only")
+		cli.OsExit(1)
+		return
+	}
 	if err := validateDesktopID(f.id); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
