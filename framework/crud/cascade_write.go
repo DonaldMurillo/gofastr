@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"slices"
@@ -14,9 +15,131 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	fwdb "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
+
+// pivotLink is one many_to_many link: the pivot table and its two key
+// columns, each passed through query.SafeIdent, and the coerced key
+// values.
+type pivotLink struct {
+	through, localKey, fkTarget string
+	parent, child               any
+}
+
+// newPivotLink gates rel's pivot table and key columns as identifiers
+// and pairs them with the link's key values.
+func newPivotLink(rel entity.Relation, parent, child any) (pivotLink, error) {
+	through, err := query.SafeIdent(rel.Through)
+	if err != nil {
+		return pivotLink{}, fmt.Errorf("relation %q through table %q: %w", rel.Name, rel.Through, err)
+	}
+	localKey, err := query.SafeIdent(rel.LocalKey)
+	if err != nil {
+		return pivotLink{}, fmt.Errorf("relation %q local key %q: %w", rel.Name, rel.LocalKey, err)
+	}
+	fkTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
+	if err != nil {
+		return pivotLink{}, fmt.Errorf("relation %q foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
+	}
+	return pivotLink{through: through, localKey: localKey, fkTarget: fkTarget, parent: parent, child: child}, nil
+}
+
+// pivotLinked reports whether the link's pivot row exists as the caller
+// reads it: under a registered pivot's tenant, owner and soft-delete
+// scope. Read unscoped, another tenant's row stood in for the caller's
+// and the caller's insert was skipped.
+func (ch *CrudHandler) pivotLinked(ctx context.Context, r *http.Request, pivotHandler *CrudHandler, l pivotLink) (bool, error) {
+	cb := query.Count(l.through).
+		Where(l.localKey+" = $1", l.parent).
+		Where(l.fkTarget+" = $1", l.child)
+	if pivotHandler != nil {
+		pivotHandler.ApplyTenantScopeCount(cb, r)
+		pivotHandler.ApplyOwnerScopeCount(cb, r)
+		pivotHandler.ApplySoftDeleteFilterCount(cb, r)
+	}
+	q, args := cb.Build()
+	var n int
+	if err := ch.DB.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// writePivotLink writes one link unless the caller already holds it. The
+// insert runs under a savepoint, so a refused one leaves a Postgres
+// transaction usable, and a unique violation is accepted only when the
+// recheck finds the link: a concurrent request wrote the same pair. Any
+// other violation (a constraint beyond the link's own key) is the
+// caller's conflict; it was swallowed, so SQLite committed the parent
+// and reported a link that did not exist.
+func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel entity.Relation, pivot *entity.Entity, pivotHandler *CrudHandler, fieldPrefix string, l pivotLink) error {
+	linked, err := ch.pivotLinked(ctx, r, pivotHandler, l)
+	if err != nil {
+		return fmt.Errorf("pivot check in %s: %w", rel.Through, err)
+	}
+	if linked {
+		return nil
+	}
+	var created map[string]any
+	insert := func(ctx context.Context) error {
+		if pivotHandler == nil {
+			//gofastr:allow(emitident) each name went through query.SafeIdent in newPivotLink, the only constructor
+			insQ := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)", l.through, l.localKey, l.fkTarget)
+			if _, err := ch.DB.ExecContext(ctx, insQ, l.parent, l.child); err != nil {
+				return fmt.Errorf("pivot insert into %s: %w", rel.Through, err)
+			}
+			return nil
+		}
+		lw := pivotHandler.linkWrite(map[string]any{rel.LocalKey: l.parent, rel.ForeignKeyTarget: l.child})
+		if err := pivotHandler.checkBelongsToScope(ctx, lw); err != nil {
+			var ve *ValidationError
+			if errors.As(err, &ve) {
+				return &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
+			}
+			return fmt.Errorf("%s: %w", fieldPrefix, err)
+		}
+		// A registered pivot is written through its own
+		// create: its route's gates (Access.Create, held
+		// scopes, CRUD=false) refuse here as there, and
+		// its tenant and owner stamps land, so the link
+		// is visible under the pivot's own scoping.
+		if !pivotHandler.canCascadeWrite(ctx, r, opCreate, "") {
+			return fmt.Errorf("%w: permission denied to create %s", errNotFound, pivot.GetName())
+		}
+		// The body keys are the pivot's field names
+		// (linkWrite folds the relation's spelling).
+		res, err := pivotHandler.doCreate(ctx, r, maps.Clone(lw.body))
+		if err != nil {
+			var ve *ValidationError
+			if errors.As(err, &ve) {
+				return &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
+			}
+			return fmt.Errorf("%s: %w", fieldPrefix, err)
+		}
+		created = res
+		return nil
+	}
+	if tx, ok := fwdb.TxFromContext(ctx); ok {
+		err = fwdb.InSavepoint(ctx, tx, func(ctx context.Context, _ *sql.Tx) error { return insert(ctx) })
+	} else {
+		err = insert(ctx)
+	}
+	if err != nil {
+		if !isUniqueViolation(err) {
+			return err
+		}
+		if linked, cerr := ch.pivotLinked(ctx, r, pivotHandler, l); cerr != nil || !linked {
+			return err
+		}
+		return nil
+	}
+	if created != nil {
+		pivotHandler.emitCascade(ctx, event.EntityCreated, created)
+	}
+	return nil
+}
 
 // childHandlerFor builds a tx-bound CrudHandler for the relation target.
 func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
@@ -388,6 +511,17 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
 
+		// The cascade exists to point the parent at the child. A key the
+		// parent write does not take (ReadOnly, Hidden, the owner or
+		// tenant column) would leave the parent on its old reference while
+		// the child is written and handed back as attached, so the
+		// cascade is refused before any child is written.
+		if fk := oneFK(rel); ch.declaresField(fk) && !ch.parentSetsKey(ctx, ch.fieldByName(fk), isUpdate) {
+			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
+				Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
+			}}}}
+		}
+
 		childHandler := ch.childHandlerFor(target)
 		childMap = childHandler.unconvertMapKeys(childMap)
 		targetPK, err := target.KeyColumn()
@@ -398,7 +532,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		var childResult map[string]any
 		childIDVal, hasChildID := childMap[targetPK]
 		if !hasChildID {
-			childIDVal, hasChildID = childMap[ch.convertKey(targetPK)]
+			childIDVal, hasChildID = childMap[childHandler.convertKey(targetPK)]
 		}
 		if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
 			if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
@@ -406,7 +540,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			}
 			childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
 			if err == nil {
-				childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
+				childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 			}
 		} else {
 			if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
@@ -414,7 +548,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			}
 			childResult, err = childHandler.doCreate(ctx, r, childMap)
 			if err == nil {
-				childHandler.EmitEvent(ctx, event.EntityCreated, childResult)
+				childHandler.emitCascade(ctx, event.EntityCreated, childResult)
 			}
 		}
 		if err != nil {
@@ -427,12 +561,31 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 
 		childPKVal := childResult[targetPK]
 		if childPKVal == nil {
-			childPKVal = childResult[ch.convertKey(targetPK)]
+			childPKVal = childResult[childHandler.convertKey(targetPK)]
 		}
 		body[oneFK(rel)] = childPKVal
+		// A child the caller's read scope hides goes back as its id only,
+		// as on the dependent arms.
+		if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+			return nil, fmt.Errorf("%s: %w", rel.Name, err)
+		}
 		attached[ch.convertKey(rel.Name)] = childResult
 	}
 	return attached, nil
+}
+
+// declaresField reports whether the entity declares a field named name.
+func (ch *CrudHandler) declaresField(name string) bool {
+	return slices.ContainsFunc(ch.Entity.GetFields(), func(f schema.Field) bool { return f.Name == name })
+}
+
+// parentSetsKey reports whether the parent write takes f from the body:
+// doUpdate's SET rules on an update, doCreate's column rules on a create.
+func (ch *CrudHandler) parentSetsKey(ctx context.Context, f schema.Field, isUpdate bool) bool {
+	if isUpdate {
+		return ch.updateSets(ctx, f, true)
+	}
+	return ch.createWrite(ctx, nil).sets(f)
 }
 
 // processDependentCascadeWrites handles nested mutations for dependent relations
@@ -443,7 +596,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 	}
 	attached := make(map[string]any)
 	for _, rel := range ch.Entity.Config.Relations {
-		if !rel.CascadeWrite {
+		// Belongs-to cascades ran before the parent was written and
+		// need only the target's key; the parent's own key, which the
+		// dependent arms read below, may span several columns.
+		if !rel.CascadeWrite || rel.Type == entity.RelManyToOne {
 			continue
 		}
 		rawVal, ok := ch.findCascadeValue(body, rel.Name)
@@ -480,7 +636,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			var childResult map[string]any
 			childIDVal, hasChildID := childMap[targetPK]
 			if !hasChildID {
-				childIDVal, hasChildID = childMap[ch.convertKey(targetPK)]
+				childIDVal, hasChildID = childMap[childHandler.convertKey(targetPK)]
 			}
 			if isUpdate {
 				if hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
@@ -492,7 +648,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
 					if err == nil {
-						childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
+						childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
 					existingID, scanErr := ch.findExistingHasOneChild(ctx, target, targetPK, oneFK(rel), parentID)
@@ -505,7 +661,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						}
 						childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(existingID), childMap)
 						if err == nil {
-							childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
+							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 						}
 					} else {
 						if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
@@ -513,7 +669,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						}
 						childResult, err = childHandler.doCreate(ctx, r, childMap)
 						if err == nil {
-							childHandler.EmitEvent(ctx, event.EntityCreated, childResult)
+							childHandler.emitCascade(ctx, event.EntityCreated, childResult)
 						}
 					}
 				}
@@ -523,7 +679,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				}
 				childResult, err = childHandler.doCreate(ctx, r, childMap)
 				if err == nil {
-					childHandler.EmitEvent(ctx, event.EntityCreated, childResult)
+					childHandler.emitCascade(ctx, event.EntityCreated, childResult)
 				}
 			}
 			if err != nil {
@@ -531,6 +687,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				if errors.As(err, &ve) {
 					return nil, &ValidationError{fields: prefixValidationErrors(rel.Name, ve.fields)}
 				}
+				return nil, fmt.Errorf("%s: %w", rel.Name, err)
+			}
+			// A child the caller's read scope hides goes back as its id only.
+			if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
 				return nil, fmt.Errorf("%s: %w", rel.Name, err)
 			}
 			attached[ch.convertKey(rel.Name)] = childResult
@@ -552,7 +712,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				var childResult map[string]any
 				childIDVal, hasChildID := childMap[targetPK]
 				if !hasChildID {
-					childIDVal, hasChildID = childMap[ch.convertKey(targetPK)]
+					childIDVal, hasChildID = childMap[childHandler.convertKey(targetPK)]
 				}
 				if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
 					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
@@ -563,7 +723,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
 					if err == nil {
-						childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
+						childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
 					if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
@@ -571,7 +731,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childResult, err = childHandler.doCreate(ctx, r, childMap)
 					if err == nil {
-						childHandler.EmitEvent(ctx, event.EntityCreated, childResult)
+						childHandler.emitCascade(ctx, event.EntityCreated, childResult)
 					}
 				}
 				if err != nil {
@@ -579,6 +739,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					if errors.As(err, &ve) {
 						return nil, &ValidationError{fields: prefixValidationErrors(fmt.Sprintf("%s.%d", rel.Name, idx), ve.fields)}
 					}
+					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
+				}
+				// A child the caller's read scope hides goes back as its id only.
+				if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
 					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 				}
 				childResults = append(childResults, childResult)
@@ -591,17 +755,8 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotArray}}}}
 			}
 			childResults := make([]map[string]any, 0, len(slice))
-			through, err := query.SafeIdent(rel.Through)
-			if err != nil {
-				return nil, fmt.Errorf("relation %q through table %q: %w", rel.Name, rel.Through, err)
-			}
-			localKey, err := query.SafeIdent(rel.LocalKey)
-			if err != nil {
-				return nil, fmt.Errorf("relation %q local key %q: %w", rel.Name, rel.LocalKey, err)
-			}
-			fkTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
-			if err != nil {
-				return nil, fmt.Errorf("relation %q foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
+			if _, err := newPivotLink(rel, nil, nil); err != nil {
+				return nil, err
 			}
 			pivot, err := entity.PivotEntity(ch.Registry, ch.Entity, rel.Through)
 			if err != nil {
@@ -621,7 +776,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					childMap := childHandler.unconvertMapKeys(it)
 					idVal, hasID := childMap[targetPK]
 					if !hasID {
-						idVal, hasID = childMap[ch.convertKey(targetPK)]
+						idVal, hasID = childMap[childHandler.convertKey(targetPK)]
 					}
 					if hasID {
 						coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, idVal)
@@ -633,7 +788,8 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
 						if len(childMap) == 1 {
-							childResult = childMap
+							// Under the child's wire key, as the bare-id arms below.
+							childResult = map[string]any{childHandler.convertKey(targetPK): childID}
 						} else {
 							if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childID)) {
 								return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
@@ -647,7 +803,11 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 								}
 								return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 							}
-							childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
+							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
+							// The update may move the child out of the caller's read scope.
+							if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+								return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
+							}
 						}
 					} else {
 						if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
@@ -662,10 +822,14 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							}
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
-						childHandler.EmitEvent(ctx, event.EntityCreated, childResult)
+						childHandler.emitCascade(ctx, event.EntityCreated, childResult)
 						childID = childResult[targetPK]
 						if childID == nil {
-							childID = childResult[ch.convertKey(targetPK)]
+							childID = childResult[childHandler.convertKey(targetPK)]
+						}
+						// A child the caller's read scope hides goes back as its id only.
+						if childResult, err = childHandler.scopedReadBack(ctx, childResult); err != nil {
+							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
 					}
 				case string, int, int64, int32, uint, uint64, float64:
@@ -695,32 +859,12 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
 				coercedChildID := coercePKValue(ch.Registry, target, targetPK, childID)
 
-				var exists int
-				checkQ := fmt.Sprintf("SELECT 1 FROM %s WHERE %s = $1 AND %s = $2",
-					through, localKey, fkTarget)
-				err := ch.DB.QueryRowContext(ctx, checkQ, coercedParentID, coercedChildID).Scan(&exists)
+				link, err := newPivotLink(rel, coercedParentID, coercedChildID)
 				if err != nil {
-					if errors.Is(err, sql.ErrNoRows) {
-						if pivotHandler != nil {
-							link := map[string]any{rel.LocalKey: coercedParentID, rel.ForeignKeyTarget: coercedChildID}
-							if err := pivotHandler.checkBelongsToScope(ctx, pivotHandler.linkWrite(link)); err != nil {
-								var ve *ValidationError
-								if errors.As(err, &ve) {
-									return nil, &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
-								}
-								return nil, fmt.Errorf("%s: %w", fieldPrefix, err)
-							}
-						}
-						insQ := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)",
-							through, localKey, fkTarget)
-						if _, insErr := ch.DB.ExecContext(ctx, insQ, coercedParentID, coercedChildID); insErr != nil {
-							if !isUniqueViolation(insErr) {
-								return nil, fmt.Errorf("pivot insert into %s: %w", rel.Through, insErr)
-							}
-						}
-					} else {
-						return nil, fmt.Errorf("pivot check in %s: %w", rel.Through, err)
-					}
+					return nil, err
+				}
+				if err := ch.writePivotLink(ctx, r, rel, pivot, pivotHandler, fieldPrefix, link); err != nil {
+					return nil, err
 				}
 				childResults = append(childResults, childResult)
 			}

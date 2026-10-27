@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -120,6 +122,126 @@ func (ch *CrudHandler) runBeforeGet(ctx context.Context, r *http.Request, id str
 		return nil, fmt.Errorf("before-get hook: %w", err)
 	}
 	return payload.Where, nil
+}
+
+// childBeforeScopes runs a related entity's OWN read-scoping hooks for a read
+// that reaches its rows from another entity's route (?include=, ?rel.field=)
+// and returns the WHERE clauses they appended.
+//
+// BeforeList and BeforeGet are the documented way to scope reads, and the
+// direct routes apply them; an include or a nested filter that skipped them
+// served, or counted, every row the child's own route hides. The chains are
+// picked the way applyChildReadHooks picks the After side: BeforeList
+// always, plus BeforeGet for a to-one relation, which mirrors GET
+// /child/{id}. The rows are loaded in one batch, so BeforeGet sees an empty
+// ID: a hook that needs one should refuse, and its error fails the request.
+//
+// Gated like the parent read: always on an HTTP request, and in process only
+// under WithReadHooks, where ListAll runs the parent's own BeforeList.
+func (ch *CrudHandler) childBeforeScopes(ctx context.Context, target *entity.Entity, rel entity.Relation) ([]hook.WhereClause, error) {
+	if ch.ChildHooks == nil || target == nil {
+		return nil, nil
+	}
+	reg, err := ch.childHookRegistry(target.GetName())
+	if err != nil || reg == nil {
+		return nil, err
+	}
+	req := hookRequest(ch.requestFrom(ctx))
+	var where []hook.WhereClause
+	if len(reg.HooksFor(hook.BeforeList)) > 0 {
+		payload := &hook.ListPayload{Request: req}
+		if err := runHooks(reg, hookCtx(ctx), hook.BeforeList, payload); err != nil {
+			return nil, &childHookError{rel: rel.Name, chain: "before-list", err: err}
+		}
+		where = append(where, payload.Where...)
+	}
+	toOne := rel.Type == entity.RelHasOne || rel.Type == entity.RelManyToOne
+	if toOne && len(reg.HooksFor(hook.BeforeGet)) > 0 {
+		payload := &hook.GetPayload{Request: req}
+		if err := runHooks(reg, hookCtx(ctx), hook.BeforeGet, payload); err != nil {
+			return nil, &childHookError{rel: rel.Name, chain: "before-get", err: err}
+		}
+		where = append(where, payload.Where...)
+	}
+	return where, nil
+}
+
+// childHookError is a child entity's Before hook refusing a read reached
+// through ?include= or a nested ?rel.field= filter. writeIncludeError
+// renders it the way the child's own route renders the same refusal (400
+// with the hook's wording or phrase), so a hook that refuses an ID-less
+// BeforeGet reads as a refusal, not a server fault. Error() keeps the
+// relation and chain for logs and in-process callers.
+type childHookError struct {
+	rel, chain string
+	err        error
+}
+
+func (e *childHookError) Error() string {
+	return fmt.Sprintf("relation %s: %s hook: %v", e.rel, e.chain, e.err)
+}
+
+func (e *childHookError) Unwrap() error { return e.err }
+
+// childHookRegistry looks up name's hook registry through ChildHooks, a
+// host-installable lookup that the nested-filter path reaches from the
+// in-process API. A panic there is turned into an error, so the read fails
+// closed instead of skipping the scope or killing the process.
+func (ch *CrudHandler) childHookRegistry(name string) (reg *hook.HookRegistry, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			reg, err = nil, fmt.Errorf("child hooks for %s: %s", name, textsafe.Recovered(r))
+		}
+	}()
+	return ch.ChildHooks(name), nil
+}
+
+// applyChildBeforeHooks stores the include target's Before-hook clauses on
+// node.HookScopes. See childBeforeScopes.
+func (ch *CrudHandler) applyChildBeforeHooks(ctx context.Context, node *IncludeNode) error {
+	if node == nil || !readHooksEnabled(ctx) {
+		return nil
+	}
+	where, err := ch.childBeforeScopes(ctx, node.Target, node.Relation)
+	if err != nil {
+		return err
+	}
+	node.HookScopes = where
+	return nil
+}
+
+// hookScopeSubquery renders Before-hook clauses as one predicate on the rows
+// of table, as qualifier names them:
+//
+//	qualifier.id IN (SELECT id FROM table WHERE (c1) AND (c2))
+//
+// A hook's clause is written against GET /<target>, a bare SELECT on the
+// target table, so it is evaluated in exactly that shape rather than spliced
+// into a JOIN where its bare column names could be ambiguous or bind to the
+// wrong table. Placeholders are numbered from $1 (query.Build renumbers the
+// clauses the way the direct route does), so a caller that runs the SQL as
+// is puts this predicate FIRST and numbers the rest after len(args).
+func hookScopeSubquery(qualifier, table string, key []string, clauses []hook.WhereClause) (string, []any) {
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	if !isSafeTable(qualifier) || !isSafeTable(table) || !safeIdentifiers(key) {
+		return "1 = 0", nil
+	}
+	qb := query.Select(key...).From(table)
+	for _, c := range clauses {
+		qb.Where(c.SQL, c.Args...)
+	}
+	sub, args := qb.Build()
+	lhs := make([]string, len(key))
+	for i, k := range key {
+		lhs[i] = qualifier + "." + k
+	}
+	left := lhs[0]
+	if len(lhs) > 1 {
+		left = "(" + strings.Join(lhs, ", ") + ")"
+	}
+	return left + " IN (" + sub + ")", args
 }
 
 // runAfterGet applies the AfterGet chain to a single in-process result and

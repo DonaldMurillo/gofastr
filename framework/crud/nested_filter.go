@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -11,9 +12,11 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
@@ -38,6 +41,23 @@ func isSafeIdentifier(s string) bool {
 	return safeIdentifierRE.MatchString(s)
 }
 
+// isSafeTable reports whether s names a table: one identifier, or a
+// schema-qualified one (app.tags), the shape query.SafeIdent accepts
+// for Table. A table goes into SQL as a column qualifier (app.tags.name),
+// which Postgres reads; holding it to isSafeIdentifier made every
+// fragment on a qualified table match nothing.
+func isSafeTable(s string) bool {
+	_, err := query.SafeIdent(s)
+	return err == nil
+}
+
+// selfJoinAlias is the alias a hop gives its table when it joins the table
+// it came from. An alias is one identifier, so a qualified table takes its
+// last segment: app.nodes becomes nodes_sub.
+func selfJoinAlias(table string) string {
+	return tableBase(table) + "_sub"
+}
+
 // relationHop describes one hop in a multi-level relation traversal.
 type relationHop struct {
 	Relation   entity.Relation
@@ -51,17 +71,23 @@ type relationHop struct {
 	// nothing.
 	Pivot       *entity.Entity
 	PivotScopes []filter.ParsedFilter
+	// HookScopes holds the clauses the target's own BeforeList (and, on a
+	// to-one hop, BeforeGet) hooks appended: the EXISTS subquery counts
+	// only rows the target's route would serve.
+	HookScopes []hook.WhereClause
 }
 
 // nestedFilter is one parsed `?author.name=alice` or `?author.team.name=x` style predicate.
 type nestedFilter struct {
-	Hops       []relationHop
-	Relation   entity.Relation // 1-hop fallback
-	Field      string
-	Op         filter.FilterOp
-	Value      string   // single-value ops (eq/gt/like/…)
-	Values     []string // OpIn: the full value set, emitted as one IN (...)
-	isBool     bool
+	Hops     []relationHop
+	Relation entity.Relation // 1-hop fallback
+	Field    string
+	Op       filter.FilterOp
+	Value    string   // single-value ops (eq/gt/like/…)
+	Values   []string // OpIn: the full value set, emitted as one IN (...)
+	// colType is the target column's type. Every value already passed
+	// filter.CoerceValue for it; the subquery binds filter.TypedBind.
+	colType    schema.FieldType
 	softDelete bool                  // 1-hop fallback
 	scopes     []filter.ParsedFilter // 1-hop fallback
 	table      string                // 1-hop fallback
@@ -89,7 +115,10 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		return nil, nil
 	}
 	var out []nestedFilter
-	for key, values := range q {
+	// Sorted, so one query string always yields the same SQL text and the
+	// same first refusal.
+	for _, key := range slices.Sorted(maps.Keys(q)) {
+		values := q[key]
 		if !strings.Contains(key, ".") || len(values) == 0 {
 			continue
 		}
@@ -130,16 +159,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			currentEntity = target
 		}
 
-		fieldRaw := parts[len(parts)-1]
-		fieldName := fieldRaw
-		op := filter.OpEq
-		for _, s := range filter.FilterSuffixes {
-			if before, ok0 := strings.CutSuffix(fieldRaw, s.Suffix); ok0 {
-				fieldName = before
-				op = s.Op
-				break
-			}
-		}
+		fieldName, op := splitFieldOp(currentEntity, parts[len(parts)-1])
 
 		// Refuse field names that aren't plain SQL identifiers.
 		if !isSafeIdentifier(fieldName) {
@@ -147,18 +167,15 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		}
 
 		target := currentEntity
-		known, blocked, isBool := false, false, false
+		sent := fieldName
+		known, blocked := false, false
 		var colType schema.FieldType
-		for _, f := range target.GetFields() {
-			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) || casing.ToSnake(fieldName) == f.Name {
-				known = !f.Hidden
-				blocked = known && f.NoQuery
-				if known {
-					fieldName = f.Name // rewrite to the column: this reaches SQL
-					isBool = f.Type == schema.Bool
-					colType = f.Type
-				}
-				break
+		if f, ok := nestedField(registry, target, fieldName); ok {
+			known = !f.Hidden
+			blocked = known && f.NoQuery
+			if known {
+				fieldName = f.Name // rewrite to the column: this reaches SQL
+				colType = f.Type
 			}
 		}
 		if blocked {
@@ -176,7 +193,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			Relation:   hops[0].Relation,
 			Field:      fieldName,
 			Op:         op,
-			isBool:     isBool,
+			colType:    colType,
 			softDelete: hops[0].SoftDelete,
 			table:      hops[0].Table,
 		}
@@ -191,9 +208,78 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		} else {
 			nf.Value = values[0]
 		}
+		if err := checkNestedValues(sent, nf); err != nil {
+			return nil, i18n.Wrap(reasonNestedFilter, err, map[string]any{"key": strconv.Quote(key)})
+		}
 		out = append(out, nf)
 	}
 	return out, nil
+}
+
+// nestedField finds the target field a nested filter names, by column
+// name, wire name, or the snake_case of a camelCase spelling. Hidden
+// fields are returned too; the caller folds them into unknown.
+func nestedField(registry entity.Registry, target *entity.Entity, name string) (schema.Field, bool) {
+	for _, f := range entity.ValueFields(registry, target) {
+		if f.Name == name || (f.WireName != "" && f.WireName == name) || casing.ToSnake(name) == f.Name {
+			return f, true
+		}
+	}
+	return schema.Field{}, false
+}
+
+// splitFieldOp splits the last segment of a nested key into the field it
+// names and its operator, the way filter.ParseFiltersValues splits a
+// top-level key: a suffix counts only when the name before it is a
+// visible field of target, and a segment that is itself a field name
+// (opt_in, check_in) is that field under equality. Cutting the first
+// matching suffix with no such check sent ?members.opt_in=true looking
+// for a field "opt". When neither reading names a field, the first
+// suffix cut stands, so the refusal names what the caller most likely
+// meant.
+func splitFieldOp(target *entity.Entity, raw string) (string, filter.FilterOp) {
+	visible := func(name string) bool {
+		f, ok := nestedField(nil, target, name)
+		return ok && !f.Hidden
+	}
+	firstCut, firstOp, cut := raw, filter.OpEq, false
+	for _, s := range filter.FilterSuffixes {
+		before, ok := strings.CutSuffix(raw, s.Suffix)
+		if !ok {
+			continue
+		}
+		if visible(before) {
+			return before, s.Op
+		}
+		if !cut {
+			firstCut, firstOp, cut = before, s.Op, true
+		}
+	}
+	if visible(raw) {
+		return raw, filter.OpEq
+	}
+	return firstCut, firstOp
+}
+
+// checkNestedValues refuses a value that is not of the target column's
+// type, the same filter.CoerceValue check the top-level parser runs, so
+// ?author.age=abc answers 400 on both dialects instead of a Postgres 500
+// and an empty SQLite 200. A like value is a substring and is not checked.
+func checkNestedValues(sent string, nf nestedFilter) error {
+	switch nf.Op {
+	case filter.OpLike:
+		return nil
+	case filter.OpIn:
+		for _, v := range nf.Values {
+			if _, err := filter.CoerceValue(sent, nf.colType, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		_, err := filter.CoerceValue(sent, nf.colType, nf.Value)
+		return err
+	}
 }
 
 // NestedFilter is the in-process (ListOptions) equivalent of a single
@@ -263,18 +349,14 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 		}
 
 		target := currentEntity
-		known, blocked, isBool := false, false, false
+		known, blocked := false, false
 		var colType schema.FieldType
-		for _, f := range target.GetFields() {
-			if f.Name == field || (f.WireName != "" && f.WireName == field) || casing.ToSnake(field) == f.Name {
-				known = !f.Hidden
-				blocked = known && f.NoQuery
-				if known {
-					field = f.Name // rewrite to the column: this reaches SQL
-					isBool = f.Type == schema.Bool
-					colType = f.Type
-				}
-				break
+		if f, ok := nestedField(registry, target, field); ok {
+			known = !f.Hidden
+			blocked = known && f.NoQuery
+			if known {
+				field = f.Name // rewrite to the column: this reaches SQL
+				colType = f.Type
 			}
 		}
 		if blocked {
@@ -301,7 +383,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 			Relation:   hops[0].Relation,
 			Field:      field,
 			Op:         op,
-			isBool:     isBool,
+			colType:    colType,
 			softDelete: hops[0].SoftDelete,
 			table:      hops[0].Table,
 		}
@@ -313,6 +395,9 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 			nf.Values = spec.Values
 		} else {
 			nf.Value = spec.Value
+		}
+		if err := checkNestedValues(spec.Field, nf); err != nil {
+			return nil, fmt.Errorf("nested filter %q: %w", spec.Relation, err)
 		}
 		out = append(out, nf)
 	}
@@ -427,7 +512,7 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 	case entity.RelManyToMany:
 		joinable = len(parentKey) == 1 && len(targetKey) == 1
 	}
-	if !joinable || !isSafeIdentifier(parentTable) || !safeIdentifiers(parentKey) || !isSafeIdentifier(relTable) || !safeIdentifiers(targetKey) {
+	if !joinable || !isSafeTable(parentTable) || !safeIdentifiers(parentKey) || !isSafeTable(relTable) || !safeIdentifiers(targetKey) {
 		return "1 = 0", nil
 	}
 	if rel.Type != entity.RelManyToMany && !safeIdentifiers(fks) {
@@ -437,7 +522,7 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 	subTable := relTable
 	aliasClause := relTable
 	if relTable == parentTable {
-		subTable = relTable + "_sub"
+		subTable = selfJoinAlias(relTable)
 		aliasClause = fmt.Sprintf("%s %s", relTable, subTable)
 	}
 
@@ -451,6 +536,16 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 		}
 		args = append(args, scopeArgs...)
 	}
+	// The target's Before-hook clauses, evaluated on its own table the way
+	// its route evaluates them. Positional renumbering in the outer
+	// builder keeps their args after the scope's.
+	if hookPred, hookArgs := hookScopeSubquery(subTable, relTable, targetKey, hop.HookScopes); hookPred != "" {
+		if scopeClause != "" {
+			scopeClause += " AND "
+		}
+		scopeClause += hookPred
+		args = append(args, hookArgs...)
+	}
 
 	var innerPredicate string
 	if len(hops) == 1 {
@@ -463,15 +558,16 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 			ph := make([]string, len(nf.Values))
 			for i, v := range nf.Values {
 				ph[i] = fmt.Sprintf("$%d", len(args)+1)
-				args = append(args, filter.BoolBind(nf.isBool, v))
+				args = append(args, filter.TypedBind(nf.colType, v))
 			}
 			fieldPred = fmt.Sprintf("%s.%s IN (%s)", subTable, col, strings.Join(ph, ","))
 		} else if nf.Op == filter.OpLike {
-			fieldPred = fmt.Sprintf("%s.%s LIKE $%d"+filter.LikeEscapeSuffix, subTable, col, len(args)+1)
-			args = append(args, filter.EscapeLikePattern(nf.Value))
+			var arg string
+			fieldPred, arg = filter.LikeClause(subTable+"."+col, len(args)+1, nf.Value)
+			args = append(args, arg)
 		} else {
 			fieldPred = fmt.Sprintf("%s.%s %s $%d", subTable, col, opToSQL(nf.Op), len(args)+1)
-			args = append(args, filter.BoolBind(nf.isBool, nf.Value))
+			args = append(args, filter.TypedBind(nf.colType, nf.Value))
 		}
 		innerPredicate = fieldPred
 	} else {
@@ -499,7 +595,7 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 			aliasClause, keyJoin(subTable, fks, parentTable, parentKey), innerPredicate,
 		), args
 	case entity.RelManyToMany:
-		if !isSafeIdentifier(rel.Through) || !isSafeIdentifier(rel.ForeignKeyTarget) || !isSafeIdentifier(rel.LocalKey) {
+		if !isSafeTable(rel.Through) || !isSafeIdentifier(rel.ForeignKeyTarget) || !isSafeIdentifier(rel.LocalKey) {
 			return "1 = 0", nil
 		}
 		// The builder renumbers placeholders in the order they appear, so
@@ -641,11 +737,30 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 			if checkPosture && (!probe.relationReachable(ctx, "read") || !probe.CanReadScoped(ctx)) {
 				return &includeForbiddenError{Entity: target.GetName()}
 			}
+			// Filtering through a many_to_many counts the join entity's
+			// rows: ?members.id=x answers "is x a member". Its PivotScopes
+			// narrow the rows below, so the gate half is asked here, as
+			// on the include path.
+			if checkPosture {
+				if err := ch.checkPivotReadable(ctx, filters[i].Hops[h].Pivot); err != nil {
+					return err
+				}
+			}
 			var scopes []filter.ParsedFilter
 			scopes = append(scopes, eagerScopeFilters(ctx, target)...)
 			scopes = append(scopes, readScopeFilters(ctx, target)...)
 			filters[i].Hops[h].Scopes = scopes
 			filters[i].Hops[h].PivotScopes = pivotScopes(ctx, filters[i].Hops[h].Pivot)
+			// The target's own BeforeList/BeforeGet scope, run where the
+			// parent's would be: on every HTTP request, and in process
+			// under WithReadHooks.
+			if checkPosture || readHooksEnabled(ctx) {
+				where, err := ch.childBeforeScopes(ctx, target, filters[i].Hops[h].Relation)
+				if err != nil {
+					return err
+				}
+				filters[i].Hops[h].HookScopes = where
+			}
 			if h == 0 {
 				filters[i].scopes = scopes
 			}

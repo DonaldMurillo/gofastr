@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -109,6 +110,12 @@ type IncludeNode struct {
 	// IN list, OR where the declaration demands AND, and serve the drafts
 	// the scope exists to hide.
 	ReadScopes []filter.ParsedFilter
+	// HookScopes carries the WHERE clauses the TARGET's own BeforeList
+	// (and, for a to-one relation, BeforeGet) hooks appended, set by
+	// applyChildBeforeHooks. They render as one key-IN subquery on the
+	// target table, so a clause written against GET /<target> reads the
+	// same columns here.
+	HookScopes []hook.WhereClause
 	// Pivot is the registered entity owning a many_to_many's Through
 	// table, nil when the migrator created it. PivotScopes carries its
 	// owner, tenant and read-scope predicates (applyPivotScope): a link
@@ -257,7 +264,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 				// fields, the allow-list that keeps `include=rel(col=v)`
 				// from naming an arbitrary column. Target is always resolved
 				// now, so this list is never empty.
-				parsed, err := parseScopedFilters(filterClause, target.GetFields(), path)
+				parsed, err := parseScopedFilters(filterClause, entity.ValueFields(registry, target), path)
 				if err != nil {
 					return nil, err
 				}
@@ -409,14 +416,29 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			return nil, i18n.NewError(reasonScopedMissingEq, map[string]any{"include": strconv.Quote(pathForErrors), "filter": strconv.Quote(kv)})
 		}
 		key, value := kv[:eq], kv[eq+1:]
-		field := key
-		op := filter.OpEq
+		// Split the key the way the top-level parser does: a suffix counts
+		// only when the name before it is a declared field, and a key that
+		// is itself a field (opt_in, check_in) is that field under
+		// equality. With fields nil every name is accepted, so the first
+		// suffix cut stands, as it always has.
+		named := func(n string) bool { return knownField[n] || noQueryField[n] }
+		field, op := key, filter.OpEq
+		firstCut, firstOp, cut, resolved := key, filter.OpEq, false, false
 		for _, s := range filter.FilterSuffixes {
-			if before, ok := strings.CutSuffix(key, s.Suffix); ok {
-				field = before
-				op = s.Op
+			before, ok := strings.CutSuffix(key, s.Suffix)
+			if !ok {
+				continue
+			}
+			if fields == nil || named(before) {
+				field, op, resolved = before, s.Op, true
 				break
 			}
+			if !cut {
+				firstCut, firstOp, cut = before, s.Op, true
+			}
+		}
+		if !resolved && !named(key) {
+			field, op = firstCut, firstOp
 		}
 		if noQueryField[field] {
 			return nil, i18n.NewError(reasonScopedNotFilterable, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
@@ -445,13 +467,34 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			}
 			vals := strings.SplitSeq(value, "|")
 			for v := range vals {
-				out = append(out, filter.ParsedFilter{Field: field, Op: filter.OpIn, Value: v}.Coerced(colType[field]))
+				pf, err := scopedTyped(filter.ParsedFilter{Field: sent, Op: filter.OpIn, Value: v}, field, colType[field], pathForErrors)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, pf)
 			}
 		} else {
-			out = append(out, filter.ParsedFilter{Field: field, Op: op, Value: value}.Coerced(colType[field]))
+			pf, err := scopedTyped(filter.ParsedFilter{Field: sent, Op: op, Value: value}, field, colType[field], pathForErrors)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, pf)
 		}
 	}
 	return out, nil
+}
+
+// scopedTyped checks a scoped filter's value against its column type
+// (the error names the field the caller sent, pf.Field) and returns the
+// filter on column col with its typed value, so a mistyped value inside
+// ?include=rel(...) answers 400 on both dialects.
+func scopedTyped(pf filter.ParsedFilter, col string, t schema.FieldType, pathForErrors string) (filter.ParsedFilter, error) {
+	typed, err := pf.Typed(t)
+	if err != nil {
+		return filter.ParsedFilter{}, i18n.Wrap(reasonScopedFilter, err, map[string]any{"include": strconv.Quote(pathForErrors)})
+	}
+	typed.Field = col
+	return typed, nil
 }
 
 // maxScopedINEntries caps the size of a single `field_in=a|b|c|…` list
@@ -505,6 +548,13 @@ func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, e
 		// leaks either way, the owner scope matches no row, but the two
 		// status codes differ.
 		writeErrJSON(w, r, http.StatusForbidden, forbidden, i18n.Phrase{})
+		return
+	}
+	if refused, ok := errors.AsType[*childHookError](err); ok {
+		// The child's own route answers its Before hook's error as 400 with
+		// the hook's wording or phrase (List and Get in crud.go), so the
+		// same refusal reached through the relation answers the same.
+		writeErrJSON(w, r, http.StatusBadRequest, refused.err, i18n.Phrase{})
 		return
 	}
 	log.Printf("crud: %s include failed: %v", surface, err)
@@ -572,7 +622,10 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		applyRelatedTenantScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
 		applyPivotScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), parentKey, node, ids, loaded, budget); err != nil {
+		if err := ch.applyChildBeforeHooks(ctx, node); err != nil {
+			return err
+		}
+		if err := loadIncludeNode(ctx, ch.conn(ctx), ch.Entity.GetTable(), parentKey, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
 			}
@@ -641,7 +694,10 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		applyRelatedTenantScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
 		applyPivotScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, target.GetTable(), key, node, ids, loaded, budget); err != nil {
+		if err := ch.applyChildBeforeHooks(ctx, node); err != nil {
+			return err
+		}
+		if err := loadIncludeNode(ctx, ch.conn(ctx), target.GetTable(), key, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
 			}
@@ -787,9 +843,35 @@ func rawRelationValue(rel entity.Relation, val any, present bool) any {
 
 // convTree is the wire-key converter for one include hop's rows, and by
 // raw relation name the trees for the hops nested under it.
+//
+// documents names the hop's schema.JSON columns. Their values are stored
+// documents, data and not wire keys, so their keys are kept as stored, the
+// way a direct read keeps them. Converted, a stored {"key_name": 1} read
+// back as keyName through ?include= and the next save of that value
+// rewrote the document.
 type convTree struct {
-	conv     func(string) string
-	children map[string]*convTree
+	conv      func(string) string
+	children  map[string]*convTree
+	documents map[string]bool
+}
+
+// hopTree is the converter tree of one hop over target's rows, without
+// the hops nested under it. A nil target converts with the handler's own
+// keys and treats no column as a document.
+func (ch *CrudHandler) hopTree(target *entity.Entity) *convTree {
+	if target == nil {
+		return &convTree{conv: ch.convertKey}
+	}
+	t := &convTree{conv: ch.wireConverterOf(target)}
+	for _, f := range target.GetFields() {
+		if f.Type == schema.JSON {
+			if t.documents == nil {
+				t.documents = map[string]bool{}
+			}
+			t.documents[f.Name] = true
+		}
+	}
+	return t
 }
 
 // includeConvTrees builds the converter tree of each relation nodes
@@ -803,12 +885,13 @@ type convTree struct {
 func (ch *CrudHandler) includeConvTrees(nodes []*IncludeNode) map[string]*convTree {
 	out := map[string]*convTree{}
 	for _, node := range nodes {
-		t := &convTree{children: ch.includeConvTrees(node.Children)}
+		var t *convTree
 		if node.Target != nil {
-			t.conv = ch.wireConverterOf(node.Target)
+			t = ch.hopTree(node.Target)
 		} else {
-			t.conv = ch.wireConverterFor(node.Relation.Entity)
+			t = ch.hopTreeFor(node.Relation.Entity)
 		}
+		t.children = ch.includeConvTrees(node.Children)
 		if prev, ok := out[node.Relation.Name]; ok {
 			mergeConvTree(prev, t)
 			continue
@@ -838,7 +921,7 @@ func mergeConvTree(dst, src *convTree) {
 // declaration's field naming.
 func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, tree *convTree, val any, present bool, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, error) {
 	if tree == nil {
-		tree = &convTree{conv: ch.wireConverterFor(rel.Entity)}
+		tree = ch.hopTreeFor(rel.Entity)
 	}
 	switch rel.Type {
 	case entity.RelHasMany, entity.RelManyToMany:
@@ -916,6 +999,10 @@ func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintp
 		converted[id] = entry
 		total := 1
 		for k, val := range x {
+			if tree.documents[k] {
+				out[tree.conv(k)] = val
+				continue
+			}
 			sub := tree
 			if child, ok := tree.children[k]; ok {
 				sub = child
@@ -1072,8 +1159,8 @@ func applyRelatedReadScope(ctx context.Context, node *IncludeNode) {
 	node.ReadScopes = readScopeFilters(ctx, node.Target)
 }
 
-// wireConverterFor returns the JSON-key converter for the entity a relation
-// points at, so an included row is renamed by ITS OWN schema rather than the
+// hopTreeFor returns the converter tree for the entity a relation points
+// at, so an included row is renamed by ITS OWN schema rather than the
 // parent handler's.
 //
 // Without this, deepConvertMap applied the parent's wire map at every depth:
@@ -1087,15 +1174,15 @@ func applyRelatedReadScope(ctx context.Context, node *IncludeNode) {
 // resolution failure this falls back to the handler's own converter, which is
 // the pre-existing behaviour, the include tree has already refused
 // unresolvable targets by this point, so this path is defensive only.
-func (ch *CrudHandler) wireConverterFor(targetName string) func(string) string {
+func (ch *CrudHandler) hopTreeFor(targetName string) *convTree {
 	if ch.Registry == nil {
-		return ch.convertKey
+		return ch.hopTree(nil)
 	}
 	target, err := entity.ResolveTarget(ch.Registry, ch.Entity, targetName)
-	if err != nil || target == nil {
-		return ch.convertKey
+	if err != nil {
+		return ch.hopTree(nil)
 	}
-	return ch.wireConverterOf(target)
+	return ch.hopTree(target)
 }
 
 // wireConverterOf converts target's columns to the keys its included rows
@@ -1148,9 +1235,32 @@ func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*Includ
 		if !target.relationReachable(ctx, "read") || !target.canReadEntityGate(ctx) {
 			return &includeForbiddenError{Entity: node.Target.GetName()}
 		}
+		// A many_to_many reads the join entity's rows too: which members a
+		// group has IS the memberships table. A registered pivot answers
+		// for itself the way the target does; its owner, tenant and read
+		// scope narrow the rows (applyPivotScope), so the gate half is the
+		// one to ask here. A migrator-made pivot (nil) has no posture.
+		if err := ch.checkPivotReadable(ctx, node.Pivot); err != nil {
+			return err
+		}
 		if err := ch.checkIncludeReadable(ctx, node.Children); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// checkPivotReadable refuses a many_to_many whose registered join entity the
+// caller may not read: its own route answers 403, so the associations it
+// holds are not readable through ?include= or ?rel.field= either. nil (a
+// migrator-made pivot) passes.
+func (ch *CrudHandler) checkPivotReadable(ctx context.Context, pivot *entity.Entity) error {
+	if pivot == nil {
+		return nil
+	}
+	probe := &CrudHandler{Entity: pivot, DB: ch.DB, Registry: ch.Registry}
+	if !probe.relationReachable(ctx, "read") || !probe.canReadEntityGate(ctx) {
+		return &includeForbiddenError{Entity: pivot.GetName()}
 	}
 	return nil
 }

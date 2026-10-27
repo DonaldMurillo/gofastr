@@ -72,12 +72,13 @@ func TestEventStream_DeliversRemoteIntOwnerEvent(t *testing.T) {
 	go func() { chB.EventStream()(rec, req); close(done) }()
 	time.Sleep(100 * time.Millisecond) // let the subscription register
 
-	// Replica A: alice's own write, real CRUD event payload (ownerId int64→string).
-	chA.EmitEvent(ctxWithUser("alice"), event.EntityCreated, map[string]any{"id": "remote-n1", "user_id": "alice"})
+	// Replica A: alice's own write, real CRUD event payload. Her row's
+	// user_id holds her extractor id, int64 7, stamped as the string "7".
+	chA.EmitEvent(ctxWithUser("alice"), event.EntityCreated, map[string]any{"id": "remote-n1", "user_id": int64(7)})
 	time.Sleep(300 * time.Millisecond)
 
 	// Control: the same event emitted locally on replica B IS delivered.
-	chB.EmitEvent(ctxWithUser("alice"), event.EntityCreated, map[string]any{"id": "local-n2", "user_id": "alice"})
+	chB.EmitEvent(ctxWithUser("alice"), event.EntityCreated, map[string]any{"id": "local-n2", "user_id": int64(7)})
 	time.Sleep(300 * time.Millisecond)
 
 	cancel()

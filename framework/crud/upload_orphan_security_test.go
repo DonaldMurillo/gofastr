@@ -137,6 +137,26 @@ func TestFailedCreateLeavesNoOrphanUpload(t *testing.T) {
 		}
 	})
 
+	t.Run("client gone before the rollback", func(t *testing.T) {
+		ch, _, dir := orphanMediaHandler(t)
+		req := orphanMultipartRequest(t, map[string]string{"caption": "ok", "count": "1"})
+		ctx, cancel := context.WithCancel(req.Context())
+		hooks := hook.NewHookRegistry()
+		hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, _ any) error {
+			cancel() // the client disconnects while the hook runs
+			return fmt.Errorf("rejected")
+		})
+		ch.Hooks = hooks
+		rr := httptest.NewRecorder()
+		ch.Create()(rr, req.WithContext(ctx))
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 hook rejection, got %d (%s)", rr.Code, rr.Body.String())
+		}
+		if n := orphanFiles(t, dir); n != 0 {
+			t.Errorf("SECURITY: [orphan-upload] the request was canceled before the rollback and %d file(s) remain in storage with no row referencing them", n)
+		}
+	})
+
 	t.Run("multipart update on missing id", func(t *testing.T) {
 		ch, db, dir := orphanMediaHandler(t)
 		req := orphanMultipartRequest(t, map[string]string{"caption": "ok", "count": "1"})

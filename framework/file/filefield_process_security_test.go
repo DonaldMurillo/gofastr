@@ -200,7 +200,11 @@ func (s *deleteLedgerStorage) Save(_ context.Context, key string, _ io.Reader) e
 	return nil
 }
 
-func (s *deleteLedgerStorage) Delete(_ context.Context, key string) error {
+func (s *deleteLedgerStorage) Delete(ctx context.Context, key string) error {
+	// Refuses a canceled call, as both local backends do.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.deleted = append(s.deleted, key)
 	return nil
 }
@@ -243,6 +247,15 @@ func (partialDeriver) DeriveImage(ctx context.Context, store upload.Storage, _ [
 	if err := store.Save(ctx, primaryRef+"_sm.webp", bytes.NewReader([]byte("rendition"))); err != nil {
 		return nil, err
 	}
+	return nil, deriveError{}
+}
+
+// cancelingDeriver fails after the request it runs under is canceled,
+// the client gone mid-derivation.
+type cancelingDeriver struct{ cancel context.CancelFunc }
+
+func (d cancelingDeriver) DeriveImage(context.Context, upload.Storage, []byte, string) (*file.ImageDerivatives, error) {
+	d.cancel()
 	return nil, deriveError{}
 }
 
@@ -302,6 +315,19 @@ func TestProcessFileFieldDeriveFailureOrphans(t *testing.T) {
 		}
 		if orphans := remaining(store); len(orphans) > 0 {
 			t.Fatalf("SECURITY: [filefield-orphan] upload rejected mid-derivation (err=%v) but the primary AND already-saved rendition persist: keys %v remain (saved=%v deleted=%v). Attack: each rejected request leaves a full-size object plus partial renditions on disk, referenced by no row (variant loop saves incrementally, imagefield.go:160-168; no store.Delete on the error path).", err, orphans, store.saved, store.deleted)
+		}
+	})
+
+	t.Run("canceled derive failure must not orphan the primary", func(t *testing.T) {
+		store := &deleteLedgerStorage{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		_, err := file.ProcessFileField(ctx, store, bytes.NewReader(payload), "photo.png", "users", "avatar", file.WithImageDeriver(cancelingDeriver{cancel}))
+		if err == nil {
+			t.Fatal("control: a failing deriver must still fail the upload")
+		}
+		if orphans := remaining(store); len(orphans) > 0 {
+			t.Fatalf("SECURITY: [filefield-orphan] the request was canceled before the cleanup and keys %v remain (saved=%v deleted=%v)", orphans, store.saved, store.deleted)
 		}
 	})
 

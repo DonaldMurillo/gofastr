@@ -1131,3 +1131,31 @@ func assertColumnType(t *testing.T, db *sql.DB, table, column, want string) {
 	}
 	t.Errorf("column %q not found after the rebuild", column)
 }
+
+// The repair looked the table up in sqlite_master by exact name, so an
+// entity on Tasks over the stored tasks failed with "table not found",
+// though SQLite itself resolves either spelling.
+func TestRepairOwnerFKIgnoresTableCase(t *testing.T) {
+	db := legacyDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
+		`CREATE INDEX idx_tasks_title ON tasks(title)`,
+	)
+	ent := taskEntity(t)
+	ent.Config.Table = "Tasks"
+	ctx := context.Background()
+	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": ent})
+	if err != nil || len(stale) != 1 {
+		t.Fatalf("stale = %+v, %v; want the user_id key", stale, err)
+	}
+	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	var name string
+	if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_title'`).Scan(&name); err != nil {
+		t.Fatalf("the index was not replayed: %v", err)
+	}
+	if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'`).Scan(&name); err != nil {
+		t.Fatalf("the table lost its stored spelling: %v", err)
+	}
+}

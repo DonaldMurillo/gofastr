@@ -40,7 +40,10 @@ var errUpsertForeignRow = errors.New("upsert: target row belongs to a different 
 // EXCLUDED pseudo-table. The framework's BeforeCreate/AfterCreate hooks
 // fire (an upsert that turns into an INSERT is semantically a Create);
 // no Update hooks fire, if you need to distinguish, route through the
-// regular Create/Update endpoints.
+// regular Create/Update endpoints. The lifecycle event does distinguish:
+// entity.created when no row held the key, entity.updated when one did.
+// On conflict only the columns the body carries are written; a Default
+// fills an omitted column on the insert arm alone.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
 	req := syntheticRequest(ctx, http.MethodPost, "/")
 
@@ -59,6 +62,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			return nil, &tenantMissingError{}
 		}
 	}
+	// Keys resolve to columns first, so an ownerId spelling is the owner
+	// column the strip below removes.
+	if err := ch.bodyColumns(body); err != nil {
+		return nil, err
+	}
 	// Strip caller-supplied owner_id / tenant_id from the body BEFORE
 	// the tx so a body field can never override what the context says.
 	// The framework stamps both from context-derived values below.
@@ -70,6 +78,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	}
 
 	var result, out map[string]any
+	eventType := event.EntityCreated
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		// A storage key in a file field must be one this caller uploaded
 		// or one already on the row it is writing (media_provenance.go).
@@ -108,6 +117,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
 		}
+		if err := ch.refuseBlankKeyParts(body); err != nil {
+			return err
+		}
 
 		// Preflight against the pre-existing row (matched by PK only, the
 		// same key the ON CONFLICT target uses). Both properties are
@@ -130,9 +142,21 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.upsertPreflight(ctx, body); err != nil {
 			return err
 		}
+		// Which arm the statement will take decides the event: a row
+		// already under the key is updated, and announced as an update.
+		// A caller-owned transaction with no commit queue confirms an
+		// update by its values and a create only by the row being there,
+		// so a rolled-back upsert onto an existing row announced as a
+		// create would be confirmed by the row that survived it.
+		existed, err := ch.upsertRowExists(ctx, body)
+		if err != nil {
+			return err
+		}
+		if existed {
+			eventType = event.EntityUpdated
+		}
 		// The state check, as an update of the existing row or a create
 		// (states.go).
-		var err error
 		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
 			return err
 		}
@@ -190,7 +214,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 			if f.AutoGenerate != schema.AutoNone {
 				cols = append(cols, f.Name)
-				vals = append(vals, body[f.Name])
+				// A sent created_at lands in the stored layout, or SQLite
+				// text order, filters and cursors skip or repeat it.
+				vals = append(vals, ch.bindJSONValue(f.Name, body[f.Name]))
 				continue
 			}
 			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) {
@@ -225,6 +251,15 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			if isAutoField(ch.Entity, c) {
 				continue
 			}
+			// The conflict arm writes what the caller sent. A Default
+			// fills an omitted column for the insert arm only: on the
+			// existing row it would overwrite a stored value nobody sent.
+			// The owner column (stamped into the body above) and the
+			// tenant column stay in the SET; the conflict guard holds both
+			// equal to the stored row.
+			if !sent[c] && !(ch.Entity.Config.Scope.MultiTenant && c == ch.Entity.Config.TenantColumn()) {
+				continue
+			}
 			// A stored state stays put on conflict unless the caller sent
 			// the column under a state override (states.go).
 			if !ch.upsertSetsGuarded(ctx, c, sent[c]) {
@@ -243,29 +278,38 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		var sb strings.Builder
 		sb.WriteString("INSERT INTO ")
 		sb.WriteString(ch.Entity.GetTable())
-		sb.WriteString(" (")
-		sb.WriteString(strings.Join(cols, ", "))
-		sb.WriteString(") VALUES (")
-		sb.WriteString(strings.Join(placeholders, ", "))
-		sb.WriteString(") ON CONFLICT (")
-		sb.WriteString(strings.Join(ch.keyCols(), ", "))
-		sb.WriteString(") DO ")
-		if len(setParts) == 0 {
-			// No fields to update, just DO NOTHING; RETURNING still picks
-			// the existing row though we have to query it explicitly.
-			sb.WriteString("NOTHING")
+		sb.WriteString(" AS " + upsertTarget)
+		if len(cols) == 0 {
+			// Nothing sent and nothing defaulted: the key is generated, so
+			// no row can conflict. "() VALUES ()" is a syntax error on both
+			// dialects, and SQLite refuses an upsert clause after DEFAULT
+			// VALUES, so this is a plain insert.
+			sb.WriteString(" DEFAULT VALUES")
 		} else {
-			sb.WriteString("UPDATE SET ")
-			sb.WriteString(strings.Join(setParts, ", "))
-			if guard := ch.upsertConflictGuard(); guard != "" {
-				sb.WriteString(" WHERE ")
-				sb.WriteString(guard)
+			sb.WriteString(" (")
+			sb.WriteString(strings.Join(cols, ", "))
+			sb.WriteString(") VALUES (")
+			sb.WriteString(strings.Join(placeholders, ", "))
+			sb.WriteString(") ON CONFLICT (")
+			sb.WriteString(strings.Join(ch.keyCols(), ", "))
+			sb.WriteString(") DO ")
+			if len(setParts) == 0 {
+				// No fields to update, just DO NOTHING; RETURNING still picks
+				// the existing row though we have to query it explicitly.
+				sb.WriteString("NOTHING")
+			} else {
+				sb.WriteString("UPDATE SET ")
+				sb.WriteString(strings.Join(setParts, ", "))
+				if guard := ch.upsertConflictGuard(); guard != "" {
+					sb.WriteString(" WHERE ")
+					sb.WriteString(guard)
+				}
 			}
 		}
 		sb.WriteString(" RETURNING ")
 		sb.WriteString(strings.Join(visFields, ", "))
 
-		row := ch.DB.QueryRowContext(ctx, sb.String(), vals...)
+		row := ch.conn(ctx).QueryRowContext(ctx, sb.String(), vals...)
 		res, err := ch.scanOne(row, visFields)
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) > 0 {
 			// The conflict row failed the DO UPDATE scope guard: it
@@ -296,14 +340,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				Where(kc, ka...)
 			ch.ApplyTenantScope(selQB, req)
 			ch.ApplyOwnerScope(selQB, req)
-			// This fallback is a READ (it hands the row to the caller), so
-			// it carries the read scope: a caller outside the scope must not
-			// read back a row the write produced. The upsert WRITE above
-			// deliberately does not carry it; see ApplyReadScope.
-			ch.ApplyReadScope(selQB, req)
+			// No read scope here: a row it hides would fail the upsert with
+			// no rows. scopedReadBack below reduces it to its id, as on the
+			// DO UPDATE arm.
 			ch.ApplySoftDeleteFilter(selQB, req)
 			selSQL, selArgs := selQB.Build()
-			sel := ch.DB.QueryRowContext(ctx, selSQL, selArgs...)
+			sel := ch.conn(ctx).QueryRowContext(ctx, selSQL, selArgs...)
 			res, err = ch.scanOne(sel, visFields)
 		}
 		if err != nil {
@@ -318,7 +360,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 		// Upsert writes directly (not via doCreate), so it stages its own
 		// outbox event inside the tx.
-		if err := ch.StageEvent(ctx, event.EntityCreated, result); err != nil {
+		if err := ch.StageEvent(ctx, eventType, result); err != nil {
 			return fmt.Errorf("stage event: %w", err)
 		}
 		// The DO UPDATE RETURNING is a read handed to the caller: a row
@@ -330,8 +372,31 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	ch.EmitEvent(ctx, event.EntityCreated, result)
+	ch.EmitEvent(ctx, eventType, result)
 	return out, nil
+}
+
+// upsertRowExists reports whether a row already holds the body's primary
+// key, unscoped like upsertPreflight: the conflict arm runs on it whoever
+// owns it. A body with no key cannot conflict. Read in the upsert's tx; a
+// row another session commits between this read and the INSERT is still
+// taken by the conflict arm and announced as a create.
+func (ch *CrudHandler) upsertRowExists(ctx context.Context, body map[string]any) (bool, error) {
+	key := ch.colKeyVals(body)
+	if key == nil {
+		return false, nil
+	}
+	kc, ka := ch.keyCond(key)
+	var one int
+	err := ch.conn(ctx).QueryRowContext(ctx,
+		fmt.Sprintf("SELECT 1 FROM %s WHERE %s", ch.Entity.GetTable(), kc), ka...).Scan(&one)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("upsert: read existing row: %w", err)
+	}
+	return true, nil
 }
 
 // upsertPreflight inspects the pre-existing row (if any) matching the body's
@@ -369,7 +434,7 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	kc, ka := ch.keyCond(key)
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
 		strings.Join(cols, ", "), ch.Entity.GetTable(), kc)
-	err := ch.DB.QueryRowContext(ctx, q, ka...).Scan(ptrs...)
+	err := ch.conn(ctx).QueryRowContext(ctx, q, ka...).Scan(ptrs...)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil // no existing row, pure insert path, allow.
@@ -416,10 +481,10 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 // still the row ON CONFLICT resolves against.
 func (ch *CrudHandler) upsertConflictGuard() string {
 	scope := ch.Entity.Config.Scope
-	// The existing row is named by the target table; Postgres requires the
-	// qualifier (an unqualified column is ambiguous with EXCLUDED) and
+	// The existing row is named by the target's alias; Postgres requires
+	// the qualifier (an unqualified column is ambiguous with EXCLUDED) and
 	// SQLite accepts it.
-	tbl := ch.Entity.GetTable()
+	tbl := upsertTarget
 	var guards []string
 	if of := scope.OwnerField; of != "" {
 		guards = append(guards, fmt.Sprintf("%s.%s = EXCLUDED.%s", tbl, of, of))
@@ -433,6 +498,13 @@ func (ch *CrudHandler) upsertConflictGuard() string {
 	}
 	return strings.Join(guards, " AND ")
 }
+
+// upsertTarget aliases the upsert's target table. A table named excluded
+// shares its name with the proposed-row pseudo-table: Postgres refuses
+// every reference to it as ambiguous, and SQLite reads excluded.col as the
+// stored row, so the update writes the old value back. Under the alias,
+// excluded names only the proposed row on both.
+const upsertTarget = "upsert_target"
 
 // isAutoField reports whether a field name corresponds to an auto-generated
 // column on the entity (UUID, timestamp, increment). Used by UpsertOne to

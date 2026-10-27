@@ -32,7 +32,7 @@ func TestConvergeKeyRereadsLiveKey(t *testing.T) {
 		PrimaryKey: []string{"student_id", "course_id"},
 	}.WithTimestamps(false))
 	stale := liveKey{cols: []string{"id"}}
-	if err := convergeKey(ctx, db, ent, map[string]*entity.Entity{"enrollment": ent}, DialectSQLite, stale); err != nil {
+	if err := convergeKey(ctx, db, ent, map[string]*entity.Entity{"enrollment": ent}, DialectSQLite, stale, nil); err != nil {
 		t.Fatalf("convergeKey with a stale pre-lock key: %v", err)
 	}
 }

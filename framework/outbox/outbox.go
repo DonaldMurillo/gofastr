@@ -70,6 +70,11 @@ type Outbox struct {
 	// it to assert lease-reclaim without wall-clock sleeps.
 	now func() time.Time
 
+	// beforeReplayCommit is a deterministic seam for package tests: it
+	// runs inside Replay's transaction after the reset, before the commit.
+	// Production code leaves it nil.
+	beforeReplayCommit func()
+
 	// nudge wakes the Relay immediately after a commit so delivery
 	// latency is not bound to PollInterval. Buffered cap 1: extra
 	// nudges coalesce, one wake per pump is enough.
@@ -104,6 +109,13 @@ type Outbox struct {
 	// MemoryQueue's defaultHandlerTimeout / DBQueue's WithDBHandlerTimeout
 	// both bound handler invocations the same way. Default 30s.
 	handlerTimeout time.Duration
+
+	// settleTimeout bounds the bookkeeping writes that record one
+	// delivery's outcome (settle + parent completion). The window opens
+	// when settling starts, after the handler returned, never before it:
+	// a handler that runs longer than this window must still have its
+	// outcome recorded. Default 10s; tests shrink it.
+	settleTimeout time.Duration
 
 	// retention, when > 0, enables automatic purge of fully-settled
 	// (dispatched) parent rows and their deliveries older than this from the
@@ -218,6 +230,7 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 		consumers:      map[string]map[string]event.EventHandler{},
 		handlerGrace:   15 * time.Minute,
 		handlerTimeout: 30 * time.Second,
+		settleTimeout:  10 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -234,6 +247,11 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 		return nil, fmt.Errorf("outbox: invalid delivery table name %q: %w", o.deliveryTable, err)
 	}
 	o.dialect = detectDialect(db)
+	if o.dialect == dialectPostgres {
+		if err := query.RefuseCaseKeptTables(context.Background(), db, o.table, o.deliveryTable); err != nil {
+			return nil, fmt.Errorf("outbox: %w", err)
+		}
+	}
 	if !o.skipEnsure {
 		if err := o.ensureTable(); err != nil {
 			return nil, fmt.Errorf("outbox: ensure table: %w", err)
@@ -262,12 +280,12 @@ func detectDialect(db *sql.DB) dialect {
 
 // qt returns the validated, double-quoted parent table name for interpolation.
 func (o *Outbox) qt() string {
-	return query.QuoteIdent(o.table)
+	return query.QuoteFolded(o.table)
 }
 
 // qd returns the validated, double-quoted delivery table name.
 func (o *Outbox) qd() string {
-	return query.QuoteIdent(o.deliveryTable)
+	return query.QuoteFolded(o.deliveryTable)
 }
 
 func (o *Outbox) ensureTable() error {
@@ -299,7 +317,7 @@ func (o *Outbox) ensureTable() error {
 	}
 	idx := fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s ON %s (status, created_at)",
-		query.QuoteIdent(safeIdx), o.qt(),
+		query.QuoteIndexName(safeIdx), o.qt(),
 	)
 	if _, err := o.db.Exec(idx); err != nil {
 		return err
@@ -313,10 +331,10 @@ func (o *Outbox) ensureTable() error {
 // vestigial now that state moved to the child, but dropping columns is
 // destructive. DDL mirrors the parent's dialect switch.
 func (o *Outbox) ensureDeliveryTable(tsType string) error {
-	// created_at is when the DELIVERY row was inserted (not when the event was
-	// staged, that's the parent's created_at). The abandonment grace is
-	// measured from this so a freshly-expanded delivery for a newly-declared
-	// consumer is never abandoned by a lagging replica.
+	// created_at is when the DELIVERY row was inserted or last replayed (not
+	// when the event was staged, that's the parent's created_at). The
+	// abandonment grace is measured from this so a freshly-expanded or
+	// freshly-replayed delivery is never abandoned by a lagging replica.
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		row_id          TEXT NOT NULL,
 		consumer        TEXT NOT NULL,
@@ -343,7 +361,7 @@ func (o *Outbox) ensureDeliveryTable(tsType string) error {
 	}
 	_, err = o.db.Exec(fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s ON %s (status, next_attempt_at)",
-		query.QuoteIdent(safeClaim), o.qd(),
+		query.QuoteIndexName(safeClaim), o.qd(),
 	))
 	return err
 }

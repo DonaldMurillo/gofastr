@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	fwdb "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -21,7 +23,8 @@ func WithSoftDelete(ent *entity.Entity) *entity.Entity {
 	return ent
 }
 
-// SoftDelete marks a record as deleted by setting deleted_at to NOW().
+// SoftDelete marks a record as deleted by setting deleted_at to the
+// current UTC time, bound as a parameter: SQLite has no NOW().
 // The record remains in the database but will be excluded from normal queries.
 //
 // SECURITY. UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
@@ -32,7 +35,7 @@ func WithSoftDelete(ent *entity.Entity) *entity.Entity {
 // check). Using this helper in a user-facing endpoint without such a check
 // creates a cross-tenant / IDOR vulnerability.
 func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error {
-	return setDeletedAt(ctx, db, table, id, "deleted_at = NOW()")
+	return setDeletedAt(ctx, db, table, id, "deleted_at = $2", time.Now().UTC())
 }
 
 // Restore clears the deleted_at field, making a soft-deleted record visible again.
@@ -51,14 +54,26 @@ func Restore(ctx context.Context, db *sql.DB, table string, id string) error {
 // setDeletedAt is the shared UPDATE body of SoftDelete and Restore: validate
 // the table identifier, then flip deleted_at to setExpr for one row by id.
 // It replaces the two former SafeIdent → quote → Exec copies.
-func setDeletedAt(ctx context.Context, db *sql.DB, table, id, setExpr string) error {
+func setDeletedAt(ctx context.Context, db *sql.DB, table, id, setExpr string, setArgs ...any) error {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
 		return fmt.Errorf("softdelete: %w", err)
 	}
-	q := fmt.Sprintf("UPDATE %s SET %s WHERE id = $1", query.QuoteIdent(safeTable), setExpr)
-	_, err = db.ExecContext(ctx, q, id)
+	q := fmt.Sprintf("UPDATE %s SET %s WHERE id = $1", query.QuoteFolded(safeTable), setExpr)
+	_, err = conn(ctx, db).ExecContext(ctx, q, append([]any{id}, setArgs...)...)
 	return err
+}
+
+// conn is what a helper runs on: the transaction ctx carries (App.InTx,
+// a CRUD hook's), else db. On the pool the write committed on its own
+// past the caller's rollback.
+func conn(ctx context.Context, db *sql.DB) interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+} {
+	if tx, ok := fwdb.TxFromContext(ctx); ok {
+		return tx
+	}
+	return db
 }
 
 // ForceDelete permanently removes a record from the database.
@@ -79,7 +94,7 @@ func ForceDelete(ctx context.Context, db *sql.DB, table string, id string) error
 	}
 	qb := query.Delete(safeTable).Where("id = $1", id)
 	q, args := qb.Build()
-	_, err = db.ExecContext(ctx, q, args...)
+	_, err = conn(ctx, db).ExecContext(ctx, q, args...)
 	return err
 }
 

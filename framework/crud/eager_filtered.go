@@ -81,6 +81,16 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 	// not to a column the target does not declare at all.
 	served := servedColumns(node.Target)
 
+	// The target's own BeforeList/BeforeGet clauses (node.HookScopes), as
+	// one key-IN subquery on its table. It is numbered from $1, so each
+	// loader puts it first and numbers its own placeholders after it.
+	targetKey := node.Target.KeyColumns()
+	if rel.Type == entity.RelManyToMany && len(targetKey) > 1 {
+		targetKey = targetKey[:1] // refused below by target.KeyColumn()
+	}
+	hookPred, hookArgs := hookScopeSubquery(safeEntity, safeEntity, targetKey, node.HookScopes)
+	scope := hookScope{sql: hookPred, args: hookArgs}
+
 	switch rel.Type {
 	case entity.RelHasOne, entity.RelHasMany:
 		safeFKs, err := relationFKs(rel)
@@ -96,13 +106,13 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 			}
 			return fmt.Errorf("eager filtered: relation %q: %w: its parent is keyed on (%s)", rel.Name, shape, strings.Join(parentKey, ", "))
 		}
-		return loadHasManyFiltered(ctx, db, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
+		return loadHasManyFiltered(ctx, db, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, scope, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToOne:
 		safeFKs, err := relationFKs(rel)
 		if err != nil {
 			return fmt.Errorf("eager filtered: %w", err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, ids, result, softDeleteFilter, served, budget)
+		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, scope, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToMany:
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
@@ -110,7 +120,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 			// `deleted_at` would be ambiguous, qualify it with the target.
 			mtmSoftDelete = " AND " + safeEntity + ".deleted_at IS NULL"
 		}
-		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node, ids, result, mtmSoftDelete, served, budget)
+		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node, scope, ids, result, mtmSoftDelete, served, budget)
 	}
 	return nil
 }
@@ -119,12 +129,24 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 // set keeps every column: that is EagerLoad called with no registry, where the
 // target schema is unknown and the documented contract is the raw row.
 //
-// Names are folded the way Postgres folds the unquoted identifiers the DDL
-// writes, so a declared "Sku" serves the column Postgres reports as "sku".
-type servedCols map[string]bool
+// It maps each column, folded the way Postgres folds the unquoted identifiers
+// the DDL writes, to its declared spelling: a declared "Sku" serves the column
+// Postgres reports as "sku", under the key "Sku" a direct read of the target
+// uses. Keyed by the reported "sku", the included row missed the Date, JSON
+// and Decimal decoding and the wire names, all of which look up declared names.
+type servedCols map[string]string
 
-// drop reports whether column c must be left out of an eager-loaded row.
-func (s servedCols) drop(c string) bool { return s != nil && !s[foldIdent(c)] }
+// set stores column c's scanned value v in row under its declared name, or
+// leaves it out when the target does not serve c.
+func (s servedCols) set(row map[string]any, c string, v any) {
+	if s == nil {
+		row[c] = v
+		return
+	}
+	if name, ok := s[foldIdent(c)]; ok {
+		row[name] = v
+	}
+}
 
 // foldIdent lowercases ASCII letters only, as Postgres folds an unquoted
 // identifier; identifiers are SafeIdent-validated ASCII.
@@ -155,28 +177,47 @@ func servedColumns(target *entity.Entity) servedCols {
 	}
 	set := servedCols{}
 	for _, k := range target.KeyColumns() {
-		set[foldIdent(k)] = true
+		set[foldIdent(k)] = k
 	}
 	for _, f := range target.GetFields() {
 		if !f.Hidden {
-			set[foldIdent(f.Name)] = true
+			set[foldIdent(f.Name)] = f.Name
 		}
 	}
 	return set
 }
 
-func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
-	where, args, ok, err := keyInClause(safeFKs, ids, 1)
+// hookScope is a target's Before-hook predicate (hookScopeSubquery), numbered
+// from $1. A loader renders it first and starts its own placeholders at next.
+type hookScope struct {
+	sql  string
+	args []any
+}
+
+// next is the first placeholder index after the scope's own.
+func (h hookScope) next() int { return len(h.args) + 1 }
+
+// and prefixes where with the scope predicate.
+func (h hookScope) and(where string) string {
+	if h.sql == "" {
+		return where
+	}
+	return h.sql + " AND " + where
+}
+
+func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	where, keyArgs, ok, err := keyInClause(safeFKs, ids, scope.next())
 	if err != nil || !ok {
 		return err
 	}
+	args := append(append([]any(nil), scope.args...), keyArgs...)
 	extra, extraArgs := filterClause(filters, len(args)+1)
 	readClause, readArgs := renderReadScope(readScopes, "", len(args)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
 	q := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		safeEntity, where, extra, readClause, softDeleteFilter)
+		safeEntity, scope.and(where), extra, readClause, softDeleteFilter)
 	args = append(args, extraArgs...)
 	args = append(args, readArgs...)
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -204,10 +245,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, 
 		}
 		row := make(map[string]any, len(cols))
 		for i, c := range cols {
-			if served.drop(c) {
-				continue
-			}
-			row[c] = convertDatabaseValue(vals[i], boolCols[i])
+			served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
 		}
 		if parentID, ok := scannedKey(cols, vals, safeFKs); ok {
 			attachChildRow(rel, parentID, row, result)
@@ -216,7 +254,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, 
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
 	targetKey, err := safeColumns(target.KeyColumns())
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid target key: %w", err)
@@ -228,17 +266,18 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable strin
 	if err != nil || len(unique) == 0 {
 		return err
 	}
-	where, fkArgs, ok, err := keyInClause(targetKey, unique, 1)
+	where, keyArgs, ok, err := keyInClause(targetKey, unique, scope.next())
 	if err != nil || !ok {
 		return err
 	}
+	fkArgs := append(append([]any(nil), scope.args...), keyArgs...)
 	extra, extraArgs := filterClause(filters, len(fkArgs)+1)
 	readClause, readArgs := renderReadScope(readScopes, "", len(fkArgs)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
 	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		safeEntity, where, extra, readClause, softDeleteFilter)
+		safeEntity, scope.and(where), extra, readClause, softDeleteFilter)
 	fkArgs = append(fkArgs, extraArgs...)
 	fkArgs = append(fkArgs, readArgs...)
 
@@ -268,10 +307,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable strin
 		}
 		row := make(map[string]any, len(cols))
 		for i, c := range cols {
-			if served.drop(c) {
-				continue
-			}
-			row[c] = convertDatabaseValue(vals[i], boolCols[i])
+			served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
 		}
 		if id, ok := scannedKey(cols, vals, targetKey); ok {
 			targetByID[id] = row
@@ -291,7 +327,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable strin
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, node *IncludeNode, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, node *IncludeNode, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
 	target, filters, readScopes := node.Target, node.Filters, node.ReadScopes
 	targetPK, err := target.KeyColumn()
 	if err != nil {
@@ -314,25 +350,26 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids))
+	args := make([]any, 0, len(scope.args)+len(ids))
+	args = append(args, scope.args...)
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		placeholders[i] = fmt.Sprintf("$%d", len(args)+1)
 		args = append(args, id)
 	}
 
-	extra, extraArgs := filterClauseQualified(filters, safeEntity, len(ids)+1)
-	readClause, readArgs := renderReadScope(readScopes, safeEntity, len(ids)+len(extraArgs)+1)
+	extra, extraArgs := filterClauseQualified(filters, safeEntity, len(args)+1)
+	readClause, readArgs := renderReadScope(readScopes, safeEntity, len(args)+len(extraArgs)+1)
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	pivotWhere, pivotArgs := pivotClause(node.Pivot, node.PivotScopes, safeThrough, len(ids)+len(extraArgs)+len(readArgs)+1)
+	pivotWhere, pivotArgs := pivotClause(node.Pivot, node.PivotScopes, safeThrough, len(args)+len(extraArgs)+len(readArgs)+1)
 	q := fmt.Sprintf(
-		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s IN (%s)%s%s%s%s",
+		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s%s.%s IN (%s)%s%s%s%s",
 		safeEntity,
 		safeThrough, safeLocalKey,
 		safeEntity, safeThrough,
 		safeEntity, targetPK, safeThrough, safeFKTarget,
-		safeThrough, safeLocalKey,
+		scope.and(""), safeThrough, safeLocalKey,
 		strings.Join(placeholders, ", "),
 		extra,
 		readClause,
@@ -370,8 +407,8 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 		for i, c := range cols {
 			if c == "__parent_id" {
 				parentID = fmt.Sprintf("%v", vals[i])
-			} else if !served.drop(c) {
-				row[c] = convertDatabaseValue(vals[i], boolCols[i])
+			} else {
+				served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
 			}
 		}
 		if entry, ok := result[parentID]; ok {
@@ -423,7 +460,7 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 	// Identifiers go in unquoted, the way the DDL wrote them, so each is
 	// validated here as well as by the caller; one that fails matches no
 	// row rather than reaching the SQL.
-	if table != "" && !isSafeIdentifier(table) {
+	if table != "" && !isSafeTable(table) {
 		return " AND 1 = 0", nil
 	}
 	for _, f := range filters {
@@ -458,10 +495,11 @@ func renderFilterClause(filters []filter.ParsedFilter, table string, startIdx in
 		}
 		if f.Op == filter.OpLike {
 			// Same rule as every other depth: `_like` is a literal
-			// substring with the caller's wildcards escaped. See
-			// nested_filter.go's LIKE branch.
-			parts = append(parts, fmt.Sprintf("%s LIKE $%d"+filter.LikeEscapeSuffix, col(f.Field), idx))
-			args = append(args, filter.EscapeLikePattern(fmt.Sprintf("%v", f.Value)))
+			// substring with the caller's wildcards escaped, matched
+			// without regard to case. See filter.LikeClause.
+			clause, arg := filter.LikeClause(col(f.Field), idx, f.Value)
+			parts = append(parts, clause)
+			args = append(args, arg)
 			idx++
 			continue
 		}

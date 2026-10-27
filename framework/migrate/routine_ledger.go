@@ -38,7 +38,7 @@ func ensureRoutineLedger(ctx context.Context, exec execQueryer, dialect Dialect)
 		name       TEXT NOT NULL PRIMARY KEY,
 		checksum   TEXT NOT NULL,
 		applied_at TIMESTAMP NOT NULL DEFAULT %s
-	)`, query.QuoteIdent(safe), now)
+	)`, query.QuoteFolded(safe), now)
 	_, err := exec.ExecContext(ctx, ddl)
 	return err
 }
@@ -48,7 +48,7 @@ func ensureRoutineLedger(ctx context.Context, exec execQueryer, dialect Dialect)
 // snapshot reflects this boot's view of bookkeeping.
 func readRoutineLedger(ctx context.Context, exec execQueryer) (map[string]string, error) {
 	safe := query.MustIdent(routineLedgerTable)
-	q := fmt.Sprintf("SELECT name, checksum FROM %s", query.QuoteIdent(safe))
+	q := fmt.Sprintf("SELECT name, checksum FROM %s", query.QuoteFolded(safe))
 	rows, err := exec.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func upsertRoutineLedger(ctx context.Context, exec execQueryer, dialect Dialect,
 	q := fmt.Sprintf(
 		"INSERT INTO %s (name, checksum, applied_at) VALUES (%s, %s, %s) "+
 			"ON CONFLICT (name) DO UPDATE SET checksum = EXCLUDED.checksum, applied_at = EXCLUDED.applied_at",
-		query.QuoteIdent(safe), placeholderName, placeholderChecksum, now,
+		query.QuoteFolded(safe), placeholderName, placeholderChecksum, now,
 	)
 	_, err := exec.ExecContext(ctx, q, name, checksum)
 	return err

@@ -144,7 +144,7 @@ func renderReadScope(preds []filter.ParsedFilter, qualifier string, startIdx int
 	// Identifiers go in validated but unquoted, the way the DDL wrote
 	// them: a quoted mixed-case name misses the folded column on
 	// Postgres. One that fails validation matches no row.
-	if qualifier != "" && !isSafeIdentifier(qualifier) {
+	if qualifier != "" && !isSafeTable(qualifier) {
 		return "(1 = 0)", nil
 	}
 	for _, f := range preds {

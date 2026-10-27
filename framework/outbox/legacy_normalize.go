@@ -225,7 +225,7 @@ func legacyTimeSets(layout string, cols []timeCol) ([]string, []any, error) {
 // relay's own queries will surface any genuine DB fault.
 func (o *Outbox) tableExists(ctx context.Context, bareName string) bool {
 	var n int
-	q := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", query.QuoteIdent(bareName))
+	q := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", query.QuoteFolded(bareName))
 	err := o.db.QueryRowContext(ctx, q).Scan(&n)
 	if err == nil || err == sql.ErrNoRows {
 		return true

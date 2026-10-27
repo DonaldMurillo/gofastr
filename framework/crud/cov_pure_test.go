@@ -133,9 +133,8 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 	}{
 		{schema.Field{Type: schema.Int}, "integer"},
 		{schema.Field{Type: schema.Float}, "number"},
-		{schema.Field{Type: schema.Decimal}, "number"},
+		{schema.Field{Type: schema.Decimal}, "string"},
 		{schema.Field{Type: schema.Bool}, "boolean"},
-		{schema.Field{Type: schema.JSON}, "object"},
 		{schema.Field{Type: schema.Enum, Values: []string{"a"}}, "string"},
 		{schema.Field{Type: schema.String}, "string"},
 	}
@@ -144,6 +143,10 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 		if got["type"] != c.want {
 			t.Errorf("mcpFieldSchema(%v) type = %v, want %v", c.f.Type, got["type"], c.want)
 		}
+	}
+	// A JSON field takes any JSON value, as the HTTP route does.
+	if got := mcpFieldSchema(schema.Field{Type: schema.JSON}); len(got) != 0 {
+		t.Errorf("mcpFieldSchema(JSON) = %v, want the empty schema", got)
 	}
 }
 

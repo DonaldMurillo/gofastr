@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
@@ -20,6 +21,57 @@ func (ch *CrudHandler) keyCols() []string {
 		return ch.Entity.KeyColumns()
 	}
 	return ch.PrimaryKey
+}
+
+// refuseBlankKeyParts refuses a write that would store "" in a column of
+// a key spanning several: entity.SplitKey refuses an empty part, so the
+// row could never be named again by get, update or delete.
+func (ch *CrudHandler) refuseBlankKeyParts(body map[string]any) error {
+	cols := ch.keyCols()
+	if len(cols) < 2 {
+		return nil
+	}
+	var fields map[string][]schema.Violation
+	for _, c := range cols {
+		if v, ok := body[c]; ok && v == "" {
+			if fields == nil {
+				fields = map[string][]schema.Violation{}
+			}
+			fields[c] = []schema.Violation{{Reason: schema.ReasonRequired}}
+		}
+	}
+	if fields != nil {
+		return &ValidationError{fields: fields}
+	}
+	return nil
+}
+
+// withKeyTiebreak returns sorts followed by every key column it does not
+// already sort on, ascending. An offset page is only well defined over a
+// total order: sorted on a non-unique column (or not sorted at all) the
+// database may hand back tied rows in a different order for each page, and
+// Postgres does, so a walk with ?sort=status&page=N skipped some rows and
+// repeated others. The key makes the order total on every dialect.
+//
+// With no sort at all, an entity with a framework-written created_at
+// lists oldest first: ids are random UUIDs, so key order alone would
+// shuffle what used to read as insertion order.
+func (ch *CrudHandler) withKeyTiebreak(sorts []filter.ParsedSort) []filter.ParsedSort {
+	out := slices.Clone(sorts)
+	if len(sorts) == 0 && ch.Entity != nil {
+		for _, f := range ch.Entity.GetFields() {
+			if f.Name == "created_at" && f.Type == schema.Timestamp && f.AutoGenerate != schema.AutoNone {
+				out = append(out, filter.ParsedSort{Field: f.Name})
+				break
+			}
+		}
+	}
+	for _, k := range ch.keyCols() {
+		if !slices.ContainsFunc(sorts, func(s filter.ParsedSort) bool { return s.Field == k }) {
+			out = append(out, filter.ParsedSort{Field: k})
+		}
+	}
+	return out
 }
 
 // keyColumn is the handler's one key column, the column a relation from
@@ -132,7 +184,7 @@ func (ch *CrudHandler) ownRow(id string, row map[string]any, cols []string) bool
 // it returns: equality may match more than one spelling, and a SQLite
 // key may be declared under a stricter collation than its column.
 func (ch *CrudHandler) queryKeyed(ctx context.Context, cols []string, sqlStr string, args []any) ([]map[string]any, error) {
-	rows, err := ch.DB.QueryContext(ctx, sqlStr, args...)
+	rows, err := ch.conn(ctx).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +196,7 @@ func (ch *CrudHandler) queryKeyed(ctx context.Context, cols []string, sqlStr str
 // the row whose own id is id, or sql.ErrNoRows.
 func (ch *CrudHandler) scanOwn(ctx context.Context, id string, cols []string, sqlStr string, args []any) (map[string]any, error) {
 	if !ch.keyHasSpellings() {
-		return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+		return ch.scanOne(ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...), cols)
 	}
 	found, err := ch.queryKeyed(ctx, cols, sqlStr, args)
 	if err != nil {
@@ -166,7 +218,7 @@ func (ch *CrudHandler) scanOwn(ctx context.Context, id string, cols []string, sq
 // written.
 func (ch *CrudHandler) writeOwn(ctx context.Context, id string, cols []string, sqlStr string, args []any) (map[string]any, error) {
 	if !ch.keyHasSpellings() {
-		return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+		return ch.scanOne(ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...), cols)
 	}
 	changed, err := ch.queryKeyed(ctx, cols, sqlStr, args)
 	if err != nil {
@@ -196,7 +248,7 @@ func (ch *CrudHandler) writeOwn(ctx context.Context, id string, cols []string, s
 func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(cols ...string) (string, []any), build func(returning []string) (string, []any)) (int64, error) {
 	if !ch.keyHasSpellings() {
 		sqlStr, args := build(nil)
-		res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+		res, err := ch.conn(ctx).ExecContext(ctx, sqlStr, args...)
 		if err != nil {
 			return 0, err
 		}
@@ -226,7 +278,7 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 		}
 	}
 	sqlStr, args := build(nil)
-	res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+	res, err := ch.conn(ctx).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, err
 	}
