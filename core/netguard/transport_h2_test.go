@@ -1,6 +1,7 @@
 package netguard
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"net"
@@ -35,6 +36,41 @@ func TestGuardPlainKeepsHTTP2(t *testing.T) {
 	_ = resp.Body.Close()
 	if string(body) != "HTTP/2.0" {
 		t.Errorf("server saw %q, want HTTP/2.0", body)
+	}
+}
+
+// A transport that routes on its own (a proxy, or any dial hook,
+// deprecated ones included) is left alone: swapping its dialer would
+// change where it connects. The caller wraps it instead.
+func TestGuardPlainRefusesCustomDialers(t *testing.T) {
+	dial := func(context.Context, string, string) (net.Conn, error) { return nil, nil }
+	plainDial := func(string, string) (net.Conn, error) { return nil, nil }
+	for name, tr := range map[string]*http.Transport{
+		"proxy":          {Proxy: http.ProxyFromEnvironment},
+		"DialContext":    {DialContext: dial},
+		"DialTLSContext": {DialTLSContext: dial},
+		"Dial":           {Dial: plainDial},
+		"DialTLS":        {DialTLS: plainDial},
+	} {
+		if guarded, ok := GuardPlainTransport(tr, "test"); ok || guarded != nil {
+			t.Errorf("%s: transport guarded in place, want it refused", name)
+		}
+	}
+}
+
+// The clone of a plain transport dials through the guard: a loopback
+// address is refused at connect time.
+func TestGuardPlainBlocksLoopback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	guarded, ok := GuardPlainTransport(&http.Transport{}, "test")
+	if !ok {
+		t.Fatal("plain transport refused")
+	}
+	resp, err := (&http.Client{Transport: guarded}).Get(srv.URL)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("the guarded clone reached a loopback server")
 	}
 }
 
