@@ -31,7 +31,7 @@ func TestDesktopBuildRejectsUnsupportedFormat(t *testing.T) {
 			var code int
 			text := clitest.CovT_capStdout(t, func() {
 				code = clitest.CovT_capExit(t, func() {
-					runDesktopBuildForOS([]string{"--id=dev.example.app", "--pkg=./missing", "--format=" + test.format, "-o=" + output}, test.target)
+					runDesktopBuildForOS([]string{"--id=dev.example.notes", "--pkg=./missing", "--format=" + test.format, "-o=" + output}, test.target)
 				})
 			})
 			if code != 1 || !strings.Contains(text, "--format") {
@@ -51,7 +51,10 @@ func linuxArchiveFixture(t *testing.T) (desktopBuildFlags, string, []linuxArchiv
 	if err := os.WriteFile(exe, []byte("#!/bin/sh\nprintf '%s\\000' \"$@\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	f := desktopBuildFlags{id: "dev.example.app", version: "1.2.3", format: "tar.gz"}
+	// The id names bin/<id>, which the launcher test executes. macOS kills
+	// an exec of a file named *.app outside a bundle, so the id must not
+	// end in .app.
+	f := desktopBuildFlags{id: "dev.example.notes", version: "1.2.3", format: "tar.gz"}
 	icon := testLinuxPNG(t)
 	entries, err := linuxBundleEntries(f, ` Notes 100% "$HOME" & Co `, "amd64", exe, icon)
 	if err != nil {
@@ -119,7 +122,7 @@ func TestLinuxArchiveDeterministic(t *testing.T) {
 		t.Fatal("same payload differs by source timestamp or input order")
 	}
 	headers, contents := decodeLinuxArchive(t, first.Bytes())
-	want := []string{"README.txt", "bin/dev.example.app", "dev.example.app.desktop.in", "icon.png", "launch.sh", "manifest.json"}
+	want := []string{"README.txt", "bin/dev.example.notes", "dev.example.notes.desktop.in", "icon.png", "launch.sh", "manifest.json"}
 	var got []string
 	for _, h := range headers {
 		rel := strings.TrimPrefix(h.Name, root+"/")
@@ -128,7 +131,7 @@ func TestLinuxArchiveDeterministic(t *testing.T) {
 			t.Errorf("non-deterministic or unexpected metadata: %+v", h)
 		}
 		mode := int64(0644)
-		if rel == "launch.sh" || rel == "bin/dev.example.app" {
+		if rel == "launch.sh" || rel == "bin/dev.example.notes" {
 			mode = 0755
 		}
 		if h.Mode != mode {
@@ -152,7 +155,7 @@ func TestLinuxArchiveDeterministic(t *testing.T) {
 			t.Errorf("manifest mismatch: %+v", entry)
 		}
 	}
-	desktop := string(contents[root+"/dev.example.app.desktop.in"])
+	desktop := string(contents[root+"/dev.example.notes.desktop.in"])
 	if !strings.Contains(desktop, `Name=\sNotes\s100%\s"$HOME"\s&\sCo\s`+"\n") || !strings.Contains(desktop, "Exec=\"@BUNDLE_ROOT@/launch.sh\"\n") {
 		t.Fatalf("desktop escaping: %s", desktop)
 	}
@@ -204,7 +207,7 @@ func TestLinuxArchiveRejectsSymlinkSource(t *testing.T) {
 	}
 }
 func TestLinuxArchiveMetadataValidation(t *testing.T) {
-	f := desktopBuildFlags{id: "dev.example.app", version: "1.2.3"}
+	f := desktopBuildFlags{id: "dev.example.notes", version: "1.2.3"}
 	for _, version := range []string{"", "../../escape", "1\nExec=bad", "1/2", "-1", strings.Repeat("1", 65)} {
 		bad := f
 		bad.version = version
@@ -309,7 +312,7 @@ func TestLinuxArchiveInvalidInputBeforeOutput(t *testing.T) {
 		{"sign", func(f *desktopBuildFlags) { f.sign = "identity" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			f := desktopBuildFlags{format: "tar.gz", id: "dev.example.app", version: "1.0", pkg: "./missing", out: filepath.Join(t.TempDir(), "not-created")}
+			f := desktopBuildFlags{format: "tar.gz", id: "dev.example.notes", version: "1.0", pkg: "./missing", out: filepath.Join(t.TempDir(), "not-created")}
 			test.mutate(&f)
 			if err := buildLinuxDesktop(f, "Notes"); err == nil {
 				t.Fatal("invalid input accepted")
@@ -390,7 +393,7 @@ func TestDesktopBuildLinuxArchive(t *testing.T) {
 
 func TestLinuxArchiveDestinationSymlink(t *testing.T) {
 	t.Setenv("GOARCH", "amd64")
-	f := desktopBuildFlags{format: "tar.gz", id: "dev.example.app", version: "1.0", pkg: "./missing", out: t.TempDir()}
+	f := desktopBuildFlags{format: "tar.gz", id: "dev.example.notes", version: "1.0", pkg: "./missing", out: t.TempDir()}
 	target := filepath.Join(t.TempDir(), "unrelated")
 	if err := os.WriteFile(target, []byte("unchanged"), 0600); err != nil {
 		t.Fatal(err)
@@ -417,7 +420,7 @@ func TestLinuxArchiveDestinationSymlink(t *testing.T) {
 
 func TestLinuxArchiveBuildFailurePreservesRelease(t *testing.T) {
 	t.Setenv("GOARCH", "amd64")
-	f := desktopBuildFlags{format: "tar.gz", id: "dev.example.app", version: "1.0", pkg: "./missing", out: t.TempDir()}
+	f := desktopBuildFlags{format: "tar.gz", id: "dev.example.notes", version: "1.0", pkg: "./missing", out: t.TempDir()}
 	root, err := linuxBundleRoot(f, "Notes", "amd64")
 	if err != nil {
 		t.Fatal(err)

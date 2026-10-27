@@ -51,7 +51,7 @@ func TestLinuxArchiveSpecialIconProcess(t *testing.T) {
 		t.Skip("subprocess helper")
 	}
 	output := filepath.Join(t.TempDir(), "not-created")
-	f := desktopBuildFlags{format: "tar.gz", id: "dev.example.app", version: "1.0", icon: icon, pkg: "./missing", out: output}
+	f := desktopBuildFlags{format: "tar.gz", id: "dev.example.notes", version: "1.0", icon: icon, pkg: "./missing", out: output}
 	err := buildLinuxDesktopArchive(f, "Notes", "amd64")
 	if err == nil || !strings.Contains(err.Error(), "regular PNG file") {
 		t.Fatalf("expected regular-file refusal before compiler, got %v", err)
