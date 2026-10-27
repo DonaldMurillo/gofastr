@@ -122,14 +122,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   so a squatter's token or a stolen one outlived the event meant to end
   it. A JWT from `JWTAuth` with a user store now carries a tag derived
   from the password hash it was issued against and answers 401 once the
-  hash changes. Each JWT request does one more indexed lookup, JWTs
+  hash changes. A claim writes a fresh unusable hash, so it ends the
+  JWTs of an account that never had a password too. Each JWT request
+  does one more indexed lookup, JWTs
   issued before the upgrade answer 401 once, and `GenerateToken` errors
   for a user the store cannot resolve by email to the same id.
 - **A login overtaken by a password reset leaves no session.** A login
   whose password check passed just before a reset purged the user's
-  sessions minted one afterwards. The login re-reads the credential
-  after minting and, if it changed, deletes the session and answers the
-  ordinary 401.
+  sessions minted one afterwards, and so did a magic link redeemed just
+  before one. Both re-read the credential after minting and, if it
+  changed, delete the session and answer 401.
 - **BREAKING: backup-code regeneration no longer writes over a
   concurrent 2FA change.** Regenerating codes wrote back the state it
   read first, so a TOTP code used in between could be used again, and a

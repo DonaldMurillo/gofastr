@@ -589,17 +589,22 @@ func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (b
 	return v, err
 }
 
-// ClearPassword replaces the user's hash with the placeholder and records
-// password_set=false, so no password signs in until the owner sets one.
-// Implements PasswordClearer.
+// ClearPassword replaces the user's hash with a new unusable one and
+// records password_set=false, so no password signs in until the owner
+// sets one, and no JWT issued before the clear validates. Implements
+// PasswordClearer.
 func (s *EntityUserStore) ClearPassword(ctx context.Context, userID string) error {
+	placeholder, err := newPlaceholderHash()
+	if err != nil {
+		return err
+	}
 	q := fmt.Sprintf("UPDATE %s SET %s = $1, %s = FALSE WHERE %s = $2",
 		query.QuoteFolded(s.table),
 		query.QuoteFolded(s.fieldMap.PasswordHash),
 		query.QuoteFolded(s.fieldMap.PasswordSet),
 		query.QuoteFolded(s.fieldMap.ID),
 	)
-	res, err := s.db.ExecContext(ctx, q, passwordPlaceholderHash, userID)
+	res, err := s.db.ExecContext(ctx, q, placeholder, userID)
 	if err != nil {
 		return err
 	}

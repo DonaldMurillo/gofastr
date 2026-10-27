@@ -721,7 +721,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, _, findErr := userStore.FindByEmail(r.Context(), email)
+	user, hash, findErr := userStore.FindByEmail(r.Context(), email)
 	if findErr != nil && !errors.Is(findErr, ErrUserNotFound) {
 		// Any non-NotFound error is a transport / DB failure. We must
 		// NOT silently auto-create a user, that would mask the failure
@@ -730,7 +730,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
-	created := false
+	created, claimed := false, false
 	if findErr != nil {
 		// User doesn't exist, auto-create. Prefer the OAuthUserCreator
 		// path so password_set=false is recorded for the unlink guard;
@@ -748,7 +748,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 			// between the lookup and the create. This token is spent,
 			// so take the existing-account path below instead of
 			// answering 500.
-			user, _, err = userStore.FindByEmail(r.Context(), email)
+			user, hash, err = userStore.FindByEmail(r.Context(), email)
 			if err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 				return
@@ -797,6 +797,15 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 				writeAuthError(w, r, http.StatusInternalServerError, reasonAccountClaimFailed)
 				return
 			}
+			claimed = true
+		}
+	}
+	if created || claimed {
+		// This request wrote the credential itself; the one to hold the
+		// session to is what it wrote.
+		if _, hash, err = userStore.FindByEmail(r.Context(), email); err != nil {
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+			return
 		}
 	}
 
@@ -809,6 +818,19 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
+		return
+	}
+	// A password reset or change that finished after the link was spent
+	// purged this user's sessions and tokens before this session existed.
+	// Re-read the credential now the session is stored, as login does: a
+	// purge from here on reaches it, and a credential that already moved
+	// means the reset outranks the link.
+	if !credentialUnchanged(r.Context(), userStore, email, user.GetID(), hash) {
+		if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
+			slog.Warn("auth: dropping a magic-link session minted under a stale credential failed",
+				"user_hash", hashedIdentifier(user.GetID()), "err", err)
+		}
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 	// Set session cookie through the one mint helper: SameSite=Strict,

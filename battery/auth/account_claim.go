@@ -18,8 +18,9 @@ type EmailVerifiedChecker interface {
 }
 
 // PasswordClearer is the optional UserStore extension that removes a
-// user's password: the hash becomes the placeholder and the store records
-// that no password is set. A magic-link claim uses it to evict a password
+// user's password: the hash becomes a new unusable hash, different from
+// the one stored before so the JWTs bound to it end, and the store
+// records that no password is set. A magic-link claim uses it to evict a password
 // chosen by whoever registered the address before its owner.
 type PasswordClearer interface {
 	ClearPassword(ctx context.Context, userID string) error
@@ -80,7 +81,11 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 				return fmt.Errorf("clear password: %w", err)
 			}
 		} else if setter, ok := store.(PasswordSetter); ok {
-			if err := setter.SetPassword(ctx, userID, passwordPlaceholderHash); err != nil {
+			placeholder, err := newPlaceholderHash()
+			if err != nil {
+				return fmt.Errorf("clear password: %w", err)
+			}
+			if err := setter.SetPassword(ctx, userID, placeholder); err != nil {
 				return fmt.Errorf("clear password: %w", err)
 			}
 		} else {

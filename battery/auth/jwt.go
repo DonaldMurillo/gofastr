@@ -115,7 +115,8 @@ func (j *JWTAuth) generateToken(user User, hash string) (string, error) {
 // HMAC, under the signing key, of the user id and the stored password
 // hash. Every event that must end outstanding JWTs writes a new hash: a
 // password change or reset (bcrypt salts every hash), and an account claim
-// (the squatter's password becomes the placeholder). resolveOwner
+// (the password becomes a fresh unusable hash, even on an account that
+// never had one). resolveOwner
 // recomputes the tag from the fresh row, so a token issued before any of
 // them fails on its next request. The tag is keyed, so the payload, which
 // anyone holding the token can read, says nothing about the hash.

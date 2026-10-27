@@ -62,6 +62,29 @@ func TestJWTDiesWithCredentialChange(t *testing.T) {
 			t.Fatalf("squatter JWT after the claim = %d, want 401", got)
 		}
 	})
+	t.Run("passwordless account claim", func(t *testing.T) {
+		// An unverified IdP login creates the account with the shared
+		// placeholder hash. A claim that wrote the same placeholder back
+		// left the tag, and the squatter's JWT, unchanged.
+		c := newClaimRig(t)
+		u, err := c.store.CreateUserNoPassword(context.Background(), email, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, err := c.mgr.JWT().GenerateToken(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.jwtStatus(tok); got != http.StatusOK {
+			t.Fatalf("fresh JWT = %d, want 200", got)
+		}
+		if got := c.magicLink(email); got != u.GetID() {
+			t.Fatalf("magic link signed into %s, want %s", got, u.GetID())
+		}
+		if got := c.jwtStatus(tok); got != http.StatusUnauthorized {
+			t.Fatalf("squatter JWT after the claim = %d, want 401", got)
+		}
+	})
 	t.Run("password reset", func(t *testing.T) {
 		c := newClaimRig(t)
 		register(c)
