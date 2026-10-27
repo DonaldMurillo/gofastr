@@ -10,9 +10,9 @@ import (
 )
 
 // The shared libraries the Linux host binds to, and the distro packages
-// that carry them. GTK 3 and WebKitGTK 4.1 are the targets named in
-// docs/desktop-plan.md: 4.1 is what Ubuntu 22.04 onward, Debian 12 and
-// Tauri ship against, and webkitgtk-6.0 (GTK 4) is a later probe.
+// that carry them. GTK 3 and WebKitGTK 4.1 are the targets: 4.1 is what
+// Ubuntu 22.04 onward, Debian 12 and Tauri ship against, and
+// webkitgtk-6.0 (GTK 4) is a later probe.
 //
 // Optional libraries are the ones a host can do without: notifications
 // degrade to nothing without libnotify, and a snapshot needs gdk-pixbuf
@@ -325,9 +325,8 @@ var (
 // to call from a test.
 //
 // A missing required library produces an error wrapping ErrUnavailable
-// whose text names the distro packages to install, which is the message
-// docs/desktop-plan.md promises the user ("Run returns a clear error
-// naming the package to install").
+// whose text names the distro packages to install, so Run tells the user
+// what to install instead of failing on a missing symbol.
 func Load() error {
 	loadOnce.Do(load)
 	return loadErr

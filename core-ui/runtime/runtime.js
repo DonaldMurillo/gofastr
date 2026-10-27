@@ -2798,8 +2798,7 @@
       // +17 for the shortest). Re-measure the clearance against
       // budget_test.go's comment history before spending it rather
       // than trusting a number written here; it moves under the
-      // kernel. The finding is recorded in
-      // docs/spec-behavior-registry.md.
+      // kernel.
       return [];
     }
   })();

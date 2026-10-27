@@ -17,7 +17,7 @@ import (
 )
 
 // Browser coverage for the interaction bridge's registered-descriptor
-// path (docs/spec-behavior-registry.md, "Dependencies and readiness":
+// path (core-ui/ARCHITECTURE.md, "Dependencies and readiness":
 // the bridge used to iterate the kernel's own _moduleMarkers table
 // only, so a registered behaviour had no interaction trigger). The
 // probes here prove the fourth load path honours a descriptor the way

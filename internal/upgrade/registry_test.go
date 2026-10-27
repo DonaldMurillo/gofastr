@@ -425,20 +425,14 @@ func nextVersions(v string) []string {
 }
 
 // TestShippedEntriesAreChangelogReleases: every registry file at or
-// below `through` names a release CHANGELOG.md has a heading for. A
-// pending file written as v0.87.0 while the release shipped as v0.88.0
-// slips under `through` at the bump with a version that never existed;
-// this is the tripwire that says rename it.
-//
-//gofastr:test-reads /CHANGELOG.md
+// below `through` names a release CHANGELOG.md or an archive under
+// changelog/ has a heading for. A pending file written as v0.87.0 while
+// the release shipped as v0.88.0 slips under `through` at the bump with a
+// version that never existed; this is the tripwire that says rename it.
 func TestShippedEntriesAreChangelogReleases(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
-	if err != nil {
-		t.Fatalf("read CHANGELOG.md: %v", err)
-	}
 	shipped := map[string]bool{}
-	for _, m := range regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`).FindAllStringSubmatch(string(body), -1) {
-		shipped["v"+m[1]] = true
+	for _, m := range releaseHeading.FindAllStringSubmatch(readChangelog(t), -1) {
+		shipped["v"+m[1]+"."+m[2]+"."+m[3]] = true
 	}
 	reg, err := Load()
 	if err != nil {
@@ -449,7 +443,7 @@ func TestShippedEntriesAreChangelogReleases(t *testing.T) {
 			continue // pending: the release PR names it
 		}
 		if !shipped[rel.Version] {
-			t.Errorf("releases/%s.yml is at or below through %s but CHANGELOG.md has no [%s] release: rename the pending file to the version that shipped", rel.Version, reg.Through, strings.TrimPrefix(rel.Version, "v"))
+			t.Errorf("releases/%s.yml is at or below through %s but neither CHANGELOG.md nor changelog/ has a [%s] release: rename the pending file to the version that shipped", rel.Version, reg.Through, strings.TrimPrefix(rel.Version, "v"))
 		}
 	}
 }

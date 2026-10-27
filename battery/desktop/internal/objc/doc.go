@@ -3,9 +3,9 @@
 // through the internal/ffi call trampoline, class registration with Go
 // IMPs, block literals, and the dispatch main-queue hop.
 //
-// It is the spike slice of docs/desktop-plan.md phase 0 and is
-// internal on purpose: this is the layer most likely to change when
-// the battery lands.
+// It began as the desktop host's phase-0 spike and stays internal on
+// purpose: nothing outside battery/desktop imports it, and it is the
+// layer most likely to change.
 //
 // darwin/arm64 and darwin/amd64. Almost all of it is shared; the message
 // send is where the two ABIs genuinely differ and msgsend_darwin_arm64.go

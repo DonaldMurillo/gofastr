@@ -34,7 +34,7 @@ const (
 	// bytes of clearance, the same margin every raise here uses.
 	// Re-measure after a merge, not before.
 	// 13305, raised 92 bytes from 13213 on 2026-09-15 (the behaviour
-	// registry, docs/spec-behavior-registry.md), same rule: measured,
+	// registry, core-ui/ARCHITECTURE.md), same rule: measured,
 	// not skipped. One SOURCE change that cannot be a demand module,
 	// because it is what tells the kernel which demand modules exist:
 	//   - frag/boot.js's _registered (10 lines): reads the registered
@@ -46,7 +46,7 @@ const (
 	// The merged bundle measures 13297 at level 6; 8 bytes of clearance.
 	//
 	// 13372, raised 67 bytes from 13305 on 2026-09-16 (loader
-	// dependencies and readiness, docs/spec-behavior-registry.md
+	// dependencies and readiness, core-ui/ARCHITECTURE.md
 	// "Dependencies and readiness"), same rule: measured, not skipped.
 	// One SOURCE change that cannot be a demand module, because it is
 	// the machinery every demand load goes through:
@@ -60,7 +60,7 @@ const (
 	//     a few bytes back; the net is the number above.
 	//
 	// 2026-09-20, the interaction bridge learns registered descriptors
-	// (docs/spec-behavior-registry.md, sequence step 5's prerequisite):
+	// (core-ui/ARCHITECTURE.md, "Dependencies and readiness"):
 	// frag/boot.js's _registered parse gains the x array and moves
 	// above the bridge, whose install loop now iterates
 	// _moduleMarkers.concat(_registered). The line did NOT move: the

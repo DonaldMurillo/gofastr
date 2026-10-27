@@ -2,9 +2,9 @@
 
 package objc
 
-// The phase-0 spike (docs/desktop-plan.md): a real GoFastr SSR app,
-// served in-process over loopback, rendered inside a native WKWebView
-// opened by a CGO_ENABLED=0 binary. The scenario walks the spike
+// The phase-0 spike: a real GoFastr SSR app, served in-process over
+// loopback, rendered inside a native WKWebView opened by a
+// CGO_ENABLED=0 binary. The scenario walks the spike
 // claims: client-side navigation between two screens, one island RPC
 // round-trip, a JavaScript message into Go, a PNG snapshot of the live
 // window, and every native callback landing on the Go main thread.
@@ -13,7 +13,7 @@ package objc
 //
 //	CGO_ENABLED=0 go test -count=1 -tags desktop_e2e -run TestSpike -v ./battery/desktop/internal/objc/
 //
-// Never in CI (see the plan's testing policy).
+// Never in CI (see the testing section of framework/docs/content/desktop.md).
 
 import (
 	"context"

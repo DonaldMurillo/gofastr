@@ -15,7 +15,7 @@ import (
 
 // Registered behaviours are runtime modules too. A package that calls
 // registry.RegisterBehavior embeds its JavaScript beside the Go that
-// renders the markup it binds (docs/spec-behavior-registry.md), so the
+// renders the markup it binds (core-ui/ARCHITECTURE.md), so the
 // module lives outside core-ui/runtime and outside every lint that
 // walks that directory. The contract is the same for both: ES2020
 // (no var), no selector built from an unescaped value, no storage key

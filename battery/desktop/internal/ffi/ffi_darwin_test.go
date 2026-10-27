@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// The FFI self-test ("the linkname self-test" in docs/desktop-plan.md):
-// it drives every pulled runtime hook once — Call through
+// The FFI self-test, the guard on the go:linkname runtime hooks: it
+// drives every pulled runtime hook once — Call through
 // runtime.cgocall into a trampoline entry, and runtime.cgocallback
 // underneath it — and asserts the argument and return plumbing. A Go
 // release that removes or reshapes either hook fails here first, in the

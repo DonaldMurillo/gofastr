@@ -19,7 +19,7 @@ import (
 //
 //gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
-	// Registered behaviours (docs/spec-behavior-registry.md) are modules
+	// Registered behaviours (core-ui/ARCHITECTURE.md) are modules
 	// from the host down, so the per-module budget holds them too.
 	// ModuleNames() cannot: it sees only the registrations linked into
 	// THIS test binary, and the packages that register (framework/ui,

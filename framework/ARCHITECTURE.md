@@ -335,11 +335,13 @@ Out-of-contract (NOT part of the layering rules below):
                              battery/ but classified Experimental by the
                              stability manifest): the app inside the OS
                              WebView from a CGO_ENABLED=0 binary. Its
-                             internal/ffi, internal/objc, and
-                             internal/fakecgo packages are the pure-Go
-                             native layer (darwin/arm64 today); see
-                             docs/desktop-plan.md for the runtime hooks
-                             it stands on.
+                             internal/ffi, internal/fakecgo,
+                             internal/objc, internal/win32, and
+                             internal/gtk packages are the pure-Go
+                             native layer (macOS arm64, Windows amd64,
+                             Linux amd64 and arm64); internal/ffi's
+                             self-test guards the runtime hooks it
+                             stands on.
   experimental/webmcp        WebMCP bridge: registers server-declared
                              tools on the page's modelContext (the
                              Chrome origin-trial API on Document, with

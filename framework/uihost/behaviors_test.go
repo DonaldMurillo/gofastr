@@ -11,7 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The behaviour seam's host-side wiring (docs/spec-behavior-registry.md
+// The behaviour seam's host-side wiring (core-ui/ARCHITECTURE.md
 // "Serving and the manifest"): live pages learn registered behaviours'
 // markers from /__gofastr/manifest.js (window.__gofastr_behaviors),
 // export mode keeps the inline #gofastr-behaviors block, and the
