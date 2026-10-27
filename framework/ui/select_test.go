@@ -169,3 +169,40 @@ func TestSelectLabelHidden(t *testing.T) {
 		t.Errorf("the field sheet does not hide the label:\n%s", css)
 	}
 }
+
+// optionTag returns the opening <option> tag whose label is text.
+func optionTag(t *testing.T, h, text string) string {
+	t.Helper()
+	end := strings.Index(h, ">"+text+"</option>")
+	if end < 0 {
+		t.Fatalf("no option %q in:\n%s", text, h)
+	}
+	return h[strings.LastIndex(h[:end], "<option"):end]
+}
+
+// An option with an empty value is selectable like any other: "All"
+// flagged Selected is the one the form submits.
+func TestSelectSelectsEmptyValue(t *testing.T) {
+	h := string(Select(SelectConfig{Name: "status", Label: "Status", Options: []SelectOption{
+		{Value: "open", Text: "Open"},
+		{Value: "", Text: "All", Selected: true},
+	}}))
+	if !strings.Contains(optionTag(t, h, "All"), "selected") {
+		t.Errorf("the flagged empty option is not selected:\n%s", h)
+	}
+	if strings.Contains(optionTag(t, h, "Open"), "selected") {
+		t.Errorf("an unflagged option is selected:\n%s", h)
+	}
+}
+
+// With nothing flagged, the browser's default stands: the first
+// option, not a later one whose value happens to be empty.
+func TestSelectUnflaggedKeepsFirstOption(t *testing.T) {
+	h := string(Select(SelectConfig{Name: "status", Label: "Status", Options: []SelectOption{
+		{Value: "open", Text: "Open"},
+		{Value: "", Text: "All"},
+	}}))
+	if strings.Contains(optionTag(t, h, "All"), "selected") {
+		t.Errorf("an unflagged empty option took the selection:\n%s", h)
+	}
+}

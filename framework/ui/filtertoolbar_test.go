@@ -68,6 +68,80 @@ func TestFilterToolbarSelectSelected(t *testing.T) {
 	}
 }
 
+// A facet value from the URL that no option lists selected nothing: the
+// select showed "all" and the pills checked none while the toolbar
+// counted the filter as applied, and Apply then dropped it. The value
+// draws as its own chosen option, so the control shows it and Apply
+// keeps it.
+func TestFacetKeepsUnlistedValue(t *testing.T) {
+	for _, kind := range []FacetKind{FacetSelect, FacetPills} {
+		out := string(FilterToolbar(FilterToolbarConfig{
+			Action: "/tickets",
+			Facets: []Facet{{
+				Name: "priority", Label: "Priority", Kind: kind, Value: "urgent",
+				Options: []FacetOption{{Label: "Low", Value: "low"}, {Label: "High", Value: "high"}},
+			}},
+		}))
+		tag := optionTagFor(out, "urgent")
+		if kind == FacetPills {
+			tag = inputTagFor(out, "urgent")
+		}
+		if !strings.Contains(tag, "selected") && !strings.Contains(tag, "checked") {
+			t.Errorf("kind %v: the unlisted value is not the chosen one (%q):\n%s", kind, tag, out)
+		}
+		if !strings.Contains(out, ">urgent<") {
+			t.Errorf("kind %v: the unlisted value is not shown:\n%s", kind, out)
+		}
+		for _, other := range []string{"", "low", "high"} {
+			o := optionTagFor(out, other)
+			if kind == FacetPills {
+				o = inputTagFor(out, other)
+			}
+			if strings.Contains(o, "selected") || strings.Contains(o, "checked") {
+				t.Errorf("kind %v: %q is chosen beside the unlisted value: %s", kind, other, o)
+			}
+		}
+	}
+	// A listed value draws once, as its own option.
+	for _, kind := range []FacetKind{FacetSelect, FacetPills} {
+		out := string(FilterToolbar(FilterToolbarConfig{
+			Action: "/tickets",
+			Facets: []Facet{{
+				Name: "priority", Label: "Priority", Kind: kind, Value: "high",
+				Options: []FacetOption{{Label: "Low", Value: "low"}, {Label: "High", Value: "high"}},
+			}},
+		}))
+		if n := strings.Count(out, `value="high"`); n != 1 {
+			t.Errorf("kind %v: the listed value draws %d times:\n%s", kind, n, out)
+		}
+	}
+}
+
+// A sort from the URL that no Sort option lists selected nothing, so
+// the browser showed the first option and Apply submitted it in place
+// of the active sort. The value draws as its own chosen option.
+func TestSortKeepsUnlistedValue(t *testing.T) {
+	sorts := []SortOption{{Label: "Newest", Value: "-created"}, {Label: "Name", Value: "name"}}
+	out := string(FilterToolbar(FilterToolbarConfig{Action: "/tickets", Sort: sorts, SortValue: "-priority"}))
+	if tag := optionTagFor(out, "-priority"); !strings.Contains(tag, "selected") {
+		t.Errorf("the unlisted sort is not the chosen one (%q):\n%s", tag, out)
+	}
+	if !strings.Contains(out, ">-priority<") {
+		t.Errorf("the unlisted sort is not shown:\n%s", out)
+	}
+	for _, other := range []string{"-created", "name"} {
+		if tag := optionTagFor(out, other); strings.Contains(tag, "selected") {
+			t.Errorf("%q is chosen beside the unlisted sort: %s", other, tag)
+		}
+	}
+	for _, v := range []string{"", "name"} {
+		out := string(FilterToolbar(FilterToolbarConfig{Action: "/tickets", Sort: sorts, SortValue: v}))
+		if n := strings.Count(out, "<option"); n != 2 {
+			t.Errorf("SortValue %q: %d options, want the two listed:\n%s", v, n, out)
+		}
+	}
+}
+
 // optionTagFor returns the <option ...> open tag containing value="<val>".
 func optionTagFor(html, val string) string {
 	for seg := range strings.SplitSeq(html, "<option") {
@@ -275,6 +349,21 @@ func TestFilterToolbarHiddenCarriesRequestState(t *testing.T) {
 		Action: "/orders",
 		Search: &FilterSearch{Name: "q"},
 		Hidden: []HiddenField{{Name: "q", Value: "stale"}},
+	})
+}
+
+// The sort control's defaulted name ("sort") is owned like a named
+// one: a carried sort=old beside it would submit twice.
+func TestFilterHiddenRefusesDefaultSortName(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("a Hidden sort beside the defaulted sort control must panic")
+		}
+	}()
+	FilterToolbar(FilterToolbarConfig{
+		Action: "/orders",
+		Sort:   []SortOption{{Label: "Newest", Value: "new"}},
+		Hidden: []HiddenField{{Name: "sort", Value: "old"}},
 	})
 }
 

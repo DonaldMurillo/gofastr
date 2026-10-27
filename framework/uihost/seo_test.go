@@ -90,6 +90,35 @@ func TestSitemapExpandsDynamicRoutes(t *testing.T) {
 	}
 }
 
+// keyedPagesComp lists records whose keys hold a "/" and a space.
+type keyedPagesComp struct{ plainComp }
+
+func (keyedPagesComp) StaticPaths(context.Context) []map[string]string {
+	return []map[string]string{{"id": "a/b"}, {"id": "c d"}}
+}
+
+// A key value is one escaped segment of its <loc>: {"id":"a/b"} was
+// listed as /orders/a/b, a page nobody serves, and a space went out raw.
+func TestSitemapKeepsKeyOneSegment(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/orders/:id", &keyedPagesComp{}, nil)
+	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}))
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest("GET", "/sitemap.xml", nil))
+	body := w.Body.String()
+	for _, want := range []string{"<loc>https://example.com/orders/a%2Fb</loc>", "<loc>https://example.com/orders/c%20d</loc>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("sitemap lacks %s:\n%s", want, body)
+		}
+	}
+	// The listed URL serves the record.
+	page := httptest.NewRecorder()
+	ds.ServeHTTP(page, httptest.NewRequest("GET", "/orders/a%2Fb", nil))
+	if page.Code != 200 {
+		t.Errorf("GET /orders/a%%2Fb: status %d", page.Code)
+	}
+}
+
 func TestSitemapSkipsDynamicWithoutStaticPaths(t *testing.T) {
 	a := app.NewApp("x")
 	a.Register("/", &plainComp{}, nil)

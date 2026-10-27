@@ -27,3 +27,21 @@ func TestFilterRowsValueInputLoadsFieldSheet(t *testing.T) {
 		t.Errorf("the value input does not carry the field sheet's marker: %s", tag)
 	}
 }
+
+// A row's field or operator from the URL that the lists no longer hold
+// selected nothing, so the browser showed the first choice and Apply
+// rewrote the filter. Each draws as its own chosen option.
+func TestFilterRowsKeepUnlistedChoices(t *testing.T) {
+	out := string(FilterRows(FilterRowsConfig{
+		ID: "f", FieldName: "f", OpName: "op", ValueName: "v",
+		Legend: "Filters", FieldLabel: "Field", OpLabel: "Operator", ValueLabel: "Value",
+		Fields:    []SelectOption{{Value: "status", Text: "Status"}},
+		Operators: []SelectOption{{Value: "eq", Text: "is"}},
+		Rows:      []FilterRow{{Field: "gone", Op: "near", Value: "x"}},
+	}))
+	for _, v := range []string{"gone", "near"} {
+		if tag := optionTagFor(out, v); !strings.Contains(tag, "selected") || !strings.Contains(out, ">"+v+"<") {
+			t.Errorf("the unlisted %q is not kept and chosen (%q):\n%s", v, tag, out)
+		}
+	}
+}

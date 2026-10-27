@@ -7,6 +7,7 @@ package headless
 // to live here; heights, borders and class structure live in the class map.
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -198,7 +199,10 @@ type SelectProps struct {
 	// Options is the list of choices.
 	Options []Option
 	// Selected marks the option whose Value it matches. Empty selects
-	// the placeholder (or the first option when there is none).
+	// the placeholder; with no placeholder it selects the option whose
+	// Value is empty, or leaves the browser's first option when none is.
+	// A value no option lists is kept: it draws as its own chosen
+	// option, labelled with the value, so the form submits it unchanged.
 	Selected string
 	// Placeholder renders a disabled first option with an empty value.
 	// That empty value is also what makes Required enforceable: the
@@ -232,10 +236,19 @@ func Select(p SelectProps, s Classes) render.HTML {
 	for _, o := range p.Options {
 		a := Safe(o.ExtraAttrs, "value", "selected", "disabled")
 		a["value"] = o.Value
-		if p.Selected != "" && o.Value == p.Selected {
+		// An empty Selected is the placeholder's when there is one;
+		// otherwise it is the option whose value is empty.
+		if o.Value == p.Selected && (p.Selected != "" || p.Placeholder == "") {
 			a["selected"] = ""
 		}
 		kids = append(kids, El("option", s, PartOption, Internal(a), render.Text(o.Label)))
+	}
+	// A Selected no option lists (a stored value since dropped from the
+	// choices, a hand-edited URL) marked nothing, so the browser chose
+	// the first option and the form submitted a value nobody picked.
+	// It stays, drawn as its own chosen option labelled with itself.
+	if p.Selected != "" && !slices.ContainsFunc(p.Options, func(o Option) bool { return o.Value == p.Selected }) {
+		kids = append(kids, El("option", s, PartOption, Internal(html.Attrs{"value": p.Selected, "selected": ""}), render.Text(p.Selected)))
 	}
 
 	attrs := Safe(p.Extra)

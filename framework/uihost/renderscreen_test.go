@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -231,6 +232,32 @@ func TestRenderScreenTitleFromTitler(t *testing.T) {
 		titleOnlyComp{}, ScreenResponse{Status: http.StatusGone})
 	if body := rec.Body.String(); !strings.Contains(body, "<title>Session expired — recoverapp</title>") {
 		t.Errorf("title not honored: %s", body[:min(200, len(body))])
+	}
+}
+
+// A client navigation to a recovery screen gets the same title as a
+// hard load, plus the head carrier that replaces the previous page's
+// language and page-owned meta.
+func TestRenderScreenPartialCarriesTitleAndHead(t *testing.T) {
+	ds := New(newRecoverApp())
+	for _, tc := range []struct {
+		comp  component.Component
+		title string
+	}{
+		{titleOnlyComp{}, "Session expired — recoverapp"},
+		{recoverComp{}, "410: recoverapp"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req.Header.Set("X-Gofastr-Navigate", "1")
+		rec := httptest.NewRecorder()
+		ds.RenderScreen(rec, req, tc.comp, ScreenResponse{Status: http.StatusGone})
+		got, _ := url.PathUnescape(rec.Header().Get("X-Gofastr-Title"))
+		if got != tc.title {
+			t.Errorf("partial title = %q, want %q", got, tc.title)
+		}
+		if !strings.Contains(rec.Body.String(), `data-cui-page-head=`) || !strings.Contains(rec.Body.String(), `data-cui-lang=`) {
+			t.Errorf("partial has no head carrier: %s", rec.Body.String())
+		}
 	}
 }
 

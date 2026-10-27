@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 )
@@ -38,6 +39,18 @@ func (ds *UIHost) RouteMatchMiddleware() func(http.Handler) http.Handler {
 // routePath is the request's path in the routing form Router.Resolve
 // matches (app.RoutePath), so a key value holding "/" keeps its segment.
 func routePath(r *http.Request) string { return app.RoutePath(r.URL.EscapedPath()) }
+
+// fromPath reads X-Gofastr-From in the same routing form. The runtime
+// sends location.pathname, percent-encoded, so an origin compared raw
+// against the decoded target never shares a {param} group's layer. A
+// query or fragment the header carries passes through unchanged.
+func fromPath(r *http.Request) string {
+	from := r.Header.Get("X-Gofastr-From")
+	if i := strings.IndexAny(from, "?#"); i >= 0 {
+		return app.RoutePath(from[:i]) + from[i:]
+	}
+	return app.RoutePath(from)
+}
 
 // HasScreen reports whether a screen route serves path, by the same
 // resolution RouteMatchMiddleware uses. known is false when the host has

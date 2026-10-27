@@ -635,7 +635,10 @@ const (
 	// Resolving an inherited <base target> before intercepting a form adds 13.
 	// The module-failure replay refusing a form the browser would turn into
 	// a GET (no method, PUT, PATCH) and replaying a JSON form's GET adds 19.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8
+	// Back/Forward comparing every value of a repeated query key adds 28;
+	// a whole document's page-scoped seed riding its swap and the boot
+	// cache entry adds 114.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1051,7 +1054,18 @@ const (
 	// GET (no method, PUT, PATCH) measures 17498 at level 1. It runs exactly
 	// when the rpc module failed to load, so it cannot be carved into one.
 	// Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17500
+	// The navigator dropping its cache on a session change, keeping an
+	// error page out of it, refusing a layout-less prefetch inside a
+	// layout shell, and sharing its seed merge with the overlay pane
+	// measure 17517 at level 1. Each runs on the navigation path before
+	// any demand module could, so none carves. Two bytes of clearance,
+	// cliff fixture re-run.
+	// Back/Forward comparing every value of a repeated query key, and a
+	// whole document's page-scoped seed riding the boot cache entry and
+	// every document swap, measure 17670 at level 1. Both run in the
+	// navigator's popstate and swap paths, before any demand module
+	// could. Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17672
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1109,6 +1123,16 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"submitter-aware form bridge and native module-failure replay":             211,
 		"inherited base target preserves the native form browsing context":         13,
 		"module-failure replay keeps forms the browser would send as GET":          19,
+		// Measured 15081 → 15109 (2026-10-27): TestNavSessionChangeClearsCache,
+		// TestCrossChainErrorPageNotCached, TestPrefetchedBarePageLeavesShell,
+		// TestInterceptPaneAppliesSeed (the shared seed merge).
+		"nav cache: session drop, no error replay, prefetch chain check, pane seed": 28,
+		// Measured 15109 → 15137 → 15251 (2026-10-27):
+		// TestRepeatedQueryBackRefetches + TestEmptyQueryValueBackRefetches,
+		// then TestBackRestoresFirstPageSignals +
+		// TestFullDocNavAppliesPageSignals (docSeed).
+		"popstate compares every value of a query key":              28,
+		"whole-document page seed on boot entry and document swaps": 114,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1279,7 +1303,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// prefixed keys and a followed redirect goes through the plain
 		// navigator's _followed, which also catches one that leaves the
 		// origin (TestRedirectToLocaleLoadsDocument).
-		"envelope": 7856,
+		// 7878 measured (7876 + 2) after it decodes X-Gofastr-Swap, which
+		// uihost percent-encodes for a layer key holding non-ASCII or %
+		// (2026-10-26, TestSwapKeyDecodesNonASCII drives the plain
+		// navigator's twin in core).
+		"envelope": 7878,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1300,7 +1328,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3165 measured (3163 + 2): widget submit forwards the selected
 		// submitter and stands down for the native module-failure replay,
 		// matching the document bridge rather than losing button overrides.
-		"widgets": 3165,
+		// 3212 measured (3210 + 2): a hydrated root's listeners ride one
+		// AbortController per mount and a stale mount's dismiss is spent,
+		// so a reopened SSR widget sends one RPC per click and a second
+		// close re-hides it (2026-10-26, TestHydratedWidgetReopenWiresOnce).
+		"widgets": 3212,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1344,7 +1376,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// record's cached page before falling back
 		// (TestInterceptMissingRecordSkipsCache,
 		// TestInterceptGoneRefetchWithHash).
-		"intercept": 3508,
+		// 3520 measured (3518 + 2) after a pane applies its answer's
+		// signal seed (2026-10-27, TestInterceptPaneAppliesSeed).
+		"intercept": 3520,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1432,7 +1466,15 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// leave guard with an exact-destination retry. Includes main's followed-
 		// redirect refusal above. The pre-submit/native-fallback work stays in
 		// boot; request serialization and the guard belong with this dispatcher.
-		"rpc": 3556,
+		// 3578 measured (3576 + 2) after the plain-form bridge sends the
+		// CSRF header and handles a non-redirect answer the way a
+		// data-cui-rpc form does: field errors, toast header, invalidation
+		// (2026-10-26, TestJSONFormSendsCSRFHeader,
+		// TestSPAFormShowsFieldErrors, TestSPAFormDeliversToastHeader).
+		// 3602 measured (3600 + 2) after a data-cui-rpc form's body
+		// carries the pressed submit button (2026-10-27,
+		// TestRPCFormSendsClickedSubmitter).
+		"rpc": 3602,
 	}
 	const coreOverride = 0
 

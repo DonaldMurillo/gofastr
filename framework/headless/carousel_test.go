@@ -9,6 +9,20 @@ import (
 
 func renderCarousel(p CarouselProps) string { return string(Carousel(p, nil)) }
 
+// Two carousels sharing one slides slice each derive their own slide
+// ids: a render never writes its ids into the caller's slice.
+func TestCarouselSharedSlidesKeepOwnIDs(t *testing.T) {
+	slides := []CarouselSlide{{Content: render.Text("One")}}
+	a := renderCarousel(CarouselProps{Label: "A", ID: "a", Slides: slides})
+	b := renderCarousel(CarouselProps{Label: "B", ID: "b", Slides: slides})
+	if !strings.Contains(a, `id="a-track-slide-0"`) || !strings.Contains(b, `id="b-track-slide-0"`) {
+		t.Errorf("a shared slides slice carried one render's ids into the next:\n%s\n%s", a, b)
+	}
+	if slides[0].ID != "" {
+		t.Errorf("the render wrote %q into the caller's slides", slides[0].ID)
+	}
+}
+
 func TestCarouselRendersTrackControlsAndDots(t *testing.T) {
 	h := renderCarousel(CarouselProps{Label: "Featured work", ID: "feat", Slides: []CarouselSlide{
 		{Content: render.Text("One")},

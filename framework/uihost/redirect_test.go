@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +57,7 @@ func TestRedirectInRouteManifest(t *testing.T) {
 	a.Redirect("/old", "/new")
 	ds := New(a)
 
-	body := ds.buildRouteScript()
+	body := ds.buildRouteScript(context.Background())
 	start := strings.IndexByte(body, '[')
 	end := strings.LastIndexByte(body, ']')
 	if start < 0 || end <= start {

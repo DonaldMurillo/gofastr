@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -184,8 +185,10 @@ var pwaSensitivePaths = []string{
 }
 
 // pwaDenyPaths returns the effective deny list: the built-in sensitive
-// framework endpoints plus normalized config DenyPaths entries.
-func pwaDenyPaths(cfg PWAConfig) []string {
+// framework endpoints plus normalized config DenyPaths entries, each
+// also behind every locale prefix: /es/api/me routes to /api/me, so an
+// unprefixed list let a credentialed response into the shared cache.
+func (ds *UIHost) pwaDenyPaths(cfg PWAConfig) []string {
 	deny := append([]string(nil), pwaSensitivePaths...)
 	for _, d := range cfg.DenyPaths {
 		d = strings.TrimRight(strings.TrimSpace(d), "/")
@@ -194,12 +197,23 @@ func pwaDenyPaths(cfg PWAConfig) []string {
 		}
 		deny = append(deny, d)
 	}
+	if ds.pathLocales == nil {
+		return deny
+	}
+	// Every tag, the default too: /en/api/me redirects to /api/me.
+	base := len(deny)
+	for _, tag := range ds.pathLocales.All() {
+		for _, d := range deny[:base] {
+			deny = append(deny, "/"+tag+d)
+		}
+	}
 	return deny
 }
 
 // pwaAllowedPrecache reports whether a Precache entry may enter the
 // app-shell cache: same-origin root-absolute paths only, never a
-// denied endpoint.
+// denied endpoint. The path is decoded and cleaned first, as the router
+// does: /a%70i/me and /static/../api/me both reach /api/me.
 func pwaAllowedPrecache(p string, deny []string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false
@@ -208,6 +222,11 @@ func pwaAllowedPrecache(p string, deny []string) bool {
 	if i := strings.IndexAny(clean, "?#"); i >= 0 {
 		clean = clean[:i]
 	}
+	clean, err := url.PathUnescape(clean)
+	if err != nil {
+		return false
+	}
+	clean = path.Clean(clean)
 	for _, d := range deny {
 		if clean == d || strings.HasPrefix(clean, d+"/") {
 			return false
@@ -217,9 +236,15 @@ func pwaAllowedPrecache(p string, deny []string) bool {
 }
 
 // pwaAssetURL matches root-absolute src/href attribute values in the
-// rendered offline page so its stylesheet/script dependencies join the
-// precache and the page renders styled with no network.
-var pwaAssetURL = regexp.MustCompile(`(?:src|href)="(/[^"]+)"`)
+// rendered offline page, with the tag that carries them, so its
+// stylesheet/script dependencies join the precache and the page renders
+// styled with no network.
+var pwaAssetURL = regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?\s(?:src|href)="(/[^"]+)"`)
+
+// pwaNavTags carry a navigation target, not an asset. Precached, a link
+// like /dashboard is the signed-in user's page in Cache Storage, served
+// to whoever is offline next.
+var pwaNavTags = map[string]bool{"a": true, "area": true, "base": true}
 
 // pwaPrecachePaths returns the deduplicated, sorted, basePath-neutral
 // precache manifest: the runtime/app shell, the offline screen and its
@@ -228,7 +253,7 @@ var pwaAssetURL = regexp.MustCompile(`(?:src|href)="(/[^"]+)"`)
 // exactly, so entries the client requests with a content-addressed
 // ?v=<hash> (split runtime modules, component CSS) are listed with
 // that exact query.
-func (ds *UIHost) pwaPrecachePaths(cfg PWAConfig, offlineHTML string, live bool) []string {
+func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHTML string, live bool) []string {
 	set := map[string]bool{
 		"/__gofastr/runtime.js":      true,
 		"/__gofastr/color-scheme.js": true,
@@ -244,8 +269,13 @@ func (ds *UIHost) pwaPrecachePaths(cfg PWAConfig, offlineHTML string, live bool)
 		// against files the export doesn't write.
 		set["/__gofastr/runtime.js?v="+widget.RuntimeHash()] = true
 		set["/__gofastr/color-scheme.js?v="+colorSchemeHash()] = true
-		if _, mHash := ds.manifestJS(); mHash != "" {
-			set["/__gofastr/manifest.js?v="+mHash] = true
+		// One manifest per catalog locale: a /es/ page links its own.
+		// The locales are the translator ctx carries, the one the
+		// pages are served under, not the process default.
+		for _, lr := range ds.renderLocales(ctx) {
+			if mHash := ds.manifestFor(lr).hash; mHash != "" {
+				set["/__gofastr/manifest.js?v="+mHash] = true
+			}
 		}
 	}
 	if ds.App != nil {
@@ -268,12 +298,17 @@ func (ds *UIHost) pwaPrecachePaths(cfg PWAConfig, offlineHTML string, live bool)
 		}
 		set[u] = true
 	}
-	deny := pwaDenyPaths(cfg)
+	deny := ds.pwaDenyPaths(cfg)
 	// Whatever the offline page links (per-component CSS, app.css) must
 	// be cached with it or it renders unstyled when the network is gone.
 	for _, m := range pwaAssetURL.FindAllStringSubmatch(offlineHTML, -1) {
-		if pwaAllowedPrecache(m[1], deny) {
-			set[m[1]] = true
+		if pwaNavTags[m[1]] {
+			continue
+		}
+		// The attribute's HTML spelling (&amp;) is not the URL the page
+		// requests.
+		if u := stdhtml.UnescapeString(m[2]); pwaAllowedPrecache(u, deny) {
+			set[u] = true
 		}
 	}
 	for _, icon := range cfg.Icons {
@@ -441,7 +476,8 @@ func (ds *UIHost) pwaVersion(manifest []byte, precache []string, offlineHTML str
 }
 
 // pwaStaticBytes resolves a precache path against the host's static
-// storage (embedded FS first, then the static dir) and returns its
+// storage (the static dir first, then the embedded FS: the order a
+// request is served in) and returns its
 // bytes, or nil when the path isn't served from static storage. The
 // path is cleaned to its root-relative form, so traversal segments
 // can't escape the static root, and the static-dir read goes through
@@ -456,13 +492,13 @@ func (ds *UIHost) pwaStaticBytes(p string) []byte {
 	if rel == "" || rel == "." {
 		return nil
 	}
-	if ds.staticFS != nil {
-		if b, err := fs.ReadFile(ds.staticFS, rel); err == nil {
+	if root := ds.staticRootOf(); root != nil {
+		if b, err := root.ReadFile(filepath.FromSlash(rel)); err == nil {
 			return b
 		}
 	}
-	if root := ds.staticRootOf(); root != nil {
-		if b, err := root.ReadFile(filepath.FromSlash(rel)); err == nil {
+	if ds.staticFS != nil {
+		if b, err := fs.ReadFile(ds.staticFS, rel); err == nil {
 			return b
 		}
 	}
@@ -520,7 +556,15 @@ func pwaStaticHash(name, basePath string) string {
 // skipWaiting. A new worker activates once existing tabs release the
 // old one; pages hear about a waiting update via the
 // "gofastr:pwa-update" window event dispatched by register.js.
+//
+// It lists the manifests of the process-wide translator's locales
+// (i18n.Default); the served worker lists those of the translator its
+// request carries.
 func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
+	return ds.serviceWorkerJS(context.Background(), basePath)
+}
+
+func (ds *UIHost) serviceWorkerJS(ctx context.Context, basePath string) (string, error) {
 	if ds.pwaConfig == nil {
 		return "", fmt.Errorf("uihost: PWA not configured")
 	}
@@ -530,7 +574,7 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	precache := ds.pwaPrecachePaths(cfg, offlineHTML, true)
+	precache := ds.pwaPrecachePaths(ctx, cfg, offlineHTML, true)
 	version := ds.pwaVersion(manifest, precache, offlineHTML)
 	nameSlug := pwaSlug(cfg.Name)
 	prefix := "gofastr-pwa-" + nameSlug + "." + pwaNameHash(cfg.Name) + "."
@@ -543,7 +587,7 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	shared, err := pwaSharedWorkerArgs(basePath, pwaDenyPaths(cfg))
+	shared, err := pwaSharedWorkerArgs(basePath, ds.pwaDenyPaths(cfg))
 	if err != nil {
 		return "", err
 	}
@@ -642,7 +686,7 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 	if err != nil {
 		return "", err
 	}
-	deny := pwaDenyPaths(cfg)
+	deny := ds.pwaDenyPaths(cfg)
 	seen := map[string]bool{}
 	add := func(dst *[]string, paths ...string) {
 		for _, p := range paths {
@@ -653,7 +697,7 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 		}
 	}
 	var precache []string
-	add(&precache, ds.pwaPrecachePaths(cfg, offlineHTML, false)...)
+	add(&precache, ds.pwaPrecachePaths(context.Background(), cfg, offlineHTML, false)...)
 	add(&precache, export.Pages...)
 	add(&precache, export.Assets...)
 	// Component stylesheets are requested under content-addressed ?v=
@@ -972,7 +1016,7 @@ func (ds *UIHost) handlePWAServiceWorker(w http.ResponseWriter, r *http.Request)
 	// one page, so the style registries have settled (same reasoning
 	// as the deployment fingerprint itself).
 	ds.pwaSWOnce.Do(func() {
-		ds.pwaSW, ds.pwaSWErr = ds.PWAServiceWorkerJS("")
+		ds.pwaSW, ds.pwaSWErr = ds.serviceWorkerJS(r.Context(), "")
 	})
 	if ds.pwaSWErr != nil {
 		i18n.HTTPError(w, r, http.StatusNotFound, reasonPWANotConfigured)

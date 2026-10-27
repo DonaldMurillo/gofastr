@@ -10,11 +10,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -217,6 +219,31 @@ func TestPWAServiceWorkerDeterministic(t *testing.T) {
 	}
 }
 
+// The cache version follows the static file the host serves. A file in
+// both the static dir and the embedded FS is served from the dir, but
+// the fingerprint read the embedded copy, so a redeploy that changed
+// only the dir's bytes kept the old cache.
+func TestPWAFingerprintsServedFile(t *testing.T) {
+	embedded := fstest.MapFS{"logo.svg": {Data: []byte("embedded")}}
+	build := func(onDisk string) string {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "logo.svg"), []byte(onDisk), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		a := app.NewApp("x")
+		a.Register("/", &plainComp{}, nil)
+		ds := New(a, WithStaticDir(dir), WithPWA(PWAConfig{Precache: []string{"/logo.svg"}}))
+		ds.SetStaticFS(embedded)
+		if body := pwaGet(t, ds, "/logo.svg").Body.String(); body != onDisk {
+			t.Fatalf("served %q, want the dir's %q", body, onDisk)
+		}
+		return pwaGet(t, ds, "/service-worker.js").Body.String()
+	}
+	if build("disk one") == build("disk two") {
+		t.Error("changed served bytes kept the same service worker")
+	}
+}
+
 func TestPWAPrecacheDropsSensitive(t *testing.T) {
 	a := app.NewApp("x")
 	a.Register("/", &plainComp{}, nil)
@@ -266,6 +293,41 @@ func TestPWAPrecacheDropsSensitive(t *testing.T) {
 		if got[banned] {
 			t.Errorf("sensitive/unsafe precache entry %s must be dropped: %v", banned, precache)
 		}
+	}
+}
+
+// The router decodes and cleans a path before it matches a route, so
+// /a%70i/me reaches /api/me. The precache filter compared the raw
+// spelling, so an encoded entry for a denied endpoint was fetched with
+// the installing user's cookies and served from the cache to the next.
+func TestPWAPrecacheDecodesBeforeDeny(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	entries := []string{
+		"/a%70i/me?v=1",
+		"/%61uth/login",
+		"/static/../api/users",
+		"/api%2Fusers",
+		"/static/%zz.png",
+	}
+	ds := New(a, WithPWA(PWAConfig{Precache: append(entries, "/static/ok%20file.png")}))
+	body := pwaGet(t, ds, "/service-worker.js").Body.String()
+	_, after, _ := strings.Cut(body, "var PRECACHE = ")
+	var precache []string
+	if err := json.Unmarshal([]byte(after[:strings.Index(after, ";\n")]), &precache); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range precache {
+		got[p] = true
+	}
+	for _, e := range entries {
+		if got[e] {
+			t.Errorf("precache kept %s", e)
+		}
+	}
+	if !got["/static/ok%20file.png"] {
+		t.Error("an encoded safe asset was dropped")
 	}
 }
 
@@ -436,6 +498,74 @@ func TestPWAOfflineNoBundleCSS(t *testing.T) {
 		if strings.Contains(p, "comp-bundle.css") {
 			t.Errorf("precache must not contain a bundle URL: %s", p)
 		}
+	}
+}
+
+// offlineLinksComp renders an offline page with a navigation link beside
+// its assets.
+type offlineLinksComp struct{}
+
+func (offlineLinksComp) Render() render.HTML {
+	return `<a href="/dashboard">Dashboard</a><area href="/account"><link rel="stylesheet" href="/x.css"><script src="/boot.js?a=1&amp;b=2"></script>`
+}
+
+// The offline page's assets are precached, its navigation links are
+// not: an <a href="/dashboard"> put the signed-in user's page in Cache
+// Storage, served to the next user offline. An asset URL is decoded
+// from its HTML spelling, or the install fetched /boot.js?a=1&amp;b=2.
+func TestPWAPrecachesAssetsNotLinks(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{OfflineScreen: offlineLinksComp{}}))
+	sw, err := ds.PWAServiceWorkerJS("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range pwaSWPrecache(t, sw) {
+		got[p] = true
+	}
+	for _, p := range []string{"/dashboard", "/account", "/boot.js?a=1&amp;b=2"} {
+		if got[p] {
+			t.Errorf("precache lists %s", p)
+		}
+	}
+	for _, p := range []string{"/x.css", "/boot.js?a=1&b=2"} {
+		if !got[p] {
+			t.Errorf("precache is missing %s", p)
+		}
+	}
+}
+
+// With locale prefixes on, /es/api/me routes to /api/me: a Precache
+// entry for it stored user A's response in the shared cache, served to
+// user B by the cache-first ?v branch.
+func TestPWADenyCoversLocalePrefix(t *testing.T) {
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{Precache: []string{
+		"/es/api/me?v=1", "/en/auth/session", "/es/__gofastr/sse", "/es/static/a.css",
+	}}))
+	ds.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+	sw, err := ds.PWAServiceWorkerJS("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range pwaSWPrecache(t, sw) {
+		got[p] = true
+	}
+	for _, p := range []string{"/es/api/me?v=1", "/en/auth/session", "/es/__gofastr/sse"} {
+		if got[p] {
+			t.Errorf("precache lists %s", p)
+		}
+	}
+	if !got["/es/static/a.css"] {
+		t.Error("precache is missing /es/static/a.css")
+	}
+	// The worker never intercepts the prefixed endpoint either.
+	if !strings.Contains(sw, `"/es/api/"`) {
+		t.Errorf("worker deny list misses /es/api/:\n%s", sw)
 	}
 }
 

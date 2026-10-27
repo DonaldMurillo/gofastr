@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -52,6 +53,9 @@ type ComboboxPick struct {
 	// Value is the picked option's value; Label is the text the input
 	// shows for it. Both empty when nothing is picked.
 	Value, Label string
+	// Form is the id of the form the hidden input submits with, when
+	// that is not the form around it (the HTML form attribute).
+	Form string
 }
 
 // ComboboxProps configures the combobox.
@@ -154,7 +158,10 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	}
 	listboxID := p.ID + "-listbox"
 
-	// Option ids: caller's, checked for duplicates, or derived.
+	// Option ids: caller's, checked for duplicates, or derived. The
+	// derived ids go on a copy: the caller's slice may feed another
+	// combobox with a different ID.
+	p.Options = slices.Clone(p.Options)
 	ids := make([]string, 0, len(p.Options))
 	for i := range p.Options {
 		if p.Options[i].ID == "" {
@@ -277,6 +284,9 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	}
 	if p.Pick != nil {
 		value := Attrs(map[string]string{"type": "hidden", "name": p.Pick.Name, "value": p.Pick.Value})
+		if p.Pick.Form != "" {
+			value["form"] = p.Pick.Form
+		}
 		Mark(value, "data-hui-combobox-value")
 		body = append(body, render.VoidTag("input", Internal(value)))
 	}

@@ -44,7 +44,7 @@ func writeStaleMarkupReload(w http.ResponseWriter, r *http.Request, path, swapLa
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("X-Gofastr-Partial", "true")
 	if swapLayer != "" {
-		h.Set("X-Gofastr-Swap", swapLayer)
+		h.Set("X-Gofastr-Swap", escapeLayerKey(swapLayer))
 	}
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusConflict)

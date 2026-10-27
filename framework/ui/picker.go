@@ -41,6 +41,9 @@ type PickerConfig struct {
 	// when nothing is picked.
 	Value, ValueLabel string
 	Placeholder       string
+	// Form is the id of the form the picked value submits with, when
+	// that is not the form around the picker (the HTML form attribute).
+	Form string
 	// Options are the listbox's first rows, shown on focus before any
 	// search; More is a note row after them ("Showing 20 of 312").
 	Options []PickerOption
@@ -85,7 +88,7 @@ func Picker(cfg PickerConfig) render.HTML {
 			Label:       cfg.Label,
 			Placeholder: cfg.Placeholder,
 			Island:      &headless.Island{Endpoint: cfg.Endpoint, Signal: id},
-			Pick:        &headless.ComboboxPick{Name: cfg.Name, Value: cfg.Value, Label: cfg.ValueLabel},
+			Pick:        &headless.ComboboxPick{Name: cfg.Name, Value: cfg.Value, Label: cfg.ValueLabel, Form: cfg.Form},
 			Options:     pickerOptions(cfg.Options, cfg.More),
 			Control:     &c,
 			ExtraAttrs:  headless.Safe(cfg.ExtraAttrs),

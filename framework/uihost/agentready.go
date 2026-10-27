@@ -816,7 +816,9 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	// out with NoLLMMD.
 	if ds.pageDocsOn() {
 		if scr, _, ok := ds.App.Router.Resolve(routePath(req)); ok && !scr.NoLLMMD {
-			links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.Path)))
+			// The escaped path: decoded, a > , ; or " in it would close
+			// the URI reference and start a link of the client's choosing.
+			links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.EscapedPath())))
 		}
 	}
 	if len(links) == 0 {
@@ -897,6 +899,16 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	// status the HTML would (app.SetStatus, ScreenStatusCode): a missing
 	// record answers 404 in either.
 	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
+	// A refused page answers as its HTML does: the redirect, or the
+	// block's status over the withheld doc.
+	switch res.Decision.Kind {
+	case app.DecisionRedirect:
+		w.Header().Add("Vary", "Accept")
+		http.Redirect(w, r, scrubCtl(res.Decision.URL), http.StatusSeeOther)
+		return true
+	case app.DecisionBlock:
+		status = res.Decision.Status
+	}
 	md := res.MD
 	if res.Allowed {
 		title := res.Title
@@ -906,7 +918,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		// SEO resolved against the LOADED instance so the negotiated
 		// markdown's front matter matches the HTML head (llmmd_seo.go's
 		// lockstep contract), not the zero-value registration template.
-		seo := resolveScreenSEOFor(ctx, screen, res.Component)
+		seo := ds.localizeSEO(ctx, routePath(r), resolveScreenSEOFor(ctx, screen, res.Component))
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md
 		}

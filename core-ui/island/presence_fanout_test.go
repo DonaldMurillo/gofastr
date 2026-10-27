@@ -3,8 +3,10 @@ package island
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -116,6 +118,71 @@ func TestPresenceFanoutDeathExpiresByTTL(t *testing.T) {
 	waitFor(t, 2*time.Second, "B expires A's member within TTL", func() bool {
 		return len(b.PresenceRoster("doc:1")) == 0
 	})
+}
+
+// TestTTLExpiryFiresPresenceChange: a crashed replica's members expiring
+// on B must fire B's OnPresenceChange, the hook an app pushes the new
+// roster from. The sweep used to compare rosters that both filtered
+// expired entries, saw no change, and left viewers on the dead roster.
+func TestTTLExpiryFiresPresenceChange(t *testing.T) {
+	a, b, _, stopA, stopB := twoManagersOnOneBus(t, 20*time.Millisecond, 80*time.Millisecond)
+	defer stopA()
+	defer stopB()
+
+	h := a.PresenceJoin("sess-a1", PresenceIdentity{UserID: "u1"}, []string{"doc:1"})
+	defer h.Leave()
+	waitFor(t, time.Second, "B sees A's member before death", func() bool {
+		return len(b.PresenceRoster("doc:1")) == 1
+	})
+
+	var fired atomic.Int32
+	b.SetOnPresenceChange(func(topic string) {
+		if topic == "doc:1" {
+			fired.Add(1)
+		}
+	})
+	a.haltPresenceHeartbeat()
+
+	waitFor(t, 2*time.Second, "B's OnPresenceChange fires on TTL expiry", func() bool {
+		return fired.Load() > 0 && len(b.PresenceRoster("doc:1")) == 0
+	})
+}
+
+// TestCapEvictOfExpiredFiresChange: the topic-cap eviction is the other
+// place an expired, unswept roster leaves the table. Viewers still hold
+// its members, so dropping it must fire OnPresenceChange too.
+func TestCapEvictOfExpiredFiresChange(t *testing.T) {
+	m := NewManager()
+	stop, err := m.SetFanout(fanout.NewInProcess())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	m.reconfigurePresence(time.Hour, time.Hour) // keep the sweep out of it
+
+	now := time.Now()
+	m.mu.Lock()
+	for i := range maxRemoteRosterTopics {
+		topic := "t:" + strconv.Itoa(i)
+		entry := remoteRosterEntry{members: []PresenceMember{{UserID: "u"}}, expiresAt: now.Add(time.Hour)}
+		touched := now
+		if i == 0 {
+			// Oldest refresh, and past its TTL before any sweep ran.
+			entry.expiresAt = now.Add(-time.Second)
+			touched = now.Add(-time.Minute)
+		}
+		m.remoteRosters[topic] = map[string]remoteRosterEntry{"r1": entry}
+		m.remoteRosterTouch[topic] = touched
+	}
+	m.mu.Unlock()
+
+	var fired []string
+	m.SetOnPresenceChange(func(topic string) { fired = append(fired, topic) })
+	m.mergeRemotePresence("r2", presenceFanoutMsg{ReplicaID: "r2", Topic: "new", Members: []PresenceMember{{UserID: "u2"}}})
+
+	if !slices.Contains(fired, "t:0") {
+		t.Fatalf("OnPresenceChange fired for %v, want t:0 (the evicted expired roster)", fired)
+	}
 }
 
 // TestPresenceFanoutGracefulLeavePrompt: stop() on A sends a graceful leave
@@ -358,4 +425,33 @@ func waitFor(t *testing.T, deadline time.Duration, what string, cond func() bool
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for: %s", what)
+}
+
+// TestLeaveOverExpiredFiresChange: a replica's empty announcement that
+// removes its own expired, unswept roster is the departure viewers were
+// never told about. The sweep finds nothing left to report, so the
+// announcement must fire OnPresenceChange itself.
+func TestLeaveOverExpiredFiresChange(t *testing.T) {
+	m := NewManager()
+	stop, err := m.SetFanout(fanout.NewInProcess())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	m.reconfigurePresence(time.Hour, time.Hour) // keep the sweep out of it
+
+	m.mu.Lock()
+	m.remoteRosters["doc:1"] = map[string]remoteRosterEntry{
+		"r1": {members: []PresenceMember{{UserID: "u1"}}, expiresAt: time.Now().Add(-time.Second)},
+	}
+	m.remoteRosterTouch["doc:1"] = time.Now().Add(-time.Minute)
+	m.mu.Unlock()
+
+	var fired []string
+	m.SetOnPresenceChange(func(topic string) { fired = append(fired, topic) })
+	m.mergeRemotePresence("r1", presenceFanoutMsg{ReplicaID: "r1", Topic: "doc:1"})
+
+	if !slices.Contains(fired, "doc:1") {
+		t.Fatalf("OnPresenceChange fired for %v, want doc:1 (r1's expired members left)", fired)
+	}
 }

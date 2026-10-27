@@ -246,6 +246,7 @@ nav	2	applyDocShell
 nav	2	cacheScreen
 nav	2	crossesDocBoundary
 nav	2	docCarrier
+nav	2	docSeed
 nav	2	domChainKeys
 nav	2	findSlot
 nav	2	finishNav
@@ -292,6 +293,7 @@ nav	4	dom
 nav	4	el
 nav	4	el
 nav	4	epoch
+nav	4	flat
 nav	4	fresh
 nav	4	fullPath
 nav	4	glob
@@ -307,9 +309,11 @@ nav	4	link
 nav	4	m
 nav	4	m
 nav	4	myEpoch
+nav	4	names
 nav	4	navHash
 nav	4	origin
 nav	4	out
+nav	4	p
 nav	4	p0
 nav	4	page
 nav	4	parts
@@ -333,6 +337,7 @@ nav	4	u0
 nav	4	v
 nav	4	x
 nav	6	G
+nav	6	av
 nav	6	cached
 nav	6	cfg
 nav	6	copy

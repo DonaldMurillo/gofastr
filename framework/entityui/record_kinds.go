@@ -33,8 +33,18 @@ func builtinKind(name string) Kind {
 		}
 		return Kind{Input: moneyInput, Cell: show}
 	case "email", "url", "color":
-		t := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
+		kindType := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
 		return Kind{Input: func(ic InputContext) render.HTML {
+			t := kindType
+			if t == "color" && !simpleColor(ic.Value) {
+				// A color input holds only a lowercase #rrggbb: it
+				// draws anything else, empty included, as black and
+				// submits "#000000", or lowercases the hex, so an
+				// untouched save rewrote the column. Any other value
+				// draws as text and keeps it; an empty one can stay
+				// empty. The picker returns once a #rrggbb is saved.
+				t = "text"
+			}
 			return ui.FormField(ui.FormFieldConfig{
 				Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 				Input: func(c headless.FieldControl) render.HTML {
@@ -61,12 +71,28 @@ func builtinKind(name string) Kind {
 	}
 }
 
+// simpleColor reports whether s is the one spelling a color input keeps
+// as it is: # and six lowercase hex digits.
+func simpleColor(s string) bool {
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // moneyInput is the money kind's control: a number input whose step lets
-// the type's precision through, with the currency symbol prepended.
+// the type's precision through, with the currency symbol prepended. A
+// stored value finer than cents widens the step, or the form could not
+// be saved untouched.
 func moneyInput(ic InputContext) render.HTML {
 	step := map[schema.FieldType]string{schema.Int: "1", schema.Float: "any"}[ic.Field.Type]
 	if step == "" {
-		step = "0.01"
+		step = strconv.FormatFloat(fractionStep(ic.Value, 2), 'f', -1, 64)
 	}
 	return ui.FormField(ui.FormFieldConfig{
 		Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
