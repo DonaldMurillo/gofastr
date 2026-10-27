@@ -54,7 +54,8 @@ for test in TestNativeGTKWebKit TestNativeGoFastrBridge TestNativeActivation Tes
   if [[ $test != TestNativeActivation ]]; then
     runner+=(xvfb-run --auto-servernum '--server-args=-screen 0 1280x800x24 -nolisten tcp')
   fi
-  "${runner[@]}" go test ./battery/desktop/linux -run "^${test}$" -count=1 -timeout="$timeout" -v "${linker[@]}" \
+  # bash 3.2 (macOS /bin/bash) reads an empty array as unbound under set -u.
+  "${runner[@]}" go test ./battery/desktop/linux -run "^${test}$" -count=1 -timeout="$timeout" -v ${linker[@]+"${linker[@]}"} \
     2>&1 | tee "$log"
   # Missing/renamed tests and t.Skip both make go test exit zero. Require
   # this specific test to pass so CI cannot turn green without exercising it.
