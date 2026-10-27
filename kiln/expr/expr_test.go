@@ -1,6 +1,7 @@
 package expr_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -265,5 +266,37 @@ func TestCustomFunction(t *testing.T) {
 	}
 	if v != int64(42) {
 		t.Errorf("got %v, want 42", v)
+	}
+}
+
+// An integer past 2^53 reaches a scope from the journal as a json.Number.
+// Read through a name, a field, a map key or a list index, it is the
+// int64 it spells, so arithmetic and comparisons stay exact; a list
+// holding one still matches it in contains.
+func TestScopeBigIntegersStayExact(t *testing.T) {
+	big := json.Number("9007199254740993")
+	scope := expr.MapScope{
+		"n": big,
+		"m": map[string]any{"n": big},
+		"l": []any{big},
+		// Past int64 it is the float64 it always arrived as.
+		"h": json.Number("100000000000000000000"),
+	}
+	for _, src := range []string{
+		`-h < -9007199254740993`,
+		`n + 1 == 9007199254740994`,
+		`-n == -9007199254740993`,
+		`-m.n == -9007199254740993`,
+		`-m["n"] == -9007199254740993`,
+		`-l[0] == -9007199254740993`,
+		`contains(l, 9007199254740993)`,
+	} {
+		e, err := expr.Compile(src)
+		if err != nil {
+			t.Fatalf("compile %q: %v", src, err)
+		}
+		if v, err := e.Eval(scope, expr.DefaultEnv()); err != nil || v != true {
+			t.Errorf("%s = %v, %v; want true", src, v, err)
+		}
 	}
 }

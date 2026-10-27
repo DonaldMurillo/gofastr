@@ -1,9 +1,29 @@
 package expr
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
+
+// exactNumber returns the int64 a json.Number spells, or its float64
+// when it is not an integer in int64 range; any other value passes
+// through. The kiln journal keeps an integer past 2^53 as a json.Number
+// so it is not rounded, and every value read out of a scope goes through
+// here so the evaluator sees only the number types it knows.
+func exactNumber(v any) any {
+	n, ok := v.(json.Number)
+	if !ok {
+		return v
+	}
+	if i, err := n.Int64(); err == nil {
+		return i
+	}
+	if f, err := n.Float64(); err == nil {
+		return f
+	}
+	return v
+}
 
 func (n *literalNode) eval(_ Scope, _ *Env) (any, error) { return n.value, nil }
 
@@ -12,7 +32,7 @@ func (n *identNode) eval(scope Scope, _ *Env) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("expr: undefined identifier %q", n.name)
 	}
-	return v, nil
+	return exactNumber(v), nil
 }
 
 func (n *memberNode) eval(scope Scope, env *Env) (any, error) {
@@ -28,7 +48,7 @@ func (n *memberNode) eval(scope Scope, env *Env) (any, error) {
 	if !exists {
 		return nil, fmt.Errorf("expr: missing field %q", n.field)
 	}
-	return v, nil
+	return exactNumber(v), nil
 }
 
 func (n *indexNode) eval(scope Scope, env *Env) (any, error) {
@@ -51,7 +71,7 @@ func (n *indexNode) eval(scope Scope, env *Env) (any, error) {
 		if i < 0 || i >= int64(len(t)) {
 			return nil, fmt.Errorf("expr: index %d out of range", i)
 		}
-		return t[i], nil
+		return exactNumber(t[i]), nil
 	case map[string]any:
 		key, ok := idx.(string)
 		if !ok {
@@ -61,7 +81,7 @@ func (n *indexNode) eval(scope Scope, env *Env) (any, error) {
 		if !exists {
 			return nil, fmt.Errorf("expr: missing key %q", key)
 		}
-		return v, nil
+		return exactNumber(v), nil
 	default:
 		return nil, fmt.Errorf("expr: cannot index %T", target)
 	}
@@ -242,6 +262,12 @@ func numerics(v any) (*int64, float64, bool) {
 		return nil, n, true
 	case float32:
 		return nil, float64(n), true
+	case json.Number:
+		// A list element (contains compares them through equals) is not
+		// read through a scope accessor, so it can still be one.
+		if x := exactNumber(n); x != any(n) {
+			return numerics(x)
+		}
 	}
 	return nil, 0, false
 }

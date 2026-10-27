@@ -101,7 +101,7 @@ func tableColumns(d *sql.DB, table string) (map[string]struct{}, error) {
 	if _, err := query.SafeIdent(table); err != nil {
 		return nil, err
 	}
-	rows, err := d.Query(`PRAGMA table_info(` + query.QuoteIdent(table) + `)`)
+	rows, err := d.Query(`PRAGMA table_info(` + query.QuoteFolded(table) + `)`)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func alterAddColumn(table string, f schema.Field) string {
 	// (arbitrary DDL, ATTACH-based file creation). Quoting makes the
 	// whole tail one (weird, harmless) identifier — the exact property
 	// sqlDefault already pins for DEFAULT literals.
-	col := query.QuoteIdent(f.Name) + " " + sqlType(f)
+	col := query.QuoteFolded(f.Name) + " " + sqlType(f)
 	if f.Default != nil {
 		col += fmt.Sprintf(" DEFAULT %s", sqlDefault(f))
 	}
@@ -137,7 +137,7 @@ func alterAddColumn(table string, f schema.Field) string {
 	// honor only Default. Required-without-default added columns become
 	// nullable in the live DB; the freeze step emits a proper migration
 	// later if the user wants strictness in production.
-	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", query.QuoteIdent(table), col)
+	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", query.QuoteFolded(table), col)
 }
 
 // Mirror of framework's sqlType / sqlDefault, kept private to avoid
@@ -196,7 +196,7 @@ func DropTable(d *sql.DB, table string) error {
 	if err != nil {
 		return fmt.Errorf("kiln/db: drop: %w", err)
 	}
-	if _, err := d.Exec("DROP TABLE IF EXISTS " + query.QuoteIdent(t)); err != nil {
+	if _, err := d.Exec("DROP TABLE IF EXISTS " + query.QuoteFolded(t)); err != nil {
 		return fmt.Errorf("kiln/db: drop %s: %w", table, err)
 	}
 	return nil

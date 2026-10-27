@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
@@ -328,13 +329,13 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 			out["recent"] = sess.Chat[start:]
 		}
 
-		// Both world-shaped fields go through redactedWorld for the same
+		// Both world-shaped fields go through world.Redacted for the same
 		// reason serveWorld does: App.Auth.JWTSecret is a session-forging
 		// key and App.Admin.SeedPassword is a live credential. serveWorld
 		// redacted them and this endpoint did not, so ?fields=world and
 		// ?fields=app handed both out verbatim.
 		if want["world"] || want["app"] {
-			redacted := redactedWorld(sess.World)
+			redacted := world.Redacted(sess.World)
 			if want["world"] {
 				out["world"] = redacted
 			}
@@ -375,7 +376,7 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 			// session-forging key) and App.Admin.SeedPassword, and the
 			// chat panel links this endpoint from every page. The rest
 			// of the IR is the point of the endpoint and passes through.
-			"world": redactedWorld(sess.World),
+			"world": world.Redacted(sess.World),
 			"session": map[string]any{
 				"chat":  sess.Chat,
 				"plans": sess.Plans,
@@ -425,12 +426,12 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 	var callID string
 	if journaledTools[name] {
 		// The envelope is journaled only for a body that parses: garbage
-		// must not mint journal history. UnmarshalStrict (map shape)
+		// must not mint journal history. decodeToolArgs (map shape)
 		// refuses duplicate and case-folded top-level keys the same way
-		// the typed decode below does.
+		// the typed decode below does, and keeps big integers exact.
 		var args map[string]any
 		if len(body) > 0 {
-			if err := handler.UnmarshalStrict(body, &args); err != nil {
+			if err := decodeToolArgs(body, &args); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -503,10 +504,10 @@ func maskCredentialValue(key string, v any) any {
 		if v == nil {
 			return nil
 		}
-		return redactedSecret
+		return world.RedactedSecret
 	case strings.EqualFold(key, "db_url"):
 		if s, ok := v.(string); ok && dsnredact.HasSecret(s) {
-			return redactedSecret
+			return world.RedactedSecret
 		}
 		return v
 	}
@@ -538,126 +539,137 @@ func writeResult(w http.ResponseWriter, res protocol.Result) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// dispatch is the bridge from JSON tool calls to typed Tools methods.
+// decodeToolArgs is the one decode for a tool-call body: strict
+// (duplicate and case-folded keys are ambiguity, not data) and exact.
+// An `any` slot (entity properties, a field default, page props, action
+// params, seed rows) keeps an integer past 2^53 with its digits, where a
+// plain decode rounded 9007199254740993 to 9007199254740992 before the
+// value was journaled.
+func decodeToolArgs(body []byte, dst any) error {
+	if err := handler.UnmarshalStrict(body, dst, handler.UseNumber()); err != nil {
+		return err
+	}
+	return jsonexact.Settle(dst)
+}
+
 // dispatch is the bridge from JSON tool calls to typed Tools methods. The
-// buffered body decodes through handler.UnmarshalStrict (duplicate and
-// case-folded keys are ambiguity, not data), with the size cap applied by
-// the caller that buffered it.
+// buffered body decodes through decodeToolArgs, with the size cap applied
+// by the caller that buffered it.
 func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protocol.Result, error) {
 	switch name {
 	case "world_get":
 		var args protocol.WorldGetArgs
 		if len(body) > 0 {
-			if err := handler.UnmarshalStrict(body, &args); err != nil {
+			if err := decodeToolArgs(body, &args); err != nil {
 				return protocol.Result{}, err
 			}
 		}
 		return s.tools.WorldGet(ctx, args), nil
 	case "set_app_config":
 		var args protocol.SetAppConfigArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetAppConfig(ctx, args), nil
 	case "set_scaffold":
 		var args protocol.SetScaffoldArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetScaffold(ctx, args), nil
 	case "add_entity":
 		var args protocol.AddEntityArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddEntity(ctx, args), nil
 	case "update_entity":
 		var args protocol.UpdateEntityArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.UpdateEntity(ctx, args), nil
 	case "delete_entity":
 		var args protocol.DeleteEntityArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteEntity(ctx, args), nil
 	case "add_field":
 		var args protocol.AddFieldArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddField(ctx, args), nil
 	case "delete_field":
 		var args protocol.DeleteFieldArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteField(ctx, args), nil
 	case "add_page":
 		var args protocol.AddPageArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddPage(ctx, args), nil
 	case "delete_page":
 		var args protocol.DeletePageArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeletePage(ctx, args), nil
 	case "update_page_element":
 		var args protocol.UpdatePageElementArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.UpdatePageElement(ctx, args), nil
 	case "add_hook":
 		var args protocol.AddHookArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddHook(ctx, args), nil
 	case "delete_hook":
 		var args protocol.DeleteHookArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteHook(ctx, args), nil
 	case "add_route":
 		var args protocol.AddRouteArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddRoute(ctx, args), nil
 	case "delete_route":
 		var args protocol.DeleteRouteArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteRoute(ctx, args), nil
 	case "add_seed":
 		var args protocol.AddSeedArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddSeed(ctx, args), nil
 	case "propose_plan":
 		var args protocol.ProposePlanArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.ProposePlan(ctx, args), nil
 	case "approve_plan":
 		var args protocol.ApprovePlanArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.ApprovePlan(ctx, args), nil
 	case "reject_plan":
 		var args protocol.RejectPlanArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.RejectPlan(ctx, args), nil
@@ -667,44 +679,17 @@ func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protoc
 		return s.tools.ResetSession(ctx, protocol.ResetSessionArgs{}), nil
 	case "set_theme":
 		var args protocol.SetThemeArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetTheme(ctx, args), nil
 
 	case "chat":
 		var args protocol.ChatArgs
-		if err := handler.UnmarshalStrict(body, &args); err != nil {
+		if err := decodeToolArgs(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.Chat(ctx, args), nil
 	}
 	return protocol.Result{}, fmt.Errorf("unknown tool %q", name)
-}
-
-// redactedSecret is what a credential renders as in any world the server
-// hands out. A fixed marker rather than an empty string, so a reader can
-// tell "configured, withheld" from "not set".
-const redactedSecret = "[redacted]"
-
-func redactedWorld(w *world.World) *world.World {
-	if w == nil {
-		return nil
-	}
-	out := *w
-	if out.App.Auth.JWTSecret != "" {
-		out.App.Auth.JWTSecret = redactedSecret
-	}
-	if out.App.Admin.SeedPassword != "" {
-		out.App.Admin.SeedPassword = redactedSecret
-	}
-	// A credentialed DSN is credential material by the freeze contract
-	// (dsnredact.HasSecret is that one rule): an embedded password must
-	// not be handed out with the world, while credential-free DSNs
-	// (file:blog.db) are configuration and stay visible so local frozen
-	// apps stay diagnosable.
-	if dsnredact.HasSecret(out.App.DBURL) {
-		out.App.DBURL = redactedSecret
-	}
-	return &out
 }

@@ -120,6 +120,10 @@ func (l *Live) Apply(e journal.Entry) error {
 		}
 	}
 	if err := journal.Apply(l.sess, e); err != nil {
+		// A refused entry may have changed the session before it failed
+		// (journal.Apply is not transactional), and nothing durable
+		// records that change: put the session back to the journal.
+		l.restoreFromJournal()
 		return fmt.Errorf("kiln/live: apply to session: %w", err)
 	}
 	// Validate by rebuilding BEFORE the durable Append. If the entry can't be
@@ -138,7 +142,12 @@ func (l *Live) Apply(e journal.Entry) error {
 	// refused to apply.
 	if err := l.applySideEffects(e, dropTable); err != nil {
 		l.restoreFromJournal()
-		l.rederiveDB()
+		// A refused seed rolled back its own transaction, so the DB still
+		// matches the journal. Rederiving drops every table, and with them
+		// the CRUD rows the journal never recorded.
+		if e.Op != journal.OpAddSeed {
+			l.rederiveDB()
+		}
 		return fmt.Errorf("kiln/live: side-effects: %w", err)
 	}
 	if _, err := l.journal.Append(e); err != nil {
@@ -198,7 +207,7 @@ func (l *Live) applySideEffects(e journal.Entry, dropTable string) error {
 		if p.Seed == nil {
 			return nil
 		}
-		w := &world.World{Seeds: []*world.Seed{p.Seed}}
+		w := &world.World{Entities: l.sess.World.Entities, Seeds: []*world.Seed{p.Seed}}
 		return kilnrender.ApplySeeds(l.app.DB, w)
 	case journal.OpDeleteEntity:
 		if dropTable == "" {
@@ -235,7 +244,7 @@ func (l *Live) rederiveDB() {
 		if s == nil {
 			continue
 		}
-		w := &world.World{Seeds: []*world.Seed{s}}
+		w := &world.World{Entities: l.sess.World.Entities, Seeds: []*world.Seed{s}}
 		if err := kilnrender.ApplySeeds(db, w); err != nil {
 			slog.Warn("kiln/live: re-derive skipped a seed the world refuses",
 				"seed", i, "entity", s.Entity, "err", err)
@@ -275,24 +284,66 @@ func (l *Live) TruncateAndReload(n int) error {
 	return l.reloadBody()
 }
 
-// UndoLast removes the most recent journal entry and reloads. The
-// Len→TruncateAfter pair runs under one hold of l.mu so the cut is
-// computed against the log a concurrent Append can no longer rewrite
-// between the two steps.
+// UndoLast reverts the most recent world edit and reloads. The journal
+// is cut at that edit, and at the tool_call envelope journaled just
+// before it when there is one, so the edit's tool_result and anything
+// journaled after it go too. Cutting a fixed one entry was wrong: the
+// HTTP tool API wraps every edit in a tool_call and a tool_result, so
+// a one-entry cut removed the tool_result, left the edit in the world,
+// and still re-derived the DB. A journal with no world edit has
+// nothing to undo. The Read→TruncateAfter pair runs under one hold of
+// l.mu so the cut is computed against the log a concurrent Append can
+// no longer rewrite between the two steps.
 func (l *Live) UndoLast() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	n, err := l.journal.Len()
+	entries, err := l.journal.Read()
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	cut := undoCut(entries)
+	if cut < 0 {
 		return ErrNothingToUndo
 	}
-	if err := l.journal.TruncateAfter(n - 1); err != nil {
+	// The undone edit's op rides the event, so the reload client knows
+	// whether the document shell changed.
+	var undone journal.Op
+	for _, e := range entries[cut:] {
+		if e.Kind == journal.KindWorldEdit {
+			undone = e.Op
+		}
+	}
+	if err := l.journal.TruncateAfter(cut); err != nil {
 		return err
 	}
-	return l.reloadBody()
+	if err := l.reloadBody(); err != nil {
+		return err
+	}
+	// The world a visitor's page renders from just changed: tell the bus
+	// so the reload client refreshes, as it does for any world edit.
+	l.bus.Send(Event{Kind: EventUndo, Op: string(undone)})
+	return nil
+}
+
+// EventUndo is the bus event UndoLast sends after the reverted world
+// is live. The build-mode reload client refreshes the page on it.
+const EventUndo = "undo"
+
+// undoCut returns how many leading entries survive an undo, or -1 when
+// the log holds no world edit. The cut lands on the last world edit, or
+// on its tool_call envelope when the HTTP tool API journaled one
+// immediately before it.
+func undoCut(entries []journal.Entry) int {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Kind != journal.KindWorldEdit {
+			continue
+		}
+		if i > 0 && entries[i-1].Kind == journal.KindToolCall {
+			return i - 1
+		}
+		return i
+	}
+	return -1
 }
 
 // reloadBody is the shared boot/reload sequence: replay the journal,

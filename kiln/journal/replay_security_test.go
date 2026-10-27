@@ -200,7 +200,15 @@ func TestReplayGatesEveryDestructiveOp(t *testing.T) {
 		{OpDeleteRoute, DeleteRoutePayload{Method: "GET", Path: "/x"}},
 	}
 	for _, tc := range cases {
+		// Every target exists, so the refusal can only be the plan gate:
+		// a delete of an absent target is refused before the gate runs.
 		s := NewSession()
+		mustApply(t, s, worldEdit(OpAddEntity, AddEntityPayload{
+			Entity: &world.Entity{Name: "orders", Fields: []world.Field{{Name: "total", Type: "int"}}},
+		}))
+		mustApply(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{Path: "/orders"}}))
+		mustApply(t, s, worldEdit(OpAddHook, AddHookPayload{Hook: &world.Hook{ID: "h1", Entity: "orders", When: "before_create"}}))
+		mustApply(t, s, worldEdit(OpAddRoute, AddRoutePayload{Route: &world.Route{Method: "GET", Path: "/x"}}))
 		err := Apply(s, worldEdit(tc.op, tc.payload))
 		if err == nil {
 			t.Errorf("SECURITY: [integrity] %s applied with no approved plan", tc.op)

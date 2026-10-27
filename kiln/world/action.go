@@ -2,6 +2,8 @@ package world
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/node"
 )
@@ -39,6 +41,41 @@ func ValidateAction(a Action) error {
 		return fmt.Errorf("action kind %q is not supported by kiln/effect (supported: noop, validate, set_field, audit, respond_json, emit_event)", a.Kind)
 	}
 	return nil
+}
+
+// HookActionKinds are the kinds a hook can run: effect.RunHook dispatches
+// through effect.Run, which performs a side effect and produces no
+// response, so respond_json has nowhere to go on a hook.
+var HookActionKinds = []string{ActionNoop, ActionValidate, ActionSetField, ActionAudit, ActionEmitEvent}
+
+// RouteActionKinds are the kinds a route can run: render.applyRoutes
+// answers every request through effect.Resolve, which only knows how to
+// produce a response.
+var RouteActionKinds = []string{ActionNoop, ActionRespondJSON}
+
+// ValidateHookAction refuses a kind effect.Run cannot run. ValidateAction's
+// one shared set admitted respond_json on a hook, which then failed every
+// create, update, delete, or list it was attached to.
+func ValidateHookAction(a Action) error {
+	return validateSurfaceAction("hook", a, HookActionKinds)
+}
+
+// ValidateRouteAction refuses a kind effect.Resolve cannot answer with.
+// The shared set admitted validate/set_field/audit/emit_event on a route,
+// which then answered every request with a 500.
+func ValidateRouteAction(a Action) error {
+	return validateSurfaceAction("route", a, RouteActionKinds)
+}
+
+func validateSurfaceAction(surface string, a Action, kinds []string) error {
+	if err := ValidateAction(a); err != nil {
+		return err
+	}
+	if a.Kind == "" || slices.Contains(kinds, a.Kind) {
+		return nil
+	}
+	return fmt.Errorf("action kind %q does not run on a %s (supported on a %s: %s)",
+		a.Kind, surface, surface, strings.Join(kinds, ", "))
 }
 
 // validateNodeActions walks a UI node tree and rejects any unsupported action

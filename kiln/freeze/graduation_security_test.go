@@ -102,6 +102,13 @@ func TestFreezeRefusesSeedsLiveRefuses(t *testing.T) {
 				"live runtime refuses.", name)
 		}
 	}
+	// The live INSERT targets the entity's table, so the gate checks the
+	// table, not the name: a clean name over a hostile table is refused.
+	hostile := newWorld(&world.Seed{Entity: "posts", Rows: []map[string]any{{"title": "x"}}})
+	hostile.Entities["posts"].Table = `posts" ; DROP TABLE posts; --`
+	if _, err := freeze.AppSpecYAML(hostile); err == nil {
+		t.Errorf("SECURITY: a seed whose entity table is not an identifier graduated")
+	}
 	// Guard: an ordinary seed for a real entity still graduates.
 	if _, err := freeze.AppSpecYAML(newWorld(&world.Seed{Entity: "posts", Rows: []map[string]any{{"title": "ok"}}})); err != nil {
 		t.Errorf("ordinary seed refused at graduation: %v", err)
