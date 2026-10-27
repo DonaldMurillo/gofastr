@@ -310,12 +310,12 @@ func compare(op string, l, r any) (any, error) {
 	li, lf, lOK := numerics(l)
 	ri, rf, rOK := numerics(r)
 	if lOK && rOK {
-		var a, b float64
+		// Two integers order as integers: float64 rounds past 2^53, so
+		// 9007199254740993 > 9007199254740992 came out false.
 		if li != nil && ri != nil {
-			a, b = float64(*li), float64(*ri)
-		} else {
-			a, b = lf, rf
+			return orderInts(op, *li, *ri), nil
 		}
+		a, b := lf, rf
 		switch op {
 		case "<":
 			return a < b, nil
@@ -342,6 +342,20 @@ func compare(op string, l, r any) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("expr: cannot compare %T %s %T", l, op, r)
+}
+
+// orderInts applies an ordering operator compare has already matched.
+func orderInts(op string, a, b int64) bool {
+	switch op {
+	case "<":
+		return a < b
+	case ">":
+		return a > b
+	case "<=":
+		return a <= b
+	default: // ">="
+		return a >= b
+	}
 }
 
 func toInt(v any) (int64, bool) {

@@ -1300,48 +1300,63 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	sl.state = StateReady
 	sl.mu.Unlock()
 
-	// Exit watcher: charge circuit on unexpected exit, transition to
-	// Crashed. The supervise loop then drives Backoff → Starting.
-	sup := sl.sup
-	go func() {
-		waitErr := child.Wait()
-		sl.mu.Lock()
-		// leaseFailing: handleLeaseExpired killed this child on purpose
-		// and keeps state=Ready for the recovery arm. Its exit is a
-		// drain, not a crash: charging the circuit for it let a few
-		// store outages wedge a healthy module in Crashed.
-		leaseDrain := sl.leaseFailing
-		expected := sl.state == StateDrainingDisable ||
-			sl.state == StateDrainingUpgrade ||
-			sl.state == StateInstalledDisabled ||
-			sl.state == StateFailed ||
-			leaseDrain
-		curState := sl.state
-		// Clear runtime handles; they are no longer valid.
-		sl.child = nil
-		sl.peer = nil
-		sl.codec = nil
-		sl.lastExit = exitLabel(waitErr, expected)
-		if leaseDrain {
-			sl.lastExit = "lease-expired-drain"
-		}
-		sl.mu.Unlock()
-		if expected {
-			// Drained exit: no restart, no charge.
-			sup.logf("processmodule: %s expected exit: %v", sl.name, waitErr)
-			return
-		}
-		sup.logf("processmodule: %s UNEXPECTED exit in %s: %v", sl.name, curState, waitErr)
-		// Crashed; the supervise loop will pick it up.
-		sl.mu.Lock()
-		sl.state = StateCrashed
-		sl.mu.Unlock()
-		select {
-		case sl.wake <- struct{}{}:
-		default:
-		}
-	}()
+	go sl.watchExit(child, instanceID)
 	return nil
+}
+
+// watchExit waits for child and records its exit: a crash charges the
+// circuit and moves the slot to Crashed, and the supervise loop then
+// drives Backoff → Starting. A slot that no longer holds child was
+// already settled by a drain, which recorded the exit and may have
+// started a replacement; this late watcher leaves that slot alone. The
+// slot is matched by instanceID, minted per spawn, not by comparing
+// children: a runner may return an uncomparable RunningChild value.
+func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
+	sup := sl.sup
+	waitErr := child.Wait()
+	sl.mu.Lock()
+	if sl.child == nil || sl.instanceID != instanceID {
+		sl.mu.Unlock()
+		return
+	}
+	// leaseFailing: handleLeaseExpired killed this child on purpose
+	// and keeps state=Ready for the recovery arm. Its exit is a
+	// drain, not a crash: charging the circuit for it let a few
+	// store outages wedge a healthy module in Crashed.
+	leaseDrain := sl.leaseFailing
+	expected := sl.state == StateDrainingDisable ||
+		sl.state == StateDrainingUpgrade ||
+		sl.state == StateInstalledDisabled ||
+		sl.state == StateFailed ||
+		leaseDrain
+	curState := sl.state
+	// Clear runtime handles; they are no longer valid.
+	sl.child = nil
+	sl.peer = nil
+	sl.codec = nil
+	sl.lastExit = exitLabel(waitErr, expected)
+	if leaseDrain {
+		sl.lastExit = "lease-expired-drain"
+	}
+	if !expected {
+		// Crashed, in the same critical section that clears the child: a
+		// childless Ready in between is the lease-drain recovery case,
+		// and the supervise loop would spawn a replacement this watcher
+		// then marked Crashed.
+		sl.state = StateCrashed
+	}
+	sl.mu.Unlock()
+	if expected {
+		// Drained exit: no restart, no charge.
+		sup.logf("processmodule: %s expected exit: %v", sl.name, waitErr)
+		return
+	}
+	sup.logf("processmodule: %s UNEXPECTED exit in %s: %v", sl.name, curState, waitErr)
+	// The supervise loop picks the crash up.
+	select {
+	case sl.wake <- struct{}{}:
+	default:
+	}
 }
 
 // verifyToolSurface fetches module.tool.list and requires byte-equality

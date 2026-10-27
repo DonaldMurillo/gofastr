@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
@@ -282,46 +284,50 @@ func mergeStructIntoMap(before, after any, dest map[string]any) error {
 	return mergeFields(bv, av, slices.Sorted(maps.Keys(dest)), dest)
 }
 
-// mergeFields writes each field of av that differs from bv into dest.
-// An untagged embedded struct is walked in place, since JSON promotes
-// its fields to the outer object, whether or not its type is exported.
+// mergeFields writes each field JSON would encode that differs between
+// bv and av into dest. The field set is encoding/json's: fields promoted
+// from an embedded struct whose tag gives no name count, whether or not
+// its type is exported, and a name held by several fields goes to the
+// shallowest, then to the one tagged with it, else to none. So a hook
+// writing an embedded field an outer one shadows changes nothing, as it
+// would change nothing in the JSON. A field under a nil embedded pointer
+// reads as its zero value, so a hook that drops one clears the fields it
+// promoted.
 func mergeFields(bv, av reflect.Value, keys []string, dest map[string]any) error {
-	t := av.Type()
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if f.Anonymous && f.Tag.Get("json") == "" {
-			eb, ea := bv.Field(i), av.Field(i)
-			if eb.Kind() == reflect.Pointer {
-				if eb.IsNil() || ea.IsNil() {
-					continue
-				}
-				eb, ea = eb.Elem(), ea.Elem()
+	var wireB, wireA map[string]json.RawMessage
+	for _, f := range jsonFields(av.Type()) {
+		var b []byte
+		if nv := fieldOrZero(av, f.index); nv.CanInterface() {
+			oldVal := fieldOrZero(bv, f.index).Interface()
+			newVal := nv.Interface()
+			if reflect.DeepEqual(oldVal, newVal) {
+				continue // hook left this field untouched, don't widen the body
 			}
-			if ea.Kind() == reflect.Struct {
-				if err := mergeFields(eb, ea, keys, dest); err != nil {
+			// Round-trip the new value through JSON so it matches the shape
+			// the untyped path expects (integers as int64, other numbers as
+			// float64, time as RFC3339, etc.).
+			var err error
+			if b, err = json.Marshal(newVal); err != nil {
+				return err
+			}
+		} else {
+			// An unexported embedded struct named by its tag: reflection
+			// cannot read it out, so read its key from the encoded struct.
+			if wireA == nil {
+				var err error
+				if wireB, err = encodeWire(bv); err != nil {
 					return err
 				}
+				if wireA, err = encodeWire(av); err != nil {
+					return err
+				}
+			}
+			if bytes.Equal(wireB[f.name], wireA[f.name]) {
 				continue
 			}
-		}
-		if f.PkgPath != "" { // unexported
-			continue
-		}
-		name, skip := jsonFieldName(f)
-		if skip {
-			continue
-		}
-		oldVal := bv.Field(i).Interface()
-		newVal := av.Field(i).Interface()
-		if reflect.DeepEqual(oldVal, newVal) {
-			continue // hook left this field untouched, don't widen the body
-		}
-		// Round-trip the new value through JSON so it matches the shape the
-		// untyped path expects (integers as int64, other numbers as
-		// float64, time as RFC3339, etc.).
-		b, err := json.Marshal(newVal)
-		if err != nil {
-			return err
+			if b = wireA[f.name]; b == nil {
+				b = []byte("null")
+			}
 		}
 		var decoded any
 		if err := decodeHookJSON(b, &decoded); err != nil {
@@ -333,33 +339,157 @@ func mergeFields(bv, av reflect.Value, keys []string, dest map[string]any) error
 		// lacks gets the snake_case column name.
 		wrote := false
 		for _, k := range keys {
-			if casing.ToCamel(k) == casing.ToCamel(name) {
+			if casing.ToCamel(k) == casing.ToCamel(f.name) {
 				dest[k] = decoded
 				wrote = true
 			}
 		}
 		if !wrote {
-			dest[casing.ToSnake(name)] = decoded
+			dest[casing.ToSnake(f.name)] = decoded
 		}
 	}
 	return nil
 }
 
-// jsonFieldName returns the effective JSON key for a struct field (honoring
-// the json tag, ignoring options like omitempty) and whether the field is
-// JSON-skipped (`json:"-"`).
-func jsonFieldName(f reflect.StructField) (name string, skip bool) {
+// encodeWire is v encoded as JSON, keyed by field name.
+func encodeWire(v reflect.Value) (map[string]json.RawMessage, error) {
+	b, err := json.Marshal(v.Interface())
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// jsonField is one field of a struct as encoding/json sees it.
+type jsonField struct {
+	name   string
+	index  []int
+	tagged bool
+}
+
+// jsonFields lists the fields encoding/json encodes for t, in field order,
+// each under the name it encodes as.
+func jsonFields(t reflect.Type) []jsonField {
+	var all []jsonField
+	depthOf := map[string]int{}
+	var walk func(t reflect.Type, index []int, seen []reflect.Type)
+	walk = func(t reflect.Type, index []int, seen []reflect.Type) {
+		if slices.Contains(seen, t) {
+			return // a type that embeds itself through a pointer
+		}
+		seen = append(seen, t)
+		// The steps and their order are encoding/json's typeFields.
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			at := append(slices.Clone(index), i)
+			ft := f.Type
+			if ft.Name() == "" && ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			// An unexported embedded struct still counts: its exported
+			// fields promote, or it is a named field under its tag.
+			if !f.IsExported() && (!f.Anonymous || ft.Kind() != reflect.Struct) {
+				continue
+			}
+			name, skip := jsonTagName(f)
+			if skip {
+				continue
+			}
+			if name == "" && f.Anonymous && ft.Kind() == reflect.Struct {
+				walk(ft, at, seen)
+				continue
+			}
+			tagged := name != ""
+			if !tagged {
+				name = f.Name
+			}
+			all = append(all, jsonField{name: name, index: at, tagged: tagged})
+			if d, ok := depthOf[name]; !ok || len(at) < d {
+				depthOf[name] = len(at)
+			}
+		}
+	}
+	walk(t, nil, nil)
+
+	var out []jsonField
+	for _, name := range slices.Sorted(maps.Keys(depthOf)) {
+		var top []jsonField
+		for _, f := range all {
+			if f.name == name && len(f.index) == depthOf[name] {
+				top = append(top, f)
+			}
+		}
+		if len(top) > 1 {
+			top = slices.DeleteFunc(top, func(f jsonField) bool { return !f.tagged })
+		}
+		if len(top) == 1 {
+			out = append(out, top[0])
+		}
+	}
+	slices.SortFunc(out, func(a, b jsonField) int { return slices.Compare(a.index, b.index) })
+	return out
+}
+
+// fieldOrZero is v's field at index, reading through embedded pointers;
+// a nil one on the way gives the field's zero value.
+func fieldOrZero(v reflect.Value, index []int) reflect.Value {
+	for _, i := range index {
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				return reflect.Zero(fieldType(v.Type().Elem(), index))
+			}
+			v = v.Elem()
+		}
+		v = v.Field(i)
+		index = index[1:]
+	}
+	return v
+}
+
+// fieldType is the type of the field at index under struct type t.
+func fieldType(t reflect.Type, index []int) reflect.Type {
+	for _, i := range index {
+		if t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		t = t.Field(i).Type
+	}
+	return t
+}
+
+// jsonTagName returns the name a field's json tag gives it, "" when the
+// tag gives none or one encoding/json rejects, and whether the field is
+// JSON-skipped (`json:"-"`). Options like omitempty are ignored.
+func jsonTagName(f reflect.StructField) (name string, skip bool) {
 	tag := f.Tag.Get("json")
 	if tag == "-" {
 		return "", true
 	}
-	if comma := strings.IndexByte(tag, ','); comma >= 0 {
-		tag = tag[:comma]
+	name, _, _ = strings.Cut(tag, ",")
+	if !validJSONTagName(name) {
+		return "", false
 	}
-	if tag == "" {
-		return f.Name, false
+	return name, false
+}
+
+// validJSONTagName is encoding/json's isValidTag: letters, digits and a
+// set of punctuation, which excludes quotes and backslashes.
+func validJSONTagName(s string) bool {
+	if s == "" {
+		return false
 	}
-	return tag, false
+	for _, c := range s {
+		switch {
+		case strings.ContainsRune("!#$%&()*+-./:;<=>?@[]^_{|}~ ", c):
+		case !unicode.IsLetter(c) && !unicode.IsDigit(c):
+			return false
+		}
+	}
+	return true
 }
 
 // marshalMergeIntoMap is the additive fallback used when the diff path can't

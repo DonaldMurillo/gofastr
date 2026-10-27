@@ -848,8 +848,17 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		if err != nil {
 			return op, err
 		}
-		op.BodyRequired, _ = body["required"].(bool)
-		content, _ := body["content"].(map[string]any)
+		if v, set := body["required"]; set {
+			if op.BodyRequired, ok = v.(bool); !ok {
+				return op, fmt.Errorf("operation %s %s: requestBody.required must be a boolean, got %T", strings.ToUpper(method), path, v)
+			}
+		}
+		var content map[string]any
+		if v, set := body["content"]; set {
+			if content, ok = v.(map[string]any); !ok {
+				return op, fmt.Errorf("operation %s %s: requestBody.content must be an object, got %T", strings.ToUpper(method), path, v)
+			}
+		}
 		if jsonMedia, ok := content["application/json"].(map[string]any); ok {
 			schema, _ := jsonMedia["schema"].(map[string]any)
 			if schema != nil {

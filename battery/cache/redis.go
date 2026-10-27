@@ -160,12 +160,14 @@ func (rc *RedisCache) Clear(ctx context.Context) error {
 			"flushing the database instead would delete every other namespace's keys", rc.cfg.prefix)
 	}
 	want := rc.keyPrefix()
-	keys, err := scanner.Keys(ctx, want+"*")
+	// Escaped, because SCAN reads the pattern as a glob: "a[b]c:*" is a
+	// character class that matches none of the literal "a[b]c:" keys.
+	keys, err := scanner.Keys(ctx, escapeGlob(want)+"*")
 	if err != nil {
 		return fmt.Errorf("cache: Clear scan %q: %w", want, err)
 	}
-	// Filter client-side rather than trusting the glob: a prefix
-	// containing *, ?, or [ would match more than it names.
+	// Filter client-side too, so a scanner that ignores the escapes and
+	// matches more than the prefix names still deletes only owned keys.
 	owned := make([]string, 0, len(keys))
 	for _, k := range keys {
 		if strings.HasPrefix(k, want) {
@@ -176,6 +178,19 @@ func (rc *RedisCache) Clear(ctx context.Context) error {
 		return nil
 	}
 	return rc.client.Del(ctx, owned...)
+}
+
+// escapeGlob backslash-escapes the bytes a Redis glob treats as special.
+func escapeGlob(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\', '*', '?', '[', ']':
+			b.WriteByte('\\')
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // keyPrefix returns the literal string every key of this cache starts

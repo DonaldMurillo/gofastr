@@ -100,7 +100,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   writes a number. A `respond_json` status that large answered 200; it
   is now refused like any out-of-range status. A hook expression reading
   one failed with "requires numbers"; it now does exact integer
-  arithmetic and comparisons.
+  arithmetic, equality and ordering (`<`, `>`, `<=`, `>=`).
+- **A process module's crash is recorded before it can respawn twice.**
+  The exit watcher cleared the child, unlocked, logged, and only then
+  marked the slot crashed. In between, the slot read as a childless
+  Ready, which the supervise loop takes for a lease drain and respawns;
+  the watcher then marked that replacement crashed, and crash handling
+  spawned another child without draining it. The crash is now recorded
+  with the child cleared.
+- **A Redis cache whose prefix holds `[`, `]` or `\` clears its keys.**
+  `RedisCache.Clear` passed the prefix to `KeyScanner.Keys` unescaped,
+  and Redis read it as a glob, so `WithPrefix("a[b]c")` matched none of
+  its own keys and `Clear` returned nil with every entry still stored.
+  The prefix is now escaped in the scan pattern.
 - **`AssertJSON` tells big integers apart.** The test harness compared
   both sides after decoding numbers as float64, so a response holding
   9007199254740992 passed an assertion that expected 9007199254740993.
@@ -249,9 +261,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   typed hook on `type Row struct { Fields; … }` that cleared
   `v.Secret` left the original secret in the body: the merge treated
   `Fields` as one field (or skipped it, when its type was unexported),
-  while JSON promotes its fields. The merge now walks an untagged
-  embedded struct, so a redacting After hook redacts and a Before hook
-  overrides the promoted column.
+  while JSON promotes its fields. The merge now walks an embedded
+  struct whose tag names no key (`json:",omitempty"` included), so a
+  redacting After hook redacts and a Before hook overrides the promoted
+  column. A hook that sets an embedded pointer to nil clears the fields
+  it promoted. The merge follows JSON's field set: an embedded field an
+  outer one of the same name shadows, or two embedded fields tied at one
+  depth, never reach the body. An unexported embedded struct with a tag
+  name merges under that key, and a tag name JSON rejects (`bad\name`)
+  falls back to the Go field name, as in JSON.
 - **`EmitAsync` runs each subscriber on its own goroutine.** It ran
   them one after another on one goroutine, so a subscriber blocked on a
   slow service held back every later one, the SSE listener included,
@@ -336,7 +354,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   module answered 503 instead of 404. Every path now drives the
   supervisor's state and takes effect before it returns. Enabling after
   `App.Start` spawns the child, a lease-expiry drain no longer counts
-  toward the crash circuit, a request body over the limit answers 413
+  toward the crash circuit (and the drained child's late exit no longer
+  marks its replacement crashed), a request body over the limit answers 413
   instead of reaching the child truncated, and the runner removes the
   scratch directory it made for each child.
 - **A full disk no longer leaves a semantic index that cannot reopen.**
@@ -992,7 +1011,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   child's key field now.
 - **An optional OpenAPI request body is optional in the generated CLI.**
   The CLI demanded `--file`, and the body schema's required fields, even
-  when the operation's `requestBody` is not `required`.
+  when the operation's `requestBody` is not `required`. A `required` that
+  is not a boolean, or a `content` that is not an object, fails the
+  generate instead of reading as absent.
 - **The OpenAPI CLI sends the token the document's `security` names.**
   It took the first supported scheme by name and ignored `security`. It
   now follows the top-level requirement, and an operation whose own
