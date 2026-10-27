@@ -84,8 +84,8 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 	}
 	// Listing a single owner's tokens is the hot path; index it.
 	idxName, _ := query.SafeIdent(s.table + "_owner_idx")
-	idx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (owner_kind, owner_id)`,
-		query.QuoteIndexName(idxName), query.QuoteFolded(s.table))
+	idx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s (owner_kind, owner_id)`,
+		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, query.QuoteIndexName(idxName), query.QuoteFolded(s.table)))
 	_, err := s.db.ExecContext(ctx, idx)
 	return err
 }

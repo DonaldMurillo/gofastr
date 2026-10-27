@@ -314,8 +314,8 @@ func (q *DBQueue) ensureTable() error {
 		if err != nil {
 			return fmt.Errorf("queue: invalid index name %q: %w", ix.name, err)
 		}
-		idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s %s",
-			query.QuoteIndexName(safeIdx), q.qt(), ix.cols)
+		idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s %s",
+			query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), q.qt()), ix.cols)
 		if _, err := q.db.Exec(idx); err != nil {
 			return err
 		}
@@ -327,8 +327,8 @@ func (q *DBQueue) ensureTable() error {
 	if err != nil {
 		return fmt.Errorf("queue: invalid index name: %w", err)
 	}
-	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (type, unique_key) WHERE %s",
-		query.QuoteIndexName(safeIdx), q.qt(), liveUniqueKey))
+	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (type, unique_key) WHERE %s",
+		query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), q.qt()), liveUniqueKey))
 	return err
 }
 

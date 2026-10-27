@@ -212,6 +212,14 @@ An index or trigger named after a table takes `query.QuoteIndexName`,
 which keeps only the folded part after the last dot: Postgres puts an
 index in its table's schema and refuses a qualified name, so
 `QuoteIndexName("app.UserEvents_idx")` gives `"userevents_idx"`.
+SQLite is the other way round: it takes the schema on the index name
+and refuses it on the indexed table. `query.IndexOn(sqlite, name,
+table)` renders the `<index> ON <table>` part for either engine. For
+the index `"x_idx"` on `"main"."events"` it gives
+`"main"."x_idx" ON "events"` on SQLite and `"x_idx" ON "main"."events"`
+on Postgres. `query.SQLitePragma("table_info", table)`
+puts the schema on the pragma the same way:
+`PRAGMA "main".table_info("events")`.
 `QuoteIdent` keeps the name as given and is for a name read back from
 the database catalog; the `quoteident` vet check refuses it anywhere
 else outside `core/query`.

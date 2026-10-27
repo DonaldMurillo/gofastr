@@ -751,8 +751,8 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "two_factor_verified", "pending_two_factor"); err != nil {
 		return err
 	}
-	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (expires_at)",
-		indexName("idx_", s.table, "_expires"), query.QuoteFolded(s.table))
+	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (expires_at)",
+		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, indexName("idx_", s.table, "_expires"), query.QuoteFolded(s.table)))
 	_, err = s.db.ExecContext(ctx, idx)
 	return err
 }

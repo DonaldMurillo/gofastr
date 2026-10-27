@@ -316,8 +316,8 @@ func (o *Outbox) ensureTable() error {
 		return fmt.Errorf("outbox: invalid index name %q: %w", idxName, err)
 	}
 	idx := fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s ON %s (status, created_at)",
-		query.QuoteIndexName(safeIdx), o.qt(),
+		"CREATE INDEX IF NOT EXISTS %s (status, created_at)",
+		query.IndexOn(o.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), o.qt()),
 	)
 	if _, err := o.db.Exec(idx); err != nil {
 		return err
@@ -360,8 +360,8 @@ func (o *Outbox) ensureDeliveryTable(tsType string) error {
 		return fmt.Errorf("outbox: invalid index name %q: %w", claimIdx, err)
 	}
 	_, err = o.db.Exec(fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s ON %s (status, next_attempt_at)",
-		query.QuoteIndexName(safeClaim), o.qd(),
+		"CREATE INDEX IF NOT EXISTS %s (status, next_attempt_at)",
+		query.IndexOn(o.dialect == dialectSQLite, query.QuoteIndexName(safeClaim), o.qd()),
 	))
 	return err
 }

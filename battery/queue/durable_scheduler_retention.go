@@ -75,12 +75,10 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 		return err
 	}
 	for _, statement := range []string{
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (schedule_id, enqueued_job_id)",
-			s.queue.schedulerIndex("scheduler_occurrences_schedule_job_idx"),
-			s.queue.schedulerOccurrencesTable()),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (created_at)",
-			s.queue.schedulerIndex("scheduler_occurrences_created_at_idx"),
-			s.queue.schedulerOccurrencesTable()),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (schedule_id, enqueued_job_id)",
+			s.queue.indexOn("scheduler_occurrences_schedule_job_idx", s.queue.schedulerOccurrencesTable())),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (created_at)",
+			s.queue.indexOn("scheduler_occurrences_created_at_idx", s.queue.schedulerOccurrencesTable())),
 	} {
 		if _, err := s.queue.db.Exec(statement); err != nil {
 			return err
@@ -120,7 +118,7 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	}
 	// SQLite has no IF NOT EXISTS for ADD COLUMN: probe PRAGMA once and
 	// ALTER only the missing columns, tolerating the duplicate-column race.
-	rows, err := s.queue.db.Query("PRAGMA table_info(" + table + ")")
+	rows, err := s.queue.db.Query(query.SQLitePragma("table_info", table))
 	if err != nil {
 		return err
 	}
@@ -160,10 +158,12 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	return nil
 }
 
-func (q *DBQueue) schedulerIndex(suffix string) string {
+// indexOn renders "<index> ON <table>" for the scheduler index named by
+// the queue table and suffix, on table (already quoted).
+func (q *DBQueue) indexOn(suffix, table string) string {
 	name, err := query.SafeIdent(q.table + "_" + suffix)
 	if err != nil {
 		panic(err)
 	}
-	return query.QuoteIndexName(name)
+	return query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(name), table)
 }

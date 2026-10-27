@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
@@ -86,8 +87,9 @@ func (s *SQLRateLimitStore) EnsureSchema(ctx context.Context) error {
 			query.QuoteFolded(s.table)),
 		fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (rl_key TEXT NOT NULL, attempted_at_ms BIGINT NOT NULL)",
 			query.QuoteFolded(s.table+"_attempts")),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (rl_key, attempted_at_ms)",
-			query.QuoteIndexName("idx_"+s.table+"_attempts_key_time"), query.QuoteFolded(s.table+"_attempts")),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (rl_key, attempted_at_ms)",
+			query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite,
+				query.QuoteIndexName("idx_"+s.table+"_attempts_key_time"), query.QuoteFolded(s.table+"_attempts"))),
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {

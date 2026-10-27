@@ -68,8 +68,8 @@ func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedView
 			columns    TEXT NOT NULL DEFAULT '',
 			created_at %s NOT NULL
 		)`, query.QuoteFolded(table), ts),
-		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (owner, tenant, entity, name)`,
-			query.QuoteIndexName(table+"_owner"), query.QuoteFolded(table)),
+		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s (owner, tenant, entity, name)`,
+			query.IndexOn(!pg, query.QuoteIndexName(table+"_owner"), query.QuoteFolded(table))),
 	}
 	for _, q := range stmts {
 		if _, err := db.ExecContext(ctx, q); err != nil {

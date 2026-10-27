@@ -150,8 +150,8 @@ func (s *SQLStore) ensureTables() error {
 			created_at      %s NOT NULL,
 			updated_at      %s NOT NULL
 		)`, s.delTable, blob, ts, ts, ts),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_due_idx ON %s (status, next_attempt_at)",
-			s.delTable, s.delTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (status, next_attempt_at)",
+			query.IndexOn(s.dialect == "sqlite", s.delTable+"_due_idx", s.delTable)),
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {

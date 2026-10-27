@@ -84,6 +84,36 @@ func QuoteIndexName(s string) string {
 	return QuoteFolded(s)
 }
 
+// IndexOn renders the "<index> ON <table>" part of a CREATE INDEX for an
+// index named name on table, both already validated and quoted (or both
+// left bare). The index lives in its table's schema, and the two engines
+// spell that on opposite sides: Postgres refuses a schema on the index
+// name and takes it on the table, SQLite takes it on the index name and
+// refuses it on the indexed table. sqlite picks the SQLite spelling. name
+// is the bare index name, as [QuoteIndexName] returns it; a schema on
+// table moves onto it on SQLite.
+//
+//	IndexOn(false, `"x_idx"`, `"main"."events"`) → "x_idx" ON "main"."events"
+//	IndexOn(true, `"x_idx"`, `"main"."events"`)  → "main"."x_idx" ON "events"
+func IndexOn(sqlite bool, name, table string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 && sqlite {
+		return table[:i] + "." + name + " ON " + table[i+1:]
+	}
+	return name + " ON " + table
+}
+
+// SQLitePragma renders PRAGMA fn(table) for a table already validated and
+// quoted (or left bare). SQLite takes a schema on the pragma, PRAGMA
+// "main".table_info("events"), and refuses one inside the parentheses.
+//
+//	SQLitePragma("table_info", `"main"."events"`) → PRAGMA "main".table_info("events")
+func SQLitePragma(fn, table string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		return "PRAGMA " + table[:i] + "." + fn + "(" + table[i+1:] + ")"
+	}
+	return "PRAGMA " + fn + "(" + table + ")"
+}
+
 // SafeQuote validates and quotes a SQL identifier in one step.
 func SafeQuote(s string) (string, error) {
 	if _, err := SafeIdent(s); err != nil {

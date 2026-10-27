@@ -99,10 +99,10 @@ func (s *SQLInboundStore) ensureTable() error {
 			updated_at  %s NOT NULL
 		)`, s.table, blob, ts, ts),
 		// Lookup indexes, no unique constraint (see type doc).
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_dedupe_idx ON %s (source, dedupe_key)",
-			s.table, s.table),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_status_idx ON %s (status)",
-			s.table, s.table),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (source, dedupe_key)",
+			query.IndexOn(s.dialect == "sqlite", s.table+"_dedupe_idx", s.table)),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (status)",
+			query.IndexOn(s.dialect == "sqlite", s.table+"_status_idx", s.table)),
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {

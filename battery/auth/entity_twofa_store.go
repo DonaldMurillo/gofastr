@@ -246,7 +246,7 @@ func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (boo
 // PRAGMA table_info (SQLite-only). table must already be a validated
 // identifier.
 func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (bool, error) {
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", query.QuoteFolded(table)))
+	rows, err := db.QueryContext(ctx, query.SQLitePragma("table_info", query.QuoteFolded(table)))
 	if err != nil {
 		return false, err
 	}

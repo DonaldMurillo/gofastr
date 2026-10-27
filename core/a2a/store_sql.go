@@ -149,8 +149,8 @@ func (s *SQLStore) ensureTables() error {
 		return err
 	}
 	// Serves ListTasks' owner filter plus its newest-first ordering.
-	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (owner, status_ts)",
-		query.QuoteIndexName(s.taskTable+"_owner_ts_idx"), query.QuoteFolded(s.taskTable))
+	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (owner, status_ts)",
+		query.IndexOn(s.dialect == dialectSQLite, query.QuoteIndexName(s.taskTable+"_owner_ts_idx"), query.QuoteFolded(s.taskTable)))
 	if _, err := s.db.Exec(idx); err != nil {
 		return err
 	}

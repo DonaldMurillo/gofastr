@@ -47,10 +47,7 @@ func createIndexSQL(dialect Dialect, unique bool, name, table, body string) stri
 	if unique {
 		u = "UNIQUE "
 	}
-	if s, base := splitTable(table); s != "" && dialect == DialectSQLite {
-		return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s.%s ON %s (%s)", u, s, name, base, body)
-	}
-	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)", u, name, table, body)
+	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s (%s)", u, query.IndexOn(dialect == DialectSQLite, name, table), body)
 }
 
 // dropIndexSQL drops index name on table. Both engines resolve a bare
@@ -82,10 +79,7 @@ func sqlitePragma(fn, table string) (string, error) {
 	if _, err := query.SafeIdent(table); err != nil {
 		return "", err
 	}
-	if s, name := splitTable(table); s != "" {
-		return fmt.Sprintf("PRAGMA %s.%s(%s)", s, fn, name), nil
-	}
-	return fmt.Sprintf("PRAGMA %s(%s)", fn, table), nil
+	return query.SQLitePragma(fn, table), nil
 }
 
 // sqliteMaster names the sqlite_master of a table's schema: each attached

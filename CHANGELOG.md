@@ -28,9 +28,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   interface as a float64, so 9007199254740993 reads back as
   9007199254740992. A decode whose numbers are never read carries
   `//gofastr:allow(floatnum) <why>`.
-- **`query.QuoteIndexName` and `query.RefuseCaseKeptTables`.**
+- **`query.QuoteIndexName`, `query.IndexOn`, `query.SQLitePragma` and
+  `query.RefuseCaseKeptTables`.**
   `QuoteIndexName` quotes the folded last part of a name, for an index
-  or trigger named after a possibly qualified table. `RefuseCaseKeptTables`
+  or trigger named after a possibly qualified table. `IndexOn` renders
+  the `<index> ON <table>` of a `CREATE INDEX` with the table's schema
+  where each engine takes it, and `SQLitePragma` puts a table's schema
+  on the pragma. `RefuseCaseKeptTables`
   probes Postgres for a table an older build created with its case kept
   and returns an error holding the `ALTER TABLE ... RENAME` that moves it.
 
@@ -44,7 +48,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   service-account and rate-limit stores, the audit table, the embed
   burn table, search, pgvector and the migrate tracking table now fold
   the name and quote each dotted part, the way AutoMigrate's tables
-  are named. Index and trigger names follow their table. On boot each
+  are named. Index and trigger names follow their table: on Postgres
+  the index name is bare and the table carries the schema, on SQLite
+  the schema goes on the index name and on `PRAGMA table_info`, so a
+  store configured as `main.jobs` or on an attached schema builds its
+  indexes there too. The same holds for the auth user, OAuth-link,
+  session and passkey stores and kiln's column read. On boot each
   store checks for a table an older build made with the case kept and
   refuses to start with the rename to run, instead of creating an empty
   table beside it (or, for the tracking table, re-running every

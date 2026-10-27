@@ -84,8 +84,8 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 		)`, jobs, ts),
 		// One queued job per confirmed run: a second confirm of the same
 		// run while it waits finds the first instead of racing it in.
-		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (run_key) WHERE status = 'queued'`,
-			query.QuoteFolded(bulkJobsTable+"_run_key"), jobs),
+		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s (run_key) WHERE status = 'queued'`,
+			query.IndexOn(s.dialect == migrate.DialectSQLite, query.QuoteIndexName(bulkJobsTable+"_run_key"), jobs)),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			job_id    TEXT NOT NULL,
 			record_id TEXT NOT NULL,
@@ -93,8 +93,8 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 			outcome   TEXT,
 			PRIMARY KEY (job_id, record_id)
 		)`, query.QuoteFolded(bulkItemsTable)),
-		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (job_id, seq)`,
-			query.QuoteFolded(bulkItemsTable+"_seq"), query.QuoteFolded(bulkItemsTable)),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s (job_id, seq)`,
+			query.IndexOn(s.dialect == migrate.DialectSQLite, query.QuoteIndexName(bulkItemsTable+"_seq"), query.QuoteFolded(bulkItemsTable))),
 	}
 	for _, q := range stmts {
 		if _, err := db.ExecContext(ctx, q); err != nil {

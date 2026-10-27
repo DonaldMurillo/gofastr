@@ -61,9 +61,9 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 	// user_id index powers ListAccounts / UnlinkOAuth, without it both
 	// degenerate to full scans of a table that grows with the user count.
 	idx := fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
-		indexName("", s.oauthLinksTable(), "_user_idx"),
-		query.QuoteFolded(s.oauthLinksTable()),
+		"CREATE INDEX IF NOT EXISTS %s (%s)",
+		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite,
+			indexName("", s.oauthLinksTable(), "_user_idx"), query.QuoteFolded(s.oauthLinksTable())),
 		query.QuoteFolded("user_id"),
 	)
 	if _, err := s.db.ExecContext(ctx, idx); err != nil {

@@ -101,7 +101,7 @@ func tableColumns(d *sql.DB, table string) (map[string]struct{}, error) {
 	if _, err := query.SafeIdent(table); err != nil {
 		return nil, err
 	}
-	rows, err := d.Query(`PRAGMA table_info(` + query.QuoteFolded(table) + `)`)
+	rows, err := d.Query(query.SQLitePragma("table_info", query.QuoteFolded(table)))
 	if err != nil {
 		return nil, err
 	}
