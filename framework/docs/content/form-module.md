@@ -52,8 +52,31 @@ wiring before the control renders. Prefer them for ordinary forms so
 `Required`, `Placeholder`, bounds, value, help, and error states stay
 visible in the Go type instead of being repeated through `html.Attrs`
 literals at each call site. For the input types they do not name
-(email, password, datetime-local, file, tel, url, search), build a
-`ui.Control` inside a `FormField` builder.
+(email, password, file, tel, url, search), build a `ui.Control` inside
+a `FormField` builder.
+
+### Dates and times
+
+Use `ui.DateField` for a date and `ui.DateTimeField` for a date with a
+time of day. Both render the browser's native picker
+(`<input type="date">` and `<input type="datetime-local">`), and GoFastr
+ships no custom calendar. The native picker is accessible, follows the
+user's locale and OS, opens the platform's own picker on phones, and
+needs no JavaScript. Values travel in the HTML formats (`2026-07-22`,
+`2026-07-22T09:30`), so the server parses one shape whatever the
+display language.
+
+```go
+ui.DateField(ui.DateFieldConfig{
+	Label: "Due date", Name: "due_on", Value: "2026-07-22",
+	Min: "2026-01-01", Required: true,
+})
+```
+
+Bound the range with `Min` and `Max`, and validate on the server as
+for any other field: the browser's bounds are a hint, not a check.
+For a date range, use two fields (`starts_on`, `ends_on`) and reject
+an end before the start in the handler.
 
 ## Validation
 
@@ -288,6 +311,11 @@ headless counterpart, so it ships as framework/ui's own module.
   Continue/Back click is a regular form POST; the wizard does not
   disable earlier-step fields. Validate each step's data on the server
   for the relevant step before advancing.
+- **Building a calendar popup for a date field.** `ui.DateField` and
+  `ui.DateTimeField` already open the platform's picker. A hand-rolled
+  calendar has to rebuild its keyboard grid, screen-reader
+  announcements, locale week start and phone behavior, and still
+  submit the HTML date format. See "Dates and times" above.
 
 ## E2E test coverage
 

@@ -4,9 +4,11 @@ Forward-looking work that isn't built yet (or isn't finished yet). Shipped
 features live in `framework/docs/content/<feature>.md` (also embedded into
 the binary: run `gofastr docs` to browse) and the two architecture
 documents (`framework/ARCHITECTURE.md`, `core-ui/ARCHITECTURE.md`).
+Smaller tracked work, such as desktop platform gaps, lives in GitHub
+issues.
 
 Each section ends with a status note. When something ships, delete it from
-here and add the `docs/<feature>.md` it now belongs in. Full design
+here and document it in `framework/docs/content/<feature>.md`. Full design
 sketches for deleted sections live in git history (this file was trimmed
 of ~10 shipped sections on 2026-07-15).
 
@@ -26,14 +28,17 @@ the shape.
 
 ## 2. Deferred UI components
 
-Both shipped once as SSR shells with no runtime contract and were
-deleted (2026-05-22). Re-add only with the full loop: runtime module +
-RPC handler + an e2e test proving the interaction round-trips.
+- **Calendar component**
+  ([issue 610](https://github.com/DonaldMurillo/gofastr/issues/610)). Dates use the native picker through
+  `ui.DateField` and `ui.DateTimeField`, and that stays the recommended
+  path (`framework/docs/content/form-module.md`, "Dates and times"). A
+  calendar is built only for what the native input cannot do: a range in
+  one control, an always-visible calendar, disabled specific days, or data
+  on the days. It needs the full loop: `core-ui/runtime/src/datepicker.js`,
+  an RPC handler, and an e2e test asserting that selecting a day
+  round-trips.
 
-- **Calendar / date picker**: needs `core-ui/runtime/src/datepicker.js`
-  + RPC + e2e asserting day selection works end-to-end.
-- **Inline edit field**: needs `core-ui/runtime/src/inlineedit.js` +
-  RPC + e2e proving click → input swap → Enter saves.
+**Status:** not started; waits for an app that needs one of those cases.
 
 ---
 
@@ -48,12 +53,16 @@ correct, inspectable, runnable app, SQL + REST + OpenAPI + MCP + UI,
 without hand-writing the glue.*
 
 1. **Framework stability → the `v1.0.0` gate.** The API may change until
-   v1.0. Drop `v0.x` only when the gate below is green.
+   v1.0. Drop `v0.x` only when the gate below is green. Every package
+   already carries a support tier (`docs/public-api.md`), and none is
+   Stable yet.
 2. **Declaration-first proof.** ✓ Shipped: `examples/ecommerce`, a
    five-entity app spec generated, built, and surface-tested end-to-end
    (`flagship_test.go`, zero hand-written app code).
-3. **Dogfooding.** ✓ Kiln and `examples/site` are built on the framework.
-   Deepen by porting more internal tooling onto app specs.
+3. **Dogfooding.** ✓ Kiln, `examples/site`, and the `examples/meridian`
+   flagship are built on the framework, and Meridian is the design
+   system's completeness check. Deepen by porting more internal tooling
+   onto app specs.
 4. **External adoption, the genuinely open item.** No outside
    production users yet. Recruit and evaluate one through the
    [external pilot program](docs/pilot-program.md); this is the part the code
