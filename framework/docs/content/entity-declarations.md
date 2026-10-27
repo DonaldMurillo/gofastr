@@ -1694,7 +1694,9 @@ key.
 When a registered entity owns a `many_to_many`'s `Through` table, every
 read through the pivot applies that entity's soft delete and its owner,
 tenant and read scopes: a soft-deleted enrollment, or another owner's,
-links nothing. Boot refuses the relation when the entity does not
+links nothing. Its `BeforeList` hooks run on `?include=` and nested
+filters too, so a link `GET /enrollments` would not list for the caller
+links nothing either, and a hook that refuses refuses the read. Boot refuses the relation when the entity does not
 declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
 creates no pivot of its own. A `cascade_write` link writes its pivot
 row through that entity's own create: its `access` create permission

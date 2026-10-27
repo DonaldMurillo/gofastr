@@ -197,7 +197,8 @@ func (ch *CrudHandler) childHookRegistry(name string) (reg *hook.HookRegistry, e
 }
 
 // applyChildBeforeHooks stores the include target's Before-hook clauses on
-// node.HookScopes. See childBeforeScopes.
+// node.HookScopes, and a many_to_many join entity's BeforeList clauses on
+// node.PivotHookScopes. See childBeforeScopes.
 func (ch *CrudHandler) applyChildBeforeHooks(ctx context.Context, node *IncludeNode) error {
 	if node == nil || !readHooksEnabled(ctx) {
 		return nil
@@ -207,7 +208,26 @@ func (ch *CrudHandler) applyChildBeforeHooks(ctx context.Context, node *IncludeN
 		return err
 	}
 	node.HookScopes = where
+	// The link rows are the join entity's own rows, and GET /<pivot> runs
+	// its BeforeList over them. A relation reaching them from the parent
+	// is to-many, so BeforeGet never applies. A migrator-made pivot (nil)
+	// has no hooks.
+	pivotWhere, err := ch.childBeforeScopes(ctx, node.Pivot, node.Relation)
+	if err != nil {
+		return err
+	}
+	node.PivotHookScopes = pivotWhere
 	return nil
+}
+
+// pivotHookScope renders a join entity's BeforeList clauses as one predicate
+// on its Through table's rows, keyed by the join entity's own key the way
+// hookScopeSubquery keys a target. Numbered from $1.
+func pivotHookScope(pivot *entity.Entity, through string, clauses []hook.WhereClause) (string, []any) {
+	if pivot == nil || len(clauses) == 0 {
+		return "", nil
+	}
+	return hookScopeSubquery(through, through, pivot.KeyColumns(), clauses)
 }
 
 // hookScopeSubquery renders Before-hook clauses as one predicate on the rows

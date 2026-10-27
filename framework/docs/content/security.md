@@ -642,7 +642,8 @@ above.
 Read paths carry the target entity's posture: an `?include=` or a nested
 filter is refused when the caller may not read the related entity, or the
 registered join entity a many-to-many relation runs through, and the target's
-`BeforeList` scope narrows the rows it returns or matches. Write
+`BeforeList` scope narrows the rows it returns or matches. The join entity's
+own `BeforeList` scope narrows the link rows the same way. Write
 paths now resolve the same predicate. A create or update that sets a
 BelongsTo relation column such as `order_id` or `author_id` is answered
 with **404** when the target row exists but the caller cannot read it

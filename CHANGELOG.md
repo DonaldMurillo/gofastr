@@ -295,6 +295,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   lacked still disclosed its associations through `?include=` and
   `?rel.id=` filters. Its gate now applies on both, and a pivot with CRUD
   turned off refuses them, as a CRUD-off target does.
+- **A many-to-many join entity's `BeforeList` hooks scope includes and
+  nested filters.** `?include=` and `?rel.field=` through a registered
+  pivot ran the target's `BeforeList` but not the pivot's, so a link
+  `GET /<pivot>` hid from the caller still served the related row
+  behind it and matched a nested filter. The pivot's `BeforeList`
+  clauses now narrow the link rows on both paths, and a hook that
+  refuses or panics refuses the read the way a target hook does.
 - **`access.CachedResolver` caches roles per tenant.** It keyed cached
   roles by user alone, so a user who was admin in tenant A got A's roles
   on a request in tenant B within the TTL. The tenant is part of the key,

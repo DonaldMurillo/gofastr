@@ -205,6 +205,29 @@ func (h hookScope) and(where string) string {
 	return h.sql + " AND " + where
 }
 
+// hookScopeShell is the prefix of the SELECT hookScope.also renders.
+const hookScopeShell = "SELECT 1 FROM t WHERE "
+
+// also is h AND o as one scope numbered from $1. Each half is numbered from
+// $1 on its own, and the query builder is the one place placeholders are
+// renumbered (positionally, after the args before them), so the pair is
+// composed as the WHERE of a SELECT the builder renders and cut back out.
+// A shell that comes back in another shape matches no row.
+func (h hookScope) also(o hookScope) hookScope {
+	if o.sql == "" {
+		return h
+	}
+	if h.sql == "" {
+		return o
+	}
+	sql, args := query.Select("1").From("t").Where(h.sql, h.args...).Where(o.sql, o.args...).Build()
+	where, ok := strings.CutPrefix(sql, hookScopeShell)
+	if !ok {
+		return hookScope{sql: "1 = 0"}
+	}
+	return hookScope{sql: where, args: args}
+}
+
 func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
 	where, keyArgs, ok, err := keyInClause(safeFKs, ids, scope.next())
 	if err != nil || !ok {
@@ -348,6 +371,10 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	if err != nil {
 		return fmt.Errorf("eager filtered: invalid FK target %q: %w", rel.ForeignKeyTarget, err)
 	}
+	// The join entity's own BeforeList clauses narrow the link rows, ANDed
+	// into the scope that leads the WHERE.
+	pivotHook, pivotHookArgs := pivotHookScope(node.Pivot, safeThrough, node.PivotHookScopes)
+	scope = scope.also(hookScope{sql: pivotHook, args: pivotHookArgs})
 
 	placeholders := make([]string, len(ids))
 	args := make([]any, 0, len(scope.args)+len(ids))

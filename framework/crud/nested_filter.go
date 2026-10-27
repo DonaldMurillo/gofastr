@@ -75,6 +75,10 @@ type relationHop struct {
 	// to-one hop, BeforeGet) hooks appended: the EXISTS subquery counts
 	// only rows the target's route would serve.
 	HookScopes []hook.WhereClause
+	// PivotHookScopes holds the clauses a many_to_many hop's join entity's
+	// own BeforeList appended: a link row its route would not list links
+	// nothing.
+	PivotHookScopes []hook.WhereClause
 }
 
 // nestedFilter is one parsed `?author.name=alice` or `?author.team.name=x` style predicate.
@@ -603,6 +607,10 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 		// precede theirs.
 		pivotWhere, pivotArgs := pivotClause(hop.Pivot, hop.PivotScopes, rel.Through, len(args)+1)
 		args = append(args, pivotArgs...)
+		if hookPred, hookArgs := pivotHookScope(hop.Pivot, rel.Through, hop.PivotHookScopes); hookPred != "" {
+			pivotWhere += " AND " + hookPred
+			args = append(args, hookArgs...)
+		}
 		return fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s%s)",
 			aliasClause, rel.Through,
@@ -760,6 +768,13 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 					return err
 				}
 				filters[i].Hops[h].HookScopes = where
+				// The join entity's BeforeList scopes the link rows the
+				// EXISTS joins through. nil for a migrator-made pivot.
+				pivotWhere, err := ch.childBeforeScopes(ctx, filters[i].Hops[h].Pivot, filters[i].Hops[h].Relation)
+				if err != nil {
+					return err
+				}
+				filters[i].Hops[h].PivotHookScopes = pivotWhere
 			}
 			if h == 0 {
 				filters[i].scopes = scopes

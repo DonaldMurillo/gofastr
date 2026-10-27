@@ -122,7 +122,11 @@ type IncludeNode struct {
 	// row the join entity's own route hides links nothing.
 	Pivot       *entity.Entity
 	PivotScopes []filter.ParsedFilter
-	Children    []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
+	// PivotHookScopes carries the clauses the join entity's own BeforeList
+	// appended (applyChildBeforeHooks), rendered as one key-IN subquery on
+	// the Through table.
+	PivotHookScopes []hook.WhereClause
+	Children        []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
 	// scopedClauses remembers the scoped-filter sets already merged into
 	// this node (or into sibling nodes spawned for it) so a repeated
 	// mention of the same relation with the SAME set is a no-op instead
