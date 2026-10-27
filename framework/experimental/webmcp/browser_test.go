@@ -179,7 +179,7 @@ func webmcpBrowserCtx(t *testing.T) context.Context {
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(allocCancel)
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	t.Cleanup(cancel)
 	ctx, tcancel := context.WithTimeout(ctx, 90*time.Second)
 	t.Cleanup(tcancel)

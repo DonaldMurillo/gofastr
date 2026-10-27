@@ -58,6 +58,10 @@
     if (opts.theme) q.push('theme=' + encodeURIComponent(opts.theme));
     if (q.length) src += '?' + q.join('&');
     frame.src = src;
+    // The loader runs on the customer's page, where no runtime and so no
+    // say() exists; opts.title is how the snippet names the frame in its
+    // own language.
+    //gofastr:allow(runtimeprose) customer-page loader, no runtime; opts.title localizes
     frame.title = opts.title || ('Embedded ' + surface);
     // Scripts run the handshake/runtime; same-origin keeps app fetches and
     // storage on the app origin. No other capability is needed: in particular,

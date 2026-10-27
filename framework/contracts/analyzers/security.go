@@ -1454,9 +1454,9 @@ func seedScannerFields(pkg *rawJSONPkg) {
 					continue
 				}
 				switch aliases[pkgIdent.Name] {
-				case "io", "net", "github.com/DonaldMurio/gofastr/core/stream":
+				case "io", "net":
 					switch sel.Sel.Name {
-					case "Reader", "ReadCloser", "Conn", "WebSocketConn":
+					case "Reader", "ReadCloser", "Conn":
 						for _, name := range param.Names {
 							transport[name.Name] = true
 						}

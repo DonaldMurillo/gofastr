@@ -60,7 +60,7 @@
   // NS._navEpoch slot and the one decision, NS._navLive.
 
   const G = NS;
-  let _pend = new Map();          // in-flight dedup, module side: path -> epoch
+  const _pend = new Map();          // in-flight dedup, module side: path -> epoch
   let _navPointer = false;        // pointer modality, set from nav's `pointer` opt
 
   // The module's screen cache: same LRU contract as core's, its own
@@ -491,7 +491,7 @@
       const tag = steps[i].replace(/\d+$/, '');
       const idx = +steps[i].slice(tag.length);
       let k = 0;
-      node = Array.prototype.find.call(node.children, (c) => c.tagName === tag && ++k === idx) || null;
+      node = [...node.children].find((c) => c.tagName === tag && ++k === idx) || null;
     }
     return node;
   };
@@ -607,7 +607,7 @@
   // under their own key at capture time (captures ride leave/push
   // choke points, low frequency, no throttle needed).
   const ANCHOR_KEY = 'gofastr:anchors';
-  let _anchors = (() => {
+  const _anchors = (() => {
     try { return JSON.parse(sessionStorage.getItem(ANCHOR_KEY)) || {}; } catch (_) { return {}; }
   })();
   // ─── The layout navigator ────────────────────────────────────────────
@@ -637,7 +637,6 @@
     } catch (_) { /* ancient browsers: location is the best guess */ }
     return location.pathname + location.search;
   })();
-  const _pending = new Set();
   const _done = (path, prevPath, cached, root, ps, notOk) => {
     if (!notOk) _liveDomPath = path;
     finishNav(path, prevPath, cached, root, ps);
@@ -1021,7 +1020,8 @@
         return;
       }
 
-      let title, body, partial = resp.headers.get('X-Gofastr-Partial') === 'true';
+      const partial = resp.headers.get('X-Gofastr-Partial') === 'true';
+      let title, body;
       let swapKey = (partial && resp.headers.get('X-Gofastr-Swap')) || '';
       if (partial) {
         title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
@@ -1279,7 +1279,7 @@
         if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
       }
     }
-    return _origInval.apply(this, arguments);
+    return _origInval.apply(this, sels);
   };
 
   (NS.loadedModules ||= {}).envelope = true;

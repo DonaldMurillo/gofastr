@@ -676,7 +676,7 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var dismissed bool
+	var present, armedBeforeNav, dismissed bool
 	if err := chromedp.Run(ctx,
 		network.Enable(),
 		chromedp.Navigate(base+"/components/toast"),
@@ -688,22 +688,42 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-feedback'] === true`, nil, chromedp.WithPollingInterval(100*1e6), chromedp.WithPollingTimeout(8*time.Second)),
 		// Inject a brand-new toast-stack with a TTL item, simulating
 		// the post-SPA-nav case where a freshly-swapped <main> brings
-		// a stack the module never saw at load time.
+		// a stack the module never saw at load time. The insertion
+		// observer also runs loaded modules' scanners on added nodes,
+		// so the module's scanner is held back while the stack goes in
+		// (observer callbacks run before this script's task ends) and
+		// restored in the next step: only the navigate rescan is left
+		// to arm the item.
 		chromedp.Evaluate(`(() => {
+            const G = window.__gofastr;
+            window.__heldScanner = G._moduleScanners['headless-feedback'];
+            delete G._moduleScanners['headless-feedback'];
             const stack = document.createElement('div');
-            stack.setAttribute('data-cui-toast-stack', 'spa-nav-rescan-test');
+            stack.setAttribute('data-hui-toast-stack', 'spa-nav-rescan-test');
+            stack.innerHTML = '<div data-hui-toast-id="rescan-target" data-hui-toast-ttl-ms="300">' +
                 '<div class="fui-notification fui-notification--info">SPA nav rescan target</div>' +
                 '</div>';
             document.body.appendChild(stack);
-            // The contract: core dispatches gofastr:navigate after the
-            // swap, and every loaded module's scanner re-runs against
-            // the fresh DOM.
-            window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x' } }));
         })()`, nil),
+		chromedp.Evaluate(`window.__gofastr._moduleScanners['headless-feedback'] = window.__heldScanner`, nil),
+		// The item is in the DOM with no timer: only the rescan can arm
+		// it, so its removal below is the rescan's doing.
+		chromedp.Evaluate(`!!document.querySelector('[data-hui-toast-id="rescan-target"]')`, &present),
+		chromedp.Evaluate(`window.__gofastr._toastTimers.has('rescan-target')`, &armedBeforeNav),
+		// The contract: core dispatches gofastr:navigate after the
+		// swap, and every loaded module's scanner re-runs against the
+		// fresh DOM.
+		chromedp.Evaluate(`window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x' } }))`, nil),
 		waitFor(`!document.querySelector('[data-hui-toast-id="rescan-target"]')`), // TTL is 300ms, dismiss anim ~200ms
 		chromedp.Evaluate(`!document.querySelector('[data-hui-toast-id="rescan-target"]')`, &dismissed),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
+	}
+	if !present {
+		t.Fatal("the injected toast item is not in the DOM; the test has nothing to watch")
+	}
+	if armedBeforeNav {
+		t.Fatal("the injected toast was armed before gofastr:navigate fired; the test cannot tell the rescan did it")
 	}
 	if !dismissed {
 		t.Errorf("SSR toast with TTL=300ms injected after headless-feedback loaded was NOT dismissed " +

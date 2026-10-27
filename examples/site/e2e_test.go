@@ -64,7 +64,7 @@ func siteBrowserCtx(t *testing.T) context.Context {
 			chromedp.WindowSize(1280, 800),
 		)
 		allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+		browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 		// Materialize the browser now so no test pays the process launch
 		// inside its own deadline.
 		if err := chromedp.Run(browserCtx); err != nil {

@@ -1,4 +1,4 @@
-package runtime_test
+package hosttest
 
 // The 404 outlet in a real browser (docs/DESIGN-layout-outlets.md
 // "404 outlet", Decided 5): the runtime accepts a 404 answer on BOTH

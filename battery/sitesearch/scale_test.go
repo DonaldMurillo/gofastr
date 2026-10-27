@@ -10,9 +10,12 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -84,6 +87,29 @@ func gzLen(b []byte) int {
 	return buf.Len()
 }
 
+// gzSizes gzips every file once, across all cores: at 10,000 pages the
+// export is some 13,000 files, and compressing them one at a time at
+// BestCompression was most of the test's run.
+func gzSizes(files map[string][]byte) map[string]int {
+	names := slices.Collect(maps.Keys(files))
+	sizes := make([]int, len(names))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range runtime.GOMAXPROCS(0) {
+		wg.Go(func() {
+			for i := int(next.Add(1) - 1); i < len(names); i = int(next.Add(1) - 1) {
+				sizes[i] = gzLen(files[names[i]])
+			}
+		})
+	}
+	wg.Wait()
+	out := make(map[string]int, len(names))
+	for i, n := range names {
+		out[n] = sizes[i]
+	}
+	return out
+}
+
 // fetched lists the files the static client downloads for q: the
 // manifest, the shards its terms read, and the page files of the top
 // results.
@@ -132,25 +158,26 @@ func TestExportStaysSmall(t *testing.T) {
 		shardBudget    = 50 << 10
 		queryBudget    = 150 << 10
 	)
-	if n := gzLen(files["manifest.json"]); n > manifestBudget {
+	gz := gzSizes(files)
+	if n := gz["manifest.json"]; n > manifestBudget {
 		t.Errorf("manifest: %d B gzipped, budget %d", n, manifestBudget)
 	}
 	biggest, name := 0, ""
-	for f, body := range files {
+	for f, n := range gz {
 		if strings.HasPrefix(f, "t-") {
-			if n := gzLen(body); n > biggest {
+			if n > biggest {
 				biggest, name = n, f
 			}
 		}
 	}
-	t.Logf("%d files; largest shard %s %d B gz; manifest %d B gz", len(files), name, biggest, gzLen(files["manifest.json"]))
+	t.Logf("%d files; largest shard %s %d B gz; manifest %d B gz", len(files), name, biggest, gz["manifest.json"])
 	if biggest > shardBudget {
 		t.Errorf("largest shard %s: %d B gzipped, budget %d", name, biggest, shardBudget)
 	}
 	for _, q := range []string{"form", "pro", "con", "re", "co", "st", "pa", "valid", "migration", "the", "session token"} {
 		total := 0
 		for _, f := range fetched(t, idx, files, q) {
-			total += gzLen(files[f])
+			total += gz[f]
 		}
 		t.Logf("%q downloads %d B gz", q, total)
 		if total > queryBudget {

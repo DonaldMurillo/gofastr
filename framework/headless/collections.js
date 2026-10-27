@@ -24,7 +24,7 @@
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
-    if (root.querySelectorAll) out.push.apply(out, root.querySelectorAll(sel));
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
     return out;
   }
 
@@ -48,7 +48,7 @@
     return root && root.querySelector('[data-hui-tag-input-status]');
   }
   function hiddensOf(root) {
-    return root ? Array.prototype.slice.call(root.querySelectorAll('input[type="hidden"]')) : [];
+    return root ? [...root.querySelectorAll('input[type="hidden"]')] : [];
   }
 
   // makeChip builds the same shape the server rendered: a list item
@@ -214,7 +214,7 @@
     if (!rep || repOp.root == null) { repOp = null; return; }
     if (repOp.action === 'remove' && repOp.index >= 0) {
       const rows = rep.querySelectorAll('[data-hui-repeater-index]');
-      let target = rows[repOp.index] || rows[rows.length - 1];
+      const target = rows[repOp.index] || rows[rows.length - 1];
       const ctl = target && target.querySelector('input,select,textarea');
       if (ctl) ctl.focus({ preventScroll: true });
     } else {

@@ -115,7 +115,7 @@ jobs:
       # The deterministic test step's scope, shared with the replay gate
       # after it. The Test step's comment says why each one runs in
       # browser-e2e instead.
-      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
       TEST_SKIP: 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
     services:
       # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
@@ -550,7 +550,7 @@ jobs:
     # a runner (CLAUDE.md documents the flake classes); separate runners
     # don't contend, so the matrix keeps every suite exactly as isolated
     # while running them concurrently, wall clock drops from the ~28m
-    # serial sum to the slowest shard (site-axe, ~13m). fail-fast is off
+    # serial sum to the slowest shard. fail-fast is off
     # so one red suite still lets the rest report, matching the old
     # per-step `if: !cancelled()` behavior. Each shard is its own check
     # run; release.yml's gate counts checks whose name contains
@@ -578,20 +578,18 @@ jobs:
           - suite: site
             pkg: examples/site$
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
-          # The axe gate scans every page under BOTH color schemes: 11-15
-          # minutes on one runner (2026-09), the longest browser shard once
-          # the blocking job was trimmed. GOFASTR_AXE_SHARD=k/n splits its
-          # work list across runners (examples/site/axe_test.go: every n-th
-          # item from k, so the two halves are exactly the whole gate). Its
-          # own shards: CLAUDE.md documents the axe suite flaking when it
-          # shares a go-test run with the other chromedp tests. 30m: a 15m
-          # limit once failed slow runners with nothing hung.
-          - suite: site-axe-0
+          # The axe gate scans every page under BOTH color schemes. It ran
+          # as two shards while one runner took 11-15 minutes (2026-09);
+          # since each page loads once for both schemes (#595) a shard
+          # scans for about 85 s, so the gate runs whole again (#598).
+          # GOFASTR_AXE_SHARD=k/n still splits its work list
+          # (examples/site/axe_test.go) if it grows back. Its own shard:
+          # CLAUDE.md documents the axe suite flaking when it shares a
+          # go-test run with the other chromedp tests. 30m: a 15m limit
+          # once failed slow runners with nothing hung.
+          - suite: site-axe
             pkg: examples/site$
-            run: GOFASTR_AXE_SHARD=0/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
-          - suite: site-axe-1
-            pkg: examples/site$
-            run: GOFASTR_AXE_SHARD=1/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+            run: go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
           # Moved out of the blocking job's Test step (2026-10): both are
           # chromedp e2e suites and filled one of its two package slots.
           - suite: tracker
@@ -627,6 +625,12 @@ jobs:
             # out ("websocket url timeout reached", CLAUDE.md documents
             # this package as flaky under parallel load, run isolated).
             run: go test -count=1 -timeout=10m ./core-ui/runtime/
+          - suite: core-ui-runtime-hosts
+            pkg: core-ui/runtime/hosttest$
+            # The runtime's tests that boot it inside a framework, uihost
+            # or battery host. They live apart so a change to those hosts
+            # selects this short suite, not the runtime's whole one (#598).
+            run: go test -count=1 -timeout=10m ./core-ui/runtime/hosttest/
           - suite: core-ui-widget
             pkg: core-ui/widget$
             # Same class as core-ui/runtime, documented flaky when
@@ -648,7 +652,7 @@ jobs:
             # surface need a budget well past the local ~2m runtime.
             run: go test -count=1 -timeout=25m ./examples/meridian/
           - suite: chromium-ui
-            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?)$
+            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?|core-ui/interactive|examples/acme-site/siteheader|examples/meridian/siteheader)$
             # Go build tags for cmd/affected's go list; named apart from a
             # git tag trigger on purpose.
             buildtags: chromium
@@ -679,9 +683,15 @@ jobs:
             # through the file:// page `service open` writes and checks
             # the browser lands on the app with its session.
             # battery/auth's tagged test runs both passkey ceremonies
-            # through Chrome's virtual authenticator; the package's
-            # untagged suite (~50s) rides along with it.
-            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/...
+            # through Chrome's virtual authenticator.
+            # Only the tests the tag adds run here: scripts/tagged-tests.sh
+            # lists them, and the test job has already run the rest of
+            # each package. cmd/repolint fails when a package with
+            # chromium-tagged tests is missing from this list or from pkg.
+            run: |
+              pkgs="./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/... ./core-ui/interactive/ ./examples/acme-site/siteheader/ ./examples/meridian/siteheader/"
+              run_re=$(scripts/tagged-tests.sh chromium $pkgs)
+              go test -count=1 -timeout=10m -p 1 -tags chromium -run "$run_re" $pkgs
           - suite: ui-quality-evals
             pkg: evals/ui-quality(/|$)
             # Its capture tests drive a real headless Chrome; kept out of
@@ -718,14 +728,8 @@ jobs:
           # per-SHA cache instead.
           cache: false
 
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
-        with:
-          install-dependencies: true
-
-      - name: Install the gofastr binary
-        run: go install ./cmd/gofastr
-
+      # Before the Chrome and gofastr installs: a suite the change does
+      # not reach skips them too, not only the test run (#598).
       - name: Is this suite affected?
         id: scope
         env:
@@ -738,6 +742,16 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::$PKG is not in this change's import-graph closure; suite skipped (runs on main)."
           fi
+
+      - name: Install Chrome
+        if: steps.scope.outputs.run == 'true'
+        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        with:
+          install-dependencies: true
+
+      - name: Install the gofastr binary
+        if: steps.scope.outputs.run == 'true'
+        run: go install ./cmd/gofastr
 
       - name: Run suite
         if: steps.scope.outputs.run == 'true'

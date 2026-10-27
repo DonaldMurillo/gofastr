@@ -17,7 +17,7 @@
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
-    if (root.querySelectorAll) out.push.apply(out, root.querySelectorAll(sel));
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
     return out;
   }
 
@@ -73,7 +73,6 @@
     if (!wrapper.hasAttribute('data-hui-tabs-vacate')) return;
     const stash = stashMap(wrapper);
     for (const panel of own(wrapper, '[role="tabpanel"]')) {
-      const i = panel.id ? panel.id.replace(/-panel-([0-9]+)$/, '$2') : '';
       const m = panel.id && /-panel-\d+$/.test(panel.id)
         ? panel.id.slice(panel.id.lastIndexOf('-panel-') + 7) : '';
       const mine = m !== '' && parseInt(m, 10) === idx;

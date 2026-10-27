@@ -16,6 +16,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
+// Building an app resolves isolation settings: framework/isolation looks
+// for gofastr.settings.yml from the package directory up to the repo
+// root, so these tests read the root file.
+//
+//gofastr:test-reads /gofastr.settings.yml
+
 // The harness's own contract, proven on a two-screen app: the boot
 // handshake yields a session the page can use and a stranger cannot,
 // the native drivers reach the battery's menu dispatch, and the eval

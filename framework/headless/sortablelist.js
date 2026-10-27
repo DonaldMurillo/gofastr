@@ -252,7 +252,7 @@
   // announceRaw says a server-provided message through the live
   // region (the bounded 409 detail), never a sentence of our own.
   function announceRaw(msg) {
-    let live = document.getElementById('hui-sortable-live');
+    const live = document.getElementById('hui-sortable-live');
     if (!live) return; // announce() created it on the first move
     live.textContent = '';
     setTimeout(function () { live.textContent = msg; }, 30);

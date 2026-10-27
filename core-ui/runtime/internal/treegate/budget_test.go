@@ -41,7 +41,7 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 	// outside core qualifies: it ships in a binary only when its
 	// package is imported, and on a page only when asked for.
 	behaviorOverrides := map[string]int{
-		// core-ui/localdb's on-request API module, 3609 measured (2
+		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed
 		// re-check would leak, broadcasting bulk transactions in
@@ -58,8 +58,11 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// resolves on COMMIT, the cursor reader, the cross-tab channel
 		// with its forged-message guard, and the monotonic UUIDv7
 		// minter. Shrunk from 4211 by folding the single-op methods
-		// into one loop and dropping the error class.
-		"core-ui/localdb/localdb.js": 3611,
+		// into one loop and dropping the error class; the loop wrote
+		// Handle.prototype, and declaring the seven methods in the
+		// class body over one _one helper put back 28 bytes (3609 to
+		// 3637).
+		"core-ui/localdb/localdb.js": 3639,
 	}
 	sources, err := check.RegisteredBehaviorSources(repoRoot)
 	if err != nil {

@@ -629,7 +629,11 @@ above — and a `data-cui-*` attribute named by an interaction selector
 module is held to the same source lints as the kernel's own
 (`core-ui/check`: no `var`, no selector or storage key built from a raw
 value, and the rest): the clean-tree tests find every registered
-behaviour through its `//go:embed` directive. Contract and rules:
+behaviour through its `//go:embed` directive. `LintLegacyIdioms` holds
+out the pre-ES2015 spellings: `.push.apply` (spread the list),
+`Array.prototype.<m>.call` (`[...list]` or `Array.from`), the
+`arguments` object (rest parameters) and assignments to
+`<Ctor>.prototype` (a class body). Contract and rules:
 `core-ui/ARCHITECTURE.md` "Component behaviour".
 
 A behaviour may declare dependencies:

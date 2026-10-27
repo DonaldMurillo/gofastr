@@ -1,4 +1,4 @@
-package runtime_test
+package hosttest
 
 // Version-skew e2e across the data-fui-* → data-cui-* rename (#467):
 // a tab still running the v0.86.0 runtime keeps intercepting links

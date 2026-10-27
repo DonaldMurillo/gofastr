@@ -41,7 +41,7 @@
       },
       set: (cls) => {
         if (cls !== '' && !VALID.test(cls)) return;
-        for (const c of Array.prototype.slice.call(root.classList)) {
+        for (const c of [...root.classList]) {
           if (c.indexOf('cui-theme-') === 0) root.classList.remove(c);
         }
         if (cls) root.classList.add(cls);

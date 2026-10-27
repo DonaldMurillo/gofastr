@@ -602,7 +602,10 @@ helpful pre-flight read for human reviewers.
    admitted only when the attribute is already documented. The module
    is a runtime module and the runtime's source lints hold it: `const`
    and `let`, never `var`; no selector or storage key built from a raw
-   value (`core-ui/check`, found through your `//go:embed`). See
+   value; rest parameters and spread, never `arguments`, `.push.apply`
+   or `Array.prototype.<m>.call`; a class body, never an assignment to
+   `<Ctor>.prototype` (`core-ui/check`, found through your
+   `//go:embed`). See
    `core-ui/ARCHITECTURE.md` "Component behaviour".
 
 ---

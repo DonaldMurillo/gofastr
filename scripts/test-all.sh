@@ -83,7 +83,7 @@ PARALLEL=${TEST_PARALLELISM:-2}
 # The heavy set: the chromedp/browser packages CI isolates one suite per
 # runner in its browser-e2e job. Import-path regex; the same spelling
 # .githooks/pre-push and .github/workflows/ci.yml use. Keep in sync.
-HEAVY_RE='gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+HEAVY_RE='gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
 # The four cmd/gofastr tests CI runs serialized in its browser-e2e
 # gofastr-cli shard: three (main package) drive a real Chrome over the dev
 # livereload websocket, one (internal/devcmd) builds and boots every

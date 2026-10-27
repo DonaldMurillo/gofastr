@@ -108,7 +108,7 @@ func TestWasmTierInstantiatesInFrame(t *testing.T) {
 			chromedp.ExecPath(path),
 		)...)
 	defer cancelAlloc()
-	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx)
+	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
 	defer cancelBrowser()
 	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
 	defer cancel()

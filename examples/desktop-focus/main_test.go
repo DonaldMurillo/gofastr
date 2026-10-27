@@ -11,6 +11,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
+// Building an app resolves isolation settings: framework/isolation looks
+// for gofastr.settings.yml from the package directory up to the repo
+// root, so these tests read the root file.
+//
+//gofastr:test-reads /gofastr.settings.yml
+
 // The app in its `--serve` shape (no Run, no window):
 // framework.TestHarness drives the REST routes and the screens through
 // the real router, with the desktop battery registered, exactly what

@@ -54,7 +54,7 @@
     if (!host || !document.body) return;
     const next = [];
     for (const m of MARKERS) {
-      for (const el of document.querySelectorAll('[' + m.attr + ']')) {
+      for (const el of document.querySelectorAll('[' + CSS.escape(m.attr) + ']')) {
         const v = el.getAttribute(m.attr);
         next.push({ el, kind: m, text: m.text ? m.text(el, v) : m.name + ' ' + v });
       }
@@ -117,7 +117,8 @@
       }));
       // Labels sit at the box's top-left, pushed down past any label
       // already there: a layer and its slot often share a corner.
-      let x = Math.min(Math.max(r.left, 0), vw - 40), y = Math.max(r.top, 0);
+      const x = Math.min(Math.max(r.left, 0), vw - 40);
+      let y = Math.max(r.top, 0);
       const w = it.text.length * 6.6 + 8;
       for (let i = 0; i < 8 && placed.some((p) => x < p.x + p.w && p.x < x + w && Math.abs(p.y - y) < LABEL_H); i++) y += LABEL_H;
       placed.push({ x, y, w });

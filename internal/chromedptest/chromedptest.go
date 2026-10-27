@@ -59,8 +59,8 @@ const (
 	defaultWindowW = 1024
 	defaultWindowH = 768
 	defaultTimeout = 60 * time.Second
-	// defaultStartTimeout bounds both chromedp's DevTools websocket-URL
-	// wait and the startup watchdog below. A cold Chrome start on a
+	// defaultStartTimeout bounds chromedp's DevTools websocket-URL wait,
+	// its websocket dial, and the startup watchdog below. A cold Chrome start on a
 	// shared CI runner can exceed chromedp's 20s default; a generous
 	// deadline turns that from a flaky suite failure into a few slow
 	// seconds.
@@ -97,9 +97,9 @@ func Timeout(d time.Duration) Option {
 	return func(c *config) { c.timeout = d }
 }
 
-// StartTimeout overrides the default 90s startup patience for both the
-// DevTools websocket-URL read deadline and the watchdogs on starting Chrome
-// and opening the test's window. It replaces each former helper's
+// StartTimeout overrides the default 90s startup patience for the DevTools
+// websocket-URL read deadline, the websocket dial, and the watchdogs on
+// starting Chrome and opening the test's window. It replaces each former helper's
 // duplicated 90s startup literal.
 func StartTimeout(d time.Duration) Option {
 	return func(c *config) { c.startTimeout = d }
