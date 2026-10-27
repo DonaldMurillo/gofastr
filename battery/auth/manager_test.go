@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -434,27 +435,30 @@ func TestLogin_TimingSafe_NoEnumerationByResponseTime(t *testing.T) {
 	measure(t, r, "existing@example.com", "wrongpassword")
 	measure(t, r, "missing@example.com", "anypassword")
 
-	const samples = 5
+	const samples = 15
 
-	var existSum, missingSum time.Duration
+	exist := make([]time.Duration, 0, samples)
+	missing := make([]time.Duration, 0, samples)
 	for range samples {
-		existSum += measure(t, r, "existing@example.com", "wrongpassword")
-		missingSum += measure(t, r, "missing@example.com", "anypassword")
+		exist = append(exist, measure(t, r, "existing@example.com", "wrongpassword"))
+		missing = append(missing, measure(t, r, "missing@example.com", "anypassword"))
 	}
-	existMean := existSum / samples
-	missingMean := missingSum / samples
+	slices.Sort(exist)
+	slices.Sort(missing)
+	existMedian := exist[samples/2]
+	missingMedian := missing[samples/2]
 
-	t.Logf("existing-mean=%v  missing-mean=%v", existMean, missingMean)
+	t.Logf("existing-median=%v  missing-median=%v", existMedian, missingMedian)
 
-	// Both code paths should perform a bcrypt comparison. Bcrypt at
-	// default cost is ≥30ms even on fast hardware. If the missing-email
-	// path skips bcrypt, missingMean is two orders of magnitude smaller.
-	// We require the missing-email mean to be at least 50% of the
-	// existing-email mean, this catches "no bcrypt at all" without
-	// being fragile under CI jitter.
-	if missingMean*2 < existMean {
+	// Both code paths should perform a bcrypt comparison. The package's
+	// tests hash at bcrypt's minimum cost (bcryptcost_test.go), about 1ms,
+	// so a single GC pause or scheduler stall can outweigh it: a mean of
+	// five once read 4.2ms against 1.2ms on CI. The median drops that
+	// outlier. If the missing-email path skips bcrypt, its median falls
+	// to tens of microseconds, far under the 50% bound.
+	if missingMedian*2 < existMedian {
 		t.Fatalf("login is user-enumerable via timing: existing=%v missing=%v (missing must be ≥50%% of existing)",
-			existMean, missingMean)
+			existMedian, missingMedian)
 	}
 }
 
