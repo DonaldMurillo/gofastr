@@ -25,6 +25,19 @@ func TestJSONTreeDeterministicSortedKeys(t *testing.T) {
 	}
 }
 
+// TestJSONTreeKeepsBigIntegers: a number past 2^53 renders with its own
+// digits, not a rounded float64, and an ordinary number reads as before.
+func TestJSONTreeKeepsBigIntegers(t *testing.T) {
+	h := renderTree(JSONTreeProps{Value: map[string]any{
+		"id": int64(9007199254740993), "n": 1234567, "r": 0.5,
+	}})
+	for _, want := range []string{">9007199254740993<", ">1234567<", ">0.5<"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("tree missing %q:\n%s", want, h)
+		}
+	}
+}
+
 func TestJSONTreeRendersNativeDetailsAndWords(t *testing.T) {
 	h := renderTree(JSONTreeProps{Value: map[string]any{
 		"tags":  []any{"fast"},

@@ -202,6 +202,7 @@ func validateMetadata(t *Tool) (string, error) {
 		return "", nil
 	}
 	var sk exampleSchema
+	//gofastr:allow(floatnum) the schema is read only for its type names and required keys
 	if err := json.Unmarshal(t.InputSchema, &sk); err != nil {
 		return "examples", fmt.Errorf("webmcp: Register(%q): InputSchema is too malformed to validate examples against: %v", t.Name, err)
 	}
@@ -239,6 +240,7 @@ func checkExample(toolName string, idx int, sk *exampleSchema, ex Example) error
 		return nil
 	}
 	var in map[string]any
+	//gofastr:allow(floatnum) example values are checked only for their JSON type, never forwarded
 	if err := json.Unmarshal(ex.Input, &in); err != nil {
 		return fmt.Errorf("webmcp: Register(%q): example %d input must be a JSON object (the bridge always delivers an object); %v", toolName, idx, err)
 	}

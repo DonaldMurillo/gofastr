@@ -23,6 +23,22 @@ type wantsInjectionValue struct {
 
 func (wantsInjectionValue) Render() render.HTML { return render.HTML("x") }
 
+// embedsInjectionValue asks for DI only through an embedded struct.
+type embedsInjectionValue struct {
+	wantsInjectionValue
+}
+
+// An inject tag promoted from an embedded struct is the same wiring
+// mistake on a value component.
+func TestValueComponentEmbeddedInjectFails(t *testing.T) {
+	a := NewApp("t")
+	a.Register("/", embedsInjectionValue{}, nil)
+
+	if _, err := a.RenderPageResult(context.Background(), "/"); err == nil || !strings.Contains(err.Error(), "inject-tagged") {
+		t.Fatalf("value component with an embedded inject tag rendered: err = %v", err)
+	}
+}
+
 // Pins #259: a stateless value component is a supported form and must
 // render, not die with "di: target must be a non-nil pointer".
 func TestRenderValueComponentStateless(t *testing.T) {

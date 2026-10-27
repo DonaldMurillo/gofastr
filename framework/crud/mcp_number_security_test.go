@@ -82,3 +82,51 @@ func TestMCPNumericFilterMatchesStoredInt(t *testing.T) {
 		t.Errorf("SECURITY: [mcp-number] tools/call list with amount=9007199254740993 did not match the row storing exactly that value — the argument lost precision on the wire; UseNumber must carry the exact decimal into the filter. got: %s", big)
 	}
 }
+
+// A tool's result carries a stored integer above 2^53 exactly, as the
+// HTTP route answers it. The re-dispatched response was decoded into
+// float64s and marshalled again, so 9007199254740993 came back
+// 9007199254740992.
+func TestMCPToolResultKeepsBigInt(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+
+	db := setupDB(t, `CREATE TABLE mcp_ledger (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, amount INTEGER)`)
+	ent := entity.Define("mcp_ledger", makeEntityConfig("mcp_ledger", "mcp_ledger", "user_id", []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "amount", Type: schema.Int},
+	}))
+	ent.SetDB(db)
+	seedRows(t, db, "mcp_ledger", []map[string]any{
+		{"id": "big", "user_id": "alice", "amount": 9007199254740993},
+	})
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	r := router.New()
+	RegisterCrudRoutes(r, ch, "/mcp_ledger")
+	srv := mcp.NewServer()
+	if err := RegisterEntityMCPTools(srv, ch, r); err != nil {
+		t.Fatalf("register mcp: %v", err)
+	}
+	orig, _ := http.NewRequest(http.MethodPost, "/mcp", nil)
+	ctx := handler.SetUser(mcp.WithRequest(context.Background(), orig), &testUser{id: "alice"})
+
+	for _, tc := range []struct{ tool, args string }{
+		{"mcp_ledger_get", `{"id": "big"}`},
+		{"mcp_ledger_list", `{}`},
+	} {
+		p, err := json.Marshal(map[string]any{"name": tc.tool, "arguments": json.RawMessage(tc.args)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp := srv.HandleRequest(ctx, mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: p})
+		if resp.Error != nil {
+			t.Fatalf("%s: %+v", tc.tool, resp.Error)
+		}
+		out, err := json.Marshal(resp.Result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(out), `9007199254740993`) {
+			t.Errorf("%s result lost the stored amount 9007199254740993: %s", tc.tool, out)
+		}
+	}
+}

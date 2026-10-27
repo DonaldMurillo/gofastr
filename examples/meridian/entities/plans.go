@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f92db0cebb6cbfd1
+//gofastr:generated generator=app kind=scaffold version=dev sum=805d6577a79c0e84
 
 package entities
 
@@ -40,8 +40,8 @@ type PlansInput struct {
 
 // PlansPatch is the update payload for PlansRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type is not a value:
-// absent on an optional field, a validation error on a required one.
+// float, string or text field. "" for any other type is a blank: it
+// clears an optional field and fails validation on a required one.
 type PlansPatch struct {
 	Name     *string             `json:"name,omitempty"`
 	Slug     *string             `json:"slug,omitempty"`

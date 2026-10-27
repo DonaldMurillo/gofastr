@@ -95,7 +95,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	}
 	countSQL, countArgs := countQb.Build()
 	var total int
-	if err := ch.DB.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+	if err := ch.conn(ctx).QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
 		log.Printf("crud: stream count failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
@@ -114,7 +114,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	for _, c := range extraWhere {
 		qb.Where(c.SQL, c.Args...)
 	}
-	filter.ApplySortToQuery(qb, sorts)
+	filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
 	qb.Limit(limit)
 	// An explicit ?offset= overrides the page-derived offset, matching the
 	// buffered List() path, otherwise ?offset=N&stream=true would silently
@@ -128,7 +128,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	}
 
 	dataSQL, dataArgs := qb.Build()
-	rows, err := ch.DB.QueryContext(ctx, dataSQL, dataArgs...)
+	rows, err := ch.conn(ctx).QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
 		log.Printf("crud: stream query failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
@@ -151,9 +151,10 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	for rows.Next() {
 		row, err := scanRowsOne(rows, cols, ch.convertKey, boolCols)
 		if err != nil {
-			// Mid-stream errors can't change status; we close the array
-			// and let the client parse what we sent.
-			break
+			// The status is already sent. Closing the envelope would pass a
+			// truncated list off as complete; left open, it fails to parse.
+			log.Printf("crud: stream scan failed: %v", err)
+			return
 		}
 		ch.decodeReadFields(row)
 		if !first {
@@ -171,6 +172,12 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		if flusher != nil {
 			flusher.Flush()
 		}
+	}
+	// A cancelled or failed cursor ends rows.Next early: leave the
+	// envelope open, as on a scan error above.
+	if err := rows.Err(); err != nil {
+		log.Printf("crud: stream rows failed: %v", err)
+		return
 	}
 	// Guard the division: ServeStreamingList is an exported in-process
 	// entrypoint taking an arbitrary limit, and a limit < 1 used to

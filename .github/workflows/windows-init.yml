@@ -34,3 +34,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build ./...
+      - name: Init and shell regressions
+        run: >-
+          go test ./cmd/gofastr ./cmd/gofastr/internal/initcmd
+          -run '^(TestInitFreshDirectory|TestInitWindowsShells|TestInitGoDirectives|TestProjectNameWindowsDevices|TestInitKeepsHigherExistingGoRequirements|TestInitKeepsGoAboveFloor|TestInitRaisesGoBelowFloor|TestScaffoldGoRequirementsToolchainMeetsHigherMinimum)$'
+          -count=1 -v

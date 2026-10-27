@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -637,8 +636,23 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 // caller must carry the identity the gate expects. It does NOT run the
 // server-wide gate ([Server.SetGate]). That one describes who may reach the
 // /mcp ENDPOINT, and an in-process caller is not coming through it. Every
-// remote transport dispatches via HandleRequest, which does apply it.
+// remote transport dispatches via HandleRequest, which does apply it. A
+// remote caller arriving through another surface goes through
+// [Server.CallToolFor].
 func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (any, error) {
+	return s.callTool(ctx, name, params)
+}
+
+// CallToolFor invokes a tool for a remote caller that reaches it through
+// a surface other than /mcp, such as the A2A exchange. ctx carries that
+// caller. The server-wide gate ([Server.SetGate]) runs first, then
+// everything [Server.CallTool] runs, so the second surface cannot reach a
+// tool the gate closes /mcp over. A refusal answers as tools/call does:
+// invalid params carrying the gate's message.
+func (s *Server) CallToolFor(ctx context.Context, name string, params map[string]any) (any, error) {
+	if err := s.checkServerGate(ctx); err != nil {
+		return nil, &RPCError{Code: ErrInvalidParams, Message: err.Error()}
+	}
 	return s.callTool(ctx, name, params)
 }
 
@@ -730,20 +744,4 @@ func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]an
 		}
 	}()
 	return t.Handler(ctx, params)
-}
-
-// enrichContext propagates auth and tenant info from the handler package's
-// context helpers into the tool handler context. This ensures MCP tool
-// handlers can access user/tenant information set by upstream middleware.
-func enrichContext(ctx context.Context) context.Context {
-	if u, ok := handler.GetUser(ctx); ok {
-		ctx = handler.SetUser(ctx, u)
-	}
-	if t, ok := handler.GetTenant(ctx); ok {
-		ctx = handler.SetTenant(ctx, t)
-	}
-	if id, ok := handler.GetRequestID(ctx); ok {
-		ctx = handler.SetRequestID(ctx, id)
-	}
-	return ctx
 }

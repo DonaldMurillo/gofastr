@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -21,14 +22,21 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 		t.Fatal(err)
 	}
 	var count atomic.Int64
-	page := `<!doctype html><html><head><title>t</title>` +
-		`<script type="application/json" id="gofastr-routes">` +
-		`[{"path":"/list","layouts":["l:site"]}]</script>` +
-		`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
-		`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` +
-		`<h1 id="list-screen">List</h1>` +
-		`<div id="host" data-hui-pane-deeplink="pane"></div>` +
-		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
+	// The screen shows every tag value it was asked for, so a history
+	// move that keeps the wrong content is visible.
+	screen := func(r *http.Request) string {
+		return `<h1 id="list-screen">List</h1>` +
+			`<p id="tags">` + html.EscapeString(fmt.Sprintf("%q", r.URL.Query()["tag"])) + `</p>` +
+			`<div id="host" data-hui-pane-deeplink="pane"></div>`
+	}
+	page := func(r *http.Request) string {
+		return `<!doctype html><html><head><title>t</title>` +
+			`<script type="application/json" id="gofastr-routes">` +
+			`[{"path":"/list","layouts":["l:site"]}]</script>` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` + screen(r) +
+			`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
+	}
 	mux := http.NewServeMux()
 	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
@@ -42,11 +50,11 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "List")
 			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<h1 id="list-screen">List</h1><div id="host" data-hui-pane-deeplink="pane"></div>`)
+			fmt.Fprint(w, screen(r))
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, page)
+		fmt.Fprint(w, page(r))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -122,5 +130,60 @@ func TestIdentityQueryBackRefetches(t *testing.T) {
 	}
 	if got := count.Load(); got != 1 {
 		t.Errorf("identity back should replay the cached screen (%d requests, want 1)", got)
+	}
+}
+
+// A repeated query key is screen identity value by value: Back from
+// ?tag=a&tag=c to ?tag=a&tag=b compared only the first value of each
+// key, called the move stateful-only, and left the a,c screen under the
+// a,b URL.
+func TestRepeatedQueryBackRefetches(t *testing.T) {
+	srv, _ := stateSite(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+
+	var tags string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/list?tag=a&tag=b"),
+		chromedp.WaitVisible(`#list-screen`, chromedp.ByID),
+		chromedp.Evaluate(`__gofastr.navigate('/list?tag=a&tag=c')`, nil),
+		chromedp.WaitVisible(`//p[@id="tags"][text()='["a" "c"]']`),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Text(`#tags`, &tags, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if tags != `["a" "b"]` {
+		t.Errorf("back to ?tag=a&tag=b shows tags %s, want [\"a\" \"b\"]", tags)
+	}
+}
+
+// A key present with an empty value is not the key absent, in either
+// direction: Back from ?tag= to the bare path, and Forward again, each
+// read both sides as "" and kept the screen they left.
+func TestEmptyQueryValueBackRefetches(t *testing.T) {
+	srv, _ := stateSite(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+
+	var afterBack, afterForward string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/list"),
+		chromedp.WaitVisible(`#list-screen`, chromedp.ByID),
+		chromedp.Evaluate(`__gofastr.navigate('/list?tag=')`, nil),
+		chromedp.WaitVisible(`//p[@id="tags"][text()='[""]']`),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Text(`#tags`, &afterBack, chromedp.ByID),
+		chromedp.Evaluate(`history.forward()`, nil),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Text(`#tags`, &afterForward, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if afterBack != "[]" {
+		t.Errorf("back to the bare path shows tags %s, want []", afterBack)
+	}
+	if afterForward != `[""]` {
+		t.Errorf("forward to ?tag= shows tags %s, want [\"\"]", afterForward)
 	}
 }

@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -50,10 +51,19 @@ type Client struct {
 
 // NewClient constructs a Client with a deadline-bearing default when one
 // is not supplied (a zero-timeout client waits forever on an unresponsive
-// peer). BaseURL should NOT include a trailing slash.
+// peer). BaseURL should NOT include a trailing slash. The default refuses
+// redirects: every request carries the token, and Go re-sends
+// Authorization to a redirect on the same host at another port and any
+// other header (an apiKey one) to any host at all. A 3xx comes back as an
+// *APIError. Pass your own *http.Client to keep a redirect policy.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	return &Client{BaseURL: baseURL, HTTP: httpClient}
 }
@@ -112,7 +122,17 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 	if out == nil || len(data) == 0 {
 		return nil
 	}
-	return json.Unmarshal(data, out)
+	// UseNumber: a number landing in an any keeps its digits; as a
+	// float64, 9007199254740993 came back as ...992.
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return fmt.Errorf("invalid data after the JSON value")
+	}
+	return nil
 }
 
 // DoRaw is the transport under Do: query and extra headers ride along,
@@ -182,8 +202,7 @@ func renderCLIOpsFile(spec cliSpec) string {
 				needsFmt = true
 			}
 		}
-		if op.BodyKind == "binary" || op.BodyKind == "json" ||
-			(op.BodyKind == "raw" && op.BodyRequired) {
+		if op.BodyKind == "json" || ((op.BodyKind == "binary" || op.BodyKind == "raw") && op.BodyRequired) {
 			needsFmt = true
 		}
 	}
@@ -195,10 +214,15 @@ func renderCLIOpsFile(spec cliSpec) string {
 		}
 	}
 
-	needsBody := false
+	// An optional binary body declares an io.Reader that stays nil when
+	// --file is left out; it builds nothing, so it needs no bytes.
+	needsBody, needsIO := false, false
 	for _, op := range spec.Ops {
 		if op.BodyKind == "json" || op.BodyKind == "raw" {
-			needsBody = true
+			needsBody, needsIO = true, true
+		}
+		if op.BodyKind == "binary" && !op.BodyRequired {
+			needsIO = true
 		}
 	}
 
@@ -207,14 +231,16 @@ func renderCLIOpsFile(spec cliSpec) string {
 	if needsBody {
 		sb.WriteString("\t\"bytes\"\n")
 	}
-	sb.WriteString("\t\"encoding/json\"\n")
+	if slices.ContainsFunc(spec.Ops, func(op cliOp) bool { return op.BodyKind == "json" }) {
+		sb.WriteString("\t\"encoding/json\"\n") // a JSON body checks --json and marshals its field flags
+	}
 	if needsFlag {
 		sb.WriteString("\t\"flag\"\n")
 	}
 	if needsFmt {
 		sb.WriteString("\t\"fmt\"\n")
 	}
-	if needsBody {
+	if needsIO {
 		sb.WriteString("\t\"io\"\n")
 	}
 	sb.WriteString("\t\"net/http\"\n\t\"net/url\"\n\t\"os\"\n")
@@ -231,13 +257,37 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 
 `)
 	}
+	if slices.ContainsFunc(spec.Ops, func(op cliOp) bool {
+		return slices.ContainsFunc(op.QueryParams, func(p cliOpParam) bool { return p.Joined })
+	}) {
+		sb.WriteString(`// formJoined renders an array query parameter in OpenAPI's form style
+// with explode false: name=a,b, each item escaped and the commas between
+// them literal, as the spec's own example sends them.
+func formJoined(name string, items []string) string {
+	esc := make([]string, len(items))
+	for i, item := range items {
+		esc[i] = url.QueryEscape(item)
+	}
+	return url.QueryEscape(name) + "=" + strings.Join(esc, ",")
+}
+
+// joinQuery appends one encoded name=value pair to an encoded query.
+func joinQuery(q, pair string) string {
+	if q == "" {
+		return pair
+	}
+	return q + "&" + pair
+}
+
+`)
+	}
 	sb.WriteString(`// printResponse renders an operation response: JSON pretty-prints,
 // anything else (an image, CSV, plain text) streams raw to stdout so
 // redirects work: ` + "`" + spec.Binary + " <op> > out.png`" + `.
 func printResponse(data []byte, contentType string) int {
 	if strings.Contains(contentType, "json") {
 		var v any
-		if jsonErr := json.Unmarshal(data, &v); jsonErr == nil {
+		if jsonErr := decodeJSON(data, &v); jsonErr == nil {
 			return printJSON(v)
 		}
 	}
@@ -324,10 +374,16 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 
 	usage := func(p cliOpParam, kind string) string {
 		u := kind + " parameter"
-		if p.Required {
-			u += " (required)"
+		if p.Description == "" {
+			if p.Required {
+				u += " (required)"
+			}
+			return u
 		}
-		return u
+		if p.Required {
+			u += ", required"
+		}
+		return p.Description + " (" + u + ")"
 	}
 	for i, p := range op.PathParams {
 		flagDecl(sb, fmt.Sprintf("pp%d", i), p, usage(p, "path"))
@@ -351,8 +407,11 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	case "raw":
 		sb.WriteString("\tjsonF := fs.String(\"json\", \"\", \"raw JSON body (inline, @file, or - for stdin)\")\n")
 	case "binary":
-		fmt.Fprintf(sb, "\tfileF := fs.String(\"file\", \"\", %q)\n",
-			fmt.Sprintf("request body file (%s); - reads stdin (required)", op.BodyContentType))
+		usage := fmt.Sprintf("request body file (%s); - reads stdin", op.BodyContentType)
+		if op.BodyRequired {
+			usage += " (required)"
+		}
+		fmt.Fprintf(sb, "\tfileF := fs.String(\"file\", \"\", %q)\n", usage)
 	}
 
 	sb.WriteString("\tg, code := parseGlobals(fs, args)\n\tif g == nil {\n\t\treturn code\n\t}\n")
@@ -377,14 +436,26 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 		fmt.Fprintf(sb, "\tif !visited[%q] {\n\t\tfmt.Fprintln(os.Stderr, \"--%s is required\")\n\t\treturn 2\n\t}\n", p.Flag, p.Flag)
 	}
 	if op.BodyKind == "json" {
+		flags := make([]string, 0, len(op.BodyFields))
+		for _, f := range op.BodyFields {
+			flags = append(flags, fmt.Sprintf("%q", f.Flag))
+		}
+		fmt.Fprintf(sb, "\tfieldSet := false\n\tfor _, fl := range []string{%s} {\n\t\tif visited[fl] {\n\t\t\tfieldSet = true\n\t\t}\n\t}\n", strings.Join(flags, ", "))
+		// The schema's required properties bind the object the field
+		// flags build. An optional body may be left out entirely, so they
+		// apply only once a field flag starts one.
+		built := ""
+		if !op.BodyRequired {
+			built = " && fieldSet"
+		}
 		for _, f := range op.BodyFields {
 			if !f.Required {
 				continue
 			}
-			fmt.Fprintf(sb, "\tif *jsonF == \"\" && !visited[%q] {\n\t\tfmt.Fprintln(os.Stderr, \"--%s is required (or pass --json)\")\n\t\treturn 2\n\t}\n", f.Flag, f.Flag)
+			fmt.Fprintf(sb, "\tif *jsonF == \"\"%s && !visited[%q] {\n\t\tfmt.Fprintln(os.Stderr, \"--%s is required (or pass --json)\")\n\t\treturn 2\n\t}\n", built, f.Flag, f.Flag)
 		}
 	}
-	if op.BodyKind == "binary" {
+	if op.BodyKind == "binary" && op.BodyRequired {
 		sb.WriteString("\tif *fileF == \"\" {\n\t\tfmt.Fprintln(os.Stderr, \"--file is required\")\n\t\treturn 2\n\t}\n")
 	}
 
@@ -398,13 +469,27 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 
 	// Query assembly: only flags the caller actually set are sent.
 	sb.WriteString("\tq := url.Values{}\n")
+	var joined []string
 	for i, p := range op.QueryParams {
 		v := fmt.Sprintf("qp%d", i)
+		if p.Joined {
+			joined = append(joined, fmt.Sprintf("\tif len(%s) > 0 {\n\t\trawQ = joinQuery(rawQ, formJoined(%q, %s))\n\t}\n", v, p.Name, v))
+			continue
+		}
 		if p.Repeated {
 			fmt.Fprintf(sb, "\tfor _, item := range %s {\n\t\tq.Add(%q, item)\n\t}\n", v, p.Name)
 			continue
 		}
 		fmt.Fprintf(sb, "\tif visited[%q] {\n\t\tq.Set(%q, %s)\n\t}\n", p.Flag, p.Name, paramString(v, p))
+	}
+	if len(joined) > 0 {
+		// url.Values would escape the delimiting commas, so the query
+		// rides on the path and DoRaw gets none.
+		sb.WriteString("\trawQ := q.Encode()\n")
+		for _, j := range joined {
+			sb.WriteString(j)
+		}
+		sb.WriteString("\tif rawQ != \"\" {\n\t\tpath += \"?\" + rawQ\n\t}\n\tq = nil\n")
 	}
 
 	// Header assembly.
@@ -418,6 +503,15 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 		fmt.Fprintf(sb, "\tif visited[%q] {\n\t\thdr.Set(%q, %s)\n\t}\n", p.Flag, p.Name, paramString(v, p))
 	}
 
+	// An operation whose security names another scheme sends the token
+	// under that scheme's header: it rides in hdr, and the copy of the
+	// client it calls through holds no token, so DoRaw adds no default.
+	caller := "g.client"
+	if op.AuthHeader != "" {
+		caller = "authed"
+		fmt.Fprintf(sb, "\tauthed := *g.client\n\tif authed.Token != \"\" {\n\t\thdr.Set(%q, %q+authed.Token)\n\t\tauthed.Token = \"\"\n\t}\n", op.AuthHeader, op.AuthPrefix)
+	}
+
 	// Body + request. Bodies are optional unless the spec marks the
 	// requestBody required: with no --json and no field flags, nothing
 	// is sent. Body construction is runner-local (NOT buildBody, whose
@@ -425,35 +519,37 @@ func renderCLIOpRunner(sb *strings.Builder, spec cliSpec, op cliOp) {
 	// flags as body-field flags and refuse valid --json invocations).
 	switch op.BodyKind {
 	case "json":
-		flags := make([]string, 0, len(op.BodyFields))
-		for _, f := range op.BodyFields {
-			flags = append(flags, fmt.Sprintf("%q", f.Flag))
-		}
-		fmt.Fprintf(sb, "\tfieldSet := false\n\tfor _, fl := range []string{%s} {\n\t\tif visited[fl] {\n\t\t\tfieldSet = true\n\t\t}\n\t}\n", strings.Join(flags, ", "))
 		sb.WriteString("\tif *jsonF != \"\" && fieldSet {\n\t\tfmt.Fprintln(os.Stderr, \"--json and body field flags are mutually exclusive\")\n\t\treturn 2\n\t}\n")
 		sb.WriteString("\tbodySet := *jsonF != \"\" || fieldSet\n")
 		if op.BodyRequired {
 			sb.WriteString("\tif !bodySet {\n\t\tfmt.Fprintln(os.Stderr, \"a request body is required: pass body field flags or --json\")\n\t\treturn 2\n\t}\n")
 		}
 		sb.WriteString("\tct := \"\"\n\tvar rdr io.Reader\n\tif bodySet {\n")
-		sb.WriteString("\t\tvar payload []byte\n\t\tif *jsonF != \"\" {\n\t\t\traw, err := readJSONArg(*jsonF)\n\t\t\tif err != nil {\n\t\t\t\treturn apiFail(err)\n\t\t\t}\n\t\t\tvar parsed map[string]any\n\t\t\tif err := json.Unmarshal(raw, &parsed); err != nil {\n\t\t\t\tfmt.Fprintf(os.Stderr, \"--json: %v\\n\", err)\n\t\t\t\treturn 2\n\t\t\t}\n\t\t\tpayload = raw\n\t\t} else {\n\t\t\tbody := map[string]any{}\n")
+		sb.WriteString("\t\tvar payload []byte\n\t\tif *jsonF != \"\" {\n\t\t\traw, err := readJSONArg(*jsonF)\n\t\t\tif err != nil {\n\t\t\t\treturn apiFail(err)\n\t\t\t}\n\t\t\tvar parsed map[string]any\n\t\t\tif err := decodeJSON(raw, &parsed); err != nil {\n\t\t\t\tfmt.Fprintf(os.Stderr, \"--json: %v\\n\", err)\n\t\t\t\treturn 2\n\t\t\t}\n\t\t\tpayload = raw\n\t\t} else {\n\t\t\tbody := map[string]any{}\n")
 		for i, f := range op.BodyFields {
 			fmt.Fprintf(sb, "\t\t\tif visited[%q] {\n\t\t\t\tbody[%q] = *bf%d\n\t\t\t}\n", f.Flag, f.Wire, i)
 		}
 		sb.WriteString("\t\t\tvar err error\n\t\t\tpayload, err = json.Marshal(body)\n\t\t\tif err != nil {\n\t\t\t\treturn apiFail(err)\n\t\t\t}\n\t\t}\n")
 		sb.WriteString("\t\tct = \"application/json\"\n\t\trdr = bytes.NewReader(payload)\n\t}\n")
-		fmt.Fprintf(sb, "\tdata, respCT, err := g.client.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", op.Method)
+		fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", caller, op.Method)
 	case "raw":
 		if op.BodyRequired {
 			sb.WriteString("\tif *jsonF == \"\" {\n\t\tfmt.Fprintln(os.Stderr, \"a request body is required: pass --json\")\n\t\treturn 2\n\t}\n")
 		}
 		sb.WriteString("\tct := \"\"\n\tvar rdr io.Reader\n\tif *jsonF != \"\" {\n\t\tpayload, err := readJSONArg(*jsonF)\n\t\tif err != nil {\n\t\t\treturn apiFail(err)\n\t\t}\n\t\tct = \"application/json\"\n\t\trdr = bytes.NewReader(payload)\n\t}\n")
-		fmt.Fprintf(sb, "\tdata, respCT, err := g.client.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", op.Method)
+		fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", caller, op.Method)
 	case "binary":
-		sb.WriteString("\tf, err := openBodyFile(*fileF)\n\tif err != nil {\n\t\treturn apiFail(err)\n\t}\n\tif f != os.Stdin {\n\t\tdefer f.Close()\n\t}\n")
-		fmt.Fprintf(sb, "\tdata, respCT, err := g.client.DoRaw(g.ctx, %q, path, q, hdr, %q, f)\n", op.Method, op.BodyContentType)
+		if op.BodyRequired {
+			sb.WriteString("\tf, err := openBodyFile(*fileF)\n\tif err != nil {\n\t\treturn apiFail(err)\n\t}\n\tif f != os.Stdin {\n\t\tdefer f.Close()\n\t}\n")
+			fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, %q, f)\n", caller, op.Method, op.BodyContentType)
+			break
+		}
+		// rdr stays a nil interface without --file: a nil *os.File in it
+		// would read as a body.
+		fmt.Fprintf(sb, "\tct := \"\"\n\tvar rdr io.Reader\n\tif *fileF != \"\" {\n\t\tf, err := openBodyFile(*fileF)\n\t\tif err != nil {\n\t\t\treturn apiFail(err)\n\t\t}\n\t\tif f != os.Stdin {\n\t\t\tdefer f.Close()\n\t\t}\n\t\tct, rdr = %q, f\n\t}\n", op.BodyContentType)
+		fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, ct, rdr)\n", caller, op.Method)
 	default:
-		fmt.Fprintf(sb, "\tdata, respCT, err := g.client.DoRaw(g.ctx, %q, path, q, hdr, \"\", nil)\n", op.Method)
+		fmt.Fprintf(sb, "\tdata, respCT, err := %s.DoRaw(g.ctx, %q, path, q, hdr, \"\", nil)\n", caller, op.Method)
 	}
 	sb.WriteString("\tif err != nil {\n\t\treturn apiFail(err)\n\t}\n\treturn printResponse(data, respCT)\n}\n")
 }

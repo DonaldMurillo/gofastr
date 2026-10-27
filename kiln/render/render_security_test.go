@@ -53,11 +53,12 @@ func TestSeedIdentRejectsInjection(t *testing.T) {
 			Rows:   []map[string]any{{"": "a"}},
 		},
 	} {
-		err := ApplySeeds(db, &world.World{Seeds: []*world.Seed{seed}})
-		if err == nil {
-			t.Errorf("%s: seed accepted, want rejection", name)
-		}
+		refusedBeforeSQL(t, name, ApplySeeds(db, seedWorld(seed, "")))
 	}
+	// A hostile declared table is refused the same way: the INSERT
+	// targets the entity's table, not its name.
+	hostile := &world.Seed{Entity: "users", Rows: []map[string]any{{"name": "a"}}}
+	refusedBeforeSQL(t, "hostile entity table", ApplySeeds(db, seedWorld(hostile, "users; DROP TABLE users")))
 	// The table must survive every attempt above.
 	var n int
 	if err := db.QueryRow(`SELECT count(*) FROM users`).Scan(&n); err != nil {
@@ -69,7 +70,7 @@ func TestSeedIdentRejectsInjection(t *testing.T) {
 func TestSeedHappyPathStillInserts(t *testing.T) {
 	db := openSeedDB(t)
 	seed := &world.Seed{Entity: "users", Rows: []map[string]any{{"name": "ada"}}}
-	if err := ApplySeeds(db, &world.World{Seeds: []*world.Seed{seed}}); err != nil {
+	if err := ApplySeeds(db, seedWorld(seed, "")); err != nil {
 		t.Fatalf("valid seed rejected: %v", err)
 	}
 	var got string
@@ -78,6 +79,30 @@ func TestSeedHappyPathStillInserts(t *testing.T) {
 	}
 	if got != "ada" {
 		t.Errorf("name = %q, want ada", got)
+	}
+}
+
+// refusedBeforeSQL fails unless err is the identifier refusal. A driver
+// error ("insert …: no such table") also rejects the seed, but only
+// because the quoted name happened not to exist: the statement still
+// reached the database, which is the sink the validation guards.
+func refusedBeforeSQL(t *testing.T, name string, err error) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("%s: seed accepted, want rejection", name)
+		return
+	}
+	if strings.Contains(err.Error(), "insert ") {
+		t.Errorf("%s: seed reached the database before refusal: %v", name, err)
+	}
+}
+
+// seedWorld declares the seed's entity (with table, when set) so the
+// identifier checks, not the missing-entity refusal, decide each case.
+func seedWorld(seed *world.Seed, table string) *world.World {
+	return &world.World{
+		Entities: map[string]*world.Entity{seed.Entity: {Name: seed.Entity, Table: table}},
+		Seeds:    []*world.Seed{seed},
 	}
 }
 
@@ -382,5 +407,15 @@ func TestRouteHostileAction500sNotPanics(t *testing.T) {
 	app.Router().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/ok", nil))
 	if res.Code != http.StatusOK {
 		t.Errorf("healthy route: status = %d, want 200", res.Code)
+	}
+}
+
+// An integer prop past 2^53 reaches the renderer as a json.Number (the
+// journal keeps it exact); propInt reads the integer it spells, as it
+// reads a float64, instead of dropping it to 0.
+func TestPropIntReadsBigIntegers(t *testing.T) {
+	props := map[string]any{"level": json.Number("9007199254740993")}
+	if got := propInt(props, "level"); int64(got) != 9007199254740993 {
+		t.Errorf("propInt = %d, want 9007199254740993", got)
 	}
 }

@@ -124,7 +124,10 @@ section back. See [App specs](app-spec.md#custom-endpoints-endpoints).
 
 - A `name` that an entity resource already uses: `list`, `get`, `create`,
   `update`, `patch`, `remove`, the batch and watch calls, a state move's key,
-  or a CLI verb. Generation refuses it and names the clash.
+  or a CLI verb. Generation refuses it and names the clash. The same goes
+  for a name the Go client already holds as a field: `token`, `h_t_t_p` or
+  `base_u_r_l` would declare a `Client.Token`, `Client.HTTP` or
+  `Client.BaseURL` method beside the field of that name.
 - Two names that differ only before a digit, such as `cache_bust1` and
   `cache_bust_1`. Both become `CacheBust1`, so generation refuses the
   pair, across entities too: the Go client's methods share one namespace.

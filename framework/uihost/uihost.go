@@ -155,8 +155,9 @@ type UIHost struct {
 	// are static after wire time, so they are marshaled once and reused on every
 	// page render instead of rebuilt per request. The *MarshalCount atomics let
 	// tests (and a host observing itself) confirm the per-request marshal is gone.
-	routeScriptOnce     sync.Once
-	routeScript         string
+	// The route script carries loading content, so it is built once per
+	// catalog locale (localecache.go).
+	routeScripts        perLocale[string]
 	routeMarshalCount   atomic.Int64
 	catalogCacheOnce    sync.Once
 	catalogCache        string
@@ -176,11 +177,10 @@ type UIHost struct {
 	appCSSLayoutsGen        uint64
 	appCSSTransitionLayouts map[*app.Layout]bool
 	appCSSLayoutsWarn       sync.Once
-	// External data manifest (catalog + module hashes + action hashes),
-	// composed + fingerprinted once after Mount. See manifestjs.go.
-	manifestOnce sync.Once
-	manifestBody string
-	manifestHash string
+	// External data manifest (catalog + module hashes + action hashes +
+	// route graph), composed + fingerprinted once per catalog locale
+	// after Mount. See manifestjs.go.
+	manifests perLocale[manifestEntry]
 
 	// standalone is a private router lazily mounted on first ServeHTTP call,
 	// so the host can satisfy http.Handler when it is used outside a
@@ -560,7 +560,9 @@ func WithDescription(desc string) Option {
 // (e.g. "noindex" for a staging deploy). Per-screen directives via
 // [ScreenRobots] or [SEO].Robots are emitted in addition to, and
 // before, this global tag; crawlers apply the most restrictive
-// combination.
+// combination. battery/sitesearch ignores this tag: a staging noindex
+// keeps every page in the site's own search, and only a screen's own
+// directive drops it.
 func WithRobotsMeta(directives string) Option {
 	return func(ds *UIHost) {
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="robots" content="%s">`, stdhtml.EscapeString(directives)))
@@ -1197,19 +1199,25 @@ func pathToActionID(path string) string {
 	return name
 }
 
-// buildRouteScript returns the __gofastr_routes script body, computed ONCE and
-// cached. The route table is static after wire time (screens register at
-// App.Mount, before any page render), so rebuilding + re-marshaling it on every
-// request was pure waste. CSS chunk names are auto-derived from the screen path.
-func (ds *UIHost) buildRouteScript() string {
-	ds.routeScriptOnce.Do(func() {
-		ds.routeScript = ds.buildRouteScriptUncached()
-	})
-	return ds.routeScript
+// buildRouteScript returns the __gofastr_routes script body for the
+// reader's locale, computed ONCE per catalog locale and cached. The
+// route table is static after wire time (screens register at App.Mount,
+// before any page render), so rebuilding + re-marshaling it on every
+// request was pure waste; only the loading content in it differs by
+// locale. CSS chunk names are auto-derived from the screen path.
+func (ds *UIHost) buildRouteScript(ctx context.Context) string {
+	return ds.routeScriptFor(ds.renderLocale(ctx))
 }
 
-// buildRouteScriptUncached is the per-call marshal; buildRouteScript caches it.
-func (ds *UIHost) buildRouteScriptUncached() string {
+func (ds *UIHost) routeScriptFor(lr localeRender) string {
+	return ds.routeScripts.get(lr.key, func() string {
+		return ds.buildRouteScriptUncached(lr.ctx)
+	})
+}
+
+// buildRouteScriptUncached is the per-call marshal; buildRouteScript
+// caches it. ctx is the locale the loading content renders in.
+func (ds *UIHost) buildRouteScriptUncached(ctx context.Context) string {
 	routes := ds.App.Routes()
 	if len(routes) == 0 {
 		return ""
@@ -1249,7 +1257,7 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 		// the route's swap-slot loading
 		// content rides the manifest.
 		if r.Loading != nil {
-			infos[i].Loading = r.Loading.HTML
+			infos[i].Loading = r.Loading.HTML(ctx)
 			infos[i].LoadingAfter = r.Loading.After
 			infos[i].LoadingMin = r.Loading.Min
 		}
@@ -1625,7 +1633,31 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		writeBlock(w, r, res)
 		return
 	}
-	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, pageStatus(res, recorded()))
+	ds.finishPageDocument(w, r, withRenderAlt(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
+}
+
+type renderAltKey struct{}
+
+// withRenderAlt marks ctx when res is a RenderAlt answer, for the head
+// built after it (screenOwns).
+func withRenderAlt(ctx context.Context, res app.RenderResult) context.Context {
+	if res.Kind != app.DecisionRenderAlt {
+		return ctx
+	}
+	return context.WithValue(ctx, renderAltKey{}, true)
+}
+
+// screenOwns reports whether the screen's registration-time metadata
+// (Description, Article, its registration instance's HeadHTML)
+// describes comp: comp is nil or a copy of the screen's component, and
+// no RenderAlt replaced it. An alt, an auth-failure screen or a
+// not-found body read only their own: the guarded screen's title,
+// description and HeadHTML rode them to the visitor it refused.
+func screenOwns(ctx context.Context, screen *app.Screen, comp component.Component) bool {
+	if alt, _ := ctx.Value(renderAltKey{}).(bool); alt {
+		return false
+	}
+	return comp == nil || reflect.TypeOf(comp) == reflect.TypeOf(screen.Component)
 }
 
 // pageStatus is the status of a rendered page, decided once by the one
@@ -1870,16 +1902,7 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 	if !ok {
 		return ""
 	}
-	resolved := resolveScreenSEOFor(ctx, screen, comp)
-	if len(resolved.Hreflangs) == 0 {
-		resolved.Hreflangs = ds.localeAlternates(pagePath)
-	}
-	resolved.Canonical = ds.localizeURL(ctx, resolved.Canonical)
-	if resolved.OG != nil && resolved.OG.URL != "" {
-		og := *resolved.OG
-		og.URL = ds.localizeURL(ctx, og.URL)
-		resolved.OG = &og
-	}
+	resolved := ds.localizeSEO(ctx, pagePath, resolveScreenSEOFor(ctx, screen, comp))
 
 	var parts []string
 	if resolved.Description != "" {
@@ -1923,7 +1946,13 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 	}
 	// Catch-all per-screen HTML escape hatch. Caller-supplied. Scrub
 	// inline <script> tags before injection (XSS defense-in-depth).
-	if seoScreen, ok := screen.Component.(SEOScreen); ok {
+	// The rendered component's: the registration instance knows no
+	// params, and under RenderAlt it is the screen the policy refused.
+	src := component.Component(screen.Component)
+	if comp != nil {
+		src = comp
+	}
+	if seoScreen, ok := src.(SEOScreen); ok {
 		if h := seoScreen.HeadHTML(); h != "" {
 			parts = append(parts, stripInlineScripts(h))
 		}
@@ -1976,7 +2005,8 @@ func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component
 			desc = d.ScreenDescription(ctx)
 		}
 	}
-	if desc == "" {
+	owns := screenOwns(ctx, screen, comp)
+	if desc == "" && owns {
 		desc = screen.Description
 	}
 	robots := bundle.Robots
@@ -2011,7 +2041,7 @@ func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component
 	// becomes an article with no article-specific data. Only gaps are filled,
 	// explicit ScreenSchema / ScreenSEO values win.
 	og := bundle.OG
-	article := screen.Article
+	article := screen.Article && owns
 	var meta app.ArticleMeta
 	if !article {
 		if sa, ok := src.(app.ScreenArticle); ok {
@@ -2211,7 +2241,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// block (inert data, CSP-safe) because exported pages must be
 	// self-contained files.
 	if !bundle {
-		if routes := routesJSONScript(ds); routes != "" {
+		if routes := routesJSONScript(ctx, ds); routes != "" {
 			headClose.WriteString(routes)
 			headClose.WriteByte('\n')
 		}
@@ -2320,7 +2350,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 		// so the kernel finds them set at boot. Every rail script carries
 		// defer, so none of them blocks the parser or first paint, and
 		// they all run after the document is parsed, still in order.
-		_, mHash := ds.manifestJS()
+		_, mHash := ds.manifestJS(ctx)
 		scripts.WriteString(`<script defer src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
 		scripts.WriteByte('\n')
 		runtimeSrc += "?v=" + widget.RuntimeHash()
@@ -2665,7 +2695,7 @@ func (ds *UIHost) serveNotFoundPartial(w http.ResponseWriter, r *http.Request, p
 		return false
 	}
 	ctx := store.WithValues(app.WithRequest(r.Context(), r))
-	res, err := ds.App.RenderNotFoundFromResult(ctx, path, r.Header.Get("X-Gofastr-From"), ds.notFoundBodyComponent(path))
+	res, err := ds.App.RenderNotFoundFromResult(ctx, path, fromPath(r), ds.notFoundBodyComponent(path))
 	if err != nil {
 		slog.Warn("uihost: not-found partial render failed; serving document 404", "err", err)
 		return false
@@ -2831,7 +2861,7 @@ func (ds *UIHost) serveErrorPartial(w http.ResponseWriter, r *http.Request, path
 		return false
 	}
 	ctx := store.WithValues(app.WithRequest(r.Context(), r))
-	res, err := ds.App.RenderErrorFromResult(ctx, path, r.Header.Get("X-Gofastr-From"), ds.errorBodyComponent())
+	res, err := ds.App.RenderErrorFromResult(ctx, path, fromPath(r), ds.errorBodyComponent())
 	if err != nil {
 		slog.Warn("uihost: error partial render failed; serving document 500", "err", err)
 		return false
@@ -2966,9 +2996,11 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// via X-Gofastr-Location so it pushState's and loads the partial
 	// there (same mechanism as a policy redirect). The client manifest
 	// usually rewrites before the request; this covers first load and a
-	// stale manifest so a redirect never 404s.
+	// stale manifest so a redirect never 404s. The target is percent-
+	// encoded like http.Redirect's Location: fetch reads header bytes as
+	// Latin-1.
 	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
-		w.Header().Set("X-Gofastr-Location", target)
+		w.Header().Set("X-Gofastr-Location", escapeNonASCII(target))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -2998,14 +3030,14 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// the ordinary <main> swap.
 	var overlay *app.Intercept
 	if r.Header.Get("X-Gofastr-Intercept") == "1" {
-		overlay, _ = ds.App.Router.InterceptFor(path, r.Header.Get("X-Gofastr-From"))
+		overlay, _ = ds.App.Router.InterceptFor(path, fromPath(r))
 	}
 
 	var res app.RenderResult
 	var err error
 	if overlay != nil {
-		res, err = ds.App.RenderOverlayResult(ctx, path, r.Header.Get("X-Gofastr-From"), overlay.As)
-	} else if from := r.Header.Get("X-Gofastr-From"); from != "" {
+		res, err = ds.App.RenderOverlayResult(ctx, path, fromPath(r), overlay.As)
+	} else if from := fromPath(r); from != "" {
 		// Subtree partial: the client names the route it is navigating
 		// FROM; the server renders only the layout layers the two routes
 		// do NOT share and echoes the swap boundary via X-Gofastr-Swap.
@@ -3060,7 +3092,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// redirects don't propagate cookies, javascript:/data: schemes
 		// are blocked at the navigation layer).
 		if handler.IsSafeRelativePath(res.URL) {
-			w.Header().Set("X-Gofastr-Location", res.URL)
+			w.Header().Set("X-Gofastr-Location", escapeNonASCII(res.URL))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -3082,6 +3114,27 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 // success path passes pageStatus (0 is the implicit 200);
 // serveNotFoundPartial passes http.StatusNotFound so a missed
 // navigation answers partial-shaped with the error status.
+// partialHead is the head carrier a partial page body ends with: the
+// page-owned metadata, language, direction and skip-link label the
+// runtime moves into the kept document. Attribute escaping keeps
+// authored head HTML inert until the runtime selects safe meta/link
+// elements; a script is never replayed on navigation.
+func (ds *UIHost) partialHead(ctx context.Context, path string, comp component.Component) render.HTML {
+	lang := ds.App.LangFor(ctx, path)
+	if c, ok := comp.(app.ScreenLanger); ok && c.ScreenLang() != "" {
+		lang = c.ScreenLang()
+	}
+	head := map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(ctx, path, comp)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}
+	// The runtime's own words for the destination's reader: a soft nav
+	// keeps the document, so the #gofastr-strings block in <head> would
+	// otherwise keep speaking the first page's language. Absent means
+	// English, which clears a previous page's table.
+	if strs := runtime.StringsJSON(ctx); strs != nil {
+		head["data-cui-strings"] = string(strs)
+	}
+	return render.Tag("template", head)
+}
+
 func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
 	// Deploy skew: a runtime that reads another markup generation must
 	// not receive this body (markupskew.go).
@@ -3102,7 +3155,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// and a reader decodes the UTF-8 bytes as Latin-1 ("Docs â GoFastr").
 	// The runtime must decodeURIComponent it.
 	title := res.Title
-	if title == "" {
+	if title == "" && res.Kind != app.DecisionRenderAlt {
 		if scr, _, ok := ds.App.Router.Resolve(path); ok {
 			title = scr.Title
 		}
@@ -3138,7 +3191,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if r.Header.Get("X-Gofastr-Fills") != "2" && len(res.Fills) > 0 {
 			swap = "!reload"
 		}
-		w.Header().Set("X-Gofastr-Swap", swap)
+		w.Header().Set("X-Gofastr-Swap", escapeLayerKey(swap))
 	}
 	// The page answer's keyed-transition pick
 	// the runtime adds it to the view-transition types beside the
@@ -3155,22 +3208,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// return; see that comment for the threat model — every partial-shaped
 	// body is per-user rendered content, the not-found partial included).
 	w.Header().Set("Cache-Control", "no-store")
-	// Carry page-owned metadata inside the cached primary payload. Attribute
-	// escaping keeps authored head HTML inert until the runtime selects safe
-	// meta/link elements; a script is never replayed on navigation.
-	lang := ds.App.LangFor(ctx, path)
-	if c, ok := res.Component.(app.ScreenLanger); ok && c.ScreenLang() != "" {
-		lang = c.ScreenLang()
-	}
-	head := map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(ctx, path, res.Component)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}
-	// The runtime's own words for the destination's reader: a soft nav
-	// keeps the document, so the #gofastr-strings block in <head> would
-	// otherwise keep speaking the first page's language. Absent means
-	// English, which clears a previous page's table.
-	if strs := runtime.StringsJSON(ctx); strs != nil {
-		head["data-cui-strings"] = string(strs)
-	}
-	res.HTML = render.Join(res.HTML, render.Tag("template", head))
+	res.HTML = render.Join(res.HTML, ds.partialHead(withRenderAlt(ctx, res), path, res.Component))
 	// Fills envelope a fills-capable client that
 	// kept layout layers with tree-layout outlets gets the partial as an
 	// envelope — the seed island (scanned over the primary payload AND
@@ -3595,18 +3633,37 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// a page load would not: it names a page the policy then judges. Any
 	// other path leaves the params empty, and a policy that reads one
 	// refuses. A redirect decision is a refusal here, since an RPC cannot
-	// follow it.
+	// follow it. The whole policy phase runs, region guards included: an
+	// outlet guard that sends the visitor to /login keeps them off the
+	// page as surely as the screen chain does. With no page of this screen
+	// named, PatternPolicy decides, and a dynamic screen carrying a region
+	// guard refuses, since the guard has no URL to judge.
 	ds.mu.RLock()
 	screen := ds.actionScreens[componentID]
 	ds.mu.RUnlock()
 	if screen != nil {
 		ctx := app.WithRequest(r.Context(), r)
+		var d app.Decision
+		judged := false
 		if body.Page != "" {
-			if m, ok := ds.App.Router.MatchFor(app.RoutePath(body.Page)); ok && m.ScreenID() == screen.Path {
-				ctx = app.WithMatch(ctx, m)
+			page := app.RoutePath(body.Page)
+			if m, ok := ds.App.Router.MatchFor(page); ok && m.ScreenID() == screen.Path {
+				var err error
+				d, _, err = ds.App.PagePolicy(app.WithMatch(ctx, m), page)
+				if err != nil {
+					// The page answers an error, never itself: refuse.
+					d = app.Decision{Kind: app.DecisionBlock, Status: http.StatusForbidden}
+					if errors.Is(err, app.ErrNotFound) {
+						d.Status = http.StatusNotFound
+					}
+				}
+				judged = true
 			}
 		}
-		if d := app.ResolvePolicy(ctx, screen); d.Kind != app.DecisionAllow {
+		if !judged {
+			d = ds.App.PatternPolicy(ctx, screen)
+		}
+		if d.Kind != app.DecisionAllow {
 			status := http.StatusForbidden
 			if d.Kind == app.DecisionBlock && d.Status >= 400 && d.Status < 600 {
 				status = d.Status
@@ -4008,18 +4065,24 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			}
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
-			// A screen whose policy chain doesn't Allow this request gets
+			// A screen whose policy phase doesn't Allow this request gets
 			// the metadata-free withheld doc: the pattern doc's title,
 			// description, SEO front matter, AND content are all
 			// component-supplied, which the policy protects on the page
-			// render too. No front matter on the withheld path.
+			// render too. PatternPolicy runs the region guards as well; a
+			// dynamic pattern carrying one is withheld, since a guard
+			// decides per URL and this doc names none. No front matter on
+			// the withheld path.
 			var md string
-			if app.ResolvePolicy(app.WithRequest(req.Context(), req), sc).Kind != app.DecisionAllow {
+			ctx := app.WithRequest(req.Context(), req)
+			if coreApp.PatternPolicy(ctx, sc).Kind != app.DecisionAllow {
 				md = app.ScreenLLMMDWithheld(sc)
 			} else {
-				seo := resolveScreenSEO(req.Context(), sc)
+				// Under /es/ the canonical, hreflangs and links name the
+				// Spanish pages, as the per-URL doc's do.
+				seo := ds.localizeSEO(ctx, base, resolveScreenSEO(ctx, sc))
 				fm := screenSEOFrontMatter(sc.Title, seo)
-				md = app.ScreenLLMMDWithMeta(sc, fm)
+				md = app.ScreenLLMMDWithMeta(ctx, sc, fm)
 			}
 			w.Write([]byte(md))
 		})
@@ -4358,7 +4421,7 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 		if title == "" {
 			title = scr.Title
 		}
-		seo := resolveScreenSEOFor(ctx, scr, res.Component)
+		seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md
 		}
@@ -4460,7 +4523,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// request, so one is made for the path, and the route match is
 	// installed the way handlePage does it.
 	if app.RequestFromContext(ctx) == nil {
-		if req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil); err == nil {
+		if req, err := pageRequest(ctx, path); err == nil {
 			ctx = app.WithRequest(ctx, req)
 		}
 	}
@@ -4503,7 +4566,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	page := ds.injectChromeModeFor(ctx, string(res.HTML), path, "", "", false, res.Component)
+	page := ds.injectChromeModeFor(withRenderAlt(ctx, res), string(res.HTML), path, "", "", false, res.Component)
 	return injectHeadData(ctx, page), res.FillFailures, nil
 }
 
@@ -4518,7 +4581,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 		return "", false
 	}
 	if app.RequestFromContext(ctx) == nil {
-		if req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil); err == nil {
+		if req, err := pageRequest(ctx, path); err == nil {
 			ctx = app.WithRequest(ctx, req)
 		}
 	}
@@ -4842,6 +4905,30 @@ func signalsJSONScript(seed map[string]any) string {
 		`</script>`
 }
 
+// signalPageNamesScript names the page-scoped keys of a full page's seed
+// in an inert #gofastr-signals-page block (a sorted JSON array). The
+// flat seed mixes scopes; a partial splits them in its own island. The
+// runtime reads this list to restore just those values, as a partial's
+// island does, when Back replays the first page of a visit or a
+// navigation swaps in a fetched document. Returns "" when the seed
+// holds none.
+func signalPageNamesScript(seed map[string]any) string {
+	var names []string
+	for _, k := range slices.Sorted(maps.Keys(seed)) {
+		if store.ScopeOf(k) != store.ScopeGlobal {
+			names = append(names, k)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	buf, err := json.Marshal(names)
+	if err != nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-signals-page">` + escapeJSONForScript(buf) + `</script>`
+}
+
 // runtimeStringsScript is the #gofastr-strings block for ctx's locale, or
 // "" when every runtime string reads as its English.
 func runtimeStringsScript(ctx context.Context) string {
@@ -4860,12 +4947,18 @@ func runtimeStringsScript(ctx context.Context) string {
 //     plus all app-global slices). ctx must carry the request value bag
 //     (store.WithValues), so producer-seeded per-request values win over
 //     declared defaults.
+//   - #gofastr-signals-page, the seed's page-scoped keys
+//     (signalPageNamesScript).
 //   - #gofastr-strings, the runtime strings translated for ctx's locale
 //     (runtime.StringsJSON), which the kernel's say() reads.
 //
 // Each block is left out when it has nothing to carry.
 func injectHeadData(ctx context.Context, page string) string {
-	block := signalsJSONScript(store.SeedFor(ctx, page))
+	seed := store.SeedFor(ctx, page)
+	block := signalsJSONScript(seed)
+	if names := signalPageNamesScript(seed); names != "" {
+		block += "\n" + names
+	}
 	if strs := runtimeStringsScript(ctx); strs != "" {
 		if block != "" {
 			block += "\n"
@@ -4974,9 +5067,10 @@ func runtimeModulePreloadLinks(pageHTML string) string {
 
 // routesJSONScript embeds the route graph as inert JSON. Same model
 // as catalogJSONScript. Returns "" when no routes are registered
-// (e.g. a host used standalone in tests without a real app).
-func routesJSONScript(ds *UIHost) string {
-	body := strings.TrimSpace(ds.buildRouteScript())
+// (e.g. a host used standalone in tests without a real app). The
+// loading content in it speaks the locale on ctx.
+func routesJSONScript(ctx context.Context, ds *UIHost) string {
+	body := strings.TrimSpace(ds.buildRouteScript(ctx))
 	if body == "" {
 		return ""
 	}

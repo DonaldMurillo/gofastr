@@ -473,8 +473,10 @@ func TestCompositeForeignKeyKeptColumn(t *testing.T) {
 		if _, err := db.Exec(`INSERT INTO orders (store, no, owner_id) VALUES ('', '', 'alice')`); err != nil {
 			t.Fatal(err)
 		}
-		if rec := serveKeyedAs(t, app, "bob", "POST", "/lines", map[string]any{"order_store": "", "line_id": "l2", "order_no": ""}); rec.Code != http.StatusNotFound {
-			t.Errorf("bob pointing a line at alice's order ('', '') = %d %s; want 404", rec.Code, rec.Body)
+		// order_store is also part of the line's own key, and a blank key
+		// part is refused (400) before the reference is looked up (404).
+		if rec := serveKeyedAs(t, app, "bob", "POST", "/lines", map[string]any{"order_store": "", "line_id": "l2", "order_no": ""}); rec.Code != http.StatusNotFound && rec.Code != http.StatusBadRequest {
+			t.Errorf("bob pointing a line at alice's order ('', '') = %d %s; want it refused", rec.Code, rec.Body)
 		}
 
 		ctx := handler.SetUser(context.Background(), relUser("bob"))

@@ -253,6 +253,17 @@ func relationType(value string) (framework.RelationType, error) {
 // because seeding requires migrations to have run first, and Kiln owns
 // the migration step: Apply registers the entities, the caller migrates,
 // the caller seeds.
+//
+// A seed names its entity, and its rows go into that entity's table
+// (world.Entity.TableName: the declared Table, else the framework's
+// default), so w must carry the entities its seeds name. The INSERT used
+// to target the entity name itself, which is a different table for
+// {name:"post", table:"posts"} and for every camelCase name.
+//
+// Each seed's rows go in one transaction: a seed the database refuses
+// part way lands none of its rows, so the caller can report the refusal
+// without rebuilding the database (kiln/live used to drop every table to
+// clear a half-applied seed, taking the CRUD rows with it).
 func ApplySeeds(db *sql.DB, w *world.World) error {
 	if db == nil || len(w.Seeds) == 0 {
 		return nil
@@ -261,20 +272,36 @@ func ApplySeeds(db *sql.DB, w *world.World) error {
 		if s == nil {
 			continue
 		}
-		if err := insertSeed(db, s); err != nil {
+		if err := applySeed(db, w, s); err != nil {
 			return fmt.Errorf("seed %d (%s): %w", i, s.Entity, err)
 		}
 	}
 	return nil
 }
 
-func insertSeed(db *sql.DB, s *world.Seed) error {
+func applySeed(db *sql.DB, w *world.World, s *world.Seed) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := insertSeed(tx, w, s); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 	if s.Entity == "" {
 		return fmt.Errorf("empty entity")
 	}
-	table, err := query.SafeIdent(s.Entity)
+	ent, ok := w.Entities[s.Entity]
+	if !ok || ent == nil {
+		return fmt.Errorf("seed entity %q is not in the world", s.Entity)
+	}
+	table, err := query.SafeIdent(ent.TableName())
 	if err != nil {
-		return fmt.Errorf("seed entity: %w", err)
+		return fmt.Errorf("seed entity table: %w", err)
 	}
 	for _, row := range s.Rows {
 		if len(row) == 0 {
@@ -295,7 +322,7 @@ func insertSeed(db *sql.DB, s *world.Seed) error {
 			args[i] = row[c]
 		}
 		q := buildInsert(table, cols, placeholders)
-		if _, err := db.Exec(q, args...); err != nil {
+		if _, err := tx.Exec(q, args...); err != nil {
 			return fmt.Errorf("insert %v: %w", row, err)
 		}
 	}
@@ -312,13 +339,13 @@ func insertSeed(db *sql.DB, s *world.Seed) error {
 // identifier. core/query is the one correct implementation; there is no
 // second copy here any more.
 func buildInsert(table string, cols, placeholders []string) string {
-	return "INSERT INTO " + query.QuoteIdent(table) + " (" + joinIdents(cols) + ") VALUES (" + join(placeholders) + ")"
+	return "INSERT INTO " + query.QuoteFolded(table) + " (" + joinIdents(cols) + ") VALUES (" + join(placeholders) + ")"
 }
 
 func joinIdents(cols []string) string {
 	out := make([]string, len(cols))
 	for i, c := range cols {
-		out[i] = query.QuoteIdent(c)
+		out[i] = query.QuoteFolded(c)
 	}
 	return strings.Join(out, ", ")
 }

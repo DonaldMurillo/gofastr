@@ -132,8 +132,34 @@ results, err := idx.Search(ctx, search.Query{Text: "framework", Limit: 10})
 | `Language`      | `string`           | tsvector config. Defaults to `english`; validated against `^[a-z_]+$`. |
 | `WeightedFields`| `map[string]byte` | Maps `Document.Fields` keys (string values) to a weight `'A'`..`'D'`. |
 
-`EnsureSchema` is idempotent: it creates the table and a GIN index on the
-tsvector if they don't already exist, so it's safe to call on every startup.
+`EnsureSchema` is idempotent: it creates the table and GIN indexes on the
+stemmed `tsv` column and the unstemmed `tsv_prefix` column (see Prefix
+matching) if they don't already exist, so it's safe to call on every startup.
+The indexes are named `<table>_tsv_idx` and `<table>_tsv_prefix_idx`. When
+`<table>_tsv_prefix_idx` would pass Postgres's 63-byte limit, the table part
+is cut short and an 8-hex-digit hash of the full table name goes before the
+suffix, so the two indexes keep distinct names. `<table>_tsv_idx` keeps the
+name Postgres's own cut at 63 bytes gives it, the name earlier releases
+created, unless that cut is the table's own name (a 63-byte table name); then
+it takes the hashed form too.
+A trigger, `<table>_tsv_prefix`, computes `tsv_prefix` on every insert and on
+every update of `text` or `fields`, so a writer that never names the column
+keeps it current too: a replica still on the previous release during a rolling
+upgrade inserts rows that prefix-match, and its rewrites never leave the old
+text's prefixes behind. `EnsureSchema` installs the trigger and its function
+(also named `<table>_tsv_prefix`), and replaces the trigger when
+`WeightedFields` changes; replicas booting together take turns on an advisory
+lock. The role needs to create functions and triggers, as it already creates
+the table.
+
+A table created before `tsv_prefix` existed gains the column and has it filled
+from the stored rows on the first `EnsureSchema`. The column is added in a
+statement of its own and the rows are filled in committed batches of 1000, so
+other replicas keep searching and indexing during the backfill; a row not yet
+filled still matches through `tsv` and only misses prefixes past its stem. A
+replica that starts while another is filling helps finish the rows left. Once
+every row is filled the column carries a comment, and later boots skip the
+backfill after a catalog read and the trigger check.
 
 ### Weighted fields
 
@@ -187,8 +213,20 @@ never matches. The Postgres backend encodes this as JSONB containment
 
 The query builder joins terms with AND and suffixes the **last** term with
 `:*`, so partial input matches as the user types, useful for command palettes
-and autocomplete. A query for `"pagin"` matches documents containing
-`"pagination"`.
+and autocomplete. Every prefix of a word matches it: `"pag"`, `"pagina"` and
+`"paginatio"` all find `"pagination"`.
+
+The English config stems both the document and the query, and a stemmed
+prefix is no prefix of the stemmed word (`"pagina"` stems to `"pagina"`, the
+word to `"pagin"`), so the stemmed column alone loses every prefix past the
+stem. The last term is also matched against `tsv_prefix`, the same text under
+the `simple` config with no stemming, and the other terms must still match
+the stemmed column.
+
+Query text splits into terms at any rune that is not a letter or digit, the
+way the tokenizer splits documents: `"won't"` is `won & t:*`, and
+`"load-balance"` is two terms. A query made only of stopwords (`"don't"` is
+`don` and `t`) matches nothing.
 
 ### What it deliberately doesn't do
 
@@ -248,25 +286,44 @@ so the default `go test ./...` stays green.
 
 The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, text, tokenize='porter unicode61')`. Only `Document.Text` is tokenised; structured fields are stored (UNINDEXED) for `FieldEquals` filtering via `json_extract`.
 
+Beside it `EnsureSchema` keeps `<table>_prefix`, a contentless FTS5 table over
+the same text with the `unicode61` tokenizer and no stemming. The porter
+tokenizer stems a prefix query too (`"pagina"*` finds nothing, since the index
+holds `pagin`), so `Search` also runs the last term's prefix scan, `"pagina"*`,
+against the unstemmed table, with the other terms still matched stemmed in the
+main one, and a row matches when either does. Every prefix of a word finds it,
+however many indexed words share the prefix. A table created before the
+companion existed has it filled from the stored rows on the first
+`EnsureSchema`, which also drops the `<table>_prefix_vocab` view earlier
+releases created.
+
+Query text splits into terms at any rune that is not a letter or digit, the
+way `unicode61` splits documents, so `"won't"` matches `won't`.
+
 ### Ranking
 
 Results are ranked by BM25. The SQLite FTS5 `bm25()` function returns negative
 values (more negative = better match), so the backend exposes
 `Score = -bm25`; callers sort descending consistently with the other backends.
+A row both the stemmed and the unstemmed prefix leg match scores the sum of
+the two, as the Postgres backend sums `ts_rank` over `tsv` and `tsv_prefix`.
 The tiebreak is `id ASC`.
 
 ### Scoping with `FieldEquals`
 
 `FieldEquals` uses `json_extract(fields, '$."key"') = ?`: the key is validated
 against `^[A-Za-z0-9_]+$` before the JSON path is interpolated, and the value
-is parameterised. String-only matching is enforced naturally by SQLite's type
-system: a JSON number and a TEXT parameter are different storage classes and
-never compare equal.
+is parameterised. A `json_type(fields, '$."key"') = 'text'` check beside it
+keeps matching string-only: `json_extract` returns an array or object as its
+JSON text, so without it a stored `tenant: ["acme"]` would equal the filter
+value `["acme"]`.
 
 ### Indexing
 
 FTS5 has no upsert, so `Index` is `DELETE` by id + `INSERT` in a single
 transaction: re-indexing the same id replaces in place with no duplicate rows.
+The prefix companion row shares the main row's rowid and is replaced and
+deleted in the same transaction.
 
 ## Choosing a backend
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -78,11 +79,17 @@ func Select(cfg SelectConfig) render.HTML {
 	}
 	// The last Selected option wins, which is the browser's own rule
 	// when more than one carries the attribute.
-	selected := ""
+	// With nothing flagged and no placeholder the first option is the
+	// browser's default; naming it keeps a later empty-value option
+	// from matching the empty selection.
+	selected, flagged := "", false
 	for _, opt := range cfg.Options {
 		if opt.Selected {
-			selected = opt.Value
+			selected, flagged = opt.Value, true
 		}
+	}
+	if !flagged && cfg.Placeholder == "" && slices.ContainsFunc(cfg.Options, func(o SelectOption) bool { return o.Value == "" }) {
+		selected = cfg.Options[0].Value
 	}
 	control := func(c headless.FieldControl) render.HTML {
 		opts := make([]headless.Option, 0, len(cfg.Options))

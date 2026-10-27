@@ -160,12 +160,14 @@ func (rc *RedisCache) Clear(ctx context.Context) error {
 			"flushing the database instead would delete every other namespace's keys", rc.cfg.prefix)
 	}
 	want := rc.keyPrefix()
-	keys, err := scanner.Keys(ctx, want+"*")
+	// Escaped, because SCAN reads the pattern as a glob: "a[b]c:*" is a
+	// character class that matches none of the literal "a[b]c:" keys.
+	keys, err := scanner.Keys(ctx, escapeGlob(want)+"*")
 	if err != nil {
 		return fmt.Errorf("cache: Clear scan %q: %w", want, err)
 	}
-	// Filter client-side rather than trusting the glob: a prefix
-	// containing *, ?, or [ would match more than it names.
+	// Filter client-side too, so a scanner that ignores the escapes and
+	// matches more than the prefix names still deletes only owned keys.
 	owned := make([]string, 0, len(keys))
 	for _, k := range keys {
 		if strings.HasPrefix(k, want) {
@@ -176,6 +178,19 @@ func (rc *RedisCache) Clear(ctx context.Context) error {
 		return nil
 	}
 	return rc.client.Del(ctx, owned...)
+}
+
+// escapeGlob backslash-escapes the bytes a Redis glob treats as special.
+func escapeGlob(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\', '*', '?', '[', ']':
+			b.WriteByte('\\')
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // keyPrefix returns the literal string every key of this cache starts
@@ -191,20 +206,23 @@ func (rc *RedisCache) prefixedKey(key string) string {
 	return rc.keyPrefix() + key
 }
 
-// escapeKeySegment doubles ':' inside a prefix so that joining it to a
-// key with a single ':' is injective.
+// escapeKeySegment percent-encodes '%' and ':' inside a prefix, so the
+// escaped prefix holds no ':' and the first ':' of a key is always the
+// join between prefix and key.
 //
-// Plain concatenation is not. WithPrefix("u:alice") and
-// WithPrefix("u:alice:admin") both produce "u:alice:admin:x" — the
-// first from key "admin:x", the second from key "x" — so one tenant
+// Plain concatenation is not injective. WithPrefix("u:alice") and
+// WithPrefix("u:alice:admin") both produce "u:alice:admin:x", the
+// first from key "admin:x", the second from key "x", so one tenant
 // could read, overwrite, or Delete another's entries by choosing a key
-// that spans the boundary. Doubling the separator inside the prefix
-// makes the prefix segment unambiguous, since a single ':' can then
-// only be the join.
+// that spans the boundary. Doubling ':' was not injective either:
+// WithPrefix("u") with key ":alice:x" and WithPrefix("u:alice") with
+// key "x" both gave "u::alice:x", and Clear on "u" deleted the other's
+// entry. '%' is encoded first so an escaped ':' cannot meet a literal
+// "%3A" in another prefix.
 //
-// Keys change shape for a prefix that CONTAINS ':'. A prefix without
-// one is unaffected, which is every prefix that was unambiguous
-// already.
+// Keys change shape for a prefix that contains ':' or '%'. Any other
+// prefix keeps its keys as they were.
 func escapeKeySegment(s string) string {
-	return strings.ReplaceAll(s, ":", "::")
+	s = strings.ReplaceAll(s, "%", "%25")
+	return strings.ReplaceAll(s, ":", "%3A")
 }

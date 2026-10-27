@@ -160,7 +160,7 @@ func TestThemeCSSRejectsDeclarationBreakout(t *testing.T) {
 
 // Property 3: world credentials (App.Auth.JWTSecret, App.Admin.SeedPassword)
 // are masked on every endpoint that emits the world or app config.
-// /kiln/world redacts (redactedWorld); /kiln/status?fields=world|app must
+// /kiln/world redacts (world.Redacted); /kiln/status?fields=world|app must
 // not be a bypass.
 func TestStatusDoesNotLeakWorldSecrets(t *testing.T) {
 	d, cleanup, err := db.EphemeralSQLite("kiln-sec")

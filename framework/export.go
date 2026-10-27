@@ -37,6 +37,10 @@ const (
 // A registered battery that implements static.Contributor (the
 // battery/sitesearch index) sees every page and adds its files.
 //
+// The export carries the Content-Security-Policy the app serves live
+// (AppConfig.SecurityHeaders.ContentSecurityPolicy, or the built-in
+// default when unset) in each page's <meta> and in _headers.
+//
 // This is the native replacement for the wget mirror the Pages deploy
 // used to ship: declaration-driven (no crawling), and it dumps the
 // split modules the crawl baked a "?v=" into and 404'd.
@@ -51,7 +55,10 @@ func (a *App) ExportStatic(ctx context.Context, dir, basePath string) error {
 					contributors = append(contributors, c)
 				}
 			}
-			_, err := (&static.Builder{Host: host, OutDir: dir, BasePath: basePath, Handler: a.router, Contributors: contributors}).Build(ctx)
+			_, err := (&static.Builder{
+				Host: host, OutDir: dir, BasePath: basePath, Handler: a.router, Contributors: contributors,
+				ContentSecurityPolicy: a.Config.SecurityHeaders.ContentSecurityPolicy,
+			}).Build(ctx)
 			return err
 		}
 	}

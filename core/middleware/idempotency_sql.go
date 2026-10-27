@@ -122,8 +122,8 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 		return err
 	}
 	if _, err := s.db.Exec(fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s_expires_idx ON %s (expires_at)",
-		s.table, s.table,
+		"CREATE INDEX IF NOT EXISTS %s (expires_at)",
+		query.IndexOn(s.dialect == "sqlite", s.table+"_expires_idx", s.table),
 	)); err != nil {
 		return fmt.Errorf("idempotency: create expiry index: %w", err)
 	}

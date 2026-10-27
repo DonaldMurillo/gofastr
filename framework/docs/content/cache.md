@@ -127,12 +127,13 @@ func (c adapter) Keys(ctx context.Context, pattern string) ([]string, error) {
 
 ### Prefixes and key shape
 
-`WithPrefix("p")` stores under `p:<key>`. A `:` **inside** the prefix is
-doubled first, so `WithPrefix("u:alice")` stores under `u::alice:<key>`.
-Without that, `WithPrefix("u:alice")` with key `admin:x` and
-`WithPrefix("u:alice:admin")` with key `x` both produced
-`u:alice:admin:x`, and one namespace could read, overwrite, or delete
-another's entries. A prefix containing no `:` is unaffected.
+`WithPrefix("p")` stores under `p:<key>`. A `%` or `:` **inside** the
+prefix is percent-encoded first (`%25`, `%3A`), so `WithPrefix("u:alice")`
+stores under `u%3Aalice:<key>` and the first `:` is always the join.
+Without that, `WithPrefix("u")` with key `:alice:x` and
+`WithPrefix("u:alice")` with key `x` named the same Redis key, and one
+namespace could read, overwrite, delete or `Clear` another's entries. A
+prefix containing no `:` or `%` is unaffected.
 
 `RedisCache` has no background goroutine and no `Close`. Expiry is
 handled by the Redis server's own `maxmemory` policy.
@@ -177,7 +178,12 @@ The middleware is RFC 9111-compliant by default:
   artifact, not a representation, and the key encodes no conditional
   headers — a stored 304 would be replayed to every unconditional GET
   as an empty-body `HIT` (RFC 9111 §4.3.1).
-- `Vary` headers are respected; `Vary: *` disables caching.
+- `Vary` headers are respected, including ones middleware outside the
+  cache set (`WithI18n` adds `Vary: Accept-Language, X-Locale`, so each
+  language gets its own entry); `Vary: *` disables caching.
+- Under `WithLocalePrefixes` the router strips `/es` before middleware
+  runs, so the key carries the URL's locale: `/es/pricing` and
+  `/pricing` are separate entries.
 - Responses larger than `maxBodyBytes` (default 8 MiB) are streamed
   without caching.
 - The `X-Cache: HIT` / `MISS` header is set on every response.

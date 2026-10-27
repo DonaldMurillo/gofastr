@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // maxSetupBodyBytes caps the wizard's urlencoded form bodies. Matches the
@@ -30,6 +32,10 @@ const maxSetupBodyBytes int64 = 1 << 20
 //     switch to the real app handler. Step execution is serialized and
 //     Complete is re-checked on every claim so two racing submissions
 //     can't both run the steps.
+//   - Completion elsewhere: an app path, or /setup without the setup
+//     cookie, re-checks Complete at most once per
+//     completeRecheckInterval and swaps when setup finished on another
+//     replica or by another path.
 func (r *Runner) Handler(swap func(), healthz, readyz http.HandlerFunc) http.Handler {
 	r.mu.Lock()
 	r.swap = swap
@@ -91,6 +97,23 @@ func (r *Runner) serve(w http.ResponseWriter, req *http.Request, healthz, readyz
 	case "/setup":
 		r.handleSetup(w, req)
 	default:
+		// A replica that did not run the wizard learns of completion
+		// here: the operator finished on another replica, and this one
+		// would otherwise answer 503 forever. The swapped-in router
+		// cannot serve this request (it is already inside the setup
+		// handler), so send the client straight back: the retry
+		// reaches the app. 307 keeps the method and body. The path's
+		// leading slashes collapse to one: "//host/x" echoed back is a
+		// scheme-relative Location naming another site.
+		if r.recheckElsewhere(req.Context()) {
+			w.Header().Set("Cache-Control", "no-store")
+			loc := "/" + strings.TrimLeft(req.URL.EscapedPath(), "/\\")
+			if req.URL.RawQuery != "" {
+				loc += "?" + req.URL.RawQuery
+			}
+			http.Redirect(w, req, textsafe.ScrubControlBytes(loc), http.StatusTemporaryRedirect)
+			return
+		}
 		r.write503(w)
 	}
 }
@@ -132,23 +155,30 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 
 // handleSetup processes GET (render) and POST (submit) for the wizard.
 func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
-	// Auth gate: if token is enabled, require the cookie.
+	// Auth gate: if token is enabled, require the cookie. A visitor
+	// without one still learns that setup finished elsewhere (another
+	// replica ran the wizard and this one never issued a cookie): the
+	// same rate-limited re-check the app paths use.
 	if r.tokenEnabled {
 		if !hasSetupCookie(req, r.cookieSecret) {
+			if r.recheckElsewhere(req.Context()) {
+				r.renderCompletionPage(w, req)
+				return
+			}
 			i18n.HTTPError(w, req, http.StatusForbidden, reasonSetupTokenRequired)
 			return
 		}
 	}
 
-	// Cheap re-check: if setup already completed AND not in force
-	// (rescue) mode, show a done page. completeAndSwap also fires the
-	// (idempotent) swap so this branch is self-healing: if completion
-	// was reached without the swap firing, a transient Complete error
-	// on the final POST, or completion via another path, any later
-	// request brings the app up instead of leaving it 503 forever.
-	force := isForceMode()
-	done, err := r.completeAndSwap(req.Context())
-	if err == nil && done && !force {
+	// Cheap re-check: when the wizard is over (see wizardFinished),
+	// show the done page. completeAndSwap also fires the (idempotent)
+	// swap so this branch is self-healing: if completion was reached
+	// without the swap firing, a transient Complete error on the final
+	// POST, or completion via another path, any later request brings
+	// the app up instead of leaving it 503 forever. A wizard still in
+	// progress, force mode's included, keeps rendering its steps: a
+	// swap here would hand the operator's next POST to the real router.
+	if _, finished, err := r.completeAndSwap(req.Context()); err == nil && finished {
 		r.renderCompletionPage(w, req)
 		return
 	}
@@ -235,7 +265,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 		// Complete predicate confirms it (and the swap has fired).
 		// Claiming "your application is ready" while every route still
 		// answers 503 would strand the operator on a lie.
-		done, err := r.completeAndSwap(req.Context())
+		done, _, err := r.completeAndSwap(req.Context())
 		switch {
 		case err != nil:
 			r.renderIncomplete(req.Context(), w, pageCheckFailed.Text(req.Context(), map[string]any{"cause": err.Error()}))
@@ -282,11 +312,17 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 	// proceed — under force too: the operator opted into re-running
 	// steps, not into running them against a state that cannot be read.
 	// A failed setup step is recoverable, a silently re-run one is not.
+	//
+	// Only the FIRST step is skipped on a completed install. A later
+	// step's claim means this process already ran the steps before it,
+	// one of which may be what flipped Complete (AdminStep does), and
+	// the documented [adminStep, HealthStep(app)] wiring must still run
+	// HealthStep.
 	done, err := r.cfg.Complete(ctx)
 	if err != nil {
 		return fmt.Errorf("setup: completion check failed, refusing to run step: %w", err)
 	}
-	if done && !isForceMode() {
+	if done && stepIdx == 0 && !isForceMode() {
 		return nil
 	}
 
@@ -345,13 +381,66 @@ func (r *Runner) write503(w http.ResponseWriter) {
 }
 
 // completeAndSwap re-checks the Complete predicate and fires the swap
-// (idempotent on the framework side) when it reports true. Every path
-// that might observe completion routes through here, so completion
+// (idempotent on the framework side) when the wizard is finished: done
+// is the predicate's answer, finished is whether the swap fired. Every
+// path that might observe completion routes through here, so completion
 // reached on ANY request, not only the final POST, brings the app up.
-func (r *Runner) completeAndSwap(ctx context.Context) (bool, error) {
-	done, err := r.cfg.Complete(ctx)
-	if err == nil && done && r.swap != nil {
+func (r *Runner) completeAndSwap(ctx context.Context) (done, finished bool, err error) {
+	done, err = r.cfg.Complete(ctx)
+	if err != nil || !done || !r.wizardFinished() {
+		return done, false, err
+	}
+	if r.swap != nil {
 		r.swap()
 	}
-	return done, err
+	return true, true, nil
+}
+
+// wizardFinished reports whether, with Complete reporting true, the
+// wizard is over in this process:
+//
+//   - every declared step has run here, or
+//   - no step has run (or is running) here and force mode is off:
+//     setup finished before this boot or on another replica.
+//
+// A wizard that has run some of its steps is not finished just because
+// Complete flipped: AdminStep flips it, and the steps declared after it
+// (HealthStep in the documented wiring) still run. Force mode on a
+// completed install is not finished until its steps have re-run.
+func (r *Runner) wizardFinished() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.currentStep >= len(r.cfg.Steps) {
+		return true
+	}
+	return r.currentStep == 0 && !r.stepInFlight && !isForceMode()
+}
+
+// completeRecheckInterval bounds how often requests without the setup
+// cookie probe Complete. They are the requests a 503 storm is made of
+// (load balancer traffic, clients retrying), so each may not cost a
+// Complete query; one per interval answers "did another replica finish
+// setup?" fast enough for an operator.
+const completeRecheckInterval = time.Second
+
+// recheckElsewhere probes Complete at most once per
+// completeRecheckInterval across all callers and fires the swap when
+// the wizard is finished (see wizardFinished). It reports whether it
+// swapped. A caller inside the interval, or one that loses the race to
+// claim it, skips the probe and reports false.
+func (r *Runner) recheckElsewhere(ctx context.Context) bool {
+	clock := time.Now
+	if r.now != nil {
+		clock = r.now
+	}
+	now := clock().UnixNano()
+	last := r.lastRecheck.Load()
+	if last != 0 && now-last < int64(completeRecheckInterval) {
+		return false
+	}
+	if !r.lastRecheck.CompareAndSwap(last, now) {
+		return false
+	}
+	_, finished, err := r.completeAndSwap(ctx)
+	return err == nil && finished
 }

@@ -99,6 +99,28 @@ func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 	}
 }
 
+// A second Delete of one key still says the object is gone: cleanup
+// callers treat os.ErrNotExist as done, and the scrubbed wrap dropped it.
+func TestLocalStorage_DeleteMissingIsNotExist(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	s := newTestLocalStorage(t, dir)
+	ctx := context.Background()
+	if err := s.Save(ctx, "a/b.bin", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, "a/b.bin"); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Delete(ctx, "a/b.bin")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("second Delete = %v, want os.ErrNotExist", err)
+	}
+	if strings.Contains(err.Error(), dir) {
+		t.Errorf("SECURITY: [storage] error message leaks absolute path %q: %v", dir, err)
+	}
+}
+
 // Pins the absolute-path leak in Delete/Exists errors, found by the
 // 2026-09-04 red-probe round; fixed by routing both through resolveKey
 // and scrubbing every wrap with ScrubPath.

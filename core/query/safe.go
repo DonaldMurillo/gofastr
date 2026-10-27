@@ -46,6 +46,74 @@ func QuoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
+// QuoteFolded quotes a declared identifier the way the schema stores it.
+// AutoMigrate writes its DDL unquoted, so Postgres folds a declared
+// "Widgets" to widgets, and a quoted "Widgets" then names no table. Folding
+// ASCII letters before quoting keeps the quotes (a reserved word such as
+// order still works) and names what the DDL created. SQLite compares
+// identifiers without case, so the folded spelling names the same table
+// there. Each dot-separated part is quoted on its own. The caller validates
+// the identifier first (via SafeIdent), so it is ASCII.
+//
+//	QuoteFolded("Widgets")        → "widgets"
+//	QuoteFolded("app.UserEvents") → "app"."userevents"
+func QuoteFolded(s string) string {
+	parts := strings.Split(s, ".")
+	for i, part := range parts {
+		b := []byte(part)
+		for j, c := range b {
+			if 'A' <= c && c <= 'Z' {
+				b[j] = c + ('a' - 'A')
+			}
+		}
+		parts[i] = QuoteIdent(string(b))
+	}
+	return strings.Join(parts, ".")
+}
+
+// QuoteIndexName quotes the name of an index or trigger built from a
+// table name. Postgres puts an index in its table's schema and refuses a
+// schema-qualified name, so only the part after the last dot is kept,
+// folded the way QuoteFolded folds it.
+//
+//	QuoteIndexName("app.UserEvents_idx") → "userevents_idx"
+func QuoteIndexName(s string) string {
+	if i := strings.LastIndexByte(s, '.'); i >= 0 {
+		s = s[i+1:]
+	}
+	return QuoteFolded(s)
+}
+
+// IndexOn renders the "<index> ON <table>" part of a CREATE INDEX for an
+// index named name on table, both already validated and quoted (or both
+// left bare). The index lives in its table's schema, and the two engines
+// spell that on opposite sides: Postgres refuses a schema on the index
+// name and takes it on the table, SQLite takes it on the index name and
+// refuses it on the indexed table. sqlite picks the SQLite spelling. name
+// is the bare index name, as [QuoteIndexName] returns it; a schema on
+// table moves onto it on SQLite.
+//
+//	IndexOn(false, `"x_idx"`, `"main"."events"`) → "x_idx" ON "main"."events"
+//	IndexOn(true, `"x_idx"`, `"main"."events"`)  → "main"."x_idx" ON "events"
+func IndexOn(sqlite bool, name, table string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 && sqlite {
+		return table[:i] + "." + name + " ON " + table[i+1:]
+	}
+	return name + " ON " + table
+}
+
+// SQLitePragma renders PRAGMA fn(table) for a table already validated and
+// quoted (or left bare). SQLite takes a schema on the pragma, PRAGMA
+// "main".table_info("events"), and refuses one inside the parentheses.
+//
+//	SQLitePragma("table_info", `"main"."events"`) → PRAGMA "main".table_info("events")
+func SQLitePragma(fn, table string) string {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		return "PRAGMA " + table[:i] + "." + fn + "(" + table[i+1:] + ")"
+	}
+	return "PRAGMA " + fn + "(" + table + ")"
+}
+
 // SafeQuote validates and quotes a SQL identifier in one step.
 func SafeQuote(s string) (string, error) {
 	if _, err := SafeIdent(s); err != nil {

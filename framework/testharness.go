@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
@@ -244,10 +246,10 @@ func (tr *TestResponse) AssertJSON(t testing.TB, expected any) *TestResponse {
 	}
 
 	var expNorm, actNorm any
-	if err := json.Unmarshal(expectedBytes, &expNorm); err != nil {
+	if err := jsonexact.Decode(expectedBytes, &expNorm, canonicalNumber); err != nil {
 		t.Fatalf("unmarshal expected: %v", err)
 	}
-	if err := json.Unmarshal(tr.recorder.Body.Bytes(), &actNorm); err != nil {
+	if err := jsonexact.Decode(tr.recorder.Body.Bytes(), &actNorm, canonicalNumber); err != nil {
 		t.Fatalf("unmarshal response body: %v\nbody: %s", err, tr.recorder.Body.String())
 	}
 
@@ -257,6 +259,22 @@ func (tr *TestResponse) AssertJSON(t testing.TB, expected any) *TestResponse {
 		t.Fatalf("JSON mismatch:\nexpected: %s\nactual:   %s", expJSON, actJSON)
 	}
 	return tr
+}
+
+// canonicalNumber is jsonexact.Lossless with an integer it keeps exact
+// spelled in plain decimal, so 1e20 on one side matches
+// 100000000000000000000 on the other.
+func canonicalNumber(n json.Number) (any, error) {
+	v, err := jsonexact.Lossless(n)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := v.(json.Number); ok {
+		if r, ok := new(big.Rat).SetString(n.String()); ok && r.IsInt() {
+			return json.Number(r.Num().String()), nil
+		}
+	}
+	return v, nil
 }
 
 // AssertHeader asserts a response header value. Chainable.

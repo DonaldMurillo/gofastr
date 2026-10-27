@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +24,7 @@ import (
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // Broker is the production capability broker for the module reverse channel
@@ -576,7 +579,7 @@ func (b *Broker) eventHandler(view ModuleGrantView) moduleproto.Handler {
 		}
 		var data any
 		if len(p.Payload) > 0 {
-			if err := json.Unmarshal(p.Payload, &data); err != nil {
+			if err := jsonexact.Unmarshal(p.Payload, &data); err != nil {
 				return nil, paramErr("event payload: %v", err)
 			}
 		}
@@ -712,12 +715,23 @@ func expandRaw(q url.Values, raw json.RawMessage) {
 		return
 	}
 	var m map[string]any
-	if json.Unmarshal(raw, &m) != nil {
+	if jsonexact.Unmarshal(raw, &m) != nil {
 		return
 	}
 	for k, v := range m {
-		q.Set(k, fmt.Sprint(v))
+		q.Set(k, filterParamString(v))
 	}
+}
+
+// filterParamString spells one filter value as a query param. A number is
+// written in plain decimal, the form the filter DSL's integer parser
+// reads: fmt.Sprint(float64(1234567)) is "1.234567e+06". An integer past
+// 2^53 arrives as a json.Number and keeps the module's digits.
+func filterParamString(v any) string {
+	if f, ok := v.(float64); ok {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	return fmt.Sprint(v)
 }
 
 // sanitizeFilter reduces a child-supplied filter object to the keys that name
@@ -733,7 +747,7 @@ func sanitizeFilter(ent *entity.Entity, raw json.RawMessage) (json.RawMessage, e
 		return raw, nil
 	}
 	var m map[string]any
-	if json.Unmarshal(raw, &m) != nil {
+	if jsonexact.Unmarshal(raw, &m) != nil {
 		return raw, nil // non-object: expandRaw ignores it; pass through
 	}
 	allowed := queryableFieldKeys(ent)
@@ -836,13 +850,27 @@ func mapQueryResult(res any) (any, error) {
 	rows, _ := json.Marshal(env["data"])
 	total := 0
 	if raw, present := env["total"]; present {
-		t, ok := raw.(float64)
+		t, ok := envelopeTotal(raw)
 		if !ok {
-			return nil, fmt.Errorf("query result envelope: %q must be a number, got %T", "total", raw)
+			return nil, fmt.Errorf("query result envelope: %q must be an integer, got %T %v", "total", raw, raw)
 		}
-		total = int(t)
+		total = t
 	}
 	return moduleproto.EntityQueryResult{Rows: rows, Total: total}, nil
+}
+
+// envelopeTotal reads an envelope's total as crud.Redispatch decodes
+// it: a json.Number holding an integer.
+func envelopeTotal(raw any) (int, bool) {
+	n, ok := raw.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	t, err := n.Int64()
+	if err != nil || t < 0 || t > math.MaxInt {
+		return 0, false
+	}
+	return int(t), true
 }
 
 func mapMutationResult(res any) moduleproto.EntityMutationResult {
@@ -863,10 +891,7 @@ func mapSearchResult(res any) any {
 		if raw == nil {
 			raw, _ = json.Marshal(env["results"])
 		}
-		total := 0
-		if t, ok := env["total"].(float64); ok {
-			total = int(t)
-		}
+		total, _ := envelopeTotal(env["total"])
 		return moduleproto.SearchQueryResult{Results: raw, Total: total}
 	}
 	raw, _ := json.Marshal(res)

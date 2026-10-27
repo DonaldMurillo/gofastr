@@ -142,7 +142,7 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 |--------------|---------------------------------------------------------------|
 | `up`         | Apply all pending migrations in version order.                |
 | `status`     | Print applied count, pending versions, and any dirty version. |
-| `down N`     | Roll back the most recent `N` applied migrations in reverse.  |
+| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be a positive integer; anything else is refused before a rollback. |
 | `generate N` | Write a versioned, reversible migration file from entity changes. |
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
@@ -160,7 +160,8 @@ Flags & inputs:
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created
-  yet; a no-op when it already exists.
+  yet; a no-op when it already exists. The `migrations/` directory and
+  the database URL are checked first, so a refused run creates nothing.
 - `--not-applied` (`force` only): remove the version from the tracking
   table (treat as pending) instead of marking it applied.
 - `--from=<yml>` (`generate`/`repair`): the app spec holding the entity
@@ -252,6 +253,14 @@ ALTER TABLE "posts" ADD COLUMN "published" BOOLEAN;
 ALTER TABLE "posts" DROP COLUMN "published";
 ```
 
+Within an entity the file drops changed indexes first, then changes
+columns, then creates indexes, so a unique index retargeted to a new
+column and an indexed column dropped with its index both apply. A
+`Unique` field added to an existing table gets a unique index,
+`<table>_<column>_key`, after its `ADD COLUMN`. Defaults render as the
+value they hold: a float in its shortest exact form (`1e-07`, not
+`0.000000`), and a scalar on a JSON field JSON-encoded (`'true'`).
+
 > **Scope.** The standalone `gofastr migrate generate` CLI reads schema
 > **only from the `--from=<gofastr.yml>` app spec's entities** (see
 > [app specs](app-spec.md)). That is the pre-graduation bootstrap path. It does
@@ -289,14 +298,19 @@ every existing row gets the default. Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On
 Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
 type carries `USING col::INTEGER` (or the declared integer type), so
-numeric text converts and anything else fails the migration; other
+numeric text converts and anything else fails the migration; a text
+default is dropped before the retype and the declared default set
+after it, since Postgres cannot cast the old one; other
 changes may still need a data-specific `USING` clause, so review and
 hand-tighten. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
 table, rename, and recreate the entity's indices (the declared ones and the
-automatic belongs_to foreign-key indices). Dropping the old table runs every
+automatic belongs_to foreign-key indices). The rename runs under
+`PRAGMA legacy_alter_table`, so a view or another table's trigger that
+names the table survives it, and the file re-runs every routine's `Up`
+afterwards, since dropping the table dropped its triggers. Dropping the old table runs every
 `ON DELETE` action onto it while foreign keys are on, so a `CASCADE` child
 (every many_to_many pivot) would lose its rows and a `SET NULL` child its
 links. `ApplySchemaDiffWithOptions` therefore runs a rebuild on one
@@ -304,10 +318,16 @@ connection with foreign keys off and rolls it back if `PRAGMA
 foreign_key_check` finds a violation the change introduced. `migrate
 generate` cannot do the same, because the runner applies each file inside a
 transaction, where the pragma has no effect: it refuses a rebuild that a
-`CASCADE` or `SET NULL` key references and names those tables. Write that
+`CASCADE` or `SET NULL` key references and names those tables. It reads
+those keys from the declared relations and from the snapshot's recorded
+table DDL, so a key the database still holds counts even after its
+relation changed or went away. Write that
 migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
 foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
-Rows are carried over, not regenerated; a required-but-undefaulted column added in the same
+Rows are carried over, not regenerated. A column added in the same change
+is added first and copied like the rest, with the value its `ADD COLUMN`
+default gave each row, so a key moved onto new columns keeps the table's
+rows (and fails, keeping them, when those rows repeat the new key). A required-but-undefaulted column added in the same
 change still fails loud on a populated table until you backfill it, and a
 migration holding a rebuild ships no `Down` (the pre-migration constraints
 are not recoverable, and the other changes' inverses alone would roll back to
@@ -360,9 +380,35 @@ compares the declared key with the live one (or the snapshot's
   constraint, clears the `NOT NULL` the new key gave a column that was not
   in the old one, and adds the old key back. When an old key column leaves
   the entity (the injected `id`, say), the diff drops it with its values,
-  so the generated migration has no `Down`.
+  so the generated migration has no `Down`. Postgres refuses to drop a key
+  another table's foreign key depends on, so when entities or generated
+  `many_to_many` pivots declare foreign keys onto the table, the change
+  first drops the foreign keys those tables hold onto the old key and
+  re-adds each declared one after `ADD PRIMARY KEY`. A key whose columns
+  the child table gains only in its own changes (a column renamed or added
+  in the same change) is re-added after every table's changes. A foreign
+  key onto a separately unique column of the table does not depend on the
+  primary key and is left alone. Boot and `migrate generate` both do this,
+  and that migration has no `Down` either. A foreign key onto the old key
+  that no relation declares (one added by hand) is never dropped silently:
+  boot and a generated migration refuse the key change with an error
+  naming the constraint, and `DiffSchema` lists its drop as a destructive
+  change, so the key change applies only with `AllowDestructive`. A
+  foreign key from a table no entity declares (a hand-made table, say)
+  still blocks the drop, and the change fails with Postgres naming it.
 - SQLite cannot alter a key in place, so the table is rebuilt the way a
-  retype is, with the same foreign-key handling and no `Down`.
+  retype is, with the same foreign-key handling and no `Down`. SQLite
+  names the columns a foreign key references, so a table that references
+  the old key (an entity table, a generated `many_to_many` pivot, or a
+  hand-made table) would fail every later write with `foreign key
+  mismatch`. Boot and `migrate generate` refuse such a change and name
+  those tables: boot rebuilds no table but the one whose key changes, the
+  same way it never applies a retype rebuild. `DiffSchema` rebuilds an
+  entity table whose foreign key no longer matches, so applying its
+  changes with `AllowDestructive` works there. It does not rebuild a
+  generated pivot, so that migration is written by hand. A reference onto
+  a column that stays unique (a `Unique` field or unique index) is
+  unaffected.
 
 Either way the change fails, and the table keeps its old key and rows, when
 rows repeat the new key or leave a key column `NULL`. Clean those rows up
@@ -385,9 +431,26 @@ A snapshot written before `primary_keys` was recorded generates no key
 change. The next generated migration records the keys, and boot catches a
 mismatch in the meantime.
 
+### Foreign-key changes
+
+`DiffSchema` compares the foreign keys each live table holds with the ones
+its declared relations imply: the columns in order, the referenced table
+and columns, and the `ON DELETE` action. On Postgres a missing key is
+added, a changed key on the same columns (a reversed column order, a new
+target, a new `ON DELETE`) is dropped and re-added, and a key no relation
+declares any more is dropped as a destructive change, which
+`ApplySchemaDiff` refuses until `AllowDestructive` is set. SQLite cannot
+alter a constraint, so any difference rebuilds the table the way a retype
+does. A column renamed through `Renames` on either end of a key carries
+the key with it (both engines rewrite the reference), so the rename alone
+is no foreign-key change. `migrate generate` does not compare foreign keys,
+because the snapshot records no constraint names. A key change on the
+referenced table is the one place a hand-added foreign key surfaces there:
+the generated migration refuses to drop it (see Primary-key changes).
+
 ### Snapshot file format (`schema.snapshot.json`)
 
-The schema snapshot file records the declarative state migrations have been generated up to:
+The schema snapshot file records the declarative state migrations have been generated up to. `SaveSnapshot` writes a temp file beside it and renames it over, so a crash never leaves a torn snapshot; an existing file keeps its mode and a symlink is written through:
 
 ```json
 {
@@ -618,7 +681,9 @@ INFO migrate: skipping routines declared for a different dialect declared=postgr
 ```
 
 Skipped routines are NOT removed from the plan. A future dialect switch (or
-running the same binary against Postgres) will pick them up. `View` does not
+running the same binary against Postgres) will pick them up. `GeneratePlan`
+skips them the same way: a migration generated for one dialect carries no
+routine scoped to another, and the snapshot it writes does not record one. `View` does not
 take a `Dialect` tag: its `render()` already emits the right DDL per engine
 (`CREATE OR REPLACE VIEW` on Postgres, `DROP IF EXISTS` + `CREATE` on SQLite,
 `MATERIALIZED` via the `Materialized` bool), so a redundant tag would be
@@ -639,7 +704,10 @@ The ledger is **reporting, not gating**: every matching routine's `Up` STILL
 runs every boot (idempotent, self-healing against DB-side drift). The
 checksum is how the `app_routines` MCP tool (see the Agent-ready doc) tells
 you "the registered body drifted since the last boot that recorded this row".
-It does not skip application.
+It does not skip application. When the ledger exists but cannot be read (a
+revoked grant, a lock the call's context gave up on), the tool reports
+`ledger_state=unknown` rather than `missing`; `missing` means the ledger was
+read, or does not exist yet, and holds no row for the routine.
 
 When a routine is removed from code, its ledger row is NOT dropped (additive-
 only: boot never auto-drops). Instead, you see a loud `WARN` naming the
@@ -680,8 +748,13 @@ up, down, next, _ := migrate.GeneratePlan(plan, prevSnapshot, migrate.DialectPos
 
 `GeneratePlan` emits each new/changed routine's body forward and restores the
 previous body on rollback; a removed routine is dropped (and recreated on
-`Down`). Tables, then views, then routines generate into one migration with
-correct rollback ordering.
+`Down`). Everything lands in one migration, in this order: removed
+routines, then removed views, then the table changes (Postgres refuses to
+drop a table or column a view still reads), then new and changed views in
+`DependsOn` order, then new and changed routines in the plan's order, the
+order boot applies them. The `Down` runs the changes backwards. Removed
+views drop in name order, since the snapshot records no `DependsOn`: when
+one removed view reads another, remove them in separate migrations.
 
 ### Worked Postgres example
 
@@ -782,9 +855,17 @@ app.View(migrate.View{
 
 - **Migration**: emitted after all tables (and ordered among views by
   `DependsOn`). Idempotent: `CREATE OR REPLACE VIEW` on Postgres, `DROP …
-  IF EXISTS` + `CREATE` on SQLite/materialized. `migrate generate` tracks
+  IF EXISTS` + `CREATE` on SQLite/materialized, so every boot recreates a
+  materialized view and refreshes its rows. Postgres refuses to drop a
+  materialized view another view reads, so boot first drops the plan's
+  views that depend on it, deepest first, and recreates them after it. A
+  view outside the plan that reads it still fails the boot. Changing a
+  view between plain and `Materialized` drops the live object of the
+  other kind (and its dependents) first. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it
-  changes (the `Down` restores the previous definition / drops a new one).
+  changes (the `Down` restores the previous definition / drops a new one);
+  on Postgres the file drops and recreates the declared dependents of a
+  changed materialized view, and a kind change drops the old kind first.
 - **ORM**: with `Columns` declared, three read routes are mounted —
   `GET /active_users`, `GET /active_users/{id}` and
   `GET /active_users/_events` — and no write routes. The view's
@@ -869,6 +950,18 @@ with no API to opt in.
 Dialect affects only the tracking-table queries and timestamp default.
 Your migration `Up`/`Down` SQL is passed verbatim to the driver. Keep
 it dialect-portable, or split into two registrations.
+
+An entity table may be schema-qualified (`Table: "x.widgets"`). Boot,
+`DiffSchema` and the live-column readers resolve the schema on both
+engines (on SQLite, an attached database name), and default index and
+primary-key names use the table's base name: `idx_widgets_title` and
+`widgets_pkey`, created in the table's schema. On SQLite a foreign key
+names its parent without a schema (SQLite takes the parent from the
+child's schema), key-change rebuilds and owner-key repairs keep indexes
+and triggers in the table's schema, and the foreign-key check runs over
+every attached database. On Postgres only folded
+(lower-case) columns count as the entity's: a quoted legacy `"Title"`
+is left alone and `title` is added beside it.
 
 ## Tracking table
 
@@ -1073,9 +1166,17 @@ development convenience. What it guarantees:
   context (shutdown) returns promptly instead of hanging on a stuck
   holder. SQLite gets the same cross-process serialization from a twin:
   a leased lock row in `_gofastr_migrate_lock` (one atomic upsert,
-  heartbeat-renewed, released on completion, expired by the next boot if
-  the holder crashed) — SQLite's file-level locking serializes
-  statements, not the read → apply → record sequence. As a second line
+  released on completion, expired by the next boot if the holder
+  crashed) — SQLite's file-level locking serializes statements, not the
+  read → apply → record sequence. The runner takes, renews and releases
+  the lease on its own pinned connection, renewing before each
+  migration, so a long run keeps it on any pool size, `MaxOpenConns(1)`
+  included. Renewal and release name the expiry the holder last wrote,
+  so a holder whose lease expired and was taken cannot extend or delete
+  the new holder's row: it logs "lock lease lost" at Error and the run
+  stops before its next migration with `lease lost to another process`.
+  One migration that runs longer than the lease (60s) loses it, since
+  SQLite's writer lock blocks renewal while its transaction is open. As a second line
   of defense the versioned runner re-checks the tracking row immediately
   before applying each migration, so a runner whose applied-versions
   read still went stale converges (skips) instead of failing its boot
@@ -1093,8 +1194,8 @@ development convenience. What it guarantees:
   `dirty` marker; `up`/`down` refuse to proceed (`ErrDirty`) until an
   operator reconciles the schema and runs `migrate force`. This is the
   same posture as golang-migrate's dirty flag.
-- **Destructive-change gate.** `DiffSchema` flags `DROP COLUMN` as
-  destructive and `ApplySchemaDiff` refuses to run destructive changes
+- **Destructive-change gate.** `DiffSchema` flags `DROP COLUMN` (and a
+  dropped foreign key) as destructive and `ApplySchemaDiff` refuses to run destructive changes
   unless the caller opts in (`ApplySchemaDiffWithOptions`). The default
   never drops data; `migrate generate` instead emits the drop as a
   reviewable, reversible versioned migration you apply deliberately.

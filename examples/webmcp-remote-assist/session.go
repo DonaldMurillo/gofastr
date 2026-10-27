@@ -263,6 +263,10 @@ func (a *assistApp) createSession() *assistSession {
 		conns:     map[role]*stream.WebSocketConn{},
 	}
 	s.channel = stream.NewStateChannel[role, assistSnapshot, assistEvent](sessionSource{app: a, id: s.id})
+	// The channel relays WebRTC signaling, which no snapshot carries: a
+	// dropped answer would leave the call waiting in silence, so a
+	// connection that misses an event is closed to reconnect instead.
+	s.channel.CloseOnOverflow(true)
 	go s.channel.Run()
 
 	a.mu.Lock()

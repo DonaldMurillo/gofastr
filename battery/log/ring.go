@@ -2,8 +2,9 @@ package log
 
 import (
 	"bytes"
-	"encoding/json"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // RingSink is an in-memory Sink that keeps the most recent N log
@@ -102,7 +103,7 @@ func (r *RingSink) SnapshotDecoded() []map[string]any {
 	out := make([]map[string]any, 0, len(raw))
 	for _, line := range raw {
 		var m map[string]any
-		if err := json.Unmarshal(bytes.TrimSpace(line), &m); err == nil {
+		if err := jsonexact.Unmarshal(bytes.TrimSpace(line), &m); err == nil {
 			out = append(out, m)
 		}
 	}

@@ -130,7 +130,9 @@ yourself before returning.
 
 The cache is keyed by `(principal, Idempotency-Key)`. The
 **fingerprint** that guards against accidental key reuse is
-`sha256(principal ∥ method ∥ path ∥ raw query ∥ Content-Type ∥ body)`.
+`sha256(principal ∥ method ∥ path ∥ raw query ∥ Content-Type ∥ body)`,
+where the path is the escaped one, so `/items/a%2Fb` and `/items/a/b`
+are different requests.
 Other headers (auth tokens, request IDs) are intentionally excluded.
 They aren't part of the client's intent.
 
@@ -173,7 +175,9 @@ Two stores are bundled:
   default store: `MaxStoreEntries` and `MaxStoreEntryBytes` (0 keeps the
   defaults; ignored when you pass your own `Store`). Store-level options
   `WithMemoryStoreMaxEntries(n)` / `WithMemoryStoreMaxEntryBytes(n)`
-  exist for direct construction.
+  exist for direct construction. The map is per replica: a retry that
+  reaches another replica runs again, so `NewApp` logs a warning when
+  `WithIdempotency` keeps the default store beside `WithFanout`.
 - `NewSQLIdempotencyStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `idempotency_keys` on first use. Options:
   - `WithSQLIdempotencyTable(name)`: override the default table name.

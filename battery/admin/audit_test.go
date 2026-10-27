@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -68,6 +69,29 @@ func TestAuditPageListsRows(t *testing.T) {
 	}
 	if strings.Contains(body, "<b>raw</b>") || !strings.Contains(body, "billing") {
 		t.Error("an unexposed entity's row is missing or unescaped")
+	}
+}
+
+// An integer past 2^53 in a stored diff reads on the audit page with its
+// own digits: decoding the diff into map[string]any read it as a float64
+// and showed 9007199254740993 as 9007199254740992.
+func TestAuditChangesKeepBigIntegers(t *testing.T) {
+	ledger := entity.EntityConfig{
+		Table: "ledger",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "ref", Type: schema.Int},
+		},
+	}.WithTimestamps(false)
+	x := setup(t, map[string]entity.EntityConfig{"ledger": ledger}, Config{Entities: []string{"ledger"}}, nil)
+	x.insert("ledger", map[string]any{"id": "l-1", "title": "Wire", "ref": 7})
+	x.seedAuditDiff("a1", "", "ledger", "update", "l-1", "admin-1", time.Now().UTC(),
+		`{"old":{"title":"Wire","ref":7},"new":{"title":"Wire","ref":9007199254740993}}`)
+	// The markup only: an inlined head's sheets name the marker too.
+	_, body, _ := strings.Cut(get(x.as(theAdmin), "/admin/audit").Body.String(), "<body")
+	_, list, _ := strings.Cut(body, `data-cui-comp="ui-change-list"`)
+	if !strings.Contains(list, "9007199254740993") {
+		t.Errorf("the change list lost the integer's digits:\n%.600s", list)
 	}
 }
 

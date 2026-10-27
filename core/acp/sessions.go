@@ -74,10 +74,22 @@ func (st *serverState) refuseFullSessions(existingID string) *wireRespError {
 // in-flight prompt, if any, is canceled so the turn ends promptly.
 // The pre-check above already refused the hopeless frames; this is the
 // authoritative check under the lock.
-func (st *serverState) recordSession(s *session, id string) *wireRespError {
+//
+// A fresh session (session/new) under an id this connection already
+// holds, live or draining, is refused: the Agent broke the contract
+// that NewSession mints a new id, and replacing the entry would clear a
+// running turn's busy flag and drop its cancel handle.
+func (st *serverState) recordSession(s *session, id string, fresh bool) *wireRespError {
 	max := st.srv.sessionCapFor()
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if fresh {
+		_, live := st.sessions[id]
+		_, draining := st.draining[id]
+		if live || draining {
+			return &wireRespError{Code: ErrInternalError, Message: "session/new: agent returned a session ID this connection already holds"}
+		}
+	}
 	if _, exists := st.sessions[id]; exists {
 		st.sessions[id] = s
 		return nil
@@ -95,6 +107,9 @@ func (st *serverState) recordSession(s *session, id string) *wireRespError {
 			delete(st.sessions, oldestID)
 			oldest.mu.Lock()
 			cancel := oldest.cancel
+			if oldest.busy {
+				st.draining[oldestID] = oldest
+			}
 			oldest.mu.Unlock()
 			if cancel != nil {
 				cancel()
@@ -104,4 +119,25 @@ func (st *serverState) recordSession(s *session, id string) *wireRespError {
 	st.sessions[id] = s
 	st.sessionOrder = append(st.sessionOrder, id)
 	return nil
+}
+
+// sessionBusy reports whether id names a session on this connection
+// whose prompt turn is still running, a live one or one EvictOldest
+// dropped before its turn returned.
+func (st *serverState) sessionBusy(id string) bool {
+	st.mu.Lock()
+	sessions := []*session{st.sessions[id], st.draining[id]}
+	st.mu.Unlock()
+	for _, sess := range sessions {
+		if sess == nil {
+			continue
+		}
+		sess.mu.Lock()
+		busy := sess.busy
+		sess.mu.Unlock()
+		if busy {
+			return true
+		}
+	}
+	return false
 }

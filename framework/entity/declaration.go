@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // EntityDeclaration is the grouped JSON/YAML shape used after app spec
@@ -47,7 +48,9 @@ type EntityDeclaration struct {
 func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
 	type grouped EntityDeclaration
 	var decoded grouped
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	// Exact numbers: a field default or a property past 2^53 keeps its
+	// digits on the way to DDL, inserts and codegen.
+	if err := jsonexact.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	var root map[string]json.RawMessage
@@ -178,11 +181,13 @@ func mergeDeclarationJSONField[T any](
 		return nil
 	}
 	var flat T
+	//gofastr:allow(floatnum) T is a scope/pagination/exposure key type (bool, *bool, string, []string, int, *AccessDeclaration, *ReadScopeDeclaration): none holds an interface value
 	if err := json.Unmarshal(flatRaw, &flat); err != nil {
 		return fmt.Errorf("%s: %w", key, err)
 	}
 	if groupedRaw, groupedSet := group[key]; groupedSet {
 		var grouped T
+		//gofastr:allow(floatnum) same T as the flat decode above: no interface value to round
 		if err := json.Unmarshal(groupedRaw, &grouped); err != nil {
 			return fmt.Errorf("%s.%s: %w", declarationGroupForKey(key), key, err)
 		}

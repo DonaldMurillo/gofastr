@@ -297,10 +297,13 @@ app.Use(access.Middleware(policy, roles.Resolve))
 
 The default TTL is 30 seconds. Cache keys come from the authenticated value in
 `core/handler` context when it implements `GetID() string`, which is the same
-user seam populated by `battery/auth`. Missing or empty user IDs resolve
-without caching, so anonymous requests never share role state. Concurrent
+user seam populated by `battery/auth`, plus the request's tenant
+(`tenant.SetTenantID`, read back through `handler.GetTenantID`), so a user
+who is admin in one tenant and viewer in another gets each tenant's roles.
+Missing or empty user IDs resolve without caching, so anonymous requests
+never share role state. Concurrent
 misses for one user share one lookup. `Resolve` returns defensive copies;
-call `Invalidate(userID)` after changing one user's role inputs or
+call `Invalidate(userID)` (every tenant of that user) after changing one user's role inputs or
 `InvalidateAll()` after a global role-policy change. A zero or negative TTL
 keeps same-key single-flight behavior but does not retain results.
 

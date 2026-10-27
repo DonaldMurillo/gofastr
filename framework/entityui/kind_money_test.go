@@ -58,6 +58,21 @@ func TestMoneyInputHasSymbolAndStep(t *testing.T) {
 	}
 }
 
+// A Decimal money column holds four fraction digits and the input
+// stepped by 0.01, so a stored 19.995 failed the browser's step check
+// and the record could not be saved untouched.
+func TestMoneyStepAdmitsStoredValue(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"deals": dealsConfig()},
+		map[string][]map[string]any{"deals": {{"id": "d1", "name": "alpha", "amount": "19.995", "fee": "-5"}}},
+		withAPI(map[string]string{"deals": "/api/deals"}))
+	body := string(x.ui.Record("deals", "d1").Base("/deals").RenderCtx(x.userCtx("/deals/d1", "", "u1")))
+	tag := tagFor(t, body, "amount")
+	if !strings.Contains(tag, `value="19.995"`) || !strings.Contains(tag, `step="0.001"`) {
+		t.Errorf("amount = %s, want value 19.995 with step 0.001", tag)
+	}
+}
+
 // A money column prints as an amount in the list, a negative one with
 // the sign ahead of the symbol.
 func TestMoneyCellPrintsAmount(t *testing.T) {

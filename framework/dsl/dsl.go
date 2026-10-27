@@ -298,7 +298,13 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		if cf.NoQuery {
 			return nil, i18n.NewError(reasonAfterFieldNotQueryable, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
-		qb.Cursor(cursorField, parsed.After, "forward")
+		// after() is a bare keyset value: of the cursor column's type, or
+		// refused, the same as a filter value.
+		after, err := filter.CoerceValue(cursorField, cf.Type, parsed.After)
+		if err != nil {
+			return nil, err
+		}
+		qb.Cursor(cursorField, after, "forward")
 	}
 	return qb, nil
 }
@@ -425,16 +431,22 @@ func trimDSLValue(value string) string {
 }
 
 func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
-	value := dslTypedValue(field, raw)
 	switch op {
-	case "=":
-		return field.Name + " = $1", []any{value}, nil
-	case "!=":
-		return field.Name + " != $1", []any{value}, nil
-	case "contains":
-		return field.Name + " LIKE $1" + filter.LikeEscapeSuffix, []any{filter.EscapeLikePattern(raw)}, nil
-	case ">", "<", ">=", "<=":
+	case "=", "!=", ">", "<", ">=", "<=":
+		value, err := filter.CoerceValue(field.Name, field.Type, raw)
+		if err != nil {
+			return "", nil, err
+		}
 		return field.Name + " " + op + " $1", []any{value}, nil
+	case "contains":
+		// Case-insensitive on both dialects, the ?q= and ?field_like=
+		// shape (filter.LikeClause). On a non-text column the substring
+		// match means nothing and Postgres refuses LOWER(integer).
+		if err := filter.CheckOpType(field.Name, filter.OpLike, field.Type); err != nil {
+			return "", nil, err
+		}
+		clause, arg := filter.LikeClause(field.Name, 1, raw)
+		return clause, []any{arg}, nil
 	case "in":
 		values := splitDSLArgs(strings.Trim(raw, "[]"))
 		if len(values) == 0 {
@@ -444,35 +456,16 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 		args := make([]any, len(values))
 		for i, item := range values {
 			placeholders[i] = fmt.Sprintf("$%d", i+1)
-			args[i] = dslTypedValue(field, trimDSLValue(item))
+			v, err := filter.CoerceValue(field.Name, field.Type, trimDSLValue(item))
+			if err != nil {
+				return "", nil, err
+			}
+			args[i] = v
 		}
 		return field.Name + " IN (" + strings.Join(placeholders, ", ") + ")", args, nil
 	default:
 		return "", nil, i18n.NewError(reasonUnsupportedOperator, map[string]any{"op": strconv.Quote(op)})
 	}
-}
-
-func dslTypedValue(field schema.Field, value string) any {
-	switch field.Type {
-	case schema.Int:
-		if n, err := strconv.Atoi(value); err == nil {
-			return n
-		}
-	case schema.Float, schema.Decimal:
-		//gofastr:allow(nonfinite) a DSL filter value flows to a SQL comparison, not a range guard; a non-finite value matches no rows.
-		if n, err := strconv.ParseFloat(value, 64); err == nil {
-			return n
-		}
-	case schema.Bool:
-		if b, err := strconv.ParseBool(value); err == nil {
-			return b
-		}
-	default:
-		// Every other type binds as the string the caller sent. A new
-		// numeric type added to schema will land here and compare as
-		// text, so it belongs in a case above, not in this default.
-	}
-	return value
 }
 
 func hasRelation(ent *entity.Entity, name string) bool {

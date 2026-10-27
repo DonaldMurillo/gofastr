@@ -47,10 +47,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardederr"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/divlimit"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/embedskip"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/emitident"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/errleak"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fieldtypeswitch"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fixedtmp"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/floatnum"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
@@ -61,6 +63,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nonfinite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nostore"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nowaitdelay"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/quoteident"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rawtext"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverlog"
@@ -136,6 +139,11 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// catalog Phrase with a stable code. Arms and silences are in
 	// rawtext's doc comment.
 	allow.Guard(rawtext.Analyzer),
+
+	// 2026-10-26 bug bash rules: one per repeated bug family.
+	allow.Guard(embedskip.Analyzer),
+	allow.Guard(floatnum.Analyzer),
+	allow.Guard(quoteident.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

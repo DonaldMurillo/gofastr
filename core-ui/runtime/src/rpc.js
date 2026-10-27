@@ -127,6 +127,9 @@
       body = params;
       headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
     }
+    // The page's token rides the header, as on data-cui-rpc: a JSON body
+    // has no field middleware.CSRF reads, and a page may carry only the meta.
+    _csrf(headers);
 
     try {
       const resp = await fetch(NS._lp?.(action) ?? action, {
@@ -143,7 +146,21 @@
         // A hard navigation preserves the original form contract: the target
         // may not be in the SPA route table, and rebuilding also resets SSE.
         window.location.assign(resp.url);
+        return;
       }
+      if (!resp.ok) {
+        // A refusal is never silent: the server's field errors go in place,
+        // or a toast names the status, as on a data-cui-rpc form.
+        const txt = await resp.text();
+        NS.loadModule('formerrors').then(() => NS._formErrors.report(form, resp.status, txt)).catch(() => {});
+        return;
+      }
+      if (form.querySelector('[aria-invalid="true"]')) {
+        NS.loadModule('formerrors').then(() => NS._formErrors.clear(form)).catch(() => {});
+      }
+      NS._inval?.(resp);
+      const toastHeader = resp.headers.get('X-Gofastr-Toast');
+      if (toastHeader) NS._dispatchToastHeader(toastHeader);
     } catch (err) {
       // The write may have committed. Surface the failure so the user does not
       // press submit again and duplicate it.
@@ -203,7 +220,10 @@
     // controls (a plain RPC button) keeps the legacy empty body.
     let fd = null;
     if (!body && formSource) {
-      fd = new FormData(formSource);
+      // The pressed submit button's name=value rides along, as on a
+      // native submit; FormData throws on a submitter the form does not own.
+      const sub = opts?.submitter;
+      fd = new FormData(formSource, sub?.form === formSource ? sub : null);
     } else if (!body && !formSource) {
       const controls = node.querySelectorAll('input[name]:not([type=file]),select[name],textarea[name]');
       if (controls.length) {

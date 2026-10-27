@@ -316,7 +316,11 @@ func writeDTSEndpoints(dts *strings.Builder, decl framework.EntityDeclaration, e
 var jsObjectMembers = []string{"constructor", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString", "toString", "valueOf"}
 
 // jsResourceMembers are the names the client.js Resource class defines.
-var jsResourceMembers = []string{"list", "listCursor", "get", "create", "update", "patch", "remove", "batchCreate", "batchUpdate", "batchDelete", "watch", "transition", "client", "table"}
+var jsResourceMembers = []string{"list", "listCursor", "get", "create", "update", "patch", "remove", "batchCreate", "batchUpdate", "batchDelete", "watch", "transition", "client", "table", "columns"}
+
+// goClientFields are the fields of the Go Client struct. An endpoint is a
+// method on Client, and Go refuses a field and a method of one name.
+var goClientFields = []string{"BaseURL", "HTTP", "Token"}
 
 // checkEndpointName refuses an endpoint name whose generated call would
 // take a name the entity's client surface already uses: a Resource member
@@ -333,6 +337,8 @@ func checkEndpointName(decl framework.EntityDeclaration, name string) error {
 	switch {
 	case slices.Contains(jsResourceMembers, js) || slices.Contains(jsObjectMembers, js):
 		return fmt.Errorf("the JS client would bind it as %s, which every resource already has; rename the endpoint", js)
+	case slices.Contains(goClientFields, appspec.ToCamelCase(name)):
+		return fmt.Errorf("the Go client would declare it as the method Client.%s, which is already a Client field; rename the endpoint", appspec.ToCamelCase(name))
 	case moves[name] || moves[js] || moves[cmd]:
 		return fmt.Errorf("a state move of %s already binds that method and CLI command; rename the endpoint", decl.Name)
 	case slices.Contains(cliVerbs, cmd) || cmd == "help":

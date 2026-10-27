@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,6 +56,10 @@ type Watcher struct {
 
 	mu    sync.Mutex
 	known map[string]fileFingerprint // absolute path -> last seen state
+	// reconciled is set once a scan has compared the index against the
+	// tree. known starts empty, so until then the deletion pass cannot
+	// see a file deleted while no watcher ran.
+	reconciled bool
 }
 
 type fileFingerprint struct {
@@ -152,11 +157,13 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 		}
 	}()
 	seen := make(map[string]struct{}, 256)
+	absRoots := make([]string, 0, len(roots))
 	for _, root := range roots {
 		abs, err := filepath.Abs(root)
 		if err != nil {
 			return fmt.Errorf("semantic: abs(%q): %w", root, err)
 		}
+		absRoots = append(absRoots, abs)
 		err = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -204,7 +211,75 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 			return fmt.Errorf("semantic: watcher remove: %w", err)
 		}
 	}
+	w.mu.Lock()
+	reconciled := w.reconciled
+	w.mu.Unlock()
+	if !reconciled {
+		if err := w.reconcile(ctx, absRoots, seen); err != nil {
+			return err
+		}
+		w.mu.Lock()
+		w.reconciled = true
+		w.mu.Unlock()
+	}
 	return nil
+}
+
+// reconcile removes the documents the index holds for files under roots
+// that this scan did not see: files deleted while no watcher ran, which
+// a persisted index (or a shared PgVectorStore) still carries. Only a
+// document a watcher makes counts (its ID is the hash of its Source
+// path), so a host's own documents and files under other roots are left
+// alone. An Index that cannot list its documents is not reconciled.
+func (w *Watcher) reconcile(ctx context.Context, absRoots []string, seen map[string]struct{}) (err error) {
+	// Same recover net as scan and upsert: the index is host-supplied
+	// code on the watcher loop.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: watcher reconcile panicked: %v", v)
+		}
+	}()
+	dl, ok := w.idx.(docSourceLister)
+	if !ok {
+		return nil
+	}
+	sources, err := dl.docSources(ctx)
+	if err != nil {
+		return fmt.Errorf("semantic: watcher reconcile: %w", err)
+	}
+	var stale []string
+	for _, id := range slices.Sorted(maps.Keys(sources)) {
+		src := sources[id]
+		if id != pathDocID(src) {
+			continue
+		}
+		if _, ok := seen[src]; ok {
+			continue
+		}
+		if !underAnyRoot(src, absRoots) {
+			continue
+		}
+		stale = append(stale, id)
+	}
+	if len(stale) > 0 {
+		if err := w.idx.Remove(ctx, stale...); err != nil {
+			return fmt.Errorf("semantic: watcher remove: %w", err)
+		}
+	}
+	return nil
+}
+
+// underAnyRoot reports whether path lies inside one of roots, compared
+// lexically: "/a/bc" is not under "/a/b".
+func underAnyRoot(path string, roots []string) bool {
+	for _, root := range roots {
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) (err error) {

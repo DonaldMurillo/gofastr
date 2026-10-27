@@ -344,7 +344,7 @@
       const env = info.data;
       if (dead || !env || typeof env.type !== 'string') return;
       if (env.type === 'signal') { onSignal(env.payload || {}); return; }
-      const res = reduce(env);
+      const res = reduce(env, info.generation);
       if (env.type === 'snapshot') {
         if (res.applied) {
           reconcile();

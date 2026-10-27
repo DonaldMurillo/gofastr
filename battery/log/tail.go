@@ -2,10 +2,11 @@ package log
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // tailFile returns up to maxLines decoded log entries from the end of
@@ -71,7 +72,7 @@ func tailFileWithWindow(path string, maxLines int, window int64) ([]map[string]a
 	out := make([]map[string]any, 0, maxLines)
 	for scanner.Scan() {
 		var m map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &m); err != nil {
+		if err := jsonexact.Unmarshal(scanner.Bytes(), &m); err != nil {
 			continue // ignore malformed lines
 		}
 		if len(out) == maxLines {

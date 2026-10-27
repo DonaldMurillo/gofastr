@@ -128,7 +128,7 @@ turns isolation off: its port is part of its contract.
 
 `UserConfigDir` is `~/Library/Application Support` on macOS,
 `$XDG_CONFIG_HOME` (default `~/.config`) on Linux, and `%AppData%` on
-Windows. `GOFASTR_SERVICE_DATA_DIR`, an absolute path, replaces it;
+Windows. `GOFASTR_SERVICE_DATA_DIR`, an absolute path with no control characters, replaces it;
 tests use it so a suite never touches the real one. The control socket
 path must fit the platform's AF_UNIX limit (about 104 bytes); `install`
 and the daemon both refuse a longer one with a message naming the

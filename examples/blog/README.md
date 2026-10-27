@@ -41,7 +41,7 @@ Email is PII, so every operation on users is gated, reads included.
 | GET      | `/posts`              | public        | List posts (paginated)       |
 | GET      | `/posts/{id}`         | public        | Get post by ID               |
 | GET      | `/posts/published`    | public        | List published posts only    |
-| GET      | `/posts/search?q=...` | public        | Search indexed posts         |
+| GET      | `/posts/search?q=...` | public        | Search published posts       |
 | POST     | `/posts`              | `posts:write` | Create post                  |
 | PUT      | `/posts/{id}`         | `posts:write` | Update post                  |
 | PATCH    | `/posts/{id}`         | `posts:write` | Sparse-update post           |
@@ -135,6 +135,8 @@ gofastr generate app gofastr.yml
 ## Search
 
 The blog uses `battery/search` with the in-memory backend for `/posts/search`.
+Drafts are indexed too, so the public route filters with
+`FieldEquals: {"status": "published"}`.
 Production apps can swap this interface for a Postgres full-text, Meilisearch,
 or Elasticsearch backend.
 

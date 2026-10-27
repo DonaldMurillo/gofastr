@@ -58,6 +58,21 @@ func TestEnsureDatabaseOn_Creates(t *testing.T) {
 	}
 }
 
+// The DSN connects to its database name with the case kept, so a missing
+// MyApp is created as "MyApp", not folded to a myapp nothing connects to.
+func TestEnsureDatabaseKeepsNameCase(t *testing.T) {
+	shortPing(t)
+	db, mock, _ := sqlmock.New(sqlmock.MonitorPingsOption(true))
+	defer db.Close()
+	mock.ExpectPing()
+	mock.ExpectQuery("pg_database").WithArgs("MyApp").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE DATABASE "MyApp"`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	if _, err := ensureDatabaseOn(context.Background(), db, "MyApp", "MyApp"); err != nil {
+		t.Fatalf("create MyApp: %v", err)
+	}
+}
+
 func TestEnsureDatabaseOn_ProbeError(t *testing.T) {
 	shortPing(t)
 	db, mock, _ := sqlmock.New(sqlmock.MonitorPingsOption(true))

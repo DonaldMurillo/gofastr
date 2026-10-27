@@ -36,10 +36,15 @@ runner := setup.New(setup.Config{
 app.SetSetup(runner)
 ```
 
-`Complete` decides everything: while it reports false, the app is in
-setup; the moment it reports true, setup is over. It is **derived
-state**, "at least one user exists" for `AdminStep`, never a marker
-file, so a crash mid-setup simply re-enters setup on the next boot.
+`Complete` decides whether the app boots into setup: while it reports
+false, the app is in setup. It is **derived state**, "at least one user
+exists" for `AdminStep`, never a marker file, so a crash mid-setup
+simply re-enters setup on the next boot.
+
+`AdminStep` stores the admin under the address login looks up: the
+auth battery's canonical form (`auth.CanonicalEmail`, or the host's
+`AuthConfig.CanonicalizeEmail` when set), so `Ops@Example.com` signs in
+as `ops@example.com`.
 
 ## The interactive skin
 
@@ -74,10 +79,28 @@ link: `scheme` is `"https"` when the app serves TLS and `"http"`
 otherwise, and `addr` is the bound listen address. It returns `""` when
 there is no link to print.
 
-When the final step succeeds, the serving handler swaps atomically to
-the real router, with no restart. Background consumers (cron, queues, the
-outbox relay) do not start until that swap: setup owns the schema's
-initial state.
+Every declared step runs, including the ones after the step that
+flips `Complete`: in the wiring above, `AdminStep` makes `Complete`
+true and `HealthStep` still runs next. When the final step succeeds,
+the serving handler swaps atomically to the real router, with no
+restart. Background consumers (cron, queues, the outbox relay) do not
+start until that swap: setup owns the schema's initial state.
+
+### Several replicas
+
+Each replica serves its own wizard and prints its own token. Finish
+setup on any one of them. The others notice on their next request: a
+request without that replica's setup cookie (any app path, or `/setup`)
+re-checks `Complete`, at most once per second per replica so a storm
+of 503s does not turn into a storm of queries, and swaps to the real
+router once it reports true. The app path that triggers the swap gets a
+`307` back to the same URL, which the real router then serves; `/setup`
+shows the completion page.
+
+`/readyz` reports the app's readiness checks during setup, not setup
+state. An orchestrator removes not-ready replicas from rotation, and a
+replica in setup has to stay reachable for the operator to open its
+wizard.
 
 ## The headless skin (IaC)
 
@@ -105,9 +128,11 @@ values prefilled (secrets excepted, never echoed into HTML).
 - `GOFASTR_SETUP=force`: enter setup even when complete (rescue). The
   wizard warns that setup already completed and **re-runs the steps**:
   every wizard submit executes that step's `Run`, and the headless skin's
-  `RunSteps` executes too, instead of silently skipping. Without `force`,
-  a completed install refuses step execution on both skins — force is the
-  explicit opt-in that unlocks it.
+  `RunSteps` executes too, instead of silently skipping. The wizard stays
+  up, and app paths answer 503, until its last step has run; only then
+  does the app swap to the real router. Without `force`, a completed
+  install refuses step execution on both skins — force is the explicit
+  opt-in that unlocks it.
 - An invalid value fails `Start`, mirroring `GOFASTR_ROLE`.
 
 Worker-role processes (`GOFASTR_ROLE=worker`) refuse to start while

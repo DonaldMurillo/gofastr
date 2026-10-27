@@ -1,0 +1,193 @@
+version: v0.96.0
+title: unreleased
+notes:
+  - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
+    breaking: true
+    hits: review
+    guidance: "The framework's own /api/llm.md passes the path the UI host registered, so apps that never call these change nothing. A hand-rolled mount passes \"/llm-pages.md\" only when a UI host built with WithPublicLLMMD serves it, and \"\" otherwise."
+    find:
+      shapes:
+        - symbol: gofastr/framework/crud.RegistryLLMMD
+          type: '^func\(registry entity\.Registry, appName string, crudMount func\(\*entity\.Entity\) crud\.MountInfo\) string$'
+        - symbol: gofastr/framework/crud.RegistryLLMMDHandler
+          type: '^func\(registry entity\.Registry, appName string, crudMount func\(\*entity\.Entity\) crud\.MountInfo\) http\.Handler$'
+  - change: "BREAKING - mcp.WidgetClientScriptURL, mcp.WidgetClientHandler and the /__gofastr/mcp/app/widgetclient.js route are removed; mcp.WidgetDocument inlines the widget client instead of linking it"
+    breaking: true
+    hits: edit
+    guidance: "A chat host renders the widget in a frame on its own origin, so the linked client resolved against the host and the widget never initialized. Delete any mount of the handler. A hand-written widget inlines \"<script>\"+string(mcp.WidgetClientJS())+\"</script>\" in place of the <script src>, or builds its document with mcp.WidgetDocument."
+    find:
+      uses:
+        - gofastr/core/mcp.WidgetClientScriptURL
+        - gofastr/core/mcp.WidgetClientHandler
+  - change: "BREAKING - the local storage backends (battery/storage and upload.NewLocalStorage) refuse a key that is not in its clean form (a//b, a/./b, ./a, a trailing slash, a leading slash, or .) with ErrInvalidKey instead of cleaning it, and Delete refuses a case- or normalization-folded spelling of a stored object"
+    breaking: true
+    hits: review
+    guidance: "Each such key was an alias of another object, so erasing a row that named one could delete another user's file. Keys the framework mints are already clean. A key your code builds by joining strings should go through path.Clean before Save, and stored keys that are not clean need renaming."
+    find:
+      uses:
+        - gofastr/battery/storage.NewLocalStorage
+        - gofastr/core/upload.NewLocalStorage
+  - change: "BREAKING - app.ScreenLLMMD and app.ScreenLLMMDWithMeta take a context.Context first, so a screen's llm.md links follow the request's locale prefix"
+    breaking: true
+    hits: edit
+    guidance: "Pass the request context: app.ScreenLLMMD(r.Context(), screen) and app.ScreenLLMMDWithMeta(r.Context(), screen, meta). The UI host calls these itself, so apps that never call them change nothing."
+    find:
+      uses:
+        - gofastr/core-ui/app.ScreenLLMMD
+        - gofastr/core-ui/app.ScreenLLMMDWithMeta
+  - change: "BREAKING in production mode - the magic-link, password-reset and email-verification plugins refuse to boot on the in-memory token store they mint when TokenStore is unset, as the session and 2FA stores already do"
+    breaking: true
+    hits: review
+    guidance: "A link emailed from one replica was invalid on the next, and a restart dropped every pending link. Set each plugin's TokenStore to auth.NewSQLMagicLinkTokenStore(db), or set AuthConfig.AllowInMemoryStores: true to acknowledge a single-node deployment. DevMode is unaffected."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewPasswordResetPlugin
+        - gofastr/battery/auth.NewEmailVerificationPlugin
+  - change: "BREAKING for static exports - App.ExportStatic now ships the app's own Content-Security-Policy (AppConfig.SecurityHeaders.ContentSecurityPolicy) instead of a fixed one, and refuses a policy holding a 'nonce-' source, a control byte, or a quote or angle bracket"
+    breaking: true
+    hits: review
+    guidance: "An export used to ignore the configured policy, so a policy with a nonce exported fine. A nonce baked into files gives every visitor the same value and protects nothing; exported pages link every script, so drop the nonce source (hashes are fine). The export's <meta> also leaves out frame-ancestors, report-uri and sandbox, which a meta ignores; _headers keeps them."
+    find:
+      uses:
+        - gofastr/framework.WithSecurityHeaders
+  - change: "BREAKING - app.LoadingManifest.HTML is a method, HTML(ctx context.Context) string, that renders Show in the reader's locale; it was a string field rendered once"
+    breaking: true
+    hits: edit
+    guidance: "Replace m.HTML with m.HTML(ctx), passing the request context so the loading content reads in the reader's language. Most apps never read the manifest: the UI host builds it."
+    find:
+      uses:
+        - gofastr/core-ui/app.LoadingManifest.HTML
+  - change: "BREAKING - EraseUserData follows foreign keys: a row in any table that references an erased row is erased too, whoever owns it, and a RESTRICT or NO ACTION relation refuses the erasure while such a row survives"
+    breaking: true
+    hits: review
+    guidance: "Erasure used to delete only the user's owner-scoped rows, so a reference from another table blocked it or was left dangling. Cascaded rows are reported in EraseReport.Cascaded. Declare OnDelete SetNull on a relation whose child rows must survive the parent's erasure; one declared Restrict or NoAction now makes EraseUserData return an error naming the relation until the blocking rows are removed or reassigned. Run WithEraseDryRun to see the counts first."
+    find:
+      uses:
+        - gofastr/framework.App.EraseUserData
+  - change: "BREAKING for generated clients - an entity declaring an integer id gets ID int64 in the Go client (record methods and BatchDelete take int64) and id: number in client.d.ts, and a json field is any (unknown in TypeScript) instead of map[string]any, with every number inside an any (json fields, batch data) decoded as json.Number"
+    breaking: true
+    hits: review
+    guidance: "The server always answered an integer id as a JSON number, so the old string-typed client failed every decode; code calling it with a string id now passes the int64. A json field read as map[string]any needs a type assertion, since the value may be an array, number or string. A number inside one is a json.Number: call Int64() or Float64() where the code asserted float64, which rounded integers past 2^53. Regenerate with gofastr generate."
+    find:
+      config:
+        - key: entities.*.fields.*.type
+          value: '(?i)^(int|integer|json)$'
+  - change: "BREAKING for --from-openapi CLIs - servers[0].url's path becomes the API prefix every request carries, so --url and <APP>_URL take a bare origin; --api-prefix now works with --from-openapi and replaces that path"
+    breaking: true
+    hits: review
+    guidance: "A caller that passed --url https://host/api/v3 to reach a server whose spec names /api/v3 now passes --url https://host, or the path doubles. Set api_prefix: \"\" on the cli entry to keep the old behavior."
+    find:
+      text:
+        - glob: "**/gofastr.settings.yml"
+          match: '^\s+from_openapi:'
+  - change: "A generated CLI sends the token login stored only to the origin it was stored for; a --url or <APP>_URL naming another host gets no credential"
+    breaking: false
+    guidance: "Run login --url <url> against each server you call, or set <APP>_TOKEN, which goes wherever the call does."
+    nodetect: "the change is in the generated CLI's runtime behavior; nothing in an app's source spells it"
+  - change: "BREAKING - columns is a reserved transition key: a move keyed columns overwrote the JS SDK resource's upload column map"
+    breaking: true
+    hits: edit
+    guidance: "Rename the transition. The boot error names the collision."
+    find:
+      fields:
+        - field: gofastr/framework/entity.Transition.Key
+          value: '^columns$'
+  - change: "BREAKING - entity.Define panics, and the app spec refuses, a cursor field that can hold NULL: one that is not a key column, not Required and not framework-written"
+    breaking: true
+    hits: review
+    guidance: "Keyset paging skipped rows whose cursor column was NULL, and the dialects sort NULLs at opposite ends. Mark the field Required, or page on created_at plus the id. The panic names the entity and the field."
+    find:
+      fields:
+        - field: gofastr/framework/entity.PaginationConfig.CursorField
+        - field: gofastr/framework/entity.PaginationConfig.CursorFields
+      config:
+        - key: entities.*.pagination.cursor_fields
+        - key: entities.*.cursor_fields
+        - key: entities.*.pagination.cursor_field
+        - key: entities.*.cursor_field
+  - change: "BREAKING - a filter value must be of its field's type on every filter surface (flat ?field_op=, ?where=, the DSL, ?rel.field=, ?include=rel(...), ListOptions.Filters, a cursor token); a mistyped one answers 400 naming the field, LenientFilters included, a Bool takes exactly what strconv.ParseBool accepts, a JSON value must be JSON, and a Relation column holding an integer key is checked as an Int"
+    breaking: true
+    guidance: "A client that sent ?active=yes or ?count=abc got an empty SQLite list or a Postgres 500 and now gets a 400. Send true/false (or 1/0) for a Bool and the field's type everywhere else; the accepted spellings are in entity-declarations.md."
+    nodetect: "the values come from clients' query strings and DSL text at request time, not from the app's source"
+  - change: "BREAKING - filter.BoolBind is removed; filter.CoerceValue checks and coerces a raw value for any field type"
+    breaking: true
+    hits: edit
+    guidance: "BoolBind(isBool, raw) bound a Bool's parsed value and fell back to the raw string for anything else, so a mistyped value reached SQL. Call filter.CoerceValue(field, t, raw), which returns the bind value or an error naming the field; answer that error with 400. For a ParsedFilter, f.Typed(t) then f.BindValue() does the same."
+    find:
+      uses:
+        - gofastr/framework/filter.BoolBind
+  - change: "BREAKING - _like and DSL contains ignore case on both dialects (LOWER(col) LIKE, the ?q= shape), and contains on a non-text field is refused"
+    breaking: true
+    guidance: "Postgres used to match _like with case and SQLite without; both now ignore ASCII case, and Postgres folds the rest of Unicode too. A client relying on a case-sensitive Postgres match gets more rows."
+    nodetect: "the operators come from clients' query strings and DSL text at request time, not from the app's source"
+  - change: "BREAKING for typed hooks - a JSON integer in a map[string]any or any field of the hook's value arrives as int64 instead of float64, and merges back to the row the same way"
+    breaking: true
+    hits: review
+    guidance: "Integers above 2^53 were rounded on the way through a typed hook and written back rounded. Other numbers stay float64. A hook that asserts .(float64) on a nested integer switches to int64, or uses a type switch over both."
+    find:
+      uses:
+        - gofastr/framework.OnBeforeCreate
+        - gofastr/framework.OnAfterCreate
+        - gofastr/framework.OnBeforeUpdate
+        - gofastr/framework.OnAfterUpdate
+  - change: "BREAKING for crud.Redispatch - numbers in the result arrive as json.Number instead of float64, so an id or count above 2^53 keeps every digit"
+    breaking: true
+    hits: review
+    guidance: "MCP tool results and module reverse calls decoded the response with every number as a float64, rounding big integer ids. A caller that asserts .(float64) on a field of the result switches to json.Number and calls Int64 or Float64."
+    find:
+      uses:
+        - gofastr/framework/crud.Redispatch
+  - change: "BREAKING - the auth battery's durable stores fold a mixed-case table name the way AutoMigrate does, and AuthManager.Init refuses to boot on Postgres while a case-kept table from an older version exists"
+    breaking: true
+    hits: review
+    guidance: "Only a users, sessions, 2FA, OAuth-links, passkey or magic-link table declared with upper case or a dot on Postgres is affected. Older versions created a second, quoted table such as \"Members\" beside AutoMigrate's members, kept the case of mapped columns such as \"PasswordHash\", and created a dotted name such as q.Members as one literal table. Move the rows into the folded table and drop the old one, or run the quoted ALTER TABLE statements the error prints (rename, SET SCHEMA, RENAME COLUMN), then restart. Old case-kept index names stay behind after a rename and can be dropped. On SQLite a dotted name now needs that database attached."
+    find:
+      uses:
+        - gofastr/battery/auth.NewEntityUserStore
+        - gofastr/battery/auth.NewEntitySessionStore
+        - gofastr/battery/auth.NewEntityTwoFAStore
+        - gofastr/battery/auth.NewSQLMagicLinkTokenStore
+        - gofastr/battery/auth.NewSQLPasskeyStore
+  - change: "BREAKING - an update that sends \"\" for an optional non-text field (number, date, timestamp, enum, uuid, relation, json) clears it to null; it used to be dropped, which kept the stored value"
+    breaking: true
+    guidance: "An HTML form posts every control, and a blank one now clears the column, which is what emptying the control means. A JSON client that sent \"\" for a field it meant to leave alone omits the key instead. String and Text keep \"\" as a value, and a blank Image or File keeps the stored file."
+    nodetect: "the change is in how crud reads an update body; nothing in an app's source spells it"
+  - change: "BREAKING - an upsert onto an existing key emits and stages entity.updated; it used to announce entity.created on both arms"
+    breaking: true
+    guidance: "A subscriber or outbox consumer that treated every upsert as a create also handles entity.updated for the same entity. AfterCreate hooks still fire on both arms."
+    nodetect: "the event type is chosen at runtime inside crud's upsert; nothing in an app's source spells it"
+  - change: "BREAKING for ui.DateTimeFieldConfig - Step is a float64 in seconds, so 0.001 shows milliseconds"
+    breaking: true
+    hits: review
+    guidance: "An untyped constant such as Step: 60 still compiles. A typed int variable passed as Step converts with float64(n)."
+    find:
+      uses:
+        - gofastr/framework/ui.DateTimeFieldConfig
+  - change: "BREAKING for custom locale resolvers - i18n.WithLocaleResolver and framework.WithLocaleResolver take an i18n.LocaleResolver{Resolve, Vary}, so the middleware can add the headers a resolver reads to the response's Vary"
+    breaking: true
+    hits: review
+    guidance: "i18n.CookieLocale returns a LocaleResolver already, so WithLocaleResolver(i18n.CookieLocale(\"locale\")) compiles unchanged. A custom func becomes i18n.LocaleResolver{Resolve: f, Vary: []string{<every request header f reads>}}; leaving Vary empty lets a shared cache replay one reader's language to the next."
+    find:
+      uses:
+        - gofastr/core/i18n.WithLocaleResolver
+        - gofastr/framework.WithLocaleResolver
+  - change: "BREAKING for code that stores FileField.URL - file.FileField.URL escapes each path segment, so it differs from StorageRef for a file name holding # or %"
+    breaking: true
+    hits: review
+    guidance: "Store ff.StorageRef in the column, not ff.URL. A column holding the escaped URL fails CRUD's uploaded-key check with key_not_uploaded for such names. Use ff.URL only as a link."
+    find:
+      uses:
+        - gofastr/framework/file.ProcessFileField
+  - change: "BREAKING - auth.TwoFACompareAndSetter and MemoryTwoFAStore.CompareAndSetTwoFA are removed; backup-code regeneration swaps through TwoFAStateSwapper"
+    breaking: true
+    hits: edit
+    guidance: "A custom 2FA store implements TwoFAStateSwapper (CompareAndSwapTwoFA) instead; both built-in stores already do. Delete any CompareAndSetTwoFA method or call."
+    find:
+      uses:
+        - gofastr/battery/auth.TwoFACompareAndSetter
+        - gofastr/battery/auth.MemoryTwoFAStore.CompareAndSetTwoFA
+  - change: "BREAKING on Postgres - a store table configured with capitals or a dot (queue, outbox, fanout, A2A, access grants, auth token and rate-limit stores, audit, embed burns, search, pgvector, the migrate tracking table) is folded to lowercase and quoted per part; it used to keep its case and be one name"
+    breaking: true
+    guidance: "A lowercase table name needs nothing. For a name like Jobs or app.Jobs, the first boot refuses to start and prints the statements to run, such as ALTER TABLE \"Jobs\" RENAME TO \"jobs\" (plus ALTER TABLE ... SET SCHEMA for a dotted name). Run them, then restart. Raw SQL a host writes against such a table uses the lowercase name."
+    nodetect: "table names are configuration values, often read from env; the old table is found at boot, which prints the rename"

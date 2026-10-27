@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // The JSON tree: an arbitrary value as nested native details, so the
@@ -64,7 +65,7 @@ func JSONTree(p JSONTreeProps, s Classes) render.HTML {
 		panic("headless: JSONTree cannot marshal Value — " + err.Error())
 	}
 	var parsed any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
+	if err := jsonexact.Unmarshal(raw, &parsed); err != nil {
 		panic("headless: JSONTree cannot re-parse marshalled JSON — " + err.Error())
 	}
 	b := p.Parts.Box(s)
@@ -97,6 +98,11 @@ func jsonNode(b Box, v any, depth int, p JSONTreeProps, w *Strings) render.HTML 
 		s := strconv.FormatFloat(t, 'f', -1, 64)
 		//gofastr:allow(rawtext) a JSON viewer shows the document's own digits, the source a reader copies
 		return b.El("span", PartJSONNum, own, render.Text(s))
+	case json.Number:
+		// An integer past 2^53, which a float64 would round: the value's
+		// own digits.
+		//gofastr:allow(rawtext) a JSON viewer shows the document's own digits, the source a reader copies
+		return b.El("span", PartJSONNum, own, render.Text(t.String()))
 	case string:
 		s := t
 		if p.MaxStringLen > 0 && len(s) > p.MaxStringLen {

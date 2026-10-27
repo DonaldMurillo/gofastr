@@ -73,7 +73,8 @@ The generated worker is deliberately conservative:
 - **The cache holds exactly the precache set**: the goFastr runtime
   (`runtime.js`, split modules under their content-addressed
   `?v=<hash>` URLs, `color-scheme.js`, `actions.js`, `app.css`,
-  `manifest.js`), the web app manifest, the offline page plus the
+  `manifest.js`, one per catalog locale in an app with a translator),
+  the web app manifest, the offline page plus the
   per-component stylesheets it links, declared icons, and your
   `Precache` entries. The live worker lists the shell assets under both
   their bare paths (the offline page references those) and the
@@ -157,6 +158,11 @@ logged error line. The offline screen is precached at install time,
 not served per request, so a fallback page is the only possible
 answer.)
 
+The assets the offline page loads (its `src` attributes and `<link
+href>` stylesheets, root-relative) are precached with it. Its
+navigation links (`<a>`, `<area>`, `<base>`) are not: a page they name
+is fetched with the installing user's cookies.
+
 ## Update behavior
 
 Registration runs on every page load, which doubles as the update
@@ -203,7 +209,10 @@ the exported app installs and works offline from the subpath. See
   is silently dropped: the shell cache is for assets, never data. If
   you need offline data, that's application logic, not the app shell.
   If your API lives at a custom prefix, list it in `DenyPaths` so the
-  same guarantee covers it.
+  same guarantee covers it. The entry is decoded and cleaned before the
+  check, as the router does, so `/a%70i/products` and
+  `/static/../api/products` are dropped too, and an entry with a
+  malformed escape is dropped.
 - **Expecting pages to work offline.** Only the shell and the offline
   screen are cached. Navigations are network-first by design; rendered
   pages are never stored (they can be personalized). An offline visit

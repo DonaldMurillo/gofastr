@@ -98,7 +98,7 @@ func TestPrefixWinsOverCookie(t *testing.T) {
 	r.Header.Set("Accept-Language", "de")
 	r.Header.Set("X-Locale", "de")
 	r = r.WithContext(WithPathLocale(r.Context(), pathSet(), "es"))
-	got := Negotiate(tr, r, WithLocaleResolver(func(*http.Request) (string, bool) { return "de", true }))
+	got := Negotiate(tr, r, WithLocaleResolver(LocaleResolver{Resolve: func(*http.Request) (string, bool) { return "de", true }}))
 	if got.Tag != "es" {
 		t.Fatalf("Negotiate = %q, want the path's es", got.Tag)
 	}

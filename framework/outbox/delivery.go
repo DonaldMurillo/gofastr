@@ -80,11 +80,16 @@ func (o *Outbox) Replay(ctx context.Context, rowID string) error {
 		return fmt.Errorf("outbox: replay: begin: %w", err)
 	}
 	defer tx.Rollback()
+	// created_at restarts the handler grace, which requeueNoHandler
+	// measures from it: kept, a replay of a delivery abandoned while its
+	// consumer was removed is abandoned again on the spot by a replica
+	// that has not picked up the re-added handler yet. Nothing else reads
+	// a delivery's created_at; claim order and retention use the parent's.
 	res, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
-			SET status='pending', attempts=0, last_error='', next_attempt_at=NULL, claimed_until=NULL
+			SET status='pending', attempts=0, last_error='', next_attempt_at=NULL, claimed_until=NULL, created_at=$2
 			WHERE row_id=$1 AND status IN ('dead','abandoned')`, o.qd()),
-		rowID)
+		rowID, o.now().UTC())
 	if err != nil {
 		return fmt.Errorf("outbox: replay: reset deliveries: %w", err)
 	}
@@ -99,6 +104,9 @@ func (o *Outbox) Replay(ctx context.Context, rowID string) error {
 		fmt.Sprintf(`UPDATE %s SET status='pending', dispatched_at=NULL WHERE id=$1 AND status='dispatched'`, o.qt()),
 		rowID); err != nil {
 		return fmt.Errorf("outbox: replay: reopen parent: %w", err)
+	}
+	if o.beforeReplayCommit != nil {
+		o.beforeReplayCommit()
 	}
 	return tx.Commit()
 }
@@ -115,11 +123,12 @@ func (o *Outbox) ReplayConsumer(ctx context.Context, rowID, consumer string) err
 		return fmt.Errorf("outbox: replay consumer: begin: %w", err)
 	}
 	defer tx.Rollback()
+	// created_at restarts the handler grace, as in Replay.
 	res, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
-			SET status='pending', attempts=0, last_error='', next_attempt_at=NULL, claimed_until=NULL
+			SET status='pending', attempts=0, last_error='', next_attempt_at=NULL, claimed_until=NULL, created_at=$3
 			WHERE row_id=$1 AND consumer=$2 AND status IN ('dead','abandoned')`, o.qd()),
-		rowID, consumer)
+		rowID, consumer, o.now().UTC())
 	if err != nil {
 		return fmt.Errorf("outbox: replay consumer: reset delivery: %w", err)
 	}
@@ -280,31 +289,37 @@ func joinPlaceholders(ph []string) string {
 // Replay/ReplayConsumer need to resurrect it is kept. Retention is therefore
 // not a dead-letter TTL: a parent with a terminal delivery is retained
 // indefinitely until that delivery is replayed to completion.
+//
+// The guard excludes a pending child too. A dispatched parent can still
+// hold one: under Postgres READ COMMITTED, completeParent's NOT EXISTS
+// reads the snapshot from before a concurrent Replay commits, so it
+// completes the parent over the delivery Replay just reset. The relay
+// still claims and delivers that child, so retention must leave it alone.
 func (o *Outbox) purgeExpired(ctx context.Context) error {
 	if o.retention <= 0 {
 		return nil
 	}
 	cutoff := o.now().UTC().Add(-o.retention)
-	// Deliveries first: drop a dispatched parent's deliveries only when the
-	// parent has no terminal (dead/abandoned) child to preserve.
+	// Deliveries first: drop a dispatched parent's deliveries only when
+	// every one of them is dispatched.
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE row_id IN (
 			SELECT p.id FROM %s p
 			WHERE p.status='dispatched' AND p.created_at <= $1
 			  AND NOT EXISTS (
 			      SELECT 1 FROM %s d
-			      WHERE d.row_id = p.id AND d.status IN ('dead','abandoned')
+			      WHERE d.row_id = p.id AND d.status <> 'dispatched'
 			  ))`, o.qd(), o.qt(), o.qd()),
 		cutoff); err != nil {
 		return err
 	}
 	// Parents: same NOT EXISTS guard so the parent payload survives
-	// alongside its terminal delivery.
+	// alongside its dead, abandoned or pending delivery.
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE status='dispatched' AND created_at <= $1
 		  AND NOT EXISTS (
 		      SELECT 1 FROM %s d
-		      WHERE d.row_id = %s.id AND d.status IN ('dead','abandoned')
+		      WHERE d.row_id = %s.id AND d.status <> 'dispatched'
 		  )`, o.qt(), o.qd(), o.qt()),
 		cutoff)
 	return err
@@ -343,6 +358,15 @@ type claimedDelivery struct {
 	Payload   []byte
 	Attempts  int
 	CreatedAt time.Time
+	// ClaimedUntil is the lease this claim wrote (claimed_until). Every
+	// settle matches on it, so a claimant whose lease expired and was
+	// re-claimed settles nothing: the row's claimed_until now holds the
+	// newer claim's lease. A reclaim always writes a strictly later value
+	// (it needs claimed_until <= now, and writes now+lease), so the lease
+	// doubles as a monotonic claim fence. The settle binds the same Go
+	// value the claim bound, so the driver encodes both identically:
+	// SQLite compares the same text, Postgres rounds both to microseconds.
+	ClaimedUntil time.Time
 }
 
 // claimDeliveries claims up to batchSize eligible deliveries. A delivery
@@ -437,6 +461,7 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 		if err != nil {
 			return nil, err
 		}
+		d.ClaimedUntil = claimUntil
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -496,6 +521,7 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 			rows.Close()
 			return nil, err
 		}
+		d.ClaimedUntil = claimUntil
 		out = append(out, d)
 		pairs = append(pairs, [2]string{d.RowID, d.Consumer})
 	}
@@ -559,12 +585,20 @@ func scanClaimedDelivery(row interface {
 // a stale success whose handler genuinely ran is simply lost credit; a later
 // Replay may duplicate, and that is the documented contract, the terminal
 // record wins.
+//
+// Every settle is also fenced on the claim it holds (claimed_until equal to
+// the lease this claim wrote, see claimedDelivery.ClaimedUntil). A claimant
+// whose lease expired and was re-claimed settles nothing: its late write
+// would otherwise clear the newer claim's lease, and after the backoff a
+// third relay would claim the delivery while the second still runs it. The
+// current claimant's outcome decides the row; a stale success is lost credit
+// (the re-claimant delivers again, the at-least-once duplicate).
 func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) {
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='dispatched', dispatched_at=$1, claimed_until=NULL, next_attempt_at=NULL, last_error=''
-			WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
-		o.now().UTC(), d.RowID, d.Consumer); err != nil {
+			WHERE row_id=$2 AND consumer=$3 AND status='pending' AND claimed_until=$4`, o.qd()),
+		o.now().UTC(), d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
 		slog.Default().Error("outbox: mark delivery dispatched failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 	}
@@ -586,14 +620,15 @@ func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) 
 // stale claimant's settle (which matches no live 'pending' row by then, or
 // a re-claimed one) can neither rewind nor double-count what claims
 // already recorded. The dead-letter decision uses the claim snapshot
-// because it decides what THIS settle does.
+// because it decides what THIS settle does. Both arms carry the claim fence
+// (see markDeliveryDispatched).
 func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cause error) {
 	if d.Attempts >= o.maxAttempts {
 		if _, err := o.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s
 				SET status='dead', last_error=$1, claimed_until=NULL, next_attempt_at=NULL
-				WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
-			truncateError(cause), d.RowID, d.Consumer); err != nil {
+				WHERE row_id=$2 AND consumer=$3 AND status='pending' AND claimed_until=$4`, o.qd()),
+			truncateError(cause), d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
 			slog.Default().Error("outbox: mark delivery dead failed; lease recovery will retry",
 				"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 		}
@@ -603,8 +638,8 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 				SET status='pending', last_error=$1, next_attempt_at=$2, claimed_until=NULL
-				WHERE row_id=$3 AND consumer=$4 AND status='pending'`, o.qd()),
-		truncateError(cause), next, d.RowID, d.Consumer); err != nil {
+				WHERE row_id=$3 AND consumer=$4 AND status='pending' AND claimed_until=$5`, o.qd()),
+		truncateError(cause), next, d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
 		slog.Default().Error("outbox: requeue failed delivery failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 	}
@@ -622,14 +657,16 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 // not burn the budget of a consumer that is merely not declared here yet.
 // Measuring the grace from the delivery's own created_at (not the event's)
 // is what makes a freshly-added consumer's deliveries safe: they are young,
-// so a lagging replica requeues rather than abandons them.
+// so a lagging replica requeues rather than abandons them. Both arms carry
+// the claim fence (see markDeliveryDispatched): a stale refund would
+// otherwise hand back an attempt the newer claim consumed.
 func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	now := o.now().UTC()
 	res, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='abandoned', last_error='no consumer handler within grace', claimed_until=NULL, next_attempt_at=NULL
-			WHERE row_id=$1 AND consumer=$2 AND status='pending' AND created_at <= $3`, o.qd()),
-		d.RowID, d.Consumer, now.Add(-o.handlerGrace))
+			WHERE row_id=$1 AND consumer=$2 AND status='pending' AND created_at <= $3 AND claimed_until=$4`, o.qd()),
+		d.RowID, d.Consumer, now.Add(-o.handlerGrace), d.ClaimedUntil)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n > 0 {
 			o.completeParent(ctx, d.RowID)
@@ -647,10 +684,30 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 				SET status='pending',
 				    attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
 				    next_attempt_at=$1, claimed_until=NULL
-				WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
-		next, d.RowID, d.Consumer); err != nil {
+				WHERE row_id=$2 AND consumer=$3 AND status='pending' AND claimed_until=$4`, o.qd()),
+		next, d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
 		slog.Default().Error("outbox: requeue unhandled delivery failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+	}
+}
+
+// releaseUnstarted hands back claims the relay never started (see pump):
+// the lease is cleared and the attempt the claim consumed is refunded, so
+// the delivery is claimable at once and its budget is untouched. Each
+// write carries the claim fence: a claim another relay already took over
+// keeps its lease and its count, and every settle and the budget sweep
+// clear claimed_until, so the fence also keeps the release off a settled
+// row.
+func (o *Outbox) releaseUnstarted(ctx context.Context, ds []claimedDelivery) {
+	for _, d := range ds {
+		if _, err := o.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE %s
+				SET attempts = attempts - 1, claimed_until=NULL
+				WHERE row_id=$1 AND consumer=$2 AND claimed_until=$3`, o.qd()),
+			d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
+			slog.Default().Error("outbox: release unstarted delivery failed; lease recovery will retry",
+				"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+		}
 	}
 }
 

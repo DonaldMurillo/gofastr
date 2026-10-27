@@ -17,23 +17,23 @@ import (
 )
 
 // Pins: no credential value appears in any world the chat server hands
-// out. redactedWorld is the single masking chokepoint for the world-bearing
+// out. world.Redacted is the single masking chokepoint for the world-bearing
 // GET surfaces, and a credentialed DSN is a credential by the framework's
 // own freeze contract: kiln/freeze/appspec.go dbURLRef/dsnHasSecret
 // replace exactly this shape (postgres://user:pass@host) with a
 // ${DATABASE_URL} reference before anything durable is written, because the
 // password embedded in the URL is a live database credential.
-// Surfaces: kiln/chat/server.go::redactedWorld (masks only
+// Surfaces: kiln/world/redact.go::Redacted (masks only
 // App.Auth.JWTSecret + App.Admin.SeedPassword; App.DBURL untouched) via
 // serveWorld (GET /kiln/world) and serveStatus (?fields=app and
 // ?fields=world).
 // Finding: a prompt-injected agent turn that transfers a DSN the developer
-// pasted into chat into set_app_config parks it in App.DBURL; redactedWorld
+// pasted into chat into set_app_config parks it in App.DBURL; world.Redacted
 // copies it through verbatim, so GET /kiln/world and /kiln/status hand the
 // embedded password to any local process, and to any DNS-rebinding page
 // (the rebinding read class is this package's own tested threat model, see
 // TestReadRoutesRefuseCrossSiteSub).
-// Fix direction: extend redactedWorld to mask App.DBURL whenever
+// Fix direction: extend world.Redacted to mask App.DBURL whenever
 // dsnHasSecret-equivalent logic says the DSN embeds credentials (URL
 // userinfo or a password= pair), leaving credential-free DSNs (file:blog.db)
 // visible so local frozen apps stay diagnosable. Reuse the dsnHasSecret
@@ -71,7 +71,7 @@ func TestWorldMasksCredentialedDSN(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.serveWorld(rec, req)
 	if strings.Contains(rec.Body.String(), canary) {
-		t.Errorf("SECURITY: [kiln-world-dsn-unredacted] GET /kiln/world leaked the DSN password %q verbatim — redactedWorld masks App.Auth.JWTSecret and App.Admin.SeedPassword but copies App.DBURL through, and a credentialed DSN is a credential by the framework's own freeze contract (dsnHasSecret): %.600s", canary, rec.Body.String())
+		t.Errorf("SECURITY: [kiln-world-dsn-unredacted] GET /kiln/world leaked the DSN password %q verbatim — world.Redacted masks App.Auth.JWTSecret and App.Admin.SeedPassword but copies App.DBURL through, and a credentialed DSN is a credential by the framework's own freeze contract (dsnHasSecret): %.600s", canary, rec.Body.String())
 	}
 
 	// /kiln/status world-bearing field selectors: same masking chokepoint.
@@ -80,7 +80,7 @@ func TestWorldMasksCredentialedDSN(t *testing.T) {
 		rec := httptest.NewRecorder()
 		srv.serveStatus(rec, req)
 		if strings.Contains(rec.Body.String(), canary) {
-			t.Errorf("SECURITY: [kiln-world-dsn-unredacted] GET /kiln/status?fields=%s leaked the DSN password %q verbatim — serveStatus routes both world-shaped fields through redactedWorld, which does not mask App.DBURL: %.600s", fields, canary, rec.Body.String())
+			t.Errorf("SECURITY: [kiln-world-dsn-unredacted] GET /kiln/status?fields=%s leaked the DSN password %q verbatim — serveStatus routes both world-shaped fields through world.Redacted, which does not mask App.DBURL: %.600s", fields, canary, rec.Body.String())
 		}
 	}
 

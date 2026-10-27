@@ -398,3 +398,82 @@ func TestWorldDumpRedactsSecrets(t *testing.T) {
 		t.Errorf("redaction removed non-secret config too: %s", body)
 	}
 }
+
+// A tool call carrying an integer past 2^53 keeps the digits the agent
+// sent: in the tool_call envelope, every world_edit payload, and the live
+// world /kiln/world serves (seed rows reach the database from it).
+// json.Unmarshal into an `any` slot rounded 9007199254740993 to
+// 9007199254740992 at each.
+func TestToolJournalKeepsBigIntegers(t *testing.T) {
+	const exact, rounded = "9007199254740993", "9007199254740992"
+	d, cleanup, err := db.EphemeralSQLite("kiln-chat-bigint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	j := journal.NewMemory()
+	l, err := live.New(j, func() *framework.App { return framework.NewApp(framework.WithDB(d)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := protocol.New(l)
+	chat.New(l, tools).Mount(l.Aux())
+
+	post := func(tool, body string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/kiln/tool/"+tool, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, req)
+		var res protocol.Result
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil || !res.OK {
+			t.Fatalf("%s: %d %s", tool, rec.Code, rec.Body.String())
+		}
+	}
+	post("add_entity", `{"entity":{"name":"items","fields":[{"name":"n","type":"int"}],"properties":{"big":`+exact+`}}}`)
+	post("add_field", `{"entity":"items","field":{"name":"m","type":"int","default":`+exact+`}}`)
+	if res := tools.ProposePlan(t.Context(), protocol.ProposePlanArgs{
+		PlanID: "p1", Steps: []string{"update items"},
+		Targets: []journal.PlanTarget{{Op: "update_entity", Name: "items"}},
+	}); !res.OK {
+		t.Fatalf("propose: %+v", res)
+	}
+	if res := tools.ApprovePlan(t.Context(), protocol.ApprovePlanArgs{PlanID: "p1"}); !res.OK {
+		t.Fatalf("approve: %+v", res)
+	}
+	post("update_entity", `{"plan_id":"p1","entity":{"name":"items","fields":[{"name":"n","type":"int"},{"name":"m","type":"int"}],"properties":{"big":`+exact+`}}}`)
+	post("add_page", `{"page":{"path":"/big","tree":{"kind":"div","_id":"root","props":{"n":`+exact+`}}}}`)
+	post("update_page_element", `{"path":"/big","element_id":"root","patch":{"op":"set_props","set_props":{"n":`+exact+`}}}`)
+	post("add_hook", `{"hook":{"id":"h1","entity":"items","when":"before_create","action":{"kind":"set_field","params":{"field":"n","value":`+exact+`}}}}`)
+	post("add_route", `{"route":{"method":"GET","path":"/big","action":{"kind":"respond_json","params":{"status":200,"body":{"n":`+exact+`}}}}}`)
+	post("add_seed", `{"seed":{"entity":"items","rows":[{"n":`+exact+`}]}}`)
+
+	entries, err := j.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits := map[journal.Op]bool{}
+	for _, e := range entries {
+		if e.Kind != journal.KindToolCall && e.Kind != journal.KindWorldEdit {
+			continue
+		}
+		// An update's "prev" is the live world's snapshot: it holds the
+		// digits only if the world was rebuilt from the journal exactly.
+		if strings.Contains(string(e.Payload), rounded) || !strings.Contains(string(e.Payload), exact) {
+			t.Errorf("%s %s journaled %s, want %s", e.Kind, e.Op, e.Payload, exact)
+		}
+		if e.Kind == journal.KindWorldEdit {
+			edits[e.Op] = true
+		}
+	}
+	if len(edits) != 8 {
+		t.Errorf("world edits journaled = %v, want all 8 tools", edits)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/kiln/world", nil)
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if body := rec.Body.String(); strings.Contains(body, rounded) || !strings.Contains(body, exact) {
+		t.Errorf("/kiln/world shows %s, want %s: %.600s", rounded, exact, body)
+	}
+}

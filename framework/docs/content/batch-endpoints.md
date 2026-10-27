@@ -28,6 +28,9 @@ the whole transaction.
 - `committed: true` → HTTP 200, the transaction was applied.
 - `committed: false` → HTTP 400, the transaction was rolled back.
 - `results` is always in input order; every input index appears.
+- Every batch response carries `Cache-Control: no-store`, as the
+  single-row writes do, and audit rows a batch writes carry the
+  request's client IP and user agent.
 - The first per-item failure populates `error` (and optionally
   `fields` for validation failures) on that index. Later indices are
   marked `"skipped": true`.

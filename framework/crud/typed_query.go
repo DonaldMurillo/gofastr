@@ -7,13 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // TypedQuery is a generic, fluent query builder that returns []*T from the
@@ -96,6 +100,14 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, e
 		qb.Limit(*q.limit)
 	}
 	if q.offset != nil {
+		// Same total order the list paths get (withKeyTiebreak): an
+		// offset page over tied rows is otherwise a different slice on
+		// each call. entity.Order keeps its column private, so a key the
+		// caller already ordered on repeats; a repeated ORDER BY column
+		// is a no-op on both dialects.
+		for _, k := range q.handler.keyCols() {
+			qb.Order(k, "ASC")
+		}
 		qb.Offset(*q.offset)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
@@ -143,7 +155,7 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 		qb.Where(c.SQL, c.Args...)
 	}
 	sqlStr, args := qb.Build()
-	rows, err := q.handler.DB.QueryContext(ctx, sqlStr, args...)
+	rows, err := q.exec(ctx).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -268,7 +280,7 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	}
 	sqlStr, args := cb.Build()
 	var n int
-	if err := q.handler.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&n); err != nil {
+	if err := q.exec(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -295,14 +307,118 @@ func MarshalEntity(src any) (map[string]any, error) {
 // unmarshalRowToStruct converts a snake-cased map (the framework's standard
 // row shape) into a typed struct whose JSON tags are camelCase. Same casing
 // transform the typed-hooks helpers use, kept symmetric so generated repo
-// code can rely on either path.
+// code can rely on either path. A number under an `any` field reads as the
+// stored JSON column read gives it (storedJSONNumbers): json.Unmarshal
+// read 9007199254740993 as 9007199254740992, and a MarshalEntity then
+// UpdateOne wrote the rounded value back.
 func unmarshalRowToStruct(m map[string]any, dest any) error {
 	camel := casing.MapToCamel(m)
+	if t := reflect.TypeOf(dest); t != nil {
+		camel, _ = widenDates(camel, t).(map[string]any)
+	}
 	b, err := json.Marshal(camel)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(b, dest)
+	return jsonexact.Decode(b, dest, func(n json.Number) (any, error) {
+		return storedJSONNumbers(n), nil
+	})
+}
+
+var timeType = reflect.TypeOf(time.Time{})
+
+// widenDates returns v with every YYYY-MM-DD string that t decodes into a
+// time.Time spelled as that date's RFC 3339 midnight. A Date column reads
+// back as YYYY-MM-DD (dateText), which time.Time's UnmarshalJSON refuses,
+// so a struct holding a Date in a time.Time failed to decode. Maps and
+// slices it changes are copies: the caller's row is left as it was.
+func widenDates(v any, t reflect.Type) any {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch {
+	case t == timeType:
+		if s, ok := v.(string); ok {
+			if d, err := time.Parse(time.DateOnly, s); err == nil {
+				return d.Format(time.RFC3339)
+			}
+		}
+	case t.Kind() == reflect.Struct:
+		if m, ok := v.(map[string]any); ok {
+			return widenStructDates(m, t)
+		}
+	case t.Kind() == reflect.Slice || t.Kind() == reflect.Array:
+		switch s := v.(type) {
+		case []any:
+			out := make([]any, len(s))
+			for i, item := range s {
+				out[i] = widenDates(item, t.Elem())
+			}
+			return out
+		case []map[string]any:
+			out := make([]any, len(s))
+			for i, item := range s {
+				out[i] = widenDates(item, t.Elem())
+			}
+			return out
+		}
+	}
+	return v
+}
+
+// widenStructDates is widenDates for the object a struct decodes from,
+// matching keys to fields the way encoding/json does (tag name or field
+// name, case-insensitively; embedded structs promote their fields).
+func widenStructDates(m map[string]any, t reflect.Type) map[string]any {
+	out := m
+	copied := false
+	var walk func(t reflect.Type)
+	walk = func(t reflect.Type) {
+		for i := range t.NumField() {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == "-" {
+				continue
+			}
+			ft := f.Type
+			for ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if f.Anonymous && name == "" && ft.Kind() == reflect.Struct {
+				walk(ft)
+				continue
+			}
+			if !f.IsExported() {
+				continue
+			}
+			switch ft.Kind() {
+			case reflect.Struct, reflect.Slice, reflect.Array:
+			default:
+				continue // nothing under it can be a time.Time
+			}
+			if name == "" {
+				name = f.Name
+			}
+			for k, item := range out {
+				if !strings.EqualFold(k, name) {
+					continue
+				}
+				if _, isText := item.(string); !isText && ft == timeType {
+					continue // already a time.Time, or null
+				}
+				widened := widenDates(item, f.Type)
+				if s, ok := widened.(string); ok && s == item {
+					continue
+				}
+				if !copied {
+					out, copied = maps.Clone(m), true
+				}
+				out[k] = widened
+			}
+		}
+	}
+	walk(t)
+	return out
 }
 
 // marshalStructToRow is the inverse, used by typed repos to feed a *T into
@@ -321,9 +437,7 @@ func marshalStructToRow(src any) (map[string]any, error) {
 	if err := dec.Decode(&m); err != nil {
 		return nil, err
 	}
-	if _, err := normalizeJSONNumbers(m); err != nil {
-		return nil, err
-	}
+	normalizeJSONNumbers(m)
 	return casing.MapToSnake(m), nil
 }
 
@@ -441,12 +555,20 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	q.handler.ApplyOwnerScopeUpdate(ub, req)
 
 	sqlStr, args := ub.Build()
-	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
+	res, err := q.exec(ctx).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
 	return int(n), nil
+}
+
+// exec is what the query runs on: the transaction ctx carries (App.InTx,
+// a hook's), else the handler's DB. The pool alone took a bulk write
+// out of the caller's transaction, so it committed whatever the owner
+// decided, and on SQLite waited behind that transaction's lock.
+func (q *TypedQuery[T]) exec(ctx context.Context) DBExecutor {
+	return q.handler.conn(ctx)
 }
 
 // DeleteAll removes every row matching the current Where chain. For
@@ -479,7 +601,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		q.handler.ApplyTenantScopeUpdate(ub, req)
 		q.handler.ApplyOwnerScopeUpdate(ub, req)
 		sqlStr, args := ub.Build()
-		res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
+		res, err := q.exec(ctx).ExecContext(ctx, sqlStr, args...)
 		if err != nil {
 			return 0, err
 		}
@@ -504,7 +626,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)
 	sqlStr, args := db.Build()
-	res, err := q.handler.DB.ExecContext(ctx, sqlStr, args...)
+	res, err := q.exec(ctx).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, err
 	}

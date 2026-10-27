@@ -78,7 +78,7 @@ func TestPgVectorFilterNoInjection(t *testing.T) {
 }
 
 // TestPgVectorMetaMatchNoInjection: a hostile MetaMatch key/value cannot break
-// out of the JSONB containment predicate.
+// out of the per-key JSONB equality predicate (key and value both bound).
 func TestPgVectorMetaMatchNoInjection(t *testing.T) {
 	s := newPgStore(t, 3)
 	ctx := context.Background()

@@ -81,12 +81,14 @@ func FindStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, registry entity.
 // ownerCol. A missing table yields nothing rather than an error: AutoMigrate
 // creates tables, and a repair scan that ran first has no finding to make.
 func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol string) ([]string, error) {
-	safe, err := query.SafeIdent(table)
+	// PRAGMA takes no bind parameters, so sqlitePragma validates the name.
+	// A qualified main.tasks puts its schema on the pragma: quoted whole,
+	// "main.tasks" named no table and the scan found nothing.
+	pragma, err := sqlitePragma("foreign_key_list", table)
 	if err != nil {
 		return nil, fmt.Errorf("repair scan: invalid table name %q: %w", table, err)
 	}
-	// PRAGMA takes no bind parameters, hence SafeIdent above.
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA foreign_key_list(%q)", safe))
+	rows, err := db.QueryContext(ctx, pragma)
 	if err != nil {
 		return nil, fmt.Errorf("read foreign keys of %s: %w", table, err)
 	}
@@ -293,51 +295,101 @@ func withSQLiteRebuildConn(ctx context.Context, db *sql.DB, fn func(conn *sql.Co
 	return restore()
 }
 
-// foreignKeyViolations runs PRAGMA foreign_key_check and names each
-// violation as "child → parent". The pragma reports regardless of whether
-// enforcement is on, and inside a transaction it sees that transaction's
-// writes.
+// foreignKeyViolations runs PRAGMA foreign_key_check in every schema the
+// connection has (an unqualified one checks main alone, so a rebuild in an
+// attached schema went unchecked) and names each violation as
+// "child → parent", the child qualified outside main. The pragma reports
+// regardless of whether enforcement is on, and inside a transaction it
+// sees that transaction's writes.
 func foreignKeyViolations(ctx context.Context, q queryer) ([]string, error) {
-	rows, err := q.QueryContext(ctx, "PRAGMA foreign_key_check")
+	schemas, err := sqliteSchemas(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	var violations []string
+	for _, schema := range schemas {
+		rows, err := q.QueryContext(ctx, "PRAGMA "+quoteIdent(schema)+".foreign_key_check")
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var table, rowid, parent, fkid any
+			if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			child := fmt.Sprintf("%v", table)
+			if schema != "main" {
+				child = schema + "." + child
+			}
+			violations = append(violations, fmt.Sprintf("%s → %v", child, parent))
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return violations, nil
+}
+
+// sqliteSchemas lists the connection's schemas: main, temp when it is in
+// use, and every attached database.
+func sqliteSchemas(ctx context.Context, q queryer) ([]string, error) {
+	rows, err := q.QueryContext(ctx, "PRAGMA database_list")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var violations []string
+	var out []string
 	for rows.Next() {
-		var table, rowid, parent, fkid any
-		if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
+		var seq int
+		var name string
+		var file sql.NullString
+		if err := rows.Scan(&seq, &name, &file); err != nil {
 			return nil, err
 		}
-		violations = append(violations, fmt.Sprintf("%v → %v", table, parent))
+		out = append(out, name)
 	}
-	return violations, rows.Err()
+	return out, rows.Err()
 }
 
 // rebuildWithoutOwnerFK performs one table's rebuild inside a transaction, so
 // a failure anywhere leaves the original table untouched.
 func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) error {
-	safe, err := query.SafeIdent(s.Table)
-	if err != nil {
+	if _, err := query.SafeIdent(s.Table); err != nil {
 		return fmt.Errorf("invalid table name %q: %w", s.Table, err)
 	}
+	// A qualified aux.tasks is tasks in aux: its catalog, its sequence
+	// table and its objects all live in that schema, and SQLite takes the
+	// schema on the table a statement names but never on a RENAME TO.
+	schema, base := splitTable(s.Table)
+	master, seqTable, prefix := "sqlite_master", "sqlite_sequence", ""
+	if schema != "" {
+		master, seqTable, prefix = quoteIdent(schema)+".sqlite_master", quoteIdent(schema)+".sqlite_sequence", quoteIdent(schema)+"."
+	}
 
-	var createSQL string
-	err = conn.QueryRowContext(ctx,
-		"SELECT sql FROM sqlite_master WHERE type='table' AND name = ?", s.Table).Scan(&createSQL)
+	// SQLite resolves table names without case, so the entity's Tasks is
+	// the stored tasks; sqlite_master compares exactly unless told
+	// otherwise. Every lookup below (indexes, triggers, the sequence row)
+	// and the rename back use the stored spelling.
+	var stored, createSQL string
+	err := conn.QueryRowContext(ctx,
+		"SELECT name, sql FROM "+master+" WHERE type='table' AND name = ? COLLATE NOCASE", base).Scan(&stored, &createSQL)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("table not found")
 	}
 	if err != nil {
 		return err
 	}
+	qualified := prefix + quoteIdent(stored)
 
 	// Indices and triggers are dropped with the table. sql IS NULL marks an
 	// index SQLite created itself (for UNIQUE or PRIMARY KEY); those come back
 	// with the CREATE TABLE and must not be replayed.
 	var replays []string
 	objRows, err := conn.QueryContext(ctx,
-		"SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type IN ('index','trigger') AND sql IS NOT NULL", s.Table)
+		"SELECT sql FROM "+master+" WHERE tbl_name = ? AND type IN ('index','trigger') AND sql IS NOT NULL", stored)
 	if err != nil {
 		return err
 	}
@@ -347,14 +399,17 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 			objRows.Close()
 			return err
 		}
-		replays = append(replays, ddl)
+		// sqlite_master records the DDL without its schema, and an
+		// unqualified CREATE INDEX or TRIGGER lands in main, so a replay
+		// into another schema names it.
+		replays = append(replays, inSchema(ddl, schema))
 	}
 	objRows.Close()
 	if err := objRows.Err(); err != nil {
 		return err
 	}
 
-	newTable := s.Table + "__gofastr_repair"
+	newTable := stored + "__gofastr_repair"
 	newDDL, removed, err := ddlWithoutForeignKeyOn(createSQL, s.Column, newTable)
 	if err != nil {
 		return err
@@ -368,6 +423,7 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 			"rebuild this table by hand:\n%s", s.Column, createSQL)
 	}
 
+	newDDL = inSchema(newDDL, schema)
 	cols, err := tableColumnNames(ctx, conn, s.Table)
 	if err != nil {
 		return err
@@ -387,7 +443,7 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	// the next insert a rowid it had already used — the one thing
 	// AUTOINCREMENT exists to prevent. Read before the drop, put back after
 	// the rename.
-	seq, hasSeq, err := autoincrementSeq(ctx, conn, s.Table)
+	seq, hasSeq, err := autoincrementSeq(ctx, conn, seqTable, stored)
 	if err != nil {
 		return err
 	}
@@ -400,9 +456,9 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 
 	stmts := []string{
 		newDDL,
-		fmt.Sprintf("INSERT INTO %q (%s) SELECT %s FROM %q", newTable, colList, colList, safe),
-		fmt.Sprintf("DROP TABLE %q", safe),
-		fmt.Sprintf("ALTER TABLE %q RENAME TO %q", newTable, safe),
+		fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", prefix+quoteIdent(newTable), colList, colList, qualified),
+		fmt.Sprintf("DROP TABLE %s", qualified),
+		fmt.Sprintf("ALTER TABLE %s RENAME TO %s", prefix+quoteIdent(newTable), quoteIdent(stored)),
 	}
 	stmts = append(stmts, replays...)
 	for _, stmt := range stmts {
@@ -411,7 +467,7 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 		}
 	}
 	if hasSeq {
-		if err := restoreAutoincrementSeq(ctx, tx, s.Table, seq); err != nil {
+		if err := restoreAutoincrementSeq(ctx, tx, seqTable, stored, seq); err != nil {
 			return err
 		}
 	}
@@ -421,9 +477,9 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 // autoincrementSeq reads the table's AUTOINCREMENT high-water mark, if it has
 // one. An absent sqlite_sequence row, or an absent sqlite_sequence table,
 // means the table does not use AUTOINCREMENT and there is nothing to carry.
-func autoincrementSeq(ctx context.Context, conn *sql.Conn, table string) (int64, bool, error) {
+func autoincrementSeq(ctx context.Context, conn *sql.Conn, seqTable, table string) (int64, bool, error) {
 	var seq int64
-	err := conn.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&seq)
+	err := conn.QueryRowContext(ctx, `SELECT seq FROM `+seqTable+` WHERE name = ?`, table).Scan(&seq)
 	switch {
 	case err == nil:
 		return seq, true, nil
@@ -441,26 +497,26 @@ func autoincrementSeq(ctx context.Context, conn *sql.Conn, table string) (int64,
 // re-seeds the row from the rows it copied, so the UPDATE normally finds one;
 // the INSERT covers a table whose highest rows were all deleted before the
 // repair, which is exactly the case where the mark matters.
-func restoreAutoincrementSeq(ctx context.Context, tx *sql.Tx, table string, seq int64) error {
-	res, err := tx.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = ?`, seq, table)
+func restoreAutoincrementSeq(ctx context.Context, tx *sql.Tx, seqTable, table string, seq int64) error {
+	res, err := tx.ExecContext(ctx, `UPDATE `+seqTable+` SET seq = ? WHERE name = ?`, seq, table)
 	if err != nil {
 		return err
 	}
 	if n, aerr := res.RowsAffected(); aerr == nil && n > 0 {
 		return nil
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)`, table, seq)
+	_, err = tx.ExecContext(ctx, `INSERT INTO `+seqTable+` (name, seq) VALUES (?, ?)`, table, seq)
 	return err
 }
 
 // tableColumnNames returns the table's columns in declaration order, so the
 // copy names them explicitly instead of relying on SELECT * lining up.
 func tableColumnNames(ctx context.Context, conn *sql.Conn, table string) ([]string, error) {
-	safe, err := query.SafeIdent(table)
+	pragma, err := sqlitePragma("table_info", table)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%q)", safe))
+	rows, err := conn.QueryContext(ctx, pragma)
 	if err != nil {
 		return nil, err
 	}

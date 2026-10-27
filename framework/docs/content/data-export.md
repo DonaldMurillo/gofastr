@@ -59,18 +59,25 @@ func init() {
         Name:       "my_things",        // unique archive key + ndjson stem
         Source:     "mybattery",        // manifest provenance
         Table:      "my_things",        // physical table
-        PrimaryKey: "id",               // keyset-paging column
+        PrimaryKey: "id",               // keyset-paging column; "" = no key, "a,b" = composite
         Columns:    []string{"id", "kind", "payload"},
     })
 }
 ```
 
-`battery/auth` (auth_users, auth_sessions) and `battery/queue` (queue_jobs)
-register themselves this way; importing the battery == including its tables.
+An empty `PrimaryKey` means the table has no key and is read in one pass; a
+comma-joined value (`"provider,provider_id"`) is a composite key.
+`battery/auth` (users, sessions, 2FA enrolments, OAuth links, passkeys) and
+`battery/queue` (queue_jobs) register themselves this way; importing the battery == including its tables.
 **Unregistered raw tables are silently excluded**: a battery or app with
 custom tables registers an exporter to be included. A registered table that is
 absent from the live DB is skipped with a note (e.g. the auth battery is
-imported but the host didn't create that table).
+imported but the host didn't create that table). On Postgres the presence
+check reads the current schema only (`current_schema()`, the first schema on
+the `search_path`), so a same-named table in another schema does not count;
+a schema-qualified name (`app.widgets`) is looked up in its own schema.
+Entities and exporters whose tables differ only in case are one source,
+named after the entity that sorts first.
 
 A user table that is ALSO a registry entity is already covered by the registry
 walk; the framework dedups by table name, so it is never exported twice.
@@ -98,7 +105,7 @@ directory and files receive protected owner-only ACLs instead of Unix modes.
 
 ```json
 {
-  "format": "gofastr-data-v1",
+  "format": "gofastr-data-v2",
   "created_at": "2026-07-12T00:00:00Z",
   "entities": [
     {
@@ -115,9 +122,26 @@ directory and files receive protected owner-only ACLs instead of Unix modes.
 }
 ```
 
+A binary column value (a SQLite BLOB, a Postgres `bytea`) is written to
+the NDJSON as `{"$bytes":"<base64>"}` and restored as bytes. Import
+refuses any other JSON object or array in a column value. A
+`gofastr-data-v1` archive, which has no binary tag, still imports; an
+older binary refuses a `v2` archive. Restore advances the Postgres
+sequence of every SERIAL column it wrote, a registered battery table's
+included.
+
 `primary_key` is the keyset column, or for a composite key the key columns
 joined by commas (`"student_id,course_id"`); the export pages those by
-row value.
+row value. A raw `migrate.Table` with no primary key has `""` here: there is
+nothing to page by, so the export reads the whole table in one statement.
+
+`source` is `"entity"` for an entity table, `"pivot"` for a many_to_many pivot
+table that AutoMigrate creates itself (named by its table, with its two link
+columns as both its columns and its key), or the battery name for a registered
+exporter. Sources are listed parents first: a table comes after every table
+its `BelongsTo` foreign keys reference, and a pivot after both its ends.
+Tables with no dependency between them stay in table-name order, and battery
+exporters come last.
 
 `created_at` is **caller-supplied**, not `time.Now`, so an archive is
 reproducible:
@@ -140,6 +164,7 @@ these is rejected up front, leaving the database untouched:
 - missing or unparseable `manifest.json`;
 - unsupported `format` version;
 - a source that isn't a live entity or registered exporter;
+- a source whose table is not in the live database;
 - an archive table name that doesn't match the live table;
 - an archive column absent from the live schema (incompatible column set);
 - a per-file `sha256` that doesn't match the `.ndjson` bytes (corrupt/tampered).
@@ -148,14 +173,50 @@ Restore into an empty (or freshly migrated) database. Import uses plain
 `INSERT` and will fail loud on a primary-key conflict if a row already exists,
 rolling the whole thing back.
 
+The write order comes from the live registry, not the archive listing, so an
+archive written before this order existed restores too:
+
+- **Parents first.** Each table is written after the tables its foreign keys
+  reference, and a pivot table after both its ends, so no foreign key
+  constraint refuses a row whose parent has not landed yet.
+- **Self-references.** In a table that references itself (a comment's
+  `parent_id`), rows are written parent row first, whatever their key order.
+  Rows that reference each other in a cycle (two comments naming each
+  other) have no such order: the row that closes the cycle is written with
+  that reference empty, and an `UPDATE` sets it once the table's rows are
+  all in. The column must accept NULL for that moment.
+- **Cycles of tables.** Two tables whose foreign keys name each other
+  (`a.b_id` → `b`, `b.a_id` → `a`) have no parents-first order either. The
+  table written first goes in with its reference to the later one empty,
+  and an `UPDATE` sets it once every source is written. Again the column
+  must accept NULL.
+- **Exact numbers.** Numbers are read as written: an integer that fits in
+  `int64` is bound as an integer, so `9007199254740993` restores as
+  `9007199254740993` and not as the nearest `float64`. A larger integer is
+  bound as its decimal text, and anything else as a `float64`.
+- **Postgres sequences.** After writing a table with an
+  `AutoGenerate: schema.AutoIncrement` column, import moves that column's
+  sequence to the largest restored value (`setval(pg_get_serial_sequence(…),
+  MAX(col))`), so the next generated id follows the restored ones instead of
+  colliding with them. On an empty table the sequence restarts at its
+  minimum (1 by default), and so it does when every restored id sits below
+  that minimum (an id of 0, or negative ids): `setval` refuses a value under
+  the minimum, which is already above every restored id. SQLite needs no
+  step: its rowid already follows explicit ids.
+
 ## SQL safety
 
 Table and column names must be interpolated into SQL (identifiers can't be
 `$1` placeholders), so every one is **whitelisted**: names are derived from the
 registry schema (`entity.GetTable` / `entity.GetFields`) or a registered
-`DataExporter`, and each passes through `core/query.SafeIdent` before
-`core/query.QuoteIdent`. Archive table/column names are **never** trusted into
-SQL. They are checked against the live known set first and unknown ones are
+`DataExporter`, and each passes through `core/query.SafeIdent` before it is
+quoted. A table is quoted as the catalog spells it, each dot-separated part on
+its own. AutoMigrate's DDL leaves names unquoted and Postgres folds them, so an
+entity declared as `Widgets` with a `UserName` field lives in `widgets.username`,
+and the export, import and erasure name it that way. A battery may quote its
+table and keep the case, so an exporter's or eraser's table is matched by its
+own spelling first and its folded one second, never another case variant. Archive table/column names
+are **never** trusted into SQL. They are checked against the live known set first and unknown ones are
 rejected. All row values are `$n` bound arguments. This is why a malicious or
 corrupt archive cannot inject SQL: a smuggled identifier is rejected at the
 membership check before any query is built.
@@ -163,8 +224,10 @@ membership check before any query is built.
 ## Registering a renamed or custom table
 
 A battery's table name is sometimes host-configured (e.g. the auth user table
-is commonly `users` or `auth_users`). The registered entries cover the
-canonical names. If you renamed a table, register the actual name from your
+is commonly `users` or `auth_users`). The auth battery re-registers its
+exporters against the tables its configured stores use when it starts, so
+`NewEntityUserStore(db, "users")` exports `users`. For any other battery or
+app table you renamed, register the actual name from your
 app's `main.go` (or a `main`-owned `init`) so it is included:
 
 <!-- gofastr:compile
@@ -229,8 +292,8 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    hard-deleted: `DELETE FROM <table> WHERE <owner_field> = $1`. The delete is
    raw, so it removes soft-deleted rows too: a row the user previously
    "deleted" is now actually expunged. Erasure means erasure: no tombstone, no
-   undo. Entities without an `OwnerField` hold no per-user data and are
-   skipped.
+   undo. Rows that reference an erased row through a foreign key go with it,
+   in any table and whoever owns them; see [Cascade](#cascade) below.
 2. **Battery plane.** Every registered `datexport.DataEraser` runs. A battery
    declares each table it owns and how to erase it: hard-delete, or anonymize
    (overwrite named columns with a tombstone and keep the row). `battery/auth`
@@ -247,8 +310,65 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    verbatim.
 3. **Audit plane (built-in).** The audit table is retained, since it is the
    compliance record of who did what, but the user's `actor_id` is
-   anonymized: every row where `actor_id = userID` is set to `[erased]`. See
+   anonymized (every row where `actor_id = userID` is set to `[erased]`) and
+   the `diff` that copies the user's data is replaced. See
    [Audit retention](#audit-retention) below.
+
+### Cascade
+
+Erasure follows foreign keys the way `ON DELETE CASCADE` would. A row whose
+`BelongsTo` key points at a row being erased is erased too, whether or not its
+table is owner-scoped and whoever owns it: the items of a user's list (an
+entity with no `OwnerField`), another user's comment on the user's post, the
+replies under that comment, and the pivot rows of a many_to_many. The walk is
+recursive and runs in the same transaction, deleting children before parents,
+so the constraints AutoMigrate generates never refuse the delete.
+
+- **Composite keys** are followed column for column: an `order_lines` row is
+  reached through `(store, order_no)`, never through one of the two alone.
+  A foreign key whose column count does not match the referenced table's key
+  is refused with an error before anything is deleted.
+- **`OnDelete: entity.OnDeleteSetNull`** relations are not followed: the
+  database detaches that child and it survives with a NULL key.
+- **`entity.OnDeleteRestrict` and `entity.OnDeleteNoAction`** relations are
+  not followed either. Declaring one says a child row blocks its parent's
+  delete, so erasure does not delete that row to get around it. If a row the
+  erasure does not remove references a row it would, `EraseUserData` returns
+  an error naming the relation (`<entity>.<relation>`) and the child table,
+  and erases nothing. A dry run refuses the same way. The user's own child
+  rows (an owner-scoped child table) do not block: they are deleted before
+  the parents they reference. Remove or reassign the blocking rows, or change
+  the relation to CASCADE or SET NULL, then erase again. An unset `OnDelete`
+  and `entity.OnDeleteCascade` are followed.
+- **Unmanaged entities** (`Unmanaged: true`: views, host-owned tables) are not
+  reached. A cascade table absent from the live database is skipped.
+- **A raw `migrate.Table` with no primary key** is reached through its
+  foreign keys like any table. Nothing can reference it, so its rows are
+  matched by the foreign key that names an erased row rather than staged by
+  key, and they are counted and deleted the same way. Such tables are
+  deleted before any other, so a SET NULL relation from one of them cannot
+  empty the column the match reads before its rows go.
+- **Cycles between erased rows.** When two tables name each other
+  (`a.b_id` → `b`, `b.a_id` → `a`), or a table names itself through an
+  `entity.OnDeleteRestrict` relation, no delete order satisfies every
+  constraint. Erasure empties those references on the rows it erases, then
+  deletes them. A reference column declared NOT NULL cannot be emptied, and
+  the erasure fails naming the relation.
+- **A NULL in a primary key.** SQLite lets a primary key that is not an
+  `INTEGER` hold NULL. Such a row cannot be told apart by its key, so an
+  erasure that would remove one is refused with an error naming the table,
+  and erases nothing. Give the row a key, then erase again.
+- **Stored files** named by a cascaded row are deleted with it, under the same
+  rules as the user's own rows (see [Stored files](#stored-files)).
+
+The rows the user owns are reported in `Entities`. The rows deleted because
+they referenced an erased row are reported in `Cascaded`, one entry per table,
+with `Source: "cascade"` and `Mode: "delete"`. A row the user owns that the
+cascade also reaches counts once, in `Entities`. Dry-run runs the same
+cascade and rolls it back.
+
+There is no per-user export, only the full `ExportData` dump, so nothing on the
+export side needs to mirror the cascade.
 
 ### Stored files
 
@@ -282,6 +402,26 @@ posture for a compliance trail. Instead the personal link is cut:
   for CRUD events, sometimes a user id for auth events, and records which
   object was acted on, which is legitimate audit content. Blanket-anonymizing
   it would also destroy the resource ids that make the trail useful.
+- `diff` (the before and after copy of the row) is replaced with
+  `{"erased":true}` on every row the erased user acted from, and on every row,
+  whoever acted, that records an erased row (its `entity` and `record_id`
+  match a row the entity plane or the cascade deleted, by raw id or by the
+  `sha256:` digest a sensitive key is stored as, each with control bytes
+  stripped the way the audit log stores them). An admin's edit of the
+  user's post keeps its actor and record id but loses the post's text. The
+  marker is JSON, so a reader decoding `{"old":…,"new":…}` sees an empty
+  change. A NULL diff stays NULL.
+
+`report.Audit.RowsAffected` counts the rows whose actor was anonymized plus the
+other rows whose diff was replaced, each row once.
+
+The audit table needs an `actor_id` column, or erasure fails loud. A custom
+table with no `diff` column has no diff to scrub, and one with no `entity` or
+`record_id` column cannot name the rows that record an erased row, so those
+scrubs are skipped there. Two cases are not scrubbed: a row whose `record_id`
+a host `Redact` callback rewrote to something other than the raw id or its
+digest, and an `auth` event about the user that another actor wrote (its
+`record_id` is the user id, not an erased row).
 
 The default audit table is `audit_log` (matching `EnsureAuditTable`). If your
 app renamed it via `AuditConfig.Table`, pass the name to `EraseUserData`:
@@ -298,14 +438,17 @@ was erased:
 ```go
 type EraseReport struct {
     DryRun    bool
-    Entities  []EraseTableResult // owner-scoped entity tables (always delete)
+    Entities  []EraseTableResult // owner-scoped entity tables: the rows the user owns (always delete)
+    Cascaded  []EraseTableResult // rows deleted because a foreign key named an erased row
     Batteries []EraseTableResult // registered erasers (delete or anonymize)
-    Audit     *EraseTableResult  // built-in audit anonymization; nil if the audit table is absent
+    Audit     *EraseTableResult  // built-in audit plane; nil if the audit table is absent
     Skipped   []string           // erasers skipped because their identity could not be resolved (idempotent re-run)
+}
 ```
 
-Each `EraseTableResult` carries the table name, the mode (`delete` or
-`anonymize`), and the row count. `report.TotalErased()` sums every plane.
+Each `EraseTableResult` carries the table name, its source (`entity`,
+`cascade`, the battery name, or `audit`), the mode (`delete` or `anonymize`),
+and the row count. `report.TotalErased()` sums every plane.
 `Skipped` names identity-resolved erasers that were skipped because the
 resolved identity row was already gone, the idempotent-re-run case (see
 "Identity-keyed tables" above): skipping is not an error, and the erasure
@@ -317,9 +460,18 @@ reports zero for those tables rather than failing.
 rows that *would* be affected, but nothing is deleted or scrubbed. Use it for a
 compliance review before committing to an erasure.
 
+The dry run performs the erasure inside a transaction and rolls it back, and
+deletes no stored file. Its counts are the real run's: a row two registered
+erasers both reach counts once, as the real run deletes it once. A
+constraint that would refuse the real erasure refuses the dry run too. While
+it runs it holds the same row locks the real erasure would. The rollback
+undoes rows, not what the database does outside a transaction: a trigger
+that draws a Postgres sequence value (a `SERIAL` audit row) leaves the
+sequence advanced.
+
 ```go
 dry, _ := app.EraseUserData(ctx, uid, framework.WithEraseDryRun())
-// dry.TotalErased() == the count a real call would erase; DB unchanged
+// dry.TotalErased() == the count a real call would erase; no row changed
 ```
 
 ### Idempotency
@@ -356,7 +508,13 @@ datexport.RegisterEraser(datexport.DataEraser{
 
 `Column` is the user-id column matched against the erased user's id. For
 `EraseAnonymize`, both `ScrubColumns` and `Column` are overwritten with
-`Tombstone`. As with export: a registered table that is absent from the live
+`Tombstone`, and an anonymizer with no `ScrubColumns` is an error. Every
+eraser's rows are read before anything is written, deletes run before
+anonymizers, and the anonymizers on one table run as a single UPDATE, so
+two erasers matching on the same column both apply. Each eraser's
+`RowsAffected` is the number of rows it matched. Rows an eraser deletes
+or anonymizes in an entity table get the same audit scrubbing and stored
+file deletion as the entity plane's own rows. As with export: a registered table that is absent from the live
 DB is skipped with a note; an unregistered raw table is silently excluded.
 
 ### Identity-keyed tables (non-user-id match)
@@ -422,7 +580,8 @@ re-registered.
 
 Erasure rides the same identifier firewall as export: every table and column
 name is registry- or eraser-derived and passes through `core/query.SafeIdent`
-before `core/query.QuoteIdent`; the user id and the tombstone are `$n` bound
+before it is quoted as the catalog spells it; the user id and the tombstone
+are `$n` bound
 arguments. A misconfigured eraser fails loud at `SafeIdent` rather than
 interpolating an unsafe name. The whole write runs inside one transaction and
 rolls back on any error.

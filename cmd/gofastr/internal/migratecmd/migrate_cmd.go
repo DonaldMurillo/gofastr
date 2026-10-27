@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
@@ -218,6 +219,13 @@ func runMigrateUp(args []string) {
 
 	// --create-db: create the target database first if it doesn't exist.
 	if hasFlag(args, "--create-db") {
+		// Check the arguments first: a run refused after the create left
+		// an empty database behind.
+		if err := migrateArgsError(args); err != nil {
+			cli.Fail("%v", err)
+			cli.OsExit(1)
+			return
+		}
 		driver := getMigrateDriver(args)
 		dbURL := getMigrateDBURL(args)
 		if err := ensureDriverRegistered(driver); err != nil {
@@ -249,12 +257,20 @@ func runMigrateUp(args []string) {
 }
 
 func runMigrateDown(args []string) {
+	// The count is a positive integer or absent. Sscanf read "all" as no
+	// number and "3x" as 3, so a typo rolled back one or three.
 	n := 1
 	for _, a := range args {
 		if strings.HasPrefix(a, "--") {
 			continue
 		}
-		fmt.Sscanf(a, "%d", &n)
+		v, err := strconv.Atoi(a)
+		if err != nil || v < 1 {
+			cli.Fail("migrate down takes a positive number of migrations to roll back, got %q", a)
+			cli.OsExit(1)
+			return
+		}
+		n = v
 	}
 
 	fmt.Printf("\n  %s\n\n", cli.Bold("Rolling back migrations..."))
@@ -333,20 +349,26 @@ func runMigrateStatus(args []string) {
 	}
 }
 
-func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
+// migrateArgsError is what migratorFromArgs refuses before it opens
+// anything: no migrations directory, or no database URL.
+func migrateArgsError(args []string) error {
 	if _, err := os.Stat("migrations"); os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("directory 'migrations/' not found.\n" +
+		return fmt.Errorf("directory 'migrations/' not found.\n" +
 			"This subcommand reads file-based migrations (migrations/*.sql), but apps scaffolded by `gofastr init` register migrations inline in Go (entities/entities.go → RegisterMigrations) and apply them at boot: there may be nothing on disk to read.\n" +
 			"Review inline migrations in your entities package; to adopt file-based migrations, generate one with `gofastr migrate generate <name> --from=<gofastr.yml>` (see `gofastr docs migrations`).")
 	}
-	dbURL := getMigrateDBURL(args)
-	if dbURL == "" {
-		return nil, nil, fmt.Errorf("database URL is required; set DATABASE_URL or pass --db-url=<url>")
+	if getMigrateDBURL(args) == "" {
+		return fmt.Errorf("database URL is required; set DATABASE_URL or pass --db-url=<url>")
 	}
-	driver := getMigrateDriver(args)
-	if err := ensureDriverRegistered(driver); err != nil {
+	return ensureDriverRegistered(getMigrateDriver(args))
+}
+
+func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
+	if err := migrateArgsError(args); err != nil {
 		return nil, nil, err
 	}
+	dbURL := getMigrateDBURL(args)
+	driver := getMigrateDriver(args)
 	db, err := sql.Open(driver, dbURL)
 	if err != nil {
 		return nil, nil, err

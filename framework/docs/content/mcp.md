@@ -49,9 +49,12 @@ the MCP server card mirrors it.
 | `prompts/list` | One page of the prompts the caller may see, name order. |
 | `prompts/get` | A prompt's messages by name and string `arguments`. |
 
-Any other method returns `-32601` method not found. A request whose `jsonrpc`
-field is not `"2.0"` returns `-32602`. The three error codes the server emits
-are exported: `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602),
+Any other method returns `-32601` method not found. A body that is not JSON
+returns `-32700`. A request whose `jsonrpc` field is not `"2.0"`, whose
+envelope repeats or case-folds a key, or whose `id` is not a string, number
+or null returns `-32600`, with a null `id` in the last case. The error codes
+the server emits are exported: `ErrParse` (-32700), `ErrInvalidRequest`
+(-32600), `ErrMethodNotFound` (-32601), `ErrInvalidParams` (-32602),
 `ErrInternalError` (-32603), carried in `Response.Error` as an `*RPCError`.
 
 `initialize` advertises capabilities from the registries: `tools` always;
@@ -114,6 +117,12 @@ never receives type-confused arguments it must defend against itself. A tool
 that must see its arguments verbatim opts out with `WithLaxArgs()` (see
 below) and validates on its own.
 
+A numeric argument reaches the handler as a `float64`, except one a
+`float64` cannot hold exactly: an integer past ±2^53, however it is
+spelled (`9007199254740993`, `9007199254740993e0`), arrives as the
+`json.Number` the caller sent, so a handler forwarding it never passes a
+rounded value off as exact.
+
 `UnregisterTool(name)` removes a tool and reports whether it was there. It
 exists for an opt-in that can only be withdrawn *after* registration: the
 dev MCP registers its mutating control tools during `InitPlugins`, but
@@ -154,7 +163,9 @@ Three more calls matter when you hold the server in-process:
   It runs the tool's own gate (`WithToolGate`) against `ctx`; it does not run
   the server-wide gate (`SetGate`), because an in-process caller is not coming
   through `/mcp`. Every remote transport dispatches via `HandleRequest`, which
-  does apply it.
+  does apply it. A remote-facing in-process caller (the A2A entity skills)
+  uses `CallToolFor(ctx, name, params)`, which runs the server-wide gate
+  first and refuses with the same error `tools/call` gives.
 - `ListToolsFor(ctx)` is the listing `tools/list` serves: per-tool gates and
   the server-wide gate both applied. `ListTools()` applies neither per-caller
   gate; it is introspection for code that already holds the server, and its
@@ -200,7 +211,9 @@ duplicate `uri`.
 `resources/list` serves metadata (uri, name, description, mimeType, `_meta`)
 in URI order; contents funcs never run for a listing. `resources/read`
 resolves the `uri` with a map lookup, no filesystem access, and an unknown
-`uri` is an error.
+`uri` is an error. Each content item carries the resource's `_meta` too, so
+an MCP App's `_meta.ui` (csp, permissions) reaches a host that reads only
+the contents.
 
 Options:
 
@@ -309,7 +322,8 @@ Registering any prompt advertises the `prompts` capability. Errors: empty
 
 Required arguments are enforced for you: a `prompts/get` missing a
 `PromptArgument` marked `Required` is refused with an invalid-params error
-before the handler runs. An unknown prompt name is the same error.
+before the handler runs. An unknown prompt name is the same error, and so is
+an argument value that is not a string, `null` included.
 
 Options: `WithPromptDescription`, `WithPromptArguments(args...)`, and
 `WithPromptGate` (per-caller; see below).
@@ -437,7 +451,7 @@ caller anything the matching methods would not:
   gate refuses the read, not the listing; it keeps the update notice
   from callers who could never read the result. Tools, prompts and
   resource templates are the other shape: their gates hide the item
-  from its list method, and the `list_changed` a gated tool or
+  from its list method, and the `list_changed` a gated tool, prompt or
   resource template registration fires is likewise withheld from
   callers its gate refuses, who cannot see the item in that listing
   either.
@@ -457,7 +471,8 @@ and re-lists is correct again.
 Each held stream costs a goroutine and that buffer, so one caller may
 not hold an unbounded number of them: at most 16 concurrent streams per
 caller (the resolved user when middleware put one in the request
-context, else the TCP peer), configurable with
+context, else the TCP peer's host, so behind a proxy every anonymous
+stream shares one cap), configurable with
 `SetSSESeatCap(n)` — `n < 0` lifts the cap for deployments that bound
 seats elsewhere. A caller past the cap is answered `429` at connect by
 default; `SetSSESeatOverflow(mcp.SeatOverflowEvictOldest)` instead
@@ -557,11 +572,19 @@ What a client sees at the edges:
   `application/json` content type (parameters allowed, plus the `+json`
   structured-suffix family), caps the body at 1 MiB, and decodes the
   envelope with strict top-level keys: a body repeating a key, or spelling
-  one in two cases (`"method"` and `"Method"`), is refused as invalid JSON
-  rather than silently resolved last-key-wins. The `params` object gets the
+  one in two cases (`"method"` and `"Method"`), is refused as an invalid
+  request (-32600) rather than silently resolved last-key-wins. The `params` object gets the
   same rule at dispatch, for every method: any object inside `params` that
   repeats a key, or carries two keys that case-fold onto each other
   (`"name"` and `"Name"`), is refused with invalid-params before any
+  handler runs. A notification (a message with no `id` member, whatever its
+  method) gets `202 Accepted` and no body, on this transport and on
+  `ServeSSE`'s POST; `ServeStdio` writes no line for one. It must still be a
+  valid request: an id-less `{}`, or one without `"jsonrpc": "2.0"` or a
+  method, answers -32600 with a null id. `"id": null` is a
+  request and gets an answer. A numeric `id`
+  is echoed with every digit on all three transports, so an id above 2^53
+  still matches its request.
 - `ServeSSE(path)` returns an http.Handler where POST handles JSON-RPC and GET
   with `Accept: text/event-stream` opens a stream the server holds open for
   the connection's life, carrying server-initiated notifications (see
@@ -633,57 +656,31 @@ no extra framing. GoFastr serves the widget side of MCP Apps and is not a
 host: nothing here renders another server's widget, and nothing in the
 framework speaks the host half of this protocol.
 
-A framework app serves the script by itself: as soon as one MCP App is
-registered with `WithMCPApp`, `Start` mounts `mcp.WidgetClientHandler()`
-at `mcp.WidgetClientScriptURL` on the app router. The condition follows
-the server's capability rule (`resources` and `prompts` are advertised
-only when something is registered): no widget, no public script route.
-The mount does not require `WithMCP()`; a host that wired `/mcp` by hand
-still gets it, because the widget's HTML references this URL on the app's
-public router either way. A router already serving the URL (you mounted
-the handler yourself) keeps that route: the automatic mount steps aside
-with a warning, and the bytes are the same. In a role-split deployment
-the agent role (`framework.WithRole(framework.RoleAgent)`) forwards the
-script URL to the app router along with `/mcp`, so widgets keep loading
-when the agent process is the origin the MCP host resolved.
+The widget carries its client inline. A chat host renders the widget's
+HTML in a sandboxed frame on the host's own origin, so a `<script src>`
+naming a path resolves against the host, never against your app: a
+linked client never loads and the widget renders without ever
+initializing. Nothing is mounted on the app router for widgets, and the
+host's iframe CSP needs no script origin for the client.
 
 Assembling that HTML is what `mcp.WidgetDocument` is for: it emits the
-document around your markup and script with the client's `<script src>`
-taken from [WidgetClientScriptURL] by construction — the one-line typo
-that kills a widget silently cannot happen. Escaping rules, the script
-guards, and the end-to-end walkthrough live in
-[agent host](agent-host.md).
+document around your markup and script with the client inlined ahead of
+your script. Escaping rules, the script guards, and the end-to-end
+walkthrough live in [agent host](agent-host.md).
 
-Two ways to get the script into your widget's HTML:
+HTML you write by hand inlines the bytes itself:
 
 <!-- gofastr:compile
-import (
-	"github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/core/router"
-)
+import "github.com/DonaldMurillo/gofastr/core/mcp"
 
-var rt *router.Router
 var widgetHTML string
 -->
 ```go
-// Hot-link: reference the script URL from a <script src> in the app's
-// HTML. A framework app that uses WithMCPApp serves it automatically
-// (see above); mounting the handler yourself is for a router assembled
-// by hand (core/mcp standalone, or RegisterApp without WithMCPApp). The
-// handler serves the script with Cross-Origin-Resource-Policy:
-// cross-origin so the opaque-origin iframe can fetch it; whether the
-// HOST's iframe CSP allows the fetch is governed by the app's declared
-// AppCSP.ResourceDomains, like any cross-origin script.
-rt.Get(mcp.WidgetClientScriptURL, mcp.WidgetClientHandler())
-
-// Or fold the bytes into the HTML you hand to RegisterApp, and the widget
-// carries its own client with no route and no CSP dependency.
 widgetHTML = "<script>" + string(mcp.WidgetClientJS()) + "</script>"
 ```
 
-The script URL is `/__gofastr/mcp/app/widgetclient.js`
-([WidgetClientScriptURL]). Inside the widget document the client exposes
-itself as `window.__gofastrMcpApp`:
+Inside the widget document the client exposes itself as
+`window.__gofastrMcpApp`:
 
 ```js
 var app = window.__gofastrMcpApp;
@@ -702,9 +699,11 @@ app.sizeChanged({ width: 320, height: 240 });
 
 ### The handshake
 
-`connect(appCapabilities, timeoutMs?)` sends the `ui/initialize` request
-carrying your `appCapabilities` (`experimental`, `tools.listChanged`,
-`availableDisplayModes`), resolves with the host's result — `protocolVersion`,
+`connect(appCapabilities, timeoutMs?, appInfo?)` sends the `ui/initialize`
+request carrying your `appCapabilities` (`experimental`, `tools.listChanged`,
+`availableDisplayModes`), `appInfo` (`{name, version}`, each defaulting to
+`gofastr-mcp-app` and `0.0.0` when missing or empty) and
+`protocolVersion: "2026-01-26"`, resolves with the host's result — `protocolVersion`,
 `hostCapabilities`, `hostInfo`, `hostContext` — and only then sends the
 `ui/notifications/initialized` notification. Call it once, on load. If the
 host never answers, the promise rejects after `timeoutMs` (default 30s) and
@@ -752,7 +751,7 @@ response before tearing the resource down, to prevent data loss. Register
 a request handler with `onResourceTeardown(handler)`; `params.reason`
 says why the widget is going away. The handler may return a promise —
 the client answers the request only after it settles, with `result: {}`
-on success or a JSON-RPC error if the handler throws — and then fails
+on success or a JSON-RPC internal error (-32603) if the handler throws — and then fails
 every request still in flight with `E_TEARDOWN`, because the host that
 is removing the widget will never answer them.
 
@@ -810,14 +809,10 @@ the merged state. The convention and its boundaries:
 - **Serving `ListTools()` output to a remote caller.** It applies no
   per-caller gates. The JSON-RPC path serves `ListToolsFor(ctx)`; reach for
   that (or let the transport do it) whenever the listing leaves the process.
-- **Calling `app.MCP.RegisterApp` directly and expecting the script
-  route.** The automatic widget client mount keys on `WithMCPApp`
-  registrations. Registering through the primitives, or running
-  `core/mcp` standalone, means mounting `WidgetClientHandler()` yourself.
-- **Hand-writing the widget client `<script src>`.** The URL must be
-  exactly `mcp.WidgetClientScriptURL`; a one-character typo is a widget
-  that renders and silently never receives anything. Build the document
-  with `mcp.WidgetDocument`, which bakes in the constant
+- **Linking the widget client with `<script src>`.** The host resolves the
+  URL on its own origin, so the client never loads and the widget renders
+  without ever receiving anything. Inline `mcp.WidgetClientJS()`, or build
+  the document with `mcp.WidgetDocument`, which inlines it
   ([agent host](agent-host.md)).
 - **Forgetting that required prompt arguments are checked before the
   handler runs.** A `prompts/get` missing one is refused with invalid-params;

@@ -63,6 +63,9 @@ type MemoryKeyword struct {
 	mu     sync.RWMutex
 	docs   map[string]keywordDoc
 	totals map[string]int // term -> # of docs containing term (for IDF)
+	// totalLen is the sum of every doc's length, kept on Index and
+	// Delete so the average length costs nothing per Search.
+	totalLen int
 }
 
 type keywordDoc struct {
@@ -94,6 +97,7 @@ func (m *MemoryKeyword) Index(ctx context.Context, id, text string) error {
 				delete(m.totals, term)
 			}
 		}
+		m.totalLen -= prior.length
 	}
 	tokens := keywordTokens(text)
 	tf := make(map[string]int, len(tokens))
@@ -101,6 +105,7 @@ func (m *MemoryKeyword) Index(ctx context.Context, id, text string) error {
 		tf[t]++
 	}
 	m.docs[id] = keywordDoc{id: id, length: len(tokens), tf: tf}
+	m.totalLen += len(tokens)
 	for term := range tf {
 		m.totals[term]++
 	}
@@ -124,6 +129,7 @@ func (m *MemoryKeyword) Delete(ctx context.Context, id string) error {
 			delete(m.totals, term)
 		}
 	}
+	m.totalLen -= doc.length
 	delete(m.docs, id)
 	return nil
 }
@@ -156,6 +162,7 @@ func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]Key
 		return nil, nil
 	}
 	totalDocs := float64(len(m.docs))
+	avg := avgLen(m)
 	type scored struct {
 		id    string
 		score float64
@@ -180,7 +187,7 @@ func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]Key
 				idf = 0.0001 // tiny floor so common terms still contribute order
 			}
 			// Length-normalised TF: dampens long-document advantage.
-			tfNorm := float64(tf) / (float64(tf) + 0.5 + 1.5*float64(doc.length)/avgLen(m))
+			tfNorm := float64(tf) / (float64(tf) + 0.5 + 1.5*float64(doc.length)/avg)
 			s += idf * tfNorm
 		}
 		if s > 0 {
@@ -203,25 +210,31 @@ func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]Key
 	return out, nil
 }
 
+// avgLen is the mean doc length, floored at 1. The caller holds m.mu.
 func avgLen(m *MemoryKeyword) float64 {
 	if len(m.docs) == 0 {
 		return 1
 	}
-	var sum int
-	for _, d := range m.docs {
-		sum += d.length
-	}
-	avg := float64(sum) / float64(len(m.docs))
+	avg := float64(m.totalLen) / float64(len(m.docs))
 	if avg < 1 {
 		return 1
 	}
 	return avg
 }
 
+// keywordRune reports whether r belongs to a keyword term: any letter or
+// any number, \pL\pN. SQLite's unicode61 tokenizer indexes "H₂O" as one
+// token (the subscript is category No), so splitting at ASCII-only digits
+// made MemoryKeyword and the query-term cap disagree with it. '_' and '-'
+// stay separators: unicode61 splits there too.
+func keywordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsNumber(r)
+}
+
 func keywordTokens(s string) []string {
 	lower := strings.ToLower(s)
 	return strings.FieldsFunc(lower, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		return !keywordRune(r)
 	})
 }
 

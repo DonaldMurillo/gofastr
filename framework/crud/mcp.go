@@ -393,10 +393,23 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	// embed.Host.Middleware short-circuits on a missing header — dropping it
 	// would authenticate the subject without ever evaluating the reach
 	// allow-list or the grant's expiry for the path being re-dispatched to.
-	// Nothing beyond these four rides along: the re-dispatch re-presents
-	// the caller's credentials, never other headers the original carried.
+	//
+	// The caller's peer address rides along too, with the two proxy
+	// headers a trusted-proxy client-IP lookup reads: the placeholder
+	// address httptest stamps put every MCP caller in one per-IP
+	// rate-limit bucket. The headers count only where the original's did,
+	// because the lookup trusts them only when RemoteAddr is a trusted
+	// proxy, and RemoteAddr is the original's.
+	// Nothing beyond these rides along: the re-dispatch re-presents the
+	// caller's credentials and address, never other headers the original
+	// carried.
 	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
-		for _, name := range []string{"Cookie", "Authorization", "X-API-Key", fembed.GrantHeader} {
+		req.RemoteAddr = orig.RemoteAddr
+		// Two lists: the credential headers must match credentialFingerprint
+		// and the broker's (TestCredentialCanonsAgree); the proxy headers
+		// are address, not credential.
+		credentials := []string{"Cookie", "Authorization", "X-API-Key", fembed.GrantHeader}
+		for _, name := range append(credentials, []string{"X-Forwarded-For", "X-Real-IP"}...) {
 			for _, v := range orig.Header.Values(name) {
 				if v == "" {
 					continue
@@ -424,8 +437,13 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	if status == http.StatusNoContent || rec.Body.Len() == 0 {
 		return nil, nil
 	}
+	// UseNumber keeps every number as the literal the route wrote: a
+	// float64 decode rounded integers above 2^53 before the result was
+	// marshalled again for the client.
 	var out any
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(rec.Body.Bytes()))
+	dec.UseNumber()
+	if err := dec.Decode(&out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -599,6 +617,15 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 			}
 		}
 	}
+	// The owner and tenant columns are stamped by the server on create,
+	// so a caller never has to send them.
+	serverStamped := map[string]bool{}
+	if f := ent.Config.Scope.OwnerField; f != "" {
+		serverStamped[f] = true
+	}
+	if ent.Config.Scope.MultiTenant {
+		serverStamped[ent.Config.TenantColumn()] = true
+	}
 	props := make(map[string]any)
 	var required []string
 	for _, field := range ent.GetFields() {
@@ -616,10 +643,12 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 		if !update && key == stateKey {
 			fs["enum"] = st.InitialValues(ent.GetFields())
 		}
-		props[key] = fs
-		if field.Required && field.Default == nil {
+		if field.Required && field.Default == nil && !serverStamped[field.Name] {
 			required = append(required, key)
+		} else if !field.Required {
+			nullableToolSchema(fs)
 		}
+		props[key] = fs
 	}
 	out := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -631,6 +660,21 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 // mcpFieldKey returns the parameter name a field is exposed under in MCP
 // tool schemas: WireName when set (the version-specific alias), else the
 // raw DB column Name. The CRUD filter parser accepts both forms.
+// nullableToolSchema lets fs accept null as well, the way the route
+// takes null for an optional field.
+func nullableToolSchema(fs map[string]any) {
+	if t, ok := fs["type"].(string); ok {
+		fs["type"] = []any{t, "null"}
+	}
+	if values, ok := fs["enum"].([]string); ok {
+		enum := make([]any, 0, len(values)+1)
+		for _, v := range values {
+			enum = append(enum, v)
+		}
+		fs["enum"] = append(enum, nil)
+	}
+}
+
 func mcpFieldKey(field schema.Field) string {
 	if field.WireName != "" {
 		return field.WireName
@@ -642,12 +686,17 @@ func mcpFieldSchema(field schema.Field) map[string]any {
 	switch field.Type {
 	case schema.Int:
 		return map[string]any{"type": "integer"}
-	case schema.Float, schema.Decimal:
+	case schema.Float:
+		// Not Decimal: the route stores a decimal as the text it was
+		// sent and refuses a JSON number for one, so it takes the string
+		// default below.
 		return map[string]any{"type": "number"}
 	case schema.Bool:
 		return map[string]any{"type": "boolean"}
 	case schema.JSON:
-		return map[string]any{"type": "object"}
+		// Any JSON value: the route stores arrays, strings and numbers
+		// in a json field as well as objects.
+		return map[string]any{}
 	case schema.Enum:
 		return map[string]any{"type": "string", "enum": field.Values}
 	default:

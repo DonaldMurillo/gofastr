@@ -145,3 +145,27 @@ func TestHTTPErrorReporter_Delivers(t *testing.T) {
 		t.Errorf("decoded report = %+v, want Error=boom Message=http.panic", rep0)
 	}
 }
+
+// http.ErrAbortHandler is net/http's "abort this response" signal, not a
+// bug: recovery re-raises it so the server drops the connection, and it
+// neither reports it nor writes a 500 over a half-sent body.
+func TestRecoveryReraisesAbortHandler(t *testing.T) {
+	rep := &recordingReporter{}
+	h := recoveryMiddleware(rep)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}))
+	rec := httptest.NewRecorder()
+	defer func() {
+		if v := recover(); v != http.ErrAbortHandler {
+			t.Fatalf("recovered %v, want http.ErrAbortHandler re-raised", v)
+		}
+		if len(rep.reports) != 0 {
+			t.Errorf("abort reported as a panic: %+v", rep.reports)
+		}
+		if rec.Code == http.StatusInternalServerError {
+			t.Error("abort wrote a 500")
+		}
+	}()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	t.Fatal("recovery swallowed http.ErrAbortHandler")
+}

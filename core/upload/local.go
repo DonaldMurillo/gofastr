@@ -53,25 +53,28 @@ func (s *LocalStorage) Close() error {
 // using it must not run in parallel.
 var afterResolve func(path string)
 
-// sanitizeKey prevents path traversal in storage keys.
+// sanitizeKey prevents path traversal in storage keys. It refuses a key
+// rather than cleaning it: "a//b.png", "a/./b.png", "a/b.png/" and
+// "/a/b.png" all name the file of "a/b.png", and erasure deletes the keys
+// a row names, so a row naming an alias deleted another key's file. Every
+// key the framework mints (UniqueFilename, framework/file's
+// GenerateFilePath, the image renditions beside it) is already clean.
 func sanitizeKey(key string) (string, error) {
 	// Reject obvious traversal patterns
 	if strings.Contains(key, "..") {
 		return "", fmt.Errorf("%w: path traversal detected", ErrInvalidKey)
 	}
-
-	// Clean the path and ensure it doesn't escape
+	if key == "" || key == "." {
+		return "", fmt.Errorf("%w: empty key", ErrInvalidKey)
+	}
+	if strings.HasPrefix(key, "/") || filepath.IsAbs(key) || filepath.VolumeName(key) != "" {
+		return "", fmt.Errorf("%w: absolute key", ErrInvalidKey)
+	}
+	// The native spelling: RefuseFoldedKey splits it on os.PathSeparator.
 	cleaned := filepath.Clean(key)
-	if cleaned == "." {
-		return "", fmt.Errorf("%w: empty after cleaning", ErrInvalidKey)
+	if filepath.ToSlash(cleaned) != key {
+		return "", fmt.Errorf("%w: key is not in its clean form", ErrInvalidKey)
 	}
-
-	// Make the path relative (remove leading slashes)
-	cleaned = strings.TrimPrefix(cleaned, "/")
-	if cleaned == "" {
-		return "", fmt.Errorf("%w: empty after sanitization", ErrInvalidKey)
-	}
-
 	return cleaned, nil
 }
 
@@ -308,8 +311,13 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := root.Rename(tmpRel, rel); err != nil {
-			return scrub("renaming into place", rk.path, err)
+		if err := CommitUnfolded(key, rk.root, root, func() error {
+			if err := root.Rename(tmpRel, rel); err != nil {
+				return scrub("renaming into place", rk.path, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		renamed = true
 		if err := fileperm.Restrict(rk.path, false); err != nil {
@@ -362,8 +370,13 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, rk.path); err != nil {
-		return scrub("renaming into place", rk.path, err)
+	if err := CommitUnfolded(key, rk.root, nil, func() error {
+		if err := os.Rename(tmpPath, rk.path); err != nil {
+			return scrub("renaming into place", rk.path, err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	renamed = true
 	if err := fileperm.Restrict(rk.path, false); err != nil {
@@ -383,19 +396,34 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 		return err
 	}
 
+	// On a case- or normalization-insensitive filesystem "A/b.png" opens
+	// a/b.png: Save refuses the second spelling, and so does Delete, or
+	// erasing a row naming it removed the other key's object.
+	root := s.rootFor(rk)
 	var rmErr error
-	if root := s.rootFor(rk); root != nil {
-		// Kernel-contained unlink: a parent directory swapped for a
-		// symlink after resolution is refused here instead of followed.
-		rmErr = root.Remove(rk.rel())
-	} else {
-		rmErr = os.Remove(rk.path)
+	if err := CommitUnfolded(key, rk.root, root, func() error {
+		if root != nil {
+			// Kernel-contained unlink: a parent directory swapped for a
+			// symlink after resolution is refused here instead of followed.
+			rmErr = root.Remove(rk.rel())
+		} else {
+			rmErr = os.Remove(rk.path)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	if rmErr != nil {
 		// The wrap scrubs the absolute path out of the raw
 		// *os.PathError: erase_data.go and DeleteFileField embed this
 		// message verbatim in errors reported to operators and hosts.
-		return fmt.Errorf("deleting file: %s", ScrubPath(rmErr.Error(), rk.absBase, rk.path))
+		// A missing object keeps os.ErrNotExist in the chain: cleanup
+		// callers count it as already deleted.
+		msg := ScrubPath(rmErr.Error(), rk.absBase, rk.path)
+		if errors.Is(rmErr, os.ErrNotExist) {
+			return fmt.Errorf("deleting file: %s: %w", msg, os.ErrNotExist)
+		}
+		return fmt.Errorf("deleting file: %s", msg)
 	}
 
 	return nil
@@ -429,8 +457,16 @@ func (s *LocalStorage) open(key string) (*os.File, error) {
 		return nil, err
 	}
 
+	// On a case- or normalization-insensitive filesystem "tenanta/x"
+	// opens the file stored as "TenantA/x": refuse a spelling other than
+	// the stored one, as Save and Delete do.
+	root := s.rootFor(rk)
+	if err := RefuseFoldedKey(key, "", rk.root, root); err != nil {
+		return nil, err
+	}
+
 	var f *os.File
-	if root := s.rootFor(rk); root != nil {
+	if root != nil {
 		// Kernel-contained open: a symlink planted at the leaf (or a
 		// parent swapped) after resolution is refused here instead of
 		// streamed.
@@ -562,7 +598,13 @@ func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 		return false, err
 	}
 
-	if root := s.rootFor(rk); root != nil {
+	// A folded spelling would report the other key's object; see open.
+	root := s.rootFor(rk)
+	if err := RefuseFoldedKey(key, "", rk.root, root); err != nil {
+		return false, err
+	}
+
+	if root != nil {
 		// Kernel-contained stat: no existence oracle for paths a
 		// post-resolution symlink plant funnels outside the root.
 		_, err = root.Stat(rk.rel())

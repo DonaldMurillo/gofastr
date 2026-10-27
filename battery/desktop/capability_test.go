@@ -135,6 +135,32 @@ func TestManifestDeterministicAcrossRegistrationOrders(t *testing.T) {
 	}
 }
 
+// A schema bound past 2^53 reaches the manifest with its digits:
+// compacting the schema through map[string]any read it as a float64 and
+// published "maximum":9007199254740992.
+func TestManifestKeepsBigIntegers(t *testing.T) {
+	b, _ := newTestBattery(t)
+	cap := regCap("ledger")
+	cap.Methods[0].Input = json.RawMessage(`{"type":"integer", "maximum":9007199254740993}`)
+	if err := b.Register(cap); err != nil {
+		t.Fatal(err)
+	}
+	b.freezeForTest()
+	m, err := b.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range m.Capabilities {
+		if c.Name == "ledger" {
+			if got := string(c.Methods[0].Input); got != `{"maximum":9007199254740993,"type":"integer"}` {
+				t.Fatalf("manifest input schema = %s", got)
+			}
+			return
+		}
+	}
+	t.Fatal("ledger capability missing from manifest")
+}
+
 func TestManifestBeforeFreezeIsError(t *testing.T) {
 	b, _ := newTestBattery(t)
 	if _, err := b.Manifest(); err == nil {

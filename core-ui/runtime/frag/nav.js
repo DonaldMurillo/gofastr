@@ -210,6 +210,25 @@
     return carrier.outerHTML;
   };
   window.__gofastr._docCarrier = docCarrier;
+  // docSeed is a whole document's page-scoped signal seed, as the
+  // #gofastr-signals-partial island a partial carries. The head seed
+  // mixes scopes; #gofastr-signals-page names its page-scoped keys, so
+  // only those ride and a global keeps its first-seen rule. Placed in a
+  // swapped or cached body, the swap's merge applies it: Back to the
+  // first page of a visit, or a fetched document, restores page state
+  // the way a partial does. A host that names no keys restores none.
+  // (A whole document never carries a partial island of its own.)
+  const docSeed = (source) => {
+    const flat = _json(source.getElementById('gofastr-signals')?.textContent);
+    const names = _json(source.getElementById('gofastr-signals-page')?.textContent);
+    if (!flat || !Array.isArray(names)) return '';
+    const p = {};
+    // A name the seed lacks stays undefined, which JSON drops.
+    for (const k of names) p[k] = flat[k];
+    // The island is re-parsed from a string: a value holding
+    // "</script>" must not end it.
+    return '<script type="application/json" id="gofastr-signals-partial">' + JSON.stringify({ p }).replace(/</g, '\\u003c') + '</script>';
+  };
 
   // Cache the initial page so back-navigation to it works instantly.
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
@@ -219,7 +238,7 @@
     // currentPath) is keyed pathname+search, and invalidate()
     // matches against that form. The layer is <main>'s own slot key:
     // the boot html spans everything below layer 0.
-    cacheScreen(location.pathname + location.search, docCarrier(document) + initialMain.innerHTML, document.title, mainSlotKey());
+    cacheScreen(location.pathname + location.search, docCarrier(document) + docSeed(document) + initialMain.innerHTML, document.title, mainSlotKey());
   }
 
 
@@ -620,7 +639,9 @@
       if (!cached && !bypassCache && !forceFull && window.__gofastr._takePrefetched) {
         const pf = window.__gofastr._takePrefetched(path);
         if (pf) {
-          const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0) ? mainEl() : null);
+          // A layout-less entry swaps into <main> only when the live DOM
+          // is layout-less too, as for the screen cache above.
+          const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
           if (slot) {
             await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
@@ -667,7 +688,7 @@
           const sourceRoot = shellEl(pdoc) || nm;
           // The carrier rides <main>, so the cache entry below (and the
           // whole-main fallback) keeps the page's language and words.
-          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc) + docSeed(pdoc));
           const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -675,7 +696,8 @@
             const m = mainEl();
             if (m) swapAtSlot(m, nm ? nm.innerHTML : '');
           }
-          cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
+          // An error page is shown, never replayed.
+          if (fr.ok) cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
           finishNav(dest, prevPath, false, el || mainEl(), ps);
         }, null, pdoc, t);
         return;
@@ -699,6 +721,9 @@
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
       if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
+      // A session change is an identity change: one identity's pages
+      // must never replay for another.
+      if (rs) window.__gofastr.invalidate('*');
       if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
 
@@ -741,6 +766,10 @@
       const partial = resp.headers.get('X-Gofastr-Partial') === 'true';
       let title, body;
       let swapKey = (partial && resp.headers.get('X-Gofastr-Swap')) || '';
+      // uihost percent-encodes a key holding non-ASCII or %, since fetch
+      // reads header bytes as Latin-1; a key an older server sent raw
+      // stays as it came.
+      try { swapKey = decodeURIComponent(swapKey); } catch (_) {}
       if (partial) {
         title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
         body = html;
@@ -748,7 +777,7 @@
         const pdoc = new DOMParser().parseFromString(html, 'text/html');
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
-        body = docCarrier(pdoc) + (nm?.innerHTML ?? '');
+        body = docCarrier(pdoc) + docSeed(pdoc) + (nm?.innerHTML ?? '');
         swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       // The swap boundary must be live in the DOM; a miss means the
@@ -844,6 +873,8 @@
       if (!store[k]) store[k] = { value: glob[k], listeners: [] };
     }
   };
+  // The intercept module's pane swap applies its answer's seed too.
+  window.__gofastr._mergeSeed = mergeSeedFromDOM;
 
   // Link clicks: cross-page navigation (/a → /b) is intercepted and
   // handled client-side via partial fetch + cache. No hard refresh.
@@ -970,7 +1001,10 @@
     const keys = new Set([...as.keys(), ...bs.keys()]);
     const stateful = _statefulParams();
     for (const k of keys) {
-      if ((as.get(k) || '') === (bs.get(k) || '')) continue;
+      // Every value counts, in order: ?tag=a&tag=b is not ?tag=a&tag=c,
+      // and an empty ?tag= is not an absent tag.
+      const av = as.getAll(k), bv = bs.getAll(k);
+      if (av.length === bv.length && av.every((v, i) => v === bv[i])) continue;
       if (!stateful.has(k)) return false;
     }
     return true;

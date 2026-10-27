@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -97,6 +98,9 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	// track and slides are DIVs, not ul/li: slides are not list items,
 	// and a ul whose children carry role=group trips axe's list rule
 	// besides the allowed-role one the coordinator's site sweep caught.
+	// The derived ids go on a copy: the caller's slice may feed
+	// another carousel with a different ID.
+	p.Slides = slices.Clone(p.Slides)
 	ids := make([]string, 0, len(p.Slides))
 	for i := range p.Slides {
 		if p.Slides[i].ID == "" {

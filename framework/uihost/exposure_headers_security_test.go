@@ -3,6 +3,7 @@ package uihost
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -286,6 +287,19 @@ func TestLinkAlternatePathControlBytes(t *testing.T) {
 				}
 			}
 		})
+	}
+
+	// A decoded > , ; or " closes the URI reference and opens a link of
+	// the attacker's choosing: a second rel="service" naming their MCP.
+	inj := httptest.NewRequest(http.MethodGet, "/notes/"+url.PathEscape(`x>, <https://evil.test/mcp>; rel="service", </tail`), nil)
+	inj.Host = "real.example"
+	irec := httptest.NewRecorder()
+	host.ServeHTTP(irec, inj)
+	if irec.Code != http.StatusOK {
+		t.Fatalf("setup: injection page status %d, want 200", irec.Code)
+	}
+	if link := irec.Header().Get("Link"); strings.Contains(link, "<https://evil.test") || strings.Count(link, `rel="service"`) != 1 {
+		t.Fatalf("SECURITY: [uihost-link] request path added a link to the Link header: %q", link)
 	}
 
 	// Control: a clean path yields a clean header.

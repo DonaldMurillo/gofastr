@@ -172,7 +172,10 @@ After `Options.MaxAttempts` attempts the delivery transitions to
 counter when `ClaimDueDeliveries` reserves it, so a worker that crashes
 between claim and settle (deploy kill, OOM) still burns budget and a
 crash loop terminates at `MaxAttempts` instead of redelivering forever.
-Settles never rewrite the counter — two overlapping runners (a worker
+A claimed delivery whose count is already past `MaxAttempts` (earlier
+claims spent the budget and their workers died before settling) is
+marked `dead` without a request, so `MaxAttempts: 1` means at most one
+POST even across crashes. Settles never rewrite the counter — two overlapping runners (a worker
 whose lease expired mid-POST, the designed recovery re-claim) each count
 their own POST, so the recorded attempts always equal the deliveries
 that ran. A transient error looking the subscriber up (a store blip, a
@@ -181,7 +184,16 @@ schedules the next attempt, since `dead` is reserved for an exhausted
 attempt budget or a subscriber that is definitively gone or inactive. A
 row already `success` or `dead` is fenced: a stale claimant's late
 non-terminal settle is a no-op, never a re-queue of a delivered row.
-Dead deliveries are not retried; they remain in the store for
+A retry or `dead` settle from a claim the row has moved past is fenced
+too: once another worker re-claims, the late retry would replace that
+worker's lease, and a third worker could claim the delivery while the
+second is still sending it; once an operator resets the delivery, a late
+give-up would dead-letter the replay before it ran. A success settle is
+never lease-fenced, since the receiver already has the payload. A settle for a row retention already reaped does
+nothing, so completed work never becomes deliverable again.
+Nothing but a success replaces a `success` row: a claimant past the
+budget that dead-letters while the worker it outran is still mid-POST
+does not mark that delivery `dead` once it lands. Dead deliveries are not retried; they remain in the store for
 inspection / replay via your own admin tooling.
 
 If a subscriber is removed while a delivery for it is pending, the
@@ -280,7 +292,12 @@ attempt per claimed row, so a concurrent Manager sees them as
 not-yet-due and skips them. The Manager auto-detects the interface and
 uses the claim path, which makes multi-instance deployments safe
 against double delivery. Set `Options.LeasePeriod` (default 30s) above
-your worst-case handler latency.
+your worst-case handler latency. A worker sends a claimed batch one
+delivery at a time; when less of the lease is left than the HTTP
+client's timeout (capped at half the lease), it hands that delivery
+and the rest of the batch back, attempt refunded, for the next tick.
+A store without `LeasedStore` still counts each attempt and
+dead-letters at `MaxAttempts`.
 
 A `leasePeriod` of `0` selects the 30 s default; a negative one is
 rejected by both bundled stores — a negative lease can only be a sign
@@ -389,7 +406,11 @@ request path.
    queue wired, the dedupe key is deliberately **not** stored yet.
 6. Enqueue a `queue.Job{Type: JobType, Payload: {"envelope_id", "source"}}`.
 7. Register the dedupe key on the envelope; only now that the event is
-   durably queued may redeliveries be dedupe-acked.
+   durably queued may redeliveries be dedupe-acked. A worker may already
+   hold the envelope, so the bundled stores write the key alone
+   (`RegisterDedupeKey`), at any status, and a settle that carries no key
+   keeps the stored one. A host store without `RegisterDedupeKey` gets
+   the key through `UpdateEnvelope`.
 8. Respond `202` with `{"id": "<envelope id>"}`.
 
 On enqueue failure the handler responds `500` (the sender retries) and
@@ -441,7 +462,10 @@ when the store implements the claim; both bundled stores do), so two
 overlapping runs under the queue's lease expiry each count — before
 calling your function, then `processed` on success or `failed` (with
 `LastError` set) on error. It returns your function's error so the
-queue's own retry/backoff can reschedule it.
+queue's own retry/backoff can reschedule it. `failed` is not final: the
+retry marks the envelope `processing` again, consumes an attempt, and
+records its own error. Only `processed` is fenced, so a stale runner's
+late failure cannot overwrite a success.
 
 ### Stores
 

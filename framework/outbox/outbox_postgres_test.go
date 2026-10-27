@@ -46,7 +46,9 @@ func TestPostgres_DeliveryTableCreated(t *testing.T) {
 	db, _ := pgOutbox(t)
 	for _, want := range []string{"event_outbox", "event_outbox_delivery"} {
 		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables WHERE table_name=$1`, want).Scan(&n); err != nil {
+		// Scoped to this test's schema: the shared instance holds other
+		// tests' event_outbox tables in theirs.
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name=$1`, want).Scan(&n); err != nil {
 			t.Fatalf("query information_schema: %v", err)
 		}
 		if n != 1 {

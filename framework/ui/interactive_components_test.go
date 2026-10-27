@@ -101,11 +101,11 @@ func TestTabsFirstButtonActive(t *testing.T) {
 func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 	css := tabsStyle.Entry().CSSFor(style.Theme{})
 	for i := range 3 {
-		btnRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-cui-tab-index="%d"]`, i, i)
+		btnRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-nav>.fui-tab[data-cui-tab-index="%d"]`, i, i)
 		if !strings.Contains(css, btnRule) {
 			t.Errorf("missing active-button rule for tab %d (highlight won't move):\n%s", i, btnRule)
 		}
-		panelRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-cui-tab-index="%d"]`, i, i)
+		panelRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]`, i, i)
 		if !strings.Contains(css, panelRule) {
 			t.Errorf("missing visible-panel rule for tab %d:\n%s", i, panelRule)
 		}
@@ -117,7 +117,7 @@ func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 func TestTabsPanelRuleCoversManyTabs(t *testing.T) {
 	css := tabsStyle.Entry().CSSFor(style.Theme{})
 	last := tabsMaxPanels - 1
-	rule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-cui-tab-index="%d"]`, last, last)
+	rule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]`, last, last)
 	if !strings.Contains(css, rule) {
 		t.Errorf("CSS does not cover tab index %d (panels beyond the cap silently stay hidden):\n%s", last, css)
 	}

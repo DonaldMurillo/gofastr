@@ -606,6 +606,10 @@ func TestFingerprintBindsFullRequestShape(t *testing.T) {
 		retry spec
 	}{
 		{"different path", spec{"POST", "/orders", "", ""}, spec{"POST", "/transfers", "", ""}},
+		// The mux routes these two differently (an escaped slash stays
+		// inside one segment), so they are different requests even though
+		// their decoded paths match.
+		{"escaped slash in path", spec{"POST", "/items/a%2Fb", "", ""}, spec{"POST", "/items/a/b", "", ""}},
 		{"different query", spec{"POST", "/pay?x=1", "", ""}, spec{"POST", "/pay?x=2", "", ""}},
 		{"different method", spec{"POST", "/pay", "", ""}, spec{"PUT", "/pay", "", ""}},
 		{"different content-type", spec{"POST", "/pay", "", "same"}, spec{"POST", "/pay", "text/plain", "same"}},

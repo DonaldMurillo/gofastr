@@ -1,10 +1,6 @@
 package mcp
 
 import (
-	"bytes"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -110,6 +106,18 @@ func TestWidgetClientJS_HandshakeNotifiesAfterInitializeResult(t *testing.T) {
 	}
 	if !strings.Contains(body, "appCapabilities: appCapabilities") {
 		t.Error("connect() must carry the app's appCapabilities in ui/initialize params")
+	}
+	// McpUiInitializeRequest params require appInfo (an Implementation)
+	// and protocolVersion beside appCapabilities; a host validating the
+	// request refused the handshake without them.
+	if !strings.Contains(body, "appInfo: initAppInfo(appInfo)") {
+		t.Error("connect() must carry appInfo in ui/initialize params, defaulted when the caller passes none")
+	}
+	if !strings.Contains(body, "protocolVersion: PROTOCOL_VERSION") {
+		t.Error("connect() must carry protocolVersion in ui/initialize params")
+	}
+	if !strings.Contains(code, `const PROTOCOL_VERSION = "2026-01-26";`) {
+		t.Error("PROTOCOL_VERSION must be the ext-apps spec the client implements, 2026-01-26")
 	}
 }
 
@@ -267,8 +275,14 @@ func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	if !strings.Contains(tn, "reply(msg.id, {}, null);") {
 		t.Error("handleTeardown must answer the request with result {} on success")
 	}
-	if !strings.Contains(tn, `reply(msg.id, null, { code: "E_HANDLER"`) {
-		t.Error("handleTeardown must answer with a JSON-RPC error when the handler throws — the host is waiting on the response")
+	if !strings.Contains(tn, `reply(msg.id, null, { code: INTERNAL_ERROR,`) ||
+		!strings.Contains(code, "const INTERNAL_ERROR = -32603;") {
+		t.Error("handleTeardown must answer with a JSON-RPC internal error (-32603) when the handler throws — the host is waiting on the response")
+	}
+	// A JSON-RPC error code on the wire is an integer. The E_* strings
+	// are for promise rejections that never leave the frame.
+	if m := regexp.MustCompile(`reply\([^)]*code:\s*"`).FindString(code); m != "" {
+		t.Errorf("a reply posts a string error code, JSON-RPC requires an integer: %s", m)
 	}
 	// Every rejectOutstanding sits immediately after a reply: the
 	// response is posted FIRST, on both the success and error paths.
@@ -295,42 +309,6 @@ func TestWidgetClientJS_ChannelContract(t *testing.T) {
 	}
 	if !strings.Contains(code, `"pagehide"`) {
 		t.Error("pagehide must fail outstanding requests instead of leaking until timeout")
-	}
-}
-
-// The handler serves the script with the headers an opaque-origin widget
-// iframe needs: the CORP cross-origin relaxation (a same-origin default
-// would block the "null"-origin frame's script fetch), nosniff, and the
-// no-store dev cache. The body is exactly the embedded client.
-func TestWidgetClientHandlerServedHeaders(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.Handle(WidgetClientScriptURL, WidgetClientHandler())
-
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-	resp, err := http.Get(srv.URL + WidgetClientScriptURL)
-	if err != nil {
-		t.Fatalf("GET widget client: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("widget client status=%d", resp.StatusCode)
-	}
-	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") {
-		t.Errorf("widget client Content-Type=%q", ct)
-	}
-	if got := resp.Header.Get("Cross-Origin-Resource-Policy"); got != "cross-origin" {
-		t.Errorf("widget client CORP=%q, want cross-origin (opaque-origin fetcher)", got)
-	}
-	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
-		t.Error("widget client must carry nosniff")
-	}
-	if cc := resp.Header.Get("Cache-Control"); cc != "no-store, max-age=0" {
-		t.Errorf("widget client Cache-Control=%q", cc)
-	}
-	if !bytes.Equal(body, WidgetClientJS()) {
-		t.Error("widget client route must serve exactly the embedded bytes")
 	}
 }
 

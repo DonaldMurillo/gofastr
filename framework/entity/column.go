@@ -3,8 +3,10 @@ package entity
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // Column-typed query primitives
@@ -252,9 +254,11 @@ func (c BoolColumn) IsFalse() Condition  { return c.Eq(false) }
 // ----------------------------------------------------------------------------
 
 // TimestampColumn represents a TIMESTAMP/TIMESTAMPTZ column. Method semantics
-// mirror IntColumn but accept any value the driver knows how to bind
-// (time.Time, RFC3339 strings, etc.) so callers don't have to choose a
-// canonical form here.
+// mirror IntColumn but accept a time.Time, a *time.Time or an RFC 3339
+// string, bound in schema.TimestampLayout as crud stores the column and the
+// filter binder binds it. SQLite compares the column as text, so a value
+// bound as given, "…10:00:00Z", missed the row stored as "…10:00:00.000000Z"
+// and gt/lt compared spellings. Any other value binds as given.
 type TimestampColumn struct{ rawColumn }
 
 func NewTimestampColumn(name string) TimestampColumn {
@@ -262,19 +266,36 @@ func NewTimestampColumn(name string) TimestampColumn {
 }
 
 func (c TimestampColumn) Eq(v any) Condition {
-	return Condition{sql: c.name() + " = $1", args: []any{v}}
+	return Condition{sql: c.name() + " = $1", args: []any{timestampArg(v)}}
 }
 func (c TimestampColumn) Gt(v any) Condition {
-	return Condition{sql: c.name() + " > $1", args: []any{v}}
+	return Condition{sql: c.name() + " > $1", args: []any{timestampArg(v)}}
 }
 func (c TimestampColumn) Gte(v any) Condition {
-	return Condition{sql: c.name() + " >= $1", args: []any{v}}
+	return Condition{sql: c.name() + " >= $1", args: []any{timestampArg(v)}}
 }
 func (c TimestampColumn) Lt(v any) Condition {
-	return Condition{sql: c.name() + " < $1", args: []any{v}}
+	return Condition{sql: c.name() + " < $1", args: []any{timestampArg(v)}}
 }
 func (c TimestampColumn) Lte(v any) Condition {
-	return Condition{sql: c.name() + " <= $1", args: []any{v}}
+	return Condition{sql: c.name() + " <= $1", args: []any{timestampArg(v)}}
+}
+
+// timestampArg is v in schema.TimestampLayout when v is an instant.
+func timestampArg(v any) any {
+	switch t := v.(type) {
+	case time.Time:
+		return schema.FormatTimestamp(t)
+	case *time.Time:
+		if t != nil {
+			return schema.FormatTimestamp(*t)
+		}
+	case string:
+		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+			return schema.FormatTimestamp(parsed)
+		}
+	}
+	return v
 }
 
 // ----------------------------------------------------------------------------

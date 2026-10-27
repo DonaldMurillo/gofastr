@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -74,5 +75,51 @@ func TestNonObjectDataReachesConsumer(t *testing.T) {
 			"([]string{\"a\",\"b\"}): Append accepted it inside the business tx, but processDelivery " +
 			"unmarshals into map[string]any, so the delivery can only fail and eventually dead-letter — " +
 			"the staged event is lost on the durable lane while the live bus would have delivered it")
+	}
+}
+
+// TestRelayKeepsBigIntegers: an integer past 2^53 in a staged payload
+// reaches the consumer with its digits, not rounded through a float64.
+func TestRelayKeepsBigIntegers(t *testing.T) {
+	db, o := openOutbox(t,
+		WithPollInterval(20*time.Millisecond),
+		WithHandlerGrace(time.Hour),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	got := make(chan any, 1)
+	o.Consume("svc", "t.big", func(_ context.Context, ev event.Event) error {
+		got <- ev.Data
+		return nil
+	})
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if _, err := o.Append(ctx, tx, "t.big", map[string]any{"id": int64(9007199254740993), "n": 3}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	stop := o.StartRelay(ctx)
+	defer stop()
+	o.Nudge()
+
+	select {
+	case data := <-got:
+		b, err := json.Marshal(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `{"id":9007199254740993,"n":3}`; string(b) != want {
+			t.Fatalf("consumer received %s, want %s", b, want)
+		}
+		if n, ok := data.(map[string]any)["n"].(float64); !ok || n != 3 {
+			t.Fatalf("small number = %#v, want float64(3)", data.(map[string]any)["n"])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("consumer never received the staged payload")
 	}
 }

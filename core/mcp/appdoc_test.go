@@ -13,7 +13,7 @@ import (
 
 // The assembled document carries exactly the boilerplate the author
 // should never retype, and nothing else: doctype, charset/viewport, title,
-// one root element wrapping the body, the widget client <script src>, and
+// one root element wrapping the body, the inlined widget client, and
 // the author's script after it in execution order. No CSS anywhere —
 // the builder emits structure only, hard rule 7's widget-side twin.
 func TestWidgetDocument_AssemblesDocument(t *testing.T) {
@@ -40,18 +40,24 @@ func TestWidgetDocument_AssemblesDocument(t *testing.T) {
 		}
 	}
 
-	// The client script tag comes from the constant the server mounts, and
-	// it precedes the author's script so window.__gofastrMcpApp exists
-	// when the author's code runs.
-	clientTag := `<script src="` + WidgetClientScriptURL + `"></script>`
-	if !strings.Contains(html, clientTag) {
-		t.Errorf("document missing the widget client script tag %q:\n%s", clientTag, html)
+	// The widget client is inlined, byte for byte, and precedes the
+	// author's script so window.__gofastrMcpApp exists when the author's
+	// code runs. A <script src> would resolve against the chat host's
+	// origin, where nothing serves the client.
+	clientTag := "<script>" + string(WidgetClientJS()) + "</script>"
+	if strings.Count(html, clientTag) != 1 {
+		t.Errorf("document must inline the widget client exactly once:\n%s", html)
 	}
-	if ci, ai := strings.Index(html, clientTag), strings.Index(html, "window.__gofastrMcpApp"); ci < 0 || ai < ci {
-		t.Errorf("author script must come after the client script tag")
+	if ci, ai := strings.Index(html, clientTag), strings.Index(html, "app.connect({});"); ci < 0 || ai < ci+len(clientTag) {
+		t.Errorf("author script must come after the inlined client")
 	}
-	if strings.Contains(html, "style") {
-		t.Errorf("builder must emit zero styling; found a style reference:\n%s", html)
+	if srcs := scriptSrcRE.FindAllString(html, -1); len(srcs) != 0 {
+		t.Errorf("document must load no script by URL, found %q", srcs)
+	}
+	// The client applies the host's styles at runtime, so it names them;
+	// the markup the builder writes around it must not.
+	if markup := strings.Replace(html, clientTag, "", 1); strings.Contains(markup, "style") {
+		t.Errorf("builder must emit zero styling; found a style reference:\n%s", markup)
 	}
 }
 
@@ -106,6 +112,9 @@ func TestWidgetDocument_Validation(t *testing.T) {
 		{"script close tag upper case", WidgetDocument{Body: "x", Script: `el.innerHTML = "</SCRIPT>";`}, `"</SCRIPT"`},
 		{"script close tag mixed case", WidgetDocument{Body: "x", Script: `el.innerHTML = "</ScRiPt>";`}, `"</ScRiPt"`},
 		{"script html comment open", WidgetDocument{Body: "x", Script: `var s = "<!--";`}, `"<!--"`},
+		// İ lower-cases to three bytes from two: an offset found in the
+		// lowered copy must not index the original.
+		{"script close tag after dotted I", WidgetDocument{Body: "x", Script: "İ</script"}, `"</script"`},
 	}
 	for _, tc := range cases {
 		_, err := tc.doc.HTML()
@@ -125,12 +134,26 @@ func TestWidgetDocument_Validation(t *testing.T) {
 	}
 }
 
+// The inlined widget client is held to the same rule as the author's
+// Script: a future edit to widgetclient.js that carries "</script" or
+// "<!--" would cut the client short in every widget, so HTML refuses to
+// build rather than ship a truncated client.
+func TestWidgetDocument_RefusesUnsafeClient(t *testing.T) {
+	saved := widgetClientJSBytes
+	t.Cleanup(func() { widgetClientJSBytes = saved })
+	for _, bad := range []string{`var s = "</script>";`, `var s = "</SCRIPT";`, `var s = "<!--";`} {
+		widgetClientJSBytes = []byte(bad)
+		if _, err := (WidgetDocument{Body: "x"}).HTML(); err == nil || !strings.Contains(err.Error(), "widget client") {
+			t.Errorf("client %q: want a widget client refusal, got %v", bad, err)
+		}
+	}
+}
+
 // ── Escaping: the breakout test ─────────────────────────────────────
 
-// scriptSrcRE captures the src of every script tag that carries one. The
-// round-trip test compares the captured value for EQUALITY against
-// WidgetClientScriptURL, because a substring pin would pass against a
-// longer URL that merely contains the constant.
+// scriptSrcRE captures the src of every script tag that carries one. A
+// widget document must carry none: the chat host renders it on its own
+// origin, so any script URL resolves against the host, not the server.
 var scriptSrcRE = regexp.MustCompile(`<script\b[^>]*\bsrc="([^"]*)"`)
 
 // A hostile Title and RootID cannot break out of their contexts. Title is
@@ -168,9 +191,8 @@ func TestWidgetDocument_EscapesDataFields(t *testing.T) {
 	if n := strings.Count(html, "<script"); n != 2 {
 		t.Errorf("hostile data fields must not add script elements: found %d in:\n%s", n, html)
 	}
-	srcs := scriptSrcRE.FindAllStringSubmatch(html, -1)
-	if len(srcs) != 1 {
-		t.Fatalf("exactly one script may carry a src, found %d in:\n%s", len(srcs), html)
+	if srcs := scriptSrcRE.FindAllStringSubmatch(html, -1); len(srcs) != 0 {
+		t.Fatalf("no script may carry a src, found %d in:\n%s", len(srcs), html)
 	}
 }
 
@@ -219,15 +241,14 @@ func TestWidgetDocument_RoundTrip(t *testing.T) {
 		t.Fatalf("resource text missing: %v", resp.Result)
 	}
 
-	// The document's one src-bearing script tag loads EXACTLY the URL the
-	// server mounts the client at. Equality, not substring: a drifted URL
-	// that merely contains the constant must fail here.
-	srcs := scriptSrcRE.FindAllStringSubmatch(text, -1)
-	if len(srcs) != 1 {
-		t.Fatalf("built document must carry exactly one script src, found %d:\n%s", len(srcs), text)
+	// The document the wire serves carries the whole widget client
+	// inline and loads nothing by URL: the host renders it on its own
+	// origin, where no path of ours resolves.
+	if !strings.Contains(text, "<script>"+string(WidgetClientJS())+"</script>") {
+		t.Errorf("served document must inline the widget client verbatim:\n%s", text)
 	}
-	if srcs[0][1] != WidgetClientScriptURL {
-		t.Errorf("document script src = %q, want exactly %q (the URL the server mounts)", srcs[0][1], WidgetClientScriptURL)
+	if srcs := scriptSrcRE.FindAllStringSubmatch(text, -1); len(srcs) != 0 {
+		t.Errorf("served document must load no script by URL, found %q", srcs)
 	}
 
 	// The linking tool answers, so the model can reach the widget.

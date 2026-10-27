@@ -2,12 +2,14 @@ package stream
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // validUpgradeReq builds a complete RFC 6455 §4.2.1 handshake.
@@ -267,5 +269,112 @@ func TestUnmaskedCloseIsProtocolError(t *testing.T) {
 	}
 	if echo := c.peerClosePayload.Load(); echo != nil {
 		t.Errorf("unmasked close captured echo payload %x; peer bytes from a protocol-violating frame must not be stored for echo", *echo)
+	}
+}
+
+// Property: a text message must be valid UTF-8 as a whole message, and
+// one that is not fails the connection with 1007 (RFC 6455 §8.1). The
+// check runs on the reassembled message, so a character split across
+// fragments is fine and a fragment boundary cannot smuggle bad bytes.
+func TestInvalidUTF8TextFailsWith1007(t *testing.T) {
+	for name, frames := range map[string][]byte{
+		"single frame":     wsTextFrag(0x1, true, "ok\xff"),
+		"last fragment":    append(wsTextFrag(0x1, false, "ok"), wsTextFrag(0x0, true, "\xc3")...),
+		"overlong encoded": wsTextFrag(0x1, true, "\xc0\xaf"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := wsConnFromBytes(frames)
+			if f, err := c.readFrame(); err == nil {
+				t.Fatalf("invalid UTF-8 text delivered: %q", f.payload)
+			}
+			own := c.ownClosePayload.Load()
+			if own == nil || len(*own) < 2 || binary.BigEndian.Uint16(*own) != 1007 {
+				t.Fatalf("close status = %v, want 1007", own)
+			}
+		})
+	}
+	t.Run("char split across fragments", func(t *testing.T) {
+		c := wsConnFromBytes(append(wsTextFrag(0x1, false, "\xc3"), wsTextFrag(0x0, true, "\xa9")...))
+		f, err := c.readFrame()
+		if err != nil || string(f.payload) != "é" {
+			t.Fatalf("readFrame = %v, %v; want é", f, err)
+		}
+	})
+	t.Run("binary is not text", func(t *testing.T) {
+		c := wsConnFromBytes(wsTextFrag(0x2, true, "\xff\xfe"))
+		if _, err := c.readFrame(); err != nil {
+			t.Fatalf("binary message refused: %v", err)
+		}
+	})
+}
+
+// The 1007 reaches the wire: the pump fails the connection and the
+// Close frame the peer reads carries it.
+func TestInvalidUTF8ClosesWith1007OnWire(t *testing.T) {
+	conn, cli := newReadPumpConn(t, WSConfig{
+		ReadLimit:       1 << 20,
+		ReadIdleTimeout: -1,
+		PongTimeout:     -1,
+		WriteTimeout:    time.Second,
+		CloseTimeout:    100 * time.Millisecond,
+		requireMask:     true,
+	})
+	defer conn.Close()
+	defer cli.Close()
+	if _, err := cli.Write(maskedClientFrame(wsopcodeText, []byte("\xff"))); err != nil {
+		t.Fatal(err)
+	}
+	_ = cli.SetReadDeadline(time.Now().Add(2 * time.Second))
+	hdr := make([]byte, 4)
+	if _, err := readFull(cli, hdr); err != nil {
+		t.Fatalf("no Close frame: %v", err)
+	}
+	if hdr[0]&0x0F != wsopcodeClose || binary.BigEndian.Uint16(hdr[2:]) != 1007 {
+		t.Fatalf("frame %x, want Close with 1007", hdr)
+	}
+}
+
+// Property: a Close reason must be UTF-8 (RFC 6455 §5.5.1); one that is
+// not is a protocol error, so the echo says 1002, not the peer's code.
+func TestCloseReasonBadUTF8Echoes1002(t *testing.T) {
+	frame := driveCloseEcho(t, []byte{0x03, 0xE8, 'b', 0xff})
+	if len(frame) < 4 || frame[2] != echo1002[0] || frame[3] != echo1002[1] {
+		t.Fatalf("echo = %x, want status 1002", frame)
+	}
+}
+
+// Property: the payload length uses the minimal encoding (RFC 6455
+// §5.2): the 16-bit form only for 126..65535, the 64-bit form only
+// above that. A longer-than-needed form is a protocol error.
+func TestNonMinimalLengthRejected(t *testing.T) {
+	ext16 := func(n int) []byte {
+		return append([]byte{0x82, 126, byte(n >> 8), byte(n)}, make([]byte, n)...)
+	}
+	ext64 := func(n int) []byte {
+		b := []byte{0x82, 127, 0, 0, 0, 0, 0, 0, 0, 0}
+		binary.BigEndian.PutUint64(b[2:], uint64(n))
+		return append(b, make([]byte, n)...)
+	}
+	for name, frame := range map[string][]byte{
+		"16-bit form for 5 bytes":   ext16(5),
+		"16-bit form for 125 bytes": ext16(125),
+		"64-bit form for 200 bytes": ext64(200),
+		"64-bit form for 65535":     ext64(65535),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := wsConnFromBytes(frame).readFrame(); err == nil {
+				t.Fatal("non-minimal length accepted")
+			}
+		})
+	}
+	for name, frame := range map[string][]byte{
+		"16-bit form for 126":   ext16(126),
+		"64-bit form for 65536": ext64(65536),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := wsConnFromBytes(frame).readFrame(); err != nil {
+				t.Fatalf("minimal length refused: %v", err)
+			}
+		})
 	}
 }

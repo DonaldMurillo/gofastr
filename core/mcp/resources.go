@@ -138,11 +138,20 @@ type resourceReadResult struct {
 	Contents []resourceContentItem `json:"contents"`
 }
 
+// resourceContentItem is the spec's TextResourceContents |
+// BlobResourceContents union, told apart by which key is present. Text
+// and Blob are pointers so exactly one is set and an empty body still
+// carries its key: two plain omitempty strings dropped both for "" and
+// left an item no validating client could decode.
 type resourceContentItem struct {
-	URI      string `json:"uri"`
-	MimeType string `json:"mimeType,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Blob     string `json:"blob,omitempty"` // base64
+	URI      string  `json:"uri"`
+	MimeType string  `json:"mimeType,omitempty"`
+	Text     *string `json:"text,omitempty"`
+	Blob     *string `json:"blob,omitempty"` // base64
+	// Meta is the resource's _meta, repeated on its contents: a host reads
+	// an MCP App's _meta.ui (csp, permissions) from what it renders, and
+	// resources/list alone left the declared CSP unseen.
+	Meta map[string]any `json:"_meta,omitempty"`
 }
 
 // handleResourcesList returns one page of registered resources in URI
@@ -196,11 +205,12 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 	if mime == "" {
 		mime = res.MimeType
 	}
-	item := resourceContentItem{URI: res.URI, MimeType: mime}
+	item := resourceContentItem{URI: res.URI, MimeType: mime, Meta: res.Meta}
 	if contents.Blob != nil {
-		item.Blob = base64.StdEncoding.EncodeToString(contents.Blob)
+		blob := base64.StdEncoding.EncodeToString(contents.Blob)
+		item.Blob = &blob
 	} else {
-		item.Text = contents.Text
+		item.Text = &contents.Text
 	}
 	return newSuccessResponse(req.ID, resourceReadResult{Contents: []resourceContentItem{item}})
 }

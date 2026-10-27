@@ -187,6 +187,10 @@ type childPrep struct {
 	Stdout     io.ReadCloser
 	StderrPipe io.ReadCloser
 	Scratch    string
+	// OwnScratch: the runner made Scratch (ChildSpec.ScratchDir was
+	// empty), so it removes it when the child is reaped or the spawn
+	// fails. A caller-supplied dir is the caller's to clean up.
+	OwnScratch bool
 	Stderr     *moduleproto.RingSink
 	Spec       ChildSpec
 	// Artifact is the open artifact fd when the platform execs BY FD
@@ -275,6 +279,13 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		_ = artifact.Close()
 		return nil, fmt.Errorf("processmodule: scratch dir %s: %w", scratch, err)
 	}
+	ownScratch := spec.ScratchDir == ""
+	prepared := false
+	defer func() {
+		if !prepared && ownScratch {
+			_ = os.RemoveAll(scratch)
+		}
+	}()
 
 	stderr := spec.Stderr
 	if stderr == nil {
@@ -331,12 +342,14 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		return nil, fmt.Errorf("processmodule: stderr pipe: %w", err)
 	}
 
+	prepared = true
 	return &childPrep{
 		Cmd:        cmd,
 		Stdin:      stdin,
 		Stdout:     stdout,
 		StderrPipe: stderrPipe,
 		Scratch:    scratch,
+		OwnScratch: ownScratch,
 		Stderr:     stderr,
 		Spec:       spec,
 		Artifact:   execFD,
@@ -361,6 +374,12 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 // path-based exec offers on platforms without exec-by-fd.
 func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io.Reader, w io.Writer, maxFrameBytes int) (*moduleproto.Codec, error)) (RunningChild, error) {
 	cmd := prep.Cmd
+	started := false
+	defer func() {
+		if !started {
+			prep.removeOwnedScratch()
+		}
+	}()
 	if prep.Artifact == nil && !fdExecSupported {
 		// Path-exec platform: re-verify the digest immediately before
 		// exec so a swap between prepare and here (concurrent deploy,
@@ -430,7 +449,19 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		stderr: prep.Stderr,
 		pgid:   childPgid(cmd),
 	}
+	if prep.OwnScratch {
+		rc.scratch = prep.Scratch
+	}
+	started = true
 	return rc, nil
+}
+
+// removeOwnedScratch deletes the scratch dir when the runner made it, on
+// a spawn that failed before a [spawnedChild] took ownership of it.
+func (p *childPrep) removeOwnedScratch() {
+	if p != nil && p.OwnScratch {
+		_ = os.RemoveAll(p.Scratch)
+	}
 }
 
 // execName is the human-readable program name for exec error messages:
@@ -477,6 +508,11 @@ type spawnedChild struct {
 	mu       sync.Mutex
 	waitOnce sync.Once
 	waitErr  error
+
+	// scratch is the runner-made working dir Wait removes once the child
+	// is reaped, so a crash-looping module does not leave one directory
+	// per restart under the temp root. Empty for a caller-supplied dir.
+	scratch string
 }
 
 func (c *spawnedChild) Codec() *moduleproto.Codec     { return c.codec }
@@ -526,6 +562,9 @@ func (c *spawnedChild) Kill() error {
 func (c *spawnedChild) Wait() error {
 	c.waitOnce.Do(func() {
 		c.waitErr = c.cmd.Wait()
+		if c.scratch != "" {
+			_ = os.RemoveAll(c.scratch)
+		}
 	})
 	return c.waitErr
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
+	"slices"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -455,7 +457,10 @@ func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 		}
 	}
 	if v, ok := cfg["Fields"]; ok {
-		decl.Fields = packReadFields(v)
+		var err error
+		if decl.Fields, err = packReadFields(v); err != nil {
+			return decl, err
+		}
 	}
 	if v, ok := cfg["Indices"]; ok {
 		decl.Indices = packReadIndices(v)
@@ -470,17 +475,69 @@ func PackEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 	return decl, nil
 }
 
-func packReadFields(e ast.Expr) []framework.FieldDeclaration {
+// packHeldFieldKeys are the schema.Field keys a spec field declaration
+// holds. Any other key set to a non-zero value fails the pack: WireName
+// was read past, so a packed spec's client named the JSON key from Name
+// ("bodyText") while CRUD served the override ("content"), and every
+// read came back empty.
+var packHeldFieldKeys = map[string]bool{
+	"Name": true, "Type": true, "Required": true, "Unique": true, "Default": true,
+	"AutoGenerate": true, "ReadOnly": true, "Hidden": true, "NoQuery": true,
+	"Max": true, "Min": true, "Pattern": true, "Values": true, "To": true, "Many": true,
+}
+
+// packZeroLiteral reports whether e spells a zero value: "", false, nil,
+// or 0. Setting an unheld key to its zero value changes nothing.
+func packZeroLiteral(e ast.Expr) bool {
+	switch t := e.(type) {
+	case *ast.BasicLit:
+		return t.Value == `""` || t.Value == "``" || t.Value == "0"
+	case *ast.Ident:
+		return t.Name == "false" || t.Name == "nil"
+	}
+	return false
+}
+
+// packReadFields reads a []schema.Field literal back to declarations. It
+// refuses what a declaration cannot hold rather than drop it: a key
+// outside packHeldFieldKeys, a Type with no spec name, and a Max, Min, or
+// AutoGenerate it cannot read as a literal. The fields read before the
+// refusal come back with the error.
+func packReadFields(e ast.Expr) ([]framework.FieldDeclaration, error) {
 	cl, ok := e.(*ast.CompositeLit)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	out := make([]framework.FieldDeclaration, 0, len(cl.Elts))
 	for _, el := range cl.Elts {
 		fv := FieldVals(el)
+		name := AstString(fv["Name"])
+		for _, key := range slices.Sorted(maps.Keys(fv)) {
+			if !packHeldFieldKeys[key] && !packZeroLiteral(fv[key]) {
+				return out, fmt.Errorf("field %q: schema.Field key %s has no app spec equivalent; pack would drop it", name, key)
+			}
+		}
+		typeName := "String" // schema.Field's zero Type
+		if v, set := fv["Type"]; set {
+			typeName = AstSelName(v)
+		}
+		typ, ok := schemaTypeToYAML[typeName]
+		if !ok {
+			return out, fmt.Errorf("field %q: Type %s has no app spec name", name, typeName)
+		}
+		for _, key := range []string{"Max", "Min"} {
+			if v, set := fv[key]; set && !packZeroLiteral(v) {
+				if _, ok := astPtrCallFloat(v); !ok {
+					return out, fmt.Errorf("field %q: %s is not a literal number pack can read", name, key)
+				}
+			}
+		}
+		if v, set := fv["AutoGenerate"]; set && autoGenerateToYAML(AstSelName(v)) == "" && AstSelName(v) != "AutoNone" {
+			return out, fmt.Errorf("field %q: AutoGenerate %s has no app spec name", name, AstSelName(v))
+		}
 		f := framework.FieldDeclaration{
-			Name:     AstString(fv["Name"]),
-			Type:     schemaTypeToYAML[AstSelName(fv["Type"])],
+			Name:     name,
+			Type:     typ,
 			Required: AstBool(fv["Required"]),
 			Unique:   AstBool(fv["Unique"]),
 			ReadOnly: AstBool(fv["ReadOnly"]),
@@ -511,7 +568,7 @@ func packReadFields(e ast.Expr) []framework.FieldDeclaration {
 		}
 		out = append(out, f)
 	}
-	return out
+	return out, nil
 }
 
 func autoGenerateToYAML(constName string) string {

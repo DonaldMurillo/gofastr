@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -82,25 +83,42 @@ func WithAdvisoryLock(ctx context.Context, db *sql.DB, dialect Dialect, fn func(
 // that need to namespace the lock away from other migration tooling sharing
 // the database. The key names the Postgres advisory lock; the SQLite arm uses
 // its own fixed lease table and ignores it.
+//
+// On SQLite the lease lasts migrateLease from when it is taken, and fn
+// renews it only through the runner's keep calls (withLeasedLock), made
+// between migrations: there is no background renewal while fn holds the
+// connection. Work under this exported entry point must finish within the
+// lease, or another process may take the lock.
 func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key int64, fn func(conn *sql.Conn) error) error {
+	return withLeasedLock(ctx, db, dialect, key, func(conn *sql.Conn, _ func(context.Context) error) error {
+		return fn(conn)
+	})
+}
+
+// errLeaseLost reports that another process holds the SQLite lease this
+// holder took: its own expired and was taken.
+var errLeaseLost = errors.New("lease lost to another process")
+
+// withLeasedLock is WithAdvisoryLockKey for a runner that can renew: fn
+// gets keep, which renews the SQLite lease on the pinned connection and
+// returns errLeaseLost once another process holds it. keep must run while
+// the connection has no open transaction (between migrations): a renewal
+// inside one would commit or roll back with it. On Postgres, and with a
+// nil db, keep does nothing.
+func withLeasedLock(ctx context.Context, db *sql.DB, dialect Dialect, key int64, fn func(conn *sql.Conn, keep func(context.Context) error) error) error {
+	noKeep := func(context.Context) error { return nil }
 	if db == nil {
-		return fn(nil)
+		return fn(nil, noKeep)
 	}
 
-	// SQLite arm: take the leased lock row BEFORE pinning the connection, so
-	// the lease statements (and its heartbeat) run on the pool while fn owns
-	// the pinned conn. A process-level mutex orders same-process callers
-	// first: two goroutines whose pool connections may not even share a
-	// database (an in-memory SQLite pool is per-connection) could not be
-	// ordered by any row.
+	// A process-level mutex orders same-process SQLite callers first: two
+	// goroutines whose pool connections may not even share a database (an
+	// in-memory SQLite pool is per-connection) could not be ordered by any
+	// row. It is taken before the pin, so a one-connection pool queues
+	// here rather than on the pool.
 	if dialect == DialectSQLite {
 		sqliteMigrateMu.Lock()
 		defer sqliteMigrateMu.Unlock()
-		release, err := AcquireSQLiteLease(ctx, db, "_gofastr_migrate_lock", migrateLease, "migrate")
-		if err != nil {
-			return fmt.Errorf("migrate lock: sqlite lease: %w", err)
-		}
-		defer release()
 	}
 
 	// Pin a single connection for the whole lock lifetime. The lock (Postgres)
@@ -112,8 +130,21 @@ func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key i
 	}
 	defer conn.Close()
 
+	if dialect == DialectSQLite {
+		// The lease is taken, renewed and released on the pinned
+		// connection: a renewal through the pool waited for this very
+		// connection on a one-connection pool, so nothing renewed and the
+		// lease expired mid-run; and an in-memory pool's other connections
+		// are other databases.
+		lease, err := acquireSQLiteLeaseOn(ctx, conn, "_gofastr_migrate_lock", migrateLease, "migrate")
+		if err != nil {
+			return fmt.Errorf("migrate lock: sqlite lease: %w", err)
+		}
+		defer lease.release(context.WithoutCancel(ctx), conn)
+		return fn(conn, func(ctx context.Context) error { return lease.keep(ctx, conn) })
+	}
 	if dialect != DialectPostgres {
-		return fn(conn)
+		return fn(conn, noKeep)
 	}
 
 	// Poll pg_try_advisory_lock (non-blocking) until we win the lock or ctx is
@@ -142,7 +173,7 @@ func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key i
 		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key)
 	}()
 
-	return fn(conn)
+	return fn(conn, noKeep)
 }
 
 // sqliteMigrateMu serializes WithAdvisoryLock callers within one process on
@@ -153,46 +184,67 @@ func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key i
 var sqliteMigrateMu sync.Mutex
 
 // migrateLease is how long a _gofastr_migrate_lock row counts as held before
-// another process may steal it. A holder renews at lease/3, so a live process
-// never loses the lock; a crashed one blocks other boots for at most one
-// lease. If a slow migration still outruns the lease, the runMigrationUp
-// tracking-row re-check makes the over-stepping runner converge instead of
-// corrupting or failing its boot.
-const migrateLease = 60 * time.Second
+// another process may steal it. The runner renews it on its pinned
+// connection before each migration, so a run of any length keeps it as long
+// as no single migration outlasts the lease (SQLite's one writer also blocks
+// any renewal from elsewhere while a migration's transaction is open). A
+// crashed holder blocks other boots for at most one lease. A var so a test
+// can shrink it.
+var migrateLease = 60 * time.Second
 
-// AcquireSQLiteLease takes a cross-process leased lock on SQLite: one row in
-// the named lock table, acquired by a single atomic upsert whose DO UPDATE
-// fires only when the previous lease has expired (SQLite's own clock via
-// strftime('%s','now'), so processes disagreeing about wall time don't
-// stretch or shrink the lease). While held, a heartbeat renews the row at
-// lease/3; the returned release func stops the heartbeat and deletes the
-// row. Waiting respects ctx: cancel it to stop waiting for the current
-// holder.
-//
-// It is the canonical lease acquisition formerly duplicated as core/
-// migrate's acquireSQLiteMigrateLease (_gofastr_migrate_lock, the migration
-// lease) and framework/migrate's acquireSQLiteSeedLease (_gofastr_seed_lock,
-// the seed lease); the table is a parameter so a boot holding both locks
-// (migrate then seed) never self-deadlocks. what names the lock in the
-// heartbeat and release warnings ("migrate", "seed").
-func AcquireSQLiteLease(ctx context.Context, db *sql.DB, table string, lease time.Duration, what string) (release func(), err error) {
-	lockTable := query.QuoteIdent(query.MustIdent(table))
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+// sqliteLease is a held lease row. fence is the expires_at this holder last
+// wrote: renew and release match on it, so a holder whose lease expired and
+// was taken cannot extend or delete the new holder's row. Every taking of
+// the row writes a later expiry than the row held (it fires only once now
+// has reached the old one, and adds a lease of at least a second), so the
+// fence never matches another holder's row. A token column would also
+// fence, but needs a schema change to every existing lock table, and an
+// older binary taking the row during a rolling deploy would leave the
+// previous holder's token in place; the expiry it writes still moves.
+type sqliteLease struct {
+	table      string // quoted
+	renewSQL   string // the fenced renewal statement
+	releaseSQL string // the fenced release statement
+	seconds    int64
+	what       string
+
+	mu    sync.Mutex
+	fence int64
+	lost  bool
+}
+
+// leaseConn is what the lease statements run on: the pool, or a pinned
+// connection.
+type leaseConn interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// acquireSQLiteLeaseOn takes the lease row on x, waiting while another
+// process holds it.
+func acquireSQLiteLeaseOn(ctx context.Context, x leaseConn, table string, lease time.Duration, what string) (*sqliteLease, error) {
+	lockTable := query.QuoteFolded(query.MustIdent(table))
+	if _, err := x.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY CHECK (id = 1), expires_at INTEGER NOT NULL)", lockTable)); err != nil {
 		return nil, err
 	}
 	acquire := fmt.Sprintf(`INSERT INTO %s (id, expires_at)
 VALUES (1, CAST(strftime('%%s','now') AS INTEGER) + ?)
 ON CONFLICT (id) DO UPDATE SET expires_at = excluded.expires_at
-WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockTable)
-	leaseSeconds := int64(lease / time.Second)
+WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)
+RETURNING expires_at`, lockTable, lockTable)
+	l := &sqliteLease{
+		table: lockTable, seconds: max(int64(lease/time.Second), 1), what: what,
+		renewSQL:   fmt.Sprintf("UPDATE %s SET expires_at = CAST(strftime('%%s','now') AS INTEGER) + ? WHERE id = 1 AND expires_at = ? RETURNING expires_at", lockTable),
+		releaseSQL: fmt.Sprintf("DELETE FROM %s WHERE id = 1 AND expires_at = ?", lockTable),
+	}
 	for {
-		res, err := db.ExecContext(ctx, acquire, leaseSeconds)
-		if err != nil {
-			return nil, err
+		err := x.QueryRowContext(ctx, acquire, l.seconds).Scan(&l.fence)
+		if err == nil {
+			return l, nil
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			break
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
 		}
 		// Held by another process. Wait and retry; the holder either
 		// releases (row deleted), its lease expires (steal succeeds), or
@@ -202,6 +254,88 @@ WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockT
 			return nil, ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
+	}
+}
+
+// renew extends the lease on x if this holder still owns the row. It
+// returns errLeaseLost, logged once, when another process holds it.
+func (l *sqliteLease) renew(ctx context.Context, x leaseConn) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.lost {
+		return errLeaseLost
+	}
+	err := x.QueryRowContext(ctx, l.renewSQL, l.seconds, l.fence).Scan(&l.fence)
+	if errors.Is(err, sql.ErrNoRows) {
+		l.markLost()
+		return errLeaseLost
+	}
+	return err
+}
+
+// keep is the runner's renewal between migrations: a lost lease stops the
+// run; any other failure is logged and the run goes on, since the lease
+// may still hold and the next keep tries again.
+func (l *sqliteLease) keep(ctx context.Context, x leaseConn) error {
+	err := l.renew(ctx, x)
+	if err != nil && !errors.Is(err, errLeaseLost) {
+		slog.Warn(l.what+" lock lease renewal failed; the lease expires if this keeps failing", "err", err)
+		return nil
+	}
+	return err
+}
+
+// release deletes the row if this holder still owns it.
+func (l *sqliteLease) release(ctx context.Context, x leaseConn) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.lost {
+		return
+	}
+	res, err := x.ExecContext(ctx, l.releaseSQL, l.fence)
+	if err != nil {
+		// The lock still opens: the lease expires on its own after one
+		// lease period. Other boots wait that long instead of running
+		// immediately, which deserves a log line, not silence.
+		slog.Warn(l.what+" lock release failed; the lease expires instead", "err", err)
+		return
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		l.markLost()
+	}
+}
+
+// markLost records and logs the loss; l.mu is held.
+func (l *sqliteLease) markLost() {
+	l.lost = true
+	slog.Error(l.what+" lock lease lost: it expired and another process took it, so the work it guarded may have run there at the same time",
+		"table", l.table)
+}
+
+// AcquireSQLiteLease takes a cross-process leased lock on SQLite: one row in
+// the named lock table, acquired by a single atomic upsert whose DO UPDATE
+// fires only when the previous lease has expired (SQLite's own clock via
+// strftime('%s','now'), so processes disagreeing about wall time don't
+// stretch or shrink the lease). While held, a heartbeat renews the row
+// through the pool at lease/3; the returned release func stops the
+// heartbeat and deletes the row. Renewal and release are fenced on the
+// expiry this holder last wrote (sqliteLease): a holder whose lease was
+// taken logs the loss and leaves the new holder's row alone. Waiting
+// respects ctx: cancel it to stop waiting for the current holder.
+//
+// The heartbeat needs a free pool connection: on a one-connection pool it
+// renews only while the holder's work is not holding that connection.
+//
+// It is the canonical lease acquisition formerly duplicated as core/
+// migrate's acquireSQLiteMigrateLease (_gofastr_migrate_lock, the migration
+// lease) and framework/migrate's acquireSQLiteSeedLease (_gofastr_seed_lock,
+// the seed lease); the table is a parameter so a boot holding both locks
+// (migrate then seed) never self-deadlocks. what names the lock in the
+// heartbeat and release warnings ("migrate", "seed").
+func AcquireSQLiteLease(ctx context.Context, db *sql.DB, table string, lease time.Duration, what string) (release func(), err error) {
+	l, err := acquireSQLiteLeaseOn(ctx, db, table, lease, what)
+	if err != nil {
+		return nil, err
 	}
 	// Heartbeat: the work held under the lease can take arbitrarily long,
 	// far past the lease, so renew at lease/3 while the holder is alive. If
@@ -214,17 +348,19 @@ WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockT
 		defer close(done)
 		ticker := time.NewTicker(lease / 3)
 		defer ticker.Stop()
-		renew := fmt.Sprintf(
-			"UPDATE %s SET expires_at = CAST(strftime('%%s','now') AS INTEGER) + ? WHERE id = 1", lockTable)
 		for {
 			select {
 			case <-hbCtx.Done():
 				return
 			case <-ticker.C:
+				err := l.renew(hbCtx, db)
+				if errors.Is(err, errLeaseLost) {
+					return // logged by renew; the row is another holder's now
+				}
 				// A failed renewal is survivable but not silent: if it keeps
 				// failing the lease expires and another process may steal the
 				// run, so surface it.
-				if _, err := db.ExecContext(hbCtx, renew, leaseSeconds); err != nil {
+				if err != nil && hbCtx.Err() == nil {
 					slog.Warn(what+" lock lease renewal failed; the lease expires if this keeps failing",
 						"err", err)
 				}
@@ -234,11 +370,6 @@ WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockT
 	return func() {
 		stopHB() // stops the goroutine before the DELETE races a renewal
 		<-done
-		if _, err := db.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("DELETE FROM %s WHERE id = 1", lockTable)); err != nil {
-			// The lock still opens: the lease expires on its own after one
-			// lease period. Other boots wait that long instead of running
-			// immediately, which deserves a log line, not silence.
-			slog.Warn(what+" lock release failed; the lease expires instead", "err", err)
-		}
+		l.release(context.WithoutCancel(ctx), db)
 	}, nil
 }

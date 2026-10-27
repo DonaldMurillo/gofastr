@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -65,8 +66,14 @@ func (s *Server) SetSSESeatOverflow(p SeatOverflowPolicy) {
 
 // sseSeatKey derives the per-caller seat key: the authenticated user's
 // id when upstream middleware resolved one into the request context,
-// else the TCP peer. The prefixes keep the two namespaces from
+// else the TCP peer's host. The prefixes keep the two namespaces from
 // colliding (a user id never aliases a RemoteAddr and back).
+//
+// The host, never host:port: every HTTP/1.1 stream is its own
+// connection with its own source port, so a port-keyed seat gave each
+// stream a bucket of its own and the cap never applied. Behind a proxy
+// every anonymous stream shares the proxy's host, one bucket for all
+// callers the server cannot tell apart, as in core/stream's broker.
 func sseSeatKey(ctx context.Context, r *http.Request) string {
 	if u, ok := handler.GetUser(ctx); ok {
 		if id, ok := u.(interface{ GetID() string }); ok && id.GetID() != "" {
@@ -74,6 +81,9 @@ func sseSeatKey(ctx context.Context, r *http.Request) string {
 		}
 	}
 	if r != nil && r.RemoteAddr != "" {
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			return "peer:" + host
+		}
 		return "peer:" + r.RemoteAddr
 	}
 	return "anon"

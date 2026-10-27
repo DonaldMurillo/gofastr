@@ -211,6 +211,56 @@ func TestBuildExpandsDynamicRoutesViaStaticPaths(t *testing.T) {
 	}
 }
 
+type keyedScreen struct {
+	key   string
+	paths []map[string]string
+}
+
+func (k *keyedScreen) SetParams(params map[string]string) {
+	k.key = params["id"] + params["rest"]
+}
+func (k *keyedScreen) Render() render.HTML                             { return render.HTML("<p>key=" + k.key + "</p>") }
+func (k *keyedScreen) StaticPaths(context.Context) []map[string]string { return k.paths }
+
+// A StaticPaths value substituted raw is read back decoded: "a%2Fb"
+// rendered key "a/b", so the file for literal key "a%2Fb" held another
+// record's page. The file sits where a static host resolves the
+// sitemap's escaped URL (/items/a%252Fb decodes to items/a%2Fb).
+func TestBuildEscapesStaticPathsValue(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/items/:id", &keyedScreen{paths: []map[string]string{{"id": "a%2Fb"}}}, nil)
+	a.Register("/docs/:rest*", &keyedScreen{paths: []map[string]string{{"rest": "x%25y/z"}}}, nil)
+	host := uihost.New(a, uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	// Each page keeps its sitemap entry, at the URL that reaches its file,
+	// slashed like its links (slashPageLinks).
+	sm, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, loc := range []string{"/items/a%252Fb/</loc>", "/docs/x%2525y/z/</loc>"} {
+		if !strings.Contains(string(sm), loc) {
+			t.Errorf("sitemap misses %s:\n%s", loc, sm)
+		}
+	}
+	for file, want := range map[string]string{
+		filepath.Join("items", "a%2Fb", "index.html"):     "key=a%2Fb<",
+		filepath.Join("docs", "x%25y", "z", "index.html"): "key=x%25y/z<",
+	} {
+		data, err := os.ReadFile(filepath.Join(out, file))
+		if err != nil {
+			t.Errorf("missing %s: %v", file, err)
+			continue
+		}
+		if !strings.Contains(string(data), want) {
+			t.Errorf("%s does not hold %q", file, want)
+		}
+	}
+}
+
 func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
 	// No StaticPaths method on this screen, so it should be skipped silently.
 	type plainProduct struct{ productScreenWithoutPaths }

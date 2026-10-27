@@ -90,12 +90,16 @@ filters:
 | `_lt`    | `<`             |
 | `_lte`   | `<=`            |
 | `_ne`    | `!=` (same NULL semantics as `=`: a NULL column matches neither) |
-| `_like`  | literal `contains`: `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
+| `_like`  | case-insensitive literal `contains`: `LOWER(col) LIKE '%value%' ESCAPE '\'` with the value lowered and the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
 | `_in`    | `IN (...)`. Separator differs by surface: a top-level or `?rel.field_in=` query param takes COMMA-separated values, while a scoped include filter `include=rel(field_in=a\|b)` takes pipe-separated ones, because a comma already separates the filters inside the parentheses |
 
 Filters validate against the **target** entity's fields, not the
 parent's. `include=comments(post_id=x)` validates `post_id` on
-`comments`, not on `posts`.
+`comments`, not on `posts`. Keys split the way top-level keys do: a
+suffix counts only when the name before it is a field, so a field
+named `opt_in` or `check_in` filters as itself, both here and in
+`?rel.opt_in=`. Values must be of the column's type, as at the top
+level: `include=members(opt_in=maybe)` is a 400 naming the field.
 
 ## Behaviour & guarantees
 
@@ -106,7 +110,10 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
 - Multi-tenant scoping is applied to includes. If both parent and
   child are tenant-scoped, the child query filters on the same tenant.
 - Result key casing matches the entity's `JSONCase` setting
-  (`camel` or `snake`); nested rows are deep-converted.
+  (`camel` or `snake`); nested rows are deep-converted, except `json`
+  fields, whose documents keep their stored keys. On Postgres a
+  target with mixed-case column names comes back under its declared
+  field names with decoded values, as its own route answers.
 - Includes are bounded. A single path may take at most **4** relation
   hops, and one request's includes may materialise at most **20,000**
   related-row references in total. Either limit is a **400**. Narrow
@@ -126,7 +133,10 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
 > which lets it resolve each relation's target to apply the
 > `deleted_at IS NULL` filter, keep only declared non-Hidden columns, and AND in the
 > owner (`OwnerField`) and tenant (`MultiTenant`) predicates from ctx,
-> exactly as the include path does. With no user or tenant in ctx those
+> exactly as the include path does. With the registry it also decodes
+> each row the way the include path does (a `date` as `YYYY-MM-DD`, a
+> `json` field as its document, a `decimal` as text) and keys it by
+> declared field names. With no user or tenant in ctx those
 > predicates match nothing, so the helper fails closed. Always pass the registry when
 > loading relations whose targets are soft-deletable, carry Hidden
 > columns, are owner-scoped, or are multi-tenant; without it the helper

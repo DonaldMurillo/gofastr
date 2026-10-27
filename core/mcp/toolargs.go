@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -95,13 +97,10 @@ func jsonTypeOf(v any) string {
 	case json.Number:
 		// The wire decode uses UseNumber (tools.go), so a numeric
 		// argument arrives as json.Number to keep its exact decimal
-		// above 2^53. A value with no fractional part or exponent is an
-		// integer; otherwise a number.
-		s := n.String()
-		if !strings.ContainsAny(s, ".eE") {
-			return "integer"
-		}
-		if _, err := n.Int64(); err == nil {
+		// above 2^53, or a fraction float64 would round to an integer.
+		// Its digits decide: 9007199254740993e0 and 9007199254740993.0
+		// are integers, 9007199254740993.5 is not.
+		if integralNumber(n.String()) {
 			return "integer"
 		}
 		return "number"
@@ -117,10 +116,38 @@ func jsonTypeOf(v any) string {
 		// natives; the wire path only ever sees float64.
 		return "integer"
 	case float32:
+		if f := float64(n); f == math.Trunc(f) && !math.IsInf(f, 0) {
+			return "integer"
+		}
 		return "number"
 	default:
 		return reflect.TypeOf(v).String()
 	}
+}
+
+// integralNumber reports whether s, a JSON number literal, names an
+// integer. It counts digits instead of parsing: a float64 rounds
+// 1.0000000000000001 to 1, and big.Rat would build the 10^999999999 an
+// attacker's 1e-999999999 asks for. The value is digits × 10^(exp −
+// len(frac)), and each trailing zero of the digits adds one back.
+func integralNumber(s string) bool {
+	mant, exp, _ := strings.Cut(strings.ToLower(s), "e")
+	whole, frac, _ := strings.Cut(strings.TrimLeft(mant, "+-"), ".")
+	digits := whole + frac
+	if strings.Trim(digits, "0") == "" {
+		return true // zero, at any exponent
+	}
+	scale := len(digits) - len(strings.TrimRight(digits, "0")) - len(frac)
+	if exp == "" {
+		return scale >= 0
+	}
+	e, err := strconv.Atoi(exp)
+	if err != nil || e > 1<<30 || e < -(1<<30) {
+		// An exponent this size outweighs any literal's digits: a
+		// positive one leaves an integer, a negative one a fraction.
+		return !strings.HasPrefix(exp, "-")
+	}
+	return e+scale >= 0
 }
 
 func validateType(t any, value any, path string) error {
@@ -128,6 +155,8 @@ func validateType(t any, value any, path string) error {
 	switch tv := t.(type) {
 	case string:
 		allowed = []string{tv}
+	case []string:
+		allowed = tv
 	case []any:
 		for _, e := range tv {
 			s, ok := e.(string)
@@ -171,25 +200,119 @@ func validateEnum(e any, value any, path string) error {
 func jsonEqual(a, b any) bool {
 	if jsonTypeOf(a) == "integer" || jsonTypeOf(a) == "number" {
 		if jsonTypeOf(b) == "integer" || jsonTypeOf(b) == "number" {
-			af, aok := toFloat(a)
-			bf, bok := toFloat(b)
-			return aok && bok && af == bf
+			ad, aok := decimalOf(a)
+			bd, bok := decimalOf(b)
+			return aok && bok && ad.equal(bd)
 		}
 		return false
+	}
+	// Objects and arrays recurse, so a number inside one compares the way a
+	// scalar does: the wire's json.Number or float64 against a declared Go
+	// int. Declared members may be typed Go values (map[string]int,
+	// []string), hence reflect rather than a []any/map[string]any switch.
+	av, bv := reflect.ValueOf(a), reflect.ValueOf(b)
+	switch {
+	case isJSONArray(av) && isJSONArray(bv):
+		if av.Len() != bv.Len() {
+			return false
+		}
+		for i := range av.Len() {
+			if !jsonEqual(av.Index(i).Interface(), bv.Index(i).Interface()) {
+				return false
+			}
+		}
+		return true
+	case isJSONObject(av) && isJSONObject(bv):
+		if av.Len() != bv.Len() {
+			return false
+		}
+		for it := av.MapRange(); it.Next(); {
+			bval := bv.MapIndex(it.Key().Convert(bv.Type().Key()))
+			if !bval.IsValid() || !jsonEqual(it.Value().Interface(), bval.Interface()) {
+				return false
+			}
+		}
+		return true
 	}
 	return reflect.DeepEqual(a, b)
 }
 
-func toFloat(v any) (float64, bool) {
+func isJSONArray(v reflect.Value) bool {
+	return v.IsValid() && (v.Kind() == reflect.Slice || v.Kind() == reflect.Array) && v.Type().Elem().Kind() != reflect.Uint8
+}
+
+func isJSONObject(v reflect.Value) bool {
+	return v.IsValid() && v.Kind() == reflect.Map && v.Type().Key().Kind() == reflect.String
+}
+
+// decimal is a number's exact value as 0.digits × 10^exp, with no
+// leading or trailing zero in digits; zero has no digits. Two numbers
+// are equal exactly when their decimals are, so comparison reads text
+// and never builds the number: big.Rat.SetString on an argument like
+// 1e999999 built a 10^999999 per enum member. Comparing through float64
+// was the other wrong answer: it rounded integers above 2^53 onto their
+// neighbours, so a neighbour of an enum member matched it.
+type decimal struct {
+	neg    bool
+	digits string
+	exp    *big.Int // the exponent's own digits, as many as the text has
+}
+
+func (d decimal) equal(o decimal) bool {
+	return d.neg == o.neg && d.digits == o.digits && d.exp.Cmp(o.exp) == 0
+}
+
+// decimalOf reads v's exact decimal. A float64 holds a dyadic fraction,
+// and 767 significant digits spell any of them exactly, so 'e' at that
+// precision is the float's true value, not its shortest spelling: the
+// float 0.1 is not one tenth.
+func decimalOf(v any) (decimal, bool) {
 	switch n := v.(type) {
+	case json.Number:
+		return parseDecimal(n.String())
 	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
+		if math.IsInf(n, 0) || math.IsNaN(n) {
+			return decimal{}, false
+		}
+		return parseDecimal(strconv.FormatFloat(n, 'e', 767, 64))
+	case float32:
+		return decimalOf(float64(n))
 	}
-	return 0, false
+	// In-process callers pass any Go integer type.
+	switch rv := reflect.ValueOf(v); rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return parseDecimal(strconv.FormatInt(rv.Int(), 10))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return parseDecimal(strconv.FormatUint(rv.Uint(), 10))
+	}
+	return decimal{}, false
+}
+
+// parseDecimal normalizes a JSON number literal. Its cost is the
+// literal's length: the exponent stays the digits it was written with.
+func parseDecimal(s string) (decimal, bool) {
+	mant, expText, hasExp := strings.Cut(strings.ToLower(s), "e")
+	neg := strings.HasPrefix(mant, "-")
+	whole, frac, _ := strings.Cut(strings.TrimPrefix(mant, "-"), ".")
+	all := whole + frac
+	if all == "" {
+		return decimal{}, false
+	}
+	exp := new(big.Int)
+	if hasExp {
+		if _, ok := exp.SetString(expText, 10); !ok {
+			return decimal{}, false
+		}
+	}
+	trimmed := strings.TrimLeft(all, "0")
+	digits := strings.TrimRight(trimmed, "0")
+	if digits == "" {
+		return decimal{exp: new(big.Int)}, true // zero, whatever its sign or exponent
+	}
+	// 0.digits × 10^exp: the point moves to just before the first
+	// nonzero digit, which sits len(whole) − leading zeros places in.
+	exp.Add(exp, big.NewInt(int64(len(whole)-(len(all)-len(trimmed)))))
+	return decimal{neg: neg, digits: digits, exp: exp}, true
 }
 
 func validateObject(node map[string]any, obj map[string]any, path string) error {

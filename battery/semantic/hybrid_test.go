@@ -152,6 +152,31 @@ func TestRerankerReordersResults(t *testing.T) {
 	}
 }
 
+// TestRerankCanChangeTopOne: the reranker reorders the candidate set and
+// K cuts its output. Cutting to K first handed it one hit at K=1, so it
+// could never promote anything.
+func TestRerankCanChangeTopOne(t *testing.T) {
+	ctx := context.Background()
+	idx, _ := Open(Options{Embedder: NewStubEmbedder(64), Reranker: lengthReranker{}})
+	if err := idx.Add(ctx,
+		Document{ID: "exact", Text: "zebra"},
+		Document{ID: "long", Text: "zebra grazing beside a long dusty road at noon"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := idx.Query(ctx, Query{Text: "zebra", K: 1})
+	if err != nil || len(hits) != 1 || hits[0].Chunk.DocID != "exact" {
+		t.Fatalf("vector top-1 = %+v %v, want exact", hits, err)
+	}
+	hits, err = idx.Query(ctx, Query{Text: "zebra", K: 1, Rerank: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Chunk.DocID != "long" {
+		t.Fatalf("reranked top-1 = %+v, want long", hits)
+	}
+}
+
 func TestRerankerErrorPropagates(t *testing.T) {
 	want := errors.New("rerank exploded")
 	idx, _ := Open(Options{Embedder: NewStubEmbedder(32), Reranker: errReranker{err: want}})

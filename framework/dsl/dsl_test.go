@@ -181,13 +181,15 @@ func TestParseDSLRejectsHugeInput(t *testing.T) {
 // char are escaped literally, the pattern is wrapped in %…%, and the
 // fragment carries the ESCAPE clause. dsl used to re-implement the
 // replacer privately; this test pins the exact emitted SQL + args so
-// the dedup onto filter's exported helpers cannot drift behavior.
+// the dedup onto filter's exported helpers cannot drift behavior. The match
+// ignores case (LOWER on the column, the value lowered in Go), the shape
+// ?q= and ?field_like= use, so it answers the same on both dialects.
 func TestContainsUsesCanonicalLikeEscape(t *testing.T) {
-	cond, args, err := dslCondition(schema.Field{Name: "title", Type: schema.String}, "contains", `50%_off\x`)
+	cond, args, err := dslCondition(schema.Field{Name: "title", Type: schema.String}, "contains", `50%_OFF\x`)
 	if err != nil {
 		t.Fatalf("dslCondition: %v", err)
 	}
-	wantSQL := `title LIKE $1` + filter.LikeEscapeSuffix
+	wantSQL := `LOWER(title) LIKE $1` + filter.LikeEscapeSuffix
 	if cond != wantSQL {
 		t.Errorf("contains SQL = %q, want %q", cond, wantSQL)
 	}

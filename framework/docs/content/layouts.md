@@ -438,7 +438,20 @@ A `Policy` can attach to one region instead of the whole screen:
 `OutletOptions.Policy`, `AreaSpec.Policy`, or `app.FillPolicy(p)` on one
 fill declaration. Every region guard runs in the policy phase, before
 any `Load`. The first `Redirect` moves the whole page; `RenderAlt` and
-`Block` are recorded and applied to their region alone.
+`Block` are recorded and applied to their region alone. Every surface
+that answers for the page runs them: the render, deferred part
+requests, server actions (a redirect refuses the action with 403), the
+sitemap and the llm.md documents. `(*App).PagePolicy(ctx, path)` is
+that policy phase for one URL; `(*App).PatternPolicy(ctx, screen)` is
+the answer for a route pattern, which withholds a dynamic pattern whose
+layout carries any region guard.
+
+The policy phase runs in one order on every surface: the eager
+resolvers, the screen chain, then the region guards (skipped when the
+chain answered `Redirect` or `Block`). A whole-page resolver failure
+read anywhere in that phase, a guard's own read included, wins over
+every decision: the page answers its error (404 for a missing row)
+before `Load` runs, and a deferred part request resets.
 
 <!-- gofastr:compile
 import "context"
@@ -506,22 +519,37 @@ screen for the primary slot (`Screen.WithLoading`, with
 `ScreenGroup.WithLoading` as the group default):
 
 <!-- gofastr:compile
+import "context"
 import "time"
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
 import "github.com/DonaldMurillo/gofastr/core-ui/component"
+import "github.com/DonaldMurillo/gofastr/core/render"
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 type ReportsScreen struct{ component.Component }
 var reports *app.Screen
 -->
 ```go
 reports.WithLoading(&app.Loading{
-	Show:  app.LoadingComponent(ui.SkeletonCard(ui.SkeletonCardConfig{Label: "Loading"})),
+	Show: app.NewContextComponent(func(ctx context.Context) render.HTML {
+		return ui.SkeletonCard(ui.SkeletonCardConfig{Ctx: ctx}) // "Loading…" in the reader's language
+	}),
 	After: 150 * time.Millisecond, // shown only past this wait
-	Min:   300 * time.Millisecond,  // held at least this long once shown
+	Min:   300 * time.Millisecond, // held at least this long once shown
 })
 ```
 
-The server renders `Show` once into an inert `<template>` beside the
+Loading content renders in the reader's locale. An outlet's or area's
+template renders under the page's request context; the primary slot's
+rides the route graph in `manifest.js`, which the host builds once per
+catalog locale, each body with its own `?v=` hash, and a page links the
+body of its own locale (a static export inlines the same graph into
+each locale tree). Give `Show` a context component, as above, when the
+content says words: the kit's skeletons and spinner read their default
+label from `Ctx`. `app.LoadingComponent(markup)` takes markup that was
+rendered when you declared it, so a skeleton built there without `Ctx`
+says the default language's "Loading…" on every page.
+
+The server renders `Show` into an inert `<template>` beside the
 region, so the browser holds the bytes before the fetch starts. Past
 `After` the runtime parks the region's old nodes and clones the
 template in; a response faster than `After` paints nothing extra, and a

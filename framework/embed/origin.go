@@ -85,6 +85,15 @@ func NormalizeOrigin(raw string) (string, error) {
 	// the expanded spelling means the frame's browser-attested origin never
 	// matches the one the app minted for.
 	if ip := net.ParseIP(host); ip != nil && strings.Contains(host, ":") {
+		// An IPv4-mapped literal ("[::ffff:127.0.0.1]") is refused. Go
+		// prints it as a bare dotted quad, which a browser never sends (it
+		// serializes "[::ffff:7f00:1]"), and "[127.0.0.1]" is not a valid
+		// URL authority, so normalizing the result a second time (as
+		// Host.MintNonce then MintNonce do) fails. No browser treats it as
+		// the IPv4 origin either, so nothing legitimate is lost.
+		if ip.To4() != nil {
+			return "", fmt.Errorf("embed: origin %q uses an IPv4-mapped IPv6 host; use the IPv4 origin or a plain IPv6 one", raw)
+		}
 		host = "[" + ip.String() + "]"
 	} else if strings.Contains(host, ":") {
 		host = "[" + host + "]"

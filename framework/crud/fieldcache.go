@@ -1,9 +1,12 @@
 package crud
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // The handler's derived field caches (visible-field projection, wire-key
@@ -48,6 +51,10 @@ type fieldCacheData struct {
 	// resolve a WireName on a write-only field.
 	wireKeyOf    map[string]string
 	columnOfWire map[string]string
+	// columnOfCamel maps the camelCase form of every column name and wire
+	// key to its column, "" where two columns share one. It resolves the
+	// snake keys MarshalEntity derives from json tags (bodyColumns).
+	columnOfCamel map[string]string
 	// jsonColumns / jsonWireKeys hold the schema.JSON fields by column and
 	// by wire key. The write path binds by column, the read path (scanned
 	// rows are already key-converted) by wire key.
@@ -56,7 +63,16 @@ type fieldCacheData struct {
 	// decimalWireKeys holds the schema.Decimal fields by wire key: the
 	// read path turns a driver's number back into the decimal's text.
 	decimalWireKeys map[string]struct{}
-	sig             uint64
+	// dateWireKeys holds the schema.Date fields by wire key: the read path
+	// turns the time.Time a driver scans DATE into back into YYYY-MM-DD.
+	dateWireKeys map[string]struct{}
+	// dateColumns holds them by column: an in-process write turns a Go
+	// time at midnight into the date (bodyColumns).
+	dateColumns map[string]struct{}
+	// timestampColumns holds the schema.Timestamp fields by column: the
+	// write path stores their values in the layout the cursor carries.
+	timestampColumns map[string]struct{}
+	sig              uint64
 }
 
 // fieldCache is the shared holder. The handler stores a POINTER to it, so
@@ -135,9 +151,14 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 	s := &fieldCacheData{
 		wireKeyOf:       map[string]string{},
 		columnOfWire:    map[string]string{},
+		columnOfCamel:   map[string]string{},
 		jsonColumns:     map[string]struct{}{},
 		jsonWireKeys:    map[string]struct{}{},
 		decimalWireKeys: map[string]struct{}{},
+		dateWireKeys:    map[string]struct{}{},
+		dateColumns:     map[string]struct{}{},
+
+		timestampColumns: map[string]struct{}{},
 	}
 	if ch.Entity == nil {
 		s.sig = ch.fieldCacheSignature()
@@ -163,12 +184,26 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		if _, exists := s.columnOfWire[wk]; !exists {
 			s.columnOfWire[wk] = f.Name
 		}
+		for _, key := range []string{casing.ToCamel(f.Name), casing.ToCamel(wk)} {
+			if prev, exists := s.columnOfCamel[key]; exists && prev != f.Name {
+				s.columnOfCamel[key] = "" // two columns, no answer
+				continue
+			}
+			s.columnOfCamel[key] = f.Name
+		}
 		if f.Type == schema.JSON {
 			s.jsonColumns[f.Name] = struct{}{}
 			s.jsonWireKeys[wk] = struct{}{}
 		}
 		if f.Type == schema.Decimal {
 			s.decimalWireKeys[wk] = struct{}{}
+		}
+		if f.Type == schema.Date {
+			s.dateWireKeys[wk] = struct{}{}
+			s.dateColumns[f.Name] = struct{}{}
+		}
+		if f.Type == schema.Timestamp {
+			s.timestampColumns[f.Name] = struct{}{}
 		}
 		if !f.Hidden {
 			s.visible = append(s.visible, f.Name)
@@ -185,4 +220,38 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 // mutating field declarations mid-traffic; the snapshot copy cannot.
 func (ch *CrudHandler) snapshotFields() []schema.Field {
 	return ch.snapshot().fields
+}
+
+// queryFields is snapshotFields typed by the values their columns hold,
+// as entity.ValueFields types them: a Relation foreign key to an integer
+// key is schema.Int. The parsers that check a client's filter,
+// where-tree or cursor values read it, so ?team_id=abc on an INTEGER
+// column is a 400. It is derived per call because the app assigns
+// Registry after NewCrudHandler built the snapshot.
+func (ch *CrudHandler) queryFields() []schema.Field {
+	fields := ch.snapshot().fields
+	if ch.Registry == nil || ch.Entity == nil {
+		return fields
+	}
+	out, cloned := fields, false
+	for i, f := range fields {
+		if f.Type != schema.Relation || f.RawType != "" || !entity.RelationHoldsInt(ch.Registry, ch.Entity, f.Name) {
+			continue
+		}
+		if !cloned {
+			out, cloned = slices.Clone(fields), true
+		}
+		out[i].Type = schema.Int
+	}
+	return out
+}
+
+// queryField is the queryFields entry for column name.
+func (ch *CrudHandler) queryField(name string) schema.Field {
+	for _, f := range ch.queryFields() {
+		if f.Name == name {
+			return f
+		}
+	}
+	return schema.Field{Name: name}
 }

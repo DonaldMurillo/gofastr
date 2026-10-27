@@ -69,7 +69,7 @@ func wireKeysOf(m map[string]any) []string {
 	return out
 }
 
-// wireConverterFor has three fallbacks, each of which must degrade to the
+// hopTreeFor has three fallbacks, each of which must degrade to the
 // handler's own converter rather than dropping keys or panicking: no
 // registry, an unresolvable target, and a target that declares no aliases.
 func TestInclude_WireConverterFallbacks(t *testing.T) {
@@ -84,14 +84,14 @@ func TestInclude_WireConverterFallbacks(t *testing.T) {
 
 	t.Run("no registry falls back to the handler converter", func(t *testing.T) {
 		ch := &CrudHandler{Entity: parent}
-		if got := ch.wireConverterFor("anything")("body_text"); got == "" {
+		if got := ch.hopTreeFor("anything").conv("body_text"); got == "" {
 			t.Error("converter dropped the key")
 		}
 	})
 
 	t.Run("unresolvable target falls back", func(t *testing.T) {
 		ch := &CrudHandler{Entity: parent, Registry: versionedReg{m: map[string]*entity.Entity{}}}
-		if got := ch.wireConverterFor("missing")("body_text"); got == "" {
+		if got := ch.hopTreeFor("missing").conv("body_text"); got == "" {
 			t.Error("converter dropped the key")
 		}
 	})
@@ -100,7 +100,7 @@ func TestInclude_WireConverterFallbacks(t *testing.T) {
 		ch := &CrudHandler{Entity: parent, Registry: versionedReg{
 			m: map[string]*entity.Entity{"plain|": plain},
 		}}
-		got := ch.wireConverterFor("plain")("body_text")
+		got := ch.hopTreeFor("plain").conv("body_text")
 		// Must NOT pick up the parent's "summary" alias.
 		if got == "summary" {
 			t.Error("a target with no aliases inherited the parent's alias")

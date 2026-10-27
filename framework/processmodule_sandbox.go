@@ -124,6 +124,7 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 	// escaping the spawn goroutine.
 	if err := r.wrapSafely(prep.Cmd, opts); err != nil {
 		cleanupPrepPipes(prep)
+		prep.removeOwnedScratch()
 		return nil, fmt.Errorf("processmodule: sandbox %s wrap: %w", r.backend.Name(), err)
 	}
 	return startPreparedChild(ctx, prep, r.NewCodec)

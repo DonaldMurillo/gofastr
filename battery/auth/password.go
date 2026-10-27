@@ -329,6 +329,20 @@ func dummyHashFor(h PasswordHasher) string {
 // real bcrypt time on it, preserving timing safety on the login path.
 var passwordPlaceholderHash string
 
+// newPlaceholderHash is an unusable bcrypt hash of a fresh random secret.
+// Clearing a password writes one instead of passwordPlaceholderHash: an
+// account created without a password already holds the shared
+// placeholder, so writing it back would leave the stored hash, and the
+// credential tag of every JWT issued before the clear, unchanged.
+func newPlaceholderHash() (string, error) {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return "", err
+	}
+	h, err := bcrypt.GenerateFromPassword(secret, bcryptCost)
+	return string(h), err
+}
+
 func init() {
 	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password-for-timing"), bcryptCost)
 	if err != nil {

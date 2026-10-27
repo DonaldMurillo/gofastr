@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // cachedResponse holds the serialized HTTP response for caching.
@@ -71,7 +73,10 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				return
 			}
 
-			reqCC := parseCacheControl(r.Header.Get("Cache-Control"))
+			// Every field line counts: Header.Get reads only the first,
+			// so "max-age=0" then "no-store" on two lines read as
+			// max-age alone.
+			reqCC := parseCacheControl(allValues("Cache-Control", r.Header))
 			reqNoCache := reqCC["no-cache"]
 			reqNoStore := reqCC["no-store"]
 
@@ -106,6 +111,12 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// same method+path+query. The path is the escaped one: /a%2Fb
 			// (one segment) and /a/b (two) are different pages.
 			baseKey := r.Method + ":" + r.Host + ":" + r.URL.EscapedPath() + "?" + r.URL.RawQuery
+			// Under locale prefixes the router strips /es before any
+			// middleware runs, so /es/pricing and /pricing arrive as the
+			// same URL: the locale the path named keeps them apart.
+			if _, tag, ok := i18n.PathLocale(r.Context()); ok {
+				baseKey += "#" + tag
+			}
 
 			// Try to fetch from cache only if we're allowed to serve a
 			// stored variant for this request.
@@ -141,10 +152,15 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				return
 			}
 
-			storeable := isStoreable(rec, hasCreds, reqNoStore)
+			// The response varies on what the handler declared AND on
+			// what middleware outside this one already set on w: the
+			// i18n negotiation runs first and adds Vary: Accept-Language,
+			// which the recorder never sees. Every Vary line counts.
+			varyHeader := strings.Join(append(w.Header().Values("Vary"), rec.header.Values("Vary")...), ",")
+			storeable := isStoreable(rec, w.Header(), hasCreds, reqNoStore) && !varyHasStar(varyHeader)
 
 			if storeable {
-				vary := parseVary(rec.header.Get("Vary"))
+				vary := parseVary(varyHeader)
 				headers := cloneHeader(rec.header)
 				// Bake the request's variant headers into the stored
 				// entry so we can verify on read.
@@ -183,7 +199,14 @@ func writeCached(w http.ResponseWriter, cached *cachedResponse, cacheStatus stri
 }
 
 // isStoreable decides whether a recorded response is safe to cache.
-func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
+//
+// outer is the header map middleware outside the cache already wrote on
+// the real ResponseWriter. A session middleware that set Set-Cookie, or
+// an auth layer that set Cache-Control: private, ran before the handler
+// and its headers never reach the recorder, yet they are part of the
+// response the client gets. Reading the recorder alone stored that
+// response and replayed it to other callers.
+func isStoreable(rec *responseRecorder, outer http.Header, hasCreds, reqNoStore bool) bool {
 	if reqNoStore || hasCreds {
 		return false
 	}
@@ -206,10 +229,12 @@ func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
 		return false
 	}
 	// Set-Cookie responses are inherently user-specific.
-	if len(rec.header.Values("Set-Cookie")) > 0 {
+	if len(rec.header.Values("Set-Cookie")) > 0 || len(outer.Values("Set-Cookie")) > 0 {
 		return false
 	}
-	cc := parseCacheControl(rec.header.Get("Cache-Control"))
+	// Every Cache-Control field line, outer and inner: Header.Get reads
+	// only the first, so a no-store on a second line was missed.
+	cc := parseCacheControl(allValues("Cache-Control", outer, rec.header))
 	if cc["private"] || cc["no-store"] || cc["no-cache"] {
 		return false
 	}
@@ -219,6 +244,16 @@ func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
 		return false
 	}
 	return true
+}
+
+// allValues joins every field line of name across hs with ",", the
+// list form RFC 9110 §5.3 makes equivalent to repeated lines.
+func allValues(name string, hs ...http.Header) string {
+	var vals []string
+	for _, h := range hs {
+		vals = append(vals, h.Values(name)...)
+	}
+	return strings.Join(vals, ",")
 }
 
 // varyHasStar reports whether a Vary header value contains the "*" token,

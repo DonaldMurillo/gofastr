@@ -19,6 +19,11 @@ type Session struct {
 	// the live path used to track this in a map that replay never rebuilt,
 	// so every restart re-armed every consumed plan.
 	Consumed map[string]map[string]bool `json:"consumed,omitempty"`
+
+	// replaying is set while ReplayEntries rebuilds the session from a
+	// log, where an entry the live path would now refuse may already be
+	// recorded and must still load.
+	replaying bool
 }
 
 // ChatEvent is one entry on the conversation timeline. Exactly one of

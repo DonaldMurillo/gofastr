@@ -96,3 +96,25 @@ func TestSSRF_CustomRoundTripperGuarded(t *testing.T) {
 		t.Fatal("guard should refuse BEFORE the inner RoundTripper runs")
 	}
 }
+
+// A plain *http.Transport (no proxy, no dial hook) gets the dial-time
+// guard on a clone, so the address checked is the address dialed. The
+// resolve-then-RoundTrip wrapper resolved once to check and let the
+// inner transport resolve again, which a rebinding name passes.
+func TestSSRF_PlainTransportDialGuarded(t *testing.T) {
+	inner := &http.Transport{MaxIdleConns: 7}
+	mgr := New(NewMemoryStore(), Options{HTTPClient: &http.Client{Transport: inner}})
+	tr, ok := mgr.opts.HTTPClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("plain transport wrapped as %T, want a guarded *http.Transport", mgr.opts.HTTPClient.Transport)
+	}
+	if tr == inner || inner.DialContext != nil {
+		t.Fatal("the caller's transport was modified instead of cloned")
+	}
+	if tr.MaxIdleConns != 7 {
+		t.Errorf("clone lost the caller's pool settings: MaxIdleConns = %d", tr.MaxIdleConns)
+	}
+	if err := dialLoopback(t, mgr.opts.HTTPClient); err == nil {
+		t.Fatal("SECURITY: [ssrf] plain custom transport delivered to loopback")
+	}
+}

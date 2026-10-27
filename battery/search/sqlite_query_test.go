@@ -35,8 +35,12 @@ func TestBuildFts5Query(t *testing.T) {
 		{"dedupes repeated", "go go go", `"go"*`},
 		{"dedupes case-insensitive", "Go go GO", `"go"*`},
 		{"hyphen term kept internal", "e-commerce", `"e-commerce"*`},
-		// Column filter colon is stripped within a token (same sanitizer as Postgres).
-		{"column filter stripped", "col:value other", `"colvalue" "other"*`},
+		// A column-filter colon splits the token (same sanitizer as Postgres).
+		{"column filter split", "col:value other", `"col" "value" "other"*`},
+		{"apostrophe splits", "won't", `"won" "t"*`},
+		// ₂ is \pN (No), not a decimal digit; unicode61 keeps it in the
+		// token, so splitting there missed the document's own "h₂o".
+		{"other-number rune kept", "H₂O", `"h₂o"*`},
 		{"pure punctuation dropped", "---", ""},
 		{"underscore kept", "foo_bar baz", `"foo_bar" "baz"*`},
 		{"unicode letters kept", "café résumé", `"café" "résumé"*`},

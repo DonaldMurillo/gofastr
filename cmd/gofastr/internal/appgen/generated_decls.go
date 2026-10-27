@@ -62,6 +62,16 @@ func topLevelNames(f *ast.File) []string {
 				switch s := s.(type) {
 				case *ast.TypeSpec:
 					out = append(out, s.Name.Name)
+					// A struct's fields share its method namespace: a
+					// field unmarshal_JSON is Notes.UnmarshalJSON, the
+					// method a relation decode declares on Notes.
+					if st, ok := s.Type.(*ast.StructType); ok {
+						for _, fld := range st.Fields.List {
+							for _, n := range fieldNames(fld) {
+								out = append(out, s.Name.Name+"."+n)
+							}
+						}
+					}
 				case *ast.ValueSpec:
 					for _, n := range s.Names {
 						if n.Name != "_" {
@@ -73,4 +83,35 @@ func topLevelNames(f *ast.File) []string {
 		}
 	}
 	return slices.Clip(out)
+}
+
+// fieldNames lists the names a struct field declares: its own, or for an
+// embedded field the type it embeds (T, *T, pkg.T, T[P]).
+func fieldNames(f *ast.Field) []string {
+	if len(f.Names) > 0 {
+		out := make([]string, 0, len(f.Names))
+		for _, n := range f.Names {
+			if n.Name != "_" {
+				out = append(out, n.Name)
+			}
+		}
+		return out
+	}
+	t := f.Type
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	switch x := t.(type) {
+	case *ast.IndexExpr:
+		t = x.X
+	case *ast.IndexListExpr:
+		t = x.X
+	}
+	switch x := t.(type) {
+	case *ast.Ident:
+		return []string{x.Name}
+	case *ast.SelectorExpr:
+		return []string{x.Sel.Name}
+	}
+	return nil
 }

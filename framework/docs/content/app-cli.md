@@ -61,11 +61,17 @@ Per verb:
 - **list**: an equality filter flag per field (`--status active`,
   comma list = IN), range flags (`--views-gt/-gte/-lt/-lte`) on
   numeric/date/timestamp fields, `--<field>-like` on text fields,
-  plus `--sort`, `--page`/`--limit`, `--cursor` (keyset), `--include`,
+  plus `--sort`, `--page`/`--limit`, `--cursor` (keyset; `--cursor ""`
+  fetches the first keyset page, since the server switches to keyset
+  mode when the key is present), `--include`,
   `--fields`, and `--param k=v` (repeatable) as the escape hatch for
   anything else. `-q` appears only when the entity declares
   `SearchFields`; `--trashed` only with `SoftDelete`. `-o table`
-  renders an aligned table instead of JSON.
+  renders an aligned table instead of JSON. Table cells, the cursor
+  line and API error lines drop control bytes (C0 but tab, DEL and
+  C1), so a stored `\x1b[2J` cannot clear the reader's screen. JSON
+  output keeps numbers exact: a value past 2^53 in a `--json` body, a
+  json-field flag or a response prints with every digit.
 - **create / update / patch**: per-field flags OR `--json`
   (inline, `@file`, or `-` for stdin); the two are mutually exclusive.
   Field flags are presence-faithful: only explicitly-set flags enter
@@ -107,7 +113,14 @@ Connection resolution, in order: the `--url` flag →
 create and on every overwrite). A config file that exists but does
 not parse is refused with an error naming the file (delete it or
 `login` again) rather than silently treated as "not logged in",
-which would send every request unauthenticated. There is no
+which would send every request unauthenticated. The stored token goes
+only to the origin (scheme, host and port) `login` stored it with:
+when `--url` or `<BINARY>_URL` points somewhere else, the request goes
+without it and stderr says why, so a production token never reaches a
+local or unknown server. The host compares ASCII case-insensitively, and
+a host with a non-ASCII character has no origin, so the stored token
+never goes to it: write an internationalized host in its `xn--` form. A `<BINARY>_TOKEN` you set is your choice and
+goes wherever the call does. There is no
 `--token` flag: a bearer credential on the command line sits in
 ps/procfs state every local process can read. Every verb is
 signal-cancellable (Ctrl-C interrupts the request, not just the
@@ -183,17 +196,51 @@ generated help prints them verbatim; printable summaries, including
 multi-line ones, stay quoted data.
 Path, query, and header parameters become typed flags (arrays of
 strings repeat the flag; typed arrays are rejected rather than left
-unvalidated);
+unvalidated). A query array sends `tags=a&tags=b` by default and with
+`explode: true`, and `tags=a,b` with `style: form, explode: false`,
+each item escaped. Generation refuses any other array style
+(`spaceDelimited`, `pipeDelimited`, `deepObject`, a path or header
+parameter that is not `simple`) rather than send what the server
+does not expect. A parameter's `description` leads its flag's help text,
+folded to one line and refused when it carries terminal-control bytes.
+An operation's parameter overrides a path-level one with the same `name`
+and `in`, as OpenAPI defines it, so the flag takes the operation's type
+and description;
 `application/json` object bodies get a flag per top-level scalar
 property plus the `--json` raw escape. A body property named exactly
 like a path parameter gets no flag of its own: it repeats the record the
 path names, as a composite key's columns do in a GoFastr app's PUT body,
 and `--json` can still send it. Binary bodies
 (`application/octet-stream` / `format: binary`) take `--file` with `-`
-for stdin. JSON responses pretty-print; anything else streams raw to
+for stdin; a body offering several binary types is sent as
+`application/octet-stream`, else the first type by name. A body the spec
+does not mark `required` may be left out, and the command then sends no
+body: `--file` is optional, and the schema's `required` properties bind
+only a body built from field flags (`--title x` without a required
+`--text` still fails). JSON responses pretty-print with numbers exact,
+and `Client.Do` decodes them the same way; anything else streams raw to
 stdout so `barc generate-code ... > code.png` works. `servers[0].url`
-seeds the default server URL, and an `http: bearer` or header `apiKey`
-security scheme wires into the same env/`login` machinery.
+splits in two: an absolute URL's origin seeds the default server URL,
+and its path (or the whole of a relative URL such as `/api/v3`) becomes
+the API prefix every request carries. `--url` and `$<BINARY>_URL` then
+take a bare origin: with `servers: [{url: /api/v3}]`, `get-pet-by-id
+--url http://localhost:8080 --pet-id 7` requests
+`http://localhost:8080/api/v3/pet/7`. `--api-prefix` (or the entry's
+`api_prefix`) replaces the server path, and `--api-prefix=""` drops it;
+`--from-openapi` on the command line takes the `api_prefix` of the
+settings entry for the same document. A server URL whose path already
+ends in the prefix is used as it is, so a `login` stored with
+`https://pets.example/api/v3` still requests `/api/v3/pet/7`.
+A templated server URL (`{host}`) seeds neither. An `http: bearer` or
+header `apiKey` security scheme wires into the same env/`login`
+machinery. The token goes under the scheme the document's top-level
+`security` requires (its first alternative naming one supported scheme),
+or the first supported scheme by name when `security` names none; an
+operation whose own `security` names another scheme sends the token
+under that scheme's header. An alternative that requires two schemes at
+once is passed over, since the CLI holds one token. The client refuses redirects, since every request carries the
+token: a 3xx answers as an error instead of re-sending the
+`Authorization` or apiKey header to the host it names.
 
 The generated tree is fully self-contained (stdlib only, with its own
 `internal/client`), so it runs from any directory inside a Go module —

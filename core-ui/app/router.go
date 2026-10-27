@@ -379,7 +379,7 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 			return wrapped, nil
 		}
 	}
-	out, err := renderComponentInScreen(ctx, screen, comp)
+	out, err := renderComponentInScreen(ctx, screen, comp, screen.Title)
 	if err != nil {
 		return "", screenRenderPanicError(path, err)
 	}

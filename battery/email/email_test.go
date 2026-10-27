@@ -650,8 +650,8 @@ func TestBuildMessageMultipart(t *testing.T) {
 	}
 
 	msgStr := string(msg)
-	if !strings.Contains(msgStr, "multipart/mixed") {
-		t.Error("expected multipart content type")
+	if !strings.Contains(msgStr, "Content-Type: multipart/alternative;") || strings.Contains(msgStr, "multipart/mixed") {
+		t.Error("text+HTML with no attachments must be a lone multipart/alternative")
 	}
 	if !strings.Contains(msgStr, "Plain text version.") {
 		t.Error("expected text body in multipart message")

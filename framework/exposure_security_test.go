@@ -74,7 +74,7 @@ func TestEntityLLMMDHandler_RequiresAuth(t *testing.T) {
 func TestRegistryLLMMDHandler_RequiresAuth(t *testing.T) {
 	app := securityExposureApp(t)
 	rec := httptest.NewRecorder()
-	crudpkg.RegistryLLMMDHandler(app.Registry, "Test App", nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/llm.md", nil))
+	crudpkg.RegistryLLMMDHandler(app.Registry, "Test App", nil, "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/llm.md", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("SECURITY: [llmmd] unauthenticated registry llm.md returned %d. Attack: global schema disclosure without auth.", rec.Code)
 	}

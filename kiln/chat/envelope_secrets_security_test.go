@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -18,7 +20,7 @@ import (
 // hands out. serveToolDispatch journals tool-call Args VERBATIM into
 // ChatEvent.Call.Args (journaledTools includes set_app_config), so a
 // credentialed db_url/jwt_secret parks in sess.Chat; the chat-bearing
-// GET surfaces emit session.chat with NO redaction — redactedWorld
+// GET surfaces emit session.chat with NO redaction — world.Redacted
 // masks only the world-IR arm (the sibling world_dsn red test pins that
 // arm; this is the chat-envelope arm).
 // Surfaces: kiln/chat/server.go::serveToolDispatch :416-433, serveWorld
@@ -79,7 +81,7 @@ func TestKilnChatEnvelopeMasksCreds(t *testing.T) {
 		}
 		got := rec.Body.String()
 		if strings.Contains(got, dsnCanary) || strings.Contains(got, jwtCanary) {
-			t.Errorf("SECURITY: [kiln-envelope-credential-leak] GET %s handed out the set_app_config credential verbatim (dsn=%s jwt=%s): serveToolDispatch journals tool-call Args into ChatEvent.Call.Args and every chat-bearing GET emits sess.Chat unredacted — redactedWorld covers only the world-IR arm. A local process or a same-Host DNS-rebinding page reads the credential in full: %.600s", target, dsnCanary, jwtCanary, got)
+			t.Errorf("SECURITY: [kiln-envelope-credential-leak] GET %s handed out the set_app_config credential verbatim (dsn=%s jwt=%s): serveToolDispatch journals tool-call Args into ChatEvent.Call.Args and every chat-bearing GET emits sess.Chat unredacted — world.Redacted covers only the world-IR arm. A local process or a same-Host DNS-rebinding page reads the credential in full: %.600s", target, dsnCanary, jwtCanary, got)
 		}
 		// Positive control: masking must be credential-shaped, not a
 		// blanked envelope — the benign config fields the same tool
@@ -159,5 +161,39 @@ func TestKilnChatPanelSummaryMasksCreds(t *testing.T) {
 	// row — the benign fields the same tool calls carried stay visible.
 	if !strings.Contains(rows, "panel-red") || !strings.Contains(rows, "set_app_config") {
 		t.Errorf("SECURITY: [kiln-panel-credential-leak] positive control: benign row fields (tool name set_app_config, config name panel-red) must stay visible in the rendered rows: %.600s", rows)
+	}
+}
+
+// The panel's world_edit row previews the journaled payload; an integer
+// past 2^53 in it (a field default here) shows the digits the edit
+// carried, not 9007199254740992.
+func TestPanelEditRowKeepsBigIntegers(t *testing.T) {
+	const exact, rounded = "9007199254740993", "9007199254740992"
+	d, cleanup, err := db.EphemeralSQLite("kiln-panel-bigint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	l, err := live.New(journal.NewMemory(), func() *framework.App { return framework.NewApp(framework.WithDB(d)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := protocol.New(l)
+	if res := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
+		Name: "items", Fields: []world.Field{{Name: "n", Type: "int"}},
+	}}); !res.OK {
+		t.Fatalf("add_entity: %+v", res)
+	}
+	if res := tools.AddField(t.Context(), protocol.AddFieldArgs{Entity: "items", Field: world.Field{
+		Name: "m", Type: "int", Default: json.Number(exact),
+	}}); !res.OK {
+		t.Fatalf("add_field: %+v", res)
+	}
+
+	pe := &panelEnv{live: l, tools: tools}
+	var rows string
+	l.ReadSession(func(sess *journal.Session) { rows = pe.logHTMLForCurrentLocked(sess) })
+	if strings.Contains(rows, rounded) || !strings.Contains(rows, exact) {
+		t.Errorf("add_field row previews the default as %s, want %s: %.600s", rounded, exact, rows)
 	}
 }

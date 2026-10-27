@@ -81,6 +81,43 @@ func isTerminalStatus(s DeliveryStatus) bool {
 	return s == StatusSuccess || s == StatusDead
 }
 
+// settleFence lists the row statuses a settle carrying next must not
+// overwrite. Beyond the isTerminalStatus fence, nothing but a success
+// replaces a success: a claimant past the attempt budget dead-letters
+// without sending while the claimant it outran may still deliver, and a
+// dead row over that delivery invites a replay that POSTs it again.
+func settleFence(next DeliveryStatus) []DeliveryStatus {
+	switch {
+	case !isTerminalStatus(next):
+		return []DeliveryStatus{StatusSuccess, StatusDead}
+	case next != StatusSuccess:
+		return []DeliveryStatus{StatusSuccess}
+	}
+	return nil
+}
+
+// claimFenced reports whether a settle of d belongs to a claim the row has
+// moved past: the row's next_attempt_at no longer holds the lease d's claim
+// wrote. A re-claim needs next_attempt_at <= now and writes now+lease, so
+// it always moves the value on, and so does an operator's ResetDelivery.
+// Retry and dead settles are fenced. A stale retry replaced the live
+// claimant's lease with a shorter backoff, so a third worker claimed the
+// delivery while the second still sent it. A stale dead settle landed on
+// a delivery an operator had replayed since, and dead-lettered it before
+// it ran once. A success settle is never lease-fenced: a stale success
+// really delivered, and on a replayed row it ends a replay whose payload
+// the receiver already has. A delivery no shipped store claimed (the plain
+// DueDeliveries path) carries no lease and is not fenced.
+func claimFenced(d Delivery, rowNextAttemptAt time.Time) bool {
+	return leaseFenced(d) && !rowNextAttemptAt.Equal(d.claimedUntil)
+}
+
+// leaseFenced reports whether a settle of d must match its claim's lease
+// (see claimFenced); SQLStore turns it into a next_attempt_at predicate.
+func leaseFenced(d Delivery) bool {
+	return !d.claimedUntil.IsZero() && d.Status != StatusSuccess
+}
+
 // Delivery is one attempt-set against a Subscriber for a single event.
 type Delivery struct {
 	ID            string
@@ -93,6 +130,16 @@ type Delivery struct {
 	NextAttemptAt time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// claimedUntil is the lease the claim that produced this value wrote
+	// (zero when no shipped store claimed it). The shipped stores fence a
+	// retry settle on it; see claimFenced.
+	claimedUntil time.Time
+
+	// unclaimedAttempt marks a delivery tick's plain DueDeliveries
+	// fallback dequeued: no claim consumed its attempt, so the shipped
+	// stores' settle adds it to the row (attempts = attempts + 1).
+	unclaimedAttempt bool
 }
 
 // Store is the persistence interface.
@@ -528,21 +575,72 @@ func (m *Manager) tick(ctx context.Context) {
 		// the row); this plain-dequeue fallback has no claim, so the
 		// attempt is consumed here instead — the same one-bump-per-
 		// dequeue rule, keeping MaxAttempts reachable for non-leased
-		// stores. The settle still never writes the counter.
+		// stores. The settle adds it to the row relative to the stored
+		// count (see SQLStore.UpdateDelivery); it never writes the value.
 		for i := range due {
 			due[i].Attempts++
+			due[i].unclaimedAttempt = true
 		}
 	}
 	if err != nil {
 		return
 	}
-	for _, d := range due {
+	for i, d := range due {
 		if ctx.Err() != nil {
 			return
+		}
+		// The whole batch shares one lease, and the attempts run one
+		// after another. Starting a delivery whose lease runs out mid-POST
+		// lets another worker re-claim and send it too, or dead-letter it
+		// unsent once the re-claim passes the attempt budget. Such claims
+		// go back to pending with their attempt refunded, and the next
+		// tick claims them under a fresh lease. The bar is at most half
+		// the lease, so a fresh claim always starts.
+		if m.leaseTooShort(d) {
+			if r, ok := m.store.(claimReleaser); ok {
+				m.releaseClaims(ctx, r, due[i:])
+				break
+			}
 		}
 		m.attempt(ctx, d)
 	}
 	m.sweepTerminal(ctx)
+}
+
+// claimReleaser is the shipped stores' hand-back of a claim the worker
+// never started: the row returns to pending, due now, with the attempt the
+// claim consumed refunded, fenced on the claim's own lease so a re-claimed
+// row is left alone.
+type claimReleaser interface {
+	releaseClaim(ctx context.Context, d Delivery, now time.Time) error
+}
+
+// leaseTooShort reports whether d's claim has less lease left than one
+// attempt may take: the HTTP client's timeout, capped at half the lease
+// (also the bar for a client with no timeout).
+func (m *Manager) leaseTooShort(d Delivery) bool {
+	need := m.opts.LeasePeriod / 2
+	if t := m.opts.HTTPClient.Timeout; t > 0 {
+		need = min(t, need)
+	}
+	return m.nowFn().Add(need).After(d.claimedUntil)
+}
+
+// releaseClaims hands back the claims a tick did not start (see tick).
+func (m *Manager) releaseClaims(ctx context.Context, r claimReleaser, ds []Delivery) {
+	// Store code on the worker loop, the saveDelivery recover net: a
+	// panic leaves the rest leased until the lease expires.
+	defer func() {
+		if v := recover(); v != nil {
+			m.logf("webhook: release of unstarted claims panicked (they are re-claimed when the lease expires): %v", v)
+		}
+	}()
+	now := m.nowFn()
+	for _, d := range ds {
+		if err := r.releaseClaim(context.WithoutCancel(ctx), d, now); err != nil {
+			m.logf("webhook: delivery %s: release unstarted claim failed (it is re-claimed when the lease expires): %v", d.ID, err)
+		}
+	}
 }
 
 // sweepTerminal reaps terminal, fully-settled rows older than the
@@ -580,6 +678,22 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 			m.logf("webhook: delivery %s: attempt panicked (row stays pending → duplicate delivery): %v", d.ID, v)
 		}
 	}()
+	// d.Attempts counts this claim. Past the budget means earlier claims
+	// spent it without a settle (a worker died between claim and settle,
+	// its lease expired, and this tick re-claimed the row): dead-letter
+	// it without sending. schedule only checks the budget after a failed
+	// send, so without this a MaxAttempts 1 delivery was sent once per
+	// crash. No request is made, so no attempt is counted.
+	if d.Attempts > m.opts.MaxAttempts {
+		d.Status = StatusDead
+		d.LastError = fmt.Sprintf("attempt budget exhausted: claimed %d times, max %d (a worker died between claim and settle)",
+			d.Attempts, m.opts.MaxAttempts)
+		d.NextAttemptAt = time.Time{}
+		d.UpdatedAt = m.nowFn()
+		m.logf("webhook: delivery %s: dead-lettered without sending, %s", d.ID, d.LastError)
+		m.saveDelivery(d)
+		return
+	}
 	// One delivery attempt is being processed: count it now. Every
 	// non-success branch below bumps failuresTotal exactly once, so
 	// failuresTotal stays <= deliveriesTotal. Success bumps nothing else.
@@ -615,7 +729,8 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// non-leased fallback bumps it in tick). Bumping here again and
 	// persisting it absolutely is exactly the write that let a stale
 	// claimant's settle rewind the counter a re-claimant's claim had
-	// consumed, so the settle never writes attempts.
+	// consumed, so the settle never writes attempts (the fallback's bump
+	// reaches the row as a relative +1, see unclaimedAttempt).
 	d.UpdatedAt = m.nowFn()
 	body := bytes.NewReader(d.Payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, body)

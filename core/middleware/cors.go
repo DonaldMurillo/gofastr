@@ -60,14 +60,18 @@ func CORS(cfg CORSConfig) Middleware {
 			if allowAll {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				allowed = true
-			} else if origin != "" && originSet[origin] {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				// Add, not Set: an upstream middleware may already have
-				// written Vary (compression writes Accept-Encoding), and
-				// clobbering it makes a shared cache serve one variant to
-				// clients that cannot read it.
+			} else {
+				// Under an allow-list the response depends on Origin whether
+				// or not it matched, so every response says so: a shared
+				// cache that stored the no-ACAO variant must not replay it
+				// to an allowed origin. Add, not Set: an upstream middleware
+				// may already have written Vary (compression writes
+				// Accept-Encoding).
 				w.Header().Add("Vary", "Origin")
-				allowed = true
+				if origin != "" && originSet[origin] {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					allowed = true
+				}
 			}
 
 			// SECURITY: only emit Allow-Methods / Allow-Headers when the
@@ -78,8 +82,12 @@ func CORS(cfg CORSConfig) Middleware {
 				w.Header().Set("Access-Control-Allow-Headers", headers)
 			}
 
-			// Handle preflight
-			if r.Method == http.MethodOptions {
+			// A preflight is OPTIONS carrying Origin and
+			// Access-Control-Request-Method. Any other OPTIONS (curl, WebDAV,
+			// a gateway probe) is the app's own request and reaches next.
+			preflight := r.Method == http.MethodOptions && origin != "" &&
+				r.Header.Get("Access-Control-Request-Method") != ""
+			if preflight {
 				if !allowed {
 					// SECURITY: rejected-origin preflight must fail
 					// outright rather than appearing to succeed.

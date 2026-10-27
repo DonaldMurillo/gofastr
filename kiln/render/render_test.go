@@ -122,6 +122,39 @@ func TestApplyEntityWithSeed(t *testing.T) {
 	}
 }
 
+// A seed row's integer past 2^53, and a field default, arrive from the
+// journal as a json.Number; each is stored as that integer, and the API
+// serves it back with its digits.
+func TestSeedKeepsBigIntegers(t *testing.T) {
+	const exact = "9007199254740993"
+	app, db := newTestApp(t)
+	w := world.New()
+	w.Entities["items"] = &world.Entity{Name: "items", Fields: []world.Field{
+		{Name: "n", Type: "int"}, {Name: "m", Type: "int", Default: json.Number(exact)},
+	}}
+	w.Seeds = append(w.Seeds, &world.Seed{Entity: "items", Rows: []map[string]any{{"n": json.Number(exact)}}})
+	if err := render.Apply(app, w); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := render.ApplySeeds(db, w); err != nil {
+		t.Fatalf("ApplySeeds: %v", err)
+	}
+	var nKind, mKind string
+	var n, m int64
+	if err := db.QueryRow(`SELECT typeof(n), n, typeof(m), m FROM items`).Scan(&nKind, &n, &mKind, &m); err != nil {
+		t.Fatal(err)
+	}
+	if nKind != "integer" || n != 9007199254740993 || mKind != "integer" || m != 9007199254740993 {
+		t.Errorf("stored n = %s %d, m = %s %d, want integer %s for both", nKind, n, mKind, m, exact)
+	}
+	if _, body := get(t, app.Router(), "/api/items"); strings.Count(body, exact) != 2 {
+		t.Errorf("GET /api/items = %s, want n and m %s", body, exact)
+	}
+}
+
 func TestApplyPageRendersHTML(t *testing.T) {
 	app, _ := newTestApp(t)
 	w := world.New()

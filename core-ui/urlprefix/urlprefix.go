@@ -14,8 +14,9 @@
 // <link>), the runtime's /__gofastr/ endpoints, external and
 // protocol-relative URLs, fragments, query-only and relative URLs, an
 // anchor with hreflang (a language switcher, already built with
-// i18n.LocalePath) or download, and any URL whose first segment already
-// names a locale. JSON bodies and SSE pushes are not rewritten: code
+// i18n.LocalePath) or download, any URL whose first segment already
+// names a locale, and any path a Rule's Keep claims (a static export's
+// copied files). JSON bodies and SSE pushes are not rewritten: code
 // that writes a URL there reads i18n.PathPrefix itself.
 package urlprefix
 
@@ -23,6 +24,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -42,6 +44,13 @@ type Rule struct {
 	// Origins lists absolute origins ("https://shop.example") whose
 	// URLs are prefixed too.
 	Origins []string
+	// Keep, when set, is asked about the path of each root-relative URL
+	// the rule would prefix (query and fragment cut off, as written);
+	// true leaves the URL alone. A static export sets it: its files are
+	// copied once, to the export root, so a link to one keeps its
+	// unprefixed path, while the live router serves them under every
+	// prefix.
+	Keep func(path string) bool
 }
 
 // URLAttrs lists the data-cui-* attributes whose value is a same-origin
@@ -85,8 +94,24 @@ func Path(u string, rule Rule) string {
 	if i := strings.IndexAny(seg, "/?#"); i >= 0 {
 		seg = seg[:i]
 	}
+	// The router splits the locale off the decoded path, so /%65s/ is
+	// /es/ to it: compare the segment as the router reads it, or the
+	// link gets a second prefix (/es/%65s/about).
+	if dec, err := url.PathUnescape(seg); err == nil {
+		seg = dec
+	}
 	if seg == "__gofastr" || slices.Contains(rule.Locales, seg) || "/"+seg == rule.Prefix {
 		return u
+	}
+	if rule.Keep != nil {
+		p := u
+		if i := strings.IndexAny(p, "?#"); i >= 0 {
+			p = p[:i]
+		}
+		//gofastr:allow(recovercallback) Keep is set only by a static export build (framework/static), which calls HTML on its own goroutine; Middleware's per-request rule never sets it, so no request path reaches this call.
+		if rule.Keep(p) {
+			return u
+		}
 	}
 	if u == "/" {
 		return rule.Prefix

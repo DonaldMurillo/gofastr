@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // Defaults for Config's zero fields.
@@ -30,10 +31,12 @@ const (
 	defaultMaxHistory      = 200
 	defaultDefaultPageSize = 50
 	defaultMaxPageSize     = 200
-	// defaultTerminalTaskRetention and defaultMaxPushConfigsPerTask
-	// bound the rows one owner's cheap writes retain (Config.
-	// TerminalTaskRetention / Config.MaxPushConfigsPerTask; 0 = these).
+	// defaultTerminalTaskRetention, defaultPausedTaskRetention and
+	// defaultMaxPushConfigsPerTask bound the rows one owner's cheap
+	// writes retain (Config.TerminalTaskRetention / PausedTaskRetention /
+	// MaxPushConfigsPerTask; 0 = these).
 	defaultTerminalTaskRetention = 64
+	defaultPausedTaskRetention   = 64
 	defaultMaxPushConfigsPerTask = 8
 	// defaultMaxConcurrentRunsPerOwner bounds handler goroutines started
 	// by one authenticated owner. TaskTimeout limits their lifetime; this
@@ -101,6 +104,14 @@ type Config struct {
 	// RetentionTrimmer — both built-ins do.
 	TerminalTaskRetention int
 
+	// PausedTaskRetention bounds how many PAUSED task rows (input or
+	// auth required) one owner retains: a skill that pauses on every
+	// send would otherwise mint a row per send that terminal retention
+	// never reaches. Past the bound the OLDEST paused tasks are
+	// canceled after each pause, and terminal retention then trims
+	// them. 0 = 64; negative disables.
+	PausedTaskRetention int
+
 	// MaxPushConfigsPerTask bounds push-notification configs per task
 	// (each one fans a delivery goroutine out per event): past the
 	// bound the OLDEST configs are deleted. 0 = 8; negative disables.
@@ -146,10 +157,12 @@ type Server struct {
 	defPage  int
 	maxPage  int
 
-	// maxTerminalTasks / maxPushConfigs mirror Config.
-	// TerminalTaskRetention / MaxPushConfigsPerTask (0 resolved to the
-	// defaults in NewServer; negative kept as "disabled").
+	// maxTerminalTasks / maxPausedTasks / maxPushConfigs mirror Config.
+	// TerminalTaskRetention / PausedTaskRetention / MaxPushConfigsPerTask
+	// (0 resolved to the defaults in NewServer; negative kept as
+	// "disabled").
 	maxTerminalTasks int
+	maxPausedTasks   int
 	maxPushConfigs   int
 	keepAlive        time.Duration
 	pollEvery        time.Duration
@@ -195,6 +208,11 @@ type run struct {
 	cancelDone chan struct{}
 	bus        *taskBus
 	done       chan struct{}
+	// pausedAt is the version of this run's latest write once its
+	// handler paused the task (RequireInput/RequireAuth), zero before.
+	// A stored version past it was written by a run elsewhere that
+	// resumed the task, which this run's bus never hears.
+	pausedAt atomic.Int64
 }
 
 // NewServer validates cfg and applies its defaults.
@@ -242,6 +260,10 @@ func NewServer(cfg Config) (*Server, error) {
 	if maxTerminal == 0 {
 		maxTerminal = defaultTerminalTaskRetention
 	}
+	maxPaused := cfg.PausedTaskRetention
+	if maxPaused == 0 {
+		maxPaused = defaultPausedTaskRetention
+	}
 	maxPush := cfg.MaxPushConfigsPerTask
 	if maxPush == 0 {
 		maxPush = defaultMaxPushConfigsPerTask
@@ -280,6 +302,7 @@ func NewServer(cfg Config) (*Server, error) {
 		defPage:                   defPage,
 		maxPage:                   maxPage,
 		maxTerminalTasks:          maxTerminal,
+		maxPausedTasks:            maxPaused,
 		maxPushConfigs:            maxPush,
 		keepAlive:                 keepAliveEvery,
 		pollEvery:                 pollEvery,
@@ -389,12 +412,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "parse request: %v", err))
 		return
 	}
-	if req.JSONRPC != "2.0" {
-		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))
-		return
-	}
 	if len(req.ID) == 0 || string(req.ID) == "null" {
 		s.writeResult(w, nil, nil, Errorf(CodeInvalidRequest, "request id required"))
+		return
+	}
+	// An id is a string or a number (JSON-RPC 2.0 §4). Any other type is
+	// refused before it can be echoed: the reply carries a null id, since
+	// a boolean, object or array cannot stand in as one.
+	if c := req.ID[0]; c != '"' && c != '-' && (c < '0' || c > '9') {
+		s.writeResult(w, nil, nil, Errorf(CodeInvalidRequest, "request id must be a string or a number"))
+		return
+	}
+	if req.JSONRPC != "2.0" {
+		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidRequest, `jsonrpc must be "2.0"`))
 		return
 	}
 	// The owner check precedes dispatch for every method, so no method
@@ -547,7 +577,7 @@ func decodeParams(raw json.RawMessage, v any) *Error {
 	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}
-	if err := json.Unmarshal(raw, v); err != nil {
+	if err := jsonexact.Unmarshal(raw, v); err != nil {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}
 	return nil
@@ -675,10 +705,14 @@ func (s *Server) finishRun(rn *run) {
 	close(rn.done)
 }
 
-func (s *Server) setRunCancel(rn *run, cancel context.CancelFunc) {
+// setRunCancel installs the run's live cancel and reports whether
+// CancelTask had already halted the run, both under the lock wakeRun
+// reads the cancel under (see startRun).
+func (s *Server) setRunCancel(rn *run, cancel context.CancelFunc) (halted bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rn.cancel = cancel
+	return rn.halted.Load()
 }
 
 // wakeRun cancels a run's context. The cancel func is read under the
@@ -694,26 +728,125 @@ func (s *Server) wakeRun(rn *run) {
 // context is cut from the request's CANCELLATION but not from the
 // request itself: returnImmediately and stream disconnects must not
 // abort work the client was told is running. TaskTimeout bounds it.
+//
+// A CancelTask can land between the claim and this call (a streaming
+// client knows the id once the snapshot is sent): it halts the run and
+// wakes the claim's placeholder cancel, which is a no-op. setRunCancel
+// installs the live cancel and reads the halted flag under the lock
+// wakeRun reads the cancel under, so either wakeRun calls the live
+// cancel or this call sees the halt. A run halted before it starts
+// never invokes the handler: finalize settles it as CANCELED against
+// the store, and finishRun releases it.
 func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), s.timeout)
 	runCtx = WithRequest(runCtx, r)
-	s.setRunCancel(rn, cancel)
-	t.attach(rn)
+	haltedBeforeStart := s.setRunCancel(rn, cancel)
+	if haltedBeforeStart {
+		cancel()
+	}
+	t.attach(rn, runCtx)
+	returned := make(chan struct{})
+	if _, inProcess := s.store.(*MemoryStore); !inProcess && !haltedBeforeStart {
+		go s.watchRemoteCancel(runCtx, returned, t, rn)
+	}
 	go func() {
 		defer func() {
 			cancel()
 			s.finishRun(rn)
 		}()
-		err := s.invoke(runCtx, t, h)
+		var err error
+		if !haltedBeforeStart {
+			err = s.invoke(runCtx, t, h)
+		}
+		close(returned)
 		s.finalize(runCtx, t, err)
 	}()
 }
 
+// watchRemoteCancel polls a shared store while a run is live. A
+// CancelTask served by another replica writes only the store, so without
+// this the handler ran on until its next write or TaskTimeout, and this
+// replica's subscribers never saw CANCELED. A terminal state this run
+// did not write halts the run the way a local CancelTask does, tells the
+// local subscribers, and cuts the handler's context. finalize then
+// adopts the stored record. Push configs are left alone: the replica
+// that wrote the state already delivered to them.
+//
+// The watch ends when the handler returns: finalize's own write is not
+// held under t.mu across the store call, so a later read could take it
+// for a remote one and announce the terminal state twice.
+func (s *Server) watchRemoteCancel(ctx context.Context, returned <-chan struct{}, t *taskRun, rn *run) {
+	tick := time.NewTicker(s.pollEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-returned:
+			return
+		case <-tick.C:
+		}
+		rctx, cancel := context.WithTimeout(ctx, storeOpTimeout)
+		rec, err := s.pollGetTask(rctx, t.owner, t.taskID())
+		cancel()
+		if errors.Is(err, errStorePanicked) {
+			return
+		}
+		gone := errors.Is(err, ErrNotFound)
+		if !gone && (err != nil || !rec.Task.Status.State.Terminal()) {
+			continue
+		}
+		t.mu.Lock()
+		select {
+		case <-returned:
+			t.mu.Unlock()
+			return
+		default:
+		}
+		if gone {
+			// Retention deletes only terminal rows, so a missing row
+			// this run has not settled was settled on another replica
+			// and trimmed before a poll caught it. There is no record
+			// to announce: local subscribers fall through to the store
+			// poll, which ends on the missing row. finalize's write
+			// is an UPDATE, so it cannot bring the row back.
+			halt := !t.rec.Task.Status.State.Terminal() && rn.halted.CompareAndSwap(false, true)
+			if halt {
+				close(rn.cancelDone)
+			}
+			t.mu.Unlock()
+			if halt {
+				s.wakeRun(rn)
+			}
+			return
+		}
+		remote := rec.Version > t.rec.Version && !t.rec.Task.Status.State.Terminal() &&
+			rn.halted.CompareAndSwap(false, true)
+		if remote {
+			close(rn.cancelDone)
+			rn.bus.publish(busEvent{ev: StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
+				TaskID:    rec.Task.ID,
+				ContextID: rec.Task.ContextID,
+				Status:    rec.Task.Status,
+			}}, version: rec.Version})
+		}
+		t.mu.Unlock()
+		if remote {
+			s.wakeRun(rn)
+		}
+		return
+	}
+}
+
 // publish fans one event out to the task's live subscribers and its
-// push configs. Called only AFTER the event's task state is persisted.
+// push configs. Called only AFTER the event's task state is persisted,
+// so rec.Version is the version that write produced; subscribers use
+// it to skip events a snapshot already reflects, and push delivery
+// uses it to drop an event that lost the race to a newer one.
 func (s *Server) publish(owner string, rec *TaskRecord, ev StreamResponse) {
+	version := rec.Version
 	if rn := s.runFor(rec.Task.ID); rn != nil {
-		rn.bus.publish(ev)
+		rn.bus.publish(busEvent{ev: ev, version: version})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	cfgs, err := s.store.ListPushConfigs(ctx, owner, rec.Task.ID)
@@ -722,7 +855,7 @@ func (s *Server) publish(owner string, rec *TaskRecord, ev StreamResponse) {
 		s.log.Error("a2a: list push configs", "taskId", rec.Task.ID, "err", err)
 		return
 	}
-	s.push.deliver(cfgs, ev)
+	s.push.deliver(cfgs, ev, version)
 }
 
 // ---- SendMessage / SendStreamingMessage -------------------------------
@@ -745,14 +878,12 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request, req *rpcRequ
 			s.writeResult(w, req.ID, nil, ErrUnsupportedOperation("streaming requires a flushing ResponseWriter"))
 			return
 		}
+		s.streamSend(w, r, req.ID, owner, &p)
+		return
 	}
 	t, rn, h, aerr := s.prepareSend(r, owner, &p)
 	if aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
-		return
-	}
-	if streaming {
-		s.streamSend(w, r, req.ID, owner, t, rn, h, historyLengthOf(&p))
 		return
 	}
 	// Non-streaming: answer with the task. returnImmediately hands the
@@ -1038,6 +1169,67 @@ func (s *Server) trimTerminalTasks(owner string) {
 	}
 }
 
+// pausedTrimBatch is how many paused rows past the bound one trim reads
+// per state. Every pause trims, so the excess is normally one row.
+const pausedTrimBatch = 16
+
+// trimPausedTasks bounds the owner's PAUSED task rows
+// (Config.PausedTaskRetention). Called after every persist that leaves a
+// task paused. Past the bound the oldest are canceled through the store,
+// so it works on any Store, and the canceled rows then fall to terminal
+// retention. A handler still running on a canceled task gets a version
+// conflict on its next write, as after CancelTask. Failure is a log
+// line, like the other trims.
+func (s *Server) trimPausedTasks(owner string) {
+	if s.maxPausedTasks < 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+	defer cancel()
+	var paused []*TaskRecord
+	for _, st := range []TaskState{TaskStateInputRequired, TaskStateAuthRequired} {
+		recs, _, err := s.store.ListTasks(ctx, owner, ListQuery{Status: st, Limit: s.maxPausedTasks + pausedTrimBatch})
+		if err != nil {
+			s.log.Error("a2a: list paused tasks", "owner", owner, "err", err)
+			return
+		}
+		paused = append(paused, recs...)
+	}
+	// A task that moved between the two states while they were listed
+	// shows up in both; count it once, at its newest state.
+	sortRecsNewestFirst(paused)
+	seen := make(map[string]bool, len(paused))
+	paused = slices.DeleteFunc(paused, func(rec *TaskRecord) bool {
+		dup := seen[rec.Task.ID]
+		seen[rec.Task.ID] = true
+		return dup
+	})
+	if len(paused) <= s.maxPausedTasks {
+		return
+	}
+	canceled := false
+	for _, rec := range paused[s.maxPausedTasks:] {
+		cand := rec.Clone()
+		cand.Task.Status = TaskStatus{State: TaskStateCanceled, Timestamp: s.stamp()}
+		if err := s.store.UpdateTask(ctx, cand); err != nil {
+			// A conflict is a resume or cancel that got there first.
+			if !errors.Is(err, ErrConflict) {
+				s.log.Error("a2a: cancel paused task", "taskId", rec.Task.ID, "err", err)
+			}
+			continue
+		}
+		s.publish(owner, cand, StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
+			TaskID:    cand.Task.ID,
+			ContextID: cand.Task.ContextID,
+			Status:    cand.Task.Status,
+		}})
+		canceled = true
+	}
+	if canceled {
+		s.trimTerminalTasks(owner)
+	}
+}
+
 // trimPushConfigs bounds the push-notification configs retained for
 // (owner, taskID) (Config.MaxPushConfigsPerTask), after each create.
 func (s *Server) trimPushConfigs(ctx context.Context, owner, taskID string) {
@@ -1066,6 +1258,14 @@ func (s *Server) skillIDs() []string {
 // snapshot returns a deep copy of the run's current task.
 func (t *taskRun) snapshot() *Task {
 	return t.Task()
+}
+
+// snapshotRecord returns a deep copy of the run's current record: the
+// task together with the version its last write left it at.
+func (t *taskRun) snapshotRecord() *TaskRecord {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.rec.Clone()
 }
 
 // ---- SSE ---------------------------------------------------------------
@@ -1161,19 +1361,17 @@ func (st *sseStream) keepAlive() error {
 }
 
 // streamSend answers SendStreamingMessage: the initial task snapshot,
-// then every event until the task settles.
-func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawMessage, owner string, t *taskRun, rn *run, h Handler, history *int) {
-	fl, ok := w.(http.Flusher)
-	if !ok {
-		// Without a flusher the events would buffer unboundedly; answer
-		// non-streaming instead of pretending.
-		s.writeResult(w, id, nil, ErrUnsupportedOperation("streaming requires a flushing ResponseWriter"))
-		return
-	}
-	_ = fl
-	// Seat admission: the per-owner cap on concurrent streams. Refusal
-	// happens before any byte of the stream is written; the seat is
-	// freed when this handler returns (i.e. when forwardEvents returns).
+// then every event until the task settles. handleSend has already
+// checked that the writer flushes.
+//
+// The seat is admitted BEFORE prepareSend creates or claims anything:
+// refusing it afterwards left the task SUBMITTED with its run claimed
+// and never started, so the task never settled and the owner's run
+// quota leaked one slot per refusal. Once prepareSend has claimed a
+// run, every path out of here starts it, for the same reason. The seat
+// is freed when this returns (when the stream ends, or at once when
+// prepareSend refuses the message).
+func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawMessage, owner string, p *SendMessageRequest) {
 	seat, ok := s.seats.admitSeat(owner, s.maxStreamSeats, s.streamSeatOverflow)
 	if !ok {
 		s.writeTransport(w, http.StatusTooManyRequests,
@@ -1181,39 +1379,85 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 		return
 	}
 	defer s.seats.releaseSeat(seat)
+	t, rn, h, aerr := s.prepareSend(r, owner, p)
+	if aerr != nil {
+		s.writeResult(w, id, nil, aerr)
+		return
+	}
 	st := s.newSSEStream(w, id)
-	task := t.snapshot()
-	applyHistoryLength(task, history)
-	if err := st.send(StreamResponse{Task: task}); err != nil {
+	// Subscribe before the snapshot and before the run starts. Writing
+	// the snapshot can block on a slow client, and a CancelTask in that
+	// window publishes CANCELED once; the run then finds the task already
+	// canceled and publishes nothing, so a stream that subscribed after
+	// the write ended on SUBMITTED. No version floor: until the run
+	// starts nothing advances the snapshot's record (CancelTask writes
+	// the store, not the run), so every event on the bus is news.
+	var ch chan busEvent
+	if h != nil {
+		ch = rn.bus.subscribe()
+		defer rn.bus.unsubscribe(ch)
+	}
+	snap := t.snapshotRecord()
+	task := cloneTask(snap.Task)
+	applyHistoryLength(&task, historyLengthOf(p))
+	if err := st.send(StreamResponse{Task: &task}); err != nil {
+		// The client is gone before the first event. Run the task
+		// anyway, exactly as for a client that leaves right after the
+		// snapshot: the run settles it and releases its registration.
+		if h != nil {
+			s.startRun(r, t, rn, h)
+		}
 		return
 	}
 	if h == nil {
 		return // routing reject: the snapshot is already terminal
 	}
-	// Subscribe before the run starts so its first events cannot slip
-	// past an attach that happens after the goroutine is already running.
-	ch := rn.bus.subscribe()
-	defer rn.bus.unsubscribe(ch)
 	s.startRun(r, t, rn, h)
-	s.forwardEvents(st, rn, ch, r.Context(), seat)
+	seen, unsettled := s.forwardEvents(st, rn, ch, r.Context(), seat, 0)
+	if !unsettled {
+		return
+	}
+	// The run ended without its final event reaching this stream. A
+	// CancelTask on a resumed task can land between the run's claim and
+	// the subscribe above: it publishes CANCELED to a bus nobody has
+	// joined, and the halted run adopts the stored state without
+	// announcing it again. Follow the store from what was sent, as
+	// SubscribeToTask does, so the stream ends on the settled state.
+	snap.Version = max(seen, snap.Version)
+	s.pollEvents(st, owner, snap, r.Context(), seat)
 }
 
 // forwardEvents relays bus events to the stream until the task settles,
-// the client goes away, or the run ends.
-func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, ctx context.Context, seat *streamSeat) {
+// the client goes away, or the run ends. An event whose write left the
+// task at a version at or below floor is already in the snapshot the
+// stream opened with, and is skipped rather than sent twice.
+//
+// unsettled reports a run that ended with the stream still open: its
+// handler returned without a final event, so the task moved on without
+// it (another replica resumed it). seen is the last version sent.
+func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx context.Context, seat *streamSeat, floor int64) (seen int64, unsettled bool) {
 	keepAlive := time.NewTicker(s.keepAlive)
 	defer keepAlive.Stop()
+	seen = floor
+	// relay sends one event and reports whether the stream is over.
+	relay := func(be busEvent) bool {
+		if be.version <= floor {
+			return false
+		}
+		if err := st.send(be.ev); err != nil {
+			return true
+		}
+		seen = max(seen, be.version)
+		return endsStream(be.ev)
+	}
 	for {
 		select {
-		case ev, ok := <-ch:
+		case be, ok := <-ch:
 			if !ok {
 				// Dropped for being slow; the stream is done.
 				return
 			}
-			if err := st.send(ev); err != nil {
-				return
-			}
-			if endsStream(ev) {
+			if relay(be) {
 				return
 			}
 		case <-seat.done:
@@ -1227,18 +1471,12 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, c
 			// event, then close.
 			for {
 				select {
-				case ev, ok := <-ch:
-					if !ok {
-						return
-					}
-					if err := st.send(ev); err != nil {
-						return
-					}
-					if endsStream(ev) {
+				case be, ok := <-ch:
+					if !ok || relay(be) {
 						return
 					}
 				default:
-					return
+					return seen, true
 				}
 			}
 		case <-keepAlive.C:
@@ -1371,6 +1609,15 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		}
 		state := rec.Task.Status.State
 		if state == TaskStateCanceled && halted != nil {
+			// Another replica's cancel won the write after this one
+			// halted the run, so neither the watch nor finalize will
+			// announce it: tell the local subscribers here. A stream ends
+			// at its first terminal event, so a second one is never read.
+			halted.bus.publish(busEvent{ev: StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
+				TaskID:    rec.Task.ID,
+				ContextID: rec.Task.ContextID,
+				Status:    rec.Task.Status,
+			}}, version: rec.Version})
 			task := cloneTask(rec.Task)
 			s.writeResult(w, req.ID, SendMessageResponse{Task: &task}, nil)
 			return
@@ -1430,17 +1677,57 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	// snapshot. Subscribing after the snapshot (the previous order) lost
 	// every event published in that gap: a client that released the
 	// handler on seeing the snapshot saw the stream end with no artifact
-	// or completion at all on a slow runner. An event the snapshot already
-	// reflects may be forwarded once more; updates are idempotent.
+	// or completion at all on a slow runner. An event queued in that gap
+	// may already be in the snapshot, and forwarding it again is not
+	// harmless: an artifact append is a delta the client applies on top
+	// of the snapshot, so a repeat doubles its parts. Every bus event
+	// carries the task version its write produced, and forwardEvents
+	// skips those at or below the snapshot's version.
+	//
+	// The run can also change under the read: the one subscribed to
+	// settles and a resume starts the next before the snapshot is read.
+	// Forwarding the settled run's bus then ends the stream on a running
+	// task, so the subscribe and read repeat until the run holds still,
+	// and past a few tries the store poll serves the task instead.
 	var (
-		rn *run
-		ch chan StreamResponse
+		rn  *run
+		ch  chan busEvent
+		rec *TaskRecord
+		err error
 	)
-	if rn = s.runFor(p.ID); rn != nil {
-		ch = rn.bus.subscribe()
+	for try := 0; ; try++ {
+		if rn = s.runFor(p.ID); rn != nil {
+			ch = rn.bus.subscribe()
+		}
+		// The request context bounds the read: a hung store must not pin
+		// this handler after the client has gone.
+		rec, err = s.store.GetTask(r.Context(), owner, p.ID)
+		if err != nil || s.runFor(p.ID) == rn {
+			break
+		}
+		if rn != nil {
+			rn.bus.unsubscribe(ch)
+			rn, ch = nil, nil
+		}
+		if try == 2 {
+			break
+		}
+	}
+	// A local run that paused the task, under a stored version it did
+	// not write, is still unwinding its handler after another replica
+	// resumed the task. Its bus hears nothing of that run and its
+	// watcher only of terminal states, so following it hid the resumed
+	// run's own pause until the local handler returned. Follow the store
+	// instead.
+	if rn != nil && err == nil {
+		if at := rn.pausedAt.Load(); at != 0 && rec.Version > at {
+			rn.bus.unsubscribe(ch)
+			rn, ch = nil, nil
+		}
+	}
+	if rn != nil {
 		defer rn.bus.unsubscribe(ch)
 	}
-	rec, err := s.store.GetTask(context.Background(), owner, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
 		return
@@ -1476,8 +1763,15 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		return
 	}
 	if rn != nil {
-		s.forwardEvents(st, rn, ch, r.Context(), seat)
-		return
+		seen, unsettled := s.forwardEvents(st, rn, ch, r.Context(), seat, rec.Version)
+		if !unsettled {
+			return
+		}
+		// The local run ended without settling the task, so another
+		// replica carries it on: follow the store from what was sent.
+		from := *rec
+		from.Version = seen
+		rec = &from
 	}
 	// Multi-replica fallback: the task is non-terminal and has no run
 	// in this process, so it is running on (or stalled from) another
@@ -1489,7 +1783,20 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	s.pollEvents(st, owner, rec, r.Context(), seat)
 }
 
+// pollEvents serves the polling fallback. Its store reads run under the
+// request context, cut further when the seat is evicted, so a hung
+// store read ends with the stream instead of pinning the seat after
+// the client has gone.
 func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx context.Context, seat *streamSeat) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-seat.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	last := rec.Version
 	poll := time.NewTicker(s.pollEvery)
 	defer poll.Stop()
@@ -1508,7 +1815,10 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 				return
 			}
 		case <-poll.C:
-			cur, err := s.pollGetTask(context.Background(), owner, rec.Task.ID)
+			cur, err := s.pollGetTask(ctx, owner, rec.Task.ID)
+			if ctx.Err() != nil {
+				return // the client left or the seat was evicted
+			}
 			if errors.Is(err, ErrNotFound) {
 				return
 			}

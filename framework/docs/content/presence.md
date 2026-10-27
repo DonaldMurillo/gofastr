@@ -210,9 +210,12 @@ presence); there is no separate presence wiring to do.
 - A **periodic 15s heartbeat** rebroadcasts every topic's full roster, so a
   dropped announcement heals on the next beat. A **crashed replica** stops
   heartbeating and its members vanish from peers within the TTL; no
-  explicit goodbye needed. A **graceful stop** (`SetFanout`'s returned
+  explicit goodbye needed. The expiry fires `SetOnPresenceChange` like
+  any other departure, so viewers get the shrunk roster pushed. A **graceful stop** (`SetFanout`'s returned
   `stop`, called by app `Shutdown`) publishes an empty roster first, so a
-  rolling restart converges promptly.
+  rolling restart converges promptly. The stopping replica drops every
+  remote member and fires `SetOnPresenceChange` for each topic whose
+  roster shrank, so its own viewers see them leave.
 - A roster change from a remote merge fires the same `SetOnPresenceChange` callback →
   `PushUpdate` path as a local join, so viewers on every replica see the
   update live (island push already crosses replicas).

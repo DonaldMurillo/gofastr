@@ -26,14 +26,29 @@
   // appliedSequence starts at -1, "nothing applied": a channel whose
   // source has never mutated sends its hydration snapshot at sequence
   // 0, and that snapshot must apply.
+  //
+  // reduce(envelope, generation): pass the generation the message came
+  // from (onMessage carries it) and the first snapshot of each new
+  // generation applies whatever its sequence. A fresh connection's
+  // snapshot is read after everything the old one saw, and a restarted
+  // server or another replica numbers from its own start, so comparing
+  // it with the old connection's sequences could only leave the page
+  // stale. Inside a generation the strict rule holds. Generations only
+  // grow, so a late message from one older than the hydrated generation
+  // is refused outright: its snapshot would restore old state and its
+  // sequences belong to another numbering.
   NS.createSequencedReducer = (initialState, apply) => {
     let state = initialState;
     let appliedSequence = -1;
-    return (envelope) => {
+    let hydratedGeneration;
+    return (envelope, generation) => {
       const seq = envelope ? Number(envelope.sequence) : NaN;
-      if (!Number.isFinite(seq) || seq <= appliedSequence) {
+      const stale = generation !== undefined && hydratedGeneration !== undefined && generation < hydratedGeneration;
+      const fresh = generation !== undefined && generation !== hydratedGeneration && !!envelope && envelope.type === 'snapshot';
+      if (stale || !Number.isFinite(seq) || (seq <= appliedSequence && !fresh)) {
         return { applied: false, state, appliedSequence };
       }
+      if (fresh) hydratedGeneration = generation;
       appliedSequence = seq;
       state = apply(state, envelope, seq);
       return { applied: true, state, appliedSequence };

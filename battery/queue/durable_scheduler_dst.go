@@ -19,8 +19,8 @@ import (
 //
 //   - Fall-back (wall clock repeats): a wall-clock match in the REPEATED
 //     hour fires only at its EARLIER absolute instant (the EDT side for US
-//     Eastern). Detected via the zone-offset change between two absolute
-//     minutes that render the same wall-clock Y-M-D H:M.
+//     Eastern). Detected statelessly from the zone period an instant falls
+//     in (fallBackRepeat), so the rule holds across heartbeat boundaries.
 //   - Spring-forward (wall clock skips): a wall-clock match inside the
 //     transition's skipped window fires once AT the transition instant (the
 //     first absolute minute after the skip). Detected by an absolute-minute
@@ -32,59 +32,51 @@ import (
 // semantics belong to the durable scheduler's location-aware catch-up, not
 // to the location-agnostic in-process scheduler that shares the parser.
 
-// wallMinuteKey is the Y-M-D H:M tuple of a time rendered in its location,
-// the identity of a "wall-clock minute" independent of the zone offset it
-// was reached through. Used to dedupe fall-back repeats: two absolute
-// instants with the same wallMinuteKey but different offsets are the same
-// vixie fire, and only the earlier absolute instant is kept.
-type wallMinuteKey struct {
-	year              int
-	month             time.Month
-	day, hour, minute int
+// fallBackRepeat reports whether t's wall-clock minute already occurred at
+// an earlier absolute instant: t sits in the first d of a zone period whose
+// offset is d smaller than the previous period's (the clocks went back by
+// d). Only zone data is consulted, so two heartbeats either side of a fire
+// agree on every repeat without carrying any memory of what fired. Before
+// this, the walk remembered only the LAST fire's wall minute, and a spec
+// with two firing minutes in the repeated hour ("0,30 1") fired the repeat
+// of the first one on the next heartbeat.
+func fallBackRepeat(t time.Time) bool {
+	start, _ := t.ZoneBounds()
+	if start.IsZero() {
+		return false // zone in effect since the beginning of time
+	}
+	_, prevOff := start.Add(-time.Nanosecond).Zone()
+	_, off := t.Zone()
+	back := time.Duration(prevOff-off) * time.Second
+	return back > 0 && t.Before(start.Add(back))
 }
 
-func wallKey(t time.Time) wallMinuteKey {
-	return wallMinuteKey{t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute()}
+// fires reports whether the minute t (rendered in loc, reached by one
+// absolute-minute step from prevWall) is a cron firing under vixie DST
+// semantics: a direct wall-clock match, or the transition instant of a
+// spring-forward gap whose skipped window holds a match, and in either case
+// not a fall-back repeat.
+func fires(parsed cron.Schedule, loc *time.Location, prevWall, t time.Time) bool {
+	if !parsed.Matches(t) && !skippedMatchInGap(parsed, loc, prevWall, t) {
+		return false
+	}
+	return !fallBackRepeat(t)
 }
 
 // nextFire returns the earliest cron firing strictly after `after` (evaluated
-// in `loc`), with vixie DST semantics. prevFire, when non-zero, is the
-// previous fire whose wall-minute must not be repeated in a fall-back window
-// (used by boundedDueTicks when advancing the watermark after a fire landed
-// inside a repeated hour). Returns the zero Time if no match exists within
-// the cron search horizon.
+// in `loc`), with vixie DST semantics. Returns the zero Time if no match
+// exists within the cron search horizon.
 //
 // The walk is forward in absolute minutes starting one minute after `after`.
-// At each step:
-//
-//  1. If the step crossed a spring-forward gap whose skipped window contains
-//     a cron match, the transition instant (the post-step minute) is the
-//     next fire.
-//  2. Otherwise if the post-step minute's wall clock matches the cron fields
-//     AND its wall-minute has not already fired (prevFire fall-back repeat),
-//     it is the next fire.
-//
-// Spring-forward detection runs before the direct match so a fire inside the
-// skipped window lands at the transition rather than at the next ordinary
-// match (which could be a day later for a daily spec).
-func nextFire(parsed cron.Schedule, loc *time.Location, after, prevFire time.Time) time.Time {
+// A minute inside a spring-forward gap's skipped window lands on the
+// transition rather than on the next ordinary match (which could be a day
+// later for a daily spec).
+func nextFire(parsed cron.Schedule, loc *time.Location, after time.Time) time.Time {
 	t := after.UTC().Truncate(time.Minute).Add(time.Minute).In(loc)
-	var seen map[wallMinuteKey]bool
-	if !prevFire.IsZero() {
-		seen = map[wallMinuteKey]bool{wallKey(prevFire.In(loc)): true}
-	}
 	prevWall := t.Add(-time.Minute).In(loc)
 	for range maxCronCatchUpSearchMinutes {
-		if skippedMatchInGap(parsed, loc, prevWall, t) {
-			if seen == nil || !seen[wallKey(t)] {
-				return t.UTC()
-			}
-		}
-		if parsed.Matches(t) {
-			k := wallKey(t)
-			if seen == nil || !seen[k] {
-				return t.UTC()
-			}
+		if fires(parsed, loc, prevWall, t) {
+			return t.UTC()
 		}
 		prevWall = t
 		t = t.Add(time.Minute).In(loc)
@@ -98,18 +90,11 @@ func nextFire(parsed cron.Schedule, loc *time.Location, after, prevFire time.Tim
 // `limit` are kept, matching the original backwards-walk retention so a long
 // outage costs a bounded amount of memory and retains the newest audit rows.
 //
-// The walk is forward in absolute minutes. Fall-back dedup uses a per-day
-// wall-minute set: a match whose wall-minute was already emitted (at an
-// earlier absolute instant) is skipped. The set is reset on every calendar
-// date change so it cannot grow unbounded for a minute-resolution spec
-// evaluated over a multi-year outage (DST repeats are intra-day, so a
-// same-date bound is correct).
-//
-// Spring-forward: when the absolute-minute step skipped wall minutes, each
-// skipped wall minute is tested; if any matches, a single tick is emitted at
-// the transition instant (the post-step minute). At most one transition tick
-// per transition, matching vixie cron, which fires skipped-window jobs once
-// at the transition rather than once per matching skipped minute.
+// The walk is forward in absolute minutes, one tick per minute at most. A
+// spring-forward transition whose skipped window holds several matching
+// minutes still emits one tick, matching vixie cron, which fires
+// skipped-window jobs once at the transition rather than once per matching
+// skipped minute.
 func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Time, limit int) ([]time.Time, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("queue: cron catch-up limit must be positive, got %d", limit)
@@ -119,41 +104,20 @@ func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Tim
 	if end.Before(start) {
 		return nil, nil
 	}
+	// The search bound counts back from now, not forward from the cursor:
+	// the caller moves the watermark past now, so after downtime longer
+	// than the bound a forward window kept the oldest ticks and skipped
+	// every newer one, the tick now included.
+	if floor := end.Add(-time.Duration(maxCronCatchUpSearchMinutes-1) * time.Minute); start.Before(floor) {
+		start = floor
+	}
 	var all []time.Time
-	seen := make(map[wallMinuteKey]bool)
-	var seenDate wallMinuteKey // date component only (hour/minute zeroed)
 	t := start
 	prevWall := t.Add(-time.Minute).In(loc)
 	for scanned := 0; scanned < maxCronCatchUpSearchMinutes && !t.After(end); scanned++ {
-		// Reset the fall-back dedup set on every calendar date change. DST
-		// repeats happen inside a single day; bounding by date keeps the set
-		// small even for minute-resolution specs over long outages.
-		day := wallMinuteKey{t.Year(), t.Month(), t.Day(), 0, 0}
-		if day != seenDate {
-			seen = make(map[wallMinuteKey]bool)
-			seenDate = day
+		if fires(parsed, loc, prevWall, t) {
+			all = append(all, t.UTC())
 		}
-
-		// Spring-forward: a gap-crossing step whose skipped window contains a
-		// cron match emits exactly one tick at the transition (t).
-		if skippedMatchInGap(parsed, loc, prevWall, t) {
-			k := wallKey(t)
-			if !seen[k] {
-				seen[k] = true
-				all = append(all, t.UTC())
-			}
-		}
-
-		// Direct match at t. Fall-back dedup against any earlier absolute
-		// instant that already fired at this wall-minute.
-		if parsed.Matches(t) {
-			k := wallKey(t)
-			if !seen[k] {
-				seen[k] = true
-				all = append(all, t.UTC())
-			}
-		}
-
 		prevWall = t
 		t = t.Add(time.Minute).In(loc)
 	}

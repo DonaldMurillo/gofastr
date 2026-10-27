@@ -31,7 +31,9 @@
 //     client_secret, password, passwd, secret, token, code, api_key,
 //     refresh_token, or access_token;
 //   - an Authorization, Proxy-Authorization, or X-API-Key header set on
-//     the request;
+//     the request, its name a literal or a constant (the --from-openapi
+//     CLI client names it through const tokenHeader, and a literal-only
+//     read let that client ship with no CheckRedirect);
 //   - a URL read from a field or parameter named tokenURL or
 //     tokenEndpoint.
 //
@@ -80,6 +82,7 @@ package credfetch
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"strconv"
@@ -493,7 +496,7 @@ func (f *fnCtx) headerCredential(req *types.Var) string {
 		}
 		if id, ok := inner.X.(*ast.Ident); ok {
 			if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && o == req {
-				if key, ok := stringArg(call.Args[0]); ok && headerCred[strings.ToLower(key)] {
+				if key, ok := stringArg(f.c.pass.TypesInfo, call.Args[0]); ok && headerCred[strings.ToLower(key)] {
 					found = fmt.Sprintf("%s header", key)
 				}
 			}
@@ -548,7 +551,7 @@ func (f *fnCtx) formCredential(body ast.Expr) string {
 		}
 		if id, ok := sel.X.(*ast.Ident); ok {
 			if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && o == obj {
-				if key, ok := stringArg(call.Args[0]); ok && formCred[normalizeKey(key)] {
+				if key, ok := stringArg(f.c.pass.TypesInfo, call.Args[0]); ok && formCred[normalizeKey(key)] {
 					found = fmt.Sprintf("form key %q", key)
 				}
 			}
@@ -562,7 +565,7 @@ func (f *fnCtx) formCredential(body ast.Expr) string {
 	if lit, ok := f.bound[obj].(*ast.CompositeLit); ok {
 		for _, elt := range lit.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				if key, ok := stringArg(kv.Key); ok && formCred[normalizeKey(key)] {
+				if key, ok := stringArg(f.c.pass.TypesInfo, kv.Key); ok && formCred[normalizeKey(key)] {
 					return fmt.Sprintf("form key %q", key)
 				}
 			}
@@ -716,8 +719,16 @@ func exprPath(e ast.Expr) string {
 	return ""
 }
 
-// stringArg extracts a literal string argument.
-func stringArg(e ast.Expr) (string, bool) {
+// stringArg extracts a constant string argument: a literal, or a named
+// or computed constant the type checker folded (the --from-openapi CLI
+// client sets its token header through const tokenHeader, and a
+// literal-only read let that client ship with no CheckRedirect).
+func stringArg(info *types.Info, e ast.Expr) (string, bool) {
+	if info != nil {
+		if tv, ok := info.Types[e]; ok && tv.Value != nil && tv.Value.Kind() == constant.String {
+			return constant.StringVal(tv.Value), true
+		}
+	}
 	lit, ok := e.(*ast.BasicLit)
 	if !ok || lit.Kind != token.STRING {
 		return "", false

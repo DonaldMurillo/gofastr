@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 // NamedConfig pairs an entity name with its config, the generation-side
@@ -169,9 +170,11 @@ func SchemaHash(named []NamedConfig) string {
 			if f.Default != nil {
 				// Round-trip through JSON so equivalent defaults (int 5
 				// vs float64 5 from a decoded declaration) hash the same.
+				// An integer past 2^53 keeps its digits, so two defaults
+				// a float64 would round to one value hash apart.
 				if raw, err := json.Marshal(f.Default); err == nil {
 					var v any
-					if err := json.Unmarshal(raw, &v); err != nil {
+					if err := jsonexact.Unmarshal(raw, &v); err != nil {
 						// Marshal's own output failing to decode back is
 						// an impossible-state violation, and silently
 						// hashing a zero default would flip the drift

@@ -713,7 +713,7 @@ func TestCacheMiddleware_StoreableStatuses(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
 			rec := &responseRecorder{header: make(http.Header), statusCode: tc.status}
-			if got := isStoreable(rec, false, false); got != tc.storeable {
+			if got := isStoreable(rec, http.Header{}, false, false); got != tc.storeable {
 				t.Errorf("SECURITY: [cache-304] isStoreable(status=%d) = %v, want %v",
 					tc.status, got, tc.storeable)
 			}

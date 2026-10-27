@@ -29,16 +29,19 @@ const (
 )
 
 // isTerminalInboundStatus reports whether s is a terminal envelope state.
-// The inbound twin of isTerminalStatus: processed and failed rows are
-// settled — failed is retained forever as a forensic record
-// (ReapTerminalBefore only deletes processed rows) — so only a processed
-// settle (a runner that really did succeed) may land on one. A stale
-// runner that overran the queue's lease had the envelope's job re-run
-// under it; its late failure settle must not regress the recovery
-// runner's processed record into a failed one that escapes retention
-// permanently.
+// The inbound twin of isTerminalStatus: a processed row is settled, so only
+// a processed settle (a runner that really did succeed) may land on one. A
+// stale runner that overran the queue's lease had the envelope's job re-run
+// under it; its late failure settle must not regress the recovery runner's
+// processed record into a failed one that escapes retention permanently
+// (ReapTerminalBefore only deletes processed rows).
+//
+// Failed is not terminal: ProcessInbound returns the handler's error, so
+// the queue retries the job, and that retry must mark the row processing,
+// consume an attempt and record its own error. Fencing failed rows dropped
+// all three.
 func isTerminalInboundStatus(s string) bool {
-	return s == InboundStatusProcessed || s == InboundStatusFailed
+	return s == InboundStatusProcessed
 }
 
 // defaultInboundMaxBody is the cap applied when IngestConfig.MaxBodyBytes
@@ -89,6 +92,19 @@ type envelopeProcessingClaimer interface {
 	// increments its attempts counter store-side, and clears LastError.
 	// A missing id is a no-op.
 	MarkEnvelopeProcessing(ctx context.Context, id string) error
+}
+
+// dedupeKeyRegistrar is the optional InboundStore capability IngestHandler
+// registers a dedupe key through after the enqueue. The job is already
+// queued by then, so a worker may hold the envelope: registering through
+// UpdateEnvelope wrote the handler's received-status snapshot over the
+// worker's processing row, and on a processed row the terminal fence
+// dropped the key. Both shipped stores implement it; host stores without
+// it keep the UpdateEnvelope registration.
+type dedupeKeyRegistrar interface {
+	// RegisterDedupeKey sets the envelope's dedupe key and nothing else,
+	// whatever its status. A missing id is a no-op.
+	RegisterDedupeKey(ctx context.Context, id, key string) error
 }
 
 // InboundVerifier verifies an inbound request's authenticity. The shipped
@@ -298,9 +314,15 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			// fails, a retry re-ingests a duplicate (at-least-once, same as
 			// the documented check-then-insert race), benign, but log it.
 			if dedupeKey != "" {
-				env.DedupeKey = dedupeKey
-				env.UpdatedAt = time.Now().UTC()
-				if uerr := cfg.Store.UpdateEnvelope(r.Context(), env); uerr != nil {
+				var uerr error
+				if reg, ok := cfg.Store.(dedupeKeyRegistrar); ok {
+					uerr = reg.RegisterDedupeKey(r.Context(), env.ID, dedupeKey)
+				} else {
+					env.DedupeKey = dedupeKey
+					env.UpdatedAt = time.Now().UTC()
+					uerr = cfg.Store.UpdateEnvelope(r.Context(), env)
+				}
+				if uerr != nil {
 					logf("webhook: envelope %s: dedupe key not registered after enqueue (redelivery will duplicate): %v", env.ID, uerr)
 				}
 			}
