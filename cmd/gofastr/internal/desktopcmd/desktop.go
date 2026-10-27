@@ -236,9 +236,9 @@ type desktopBuildFlags struct {
 	// default: ad-hoc when codesign exists).
 	sign   string
 	noSign bool
-	// scheme is the custom URL scheme the build claims. macOS writes it
-	// to CFBundleURLTypes; Windows embeds it for per-user registration
-	// whenever the app starts. Empty claims nothing.
+	// scheme is the build's custom URL scheme. macOS writes CFBundleURLTypes;
+	// Windows embeds it for per-user registration at startup. Linux embeds
+	// argv/session-bus handoff only, without installing an OS association.
 	scheme string
 	// notarize signs with --sign's identity under the hardened
 	// runtime, submits to Apple's notary service, staples, re-zips;

@@ -305,7 +305,7 @@ func TestLinuxArchiveInvalidInputBeforeOutput(t *testing.T) {
 	}{
 		{"version", func(f *desktopBuildFlags) { f.version = "../../escape" }},
 		{"icon", func(f *desktopBuildFlags) { f.icon = "missing.png" }},
-		{"scheme", func(f *desktopBuildFlags) { f.scheme = "example" }},
+		{"invalid scheme", func(f *desktopBuildFlags) { f.scheme = "Invalid Scheme" }},
 		{"sign", func(f *desktopBuildFlags) { f.sign = "identity" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {

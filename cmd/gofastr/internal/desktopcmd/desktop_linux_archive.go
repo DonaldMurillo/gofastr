@@ -38,17 +38,21 @@ type linuxBundleFile struct {
 }
 
 type linuxBundleManifest struct {
-	SchemaVersion int               `json:"schema_version"`
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Version       string            `json:"version"`
-	Platform      string            `json:"platform"`
-	EntryPoint    string            `json:"entry_point"`
-	Runtime       []string          `json:"runtime"`
-	Files         []linuxBundleFile `json:"files"`
+	SchemaVersion  int               `json:"schema_version"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Version        string            `json:"version"`
+	Platform       string            `json:"platform"`
+	EntryPoint     string            `json:"entry_point"`
+	EmbeddedScheme string            `json:"embedded_scheme,omitempty"`
+	Runtime        []string          `json:"runtime"`
+	Files          []linuxBundleFile `json:"files"`
 }
 
 func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
+	if _, err := linuxDesktopLinkerFlags(f.scheme); err != nil {
+		return "", err
+	}
 	if err := validateDesktopID(f.id); err != nil {
 		return "", err
 	}
@@ -75,6 +79,10 @@ func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 }
 
 func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
+	ldflags, err := linuxDesktopLinkerFlags(f.scheme)
+	if err != nil {
+		return err
+	}
 	bundleRoot, err := linuxBundleRoot(f, name, arch)
 	if err != nil {
 		return err
@@ -109,7 +117,7 @@ func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	defer os.RemoveAll(stage)
 	executable := filepath.Join(stage, "app")
 	cli.Info("Building %s (linux/%s, CGO_ENABLED=0)...", f.pkg, arch)
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", executable, f.pkg)
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", executable, f.pkg)
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err = cmd.Run(); err != nil {
@@ -241,6 +249,16 @@ payload bytes and metadata produce an identical tar.gz. Go toolchain,
 source/module versions, build settings and VCS metadata still affect the
 compiled executable, so pin those separately for reproducible builds.
 `
+	if f.scheme != "" {
+		readme += "\nThis executable embeds the URL scheme " + f.scheme + ". Invoke ./launch.sh '" + f.scheme + "://route'\n" +
+			"to deliver a link to this AppID's running instance on the SAME session bus.\n" +
+			"URL activation requires an existing local Unix D-Bus session bus through\n" +
+			"DBUS_SESSION_BUS_ADDRESS; missing, TCP, and autolaunch buses are refused.\n" +
+			"No browser/OS protocol association or D-Bus activation service is installed.\n" +
+			"If the bus disconnects, the app stays open but URL activation stops until\n" +
+			"restart. A later different bus may admit a new primary while that app remains\n" +
+			"open. This is bus-scoped delivery, not a cross-session/global process lock.\n"
+	}
 	entries := []linuxArchiveEntry{
 		{name: "README.txt", mode: 0644, data: []byte(readme)},
 		{name: "bin/" + f.id, mode: 0755, source: executable},
@@ -250,6 +268,10 @@ compiled executable, so pin those separately for reproducible builds.
 	}
 	slices.SortFunc(entries, func(a, b linuxArchiveEntry) int { return strings.Compare(a.name, b.name) })
 	manifest := linuxBundleManifest{SchemaVersion: 1, ID: f.id, Name: name, Version: f.version, Platform: "linux-" + arch, EntryPoint: "launch.sh", Runtime: []string{"glibc >= 2.34", "GTK 3", "WebKitGTK 4.1 >= 2.40", "X11 or Wayland graphical session"}}
+	if f.scheme != "" {
+		manifest.EmbeddedScheme = f.scheme
+		manifest.Runtime = append(manifest.Runtime, "existing local Unix D-Bus session bus (URL activation)")
+	}
 	for _, entry := range entries {
 		h := sha256.New()
 		size, err := copyLinuxArchiveEntry(h, entry)

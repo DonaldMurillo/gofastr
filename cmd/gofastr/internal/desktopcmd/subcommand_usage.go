@@ -27,6 +27,9 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         a PNG icon (--icon or generated), launch.sh, an inert .desktop.in
         template, manifest.json, and runtime README. No libraries,
         installer, signing, or URL-scheme registration are bundled.
+        --scheme embeds opt-in cold/warm URL delivery via an existing
+        local Unix D-Bus session bus. Pass URLs as executable/launch.sh
+        arguments; no browser or OS protocol association is installed.
         On macOS, cross-compiles (darwin/arm64, -trimpath, -s -w) and
         writes <o>/<Name>.app with Info.plist, the binary, PkgInfo, and
         an icon.icns built in pure Go from the PNG (no iconutil). Default
