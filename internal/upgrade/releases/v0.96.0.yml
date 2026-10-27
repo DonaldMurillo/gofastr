@@ -110,6 +110,13 @@ notes:
     breaking: true
     guidance: "A client that sent ?active=yes or ?count=abc got an empty SQLite list or a Postgres 500 and now gets a 400. Send true/false (or 1/0) for a Bool and the field's type everywhere else; the accepted spellings are in entity-declarations.md."
     nodetect: "the values come from clients' query strings and DSL text at request time, not from the app's source"
+  - change: "BREAKING - filter.BoolBind is removed; filter.CoerceValue checks and coerces a raw value for any field type"
+    breaking: true
+    hits: edit
+    guidance: "BoolBind(isBool, raw) bound a Bool's parsed value and fell back to the raw string for anything else, so a mistyped value reached SQL. Call filter.CoerceValue(field, t, raw), which returns the bind value or an error naming the field; answer that error with 400. For a ParsedFilter, f.Typed(t) then f.BindValue() does the same."
+    find:
+      uses:
+        - gofastr/framework/filter.BoolBind
   - change: "BREAKING - _like and DSL contains ignore case on both dialects (LOWER(col) LIKE, the ?q= shape), and contains on a non-text field is refused"
     breaking: true
     guidance: "Postgres used to match _like with case and SQLite without; both now ignore ASCII case, and Postgres folds the rest of Unicode too. A client relying on a case-sensitive Postgres match gets more rows."
