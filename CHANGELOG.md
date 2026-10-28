@@ -2237,6 +2237,15 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A password reset overtaking a passkey sign-in leaves no session, and
+  a failed session purge is no longer reported as success.** A passkey
+  sign-in that recorded its use just before a reset minted its session
+  afterwards, for a key the reset had removed. It now re-reads the key
+  after minting, and the reset removes passkeys before it revokes
+  sessions. A reset or password change whose session purge failed
+  answered `{"updated": true}` while the old sessions kept working; the
+  reset answers 500 `auth.reset_incomplete` and the change 500
+  `auth.change_incomplete`. See [auth](framework/docs/content/auth.md).
 - **A sibling subdomain can no longer plant the OAuth state cookie.** The
   browser-binding cookie was `gofastr_oauth_state` even over Secure, so a
   page on another subdomain could set it for the parent domain with its own

@@ -659,6 +659,23 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 		return
 	}
+	// A reset that finished after the use above was recorded revoked
+	// sessions before this one existed and purged the passkey. Re-read
+	// the key now the session is stored: the reset purges passkeys before
+	// it revokes sessions, so a key still here means any revoke is still
+	// to come and reaches this session, and a key gone drops it.
+	if _, err := p.store.GetPasskey(r.Context(), cred.ID); err != nil {
+		if delErr := p.mgr.SessionStore().Delete(r.Context(), sess.Token); delErr != nil {
+			slog.Warn("auth: dropping a session minted under a removed passkey failed",
+				"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
+		}
+		if errors.Is(err, ErrPasskeyNotFound) {
+			p.refuse(w, r, cred.UserID, "login", "passkey_removed", errors.New("the passkey was removed during sign-in"))
+			return
+		}
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
+		return
+	}
 	kind := "login.succeeded"
 	if pending {
 		kind = "login.pending_2fa"

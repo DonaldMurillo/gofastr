@@ -110,7 +110,9 @@ On success the user's other sessions are revoked (`session.revoked`,
 `reason=password_change`), their outstanding reset links are spent
 (`reset_tokens.purged`), every magic link mailed to them is spent
 (`magiclink_tokens.purged`), and `password.changed` is emitted. A failed
-magic-link purge is logged and the change still stands. The caller
+magic-link purge is logged and the change still stands. A failed session
+purge answers 500 `auth.change_incomplete`: the new password is set, but
+the other sessions may still work, so change it again. The caller
 gets a fresh session cookie that keeps the second factor the old
 session had passed; the response is `{"updated": true}`. API tokens
 stay: the user minted them on purpose and revokes them under
@@ -136,7 +138,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the magic-link, token or passkey store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
@@ -1387,8 +1389,10 @@ lands on a pending session and the browser goes to `TwoFactorURL` to
 finish at `/auth/2fa/challenge`, like a password login. A completed
 password reset removes every passkey on the account along with its
 sessions and API tokens: a passkey added from a stolen session would
-otherwise sign in again. A password change keeps them, as it keeps API
-tokens. Claiming an unverified account (see
+otherwise sign in again. The passkeys go before the sessions, and a
+passkey sign-in re-reads its key after minting and drops the session if
+the key is gone, so a sign-in a reset overtakes ends with no session. A
+password change keeps them, as it keeps API tokens. Claiming an unverified account (see
 [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account))
 removes its passkeys, since the squatter may have added one, and the
 `account.claimed` event counts them in `passkeys_removed`.
