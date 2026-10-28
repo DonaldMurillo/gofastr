@@ -2230,6 +2230,15 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **The relay keeps the app's headers and the vendor's hints apart.**
+  It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
+  on every fetch, to the vendor; every `X-Gofastr-*` header is now
+  stripped inbound. An upstream `103 Early Hints` is no longer
+  forwarded, so its unfiltered `Link` preload stays out of the browser,
+  and the security headers the app set before the relay ran survive
+  it (ReverseProxy cleared them). `Service-Worker-Allowed` is stripped
+  outbound, so vendor script cannot scope a worker over the whole app.
+  See [relay](framework/docs/content/relay.md).
 - **BREAKING: a process module's response headers are allow-listed.**
   The proxy copied every header the child sent, so an untrusted module
   could label a `text` body `text/html` and run script on the host
