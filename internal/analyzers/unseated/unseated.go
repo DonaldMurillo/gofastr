@@ -196,7 +196,9 @@
 // loop needs its clear inside that loop's body: a clear after the loop
 // leaves every wait for the next event under the last write's deadline.
 // With nested parks (a range over batches, then over each batch) the
-// clear belongs in the innermost one; a loop over a slice never parks.
+// clear belongs in the innermost one. A loop over a slice never waits,
+// and neither does one whose only receive sits in a select with a
+// default, so neither narrows where the clear may sit.
 // A past-deadline cut (time.Now(), the SSEBroker's eviction)
 // is meant to end the stream and is not an arm; a hijacked conn's
 // deadline is HTTP/1 only and out of scope; a one-shot answer with no
@@ -654,14 +656,39 @@ func bodyParks(pass *analysis.Pass, body *ast.BlockStmt, chanParams map[types.Ob
 }
 
 // forLoopParks: the loop's body blocks on input — a select with a
-// receive case, a receive assignment, or a conn-read call.
+// receive case, a receive assignment, or a conn-read call. A select with
+// a default counts too: a loop that polls for input is still a
+// long-lived stream to the seat and re-check arms.
 func forLoopParks(pass *analysis.Pass, loop *ast.ForStmt) bool {
+	return forLoopWaits(pass, loop, true)
+}
+
+// forLoopBlocks is forLoopParks without the polled select: a select with
+// a default never blocks, so a loop whose only receive sits in one does
+// not wait between its writes.
+func forLoopBlocks(pass *analysis.Pass, loop *ast.ForStmt) bool {
+	return forLoopWaits(pass, loop, false)
+}
+
+func forLoopWaits(pass *analysis.Pass, loop *ast.ForStmt, polled bool) bool {
 	blocks := false
-	ast.Inspect(loop.Body, func(n ast.Node) bool {
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
 		switch e := n.(type) {
 		case *ast.FuncLit:
 			return false
 		case *ast.SelectStmt:
+			if !polled && selectHasDefault(e) {
+				// Its receive cases never wait; only the clause bodies can.
+				for _, cl := range e.Body.List {
+					if comm, ok := cl.(*ast.CommClause); ok {
+						for _, st := range comm.Body {
+							ast.Inspect(st, visit)
+						}
+					}
+				}
+				return false
+			}
 			for _, cl := range e.Body.List {
 				comm, ok := cl.(*ast.CommClause)
 				if !ok || comm.Comm == nil {
@@ -691,8 +718,20 @@ func forLoopParks(pass *analysis.Pass, loop *ast.ForStmt) bool {
 			}
 		}
 		return true
-	})
+	}
+	ast.Inspect(loop.Body, visit)
 	return blocks
+}
+
+// selectHasDefault: the select carries a default clause, so it never
+// blocks.
+func selectHasDefault(s *ast.SelectStmt) bool {
+	for _, cl := range s.Body.List {
+		if comm, ok := cl.(*ast.CommClause); ok && comm.Comm == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // receiveShaped: a comm clause whose value is a channel receive

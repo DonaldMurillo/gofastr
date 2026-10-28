@@ -180,6 +180,27 @@ func clearedPerChunk(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// clearedPerChunkPolled checks for cancellation between chunks with a
+// select that has a default, which never blocks, so the per-event clear
+// still comes before the only wait.
+func clearedPerChunkPolled(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for i := 0; i < 2; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+			}
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+		_ = rc.Flush()
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
 // clearedAfterLoop clears once the loop ends: every wait for the next
 // event still runs under the deadline the last write armed.
 func clearedAfterLoop(w http.ResponseWriter, r *http.Request) {

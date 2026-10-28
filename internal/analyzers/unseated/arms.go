@@ -503,8 +503,9 @@ func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 }
 
 // innermostPark: the body of the innermost parking loop (a channel range,
-// or a for loop forLoopParks accepts) inside outer that holds site, or
-// outer itself. A loop over a slice never parks and is passed through.
+// or a for loop forLoopBlocks accepts) inside outer that holds site, or
+// outer itself. A loop over a slice, or one that only polls through a
+// select with a default, never waits and is passed through.
 func (a *arms) innermostPark(outer *ast.BlockStmt, site ast.Node) ast.Node {
 	in := ast.Node(outer)
 	ast.Inspect(outer, func(n ast.Node) bool {
@@ -520,7 +521,7 @@ func (a *arms) innermostPark(outer *ast.BlockStmt, site ast.Node) ast.Node {
 				b = st.Body
 			}
 		case *ast.ForStmt:
-			if forLoopParks(a.pass, st) {
+			if forLoopBlocks(a.pass, st) {
 				b = st.Body
 			}
 		}
