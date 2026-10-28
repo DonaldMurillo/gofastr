@@ -436,6 +436,8 @@ type armedSite struct {
 // arm standing through the idle gap. When the arm sits in a helper
 // with no clear of its own (core/stream's armDeadline), every call of
 // that helper in the stream's reach must be followed by one instead.
+// seen holds the helpers on the current lift chain only, so a helper
+// called twice from one caller is judged at both calls.
 func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*family]bool, seen map[*family]bool) bool {
 	if a.clearFollows(f, site, body) {
 		return true
@@ -444,6 +446,7 @@ func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*
 		return false
 	}
 	seen[f] = true
+	defer delete(seen, f)
 	callers := 0
 	for g := range reach {
 		for _, gb := range g.bodies {
@@ -467,10 +470,20 @@ func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*
 	return callers > 0
 }
 
-// clearFollows: a call after site, inside body, reaches a clear.
+// clearFollows: a call after site, inside body, reaches a clear. When
+// site sits in one of f's park loops the clear must sit in that loop's
+// body too: one after the loop leaves every wait for the next event
+// under the deadline the last write armed.
 func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
+	scope := body
+	for _, l := range a.loops[f] {
+		if site.Pos() >= l.body.Pos() && site.End() <= l.body.End() {
+			scope = l.body
+			break
+		}
+	}
 	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
+	ast.Inspect(scope, func(n ast.Node) bool {
 		if found {
 			return false
 		}

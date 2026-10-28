@@ -228,19 +228,21 @@ func Register(e DataExporter) {
 // maxScopedName bytes keeps its first bytes and ends in '-' and 16 hex
 // digits of the table's SHA-256, so <name>.ndjson fits one file name.
 func ScopedName(base, table string) string {
-	if table == base {
-		return base
-	}
-	b := []byte(base + "-")
-	for i := 0; i < len(table); i++ {
-		c := table[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
-			b = append(b, c)
-		default:
-			b = append(b, '-', hexDigits[c>>4], hexDigits[c&0xf])
+	b := []byte(base)
+	if table != base {
+		b = append(b, '-')
+		for i := 0; i < len(table); i++ {
+			c := table[i]
+			switch {
+			case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
+				b = append(b, c)
+			default:
+				b = append(b, '-', hexDigits[c>>4], hexDigits[c&0xf])
+			}
 		}
 	}
+	// The default table's name is bounded too: a long configured base would
+	// otherwise reach the archive whole.
 	if len(b) > maxScopedName {
 		sum := sha256.Sum256([]byte(table))
 		b = append(b[:maxScopedName-17], '-')

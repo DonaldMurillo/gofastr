@@ -59,6 +59,9 @@ func TestScopedNameBoundsLength(t *testing.T) {
 	if a == b {
 		t.Errorf("two long tables share the name %q", a)
 	}
+	if n := datexport.ScopedName(long, long); len(n) > 200 {
+		t.Errorf("the default-table name is %d bytes, past the bound", len(n))
+	}
 	if a != datexport.ScopedName("event_outbox", long+"_a") {
 		t.Error("ScopedName is not deterministic")
 	}

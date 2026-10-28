@@ -148,6 +148,38 @@ func clearedOnlyFirst(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// clearedAfterLoop clears once the loop ends: every wait for the next
+// event still runs under the deadline the last write armed.
+func clearedAfterLoop(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+		fmt.Fprintf(w, "data: %s\n\n", ev)
+		_ = rc.Flush()
+	}
+	_ = rc.SetWriteDeadline(time.Time{})
+}
+
+// helperClearedAfterLoop is the same gap through a helper that arms.
+type helperAfterLoop struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func openHelperAfterLoop(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &helperAfterLoop{w: w, rc: http.NewResponseController(w)}
+	for ev := range feed() {
+		h.arm()
+		fmt.Fprintf(h.w, "data: %s\n\n", ev)
+		_ = h.rc.Flush()
+	}
+	_ = h.rc.SetWriteDeadline(time.Time{})
+}
+
+func (h *helperAfterLoop) arm() { _ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) } // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+
 // ---- quiet: the fix spellings -----------------------------------------
 
 // perWriteDeadline is the core/mcp GET spelling: a closure arms a fresh
@@ -232,6 +264,40 @@ func (h *helperArmed) send(ev string) {
 	fmt.Fprintf(h.w, "data: %s\n\n", ev)
 	_ = h.rc.Flush()
 	_ = h.rc.SetWriteDeadline(time.Time{})
+}
+
+// twoBranch arms through a helper on both branches of send, and the
+// loop clears after each send.
+type twoBranch struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func openTwoBranch(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &twoBranch{w: w, rc: http.NewResponseController(w)}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			h.send(ev)
+			_ = h.rc.SetWriteDeadline(time.Time{})
+		}
+	}
+}
+
+func (h *twoBranch) arm() { _ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) }
+
+func (h *twoBranch) send(ev string) {
+	if len(ev) > 64 {
+		h.arm()
+		fmt.Fprintf(h.w, "data: %s\n\n", ev[:64])
+	} else {
+		h.arm()
+		fmt.Fprintf(h.w, "data: %s\n\n", ev)
+	}
+	_ = h.rc.Flush()
 }
 
 // brokerCut is the SSEBroker spelling: the stream installs a
