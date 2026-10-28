@@ -31,6 +31,8 @@ const decisionMsg = "connect-time decision %s is never re-run on this stream's d
 
 const deadlineMsg = "client write in a long-lived stream's park loop with no write deadline on its path: an evicted, revoked, or shutting-down stream blocked on a client that stopped reading never leaves (WriteTimeout 0 is the SSE-heavy app posture) — arm http.ResponseController.SetWriteDeadline (or conn.SetWriteDeadline) per write, or cut with a past deadline from whatever closes the stream (core/mcp's GET stream, core/a2a's sseStream.write, core/stream's SSEBroker cut)"
 
+const staleDeadlineMsg = "write deadline armed on an http.ResponseController in a long-lived stream and never cleared: on HTTP/2 the deadline is a stream timer that resets the stream when it fires, write pending or not, so the stream dies in its first idle gap longer than the deadline — clear it once the write is flushed with rc.SetWriteDeadline(time.Time{}) (core/stream's SSEWriter, core/a2a's sseStream, core/mcp's GET stream)"
+
 // resolverName: identity-reader spellings (nostore's vocabulary plus
 // the harness claimsFrom).
 var resolverName = regexp.MustCompile(`(?i)(currentuser|getuser$|getuser[^a]|sessionfrom|tokenscopes|requireowner|requireauth|verifytoken|readsession|getsession|loadsession|resolvesession|currentsession|allowsession|claimsfrom)`)
@@ -331,15 +333,23 @@ func runWriteDeadline(pass *analysis.Pass) (any, error) {
 	reported := map[ast.Node]bool{}
 	for _, entry := range a.families {
 		reach := a.floodOf(entry)
-		opened := false
+		opened, parks := false, false
 		for r := range reach {
-			if a.opens(r) {
-				opened = true
-				break
-			}
+			opened = opened || a.opens(r)
+			parks = parks || len(a.loops[r]) > 0
 		}
 		if !opened {
 			continue
+		}
+		if parks && !a.floodHas(entry, "cleardeadline", a.clearedDeadline) {
+			for r := range reach {
+				for _, site := range a.armedDeadlines(r) {
+					if !reported[site] {
+						reported[site] = true
+						pass.Reportf(site.Pos(), "%s", staleDeadlineMsg)
+					}
+				}
+			}
 		}
 		for r := range reach {
 			loops := a.loops[r]
@@ -386,6 +396,56 @@ func (a *arms) firstWrite(l *parkLoop) *ast.CallExpr {
 func deadlineCall(call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	return ok && (sel.Sel.Name == "SetWriteDeadline" || sel.Sel.Name == "SetDeadline")
+}
+
+// controllerDeadline: call is SetWriteDeadline on an
+// http.ResponseController, returning its argument.
+func (a *arms) controllerDeadline(call *ast.CallExpr) (ast.Expr, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "SetWriteDeadline" || len(call.Args) != 1 {
+		return nil, false
+	}
+	if !astx.IsNamed(astx.Deref(typeOf(a.pass, sel.X)), "net/http", "ResponseController") {
+		return nil, false
+	}
+	return call.Args[0], true
+}
+
+// clearedDeadline: rc.SetWriteDeadline(time.Time{}) on a
+// ResponseController.
+func (a *arms) clearedDeadline(call *ast.CallExpr) bool {
+	arg, ok := a.controllerDeadline(call)
+	if !ok {
+		return false
+	}
+	lit, ok := ast.Unparen(arg).(*ast.CompositeLit)
+	return ok && len(lit.Elts) == 0 && astx.IsNamed(typeOf(a.pass, lit), "time", "Time")
+}
+
+// armedDeadlines: the ResponseController deadlines f arms in the future.
+// A clear is not one, and neither is a past-deadline cut
+// (rc.SetWriteDeadline(time.Now()), the SSEBroker's eviction), which is
+// meant to end the stream.
+func (a *arms) armedDeadlines(f *family) []*ast.CallExpr {
+	var sites []*ast.CallExpr
+	for _, body := range f.bodies {
+		ast.Inspect(body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || a.clearedDeadline(call) {
+				return true
+			}
+			arg, ok := a.controllerDeadline(call)
+			if !ok {
+				return true
+			}
+			if now, ok := ast.Unparen(arg).(*ast.CallExpr); ok && astx.PkgFuncName(a.pass, now.Fun) == "time.Now" {
+				return true
+			}
+			sites = append(sites, call)
+			return true
+		})
+	}
+	return sites
 }
 
 var rawWriteMethod = map[string]bool{

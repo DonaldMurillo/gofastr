@@ -288,12 +288,16 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 	// Defang each stored event so a poisoned payload cannot inject a
 	// second SSE frame or a fake event:/id:/retry: directive on replay.
 	// Each write runs under a fresh deadline, so a client that stops
-	// reading cannot park this handler for good.
+	// reading cannot park this handler for good, and clears it once
+	// flushed: on HTTP/2 the deadline is a stream timer that resets the
+	// stream when it fires, write pending or not, so one left armed kills
+	// the stream in the idle gap before the next ping.
 	rc := http.NewResponseController(w)
 	for _, ev := range sess.drain() {
 		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 		_, _ = w.Write(sanitizeSSEData(ev))
 		flusher.Flush()
+		_ = rc.SetWriteDeadline(time.Time{})
 	}
 	// Park until ctx done; mcpserver currently doesn't publish
 	// notifications to the HTTP GET stream itself, the resource
@@ -319,6 +323,7 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 				return
 			}
 			flusher.Flush()
+			_ = rc.SetWriteDeadline(time.Time{})
 		}
 	}
 }

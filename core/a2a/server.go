@@ -1343,7 +1343,16 @@ func (st *sseStream) write(field string, payload []byte) error {
 	_ = st.rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 	mcp.StreamSSE(st.w, "", string(payload))
 	st.fl.Flush()
+	st.clearDeadline()
 	return st.w.err
+}
+
+// clearDeadline drops the write deadline once a write is flushed. On
+// HTTP/2 the deadline is a stream timer that resets the stream when it
+// fires, write pending or not, so one left armed would kill the stream
+// in the idle gap before the next keep-alive.
+func (st *sseStream) clearDeadline() {
+	_ = st.rc.SetWriteDeadline(time.Time{})
 }
 
 func (st *sseStream) keepAlive() error {
@@ -1357,6 +1366,7 @@ func (st *sseStream) keepAlive() error {
 		return err
 	}
 	st.fl.Flush()
+	st.clearDeadline()
 	return st.w.err
 }
 

@@ -18,8 +18,9 @@ import (
 // Every write arms a fresh write deadline (sseWriteTimeout) through
 // http.ResponseController, so a client that stops reading cannot block
 // the handler forever: an SSE server runs with WriteTimeout 0, and
-// nothing else bounds the write. A writer chain with no deadline support
-// writes without one.
+// nothing else bounds the write. The deadline is cleared once the write
+// is flushed, since on HTTP/2 an armed deadline resets an idle stream. A
+// writer chain with no deadline support writes without one.
 type SSEWriter struct {
 	w      http.ResponseWriter
 	mu     sync.Mutex
@@ -29,8 +30,9 @@ type SSEWriter struct {
 	rc     *http.ResponseController
 }
 
-// sseWriteTimeout bounds one SSEWriter write and its flush.
-const sseWriteTimeout = 10 * time.Second
+// sseWriteTimeout bounds one SSEWriter write and its flush. A var so a
+// test can shrink it.
+var sseWriteTimeout = 10 * time.Second
 
 // NewSSEWriter creates an SSEWriter wrapping w.
 // It panics if w does not implement http.Flusher.
@@ -64,6 +66,7 @@ func (s *SSEWriter) Flush() {
 	defer s.mu.Unlock()
 	if s.armDeadline() == nil {
 		s.flush.Flush()
+		s.clearDeadline()
 	}
 }
 
@@ -77,14 +80,23 @@ func (s *SSEWriter) armDeadline() error {
 	return nil
 }
 
-// send writes one encoded event under a fresh deadline and flushes it.
-// Caller holds s.mu.
+// clearDeadline drops the deadline once a write is flushed. On HTTP/2 the
+// deadline is a stream timer that resets the stream when it fires, write
+// pending or not, so a deadline left armed kills a stream that idles
+// between events. Caller holds s.mu.
+func (s *SSEWriter) clearDeadline() {
+	_ = s.rc.SetWriteDeadline(time.Time{})
+}
+
+// send writes one encoded event under a fresh deadline, flushes it and
+// clears the deadline. Caller holds s.mu.
 func (s *SSEWriter) send(b string) error {
 	if err := s.armDeadline(); err != nil {
 		return err
 	}
 	_, err := s.w.Write([]byte(b))
 	s.flush.Flush()
+	s.clearDeadline()
 	return err
 }
 

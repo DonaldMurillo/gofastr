@@ -1,6 +1,8 @@
 package stream
 
 import (
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -37,13 +39,56 @@ func TestSSEWriterArmsWriteDeadline(t *testing.T) {
 			if err := write(s); err != nil {
 				t.Fatal(err)
 			}
-			if len(rec.armed) == 0 {
-				t.Fatal("the write ran with no write deadline")
+			if len(rec.armed) < 2 {
+				t.Fatalf("armed %v: want a bounded deadline, then a clear", rec.armed)
 			}
-			if d := rec.armed[len(rec.armed)-1]; !d.After(before) || d.After(before.Add(time.Minute)) {
+			if d := rec.armed[0]; !d.After(before) || d.After(before.Add(time.Minute)) {
 				t.Fatalf("deadline %v is not a bounded time after the write began", d)
 			}
+			if d := rec.armed[len(rec.armed)-1]; !d.IsZero() {
+				t.Fatalf("deadline %v is still armed after the write", d)
+			}
 		})
+	}
+}
+
+// On HTTP/2 a write deadline is a stream timer: it resets the stream when
+// it fires, write pending or not. An SSE stream idles between events far
+// longer than one write's bound (the broker's heartbeat is 30s), so each
+// write clears its deadline once flushed (2026-10-28 review of the
+// nowritedeadline fix).
+func TestSSEWriterSurvivesIdleOnHTTP2(t *testing.T) {
+	old := sseWriteTimeout
+	sseWriteTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { sseWriteTimeout = old })
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := NewSSEWriter(w)
+		for range 2 {
+			if err := s.WriteData("x"); err != nil {
+				return
+			}
+			time.Sleep(4 * sseWriteTimeout)
+		}
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.ProtoMajor != 2 {
+		t.Fatalf("proto = %s, want HTTP/2", resp.Proto)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("stream reset while idle: %v (read %q)", err, body)
+	}
+	if string(body) != "data: x\n\ndata: x\n\n" {
+		t.Fatalf("body = %q", body)
 	}
 }
 

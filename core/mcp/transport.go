@@ -505,6 +505,11 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// never fatal.
 			return false
 		}
+		// Clear the deadline once the event is flushed: on HTTP/2 it is
+		// a stream timer that resets the stream when it fires, write
+		// pending or not, so one left armed kills a stream idle between
+		// notifications.
+		_ = rc.SetWriteDeadline(time.Time{})
 		return true
 	}
 

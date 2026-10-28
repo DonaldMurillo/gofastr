@@ -182,13 +182,37 @@ func TestSendReturnsWhenClientHangsUp(t *testing.T) {
 }
 
 // deadlineRecorder is a ResponseRecorder that also accepts write
-// deadlines, the way a real net/http response does.
+// deadlines, the way a real net/http response does, and keeps each one.
 type deadlineRecorder struct {
 	*httptest.ResponseRecorder
-	deadlines int
+	deadlines []time.Time
 }
 
-func (d *deadlineRecorder) SetWriteDeadline(time.Time) error { d.deadlines++; return nil }
+func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	return nil
+}
+
+// boundedThenCleared fails unless the write armed a deadline and cleared
+// it once flushed: on HTTP/2 a deadline left armed resets the stream when
+// it fires, so a stream idle between keep-alives would die.
+func boundedThenCleared(t *testing.T, deadlines []time.Time) {
+	t.Helper()
+	if len(deadlines) != 2 || deadlines[0].IsZero() || !deadlines[1].IsZero() {
+		t.Fatalf("write deadlines %v, want one bounded deadline then a clear", deadlines)
+	}
+}
+
+// A data event clears its deadline once flushed, as the keep-alive does.
+func TestSSEWriteClearsDeadline(t *testing.T) {
+	h := newHarness(t, nil)
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	st := h.srv.newSSEStream(rec, []byte(`"1"`))
+	if err := st.write("data", []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	boundedThenCleared(t, rec.deadlines)
+}
 
 // The SSE keep-alive comment sets a write deadline like a data event, so
 // a client that stops reading cannot pin the stream on an idle tick.
@@ -199,9 +223,7 @@ func TestKeepAliveSetsWriteDeadline(t *testing.T) {
 	if err := st.keepAlive(); err != nil {
 		t.Fatal(err)
 	}
-	if rec.deadlines != 1 {
-		t.Fatalf("keep-alive set %d write deadlines, want 1", rec.deadlines)
-	}
+	boundedThenCleared(t, rec.deadlines)
 	if !strings.Contains(rec.Body.String(), ": keep-alive") {
 		t.Fatalf("keep-alive comment missing: %q", rec.Body.String())
 	}

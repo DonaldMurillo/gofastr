@@ -179,6 +179,19 @@
 // loop's flood that force-closes the connection (an http.Server.Close
 // on release, cmd/gofastr's dev hold): such a site carries the allow
 // marker.
+//
+// The stale-deadline half came from the review of those fixes: on
+// HTTP/2 a ResponseController write deadline is a per-stream timer that
+// resets the stream when it fires, write pending or not, so a deadline
+// armed for one write and left in place killed core/stream's SSEWriter,
+// core/a2a's sseStream, core/mcp's GET stream and the harness MCP GET
+// stream in their first idle gap longer than 10s. A stream family whose
+// flood parks and arms a future rc.SetWriteDeadline with no
+// rc.SetWriteDeadline(time.Time{}) anywhere in the flood is reported at
+// each arm. A past-deadline cut (time.Now(), the SSEBroker's eviction)
+// is meant to end the stream and is not an arm; a hijacked conn's
+// deadline is HTTP/1 only and out of scope; a one-shot answer with no
+// park has no idle gap.
 package unseated
 
 import (

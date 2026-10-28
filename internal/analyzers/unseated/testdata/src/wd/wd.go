@@ -110,6 +110,25 @@ func encodeLoop(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// armedNeverCleared bounds each write but leaves the deadline armed. On
+// HTTP/2 the deadline is a stream timer that resets the stream when it
+// fires, write pending or not, so the stream dies in its first idle gap
+// longer than the deadline (core/stream's SSEWriter before the fix).
+func armedNeverCleared(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+			_ = rc.Flush()
+		}
+	}
+}
+
 // ---- quiet: the fix spellings -----------------------------------------
 
 // perWriteDeadline is the core/mcp GET spelling: a closure arms a fresh
@@ -120,7 +139,9 @@ func perWriteDeadline(w http.ResponseWriter, r *http.Request) {
 	write := func(ev string) bool {
 		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		fmt.Fprintf(w, "data: %s\n\n", ev)
-		return rc.Flush() == nil
+		ok := rc.Flush() == nil
+		_ = rc.SetWriteDeadline(time.Time{})
+		return ok
 	}
 	for {
 		select {
@@ -162,6 +183,7 @@ func (st *deadlineStream) write(ev string) {
 	_ = st.rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	fmt.Fprintf(st.w, "data: %s\n\n", ev)
 	_ = st.rc.Flush()
+	_ = st.rc.SetWriteDeadline(time.Time{})
 }
 
 // brokerCut is the SSEBroker spelling: the stream installs a
@@ -224,6 +246,16 @@ func oneShot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	fmt.Fprint(w, "data: done\n\n")
 	w.(http.Flusher).Flush()
+}
+
+// oneShotDeadline bounds its one write and returns: no idle gap follows,
+// so the deadline it leaves armed never fires on a live stream.
+func oneShotDeadline(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	fmt.Fprint(w, "data: done\n\n")
+	_ = rc.Flush()
 }
 
 // callerDriven ranges over its own channel parameter (handler.SSEStream):
