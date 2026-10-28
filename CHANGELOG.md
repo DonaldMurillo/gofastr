@@ -70,7 +70,8 @@ few lines, and link the PR or the docs page for the rest.
   - `unrechecked`: a long-lived stream that never re-checks the
     principal, authz or tenant it resolved at connect;
   - `nowritedeadline`: a client write in a stream's park loop with no
-    write deadline.
+    write deadline, and a `ResponseController` deadline a parked stream
+    arms and never clears.
 
   `worldreadable`, `mapwriter`, `rawtext`'s `ctxless` arm, `intwrap`,
   `nowaitdelay`, `credfetch`, `rootwrite`, `rootread`, `emitident`,
@@ -88,10 +89,16 @@ few lines, and link the PR or the docs page for the rest.
 - **More erasure surface.** `datexport.DataEraser.Where` (a list of
   `datexport.Equals`) narrows an eraser's match, and
   `datexport.EraseRemoveMember` takes the erased id out of a JSON-array
-  column and keeps the row. Stores tag per-user rows for erasure through
+  column and keeps the row. `datexport.ScopedName(base, table)` names a
+  registration after its table, so two stores on two tables both stay
+  registered. Stores tag per-user rows for erasure through
   `search.Document.Owner`, `semantic.Document.Owner` (copied to
-  `Chunk.Owner`), `webhook.Manager.PublishFor`, `webhook.IngestConfig.Owner`
-  and `outbox.Outbox.AppendFor`. The battery-plane table in
+  `Chunk.Owner`, and to the hybrid keyword copy through
+  `semantic.OwnedKeywordBackend`), `webhook.Manager.PublishFor`,
+  `webhook.IngestConfig.Owner`
+  and `outbox.Outbox.AppendFor`. `webhook.Bridge` queues each CRUD event
+  for the owner it names under the new `event.DataKeyOwnerID`. The
+  battery-plane table in
   [data export](framework/docs/content/data-export.md) lists every store
   and how it is erased.
 
@@ -2124,14 +2131,27 @@ few lines, and link the PR or the docs page for the rest.
   parked the handler for the life of the connection on kiln's live SSE,
   dev livereload, the harness web, REST and WebSocket streams, island
   streams and the CRUD event stream. Each write now runs under a fresh
-  deadline. Kiln's live SSE also cuts an event name at its first CR, LF
-  or NUL, so a name can no longer write its own `data:` line.
+  deadline, cleared once the write is flushed. Kiln's live SSE also cuts
+  an event name at its first CR, LF or NUL, so a name can no longer
+  write its own `data:` line.
+- **32-bit builds compile.** `GOARCH=386` failed on constants past a
+  32-bit int or uint in core/i18n plural operands, core/schema and crud
+  unsigned bounds, the headless counter, the entityui number-input bound
+  and bench-resources. CI now cross-builds linux/386.
+- **HTTP/2 streams survive an idle gap.** `stream.SSEWriter`, A2A task
+  streams, the core/mcp notification stream and the harness MCP GET
+  stream left each write's 10 s deadline armed. On HTTP/2 that deadline
+  is a stream timer that resets the stream when it fires, write pending
+  or not, so a stream quiet for 10 s died before its next heartbeat. The
+  deadline is now cleared after each flush.
 - **Outcomes are recorded after a shutdown starts.** The queue's ack and
   nack, the inbound webhook envelope's outcome, the migrate seed ledger
   and entityui bulk chunk results were written on the context the work
   ran under, so a shutdown landing as the work finished dropped the
   record and the work ran again. They now settle on a detached, bounded
-  context.
+  context. The outbound webhook's delivery state write and claim release
+  were detached but unbounded, so a store blocked on a dead database
+  held the worker past `Stop`; they are now bounded too.
 - **The harness web fetch checks the address it connects to.** It
   checked a separate DNS lookup, so a rebinding host passed as public
   and was dialed at an internal address. The SSRF check now runs on the
@@ -2139,6 +2159,8 @@ few lines, and link the PR or the docs page for the rest.
   `http.DefaultTransport` now get the same dial-time guard, which used
   to skip them because the clone carries the environment proxy; the
   guarded clone drops that proxy, as `netguard.GuardedTransport` does.
+  A transport with a `net.Dialer` of its own keeps it and gets the
+  resolve-and-check guard instead.
 - **Response wrappers expose the connection.** The cache middleware's
   recorder, the theme editor, the webmcp observer, the idempotency
   middleware and the timeout middleware gained `Unwrap`, so

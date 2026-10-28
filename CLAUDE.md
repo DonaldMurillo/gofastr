@@ -482,7 +482,9 @@ expose them to agents connected to a live app.**
   `unrechecked` (a long-lived stream for a resolved principal whose
   delivery loop never re-checks it, or whose connect-time authz or
   tenant decision never re-runs) and `nowritedeadline` (a client write
-  in a stream's park loop with no write deadline on the path). Widened
+  in a stream's park loop with no write deadline on the path, and a
+  `ResponseController` deadline a parked stream arms and never clears:
+  on HTTP/2 it resets the stream when it fires, write pending or not). Widened
   in the same round: `worldreadable` (an owner-only `os.OpenFile`
   without `O_EXCL` "fixed" by `fileperm.Restrict`, which does not
   change a file's mode off Windows; tighten the handle with
