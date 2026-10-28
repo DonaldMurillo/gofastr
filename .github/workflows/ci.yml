@@ -247,17 +247,20 @@ jobs:
       - name: repo-lint
         run: make repo-lint
 
-      - name: Cross-compile smoke (windows, darwin)
+      - name: Cross-compile smoke (windows, darwin, linux/386)
         # The runner is ubuntu-only, so windows-tagged files never compile
         # in any gate without this. Compile-only, no tests run. CGO_ENABLED
         # is forced off: the job-level "1" would make the cross-build
         # compile runtime/cgo with the host gcc, which cannot target the
-        # other OSes.
+        # other OSes. linux/386 catches a constant past a 32-bit int or
+        # uint (an untyped 1<<53 bound, a uint compared to MaxInt64); test
+        # files hold 64-bit constants on purpose and are not built.
         env:
           CGO_ENABLED: "0"
         run: |
           GOOS=windows go build ./...
           GOOS=darwin go build ./...
+          GOOS=linux GOARCH=386 go build ./...
 
       - name: Linux desktop (CGO-free runtime and CLI)
         # The normal job uses runtime/cgo. Exercise the assembly runtime

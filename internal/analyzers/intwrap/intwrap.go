@@ -52,7 +52,9 @@
 //   - constants: the compiler rejects out-of-range constant conversions;
 //   - any dominating comparison against math.MaxInt/MaxInt32/MaxInt64
 //     (shape A) or math.MinInt/MinInt64 (shape B), or a bound-sized
-//     integer literal;
+//     integer literal, including one on a value-keeping widening of the
+//     subject (`uint64(u) > math.MaxInt64`, the spelling a 32-bit
+//     build compiles); a sign-changing conversion is no such widening;
 //   - negation in functions that are not abs-shaped, and float
 //     negation (no wrap);
 //   - _test.go files.
@@ -328,6 +330,7 @@ func subjectOf(pass *analysis.Pass, e ast.Expr) subject {
 }
 
 func matchesSubject(pass *analysis.Pass, e ast.Expr, s subject) bool {
+	e = unwrapWidening(pass, e)
 	switch x := e.(type) {
 	case *ast.Ident:
 		return s.obj != nil && pass.TypesInfo.ObjectOf(x) == s.obj
@@ -335,6 +338,46 @@ func matchesSubject(pass *analysis.Pass, e ast.Expr, s subject) bool {
 		return s.str != "" && types.ExprString(x) == s.str
 	}
 	return false
+}
+
+// unwrapWidening strips integer conversions that keep every value of
+// their operand: same signedness, at least as wide. A bound on
+// uint64(n) is a bound on n, and it is how a check is spelled when n's
+// own type cannot hold the bound on a 32-bit build
+// (`uint64(n) > math.MaxInt64` for a uint). A sign-changing conversion
+// stays, so `int64(n) > math.MaxInt64` proves nothing about a uint.
+func unwrapWidening(pass *analysis.Pass, e ast.Expr) ast.Expr {
+	for {
+		call, ok := ast.Unparen(e).(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return e
+		}
+		tv, ok := pass.TypesInfo.Types[call.Fun]
+		if !ok || !tv.IsType() {
+			return e
+		}
+		to, ok1 := tv.Type.Underlying().(*types.Basic)
+		from, ok2 := pass.TypesInfo.TypeOf(call.Args[0]).Underlying().(*types.Basic)
+		if !ok1 || !ok2 || to.Info()&types.IsInteger == 0 || from.Info()&types.IsInteger == 0 {
+			return e
+		}
+		if to.Info()&types.IsUnsigned != from.Info()&types.IsUnsigned {
+			return e
+		}
+		// uint and int count as 64 bits wide: the widest they can be.
+		if pass.TypesSizes.Sizeof(to) < intWidth(pass, from) {
+			return e
+		}
+		e = call.Args[0]
+	}
+}
+
+func intWidth(pass *analysis.Pass, b *types.Basic) int64 {
+	switch b.Kind() {
+	case types.Int, types.Uint, types.Uintptr:
+		return 8
+	}
+	return pass.TypesSizes.Sizeof(b)
 }
 
 // boundMax/boundMin select which family of guards dominates;

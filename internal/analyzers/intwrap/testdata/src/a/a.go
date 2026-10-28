@@ -49,6 +49,31 @@ func toInt64Fixed(v any) (int64, bool) {
 	return 0, false
 }
 
+// toInt64Widened spells the uint check in uint64, the one spelling a
+// 32-bit build compiles (its uint cannot hold MaxInt64). The widening
+// keeps every value, so the bound holds for n.
+func toInt64Widened(v any) (int64, bool) {
+	if n, ok := v.(uint); ok {
+		if uint64(n) > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(n), true
+	}
+	return 0, false
+}
+
+// toInt64SignFlipped checks the already-wrapped value: int64(n) is
+// never above MaxInt64, so the guard is vacuous.
+func toInt64SignFlipped(v any) (int64, bool) {
+	if n, ok := v.(uint); ok {
+		if int64(n) > math.MaxInt64 { // want `conversion uint → int64 without a dominating bound check`
+			return 0, false
+		}
+		return int64(n), true // want `conversion uint → int64 without a dominating bound check`
+	}
+	return 0, false
+}
+
 // builtinAbs, reduced: |MinInt64| does not fit, -v wrapped back to
 // MinInt64 and abs returned a negative. The float arm cannot wrap.
 func builtinAbs(args []any) (any, error) {

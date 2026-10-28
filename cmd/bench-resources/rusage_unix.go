@@ -15,7 +15,7 @@ func peakRSSFromState(state *os.ProcessState) int64 {
 		return 0
 	}
 	if ru, ok := state.SysUsage().(*syscall.Rusage); ok {
-		return normaliseRSS(ru.Maxrss)
+		return normaliseRSS(int64(ru.Maxrss)) // int32 on 32-bit Linux
 	}
 	return 0
 }

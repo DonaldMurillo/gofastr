@@ -1131,12 +1131,13 @@ func intBound(b *float64) int {
 		return 0
 	}
 	const limit = 1 << 53
-	v := math.Trunc(*b)
-	if v >= limit {
-		return limit
+	v := math.Max(-limit, math.Min(math.Trunc(*b), limit))
+	// A 32-bit int holds less than 2^53.
+	if v >= math.MaxInt {
+		return math.MaxInt
 	}
-	if v <= -limit {
-		return -limit
+	if v <= math.MinInt {
+		return math.MinInt
 	}
 	return int(v)
 }

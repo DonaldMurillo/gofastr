@@ -219,5 +219,5 @@ func init() {
 // jsSafeInt reports whether n survives a JavaScript number unchanged.
 func jsSafeInt(n int) bool {
 	const max = 1<<53 - 1
-	return n >= -max && n <= max
+	return int64(n) >= -max && int64(n) <= max // int64: a 32-bit int cannot hold max
 }
