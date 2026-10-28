@@ -2218,6 +2218,12 @@ few lines, and link the PR or the docs page for the rest.
   `Scatter` already did. `LineChart` labels now sit over the points of
   the longest series.
 
+### Security
+- **`golang.org/x/net` is v0.62.0.** v0.59.0 carries an advisory in
+  `html.Parse`, which `battery/sitesearch` calls to extract page text.
+  The bump brings the other `golang.org/x` modules to their current
+  releases, in the root module and in `battery/print/chromepdf`.
+
 ## [0.95.0] - 2026-10-26
 
 ### Added
