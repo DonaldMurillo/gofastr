@@ -2230,6 +2230,12 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **The bodyless 2FA routes refuse a cross-site POST.** `/2fa/disable`,
+  `/2fa/backup-codes` and `/2fa/enroll` read no body, so another site's
+  hidden form could submit them with a stepped-up session cookie and turn
+  the user's second factor off or burn their backup codes. They now run
+  the cross-site guard login and logout use. See
+  [auth](framework/docs/content/auth.md).
 - **BREAKING: an API token reaches the admin only with `admin.AdminScope`.**
   The gate read the token's owner and its roles, never the token's
   scopes, so a `customers:read` token an admin minted could read the

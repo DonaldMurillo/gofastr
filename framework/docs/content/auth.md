@@ -947,6 +947,12 @@ so a cross-origin SPA reaching them through configured CORS depends on the
 exemption. Requests with no `Origin` (curl, native apps) pass. This is on
 by default; no configuration required.
 
+The same guard covers the other bodyless POSTs a signed-in user's cookie
+can carry: `/2fa/disable`, `/2fa/backup-codes` and `/2fa/enroll` refuse a
+cross-site request, so a hidden form on another site cannot turn off a
+user's second factor or replace their backup codes. `/2fa/verify` and
+`/2fa/challenge` read a JSON body and answer 415 to anything else.
+
 ## Browser-backend (BFF) posture
 
 For an application whose browser talks directly to the same GoFastr backend,
