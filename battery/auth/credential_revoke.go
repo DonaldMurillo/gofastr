@@ -5,6 +5,49 @@ import (
 	"errors"
 )
 
+// credentialSnapshot is the user's stored password hash, read before a
+// request that mints a lasting credential (an API token, a passkey) reads
+// its body. A reset, change or account claim moves the hash before it
+// revokes anything, so a request held open across one finds the hash
+// moved when it re-checks after storing, and undoes what it stored.
+type credentialSnapshot struct {
+	userID, email, hash string
+	ok                  bool // false: nothing to compare (no store, no such user)
+}
+
+func (m *AuthManager) snapshotCredential(ctx context.Context, userID string) (credentialSnapshot, error) {
+	store := m.UserStore()
+	if store == nil {
+		return credentialSnapshot{}, nil
+	}
+	u, err := store.FindByID(ctx, userID)
+	if errors.Is(err, ErrUserNotFound) {
+		// A credential for a missing owner never authenticates.
+		return credentialSnapshot{}, nil
+	}
+	if err != nil {
+		return credentialSnapshot{}, err
+	}
+	_, hash, err := store.FindByEmail(ctx, u.GetEmail())
+	if errors.Is(err, ErrUserNotFound) {
+		return credentialSnapshot{}, nil
+	}
+	if err != nil {
+		return credentialSnapshot{}, err
+	}
+	return credentialSnapshot{userID: userID, email: u.GetEmail(), hash: hash, ok: true}, nil
+}
+
+// moved reports whether the hash changed since the snapshot. A failed
+// re-read counts as moved: the caller undoes its write rather than keep
+// a credential it could not vouch for.
+func (s credentialSnapshot) moved(ctx context.Context, m *AuthManager) bool {
+	if !s.ok {
+		return false
+	}
+	return !credentialUnchanged(ctx, m.UserStore(), s.email, s.userID, s.hash)
+}
+
 // revokeUserAPITokens revokes every live API token userID owns, through the
 // store the TokensPlugin was built with. A credential reset that left these
 // alive did not lock out whoever held the account before it: a token minted

@@ -459,6 +459,14 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	// Taken before the body is read, as token creation does: a
+	// registration held open across a reset stored its key after the
+	// reset's purge and kept a second lasting credential.
+	snap, err := p.mgr.snapshotCredential(r.Context(), sess.UserID)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+		return
+	}
 	var body struct {
 		Name              string `json:"name"`
 		ID                string `json:"id"`
@@ -522,6 +530,18 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
+		return
+	}
+	// The hash catches a reset or change; the session catches an account
+	// claim, which may leave a passwordless hash where it was.
+	if _, err := p.mgr.SessionStore().Get(r.Context(), sess.Token); err != nil || snap.moved(r.Context(), p.mgr) {
+		if _, err := p.store.DeletePasskey(r.Context(), sess.UserID, cred.ID); err != nil {
+			slog.Warn("auth: removing a passkey registered across a credential change failed",
+				"user_hash", hashedIdentifier(sess.UserID), "err", err)
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
+			return
+		}
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 		return
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{

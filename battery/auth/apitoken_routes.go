@@ -119,6 +119,14 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 		if !ok {
 			return
 		}
+		// Taken before the body is read: a request held open with its body
+		// withheld until a reset finished inserted its token after the
+		// reset's one listing of the user's tokens, and kept it.
+		snap, err := p.mgr.snapshotCredential(r.Context(), userID)
+		if err != nil {
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+			return
+		}
 		var body createTokenRequest
 		if !decodeJSONLimited(w, r, &body) {
 			return
@@ -145,6 +153,15 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 			}
 			log.Printf("auth: issue token: %v", err)
 			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCreateToken)
+			return
+		}
+		if snap.moved(r.Context(), p.mgr) {
+			if err := p.tokens.Revoke(r.Context(), rec.ID, OwnerKindUser, userID); err != nil {
+				log.Printf("auth: revoking a token minted across a credential change: %v", err)
+				writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCreateToken)
+				return
+			}
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{

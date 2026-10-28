@@ -588,7 +588,7 @@ Self-service token management for logged-in users:
 
 | Endpoint | Effect |
 |---|---|
-| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. |
+| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. A reset or password change that lands while the request is open (its body still unread) wins: the new token is revoked and the request answers 401. |
 | `GET {base}/tokens` | List the caller's tokens (prefix only, never the plaintext or hash). |
 | `DELETE {base}/tokens/{id}` | Revoke one of the caller's tokens. A foreign id is a 404 (owner-scoped). |
 
@@ -1396,6 +1396,8 @@ sessions and API tokens: a passkey added from a stolen session would
 otherwise sign in again. The passkeys go before the sessions, and a
 passkey sign-in re-reads its key after minting and drops the session if
 the key is gone, so a sign-in a reset overtakes ends with no session. A
+registration that a reset, change or claim overtakes removes the key it
+stored and answers 401. A
 password change keeps them, as it keeps API tokens. Claiming an unverified account (see
 [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account))
 removes its passkeys, since the squatter may have added one, and the

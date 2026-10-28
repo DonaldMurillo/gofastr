@@ -2237,6 +2237,13 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **An API token or passkey created across a reset no longer survives
+  it.** `POST /auth/tokens` and `POST /auth/passkey/register` read the
+  caller before the body, and a reset revokes tokens and passkeys once.
+  A request held open with its body withheld until the reset finished
+  stored a lasting credential after that purge. Both now read the
+  password hash before the body and, when it moved, undo what they
+  stored and answer 401. See [auth](framework/docs/content/auth.md).
 - **A stale password change no longer overwrites a completed reset.** A
   change verified the current password, computed the new hash, then wrote
   it keyed on the user id alone, so a reset that landed in between was
