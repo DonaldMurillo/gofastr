@@ -388,7 +388,119 @@ func openHelperAfterLoop(w http.ResponseWriter, r *http.Request) {
 
 func (h *helperAfterLoop) arm() { _ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) } // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
 
+func sliceBatches() <-chan []string { return make(chan []string, 1) }
+
+// pacedSliceBatch paces the writes of each batch: the range over the
+// slice does not wait, but its body does, under the last write's
+// deadline.
+func pacedSliceBatch(w http.ResponseWriter, r *http.Request, pace *time.Ticker) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for batch := range sliceBatches() {
+		for _, ev := range batch {
+			<-pace.C
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+			_ = rc.Flush()
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// deferredInLoop defers the clear inside the loop: it runs when the
+// handler returns, not before the next wait.
+func deferredInLoop(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+		defer rc.SetWriteDeadline(time.Time{})
+		fmt.Fprintf(w, "data: %s\n\n", ev)
+		_ = rc.Flush()
+	}
+}
+
+// clearedOnErrorOnly clears when the write fails; a write that succeeds
+// leaves the deadline armed through the next wait.
+func clearedOnErrorOnly(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", ev); err != nil {
+			_ = rc.SetWriteDeadline(time.Time{})
+			return
+		}
+		_ = rc.Flush()
+	}
+}
+
+// clearedOnSkipOnly clears before skipping an event it cannot encode,
+// and in a panic it does not survive; the events it writes leave the
+// deadline armed.
+func clearedOnSkipOnly(w http.ResponseWriter, r *http.Request, encode func(string) (string, error)) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+		body, err := encode(ev)
+		switch {
+		case err != nil:
+			_ = rc.SetWriteDeadline(time.Time{})
+			continue
+		case body == "":
+			_ = rc.SetWriteDeadline(time.Time{})
+			panic("empty event")
+		}
+		fmt.Fprintf(w, "data: %s\n\n", body)
+		_ = rc.Flush()
+	}
+}
+
 // ---- quiet: the fix spellings -----------------------------------------
+
+// clearedOnBothPaths clears on the error path and again after the
+// flush.
+func clearedOnBothPaths(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", ev); err != nil {
+			_ = rc.SetWriteDeadline(time.Time{})
+			return
+		}
+		_ = rc.Flush()
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// deferredHelper writes through a helper that defers its clear before
+// it arms: every return clears before the loop waits again.
+type deferredHelper struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func openDeferredHelper(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &deferredHelper{w: w, rc: http.NewResponseController(w)}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			h.send(ev)
+		}
+	}
+}
+
+func (h *deferredHelper) send(ev string) {
+	defer h.rc.SetWriteDeadline(time.Time{})
+	_ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	fmt.Fprintf(h.w, "data: %s\n\n", ev)
+	_ = h.rc.Flush()
+}
 
 // perWriteDeadline is the core/mcp GET spelling: a closure arms a fresh
 // deadline before every write and the loop calls it.

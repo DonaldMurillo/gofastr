@@ -198,8 +198,13 @@
 // With nested parks (a range over batches, then over each batch) the
 // clear belongs in the innermost one. Any wait makes a loop a park here:
 // a select with no default, a receive, a send, a channel range or a conn
-// read. A loop over a slice never waits, and a select with a default
-// waits only in its operands (`<-(<-ch)`) or its clause bodies.
+// read. A loop over a slice waits only when its body does (a paced
+// batch), and a select with a default waits only in its operands
+// (`<-(<-ch)`) or its clause bodies. A deferred clear runs at return: it
+// covers a per-write helper that never waits, wherever the defer sits,
+// and never an arm in a function that parks. A clear on a branch that
+// leaves (an error path ending in return, continue, break, goto or
+// panic) covers that path only and does not count.
 // A past-deadline cut (time.Now(), the SSEBroker's eviction)
 // is meant to end the stream and is not an arm; a hijacked conn's
 // deadline is HTTP/1 only and out of scope; a one-shot answer with no
@@ -707,6 +712,12 @@ func forLoopParks(pass *analysis.Pass, loop *ast.ForStmt) bool {
 // on ch), and its clause bodies can wait. forLoopParks asks a narrower
 // question, input only, and counts a polling loop as a park.
 func forLoopBlocks(pass *analysis.Pass, loop *ast.ForStmt) bool {
+	return bodyBlocks(pass, loop.Body)
+}
+
+// bodyBlocks is forLoopBlocks for any loop body: a range over a slice
+// does not wait itself, but a body that paces its writes does.
+func bodyBlocks(pass *analysis.Pass, body ast.Node) bool {
 	blocks := false
 	var visit func(n ast.Node) bool
 	visit = func(n ast.Node) bool {
@@ -746,7 +757,7 @@ func forLoopBlocks(pass *analysis.Pass, loop *ast.ForStmt) bool {
 		}
 		return !blocks
 	}
-	ast.Inspect(loop.Body, visit)
+	ast.Inspect(body, visit)
 	return blocks
 }
 

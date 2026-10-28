@@ -476,6 +476,12 @@ func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*
 // under the deadline the last write armed. The loop is the innermost one
 // holding site that parks: a clear per batch still leaves the inner wait
 // on the batch under the deadline.
+//
+// A deferred clear runs when the function returns, wherever the defer
+// sits: it covers the arm only when nothing in body waits (a per-write
+// helper), and never inside a loop that does. A clear in a branch that
+// leaves (an error path ending in return, break, continue, goto or
+// panic) covers that path only, so it does not count.
 func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 	scope := body
 	for _, l := range a.loops[f] {
@@ -485,27 +491,79 @@ func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 		}
 	}
 	found := false
+	var path []ast.Node
 	ast.Inspect(scope, func(n ast.Node) bool {
+		if n == nil {
+			path = path[:len(path)-1]
+			return false
+		}
 		if found {
 			return false
 		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok || call.Pos() <= site.End() {
-			return true
+		if d, ok := n.(*ast.DeferStmt); ok {
+			if !bodyBlocks(a.pass, body) && a.reaches(d.Call, f, "cleardeadline", a.clearedDeadline) {
+				found = true
+			}
+			return false
 		}
-		if a.reaches(call, f, "cleardeadline", a.clearedDeadline) {
+		if call, ok := n.(*ast.CallExpr); ok && call.Pos() > site.End() && !a.onExitBranch(path) &&
+			a.reaches(call, f, "cleardeadline", a.clearedDeadline) {
 			found = true
 			return false
 		}
+		path = append(path, n)
 		return true
 	})
 	return found
 }
 
+// onExitBranch: a block on path, below the scope (path[0]), ends by
+// leaving it.
+func (a *arms) onExitBranch(path []ast.Node) bool {
+	for i := len(path) - 1; i > 0; i-- {
+		var list []ast.Stmt
+		switch n := path[i].(type) {
+		case *ast.BlockStmt:
+			list = n.List
+		case *ast.CaseClause:
+			list = n.Body
+		case *ast.CommClause:
+			list = n.Body
+		}
+		if a.leaves(list) {
+			return true
+		}
+	}
+	return false
+}
+
+// leaves: the statement list ends in a return, a break, continue or
+// goto, or a call of the panic builtin.
+func (a *arms) leaves(list []ast.Stmt) bool {
+	if len(list) == 0 {
+		return false
+	}
+	switch s := list[len(list)-1].(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.BranchStmt:
+		return s.Tok != token.FALLTHROUGH
+	case *ast.ExprStmt:
+		if call, ok := s.X.(*ast.CallExpr); ok {
+			if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok {
+				_, builtin := a.pass.TypesInfo.Uses[id].(*types.Builtin)
+				return builtin && id.Name == "panic"
+			}
+		}
+	}
+	return false
+}
+
 // innermostPark: the body of the innermost parking loop (a channel range,
-// or a for loop forLoopBlocks accepts) inside outer that holds site, or
-// outer itself. A loop over a slice, or one that only polls through a
-// select with a default, never waits and is passed through.
+// or a loop whose body waits: bodyBlocks) inside outer that holds site,
+// or outer itself. A loop over a slice that only writes, or one that only
+// polls through a select with a default, never waits and is passed
+// through.
 func (a *arms) innermostPark(outer *ast.BlockStmt, site ast.Node) ast.Node {
 	in := ast.Node(outer)
 	ast.Inspect(outer, func(n ast.Node) bool {
@@ -517,7 +575,7 @@ func (a *arms) innermostPark(outer *ast.BlockStmt, site ast.Node) ast.Node {
 		case *ast.FuncLit:
 			return false
 		case *ast.RangeStmt:
-			if _, ok := underlyingChan(typeOf(a.pass, st.X)); ok {
+			if _, ok := underlyingChan(typeOf(a.pass, st.X)); ok || bodyBlocks(a.pass, st.Body) {
 				b = st.Body
 			}
 		case *ast.ForStmt:
