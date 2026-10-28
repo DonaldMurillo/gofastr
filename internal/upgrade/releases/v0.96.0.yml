@@ -217,3 +217,10 @@ notes:
     breaking: false
     guidance: "Each store adds its column on boot, so nothing needs running. Rows written before the upgrade name nobody and are not erased with a user; set Document.Owner, use PublishFor and IngestConfig.Owner from now on."
     nodetect: "the columns are added at boot by the stores themselves; nothing in an app's source spells the change"
+  - change: "BREAKING - entityui RecordBuilder.Steps takes the ListBuilder the drawer opens from, Steps(list), so previous and next walk that list's key, View and Where pins"
+    breaking: true
+    hits: edit
+    guidance: "Steps() rebuilt a bare list, so a keyed list read the wrong params and a View or Where pin was dropped: the drawer stepped onto records the list did not show. Pass the same ListBuilder the list screen renders, for example a func that builds it, called from both the list screen and Steps(list())."
+    find:
+      uses:
+        - gofastr/framework/entityui.RecordBuilder.Steps

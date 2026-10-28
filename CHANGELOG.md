@@ -104,6 +104,17 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Bulk "Every match" and CSV export on a keyed list stay in its view.**
+  The every-match read rebuilt the list without its key, so it looked
+  for `view` instead of `<key>_view`. On `List(e).Key("inv").View("open")`
+  a delete of every match removed rows outside the open view, and the
+  export held them too.
+- **BREAKING: `RecordBuilder.Steps` takes the list the drawer opens
+  from.** `Steps()` rebuilt a bare list, so a keyed list's params were
+  read under the wrong names and its `View` and `Where` pins were
+  dropped. Previous and next could land on a record the list did not
+  show. Call `Steps(list)` with the same `ListBuilder` the list screen
+  renders; the admin battery does.
 - **BREAKING: CRUD events carry their record's owner into the outbox.**
   `crud.EventOutbox` declares `AppendFor(ctx, ex, owner, eventType,
   data)` in place of `Append`, and the outbox table gains an `owner`

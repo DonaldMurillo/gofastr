@@ -420,7 +420,7 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadScope)
 	}
 	s := &listState{m: m, key: key, p: listParamsFor(key), q: q}
-	b := &ListBuilder{ui: u, entity: m.name}
+	b := &ListBuilder{ui: u, entity: m.name, key: key}
 	if err := b.narrow(ctx, s); err != nil {
 		return nil, err
 	}

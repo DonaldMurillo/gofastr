@@ -58,6 +58,41 @@ func TestBulkEveryMatchKeepsBuilderView(t *testing.T) {
 	}
 }
 
+// A keyed list carries its view as <key>_view, and every match reads it
+// under that name: a delete on the inv list's open view leaves the draft
+// and the paid row alone.
+func TestKeyedEveryMatchKeepsView(t *testing.T) {
+	x := viewInvoices(t, false)
+	page := listHTML(t, x.ui.List("invoices").Key("inv").View("open").PageSize(1).Bulk().Delete(), x.userCtx("/invoices", "", "u1"))
+	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{
+		"action": "delete", "scope": "every", "key": hiddenValue(t, page, "key"),
+		"query": hiddenValue(t, page, "query"), "match": hiddenValue(t, page, "match"),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("status %d: %v", code, out)
+	}
+	if got := invoiceIDs(t, x); !slices.Equal(got, []string{"inv-1", "p1"}) {
+		t.Fatalf("rows left = %v, want inv-1 p1 (only the open view's rows)", got)
+	}
+}
+
+// A keyed list's Export link holds the rows its view showed.
+func TestKeyedExportKeepsView(t *testing.T) {
+	x := viewInvoices(t, false)
+	page := listHTML(t, x.ui.List("invoices").Key("inv").View("open").Bulk(), x.userCtx("/invoices", "", "u1"))
+	m := regexp.MustCompile(`href="/api/invoices/_export\.csv\?([^"]*)"`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("no export link:\n%s", page)
+	}
+	rec, rows := getExport(t, x, bulkCtx("u1", nil), stdhtml.UnescapeString(m[1]))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(rows) != 3 {
+		t.Fatalf("%d lines, want a header and the 2 open rows:\n%s", len(rows), rec.Body.String())
+	}
+}
+
 // Every match refuses when the rows it would touch are not the ones the
 // screen offered: the list changed, or the query was not the screen's.
 func TestBulkEveryMatchStaleRefused(t *testing.T) {

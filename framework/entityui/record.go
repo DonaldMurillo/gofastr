@@ -31,7 +31,7 @@ type RecordBuilder struct {
 	delete   bool
 	undo     bool
 	dup      bool
-	steps    bool
+	steps    *ListBuilder
 	panel    bool
 	prefill  map[string]string
 }
