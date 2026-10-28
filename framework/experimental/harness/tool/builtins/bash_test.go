@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func skipNonUnix(t *testing.T) {
@@ -65,6 +66,24 @@ func TestBashTimeout(t *testing.T) {
 	}
 	if !strings.Contains(res.Content[0].Text, "timeout") {
 		t.Errorf("output missing timeout: %q", res.Content[0].Text)
+	}
+}
+
+// A backgrounded child holding the output pipe cannot outlive the
+// timeout: killing only sh left Run waiting on the pipe for the child's
+// whole life (2026-10-27 H4).
+func TestBashTimeoutEndsPipeHolder(t *testing.T) {
+	skipNonUnix(t)
+	start := time.Now()
+	res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
+		"cmd":        "sleep 30 & wait",
+		"timeout_ms": 100,
+	}), nil)
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("Run returned after %s; the timeout was 100ms", took)
+	}
+	if !res.IsError || !strings.Contains(res.Content[0].Text, "timeout") {
+		t.Fatalf("expected a timeout error, got %+v", res)
 	}
 }
 

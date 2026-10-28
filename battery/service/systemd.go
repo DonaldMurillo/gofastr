@@ -98,6 +98,7 @@ func (s systemdUser) install(b *Battery, exe string, port int) error {
 	if err != nil {
 		return err
 	}
+	//gofastr:allow(rootwrite) the user's own systemd unit directory; the service ID is developer configuration
 	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
 		return err
 	}

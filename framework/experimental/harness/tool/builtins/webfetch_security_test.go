@@ -93,3 +93,38 @@ func TestWebFetchRebindDialReject(t *testing.T) {
 		t.Errorf("WebFetch dialed an internal address despite dial-time guard: %+v", res)
 	}
 }
+
+// A host-supplied client used to skip the dial-time guard whenever it
+// carried a transport of its own, so a rebinding host reached the
+// internal address it re-pointed to (2026-10-27 H12). A plain transport
+// is guarded; one whose dialer cannot be swapped is refused.
+func TestWebFetchGuardsHostTransport(t *testing.T) {
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("SECRET-INTERNAL-BODY"))
+	}))
+	defer internal.Close()
+
+	host := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	c, err := fetchClient(host, false)
+	if err != nil {
+		t.Fatalf("plain host transport refused: %v", err)
+	}
+	if c.Transport == host.Transport {
+		t.Fatal("host transport used as-is, without the dial-time guard")
+	}
+	if resp, err := c.Get(internal.URL); err == nil {
+		resp.Body.Close()
+		t.Fatal("guarded host transport dialed loopback")
+	}
+
+	custom := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	if _, err := fetchClient(custom, false); err == nil {
+		t.Fatal("a RoundTripper the guard cannot reach was accepted")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

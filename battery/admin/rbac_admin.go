@@ -546,8 +546,9 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	if !read {
 		return
 	}
-	userID := strings.TrimSpace(vals.Get("user_id"))
-	if userID == "" {
+	// The id is a key, used exactly: trimming " u1 " would edit "u1".
+	userID := vals.Get("user_id")
+	if strings.TrimSpace(userID) == "" {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}

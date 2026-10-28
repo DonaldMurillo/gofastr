@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,13 +43,17 @@ func TestSSRF_CustomClientStillGuarded(t *testing.T) {
 }
 
 func TestSSRF_CustomTransportSettingsSurvive(t *testing.T) {
-	// The guard must wrap, not replace: the caller's transport, proxy,
-	// custom dialer (egress tunnel, unix socket), pools, is used
-	// verbatim underneath the per-request check. Swapping its dialer
-	// would break clients that legitimately dial through private
-	// infrastructure to reach public targets.
+	// The guard must wrap, not replace, a transport with its own dialer
+	// (egress tunnel, unix socket) or proxy: it is used verbatim
+	// underneath the per-request check. Swapping its dialer would break
+	// clients that legitimately dial through private infrastructure to
+	// reach public targets.
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.MaxIdleConns = 7 // sentinel
+	var d net.Dialer
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return d.DialContext(ctx, network, addr)
+	}
 	mgr := New(NewMemoryStore(), Options{HTTPClient: &http.Client{Transport: tr}})
 
 	got, ok := mgr.opts.HTTPClient.Transport.(*ssrfGuardedRoundTripper)
@@ -116,5 +121,20 @@ func TestSSRF_PlainTransportDialGuarded(t *testing.T) {
 	}
 	if err := dialLoopback(t, mgr.opts.HTTPClient); err == nil {
 		t.Fatal("SECURITY: [ssrf] plain custom transport delivered to loopback")
+	}
+}
+
+// http.DefaultTransport.Clone(), the usual way to tune a client, carries
+// the environment proxy and a stock net.Dialer. It used to count as a
+// custom dialer and fall back to the resolve-then-dial wrapper, which a
+// rebinding name passes (2026-10-27 B64). It is dial-guarded now.
+func TestSSRF_DefaultCloneDialGuarded(t *testing.T) {
+	inner := http.DefaultTransport.(*http.Transport).Clone()
+	mgr := New(NewMemoryStore(), Options{HTTPClient: &http.Client{Transport: inner}})
+	if _, ok := mgr.opts.HTTPClient.Transport.(*http.Transport); !ok {
+		t.Fatalf("DefaultTransport clone wrapped as %T, want a dial-guarded *http.Transport", mgr.opts.HTTPClient.Transport)
+	}
+	if err := dialLoopback(t, mgr.opts.HTTPClient); err == nil {
+		t.Fatal("SECURITY: [ssrf] DefaultTransport clone delivered to loopback")
 	}
 }

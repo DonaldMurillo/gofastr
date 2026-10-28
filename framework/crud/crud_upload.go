@@ -119,6 +119,7 @@ func limitJSONBody(w http.ResponseWriter, r *http.Request) {
 // memory, mapping the body-limit error to errBodyTooLarge. Strict key
 // validation needs the raw bytes; the 1 MiB JSON cap bounds the buffer.
 func readBodyBytes(r *http.Request) ([]byte, error) {
+	//gofastr:allow(unboundedbody) every production caller caps the body first (limitRequestBody); decodeJSONBody is test-only
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {

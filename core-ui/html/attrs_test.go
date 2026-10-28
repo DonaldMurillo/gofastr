@@ -69,3 +69,14 @@ func TestSafeExtraAttrsNilOnEmptyResult(t *testing.T) {
 		t.Errorf("all-dropped input: got %v, want nil", got)
 	}
 }
+
+// The class attribute is byte-stable across renders: Classes used to
+// join in map order (2026-10-28 mapwriter join arm).
+func TestClassesSortedAndStable(t *testing.T) {
+	in := map[string]bool{"zeta": true, "alpha": true, "mid": true, "off": false, "beta": true}
+	for range 50 {
+		if got := Classes(in)["class"]; got != "alpha beta mid zeta" {
+			t.Fatalf("class = %q, want sorted", got)
+		}
+	}
+}

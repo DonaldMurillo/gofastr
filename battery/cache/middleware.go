@@ -1,8 +1,10 @@
 package cache
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -146,8 +148,8 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			}
 			next.ServeHTTP(rec, r)
 
-			// Overflowed the cap: the response was already streamed to the
-			// client and is too big to cache. Nothing to store or replay.
+			// Overflowed the cap, flushed or hijacked: the response was
+			// already streamed to the client. Nothing to store or replay.
 			if rec.overflow {
 				return
 			}
@@ -173,10 +175,14 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				_ = cache.Set(context.Background(), baseKey, stored, ttl)
 			}
 
-			// Replay the captured response to the client.
+			// Replay the captured response to the client. Nothing has
+			// reached w yet: a response that did (overflow, a flush, a
+			// hijack) returned above.
+			//gofastr:allow(wrapwriter) the recorder buffered the whole response; w is unwritten until here
 			w.Header().Set("X-Cache", "MISS")
 			for k, vals := range rec.header {
 				for _, v := range vals {
+					//gofastr:allow(wrapwriter) the recorder buffered the whole response; w is unwritten until here
 					w.Header().Add(k, v)
 				}
 			}
@@ -415,22 +421,52 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 	}
 	if r.maxBytes > 0 && r.body.Len()+len(b) > r.maxBytes {
 		// Over the cap, give up on caching this response and switch to
-		// streaming. Flush headers + already-buffered bytes to the client,
-		// then write this chunk and everything after straight through.
-		r.overflow = true
-		dst := r.w.Header()
-		for k, vals := range r.header {
-			for _, v := range vals {
-				dst.Add(k, v)
-			}
-		}
-		dst.Set("X-Cache", "MISS")
-		r.w.WriteHeader(r.statusCode)
-		if r.body.Len() > 0 {
-			_, _ = r.w.Write(r.body.Bytes())
-		}
-		r.body.Reset() // release the buffered memory
+		// streaming, then write this chunk and everything after straight
+		// through.
+		r.streamThrough()
 		return r.w.Write(b)
 	}
 	return r.body.Write(b)
 }
+
+// streamThrough gives up on caching: it sends the headers and the bytes
+// buffered so far to the client and passes every later write through.
+func (r *responseRecorder) streamThrough() {
+	if r.overflow {
+		return
+	}
+	r.overflow = true
+	dst := r.w.Header()
+	for k, vals := range r.header {
+		for _, v := range vals {
+			dst.Add(k, v)
+		}
+	}
+	dst.Set("X-Cache", "MISS")
+	r.w.WriteHeader(r.statusCode)
+	if r.body.Len() > 0 {
+		_, _ = r.w.Write(r.body.Bytes())
+	}
+	r.body.Reset() // release the buffered memory
+}
+
+// FlushError is a streaming response's signal that its bytes must reach
+// the client now, so the response streams through and is not cached.
+func (r *responseRecorder) FlushError() error {
+	r.streamThrough()
+	return http.NewResponseController(r.w).Flush()
+}
+
+// Flush is FlushError for handlers that assert http.Flusher.
+func (r *responseRecorder) Flush() { _ = r.FlushError() }
+
+// Hijack hands the connection to the handler (a websocket upgrade); the
+// response is the handler's from then on, and nothing is cached.
+func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	r.overflow = true
+	return http.NewResponseController(r.w).Hijack()
+}
+
+// Unwrap lets http.ResponseController reach the client writer's
+// deadlines; Flush and Hijack stop at the methods above.
+func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.w }

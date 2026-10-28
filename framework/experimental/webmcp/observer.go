@@ -188,6 +188,9 @@ func (s *statusRecorder) Flush() {
 	}
 }
 
+// Unwrap lets http.ResponseController reach the connection's deadlines.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := s.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -46,7 +47,7 @@ func TestGuardPlainRefusesCustomDialers(t *testing.T) {
 	dial := func(context.Context, string, string) (net.Conn, error) { return nil, nil }
 	plainDial := func(string, string) (net.Conn, error) { return nil, nil }
 	for name, tr := range map[string]*http.Transport{
-		"proxy":          {Proxy: http.ProxyFromEnvironment},
+		"proxy":          {Proxy: http.ProxyURL(&url.URL{Scheme: "http", Host: "proxy.internal:3128"})},
 		"DialContext":    {DialContext: dial},
 		"DialTLSContext": {DialTLSContext: dial},
 		"Dial":           {Dial: plainDial},
@@ -55,6 +56,30 @@ func TestGuardPlainRefusesCustomDialers(t *testing.T) {
 		if guarded, ok := GuardPlainTransport(tr, "test"); ok || guarded != nil {
 			t.Errorf("%s: transport guarded in place, want it refused", name)
 		}
+	}
+}
+
+// http.DefaultTransport.Clone() is the usual way to tune a client, and
+// it carries ProxyFromEnvironment and a stock net.Dialer: it is plain,
+// and its clone dials through the guard. It used to fall back to the
+// resolve-then-dial check, which DNS rebinding passes (2026-10-27 B64,
+// P54).
+func TestGuardPlainTakesDefaultClone(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 7
+	guarded, ok := GuardPlainTransport(tr, "test")
+	if !ok {
+		t.Fatal("DefaultTransport.Clone() refused as a custom dialer")
+	}
+	if guarded.Proxy != nil || guarded.MaxIdleConns != 7 {
+		t.Errorf("clone: Proxy set %v, MaxIdleConns %d; want no proxy and the tuning kept", guarded.Proxy != nil, guarded.MaxIdleConns)
+	}
+	resp, err := (&http.Client{Transport: guarded}).Get(srv.URL)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("the guarded clone reached a loopback server")
 	}
 }
 

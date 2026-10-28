@@ -448,11 +448,12 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 	return rows, nil
 }
 
+// dedupeIDs drops repeats and the empty id. Ids are keys, kept exactly:
+// trimming " x " would act on its twin row "x".
 func dedupeIDs(ids []string) []string {
 	seen := make(map[string]bool, len(ids))
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
-		id = strings.TrimSpace(id)
 		if id == "" || seen[id] {
 			continue
 		}
@@ -968,11 +969,19 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 				outcomes[rid] = BulkRowSkipped
 			}
 		}
-		if err := store.Settle(ctx, id, runner, outcomes); err != nil {
+		// The chunk ran: save its outcomes on a detached, bounded context,
+		// so a shutdown that lands now does not run these records again.
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+		err = store.Settle(settleCtx, id, runner, outcomes)
+		cancel()
+		if err != nil {
 			return err
 		}
 	}
 }
+
+// bulkSettleTimeout bounds the write that saves a chunk's outcomes.
+const bulkSettleTimeout = 10 * time.Second
 
 // ResumeBulkJobs hands the JobRunner every queued job whose Enqueue is not
 // known to have happened (the process died between writing the snapshot

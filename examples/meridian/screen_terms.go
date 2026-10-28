@@ -29,7 +29,7 @@ func (s *TermsScreen) ScreenDescription(ctx context.Context) string { return "" 
 func (s *TermsScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *TermsScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{}, ui.Markdown(ui.MarkdownConfig{Source: termsScreenTextTermsOfServiceThis.Text(ctx), Measure: true}))
+	return html.Div(html.DivConfig{}, ui.Markdown(ui.MarkdownConfig{Ctx: ctx, Source: termsScreenTextTermsOfServiceThis.Text(ctx), Measure: true}))
 }
 
 // mountTermsScreen mounts the terms screen with site.

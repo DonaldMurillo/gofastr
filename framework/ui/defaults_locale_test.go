@@ -30,6 +30,14 @@ func TestDefaultLabelsSpeakCtx(t *testing.T) {
 		english string
 		render  func(ctx context.Context) render.HTML
 	}{
+		// 2026-10-27 U10, U21: the code blocks inside Markdown and
+		// CodeTabs said their words in English on every locale.
+		{"markdown code block", i18nui.CodeBlockCopy, "copier", "copy", func(ctx context.Context) render.HTML {
+			return Markdown(MarkdownConfig{Ctx: ctx, Source: "```go\nx := 1\n```\n"})
+		}},
+		{"code tabs", i18nui.CodeBlockCopy, "copier", "copy", func(ctx context.Context) render.HTML {
+			return CodeTabs(CodeTabsConfig{Ctx: ctx, Name: "t"}, CodeSample{Label: "Go", Language: "go", Code: "x := 1"})
+		}},
 		{"avatar group", i18nui.AvatarGroupLabel, "Avatars du groupe", "Avatars", func(ctx context.Context) render.HTML {
 			return AvatarGroup(AvatarGroupConfig{Ctx: ctx, Avatars: []AvatarConfig{{Name: "Ada"}}})
 		}},

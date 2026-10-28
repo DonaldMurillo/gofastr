@@ -1122,12 +1122,23 @@ func intInputValue(s string) int {
 	return n
 }
 
-// intBound narrows a float bound to the int NumberInput takes.
+// intBound narrows a float bound to the int NumberInput takes, clamped
+// to the integers a browser number input holds exactly (±2^53). A bare
+// int(*b) past the int range is implementation-defined, which put a
+// huge Max below Min and refused every value the API accepts.
 func intBound(b *float64) int {
-	if b == nil {
+	if b == nil || math.IsNaN(*b) {
 		return 0
 	}
-	return int(*b)
+	const limit = 1 << 53
+	v := math.Trunc(*b)
+	if v >= limit {
+		return limit
+	}
+	if v <= -limit {
+		return -limit
+	}
+	return int(v)
 }
 
 func dateInputValue(s string) string {

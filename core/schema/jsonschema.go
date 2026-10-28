@@ -45,10 +45,14 @@ func fieldToJSONSchema(f Field) map[string]any {
 	case String:
 		prop["type"] = "string"
 		if f.Min != nil {
-			prop["minLength"] = int(math.Ceil(*f.Min))
+			if n, ok := LengthBound(*f.Min, math.Ceil); ok {
+				prop["minLength"] = n
+			}
 		}
 		if f.Max != nil {
-			prop["maxLength"] = int(*f.Max)
+			if n, ok := LengthBound(*f.Max, math.Floor); ok {
+				prop["maxLength"] = n
+			}
 		}
 		if f.Pattern != "" {
 			prop["pattern"] = f.Pattern
@@ -58,10 +62,14 @@ func fieldToJSONSchema(f Field) map[string]any {
 		prop["type"] = "string"
 		prop["format"] = "textarea"
 		if f.Min != nil {
-			prop["minLength"] = int(math.Ceil(*f.Min))
+			if n, ok := LengthBound(*f.Min, math.Ceil); ok {
+				prop["minLength"] = n
+			}
 		}
 		if f.Max != nil {
-			prop["maxLength"] = int(*f.Max)
+			if n, ok := LengthBound(*f.Max, math.Floor); ok {
+				prop["maxLength"] = n
+			}
 		}
 		if f.Pattern != "" {
 			prop["pattern"] = f.Pattern

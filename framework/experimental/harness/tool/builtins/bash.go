@@ -121,6 +121,11 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 	if b.SandboxFn != nil {
 		cmd = b.SandboxFn(cmd)
 	}
+	// The timeout must end the command, not just sh: a backgrounded
+	// child holding the output pipe kept Run waiting for its whole
+	// life. Kill the process group, and bound Run's wait on the pipe.
+	killGroupOnCancel(cmd)
+	cmd.WaitDelay = 2 * time.Second
 
 	var out bytes.Buffer
 	cmd.Stdout = &cappedWriter{w: &out, max: 1 << 20}

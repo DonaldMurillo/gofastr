@@ -110,35 +110,10 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 		}
 	}
 
-	client := w.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: webFetchTimeout}
+	client, err := fetchClient(w.HTTPClient, w.AllowPrivateHosts)
+	if err != nil {
+		return errorResult(fmt.Sprintf("WebFetch: %v", err)), nil
 	}
-	// Re-validate every redirect target. We never relax this, a vetted
-	// public URL must not be able to 302 us into the metadata service or
-	// loopback, even when the test injects AllowPrivateHosts on the
-	// initial hop. We copy the client so we don't mutate a shared one.
-	safeClient := *client
-	// Dial-time SSRF guard. The CheckRedirect / preflight checks validate
-	// the host string and a *separate* resolution; the dialer re-resolves,
-	// so a DNS-rebinding host (public at preflight, internal at dial) would
-	// otherwise reach the internal IP. Reject the ACTUAL connected IP at
-	// connect time, this closes rebinding on the initial fetch and every
-	// redirect hop. Only installed when the client carries no custom
-	// transport (tests that inject httptest.Client keep their transport).
-	if safeClient.Transport == nil {
-		safeClient.Transport = webFetchTransport()
-	}
-	safeClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
-		}
-		if err := assertPublicHost(req.URL.Host); err != nil {
-			return fmt.Errorf("redirect into internal address blocked: %w", err)
-		}
-		return nil
-	}
-	client = &safeClient
 	reqCtx, cancel := context.WithTimeout(ctx, webFetchTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, args.URL, nil)
@@ -182,6 +157,55 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 // runs AFTER name resolution but BEFORE the connect completes, it
 // closes the DNS-rebinding TOCTOU that assertPublicHost (a separate,
 // earlier resolution) cannot. address is "ip:port".
+// fetchClient is a copy of client (or a default one) that re-validates
+// every redirect target and dials through the dial-time SSRF guard. We
+// copy the client so we don't mutate a shared one.
+//
+// The CheckRedirect / preflight checks validate the host string and a
+// *separate* resolution; the dialer re-resolves, so a DNS-rebinding
+// host (public at preflight, internal at dial) would otherwise reach
+// the internal IP. The guard rejects the ACTUAL connected IP at connect
+// time, on the initial fetch and every redirect hop. A host transport
+// that dials directly gets the guard on a clone; one whose dialer
+// cannot be swapped is refused. Only allowPrivate, the test seam that
+// reaches httptest servers on loopback, keeps a host transport as is.
+func fetchClient(client *http.Client, allowPrivate bool) (*http.Client, error) {
+	if client == nil {
+		client = &http.Client{Timeout: webFetchTimeout}
+	}
+	safeClient := *client
+	switch tr := safeClient.Transport.(type) {
+	case nil:
+		safeClient.Transport = webFetchTransport()
+	case *http.Transport:
+		if !allowPrivate {
+			guarded, ok := netguard.GuardPlainTransport(tr, "WebFetch")
+			if !ok {
+				return nil, errors.New("the HTTP client's transport has its own proxy or dialer, which the dial-time address check cannot reach")
+			}
+			safeClient.Transport = guarded
+		}
+	default:
+		if !allowPrivate {
+			return nil, fmt.Errorf("the HTTP client's transport %T cannot carry the dial-time address check; use a nil or *http.Transport", tr)
+		}
+	}
+	// Re-validate every redirect target. We never relax this, a vetted
+	// public URL must not be able to 302 us into the metadata service or
+	// loopback, even when the test injects AllowPrivateHosts on the
+	// initial hop.
+	safeClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if err := assertPublicHost(req.URL.Host); err != nil {
+			return fmt.Errorf("redirect into internal address blocked: %w", err)
+		}
+		return nil
+	}
+	return &safeClient, nil
+}
+
 // webFetchTransport is the default WebFetch transport: every connect runs
 // ssrfDialControl. It never routes through an environment proxy. Through
 // HTTP_PROXY the dial check would only see the proxy's address while the

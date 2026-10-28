@@ -248,3 +248,34 @@ func TestWebhookDropsOldestWhenQueueFull(t *testing.T) {
 		t.Fatal("Write blocked when queue full")
 	}
 }
+
+// A redirect is refused, not followed: a 307 replays the body and every
+// configured header (X-API-Key here) to whatever host it names
+// (2026-10-27 I5).
+func TestWebhookRefusesRedirects(t *testing.T) {
+	var leaked atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked.Add(1)
+	}))
+	defer other.Close()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	s := WebhookSink(srv.URL, WebhookOpts{BatchSize: 1, BatchInterval: time.Hour, Headers: map[string]string{"X-API-Key": "k"}})
+	_ = s.Write([]byte(`{"i":1}`))
+	deadline := time.Now().Add(2 * time.Second)
+	for hits.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	_ = s.Close()
+	if hits.Load() == 0 {
+		t.Fatal("the webhook never posted")
+	}
+	if n := leaked.Load(); n != 0 {
+		t.Fatalf("the redirect target got %d requests carrying the key and batch", n)
+	}
+}
