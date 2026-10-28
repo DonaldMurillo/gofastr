@@ -1,6 +1,6 @@
 package queue
 
-import "github.com/DonaldMurillo/gofastr/framework/datexport"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
 
 // The queue battery owns a physical table that lives OUTSIDE the framework
 // entity registry (it is created with raw DDL in db.go). Registering it here

@@ -22,6 +22,7 @@ package datexport
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -64,6 +65,12 @@ const (
 	// Tombstone on every row where Column = userID. Use for rows that must be
 	// retained (the audit trail) but whose user reference must be cut.
 	EraseAnonymize
+	// EraseRemoveMember keeps every row and takes the erased value out of
+	// Column, a TEXT column holding a JSON array of strings: a feature
+	// flag's user allow list is shared by many users, so the erasure
+	// removes the member, not the flag. Only rows that list the value
+	// change, and ScrubColumns and Tombstone are unused.
+	EraseRemoveMember
 )
 
 // IdentityKind selects which principal an eraser matches against. The default
@@ -102,7 +109,7 @@ const (
 //   - Column is the user-id column matched against the erased user's id
 //     (e.g. "user_id" for sessions, "id" for the user row, "actor_id" for an
 //     audit table). Table and Column are SafeIdent-checked before SQL.
-//   - Mode selects EraseDelete or EraseAnonymize.
+//   - Mode selects EraseDelete, EraseAnonymize or EraseRemoveMember.
 //   - ScrubColumns (EraseAnonymize only) are the columns overwritten with
 //     Tombstone. Each is SafeIdent-checked before SQL.
 //   - Tombstone (EraseAnonymize only) is the replacement written to every
@@ -116,6 +123,12 @@ const (
 //     identity tagged, such as battery/auth's token table ("magiclink:<email>",
 //     "pwreset:<user id>"), matches only with the tag; the bare value matches
 //     nothing and the rows survive the erasure. Empty binds the value as is.
+//   - Where narrows the match: a row is erased only when every listed
+//     column also equals its value. battery/auth's API token table keys
+//     an owner by (owner_kind, owner_id), so its eraser matches owner_id
+//     with owner_kind = "user" and leaves a service account that shares
+//     the id alone. Each column is SafeIdent-checked before SQL and must
+//     exist on the table; each value is a bound argument.
 type DataEraser struct {
 	Name         string
 	Source       string
@@ -126,6 +139,13 @@ type DataEraser struct {
 	Tombstone    string
 	Identity     IdentityKind
 	ValuePrefix  string
+	Where        []Equals
+}
+
+// Equals is one column = value condition of DataEraser.Where.
+type Equals struct {
+	Column string
+	Value  string
 }
 
 // DataIdentityResolver declares how the framework resolves a non-user-id
@@ -267,6 +287,7 @@ func cloneEraser(e DataEraser) *DataEraser {
 		Name: e.Name, Source: e.Source, Table: e.Table, Column: e.Column,
 		Mode: e.Mode, ScrubColumns: scrub, Tombstone: e.Tombstone,
 		Identity: e.Identity, ValuePrefix: e.ValuePrefix,
+		Where: slices.Clone(e.Where),
 	}
 }
 

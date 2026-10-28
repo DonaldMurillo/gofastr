@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 

@@ -14,6 +14,11 @@ type Document struct {
 	Source   string         `json:"source,omitempty"`
 	Text     string         `json:"text"`
 	Metadata map[string]any `json:"metadata,omitempty"`
+	// Owner is the user id the document belongs to, or empty for one
+	// that names nobody. Add copies it onto every chunk, and
+	// App.EraseUserData deletes the erased user's chunks from a
+	// PgVectorStore.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Chunk is a stored, embedded slice of a Document. Vec is owned by the
@@ -26,7 +31,9 @@ type Chunk struct {
 	Text     string         `json:"text"`
 	Offset   [2]int         `json:"offset"`
 	Metadata map[string]any `json:"metadata,omitempty"`
-	Vec      []float32      `json:"-"`
+	// Owner is the owning Document's Owner; Add sets it.
+	Owner string    `json:"owner,omitempty"`
+	Vec   []float32 `json:"-"`
 }
 
 // Hit is a single retrieval result. Reason describes which stage of

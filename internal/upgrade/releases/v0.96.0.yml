@@ -191,3 +191,28 @@ notes:
     breaking: true
     guidance: "A lowercase table name needs nothing. For a name like Jobs or app.Jobs, the first boot refuses to start and prints the statements to run, such as ALTER TABLE \"Jobs\" RENAME TO \"jobs\" (plus ALTER TABLE ... SET SCHEMA for a dotted name). Run them, then restart. Raw SQL a host writes against such a table uses the lowercase name."
     nodetect: "table names are configuration values, often read from env; the old table is found at boot, which prints the rename"
+  - change: "BREAKING - framework/datexport moved to core/datexport"
+    breaking: true
+    hits: edit
+    guidance: "Import github.com/DonaldMurillo/gofastr/core/datexport instead of framework/datexport; every name in the package is unchanged. The move lets core stores (A2A, feature flags, idempotency) register their own tables, since core never imports framework."
+    find:
+      imports:
+        - gofastr/framework/datexport
+  - change: "BREAKING for custom CRUD event outboxes - crud.EventOutbox declares AppendFor(ctx, ex, owner, eventType, data) in place of Append, so a staged event names its record's owner and an erasure of that user nulls its payload"
+    breaking: true
+    hits: edit
+    guidance: "The bundled outbox implements AppendFor already, so apps that pass outbox.New to crud need nothing. A custom EventOutbox renames Append to AppendFor and takes the owner id as its third argument; store it so App.EraseUserData can find the row."
+    find:
+      uses:
+        - gofastr/framework/crud.EventOutbox
+  - change: "BREAKING for outboxes built WithoutEnsureTable - the outbox table needs an owner column, owner TEXT NOT NULL DEFAULT ''"
+    breaking: true
+    hits: review
+    guidance: "An outbox that creates its own table adds the column on boot. A host that manages the table itself runs ALTER TABLE <table> ADD COLUMN owner TEXT NOT NULL DEFAULT '' before deploying, or every insert fails."
+    find:
+      uses:
+        - gofastr/framework/outbox.WithoutEnsureTable
+  - change: "Store tables gain an owner or principal column for user data erasure: idempotency keys (principal), search documents, pgvector chunks, outbound webhook deliveries and inbound webhook envelopes (owner)"
+    breaking: false
+    guidance: "Each store adds its column on boot, so nothing needs running. Rows written before the upgrade name nobody and are not erased with a user; set Document.Owner, use PublishFor and IngestConfig.Owner from now on."
+    nodetect: "the columns are added at boot by the stores themselves; nothing in an app's source spells the change"

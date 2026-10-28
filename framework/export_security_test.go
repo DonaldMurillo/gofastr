@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
@@ -47,4 +48,31 @@ func TestExportRestrictsExistingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	filepermtest.AssertOwnerOnly(t, dir, 0o700)
+}
+
+// A symlinked export dir is refused, and its target keeps its mode: the
+// chmod used to follow the link (2026-10-27 S43).
+func TestExportRefusesSymlinkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privilege on Windows")
+	}
+	app, _ := newExportTestApp(t)
+	base := t.TempDir()
+	target := filepath.Join(base, "shared")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "export")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ExportData(context.Background(), link); err == nil {
+		t.Fatal("ExportData through a symlinked dir succeeded")
+	}
+	if fi, err := os.Stat(target); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Fatalf("symlink target mode changed: %v %v", fi.Mode(), err)
+	}
 }

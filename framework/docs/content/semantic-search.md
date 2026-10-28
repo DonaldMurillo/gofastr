@@ -374,6 +374,14 @@ CREATE INDEX ON embed_chunks USING hnsw (embedding vector_cosine_ops);
 
 **No snapshot, no `Path`.** A Postgres table *is* the durable copy, so `PgVectorStore` deliberately does not implement the gob-snapshot capability. Pairing it with `Options.Path` fails closed at `Open` with an error; do not set `Path` with this store.
 
+**Erasure.** `Document.Owner` names the user a document belongs to, and
+`Index.Add` copies it onto every chunk (`Chunk.Owner`). `PgVectorStore`
+registers a data eraser, so `App.EraseUserData` deletes the erased user's
+chunks from the table. `FlatStore` does not: its chunks, its gob snapshot
+and its WAL are not reached by erasure, so remove an erased user's
+documents with `Index.Remove` yourself, or use `PgVectorStore` for
+per-user data.
+
 **Honest trade-off.** `FlatStore` brute-force-scans a memory slice (~3 ms / 100k chunks on M-class, no network hop). `PgVectorStore` pays a Postgres round-trip per query but gains durability, multi-replica sharing, and a growth path to ANN indexing. Use `FlatStore` until the in-process limitation bites; switch when it does.
 
 ## Limitations and follow-ups

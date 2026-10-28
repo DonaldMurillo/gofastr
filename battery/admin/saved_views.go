@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
@@ -76,7 +77,22 @@ func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedView
 			return nil, fmt.Errorf("ensure table: %w", err)
 		}
 	}
+	registerSavedViews(table)
 	return s, nil
+}
+
+// registerSavedViews declares the table to App.ExportData and
+// App.EraseUserData under its configured name. A user's saved views are
+// theirs alone, so an erasure deletes them in every tenant.
+func registerSavedViews(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: "admin_saved_views", Source: "admin", Table: table, PrimaryKey: "id",
+		Columns: []string{"id", "owner", "tenant", "entity", "name", "filter", "columns", "created_at"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "admin_saved_views", Source: "admin", Table: table,
+		Column: "owner", Mode: datexport.EraseDelete,
+	})
 }
 
 // savedViewCaller reads the caller the store acts for: the owner is

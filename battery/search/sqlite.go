@@ -38,11 +38,18 @@ import (
 // an actionable message naming the tag.
 type SQLiteFTS struct {
 	db          *sql.DB
-	quotedTable string // validated + quoted FTS5 table identifier
+	table       string // validated FTS5 table identifier
+	quotedTable string // quoted table
 
 	prefixTable  string // unquoted name of the unstemmed companion table
 	quotedPrefix string // quoted prefixTable
 	quotedVocab  string // quoted vocabulary view earlier releases made; EnsureSchema drops it
+
+	// matchTable and matchPrefix name the two tables, without a schema,
+	// where FTS5 takes a table as a value (the left of MATCH, bm25's
+	// argument): "aux"."docs" there reads as table aux, column docs.
+	matchTable  string
+	matchPrefix string
 }
 
 // SQLiteFTSConfig configures a SQLiteFTS. The zero value is usable after
@@ -77,8 +84,13 @@ func NewSQLiteFTS(db *sql.DB, cfg SQLiteFTSConfig) (*SQLiteFTS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("search: invalid table name %q: %w", table, err)
 	}
+	registerOwnerEraser(safe, safe+"_prefix")
+	_, bare := sqliteSplit(safe)
 	return &SQLiteFTS{
+		matchTable:   query.QuoteFolded(bare),
+		matchPrefix:  query.QuoteFolded(bare + "_prefix"),
 		db:           db,
+		table:        safe,
 		quotedTable:  query.QuoteFolded(safe),
 		prefixTable:  safe + "_prefix",
 		quotedPrefix: query.QuoteFolded(safe + "_prefix"),
@@ -94,8 +106,8 @@ func NewSQLiteFTS(db *sql.DB, cfg SQLiteFTSConfig) (*SQLiteFTS, error) {
 // actionable message naming the tag.
 func (s *SQLiteFTS) EnsureSchema(ctx context.Context) error {
 	createTable := fmt.Sprintf(
-		`CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, text, tokenize='porter unicode61')`,
-		s.quotedTable,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(%s, tokenize='porter unicode61')`,
+		s.quotedTable, sqliteMainColumns,
 	)
 	if _, err := s.db.ExecContext(ctx, createTable); err != nil {
 		if strings.Contains(err.Error(), fts5MissingSubstr) {
@@ -107,7 +119,82 @@ func (s *SQLiteFTS) EnsureSchema(ctx context.Context) error {
 		}
 		return fmt.Errorf("search: create fts5 table: %w", err)
 	}
+	if err := s.ensureOwnerColumn(ctx); err != nil {
+		return err
+	}
 	return s.ensurePrefixSchema(ctx)
+}
+
+// sqliteMainColumns is the main table's column list. FTS5 cannot ALTER
+// a column in, so ensureOwnerColumn rebuilds a table an earlier release
+// created without owner.
+const sqliteMainColumns = `id UNINDEXED, type UNINDEXED, fields UNINDEXED, owner UNINDEXED, text`
+
+// sqliteSplit splits a validated table name into the attached schema it
+// names ("aux" for aux.docs, "" for none) and the bare name. SQLite takes
+// the schema before a pragma or a catalog and refuses it on a RENAME TO.
+func sqliteSplit(table string) (schema, name string) {
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		return table[:i], table[i+1:]
+	}
+	return "", table
+}
+
+// sqliteCatalog is the sqlite_master that lists table's schema.
+func sqliteCatalog(table string) string {
+	if schema, _ := sqliteSplit(table); schema != "" {
+		return query.QuoteFolded(schema) + ".sqlite_master"
+	}
+	return "sqlite_master"
+}
+
+// hasColumn reports whether table has col.
+func hasColumn(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, table, col string) (bool, error) {
+	var n int
+	var err error
+	if schema, name := sqliteSplit(table); schema != "" {
+		err = q.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info(?, ?) WHERE name = ?`, name, schema, col).Scan(&n)
+	} else {
+		err = q.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, table, col).Scan(&n)
+	}
+	return n > 0, err
+}
+
+// ensureOwnerColumn rebuilds a main table that predates the owner
+// column, keeping every rowid, so the prefix companion stays aligned.
+// Documents indexed before it name nobody.
+func (s *SQLiteFTS) ensureOwnerColumn(ctx context.Context) error {
+	has, err := hasColumn(ctx, s.db, s.table, "owner")
+	if err != nil {
+		return fmt.Errorf("search: probe owner column: %w", err)
+	}
+	if has {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("search: begin owner migration: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck — safe after Commit
+	tmp := query.QuoteFolded(s.table + "_owner_tmp")
+	_, bare := sqliteSplit(s.table)
+	for _, stmt := range []string{
+		fmt.Sprintf(`CREATE VIRTUAL TABLE %s USING fts5(%s, tokenize='porter unicode61')`, tmp, sqliteMainColumns),
+		fmt.Sprintf(`INSERT INTO %s (rowid, id, type, fields, owner, text) SELECT rowid, id, type, fields, '', text FROM %s`, tmp, s.quotedTable),
+		fmt.Sprintf(`DROP TABLE %s`, s.quotedTable),
+		// The new name stays in tmp's schema and takes no qualifier.
+		fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, tmp, query.QuoteFolded(bare)),
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("search: add owner column: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("search: commit owner migration: %w", err)
+	}
+	return nil
 }
 
 // ensurePrefixSchema creates the unstemmed companion index and its
@@ -123,20 +210,44 @@ func (s *SQLiteFTS) ensurePrefixSchema(ctx context.Context) error {
 	// SQLite names have no case: Docs opens the docs_prefix an earlier
 	// boot made, and a case-sensitive probe would backfill it again.
 	var existed int
+	_, barePrefix := sqliteSplit(s.prefixTable)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT count(*) FROM sqlite_master WHERE name = ? COLLATE NOCASE`, s.prefixTable,
+		`SELECT count(*) FROM `+sqliteCatalog(s.prefixTable)+` WHERE name = ? COLLATE NOCASE`, barePrefix,
 	).Scan(&existed); err != nil {
 		return fmt.Errorf("search: probe prefix table: %w", err)
+	}
+	// A companion an earlier release made has no owner column, so an
+	// erasure could not reach its rows: drop it and backfill a new one.
+	stale := false
+	if existed > 0 {
+		has, err := hasColumn(ctx, tx, s.prefixTable, "owner")
+		if err != nil {
+			return fmt.Errorf("search: probe prefix owner column: %w", err)
+		}
+		stale = !has
 	}
 	// remove_diacritics 0 keeps the index in the spelling the sanitized
 	// query uses ("café", not "cafe"). The vocabulary view earlier
 	// releases created over the companion is no longer read; drop it.
-	stmts := []string{
-		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(text, content='', contentless_delete=1, tokenize='unicode61 remove_diacritics 0')`, s.quotedPrefix),
-		fmt.Sprintf(`DROP TABLE IF EXISTS %s`, s.quotedVocab),
+	// contentless_unindexed keeps the owner value, so an erasure can
+	// match the companion's rows by it.
+	var stmts []string
+	if stale {
+		stmts = append(stmts, fmt.Sprintf(`DROP TABLE %s`, s.quotedPrefix))
 	}
-	if existed == 0 {
-		stmts = append(stmts, fmt.Sprintf(`INSERT INTO %s (rowid, text) SELECT rowid, text FROM %s`, s.quotedPrefix, s.quotedTable))
+	if existed == 0 || stale {
+		// SQLite (3.53) leaves the _content shadow table of a dropped
+		// contentless_unindexed table behind, and the CREATE below then
+		// fails on it. It holds owner values only; clear the orphan.
+		stmts = append(stmts, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, query.QuoteFolded(s.prefixTable+"_content")))
+	}
+	stmts = append(stmts,
+		//gofastr:allow(GOFASTR1415) the prefix companion is the main index's token twin; NewSQLiteFTS registers its owner eraser beside the main table's, and like the main index it is rebuilt, not exported
+		fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(owner UNINDEXED, text, content='', contentless_delete=1, contentless_unindexed=1, tokenize='unicode61 remove_diacritics 0')`, s.quotedPrefix),
+		fmt.Sprintf(`DROP TABLE IF EXISTS %s`, s.quotedVocab),
+	)
+	if existed == 0 || stale {
+		stmts = append(stmts, fmt.Sprintf(`INSERT INTO %s (rowid, owner, text) SELECT rowid, owner, text FROM %s`, s.quotedPrefix, s.quotedTable))
 	}
 	for _, stmt := range stmts {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
@@ -178,8 +289,8 @@ func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 		return fmt.Errorf("search: delete old %q: %w", doc.ID, err)
 	}
 
-	insStmt := fmt.Sprintf(`INSERT INTO %s (id, type, fields, text) VALUES (?, ?, ?, ?)`, s.quotedTable)
-	res, err := tx.ExecContext(ctx, insStmt, doc.ID, doc.Type, fieldsArg, doc.Text)
+	insStmt := fmt.Sprintf(`INSERT INTO %s (id, type, fields, owner, text) VALUES (?, ?, ?, ?, ?)`, s.quotedTable)
+	res, err := tx.ExecContext(ctx, insStmt, doc.ID, doc.Type, fieldsArg, doc.Owner, doc.Text)
 	if err != nil {
 		return fmt.Errorf("search: index %q: %w", doc.ID, err)
 	}
@@ -187,8 +298,8 @@ func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 	if err != nil {
 		return fmt.Errorf("search: index %q: %w", doc.ID, err)
 	}
-	prefixStmt := fmt.Sprintf(`INSERT INTO %s (rowid, text) VALUES (?, ?)`, s.quotedPrefix)
-	if _, err := tx.ExecContext(ctx, prefixStmt, rowid, doc.Text); err != nil {
+	prefixStmt := fmt.Sprintf(`INSERT INTO %s (rowid, owner, text) VALUES (?, ?, ?)`, s.quotedPrefix)
+	if _, err := tx.ExecContext(ctx, prefixStmt, rowid, doc.Owner, doc.Text); err != nil {
 		return fmt.Errorf("search: prefix index %q: %w", doc.ID, err)
 	}
 
@@ -248,10 +359,10 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	// starts counts, however many there are.
 	rest, last := terms[:len(terms)-1], terms[len(terms)-1]
 	args := []any{fts5Match(terms), fts5Match([]string{last})}
-	prefixLeg := fmt.Sprintf(`SELECT rowid AS rid, -bm25(%[1]s) AS score FROM %[1]s WHERE %[1]s MATCH ?`, s.quotedPrefix)
+	prefixLeg := fmt.Sprintf(`SELECT rowid AS rid, -bm25(%[2]s) AS score FROM %[1]s WHERE %[2]s MATCH ?`, s.quotedPrefix, s.matchPrefix)
 	if len(rest) > 0 {
 		args = append(args, quoteTerms(rest))
-		prefixLeg += fmt.Sprintf(` AND rowid IN (SELECT rowid FROM %[1]s WHERE %[1]s MATCH ?)`, s.quotedTable)
+		prefixLeg += fmt.Sprintf(` AND rowid IN (SELECT rowid FROM %[1]s WHERE %[2]s MATCH ?)`, s.quotedTable, s.matchTable)
 	}
 	var where strings.Builder
 	where.WriteString("TRUE")
@@ -278,16 +389,16 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	// each leg scores -bm25 and a row both legs match sums the two, as
 	// Postgres sums ts_rank over tsv and tsv_prefix. Callers sort
 	// descending consistently with the other backends.
-	stmt := fmt.Sprintf(`SELECT m.id, m.type, m.text, m.fields, h.score
+	stmt := fmt.Sprintf(`SELECT m.id, m.type, m.text, m.fields, COALESCE(m.owner, ''), h.score
 FROM (SELECT rid, SUM(score) AS score FROM (
-	SELECT rowid AS rid, -bm25(%[1]s) AS score FROM %[1]s WHERE %[1]s MATCH ?
+	SELECT rowid AS rid, -bm25(%[5]s) AS score FROM %[1]s WHERE %[5]s MATCH ?
 	UNION ALL
 	%[2]s
 ) GROUP BY rid) AS h
 JOIN %[1]s AS m ON m.rowid = h.rid
 WHERE %[3]s
 ORDER BY h.score DESC, m.id ASC%[4]s`,
-		s.quotedTable, prefixLeg, where.String(), paging.String())
+		s.quotedTable, prefixLeg, where.String(), paging.String(), s.matchTable)
 
 	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
@@ -323,7 +434,7 @@ func (s *SQLiteFTS) searchAll(ctx context.Context, q Query) ([]Result, error) {
 		paging.WriteString(" OFFSET ?")
 	}
 
-	stmt := fmt.Sprintf(`SELECT id, type, text, fields, 0 AS score
+	stmt := fmt.Sprintf(`SELECT id, type, text, fields, COALESCE(owner, ''), 0 AS score
 FROM %s
 WHERE %s
 ORDER BY id ASC%s`,

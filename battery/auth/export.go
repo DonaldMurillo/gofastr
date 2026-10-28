@@ -3,7 +3,7 @@ package auth
 import (
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // The auth battery owns physical tables that live OUTSIDE the framework entity

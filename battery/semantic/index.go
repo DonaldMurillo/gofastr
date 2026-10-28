@@ -216,6 +216,10 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		if err != nil {
 			return &chunkError{docID: doc.ID, err: err}
 		}
+		// Set here, not in the chunker, so a host Chunker cannot drop it.
+		for k := range cs {
+			cs[k].Owner = doc.Owner
+		}
 		chunks = append(chunks, cs...)
 	}
 	ids := make([]string, len(docs))

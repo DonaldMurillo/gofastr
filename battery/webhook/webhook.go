@@ -130,6 +130,10 @@ type Delivery struct {
 	NextAttemptAt time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// Owner is the user id PublishFor queued the delivery for, or empty.
+	// App.EraseUserData deletes an erased user's deliveries from a
+	// SQLStore, sent or not.
+	Owner string
 
 	// claimedUntil is the lease the claim that produced this value wrote
 	// (zero when no shipped store claimed it). The shipped stores fence a
@@ -452,8 +456,17 @@ func (m *Manager) Subscribers(ctx context.Context) ([]Subscriber, error) {
 	return m.store.ListSubscribers(ctx)
 }
 
-// Publish fans the event out to every active matching subscriber.
+// Publish fans the event out to every active matching subscriber. The
+// deliveries name no user; use PublishFor when the payload carries one
+// user's data.
 func (m *Manager) Publish(ctx context.Context, event string, payload []byte) (int, error) {
+	return m.PublishFor(ctx, "", event, payload)
+}
+
+// PublishFor is Publish for a payload that belongs to one user: each
+// delivery records owner, so erasing that user deletes the deliveries
+// with their copy of the data.
+func (m *Manager) PublishFor(ctx context.Context, owner, event string, payload []byte) (int, error) {
 	if err := validateEventName(event); err != nil {
 		return 0, err
 	}
@@ -486,6 +499,7 @@ func (m *Manager) Publish(ctx context.Context, event string, payload []byte) (in
 			NextAttemptAt: now,
 			CreatedAt:     now,
 			UpdatedAt:     now,
+			Owner:         owner,
 		}
 		if err := m.store.AddDelivery(ctx, d); err != nil {
 			return queued, err

@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -257,6 +259,7 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 			return nil, fmt.Errorf("outbox: ensure table: %w", err)
 		}
 	}
+	o.registerData()
 	return o, nil
 }
 
@@ -297,6 +300,7 @@ func (o *Outbox) ensureTable() error {
 		id              TEXT PRIMARY KEY,
 		type            TEXT NOT NULL,
 		payload         TEXT,
+		owner           TEXT NOT NULL DEFAULT '',
 		status          TEXT NOT NULL DEFAULT 'pending',
 		attempts        INTEGER NOT NULL DEFAULT 0,
 		last_error      TEXT,
@@ -306,6 +310,9 @@ func (o *Outbox) ensureTable() error {
 		claimed_until   %s
 	)`, o.qt(), tsType, tsType, tsType, tsType)
 	if _, err := o.db.Exec(stmt); err != nil {
+		return err
+	}
+	if err := o.addOwnerColumn(); err != nil {
 		return err
 	}
 	// Index serves the parent completion scan: mark dispatched only
@@ -323,6 +330,40 @@ func (o *Outbox) ensureTable() error {
 		return err
 	}
 	return o.ensureDeliveryTable(tsType)
+}
+
+// addOwnerColumn adds the owner column to a table created before it
+// existed. Postgres says ADD COLUMN IF NOT EXISTS; SQLite has no such
+// clause, so its duplicate-column error is the column already there.
+func (o *Outbox) addOwnerColumn() error {
+	stmt := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN owner TEXT NOT NULL DEFAULT ''`, o.qt())
+	if o.dialect == dialectPostgres {
+		stmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, o.qt())
+	}
+	_, err := o.db.Exec(stmt)
+	if err != nil && o.dialect != dialectPostgres && strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
+// registerData declares the parent table to App.ExportData and
+// App.EraseUserData under its configured name. A row staged with
+// AppendFor names the user its payload belongs to (CRUD stages the
+// record's owner); an erasure keeps the row, so delivery bookkeeping
+// stays whole, and writes JSON null over its payload, so neither a
+// pending delivery nor a Replay hands the user's record to a consumer.
+// A row staged with Append names nobody and is left alone.
+func (o *Outbox) registerData() {
+	datexport.Register(datexport.DataExporter{
+		Name: "event_outbox", Source: "outbox", Table: o.table, PrimaryKey: "id",
+		Columns: []string{"id", "type", "payload", "owner", "status", "attempts", "last_error",
+			"created_at", "dispatched_at", "next_attempt_at", "claimed_until"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "event_outbox", Source: "outbox", Table: o.table, Column: "owner",
+		Mode: datexport.EraseAnonymize, ScrubColumns: []string{"payload"}, Tombstone: "null",
+	})
 }
 
 // ensureDeliveryTable creates the per-consumer delivery child table and
@@ -370,8 +411,16 @@ func (o *Outbox) ensureDeliveryTable(tsType string) error {
 // (it satisfies [db.Executor]) so the row commits or rolls back with the
 // business write. data is JSON-marshalled into Payload. Returns the new
 // row's ID, which becomes [event.Event].ID on delivery for consumer
-// dedup.
+// dedup. A payload that holds one user's data goes through AppendFor
+// instead, so erasing that user reaches it.
 func (o *Outbox) Append(ctx context.Context, ex db.Executor, eventType string, data any) (string, error) {
+	return o.AppendFor(ctx, ex, "", eventType, data)
+}
+
+// AppendFor is Append for a payload that belongs to the user with id
+// owner. App.EraseUserData writes JSON null over the payload of every
+// row staged for the erased user. An empty owner is Append.
+func (o *Outbox) AppendFor(ctx context.Context, ex db.Executor, owner, eventType string, data any) (string, error) {
 	id := newID()
 	payload, err := json.Marshal(data)
 	if err != nil {
@@ -384,9 +433,9 @@ func (o *Outbox) Append(ctx context.Context, ex db.Executor, eventType string, d
 	}
 	_, err = ex.ExecContext(ctx,
 		fmt.Sprintf(`INSERT INTO %s
-			(id, type, payload, status, attempts, created_at)
-			VALUES ($1, $2, $3, 'pending', 0, $4)`, o.qt()),
-		id, eventType, body, o.now().UTC(),
+			(id, type, payload, owner, status, attempts, created_at)
+			VALUES ($1, $2, $3, $4, 'pending', 0, $5)`, o.qt()),
+		id, eventType, body, owner, o.now().UTC(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("outbox: append: %w", err)

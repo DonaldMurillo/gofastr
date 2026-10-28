@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
@@ -66,7 +67,32 @@ func NewSQLStore(db *sql.DB, opts ...SQLStoreOption) (*SQLStore, error) {
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("a2a: ensure tables: %w", err)
 	}
+	s.registerData()
 	return s, nil
+}
+
+// registerData declares both tables to App.ExportData and
+// App.EraseUserData under their configured names. The owner column is
+// the caller's user id (framework a2aOwnerPrincipal), and every task
+// and push config holds that caller's messages, artifacts and callback
+// URLs, so an erasure deletes them.
+func (s *SQLStore) registerData() {
+	datexport.Register(datexport.DataExporter{
+		Name: "a2a_tasks", Source: "a2a", Table: s.taskTable, PrimaryKey: "id",
+		Columns: []string{"id", "owner", "context_id", "skill_id", "state", "status_ts", "version", "task_json", "created_at", "updated_at"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "a2a_tasks", Source: "a2a", Table: s.taskTable,
+		Column: "owner", Mode: datexport.EraseDelete,
+	})
+	datexport.Register(datexport.DataExporter{
+		Name: "a2a_push_configs", Source: "a2a", Table: s.pushTable, PrimaryKey: "task_id,id",
+		Columns: []string{"task_id", "id", "owner", "config_json", "created_at"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "a2a_push_configs", Source: "a2a", Table: s.pushTable,
+		Column: "owner", Mode: datexport.EraseDelete,
+	})
 }
 
 // detectSQLDialect maps the shared query.IsPostgres probe onto the local

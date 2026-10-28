@@ -65,6 +65,10 @@ type InboundEnvelope struct {
 	LastError  string
 	ReceivedAt time.Time
 	UpdatedAt  time.Time
+	// Owner is the local user IngestConfig.Owner mapped the event to, or
+	// empty. App.EraseUserData deletes an erased user's envelopes from a
+	// SQLInboundStore.
+	Owner string
 }
 
 // InboundStore persists inbound envelopes. Implementations return (nil, nil)
@@ -174,6 +178,11 @@ type IngestConfig struct {
 	// DedupeKeyFunc extracts a provider idempotency key (e.g.
 	// X-GitHub-Delivery). Empty return = no dedupe for that request.
 	DedupeKeyFunc func(r *http.Request, body []byte) string
+	// Owner maps a verified event to the local user it concerns (a
+	// provider account id looked up in the app's own table, say). The
+	// envelope records it, so erasing that user deletes the payload.
+	// Nil or an empty return names nobody.
+	Owner func(r *http.Request, body []byte) string
 	// Logger receives operational warnings the response can't carry (e.g. a
 	// best-effort store update failing after an enqueue error). Default:
 	// log.Printf. Set to a no-op func to silence.
@@ -223,6 +232,9 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
+		// The ack names an envelope IngestConfig.Owner may attribute to a
+		// user, so no cache keeps it.
+		w.Header().Set("Cache-Control", "no-store")
 
 		// Cap the body before reading so an oversize payload can't exhaust
 		// memory. MaxBytesReader surfaces *http.MaxBytesError on overflow.
@@ -277,6 +289,9 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			Status:     InboundStatusReceived,
 			ReceivedAt: time.Now().UTC(),
 			UpdatedAt:  time.Now().UTC(),
+		}
+		if cfg.Owner != nil {
+			env.Owner = cfg.Owner(r, body)
 		}
 		if cfg.Queue == nil {
 			env.DedupeKey = dedupeKey
@@ -424,12 +439,18 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 			}
 		}
 
-		if err := fn(ctx, *env); err != nil {
+		err = fn(ctx, *env)
+		// The outcome is written on a detached, bounded context: a
+		// shutdown that lands as fn finishes must not leave the envelope
+		// "processing" for work that already happened.
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboundSettleTimeout)
+		defer cancel()
+		if err != nil {
 			failed := *env
 			failed.Status = InboundStatusFailed
 			failed.LastError = err.Error()
 			failed.UpdatedAt = time.Now().UTC()
-			if uerr := store.UpdateEnvelope(ctx, failed); uerr != nil {
+			if uerr := store.UpdateEnvelope(settleCtx, failed); uerr != nil {
 				// The business handler already failed; the queue retries because
 				// we return err below. But if THIS write is lost the envelope is
 				// stranded "processing" with no LastError and a stale attempt
@@ -443,12 +464,16 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		done := *env
 		done.Status = InboundStatusProcessed
 		done.UpdatedAt = time.Now().UTC()
-		if err := store.UpdateEnvelope(ctx, done); err != nil {
+		if err := store.UpdateEnvelope(settleCtx, done); err != nil {
 			return fmt.Errorf("webhook: mark envelope processed: %w", err)
 		}
 		return nil
 	}
 }
+
+// inboundSettleTimeout bounds the envelope's outcome write after the
+// business handler returns.
+const inboundSettleTimeout = 10 * time.Second
 
 // ProcessInboundOption configures ProcessInbound's operational logging.
 type ProcessInboundOption func(*processInboundOpts)

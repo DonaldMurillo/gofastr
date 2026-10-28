@@ -481,7 +481,7 @@ type fakeOutbox struct {
 	nudged   int
 }
 
-func (f *fakeOutbox) Append(_ context.Context, _ DBExecutor, eventType string, _ any) (string, error) {
+func (f *fakeOutbox) AppendFor(_ context.Context, _ DBExecutor, _, eventType string, _ any) (string, error) {
 	f.appended = append(f.appended, eventType)
 	return "1", nil
 }

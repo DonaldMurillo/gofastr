@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -101,7 +102,30 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 			return nil, fmt.Errorf("bulk store: ensure schema: %w", err)
 		}
 	}
+	registerBulkTables()
 	return s, nil
+}
+
+// registerBulkTables declares the snapshot tables to App.ExportData and
+// App.EraseUserData. A job is the record of an admin action, so an
+// erasure keeps it and tombstones its creator: RunBulkJob's Principal
+// then cannot rebuild the erased user's context, and a queued run of
+// theirs stops instead of acting for them. The items hold record ids
+// only, no user, so they are exported and left alone.
+func registerBulkTables() {
+	datexport.Register(datexport.DataExporter{
+		Name: bulkJobsTable, Source: "entityui", Table: bulkJobsTable, PrimaryKey: "id",
+		Columns: []string{"id", "entity", "action", "count", "creator", "tenant", "filter_hash", "run_key", "status",
+			"enqueued", "claim_token", "lease_until", "done", "skipped", "failed", "created_at", "finished_at"},
+	})
+	datexport.Register(datexport.DataExporter{
+		Name: bulkItemsTable, Source: "entityui", Table: bulkItemsTable, PrimaryKey: "job_id,record_id",
+		Columns: []string{"job_id", "record_id", "seq", "outcome"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: bulkJobsTable, Source: "entityui", Table: bulkJobsTable,
+		Column: "creator", Mode: datexport.EraseAnonymize, ScrubColumns: []string{"creator"},
+	})
 }
 
 // bulkJobColumns is what Job and Unenqueued read, in scanJob's order.

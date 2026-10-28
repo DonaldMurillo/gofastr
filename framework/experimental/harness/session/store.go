@@ -7,6 +7,8 @@
 // disk.
 package session
 
+//gofastr:allow-file(GOFASTR1415) the harness event log is the operator's own SQLite file, never the app database App.EraseUserData and App.ExportData open
+
 import (
 	"context"
 	"encoding/json"

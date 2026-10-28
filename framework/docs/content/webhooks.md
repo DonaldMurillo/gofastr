@@ -44,6 +44,16 @@ queued, err := mgr.Publish(ctx, "orders.created", []byte(`{"id":42}`))
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.
 
+When the payload carries one user's data, publish with `PublishFor`:
+
+```go
+queued, err := mgr.PublishFor(ctx, userID, "orders.created", payload)
+```
+
+Each delivery records `Owner`, and the `SQLStore` registers a data
+eraser, so `App.EraseUserData` deletes that user's deliveries, sent or
+not. `Publish` is `PublishFor` with no owner.
+
 Event names (and the glob patterns `Subscribe` accepts) are validated:
 empty names are refused, and so is any character from the unsafe
 control set — C0, DEL, the C1 block (U+0080–U+009F, whose 8-bit CSI/OSC
@@ -390,6 +400,14 @@ q.RegisterHandler("webhook.inbound", webhook.ProcessInbound(store, func(ctx cont
 `IngestConfig.Queue` is optional. Leave it nil to persist-and-forget
 (the envelope is still acked 202); set it to fan processing off the
 request path.
+
+`IngestConfig.Owner` maps a verified event to the local user it
+concerns, for example by looking a provider account id up in the app's
+own table. The envelope stores the result in `InboundEnvelope.Owner`,
+and `SQLInboundStore` registers a data eraser, so `App.EraseUserData`
+deletes that user's payloads. Nil, or an empty return, names nobody.
+The handler runs only after the signature checks out. The 202 ack sets
+`Cache-Control: no-store`.
 
 ### Request flow
 

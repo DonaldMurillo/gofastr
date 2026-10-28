@@ -1,6 +1,6 @@
 package auth
 
-import "github.com/DonaldMurillo/gofastr/framework/datexport"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
 
 // The auth battery's right-to-be-forgotten registrations, the erase-plane
 // mirror of export.go. Registering from init() means any app that imports
@@ -39,13 +39,17 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 //     re-created or reset the erased account. Matching the bare email, as
 //     the first registration did, reached no row the battery writes.
 //
-// API tokens (auth_api_tokens) carry owner_kind and owner_id. They are not
-// registered: a single-column eraser cannot add the owner_kind = 'user'
-// predicate, and an owner_id match alone would also hit a service account
-// that shares the id. A token of an erased user is inert anyway, since
-// TokenMiddleware resolves its owner through UserStore.FindByID and the
-// user row is gone. A host that wants the rows deleted registers its own
-// eraser for its table.
+// The SQL stores built outside the manager register themselves from their
+// constructors, under the table they were configured with:
+//
+//   - API tokens (auth_api_tokens, apitoken_sql.go): EraseDelete by
+//     owner_id with Where owner_kind = "user", so a service account that
+//     shares the id keeps its tokens. TokenMiddleware resolves an owner by
+//     id alone, so a surviving token would sign a new account given the
+//     same id straight in.
+//   - OAuth provider tokens (oauth_tokens, oauth_token_store.go):
+//     EraseDelete by user_id. A surviving refresh token still mints access
+//     to the user's provider account.
 //
 // The audit trail is deliberately NOT registered as an eraser. It is the
 // framework's table (audit_log), host-configurable via AuditConfig.Table, and

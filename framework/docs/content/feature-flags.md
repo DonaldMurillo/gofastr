@@ -111,6 +111,11 @@ Two stores are bundled:
   pin the dialect when the runtime probe is unreliable. Also implements
   `MutableStore` and `All(ctx)` for admin tooling.
 
+The SQL store registers its table with `App.ExportData` and
+`App.EraseUserData`. Erasing a user removes their id from every flag's
+`users` list and keeps the flag; the `tenants` list names tenants, not
+users, and is left alone. See [data export](data-export.md).
+
 For Redis or other backends, wrap `featureflag.Store`. Only `Get` is
 required; add `MutableStore` for admin-edit support.
 
