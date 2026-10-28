@@ -542,9 +542,14 @@ Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`), one per permission a save grants or revokes. A
 caller may grant or revoke only a permission its own roles hold (or the
 wildcard), and assign only roles it holds or whose permissions its own
-roles imply; a refusal is a 403 with a `grant-refused`,
-`revoke-refused` or `assign-roles-refused` row, so a narrower admin
-tier cannot mint a role above its own. A grid save is checked whole
+roles imply. The assign check covers every role that changes: the roles
+added and the roles the new set takes away, so a tier cannot strip a
+role it could not grant; a role the account keeps is no change. A role
+the policy grants nothing, or does not know, is checked by name
+(`auth.RequireRole`), so only a caller holding it or the wildcard
+assigns or removes it. An unknown account is a 400. A refusal is a 403
+with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
+row, so a narrower admin tier cannot mint a role above its own. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
 it is applied.
 

@@ -373,20 +373,81 @@ func TestAssignKeepsPaddedUserID(t *testing.T) {
 func TestAssignRequiresCallerTier(t *testing.T) {
 	r := newRBACEnv(t, Config{AdminRole: "support"})
 	support := roleUser{id: "sup-1", roles: []string{"support"}}
-	id := r.editor.GetID()
-	if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": "support"}); rr.Code != http.StatusNoContent {
+	fresh, err := r.mgr.UserStore().CreateUser(context.Background(), "fresh@example.com", "$2a$10$hash", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := fresh.GetID()
+	// A new account holds the default "user" role, which it keeps.
+	if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": "user,support"}); rr.Code != http.StatusNoContent {
 		t.Fatalf("a held role = %d", rr.Code)
 	}
-	for _, roles := range []any{"support,admin", []any{"support", "editor"}} {
+	for _, roles := range []any{"user,support,admin", []any{"user", "support", "editor"}} {
 		if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": roles}); rr.Code != http.StatusForbidden {
 			t.Errorf("SECURITY: support assigned %v: %d", roles, rr.Code)
 		}
 	}
-	if got := r.rolesOf(id); !slices.Equal(got, []string{"support"}) {
-		t.Fatalf("SECURITY: roles = %v, want [support]", got)
+	if got := r.rolesOf(id); !slices.Equal(got, []string{"user", "support"}) {
+		t.Fatalf("SECURITY: roles = %v, want [user support]", got)
 	}
 	if ops := r.auditOps("access"); !slices.Equal(ops, []string{"assign-roles", "assign-roles-refused", "assign-roles-refused"}) {
 		t.Fatalf("audit ops = %v", ops)
+	}
+}
+
+// wildSupport passes a support-role gate and holds the wildcard.
+var wildSupport = roleUser{id: "top-1", roles: []string{"support", "admin"}}
+
+// A lower tier cannot take away a role it could not grant: stripping the
+// editor's role, or demoting the top admin to its own tier, is refused
+// and changes nothing (2026-10-27 A4).
+func TestAssignRefusesStrippingHigherRoles(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	support := roleUser{id: "sup-1", roles: []string{"support"}}
+	top, _, err := r.mgr.UserStore().FindByEmail(context.Background(), "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		id, roles string
+		want      []string
+	}{{r.editor.GetID(), "", []string{"editor"}}, {top.GetID(), "support", []string{"admin"}}} {
+		if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": c.id, "roles": c.roles}); rr.Code != http.StatusForbidden {
+			t.Errorf("SECURITY: support set %s to %q: %d", c.id, c.roles, rr.Code)
+		}
+		if got := r.rolesOf(c.id); !slices.Equal(got, c.want) {
+			t.Errorf("SECURITY: roles of %s = %v, want %v", c.id, got, c.want)
+		}
+	}
+	if rr := rpc(r.as(wildSupport), "/admin/rbac/_assign", map[string]any{"user_id": r.editor.GetID(), "roles": ""}); rr.Code != http.StatusNoContent {
+		t.Errorf("the top admin clearing the editor's roles = %d", rr.Code)
+	}
+	if rr := rpc(r.as(wildSupport), "/admin/rbac/_assign", map[string]any{"user_id": "nobody", "roles": "support"}); rr.Code != http.StatusBadRequest {
+		t.Errorf("an unknown account = %d, want 400", rr.Code)
+	}
+}
+
+// A role the policy grants nothing, or does not know, is checked by name
+// (auth.RequireRole), so only a caller holding it or the wildcard may
+// assign it (2026-10-27 A21).
+func TestAssignRefusesPermissionlessRole(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	support := roleUser{id: "sup-1", roles: []string{"support"}}
+	_ = r.policy.Grant("auditor")
+	fresh, err := r.mgr.UserStore().CreateUser(context.Background(), "fresh@example.com", "$2a$10$hash", []string{"support"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"billing-admin", "auditor"} {
+		if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": fresh.GetID(), "roles": "support," + role}); rr.Code != http.StatusForbidden {
+			t.Errorf("SECURITY: support assigned %q: %d", role, rr.Code)
+		}
+	}
+	if got := r.rolesOf(fresh.GetID()); !slices.Equal(got, []string{"support"}) {
+		t.Errorf("SECURITY: roles = %v, want [support]", got)
+	}
+	if rr := rpc(r.as(wildSupport), "/admin/rbac/_assign", map[string]any{"user_id": fresh.GetID(), "roles": "support,billing-admin"}); rr.Code != http.StatusNoContent {
+		t.Errorf("the wildcard admin assigning a by-name role = %d", rr.Code)
 	}
 }
 

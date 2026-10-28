@@ -2242,6 +2242,13 @@ few lines, and link the PR or the docs page for the rest.
   its stored copy and listed its old and new values, though the record
   screen refuses it. Such a record now shows by its id alone. See
   [admin](framework/docs/content/admin.md).
+- **A lower admin tier can no longer strip or self-assign roles above
+  it.** User roles checked only the roles a save sent, so a support-tier
+  admin could clear a superadmin's roles, and a role the policy grants
+  nothing (one checked by name with `auth.RequireRole`) passed the tier
+  check for anyone. The check now covers every role a save adds or takes
+  away, and a permissionless role needs the caller to hold it or the
+  wildcard. See [admin](framework/docs/content/admin.md).
 - **The relay keeps the app's headers and the vendor's hints apart.**
   It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
   on every fetch, to the vendor; every `X-Gofastr-*` header is now
