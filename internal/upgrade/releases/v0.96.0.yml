@@ -1,6 +1,13 @@
 version: v0.96.0
 title: unreleased
 notes:
+  - change: "BREAKING - resources/list now filters by WithResourceGate, so a caller a resource's gate refuses never sees its URI, name or description in the listing; previously the gate protected only the read, not the metadata. Pagination now walks the post-filter set."
+    breaking: true
+    hits: review
+    guidance: "A host that put sensitive metadata on a resource and expected only the contents to be hidden must move that metadata out of the resource (into a resource template, a tool, or a prompt) or drop the gate. A host that relied on gated resources still appearing in the list to signal their existence also needs to adapt."
+    find:
+      uses:
+        - gofastr/core/mcp.WithResourceGate
   - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
     breaking: true
     hits: review

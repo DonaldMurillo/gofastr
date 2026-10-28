@@ -224,11 +224,11 @@ Options:
 | `WithResourceGate(gate)` | Refuses unauthorized reads; see below. |
 
 `WithResourceGate` runs before the contents func on every read and refuses the
-read on error. It protects the contents, not the listing: the resource's uri,
-name, and description still appear in `resources/list`, which has no
-per-caller filter and pages the whole registry. That is deliberate, because a
-concrete resource still has a read to refuse. If the metadata itself must stay
-hidden, do not register it as a resource.
+read on error. Unlike `WithResourceTemplateGate`, a resource gate protects
+**both** the listing and the contents: a caller the gate refuses does not see
+the resource in `resources/list` at all, and pagination walks the post-filter
+set. The resource's uri, name, and description are the disclosure, the same
+way a template's uriTemplate and description are.
 
 <!-- gofastr:compile
 import (
@@ -277,11 +277,11 @@ one capability for both). Errors: empty `uriTemplate` or `name`, duplicate
 Options: `WithResourceTemplateDescription`, `WithResourceTemplateMeta`
 (verbatim `_meta`), and `WithResourceTemplateGate`.
 
-The template gate behaves differently from the resource gate, because a
-template has no read path of its own. The listing entry is the whole
-disclosure, so `WithResourceTemplateGate` filters `resources/templates/list`
-per caller, the same contract prompts use: a caller the gate refuses never
-sees the template.
+Both template and resource gates behave the same: the listing entry is the
+whole disclosure for a template (its uriTemplate and description), and the
+metadata is the disclosure for a resource (its uri, name and description), so
+either gate filters its list per caller. A caller the gate refuses never
+sees the template or resource.
 
 ## Registering a prompt
 
@@ -330,12 +330,12 @@ Options: `WithPromptDescription`, `WithPromptArguments(args...)`, and
 
 ## Gating
 
-The gating property, stated plainly: a gated tool, prompt, or resource
-template is hidden from its list method for a caller the gate refuses, and
-refused on access. A gated resource keeps its metadata listed and refuses the
-read. In both shapes, pagination pages the post-gate set, so page shapes
-cannot betray a hidden item: it never appears on a page, never shortens one,
-and never bends the cursor offsets that would otherwise count it.
+The gating property, stated plainly: a gated tool, prompt, resource,
+or resource template is hidden from its list method for a caller the gate
+refuses, and refused on access. In all cases pagination pages the post-gate
+set, so page shapes cannot betray a hidden item: it never appears on a page,
+never shortens one, and never bends the cursor offsets that would otherwise
+count it.
 
 A gate is `func(ctx context.Context) error`. It receives the request context,
 auth/tenant enriched, carrying the inbound `*http.Request`
@@ -795,10 +795,11 @@ the merged state. The convention and its boundaries:
   `tools/list`.** `Gated` wraps the handler, so it only reaches `tools/call`;
   the listing still shows the tool and its full `inputSchema`. Use the
   `WithToolGate` registration option, which gates both.
-- **Expecting `WithResourceGate` to hide the resource.** It protects the
-  contents. The uri, name, and description stay in `resources/list`, which has
-  no per-caller filter. A resource whose metadata is itself sensitive is the
-  wrong shape; do not register it.
+- **Expecting `WithResourceGate` to hide the resource from `resources/list`.**
+  It does: the gate runs before the page is cut, so a caller it refuses never sees
+  the resource's URI, name or description. The gate also refuses the read, so
+  both listing and contents are protected. This is the same contract
+  `WithResourceTemplateGate`, `WithToolGate`, and `WithPromptGate` use.
 - **Reusing a cursor across list methods.** The minting method is inside the
   signed payload, so `tools/list`'s cursor is invalid-params everywhere else.
   Mint a fresh walk per method.
