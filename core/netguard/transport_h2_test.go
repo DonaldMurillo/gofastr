@@ -83,6 +83,23 @@ func TestGuardPlainTakesDefaultClone(t *testing.T) {
 	}
 }
 
+// A net.Dialer the caller built is a custom dialer even though its
+// DialContext shares the stock method's code: swapping it for the guard
+// would drop its Resolver, Control and LocalAddr (split-horizon DNS, a
+// pinned egress interface). Only the DefaultTransport's own dialer is
+// stock (2026-10-28 review of the B64 fix).
+func TestGuardPlainRefusesOwnNetDialer(t *testing.T) {
+	for name, d := range map[string]*net.Dialer{
+		"resolver":  {Resolver: &net.Resolver{PreferGo: true}},
+		"localaddr": {LocalAddr: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5)}},
+		"plain":     {},
+	} {
+		if _, ok := GuardPlainTransport(&http.Transport{DialContext: d.DialContext}, "test"); ok {
+			t.Errorf("%s: a caller's own net.Dialer was swapped for the guard", name)
+		}
+	}
+}
+
 // The clone of a plain transport dials through the guard: a loopback
 // address is refused at connect time.
 func TestGuardPlainBlocksLoopback(t *testing.T) {
