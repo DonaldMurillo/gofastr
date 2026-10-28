@@ -466,7 +466,9 @@ func (c *Conn) eventPump(ctx context.Context, ch <-chan control.EventEnvelope) {
 			}
 			f := frame{Frame: "event", Body: body}
 			out, _ := json.Marshal(f)
-			c.writeText(out)
+			if err := c.writeFrame(opcodeText, out); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -495,6 +497,12 @@ const wsPayloadChunk = 32 << 10
 // half-sent frame holds its buffer (and its socket's goroutines) for
 // the life of the TCP connection.
 const wsFrameReadTimeout = 60 * time.Second
+
+// wsFrameWriteTimeout bounds one frame write, for the same reason: a
+// client that stops reading would otherwise block the writer, and the
+// event pump behind it, for the life of the connection. A var so a test
+// can shrink it.
+var wsFrameWriteTimeout = 10 * time.Second
 
 func (c *Conn) readFrame() (op byte, payload []byte, err error) {
 	b0, err := c.reader.ReadByte()
@@ -588,6 +596,9 @@ func (c *Conn) writeFrame(op byte, payload []byte) error {
 		var ext [8]byte
 		binary.BigEndian.PutUint64(ext[:], uint64(len(payload)))
 		header = append(header, ext[:]...)
+	}
+	if err := c.netConn.SetWriteDeadline(time.Now().Add(wsFrameWriteTimeout)); err != nil {
+		return err
 	}
 	if _, err := c.writer.Write(header); err != nil {
 		return err

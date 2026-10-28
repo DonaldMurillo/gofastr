@@ -207,6 +207,7 @@ func (h *devHold) liveReload(w http.ResponseWriter, r *http.Request) {
 	for {
 		phase, _, gen, changed := h.state()
 		if phase != holdBuilding && gen != sent {
+			//gofastr:allow(nowritedeadline) release closes the server (h.srv.Close), which ends a blocked write
 			_, _ = fmt.Fprintf(w, "event: ready\ndata: %s%d\n\n", h.idPrefix, gen)
 			flusher.Flush()
 			sent = gen

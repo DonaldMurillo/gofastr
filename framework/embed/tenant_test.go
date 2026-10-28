@@ -155,3 +155,79 @@ func TestEmptyTenantIsNotAnError(t *testing.T) {
 		t.Fatalf("tenant = %q, want empty", p.tenantID)
 	}
 }
+
+// An embed stream outlives the lookup that ran at entry. The middleware
+// installs a re-check that repeats both lookups, so a long-lived handler sees
+// the subject's current tenant and stops once the subject no longer resolves
+// (2026-10-27 bug bash, unrechecked).
+func TestRecheckRepeatsTheSubjectLookups(t *testing.T) {
+	tid, gone, userless := "tenant-a", false, false
+	h := testHost(t, func(c *Config) {
+		c.Resolve = func(_ context.Context, subject string) (any, error) {
+			if gone {
+				return nil, errors.New("subject deleted")
+			}
+			if userless {
+				return nil, nil
+			}
+			return subject, nil
+		}
+		c.ResolveTenant = func(context.Context, string) (string, error) { return tid, nil }
+	})
+	grant := grantFor(t, h)
+
+	var held context.Context
+	req := httptest.NewRequest(http.MethodGet, "/embed/dashboard", nil)
+	req.Header.Set(GrantHeader, grant)
+	h.Middleware()(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		held = r.Context()
+	})).ServeHTTP(httptest.NewRecorder(), req)
+	if held == nil {
+		t.Fatal("handler did not run")
+	}
+
+	tid = "tenant-b"
+	fresh, ok := handler.RecheckPrincipal(held)
+	if !ok || tenant.GetTenantID(fresh) != "tenant-b" {
+		t.Fatalf("re-check = (%q, %v), want the subject's current tenant", tenant.GetTenantID(fresh), ok)
+	}
+	tid = ""
+	if fresh, ok = handler.RecheckPrincipal(held); !ok || tenant.GetTenantID(fresh) != "" {
+		t.Fatalf("re-check kept tenant %q for a subject that has none now", tenant.GetTenantID(fresh))
+	}
+	userless = true
+	if _, ok := handler.RecheckPrincipal(held); ok {
+		t.Fatal("re-check passed for a subject that now resolves to no user")
+	}
+	gone = true
+	if _, ok := handler.RecheckPrincipal(held); ok {
+		t.Fatal("re-check passed for a subject that no longer resolves")
+	}
+}
+
+// With only a tenant resolver, a failing lookup on re-check still closes.
+func TestRecheckFailsOnTenantLookupError(t *testing.T) {
+	var down bool
+	h := testHost(t, func(c *Config) {
+		c.ResolveTenant = func(context.Context, string) (string, error) {
+			if down {
+				return "", errors.New("tenant lookup down")
+			}
+			return "tenant-a", nil
+		}
+	})
+	grant := grantFor(t, h)
+	var held context.Context
+	req := httptest.NewRequest(http.MethodGet, "/embed/dashboard", nil)
+	req.Header.Set(GrantHeader, grant)
+	h.Middleware()(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		held = r.Context()
+	})).ServeHTTP(httptest.NewRecorder(), req)
+	if held == nil {
+		t.Fatal("handler did not run")
+	}
+	down = true
+	if _, ok := handler.RecheckPrincipal(held); ok {
+		t.Fatal("re-check passed while the tenant lookup failed")
+	}
+}

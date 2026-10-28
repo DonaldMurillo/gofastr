@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
@@ -286,7 +287,11 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 	// Replay backlog (anything published while no GET was attached).
 	// Defang each stored event so a poisoned payload cannot inject a
 	// second SSE frame or a fake event:/id:/retry: directive on replay.
+	// Each write runs under a fresh deadline, so a client that stops
+	// reading cannot park this handler for good.
+	rc := http.NewResponseController(w)
 	for _, ev := range sess.drain() {
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 		_, _ = w.Write(sanitizeSSEData(ev))
 		flusher.Flush()
 	}
@@ -304,7 +309,15 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 			// Displaced by an EvictOldest admission: stop streaming.
 			return
 		case <-ticker.C:
-			_, _ = fmt.Fprint(w, ": ping\n\n")
+			// The bearer was verified at connect; a token revoked or
+			// expired since must end the stream, not just fresh requests.
+			if _, ok := verifyBearer(h.Encoder, h.Revocations, r.Header.Get("Authorization")); !ok {
+				return
+			}
+			_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
@@ -388,6 +401,9 @@ func verifyBearer(enc *auth.Encoder, rl *auth.RevocationList, header string) (au
 
 // timeNow is replaced in tests; production uses time.Now().
 var timeNow = realTimeNow
+
+// sseWriteTimeout bounds one write on the GET stream.
+const sseWriteTimeout = 10 * time.Second
 
 // keepaliveTicker is split out to ease testing.
 var keepaliveTicker = realKeepaliveTicker

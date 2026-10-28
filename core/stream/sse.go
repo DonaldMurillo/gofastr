@@ -1,24 +1,36 @@
 package stream
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // SSEWriter writes Server-Sent Events to an http.ResponseWriter.
 //
 // It automatically sets the required headers (Content-Type, Cache-Control,
 // Connection) on first write and flushes after every event.
+//
+// Every write arms a fresh write deadline (sseWriteTimeout) through
+// http.ResponseController, so a client that stops reading cannot block
+// the handler forever: an SSE server runs with WriteTimeout 0, and
+// nothing else bounds the write. A writer chain with no deadline support
+// writes without one.
 type SSEWriter struct {
 	w      http.ResponseWriter
 	mu     sync.Mutex
 	init   bool // true after headers have been written
 	flush  http.Flusher
 	nextID string // queued id to emit before the next event
+	rc     *http.ResponseController
 }
+
+// sseWriteTimeout bounds one SSEWriter write and its flush.
+const sseWriteTimeout = 10 * time.Second
 
 // NewSSEWriter creates an SSEWriter wrapping w.
 // It panics if w does not implement http.Flusher.
@@ -30,6 +42,7 @@ func NewSSEWriter(w http.ResponseWriter) *SSEWriter {
 	return &SSEWriter{
 		w:     w,
 		flush: flush,
+		rc:    http.NewResponseController(w),
 	}
 }
 
@@ -47,7 +60,32 @@ func (s *SSEWriter) ensureHeaders() {
 
 // Flush sends any buffered data to the client immediately.
 func (s *SSEWriter) Flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.armDeadline() == nil {
+		s.flush.Flush()
+	}
+}
+
+// armDeadline sets a fresh write deadline for the next write. A chain
+// with no deadline support is no error; any other failure is, since the
+// write would then run unbounded. Caller holds s.mu.
+func (s *SSEWriter) armDeadline() error {
+	if err := s.rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	return nil
+}
+
+// send writes one encoded event under a fresh deadline and flushes it.
+// Caller holds s.mu.
+func (s *SSEWriter) send(b string) error {
+	if err := s.armDeadline(); err != nil {
+		return err
+	}
+	_, err := s.w.Write([]byte(b))
 	s.flush.Flush()
+	return err
 }
 
 // SetRetry writes the "retry:" field, telling the client how many
@@ -67,8 +105,7 @@ func (s *SSEWriter) SetRetry(seconds int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureHeaders()
-	fmt.Fprintf(s.w, "retry: %d\n\n", retryMS)
-	s.flush.Flush()
+	_ = s.send(fmt.Sprintf("retry: %d\n\n", retryMS))
 }
 
 // SetID queues an "id:" field to be emitted before the next event.
@@ -120,9 +157,7 @@ func (s *SSEWriter) WriteEvent(event, data string) error {
 	}
 	b.WriteByte('\n') // blank line terminates event
 
-	_, err := s.w.Write([]byte(b.String()))
-	s.flush.Flush()
-	return err
+	return s.send(b.String())
 }
 
 // WriteData writes an anonymous SSE event (type defaults to "message"):
@@ -152,9 +187,7 @@ func (s *SSEWriter) WriteData(data string) error {
 	}
 	b.WriteByte('\n')
 
-	_, err := s.w.Write([]byte(b.String()))
-	s.flush.Flush()
-	return err
+	return s.send(b.String())
 }
 
 // scrubSSEDataLines strips CR and NUL bytes from a multi-line data
@@ -195,9 +228,7 @@ func (s *SSEWriter) WriteComment(comment string) error {
 	b.WriteString(comment)
 	b.WriteString("\n\n")
 
-	_, err := s.w.Write([]byte(b.String()))
-	s.flush.Flush()
-	return err
+	return s.send(b.String())
 }
 
 // stripSSEControlChars truncates at the first CR, LF or NUL: those

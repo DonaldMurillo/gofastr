@@ -33,6 +33,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -395,6 +396,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+	// SSEWriter arms a fresh write deadline on every event, so a
+	// client that stops reading cannot park this handler for good.
+	sse := stream.NewSSEWriter(w)
 	// Re-verify the token for the life of the stream. handle() verified
 	// it once at request time, but the loop below holds the stream open
 	// long after; Revoke(jti) must reach an open stream, not just fresh
@@ -426,8 +430,10 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", env.ID, env.Kind, body)
-			flusher.Flush()
+			sse.SetID(strconv.FormatUint(env.ID, 10))
+			if err := sse.WriteEvent(env.Kind, string(body)); err != nil {
+				return
+			}
 		}
 	}
 }

@@ -245,37 +245,26 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				defer cancel()
 			}
 
-			// The tenant, if the app can name one for this subject. Installed
-			// from a server-side lookup keyed on the grant's subject, never
-			// from anything the request carried, which is what makes a stolen
-			// grant unable to choose its own tenant.
-			if h.resolveTenant != nil && g.Subject != "" {
-				tid, err := h.resolveTenant(ctx, g.Subject)
-				if err != nil {
-					// Fail closed, for the same reason the subject resolver
-					// does: continuing without a tenant would either error
-					// deep in CRUD or, worse, run untenanted.
-					i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
-					return
-				}
-				if tid != "" {
-					ctx = handler.SetTenant(ctx, tid)
-					ctx = tenant.SetTenantID(ctx, tid)
-				}
+			// The tenant and the user, from server-side lookups keyed on the
+			// grant's subject. Either lookup failing fails closed: continuing
+			// without a tenant would either error deep in CRUD or, worse, run
+			// untenanted, and continuing anonymously would downgrade an
+			// authenticated embed into a public one without saying so.
+			ctx, hasUser, err := h.installSubject(ctx, g.Subject)
+			if err != nil {
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+				return
 			}
-
-			if h.resolve != nil && g.Subject != "" {
-				user, err := h.resolve(ctx, g.Subject)
-				if err != nil {
-					// The subject no longer resolves. Fail closed: continuing
-					// anonymously would downgrade an authenticated embed into a
-					// public one without saying so.
-					i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
-					return
-				}
-				if !IsNilValue(user) {
-					ctx = handler.SetUser(ctx, user)
-				}
+			// A stream or long poll outlives these lookups as much as it
+			// outlives the grant. Install a re-check that repeats them, so a
+			// held handler sees the subject's current tenant and closes once
+			// the subject no longer resolves (handler.RecheckPrincipal).
+			if g.Subject != "" && (h.resolve != nil || h.resolveTenant != nil) {
+				subject := g.Subject
+				ctx = handler.WithPrincipalCheck(ctx, func(c context.Context) (context.Context, bool) {
+					fresh, stillUser, err := h.installSubject(c, subject)
+					return fresh, err == nil && stillUser == hasUser
+				})
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -335,6 +324,42 @@ func (h *Host) RequireScope(scope string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// installSubject installs the tenant and user the app's resolvers name for
+// subject, clearing both first so a re-check never keeps a value the lookup
+// no longer returns. It reports whether a user was installed. The tenant comes
+// from a server-side lookup keyed on the subject, never from anything the
+// request carried, which is what makes a stolen grant unable to choose its own
+// tenant.
+func (h *Host) installSubject(ctx context.Context, subject string) (context.Context, bool, error) {
+	ctx = handler.SetUser(ctx, nil)
+	ctx = handler.SetTenant(ctx, nil)
+	ctx = tenant.SetTenantID(ctx, "")
+	if subject == "" {
+		return ctx, false, nil
+	}
+	if h.resolveTenant != nil {
+		tid, err := h.resolveTenant(ctx, subject)
+		if err != nil {
+			return ctx, false, err
+		}
+		if tid != "" {
+			ctx = handler.SetTenant(ctx, tid)
+			ctx = tenant.SetTenantID(ctx, tid)
+		}
+	}
+	if h.resolve == nil {
+		return ctx, false, nil
+	}
+	user, err := h.resolve(ctx, subject)
+	if err != nil {
+		return ctx, false, err
+	}
+	if IsNilValue(user) {
+		return ctx, false, nil
+	}
+	return handler.SetUser(ctx, user), true, nil
 }
 
 // misordered answers a request that proves Middleware is installed inside an

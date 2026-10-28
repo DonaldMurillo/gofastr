@@ -1413,7 +1413,7 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 		return // routing reject: the snapshot is already terminal
 	}
 	s.startRun(r, t, rn, h)
-	seen, unsettled := s.forwardEvents(st, rn, ch, r.Context(), seat, 0)
+	seen, unsettled := s.forwardEvents(st, rn, ch, r, owner, seat, 0)
 	if !unsettled {
 		return
 	}
@@ -1424,7 +1424,7 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 	// announcing it again. Follow the store from what was sent, as
 	// SubscribeToTask does, so the stream ends on the settled state.
 	snap.Version = max(seen, snap.Version)
-	s.pollEvents(st, owner, snap, r.Context(), seat)
+	s.pollEvents(st, r, owner, snap, seat)
 }
 
 // forwardEvents relays bus events to the stream until the task settles,
@@ -1435,7 +1435,8 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 // unsettled reports a run that ended with the stream still open: its
 // handler returned without a final event, so the task moved on without
 // it (another replica resumed it). seen is the last version sent.
-func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx context.Context, seat *streamSeat, floor int64) (seen int64, unsettled bool) {
+func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, r *http.Request, owner string, seat *streamSeat, floor int64) (seen int64, unsettled bool) {
+	ctx := r.Context()
 	keepAlive := time.NewTicker(s.keepAlive)
 	defer keepAlive.Stop()
 	seen = floor
@@ -1443,6 +1444,9 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx con
 	relay := func(be busEvent) bool {
 		if be.version <= floor {
 			return false
+		}
+		if !s.callerHeld(r, owner) {
+			return true
 		}
 		if err := st.send(be.ev); err != nil {
 			return true
@@ -1480,11 +1484,37 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx con
 				}
 			}
 		case <-keepAlive.C:
+			if !s.callerHeld(r, owner) {
+				return
+			}
 			if err := st.keepAlive(); err != nil {
 				return
 			}
 		}
 	}
+}
+
+// callerHeld reports whether a fresh request with r's credentials would
+// still resolve to owner. A stream resolves its caller once, at connect,
+// and then outlives that answer: re-establish the principal
+// (handler.RecheckPrincipal) and re-run Owner on the refreshed context, so a
+// revoked session or a deleted user ends the stream at the next event or
+// keep-alive instead of when the client leaves.
+//
+// A panicking Owner counts as a refusal: the stream ends, the process
+// does not.
+func (s *Server) callerHeld(r *http.Request, owner string) (held bool) {
+	defer func() {
+		if recover() != nil {
+			held = false
+		}
+	}()
+	fresh, ok := handler.RecheckPrincipal(r.Context())
+	if !ok {
+		return false
+	}
+	got, ok := s.owner(r.WithContext(fresh))
+	return ok && got == owner
 }
 
 // ---- GetTask / ListTasks / CancelTask / SubscribeToTask ---------------
@@ -1763,7 +1793,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		return
 	}
 	if rn != nil {
-		seen, unsettled := s.forwardEvents(st, rn, ch, r.Context(), seat, rec.Version)
+		seen, unsettled := s.forwardEvents(st, rn, ch, r, owner, seat, rec.Version)
 		if !unsettled {
 			return
 		}
@@ -1780,15 +1810,15 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	// between polls are coalesced into the next snapshot — a replica
 	// boundary is exactly where per-event fidelity would require a
 	// shared bus, which a SQL store cannot give.
-	s.pollEvents(st, owner, rec, r.Context(), seat)
+	s.pollEvents(st, r, owner, rec, seat)
 }
 
 // pollEvents serves the polling fallback. Its store reads run under the
 // request context, cut further when the seat is evicted, so a hung
 // store read ends with the stream instead of pinning the seat after
 // the client has gone.
-func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx context.Context, seat *streamSeat) {
-	ctx, cancel := context.WithCancel(ctx)
+func (s *Server) pollEvents(st *sseStream, r *http.Request, owner string, rec *TaskRecord, seat *streamSeat) {
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
 		select {
@@ -1811,6 +1841,9 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 		case <-ctx.Done():
 			return
 		case <-keepAlive.C:
+			if !s.callerHeld(r, owner) {
+				return
+			}
 			if err := st.keepAlive(); err != nil {
 				return
 			}
@@ -1838,6 +1871,9 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 				continue
 			}
 			last = cur.Version
+			if !s.callerHeld(r, owner) {
+				return
+			}
 			snap := cloneTask(cur.Task)
 			if err := st.send(StreamResponse{Task: &snap}); err != nil {
 				return

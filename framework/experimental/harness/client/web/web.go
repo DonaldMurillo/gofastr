@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -152,6 +153,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering if proxied
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+	// SSEWriter arms a fresh write deadline on every event, so a
+	// client that stops reading cannot park this handler for good.
+	sse := stream.NewSSEWriter(w)
 	for {
 		select {
 		case <-ctx.Done():
@@ -167,8 +171,10 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", env.ID, env.Kind, body)
-			flusher.Flush()
+			sse.SetID(strconv.FormatUint(env.ID, 10))
+			if err := sse.WriteEvent(env.Kind, string(body)); err != nil {
+				return
+			}
 		}
 	}
 }

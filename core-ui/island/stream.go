@@ -149,6 +149,20 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 		}
 	}()
 
+	// held re-establishes the viewer and re-runs the topic gate against the
+	// refreshed context. AuthorizeTopic answered for the viewer at connect;
+	// one whose access to a joined topic was removed since must leave that
+	// roster and stop receiving its pushes, so the stream closes and the
+	// reconnect meets the gate again. With no check and no hook installed
+	// this is a no-op.
+	held := func() bool {
+		fresh, ok := handler.RecheckPrincipal(reqCtx)
+		if !ok {
+			return false
+		}
+		return len(m.filterAuthorizedTopics(fresh, topics)) == len(topics)
+	}
+
 	heartbeat := time.NewTicker(m.sseHeartbeat)
 	defer heartbeat.Stop()
 	bound := time.NewTimer(m.sseStreamBound)
@@ -166,11 +180,10 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 		case update := <-ch:
 			// The updates pushed to this stream are rendered for its viewer.
 			// Re-establish that viewer before each one (and on the heartbeat
-			// below): a session revoked mid-stream closes the stream at the
-			// next push rather than at the stream bound. See
-			// handler.RecheckPrincipal; with no check installed this is a
-			// no-op.
-			if _, ok := handler.RecheckPrincipal(reqCtx); !ok {
+			// below): a session revoked mid-stream, or a topic it may no
+			// longer join, closes the stream at the next push rather than at
+			// the stream bound.
+			if !held() {
 				return
 			}
 			payload := ssePayload{
@@ -186,7 +199,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 				return
 			}
 		case <-heartbeat.C:
-			if _, ok := handler.RecheckPrincipal(reqCtx); !ok {
+			if !held() {
 				return
 			}
 			// Keepalive comment: keeps intermediaries from idle-killing the
