@@ -2237,6 +2237,11 @@ few lines, and link the PR or the docs page for the rest.
   Modules pages and their posts now answer 403 to a caller with a tenant,
   and the sidebar, palette and dashboard leave them out. See
   [admin](framework/docs/content/admin.md).
+- **The admin's audit page and activity respect owner scope.** On an
+  entity with an `OwnerField`, they named another owner's record from
+  its stored copy and listed its old and new values, though the record
+  screen refuses it. Such a record now shows by its id alone. See
+  [admin](framework/docs/content/admin.md).
 - **The relay keeps the app's headers and the vendor's hints apart.**
   It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
   on every fetch, to the vendor; every `X-Gofastr-*` header is now

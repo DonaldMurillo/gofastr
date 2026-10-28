@@ -369,7 +369,12 @@ a link to that screen; a deleted or purged one, unlinked, by the title
 in the row's stored copy, the way the audit page names it, else by the
 singular name alone. A delete row names what was deleted even after a
 restore brings the record back. An edit's line lists what it changed
-under it, as the audit page's Changes column does. A bulk run's summary
+under it, as the audit page's Changes column does. On an entity with an
+`OwnerField`, both pages name a record and list its values only when
+the caller could read it: its stored copy names the caller as owner,
+the live record reads under the caller's owner scope, or the request
+allows cross-owner reads (`owner.AllowCrossOwner`). Another owner's
+record shows by its id alone, with no title and no changes. A bulk run's summary
 row reads "**ada** deleted 2 payments in bulk": a delete or a restore by
 its own verb, a set or a move as an update, counting the records it went
 through on; an app's own bulk action, and a run that went through on

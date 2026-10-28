@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
@@ -330,7 +331,7 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	now := time.Now()
 	data := make([]ui.Row, len(rows))
 	for i, r := range rows {
-		before, after := auditSides(r)
+		before, after := b.scopedSides(ctx, r)
 		record, changes := b.auditRecord(ctx, r, before, after)
 		data[i] = ui.Row{ID: r.ID, Cells: map[string]render.HTML{
 			"time":    agoCell(ctx, now, r.CreatedAt),
@@ -527,6 +528,34 @@ func auditSides(r auditRow) (before, after map[string]any) {
 		return nil, nil
 	}
 	return d.Before, d.After
+}
+
+// scopedSides is auditSides for a caller who may see them: nil, nil
+// when r's entity is owner-scoped and the caller's owner scope hides the
+// record. Elevation never lifts owner scope, so the trail names a record
+// and lists its values only when the caller's own read would: its stored
+// copy names the caller as owner, or the live record reads under the
+// caller's scope. A hidden record keeps its id and loses its title and
+// changes.
+func (b *Battery) scopedSides(ctx context.Context, r auditRow) (before, after map[string]any) {
+	before, after = auditSides(r)
+	e, ok := b.exposedNamed(r.Entity)
+	if !ok || b.ui == nil || e.Config.Scope == nil || e.Config.Scope.OwnerField == "" || owner.IsCrossOwner(ctx) {
+		return before, after
+	}
+	if me, ok := owner.Get(ctx); ok {
+		for _, side := range []map[string]any{before, after} {
+			if v, ok := side[e.Config.Scope.OwnerField]; ok && v != nil && fmt.Sprint(v) == fmt.Sprint(me) {
+				return before, after
+			}
+		}
+	}
+	if r.RecordID != "" && !framework.AuditDigestID(r.RecordID) {
+		if _, ok := b.ui.RecordTitle(b.elevate(ctx), e.GetName(), r.RecordID); ok {
+			return before, after
+		}
+	}
+	return nil, nil
 }
 
 // agoCell is a time as the activity feed says it, "2h ago", with the
