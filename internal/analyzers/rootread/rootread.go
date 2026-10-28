@@ -51,8 +51,14 @@
 //     its Dir — resolution on the chain (core/upload Save resolves
 //     the storage root and the destination's parent before creating,
 //     and its error-path os.Remove calls read as resolved too);
-//   - calls to symlink-named guards (EnsureNoSymlinkPath): resolution
-//     by another name;
+//   - a call to a VERIFIED guard on the read's own path, its Dir, or a
+//     local bound to either (pathflow.SymlinkGuards: a body that runs
+//     EvalSymlinks, an O_NOFOLLOW open, an Lstat consulted with
+//     ModeSymlink, or another verified guard; cross-package guards
+//     travel as a symlinkGuard fact). Until bug bash 2026-10-27 I13 any call whose NAME
+//     contained "symlink" gated every read in the function, whatever
+//     its body did and whatever path it got; fixture g and a.go's
+//     guardNamedSymlink pin that;
 //   - O_NOFOLLOW in a read-only OpenFile's flags, and an Lstat of the
 //     Remove target consulted with ModeSymlink: the leaf-following
 //     postures (directory components remain the caller's problem, but
@@ -84,26 +90,35 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "rootread",
-	Doc:  "forbids reads under a root whose containment is lexical only: prefer os.OpenRoot (kernel-enforced containment), or resolve with filepath.EvalSymlinks, or an O_NOFOLLOW/Lstat leaf check",
-	Run:  run,
+	Name:      "rootread",
+	Doc:       "forbids reads under a root whose containment is lexical only: prefer os.OpenRoot (kernel-enforced containment), or resolve with filepath.EvalSymlinks, or an O_NOFOLLOW/Lstat leaf check",
+	Run:       run,
+	FactTypes: []analysis.Fact{new(symlinkGuard)},
 }
+
+// symlinkGuard marks a function whose body resolves or refuses
+// symlinks (pathflow.ResolvesSymlinks), so a caller in another package
+// is judged on the guard's body, not its name.
+type symlinkGuard struct{}
+
+func (*symlinkGuard) AFact()         {}
+func (*symlinkGuard) String() string { return "symlinkGuard" }
 
 const readMsg = "read under a root with lexical containment only: a symlinked directory component escapes the root undetected; resolve with filepath.EvalSymlinks, or an O_NOFOLLOW/Lstat leaf check, before reading"
 
 func run(pass *analysis.Pass) (any, error) {
 	pkgFuncs := pathflow.CollectFuncs(pass)
+	isGuard := pathflow.SymlinkGuards(pass, func() analysis.Fact { return new(symlinkGuard) })
 	for _, fn := range pathflow.FuncsWithBodies(pass) {
-		checkFunc(pass, fn, pkgFuncs)
+		checkFunc(pass, fn, pkgFuncs, isGuard)
 	}
 	return nil, nil
 }
 
-func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast.FuncDecl) {
+func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc) {
 	bound := pathflow.Bindings(pass, fn.Body)
 	params := pathflow.ParamObjects(pass, fn)
 	evals := pathflow.EvalSymlinkCalls(pass, fn.Body)
-	symlinkGuard := pathflow.CallsSymlinkNamed(pass, fn.Body)
 	httpServing := hasHTTPParam(pass, fn)
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -128,9 +143,10 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 				pathArg = pathflow.ArgAt(call, 0)
 			}
 		}
-		if pathArg != nil && !symlinkGuard &&
+		if pathArg != nil &&
+			!pathflow.GuardsPath(pass, fn.Body, pathArg, bound, isGuard) &&
 			!pathflow.SymlinkResolved(pass, pathArg, bound, evals) &&
-			pathflow.JoinsUnderRooty(pass, pathArg, bound, params, pkgFuncs) {
+			pathflow.JoinsUnderRooty(pass, pathArg, bound, params, pkgFuncs, isGuard) {
 			pass.Reportf(call.Pos(), "%s", readMsg)
 		}
 
@@ -139,7 +155,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		// only with a caller-controlled name.
 		if recv, name := fsReadSink(pass, call); recv != nil && httpServing &&
 			callerSuppliedFS(pass, recv, bound, params) &&
-			!symlinkGuard &&
+			!pathflow.GuardsPath(pass, fn.Body, name, bound, isGuard) &&
 			pathflow.MentionsParam(pass, name, bound, params, 0) {
 			pass.Reportf(call.Pos(), "%s", readMsg)
 		}

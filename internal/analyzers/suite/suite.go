@@ -55,6 +55,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/floatnum"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/keytrim"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxenvelope"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/layoutfunc"
@@ -69,14 +70,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverlog"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/resolvedial"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootread"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootwrite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/secretcompare"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/settlectx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/tightenshared"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/timestampid"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedbody"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedresp"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unseated"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/worldreadable"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/wrapwriter"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -144,6 +149,16 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(embedskip.Analyzer),
 	allow.Guard(floatnum.Analyzer),
 	allow.Guard(quoteident.Analyzer),
+
+	// 2026-10-27 bug bash rules: one per repeated bug shape; the
+	// widened arms of the rules above came from the same round.
+	allow.Guard(keytrim.Analyzer),
+	allow.Guard(resolvedial.Analyzer),
+	allow.Guard(settlectx.Analyzer),
+	allow.Guard(tightenshared.Analyzer),
+	allow.Guard(wrapwriter.Analyzer),
+	allow.Guard(unseated.RecheckAnalyzer),
+	allow.Guard(unseated.WriteDeadlineAnalyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

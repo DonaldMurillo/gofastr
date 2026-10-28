@@ -235,12 +235,16 @@ func dropViaRoot(storeDir, sub, name string) error {
 	return rt.Remove(filepath.Join(sub, name))
 }
 
-// guardNamedSymlink spells the refusal without filepath.EvalSymlinks.
+// guardNamedSymlink was the quiet fixture bug bash 2026-10-27 I13
+// named: the guard's body is `return nil` and its argument is the root
+// alone. A name is not a resolution, and a root-only check leaves every
+// component under it unchecked; it fires now. The real-guard spelling
+// lives in package g.
 func (w *warehouse) guardNamedSymlink(ref string) ([]byte, error) {
 	if err := ensureNoSymlinkPath(w.shelfRoot); err != nil {
 		return nil, err
 	}
-	return os.ReadFile(filepath.Join(w.shelfRoot, scrubbed(ref)))
+	return os.ReadFile(filepath.Join(w.shelfRoot, scrubbed(ref))) // want `read under a root with lexical containment only`
 }
 
 func ensureNoSymlinkPath(string) error { return nil }

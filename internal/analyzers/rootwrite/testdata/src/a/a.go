@@ -80,7 +80,7 @@ func containedPathFixed(root, rel string) (string, error) {
 }
 
 // ApplyFixed writes through the symlink-resolving containment check.
-func (r *Report) ApplyFixed(rel string, out []byte) error {
+func (r *Report) ApplyFixed(rel string, out []byte) error { // want ApplyFixed:"symlinkGuard"
 	abs, err := containedPathFixed(r.Root, rel)
 	if err != nil {
 		return err

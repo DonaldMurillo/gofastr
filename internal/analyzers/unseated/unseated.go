@@ -65,6 +65,120 @@
 // whose header set lives in another package, and seats itself at its
 // own call site); and everything in _test.go, where a held stream is a
 // fixture, not an attack.
+//
+// # unrechecked: the principal re-check arm (RecheckAnalyzer)
+//
+// The 2026-10-27 bug bash found long-lived streams that authorize once
+// at connect and then keep delivering after the principal's access is
+// gone: battery/rtc's socket keeps signaling and receiving room events
+// and fresh TURN credentials after the session is revoked (R18, Major:
+// ServeHTTP runs Config.Authorize once at rtc.go:457, the read loop at
+// room.go:431 never re-checks); core/a2a's task streams deliver after
+// the one owner check at server.go:432 (P17: forwardEvents :1453,
+// pollEvents :1805); core/stream's SSEBroker.Subscribe keys its seat on
+// the Principal func and never re-validates it (P20, sse_broker.go:487);
+// the webmcp-remote-assist example's socket outlives its credential
+// (W11, session.go:915). Two more re-check the identity and still leak,
+// because the decision that scoped the stream is not the identity: the
+// presence stream runs filterAuthorizedTopics once (R8, Major,
+// core-ui/island/stream.go:70) while RecheckPrincipal per push only
+// re-validates the session, and the CRUD event stream captures
+// tenant.GetTenantID at connect (D24, Major, framework/crud/
+// crud_events.go:307) and filters every event on it while authzHeld
+// refreshes only the user and roles.
+//
+// Shape: an entry whose package-local flood (the seat arm's flood)
+// holds a principal RESOLUTION, a stream open (the seat arm's open
+// spellings plus core/stream.NewSSEWriter, whose content-type set lives
+// in core/stream), and a DELIVERY loop — a park loop (the seat arm's
+// park test) that reads the conn or reaches a client write. Resolution
+// is a current-user/session/token reader by name (nostore's vocabulary:
+// GetUser, GetCurrentUser, verifyToken, claimsFrom, …), an auth
+// package's Verify (the harness token check), an authorize-named call,
+// or a func-typed field named owner/principal/user/caller/identity/
+// authorize/authenticate/subject invoked with the *http.Request (a2a's
+// Config.Owner, the broker's Principal, rtc's Config.Authorize). With no re-check anywhere in the
+// flood it reports each delivery loop. A re-check is
+// handler.RecheckPrincipal anywhere in the flood (in the loop, or in a
+// closure the loop calls: crud's authzHeld), or a resolver re-run
+// inside any park loop of the stream (harness REST's verifyToken per
+// event, the harness ws revocationWatch ticker that closes the socket).
+// When the identity IS re-checked, the arm then reads the connect-time
+// DECISIONS the stream's own families make outside their loops — an
+// authorize-named call, or a tenant accessor (GetTenantID/GetTenant)
+// applied to a context — and reports each one whose callee is never
+// called again on any park loop's path: RecheckPrincipal re-runs the
+// identity middleware, not the topic authorizer or the tenant capture.
+//
+// Fix spelling: call handler.RecheckPrincipal before each delivery and
+// on an idle ticker, close on refusal (framework/crud's EventStream,
+// core/mcp's sseGetHandler, core-ui/island's ServeSSEWithPresence), and
+// re-run every connect-time decision against the refreshed context on
+// the same path (re-authorize the topics, compare the fresh tenant).
+//
+// Silent on: a stream that resolves no principal (kiln/live, dev
+// livereload, the harness web UI behind its loopback guard: nothing to
+// re-check — kiln's sseSeatPrincipal is a peer address, not a
+// resolution); a resolved stream with no park (core/mcp's POST answer)
+// or whose park loop delivers nothing (no conn read, no client write);
+// a func field with a principal-ish name invoked without the request (a
+// formatter, not a resolver); and, as in the seat arm, a re-check on
+// one arm of a dispatcher flood credits the whole flood — every handler
+// is also its own entry, so a handler that resolves and streams by
+// itself is judged alone. It cannot see a re-check that is present but
+// incomplete in what the installed checks re-derive (R10's row scope,
+// P28's tenant left in the refreshed context, U41's embed middleware
+// installing no check): those live in middleware, not in the stream.
+//
+// # nowritedeadline: the blocked-write arm (WriteDeadlineAnalyzer)
+//
+// The same round found stream loops that notice eviction, revocation,
+// or shutdown only in their select, while the write they are blocked in
+// has no deadline: an evicted CRUD event stream stays resident on a
+// client that stopped reading, so EvictOldest no longer bounds a
+// principal's goroutines (D44, Major: sse.WriteEvent at
+// framework/crud/crud_events.go:451 goes through SSEWriter.write, which
+// calls Write with no deadline, core/stream/sse.go:123); the UI stream's
+// lifetime bound cannot reclaim a blocked writer (R27, core-ui/island/
+// stream.go:182); and the harness REST, web, MCP and ws streams, kiln's
+// SSE, and dev livereload cannot leave a blocked write on revocation or
+// shutdown (H25 rest.go:429, H26 web.go:170, H27 mcpserver/http.go:307,
+// H28 ws.go:469, K24 kiln/live/sse.go:189, S35 framework/dev/
+// livereload.go:153). WriteTimeout 0 is what framework/app.go
+// recommends for SSE-heavy apps, so the server bounds nothing.
+//
+// Shape: inside a park loop of a family reached from a stream open (the
+// same open set as the re-check arm), a call that reaches an UNBOUNDED
+// client write — Write/WriteString/Flush on the http.ResponseWriter,
+// its http.Flusher, an http.ResponseController, a hijacked conn
+// (anything with SetWriteDeadline) or a bufio writer over one;
+// fmt.Fprint*/io.WriteString/io.Copy onto one; json.NewEncoder(w).
+// Encode; or a core/stream SSEWriter WriteEvent/WriteData/WriteComment/
+// WriteError/Flush — directly, through a closure the loop calls, or
+// through a package-local helper's flood (harness ws's writeText →
+// writeFrame). Credit is any SetWriteDeadline or SetDeadline call in
+// the flood of the family that holds the loop: a per-write deadline
+// (core/mcp's writeSSEEvent closure, core/a2a's sseStream.write and
+// keepAlive) or a past-deadline cut the evicting path calls (the
+// SSEBroker's sub.cut, installed in Subscribe). One report per loop, on
+// its first such call.
+//
+// Fix spelling: rc := http.NewResponseController(w) and
+// rc.SetWriteDeadline(time.Now().Add(d)) before each write (or
+// conn.SetWriteDeadline on a hijacked socket), or install the broker's
+// cut and call it from whatever closes the stream.
+//
+// Silent on: writes through core/stream's WebSocketConn, whose
+// writeFrame arms WSConfig.WriteTimeout per frame (10s by default:
+// battery/rtc and the remote-assist example); a park loop with no
+// stream open on its flood; a loop that writes only to a buffer; a
+// one-shot answer with no park (core/mcp's POST SSE answer, P46, is
+// that shape and stays out of scope); and a range over the function's
+// own channel parameter (handler.SSEStream: the channel's owner one
+// frame up owns the stream). It cannot see a close path outside the
+// loop's flood that force-closes the connection (an http.Server.Close
+// on release, cmd/gofastr's dev hold): such a site carries the allow
+// marker.
 package unseated
 
 import (
@@ -118,7 +232,85 @@ type family struct {
 	seats   bool
 }
 
+// graph is the package's family call graph, shared by the three arms.
+type graph struct {
+	pass     *analysis.Pass
+	families []*family
+	funcs    map[string][]*ast.FuncDecl
+	methods  map[string][]*ast.FuncDecl
+	byDecl   map[*ast.FuncDecl]*family
+	floods   map[*family]map[*family]bool
+}
+
+func (g *graph) floodOf(f *family) map[*family]bool {
+	if g.floods[f] == nil {
+		g.floods[f] = flood(f)
+	}
+	return g.floods[f]
+}
+
+// resolve maps a call to the package-local family it targets, or nil.
+func (g *graph) resolve(call *ast.CallExpr) *family {
+	if target := astx.ResolveCall(g.pass, call.Fun, g.funcs, g.methods); target != nil {
+		return g.byDecl[target]
+	}
+	return nil
+}
+
 func run(pass *analysis.Pass) (any, error) {
+	g := buildGraph(pass)
+	families := g.families
+	floodOf := g.floodOf
+	parksAnywhere := func(f *family) bool {
+		for r := range floodOf(f) {
+			if r.parks {
+				return true
+			}
+		}
+		return false
+	}
+
+	// A family fires when its flood holds an open site, a park, and no
+	// seat; the report lands on the open site, deduplicated per site.
+	// An open whose owning family closes its result immediately AND has
+	// no park anywhere in its own flood is a refusal (rtc's refuse
+	// upgrades so the browser can read the close code, then closes) and
+	// never fires; a family that parks keeps its open even when an
+	// error branch closes the connection early (rtc Serve, harness ws).
+	reported := map[ast.Node]bool{}
+	for _, fam := range families {
+		reach := floodOf(fam)
+		parked, seated := false, false
+		for r := range reach {
+			if r.parks {
+				parked = true
+			}
+			if r.seats {
+				seated = true
+			}
+		}
+		if !parked || seated {
+			continue
+		}
+		for r := range reach {
+			ownerParks := parksAnywhere(r)
+			for _, site := range r.opens {
+				if site.result != nil && r.closed != nil && r.closed[site.result] && !ownerParks {
+					continue // refusal: upgraded only to be closed
+				}
+				if !reported[site.call] {
+					reported[site.call] = true
+					pass.Reportf(site.call.Pos(), "%s", unseatedMsg)
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+// buildGraph collects the package's families (test files excluded),
+// their package-local call edges, and each family's own facts.
+func buildGraph(pass *analysis.Pass) *graph {
 	funcs := map[string][]*ast.FuncDecl{}   // top-level funcs by name
 	methods := map[string][]*ast.FuncDecl{} // "Recv.Method" by name
 	var families []*family
@@ -167,58 +359,7 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
-	// A family fires when its flood holds an open site, a park, and no
-	// seat; the report lands on the open site, deduplicated per site.
-	// An open whose owning family closes its result immediately AND has
-	// no park anywhere in its own flood is a refusal (rtc's refuse
-	// upgrades so the browser can read the close code, then closes) and
-	// never fires; a family that parks keeps its open even when an
-	// error branch closes the connection early (rtc Serve, harness ws).
-	floods := map[*family]map[*family]bool{}
-	floodOf := func(f *family) map[*family]bool {
-		if floods[f] == nil {
-			floods[f] = flood(f)
-		}
-		return floods[f]
-	}
-	parksAnywhere := func(f *family) bool {
-		for r := range floodOf(f) {
-			if r.parks {
-				return true
-			}
-		}
-		return false
-	}
-
-	reported := map[ast.Node]bool{}
-	for _, fam := range families {
-		reach := floodOf(fam)
-		parked, seated := false, false
-		for r := range reach {
-			if r.parks {
-				parked = true
-			}
-			if r.seats {
-				seated = true
-			}
-		}
-		if !parked || seated {
-			continue
-		}
-		for r := range reach {
-			ownerParks := parksAnywhere(r)
-			for _, site := range r.opens {
-				if site.result != nil && r.closed != nil && r.closed[site.result] && !ownerParks {
-					continue // refusal: upgraded only to be closed
-				}
-				if !reported[site.call] {
-					reported[site.call] = true
-					pass.Reportf(site.call.Pos(), "%s", unseatedMsg)
-				}
-			}
-		}
-	}
-	return nil, nil
+	return &graph{pass: pass, families: families, funcs: funcs, methods: methods, byDecl: byDecl, floods: map[*family]map[*family]bool{}}
 }
 
 // scanFamily computes the family's own facts: open sites (with their

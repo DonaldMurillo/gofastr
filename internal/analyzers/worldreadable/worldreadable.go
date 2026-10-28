@@ -41,6 +41,18 @@
 // site exists to fire on), and _test.go files. A fileperm.Restrict
 // AFTER the write does NOT quiet it: the content is exposed in the
 // window between write and tighten, which is the finding.
+//
+// The 2026-10-28 round added the RESTRICT arm for OpenFile: an
+// owner-only os.OpenFile with O_CREATE and no O_EXCL, followed in the
+// same function by fileperm.Restrict on the same path and no handle
+// tighten. The author meant the file to be owner-only even when it
+// already existed and reached for Restrict, which does not change a
+// file's mode off Windows (battery/semantic's WAL, B60, against
+// semantic-search.md's owner-only promise). Quiet: a handle Chmod or
+// fileperm.RestrictOpenFile anywhere in the function (the fix), an
+// os.Chmod of the same path, O_EXCL, and an OpenFile with no Restrict
+// at all (a lock file, a log: nothing claims owner-only for an existing
+// file there, and firing on every such open is noise).
 // Silent postures, deliberately:
 //   - mode expressions that are not constant literals (a variable, a
 //     parameter, a struct field like battery/log's FileMode or the
@@ -263,6 +275,85 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 			"os.WriteFile mode 0o%03o applies only at create: a pre-existing group/world-readable file keeps its mode and the new content lands readable by every local co-user; open O_CREATE|O_TRUNC 0o600, Chmod the handle before writing (fileperm.WriteOwnerOnly / writeSecretFile)",
 			s.perm)
 	}
+
+	// RESTRICT arm (2026-10-28, B60): os.OpenFile(path, O_CREATE...,
+	// 0o600) followed by fileperm.Restrict(path, ...) and no handle
+	// tighten. The author wanted the file owner-only even when it
+	// already existed, and Restrict is a no-op off Windows, so a
+	// pre-existing looser file stays readable (battery/semantic's WAL).
+	for _, s := range sites {
+		if s.isDir || s.mode == nil || s.perm&0o077 != 0 {
+			continue
+		}
+		if pathflow.QualifiedFunc(pass, s.call.Fun) != "os.OpenFile" {
+			continue
+		}
+		flags := pathflow.ArgAt(s.call, 1)
+		if !pathflow.FlagMentions(flags, "O_CREATE") || pathflow.FlagMentions(flags, "O_EXCL") {
+			continue
+		}
+		if !restrictsPath(pass, fn.Body, s.path, bound) || tightensHandle(pass, fn.Body) || chmodsPath(pass, fn.Body, s.path, bound) {
+			continue
+		}
+		pass.Reportf(s.call.Pos(),
+			"os.OpenFile mode 0o%03o applies only at create, and fileperm.Restrict does not change a file's mode off Windows: a pre-existing group/world-readable file stays readable; tighten the open handle (fileperm.RestrictOpenFile)",
+			s.perm)
+	}
+}
+
+// restrictsPath reports whether body calls fileperm.Restrict on the
+// same resolved path expression.
+func restrictsPath(pass *analysis.Pass, body *ast.BlockStmt, path ast.Expr, bound map[types.Object]ast.Expr) bool {
+	return callsOnPath(pass, body, path, bound, func(q string) bool { return strings.HasSuffix(q, "fileperm.Restrict") })
+}
+
+// chmodsPath reports whether body calls os.Chmod on the same resolved
+// path expression, which fixes the mode of a file that already existed.
+func chmodsPath(pass *analysis.Pass, body *ast.BlockStmt, path ast.Expr, bound map[types.Object]ast.Expr) bool {
+	return callsOnPath(pass, body, path, bound, func(q string) bool { return q == "os.Chmod" })
+}
+
+func callsOnPath(pass *analysis.Pass, body *ast.BlockStmt, path ast.Expr, bound map[types.Object]ast.Expr, callee func(string) bool) bool {
+	want := types.ExprString(pathflow.Resolve(pass, path, bound, 0))
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		c, ok := n.(*ast.CallExpr)
+		if !ok || found || len(c.Args) == 0 {
+			return !found
+		}
+		if callee(pathflow.QualifiedFunc(pass, c.Fun)) &&
+			types.ExprString(pathflow.Resolve(pass, c.Args[0], bound, 0)) == want {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// tightensHandle reports whether body chmods an *os.File handle or
+// calls a RestrictOpenFile helper: the mode then travels with the open.
+func tightensHandle(pass *analysis.Pass, body *ast.BlockStmt) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		c, ok := n.(*ast.CallExpr)
+		if !ok || found {
+			return !found
+		}
+		sel, ok := c.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "RestrictOpenFile":
+			found = true
+		case "Chmod":
+			if t := pass.TypesInfo.TypeOf(sel.X); t != nil && t.String() == "*os.File" {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 // createTempMinted reports whether the write's path is the Name() of

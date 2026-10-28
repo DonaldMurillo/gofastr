@@ -8,7 +8,10 @@
 // marker is the spelling the contracts pipeline already uses for its
 // rule ids (//gofastr:allow(GOFASTR1407) ...), so one grep lists every
 // deliberate exception in the tree, and the reason is mandatory: a bare
-// marker with nothing after the parenthesis silences nothing. The
+// marker with nothing after the parenthesis silences nothing (for a
+// /* */ marker the closing delimiter is not a reason). A marker covers
+// the line below only when it is alone on its line: a block marker with
+// code after it on the same line covers that line and no other. The
 // analyzers never see the marker. Guard wraps each one's Run so the
 // filter sits between the analyzer and the driver, which keeps the
 // fixture suites (analysistest runs the unwrapped Run) and the rules
@@ -83,8 +86,9 @@ func Allowed(pass *analysis.Pass, name string) func(token.Pos) bool {
 }
 
 // collect returns the lines that carry a marker naming name with a
-// non-empty reason. A trailing marker covers its own line; a marker on
-// a line of its own covers the next line as well.
+// non-empty reason. A trailing (or leading inline) marker covers its own
+// line; a marker on a line of its own covers the line after the comment
+// as well.
 func collect(pass *analysis.Pass, name string) map[lineKey]bool {
 	out := map[lineKey]bool{}
 	for _, f := range pass.Files {
@@ -92,16 +96,17 @@ func collect(pass *analysis.Pass, name string) map[lineKey]bool {
 		for _, cg := range f.Comments {
 			for _, c := range cg.List {
 				m := marker.FindStringSubmatch(c.Text)
-				if m == nil || !listNames(m[1], name) || strings.TrimSpace(m[2]) == "" {
+				if m == nil || !listNames(m[1], name) || reason(c.Text, m[2]) == "" {
 					continue
 				}
 				pos := pass.Fset.Position(c.Pos())
+				end := pass.Fset.Position(c.End())
 				out[lineKey{pos.Filename, pos.Line}] = true
 				if src == nil {
 					src = readFile(pass, pos.Filename)
 				}
-				if standsAlone(src, pos) {
-					out[lineKey{pos.Filename, pos.Line + 1}] = true
+				if standsAlone(src, pos, end) {
+					out[lineKey{end.Filename, end.Line + 1}] = true
 				}
 			}
 		}
@@ -119,17 +124,38 @@ func readFile(pass *analysis.Pass, name string) []byte {
 	return b
 }
 
-// standsAlone reports whether nothing but whitespace precedes the
-// comment on its line.
-func standsAlone(src []byte, pos token.Position) bool {
-	if pos.Offset > len(src) {
+// reason returns the marker's reason: the text after the parenthesis,
+// less a block comment's closing delimiter, so `/* gofastr:allow(x) */`
+// carries none.
+func reason(text, rest string) string {
+	if strings.HasPrefix(text, "/*") {
+		rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
+	}
+	return strings.TrimSpace(rest)
+}
+
+// standsAlone reports whether the comment is the only thing on its
+// line(s): nothing but whitespace before its start, and nothing but
+// whitespace after its end. A block comment followed by code on the same
+// line (`/* gofastr:allow(x) why */ code()`) is an inline marker: it
+// covers its own line, never the next one (ledger I20 of the 2026-10-27
+// bug bash; framework/contracts/suppress.go reads the same way).
+func standsAlone(src []byte, pos, end token.Position) bool {
+	if pos.Offset > len(src) || end.Offset > len(src) {
 		return false
 	}
 	start := pos.Offset
 	for start > 0 && src[start-1] != '\n' {
 		start--
 	}
-	return strings.TrimSpace(string(src[start:pos.Offset])) == ""
+	if strings.TrimSpace(string(src[start:pos.Offset])) != "" {
+		return false
+	}
+	stop := end.Offset
+	for stop < len(src) && src[stop] != '\n' {
+		stop++
+	}
+	return strings.TrimSpace(string(src[end.Offset:stop])) == ""
 }
 
 // listNames reports whether the comma-separated marker list names name.

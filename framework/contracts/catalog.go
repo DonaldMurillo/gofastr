@@ -121,6 +121,7 @@ const (
 	RuleURLAttrEscape      = "GOFASTR1412"
 	RuleVarySet            = "GOFASTR1413"
 	RuleDialectDrift       = "GOFASTR1414"
+	RuleEraseCover         = "GOFASTR1415"
 )
 
 // Performance rules.
@@ -796,6 +797,18 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "func claimPostgres(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= $1 AND next_attempt_at <= $1`, now)\n\treturn err\n}\n\nfunc claimSQLite(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= ?`, now)\n\treturn err\n}",
 			Good: "func claimPostgres(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= $1 AND next_attempt_at <= $1`, now)\n\treturn err\n}\n\nfunc claimSQLite(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= ? AND next_attempt_at <= ?`, now, now)\n\treturn err\n}",
+		}},
+	}, {
+		ID: RuleEraseCover, Slug: "security/erase-export-coverage",
+		Title:      "A user-data table the erase and export planes never reach",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "A CREATE TABLE in core/, framework/ or battery/ declares a user-identifying column (user_id, owner, actor_id, subject, email, creator, principal, users, …) or a record-payload column (payload, body, snapshot, diff, task_json, config_json, an index document's text/fields/meta), and the same package has no `datexport.DataEraser` or no `datexport.DataExporter` whose Table resolves to that table.",
+		Why:     "App.EraseUserData and App.ExportData reach the entity graph plus the tables registered in core/datexport, and nothing else. The 2026-10-27 bug bash found fourteen stores that create their own table and register neither (S9, S10, S20, S22–S32): battery/auth's OAuth token table keeps a live provider token for an erased user while every other auth table is erased; the outbox, webhook deliveries, search and semantic indexes, A2A tasks, idempotency bodies and fanout spill rows keep full copies of the user's records; the audit log is anonymized but never exported. Outside datexport itself only battery/auth and battery/queue declared anything.",
+		Fix:     "Declare the table to both planes from the package that creates it, the battery/auth erase.go + export.go pattern: a `datexport.DataEraser` keyed by the right identity (Column user_id, IdentityEmail for an email-keyed table, EraseAnonymize for a row that must be retained) and a `datexport.DataExporter`, re-registered against the configured table name when the store is built. When a short TTL or a non-user meaning is the reason not to, say so: `//gofastr:allow(GOFASTR1415) <why>`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "func (s *TokenStore) ensure() error {\n\t_, err := s.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (user_id TEXT NOT NULL, token TEXT NOT NULL)`, s.table))\n\treturn err\n}",
+			Good: "func (s *TokenStore) ensure() error {\n\t_, err := s.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (user_id TEXT NOT NULL, token TEXT NOT NULL)`, s.table))\n\tdatexport.RegisterEraser(datexport.DataEraser{Name: \"tokens\", Table: s.table, Column: \"user_id\"})\n\tdatexport.Register(datexport.DataExporter{Name: \"tokens\", Table: s.table, Columns: []string{\"user_id\", \"token\"}})\n\treturn err\n}",
 		}},
 	}, {
 		ID: RuleFoldedKey, Slug: "security/folded-key-save",

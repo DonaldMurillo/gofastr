@@ -17,10 +17,22 @@
 // deliberately ignores *http.Response; this is the other half of that
 // contract.
 //
-// Credit (the fix posture): the response body wrapped in
-// io.LimitReader / http.MaxBytesReader in the same function — directly
-// or through one same-package helper hop (a helper whose body wraps
-// its parameter). battery/auth/oidc.go reading 1<<20 is the model.
+// The fire shape is a read whose argument IS resp.Body. The fix posture
+// reads through the limiter instead — io.ReadAll(io.LimitReader(
+// resp.Body, n)), battery/auth/oidc.go reading 1<<20 is the model — and
+// that read is no sink at all. The one credit for a read of resp.Body
+// itself is a REBIND before it: resp.Body = io.NopCloser(
+// io.LimitReader(resp.Body, n)) or http.MaxBytesReader(w, resp.Body, n)
+// in the same function, or resp handed first to a same-package helper
+// that rebinds its parameter's Body that way.
+//
+// Bug bash 2026-10-27 I15 narrowed the credit: it used to be any
+// limiter in the function that MENTIONED the body (wrapsInLimiter), so
+// `_ = io.LimitReader(resp.Body, 1); io.ReadAll(resp.Body)` stayed
+// quiet, and so did an error-path io.ReadAll(resp.Body) beside a capped
+// success-path decode, and a direct read after resp.Body went to a
+// capped reading helper. A limiter bounds what reads through it; a read
+// of the raw body beside it is unbounded.
 //
 // Silent postures, deliberately:
 //   - request bodies (http.Request.Body): unboundedbody owns them;
@@ -30,7 +42,10 @@
 //     literal (a program-constructed *http.Response): the byte count
 //     is the program's own, not the network's;
 //   - reads through helpers more than one hop away: the cap must be
-//     visible where the read happens or one call away.
+//     visible where the read happens or one call away;
+//   - resp.Body handed to a helper (capped or not): the read inside the
+//     helper sees a bare parameter, not a resp.Body selector, so it is
+//     out of this rule's fire shape.
 package unboundedresp
 
 import (
@@ -52,9 +67,9 @@ var Analyzer = &analysis.Analyzer{
 const readMsg = "unbounded read of an *http.Response body: the endpoint controls the byte count — wrap it in io.LimitReader or http.MaxBytesReader before reading (battery/auth/oidc.go reads 1<<20)"
 
 func run(pass *analysis.Pass) (any, error) {
-	// Same-package helpers whose body wraps a parameter in a limiter:
-	// passing resp.Body to one is credit.
-	cappingHelpers := map[*types.Func]int{} // fn → index of the capped parameter
+	// Same-package helpers that REBIND a response parameter's Body to a
+	// limited reader: handing the response to one first is credit.
+	cappingHelpers := map[*types.Func]int{} // fn → index of the rebound parameter
 	for _, f := range pass.Files {
 		if isTest(pass, f) {
 			continue
@@ -64,20 +79,14 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok || fd.Body == nil || fd.Type == nil || fd.Type.Params == nil {
 				continue
 			}
-			idx := 0
 			for _, field := range fd.Type.Params.List {
-				n := len(field.Names)
-				if n == 0 {
-					n = 1
-				}
 				for _, name := range field.Names {
-					if wrapsInLimiter(pass, fd.Body, pass.TypesInfo.ObjectOf(name)) {
+					if rebindsBody(pass, fd.Body, pass.TypesInfo.ObjectOf(name), fd.Body.End()) {
 						if _, ok := cappingHelpers[funcOf(pass, fd)]; !ok {
 							cappingHelpers[funcOf(pass, fd)] = indexOfParam(pass, fd, name)
 						}
 					}
 				}
-				idx += n
 			}
 		}
 	}
@@ -138,9 +147,12 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// reportIfUnbounded fires when the response variable's body is read
-// without a limiter anywhere in the file's function: directly, or
-// through a one-hop helper that caps it.
+// reportIfUnbounded fires when a read takes resp.Body itself and
+// nothing rebound resp.Body to a limited reader before the read:
+// directly in this function, or by handing resp to a one-hop helper
+// that rebinds its parameter's Body. A limiter that merely MENTIONS the
+// body is no credit (I15): it bounds whatever reads through it, and
+// this read does not.
 func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, resp types.Object, literalResp map[types.Object]bool, cappingHelpers map[*types.Func]int) {
 	if literalResp[resp] {
 		return
@@ -149,28 +161,27 @@ func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, res
 	if fn == nil {
 		return
 	}
-	if wrapsInLimiter(pass, fn.Body, resp) {
+	if rebindsBody(pass, fn.Body, resp, call.Pos()) {
 		return
 	}
-	// One hop: a same-package call passing this response's body (or
-	// the response itself) to a helper that caps that parameter.
-	if passesToCappingHelper(pass, fn, resp, cappingHelpers) {
+	if passesToCappingHelper(pass, fn, resp, cappingHelpers, call.Pos()) {
 		return
 	}
 	pass.Reportf(call.Pos(), readMsg)
 }
 
-// passesToCappingHelper reports whether fn passes this response's body
-// (or the response) to a same-package helper that wraps that
-// parameter in a limiter.
-func passesToCappingHelper(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Object, cappingHelpers map[*types.Func]int) bool {
+// passesToCappingHelper reports whether fn, before pos, hands the
+// response itself (not its body: a helper given resp.Body cannot rebind
+// resp.Body) to a same-package helper that rebinds that parameter's
+// Body to a limited reader.
+func passesToCappingHelper(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Object, cappingHelpers map[*types.Func]int, pos token.Pos) bool {
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		if found {
 			return false
 		}
 		call, ok := n.(*ast.CallExpr)
-		if !ok {
+		if !ok || call.Pos() >= pos {
 			return true
 		}
 		callee, ok := astx.CalleeFunc(pass, call.Fun)
@@ -181,7 +192,7 @@ func passesToCappingHelper(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Obj
 		if !ok || argIdx >= len(call.Args) {
 			return true
 		}
-		if mentionsObject(call.Args[argIdx], resp, pass) {
+		if respObject(pass, call.Args[argIdx]) == resp {
 			found = true
 			return false
 		}
@@ -190,15 +201,44 @@ func passesToCappingHelper(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Obj
 	return found
 }
 
-// wrapsInLimiter reports whether body wraps the parameter in a
-// limiter (the readBodyCap helper shape: io.LimitReader(param, n)).
-func wrapsInLimiter(pass *analysis.Pass, body *ast.BlockStmt, param types.Object) bool {
-	if param == nil {
+// rebindsBody reports whether body, before pos, assigns resp's Body
+// field from an expression holding a limiter over resp's own body:
+// resp.Body = io.NopCloser(io.LimitReader(resp.Body, n)), or
+// http.MaxBytesReader(w, resp.Body, n). Only the rebind makes a later
+// read of resp.Body bounded.
+func rebindsBody(pass *analysis.Pass, body *ast.BlockStmt, resp types.Object, pos token.Pos) bool {
+	if resp == nil {
 		return false
 	}
-	wrapped := false
+	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
-		if wrapped {
+		if found {
+			return false
+		}
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || assign.Pos() >= pos || len(assign.Lhs) != len(assign.Rhs) {
+			return true
+		}
+		for i, lhs := range assign.Lhs {
+			if obj, ok := bodyOwner(pass, lhs); !ok || obj != resp {
+				continue
+			}
+			if limitsBodyOf(pass, assign.Rhs[i], resp) {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// limitsBodyOf reports whether e contains an io.LimitReader /
+// http.MaxBytesReader call whose reader argument mentions resp.
+func limitsBodyOf(pass *analysis.Pass, e ast.Expr, resp types.Object) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if found {
 			return false
 		}
 		call, ok := n.(*ast.CallExpr)
@@ -208,15 +248,31 @@ func wrapsInLimiter(pass *analysis.Pass, body *ast.BlockStmt, param types.Object
 		switch qualified(pass, call.Fun) {
 		case "io.LimitReader", "http.MaxBytesReader":
 			for _, arg := range call.Args {
-				if mentionsObject(arg, param, pass) {
-					wrapped = true
+				if mentionsObject(arg, resp, pass) {
+					found = true
 					return false
 				}
 			}
 		}
 		return true
 	})
-	return wrapped
+	return found
+}
+
+// respObject resolves a call argument naming a response value (resp,
+// &resp, x.resp) to its object, or nil.
+func respObject(pass *analysis.Pass, e ast.Expr) types.Object {
+	e = ast.Unparen(e)
+	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		e = u.X
+	}
+	switch x := e.(type) {
+	case *ast.Ident:
+		return pass.TypesInfo.ObjectOf(x)
+	case *ast.SelectorExpr:
+		return pass.TypesInfo.ObjectOf(x.Sel)
+	}
+	return nil
 }
 
 // bodyOwner resolves X in X.Body to X's object, when X.Body is the

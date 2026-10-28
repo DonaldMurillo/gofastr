@@ -262,3 +262,47 @@ func e15(name string) string {
 func e16(name string) string {
 	return fmt.Sprintf("var %sCount = 0\n", name) // want `identifier slot "var %s"`
 }
+
+// ---- strings transforms are not gates (bug bash 2026-10-27 I10) ----------
+//
+// resolveArg returned gated for every strings.* result, so a TrimSpace
+// or ToLower in front of a caller's name silenced the slot. They
+// transform; the payload survives them.
+
+func i10TrimSpace(name string) string {
+	return fmt.Sprintf("var %s = 1\n", strings.TrimSpace(name)) // want `identifier slot "var %s"`
+}
+
+func i10ToUpper(name string) string {
+	return fmt.Sprintf("var %s = 1\n", strings.ToUpper(name)) // want `identifier slot "var %s"`
+}
+
+func i10Replace(table string) string {
+	return fmt.Sprintf("CREATE TABLE %s (id INTEGER)", strings.ReplaceAll(table, "-", "_")) // want `identifier slot "create table %s"`
+}
+
+// i10Local: the transform result bound to a local first.
+func i10Local(name string) string {
+	low := strings.ToLower(strings.TrimSpace(name))
+	return fmt.Sprintf("func %s() {\n", low) // want `identifier slot "func %s"`
+}
+
+// i10Join: a join of caller-supplied parts.
+func i10Join(parts []string) string {
+	return fmt.Sprintf("type %s struct{}\n", strings.Join(parts, "_")) // want `identifier slot "type %s"`
+}
+
+// i10Map: a strings.Map whose mapper is not a sanitizer by name.
+func i10Map(name string) string {
+	return fmt.Sprintf("var %s = 1\n", strings.Map(upperRune, name)) // want `identifier slot "var %s"`
+}
+
+func upperRune(r rune) rune { return r - 32 }
+
+// i10Helper: a local helper whose return is a strings transform of its
+// argument (the appSpecEndpointHandlerName shape, ungated).
+func trimmedName(s string) string { return strings.TrimSpace(s) }
+
+func i10Helper(name string) string {
+	return fmt.Sprintf("func %s() {\n", trimmedName(name)) // want `identifier slot "func %s"`
+}

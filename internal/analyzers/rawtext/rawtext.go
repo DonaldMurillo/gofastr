@@ -87,7 +87,15 @@
 //     render in English on every locale's page. Meridian's header
 //     ThemeToggle and SignOut did, on /es/. A literal bound to a
 //     variable whose Ctx the function assigns later, and a positional
-//     literal, stay quiet.
+//     literal, stay quiet. In kit packages (framework/ui, headless,
+//     entityui, core-ui) it also fires where NO context reaches the
+//     function: a call to a same-package component that reads its
+//     config's Ctx outside every branch, loop and closure, passed a
+//     literal without Ctx. The enclosing component's config has no Ctx
+//     to forward, so nothing upstream can fix it: ui.Markdown's and
+//     ui.CodeTabs' code blocks (2026-10-27 bug bash U10, U21). A child
+//     that reads Ctx only on a branch (Button's shortcut hint) stays
+//     quiet.
 //
 // Silent postures, deliberately:
 //   - _test.go files, and every package outside the four roots

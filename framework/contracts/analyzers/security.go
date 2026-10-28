@@ -30,6 +30,7 @@ func init() {
 			contracts.RuleURLAttrEscape,
 			contracts.RuleVarySet,
 			contracts.RuleDialectDrift,
+			contracts.RuleEraseCover,
 		},
 		Run: runSecurity,
 	})
@@ -64,6 +65,7 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			out = append(out, ruleURLAttrEscape(p, f.Rel, file)...)
 			out = append(out, ruleVarySet(p, f.Rel, file)...)
 			out = append(out, ruleDialectDrift(p, f.Rel, file)...)
+			out = append(out, ruleEraseCover(p, f.Rel, file)...)
 		}
 	}
 	return out, nil

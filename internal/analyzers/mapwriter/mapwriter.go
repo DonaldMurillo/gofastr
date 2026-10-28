@@ -4,6 +4,21 @@
 // bitten real code (chart SVG attribute appends in PR #261's review);
 // the fix is always the same — iterate slices.Sorted(maps.Keys(m)),
 // which ranges a slice and never trips this check.
+//
+// The 2026-10-28 round added the one-step-removed arm: a map range that
+// appends to a local slice which is never sorted in the function and
+// then reaches output, either as strings.Join's first argument or as
+// the range source of a loop that writes to a sink. The order leaks the
+// same way, through the slice. Found by the 2026-10-27 bug bash's M5
+// note (schema_diff's Renames changes) and, measuring this arm,
+// core-ui/html Classes: the documented helper for predicate-driven
+// class sets joins its map-ordered classes, so the class attribute
+// changes from render to render. Quiet: any sort.* or slices.Sort* call
+// that takes the slice, and a slice that is returned or stored instead
+// of joined or written (M5's changes list goes through a caller, and
+// collecting map values into a slice is mostly order-free: fanout
+// subscriber lists, cleanup queues). A hand-written sort the rule cannot
+// see carries the allow marker.
 package mapwriter
 
 import (
@@ -72,8 +87,131 @@ func run(pass *analysis.Pass) (any, error) {
 			})
 			return true
 		})
+		for _, d := range f.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
+				checkJoined(pass, fn.Body, bound, guarded)
+			}
+		}
 	}
 	return nil, nil
+}
+
+// checkJoined reports a local slice appended in map order, never sorted
+// in the function, that later reaches strings.Join or a write loop.
+func checkJoined(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, guarded []guardRange) {
+	ast.Inspect(body, func(n ast.Node) bool {
+		rng, ok := n.(*ast.RangeStmt)
+		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) {
+			return true
+		}
+		for _, g := range guarded {
+			if rng.Pos() >= g.from && rng.Pos() <= g.to && g.matches(pass, rng.X) {
+				return true
+			}
+		}
+		reported := map[types.Object]bool{}
+		ast.Inspect(rng.Body, func(inner ast.Node) bool {
+			obj, at := appendedLocal(pass, inner)
+			if obj == nil || reported[obj] || sortsSlice(pass, body, obj) || !reachesOutput(pass, body, obj, rng.End(), bound) {
+				return true
+			}
+			reported[obj] = true
+			pass.Reportf(at,
+				"%s collects a map range in iteration order and is joined or written unsorted: the output order is random per render; sort it first (slices.Sort) or range slices.Sorted(maps.Keys(m))",
+				obj.Name())
+			return true
+		})
+		return true
+	})
+}
+
+// appendedLocal matches `s = append(s, ...)` for a function-local s.
+func appendedLocal(pass *analysis.Pass, n ast.Node) (types.Object, token.Pos) {
+	as, ok := n.(*ast.AssignStmt)
+	if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+		return nil, token.NoPos
+	}
+	call, ok := as.Rhs[0].(*ast.CallExpr)
+	if !ok {
+		return nil, token.NoPos
+	}
+	if fn, ok := call.Fun.(*ast.Ident); !ok || fn.Name != "append" {
+		return nil, token.NoPos
+	}
+	if _, isBuiltin := pass.TypesInfo.Uses[call.Fun.(*ast.Ident)].(*types.Builtin); !isBuiltin {
+		return nil, token.NoPos
+	}
+	id, ok := as.Lhs[0].(*ast.Ident)
+	if !ok {
+		return nil, token.NoPos
+	}
+	obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
+	if !ok || obj.Parent() == nil || obj.Parent() == pass.Pkg.Scope() {
+		return nil, token.NoPos
+	}
+	return obj, as.Pos()
+}
+
+// mentions reports whether n refers to obj.
+func mentions(pass *analysis.Pass, n ast.Node, obj types.Object) bool {
+	hit := false
+	ast.Inspect(n, func(x ast.Node) bool {
+		if id, ok := x.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj {
+			hit = true
+		}
+		return !hit
+	})
+	return hit
+}
+
+// sortsSlice: a sort.* or slices.Sort* call anywhere in body takes obj.
+func sortsSlice(pass *analysis.Pass, body *ast.BlockStmt, obj types.Object) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || found {
+			return !found
+		}
+		q := astx.QualifiedCallee(pass, call.Fun)
+		if !strings.HasPrefix(q, "sort.") && !strings.HasPrefix(q, "slices.Sort") {
+			return true
+		}
+		for _, a := range call.Args {
+			if mentions(pass, a, obj) {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// reachesOutput: after pos, obj is strings.Join's first argument or the
+// range source of a loop whose body writes to an output sink.
+func reachesOutput(pass *analysis.Pass, body *ast.BlockStmt, obj types.Object, pos token.Pos, bound map[types.Object]ast.Expr) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found || n == nil || n.End() <= pos {
+			return !found
+		}
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			if astx.QualifiedCallee(pass, x.Fun) == "strings.Join" && len(x.Args) > 0 && mentions(pass, x.Args[0], obj) {
+				found = true
+			}
+		case *ast.RangeStmt:
+			if x.Pos() > pos && mentions(pass, x.X, obj) {
+				ast.Inspect(x.Body, func(y ast.Node) bool {
+					if c, ok := y.(*ast.CallExpr); ok && isOutputSink(pass, c.Fun, bound) {
+						found = true
+					}
+					return !found
+				})
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 // rangesInMapOrder reports whether ranging x visits entries in map order.

@@ -10,12 +10,14 @@ import (
 
 func TestLaxEnvelope(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), laxenvelope.Analyzer,
-		"lx",      // round-4 same-package arm
-		"xlax",    // round-5 arm a: cross-package via facts (import edge)
-		"xraw",    // round-5 arm b: envelope RawMessage one level down
-		"xrawok",  // round-5 arm b: chokepoint credit, quiet
-		"xtop",    // round-5 arm c: CheckTopLevelKeys one level short
-		"xownlax", // fact names a type the strict package declares itself
-		"xownvia", // fact reaches a package that never imports xown
+		"lx",          // round-4 same-package arm
+		"xlax",        // round-5 arm a: cross-package via facts (import edge)
+		"xraw",        // round-5 arm b: envelope RawMessage one level down
+		"xrawok",      // round-5 arm b: chokepoint credit, quiet
+		"xtop",        // round-5 arm c: CheckTopLevelKeys one level short
+		"xownlax",     // fact names a type the strict package declares itself
+		"xownvia",     // fact reaches a package that never imports xown
+		"xopts",       // I6: a strict decode passing options is still strict
+		"xrawdiscard", // I11: a discarded CheckObjectKeys earns no credit
 	)
 }

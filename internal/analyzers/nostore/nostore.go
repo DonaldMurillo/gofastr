@@ -76,9 +76,14 @@
 // carries an unconditional (or same-branch) Cache-Control on its own
 // path (the SSE arms' no-cache, the admin gate, writeAuthError via
 // writeCredentialHeaders); WriteHeader(204/205) — no body, nothing to
-// store; an ERROR WRITER — a family whose every explicit status is a
+// store; an ERROR WRITE — in a family whose every explicit status is a
 // non-2xx constant (webbotauth's 403/503 problem bodies, the module
-// proxy's 503) whose body writes are therefore never 2xx bodies; a
+// proxy's 503), a body write that a non-2xx WriteHeader precedes in its
+// own or an enclosing block. A write no such status precedes is the
+// implicit 200 and is judged like any other (ledger I8 of the
+// 2026-10-27 bug bash: a `WriteHeader(401); return` arm used to quiet
+// the w.Write(data) after it, because the whole function counted as an
+// error writer); a
 // variable-status WriteHeader whose every resolvable caller constant
 // is non-2xx (the client web UI's writeJSONError answers 409); writes
 // onto anything but the function's own http.ResponseWriter (a marshal
@@ -172,7 +177,6 @@ type family struct {
 	sinks        []sinkSite
 	topCalls     []*ast.CallExpr           // calls at the bodies' top level
 	callSites    []*ast.CallExpr           // every call in the family
-	errorOnly    bool                      // every explicit status is non-2xx
 	passthrough  bool                      // upstream/stored headers copied onto w
 	hasBodyWrite bool                      // any body write (not bare WriteHeader)
 	bindings     map[types.Object]ast.Expr // single-value local assignments
@@ -535,14 +539,39 @@ func resolverCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 }
 
 // bodySetsCC: an unconditional Cache-Control set at the body's top
-// level. Branch-nested sets are deliberately not credit.
+// level. Branch-nested sets are deliberately not credit, with one
+// exception that is unconditional in effect: a top-level if/else chain
+// that ends in a plain else and sets it in every arm (the uihost
+// serveVersionedText private / immutable / no-cache split). Every path
+// through such a chain runs a set.
 func bodySetsCC(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	for _, stmt := range body.List {
-		if expr, ok := stmt.(*ast.ExprStmt); ok {
-			if call, ok := expr.X.(*ast.CallExpr); ok && isCacheControlSet(pass, call) {
+		switch st := stmt.(type) {
+		case *ast.ExprStmt:
+			if call, ok := st.X.(*ast.CallExpr); ok && isCacheControlSet(pass, call) {
+				return true
+			}
+		case *ast.IfStmt:
+			if everyArmSetsCC(pass, st) {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// everyArmSetsCC reports whether every arm of the if/else chain sets
+// Cache-Control by bodySetsCC's rule. A chain with no final else has a
+// path that sets nothing.
+func everyArmSetsCC(pass *analysis.Pass, st *ast.IfStmt) bool {
+	if !bodySetsCC(pass, st.Body) {
+		return false
+	}
+	switch e := st.Else.(type) {
+	case *ast.BlockStmt:
+		return bodySetsCC(pass, e)
+	case *ast.IfStmt:
+		return everyArmSetsCC(pass, e)
 	}
 	return false
 }
@@ -801,11 +830,11 @@ func requestAccessor(pass *analysis.Pass, call *ast.CallExpr, fam *family) bool 
 	return exprMentionsRequest(pass, call, fam)
 }
 
-// bodySinks: the 2xx write sites onto the family's own writer. A
-// family whose every explicit WriteHeader is a non-2xx constant is an
-// error writer (webbotauth's 403/503 problem bodies, the proxy's 503):
-// its body writes are not 2xx bodies, whatever the implicit-200 rule
-// would say.
+// bodySinks: the 2xx write sites onto the family's own writer. In a
+// family whose every explicit WriteHeader is a non-2xx constant, a write
+// that such a status precedes (webbotauth's 403/503 problem bodies, the
+// proxy's 503) is an error body, not a 2xx one; a write no error status
+// precedes is still the implicit 200.
 func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite {
 	var consts []int64
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -831,14 +860,17 @@ func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite
 			break
 		}
 	}
+	// An error-only family's write is an error body only when a non-2xx
+	// status runs before it: a `WriteHeader(401); return` arm followed by
+	// a plain w.Write(data) leaves that write an implicit 200 (ledger I8
+	// of the 2026-10-27 bug bash), so each write is judged on its own
+	// path rather than the whole function going quiet.
+	errorBefore := func(ast.Node) bool { return false }
 	if allNon2xx {
-		fam.errorOnly = true
+		errorBefore = func(n ast.Node) bool { return errorStatusBefore(pass, fam, body, n) }
 	}
 
 	var sinks []sinkSite
-	if allNon2xx {
-		return sinks
-	}
 	parent := parentMap(body)
 	ccSets := []*ast.CallExpr{}
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -856,6 +888,9 @@ func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite
 			return true // the origin's headers decide this response
 		}
 		idx := -1
+		if errorBefore(call) {
+			return true // an error body: a non-2xx status already went out
+		}
 		if sinkHeader(pass, fam, call) {
 			if !fam.hasBodyWrite {
 				return true // bodyless 2xx: no body, nothing to store
@@ -889,6 +924,71 @@ func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite
 		return true
 	})
 	return sinks
+}
+
+// errorStatusBefore reports whether a non-2xx constant WriteHeader on
+// the family's writer runs before n on every path to it: as an earlier
+// statement of n's own block or of an enclosing block. A function
+// literal written after the status can only run after it too, so its
+// writes count as preceded.
+func errorStatusBefore(pass *analysis.Pass, fam *family, body *ast.BlockStmt, n ast.Node) bool {
+	var path []ast.Node
+	var stack []ast.Node
+	ast.Inspect(body, func(x ast.Node) bool {
+		if path != nil {
+			return false
+		}
+		if x == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, x)
+		if x == n {
+			path = append([]ast.Node(nil), stack...)
+			return false
+		}
+		return true
+	})
+	for i := len(path) - 2; i >= 0; i-- {
+		var list []ast.Stmt
+		switch c := path[i].(type) {
+		case *ast.BlockStmt:
+			list = c.List
+		case *ast.CaseClause:
+			list = c.Body
+		case *ast.CommClause:
+			list = c.Body
+		default:
+			continue
+		}
+		for _, st := range list {
+			if st == path[i+1] {
+				break
+			}
+			if isErrorStatusStmt(pass, fam, st) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isErrorStatusStmt reports whether st is a bare w.WriteHeader(c) on the
+// family's writer with c a non-2xx constant.
+func isErrorStatusStmt(pass *analysis.Pass, fam *family, st ast.Stmt) bool {
+	es, ok := st.(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := ast.Unparen(es.X).(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "WriteHeader" || !isWriterValue(pass, fam, sel.X) {
+		return false
+	}
+	return status2xx(pass, call.Args[0]) == statusNo
 }
 
 // parentMap maps every node in body to its parent.

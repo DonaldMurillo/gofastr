@@ -124,15 +124,76 @@ func noContextCommand(exe string) ([]byte, error) {
 	return out.Bytes(), cmd.Wait()
 }
 
-// wrapperReassign is bash.go's SandboxFn posture: the Cmd handed to
-// and returned from a wrapper is the wrapper's business.
+// wrapperReassign is the harness bash.go SandboxFn site (ledger H4):
+// the Cmd goes through a wrapper and comes back, and the returned Cmd
+// is still the CommandContext child. A wrapper that does not bound
+// Wait leaves the hang in place; `sleep 3600 & wait` outlived a 100 ms
+// timeout by an hour.
 func wrapperReassign(ctx context.Context, script string) error {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
 	cmd = wrapForSandbox(cmd)
 	var out bytes.Buffer
 	cmd.Stdout = &cappedWriter{w: &out}
 	cmd.Stderr = cmd.Stdout
+	return cmd.Run() // want `nowaitdelay: exec\.CommandContext child with captured stdout starts with no WaitDelay`
+}
+
+// wrapperField is the same site through a func-typed field, which the
+// rule cannot inspect: the caller still owns the bound.
+func (s *sandboxed) wrapperField(ctx context.Context, script string) error {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+	if s.wrap != nil {
+		cmd = s.wrap(cmd)
+	}
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	return cmd.Run() // want `nowaitdelay: exec\.CommandContext child with captured stdout starts with no WaitDelay`
+}
+
+// wrapperThenBound is the fix: WaitDelay set on the Cmd the wrapper
+// returned.
+func (s *sandboxed) wrapperThenBound(ctx context.Context, script string) error {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+	if s.wrap != nil {
+		cmd = s.wrap(cmd)
+	}
+	cmd.WaitDelay = time.Second
+	var out bytes.Buffer
+	cmd.Stdout = &out
 	return cmd.Run()
+}
+
+// wrapperBounds: a same-package wrapper that sets WaitDelay itself
+// counts as the helper posture.
+func wrapperBounds(ctx context.Context, script string) error {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+	cmd = boundAndWrap(cmd)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	return cmd.Run()
+}
+
+// wrapperReplaces: a call that does not take the tracked Cmd starts a
+// new provenance the rule does not follow (not a CommandContext result).
+func wrapperReplaces(ctx context.Context, script string) error {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+	cmd = freshCmd(script)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	return cmd.Run()
+}
+
+type sandboxed struct {
+	wrap func(*exec.Cmd) *exec.Cmd
+}
+
+func boundAndWrap(cmd *exec.Cmd) *exec.Cmd {
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
+func freshCmd(script string) *exec.Cmd {
+	return exec.Command("/bin/sh", "-c", script)
 }
 
 func wrapForSandbox(cmd *exec.Cmd) *exec.Cmd {

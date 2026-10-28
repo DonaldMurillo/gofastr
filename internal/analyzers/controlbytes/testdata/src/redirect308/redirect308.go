@@ -43,6 +43,39 @@ func handlePartial(w http.ResponseWriter, r *http.Request, a *app) {
 	}
 }
 
+// ignoredVerdict is ledger I9 of the 2026-10-27 bug bash: the validator
+// ran, but its answer was thrown away, so it vetted nothing.
+func ignoredVerdict(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Path
+	_ = isSafePartialRedirect(target)
+	isSafePartialRedirect(target)
+	http.Redirect(w, r, target, http.StatusSeeOther) // want `controlbytes: request-derived value reaches http.Redirect Location unscrubbed`
+}
+
+// keptVerdict stores the answer and gates on it: quiet.
+func keptVerdict(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Path
+	ok := isSafePartialRedirect(target)
+	if !ok {
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// mustBeSafe has no result: a call to it aborts on bad input, so the
+// statement form still vets.
+func mustBeSafe(p string) {
+	if !isSafePartialRedirect(p) {
+		panic("unsafe redirect")
+	}
+}
+
+func voidValidator(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Path
+	mustBeSafe(target)
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
 // pathValueTarget is a record-save handler's shape: the redirect
 // target embeds r.PathValue("id") with no check.
 func pathValueTarget(w http.ResponseWriter, r *http.Request) {

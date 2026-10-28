@@ -19,7 +19,12 @@
 // UnmarshalStrict / DecodeStrict (by name, any package that provides
 // one) at one site and through json.Unmarshal /
 // (*json.Decoder).Decode at another; the lax site is reported. The fix
-// posture is to decode that site through the same strict helper.
+// posture is to decode that site through the same strict helper. A
+// strict call that trails options into a variadic parameter
+// (handler.UnmarshalStrict(raw, &q, handler.UseNumber()),
+// battery/semantic/routes.go) is a strict site too; every collector
+// read only the two-argument form until ledger I6 of the 2026-10-27
+// bug bash.
 //
 // Cross package (round 5, arm a): kiln/agent/loop.go's dispatch fed
 // the kiln/protocol argument structs through a bare json.Unmarshal
@@ -45,8 +50,11 @@
 // handler.UnmarshalStrict at the read loop, frame.Params then decoded
 // by plain json.Unmarshal in every handler; pinned by
 // core/acp/params_strict_red_test.go). Quiet when the package walks
-// the field's keys anywhere (handler.CheckObjectKeys on an E.F
-// selector — the core/mcp protocol.go chokepoint pattern), or when the
+// the field's keys anywhere and keeps the verdict (handler.CheckObjectKeys
+// on an E.F selector whose error is used — the core/mcp protocol.go
+// chokepoint pattern; a walk called as a bare statement, under go or
+// defer, or assigned to _ refuses nothing and earns no credit, ledger
+// I11, which holds for arm c's deep-walk cover too), or when the
 // destination cannot carry key ambiguity at all (a scalar: string,
 // number, bool — json.Unmarshal(frame.ID, &id) into an int64 resolves
 // nothing).
@@ -160,16 +168,11 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, f := range files {
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) != 2 {
-				return true
-			}
-			fn, ok := astx.CalleeFunc(pass, call.Fun)
 			if !ok {
 				return true
 			}
-			switch fn.Name() {
-			case "UnmarshalStrict", "DecodeStrict":
-				if t, ok := dstType(pass, call.Args[1]); ok {
+			if dst, ok := strictDecodeDst(pass, call); ok {
+				if t, ok := dstType(pass, dst); ok {
 					strict[t] = true
 				}
 			}
@@ -525,15 +528,11 @@ func envelopeTypes(pass *analysis.Pass, files []*ast.File) map[types.Type]map[st
 	for _, f := range files {
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) != 2 {
-				return true
-			}
-			fn, ok := astx.CalleeFunc(pass, call.Fun)
 			if !ok {
 				return true
 			}
-			if fn.Name() == "UnmarshalStrict" || fn.Name() == "DecodeStrict" {
-				if t, ok := dstType(pass, call.Args[1]); ok {
+			if dst, ok := strictDecodeDst(pass, call); ok {
+				if t, ok := dstType(pass, dst); ok {
 					strict[t] = true
 				}
 			}
@@ -582,9 +581,10 @@ func isRawMessage(t types.Type) bool {
 func rawFieldCredit(pass *analysis.Pass, files []*ast.File) map[string]bool {
 	credit := map[string]bool{}
 	for _, f := range files {
+		dropped := discardedCalls(f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) < 1 {
+			if !ok || len(call.Args) < 1 || dropped[call] {
 				return true
 			}
 			fn, ok := astx.CalleeFunc(pass, call.Fun)
@@ -611,6 +611,66 @@ func rawFieldCredit(pass *analysis.Pass, files []*ast.File) map[string]bool {
 		})
 	}
 	return credit
+}
+
+// discardedCalls returns the calls in f whose results are thrown away: a
+// bare call statement, a go or defer statement, or an assignment of
+// every result to _. A key walk there refuses nothing (ledger I11), so
+// it earns no credit.
+func discardedCalls(f *ast.File) map[*ast.CallExpr]bool {
+	out := map[*ast.CallExpr]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.ExprStmt:
+			if c, ok := ast.Unparen(s.X).(*ast.CallExpr); ok {
+				out[c] = true
+			}
+		case *ast.GoStmt:
+			out[s.Call] = true
+		case *ast.DeferStmt:
+			out[s.Call] = true
+		case *ast.AssignStmt:
+			if len(s.Rhs) != 1 {
+				return true
+			}
+			c, ok := ast.Unparen(s.Rhs[0]).(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			for _, l := range s.Lhs {
+				if id, ok := l.(*ast.Ident); !ok || id.Name != "_" {
+					return true
+				}
+			}
+			out[c] = true
+		}
+		return true
+	})
+	return out
+}
+
+// strictDecodeDst returns the destination of a strict decode call: an
+// UnmarshalStrict or DecodeStrict (by name, any package) whose second
+// argument is the destination. A call passing trailing options
+// (handler.UnmarshalStrict(raw, &q, handler.UseNumber()), ledger I6) is
+// strict too, as long as the extras bind to the callee's variadic
+// parameter.
+func strictDecodeDst(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, bool) {
+	if len(call.Args) < 2 {
+		return nil, false
+	}
+	fn, ok := astx.CalleeFunc(pass, call.Fun)
+	if !ok || (fn.Name() != "UnmarshalStrict" && fn.Name() != "DecodeStrict") {
+		return nil, false
+	}
+	if len(call.Args) == 2 {
+		return call.Args[1], true
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || !sig.Variadic() || sig.Params().Len() != 3 {
+		return nil, false
+	}
+	return call.Args[1], true
 }
 
 func armB(pass *analysis.Pass, files []*ast.File, envelopes map[types.Type]map[string]bool, credit map[string]bool) {
@@ -707,6 +767,7 @@ func armC(pass *analysis.Pass, files []*ast.File) {
 			}
 			return true
 		})
+		dropped := discardedCalls(f)
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok || fd.Body == nil {
@@ -739,7 +800,9 @@ func armC(pass *analysis.Pass, files []*ast.File) {
 					}
 					if fn.Name() == "CheckTopLevelKeys" {
 						checks[obj] = call.Pos()
-					} else {
+					} else if !dropped[call] {
+						// A deep walk whose error is discarded covers
+						// nothing (ledger I11).
 						covered[obj] = true
 					}
 				case "Unmarshal":
@@ -1131,8 +1194,10 @@ func collectStrictCalls(f *ast.File, ownPath string, idx *strictIndex) {
 			if !ok || (sel.Sel.Name != "UnmarshalStrict" && sel.Sel.Name != "DecodeStrict") {
 				return true
 			}
-			// Only the two-arg decode shapes carry a destination.
-			if len(v.Args) != 2 {
+			// The destination is the second argument: DecodeStrict takes
+			// exactly two, UnmarshalStrict may trail options
+			// (handler.UseNumber(), ledger I6).
+			if len(v.Args) != 2 && (sel.Sel.Name != "UnmarshalStrict" || len(v.Args) < 2) {
 				return true
 			}
 			dst := v.Args[1]

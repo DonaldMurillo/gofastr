@@ -119,3 +119,35 @@ func topLevel(t reflect.Type) []string {
 	}
 	return out
 }
+
+// I2: the bound on the left of the condition is the same top-level walk.
+func leftBound(t reflect.Type) []string {
+	var out []string
+	for i := 0; t.NumField() > i; i++ { // want `struct field walk keyed by tag skips fields promoted from an embedded struct`
+		out = append(out, t.Field(i).Tag.Get("json"))
+	}
+	return out
+}
+
+// The left-bound spelling with the fix stays quiet.
+func leftBoundFixed(t reflect.Type) []string {
+	var out []string
+	for i := 0; t.NumField() > i; i++ {
+		f := t.Field(i)
+		if f.Anonymous {
+			out = append(out, leftBoundFixed(f.Type)...)
+			continue
+		}
+		out = append(out, f.Tag.Get("json"))
+	}
+	return out
+}
+
+// A condition that names NumField on neither side is no field walk.
+func notAWalk(t reflect.Type, n int) []string {
+	var out []string
+	for i := 0; n > i; i++ {
+		out = append(out, t.Field(i).Tag.Get("json"))
+	}
+	return out
+}
