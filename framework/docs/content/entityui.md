@@ -157,10 +157,13 @@ keeps the UI unchanged; without a callback the default stays
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
   `ui.DrawerBar` (close, its path, copy link, open as page) and its menu drops Copy
-  link. With `Steps()`, a drawer over the record's own list (the
+  link. With `Steps(list)`, a drawer over the record's own list (the
   builder's `Base`) adds previous and next record to the bar, in the
-  order the list shows its rows under the query it was opened from:
-  view, saved view, search, filter, facets and sort, read as the caller.
+  order `list` shows its rows under the query it was opened from: the
+  list's key, `View` and `Where` pins, and the view, saved view,
+  search, filter, facets and sort its query names, read as the caller.
+  Pass the same `ListBuilder` the list screen renders, or the steps
+  walk rows the list does not show; a list of another entity draws none.
   The query arrives from the client, so it is parsed the way the list
   parses its own URL, and a sort the list refuses (a masked field's) is
   refused here too. A record past the first `EveryMatchCap` rows, or
@@ -354,7 +357,7 @@ page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
 `NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
-`Duplicate()`, `Steps()`, `Panel()` and `Prefill(values)`.
+`Duplicate()`, `Steps(list)`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 

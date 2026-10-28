@@ -104,6 +104,17 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Bulk "Every match" and CSV export on a keyed list stay in its view.**
+  The every-match read rebuilt the list without its key, so it looked
+  for `view` instead of `<key>_view`. On `List(e).Key("inv").View("open")`
+  a delete of every match removed rows outside the open view, and the
+  export held them too.
+- **BREAKING: `RecordBuilder.Steps` takes the list the drawer opens
+  from.** `Steps()` rebuilt a bare list, so a keyed list's params were
+  read under the wrong names and its `View` and `Where` pins were
+  dropped. Previous and next could land on a record the list did not
+  show. Call `Steps(list)` with the same `ListBuilder` the list screen
+  renders; the admin battery does.
 - **BREAKING: CRUD events carry their record's owner into the outbox.**
   `crud.EventOutbox` declares `AppendFor(ctx, ex, owner, eventType,
   data)` in place of `Append`, and the outbox table gains an `owner`
@@ -2219,6 +2230,23 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **The relay keeps the app's headers and the vendor's hints apart.**
+  It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
+  on every fetch, to the vendor; every `X-Gofastr-*` header is now
+  stripped inbound. An upstream `103 Early Hints` is no longer
+  forwarded, so its unfiltered `Link` preload stays out of the browser,
+  and the security headers the app set before the relay ran survive
+  it (ReverseProxy cleared them). `Service-Worker-Allowed` is stripped
+  outbound, so vendor script cannot scope a worker over the whole app.
+  See [relay](framework/docs/content/relay.md).
+- **BREAKING: a process module's response headers are allow-listed.**
+  The proxy copied every header the child sent, so an untrusted module
+  could label a `text` body `text/html` and run script on the host
+  origin, set host cookies, or replace the host's Content-Security-Policy.
+  Only cache and language headers cross now, `Vary` adds to the host's,
+  `Content-Type` is always the body kind's with `nosniff`, and a status
+  outside 200–599 answers 503 instead of panicking. See
+  [process modules](framework/docs/content/process-modules.md).
 - **`golang.org/x/net` is v0.62.0.** v0.59.0 carries an advisory in
   `html.Parse`, which `battery/sitesearch` calls to extract page text.
   The bump brings the other `golang.org/x` modules to their current

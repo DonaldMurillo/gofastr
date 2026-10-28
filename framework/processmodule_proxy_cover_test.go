@@ -115,9 +115,10 @@ func TestCommitBufferedResponse_stripsHopByHop(t *testing.T) {
 	res := &moduleproto.HTTPResponseResult{
 		Status: 200,
 		Headers: map[string]string{
-			"Connection":   "keep-alive",
-			"X-Custom":     "kept",
-			"Content-Type": "application/json; charset=utf-8",
+			"Connection":    "keep-alive",
+			"X-Custom":      "dropped",
+			"Cache-Control": "no-cache",
+			"Content-Type":  "application/json; charset=utf-8",
 		},
 		Body: moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindJSON, Value: jsonRaw(`{"a":1}`)},
 	}
@@ -125,8 +126,11 @@ func TestCommitBufferedResponse_stripsHopByHop(t *testing.T) {
 	if rec.Header().Get("Connection") != "" {
 		t.Error("hop-by-hop Connection header was not stripped")
 	}
-	if rec.Header().Get("X-Custom") != "kept" {
-		t.Error("non-hop-by-hop header was dropped")
+	if rec.Header().Get("X-Custom") != "" {
+		t.Error("a header outside the allow-list crossed")
+	}
+	if rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Error("an allow-listed header was dropped")
 	}
 	if rec.Code != 200 {
 		t.Errorf("status = %d, want 200", rec.Code)

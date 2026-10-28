@@ -180,7 +180,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		case "hello":
 			return moduleproto.HTTPResponseResult{
 				Status:  200,
-				Headers: map[string]string{"X-Module": "demo"},
+				Headers: map[string]string{"Cache-Control": "no-cache"},
 				Body: moduleproto.HTTPResponseBody{
 					Kind:  moduleproto.BodyKindUINodeV1,
 					Value: screenTree(),
@@ -192,7 +192,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 			// bytes the child would have rendered.
 			return moduleproto.HTTPResponseResult{
 				Status:  200,
-				Headers: map[string]string{"X-Module": "demo"},
+				Headers: map[string]string{"Cache-Control": "no-cache"},
 				Body: moduleproto.HTTPResponseBody{
 					Kind:  moduleproto.BodyKindJSON,
 					Value: screenTree(),

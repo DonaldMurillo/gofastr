@@ -14,42 +14,49 @@ import (
 
 type stepScreen struct {
 	component.ContextOnly
-	x     *testUI
-	id    string
-	steps bool
+	x  *testUI
+	id string
+	// list is the list Steps walks; nil draws no steps.
+	list func(u *UI) *ListBuilder
 }
 
 func (s *stepScreen) SetParams(p map[string]string) { s.id = p["id"] }
 
 func (s *stepScreen) RenderCtx(ctx context.Context) render.HTML {
 	b := s.x.ui.Record("invoices", s.id).Base("/rec/invoices")
-	if s.steps {
-		b.Steps()
+	if s.list != nil {
+		b.Steps(s.list(s.x.ui))
 	}
 	return b.RenderCtx(ctx)
 }
 
+// plainList is the invoices list with no configuration.
+func plainList(u *UI) *ListBuilder { return u.List("invoices") }
+
 // stepWorld is u1's three invoices and one of u2's. The token field is
-// masked, and its order runs against the ids'.
-func stepWorld(t *testing.T, steps bool) (*testUI, *app.App) {
+// masked, and its order runs against the ids'. a2 is the one open row,
+// outside the drafts view.
+func stepWorld(t *testing.T, list func(u *UI) *ListBuilder) (*testUI, *app.App) {
 	t.Helper()
 	installOwnerExtractor(t)
 	ents := invoiceEntities()
 	inv := ents["invoices"]
 	inv.Fields = append(inv.Fields, schema.Field{Name: "owner_id", Type: schema.String, Hidden: true})
 	inv.Scope = &entity.ScopeConfig{OwnerField: "owner_id"}
+	inv.Display.Views = []entity.ListView{{Key: "drafts", Where: `status = "draft"`}}
+	inv.Display.Facets = []string{"status"}
 	ents["invoices"] = inv
 	rows := invoiceRows()
 	rows["invoices"] = []map[string]any{
 		{"id": "a1", "number": "A-1", "token": "z", "status": "draft", "owner_id": "u1"},
-		{"id": "a2", "number": "A-2", "token": "m", "status": "draft", "owner_id": "u1"},
+		{"id": "a2", "number": "A-2", "token": "m", "status": "open", "owner_id": "u1"},
 		{"id": "a3", "number": "A-3", "token": "a", "status": "draft", "owner_id": "u1"},
 		{"id": "b1", "number": "B-1", "token": "b", "status": "draft", "owner_id": "u2"},
 	}
 	x := newTestUIExt(t, ents, rows, Extensions{}, withAPI(map[string]string{"invoices": "/api/invoices"}))
 	a := app.NewApp("rec")
-	a.Register("/rec/invoices", &stepScreen{x: x, steps: steps}, nil)
-	a.Register("/rec/invoices/:id", &stepScreen{x: x, steps: steps}, nil, app.InterceptFrom("/rec/invoices", app.ScreenDrawer))
+	a.Register("/rec/invoices", &stepScreen{x: x, list: list}, nil)
+	a.Register("/rec/invoices/:id", &stepScreen{x: x, list: list}, nil, app.InterceptFrom("/rec/invoices", app.ScreenDrawer))
 	return x, a
 }
 
@@ -89,7 +96,7 @@ func drawerSteps(t *testing.T, x *testUI, a *app.App, id, origin string) (prev, 
 // step past it, and a sort on a masked field is refused the way the list
 // refuses it, so the steps never reveal the masked field's order.
 func TestDrawerStepsFollowTheList(t *testing.T) {
-	x, a := stepWorld(t, true)
+	x, a := stepWorld(t, plainList)
 	for _, tc := range []struct {
 		name, id, origin, prev, next string
 	}{
@@ -109,7 +116,7 @@ func TestDrawerStepsFollowTheList(t *testing.T) {
 // Steps belong to a drawer over the record's own list: a drawer over
 // any other page, the full page, and a builder without Steps draw none.
 func TestDrawerStepsOnlyOverTheList(t *testing.T) {
-	x, a := stepWorld(t, true)
+	x, a := stepWorld(t, plainList)
 	if _, _, ok := drawerSteps(t, x, a, "a2", "/rec/customers/cus-1?sort=number"); ok {
 		t.Error("a drawer over another page drew steps")
 	}
@@ -120,8 +127,40 @@ func TestDrawerStepsOnlyOverTheList(t *testing.T) {
 	if stepCtlRe.MatchString(string(page.HTML)) {
 		t.Error("the full page drew steps")
 	}
-	x, a = stepWorld(t, false)
+	x, a = stepWorld(t, nil)
 	if _, _, ok := drawerSteps(t, x, a, "a2", "/rec/invoices"); ok {
 		t.Error("a builder without Steps drew steps")
+	}
+	x, a = stepWorld(t, func(u *UI) *ListBuilder { return u.List("customers") })
+	if _, _, ok := drawerSteps(t, x, a, "a2", "/rec/invoices"); ok {
+		t.Error("Steps over another entity's list drew steps")
+	}
+	x, a = stepWorld(t, func(u *UI) *ListBuilder { return u.List("invoices").Key("Inv") })
+	if _, _, ok := drawerSteps(t, x, a, "a2", "/rec/invoices"); ok {
+		t.Error("Steps over a list whose key the list refuses drew steps")
+	}
+}
+
+// Steps walk the list they were given: its key names its params, and
+// its View and Where pins narrow the rows, so the open a2 is never a
+// step from a drafts-only list.
+func TestDrawerStepsKeepListConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin string
+		list         func(u *UI) *ListBuilder
+	}{
+		{"keyed view", "/rec/invoices?inv_sort=number&inv_dir=desc",
+			func(u *UI) *ListBuilder { return u.List("invoices").Key("inv").View("drafts") }},
+		{"pinned", "/rec/invoices?sort=number&dir=desc",
+			func(u *UI) *ListBuilder { return u.List("invoices").Where("status", "draft") }},
+		// The list draws no facet for a pinned field, so it ignores one in the query.
+		{"pinned, facet on the pin", "/rec/invoices?sort=number&dir=desc&f_status=open",
+			func(u *UI) *ListBuilder { return u.List("invoices").Where("status", "draft") }},
+	} {
+		x, a := stepWorld(t, tc.list)
+		prev, next, ok := drawerSteps(t, x, a, "a3", tc.origin)
+		if !ok || prev != "" || next != "/rec/invoices/a1" {
+			t.Errorf("%s: steps = %q, %q (drawn %v), want \"\", /rec/invoices/a1", tc.name, prev, next, ok)
+		}
 	}
 }
