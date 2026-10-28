@@ -246,6 +246,29 @@ func clearedAfterPolledSend(w http.ResponseWriter, r *http.Request, relay chan c
 	}
 }
 
+// clearedAfterPolledDest drains into an index read from slots: the
+// select evaluates a receive's destination once the case is chosen, so
+// <-slots waits before the clause body runs.
+func clearedAfterPolledDest(w http.ResponseWriter, r *http.Request, slots chan int) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for events := range batches() {
+		saved := []string{""}
+	drain:
+		for {
+			select {
+			case saved[<-slots] = <-events:
+				_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+				fmt.Fprintf(w, "data: %s\n\n", saved[0])
+				_ = rc.Flush()
+			default:
+				break drain
+			}
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
 // clearedAfterSendSelect hands each chunk on through a select with no
 // default: it waits on relay even with no receive case, under the
 // deadline the previous write armed.

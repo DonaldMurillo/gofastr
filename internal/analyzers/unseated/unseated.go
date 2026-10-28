@@ -762,8 +762,9 @@ func selectHasDefault(s *ast.SelectStmt) bool {
 }
 
 // commOperands: the expressions a select evaluates for one comm clause
-// before it chooses a case: the channel of a receive, or the channel and
-// value of a send. The receive or send itself is left out.
+// outside the communication itself: the channel of a receive, the
+// channel and value of a send, and a receive's destinations, which are
+// evaluated once the case is chosen (`case s[<-i] = <-ch` waits on i).
 func commOperands(comm ast.Stmt) []ast.Expr {
 	recvOf := func(x ast.Expr) []ast.Expr {
 		if recv, ok := ast.Unparen(x).(*ast.UnaryExpr); ok && recv.Op == token.ARROW {
@@ -776,7 +777,7 @@ func commOperands(comm ast.Stmt) []ast.Expr {
 		return recvOf(c.X)
 	case *ast.AssignStmt:
 		if len(c.Rhs) == 1 {
-			return recvOf(c.Rhs[0])
+			return append(recvOf(c.Rhs[0]), c.Lhs...)
 		}
 	case *ast.SendStmt:
 		return []ast.Expr{c.Chan, c.Value}
