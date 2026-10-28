@@ -2230,6 +2230,12 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **BREAKING: an API token reaches the admin only with `admin.AdminScope`.**
+  The gate read the token's owner and its roles, never the token's
+  scopes, so a `customers:read` token an admin minted could read the
+  audit log and toggle process modules. A token now needs
+  `"admin:access"` (or `"admin:*"` or `"*:*"`); sessions are unaffected.
+  See [admin](framework/docs/content/admin.md).
 - **BREAKING: the admin's platform pages refuse a tenant-scoped caller.**
   Queue jobs, auth accounts, role grants and process modules carry no
   tenant, so a tenant's admin could list, replay, grant, assign roles to

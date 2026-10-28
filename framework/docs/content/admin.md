@@ -615,10 +615,15 @@ The gate admits an authenticated user whose `GetRoles()` holds
 `Config.AdminRole` (default `"admin"`); `battery/auth`'s `User` does.
 `Config.Authorize` replaces the role check with your own predicate; one
 that panics refuses, as `false` does, and the log names the callback and
-the panic's type. Two refusals run before either:
+the panic's type. Three refusals run before either:
 
 - an `embed` grant on the request (an embedded surface never reaches the
   back office);
+- an API token without `admin.AdminScope` (`"admin:access"`; `"admin:*"`
+  and `"*:*"` cover it). A token carries its owner's roles, so one an
+  admin minted with `customers:read` for a reporting job would otherwise
+  open the whole back office. Sessions and JWTs carry no token scopes and
+  are unaffected;
 - an `access.Decider` on the request returning `DecisionDeny`.
 
 A signed-out caller gets `401`, a signed-in caller without the role

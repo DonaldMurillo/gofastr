@@ -484,11 +484,22 @@ func (b *Battery) askPolicy(name string, ask func() bool) (ok bool) {
 	return ask()
 }
 
+// AdminScope is the API-token scope that reaches the admin. A request an
+// API token authenticated passes the gate only when the token holds it
+// ("admin:*" and "*:*" cover it): a token carries its owner's roles,
+// and one an admin minted for another surface must not open the back
+// office. Sessions and JWTs carry no token scopes and are unaffected.
+const AdminScope = "admin:access"
+
 // authorized reports whether the request may use the admin. The embed
-// refusal and a Decider's deny run before everything else and cannot be
-// lifted by Authorize; a Decider can veto the admin, never admit it.
+// refusal, a token without AdminScope and a Decider's deny run before
+// everything else and cannot be lifted by Authorize; a Decider can veto
+// the admin, never admit it.
 func (b *Battery) authorized(ctx context.Context) bool {
 	if _, embedded := embed.GrantFromContext(ctx); embedded {
+		return false
+	}
+	if held, tokenAuthed := auth.TokenScopes(ctx); tokenAuthed && !auth.ScopeMatch(held, AdminScope) {
 		return false
 	}
 	if d := access.GetDecider(ctx); d != nil {

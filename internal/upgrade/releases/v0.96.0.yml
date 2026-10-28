@@ -245,3 +245,10 @@ notes:
     find:
       uses:
         - gofastr/framework.ProcessModuleSupervisor.RevokeGrants
+  - change: "BREAKING - an API-token request reaches battery/admin only when the token holds admin.AdminScope (admin:access; admin:* and *:* cover it)"
+    breaking: true
+    hits: review
+    guidance: "A token carried its owner's admin role into the back office whatever its scopes. A script that drives the admin with a token mints one with the admin:access scope; sessions and JWTs change nothing."
+    find:
+      uses:
+        - gofastr/battery/admin.New
