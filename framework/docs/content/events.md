@@ -123,7 +123,12 @@ the same bus the SSE stream subscribes to.
 
 In-process subscribers are not subject to the 32-event SSE buffer.
 `EmitAsync` runs each subscriber on its own goroutine, so a slow or
-blocked handler does not hold back the others. A payload whose
+blocked handler does not hold back the others. The subscriber's context
+keeps the emitter's values (the user, the tenant, the request id) but not
+its cancel, because CRUD emits on the request context and the handler
+has usually returned by the time a subscriber runs. Each run is bounded
+by `event.AsyncHandlerTimeout` (one minute); work longer than that starts
+its own job. A payload whose
 `MarshalJSON` panics skips the fanout and still reaches local
 subscribers.
 

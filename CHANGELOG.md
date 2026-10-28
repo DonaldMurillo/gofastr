@@ -104,6 +104,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An `EmitAsync` subscriber no longer runs on a cancelled request
+  context.** CRUD emits on the request's context, and the handler
+  returned before the subscriber ran, so the webhook bridge's subscriber
+  query failed with `context canceled` and a committed write lost its
+  webhook. Subscribers and the fanout tap keep the context's values
+  without its cancel, each bounded by the new `event.AsyncHandlerTimeout`
+  (one minute). See [events](framework/docs/content/events.md).
 - **Bulk "Every match" and CSV export on a keyed list stay in its view.**
   The every-match read rebuilt the list without its key, so it looked
   for `view` instead of `<key>_view`. On `List(e).Key("inv").View("open")`
