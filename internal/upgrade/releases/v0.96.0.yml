@@ -238,3 +238,10 @@ notes:
     find:
       uses:
         - gofastr/battery/admin.New
+  - change: "BREAKING - ProcessModuleSupervisor.RevokeGrants removes the grants it names and keeps the rest instead of replacing the set with them, and refuses an empty list; ProcessModuleStore gains RemoveEffectiveGrants"
+    breaking: true
+    hits: review
+    guidance: "A call that passed the narrowed set now passes the grants to take away: RevokeGrants(ctx, name, []access.Permission{\"invoices:write\"}). A call passing nil or an empty list to revoke everything now errors; name every grant. A custom ProcessModuleStore implements RemoveEffectiveGrants as a compare-and-swap on the generation, like SQLProcessModuleStore."
+    find:
+      uses:
+        - gofastr/framework.ProcessModuleSupervisor.RevokeGrants

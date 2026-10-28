@@ -558,7 +558,8 @@ it is applied.
 With `Config.ProcessModules` set to `app.ProcessModules()` (see
 [process-modules](process-modules.md)), `/admin/modules` lists each
 module's state, restart count, and the circuit-open and lease-failing
-flags. Its levers (enable, disable, bump generation, revoke a grant) post
+flags. Its levers (enable, disable, bump generation, revoke a grant,
+which takes that one grant away and keeps the rest) post
 to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
 caller's roles in `Config.Policy`; without it, or without a policy, the

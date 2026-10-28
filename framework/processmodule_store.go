@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -86,6 +87,11 @@ type ProcessModuleStore interface {
 	// new generation.
 	SetEffectiveGrants(ctx context.Context, module string, grants []access.Permission) (uint64, error)
 
+	// RemoveEffectiveGrants takes grants out of the effective grant set,
+	// keeping the rest, AND bumps generation. Two removals at once both
+	// stick. It refuses an empty grants. Returns the new generation.
+	RemoveEffectiveGrants(ctx context.Context, module string, grants []access.Permission) (uint64, error)
+
 	// SetMigrationsAppliedAt records the timestamp pending migrations
 	// finished at. Nil clears it.
 	SetMigrationsAppliedAt(ctx context.Context, module string, at *time.Time) error
@@ -158,6 +164,9 @@ var ErrNoDesiredRow = errors.New("processmodule: no desired-state row")
 type SQLProcessModuleStore struct {
 	db      *sql.DB
 	dialect migrate.Dialect
+	// afterGrantsRead, when set, runs between RemoveEffectiveGrants'
+	// read and its write: a test's window for a concurrent write.
+	afterGrantsRead func()
 }
 
 // NewSQLProcessModuleStore constructs a SQL-backed store over db. EnsureSchema
@@ -526,6 +535,57 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: commit: %w", module, err)
 	}
 	return uint64(gen), nil
+}
+
+// errNoGrantsNamed is a removal that names no grant.
+var errNoGrantsNamed = errors.New("names no grant")
+
+// removeGrantsAttempts bounds RemoveEffectiveGrants' retries when other
+// writes keep moving the generation.
+const removeGrantsAttempts = 8
+
+// RemoveEffectiveGrants takes grants out of the effective grant set and
+// bumps generation. The write is a compare-and-swap on the generation
+// it read, retried when another write moved it, so a grant change that
+// lands between the read and the write is kept: replacing the set from
+// a stale read would put back a grant another revoke took away.
+func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, module string, grants []access.Permission) (uint64, error) {
+	if len(grants) == 0 {
+		return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, errNoGrantsNamed)
+	}
+	upd := fmt.Sprintf(`UPDATE %s SET effective_grants = %s, desired_generation = desired_generation + 1 WHERE module = %s AND desired_generation = %s`,
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3))
+	for range removeGrantsAttempts {
+		d, err := s.GetDesired(ctx, module)
+		if err != nil {
+			return 0, err
+		}
+		if d.DesiredGeneration > math.MaxInt64-1 {
+			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: generation %d out of range", module, d.DesiredGeneration)
+		}
+		kept := slices.DeleteFunc(slices.Clone(d.EffectiveGrants), func(g access.Permission) bool {
+			return slices.Contains(grants, g)
+		})
+		grantsJSON, err := marshalGrants(kept)
+		if err != nil {
+			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, err)
+		}
+		if s.afterGrantsRead != nil {
+			s.afterGrantsRead()
+		}
+		res, err := s.db.ExecContext(ctx, upd, string(grantsJSON), module, int64(d.DesiredGeneration))
+		if err != nil {
+			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: update: %w", module, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: rows: %w", module, err)
+		}
+		if n == 1 {
+			return d.DesiredGeneration + 1, nil
+		}
+	}
+	return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: generation kept moving after %d attempts", module, removeGrantsAttempts)
 }
 
 // SetMigrationsAppliedAt records (or clears) the migrations-applied timestamp.

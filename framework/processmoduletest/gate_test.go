@@ -683,7 +683,7 @@ func TestGate_RevokeDeniesReverseCall(t *testing.T) {
 
 	// Revoke articles:read → generation bumps, the child drains and respawns
 	// from the store's now-empty EffectiveGrants.
-	if _, err := sup.RevokeGrants(context.Background(), d.Name, nil); err != nil {
+	if _, err := sup.RevokeGrants(context.Background(), d.Name, []access.Permission{"articles:read"}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	waitForState(t, sup, d.Name, framework.StateReady, 6*time.Second)

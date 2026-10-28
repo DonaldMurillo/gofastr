@@ -2249,6 +2249,13 @@ few lines, and link the PR or the docs page for the rest.
   check for anyone. The check now covers every role a save adds or takes
   away, and a permissionless role needs the caller to hold it or the
   wildcard. See [admin](framework/docs/content/admin.md).
+- **BREAKING: `RevokeGrants` removes the grants it names.** It replaced
+  the module's grant set with them, so the admin's Revoke on
+  `invoices:write` left a read-and-write module write-only. It now keeps
+  the rest, refuses an empty list (which used to revoke everything), and
+  writes through the new `ProcessModuleStore.RemoveEffectiveGrants`, a
+  compare-and-swap so concurrent revokes both stick. See
+  [process modules](framework/docs/content/process-modules.md).
 - **The relay keeps the app's headers and the vendor's hints apart.**
   It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
   on every fetch, to the vendor; every `X-Gofastr-*` header is now

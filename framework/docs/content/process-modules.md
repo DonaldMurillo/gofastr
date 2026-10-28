@@ -71,7 +71,12 @@ module's routes answer 404. The operator enables one via
 drive the one stored state, and a toggle takes effect before the call
 returns. Enabling after `App.Start` spawns the child. Disable, grant
 revoke, and upgrade (artifact change) are all live and propagate across
-replicas through the SQL-backed `ProcessModuleStore`. A request body over
+replicas through the SQL-backed `ProcessModuleStore`.
+`RevokeGrants(ctx, name, grants)` takes the named grants out of the
+module's effective set, keeps the rest and bumps the generation; it
+refuses an empty `grants`. The store writes it as a compare-and-swap on
+the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
+two revokes at once both stick. A request body over
 the module's limit answers 413 rather than reaching the child truncated.
 
 Every boot calls `RegisterProcessModule` again, and so does every
