@@ -2237,6 +2237,16 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **An OAuth sign-in no longer survives an account claim that overtakes
+  it.** A returning sign-in refreshed its link's profile with an
+  upsert, so a claim that removed the link between the lookup and the
+  refresh had the squatter's link put back, and the session minted
+  afterwards outlived the claim's purge. The refresh is UPDATE-only
+  through the new `OAuthProfileRefresher` (implemented by
+  `EntityUserStore`; a custom store without it keeps the link-time
+  profile), and the callback resolves the link again after minting and
+  answers 401 when it no longer names the account. See
+  [auth](framework/docs/content/auth.md#proving-the-mailbox-claims-an-unverified-account).
 - **An API token or passkey created across a reset no longer survives
   it.** `POST /auth/tokens` and `POST /auth/passkey/register` read the
   caller before the body, and a reset revokes tokens and passkeys once.

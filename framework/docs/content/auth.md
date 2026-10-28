@@ -204,6 +204,7 @@ safe-but-reduced path.
 |---|---|---|
 | `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production. The legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
+| `OAuthProfileRefresher` | `OAuth2Plugin` | Update the profile of an existing link on a returning sign-in, never inserting one. `EntityUserStore` implements it. Without it the profile stays as it was at link time. |
 | `OAuthUserCreator` | `OAuth2Plugin`, `MagicLinkPlugin` | Record at creation time that the user has no password. Lets `PasswordChecker.HasPassword` return false correctly. |
 | `OAuthTokenRefresher` | `RefreshOAuthToken` / `ValidOAuthToken` | Exchange a stored refresh token for a fresh access token. Implemented by `GoogleProvider` and `GitHubProvider`. See "OAuth token store + refresh". |
 | `AccountLister` | `AccountsPlugin` | Power `GET /auth/accounts`. Required. |
@@ -1486,9 +1487,10 @@ session. In order:
 1. every OAuth link is removed;
 2. the password is cleared (magic link only; a reset keeps the new
    one);
-3. every API token issued through `TokensPlugin` is revoked;
-4. every session is deleted;
-5. the account is marked verified and `account.claimed` is emitted.
+3. every passkey is removed;
+4. every API token issued through `TokensPlugin` is revoked;
+5. every session is deleted;
+6. the account is marked verified and `account.claimed` is emitted.
 
 The account is marked verified last, so a failure anywhere leaves it
 unverified, the request answers 500, and the next proof runs the whole
@@ -1496,6 +1498,13 @@ claim again. A store missing an extension the claim needs is an error,
 never a skipped step. An enrolled second factor survives the claim: the
 mailbox is one factor, and stripping 2FA here would let a mailbox alone
 remove it from every account that predates `email_verified`.
+
+An OAuth sign-in already under way when the claim lands does not keep
+the account. Its profile refresh is an UPDATE, so it cannot put back a
+link the claim removed, and once its session is stored it resolves the
+link again. A link that is gone or names another account drops the
+session: the callback answers 401 `auth.oauth_link_removed` and emits
+`oauth.refused` with `reason=link_removed`.
 
 A verified account is never claimed: a magic link signs its owner in
 and leaves the password and other sessions alone.
@@ -1662,7 +1671,7 @@ downgrading.
 `resolveOAuthUser` runs this decision table on every callback:
 
 1. **Existing link.** `FindByOAuth(provider, providerID)` hit → log in
-   as the linked user. Profile refresh via `LinkOAuthEnriched` is
+   as the linked user. Profile refresh via `RefreshOAuthProfile` is
    best-effort and does not block login. When the IdP asserts
    `email_verified` for exactly the account's address, the account is
    marked verified (best-effort).

@@ -277,3 +277,7 @@ notes:
     breaking: true
     guidance: "A sibling subdomain could plant the plain gofastr_oauth_state cookie and pass the callback's browser binding. DevMode keeps the plain name. A test that synthesises a production-mode callback sends the __Host- name; anything that reads or strips the cookie by name (a proxy rule, a cookie-consent list) uses it too."
     nodetect: the cookie is planted and checked by the framework; a name in a proxy rule or test has no Go shape
+  - change: "A returning OAuth sign-in refreshes its link's profile only through OAuthProfileRefresher; a custom user store with only OAuthEnrichedLinker keeps the profile from link time"
+    breaking: false
+    guidance: "The refresh used LinkOAuthEnriched, an upsert that put back a link an account claim had just removed. Implement RefreshOAuthProfile(ctx, userID, provider, providerID, profile) as an UPDATE of the link's profile columns, matching all three keys, to keep profiles current. EntityUserStore does already."
+    nodetect: "a custom store implements the method on its own type; no framework name appears at the site"
