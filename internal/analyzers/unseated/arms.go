@@ -473,12 +473,14 @@ func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*
 // clearFollows: a call after site, inside body, reaches a clear. When
 // site sits in one of f's park loops the clear must sit in that loop's
 // body too: one after the loop leaves every wait for the next event
-// under the deadline the last write armed.
+// under the deadline the last write armed. The loop is the innermost one
+// holding site that parks: a clear per batch still leaves the inner wait
+// on the batch under the deadline.
 func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 	scope := body
 	for _, l := range a.loops[f] {
 		if site.Pos() >= l.body.Pos() && site.End() <= l.body.End() {
-			scope = l.body
+			scope = a.innermostPark(l.body, site)
 			break
 		}
 	}
@@ -498,6 +500,36 @@ func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 		return true
 	})
 	return found
+}
+
+// innermostPark: the body of the innermost parking loop (a channel range,
+// or a for loop forLoopParks accepts) inside outer that holds site, or
+// outer itself. A loop over a slice never parks and is passed through.
+func (a *arms) innermostPark(outer *ast.BlockStmt, site ast.Node) ast.Node {
+	in := ast.Node(outer)
+	ast.Inspect(outer, func(n ast.Node) bool {
+		if n == nil || n.Pos() > site.Pos() || n.End() < site.End() {
+			return false
+		}
+		var b *ast.BlockStmt
+		switch st := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.RangeStmt:
+			if _, ok := underlyingChan(typeOf(a.pass, st.X)); ok {
+				b = st.Body
+			}
+		case *ast.ForStmt:
+			if forLoopParks(a.pass, st) {
+				b = st.Body
+			}
+		}
+		if b != nil && site.Pos() >= b.Pos() && site.End() <= b.End() {
+			in = b
+		}
+		return true
+	})
+	return in
 }
 
 // armedDeadlines: the ResponseController deadlines f arms in the future.

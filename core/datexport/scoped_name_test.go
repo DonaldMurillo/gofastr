@@ -54,6 +54,9 @@ func TestScopedNameFoldsCase(t *testing.T) {
 	if n := datexport.ScopedName("event_outbox", "EVENT_OUTBOX"); n != "event_outbox" {
 		t.Errorf("the default table spelled in capitals gives %q", n)
 	}
+	if n := datexport.ScopedName("Events", "Events"); n != "Events" {
+		t.Errorf("a capitalized base on its own default table gives %q", n)
+	}
 }
 
 func TestScopedNameBoundsLength(t *testing.T) {

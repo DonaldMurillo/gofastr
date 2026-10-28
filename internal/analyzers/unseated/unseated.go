@@ -195,6 +195,8 @@
 // each later arm standing, and the arm is reported. An arm inside a park
 // loop needs its clear inside that loop's body: a clear after the loop
 // leaves every wait for the next event under the last write's deadline.
+// With nested parks (a range over batches, then over each batch) the
+// clear belongs in the innermost one; a loop over a slice never parks.
 // A past-deadline cut (time.Now(), the SSEBroker's eviction)
 // is meant to end the stream and is not an arm; a hijacked conn's
 // deadline is HTTP/1 only and out of scope; a one-shot answer with no

@@ -148,6 +148,38 @@ func clearedOnlyFirst(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func batches() <-chan chan string { return make(chan chan string, 1) }
+
+// clearedAfterInnerLoop clears per batch, but the inner loop parks on
+// the batch under the deadline its last write armed.
+func clearedAfterInnerLoop(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for batch := range batches() {
+		for ev := range batch {
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+			_ = rc.Flush()
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// clearedPerChunk writes a batch's chunks from a slice, which never
+// parks, and clears before waiting on the next event.
+func clearedPerChunk(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for _, chunk := range []string{ev, ev} {
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+		}
+		_ = rc.Flush()
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
 // clearedAfterLoop clears once the loop ends: every wait for the next
 // event still runs under the deadline the last write armed.
 func clearedAfterLoop(w http.ResponseWriter, r *http.Request) {

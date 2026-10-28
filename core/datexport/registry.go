@@ -234,7 +234,7 @@ func Register(e DataExporter) {
 func ScopedName(base, table string) string {
 	table = foldASCII(table)
 	b := []byte(base)
-	if table != base {
+	if table != foldASCII(base) {
 		b = append(b, '-')
 		for i := 0; i < len(table); i++ {
 			c := table[i]
