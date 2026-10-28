@@ -2237,6 +2237,14 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A sibling subdomain can no longer plant the OAuth state cookie.** The
+  browser-binding cookie was `gofastr_oauth_state` even over Secure, so a
+  page on another subdomain could set it for the parent domain with its own
+  flow's state and sign a victim into the attacker's account at the
+  callback. With `SessionSecure` on it is now `__Host-gofastr_oauth_state`;
+  DevMode keeps the plain name. A flow started before the upgrade and
+  finished after it fails once and is retried. See
+  [auth](framework/docs/content/auth.md).
 - **A soft-deleted user no longer signs in.** With `Scope.SoftDelete` on
   the users entity, `EntityUserStore` looked accounts up by id or email
   alone, so a trashed account kept its password login and every session,

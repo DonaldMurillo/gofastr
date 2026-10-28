@@ -849,7 +849,8 @@ func runCallback(t *testing.T, mgr *AuthManager, r *router.Router, providerName 
 	if err != nil {
 		t.Fatalf("generateState: %v", err)
 	}
-	req := oauthCallbackReq("/auth/oauth/"+providerName+"/callback?state="+state+"&code=fakecode", state)
+	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/"+providerName+"/callback?state="+state+"&code=fakecode", nil)
+	req.AddCookie(&http.Cookie{Name: op.stateCookieName(), Value: state})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w

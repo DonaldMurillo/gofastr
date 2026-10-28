@@ -1584,9 +1584,18 @@ it is how someone recognises the link was not meant for them.
 
 Starting an OAuth flow (`GET /auth/oauth/{provider}` or
 `.../{provider}/link`) plants a short-lived `HttpOnly`, `SameSite=Lax`
-`gofastr_oauth_state` cookie holding the same signed state token that
-goes into the redirect URL. The callback requires the two to match and
-clears the cookie either way.
+cookie holding the same signed state token that goes into the redirect
+URL. The callback requires the two to match and clears the cookie
+either way.
+
+With `SessionSecure` on (the production default) the cookie is
+`__Host-gofastr_oauth_state`, and the callback reads that name alone. A
+sibling subdomain can set a cookie for the parent domain, so a plain name
+let `evil.example.com` plant its own state for the victim's callback and
+sign the victim into the attacker's account. A browser accepts a
+`__Host-` cookie only from the host itself, `Secure`, with `Path=/`.
+DevMode over plain HTTP uses `gofastr_oauth_state`, since a browser
+refuses a `__Host-` cookie without `Secure`.
 
 Without it the state token, unforgeable and single-use though it is,
 binds the callback to nothing about the caller: an attacker could start

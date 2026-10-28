@@ -247,13 +247,32 @@ func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
 // still rides the provider's top-level redirect back to the callback, so
 // the legitimate flow is unaffected, while a callback URL replayed into
 // any other browser carries no cookie at all.
-const oauthStateCookie = "gofastr_oauth_state"
+//
+// Over Secure the name carries the __Host- prefix. A sibling subdomain can
+// set a cookie for the parent domain, and a planted
+// gofastr_oauth_state=<attacker's state>; Domain=example.com on the
+// callback path sorted ahead of the real one and passed the binding. A
+// browser accepts a __Host- cookie only host-only, Secure and Path=/, so
+// no sibling can plant it. DevMode over plain HTTP keeps the bare name
+// (oauthStateCookieDev): a __Host- cookie without Secure is refused.
+const (
+	oauthStateCookie    = "__Host-gofastr_oauth_state"
+	oauthStateCookieDev = "gofastr_oauth_state"
+)
+
+// stateCookieName is the binding cookie's name at set, read and clear.
+func (p *OAuth2Plugin) stateCookieName() string {
+	if p.mgr.Config().SessionSecure {
+		return oauthStateCookie
+	}
+	return oauthStateCookieDev
+}
 
 // bindStateToBrowser plants the state token in a short-lived HttpOnly
 // cookie alongside issuing it in the redirect URL.
 func (p *OAuth2Plugin) bindStateToBrowser(w http.ResponseWriter, state string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     oauthStateCookie,
+		Name:     p.stateCookieName(),
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
@@ -268,7 +287,7 @@ func (p *OAuth2Plugin) bindStateToBrowser(w http.ResponseWriter, state string) {
 // not authorise a later replay.
 func (p *OAuth2Plugin) requireBoundBrowser(w http.ResponseWriter, r *http.Request, state string) bool {
 	http.SetCookie(w, &http.Cookie{
-		Name:     oauthStateCookie,
+		Name:     p.stateCookieName(),
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -276,7 +295,7 @@ func (p *OAuth2Plugin) requireBoundBrowser(w http.ResponseWriter, r *http.Reques
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
-	c, err := r.Cookie(oauthStateCookie)
+	c, err := r.Cookie(p.stateCookieName())
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -597,7 +616,7 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	if _, err := p.mgr.requestSession(r, false); err == nil {
 		return false
 	}
-	c, err := r.Cookie(oauthStateCookie)
+	c, err := r.Cookie(p.stateCookieName())
 	if err != nil || c.Value == "" || subtle.ConstantTimeCompare([]byte(c.Value), []byte(state)) != 1 {
 		return false
 	}
