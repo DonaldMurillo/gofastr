@@ -2237,6 +2237,14 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A stale password change no longer overwrites a completed reset.** A
+  change verified the current password, computed the new hash, then wrote
+  it keyed on the user id alone, so a reset that landed in between was
+  replaced by the stale request's password and the change handed out a
+  fresh session. The write now needs the verified hash to still be stored
+  (new optional `PasswordSwapper`, implemented by `EntityUserStore`), and
+  a change that loses answers 422 like a wrong current password. See
+  [auth](framework/docs/content/auth.md).
 - **OIDC no longer borrows `email_verified` for a different address.** An
   id_token with an email but no `email_verified` took the flag from
   userinfo even when userinfo named another address, so the id_token's

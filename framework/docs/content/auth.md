@@ -112,7 +112,10 @@ On success the user's other sessions are revoked (`session.revoked`,
 (`magiclink_tokens.purged`), and `password.changed` is emitted. A failed
 magic-link purge is logged and the change still stands. A failed session
 purge answers 500 `auth.change_incomplete`: the new password is set, but
-the other sessions may still work, so change it again. The caller
+the other sessions may still work, so change it again. A reset or
+another change that lands while the new hash is computed wins: the
+change answers 422 on `current_password`, as for a wrong one
+(`password.change_failed`, `reason=credential_changed`). The caller
 gets a fresh session cookie that keeps the second factor the old
 session had passed; the response is `{"updated": true}`. API tokens
 stay: the user minted them on purpose and revokes them under
@@ -210,6 +213,7 @@ safe-but-reduced path.
 | `EmailVerifiedChecker` | `MagicLinkPlugin`, `OAuth2Plugin`, `PasswordResetPlugin` | Report whether the address was proven. Magic link refuses an existing account (500) on a store without it, because it cannot tell an owner from a squatter. OAuth treats its absence as unverified and never auto-links. Reset skips the claim. |
 | `PasswordClearer` | `MagicLinkPlugin` | Remove a squatter's password during a claim (placeholder hash, `password_set = false`). Without it the claim falls back to `PasswordSetter` with the placeholder hash. |
 | `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
+| `PasswordSwapper` | `POST /auth/password` | Write the new hash only while the stored one is still the hash the change verified, in one statement. `EntityUserStore` implements it. Without it the change re-reads the hash just before writing, which leaves a short window a reset can land in. |
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
 | `AtomicUnlinker` | `AccountsPlugin` | Decide and apply the last-credential guard in ONE store operation, so the refuse-the-last invariant holds when two unlinks race (two concurrent DELETEs of a two-method OAuth-only account cannot both win). `EntityUserStore` implements it (FOR UPDATE transaction on Postgres, single conditional DELETE on SQLite); stores without it keep the check-then-act fallback, which holds per request but not across concurrent ones. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |

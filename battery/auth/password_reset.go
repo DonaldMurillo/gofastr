@@ -22,6 +22,15 @@ type PasswordSetter interface {
 	SetPassword(ctx context.Context, userID, hashedPassword string) error
 }
 
+// PasswordSwapper is the optional PasswordSetter extension a password
+// change writes through. SwapPassword sets newHash only while the stored
+// hash is still oldHash, in one statement, and reports whether it wrote.
+// EntityUserStore implements it. A store without it gets a re-read just
+// before the write, which leaves a short window a reset can still land in.
+type PasswordSwapper interface {
+	SwapPassword(ctx context.Context, userID, oldHash, newHash string) (bool, error)
+}
+
 // ─── Password Reset Plugin ──────────────────────────────────────────────────
 
 // PasswordResetConfig configures the plugin.

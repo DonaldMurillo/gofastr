@@ -568,6 +568,29 @@ func (s *EntityUserStore) SetPassword(ctx context.Context, userID, hashedPasswor
 	return nil
 }
 
+// SwapPassword sets the hash only while the stored one is still oldHash.
+// Implements PasswordSwapper. False means no row matched: the hash moved,
+// or the user is gone.
+func (s *EntityUserStore) SwapPassword(ctx context.Context, userID, oldHash, newHash string) (bool, error) {
+	q := fmt.Sprintf(
+		"UPDATE %s SET %s = $1, %s = TRUE WHERE %s = $2 AND %s = $3",
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+	)
+	res, err := s.db.ExecContext(ctx, q, newHash, userID, oldHash)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // HasPassword reports whether the user has a real password set vs the
 // placeholder hash. Implements PasswordChecker.
 func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
