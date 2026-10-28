@@ -361,7 +361,16 @@ terminal `Failed` or a per-call 503):
   `HTTPResponseResult` with a `json`, `text`, or `ui.node.v1` body. There is
   no streaming in v1: the host buffers the whole response before committing
   headers, so a child that dies mid-call yields a buffered 503, never a
-  truncated 200.
+  truncated 200. A status outside 200–599 is answered the same 503.
+- **The host owns the response headers.** The response is served on the
+  host's origin, so only `Cache-Control`, `Content-Language`, `ETag`,
+  `Expires`, `Last-Modified` and `Retry-After` cross from the child, and its
+  `Vary` adds to the host's. Everything else stays the host's:
+  `Set-Cookie`, the security headers, CORS, `Location` and `Refresh` are
+  dropped. `Content-Type` is always the body kind's
+  (`application/json`, `text/plain`, or `text/html` for a validated
+  `ui.node.v1` tree), with `X-Content-Type-Options: nosniff`, so a `json` or
+  `text` body never runs as markup.
 
 To install a built child, compute the digest of its routes and tools
 (`framework.ComputeSurfaceSHA256`) and tool digests

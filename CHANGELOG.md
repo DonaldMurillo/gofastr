@@ -2230,6 +2230,14 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **BREAKING: a process module's response headers are allow-listed.**
+  The proxy copied every header the child sent, so an untrusted module
+  could label a `text` body `text/html` and run script on the host
+  origin, set host cookies, or replace the host's Content-Security-Policy.
+  Only cache and language headers cross now, `Vary` adds to the host's,
+  `Content-Type` is always the body kind's with `nosniff`, and a status
+  outside 200–599 answers 503 instead of panicking. See
+  [process modules](framework/docs/content/process-modules.md).
 - **`golang.org/x/net` is v0.62.0.** v0.59.0 carries an advisory in
   `html.Parse`, which `battery/sitesearch` calls to extract page text.
   The bump brings the other `golang.org/x` modules to their current

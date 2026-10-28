@@ -224,3 +224,10 @@ notes:
     find:
       uses:
         - gofastr/framework/entityui.RecordBuilder.Steps
+  - change: "BREAKING for process modules - the proxy copies only Cache-Control, Content-Language, ETag, Expires, Last-Modified and Retry-After from a module.http response, adds its Vary to the host's, always sets the body kind's Content-Type with nosniff, and answers 503 for a status outside 200-599"
+    breaking: true
+    hits: review
+    guidance: "A module answers on the host origin, so a header it set (Set-Cookie, a Content-Security-Policy, CORS, Location, a text/html Content-Type) used to override the host's. A module that relied on another header drops it; send markup as a ui.node.v1 body, which the host validates and renders, and set cookies from the host."
+    find:
+      uses:
+        - gofastr/core/moduleproto.HTTPResponseResult

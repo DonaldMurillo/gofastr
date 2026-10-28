@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"net/textproto"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -40,18 +43,19 @@ var moduleProxyAllowedHeaders = map[string]struct{}{
 	"X-Correlation-ID": {},
 }
 
-// hopByHopResponseHeaders are stripped from a child's response headers
-// before commit (RFC 7230 §6.1). They must not cross the proxy boundary.
-var hopByHopResponseHeaders = map[string]struct{}{
-	"Connection":          {},
-	"Proxy-Connection":    {},
-	"Keep-Alive":          {},
-	"Proxy-Authenticate":  {},
-	"Proxy-Authorization": {},
-	"Te":                  {},
-	"Trailers":            {},
-	"Transfer-Encoding":   {},
-	"Upgrade":             {},
+// moduleResponseHeaders are the child response headers the proxy copies,
+// by canonical name. A module answers on the host origin, so every other
+// header (Set-Cookie, the security headers the host set before dispatch,
+// CORS, Location, Refresh, Content-Type and the hop-by-hop set) stays the
+// host's. Vary adds to the host's value rather than replacing it.
+var moduleResponseHeaders = map[string]struct{}{
+	"Cache-Control":    {},
+	"Content-Language": {},
+	"Etag":             {},
+	"Expires":          {},
+	"Last-Modified":    {},
+	"Retry-After":      {},
+	"Vary":             {},
 }
 
 // proxyCallID is a host-side correlation id counter for [moduleproto.HTTPRequestParams.RequestID].
@@ -299,24 +303,37 @@ func (s *ProcessModuleSupervisor) watchCancel(peer *moduleproto.Peer, frameID ui
 
 // commitBufferedResponse writes the buffered response. Because the body is
 // already fully in memory (we did not stream), this never produces a partial
-// commit. Headers are filtered for hop-by-hop; Content-Type is derived from
-// the body kind for json/text.
+// commit. Only moduleResponseHeaders cross from the child; Content-Type is
+// always the body kind's, with nosniff, so a json or text body never runs as
+// markup on the host origin. A status a handler cannot write (outside
+// 200-599) is a broken child and answers the buffered 503.
 func commitBufferedResponse(w http.ResponseWriter, res *moduleproto.HTTPResponseResult, renderer *uinoderender.Renderer) {
-	// Apply child-supplied response headers, minus hop-by-hop.
-	for k, v := range res.Headers {
-		if _, drop := hopByHopResponseHeaders[k]; drop {
-			continue
-		}
-		w.Header().Set(k, v)
+	if res.Status < 200 || res.Status > 599 {
+		writeProxy503(w, proxyRetryAfter)
+		return
 	}
 	body, contentType, err := decodeBody(&res.Body, renderer)
 	if err != nil {
 		writeProxy503(w, proxyRetryAfter)
 		return
 	}
-	if w.Header().Get("Content-Type") == "" && contentType != "" {
-		w.Header().Set("Content-Type", contentType)
+	for _, k := range slices.Sorted(maps.Keys(res.Headers)) {
+		name := textproto.CanonicalMIMEHeaderKey(k)
+		if _, ok := moduleResponseHeaders[name]; !ok {
+			continue
+		}
+		if name == "Vary" {
+			w.Header().Add(name, res.Headers[k])
+			continue
+		}
+		w.Header().Set(name, res.Headers[k])
 	}
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	} else {
+		w.Header().Del("Content-Type")
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(res.Status)
 	_, _ = w.Write(body)
 }
