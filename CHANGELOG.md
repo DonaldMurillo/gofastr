@@ -2237,6 +2237,12 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **OIDC no longer borrows `email_verified` for a different address.** An
+  id_token with an email but no `email_verified` took the flag from
+  userinfo even when userinfo named another address, so the id_token's
+  email came out verified and the callback could auto-link that
+  address's account. The userinfo flag now counts only when its email is
+  the one kept. See [auth](framework/docs/content/auth.md).
 - **A password reset overtaking a passkey sign-in leaves no session, and
   a failed session purge is no longer reported as success.** A passkey
   sign-in that recorded its use just before a reset minted its session

@@ -1702,8 +1702,10 @@ strictly:
 - **OIDC**: parsed from the id_token's `email_verified` claim (or the
    configured `OIDCClaimsMapping.EmailVerifiedClaim`). Accepts a JSON
    bool or the string `"true"` (some IdPs emit the value as a string).
-   Defaults to `false` when absent: a missing assertion is never a
-   verified email.
+   When the id_token lacks the claim, the userinfo response's flag is
+   used only if its email is exactly the one kept; a flag about another
+   address does not verify this one. Defaults to `false` when absent: a
+   missing assertion is never a verified email.
 - **Google**: from the `email_verified` (modern) or `verified_email`
    (legacy) userinfo field.
 - **GitHub**: `true` only when the email came back from
