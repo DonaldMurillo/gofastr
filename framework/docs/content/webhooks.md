@@ -352,7 +352,11 @@ cancel := webhook.Bridge(app.Events(), mgr, "orders.**") // custom list
 ```
 
 The bridge subscribes one handler per event type, marshals
-`event.Event.Data` to JSON, and calls `Manager.Publish`. The returned
+`event.Event.Data` to JSON, and calls `Manager.PublishFor` with the owner
+the event names under `event.DataKeyOwnerID` (CRUD events on an entity
+with an owner field carry it), so erasing that user deletes the deliveries
+that copied their row. The owner is read before `WithBridgeRedactor` runs,
+so a redactor that drops it from the payload keeps the tag. The returned
 `cancel` detaches every subscription at once; call it before
 `Manager.Stop` so no Emit lands after the worker exits.
 

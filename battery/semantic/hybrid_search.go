@@ -19,7 +19,13 @@ type searchAdapter struct {
 	b search.Backend
 }
 
-func (a *searchAdapter) Index(ctx context.Context, id, text string) (err error) {
+func (a *searchAdapter) Index(ctx context.Context, id, text string) error {
+	return a.IndexOwned(ctx, id, "", text)
+}
+
+// IndexOwned indexes a chunk as a search.Document owned by owner, so the
+// search store's eraser deletes it with the user.
+func (a *searchAdapter) IndexOwned(ctx context.Context, id, owner, text string) (err error) {
 	// b is a host-supplied search.Backend reached from Index.Add/Remove on
 	// dispatch paths with no per-request recover; a panic becomes an
 	// attributed error instead of a process kill.
@@ -28,7 +34,7 @@ func (a *searchAdapter) Index(ctx context.Context, id, text string) (err error) 
 			err = fmt.Errorf("semantic: keyword backend panicked: %v", v)
 		}
 	}()
-	return a.b.Index(ctx, search.Document{ID: id, Type: "embed.chunk", Text: text})
+	return a.b.Index(ctx, search.Document{ID: id, Type: "embed.chunk", Text: text, Owner: owner})
 }
 
 func (a *searchAdapter) Delete(ctx context.Context, id string) (err error) {

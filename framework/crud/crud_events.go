@@ -40,7 +40,7 @@ const (
 	// when the framework's owner extractor returned nothing (e.g. for
 	// admin-side events). Without this key, an anonymous SSE subscription
 	// would receive every user's row updates.
-	eventKeyOwnerID = "ownerId"
+	eventKeyOwnerID = event.DataKeyOwnerID
 )
 
 // EventOutbox is the transactional-outbox surface CRUD needs, satisfied by

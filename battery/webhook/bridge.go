@@ -97,6 +97,9 @@ func BridgeWithOptions(bus *event.EventBus, mgr *Manager, events []string, opts 
 	for _, et := range events {
 		eventType := et
 		c := bus.Subscribe(eventType, func(ctx context.Context, e event.Event) error {
+			// Read before the redactor runs: the owner tags the stored
+			// delivery for erasure whatever the payload keeps.
+			owner := eventOwner(e)
 			if cfg.redact != nil {
 				e = cfg.redact(eventType, e)
 			}
@@ -107,7 +110,7 @@ func BridgeWithOptions(bus *event.EventBus, mgr *Manager, events []string, opts 
 				}
 				return nil
 			}
-			if _, err := mgr.Publish(ctx, eventType, payload); err != nil {
+			if _, err := mgr.PublishFor(ctx, owner, eventType, payload); err != nil {
 				if cfg.onPublishError != nil {
 					cfg.onPublishError(eventType, err)
 				}
@@ -121,4 +124,15 @@ func BridgeWithOptions(bus *event.EventBus, mgr *Manager, events []string, opts 
 			c()
 		}
 	}
+}
+
+// eventOwner is the record owner a CRUD event names under
+// event.DataKeyOwnerID, or "" for an event that names none.
+func eventOwner(e event.Event) string {
+	data, ok := e.Data.(map[string]any)
+	if !ok {
+		return ""
+	}
+	owner, _ := data[event.DataKeyOwnerID].(string)
+	return owner
 }

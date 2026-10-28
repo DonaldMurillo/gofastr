@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/search"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -108,5 +109,41 @@ func TestFlatStoreKeepsOwner(t *testing.T) {
 	t.Cleanup(func() { _ = idx.Close() })
 	if got, want := docOwners(t, idx), []string{"v1:victim"}; !slices.Equal(got, want) {
 		t.Errorf("after reload: %v, want %v", got, want)
+	}
+}
+
+// ownerRecorder is a search backend that keeps every document indexed
+// into it.
+type ownerRecorder struct {
+	search.Backend
+	docs []search.Document
+}
+
+func (r *ownerRecorder) Index(ctx context.Context, d search.Document) error {
+	r.docs = append(r.docs, d)
+	return r.Backend.Index(ctx, d)
+}
+
+// Hybrid search copies each chunk's text into the keyword backend. That
+// copy is the user's text too, so it carries the document's owner and a
+// search store's eraser reaches it (2026-10-28 review of the erasure
+// fix: the keyword copy was ownerless).
+func TestKeywordCopyKeepsOwner(t *testing.T) {
+	rec := &ownerRecorder{Backend: search.NewMemory()}
+	idx, err := Open(Options{Embedder: NewStubEmbedder(4), Keyword: WrapSearchBackend(rec)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	if err := idx.Add(context.Background(), Document{ID: "v1", Text: "diary", Owner: "victim"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.docs) == 0 {
+		t.Fatal("nothing reached the keyword backend")
+	}
+	for _, d := range rec.docs {
+		if d.Owner != "victim" {
+			t.Errorf("keyword copy %q has owner %q, want victim", d.ID, d.Owner)
+		}
 	}
 }

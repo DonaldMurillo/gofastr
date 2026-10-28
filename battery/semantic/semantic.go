@@ -108,6 +108,16 @@ type KeywordBackend interface {
 	Search(ctx context.Context, text string, top int) ([]KeywordHit, error)
 }
 
+// OwnedKeywordBackend is a [KeywordBackend] that can tag each chunk it
+// holds with the user it belongs to. The index uses IndexOwned in place
+// of Index when the backend has it, so the keyword copy of a user's text
+// is reachable by erasure the way the chunk is. [WrapSearchBackend]
+// implements it by setting search.Document.Owner.
+type OwnedKeywordBackend interface {
+	KeywordBackend
+	IndexOwned(ctx context.Context, id, owner, text string) error
+}
+
 // KeywordHit is one result from a [KeywordBackend].
 type KeywordHit struct {
 	ChunkID string

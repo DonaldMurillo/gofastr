@@ -380,7 +380,12 @@ registers a data eraser, so `App.EraseUserData` deletes the erased user's
 chunks from the table. `FlatStore` does not: its chunks, its gob snapshot
 and its WAL are not reached by erasure, so remove an erased user's
 documents with `Index.Remove` yourself, or use `PgVectorStore` for
-per-user data.
+per-user data. Hybrid search copies each chunk's text into the keyword
+backend; a backend that implements `OwnedKeywordBackend`
+(`IndexOwned(ctx, id, owner, text)`) receives the chunk's owner with it.
+`WrapSearchBackend` does, so the copy lands as a `search.Document` with
+`Owner` set and the search store's eraser removes it. `MemoryKeyword`
+holds its copy in memory only.
 
 **Honest trade-off.** `FlatStore` brute-force-scans a memory slice (~3 ms / 100k chunks on M-class, no network hop). `PgVectorStore` pays a Postgres round-trip per query but gains durability, multi-replica sharing, and a growth path to ANN indexing. Use `FlatStore` until the in-process limitation bites; switch when it does.
 
