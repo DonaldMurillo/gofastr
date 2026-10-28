@@ -201,10 +201,12 @@
 // read. A loop over a slice waits only when its body does (a paced
 // batch), and a select with a default waits only in its operands
 // (`<-(<-ch)`) or its clause bodies. A deferred clear runs at return: it
-// covers a per-write helper that never waits, wherever the defer sits,
-// and never an arm in a function that parks. A clear on a branch that
-// leaves (an error path ending in return, continue, break, goto or
-// panic) covers that path only and does not count.
+// covers the arm when nothing waits after it (a per-write helper, one
+// that takes a slot before arming included), wherever the defer sits,
+// and never an arm in a loop that waits. A clear or defer on a branch
+// that leaves the scope (an error path ending in return, goto or panic,
+// or a break or continue aimed past it) covers that path only and does
+// not count; a break out of a drain loop inside the scope stays in it.
 // A past-deadline cut (time.Now(), the SSEBroker's eviction)
 // is meant to end the stream and is not an arm; a hijacked conn's
 // deadline is HTTP/1 only and out of scope; a one-shot answer with no

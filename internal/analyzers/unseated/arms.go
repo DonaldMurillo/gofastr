@@ -478,10 +478,13 @@ func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*
 // on the batch under the deadline.
 //
 // A deferred clear runs when the function returns, wherever the defer
-// sits: it covers the arm only when nothing in body waits (a per-write
-// helper), and never inside a loop that does. A clear in a branch that
-// leaves (an error path ending in return, break, continue, goto or
-// panic) covers that path only, so it does not count.
+// sits: it covers the arm only when nothing waits between the arm and
+// the return (waitsAfter; a per-write helper that takes a slot first
+// still qualifies), and never inside a loop that waits. A clear, or a
+// defer, in a branch that leaves the scope (an error path ending in
+// return, goto or panic, or a break or continue aimed past the scope)
+// covers that path only, so it does not count. A branch that holds the
+// arm itself is the arm's own path.
 func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 	scope := body
 	for _, l := range a.loops[f] {
@@ -501,12 +504,13 @@ func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 			return false
 		}
 		if d, ok := n.(*ast.DeferStmt); ok {
-			if !bodyBlocks(a.pass, body) && a.reaches(d.Call, f, "cleardeadline", a.clearedDeadline) {
+			if !a.onExitBranch(path, site) && !a.waitsAfter(body, site) &&
+				a.reaches(d.Call, f, "cleardeadline", a.clearedDeadline) {
 				found = true
 			}
 			return false
 		}
-		if call, ok := n.(*ast.CallExpr); ok && call.Pos() > site.End() && !a.onExitBranch(path) &&
+		if call, ok := n.(*ast.CallExpr); ok && call.Pos() > site.End() && !a.onExitBranch(path, site) &&
 			a.reaches(call, f, "cleardeadline", a.clearedDeadline) {
 			found = true
 			return false
@@ -517,12 +521,47 @@ func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
 	return found
 }
 
-// onExitBranch: a block on path, below the scope (path[0]), ends by
-// leaving it.
-func (a *arms) onExitBranch(path []ast.Node) bool {
+// waitsAfter: something in body can wait once site has run: a wait
+// placed after it, or one anywhere in a loop that holds it (the next
+// iteration runs it after the arm).
+func (a *arms) waitsAfter(body ast.Node, site ast.Node) bool {
+	waits := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if n == nil || waits {
+			return false
+		}
+		if _, lit := n.(*ast.FuncLit); lit {
+			return false
+		}
+		if n.End() <= site.Pos() {
+			return false
+		}
+		if n.Pos() > site.End() {
+			waits = bodyBlocks(a.pass, n)
+			return false
+		}
+		switch l := n.(type) {
+		case *ast.ForStmt:
+			waits = bodyBlocks(a.pass, l.Body)
+		case *ast.RangeStmt:
+			_, overChan := underlyingChan(typeOf(a.pass, l.X))
+			waits = overChan || bodyBlocks(a.pass, l.Body)
+		}
+		return !waits
+	})
+	return waits
+}
+
+// onExitBranch: a block on path, below the scope (path[0]) and not
+// holding site, ends by leaving the scope.
+func (a *arms) onExitBranch(path []ast.Node, site ast.Node) bool {
 	for i := len(path) - 1; i > 0; i-- {
+		n := path[i]
+		if n.Pos() <= site.Pos() && site.End() <= n.End() {
+			continue
+		}
 		var list []ast.Stmt
-		switch n := path[i].(type) {
+		switch n := n.(type) {
 		case *ast.BlockStmt:
 			list = n.List
 		case *ast.CaseClause:
@@ -530,16 +569,17 @@ func (a *arms) onExitBranch(path []ast.Node) bool {
 		case *ast.CommClause:
 			list = n.Body
 		}
-		if a.leaves(list) {
+		if a.leaves(list, path[1:i]) {
 			return true
 		}
 	}
 	return false
 }
 
-// leaves: the statement list ends in a return, a break, continue or
-// goto, or a call of the panic builtin.
-func (a *arms) leaves(list []ast.Stmt) bool {
+// leaves: the statement list ends in a return, a goto, a call of the
+// panic builtin, or a break or continue whose target is not among inner,
+// the statements between the scope and the list.
+func (a *arms) leaves(list []ast.Stmt, inner []ast.Node) bool {
 	if len(list) == 0 {
 		return false
 	}
@@ -547,12 +587,39 @@ func (a *arms) leaves(list []ast.Stmt) bool {
 	case *ast.ReturnStmt:
 		return true
 	case *ast.BranchStmt:
-		return s.Tok != token.FALLTHROUGH
+		switch s.Tok {
+		case token.BREAK, token.CONTINUE:
+			return !branchTargetIn(s, inner)
+		}
+		return s.Tok == token.GOTO
 	case *ast.ExprStmt:
 		if call, ok := s.X.(*ast.CallExpr); ok {
 			if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok {
 				_, builtin := a.pass.TypesInfo.Uses[id].(*types.Builtin)
 				return builtin && id.Name == "panic"
+			}
+		}
+	}
+	return false
+}
+
+// branchTargetIn: the statement a break or continue transfers out of is
+// one of inner (outermost first): the labeled statement it names, or the
+// innermost loop (or, for break, switch or select) around it.
+func branchTargetIn(s *ast.BranchStmt, inner []ast.Node) bool {
+	for i := len(inner) - 1; i >= 0; i-- {
+		if s.Label != nil {
+			if l, ok := inner[i].(*ast.LabeledStmt); ok && l.Label.Name == s.Label.Name {
+				return true
+			}
+			continue
+		}
+		switch inner[i].(type) {
+		case *ast.ForStmt, *ast.RangeStmt:
+			return true
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+			if s.Tok == token.BREAK {
+				return true
 			}
 		}
 	}

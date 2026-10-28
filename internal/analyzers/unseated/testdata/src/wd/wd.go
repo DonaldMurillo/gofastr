@@ -457,7 +457,210 @@ func clearedOnSkipOnly(w http.ResponseWriter, r *http.Request, encode func(strin
 	}
 }
 
+// deferredOnErrorOnly registers its deferred clear only when the write
+// fails; a write that succeeds returns with the deadline armed, and the
+// caller waits for the next event under it.
+type deferredOnError struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func openDeferredOnError(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &deferredOnError{w: w, rc: http.NewResponseController(w)}
+	for ev := range feed() {
+		if h.send(ev) != nil {
+			return
+		}
+	}
+}
+
+func (h *deferredOnError) send(ev string) error {
+	_ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+	if _, err := fmt.Fprintf(h.w, "data: %s\n\n", ev); err != nil {
+		defer h.rc.SetWriteDeadline(time.Time{})
+		return err
+	}
+	return h.rc.Flush()
+}
+
+// clearedOnGotoOnly jumps out on a failed write; only that path clears.
+func clearedOnGotoOnly(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", ev); err != nil {
+			_ = rc.SetWriteDeadline(time.Time{})
+			goto done
+		}
+		_ = rc.Flush()
+	}
+done:
+}
+
+// deferredInSelectLoop defers the clear inside a select loop: it runs
+// when the handler returns, after every later wait.
+func deferredInSelectLoop(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			defer rc.SetWriteDeadline(time.Time{})
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+	}
+}
+
+// ackedHelper writes, then waits for the client's ack before it
+// returns: the deferred clear runs after that wait.
+type ackedHelper struct {
+	w    http.ResponseWriter
+	rc   *http.ResponseController
+	acks chan struct{}
+}
+
+func openAckedHelper(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &ackedHelper{w: w, rc: http.NewResponseController(w), acks: make(chan struct{})}
+	for ev := range feed() {
+		h.send(ev)
+	}
+}
+
+func (h *ackedHelper) send(ev string) {
+	_ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+	defer h.rc.SetWriteDeadline(time.Time{})
+	fmt.Fprintf(h.w, "data: %s\n\n", ev)
+	_ = h.rc.Flush()
+	<-h.acks
+}
+
 // ---- quiet: the fix spellings -----------------------------------------
+
+// drainedUnlabeled drains a burst in an inner loop it leaves with a bare
+// break, clearing on the way out: the break stays in the event loop.
+func drainedUnlabeled(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for first := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		fmt.Fprintf(w, "data: %s\n\n", first)
+		for {
+			select {
+			case ev := <-feed():
+				fmt.Fprintf(w, "data: %s\n\n", ev)
+				continue
+			default:
+			}
+			_ = rc.Flush()
+			_ = rc.SetWriteDeadline(time.Time{})
+			break
+		}
+	}
+}
+
+// polledClearBreak clears in a select's default clause that ends in a
+// break, which leaves only the select.
+func polledClearBreak(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		fmt.Fprintf(w, "data: %s\n\n", ev)
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			_ = rc.Flush()
+			_ = rc.SetWriteDeadline(time.Time{})
+			break
+		}
+	}
+}
+
+// drainedThenCleared writes the first event of a burst, drains what is
+// already buffered without waiting, and clears on the way out of the
+// drain: break drain stays inside the event loop, before its next wait.
+func drainedThenCleared(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for first := range feed() {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		fmt.Fprintf(w, "data: %s\n\n", first)
+	drain:
+		for {
+			select {
+			case ev := <-feed():
+				fmt.Fprintf(w, "data: %s\n\n", ev)
+			default:
+				_ = rc.Flush()
+				_ = rc.SetWriteDeadline(time.Time{})
+				break drain
+			}
+		}
+	}
+}
+
+// caseHelper arms, writes and clears inside one switch case that
+// returns: the clear is on the arm's own path.
+type caseHelper struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func openCaseHelper(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &caseHelper{w: w, rc: http.NewResponseController(w)}
+	for ev := range feed() {
+		h.send("event", ev)
+	}
+}
+
+func (h *caseHelper) send(kind, ev string) {
+	switch kind {
+	case "event":
+		_ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		fmt.Fprintf(h.w, "data: %s\n\n", ev)
+		_ = h.rc.Flush()
+		_ = h.rc.SetWriteDeadline(time.Time{})
+		return
+	}
+}
+
+// gatedHelper waits for a write slot before it arms, then defers its
+// clear: the only wait comes before the arm, so the clear at return
+// still lands before the caller waits again.
+type gatedHelper struct {
+	w    http.ResponseWriter
+	rc   *http.ResponseController
+	gate chan struct{}
+}
+
+func openGatedHelper(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &gatedHelper{w: w, rc: http.NewResponseController(w), gate: make(chan struct{}, 1)}
+	for ev := range feed() {
+		h.send(r.Context(), ev)
+	}
+}
+
+func (h *gatedHelper) send(ctx context.Context, ev string) {
+	select {
+	case h.gate <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	defer func() { <-h.gate }()
+	_ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	defer h.rc.SetWriteDeadline(time.Time{})
+	fmt.Fprintf(h.w, "data: %s\n\n", ev)
+	_ = h.rc.Flush()
+}
 
 // clearedOnBothPaths clears on the error path and again after the
 // flush.
