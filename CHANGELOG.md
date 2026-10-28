@@ -2237,6 +2237,12 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A soft-deleted user no longer signs in.** With `Scope.SoftDelete` on
+  the users entity, `EntityUserStore` looked accounts up by id or email
+  alone, so a trashed account kept its password login and every session,
+  API token and JWT. The store now skips a row with `deleted_at` set, and
+  `GET /auth/me` answers 401 for a session whose account is gone. See
+  [auth](framework/docs/content/auth.md).
 - **BREAKING: the MCP control tools and the log MCP tools need the
   `admin` role.** `app_module_enable`/`app_module_disable`
   (`WithMCPControl`) and battery/log's `log_*` tools asked only for a

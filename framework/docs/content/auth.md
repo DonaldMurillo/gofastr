@@ -721,6 +721,16 @@ mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 exported for hosts that want to assemble their own config, but the
 `*EntityConfig()` helpers are the safe default.
 
+**A soft-deleted account is signed out.** With `Scope.SoftDelete` on the
+users entity, a delete only stamps `deleted_at`. `EntityUserStore` finds
+that column when `AuthManager.Init` runs `EnsureSchema` (AutoMigrate has
+added it by then) and from then on `FindByID`, `FindByEmail` and
+`ListUsers` skip a trashed row: the password no longer signs in, and the
+account's sessions, API tokens and JWTs resolve to no user, so
+`GET /auth/me` answers 401. Restoring the row brings the account back.
+A column added by a migration after boot takes effect at the next
+restart.
+
 ## Durable store schema and PostgreSQL first boot
 
 `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore` create

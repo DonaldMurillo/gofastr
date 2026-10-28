@@ -457,7 +457,15 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 		}
 
 		if c.mgr.UserStore() != nil {
-			if user, err := c.mgr.UserStore().FindByID(r.Context(), sess.UserID); err == nil {
+			user, err := c.mgr.UserStore().FindByID(r.Context(), sess.UserID)
+			// A session whose account is gone (deleted, or trashed by a
+			// soft delete) is not a signed-in user: the session middleware
+			// already resolves it to anonymous, and /me must agree.
+			if errors.Is(err, ErrUserNotFound) {
+				writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
+				return
+			}
+			if err == nil {
 				resp["user"] = map[string]any{
 					"id":    user.GetID(),
 					"email": user.GetEmail(),
