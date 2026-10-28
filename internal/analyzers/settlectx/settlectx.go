@@ -27,8 +27,8 @@
 // context.WithoutCancel(ctx), settleTimeout). WithoutCancel keeps the
 // values and drops the cancel; the timeout bounds the write so a dead
 // database cannot hold Stop. The unbounded detach is its own failure
-// (B27: battery/webhook/webhook.go:805 settles under
-// context.Background(), so a blocked UPDATE outlives Stop), and the rule
+// (B27: battery/webhook's saveDelivery settled under a bare
+// context.Background(), so a blocked UPDATE outlived Stop), and the rule
 // reports it too when it follows a callback.
 //
 // Shape, within one function body (a declaration or a literal, each on

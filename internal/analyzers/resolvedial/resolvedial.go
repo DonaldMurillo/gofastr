@@ -39,21 +39,23 @@
 //     call, or a call to a function that performs one, directly or
 //     through further calls; the property travels across packages as
 //     a fact) precedes, in source order, a call to a
-//     RoundTrip(*http.Request) method, and the function never rewrites
-//     the request target (no assignment to a url.URL's Host or a
-//     request's URL). Reported at the RoundTrip call (B64, P54).
+//     RoundTrip(*http.Request) method, and no rewrite of the request
+//     target (an assignment to a url.URL's Host or a request's URL)
+//     comes before that call. Reported at the RoundTrip call (B64, P54).
 //   - nil-only guard install: the function resolves a host, and an
-//     `if <client>.Transport == nil { ... }` with no else assigns the
-//     client's Transport, so a non-nil, caller-supplied transport keeps
-//     its own dialer behind a check that already happened. Reported at
-//     the if (H12).
+//     `if <client>.Transport == nil { ... }` with no else (or a
+//     tagless switch case on the same test, with no default) assigns
+//     the client's Transport, so a non-nil, caller-supplied transport
+//     keeps its own dialer behind a check that already happened.
+//     Reported at the if or the case (H12).
 //
 // Silent postures, deliberately:
 //   - a RoundTrip call that comes before the lookup in source order:
 //     push.go's IP-literal branch checks the literal and delegates
 //     without resolving, and a literal cannot rebind;
-//   - a request whose URL.Host (or URL) is rewritten in the function:
-//     the dial then targets the checked IP, which is a correct spelling;
+//   - a request whose URL.Host (or URL) is rewritten before the
+//     RoundTrip: the dial then targets the checked IP, which is a
+//     correct spelling. Which URL the rewrite names is not checked;
 //   - a lookup inside a dialer (DialContext or Control) that dials the
 //     IP it checked: no RoundTrip follows, and that is the fix;
 //   - registration-time URL validation (validatePushURL,
@@ -199,9 +201,9 @@ func checkBody(pass *analysis.Pass, body *ast.BlockStmt, local map[*types.Func]b
 		return
 	}
 	firstResolve := token.NoPos
-	rewrites := false
+	var rewrites []token.Pos
 	var trips []*ast.CallExpr
-	var nilInstalls []*ast.IfStmt
+	var nilInstalls []ast.Node
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncLit:
@@ -216,25 +218,25 @@ func checkBody(pass *analysis.Pass, body *ast.BlockStmt, local map[*types.Func]b
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
 				if rewritesTarget(pass, lhs) {
-					rewrites = true
+					rewrites = append(rewrites, n.Pos())
 				}
 			}
 		case *ast.IfStmt:
-			if nilOnlyTransportInstall(pass, n) {
+			if n.Else == nil && nilTransportInstall(pass, n.Cond, n.Body.List) {
 				nilInstalls = append(nilInstalls, n)
 			}
+		case *ast.SwitchStmt:
+			nilInstalls = append(nilInstalls, nilOnlySwitchCases(pass, n)...)
 		}
 		return true
 	})
 	if firstResolve == token.NoPos {
 		return
 	}
-	if !rewrites {
-		for _, call := range trips {
-			if call.Pos() > firstResolve {
-				pass.Reportf(call.Pos(),
-					"resolvedial: RoundTrip after a resolve-and-check lets the inner transport resolve the host again to dial; a DNS-rebinding name answers public to the check and internal to the dial (%s)", advice)
-			}
+	for _, call := range trips {
+		if call.Pos() > firstResolve && !rewrittenBefore(rewrites, call.Pos()) {
+			pass.Reportf(call.Pos(),
+				"resolvedial: RoundTrip after a resolve-and-check lets the inner transport resolve the host again to dial; a DNS-rebinding name answers public to the check and internal to the dial (%s)", advice)
 		}
 	}
 	for _, s := range nilInstalls {
@@ -282,13 +284,45 @@ func rewritesTarget(pass *analysis.Pass, lhs ast.Expr) bool {
 	return false
 }
 
-// nilOnlyTransportInstall: `if x.Transport == nil { ... x.Transport = ... }`
-// on an http.Client with no else branch.
-func nilOnlyTransportInstall(pass *analysis.Pass, s *ast.IfStmt) bool {
-	if s.Else != nil {
-		return false
+// rewrittenBefore: a target rewrite precedes pos. A rewrite after the
+// RoundTrip changes nothing the dial already used.
+func rewrittenBefore(rewrites []token.Pos, pos token.Pos) bool {
+	for _, p := range rewrites {
+		if p < pos {
+			return true
+		}
 	}
-	bin, ok := ast.Unparen(s.Cond).(*ast.BinaryExpr)
+	return false
+}
+
+// nilOnlySwitchCases: the case clauses of a tagless switch with no
+// default that install a transport only under `x.Transport == nil`,
+// the switch spelling of the nil-only if.
+func nilOnlySwitchCases(pass *analysis.Pass, s *ast.SwitchStmt) []ast.Node {
+	if s.Tag != nil {
+		return nil
+	}
+	var hits []ast.Node
+	for _, st := range s.Body.List {
+		cc, ok := st.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		if cc.List == nil {
+			return nil // a default branch covers the caller's transport
+		}
+		if len(cc.List) == 1 && nilTransportInstall(pass, cc.List[0], cc.Body) {
+			hits = append(hits, cc)
+		}
+	}
+	return hits
+}
+
+// nilTransportInstall: cond is `x.Transport == nil` on an http.Client
+// and body assigns a client's Transport. The callers rule out an else
+// or default branch.
+func nilTransportInstall(pass *analysis.Pass, cond ast.Expr, body []ast.Stmt) bool {
+	bin, ok := ast.Unparen(cond).(*ast.BinaryExpr)
 	if !ok || bin.Op != token.EQL {
 		return false
 	}
@@ -304,7 +338,7 @@ func nilOnlyTransportInstall(pass *analysis.Pass, s *ast.IfStmt) bool {
 		return false
 	}
 	assigned := false
-	ast.Inspect(s.Body, func(n ast.Node) bool {
+	ast.Inspect(&ast.BlockStmt{List: body}, func(n ast.Node) bool {
 		as, ok := n.(*ast.AssignStmt)
 		if !ok {
 			return true

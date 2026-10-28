@@ -33,7 +33,8 @@
 //
 // Shape: a named struct type, outside _test.go files, with a field
 // (embedded or named) whose type is an interface that implements
-// http.ResponseWriter, that implements http.ResponseWriter itself (T
+// http.ResponseWriter, or a concrete struct writer that itself wraps
+// one (a wrapper chain), that implements http.ResponseWriter itself (T
 // or *T), that declares Write or WriteHeader on itself, and whose
 // method set (the one that implements the interface) has no
 // `Unwrap() http.ResponseWriter`, and whose values reach a handler in
@@ -69,8 +70,10 @@
 //   - a type that holds a writer but is not one (core/stream's
 //     SSEWriter and ChunkedWriter, core/a2a's errWriter): nothing hands
 //     it to a handler as a ResponseWriter;
-//   - a field of a concrete type (logging's flushWriter embeds
-//     *responseWriter, whose Unwrap is promoted);
+//   - a field of a concrete type whose Unwrap is promoted (logging's
+//     flushWriter embeds *responseWriter), and a concrete writer that
+//     wraps nothing (an httptest.ResponseRecorder buffer: there is no
+//     connection behind it to reach);
 //   - a type that declares neither Write nor WriteHeader: it intercepts
 //     nothing;
 //   - a wrapper handed only to declared functions, never to a handler
@@ -266,11 +269,30 @@ func dispatchedTypes(pass *analysis.Pass) map[*types.Named]bool {
 }
 
 // wrapsWriter: st has a field whose type is an interface implementing
-// http.ResponseWriter.
+// http.ResponseWriter, or a concrete struct (T or *T) that itself wraps
+// one. The second is a wrapper chain: the connection sits behind the
+// inner wrapper, and the outer one stays quiet only when an Unwrap
+// reaches its method set. A concrete writer that wraps nothing (an
+// httptest.ResponseRecorder) is a buffer with no connection behind it.
 func wrapsWriter(st *types.Struct, rw *types.Interface) bool {
+	return wrapsWriterSeen(st, rw, map[*types.Struct]bool{})
+}
+
+func wrapsWriterSeen(st *types.Struct, rw *types.Interface, seen map[*types.Struct]bool) bool {
+	if seen[st] {
+		return false
+	}
+	seen[st] = true
 	for i := range st.NumFields() {
 		ft := st.Field(i).Type()
-		if _, ok := ft.Underlying().(*types.Interface); ok && types.Implements(ft, rw) {
+		if _, ok := ft.Underlying().(*types.Interface); ok {
+			if types.Implements(ft, rw) {
+				return true
+			}
+			continue
+		}
+		inner, ok := astx.Deref(ft).Underlying().(*types.Struct)
+		if ok && types.Implements(types.NewPointer(astx.Deref(ft)), rw) && wrapsWriterSeen(inner, rw, seen) {
 			return true
 		}
 	}

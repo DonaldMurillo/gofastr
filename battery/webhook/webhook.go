@@ -650,8 +650,10 @@ func (m *Manager) releaseClaims(ctx context.Context, r claimReleaser, ds []Deliv
 		}
 	}()
 	now := m.nowFn()
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	defer cancel()
 	for _, d := range ds {
-		if err := r.releaseClaim(context.WithoutCancel(ctx), d, now); err != nil {
+		if err := r.releaseClaim(settleCtx, d, now); err != nil {
 			m.logf("webhook: delivery %s: release unstarted claim failed (it is re-claimed when the lease expires): %v", d.ID, err)
 		}
 	}
@@ -804,7 +806,8 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 //
 // A background context is used deliberately: a worker cancellation is the
 // reason the attempt is winding down, not a reason to lose the terminal
-// state write.
+// state write. The write is bounded by settleTimeout, so a store blocked
+// on a dead database cannot hold the worker past Stop.
 func (m *Manager) saveDelivery(d Delivery) {
 	// The recover net mirrors tick/attempt: UpdateDelivery is
 	// host-supplied store code on the worker loop. A panic here loses
@@ -816,10 +819,16 @@ func (m *Manager) saveDelivery(d Delivery) {
 			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %v", d.ID, d.Status, v)
 		}
 	}()
-	if err := m.store.UpdateDelivery(context.Background(), d); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)
+	defer cancel()
+	if err := m.store.UpdateDelivery(ctx, d); err != nil {
 		m.logf("webhook: delivery %s: persist %s state failed (row may be stale → duplicate delivery): %v", d.ID, d.Status, err)
 	}
 }
+
+// settleTimeout bounds a delivery's state write and a claim release
+// after the worker detaches them from its own context.
+const settleTimeout = 10 * time.Second
 
 // schedule sets NextAttemptAt or marks the delivery dead when the
 // attempt budget is exhausted.

@@ -134,6 +134,27 @@ func fetchReversed(c *http.Client, host string) {
 	}
 }
 
+// The nil-only install spelled as a tagless switch with no default.
+func fetchSwitch(c *http.Client, host string) {
+	_ = checkHost(host)
+	switch {
+	case c.Transport == nil: // want `resolvedial: the dial-time guard is installed only when Transport is nil`
+		c.Transport = guarded()
+	}
+}
+
+// A rewrite after the RoundTrip changes nothing the dial used.
+type lateRewriteRT struct{ inner http.RoundTripper }
+
+func (g lateRewriteRT) RoundTrip(r *http.Request) (*http.Response, error) { // want RoundTrip:"resolvesHost"
+	if err := checkHost(r.URL.Hostname()); err != nil {
+		return nil, err
+	}
+	resp, err := g.inner.RoundTrip(r) // want `resolvedial: RoundTrip after a resolve-and-check`
+	r.URL.Host = "logged.invalid"
+	return resp, err
+}
+
 // --- quiet: the fix spellings -------------------------------------------
 
 // Rewriting the request to the checked IP: the dial targets what was
@@ -264,4 +285,15 @@ func nilRefused(c *http.Client, host string) error {
 		return errors.New("a transport is required")
 	}
 	return nil
+}
+
+// A switch whose default branch wraps the caller's transport.
+func switchWithDefault(c *http.Client, host string) {
+	_ = checkHost(host)
+	switch {
+	case c.Transport == nil:
+		c.Transport = guarded()
+	default:
+		c.Transport = plainRT{inner: c.Transport}
+	}
 }

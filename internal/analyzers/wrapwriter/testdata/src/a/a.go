@@ -145,6 +145,25 @@ func Iface(next http.Handler, fw flushingWriter, r *http.Request) {
 	next.ServeHTTP(&ifaceField{fw: fw}, r)
 }
 
+// A wrapper chain: the outer holds the inner wrapper in a named field,
+// so nothing is promoted, and neither declares Unwrap. Only the outer
+// reaches a handler.
+type innerWrap struct{ http.ResponseWriter }
+
+func (i *innerWrap) Write(b []byte) (int, error) { return i.ResponseWriter.Write(b) }
+
+type outerWrap struct { // want `wrapwriter: outerWrap wraps`
+	in *innerWrap
+}
+
+func (o *outerWrap) Header() http.Header         { return o.in.Header() }
+func (o *outerWrap) WriteHeader(c int)           { o.in.WriteHeader(c) }
+func (o *outerWrap) Write(b []byte) (int, error) { return o.in.Write(b) }
+
+func Chain(next http.Handler, w http.ResponseWriter, r *http.Request) {
+	next.ServeHTTP(&outerWrap{in: &innerWrap{w}}, r)
+}
+
 // ---- arm one: quiet ---------------------------------------------------
 
 // The fix spelling: Unwrap on the pointer receiver.
