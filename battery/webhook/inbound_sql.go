@@ -121,11 +121,11 @@ func (s *SQLInboundStore) ensureTable() error {
 // it mapped to nobody waits for ReapTerminalBefore.
 func (s *SQLInboundStore) registerData() {
 	datexport.Register(datexport.DataExporter{
-		Name: "webhook_inbound", Source: "webhook", Table: s.table, PrimaryKey: "id",
+		Name: datexport.ScopedName("webhook_inbound", s.table), Source: "webhook", Table: s.table, PrimaryKey: "id",
 		Columns: strings.Split(strings.ReplaceAll(inboundColumns, " ", ""), ","),
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "webhook_inbound", Source: "webhook", Table: s.table, Column: "owner",
+		Name: datexport.ScopedName("webhook_inbound", s.table), Source: "webhook", Table: s.table, Column: "owner",
 		Mode: datexport.EraseDelete,
 	})
 }

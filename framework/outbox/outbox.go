@@ -356,12 +356,12 @@ func (o *Outbox) addOwnerColumn() error {
 // A row staged with Append names nobody and is left alone.
 func (o *Outbox) registerData() {
 	datexport.Register(datexport.DataExporter{
-		Name: "event_outbox", Source: "outbox", Table: o.table, PrimaryKey: "id",
+		Name: datexport.ScopedName("event_outbox", o.table), Source: "outbox", Table: o.table, PrimaryKey: "id",
 		Columns: []string{"id", "type", "payload", "owner", "status", "attempts", "last_error",
 			"created_at", "dispatched_at", "next_attempt_at", "claimed_until"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "event_outbox", Source: "outbox", Table: o.table, Column: "owner",
+		Name: datexport.ScopedName("event_outbox", o.table), Source: "outbox", Table: o.table, Column: "owner",
 		Mode: datexport.EraseAnonymize, ScrubColumns: []string{"payload"}, Tombstone: "null",
 	})
 }

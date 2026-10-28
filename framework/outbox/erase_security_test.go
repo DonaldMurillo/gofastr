@@ -51,7 +51,7 @@ func TestEraseBlanksOwnedOutboxPayloads(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	if f, err := os.Open(filepath.Join(dir, "event_outbox.ndjson")); err != nil {
+	if f, err := os.Open(filepath.Join(dir, "event_outbox-events.ndjson")); err != nil {
 		t.Errorf("the export has no event_outbox: %v", err)
 	} else {
 		n := 0

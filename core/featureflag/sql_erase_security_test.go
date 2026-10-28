@@ -42,7 +42,7 @@ func TestEraseRemovesFlagCohortMember(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	f, err := os.Open(filepath.Join(dir, "feature_flags.ndjson"))
+	f, err := os.Open(filepath.Join(dir, "feature_flags-rollouts.ndjson"))
 	if err != nil {
 		t.Errorf("the export has no feature_flags: %v", err)
 	} else {

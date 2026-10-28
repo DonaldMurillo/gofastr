@@ -86,11 +86,11 @@ func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedView
 // theirs alone, so an erasure deletes them in every tenant.
 func registerSavedViews(table string) {
 	datexport.Register(datexport.DataExporter{
-		Name: "admin_saved_views", Source: "admin", Table: table, PrimaryKey: "id",
+		Name: datexport.ScopedName("admin_saved_views", table), Source: "admin", Table: table, PrimaryKey: "id",
 		Columns: []string{"id", "owner", "tenant", "entity", "name", "filter", "columns", "created_at"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "admin_saved_views", Source: "admin", Table: table,
+		Name: datexport.ScopedName("admin_saved_views", table), Source: "admin", Table: table,
 		Column: "owner", Mode: datexport.EraseDelete,
 	})
 }

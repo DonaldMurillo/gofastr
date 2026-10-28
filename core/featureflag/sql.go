@@ -86,11 +86,11 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 // list and keeps the flag. The tenants list names tenants, not users.
 func (s *SQLStore) registerData() {
 	datexport.Register(datexport.DataExporter{
-		Name: "feature_flags", Source: "featureflag", Table: s.table, PrimaryKey: "key",
+		Name: datexport.ScopedName("feature_flags", s.table), Source: "featureflag", Table: s.table, PrimaryKey: "key",
 		Columns: []string{"key", "enabled", "rollout", "users", "tenants", "envs"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "feature_flags", Source: "featureflag", Table: s.table,
+		Name: datexport.ScopedName("feature_flags", s.table), Source: "featureflag", Table: s.table,
 		Column: "users", Mode: datexport.EraseRemoveMember,
 	})
 }

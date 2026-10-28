@@ -205,11 +205,11 @@ func NewSQLOAuthTokenStore(db *sql.DB, cfg ...SQLOAuthTokenStoreConfig) (*SQLOAu
 // a restore needs the same EncryptionKey.
 func registerOAuthTokens(table string) {
 	datexport.Register(datexport.DataExporter{
-		Name: "oauth_tokens", Source: "auth", Table: table, PrimaryKey: "user_id,provider",
+		Name: datexport.ScopedName("oauth_tokens", table), Source: "auth", Table: table, PrimaryKey: "user_id,provider",
 		Columns: []string{"user_id", "provider", "access_token", "refresh_token", "refresh_sha", "expires_at"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "oauth_tokens", Source: "auth", Table: table,
+		Name: datexport.ScopedName("oauth_tokens", table), Source: "auth", Table: table,
 		Column: "user_id", Mode: datexport.EraseDelete,
 	})
 }

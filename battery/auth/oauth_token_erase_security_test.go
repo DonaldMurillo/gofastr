@@ -38,7 +38,7 @@ func TestEraseRemovesOAuthTokens(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	if rows := ndjsonRows(t, dir, "oauth_tokens"); len(rows) != 2 {
+	if rows := ndjsonRows(t, dir, "oauth_tokens-provider_tokens"); len(rows) != 2 {
 		t.Errorf("export holds %d token row(s), want 2", len(rows))
 	}
 	if _, err := app.EraseUserData(ctx, "victim"); err != nil {

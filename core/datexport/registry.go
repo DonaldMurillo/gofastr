@@ -220,6 +220,31 @@ func Register(e DataExporter) {
 // segment of [A-Za-z0-9_-], non-empty. Separators and dots are refused so
 // the name can never traverse out of the export dir once it is joined into
 // a filename.
+// ScopedName is the registration Name for a store that a host can build
+// more than once on different tables. Registration replaces by Name, so
+// two stores sharing a constant would leave the first table out of every
+// export and erasure. The store's default table keeps the bare base;
+// any other table is appended after a '-', with each byte outside
+// [A-Za-z0-9_] written as '-' and two hex digits, so the result is a
+// valid exporter name and no two tables share one.
+func ScopedName(base, table string) string {
+	if table == base {
+		return base
+	}
+	const hex = "0123456789abcdef"
+	b := []byte(base + "-")
+	for i := 0; i < len(table); i++ {
+		c := table[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
+			b = append(b, c)
+		default:
+			b = append(b, '-', hex[c>>4], hex[c&0xf])
+		}
+	}
+	return string(b)
+}
+
 func validExporterName(n string) bool {
 	if n == "" {
 		return false

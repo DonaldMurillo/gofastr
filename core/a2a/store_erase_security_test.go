@@ -50,7 +50,7 @@ func TestEraseRemovesA2AState(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	for _, name := range []string{"a2a_tasks", "a2a_push_configs"} {
+	for _, name := range []string{"a2a_tasks-svc_a2a_tasks", "a2a_push_configs-svc_a2a_push_configs"} {
 		if n := archiveLines(t, dir, name); n != 2 {
 			t.Errorf("export %s holds %d row(s), want 2", name, n)
 		}

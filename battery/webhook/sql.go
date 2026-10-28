@@ -184,12 +184,12 @@ func addOwnerColumn(db *sql.DB, dialect, table string) error {
 // payload carrying their data is not sent after they are erased.
 func registerDeliveries(table string) {
 	datexport.Register(datexport.DataExporter{
-		Name: "webhook_deliveries", Source: "webhook", Table: table, PrimaryKey: "id",
+		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, PrimaryKey: "id",
 		Columns: []string{"id", "subscriber_id", "event", "payload", "attempts", "status",
 			"last_error", "next_attempt_at", "created_at", "updated_at", "owner"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "webhook_deliveries", Source: "webhook", Table: table, Column: "owner",
+		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, Column: "owner",
 		Mode: datexport.EraseDelete,
 	})
 }

@@ -39,7 +39,7 @@ func TestEraseRemovesUserAPITokens(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	if rows := ndjsonRows(t, dir, "auth_api_tokens"); len(rows) != 3 {
+	if rows := ndjsonRows(t, dir, "auth_api_tokens-machine_tokens"); len(rows) != 3 {
 		t.Errorf("export holds %d token row(s), want 3", len(rows))
 	}
 	if _, err := app.EraseUserData(ctx, "u1"); err != nil {

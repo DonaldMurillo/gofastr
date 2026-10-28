@@ -82,7 +82,7 @@ func TestExportCarriesAuditLog(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	if n := exportRows(t, dir, "audit_log"); n != 1 {
+	if n := exportRows(t, dir, "audit_log-change_trail"); n != 1 {
 		t.Errorf("export holds %d audit row(s), want 1", n)
 	}
 }

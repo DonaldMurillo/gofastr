@@ -102,12 +102,12 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 // id alone. Only the hash is stored, so the export carries no plaintext.
 func registerAPITokens(table string) {
 	datexport.Register(datexport.DataExporter{
-		Name: "auth_api_tokens", Source: "auth", Table: table, PrimaryKey: "id",
+		Name: datexport.ScopedName("auth_api_tokens", table), Source: "auth", Table: table, PrimaryKey: "id",
 		Columns: []string{"id", "name", "owner_kind", "owner_id", "prefix", "hash", "scopes",
 			"expires_at", "last_used_at", "revoked_at", "created_at"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "auth_api_tokens", Source: "auth", Table: table,
+		Name: datexport.ScopedName("auth_api_tokens", table), Source: "auth", Table: table,
 		Column: "owner_id", Mode: datexport.EraseDelete,
 		Where: []datexport.Equals{{Column: "owner_kind", Value: OwnerKindUser}},
 	})

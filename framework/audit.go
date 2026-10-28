@@ -145,7 +145,7 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 // it would match nothing.
 func registerAuditExport(table string) {
 	datexport.Register(datexport.DataExporter{
-		Name: "audit_log", Source: "audit", Table: table, PrimaryKey: "id",
+		Name: datexport.ScopedName("audit_log", table), Source: "audit", Table: table, PrimaryKey: "id",
 		Columns: []string{"id", "entity", "op", "record_id", "actor_id", "tenant_id", "created_at", "diff", "reason"},
 	})
 }

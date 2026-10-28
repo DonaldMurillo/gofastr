@@ -68,7 +68,7 @@ func TestEraseRemovesOwnedDeliveries(t *testing.T) {
 		}
 	}
 	app := framework.NewApp(framework.WithDB(db))
-	if n := exportLines(t, app, "webhook_deliveries"); n != 3 {
+	if n := exportLines(t, app, "webhook_deliveries-outgoing"); n != 3 {
 		t.Errorf("export holds %d deliveries, want 3", n)
 	}
 	if _, err := app.EraseUserData(ctx, "victim"); err != nil {
@@ -117,7 +117,7 @@ func TestEraseRemovesOwnedEnvelopes(t *testing.T) {
 	}
 	ctx := context.Background()
 	app := framework.NewApp(framework.WithDB(db))
-	if n := exportLines(t, app, "webhook_inbound"); n != 3 {
+	if n := exportLines(t, app, "webhook_inbound-incoming"); n != 3 {
 		t.Errorf("export holds %d envelopes, want 3", n)
 	}
 	if _, err := app.EraseUserData(ctx, "victim"); err != nil {

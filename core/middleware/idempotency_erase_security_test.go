@@ -53,7 +53,7 @@ func TestEraseRemovesCachedReplays(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
-	if f, err := os.Open(filepath.Join(dir, "idempotency_keys.ndjson")); err != nil {
+	if f, err := os.Open(filepath.Join(dir, "idempotency_keys-replays.ndjson")); err != nil {
 		t.Errorf("the export has no idempotency_keys: %v", err)
 	} else {
 		n := 0

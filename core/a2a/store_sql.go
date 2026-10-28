@@ -78,19 +78,19 @@ func NewSQLStore(db *sql.DB, opts ...SQLStoreOption) (*SQLStore, error) {
 // URLs, so an erasure deletes them.
 func (s *SQLStore) registerData() {
 	datexport.Register(datexport.DataExporter{
-		Name: "a2a_tasks", Source: "a2a", Table: s.taskTable, PrimaryKey: "id",
+		Name: datexport.ScopedName("a2a_tasks", s.taskTable), Source: "a2a", Table: s.taskTable, PrimaryKey: "id",
 		Columns: []string{"id", "owner", "context_id", "skill_id", "state", "status_ts", "version", "task_json", "created_at", "updated_at"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "a2a_tasks", Source: "a2a", Table: s.taskTable,
+		Name: datexport.ScopedName("a2a_tasks", s.taskTable), Source: "a2a", Table: s.taskTable,
 		Column: "owner", Mode: datexport.EraseDelete,
 	})
 	datexport.Register(datexport.DataExporter{
-		Name: "a2a_push_configs", Source: "a2a", Table: s.pushTable, PrimaryKey: "task_id,id",
+		Name: datexport.ScopedName("a2a_push_configs", s.pushTable), Source: "a2a", Table: s.pushTable, PrimaryKey: "task_id,id",
 		Columns: []string{"task_id", "id", "owner", "config_json", "created_at"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "a2a_push_configs", Source: "a2a", Table: s.pushTable,
+		Name: datexport.ScopedName("a2a_push_configs", s.pushTable), Source: "a2a", Table: s.pushTable,
 		Column: "owner", Mode: datexport.EraseDelete,
 	})
 }

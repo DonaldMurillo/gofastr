@@ -74,7 +74,13 @@ instead, under the name it was given, so a renamed table is the one
 exported and erased: the auth API-token and OAuth-token stores, admin saved
 views, the A2A task and push-config stores, feature flags, the SQL
 idempotency store, the event outbox, the webhook delivery and inbound
-stores, and the entity admin's bulk jobs. `gofastr verify` reports a store
+stores, and the entity admin's bulk jobs. Registration replaces an entry
+with the same `Name`, so these stores name each entry with
+`datexport.ScopedName(base, table)`: the default table keeps the bare name
+(`feature_flags.ndjson`), and any other table is appended after a `-`
+(`feature_flags-rollouts.ndjson`), so two stores on two tables both stay
+registered. A store of your own that a host can build twice does the same.
+`gofastr verify` reports a store
 table that holds a user column and is registered for neither plane
 (GOFASTR1415).
 **Unregistered raw tables are silently excluded**: a battery or app with

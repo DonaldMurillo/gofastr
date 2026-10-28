@@ -120,11 +120,11 @@ func NewSQLIdempotencyStore(db *sql.DB, opts ...SQLIdempotencyOption) (*SQLIdemp
 // left to the tenant's own lifecycle and to the TTL.
 func (s *SQLIdempotencyStore) registerData() {
 	datexport.Register(datexport.DataExporter{
-		Name: "idempotency_keys", Source: "idempotency", Table: s.table, PrimaryKey: "key",
+		Name: datexport.ScopedName("idempotency_keys", s.table), Source: "idempotency", Table: s.table, PrimaryKey: "key",
 		Columns: []string{"key", "fingerprint", "status", "headers", "body", "expires_at", "created_at", "principal"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
-		Name: "idempotency_keys", Source: "idempotency", Table: s.table, Column: "principal",
+		Name: datexport.ScopedName("idempotency_keys", s.table), Source: "idempotency", Table: s.table, Column: "principal",
 		Mode: datexport.EraseDelete,
 	})
 }
