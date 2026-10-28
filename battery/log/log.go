@@ -90,6 +90,14 @@ type Config struct {
 	// trusted callers (localhost, authenticated proxy, etc.).
 	AllowMCPMutation bool
 
+	// MCPGate replaces the precondition every log MCP tool runs behind,
+	// framework.MCPRequireRole("admin") by default. The tools read every
+	// caller's request paths, remote IPs and request ids, so the default
+	// is the admin role, not a signed-in user. A replacement should refuse
+	// a caller with no identity itself, as MCPRequireRole and auth.MCPRole
+	// do. The dev loop's implied tools stay ungated either way.
+	MCPGate func(ctx context.Context) error
+
 	// ErrorReporter receives recovered panics (from the plugin's
 	// panic-recovery middleware) and any errors app code forwards via
 	// Plugin.Reporter(). nil (the default) keeps the existing behaviour:

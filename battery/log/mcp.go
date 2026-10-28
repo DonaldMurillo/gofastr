@@ -420,5 +420,8 @@ func (p *Plugin) setLevelGate() func(ctx context.Context) error {
 	if p.mutationDevImplied {
 		return nil
 	}
-	return framework.MCPRequireUser()
+	if p.cfg.MCPGate != nil {
+		return p.cfg.MCPGate
+	}
+	return framework.MCPRequireRole("admin")
 }

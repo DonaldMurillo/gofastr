@@ -2230,6 +2230,18 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **BREAKING: the MCP control tools and the log MCP tools need the
+  `admin` role.** `app_module_enable`/`app_module_disable`
+  (`WithMCPControl`) and battery/log's `log_*` tools asked only for a
+  signed-in caller, so on an app with open sign-up any account could turn
+  a module off for everyone or read every caller's paths and IPs. They now
+  run behind the new `framework.MCPRequireRole("admin")`;
+  `framework.WithMCPControlGate` and `log.Config.MCPGate` replace it.
+  `MCPRequireUser`, `MCPRequireRole` and `/.debug` now honour an access
+  `Decider`'s deny. `auth.RoleGateCapability` moved to
+  `access.RoleGateCapability`. See
+  [agent-ready](framework/docs/content/agent-ready.md) and
+  [log](framework/docs/content/log.md).
 - **The bodyless 2FA routes refuse a cross-site POST.** `/2fa/disable`,
   `/2fa/backup-codes` and `/2fa/enroll` read no body, so another site's
   hidden form could submit them with a stepped-up session cookie and turn

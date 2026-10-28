@@ -154,12 +154,6 @@ func GetCurrentUser(ctx context.Context) User {
 	return u
 }
 
-// RoleGateCapability is the fixed capability name role-scoped gates pass
-// to the access.Decider. A role gate holds no resource, so the Decider
-// is consulted with the zero Ref and can only speak on the caller's
-// roles; resource-aware deciders should abstain on it.
-const RoleGateCapability access.Permission = "auth:role-gate"
-
 // roleGateDenied consults the Decider installed in ctx (access.WithDecider
 // / DeciderMiddleware) with the caller's roles and the zero Ref — a role
 // gate holds no resource. DecisionDeny refuses (fail closed before the
@@ -170,7 +164,7 @@ func roleGateDenied(ctx context.Context, user User) bool {
 	if d == nil {
 		return false
 	}
-	return d(ctx, user.GetRoles(), RoleGateCapability, access.Ref{}) == access.DecisionDeny
+	return d(ctx, user.GetRoles(), access.RoleGateCapability, access.Ref{}) == access.DecisionDeny
 }
 
 // extractBearerToken extracts the token from the Authorization header.
