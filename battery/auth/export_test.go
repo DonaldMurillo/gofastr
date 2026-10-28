@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // TestAuthExportersRegistered verifies the auth-owned tables are registered for

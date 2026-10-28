@@ -267,13 +267,21 @@ func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[stri
 			logger.Error("seed failed", "entity", name, "err", err)
 			return fmt.Errorf("seed %s: %w", name, err)
 		}
-		if err := recordSeeded(ctx, db, dialect, name); err != nil {
+		// The seed ran: record it on a detached, bounded context, so a
+		// shutdown that lands now does not seed again on the next boot.
+		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), seedRecordTimeout)
+		err := recordSeeded(recordCtx, db, dialect, name)
+		cancel()
+		if err != nil {
 			return fmt.Errorf("seed %s: record ledger: %w", name, err)
 		}
 		logger.Info("seed done", "entity", name, "elapsed", time.Since(start))
 	}
 	return nil
 }
+
+// seedRecordTimeout bounds the ledger write after a seed runs.
+const seedRecordTimeout = 10 * time.Second
 
 // sqliteSeedMu serializes RunSeeds calls within one process on SQLite. See
 // the SQLite arm of RunSeeds for why the leased lock row alone cannot order

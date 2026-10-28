@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -11,9 +12,11 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -256,7 +259,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			// only user of — a cross-principal cache-poisoning DoS for
 			// any Principal function that can return NUL-bearing
 			// subjects.
-			storeKey := strconv.Itoa(len(principal)) + "\x00" + principal + key
+			storeKey := idemStoreKey(principal, key)
 
 			replay, ok, beginErr := cfg.Store.Begin(r.Context(), storeKey, fp)
 			switch {
@@ -318,7 +321,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				}
 			}
 			switch {
-			case rec.bodyOverflow:
+			case rec.bodyOverflow, rec.streamed:
 				finish(nil)
 			case rec.status >= 200 && rec.status < 300:
 				snap := &IdempotentResponse{
@@ -349,6 +352,27 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 		return buf, true, nil
 	}
 	return buf, false, nil
+}
+
+// idemStoreKey is the key the store sees: the principal's byte length,
+// NUL, the principal, then the client's key.
+func idemStoreKey(principal, key string) string {
+	return strconv.Itoa(len(principal)) + "\x00" + principal + key
+}
+
+// idemPrincipal reads the principal back out of an idemStoreKey key,
+// so a store can file the row under the user it was cached for. A key
+// in any other shape names nobody.
+func idemPrincipal(storeKey string) string {
+	n, rest, ok := strings.Cut(storeKey, "\x00")
+	if !ok {
+		return ""
+	}
+	size, err := strconv.Atoi(n)
+	if err != nil || size < 0 || size > len(rest) {
+		return ""
+	}
+	return rest[:size]
 }
 
 // requestFingerprint hashes the parts of the request that define
@@ -418,7 +442,29 @@ type idempotencyRecorder struct {
 	maxBody      int64
 	bodyOverflow bool
 	wroteHeader  bool
+	// streamed marks a response the handler flushed or hijacked: what a
+	// replay would send is not what the client got, so none is kept.
+	streamed bool
 }
+
+// FlushError passes a flush through and marks the response streamed.
+func (r *idempotencyRecorder) FlushError() error {
+	r.streamed = true
+	return http.NewResponseController(r.ResponseWriter).Flush()
+}
+
+// Flush is FlushError for handlers that assert http.Flusher.
+func (r *idempotencyRecorder) Flush() { _ = r.FlushError() }
+
+// Hijack hands the connection to the handler; nothing is kept for replay.
+func (r *idempotencyRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	r.streamed = true
+	return http.NewResponseController(r.ResponseWriter).Hijack()
+}
+
+// Unwrap lets http.ResponseController reach the connection's deadlines;
+// Flush and Hijack stop at the methods above.
+func (r *idempotencyRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *idempotencyRecorder) WriteHeader(status int) {
 	if r.wroteHeader {

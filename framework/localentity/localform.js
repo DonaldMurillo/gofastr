@@ -60,7 +60,7 @@
   const msg = (msgs, k, n) => {
     const own = msgs && Object.prototype.hasOwnProperty.call(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
     const s = own || DEFAULTS[k]();
-    return s.split('{{n}}').join(n === undefined ? '' : String(n));
+    return s.split('{{n}}').join(n === undefined ? '' : NS.formatNumber(n));
   };
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
   const pad = (n) => String(n).padStart(2, '0');

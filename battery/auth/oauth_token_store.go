@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -193,7 +194,24 @@ func NewSQLOAuthTokenStore(db *sql.DB, cfg ...SQLOAuthTokenStoreConfig) (*SQLOAu
 	if err := s.ensureTable(context.Background()); err != nil {
 		return nil, fmt.Errorf("auth: create oauth token table: %w", err)
 	}
+	registerOAuthTokens(s.table)
 	return s, nil
+}
+
+// registerOAuthTokens declares the token table to App.ExportData and
+// App.EraseUserData under its configured name. An erased user's provider
+// grants are deleted: a surviving refresh token still mints access to
+// the user's provider account. The export carries the tokens sealed, so
+// a restore needs the same EncryptionKey.
+func registerOAuthTokens(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("oauth_tokens", table), Source: "auth", Table: table, PrimaryKey: "user_id,provider",
+		Columns: []string{"user_id", "provider", "access_token", "refresh_token", "refresh_sha", "expires_at"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("oauth_tokens", table), Source: "auth", Table: table,
+		Column: "user_id", Mode: datexport.EraseDelete,
+	})
 }
 
 func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {

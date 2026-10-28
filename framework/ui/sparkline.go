@@ -31,7 +31,9 @@ const (
 
 // SparklineConfig configures a Sparkline.
 type SparklineConfig struct {
-	// Values are the points in order (≥2).
+	// Values are the points in order (≥2 finite). A NaN or Inf value is
+	// a reading that never arrived: the line joins the points either
+	// side of it.
 	Values []float64
 	// Width / Height in CSS pixels. Default 120×32.
 	Width  int
@@ -73,7 +75,8 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if len(cfg.Values) < 2 {
+	min, max, finiteN := finiteRange(cfg.Values)
+	if finiteN < 2 {
 		// Inline trend with too few points: render a calm "no trend" dash
 		// rather than crashing the host that embeds it. Sanitized extras
 		// first, owned keys on top so they win.
@@ -103,20 +106,6 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		h = 32
 	}
 
-	min, max := cfg.Values[0], cfg.Values[0]
-	for _, v := range cfg.Values {
-		if v < min {
-			min = v
-		}
-		if v > max {
-			max = v
-		}
-	}
-	span := max - min
-	if span == 0 {
-		span = 1
-	}
-
 	// Map to viewBox coords. Leave a 1px margin top + bottom so the
 	// line stroke doesn't get clipped.
 	pad := 1.0
@@ -124,10 +113,18 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	plotH := float64(h) - 2*pad
 	n := len(cfg.Values)
 	pts := make([]string, 0, n)
+	firstX, lastX := -1.0, 0.0
 	for i, v := range cfg.Values {
+		if !finite(v) {
+			continue
+		}
 		x := float64(i) * plotW / float64(n-1)
-		y := pad + plotH - ((v - min) / span * plotH)
+		y := pad + plotH - chartFrac(v, min, max)*plotH
 		pts = append(pts, ftoa(x)+","+ftoa(y))
+		if firstX < 0 {
+			firstX = x
+		}
+		lastX = x
 	}
 
 	cls := "fui-sparkline"
@@ -187,8 +184,8 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	for i := 1; i < len(pts); i++ {
 		pathD.WriteString(" L" + pts[i])
 	}
-	areaD := pathD.String() + " L" + ftoa(plotW) + "," + ftoa(float64(h)) +
-		" L0," + ftoa(float64(h)) + " Z"
+	areaD := pathD.String() + " L" + ftoa(lastX) + "," + ftoa(float64(h)) +
+		" L" + ftoa(firstX) + "," + ftoa(float64(h)) + " Z"
 
 	var body string
 	if cfg.Shape == SparklineArea {

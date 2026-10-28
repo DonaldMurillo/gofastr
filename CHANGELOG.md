@@ -54,8 +54,75 @@ few lines, and link the PR or the docs page for the rest.
   on the pragma. `RefuseCaseKeptTables`
   probes Postgres for a table an older build created with its case kept
   and returns an error holding the `ALTER TABLE ... RENAME` that moves it.
+- **Seven analyzers from the 2026-10-27 bug bash.** `make analyze` and
+  CI's vet step now report:
+  - `keytrim`: `strings.TrimSpace` on an id, tenant or actor value that
+    is then kept, so `" x "` acts on row `x`;
+  - `tightenshared`: `os.MkdirAll` followed by an owner-only chmod of a
+    directory the caller named, which rewrites a directory someone else
+    owns;
+  - `settlectx`: an ack, settle or record write on the cancellable
+    context the work ran under, so a shutdown drops the outcome;
+  - `resolvedial`: an SSRF guard that resolves and checks a host, then
+    lets the transport resolve it again to dial;
+  - `wrapwriter`: a ResponseWriter wrapper with no `Unwrap`, and a
+    header change after the next handler ran;
+  - `unrechecked`: a long-lived stream that never re-checks the
+    principal, authz or tenant it resolved at connect;
+  - `nowritedeadline`: a client write in a stream's park loop with no
+    write deadline, and a `ResponseController` deadline a parked stream
+    arms and never clears.
+
+  `worldreadable`, `mapwriter`, `rawtext`'s `ctxless` arm, `intwrap`,
+  `nowaitdelay`, `credfetch`, `rootwrite`, `rootread`, `emitident`,
+  `unboundedbody` and `unboundedresp` cover more spellings of their
+  shapes. The rules are listed in [CLAUDE.md](CLAUDE.md).
+- **`GOFASTR1415 erasecover`.** `gofastr verify` reports DDL in `core`,
+  `framework` or `battery` for a user-keyed table that no
+  `datexport.DataEraser` and `DataExporter` cover. The catalog holds 81
+  rules.
+- **`core-ui/check.LintNumberFill` and the runtime's
+  `NS.formatNumber`.** A `{{n}}` phrase filled with `String(n)` fails
+  the runtime lint; `NS.formatNumber` formats the number in the page's
+  `<html lang>`, so counters and slider outputs read `1.234` on a German
+  page.
+- **More erasure surface.** `datexport.DataEraser.Where` (a list of
+  `datexport.Equals`) narrows an eraser's match, and
+  `datexport.EraseRemoveMember` takes the erased id out of a JSON-array
+  column and keeps the row. `datexport.ScopedName(base, table)` names a
+  registration after its table, so two stores on two tables both stay
+  registered. Stores tag per-user rows for erasure through
+  `search.Document.Owner`, `semantic.Document.Owner` (copied to
+  `Chunk.Owner`, and to the hybrid keyword copy through
+  `semantic.OwnedKeywordBackend`), `webhook.Manager.PublishFor`,
+  `webhook.IngestConfig.Owner`
+  and `outbox.Outbox.AppendFor`. `webhook.Bridge` queues each CRUD event
+  for the owner it names under the new `event.DataKeyOwnerID`. The
+  battery-plane table in
+  [data export](framework/docs/content/data-export.md) lists every store
+  and how it is erased.
+
 
 ### Fixed
+- **BREAKING: CRUD events carry their record's owner into the outbox.**
+  `crud.EventOutbox` declares `AppendFor(ctx, ex, owner, eventType,
+  data)` in place of `Append`, and the outbox table gains an `owner`
+  column, so `App.EraseUserData` sets an erased user's staged event
+  payloads to JSON `null`. A custom `EventOutbox` renames its method and
+  takes the owner. The outbox adds the column on boot; a host that passes
+  `WithoutEnsureTable` adds `owner TEXT NOT NULL DEFAULT ''` itself.
+- **User data erasure reaches every store table.** `App.EraseUserData`
+  and `App.ExportData` missed tables that held one user's data. These
+  stores now register from their constructors: admin saved views, auth
+  OAuth and API tokens (an API token owned by a service account with the
+  same id survives), A2A tasks and push configs, entityui bulk jobs (the
+  creator is anonymized), feature-flag user lists (the id is removed,
+  the flag kept), the SQL idempotency store (a new `principal` column,
+  added on boot), the outbox, outbound webhook deliveries, inbound
+  webhook envelopes, search documents and pgvector chunks. The audit
+  table is now exported too. Fanout spill rows expire on a purge ticker
+  instead of waiting for a later large publish. `FlatStore`'s snapshot
+  and WAL, and Redis queue persistence, are not reached by erasure.
 - **BREAKING: configured store tables fold their case on Postgres.** A
   store that creates its own table quoted a configured name whole, so
   `Jobs` made a table `"Jobs"` that a host's raw SQL on `jobs` never
@@ -2053,6 +2120,109 @@ few lines, and link the PR or the docs page for the rest.
 - **Fields whose names end in an operator suffix filter.** `?opt_in=`
   and `?members.check_in=` were cut into a field `opt` or `check` and
   refused; a suffix now counts only when the name before it is a field.
+- **Long-lived streams end when their caller loses access.** The
+  principal was resolved once at connect, so a revoked session or an
+  expired token kept receiving until the client left. The rtc room
+  socket, the SSE broker, island streams (which also re-run the topic
+  gate), A2A task streams, the CRUD event stream's tenant filter and the
+  harness MCP GET stream now re-check on each delivery or heartbeat and
+  close when the check fails.
+- **Stream writes have a write deadline.** A client that stopped reading
+  parked the handler for the life of the connection on kiln's live SSE,
+  dev livereload, the harness web, REST and WebSocket streams, island
+  streams and the CRUD event stream. Each write now runs under a fresh
+  deadline, cleared once the write is flushed. Kiln's live SSE also cuts
+  an event name at its first CR, LF or NUL, so a name can no longer
+  write its own `data:` line.
+- **32-bit builds compile.** `GOARCH=386` failed on constants past a
+  32-bit int or uint in core/i18n plural operands, core/schema and crud
+  unsigned bounds, the headless counter, the entityui number-input bound
+  and bench-resources. CI now cross-builds linux/386.
+- **HTTP/2 streams survive an idle gap.** `stream.SSEWriter`, A2A task
+  streams, the core/mcp notification stream and the harness MCP GET
+  stream left each write's 10 s deadline armed. On HTTP/2 that deadline
+  is a stream timer that resets the stream when it fires, write pending
+  or not, so a stream quiet for 10 s died before its next heartbeat. The
+  deadline is now cleared after each flush.
+- **Outcomes are recorded after a shutdown starts.** The queue's ack and
+  nack, the inbound webhook envelope's outcome, the migrate seed ledger
+  and entityui bulk chunk results were written on the context the work
+  ran under, so a shutdown landing as the work finished dropped the
+  record and the work ran again. They now settle on a detached, bounded
+  context. The outbound webhook's delivery state write and claim release
+  were detached but unbounded, so a store blocked on a dead database
+  held the worker past `Stop`; they are now bounded too.
+- **The harness web fetch checks the address it connects to.** It
+  checked a separate DNS lookup, so a rebinding host passed as public
+  and was dialed at an internal address. The SSRF check now runs on the
+  connected IP. Webhook and A2A push clients built on a clone of
+  `http.DefaultTransport` now get the same dial-time guard, which used
+  to skip them because the clone carries the environment proxy; the
+  guarded clone drops that proxy, as `netguard.GuardedTransport` does.
+  A transport with a `net.Dialer` of its own keeps it and gets the
+  resolve-and-check guard instead.
+- **Response wrappers expose the connection.** The cache middleware's
+  recorder, the theme editor, the webmcp observer, the idempotency
+  middleware and the timeout middleware gained `Unwrap`, so
+  `http.ResponseController` reaches flush, hijack and deadlines through
+  them. The cache and idempotency middleware no longer store a response
+  that was flushed or hijacked. Tracing sets its response headers before
+  the handler runs, since a later change never reached the client.
+- **Owner-only directories no longer rewrite shared parents.** The log
+  file sink, the desktop data dir, semantic persistence, the harness
+  SQLite store and `App.ExportData`'s directory tightened an existing
+  directory such as `/var/log` to 0700 after `MkdirAll`. Only a
+  directory the call created is tightened now; the export directory is
+  still tightened, and a symlink there is refused. A pre-existing
+  semantic WAL with looser permissions is now made owner-only.
+- **Huge field bounds no longer turn negative.** A String field's `Max`
+  or `Min` past the int range went through `int(...)`, which is
+  implementation-defined, so OpenAPI and JSON Schema published a
+  negative or nonsense `maxLength`. `schema.LengthBound` now clamps it to
+  [0, MaxInt32], and migrate and kiln's migrate write `TEXT` instead of a
+  `VARCHAR(n)` wider than Postgres accepts (10485760). The entityui
+  record form clamps a number field's bounds to ±2^53, where a huge
+  `Max` had landed below `Min` and refused every value.
+- **Ids are used exactly.** The RBAC admin and entityui bulk actions
+  trimmed spaces from ids, so `" u1 "` edited `u1`.
+- **SQLite search works on a table in an attached database.**
+  `SQLiteFTSConfig{Table: "aux.docs"}` created its table but every query
+  failed, because FTS5 read `"aux"."docs" MATCH` as a column. The bare
+  name now sits where FTS5 takes the table, and the boot-time probes
+  read the attached schema's catalog.
+- **`html.Classes` renders in sorted order,** so the `class` attribute is
+  the same bytes on every render.
+- **`ui.CodeTabs` and `ui.Markdown` take a `Ctx`,** so their code blocks'
+  accessible names, line counts and copy controls follow the request's
+  language.
+- **The static builder writes through `os.Root`.** A symlink planted in
+  the output tree failed no check and redirected the write outside it.
+- **The log webhook sink refuses redirects.** A 307 or 308 replayed the
+  batch and every configured header, such as an `X-API-Key`, to whatever
+  host the redirect named.
+- **The harness bash tool's timeout kills the process group.** A
+  backgrounded child holding the output pipe kept the call waiting for
+  its whole life.
+- **The audit scrub catches camelCase and kebab-case keys.** `resetToken`
+  and `reset-token` were stored in the clear while `reset_token` was
+  dropped. Keys now fold to snake case before the sensitive-suffix match.
+- **The email dev log redacts more secrets.** A token, code, key, secret
+  or password query parameter was kept when the keyword sat inside the
+  name (`?auth_token_v2=`), when the `&` was HTML-escaped, or when the
+  URL had no scheme. From, To, CC, Subject and headers are scrubbed of
+  control bytes, and header values are redacted like the body.
+- **Charts skip readings that are NaN or infinite.** `LineChart`,
+  `Sparkline`, `BarChart` and `PieChart` wrote `NaN` into SVG
+  coordinates, or scaled every bar to one infinite value. A non-finite
+  reading is treated as one that never arrived, as `Gauge`, `Heatmap` and
+  `Scatter` already did. `LineChart` labels now sit over the points of
+  the longest series.
+
+### Security
+- **`golang.org/x/net` is v0.62.0.** v0.59.0 carries an advisory in
+  `html.Parse`, which `battery/sitesearch` calls to extract page text.
+  The bump brings the other `golang.org/x` modules to their current
+  releases, in the root module and in `battery/print/chromepdf`.
 
 ## [0.95.0] - 2026-10-26
 

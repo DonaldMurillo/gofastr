@@ -261,7 +261,7 @@ func coercePKValue(reg entity.Registry, ent *entity.Entity, colName string, val 
 				case int64:
 					return v
 				case uint:
-					if v > math.MaxInt64 {
+					if uint64(v) > math.MaxInt64 { // uint64: a 32-bit uint cannot hold MaxInt64
 						return val
 					}
 					return int64(v)

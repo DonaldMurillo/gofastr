@@ -40,7 +40,7 @@ const (
 	// when the framework's owner extractor returned nothing (e.g. for
 	// admin-side events). Without this key, an anonymous SSE subscription
 	// would receive every user's row updates.
-	eventKeyOwnerID = "ownerId"
+	eventKeyOwnerID = event.DataKeyOwnerID
 )
 
 // EventOutbox is the transactional-outbox surface CRUD needs, satisfied by
@@ -54,10 +54,12 @@ const (
 // (redactEventRecord). See the "Durable consumers receive the raw row"
 // bullet in framework/docs/content/events.md.
 type EventOutbox interface {
-	// Append writes an event row using the passed executor, inside a CRUD
-	// transaction that is the *sql.Tx, so the row commits or rolls back
-	// with the business write.
-	Append(ctx context.Context, ex DBExecutor, eventType string, data any) (string, error)
+	// AppendFor writes an event row using the passed executor, inside a
+	// CRUD transaction that is the *sql.Tx, so the row commits or rolls
+	// back with the business write. owner is the record's owner id ("" on
+	// an entity with no owner field), which an erasure of that user
+	// matches.
+	AppendFor(ctx context.Context, ex DBExecutor, owner, eventType string, data any) (string, error)
 	// Nudge wakes the relay so post-commit delivery isn't bound to its
 	// poll interval.
 	Nudge()
@@ -85,6 +87,15 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 			data[eventKeyTenantID] = tid
 		}
 	}
+	if id, ok := ch.eventOwner(ctx, record); ok {
+		data[eventKeyOwnerID] = id
+	}
+	return data
+}
+
+// eventOwner is the owner id an event about record carries, when the
+// entity has an owner field.
+func (ch *CrudHandler) eventOwner(ctx context.Context, record any) (string, bool) {
 	if ch.Entity.Config.Scope.OwnerField != "" {
 		// Stamp the owner id as a STRING so it survives the fanout bridge's
 		// JSON round-trip unchanged: a numeric owner (e.g. a BIGINT user
@@ -100,12 +111,12 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		// record to Alice's subscription and not to Bob's. The context
 		// is the fallback for a record that does not carry the column.
 		if id, ok := ch.recordColumn(record, ch.Entity.Config.Scope.OwnerField); ok && id != nil {
-			data[eventKeyOwnerID] = fmt.Sprint(id)
+			return fmt.Sprint(id), true
 		} else if id, ok := owner.Get(ctx); ok {
-			data[eventKeyOwnerID] = fmt.Sprint(id)
+			return fmt.Sprint(id), true
 		}
 	}
-	return data
+	return "", false
 }
 
 // recordColumn reads column col from an event record, under its wire key
@@ -165,7 +176,8 @@ func (ch *CrudHandler) StageEvent(ctx context.Context, eventType string, record 
 	if ch.Outbox == nil {
 		return nil
 	}
-	_, err := ch.Outbox.Append(ctx, ch.DB, eventType, ch.eventData(ctx, record))
+	owner, _ := ch.eventOwner(ctx, record)
+	_, err := ch.Outbox.AppendFor(ctx, ch.DB, owner, eventType, ch.eventData(ctx, record))
 	return err
 }
 
@@ -351,6 +363,12 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		authzHeld := func() bool {
 			fresh, ok := handler.RecheckPrincipal(r.Context())
 			if !ok {
+				return false
+			}
+			// The per-event filter keys on the connect-time tenant. A
+			// principal the refreshed context places in another tenant
+			// would keep reading the old one's writes, so close instead.
+			if tenantScope && tenant.GetTenantID(fresh) != tenantID {
 				return false
 			}
 			liveMu.Lock()

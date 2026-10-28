@@ -353,6 +353,21 @@ func TestAssignSetsRoles(t *testing.T) {
 	}
 }
 
+// The submitted id is a key, used exactly: " u1 " names a different
+// account from "u1" (2026-10-27 A42).
+func TestAssignKeepsPaddedUserID(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	id := r.editor.GetID()
+	before := r.rolesOf(id)
+	post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"user_id": {" " + id + " "}, "roles": {"support"}})
+	if got := r.rolesOf(id); !slices.Equal(got, before) {
+		t.Fatalf("roles of %q changed from %v to %v by a padded id", id, before, got)
+	}
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"user_id": {"  "}, "roles": {"editor"}})); got != "bad-input" {
+		t.Fatalf("blank user_id result = %q", got)
+	}
+}
+
 // A caller may assign only roles its tier covers: a sub-admin cannot
 // write the top role onto any account, its own included.
 func TestAssignRequiresCallerTier(t *testing.T) {

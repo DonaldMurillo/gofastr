@@ -175,6 +175,7 @@ var examplesNeedingMoreContext = map[string]string{
 	contracts.RuleRepeatedLiteral:        "needs two *.style.css files",
 	contracts.RuleBareThemeLiteral:       "fires only inside the design-system trees, like GOFASTR1807; an app-root snippet is GOFASTR1801's finding",
 	contracts.RulePhysicalSide:           "fires only inside the design-system trees, like GOFASTR1807; an app-root snippet is GOFASTR1801's finding",
+	contracts.RuleEraseCover:             "fires only on store code under core/, framework/ and battery/; an app-root snippet is the app's own table",
 }
 
 // The other half: a rule whose bad example does NOT produce it has either

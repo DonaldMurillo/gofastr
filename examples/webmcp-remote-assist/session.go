@@ -912,9 +912,39 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		a.presence(s, r, +1)
 
 		defer conn.Close()
+		// The role check ran once, at the upgrade, and the socket outlives
+		// it: a support cookie expires, an operator link is revoked when
+		// the session ends. Re-run it before acting on each frame and on an
+		// idle ticker, and close the socket when it fails.
+		held := func() bool {
+			if r == roleSupport {
+				return a.authorizeSupport(req)
+			}
+			return a.authorizeOperator(credential, sid)
+		}
+		stopWatch := make(chan struct{})
+		defer close(stopWatch)
+		go func() {
+			t := time.NewTicker(wsRecheckEvery)
+			defer t.Stop()
+			for {
+				select {
+				case <-stopWatch:
+					return
+				case <-t.C:
+					if !held() {
+						conn.Close()
+						return
+					}
+				}
+			}
+		}()
 		for {
 			data, rerr := conn.Read()
 			if rerr != nil {
+				return
+			}
+			if !held() {
 				return
 			}
 			var in inboundMsg
@@ -935,6 +965,9 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		}
 	})
 }
+
+// wsRecheckEvery paces the idle re-check of an assist socket's role.
+var wsRecheckEvery = 30 * time.Second
 
 // operatorCookie pulls the operator credential without leaking the
 // error shape into handlers.

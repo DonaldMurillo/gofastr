@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
@@ -117,6 +118,7 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("ensure tables: %w", err)
 	}
+	registerDeliveries(s.delTable)
 	return s, nil
 }
 
@@ -148,7 +150,8 @@ func (s *SQLStore) ensureTables() error {
 			last_error      TEXT NOT NULL,
 			next_attempt_at %s,
 			created_at      %s NOT NULL,
-			updated_at      %s NOT NULL
+			updated_at      %s NOT NULL,
+			owner           TEXT NOT NULL DEFAULT ''
 		)`, s.delTable, blob, ts, ts, ts),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (status, next_attempt_at)",
 			query.IndexOn(s.dialect == "sqlite", s.delTable+"_due_idx", s.delTable)),
@@ -158,7 +161,37 @@ func (s *SQLStore) ensureTables() error {
 			return err
 		}
 	}
-	return nil
+	return addOwnerColumn(s.db, s.dialect, s.delTable)
+}
+
+// addOwnerColumn upgrades a table an earlier release created without
+// the owner column; its rows name nobody.
+func addOwnerColumn(db *sql.DB, dialect, table string) error {
+	if dialect == "postgres" {
+		_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, table))
+		return err
+	}
+	_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN owner TEXT NOT NULL DEFAULT ''`, table))
+	if err != nil && strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
+// registerDeliveries declares the delivery table to App.ExportData and
+// App.EraseUserData under its configured name. Erasure deletes the
+// erased user's deliveries (Delivery.Owner), pending ones included: a
+// payload carrying their data is not sent after they are erased.
+func registerDeliveries(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, PrimaryKey: "id",
+		Columns: []string{"id", "subscriber_id", "event", "payload", "attempts", "status",
+			"last_error", "next_attempt_at", "created_at", "updated_at", "owner"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, Column: "owner",
+		Mode: datexport.EraseDelete,
+	})
 }
 
 // ----- subscribers ----------------------------------------------------------
@@ -243,7 +276,7 @@ func (s *SQLStore) AddDelivery(ctx context.Context, d Delivery) error {
 	}
 	_, err := s.db.ExecContext(ctx, s.deliveryInsert(),
 		d.ID, d.SubscriberID, d.Event, d.Payload, d.Attempts,
-		string(d.Status), d.LastError, nextAt, d.CreatedAt, d.UpdatedAt,
+		string(d.Status), d.LastError, nextAt, d.CreatedAt, d.UpdatedAt, d.Owner,
 	)
 	return err
 }
@@ -295,7 +328,7 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 
 func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s`, s.delTable)
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s`, s.delTable)
 	var args []any
 	if subscriberID != "" {
 		q += " WHERE subscriber_id = " + s.placeholder(1)
@@ -317,7 +350,7 @@ func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limi
 // (StatusDead) deliveries, newest-first.
 func (s *SQLStore) ListDeadDeliveries(ctx context.Context, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
 		WHERE status = %s ORDER BY created_at DESC`, s.delTable, s.placeholder(1))
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
@@ -345,7 +378,7 @@ func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
 
 func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
 		WHERE status = %s AND next_attempt_at <= %s
 		ORDER BY next_attempt_at ASC`,
 		s.delTable, s.placeholder(1), s.placeholder(2))
@@ -449,7 +482,7 @@ func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, 
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING id, subscriber_id, event, payload, attempts, status,
-			last_error, next_attempt_at, created_at, updated_at`,
+			last_error, next_attempt_at, created_at, updated_at, owner`,
 		s.delTable, s.delTable, limit)
 	rows, err := s.db.QueryContext(ctx, q, now.Add(leasePeriod), string(StatusPending), now)
 	if err != nil {
@@ -494,7 +527,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	}
 
 	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
 		WHERE status = ? AND next_attempt_at <= ?
 		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
 	rows, err := conn.QueryContext(ctx, selQ, string(StatusPending), now)
@@ -576,7 +609,7 @@ func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
 		var status, lastErr string
 		var nextAt sql.NullTime
 		if err := rows.Scan(&d.ID, &d.SubscriberID, &d.Event, &d.Payload, &d.Attempts,
-			&status, &lastErr, &nextAt, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			&status, &lastErr, &nextAt, &d.CreatedAt, &d.UpdatedAt, &d.Owner); err != nil {
 			return nil, err
 		}
 		d.Status = DeliveryStatus(status)
@@ -615,12 +648,12 @@ func (s *SQLStore) subUpsert() string {
 func (s *SQLStore) deliveryInsert() string {
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(`INSERT INTO %s
-			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, s.delTable)
+			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, s.delTable)
 	}
 	return fmt.Sprintf(`INSERT INTO %s
-		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`, s.delTable)
+		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, s.delTable)
 }
 
 func (s *SQLStore) deliveryUpdate(unclaimed bool) string {

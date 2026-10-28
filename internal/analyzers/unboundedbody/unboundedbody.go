@@ -14,10 +14,26 @@
 // a different and much smaller risk. A grep cannot tell those apart, which
 // is why this lives in the vet lane rather than the contracts one.
 //
-// A cap counts when http.MaxBytesReader or io.LimitReader appears anywhere
-// in the same file: middleware that wraps a body is conventionally written
-// beside the handlers it wraps (battery/semantic/routes.go is the model),
-// and demanding the wrap be in the same function would flag correct code.
+// A cap counts only when it is on the path of the request being read:
+//
+//   - r.Body rebound from http.MaxBytesReader / io.LimitReader earlier in
+//     the reading function, or a same-package cap-establishing helper
+//     called with r first (limitBody(w, r) then io.ReadAll(r.Body));
+//   - the mount credit: the FuncDecl around the read (the handler, or the
+//     factory returning the handler literal) is referenced in the
+//     package only from inside the arguments of a call to a middleware
+//     that rebinds a request's Body from a capping constructor —
+//     battery/semantic/routes.go mounts
+//     limitBody(requireJSON(auth(indexHandler(idx)))), and a method value
+//     limitBody(http.HandlerFunc(s.serve)) counts the same;
+//   - the callers credit: every same-package caller of the reading
+//     function capped the request it passes in, by any spelling above.
+//
+// Until bug bash 2026-10-27 I12 a cap counted when MaxBytesReader or
+// LimitReader appeared anywhere in the same FILE (fileHasCap,
+// unboundedbody.go:107-108,516-518): one io.LimitReader in one handler
+// silenced an uncapped io.ReadAll(r.Body) in a separately mounted
+// sibling, and the capped fixture pinned exactly that.
 //
 // The second posture is per-handler form parity, born from the 2026-09-03
 // probe audit (entity_bodycap_red_test.go TestEntitySaveRedCapsBody on
@@ -66,6 +82,11 @@
 //     to the parse or carry its own wrap;
 //   - function literals get no caller credit (they are mounted as values,
 //     not called by name), which is the handler shape and stays reported;
+//     a literal's read takes the mount credit of the FuncDecl around it;
+//   - for the read posture, a handler the package never references (an
+//     exported handler a host mounts) has no visible cap and reports,
+//     and a "middleware" whose LimitReader wraps something other than a
+//     request's Body caps nothing it is handed;
 //   - _test.go files.
 package unboundedbody
 
@@ -98,37 +119,295 @@ var sinks = map[string]int{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	cappers := cappingHelpers(pass)
+	ix := buildIndex(pass)
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		checkFormParse(pass, f)
-		if fileHasCap(f, cappers) {
-			continue
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
+		walkWithFuncs(f, func(n ast.Node, fn ast.Node, encl *ast.FuncDecl) {
 			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+			if !ok || fn == nil {
+				return
 			}
 			argIdx, ok := sinks[astx.PkgFuncName(pass, call.Fun)]
 			if !ok || argIdx >= len(call.Args) {
-				return true
+				return
 			}
 			sel, ok := call.Args[argIdx].(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Body" {
-				return true
+				return
 			}
 			if !isInboundRequest(pass, sel.X) {
-				return true
+				return
+			}
+			if ix.sinkCapped(fn, encl, requestObject(pass, sel.X), call.Pos(), map[types.Object]bool{}, 0) {
+				return
 			}
 			pass.Reportf(call.Pos(),
 				"reads an inbound request body with no size cap: wrap it first (r.Body = http.MaxBytesReader(w, r.Body, max)) so one request cannot spend the server's memory")
-			return true
 		})
 	}
 	return nil, nil
+}
+
+// pkgIndex is the package-wide knowledge the per-request sink posture
+// consults: cap-establishing functions, middleware that rebinds a
+// request's Body, every named call site with its innermost and
+// enclosing functions, and every reference to a package function with
+// whether a capping middleware wraps it.
+type pkgIndex struct {
+	pass      *analysis.Pass
+	caps      map[types.Object]bool
+	rebinders map[types.Object]bool
+	decls     map[types.Object]*ast.FuncDecl
+	calls     map[types.Object][]siteIn
+	refs      map[types.Object][]bool // reference → wrapped by a rebinder's argument
+}
+
+// siteIn is one same-package call of a named function: the innermost
+// function holding the call, the FuncDecl around it, and the call.
+type siteIn struct {
+	fn   ast.Node
+	encl *ast.FuncDecl
+	call *ast.CallExpr
+}
+
+func buildIndex(pass *analysis.Pass) *pkgIndex {
+	ix := &pkgIndex{
+		pass:      pass,
+		caps:      cappingObjects(pass),
+		rebinders: bodyRebinders(pass),
+		decls:     funcDecls(pass),
+		calls:     map[types.Object][]siteIn{},
+		refs:      map[types.Object][]bool{},
+	}
+	for _, f := range pass.Files {
+		if pathflow.IsTestFile(pass, f) {
+			continue
+		}
+		var stack []ast.Node
+		ast.Inspect(f, func(n ast.Node) bool {
+			if n == nil {
+				stack = stack[:len(stack)-1]
+				return true
+			}
+			stack = append(stack, n)
+			id, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			obj := pass.TypesInfo.Uses[id]
+			if obj == nil || ix.decls[obj] == nil {
+				return true
+			}
+			fn, encl := funcsOf(stack)
+			if encl != nil && pass.TypesInfo.Defs[encl.Name] == obj {
+				return true // recursion is no mount
+			}
+			ix.refs[obj] = append(ix.refs[obj], ix.wrappedByRebinder(stack))
+			if call := calleeCall(stack); call != nil && fn != nil {
+				ix.calls[obj] = append(ix.calls[obj], siteIn{fn: fn, encl: encl, call: call})
+			}
+			return true
+		})
+	}
+	return ix
+}
+
+// sinkCapped reports whether the request obj read at pos in fn (whose
+// enclosing FuncDecl is encl) is capped ON ITS PATH: a rebind of its
+// Body earlier in fn, a cap-establishing helper called with it earlier
+// in fn, the enclosing function mounted only under a Body-rebinding
+// middleware, or every same-package caller of fn having capped the
+// request it passes in (recursively, cycle-guarded).
+func (ix *pkgIndex) sinkCapped(fn ast.Node, encl *ast.FuncDecl, obj types.Object, pos token.Pos, visiting map[types.Object]bool, depth int) bool {
+	if rebindCapped(ix.pass, fn, obj, pos) || helperCapped(ix.pass, fn, obj, pos, ix.caps) {
+		return true
+	}
+	if encl == nil {
+		return false
+	}
+	fo := ix.pass.TypesInfo.Defs[encl.Name]
+	if fo == nil {
+		return false
+	}
+	if ix.mountCapped(fo) {
+		return true
+	}
+	// The callers credit needs the request to be fn's own parameter: a
+	// literal's request never arrives through the enclosing function's
+	// call sites.
+	if fn != ast.Node(encl) || depth > 4 || visiting[fo] || len(ix.calls[fo]) == 0 {
+		return false
+	}
+	idx := paramIndex(ix.pass, encl, obj)
+	if idx < 0 {
+		return false
+	}
+	visiting[fo] = true
+	defer delete(visiting, fo)
+	for _, site := range ix.calls[fo] {
+		callerObj := requestObject(ix.pass, argAt(site.call, idx))
+		if callerObj == nil {
+			return false
+		}
+		if !ix.sinkCapped(site.fn, site.encl, callerObj, site.call.Pos(), visiting, depth+1) {
+			return false
+		}
+	}
+	return true
+}
+
+// mountCapped reports whether every same-package reference to fo sits
+// inside an argument of a call to a middleware that rebinds a request's
+// Body from a capping constructor (battery/semantic routes.go:
+// limitBody(requireJSON(auth(indexHandler(idx))))). A function the
+// package never references (an exported handler mounted elsewhere) has
+// no visible cap.
+func (ix *pkgIndex) mountCapped(fo types.Object) bool {
+	refs := ix.refs[fo]
+	if len(refs) == 0 {
+		return false
+	}
+	for _, wrapped := range refs {
+		if !wrapped {
+			return false
+		}
+	}
+	return true
+}
+
+// wrappedByRebinder reports whether the innermost node of stack lies
+// inside an ARGUMENT (not the callee) of a call to a Body-rebinding
+// middleware.
+func (ix *pkgIndex) wrappedByRebinder(stack []ast.Node) bool {
+	for i := len(stack) - 2; i >= 0; i-- {
+		call, ok := stack[i].(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		if stack[i+1] == call.Fun {
+			continue
+		}
+		if callee := calleeObject(ix.pass, call.Fun); callee != nil && ix.rebinders[callee] {
+			return true
+		}
+	}
+	return false
+}
+
+// calleeCall returns the call whose callee the innermost node of stack
+// is (the ident itself, or the Sel of a selector callee), or nil.
+func calleeCall(stack []ast.Node) *ast.CallExpr {
+	n := len(stack)
+	if n < 2 {
+		return nil
+	}
+	child := stack[n-1]
+	parent := stack[n-2]
+	if sel, ok := parent.(*ast.SelectorExpr); ok && sel.Sel == child && n >= 3 {
+		child, parent = sel, stack[n-3]
+	}
+	if call, ok := parent.(*ast.CallExpr); ok && call.Fun == child {
+		return call
+	}
+	return nil
+}
+
+// funcsOf returns the innermost function node on stack and the
+// FuncDecl around it.
+func funcsOf(stack []ast.Node) (ast.Node, *ast.FuncDecl) {
+	var fn ast.Node
+	var encl *ast.FuncDecl
+	for i := len(stack) - 1; i >= 0; i-- {
+		switch v := stack[i].(type) {
+		case *ast.FuncLit:
+			if fn == nil {
+				fn = v
+			}
+		case *ast.FuncDecl:
+			if fn == nil {
+				fn = v
+			}
+			encl = v
+			return fn, encl
+		}
+	}
+	return fn, encl
+}
+
+// walkWithFuncs visits every node of f with its innermost function and
+// enclosing FuncDecl.
+func walkWithFuncs(f *ast.File, visit func(n, fn ast.Node, encl *ast.FuncDecl)) {
+	var stack []ast.Node
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
+		fn, encl := funcsOf(stack)
+		visit(n, fn, encl)
+		return true
+	})
+}
+
+// calleeObject resolves a callee expression to its object.
+func calleeObject(pass *analysis.Pass, fun ast.Expr) types.Object {
+	switch f := ast.Unparen(fun).(type) {
+	case *ast.Ident:
+		return pass.TypesInfo.ObjectOf(f)
+	case *ast.SelectorExpr:
+		if sel, ok := pass.TypesInfo.Selections[f]; ok {
+			return sel.Obj()
+		}
+		return pass.TypesInfo.ObjectOf(f.Sel)
+	}
+	return nil
+}
+
+// bodyRebinders maps each package function whose body (literals
+// included) assigns an *http.Request's Body from a capping constructor:
+// the middleware spelling, r.Body = http.MaxBytesReader(w, r.Body, n).
+// A function with a LimitReader over some other reader caps nothing it
+// wraps.
+func bodyRebinders(pass *analysis.Pass) map[types.Object]bool {
+	out := map[types.Object]bool{}
+	for _, f := range pass.Files {
+		if pathflow.IsTestFile(pass, f) {
+			continue
+		}
+		for _, d := range f.Decls {
+			decl, ok := d.(*ast.FuncDecl)
+			if !ok || decl.Body == nil {
+				continue
+			}
+			found := false
+			ast.Inspect(decl.Body, func(n ast.Node) bool {
+				assign, ok := n.(*ast.AssignStmt)
+				if !ok || found {
+					return !found
+				}
+				for i, lhs := range assign.Lhs {
+					sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr)
+					if !ok || sel.Sel.Name != "Body" || i >= len(assign.Rhs) {
+						continue
+					}
+					if isInboundRequest(pass, sel.X) && hasCapCall(assign.Rhs[i]) {
+						found = true
+					}
+				}
+				return !found
+			})
+			if found {
+				if obj := pass.TypesInfo.Defs[decl.Name]; obj != nil {
+					out[obj] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // parseMethods are the *http.Request methods that read the whole body.
@@ -486,49 +765,6 @@ func isRequestType(t types.Type) bool {
 	obj := named.Obj()
 	return obj != nil && obj.Name() == "Request" &&
 		obj.Pkg() != nil && obj.Pkg().Path() == "net/http"
-}
-
-// cappingHelpers collects the package's own functions that establish a body
-// cap, so a package that factors the wrap into a named helper
-// (`limitJSONBody(w, r)`) is read the same as one that inlines
-// http.MaxBytesReader. Without this the analyzer sees only the file it is
-// looking at, and factoring out the wrap — the tidier way to write it —
-// would fail the check.
-func cappingHelpers(pass *analysis.Pass) map[string]bool {
-	out := map[string]bool{}
-	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || fn.Body == nil {
-				continue
-			}
-			if hasCapCall(fn.Body) {
-				out[fn.Name.Name] = true
-			}
-		}
-	}
-	return out
-}
-
-// fileHasCap reports whether this file establishes a body cap anywhere,
-// either directly or by calling one of the package's capping helpers.
-// Middleware that wraps a body lives beside its handlers by convention.
-func fileHasCap(f *ast.File, cappers map[string]bool) bool {
-	if hasCapCall(f) {
-		return true
-	}
-	found := false
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if id, ok := call.Fun.(*ast.Ident); ok && cappers[id.Name] {
-			found = true
-		}
-		return !found
-	})
-	return found
 }
 
 // hasCapCall reports whether n mentions one of the standard capping

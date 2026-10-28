@@ -3,7 +3,6 @@
 package dev
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/config"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
 // LiveReloadStreamURL is the SSE endpoint the dev client connects to.
@@ -131,15 +131,16 @@ func RegisterLiveReload(r *router.Router) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
-		fl, ok := w.(http.Flusher)
-		if !ok {
+		if _, ok := w.(http.Flusher); !ok {
 			i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
-		if _, err := fmt.Fprintf(w, "event: ready\ndata: %s\n\n", buildID); err != nil {
+		// SSEWriter arms a fresh write deadline on every write, so a
+		// stalled client cannot park this goroutine for good.
+		sse := stream.NewSSEWriter(w)
+		if err := sse.WriteEvent("ready", buildID); err != nil {
 			return
 		}
-		fl.Flush()
 		ticker := time.NewTicker(heartbeatInterval)
 		defer ticker.Stop()
 		for {
@@ -148,12 +149,11 @@ func RegisterLiveReload(r *router.Router) {
 				return
 			case <-ticker.C:
 				// Bail when the underlying conn is gone so the goroutine
-				// doesn't leak past a stalled or closed client. The error
-				// surfaces once the kernel send buffer fails to drain.
-				if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				// doesn't leak past a stalled or closed client: the write
+				// deadline fails a ping the client stopped draining.
+				if err := sse.WriteComment("ping"); err != nil {
 					return
 				}
-				fl.Flush()
 			}
 		}
 	}))

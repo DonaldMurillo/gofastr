@@ -52,7 +52,7 @@ battery registers its tables into the `datexport` registry from `init()`:
 ```go
 package mybattery
 
-import "github.com/DonaldMurillo/gofastr/framework/datexport"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
 
 func init() {
     datexport.Register(datexport.DataExporter{
@@ -69,6 +69,25 @@ An empty `PrimaryKey` means the table has no key and is read in one pass; a
 comma-joined value (`"provider,provider_id"`) is a composite key.
 `battery/auth` (users, sessions, 2FA enrolments, OAuth links, passkeys) and
 `battery/queue` (queue_jobs) register themselves this way; importing the battery == including its tables.
+A store whose table name is configurable registers from its constructor
+instead, under the name it was given, so a renamed table is the one
+exported and erased: the auth API-token and OAuth-token stores, admin saved
+views, the A2A task and push-config stores, feature flags, the SQL
+idempotency store, the event outbox, the webhook delivery and inbound
+stores, and the entity admin's bulk jobs. Registration replaces an entry
+with the same `Name`, so these stores name each entry with
+`datexport.ScopedName(base, table)`: the default table keeps the bare name
+(`feature_flags.ndjson`), and any other table is appended after a `-`
+(`feature_flags-rollouts.ndjson`), so two stores on two tables both stay
+registered. The table's ASCII letters are lowercased first, the way
+AutoMigrate folds them: `Rollouts` and `rollouts` are one table and get one
+name. A name longer than 200 bytes is cut to that length and ends in
+16 hex digits of the table name's SHA-256, so the file name stays inside
+one 255-byte path component. A store of your own that a host can build
+twice does the same.
+`gofastr verify` reports a store
+table that holds a user column and is registered for neither plane
+(GOFASTR1415).
 **Unregistered raw tables are silently excluded**: a battery or app with
 custom tables registers an exporter to be included. A registered table that is
 absent from the live DB is skipped with a note (e.g. the auth battery is
@@ -231,7 +250,7 @@ app table you renamed, register the actual name from your
 app's `main.go` (or a `main`-owned `init`) so it is included:
 
 <!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/framework/datexport"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
 -->
 ```go
 datexport.Register(datexport.DataExporter{
@@ -307,7 +326,25 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    a job only when the producer set `Job.UserID` — see
    [the queue reference](queue.md). A job whose payload is personal data but
    which names no user is not erasable, and its payload column is exported
-   verbatim.
+   verbatim. The other stores, each under its configured table name:
+
+   | Store | Erased by | Mode |
+   |---|---|---|
+   | `auth_api_tokens` | `owner_id` where `owner_kind = 'user'` | delete |
+   | `oauth_tokens` | `user_id` | delete |
+   | `admin_saved_views` | `owner` | delete |
+   | `a2a_tasks`, `a2a_push_configs` | `owner` | delete |
+   | `feature_flags` | the user's id in the `users` allow list | remove member |
+   | `idempotency_keys` | `principal` (the cached response's caller) | delete |
+   | `event_outbox` | `owner` (the record's owner) | anonymize: `payload` set to JSON `null` |
+   | `webhook_deliveries` | `owner` (`Manager.PublishFor`) | delete |
+   | `webhook_inbound` | `owner` (`IngestConfig.Owner`) | delete |
+   | entity admin bulk jobs | `creator` | anonymize |
+   | search indexes, pgvector chunks | `owner` (`Document.Owner`) | delete |
+
+   Search and semantic indexes register an eraser and no exporter: they are
+   rebuilt from the records that are exported, not restored. A row a store
+   wrote with an empty owner names nobody and stays.
 3. **Audit plane (built-in).** The audit table is retained, since it is the
    compliance record of who did what, but the user's `actor_id` is
    anonymized (every row where `actor_id = userID` is set to `[erased]`) and
@@ -485,10 +522,10 @@ the tombstone, a re-run's `WHERE` matches nothing.
 ### Registering an eraser
 
 A battery or app registers a table for erasure the same way it registers one
-for export. Two modes:
+for export. Three modes:
 
 <!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/framework/datexport"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
 -->
 ```go
 // Hard-delete every row owned by the user.
@@ -504,7 +541,26 @@ datexport.RegisterEraser(datexport.DataEraser{
     ScrubColumns: []string{"email", "phone"},
     Tombstone:    "[redacted]",   // empty defaults to "[erased]"
 })
+
+// Keep the row, take the user out of a JSON array of ids it shares.
+datexport.RegisterEraser(datexport.DataEraser{
+    Name: "beta_lists", Source: "rollout", Table: "beta_lists",
+    Column: "members", Mode: datexport.EraseRemoveMember,
+})
+
+// Match only the rows that also meet every Where condition.
+datexport.RegisterEraser(datexport.DataEraser{
+    Name: "api_tokens", Source: "keys", Table: "api_tokens",
+    Column: "owner_id", Mode: datexport.EraseDelete,
+    Where: []datexport.Equals{{Column: "owner_kind", Value: "user"}},
+})
 ```
+
+`EraseRemoveMember` reads `Column` as a TEXT column holding a JSON array of
+strings and rewrites only the rows that list the user, without the user;
+the row stays. `Where` narrows any mode: each column is `SafeIdent`-checked
+and must exist on the table, and each value is bound, so a service account
+that shares a user's id survives that user's erasure.
 
 `Column` is the user-id column matched against the erased user's id. For
 `EraseAnonymize`, both `ScrubColumns` and `Column` are overwritten with
@@ -532,7 +588,7 @@ at erase time (before the write transaction opens) through a registered
 user id:
 
 <!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/framework/datexport"
+import "github.com/DonaldMurillo/gofastr/core/datexport"
 -->
 ```go
 // Resolve email from the user table: SELECT email FROM auth_users WHERE id = $1

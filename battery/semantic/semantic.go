@@ -14,6 +14,11 @@ type Document struct {
 	Source   string         `json:"source,omitempty"`
 	Text     string         `json:"text"`
 	Metadata map[string]any `json:"metadata,omitempty"`
+	// Owner is the user id the document belongs to, or empty for one
+	// that names nobody. Add copies it onto every chunk, and
+	// App.EraseUserData deletes the erased user's chunks from a
+	// PgVectorStore.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Chunk is a stored, embedded slice of a Document. Vec is owned by the
@@ -26,7 +31,9 @@ type Chunk struct {
 	Text     string         `json:"text"`
 	Offset   [2]int         `json:"offset"`
 	Metadata map[string]any `json:"metadata,omitempty"`
-	Vec      []float32      `json:"-"`
+	// Owner is the owning Document's Owner; Add sets it.
+	Owner string    `json:"owner,omitempty"`
+	Vec   []float32 `json:"-"`
 }
 
 // Hit is a single retrieval result. Reason describes which stage of
@@ -99,6 +106,16 @@ type KeywordBackend interface {
 	Delete(ctx context.Context, id string) error
 	// Search returns up to top results as (chunkID, score) pairs.
 	Search(ctx context.Context, text string, top int) ([]KeywordHit, error)
+}
+
+// OwnedKeywordBackend is a [KeywordBackend] that can tag each chunk it
+// holds with the user it belongs to. The index uses IndexOwned in place
+// of Index when the backend has it, so the keyword copy of a user's text
+// is reachable by erasure the way the chunk is. [WrapSearchBackend]
+// implements it by setting search.Document.Owner.
+type OwnedKeywordBackend interface {
+	KeywordBackend
+	IndexOwned(ctx context.Context, id, owner, text string) error
 }
 
 // KeywordHit is one result from a [KeywordBackend].

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	"github.com/lib/pq"
@@ -100,6 +101,13 @@ func NewPgVector(db *sql.DB, cfg PgVectorConfig) (*PgVectorStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("semantic: invalid pgvector table name %q: %w", table, err)
 	}
+	// App.EraseUserData deletes the erased user's chunks (Document.Owner).
+	// Registered under the table's own name, so two stores in one app do
+	// not replace each other.
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: safe, Source: "semantic", Table: safe, Column: "owner",
+		Mode: datexport.EraseDelete,
+	})
 	return &PgVectorStore{
 		db:           db,
 		table:        safe,
@@ -151,6 +159,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 	}
 	// The embedding column dimension is the only interpolated value here;
 	// it is a validated positive int. The table name is validated + quoted.
+	//gofastr:allow(GOFASTR1415) a chunk table is an embedding index derived from documents the host stores and exports itself, and a restore re-embeds them; NewPgVector registers erasure by Document.Owner
 	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id           TEXT PRIMARY KEY,
 		doc_id       TEXT NOT NULL,
@@ -160,7 +169,8 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 		offset_start INTEGER NOT NULL DEFAULT 0,
 		offset_end   INTEGER NOT NULL DEFAULT 0,
 		meta         JSONB NOT NULL DEFAULT '{}',
-		embedding    vector(%d) NOT NULL
+		embedding    vector(%d) NOT NULL,
+		owner        TEXT NOT NULL DEFAULT ''
 	)`, s.quotedTable, s.dim)
 	if _, err := s.db.ExecContext(ctx, createTable); err != nil {
 		// 42704 = undefined_object: the "vector" type does not exist,
@@ -169,6 +179,11 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 			return errors.New("semantic: pgvector extension is not installed in this database: an admin must run: CREATE EXTENSION vector;")
 		}
 		return fmt.Errorf("semantic: create pgvector table: %w", err)
+	}
+	// A table an earlier release created has no owner column.
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, s.quotedTable)); err != nil {
+		return fmt.Errorf("semantic: add owner column: %w", err)
 	}
 	// B-tree index on doc_id so RemoveDoc and ChunkIDsForDoc are index
 	// scans, not full table scans. No ANN index by default: brute-force
@@ -240,8 +255,8 @@ func (s *PgVectorStore) insertChunks(ctx context.Context, tx *sql.Tx, chunks []C
 	// aliased so a table named excluded does not collide with the EXCLUDED
 	// pseudo-row.
 	stmt := fmt.Sprintf(`INSERT INTO %s AS t
-		(id, doc_id, source, kind, text, offset_start, offset_end, meta, embedding)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+		(id, doc_id, source, kind, text, offset_start, offset_end, meta, embedding, owner)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector, $10)
 	ON CONFLICT (id) DO UPDATE SET
 		doc_id       = EXCLUDED.doc_id,
 		source       = EXCLUDED.source,
@@ -250,13 +265,14 @@ func (s *PgVectorStore) insertChunks(ctx context.Context, tx *sql.Tx, chunks []C
 		offset_start = EXCLUDED.offset_start,
 		offset_end   = EXCLUDED.offset_end,
 		meta         = EXCLUDED.meta,
-		embedding    = EXCLUDED.embedding`, s.quotedTable)
+		embedding    = EXCLUDED.embedding,
+		owner        = EXCLUDED.owner`, s.quotedTable)
 	for i := range chunks {
 		c := &chunks[i]
 		kind, _ := c.Metadata["kind"].(string)
 		if _, err := tx.ExecContext(ctx, stmt,
 			c.ID, c.DocID, c.Source, kind, c.Text,
-			c.Offset[0], c.Offset[1], metas[i], encodeVector(c.Vec),
+			c.Offset[0], c.Offset[1], metas[i], encodeVector(c.Vec), c.Owner,
 		); err != nil {
 			return fmt.Errorf("semantic: insert chunk %q: %w", c.ID, err)
 		}
@@ -368,7 +384,7 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 
 	// $1::vector is referenced twice (distance projection + ORDER BY);
 	// PostgreSQL permits reusing a positional parameter within a statement.
-	stmt := fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding,
+	stmt := fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding, owner,
 		embedding <=> $1::vector AS distance
 	FROM %s
 	WHERE %s
@@ -390,7 +406,7 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 		)
 		if err := rows.Scan(
 			&c.ID, &c.DocID, &c.Source, &c.Text,
-			&c.Offset[0], &c.Offset[1], &metaBytes, &embText, &distance,
+			&c.Offset[0], &c.Offset[1], &metaBytes, &embText, &c.Owner, &distance,
 		); err != nil {
 			return nil, fmt.Errorf("semantic: pgvector scan: %w", err)
 		}
@@ -584,10 +600,10 @@ func (s *PgVectorStore) scanOne(ctx context.Context, whereClause string, args ..
 }
 
 func (s *PgVectorStore) selectAll(tail string) string {
-	return fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding FROM %s %s`, s.quotedTable, tail)
+	return fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding, owner FROM %s %s`, s.quotedTable, tail)
 }
 
-// scanChunkRow scans the canonical 8-column chunk projection. It closes
+// scanChunkRow scans the canonical 9-column chunk projection. It closes
 // nothing; the caller owns rows.
 func scanChunkRow(rows *sql.Rows) (Chunk, error) {
 	var (
@@ -597,7 +613,7 @@ func scanChunkRow(rows *sql.Rows) (Chunk, error) {
 	)
 	if err := rows.Scan(
 		&c.ID, &c.DocID, &c.Source, &c.Text,
-		&c.Offset[0], &c.Offset[1], &metaBytes, &embText,
+		&c.Offset[0], &c.Offset[1], &metaBytes, &embText, &c.Owner,
 	); err != nil {
 		return Chunk{}, err
 	}

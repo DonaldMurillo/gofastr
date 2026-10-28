@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
 // Event is one notification published when a journal entry is applied.
@@ -142,8 +144,7 @@ func (l *Live) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	}
 	defer l.sseSeats.release(principal)
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
+	if _, ok := w.(http.Flusher); !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
@@ -164,8 +165,13 @@ func (l *Live) ServeSSE(w http.ResponseWriter, r *http.Request) {
 	l.mu.RLock()
 	stamp := l.stamp
 	l.mu.RUnlock()
-	fmt.Fprintf(w, "event: ready\ndata: {\"world\":%q}\n\n", stamp) // hex, so %q is valid JSON
-	flusher.Flush()
+	// SSEWriter arms a fresh write deadline on every event, so a client
+	// that stops reading cannot park this handler for good, and it
+	// truncates an event name at its first CR, LF or NUL.
+	sse := stream.NewSSEWriter(w)
+	if err := sse.WriteEvent("ready", fmt.Sprintf("{\"world\":%q}", stamp)); err != nil { // hex, so %q is valid JSON
+		return
+	}
 
 	for {
 		select {
@@ -179,29 +185,15 @@ func (l *Live) ServeSSE(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			// Scrub the kind before it becomes an SSE field name.
 			// Event.Kind is journal-derived, so an entry whose kind
-			// carries a CR or LF closes the "event:" line and lets the
-			// rest of the value write its own fields -- an extra data:
-			// frame, or a whole synthetic event the client dispatches as
-			// if the server had sent it. The data field is JSON-encoded
-			// and cannot do this; the kind was interpolated raw.
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", scrubSSEField(ev.Kind), data)
-			flusher.Flush()
+			// carries a CR or LF would close the "event:" line and let
+			// the rest of the value write its own fields -- an extra
+			// data: frame, or a whole synthetic event the client
+			// dispatches as if the server had sent it. WriteEvent cuts
+			// the name at the first such byte.
+			if err := sse.WriteEvent(ev.Kind, string(data)); err != nil {
+				return
+			}
 		}
 	}
-}
-
-// scrubSSEField strips the bytes that terminate a line or a frame in the
-// SSE wire format, so a value can never introduce a field of its own.
-// CR and LF end a field; a NUL is not meaningful in the format and has no
-// business in an event name either.
-func scrubSSEField(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch r {
-		case '\r', '\n', 0:
-			return -1
-		}
-		return r
-	}, s)
 }

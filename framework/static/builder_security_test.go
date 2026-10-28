@@ -197,3 +197,28 @@ func TestExportCSPRefusesUnsafeShapes(t *testing.T) {
 		}
 	}
 }
+
+// A symlink planted inside OutDir cannot redirect a write: the export
+// writes through an os.Root on OutDir, so OutDir/about -> elsewhere
+// fails the build instead of landing index.html outside it
+// (2026-10-27 I4).
+func TestExportRefusesSymlinkInOutDir(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/about", &homeScreen{}, nil)
+	out, elsewhere := t.TempDir(), t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(out, "about")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	_, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background())
+	ents, rerr := os.ReadDir(elsewhere)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if len(ents) != 0 {
+		t.Fatalf("the export wrote %d entries through the symlink (build err: %v)", len(ents), err)
+	}
+	if err == nil {
+		t.Fatal("Build succeeded with a symlink inside OutDir")
+	}
+}

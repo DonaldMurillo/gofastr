@@ -80,6 +80,9 @@ type PostgresFanout struct {
 
 	purgeMu   sync.Mutex
 	lastPurge time.Time
+	// purgeEvery is the purge cadence: the dispatcher's ticker and the
+	// publish-side throttle both use it.
+	purgeEvery time.Duration
 
 	closed atomic.Bool
 	done   chan struct{}
@@ -151,6 +154,7 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 		listenTimeout: defaultListenTimeout,
 		subs:          map[string]map[uint64]*pgSub{},
 		done:          make(chan struct{}),
+		purgeEvery:    pgPurgeInterval,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -214,6 +218,7 @@ func (p *PostgresFanout) qt() string {
 }
 
 func (p *PostgresFanout) ensureTable() error {
+	//gofastr:allow(GOFASTR1415) a spill row is an in-flight bus message with no user attribution, deleted pgPurgeAge after it is written by the purge every replica's dispatcher runs on a ticker
 	_, err := p.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id         BIGSERIAL PRIMARY KEY,
 		payload    TEXT NOT NULL,
@@ -280,7 +285,7 @@ func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) er
 // maybePurge runs a throttled DELETE of rows older than the purge age.
 func (p *PostgresFanout) maybePurge(ctx context.Context) {
 	p.purgeMu.Lock()
-	if time.Since(p.lastPurge) < pgPurgeInterval {
+	if time.Since(p.lastPurge) < p.purgeEvery {
 		p.purgeMu.Unlock()
 		return
 	}
@@ -302,6 +307,10 @@ func (p *PostgresFanout) maybePurge(ctx context.Context) {
 func (p *PostgresFanout) dispatch() {
 	defer close(p.dispatched)
 	notify := p.listener.NotificationChannel()
+	// The purge also runs on this ticker, so a spilled payload expires on
+	// schedule even when no later large publish comes to purge it.
+	purge := time.NewTicker(p.purgeEvery)
+	defer purge.Stop()
 	for {
 		select {
 		case n, ok := <-notify:
@@ -312,6 +321,8 @@ func (p *PostgresFanout) dispatch() {
 				continue
 			}
 			p.handleNotify(n.Extra)
+		case <-purge.C:
+			p.maybePurge(p.fetchCtx)
 		case <-p.done:
 			return
 		}

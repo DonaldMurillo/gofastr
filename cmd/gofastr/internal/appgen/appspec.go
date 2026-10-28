@@ -3168,7 +3168,7 @@ func renderAppSpecCatalogBlock(bp appspec.AppSpec, screen appspec.AppSpecScreen,
 	case "divider":
 		return "ui.Divider(ui.DividerConfig{})", true
 	case "markdown":
-		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %s, Measure: true})", tx(block.Text)), true
+		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Ctx: ctx, Source: %s, Measure: true})", tx(block.Text)), true
 	case "pricing":
 		plans, _ := block.Props["plans"].([]any)
 		cards := make([]string, 0, len(plans))
@@ -3682,6 +3682,7 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 // mount by fetching each related entity's collection.
 func appSpecEntityFormClientJS(block appspec.AppSpecBlock, apiBase string) string {
 	entity := strings.Trim(block.Entity, "/")
+	//gofastr:allow(emitident) block.Entity is checked against the entities map in appspec validation
 	return fmt.Sprintf(`(async () => {
   const apiBase = %q;
   const form = document.querySelector('[data-entity-form="%s"]');

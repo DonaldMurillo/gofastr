@@ -42,6 +42,13 @@ The blog example wires this into `GET /posts/search?q=...`. See
 | `Type`   | `string`         | Optional. Filterable namespace ("posts", etc.).  |
 | `Text`   | `string`         | Free text body the engine tokenises.             |
 | `Fields` | `map[string]any` | Optional structured fields returned with hits.   |
+| `Owner`  | `string`         | Optional. User id the document belongs to.       |
+
+`Owner` is a storage tag, not a search filter: scope searches through
+`Fields` and `FieldEquals`. Its job is erasure. The SQLite and Postgres
+backends register a data eraser, so `App.EraseUserData` deletes every
+document indexed for the erased user. Set it on any document whose text
+or fields carry one user's data, or erasure leaves that copy behind.
 
 ### `Query`
 

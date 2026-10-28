@@ -3,7 +3,10 @@
 // root/base/dir-named root tests, the lexical Join/concat containment
 // shapes — including the one-hop same-package helper that RETURNS a
 // root-joined path — and the EvalSymlinks-on-the-chain judgement that
-// separates the fix posture from a resolution on an unrelated path.
+// separates the fix posture from a resolution on an unrelated path,
+// plus the verified symlink guards (SymlinkGuards, GuardsPath): a
+// function counts as a guard by what its body does, never by its name,
+// and a guard call gates only the path it was handed.
 //
 // Nothing here decides anything: the analyzers pick their sinks and
 // their silent postures; this package only answers "is this expression
@@ -13,8 +16,10 @@ package pathflow
 
 import (
 	"go/ast"
+	"go/build"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
@@ -77,7 +82,7 @@ func FuncsWithBodies(pass *analysis.Pass) []*ast.FuncDecl {
 // path for the caller to act on (battery/storage fullPath — the
 // 2026-09-04 rootwrite blind spot: the Join lives in the helper and
 // the caller only sees its result).
-func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool, pkgFuncs map[string][]*ast.FuncDecl) bool {
+func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool, pkgFuncs map[string][]*ast.FuncDecl, isGuard GuardFunc) bool {
 	e = Resolve(pass, e, bound, 0)
 	// A Dir of a root-joined path is that path's parent: still under
 	// the root.
@@ -131,7 +136,7 @@ func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 	} else {
 		return false
 	}
-	if CallsQualified(decl.Body, pass, "path/filepath.EvalSymlinks") || CallsSymlinkNamed(pass, decl.Body) {
+	if CallsQualified(decl.Body, pass, "path/filepath.EvalSymlinks") || CallsGuard(pass, decl.Body, isGuard) {
 		return false // the helper resolves symlinks: the fix posture
 	}
 	for i, a := range call.Args {
@@ -425,7 +430,7 @@ func MentionsParam(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.E
 		if obj == nil {
 			return false
 		}
-		if params[obj] {
+		if params[obj] && carriesText(obj) {
 			return true
 		}
 		if b, ok := bound[obj]; ok {
@@ -439,7 +444,7 @@ func MentionsParam(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.E
 		ast.Inspect(e, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok {
 				obj := pass.TypesInfo.ObjectOf(id)
-				if obj != nil && params[obj] {
+				if obj != nil && params[obj] && carriesText(obj) {
 					hit = true
 					return false
 				}
@@ -452,6 +457,19 @@ func MentionsParam(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.E
 		})
 		return hit
 	}
+}
+
+// carriesText reports whether a parameter can carry path text: a bool
+// or a number cannot (phaseName(maintenance), a run counter), so a
+// component built from one alone is not caller-controlled, the
+// 2026-09-02 narrowing extended to the parameter's type. Strings,
+// byte slices, structs, interfaces and everything else can.
+func carriesText(obj types.Object) bool {
+	b, ok := obj.Type().Underlying().(*types.Basic)
+	if !ok {
+		return true
+	}
+	return b.Info()&(types.IsBoolean|types.IsNumeric) == 0
 }
 
 // MentionsCall reports whether e's assembly involves (directly, or
@@ -622,38 +640,181 @@ func ArgTouchesPath(pass *analysis.Pass, arg ast.Expr, bound map[types.Object]as
 	return found
 }
 
-// CallsSymlinkNamed reports whether the body calls any function whose
-// name says symlink (EnsureNoSymlinkPath, EnsureNoSymlinkLeaf): the
-// codegen fileset posture, which refuses symlinked components without
-// spelling filepath.EvalSymlinks. filepath.EvalSymlinks is excluded
-// (its resolution is judged on the sink's own chain, not by name
-// presence), and so is os.Symlink itself: creating a symlink is not
-// refusing one, and a Symlink DESTINATION is a sink this family
-// reports on.
-func CallsSymlinkNamed(pass *analysis.Pass, body *ast.BlockStmt) bool {
+// GuardFunc reports whether a function is a verified symlink guard:
+// its body resolves or refuses symlinks (see ResolvesSymlinks). Nil
+// means no function is one.
+type GuardFunc func(*types.Func) bool
+
+// SymlinkGuards finds the analyzed package's symlink guards — every
+// function or method whose body ResolvesSymlinks, to a fixpoint so a
+// wrapper around a guard is one — exports a fact (from newFact) on
+// each, and returns the GuardFunc that answers for this package's
+// functions directly and for imported ones through their facts. Each
+// analyzer passes its own fact type: go/analysis lets one analyzer
+// own a fact type.
+//
+// Bug bash 2026-10-27 I13 replaced the name test (CallsSymlinkNamed:
+// any call whose name contained "symlink" gated every sink in the
+// function, so `checkSymlink(other)` with a `return nil` body silenced
+// the access). The codegen fileset guards (EnsureNoSymlinkPath,
+// EnsureNoSymlinkLeaf) still count, by their bodies.
+func SymlinkGuards(pass *analysis.Pass, newFact func() analysis.Fact) GuardFunc {
+	local := map[*types.Func]bool{}
+	var decls []*ast.FuncDecl
+	for _, f := range pass.Files {
+		// The standard library is no source of guards: vet computes
+		// facts over every dependency, and os / syscall carry
+		// O_NOFOLLOW and Lstat+ModeSymlink internally, which would make
+		// os.Chmod or filepath.EvalSymlinks itself a "guard" whose call
+		// on the sink path gates it. EvalSymlinks is credited by name.
+		if IsTestFile(pass, f) || inGOROOT(pass, f) {
+			continue
+		}
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				decls = append(decls, fd)
+			}
+		}
+	}
+	var isGuard GuardFunc
+	isGuard = func(fn *types.Func) bool {
+		if fn == nil {
+			return false
+		}
+		if fn.Pkg() == pass.Pkg {
+			return local[fn]
+		}
+		return pass.ImportObjectFact(fn.Origin(), newFact())
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, fd := range decls {
+			fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func)
+			if !ok || local[fn] {
+				continue
+			}
+			if ResolvesSymlinks(pass, fd.Body, isGuard) {
+				local[fn] = true
+				changed = true
+			}
+		}
+	}
+	// Only exported names can be called from another package; keeping
+	// the facts to them keeps the fact set (and the fixtures' fact
+	// expectations) to the cross-package surface.
+	for fn := range local {
+		if fn.Exported() {
+			pass.ExportObjectFact(fn, newFact())
+		}
+	}
+	return isGuard
+}
+
+// ResolvesSymlinks reports whether body performs a real resolution
+// posture: filepath.EvalSymlinks, an O_NOFOLLOW flag, an os.Lstat
+// consulted with ModeSymlink, or a call to a verified guard. It judges
+// a guard's body; whether the guard touched the right path is
+// GuardsPath's question. (os.Root needs no guard: its methods are no
+// os.* sink, so a write or read through one is quiet by construction.)
+func ResolvesSymlinks(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFunc) bool {
+	lstat, modeSymlink, found := false, false, false
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.CallExpr:
+			switch QualifiedFunc(pass, v.Fun) {
+			case "path/filepath.EvalSymlinks":
+				found = true
+			case "os.Lstat":
+				lstat = true
+			}
+			if isGuard != nil && isGuard(staticCallee(pass, v.Fun)) {
+				found = true
+			}
+		case *ast.SelectorExpr:
+			switch v.Sel.Name {
+			case "ModeSymlink":
+				modeSymlink = true
+			case "O_NOFOLLOW":
+				found = true
+			}
+		}
+		return !found
+	})
+	return found || (lstat && modeSymlink)
+}
+
+// inGOROOT reports whether f is a standard-library source file.
+func inGOROOT(pass *analysis.Pass, f *ast.File) bool {
+	root := build.Default.GOROOT
+	if root == "" {
+		return false
+	}
+	name := pass.Fset.Position(f.Pos()).Filename
+	return strings.HasPrefix(name, filepath.Join(root, "src")+string(filepath.Separator))
+}
+
+// GuardsPath reports whether body calls a verified guard with the
+// sink's own path: the path expression itself, its Dir, or a local
+// bound to either (ArgTouchesPath). A guard on the root alone, or on
+// an unrelated path, leaves the sink's components unchecked.
+func GuardsPath(pass *analysis.Pass, body *ast.BlockStmt, pathArg ast.Expr, bound map[types.Object]ast.Expr, isGuard GuardFunc) bool {
+	if isGuard == nil || pathArg == nil {
+		return false
+	}
+	r := Resolve(pass, pathArg, bound, 0)
+	rs := types.ExprString(r)
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
-		if !ok {
+		if !ok || found {
+			return !found
+		}
+		if !isGuard(staticCallee(pass, call.Fun)) {
 			return true
 		}
-		switch QualifiedFunc(pass, call.Fun) {
-		case "path/filepath.EvalSymlinks", "os.Symlink":
-			return true
+		for _, a := range call.Args {
+			ra := Resolve(pass, a, bound, 0)
+			if ra == r || types.ExprString(ra) == rs || ArgTouchesPath(pass, a, bound, r) {
+				found = true
+				return false
+			}
 		}
-		var name string
-		switch fun := call.Fun.(type) {
-		case *ast.Ident:
-			name = fun.Name
-		case *ast.SelectorExpr:
-			name = fun.Sel.Name
-		}
-		if name != "" && strings.Contains(strings.ToLower(name), "symlink") {
+		return true
+	})
+	return found
+}
+
+// CallsGuard reports whether body calls any verified guard: the helper
+// hop's posture, where the helper that RETURNS a root-joined path
+// refuses symlinks on it before returning.
+func CallsGuard(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFunc) bool {
+	if isGuard == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && isGuard(staticCallee(pass, call.Fun)) {
 			found = true
 		}
 		return !found
 	})
 	return found
+}
+
+// staticCallee resolves a call's callee to its *types.Func: a plain or
+// package-qualified function, or a statically dispatched method.
+func staticCallee(pass *analysis.Pass, fun ast.Expr) *types.Func {
+	switch f := ast.Unparen(fun).(type) {
+	case *ast.Ident:
+		fn, _ := pass.TypesInfo.Uses[f].(*types.Func)
+		return fn
+	case *ast.SelectorExpr:
+		fn, _ := pass.TypesInfo.Uses[f.Sel].(*types.Func)
+		return fn
+	case *ast.IndexExpr:
+		return staticCallee(pass, f.X)
+	}
+	return nil
 }
 
 // LstatLeafCheck reports whether the body Lstats the sink's own target

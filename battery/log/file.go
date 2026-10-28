@@ -59,17 +59,11 @@ func FileSink(path string, opts FileOpts) (Sink, error) {
 		opts.FileMode = 0o600
 	}
 	parent := filepath.Dir(path)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
+	// Directories FileSink creates are owner-only (server logs carry
+	// request IDs, paths, panic stacks); an existing one, /var/log
+	// included, keeps its mode. The log file itself is FileMode.
+	if err := fileperm.MkdirPrivate(parent); err != nil {
 		return nil, fmt.Errorf("log: mkdir %s: %w", parent, err)
-	}
-	// MkdirAll respects umask; explicitly tighten if a prior mkdir left
-	// a broader mode in place. Log directories must be owner-only,
-	// server logs contain request IDs, paths, panic stacks.
-	if err := os.Chmod(parent, 0o700); err != nil {
-		return nil, fmt.Errorf("log: chmod %s: %w", parent, err)
-	}
-	if err := fileperm.Restrict(parent, true); err != nil {
-		return nil, fmt.Errorf("log: restrict directory %s: %w", parent, err)
 	}
 	s := &fileSink{path: path, opts: opts}
 	if err := s.open(); err != nil {

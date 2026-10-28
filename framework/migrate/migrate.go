@@ -1170,8 +1170,8 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	}
 	switch f.Type {
 	case schema.String:
-		if f.Max != nil && *f.Max > 0 {
-			return fmt.Sprintf("VARCHAR(%d)", int(*f.Max))
+		if n, ok := schema.VarcharWidth(f.Max); ok {
+			return fmt.Sprintf("VARCHAR(%d)", n)
 		}
 		return "TEXT"
 	case schema.Text:

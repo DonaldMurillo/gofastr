@@ -211,6 +211,15 @@
     const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
   };
+  // formatNumber writes n the way the page's language (<html lang>)
+  // writes numbers, as the server's i18n.Number did for the same text:
+  // a count the runtime fills into a phrase reads "1.234" on /es/, not
+  // "1234". It reads lang on every call, so a client navigation that
+  // changes the language changes the digits; a tag Intl refuses falls
+  // back to the browser's own locale.
+  const formatNumber = (n) => {
+    try { return n.toLocaleString(document.documentElement.lang || undefined); } catch (_) { return n.toLocaleString(); }
+  };
   const closestAttr = (el, attr) => {
     const node = el.closest(`[${CSS.escape(attr)}]`);
     return node?.getAttribute(attr) ?? null;
@@ -249,6 +258,7 @@
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
     say,
+    formatNumber,
     _lp,
     _unlocalize,
     _localeOf,

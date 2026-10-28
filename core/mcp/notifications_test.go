@@ -774,6 +774,52 @@ func TestBlockedWriteDeadlineReturnsAndUnregisters(t *testing.T) {
 	}
 }
 
+// deadlineWriter is a flushing writer that keeps every write deadline
+// armed on it.
+type deadlineWriter struct {
+	mu        sync.Mutex
+	deadlines []time.Time
+}
+
+func (d *deadlineWriter) Header() http.Header         { return http.Header{} }
+func (d *deadlineWriter) WriteHeader(int)             {}
+func (d *deadlineWriter) Write(p []byte) (int, error) { return len(p), nil }
+func (d *deadlineWriter) Flush()                      {}
+
+func (d *deadlineWriter) SetWriteDeadline(t time.Time) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.deadlines = append(d.deadlines, t)
+	return nil
+}
+
+// Each event's deadline is cleared once the event is flushed. On HTTP/2
+// the deadline is a stream timer that resets the stream when it fires,
+// write pending or not, so one left armed killed a notification stream
+// idle for longer than sseWriteTimeout.
+func TestSSEEventClearsWriteDeadline(t *testing.T) {
+	s := NewServer()
+	w := &deadlineWriter{}
+	ctx, cancel := context.WithCancel(context.Background())
+	r := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
+	r.Header.Set("Accept", "text/event-stream")
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.sseGetHandler(w, r)
+	}()
+	waitForSubscribers(t, s, 1)
+	cancel()
+	<-done
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.deadlines) != 2 || w.deadlines[0].IsZero() || !w.deadlines[1].IsZero() {
+		t.Fatalf("write deadlines %v, want one bounded deadline then a clear", w.deadlines)
+	}
+}
+
 // The list_changed a gated registration fires carries the item's own
 // gate: a caller the gate refuses cannot see the item in its list
 // method and must not be told it appeared. Concrete resources are the

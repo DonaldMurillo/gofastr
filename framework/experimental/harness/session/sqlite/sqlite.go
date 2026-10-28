@@ -53,10 +53,7 @@ type Redactor interface {
 // Open opens (or creates) the SQLite session log at path. Creates
 // the parent directory and applies the v1 schema on first use.
 func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	if err := fileperm.Restrict(filepath.Dir(path), true); err != nil {
+	if err := fileperm.MkdirPrivate(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	// Seed the file 0600 BEFORE the driver opens it: the event log

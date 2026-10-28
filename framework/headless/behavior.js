@@ -226,7 +226,7 @@
       status.textContent = (root.dataset.huiDropOne || '').replaceAll('{{name}}', () => files[0].name);
     } else if (files.length > 1) {
       status.textContent = (root.dataset.huiDropMany || '')
-        .replaceAll('{{n}}', () => String(files.length))
+        .replaceAll('{{n}}', () => NS.formatNumber(files.length))
         .replaceAll('{{names}}', () => names.join(', '));
     } else {
       status.textContent = '';

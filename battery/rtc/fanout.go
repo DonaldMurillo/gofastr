@@ -35,6 +35,10 @@ const (
 	rtcHeartbeat = 15 * time.Second // full-roster rebroadcast period
 	rtcRemoteTTL = 45 * time.Second // 3x heartbeat tolerates two lost beats
 
+	// peerRecheckEvery paces the idle re-check of a joined socket's
+	// principal; inbound frames re-check on arrival.
+	peerRecheckEvery = 30 * time.Second
+
 	// maxRemoteReplicasPerRoom bounds the remote table per room so a
 	// forged-replica flood cannot grow it unboundedly.
 	maxRemoteReplicasPerRoom = 512

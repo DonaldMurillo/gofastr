@@ -179,6 +179,11 @@ cancels, and push configs are scoped to that owner in the store; another
 owner's task id is indistinguishable from an unknown one
 (`-32001` task not found), so ids do not enumerate across users.
 
+The SQL task store registers its task and push-config tables with
+`App.ExportData` and `App.EraseUserData`, keyed on the owner column, so
+erasing a user deletes their tasks and push configs (see
+[data export](data-export.md)).
+
 Entity-skill calls re-enter the app with the caller's credentials: the
 handler passes the original request into `a.MCP.CallTool`, the entity
 tool re-dispatches through the app router copying the caller's

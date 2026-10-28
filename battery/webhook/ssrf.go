@@ -129,6 +129,7 @@ func (g *ssrfGuardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, er
 			return nil, err
 		}
 	}
+	//gofastr:allow(resolvedial) fallback for a transport with its own proxy or dialer, which cannot be swapped; a plain one gets netguard.GuardPlainTransport
 	return g.inner.RoundTrip(r)
 }
 

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 )
 
 // Every table the erase plane reaches is one the export plane dumps, so an

@@ -659,6 +659,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 		}
 	}
 	for _, p := range sess.Plans {
+		//gofastr:allow(mapwriter) items is sorted by timestamp right below with an insertion sort
 		items = append(items, item{ts: p.ProposedAt, kind: "plan", plan: p})
 	}
 	// Pull world_edit entries from the journal so add_entity / add_page

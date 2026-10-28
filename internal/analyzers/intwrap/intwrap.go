@@ -15,6 +15,21 @@
 // kiln/expr env.go builtinAbs (fixed in f06f4412), where the saturated
 // fix also errs away from every threshold guard consuming abs().
 //
+// Shape C — `int(*f.Max)`, `int(math.Ceil(*f.Min))`, or a local
+// assigned from either: a float bound read through a *float64 (the
+// optional-bound spelling schema fields use) converted to a signed int.
+// A finite value past the int range converts to an implementation-
+// defined int, MinInt64 on amd64, so `Max: 1e30` publishes a negative
+// OpenAPI maxLength (core/openapi schema.go, ledger C3 of the
+// 2026-10-27 bug bash) and an entity form whose max sits below its min
+// (framework/entityui record_form.go intBound, ledger U54). The fix
+// spelling is lengthAttr in the same file: round, refuse past
+// math.MaxInt32, then convert. Shape C is not narrowed to any-boxed
+// sources: a bound is declared data (an app spec, a YAML entity), and
+// no caller bounds it. Plain float64 operands stay out of scope (chart
+// and layout math converts bounded values everywhere), as do targets
+// narrower or unsigned (int8, uint8, …).
+//
 // A bound counts only when it proves the subject inside the safe range
 // on the REACHING path (review 6): a diverging guard — an earlier if
 // whose condition, when false, leaves the subject in range (`u >
@@ -37,7 +52,9 @@
 //   - constants: the compiler rejects out-of-range constant conversions;
 //   - any dominating comparison against math.MaxInt/MaxInt32/MaxInt64
 //     (shape A) or math.MinInt/MinInt64 (shape B), or a bound-sized
-//     integer literal;
+//     integer literal, including one on a value-keeping widening of the
+//     subject (`uint64(u) > math.MaxInt64`, the spelling a 32-bit
+//     build compiles); a sign-changing conversion is no such widening;
 //   - negation in functions that are not abs-shaped, and float
 //     negation (no wrap);
 //   - _test.go files.
@@ -85,10 +102,12 @@ func run(pass *analysis.Pass) (any, error) {
 			parents := dominance.Parents(fn.Body)
 			abs := isAbsFunc(fn)
 			anyVars := unboundedSources(pass, fn.Body)
+			boundLocals := floatBoundLocals(pass, fn.Body)
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.CallExpr:
 					checkUnsignedConv(pass, x, parents, fn.Body, anyVars)
+					checkFloatBoundConv(pass, x, parents, fn.Body, boundLocals)
 				case *ast.UnaryExpr:
 					if abs && x.Op == token.SUB {
 						checkAbsNeg(pass, x, parents, fn.Body, anyVars)
@@ -157,6 +176,115 @@ func checkUnsignedConv(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.
 		src.Name(), target.Name(), maxSuffix(tgtWidth))
 }
 
+// checkFloatBoundConv reports shape C: int/int32/int64(b) where b is a
+// float bound read through a *float64 (`*f.Max`, a rounding of one, or
+// a local assigned from either) with no dominating upper-bound check.
+func checkFloatBoundConv(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]ast.Node, body *ast.BlockStmt, boundLocals map[types.Object]bool) {
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || len(call.Args) != 1 {
+		return
+	}
+	tv, ok := pass.TypesInfo.Types[id]
+	if !ok || !tv.IsType() {
+		return
+	}
+	target, ok := tv.Type.(*types.Basic)
+	if !ok {
+		return
+	}
+	switch target.Kind() {
+	case types.Int, types.Int32, types.Int64:
+	default:
+		return
+	}
+	arg := ast.Unparen(call.Args[0])
+	var subj subject
+	switch {
+	case isFloatBoundDeref(pass, arg):
+		subj = subjectOf(pass, arg)
+	case isRounding(pass, arg) && isFloatBoundDeref(pass, ast.Unparen(arg.(*ast.CallExpr).Args[0])):
+		// int(math.Ceil(*f.Min)): the guard names the deref.
+		subj = subjectOf(pass, ast.Unparen(arg.(*ast.CallExpr).Args[0]))
+	default:
+		aid, ok := arg.(*ast.Ident)
+		if !ok || !boundLocals[pass.TypesInfo.ObjectOf(aid)] {
+			return
+		}
+		subj = subjectOf(pass, aid)
+	}
+	if subj.str == "" {
+		return
+	}
+	if dominatingBound(pass, call, parents, body, subj, boundFloatMax) {
+		return
+	}
+	pass.Reportf(call.Pos(),
+		"conversion of float bound %s to %s without an upper-bound check: a finite value past the int range converts to an implementation-defined int (MinInt64 on amd64), so a large Max turns negative; compare against math.MaxInt32 first and omit or clamp",
+		subj.str, target.Name())
+}
+
+// isFloatBoundDeref: e is `*x` where x is a *float64, the optional
+// bound spelling schema fields use (Min/Max *float64).
+func isFloatBoundDeref(pass *analysis.Pass, e ast.Expr) bool {
+	star, ok := e.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	t := pass.TypesInfo.TypeOf(star)
+	b, ok := t.(*types.Basic)
+	return ok && (b.Kind() == types.Float64 || b.Kind() == types.Float32)
+}
+
+// isRounding: e is math.Ceil/Floor/Round/Trunc/RoundToEven(x).
+func isRounding(pass *analysis.Pass, e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	pn, ok := pass.TypesInfo.Uses[pkg].(*types.PkgName)
+	if !ok || pn.Imported().Path() != "math" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "Ceil", "Floor", "Round", "Trunc", "RoundToEven":
+		return true
+	}
+	return false
+}
+
+// floatBoundLocals collects locals assigned from a float bound deref or
+// a rounding of one (`n := math.Floor(*b)`).
+func floatBoundLocals(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
+	out := map[types.Object]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != len(as.Rhs) {
+			return true
+		}
+		for i, rhs := range as.Rhs {
+			rhs = ast.Unparen(rhs)
+			if !isFloatBoundDeref(pass, rhs) && !(isRounding(pass, rhs) && isFloatBoundDeref(pass, ast.Unparen(rhs.(*ast.CallExpr).Args[0]))) {
+				continue
+			}
+			if id, ok := as.Lhs[i].(*ast.Ident); ok {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					out[obj] = true
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
 // checkAbsNeg reports -x on a signed integer in an abs-shaped function.
 func checkAbsNeg(pass *analysis.Pass, un *ast.UnaryExpr, parents map[ast.Node]ast.Node, body *ast.BlockStmt, anyVars map[types.Object]bool) {
 	if tv, ok := pass.TypesInfo.Types[un.X]; ok && tv.Value != nil {
@@ -194,7 +322,7 @@ func subjectOf(pass *analysis.Pass, e ast.Expr) subject {
 	switch x := e.(type) {
 	case *ast.Ident:
 		return subject{obj: pass.TypesInfo.ObjectOf(x), str: types.ExprString(x)}
-	case *ast.SelectorExpr:
+	case *ast.SelectorExpr, *ast.StarExpr:
 		return subject{str: types.ExprString(x)}
 	default:
 		return subject{}
@@ -202,20 +330,75 @@ func subjectOf(pass *analysis.Pass, e ast.Expr) subject {
 }
 
 func matchesSubject(pass *analysis.Pass, e ast.Expr, s subject) bool {
+	e = unwrapWidening(pass, e)
 	switch x := e.(type) {
 	case *ast.Ident:
 		return s.obj != nil && pass.TypesInfo.ObjectOf(x) == s.obj
-	case *ast.SelectorExpr:
+	case *ast.SelectorExpr, *ast.StarExpr:
 		return s.str != "" && types.ExprString(x) == s.str
 	}
 	return false
 }
 
-// boundMax/boundMin select which family of guards dominates.
+// unwrapWidening strips integer conversions that keep every value of
+// their operand: same signedness, at least as wide. A bound on
+// uint64(n) is a bound on n, and it is how a check is spelled when n's
+// own type cannot hold the bound on a 32-bit build
+// (`uint64(n) > math.MaxInt64` for a uint). A sign-changing conversion
+// stays, so `int64(n) > math.MaxInt64` proves nothing about a uint.
+func unwrapWidening(pass *analysis.Pass, e ast.Expr) ast.Expr {
+	e = ast.Unparen(e)
+	for {
+		call, ok := e.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return e
+		}
+		tv, ok := pass.TypesInfo.Types[call.Fun]
+		if !ok || !tv.IsType() {
+			return e
+		}
+		to, ok1 := tv.Type.Underlying().(*types.Basic)
+		from, ok2 := pass.TypesInfo.TypeOf(call.Args[0]).Underlying().(*types.Basic)
+		if !ok1 || !ok2 || to.Info()&types.IsInteger == 0 || from.Info()&types.IsInteger == 0 {
+			return e
+		}
+		if to.Info()&types.IsUnsigned != from.Info()&types.IsUnsigned {
+			return e
+		}
+		// uint and int count as 64 bits wide: the widest they can be.
+		if pass.TypesSizes.Sizeof(to) < intWidth(pass, from) {
+			return e
+		}
+		e = ast.Unparen(call.Args[0])
+	}
+}
+
+func intWidth(pass *analysis.Pass, b *types.Basic) int64 {
+	switch b.Kind() {
+	case types.Int, types.Uint, types.Uintptr:
+		return 8
+	}
+	return pass.TypesSizes.Sizeof(b)
+}
+
+// boundMax/boundMin select which family of guards dominates;
+// boundFloatMax is shape C's upper bound on a float subject.
 const (
-	boundMax = "max"
-	boundMin = "min"
+	boundMax      = "max"
+	boundMin      = "min"
+	boundFloatMax = "floatmax"
 )
+
+// fitsInt reports whether e is a numeric constant no larger than
+// math.MaxInt64, so `x <= e` keeps a float x inside the int range.
+func fitsInt(pass *analysis.Pass, e ast.Expr) bool {
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok || tv.Value == nil {
+		return false
+	}
+	f, _ := constant.Float64Val(constant.ToFloat(tv.Value))
+	return f <= math.MaxInt64 && !math.IsInf(f, 0) && !math.IsNaN(f)
+}
 
 // dominatingBound reports whether node is dominated by a comparison of
 // the subject against a bound (review 6 made the guard branch-aware):
@@ -313,7 +496,14 @@ func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, fa
 	default:
 		return false
 	}
-	if !isMathBound(pass, other, family) && !isBoundLiteral(pass, other, family) {
+	if family == boundFloatMax {
+		// Shape C: any constant upper bound that fits an int proves the
+		// conversion (a VARCHAR cap of 65535 is as good as MaxInt32).
+		if !isMathBound(pass, other, boundMax) && !fitsInt(pass, other) {
+			return false
+		}
+		family = boundMax
+	} else if !isMathBound(pass, other, family) && !isBoundLiteral(pass, other, family) {
 		return false
 	}
 	op := bin.Op
@@ -411,7 +601,14 @@ func isBoundLiteral(pass *analysis.Pass, e ast.Expr, family string) bool {
 	if !ok || tv.Value == nil {
 		return false
 	}
-	i, ok := constant.Int64Val(tv.Value)
+	// A float-typed constant (`*f.Max > 0`) is not an Int kind, and
+	// Int64Val panics on one: convert first, and skip what has no
+	// exact integer value.
+	iv := constant.ToInt(tv.Value)
+	if iv.Kind() != constant.Int {
+		return false
+	}
+	i, ok := constant.Int64Val(iv)
 	if !ok {
 		return false
 	}

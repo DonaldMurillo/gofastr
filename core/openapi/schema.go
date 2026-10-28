@@ -16,10 +16,14 @@ func FieldToSchema(field schema.Field) map[string]any {
 	case schema.String:
 		prop["type"] = "string"
 		if field.Min != nil {
-			prop["minLength"] = int(math.Ceil(*field.Min))
+			if n, ok := schema.LengthBound(*field.Min, math.Ceil); ok {
+				prop["minLength"] = n
+			}
 		}
 		if field.Max != nil {
-			prop["maxLength"] = int(*field.Max)
+			if n, ok := schema.LengthBound(*field.Max, math.Floor); ok {
+				prop["maxLength"] = n
+			}
 		}
 		if field.Pattern != "" {
 			prop["pattern"] = field.Pattern
@@ -29,10 +33,14 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["type"] = "string"
 		prop["format"] = "textarea"
 		if field.Min != nil {
-			prop["minLength"] = int(math.Ceil(*field.Min))
+			if n, ok := schema.LengthBound(*field.Min, math.Ceil); ok {
+				prop["minLength"] = n
+			}
 		}
 		if field.Max != nil {
-			prop["maxLength"] = int(*field.Max)
+			if n, ok := schema.LengthBound(*field.Max, math.Floor); ok {
+				prop["maxLength"] = n
+			}
 		}
 
 		if field.Pattern != "" {

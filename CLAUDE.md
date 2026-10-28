@@ -465,6 +465,50 @@ expose them to agents connected to a live app.**
   configured table calls `query.RefuseCaseKeptTables` first on Postgres,
   so a table an older build made with its case kept stops the boot with
   the rename instead of being shadowed by an empty one).
+  The 2026-10-27 bug bash added seven vet analyzers. `keytrim`
+  (`strings.TrimSpace` on an id/tenant/actor value that is then kept:
+  " x " and "x" name different rows). `tightenshared` (`os.MkdirAll`
+  then an owner-only `os.Chmod`/`fileperm.Restrict` of a directory the
+  caller named: it rewrites a directory somebody else owns; `os.Stat`
+  first and tighten only what this call created). `settlectx` (an
+  ack/settle/record write on the same cancellable context the work just
+  ran under: a shutdown or timeout drops the outcome; settle on
+  `context.WithoutCancel`). `resolvedial` (an SSRF guard that resolves
+  and checks a host, then lets the transport resolve it again to dial:
+  check at dial time, `netguard`'s Control hook). `wrapwriter` (a
+  ResponseWriter wrapper with no `Unwrap`, which hides Flush/Hijack/
+  deadlines from `http.ResponseController`, and a header change after
+  the next handler ran). Two arms ship from the `unseated` package:
+  `unrechecked` (a long-lived stream for a resolved principal whose
+  delivery loop never re-checks it, or whose connect-time authz or
+  tenant decision never re-runs) and `nowritedeadline` (a client write
+  in a stream's park loop with no write deadline on the path, and a
+  `ResponseController` deadline a parked stream arms and never clears:
+  on HTTP/2 it resets the stream when it fires, write pending or not). Widened
+  in the same round: `worldreadable` (an owner-only `os.OpenFile`
+  without `O_EXCL` "fixed" by `fileperm.Restrict`, which does not
+  change a file's mode off Windows; tighten the handle with
+  `fileperm.RestrictOpenFile`), `mapwriter` (a map range appended to a
+  local slice that reaches `strings.Join` or an output loop unsorted),
+  `rawtext`'s `ctxless` (a kit function no context reaches calls a
+  component that reads its config's Ctx), `intwrap` (`int(*f)` of a
+  float bound with no upper bound), `nowaitdelay` (through a
+  `cmd = wrap(cmd)` hop), `credfetch` (a configured header map counts
+  as a credential, and `CheckRedirect: nil` is no guard), `rootwrite`
+  and `rootread` (a same-package write helper is a sink, and a guard
+  is judged by its body, never its name), `emitident` (a `strings.*`
+  result is a transform, gated only when its inputs are),
+  `unboundedbody` (the cap must sit on the read request's own path),
+  and `unboundedresp` (only a rebind of `resp.Body` caps it). The
+  contracts rule `GOFASTR1415 erasecover`
+  fires on DDL for a user-keyed table that no `datexport.DataEraser`
+  and `DataExporter` cover. The runtime JS lint
+  `core-ui/check.LintNumberFill` fires on `{{n}}` filled with
+  `String(n)` instead of `NS.formatNumber` (the kernel's
+  `toLocaleString` on `<html lang>`), and its repo test fails on a
+  violation. Matcher bugs with no code shape (audit key spellings, email
+  body and header redaction, chart NaN) were red probes and are now
+  permanent `*_security_test.go` / `_test.go` tests.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

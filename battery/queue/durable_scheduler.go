@@ -663,6 +663,7 @@ func (s *DurableScheduler) ensureTables() error {
 		tsType = "TIMESTAMPTZ"
 	}
 	statements := []string{
+		//gofastr:allow(GOFASTR1415) a schedule is a recurring job the host declares by id (Every/Cron), with no user attribution; the jobs it enqueues land in queue_jobs, which both planes cover
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			id TEXT PRIMARY KEY,
 			job_type TEXT NOT NULL,
@@ -689,6 +690,7 @@ func (s *DurableScheduler) ensureTables() error {
 			enqueued_job_id TEXT NOT NULL DEFAULT '',
 			UNIQUE(schedule_id, scheduled_tick)
 		)`, s.queue.schedulerOccurrencesTable(), tsType, tsType),
+		//gofastr:allow(GOFASTR1415) owner_id is the replica holding the scheduler lease, not a user; the table holds no user data
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			name TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL,

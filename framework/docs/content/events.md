@@ -299,6 +299,21 @@ tx.Commit()
 app.Outbox().Nudge() // wake the relay immediately; don't wait for the poll interval
 ```
 
+A payload that carries a user's data is staged with `AppendFor`, which names
+the user: `App.EraseUserData` writes JSON `null` over the payload of every row
+staged for the erased user, so neither a pending delivery nor a `Replay`
+hands their record to a consumer. CRUD stages each lifecycle event this way,
+for the record's owner (`Scope.OwnerField`); `Append` is `AppendFor` with no
+owner.
+
+```go
+app.Outbox().AppendFor(ctx, tx, customerID, "order.placed", map[string]any{"id": orderID})
+```
+
+A host that creates the table itself (`outbox.WithoutEnsureTable`) adds the
+`owner TEXT NOT NULL DEFAULT ''` column; the outbox adds it to a table it
+manages on boot.
+
 Standalone use (no App): `outbox.New(db)` + `ob.Consume(name, type,
 handler)` + `ob.StartRelay(ctx)`.
 

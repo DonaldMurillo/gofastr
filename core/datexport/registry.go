@@ -20,8 +20,11 @@
 package datexport
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -64,6 +67,12 @@ const (
 	// Tombstone on every row where Column = userID. Use for rows that must be
 	// retained (the audit trail) but whose user reference must be cut.
 	EraseAnonymize
+	// EraseRemoveMember keeps every row and takes the erased value out of
+	// Column, a TEXT column holding a JSON array of strings: a feature
+	// flag's user allow list is shared by many users, so the erasure
+	// removes the member, not the flag. Only rows that list the value
+	// change, and ScrubColumns and Tombstone are unused.
+	EraseRemoveMember
 )
 
 // IdentityKind selects which principal an eraser matches against. The default
@@ -102,7 +111,7 @@ const (
 //   - Column is the user-id column matched against the erased user's id
 //     (e.g. "user_id" for sessions, "id" for the user row, "actor_id" for an
 //     audit table). Table and Column are SafeIdent-checked before SQL.
-//   - Mode selects EraseDelete or EraseAnonymize.
+//   - Mode selects EraseDelete, EraseAnonymize or EraseRemoveMember.
 //   - ScrubColumns (EraseAnonymize only) are the columns overwritten with
 //     Tombstone. Each is SafeIdent-checked before SQL.
 //   - Tombstone (EraseAnonymize only) is the replacement written to every
@@ -116,6 +125,12 @@ const (
 //     identity tagged, such as battery/auth's token table ("magiclink:<email>",
 //     "pwreset:<user id>"), matches only with the tag; the bare value matches
 //     nothing and the rows survive the erasure. Empty binds the value as is.
+//   - Where narrows the match: a row is erased only when every listed
+//     column also equals its value. battery/auth's API token table keys
+//     an owner by (owner_kind, owner_id), so its eraser matches owner_id
+//     with owner_kind = "user" and leaves a service account that shares
+//     the id alone. Each column is SafeIdent-checked before SQL and must
+//     exist on the table; each value is a bound argument.
 type DataEraser struct {
 	Name         string
 	Source       string
@@ -126,6 +141,13 @@ type DataEraser struct {
 	Tombstone    string
 	Identity     IdentityKind
 	ValuePrefix  string
+	Where        []Equals
+}
+
+// Equals is one column = value condition of DataEraser.Where.
+type Equals struct {
+	Column string
+	Value  string
 }
 
 // DataIdentityResolver declares how the framework resolves a non-user-id
@@ -194,6 +216,62 @@ func Register(e DataExporter) {
 		Name: e.Name, Source: e.Source, Table: e.Table,
 		PrimaryKey: e.PrimaryKey, Columns: cols,
 	})
+}
+
+// ScopedName is the registration Name for a store that a host can build
+// more than once on different tables. Registration replaces by Name, so
+// two stores sharing a constant would leave the first table out of every
+// export and erasure. The table's ASCII letters are lowercased first:
+// Events and events are one table (AutoMigrate and the stores fold), so
+// they share a name, and ExportData, which keeps one exporter per folded
+// table, writes the same file whichever spelling registered. The store's
+// default table keeps the bare base; any other table is appended after a
+// '-', with each byte outside [a-z0-9_] written as '-' and two hex
+// digits, so the result is a valid exporter name and no two tables share
+// one. A name past maxScopedName bytes keeps its first bytes and ends in
+// '-' and 16 hex digits of the table's SHA-256, so <name>.ndjson fits one
+// file name.
+func ScopedName(base, table string) string {
+	table = foldASCII(table)
+	b := []byte(base)
+	if table != foldASCII(base) {
+		b = append(b, '-')
+		for i := 0; i < len(table); i++ {
+			c := table[i]
+			switch {
+			case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_':
+				b = append(b, c)
+			default:
+				b = append(b, '-', hexDigits[c>>4], hexDigits[c&0xf])
+			}
+		}
+	}
+	// The default table's name is bounded too: a long configured base would
+	// otherwise reach the archive whole.
+	if len(b) > maxScopedName {
+		sum := sha256.Sum256([]byte(table))
+		b = append(b[:maxScopedName-17], '-')
+		b = hex.AppendEncode(b, sum[:8])
+	}
+	return string(b)
+}
+
+// maxScopedName bounds a ScopedName so the archive's <name>.ndjson stays
+// inside a 255-byte path component.
+const maxScopedName = 200
+
+const hexDigits = "0123456789abcdef"
+
+// foldASCII lowers ASCII letters, the folding Postgres applies to an
+// unquoted identifier.
+func foldASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // validExporterName reports whether n is a safe archive key: one path
@@ -267,6 +345,7 @@ func cloneEraser(e DataEraser) *DataEraser {
 		Name: e.Name, Source: e.Source, Table: e.Table, Column: e.Column,
 		Mode: e.Mode, ScrubColumns: scrub, Tombstone: e.Tombstone,
 		Identity: e.Identity, ValuePrefix: e.ValuePrefix,
+		Where: slices.Clone(e.Where),
 	}
 }
 

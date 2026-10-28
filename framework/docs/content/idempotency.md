@@ -141,6 +141,13 @@ the client can retry against a recovered server.
 
 ## Stores
 
+The SQL store keeps each row's principal in a `principal` column (added
+on boot to a table an older build created) and registers the table with
+`App.ExportData` and `App.EraseUserData`. Erasure deletes the cached
+responses whose principal is the erased user id, so it reaches them when
+`Principal` returns the user id. A tenant-keyed principal is left to the
+tenant's own lifecycle and to the TTL.
+
 `IdempotencyStore` is a two-method interface:
 
 ```go

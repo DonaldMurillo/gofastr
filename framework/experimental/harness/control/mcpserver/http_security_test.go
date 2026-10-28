@@ -305,3 +305,34 @@ func TestHTTPHandlerNilEncoderRefuses(t *testing.T) {
 		t.Fatalf("SECURITY: [mcp-nil-encoder-fail-open] got 200: the initialize call executed unauthenticated")
 	}
 }
+
+// A token revoked after the GET stream connected kept the stream open
+// until the client left: the bearer was verified once, at connect
+// (2026-10-27 bug bash, unrechecked). The keepalive re-verifies it.
+func TestMCPGETStreamEndsOnRevoke(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	enc := auth.NewEncoder(mustTestSecret(t))
+	rl := auth.NewRevocationList()
+	jti := ids.NewJTI()
+	h := NewHTTPHandler(s, enc, rl)
+	bearer := "Bearer " + mintHTTPScopeToken(t, enc, func(c *auth.Claims) { c.JTI = jti })
+	prev := keepaliveTicker
+	keepaliveTicker = func() *time.Ticker { return time.NewTicker(20 * time.Millisecond) }
+	defer func() { keepaliveTicker = prev }()
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp, err := srv.Client().Do(authedReq(t, http.MethodGet, srv.URL+"/mcp", bearer, "", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	rl.Revoke(jti)
+	done := make(chan struct{})
+	go func() { _, _ = io.Copy(io.Discard, resp.Body); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream outlived its revoked token")
+	}
+}

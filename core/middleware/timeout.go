@@ -92,6 +92,11 @@ func poolableBody(b *bytes.Buffer) bool { return b.Cap() <= maxPooledBody }
 
 func (tw *timeoutWriter) Header() http.Header { return tw.h }
 
+// Unwrap lets http.ResponseController reach the connection's deadlines.
+// Flush and Hijack stop at timeoutWriter's own methods, which commit the
+// buffer first, so the controller never writes around it.
+func (tw *timeoutWriter) Unwrap() http.ResponseWriter { return tw.w }
+
 func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
@@ -138,9 +143,7 @@ func (tw *timeoutWriter) Flush() {
 		tw.commitBufferedLocked()
 		tw.streaming = true
 	}
-	if f, ok := tw.w.(http.Flusher); ok {
-		f.Flush()
-	}
+	_ = http.NewResponseController(tw.w).Flush()
 }
 
 // Hijack flips into streaming mode (no buffer to commit because hijack
@@ -158,10 +161,11 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	tw.streaming = true
 	tw.mu.Unlock()
-	if h, ok := tw.w.(http.Hijacker); ok {
-		return h.Hijack()
+	conn, rw, err := http.NewResponseController(tw.w).Hijack()
+	if errors.Is(err, http.ErrNotSupported) {
+		return nil, nil, fmt.Errorf("timeout middleware: underlying ResponseWriter does not support hijacking")
 	}
-	return nil, nil, fmt.Errorf("timeout middleware: underlying ResponseWriter does not support hijacking")
+	return conn, rw, err
 }
 
 // copyHeadersToUnderlyingLocked makes the underlying ResponseWriter's

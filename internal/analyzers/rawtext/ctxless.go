@@ -43,6 +43,10 @@ func checkCtxless(pass *analysis.Pass, ft *ast.FuncType, body *ast.BlockStmt, re
 					walk(n.Body, inner)
 					return false
 				}
+			case *ast.CallExpr:
+				if expr == "" && uiPackage(pass.Pkg.Path()) {
+					reportOrphan(pass, n, ui)
+				}
 			case *ast.CompositeLit:
 				if expr != "" {
 					reportCtxless(pass, n, expr, setLater, bound, ui)
@@ -80,6 +84,106 @@ func reportCtxless(pass *analysis.Pass, lit *ast.CompositeLit, expr string, setL
 		return
 	}
 	ui.reportf(lit, "%s.%s leaves Ctx unset while a request context is in scope: the component says its words through Ctx, so they render in English in every other locale; set Ctx: %s", named.Obj().Pkg().Name(), named.Obj().Name(), expr)
+}
+
+// reportOrphan is ctxless's no-context arm, for kit code only: a call
+// to a same-package component whose body always reads its config's
+// Ctx, passed a literal that leaves Ctx unset, from a function no
+// context reaches. The child's words then render from
+// context.Background, and nothing upstream can fix it, because the
+// enclosing component's own config has no Ctx to forward: ui.Markdown's
+// code blocks (2026-10-27 bug bash U10) and ui.CodeTabs' (U21). A
+// child that reads Ctx only on a branch (Button's shortcut hint) stays
+// quiet, as does a call into another package, whose body the pass
+// cannot read.
+func reportOrphan(pass *analysis.Pass, call *ast.CallExpr, ui uiReporter) {
+	if len(call.Args) != 1 {
+		return
+	}
+	lit, ok := ast.Unparen(call.Args[0]).(*ast.CompositeLit)
+	if !ok {
+		return
+	}
+	fn, ok := typeutilCallee(pass, call)
+	if !ok || fn.Pkg() != pass.Pkg {
+		return
+	}
+	decl := funcDecl(pass, fn)
+	if decl == nil || decl.Type.Params == nil || len(decl.Type.Params.List) != 1 || len(decl.Type.Params.List[0].Names) != 1 {
+		return
+	}
+	param := pass.TypesInfo.Defs[decl.Type.Params.List[0].Names[0]]
+	if param == nil || !carriesCtx(param.Type()) || !readsCtxAlways(pass, decl.Body, param) {
+		return
+	}
+	for _, e := range lit.Elts {
+		kv, ok := e.(*ast.KeyValueExpr)
+		if !ok {
+			return
+		}
+		if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Ctx" {
+			return
+		}
+	}
+	ui.reportf(lit, "%s gets no Ctx and no context reaches this function: its words render from context.Background, in English in every other locale; give the enclosing component's config a Ctx field and forward it", fn.Name())
+}
+
+// typeutilCallee resolves a plain or package-qualified function call.
+func typeutilCallee(pass *analysis.Pass, call *ast.CallExpr) (*types.Func, bool) {
+	var id *ast.Ident
+	switch f := ast.Unparen(call.Fun).(type) {
+	case *ast.Ident:
+		id = f
+	case *ast.SelectorExpr:
+		id = f.Sel
+	default:
+		return nil, false
+	}
+	fn, ok := pass.TypesInfo.Uses[id].(*types.Func)
+	return fn, ok
+}
+
+// funcDecl finds fn's declaration among the package's files.
+func funcDecl(pass *analysis.Pass, fn *types.Func) *ast.FuncDecl {
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil && pass.TypesInfo.Defs[fd.Name] == fn {
+				return fd
+			}
+		}
+	}
+	return nil
+}
+
+// readsCtxAlways reports whether body reads param.Ctx outside every
+// branch, loop and func literal: the component uses its context on
+// every call.
+func readsCtxAlways(pass *analysis.Pass, body *ast.BlockStmt, param types.Object) bool {
+	found := false
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch x := n.(type) {
+		case *ast.IfStmt:
+			if x.Init != nil {
+				ast.Inspect(x.Init, visit)
+			}
+			ast.Inspect(x.Cond, visit)
+			return false
+		case *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.FuncLit:
+			return false
+		case *ast.SelectorExpr:
+			if id, ok := x.X.(*ast.Ident); ok && x.Sel.Name == "Ctx" && pass.TypesInfo.Uses[id] == param {
+				found = true
+				return false
+			}
+		}
+		return true
+	}
+	ast.Inspect(body, visit)
+	return found
 }
 
 // hasCtxField reports whether st has a field Ctx of type

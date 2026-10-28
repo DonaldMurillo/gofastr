@@ -19,6 +19,13 @@ const (
 	EntityDeleted = "entity.deleted"
 )
 
+// DataKeyOwnerID is the key under which a CRUD lifecycle event's Data map
+// carries the owner id of its record, as a string, when the entity
+// declares an owner field. A consumer that copies the event somewhere
+// durable (the webhook bridge's deliveries) tags the copy with it, so
+// erasing that user reaches the copy.
+const DataKeyOwnerID = "ownerId"
+
 // Event represents something that happened in the system.
 type Event struct {
 	// ID uniquely identifies this delivery. It is stamped by the

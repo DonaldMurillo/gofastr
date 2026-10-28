@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -17,9 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -180,15 +182,11 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	// 0700: the archive is a raw dump of every physical column
 	// (password hashes, token hashes, sessions on a real app), so it
 	// gets the repo's owner-only discipline like every other
-	// secret-bearing artifact.
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("framework: export mkdir %q: %w", dir, err)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return fmt.Errorf("framework: export chmod %q: %w", dir, err)
-	}
-	if err := fileperm.Restrict(dir, true); err != nil {
-		return fmt.Errorf("framework: export restrict %q: %w", dir, err)
+	// secret-bearing artifact. The export dir is that artifact, so an
+	// existing one is tightened too; a symlink is refused rather than
+	// having its target chmodded.
+	if err := exportDir(dir); err != nil {
+		return err
 	}
 
 	dialect := migrate.DetectDialect(a.DB)
@@ -1187,4 +1185,30 @@ func jsonNumberValue(n json.Number) any {
 func sha256Hex(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+// exportDir makes dir the export's owner-only directory: a missing one
+// is created 0700, an existing directory is tightened to 0700, and a
+// symlink (whose target the chmod would rewrite) is refused.
+func exportDir(dir string) error {
+	fi, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err := fileperm.MkdirPrivate(dir); err != nil {
+			return fmt.Errorf("framework: export mkdir %q: %w", dir, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("framework: export dir %q: %w", dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("framework: export dir %q is not a directory (a symlink is refused, not followed)", dir)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("framework: export chmod %q: %w", dir, err)
+	}
+	if err := fileperm.Restrict(dir, true); err != nil {
+		return fmt.Errorf("framework: export restrict %q: %w", dir, err)
+	}
+	return nil
 }

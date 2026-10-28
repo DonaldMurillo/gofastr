@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"reflect"
 	"slices"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 // GuardedTransport returns an *http.Transport for delivering to
@@ -70,10 +73,12 @@ func GuardedTransport(allowPrivate bool, prefix string) *http.Transport {
 }
 
 // GuardPlainTransport returns a clone of tr carrying the guarded
-// dial-time hook when tr dials directly: no proxy and no dial hook of
-// its own, so installing the guarded dialer changes nothing about where
-// it connects and its TLS and pool settings survive. It returns false
-// for any other transport (a proxy, a custom dialer), whose dialer
+// dial-time hook when tr dials directly: no proxy but the environment's
+// and no dial hook but http.DefaultTransport's own, which is what
+// http.DefaultTransport.Clone() carries, so its TLS and pool settings
+// survive. The clone drops the environment proxy, as GuardedTransport
+// does. It returns false for any other transport (a proxy, a custom
+// dialer, a net.Dialer the caller built), whose dialer
 // cannot be swapped without breaking routing that reaches internal
 // addresses by design; the caller wraps those in a resolve-and-check
 // RoundTripper instead, the weaker posture. The deprecated Dial and
@@ -84,15 +89,52 @@ func GuardPlainTransport(tr *http.Transport, prefix string) (*http.Transport, bo
 	return withDialer(tr, GuardedTransport(false, prefix).DialContext)
 }
 
+// stockProxy reports whether p is no proxy or http.ProxyFromEnvironment,
+// the one every http.DefaultTransport clone carries. Any other proxy
+// func routes on purpose and keeps the transport out of the guard.
+func stockProxy(p func(*http.Request) (*url.URL, error)) bool {
+	return p == nil || reflect.ValueOf(p).Pointer() == reflect.ValueOf(http.ProxyFromEnvironment).Pointer()
+}
+
+// stockDial reports whether d is no dialer or the very dial func
+// http.DefaultTransport holds, which Clone() copies. It compares the
+// func values themselves, not their code: every (*net.Dialer).DialContext
+// method value shares one code pointer whatever its receiver, and a
+// dialer the caller built carries a Resolver, Control or LocalAddr the
+// guard's dialer would silently drop. Any other dial func keeps the
+// transport out of the guard.
+func stockDial(d func(ctx context.Context, network, addr string) (net.Conn, error)) bool {
+	return d == nil || defaultDial != nil && funcIdentity(d) == funcIdentity(defaultDial)
+}
+
+// defaultDial is http.DefaultTransport's dial func as the process
+// started, before anything could reassign the variable.
+var defaultDial = func() func(context.Context, string, string) (net.Conn, error) {
+	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+		return tr.DialContext
+	}
+	return nil
+}()
+
+// funcIdentity is the address of the closure a func value points at.
+// A copy of a func value (Clone's field copy) shares it; a method value
+// bound to a different receiver does not.
+func funcIdentity(f func(context.Context, string, string) (net.Conn, error)) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&f))
+}
+
 // withDialer is GuardPlainTransport with the dialer as a parameter, so a
 // test can dial loopback through the same clone.
 func withDialer(tr *http.Transport, dial func(ctx context.Context, network, addr string) (net.Conn, error)) (*http.Transport, bool) {
-	if tr.Proxy != nil || tr.DialContext != nil || tr.DialTLSContext != nil ||
+	if !stockProxy(tr.Proxy) || !stockDial(tr.DialContext) || tr.DialTLSContext != nil ||
 		tr.Dial != nil || tr.DialTLS != nil {
 		return nil, false
 	}
 	guarded := tr.Clone()
 	guarded.DialContext = dial
+	// The environment proxy goes, as it does in GuardedTransport: the
+	// dial check never sees the connection a proxy makes.
+	guarded.Proxy = nil
 	// Clone() runs tr's HTTP/2 setup, which offers h2 in the TLS
 	// handshake, but a transport with its own DialContext skips that
 	// setup, so the clone would write HTTP/1.1 onto a connection the

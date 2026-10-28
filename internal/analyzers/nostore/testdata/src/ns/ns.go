@@ -268,3 +268,90 @@ func bodyless202Quiet(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
+
+// ---- error writers (ledger I8) ------------------------------------------
+
+// errorWriterQuiet is the webbotauth shape: every body write follows a
+// non-2xx WriteHeader in its own block, so no body here is a 2xx body.
+func errorWriterQuiet(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	if u == "" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"status":503}`))
+		return
+	}
+	w.WriteHeader(http.StatusForbidden)
+	if r.URL.Path != "" {
+		w.Write([]byte(u))
+	}
+}
+
+// earlyErrorFire is I8: the only explicit status is the 401 arm, and
+// the plain write after it is an implicit 200 carrying the caller's
+// data.
+func earlyErrorFire(w http.ResponseWriter, r *http.Request) {
+	u := CurrentUser(r.Context())
+	if u == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// errorInClosureFire: a non-2xx status in another function literal says
+// nothing about this function's write.
+func errorInClosureFire(w http.ResponseWriter, r *http.Request) {
+	deny := func() { w.WriteHeader(http.StatusForbidden) }
+	u := CurrentUser(r.Context())
+	if u == "" {
+		deny()
+		return
+	}
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// everyArmCCQuiet is the uihost serveVersionedText shape: a 304 arm
+// beside the implicit 200, and Cache-Control set in every arm of an
+// if/else chain that ends in a plain else, so every path carries it.
+func everyArmCCQuiet(w http.ResponseWriter, r *http.Request, private bool) {
+	u := CurrentUser(r.Context())
+	if private {
+		w.Header().Set("Cache-Control", "private, no-cache")
+	} else if r.URL.RawQuery != "" {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if r.Header.Get("If-None-Match") != "" {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Write([]byte(u))
+}
+
+// someArmsCCFire: no final else, so one path sets nothing.
+func someArmsCCFire(w http.ResponseWriter, r *http.Request, private bool) {
+	u := CurrentUser(r.Context())
+	if private {
+		w.Header().Set("Cache-Control", "private, no-cache")
+	} else if r.URL.RawQuery != "" {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if r.Header.Get("If-None-Match") != "" {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+}
+
+// varStatusFire: the status before the write is a variable, not a
+// non-2xx constant, so it does not make the write an error body.
+func varStatusFire(w http.ResponseWriter, r *http.Request, code int) {
+	u := CurrentUser(r.Context())
+	if u == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	w.WriteHeader(code) // want `2xx response for a resolved principal`
+	w.Write([]byte(u))  // want `2xx response for a resolved principal`
+}

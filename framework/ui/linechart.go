@@ -35,10 +35,12 @@ type LineSeries struct {
 
 // LineChartConfig configures a LineChart.
 type LineChartConfig struct {
-	// Series are the lines (≥1, each with ≥2 Values).
+	// Series are the lines (≥1, each with ≥2 finite Values). A NaN or
+	// Inf value is a reading that never arrived: the line joins the
+	// points either side of it.
 	Series []LineSeries
-	// Labels are optional x-axis tick labels. When non-empty, must
-	// match the length of the longest series.
+	// Labels are optional x-axis tick labels. Label i sits over point i
+	// of the longest series; labels past its last point are dropped.
 	Labels []string
 	// Width / Height in CSS pixels. Default 360×200.
 	Width  int
@@ -74,7 +76,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		}
 		// A line needs ≥2 points to draw a trend; with fewer there's simply
 		// not enough data yet. A calm empty state, not a crash.
-		if len(s.Values) < 2 {
+		if _, _, n := finiteRange(s.Values); n < 2 {
 			return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, i18nui.ChartNotEnoughData.Text(cfg.Ctx), cfg.ExtraAttrs)
 		}
 	}
@@ -97,22 +99,16 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	plotW := float64(w)
 	plotH := float64(h - bottomGutter - legendGutter)
 
-	// Global min/max.
-	min := cfg.Series[0].Values[0]
-	max := min
-	for _, s := range cfg.Series {
-		for _, v := range s.Values {
-			if v < min {
-				min = v
-			}
-			if v > max {
-				max = v
-			}
+	// Global min/max over the finite readings.
+	var min, max float64
+	for i, s := range cfg.Series {
+		lo, hi, _ := finiteRange(s.Values)
+		if i == 0 || lo < min {
+			min = lo
 		}
-	}
-	span := max - min
-	if span == 0 {
-		span = 1
+		if i == 0 || hi > max {
+			max = hi
+		}
 	}
 
 	cls := "fui-line-chart"
@@ -175,10 +171,18 @@ func LineChart(cfg LineChartConfig) render.HTML {
 
 		n := len(s.Values)
 		pts := make([]string, 0, n)
+		firstX, lastX := -1.0, 0.0
 		for j, v := range s.Values {
+			if !finite(v) {
+				continue
+			}
 			x := float64(j) * plotW / float64(n-1)
-			y := linePad + inner - ((v - min) / span * inner)
+			y := linePad + inner - chartFrac(v, min, max)*inner
 			pts = append(pts, ftoa(x)+","+ftoa(y))
+			if firstX < 0 {
+				firstX = x
+			}
+			lastX = x
 		}
 		var pathD strings.Builder
 		pathD.WriteString("M" + pts[0])
@@ -192,8 +196,10 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		}
 
 		if s.Area {
-			areaD := pathD.String() + " L" + ftoa(plotW) + "," + ftoa(plotH) +
-				" L0," + ftoa(plotH) + " Z"
+			// The fill closes under the first and last drawn points: a
+			// reading that never arrived at either end leaves no slab.
+			areaD := pathD.String() + " L" + ftoa(lastX) + "," + ftoa(plotH) +
+				" L" + ftoa(firstX) + "," + ftoa(plotH) + " Z"
 			areaCls := "fui-line-chart__area"
 			if isPalette {
 				areaCls += " fui-line-chart__area--" + color
@@ -236,17 +242,21 @@ func LineChart(cfg LineChartConfig) render.HTML {
 				longest = len(s.Values)
 			}
 		}
-		// Just render up to len(Labels) evenly across plotW.
-		nl := len(cfg.Labels)
+		// Label i sits over point i, so a short list lines up with its
+		// points instead of stretching, and one label never divides by
+		// zero. A label past the last point has no point to name.
 		for i, lbl := range cfg.Labels {
-			x := float64(i) * plotW / float64(nl-1)
+			if i >= longest {
+				break
+			}
+			x := float64(i) * plotW / float64(longest-1)
 			// Anchor the edge labels inward so they don't clip against the
 			// SVG boundary (the first/last tick sit exactly on x=0 / x=plotW).
 			anchor := "middle"
 			switch i {
 			case 0:
 				anchor = "start"
-			case nl - 1:
+			case longest - 1:
 				anchor = "end"
 			}
 			sb.WriteString(`<text x="`)

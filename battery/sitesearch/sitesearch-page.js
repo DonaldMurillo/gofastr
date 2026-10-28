@@ -18,6 +18,14 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
+  // formatNumber is the kernel's when the runtime is on the page. This
+  // script also runs without it (an export can load search alone), so it
+  // falls back to the same <html lang> formatting.
+  function formatNumber(n) {
+    if (NS.formatNumber) return NS.formatNumber(n);
+    try { return n.toLocaleString(document.documentElement.lang || undefined); } catch (_) { return n.toLocaleString(); }
+  }
+
   const ROOT = '/__gofastr/search/';
   const BASE = ROOT.slice(0, ROOT.indexOf('/__' + 'gofastr/'));
   const DEBOUNCE_MS = 150;
@@ -36,7 +44,7 @@
   function words(sec, total, q) {
     if (!q) return '';
     const f = sec.getAttribute('data-search-page-' + (total === 0 ? 'none' : total === 1 ? 'one' : 'count')) || '';
-    return f.replace(/\{\{([nq])\}\}/g, function (_, k) { return k === 'n' ? String(total) : q; });
+    return f.replace(/\{\{([nq])\}\}/g, function (_, k) { return k === 'n' ? formatNumber(total) : q; });
   }
 
   // moveURL keeps the address on the query the list shows, replacing

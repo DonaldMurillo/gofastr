@@ -1217,15 +1217,29 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 					"max_attempts", job.MaxAttempts,
 					"err", err)
 			}
-			if err := q.fail(ctx, job, err); err != nil {
+			settleCtx, cancel := settleContext(ctx)
+			if err := q.fail(settleCtx, job, err); err != nil {
 				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", err)
 			}
+			cancel()
 			continue
 		}
-		if err := q.Ack(ctx, job); err != nil {
+		settleCtx, cancel := settleContext(ctx)
+		if err := q.Ack(settleCtx, job); err != nil {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
+		cancel()
 	}
+}
+
+// settleTimeout bounds one ack or nack write after a handler returns.
+const settleTimeout = 10 * time.Second
+
+// settleContext detaches ctx from the worker's cancellation and bounds it:
+// a shutdown that lands as a handler finishes must not drop the outcome,
+// or the finished job runs again once its lease expires.
+func settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 }
 
 // runHandler invokes a job handler, converting a panic into an error so a

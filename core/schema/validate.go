@@ -396,8 +396,9 @@ func toInt64(v any) (int64, bool) {
 		// 64 bits wide, and converting an out-of-int64-range value
 		// wraps negative — uint(MaxUint64) read as -1 slips past any
 		// Max-only bound. The two unsigned spellings of one number
-		// must agree.
-		if n > math.MaxInt64 {
+		// must agree. The comparison runs in uint64 so a 32-bit
+		// build, whose uint cannot hold MaxInt64, compiles.
+		if uint64(n) > math.MaxInt64 {
 			return 0, false
 		}
 		return int64(n), true

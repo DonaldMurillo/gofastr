@@ -56,11 +56,8 @@ func appOptionsDataDir(override, id string) (string, error) {
 		if !filepath.IsAbs(override) {
 			return "", fmt.Errorf("desktop: Config.DataDir %q must be absolute", override)
 		}
-		if err := os.MkdirAll(override, 0o700); err != nil {
+		if err := fileperm.MkdirPrivate(override); err != nil {
 			return "", fmt.Errorf("desktop: create data dir %s: %w", override, err)
-		}
-		if err := fileperm.Restrict(override, true); err != nil {
-			return "", fmt.Errorf("desktop: restrict data dir: %w", err)
 		}
 		return override, nil
 	}

@@ -181,7 +181,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if err := writeFile(dst, []byte(html)); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 				return err
 			}
 			b.log("rendered %s -> %s", p, dst)
@@ -250,7 +250,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		if err := b.ensureContained(dst); err != nil {
 			return res, err
 		}
-		if err := writeFile(dst, []byte(html)); err != nil {
+		if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 			return res, err
 		}
 		res.Assets = append(res.Assets, "/404.html")
@@ -352,7 +352,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	for _, a := range assets {
 		dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(a.urlPath, "/")))
-		if err := writeFile(dst, b.rewriteJSAsset(a.body)); err != nil {
+		if err := writeUnder(b.OutDir, dst, b.rewriteJSAsset(a.body)); err != nil {
 			return res, err
 		}
 		res.Assets = append(res.Assets, a.urlPath)
@@ -483,7 +483,7 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if err := writeFile(dst, []byte(md)); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(md)); err != nil {
 				return err
 			}
 			res.Assets = append(res.Assets, "/"+filepath.ToSlash(pathToLLMFile(at(p))))
@@ -497,7 +497,7 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 	// exported index metadata-free (no auth at build time).
 	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocs(ctx, exported), b.Host.App)
 	index := at("/llm-pages.md")
-	if err := writeFile(filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
+	if err := writeUnder(b.OutDir, filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
 		return err
 	}
 	res.Assets = append(res.Assets, index)
@@ -679,7 +679,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if err := writeFile(dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
 				return err
 			}
 			rendered[rel] = true
@@ -691,12 +691,12 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 	if rules.Len() == 0 {
 		// A reused OutDir may hold an earlier build's rules for
 		// redirects the app has since dropped.
-		if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := removeUnder(b.OutDir, dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("static: remove stale _redirects: %w", err)
 		}
 		return nil
 	}
-	if err := writeFile(dst, []byte(rules.String())); err != nil {
+	if err := writeUnder(b.OutDir, dst, []byte(rules.String())); err != nil {
 		return err
 	}
 	rendered["_redirects"] = true
@@ -1059,7 +1059,7 @@ func (b *Builder) slashLinks(res Result) error {
 			return fmt.Errorf("static: slash page links: %w", err)
 		}
 		if out := b.slashPageLinks(string(page), pages); out != string(page) {
-			if err := writeFile(f, []byte(out)); err != nil {
+			if err := writeUnder(b.OutDir, f, []byte(out)); err != nil {
 				return err
 			}
 		}
@@ -1489,7 +1489,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 		if err := b.ensureContained(dst); err != nil {
 			return err
 		}
-		if err := writeFile(dst, f.body); err != nil {
+		if err := writeUnder(b.OutDir, dst, f.body); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, f.urlPath)
@@ -1585,7 +1585,7 @@ func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
 	if err := b.ensureContained(dst); err != nil {
 		return err
 	}
-	return writeFile(dst, body)
+	return writeUnder(b.OutDir, dst, body)
 }
 
 // rewriteJSAsset bakes b.BasePath into a JS asset's hardcoded /__gofastr/…
@@ -1764,7 +1764,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 			if err != nil {
 				return err
 			}
-			if err := writeFile(dst, data); err != nil {
+			if err := writeUnder(b.OutDir, dst, data); err != nil {
 				return err
 			}
 			res.Assets = append(res.Assets, urlPath)
@@ -1779,11 +1779,48 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 	return nil
 }
 
-func writeFile(dst string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+// writeUnder writes data to dst, a path under outDir, through an
+// os.Root opened on outDir: every component below outDir is resolved in
+// the kernel, so a symlink planted inside the output tree fails the
+// write instead of redirecting it outside (2026-10-27 I4). The export
+// is public output, so files are 0644 and directories 0755.
+func writeUnder(outDir, dst string, data []byte) error {
+	rel, err := relUnder(outDir, dst)
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0o644)
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+		return err
+	}
+	return root.WriteFile(rel, data, 0o644)
+}
+
+// removeUnder removes dst, a path under outDir, through an os.Root.
+func removeUnder(outDir, dst string) error {
+	rel, err := relUnder(outDir, dst)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Remove(rel)
+}
+
+// relUnder is dst relative to outDir, refused when it leaves outDir.
+func relUnder(outDir, dst string) (string, error) {
+	rel, err := filepath.Rel(outDir, dst)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("static: refusing to write outside OutDir: %q", dst)
+	}
+	return rel, nil
 }
 
 // keepRendered reports whether the static source's file at rel (a slash
@@ -1799,6 +1836,11 @@ func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)
 }
 
 func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+	root, err := os.OpenRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1814,7 +1856,7 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 			return nil
 		}
 		out := filepath.Join(dst, rel)
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return err
 		}
 		in, err := os.Open(path)
@@ -1822,7 +1864,7 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 			return err
 		}
 		defer in.Close()
-		w, err := os.Create(out)
+		w, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 		if err != nil {
 			return err
 		}
@@ -1837,6 +1879,11 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 }
 
 func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+	root, err := os.OpenRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	return fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1852,10 +1899,11 @@ func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log f
 			return err
 		}
 		out := filepath.Join(dst, path)
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		rel := filepath.FromSlash(path)
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(out, data, 0o644); err != nil {
+		if err := root.WriteFile(rel, data, 0o644); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, "/"+filepath.ToSlash(path))
@@ -1990,5 +2038,5 @@ func writeHeadersFile(outDir, policy string) error {
 		"  Content-Security-Policy: " + policy + "\n" +
 		"  X-Content-Type-Options: nosniff\n" +
 		"  Referrer-Policy: strict-origin-when-cross-origin\n"
-	return writeFile(filepath.Join(outDir, "_headers"), []byte(body))
+	return writeUnder(outDir, filepath.Join(outDir, "_headers"), []byte(body))
 }

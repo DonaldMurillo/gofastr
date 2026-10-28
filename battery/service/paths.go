@@ -137,6 +137,7 @@ func ensurePrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("service: create %s: %w", dir, err)
 	}
+	//gofastr:allow(tightenshared) callers pass app-namespaced service dirs this package owns
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("service: restrict %s: %w", dir, err)
 	}

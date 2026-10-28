@@ -216,6 +216,10 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		if err != nil {
 			return &chunkError{docID: doc.ID, err: err}
 		}
+		// Set here, not in the chunker, so a host Chunker cannot drop it.
+		for k := range cs {
+			cs[k].Owner = doc.Owner
+		}
 		chunks = append(chunks, cs...)
 	}
 	ids := make([]string, len(docs))
@@ -483,8 +487,13 @@ func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) (err err
 	if i.keyword == nil {
 		return nil
 	}
+	owned, _ := i.keyword.(OwnedKeywordBackend)
 	for _, c := range chunks {
-		if err := i.keyword.Index(ctx, c.ID, c.Text); err != nil {
+		index := i.keyword.Index
+		if owned != nil {
+			index = func(ctx context.Context, id, text string) error { return owned.IndexOwned(ctx, id, c.Owner, text) }
+		}
+		if err := index(ctx, c.ID, c.Text); err != nil {
 			return fmt.Errorf("semantic: keyword index %q: %w", c.ID, err)
 		}
 	}

@@ -17,7 +17,11 @@
 // It fires on json.Unmarshal, (*json.Decoder).Decode, and
 // handler.UnmarshalStrict / handler.DecodeStrict, and stays silent when:
 //   - the decoder is a local whose UseNumber() is called in the same
-//     function, or UnmarshalStrict is passed handler.UseNumber();
+//     function, or UnmarshalStrict is passed handler.UseNumber(), directly
+//     or through a variable that holds it (a local or package-level
+//     option, a []StrictOption literal or append that includes it,
+//     spread with `opts...`; ledger I3 of the 2026-10-27 bug bash was the
+//     variable form reporting);
 //   - the target holds no empty interface (typed numbers keep their Go
 //     types), or reaches one only through a type with its own
 //     UnmarshalJSON (json.RawMessage is one);
@@ -245,7 +249,7 @@ func decodeTarget(pass *analysis.Pass, call *ast.CallExpr, useNumber map[types.O
 			return call.Args[1], true
 		case fn.Pkg().Path() == handlerPkg && fn.Name() == "UnmarshalStrict" && len(call.Args) >= 2:
 			for _, opt := range call.Args[2:] {
-				if isHandlerUseNumber(pass, opt) {
+				if carriesUseNumber(pass, opt, useNumber) {
 					return nil, false
 				}
 			}
@@ -262,10 +266,20 @@ func decodeTarget(pass *analysis.Pass, call *ast.CallExpr, useNumber map[types.O
 }
 
 // useNumberDecoders collects the locals whose UseNumber() is called in
-// body.
+// body, and the variables (locals in body, or package-level) assigned a
+// value that carries handler.UseNumber(): `opt := handler.UseNumber()`,
+// a []StrictOption literal holding one, or an append of one.
 func useNumberDecoders(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
 	out := map[types.Object]bool{}
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.VAR {
+				recordUseNumberOptions(pass, gd, out)
+			}
+		}
+	}
 	ast.Inspect(body, func(n ast.Node) bool {
+		recordUseNumberOptions(pass, n, out)
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) != 0 {
 			return true
@@ -280,6 +294,77 @@ func useNumberDecoders(pass *analysis.Pass, body *ast.BlockStmt) map[types.Objec
 		return true
 	})
 	return out
+}
+
+// recordUseNumberOptions marks each variable n assigns a value that
+// carries handler.UseNumber(). Only a definite carrier counts: a variable
+// assigned something else is no evidence, and its decode still reports.
+func recordUseNumberOptions(pass *analysis.Pass, n ast.Node, out map[types.Object]bool) {
+	mark := func(lhs []ast.Expr, rhs []ast.Expr) {
+		if len(lhs) != len(rhs) {
+			return
+		}
+		for i, l := range lhs {
+			id, ok := ast.Unparen(l).(*ast.Ident)
+			if !ok || id.Name == "_" {
+				continue
+			}
+			if carriesUseNumber(pass, rhs[i], out) {
+				out[pass.TypesInfo.ObjectOf(id)] = true
+			}
+		}
+	}
+	switch x := n.(type) {
+	case *ast.AssignStmt:
+		mark(x.Lhs, x.Rhs)
+	case *ast.GenDecl:
+		if x.Tok != token.VAR {
+			return
+		}
+		for _, sp := range x.Specs {
+			vs, ok := sp.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			lhs := make([]ast.Expr, len(vs.Names))
+			for i, nm := range vs.Names {
+				lhs[i] = nm
+			}
+			mark(lhs, vs.Values)
+		}
+	}
+}
+
+// carriesUseNumber reports whether e is handler.UseNumber(), a variable
+// recorded as holding it, a composite literal with such an element, or an
+// append call with such an argument.
+func carriesUseNumber(pass *analysis.Pass, e ast.Expr, vars map[types.Object]bool) bool {
+	switch x := ast.Unparen(e).(type) {
+	case *ast.Ident:
+		return vars[pass.TypesInfo.ObjectOf(x)]
+	case *ast.CompositeLit:
+		for _, el := range x.Elts {
+			if kv, ok := el.(*ast.KeyValueExpr); ok {
+				el = kv.Value
+			}
+			if carriesUseNumber(pass, el, vars) {
+				return true
+			}
+		}
+		return false
+	case *ast.CallExpr:
+		if id, ok := ast.Unparen(x.Fun).(*ast.Ident); ok {
+			if b, ok := pass.TypesInfo.Uses[id].(*types.Builtin); ok && b.Name() == "append" {
+				for _, a := range x.Args {
+					if carriesUseNumber(pass, a, vars) {
+						return true
+					}
+				}
+				return false
+			}
+		}
+	}
+	return isHandlerUseNumber(pass, e)
 }
 
 func isHandlerUseNumber(pass *analysis.Pass, e ast.Expr) bool {

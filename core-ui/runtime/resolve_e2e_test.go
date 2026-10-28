@@ -279,6 +279,7 @@ func newParamSite(t *testing.T) *paramSite {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", svc)
 			w.Header().Set("X-Gofastr-Swap", key)
+			//gofastr:allow(emitident) an httptest fake reflects its own request path into test HTML; nothing here is emitted code
 			fmt.Fprintf(w, `<div data-cui-screen-group="/projects/%s/"><div data-cui-layout="site" data-cui-layout-key="%s"><div data-cui-layout-slot="%s" id="slot"><span id="page">%s</span></div></div></div>`, svc, key, key, path)
 			return
 		}

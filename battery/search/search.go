@@ -8,6 +8,11 @@ type Document struct {
 	Type   string         `json:"type"`
 	Text   string         `json:"text"`
 	Fields map[string]any `json:"fields,omitempty"`
+	// Owner is the user id the document belongs to, or empty for a
+	// document that names nobody. App.EraseUserData deletes every
+	// document indexed for the erased user; it is a storage tag, not a
+	// search filter (scope searches through Fields and FieldEquals).
+	Owner string `json:"owner,omitempty"`
 }
 
 // Result is a matched document with a simple score.

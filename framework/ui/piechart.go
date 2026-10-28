@@ -69,6 +69,10 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	}
 	var total float64
 	for _, s := range cfg.Slices {
+		// A NaN or Inf value is a reading that never arrived: no slice.
+		if !finite(s.Value) {
+			continue
+		}
 		if s.Value < 0 {
 			panic("ui: PieChart Slice.Value must be ≥0")
 		}
@@ -137,7 +141,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	start := -math.Pi / 2 // 12 o'clock start
 	paletteIdx := 0
 	for _, s := range cfg.Slices {
-		if s.Value == 0 {
+		if s.Value == 0 || !finite(s.Value) {
 			continue
 		}
 		frac := s.Value / total

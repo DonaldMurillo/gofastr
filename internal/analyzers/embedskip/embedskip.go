@@ -12,7 +12,9 @@
 // binders. The fix descends: an f.Anonymous field recurses into its type
 // (a nil embedded pointer is skipped or allocated, as the caller needs).
 //
-// The loop fires when it is a for or range over X.NumField(), or a range
+// The loop fires when it is a for or range over X.NumField() (in a for
+// condition, on either side: `t.NumField() > i` was a miss, ledger I2
+// of the 2026-10-27 bug bash), or a range
 // over the X.Fields() iterator (X a reflect.Type or reflect.Value), whose
 // body reads a StructField's Tag or
 // passes a StructField to a same-package function (a jsonFieldName-style
@@ -53,7 +55,12 @@ func run(pass *analysis.Pass) (any, error) {
 			switch s := n.(type) {
 			case *ast.ForStmt:
 				if b, ok := s.Cond.(*ast.BinaryExpr); ok {
+					// The bound may sit on either side: i < t.NumField()
+					// and t.NumField() > i are the same walk.
 					bound = b.Y
+					if isNumFieldCall(pass, b.X) {
+						bound = b.X
+					}
 				}
 				body = s.Body
 			case *ast.RangeStmt:

@@ -34,6 +34,32 @@ func TestFileSinkParentDirDefaultModeIs0o700(t *testing.T) {
 	}
 }
 
+// A log in a directory FileSink did not create (the documented
+// /var/log/myapp.log) leaves that directory's mode alone; the file is
+// still 0600 (2026-10-27 L20).
+func TestFileSinkKeepsExistingParentMode(t *testing.T) {
+	requirePOSIXFileModes(t)
+	dir := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := FileSink(filepath.Join(dir, "app.log"), FileOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("existing parent mode = %o, want 0755 kept", got)
+	}
+}
+
 func TestTailFileRejectsSymlinkPath(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.log")

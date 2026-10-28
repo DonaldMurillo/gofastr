@@ -22,19 +22,10 @@
 
   const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  // formatNumber writes n the way the page's language (<html lang>)
-  // writes numbers, so a value this module writes reads like the
-  // server's i18n.Number text it replaces: "٥٠" stays "٥٠" on an
-  // Egyptian Arabic page. Rebuilt when a client navigation changes lang.
-  let lang, nf;
-  function formatNumber(n) {
-    const l = document.documentElement.lang;
-    if (!nf || l !== lang) {
-      lang = l;
-      try { nf = new Intl.NumberFormat(l || undefined); } catch (_) { nf = new Intl.NumberFormat(); }
-    }
-    return nf.format(n);
-  }
+  // formatNumber is the kernel's: a value this module writes reads like
+  // the server's i18n.Number text it replaces ("٥٠" stays "٥٠" on an
+  // Egyptian Arabic page).
+  const formatNumber = (n) => NS.formatNumber(n);
 
   // valueText is an input's value written the page's way.
   function valueText(input) {

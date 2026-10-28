@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
@@ -75,7 +76,23 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	if err := s.ensureTable(); err != nil {
 		return nil, fmt.Errorf("featureflag: ensure table: %w", err)
 	}
+	s.registerData()
 	return s, nil
+}
+
+// registerData declares the flag table to App.ExportData and
+// App.EraseUserData under its configured name. A flag's user allow list
+// is shared by everyone on it, so an erasure removes the user from the
+// list and keeps the flag. The tenants list names tenants, not users.
+func (s *SQLStore) registerData() {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("feature_flags", s.table), Source: "featureflag", Table: s.table, PrimaryKey: "key",
+		Columns: []string{"key", "enabled", "rollout", "users", "tenants", "envs"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("feature_flags", s.table), Source: "featureflag", Table: s.table,
+		Column: "users", Mode: datexport.EraseRemoveMember,
+	})
 }
 
 func (s *SQLStore) ensureTable() error {

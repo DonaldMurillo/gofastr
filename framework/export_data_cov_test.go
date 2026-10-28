@@ -10,7 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 func timeMustParse(t *testing.T, s string) time.Time {

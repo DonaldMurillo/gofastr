@@ -44,7 +44,10 @@
 //
 // A tested value is clean for that variable when a validator-named
 // call (validRequestID(id)) vetted it anywhere earlier in the
-// function, or when a map membership (allowed[origin]) appears in the
+// function and the code kept its verdict (a call statement or an
+// assignment to _ throws the answer away and vets nothing, ledger I9 of
+// the 2026-10-27 bug bash; a call with no result still counts, since it
+// can only refuse by panicking), or when a map membership (allowed[origin]) appears in the
 // condition of an if statement or switch case that lexically encloses
 // the sink — the sink then runs only for members of the configured
 // set, and a control byte cannot be in that set. The negated-denial
@@ -326,8 +329,8 @@ func testedAt(gs []guard, pos token.Pos) bool {
 
 // testedValues records where each variable was TESTED before use: an
 // argument of a validator-named call (validRequestID(id),
-// isSafePartialRedirect(u)) vets the variable for the rest of the
-// function; a membership lookup (allowed[origin]) vets it only when
+// isSafePartialRedirect(u)) whose result the code keeps vets the
+// variable for the rest of the function; a membership lookup (allowed[origin]) vets it only when
 // the lookup keys a value the code gates on — the index appears in the
 // condition of an if statement or switch case that lexically encloses
 // the sink, so the sink runs only for members of the configured set.
@@ -336,6 +339,7 @@ func testedAt(gs []guard, pos token.Pos) bool {
 // about the bytes and does not vet.
 func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]guard {
 	out := map[types.Object][]guard{}
+	dropped := droppedVerdicts(pass, body)
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.CallExpr:
@@ -346,7 +350,7 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 			case *ast.SelectorExpr:
 				name = fun.Sel.Name
 			}
-			if !validatorName.MatchString(name) {
+			if !validatorName.MatchString(name) || dropped[n] {
 				return true
 			}
 			for _, a := range n.Args {
@@ -370,6 +374,48 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 			for _, e := range n.List {
 				markMembership(out, pass, e, n.End())
 			}
+		}
+		return true
+	})
+	return out
+}
+
+// droppedVerdicts returns the calls in body that return a result the
+// code throws away: a bare call statement, a go or defer statement, or
+// an assignment of every result to _. A validator whose verdict is
+// dropped vetted nothing (`_ = valid(p); fmt.Println(p)`, ledger I9 of
+// the 2026-10-27 bug bash). A call with no result stays a guard: it can
+// only refuse by panicking or exiting.
+func droppedVerdicts(pass *analysis.Pass, body *ast.BlockStmt) map[*ast.CallExpr]bool {
+	out := map[*ast.CallExpr]bool{}
+	mark := func(e ast.Expr) {
+		c, ok := ast.Unparen(e).(*ast.CallExpr)
+		if !ok {
+			return
+		}
+		if t, ok := pass.TypesInfo.TypeOf(c).(*types.Tuple); ok && t.Len() == 0 {
+			return
+		}
+		out[c] = true
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.ExprStmt:
+			mark(s.X)
+		case *ast.GoStmt:
+			mark(s.Call)
+		case *ast.DeferStmt:
+			mark(s.Call)
+		case *ast.AssignStmt:
+			if len(s.Rhs) != 1 {
+				return true
+			}
+			for _, l := range s.Lhs {
+				if id, ok := l.(*ast.Ident); !ok || id.Name != "_" {
+					return true
+				}
+			}
+			mark(s.Rhs[0])
 		}
 		return true
 	})

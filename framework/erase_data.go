@@ -12,9 +12,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -1298,8 +1298,10 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	// while the transaction holds the only connection. The entity plane's
 	// probes ran in planErase.
 	for _, e := range liveErasers {
-		if err := requireColumn(ctx, a.DB, e.table, e.eraser.Column, dialect); err != nil {
-			return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
+		for _, col := range append([]string{e.eraser.Column}, whereColumns(e.eraser)...) {
+			if err := requireColumn(ctx, a.DB, e.table, col, dialect); err != nil {
+				return report, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
+			}
 		}
 	}
 
@@ -1453,10 +1455,68 @@ func (a *App) eraseStoredObjects(ctx context.Context, keys []string) error {
 // eraseDelete executes DELETE FROM table WHERE col = userID inside tx and
 // returns the number of rows deleted. Identifiers are MustIdent-guarded; userID
 // is a bound argument.
-func eraseDelete(ctx context.Context, tx *sql.Tx, table, col, userID string) (int, error) {
-	qt := quotePhysical(table)
-	qc := query.QuoteFolded(query.MustIdent(col))
-	return execCount(ctx, tx, fmt.Sprintf("DELETE FROM %s WHERE %s = $1", qt, qc), userID)
+func eraseDelete(ctx context.Context, tx *sql.Tx, e resolvedEraser) (int, error) {
+	match, args := eraserMatch(e, 1)
+	return execCount(ctx, tx, fmt.Sprintf("DELETE FROM %s WHERE %s", quotePhysical(e.table), match), args...)
+}
+
+// eraseRemoveMember takes the bound value out of the JSON string array in
+// the eraser's column, on every row that lists it and meets its Where
+// conditions. The rest of the array keeps its order; an array left with
+// no members is written as []. The value is a bound argument, $1 in
+// every position.
+func eraseRemoveMember(ctx context.Context, tx *sql.Tx, dialect migrate.Dialect, e resolvedEraser) (int, error) {
+	qt := quotePhysical(e.table)
+	qc := query.QuoteFolded(query.MustIdent(e.eraser.Column))
+	var rest, holds string
+	if dialect == migrate.DialectPostgres {
+		rest = fmt.Sprintf("COALESCE((SELECT json_agg(m.v ORDER BY m.n)::text FROM json_array_elements_text(%s::json) WITH ORDINALITY AS m(v, n) WHERE m.v <> $1), '[]')", qc)
+		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_array_elements_text(%s::json) AS h(v) WHERE h.v = $1)", qc)
+	} else {
+		rest = fmt.Sprintf("(SELECT json_group_array(m.value) FROM (SELECT value FROM json_each(%s) WHERE value <> $1 ORDER BY key) AS m)", qc)
+		holds = fmt.Sprintf("EXISTS (SELECT 1 FROM json_each(%s) WHERE value = $1)", qc)
+	}
+	// The match column is the array itself, so only the Where conditions
+	// narrow the rows; their placeholders follow the value's.
+	conds, wargs := whereConds(e.eraser, 2)
+	if conds != "" {
+		holds += " AND " + conds
+	}
+	return execCount(ctx, tx, fmt.Sprintf("UPDATE %s SET %s = %s WHERE %s", qt, qc, rest, holds), append([]any{e.value}, wargs...)...)
+}
+
+// eraserMatch is the condition an eraser's rows meet: its match column
+// equals the bound value and every Where column its value, ANDed, with
+// placeholders numbered from first. The arguments come back in
+// placeholder order.
+func eraserMatch(e resolvedEraser, first int) (string, []any) {
+	match := fmt.Sprintf("%s = $%d", query.QuoteFolded(query.MustIdent(e.eraser.Column)), first)
+	conds, args := whereConds(e.eraser, first+1)
+	if conds != "" {
+		match += " AND " + conds
+	}
+	return match, append([]any{e.value}, args...)
+}
+
+// whereConds is an eraser's Where conditions ANDed, placeholders numbered
+// from first, with their values in placeholder order. No conditions is "".
+func whereConds(e datexport.DataEraser, first int) (string, []any) {
+	conds := make([]string, len(e.Where))
+	args := make([]any, len(e.Where))
+	for i, w := range e.Where {
+		conds[i] = fmt.Sprintf("%s = $%d", query.QuoteFolded(query.MustIdent(w.Column)), first+i)
+		args[i] = w.Value
+	}
+	return strings.Join(conds, " AND "), args
+}
+
+// whereColumns lists the columns of an eraser's Where conditions.
+func whereColumns(e datexport.DataEraser) []string {
+	cols := make([]string, len(e.Where))
+	for i, w := range e.Where {
+		cols[i] = w.Column
+	}
+	return cols
 }
 
 // eraseKeysRead is a test seam: when non-nil it runs after the erasure has
@@ -1490,14 +1550,14 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 			anon[t] = append(anon[t], i)
 		}
 		dt := p.graph[strings.ToLower(e.eraser.Table)]
-		if dt == nil || dt.pivot {
+		if dt == nil || dt.pivot || e.eraser.Mode == datexport.EraseRemoveMember {
 			continue
 		}
 		qt := quotePhysical(e.table)
-		match := query.QuoteFolded(query.MustIdent(e.eraser.Column)) + " = $1"
+		match, margs := eraserMatch(e, 1)
 		if wantRecs && len(dt.entities) > 0 && len(dt.key) > 0 {
 			ids, err := readRecordIDs(ctx, tx, fmt.Sprintf("SELECT %s FROM %s WHERE %s", quotedCols("", dt.key), qt, match),
-				[]any{e.value}, len(dt.key))
+				margs, len(dt.key))
 			if err != nil {
 				return nil, nil, fmt.Errorf("framework: erase %q: read keys: %w", e.eraser.Name, err)
 			}
@@ -1516,7 +1576,7 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 			continue
 		}
 		stmt := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s", quotedCols("", cols), qt, match, lockRead(dialect))
-		if err := readObjectKeys(ctx, tx, stmt, []any{e.value}, cols, dt.variantCols, keys); err != nil {
+		if err := readObjectKeys(ctx, tx, stmt, margs, cols, dt.variantCols, keys); err != nil {
 			return nil, nil, fmt.Errorf("framework: erase %q: read file columns: %w", e.eraser.Name, err)
 		}
 	}
@@ -1526,11 +1586,21 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 		if e.eraser.Mode != datexport.EraseDelete {
 			continue
 		}
-		n, err := eraseDelete(ctx, tx, e.table, e.eraser.Column, e.value)
+		n, err := eraseDelete(ctx, tx, e)
 		if err != nil {
 			return nil, nil, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
 		}
 		results[i] = EraseTableResult{Name: e.eraser.Name, Source: e.eraser.Source, Table: e.eraser.Table, Mode: "delete", RowsAffected: n}
+	}
+	for i, e := range erasers {
+		if e.eraser.Mode != datexport.EraseRemoveMember {
+			continue
+		}
+		n, err := eraseRemoveMember(ctx, tx, dialect, e)
+		if err != nil {
+			return nil, nil, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
+		}
+		results[i] = EraseTableResult{Name: e.eraser.Name, Source: e.eraser.Source, Table: e.eraser.Table, Mode: "remove", RowsAffected: n}
 	}
 	for _, t := range anonTables {
 		group := make([]resolvedEraser, len(anon[t]))
@@ -1562,8 +1632,9 @@ func (p *erasePlan) eraseBatteries(ctx context.Context, tx *sql.Tx, dialect migr
 func eraseAnonymizeTable(ctx context.Context, tx *sql.Tx, es []resolvedEraser) ([]int, error) {
 	qt := quotePhysical(es[0].table)
 	counts := make([]int, len(es))
-	args := make([]any, 0, 2*len(es))
+	var args []any
 	matches := make([]string, len(es))
+	tombstones := make([]int, len(es)) // each eraser's tombstone placeholder
 	type scrubbed struct {
 		name string
 		by   []int // indexes into es
@@ -1571,17 +1642,19 @@ func eraseAnonymizeTable(ctx context.Context, tx *sql.Tx, es []resolvedEraser) (
 	var cols []*scrubbed
 	byName := map[string]*scrubbed{}
 	for i, e := range es {
-		qc := query.QuoteFolded(query.MustIdent(e.eraser.Column))
-		if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s = $1", qt, qc), e.value).Scan(&counts[i]); err != nil {
+		own, ownArgs := eraserMatch(e, 1)
+		if err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s", qt, own), ownArgs...).Scan(&counts[i]); err != nil {
 			return nil, fmt.Errorf("framework: erase %q: %w", e.eraser.Name, err)
 		}
 		ts := e.eraser.Tombstone
 		if ts == "" {
 			ts = "[erased]"
 		}
-		// $2i+1 is the eraser's match value, $2i+2 its tombstone.
-		args = append(args, e.value, ts)
-		matches[i] = fmt.Sprintf("%s = $%d", qc, 2*i+1)
+		// The eraser's match arguments, then its tombstone.
+		match, margs := eraserMatch(e, len(args)+1)
+		matches[i] = "(" + match + ")"
+		args = append(append(args, margs...), ts)
+		tombstones[i] = len(args)
 		for _, c := range append(slices.Clone(e.eraser.ScrubColumns), e.eraser.Column) {
 			s := byName[strings.ToLower(c)]
 			if s == nil {
@@ -1599,7 +1672,7 @@ func eraseAnonymizeTable(ctx context.Context, tx *sql.Tx, es []resolvedEraser) (
 		qc := query.QuoteFolded(query.MustIdent(s.name))
 		whens := make([]string, len(s.by))
 		for j, i := range s.by {
-			whens[j] = fmt.Sprintf("WHEN %s THEN $%d", matches[i], 2*i+2)
+			whens[j] = fmt.Sprintf("WHEN %s THEN $%d", matches[i], tombstones[i])
 		}
 		sets[k] = fmt.Sprintf("%s = CASE %s ELSE %s END", qc, strings.Join(whens, " "), qc)
 	}

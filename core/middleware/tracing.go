@@ -69,6 +69,10 @@ func Tracing() Middleware {
 			)
 			defer span.End()
 
+			// Put our span context on the response headers before the
+			// handler runs: once it writes, the headers are sent and a
+			// later change never reaches the client.
+			prop.Inject(ctx, propagation.HeaderCarrier(w.Header()))
 			ww := &tracingResponseWriter{ResponseWriter: w, status: 200}
 			next.ServeHTTP(ww, r.WithContext(ctx))
 
@@ -85,9 +89,6 @@ func Tracing() Middleware {
 			if ww.status >= 500 {
 				span.SetStatus(codes.Error, http.StatusText(ww.status))
 			}
-
-			// Inject our span context into outgoing response headers.
-			prop.Inject(ctx, propagation.HeaderCarrier(ww.Header()))
 		})
 	}
 }

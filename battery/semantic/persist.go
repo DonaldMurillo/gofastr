@@ -39,11 +39,8 @@ func (s *FlatStore) Snapshot(path string) error {
 	}
 	// Owner-only dir: the snapshot carries the full document corpus
 	// (and its vectors), which is app data, not a shared artifact.
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := fileperm.MkdirPrivate(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("semantic: mkdir snapshot dir: %w", err)
-	}
-	if err := fileperm.Restrict(filepath.Dir(path), true); err != nil {
-		return fmt.Errorf("semantic: restrict snapshot dir: %w", err)
 	}
 
 	s.mu.RLock()
@@ -301,7 +298,9 @@ func openWAL(path string) (*wal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("semantic: open wal: %w", err)
 	}
-	if err := fileperm.Restrict(path, false); err != nil {
+	// O_CREATE's 0600 applies only to a new file; tighten the handle so
+	// a pre-existing looser WAL is owner-only too.
+	if err := fileperm.RestrictOpenFile(f); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("semantic: restrict wal: %w", err)
 	}

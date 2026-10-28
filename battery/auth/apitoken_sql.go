@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -86,8 +87,30 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 	idxName, _ := query.SafeIdent(s.table + "_owner_idx")
 	idx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s (owner_kind, owner_id)`,
 		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, query.QuoteIndexName(idxName), query.QuoteFolded(s.table)))
-	_, err := s.db.ExecContext(ctx, idx)
-	return err
+	if _, err := s.db.ExecContext(ctx, idx); err != nil {
+		return err
+	}
+	registerAPITokens(s.table)
+	return nil
+}
+
+// registerAPITokens declares the token table to App.ExportData and
+// App.EraseUserData under its configured name. An erased user's tokens
+// are deleted: the middleware resolves a token's owner by id alone, so a
+// new account given the same id would inherit every unexpired one. The
+// owner_kind = "user" condition leaves a service account that shares the
+// id alone. Only the hash is stored, so the export carries no plaintext.
+func registerAPITokens(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("auth_api_tokens", table), Source: "auth", Table: table, PrimaryKey: "id",
+		Columns: []string{"id", "name", "owner_kind", "owner_id", "prefix", "hash", "scopes",
+			"expires_at", "last_used_at", "revoked_at", "created_at"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("auth_api_tokens", table), Source: "auth", Table: table,
+		Column: "owner_id", Mode: datexport.EraseDelete,
+		Where: []datexport.Equals{{Column: "owner_kind", Value: OwnerKindUser}},
+	})
 }
 
 // q wraps a statement template with the validated table name.

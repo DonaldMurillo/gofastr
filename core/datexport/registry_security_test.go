@@ -3,7 +3,7 @@ package datexport_test
 import (
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // Exporter names become filesystem path components
