@@ -18,7 +18,8 @@ func TestScopedNameSeparatesTables(t *testing.T) {
 		{"a2a_tasks", "t1_a2a_tasks", "a2a_tasks-t1_a2a_tasks"},
 		{"a2a_tasks", "main.a2a_tasks", "a2a_tasks-main-2ea2a_tasks"},
 		{"a2a_tasks", "main-2ea2a_tasks", "a2a_tasks-main-2d2ea2a_tasks"},
-		{"flags", "Flags", "flags-Flags"},
+		{"flags", "Flags", "flags"},
+		{"flags", "Flags_v2", "flags-flags_v2"},
 		{"flags", "drapeaux_é", "flags-drapeaux_-c3-a9"},
 	} {
 		if got := datexport.ScopedName(tc.base, tc.table); got != tc.want {
@@ -44,6 +45,17 @@ func TestScopedNamesBothRegister(t *testing.T) {
 
 // A long configured table still yields a name the archive can hold:
 // <name>.ndjson must fit one 255-byte path component.
+// Events and events are one table (AutoMigrate and the stores fold), so
+// they get one name, and the archive file does not depend on spelling.
+func TestScopedNameFoldsCase(t *testing.T) {
+	if a, b := datexport.ScopedName("event_outbox", "Events"), datexport.ScopedName("event_outbox", "events"); a != b {
+		t.Errorf("Events gives %q, events gives %q", a, b)
+	}
+	if n := datexport.ScopedName("event_outbox", "EVENT_OUTBOX"); n != "event_outbox" {
+		t.Errorf("the default table spelled in capitals gives %q", n)
+	}
+}
+
 func TestScopedNameBoundsLength(t *testing.T) {
 	long := strings.Repeat("t", 240)
 	a := datexport.ScopedName("event_outbox", long+"_a")

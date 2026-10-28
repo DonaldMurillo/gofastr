@@ -221,20 +221,25 @@ func Register(e DataExporter) {
 // ScopedName is the registration Name for a store that a host can build
 // more than once on different tables. Registration replaces by Name, so
 // two stores sharing a constant would leave the first table out of every
-// export and erasure. The store's default table keeps the bare base;
-// any other table is appended after a '-', with each byte outside
-// [A-Za-z0-9_] written as '-' and two hex digits, so the result is a
-// valid exporter name and no two tables share one. A name past
-// maxScopedName bytes keeps its first bytes and ends in '-' and 16 hex
-// digits of the table's SHA-256, so <name>.ndjson fits one file name.
+// export and erasure. The table's ASCII letters are lowercased first:
+// Events and events are one table (AutoMigrate and the stores fold), so
+// they share a name, and ExportData, which keeps one exporter per folded
+// table, writes the same file whichever spelling registered. The store's
+// default table keeps the bare base; any other table is appended after a
+// '-', with each byte outside [a-z0-9_] written as '-' and two hex
+// digits, so the result is a valid exporter name and no two tables share
+// one. A name past maxScopedName bytes keeps its first bytes and ends in
+// '-' and 16 hex digits of the table's SHA-256, so <name>.ndjson fits one
+// file name.
 func ScopedName(base, table string) string {
+	table = foldASCII(table)
 	b := []byte(base)
 	if table != base {
 		b = append(b, '-')
 		for i := 0; i < len(table); i++ {
 			c := table[i]
 			switch {
-			case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
+			case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_':
 				b = append(b, c)
 			default:
 				b = append(b, '-', hexDigits[c>>4], hexDigits[c&0xf])
@@ -256,6 +261,18 @@ func ScopedName(base, table string) string {
 const maxScopedName = 200
 
 const hexDigits = "0123456789abcdef"
+
+// foldASCII lowers ASCII letters, the folding Postgres applies to an
+// unquoted identifier.
+func foldASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
 
 // validExporterName reports whether n is a safe archive key: one path
 // segment of [A-Za-z0-9_-], non-empty. Separators and dots are refused so

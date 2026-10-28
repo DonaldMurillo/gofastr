@@ -51,6 +51,19 @@ func TestEraseBlanksOwnedOutboxPayloads(t *testing.T) {
 	if err := app.ExportData(ctx, dir); err != nil {
 		t.Fatalf("ExportData: %v", err)
 	}
+	// ReadDir, not Open alone: a case-insensitive filesystem opens
+	// event_outbox-Events.ndjson under this name too.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := false
+	for _, e := range entries {
+		named = named || e.Name() == "event_outbox-events.ndjson"
+	}
+	if !named {
+		t.Errorf("the export has no event_outbox-events.ndjson")
+	}
 	if f, err := os.Open(filepath.Join(dir, "event_outbox-events.ndjson")); err != nil {
 		t.Errorf("the export has no event_outbox: %v", err)
 	} else {
