@@ -2230,6 +2230,13 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **BREAKING: the admin's platform pages refuse a tenant-scoped caller.**
+  Queue jobs, auth accounts, role grants and process modules carry no
+  tenant, so a tenant's admin could list, replay, grant, assign roles to
+  and toggle modules for every tenant. The Jobs, User roles, Roles and
+  Modules pages and their posts now answer 403 to a caller with a tenant,
+  and the sidebar, palette and dashboard leave them out. See
+  [admin](framework/docs/content/admin.md).
 - **The relay keeps the app's headers and the vendor's hints apart.**
   It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
   on every fetch, to the vendor; every `X-Gofastr-*` header is now

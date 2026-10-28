@@ -64,7 +64,7 @@ func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) rend
 	if b.db != nil {
 		ops = append(ops, b.recentCard(ctx))
 	}
-	if len(b.cfg.Attention) > 0 || b.cfg.Queue != nil {
+	if len(b.cfg.Attention) > 0 || (b.cfg.Queue != nil && platformCaller(ctx)) {
 		ops = append(ops, b.attentionCard(ctx))
 	}
 	if len(ops) > 0 {
@@ -289,22 +289,22 @@ func (b *Battery) mountOps(r *router.Router) {
 	p := b.cfg.PathPrefix
 	post := func(path string, h http.HandlerFunc) { r.Post(p+path, h) }
 	if b.cfg.Queue != nil {
-		post("/queue/_replay/{id}", b.handleReplay)
-		post("/queue/_replay_all", b.handleReplayAll)
+		post("/queue/_replay/{id}", platformOnly(b.handleReplay))
+		post("/queue/_replay_all", platformOnly(b.handleReplayAll))
 	}
 	if b.cfg.Policy != nil && b.cfg.GrantStore != nil {
-		post("/rbac/_grant", b.handleGrant)
-		post("/rbac/_permissions", b.handlePermissions)
+		post("/rbac/_grant", platformOnly(b.handleGrant))
+		post("/rbac/_permissions", platformOnly(b.handlePermissions))
 	}
 	if b.cfg.Auth != nil {
-		post("/rbac/_assign", b.handleAssign)
+		post("/rbac/_assign", platformOnly(b.handleAssign))
 		post("/account/_name", b.handleName)
 	}
 	if b.cfg.ProcessModules != nil {
-		post("/modules/_enable", b.handleModuleEnable)
-		post("/modules/_disable", b.handleModuleDisable)
-		post("/modules/_bump", b.handleModuleBump)
-		post("/modules/_revoke", b.handleModuleRevoke)
+		post("/modules/_enable", platformOnly(b.handleModuleEnable))
+		post("/modules/_disable", platformOnly(b.handleModuleDisable))
+		post("/modules/_bump", platformOnly(b.handleModuleBump))
+		post("/modules/_revoke", platformOnly(b.handleModuleRevoke))
 	}
 	b.mountCards(r)
 	b.mountMetrics(r)

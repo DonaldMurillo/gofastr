@@ -96,7 +96,7 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 			View(w.View).Columns(w.Columns...).Top(rows).Embedded().Flush().NoCreate().Heading(heading, 3).
 			Actions(headerLink(i18nui.AdminViewAll.Text(ctx), href)).RenderCtx(ctx))
 	}
-	if b.cfg.Queue != nil {
+	if b.cfg.Queue != nil && platformCaller(ctx) {
 		if jobs := b.failedJobs(ctx); jobs != "" {
 			lists = append(lists, jobs)
 		}

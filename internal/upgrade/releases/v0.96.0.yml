@@ -231,3 +231,10 @@ notes:
     find:
       uses:
         - gofastr/core/moduleproto.HTTPResponseResult
+  - change: "BREAKING - the admin's Jobs, User roles, Roles and Modules pages and their posts answer 403 to a caller whose request carries a tenant, and its nav and dashboard leave them out"
+    breaking: true
+    hits: review
+    guidance: "Queue jobs, accounts, role grants and process modules have no tenant, so a tenant's admin reached every tenant's. Run these from a request with no tenant (tenant.GetTenantID empty), the platform operator's; tenant admins keep the entity, audit and dashboard pages."
+    find:
+      uses:
+        - gofastr/battery/admin.New

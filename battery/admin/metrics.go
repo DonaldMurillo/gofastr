@@ -115,13 +115,14 @@ func listViews(e *entity.Entity) []entity.ListView {
 }
 
 // metricStrip is the strip: each figure inside the element that polls
-// it, in one ui.StatStrip, and with a Queue the Failed jobs figure last.
+// it, in one ui.StatStrip, and with a Queue the Failed jobs figure last,
+// for the platform operator only (platformCaller).
 func (b *Battery) metricStrip(ctx context.Context) render.HTML {
 	cells := make([]render.HTML, 0, len(b.cfg.Metrics)+1)
 	for i, m := range b.cfg.Metrics {
 		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/"+strconv.Itoa(i), b.metricStat(ctx, m)))
 	}
-	if b.cfg.Queue != nil {
+	if b.cfg.Queue != nil && platformCaller(ctx) {
 		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/jobs", b.jobsFigure(ctx)))
 	}
 	if len(cells) == 0 {
@@ -199,6 +200,10 @@ func (b *Battery) mountMetrics(r *router.Router) {
 		ctx := appui.WithRequest(b.elevate(r.Context()), r)
 		var figure render.HTML
 		if r.PathValue("i") == "jobs" && b.cfg.Queue != nil {
+			if !platformCaller(ctx) {
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+				return
+			}
 			figure = b.jobsFigure(ctx)
 		} else {
 			i, err := strconv.Atoi(r.PathValue("i"))

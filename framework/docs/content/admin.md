@@ -135,6 +135,16 @@ component it returns, gets the caller's context with the elevation
 removed (`crud.WithoutElevation`); and every lifecycle hook an admin
 write or read fires runs without it.
 
+**Platform pages.** Queue jobs, auth accounts, role grants and process
+modules carry no tenant, so the Jobs page, both RBAC pages, the Modules
+page and every post under them (replay, grant, assign, enable, disable,
+bump, revoke) answer 403 to a caller whose request carries a tenant
+(`tenant.GetTenantID`), before they read or change anything. The
+sidebar, the command palette, the dashboard's jobs figure and the
+attention panel's failed jobs leave them out for that caller. Only a
+caller with no tenant, the platform operator, reaches them; the audit
+page, which does scope by tenant, stays open to both.
+
 ### App pages, cards, links and commands
 
 <!-- gofastr:compile
