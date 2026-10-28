@@ -351,7 +351,7 @@ func TestGate_ConvergenceAndRevoke(t *testing.T) {
 
 	// Revoke articles:read on A → generation bumps in the shared store.
 	start := time.Now()
-	newGen, err := supA.RevokeGrants(ctx, d.Name, nil)
+	newGen, err := supA.RevokeGrants(ctx, d.Name, []access.Permission{"articles:read"})
 	if err != nil {
 		t.Fatalf("revoke: %v", err)
 	}

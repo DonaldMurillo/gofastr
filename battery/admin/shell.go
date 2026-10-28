@@ -45,19 +45,19 @@ func (b *Battery) mount() {
 	b.screen(group, "/shortcuts", i18nui.ShortcutSheetTitle, false, b.renderShortcuts)
 	b.screen(group, "/account", i18nui.AdminAccountSettings, false, b.renderAccount)
 	if b.cfg.Queue != nil {
-		b.screen(group, "/queue", i18nui.AdminQueue, false, b.renderQueue)
+		b.screen(group, "/queue", i18nui.AdminQueue, false, b.renderQueue).WithPolicy(platformPolicy())
 	}
 	if b.db != nil {
 		b.screen(group, "/audit", i18nui.AdminAudit, false, b.renderAudit)
 	}
 	if b.cfg.Policy != nil {
-		b.screen(group, "/rbac/roles", i18nui.AdminRoles, false, b.renderRoles)
+		b.screen(group, "/rbac/roles", i18nui.AdminRoles, false, b.renderRoles).WithPolicy(platformPolicy())
 	}
 	if b.cfg.Auth != nil {
-		b.screen(group, "/rbac/users", i18nui.AdminUserRoles, false, b.renderUsers)
+		b.screen(group, "/rbac/users", i18nui.AdminUserRoles, false, b.renderUsers).WithPolicy(platformPolicy())
 	}
 	if b.cfg.ProcessModules != nil {
-		b.screen(group, "/modules", i18nui.AdminModules, false, b.renderModules)
+		b.screen(group, "/modules", i18nui.AdminModules, false, b.renderModules).WithPolicy(platformPolicy())
 	}
 	if len(b.cfg.EmailPreviews) > 0 {
 		b.screen(group, "/emails", i18nui.AdminEmails, false, b.renderEmails)
@@ -402,11 +402,12 @@ func (b *Battery) opsItems(ctx context.Context) []ui.SidebarItem {
 			out = append(out, ui.SidebarItem{Label: key.Text(ctx), Href: href, MatchPath: href, Icon: navIcon(icon)})
 		}
 	}
-	add(b.cfg.Queue != nil, i18nui.AdminQueue, "/queue", "layers")
+	platform := platformCaller(ctx)
+	add(platform && b.cfg.Queue != nil, i18nui.AdminQueue, "/queue", "layers")
 	add(b.db != nil, i18nui.AdminAudit, "/audit", "activity")
-	add(b.cfg.Policy != nil, i18nui.AdminRoles, "/rbac/roles", "shield")
-	add(b.cfg.Auth != nil, i18nui.AdminUserRoles, "/rbac/users", "users")
-	add(b.cfg.ProcessModules != nil, i18nui.AdminModules, "/modules", "cpu")
+	add(platform && b.cfg.Policy != nil, i18nui.AdminRoles, "/rbac/roles", "shield")
+	add(platform && b.cfg.Auth != nil, i18nui.AdminUserRoles, "/rbac/users", "users")
+	add(platform && b.cfg.ProcessModules != nil, i18nui.AdminModules, "/modules", "cpu")
 	add(len(b.cfg.EmailPreviews) > 0, i18nui.AdminEmails, "/emails", "mail")
 	return out
 }

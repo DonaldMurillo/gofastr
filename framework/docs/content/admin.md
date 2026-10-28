@@ -135,6 +135,16 @@ component it returns, gets the caller's context with the elevation
 removed (`crud.WithoutElevation`); and every lifecycle hook an admin
 write or read fires runs without it.
 
+**Platform pages.** Queue jobs, auth accounts, role grants and process
+modules carry no tenant, so the Jobs page, both RBAC pages, the Modules
+page and every post under them (replay, grant, assign, enable, disable,
+bump, revoke) answer 403 to a caller whose request carries a tenant
+(`tenant.GetTenantID`), before they read or change anything. The
+sidebar, the command palette, the dashboard's jobs figure and the
+attention panel's failed jobs leave them out for that caller. Only a
+caller with no tenant, the platform operator, reaches them; the audit
+page, which does scope by tenant, stays open to both.
+
 ### App pages, cards, links and commands
 
 <!-- gofastr:compile
@@ -359,7 +369,12 @@ a link to that screen; a deleted or purged one, unlinked, by the title
 in the row's stored copy, the way the audit page names it, else by the
 singular name alone. A delete row names what was deleted even after a
 restore brings the record back. An edit's line lists what it changed
-under it, as the audit page's Changes column does. A bulk run's summary
+under it, as the audit page's Changes column does. On an entity with an
+`OwnerField`, both pages name a record and list its values only when
+the caller could read it: its stored copy names the caller as owner,
+the live record reads under the caller's owner scope, or the request
+allows cross-owner reads (`owner.AllowCrossOwner`). Another owner's
+record shows by its id alone, with no title and no changes. A bulk run's summary
 row reads "**ada** deleted 2 payments in bulk": a delete or a restore by
 its own verb, a set or a move as an update, counting the records it went
 through on; an app's own bulk action, and a run that went through on
@@ -527,9 +542,14 @@ Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`), one per permission a save grants or revokes. A
 caller may grant or revoke only a permission its own roles hold (or the
 wildcard), and assign only roles it holds or whose permissions its own
-roles imply; a refusal is a 403 with a `grant-refused`,
-`revoke-refused` or `assign-roles-refused` row, so a narrower admin
-tier cannot mint a role above its own. A grid save is checked whole
+roles imply. The assign check covers every role that changes: the roles
+added and the roles the new set takes away, so a tier cannot strip a
+role it could not grant; a role the account keeps is no change. A role
+the policy grants nothing, or does not know, is checked by name
+(`auth.RequireRole`), so only a caller holding it or the wildcard
+assigns or removes it. An unknown account is a 400. A refusal is a 403
+with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
+row, so a narrower admin tier cannot mint a role above its own. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
 it is applied.
 
@@ -538,7 +558,8 @@ it is applied.
 With `Config.ProcessModules` set to `app.ProcessModules()` (see
 [process-modules](process-modules.md)), `/admin/modules` lists each
 module's state, restart count, and the circuit-open and lease-failing
-flags. Its levers (enable, disable, bump generation, revoke a grant) post
+flags. Its levers (enable, disable, bump generation, revoke a grant,
+which takes that one grant away and keeps the rest) post
 to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
 caller's roles in `Config.Policy`; without it, or without a policy, the

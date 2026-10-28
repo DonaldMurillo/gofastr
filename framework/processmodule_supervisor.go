@@ -737,9 +737,10 @@ func (s *ProcessModuleSupervisor) setDesiredEnabled(ctx context.Context, name st
 	return nil
 }
 
-// RevokeGrants replaces the effective grants AND bumps generation, every
-// replica's next reconcile observes the higher generation and restarts the
-// child with the narrowed view (design §5 "binding + revocation"). Returns
+// RevokeGrants takes grants out of the module's effective grants, keeping
+// the rest, AND bumps generation; every replica's next reconcile observes
+// the higher generation and restarts the child with the narrowed view
+// (design §5 "binding + revocation"). It refuses an empty grants. Returns
 // the new generation.
 func (s *ProcessModuleSupervisor) RevokeGrants(ctx context.Context, name string, grants []access.Permission) (uint64, error) {
 	if s.closed.Load() {
@@ -748,7 +749,7 @@ func (s *ProcessModuleSupervisor) RevokeGrants(ctx context.Context, name string,
 	if s.Slot(name) == nil {
 		return 0, fmt.Errorf("processmodule: %w: %q", ErrNoDesiredRow, name)
 	}
-	gen, err := s.store.SetEffectiveGrants(ctx, name, grants)
+	gen, err := s.store.RemoveEffectiveGrants(ctx, name, grants)
 	if err != nil {
 		return 0, err
 	}

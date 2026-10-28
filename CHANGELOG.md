@@ -2230,6 +2230,32 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **BREAKING: the admin's platform pages refuse a tenant-scoped caller.**
+  Queue jobs, auth accounts, role grants and process modules carry no
+  tenant, so a tenant's admin could list, replay, grant, assign roles to
+  and toggle modules for every tenant. The Jobs, User roles, Roles and
+  Modules pages and their posts now answer 403 to a caller with a tenant,
+  and the sidebar, palette and dashboard leave them out. See
+  [admin](framework/docs/content/admin.md).
+- **The admin's audit page and activity respect owner scope.** On an
+  entity with an `OwnerField`, they named another owner's record from
+  its stored copy and listed its old and new values, though the record
+  screen refuses it. Such a record now shows by its id alone. See
+  [admin](framework/docs/content/admin.md).
+- **A lower admin tier can no longer strip or self-assign roles above
+  it.** User roles checked only the roles a save sent, so a support-tier
+  admin could clear a superadmin's roles, and a role the policy grants
+  nothing (one checked by name with `auth.RequireRole`) passed the tier
+  check for anyone. The check now covers every role a save adds or takes
+  away, and a permissionless role needs the caller to hold it or the
+  wildcard. See [admin](framework/docs/content/admin.md).
+- **BREAKING: `RevokeGrants` removes the grants it names.** It replaced
+  the module's grant set with them, so the admin's Revoke on
+  `invoices:write` left a read-and-write module write-only. It now keeps
+  the rest, refuses an empty list (which used to revoke everything), and
+  writes through the new `ProcessModuleStore.RemoveEffectiveGrants`, a
+  compare-and-swap so concurrent revokes both stick. See
+  [process modules](framework/docs/content/process-modules.md).
 - **The relay keeps the app's headers and the vendor's hints apart.**
   It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
   on every fetch, to the vendor; every `X-Gofastr-*` header is now
