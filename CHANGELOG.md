@@ -2230,6 +2230,30 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **BREAKING: the MCP control tools and the log MCP tools need the
+  `admin` role.** `app_module_enable`/`app_module_disable`
+  (`WithMCPControl`) and battery/log's `log_*` tools asked only for a
+  signed-in caller, so on an app with open sign-up any account could turn
+  a module off for everyone or read every caller's paths and IPs. They now
+  run behind the new `framework.MCPRequireRole("admin")`;
+  `framework.WithMCPControlGate` and `log.Config.MCPGate` replace it.
+  `MCPRequireUser`, `MCPRequireRole` and `/.debug` now honour an access
+  `Decider`'s deny. `auth.RoleGateCapability` moved to
+  `access.RoleGateCapability`. See
+  [agent-ready](framework/docs/content/agent-ready.md) and
+  [log](framework/docs/content/log.md).
+- **The bodyless 2FA routes refuse a cross-site POST.** `/2fa/disable`,
+  `/2fa/backup-codes` and `/2fa/enroll` read no body, so another site's
+  hidden form could submit them with a stepped-up session cookie and turn
+  the user's second factor off or burn their backup codes. They now run
+  the cross-site guard login and logout use. See
+  [auth](framework/docs/content/auth.md).
+- **BREAKING: an API token reaches the admin only with `admin.AdminScope`.**
+  The gate read the token's owner and its roles, never the token's
+  scopes, so a `customers:read` token an admin minted could read the
+  audit log and toggle process modules. A token now needs
+  `"admin:access"` (or `"admin:*"` or `"*:*"`); sessions are unaffected.
+  See [admin](framework/docs/content/admin.md).
 - **BREAKING: the admin's platform pages refuse a tenant-scoped caller.**
   Queue jobs, auth accounts, role grants and process modules carry no
   tenant, so a tenant's admin could list, replay, grant, assign roles to

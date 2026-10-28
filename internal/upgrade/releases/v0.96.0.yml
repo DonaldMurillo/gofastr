@@ -245,3 +245,31 @@ notes:
     find:
       uses:
         - gofastr/framework.ProcessModuleSupervisor.RevokeGrants
+  - change: "BREAKING - the WithMCPControl tools need a caller holding the admin role; framework.WithMCPControlGate replaces the gate"
+    breaking: true
+    hits: review
+    guidance: "app_module_enable and app_module_disable ran for any signed-in caller. Grant the operators who drive them the admin role, or pass framework.WithMCPControlGate(framework.MCPRequireRole(\"ops\")) with the role they hold. The gofastr dev loop's implied tools stay ungated."
+    find:
+      uses:
+        - gofastr/framework.WithMCPControl
+  - change: "BREAKING - battery/log's MCP tools need a caller holding the admin role; log.Config.MCPGate replaces the gate"
+    breaking: true
+    hits: review
+    guidance: "log_recent, log_filter, log_metrics and log_set_level ran for any signed-in caller. Grant the operators who read them the admin role, or set Config.MCPGate to framework.MCPRequireRole with the role they hold. The gofastr dev loop's implied tools stay ungated."
+    find:
+      uses:
+        - gofastr/battery/log.Config.EnableMCP
+  - change: "BREAKING - auth.RoleGateCapability moved to access.RoleGateCapability"
+    breaking: true
+    hits: edit
+    guidance: "The framework's MCP gates and /.debug now consult the Decider on the same capability, so the constant lives in framework/access. Replace auth.RoleGateCapability with access.RoleGateCapability; the value, auth:role-gate, is unchanged."
+    find:
+      uses:
+        - gofastr/battery/auth.RoleGateCapability
+  - change: "BREAKING - an API-token request reaches battery/admin only when the token holds admin.AdminScope (admin:access; admin:* and *:* cover it)"
+    breaking: true
+    hits: review
+    guidance: "A token carried its owner's admin role into the back office whatever its scopes. A script that drives the admin with a token mints one with the admin:access scope; sessions and JWTs change nothing."
+    find:
+      uses:
+        - gofastr/battery/admin.New

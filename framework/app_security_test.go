@@ -106,21 +106,21 @@ func TestDevMCPRefusalMessageNamesTheFix(t *testing.T) {
 // check instead (TestDevMCPRefusesNonLoopbackBind).
 func TestControlToolsGatedInProduction(t *testing.T) {
 	t.Run("explicit opt-in is gated", func(t *testing.T) {
-		gate := controlToolGate(false /* devImplied */)
+		gate := controlToolGate(false /* devImplied */, nil)
 		if gate == nil {
 			t.Fatal("SECURITY: [authz] WithMCPControl registers the mutating tools with no gate at all")
 		}
 		if err := gate(context.Background()); err == nil {
 			t.Error("SECURITY: [authz] the control-tool gate admitted a caller with no identity on the context")
 		}
-		ctx := handler.SetUser(context.Background(), struct{ ID string }{ID: "u1"})
+		ctx := handler.SetUser(context.Background(), debugRoleUser{roles: []string{"admin"}})
 		if err := gate(ctx); err != nil {
-			t.Errorf("the control-tool gate refused an authenticated caller: %v", err)
+			t.Errorf("the control-tool gate refused an admin: %v", err)
 		}
 	})
 
 	t.Run("dev-implied is ungated", func(t *testing.T) {
-		if gate := controlToolGate(true /* devImplied */); gate != nil {
+		if gate := controlToolGate(true /* devImplied */, nil); gate != nil {
 			if err := gate(context.Background()); err != nil {
 				t.Errorf("the dev loop must reach its own control tools without auth: %v", err)
 			}

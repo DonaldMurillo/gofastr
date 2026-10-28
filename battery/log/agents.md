@@ -53,7 +53,8 @@ app.RegisterPlugin(log.New(log.Config{
 panic catcher, or per-handler `log.Println` calls. `log.New(Config{})`
 gives you all three plus the MCP introspection surface for free.
 
-**Security:** leave `AllowMCPMutation: false` on any host where `/mcp`
+**Security:** outside `gofastr dev` the log tools need the `admin` role
+(`Config.MCPGate` replaces the gate). Leave `AllowMCPMutation: false` on any host where `/mcp`
 is reachable by untrusted callers. `log_set_level` lets a caller flip
 the global log level. Combined with a verbose access pattern, that's
 both a DoS-via-disk-fill and an info-disclosure primitive.

@@ -692,7 +692,11 @@ The seam binds **every** permission gate, not only resource-scoped ones:
 `access.RequirePermission` consults it too, passing the zero `Ref` (a
 route gate holds no record), so `DecisionDeny` fails the route closed
 with 403 even when the role policy grants the permission. battery/auth's
-role gates route through the same seam.
+role gates route through the same seam, as do the framework's MCP gates
+(`MCPRequireUser`, `MCPRequireRole`) and `/.debug`: each passes the
+caller's roles, `access.RoleGateCapability` (`"auth:role-gate"`) and the
+zero `Ref`, so a resource-aware decider should abstain on that
+capability.
 
 ### Wiring it: DeciderMiddleware
 

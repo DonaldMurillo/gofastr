@@ -86,11 +86,27 @@ Opt-in because these tools reveal a lot about the running app.
 Weigh the disclosure before enabling on a production MCP server
 exposed to untrusted callers.
 
+Outside the dev loop every log tool needs a caller holding the `admin`
+role (`framework.MCPRequireRole("admin")`): the read tools hand out every
+caller's request paths, remote IPs and request ids, so a signed-in user
+is not enough. An embed grant and a caller an access `Decider` denies are
+refused too. `Config.MCPGate` replaces the gate for an app whose
+operators hold another role:
+
+```go
+app.RegisterPlugin(log.New(log.Config{
+    EnableMCP: true,
+    MCPGate:   framework.MCPRequireRole("ops"),
+}))
+```
+
 **In the dev loop the tools auto-enable.** Under `gofastr dev`
 (`GOFASTR_DEV`; opt-out `GOFASTR_DEV_MCP=0`) the plugin turns on
 `EnableMCP` and `AllowMCPMutation` regardless of Config. The local
 dev `/mcp` is trusted, and an agent driving the dev loop needs the
-debug tools without wiring. The explicit fields below remain the only
+debug tools without wiring. Tools the dev loop turned on run ungated;
+a host that set `EnableMCP` itself and gave a `MCPGate` keeps that gate
+on the read tools in dev. The explicit fields below remain the only
 path for production processes:
 
 ```go

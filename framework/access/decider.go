@@ -18,6 +18,13 @@ type Ref struct {
 	ID   string
 }
 
+// RoleGateCapability is the fixed capability name role-scoped gates pass
+// to the Decider: battery/auth's RequireRole and MCPRole, and the
+// framework's MCP gates and /.debug check. A role gate holds no resource,
+// so the Decider is consulted with the zero Ref and can only speak on the
+// caller's roles; resource-aware deciders should abstain on it.
+const RoleGateCapability Permission = "auth:role-gate"
+
 // Decision is the verdict a Decider returns for one resource-scoped capability
 // check. The zero value is DecisionAbstain so a decider that forgets to return
 // falls through to the role policy rather than silently allowing or denying.

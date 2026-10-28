@@ -464,6 +464,9 @@ func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) 
 // Generates a new TOTP secret for the authenticated user and returns the
 // otpauth:// URL (for QR code apps) along with the plaintext secret.
 func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	userID, ok := p.requireStepUpUser(w, r)
 	if !ok {
 		return
@@ -837,6 +840,9 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 // POST {basePath}/2fa/disable
 // Disables 2FA for the authenticated user.
 func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	userID, ok := p.requireStepUpUser(w, r)
 	if !ok {
 		return
@@ -870,6 +876,9 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 // POST {basePath}/2fa/backup-codes
 // Generates a fresh set of backup codes, invalidating any previous ones.
 func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	userID, ok := p.requireStepUpUser(w, r)
 	if !ok {
 		return

@@ -440,6 +440,9 @@ type App struct {
 	// mcpControl enables the MUTATING MCP tools (module enable/disable)
 	// for trusted /mcp endpoints. Set via WithMCPControl().
 	mcpControl bool
+	// mcpControlGate replaces the control tools' admin-role gate. Set via
+	// WithMCPControlGate.
+	mcpControlGate func(ctx context.Context) error
 	// localRunInfo is SetLocalRunInfo's addition to the local run
 	// record Start writes.
 	localRunInfo LocalRunInfo
@@ -1146,7 +1149,8 @@ func WithMetrics() AppOption {
 // returns true to allow; false is a 403. Without it the caller must hold
 // the "admin" role, read from the user's GetRoles() []string or from the
 // roles access middleware put on the context. A request carrying an embed
-// grant is refused either way.
+// grant is refused either way, and so is a caller an access Decider denies
+// on access.RoleGateCapability.
 func WithDebugAuthorize(fn func(ctx context.Context) bool) AppOption {
 	return func(a *App) {
 		a.debugAuthorize = fn
@@ -3984,8 +3988,9 @@ func (a *App) NoteAuthenticator() { a.authenticatorNoted.Store(true) }
 // AuthenticatorNoted reports whether NoteAuthenticator has been called.
 func (a *App) AuthenticatorNoted() bool { return a.authenticatorNoted.Load() }
 
-// debugAllowed gates /.debug/*: 401 without a user, 403 for an embed grant
-// or a caller WithDebugAuthorize (default: the "admin" role) refuses. A
+// debugAllowed gates /.debug/*: 401 without a user, 403 for an embed grant,
+// a Decider deny, or a caller WithDebugAuthorize (default: the "admin"
+// role) refuses. A
 // signed-in user is not enough. These endpoints carry the pid, the memory
 // layout and every leaked goroutine's stack, and on most apps anyone can
 // sign up.
@@ -3996,7 +4001,7 @@ func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	allowed := false
-	if _, embedded := fembed.GrantFromContext(ctx); !embedded {
+	if _, embedded := fembed.GrantFromContext(ctx); !embedded && !deciderDenies(ctx) {
 		if a.debugAuthorize != nil {
 			allowed = a.debugAuthorize(ctx)
 		} else {
@@ -4013,13 +4018,7 @@ func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 // user's GetRoles() (battery/auth's User) or the roles access middleware
 // resolved onto the context.
 func hasDebugAdminRole(ctx context.Context) bool {
-	const role = "admin"
-	if slices.Contains(access.GetRoles(ctx), role) {
-		return true
-	}
-	u, _ := handler.GetUser(ctx)
-	rh, ok := u.(interface{ GetRoles() []string })
-	return ok && slices.Contains(rh.GetRoles(), role)
+	return slices.Contains(callerRoles(ctx), "admin")
 }
 
 // registerDebugEndpoints adds /.debug/stats and /.debug/goroutineleak for

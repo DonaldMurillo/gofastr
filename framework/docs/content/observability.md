@@ -341,9 +341,11 @@ profile (a forced GC cycle runs first, so the report reflects now):
   user without the `admin` role is a 403. The role is read from the user's
   `GetRoles() []string` (battery/auth's `User` has it) or from the roles
   access middleware put on the context. A request carrying an embed grant
-  is always refused. To use a different rule, pass
+  is always refused, and so is a caller an access `Decider` denies on
+  `access.RoleGateCapability` (the zero `Ref`, as for a role gate). To use
+  a different rule, pass
   `framework.WithDebugAuthorize(func(ctx context.Context) bool)`; it runs
-  after the user check and replaces the role test.
+  after the user check and replaces the role test, not the Decider.
 - The `app_goroutine_leaks` MCP tool (with `WithMCPIntrospection()`)
   returns `{count, stacks, truncated}` so a connected agent can check the
   running app without shell access.
