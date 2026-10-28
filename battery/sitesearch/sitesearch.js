@@ -17,6 +17,14 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
+  // formatNumber is the kernel's when the runtime is on the page. This
+  // script also runs without it (an export can load search alone), so it
+  // falls back to the same <html lang> formatting.
+  function formatNumber(n) {
+    if (NS.formatNumber) return NS.formatNumber(n);
+    try { return n.toLocaleString(document.documentElement.lang || undefined); } catch (_) { return n.toLocaleString(); }
+  }
+
   // The export bakes its base path into every /__gofastr/ literal in a
   // runtime module, so ROOT carries it; BASE is what comes before it,
   // spelled so the rewrite cannot reach the search string.
@@ -183,7 +191,7 @@
     if (status) {
       const fmt = lb.getAttribute('data-hui-combobox-count');
       status.textContent = visible.length
-        ? (fmt ? fmt.replaceAll('{{n}}', function () { return NS.formatNumber(visible.length); }) : '')
+        ? (fmt ? fmt.replaceAll('{{n}}', function () { return formatNumber(visible.length); }) : '')
         : (status.getAttribute('data-hui-combobox-no-results') || '');
     }
   }

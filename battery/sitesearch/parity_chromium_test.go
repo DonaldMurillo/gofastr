@@ -275,6 +275,46 @@ func TestClientShowsLoadingAndEmptyRows(t *testing.T) {
 	}
 }
 
+// The widget counts its rows with no runtime on the page: the kernel's
+// formatNumber is absent, so the count falls back to <html lang>.
+func TestClientCountsWithoutRuntime(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html lang="en"><meta charset=utf-8>
+<div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false">
+<ul id="lb" role="listbox" hidden data-search data-hui-combobox-count="{{n}} results"></ul>
+<p data-hui-combobox-status></p></div>
+<script src="/client.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc(Root+"query", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"results":[{"url":"/a","title":"Alpha"},{"url":"/b","title":"Beta"}]}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	ctx := chromedptest.Context(t)
+	status := `document.querySelector('[data-hui-combobox-status]').textContent`
+	var got string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch)`, nil),
+		chromedp.SendKeys(`#q`, "al", chromedp.ByID),
+		chromedp.Poll(status+` !== ''`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(status, &got),
+	); err != nil {
+		t.Fatalf("count: %v (status %q)", err, got)
+	}
+	if got != "2 results" {
+		t.Errorf("status = %q, want 2 results", got)
+	}
+}
+
 // An exported page has no query endpoint: the first query asks the
 // kernel for the ranker module by its registered name, then ranks in
 // the browser.
