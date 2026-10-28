@@ -392,6 +392,23 @@ func levelAtLeast(entry map[string]any, min slog.Level) bool {
 	return lv >= min
 }
 
+// readGate guards the log READ tools. They hand out every caller's
+// request paths, remote IPs, and request IDs, straight off /mcp with no
+// route middleware in the way, so an unauthenticated MCP client was
+// reading the app's whole access log. The inputSchema is disclosure too:
+// a gated tool also vanishes from tools/list, so an anonymous caller
+// does not even learn the surface exists.
+//
+// It follows the same dev-mode escape the mutating tool uses, so a local
+// `gofastr dev` loop is unchanged, except that a host which enabled MCP
+// itself and set MCPGate keeps that gate in dev.
+func (p *Plugin) readGate() func(ctx context.Context) error {
+	if p.cfg.MCPGate != nil && !p.mcpDevImplied {
+		return p.cfg.MCPGate
+	}
+	return p.setLevelGate()
+}
+
 // setLevelGate returns the precondition log_set_level runs behind, or nil
 // when the tool is dev-implied.
 //
@@ -403,19 +420,6 @@ func levelAtLeast(entry map[string]any, min slog.Level) bool {
 // Under `gofastr dev` there is no auth to satisfy, so a gate would only lock
 // the developer's own agent out, the same call framework's control tools
 // make. Dev exposure is bounded by the loopback bind instead.
-// readGate guards the log READ tools. They hand out every caller's
-// request paths, remote IPs, and request IDs, straight off /mcp with no
-// route middleware in the way, so an unauthenticated MCP client was
-// reading the app's whole access log. The inputSchema is disclosure too:
-// a gated tool also vanishes from tools/list, so an anonymous caller
-// does not even learn the surface exists.
-//
-// It follows the same dev-mode escape the mutating tool uses, so a local
-// `gofastr dev` loop is unchanged.
-func (p *Plugin) readGate() func(ctx context.Context) error {
-	return p.setLevelGate()
-}
-
 func (p *Plugin) setLevelGate() func(ctx context.Context) error {
 	if p.mutationDevImplied {
 		return nil

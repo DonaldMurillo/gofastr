@@ -81,3 +81,44 @@ func TestLogMCPGateOverridesRole(t *testing.T) {
 		}
 	}
 }
+
+// In the dev loop the read tools run ungated when `gofastr dev` is what
+// turned MCP on. A host that enabled MCP itself and set MCPGate gets that
+// gate in dev too: with AllowMCPMutation off, the dev-implied mutation
+// flag used to skip the host's gate for every read tool.
+func TestLogMCPGateHoldsInDev(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_DEV_MCP", "")
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+	app.RegisterPlugin(New(Config{
+		Sinks: []Sink{discardSink{}}, EnableMCP: true, Level: slog.LevelInfo,
+		MCPGate: framework.MCPRequireRole("ops"),
+	}))
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	member := handler.SetUser(context.Background(), roleUser{roles: []string{"member"}})
+	ops := handler.SetUser(context.Background(), roleUser{roles: []string{"ops"}})
+	for _, tool := range []string{"log_recent", "log_filter", "log_metrics"} {
+		if err := callLogTool(app, member, tool, `{}`); err == nil {
+			t.Errorf("SECURITY: %s skipped the host's MCPGate in dev", tool)
+		}
+		if err := callLogTool(app, ops, tool, `{}`); err != nil {
+			t.Errorf("%s refused ops under MCPGate in dev: %v", tool, err)
+		}
+	}
+
+	// When `gofastr dev` is what turned MCP on, the dev agent keeps
+	// ungated reads whatever MCPGate says.
+	implied := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+	implied.RegisterPlugin(New(Config{
+		Sinks: []Sink{discardSink{}}, Level: slog.LevelInfo,
+		MCPGate: framework.MCPRequireRole("ops"),
+	}))
+	if err := implied.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins (implied): %v", err)
+	}
+	if err := callLogTool(implied, context.Background(), "log_recent", `{}`); err != nil {
+		t.Errorf("dev-implied log_recent refused the dev agent: %v", err)
+	}
+}

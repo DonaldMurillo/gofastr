@@ -95,7 +95,8 @@ type Config struct {
 	// caller's request paths, remote IPs and request ids, so the default
 	// is the admin role, not a signed-in user. A replacement should refuse
 	// a caller with no identity itself, as MCPRequireRole and auth.MCPRole
-	// do. The dev loop's implied tools stay ungated either way.
+	// do. Tools `gofastr dev` turned on stay ungated; a host that set
+	// EnableMCP itself gets this gate on the read tools in dev too.
 	MCPGate func(ctx context.Context) error
 
 	// ErrorReporter receives recovered panics (from the plugin's
@@ -140,6 +141,11 @@ type Plugin struct {
 	// Dev exposure is bounded on the other axis instead, the listener must
 	// be loopback (framework's guardDevMCPBind).
 	mutationDevImplied bool
+
+	// mcpDevImplied records that the MCP tools exist only because
+	// `gofastr dev` turned EnableMCP on. A host that enabled MCP itself
+	// and set MCPGate gets that gate on the read tools in dev too.
+	mcpDevImplied bool
 }
 
 // New constructs an unregistered plugin. Call App.RegisterPlugin to wire.
@@ -233,6 +239,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	// developer's own agent. Production never sets GOFASTR_DEV, so the
 	// explicit Config fields stay the only path there.
 	if dev.DevMCPEnabled() {
+		p.mcpDevImplied = !cfg.EnableMCP
 		cfg.EnableMCP = true
 		p.mutationDevImplied = !cfg.AllowMCPMutation
 		cfg.AllowMCPMutation = true

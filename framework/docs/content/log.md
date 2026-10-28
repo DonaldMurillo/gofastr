@@ -104,7 +104,9 @@ app.RegisterPlugin(log.New(log.Config{
 (`GOFASTR_DEV`; opt-out `GOFASTR_DEV_MCP=0`) the plugin turns on
 `EnableMCP` and `AllowMCPMutation` regardless of Config. The local
 dev `/mcp` is trusted, and an agent driving the dev loop needs the
-debug tools without wiring. The explicit fields below remain the only
+debug tools without wiring. Tools the dev loop turned on run ungated;
+a host that set `EnableMCP` itself and gave a `MCPGate` keeps that gate
+on the read tools in dev. The explicit fields below remain the only
 path for production processes:
 
 ```go
