@@ -196,9 +196,10 @@
 // loop needs its clear inside that loop's body: a clear after the loop
 // leaves every wait for the next event under the last write's deadline.
 // With nested parks (a range over batches, then over each batch) the
-// clear belongs in the innermost one. A loop over a slice never waits,
-// and neither does one whose only receive sits in a select with a
-// default, so neither narrows where the clear may sit.
+// clear belongs in the innermost one. Any wait makes a loop a park here:
+// a select with no default, a receive, a send, a channel range or a conn
+// read. A loop over a slice never waits, and a select with a default
+// waits only in its operands (`<-(<-ch)`) or its clause bodies.
 // A past-deadline cut (time.Now(), the SSEBroker's eviction)
 // is meant to end the stream and is not an arm; a hijacked conn's
 // deadline is HTTP/1 only and out of scope; a one-shot answer with no
@@ -660,35 +661,12 @@ func bodyParks(pass *analysis.Pass, body *ast.BlockStmt, chanParams map[types.Ob
 // a default counts too: a loop that polls for input is still a
 // long-lived stream to the seat and re-check arms.
 func forLoopParks(pass *analysis.Pass, loop *ast.ForStmt) bool {
-	return forLoopWaits(pass, loop, true)
-}
-
-// forLoopBlocks is forLoopParks without the polled select: a select with
-// a default never blocks, so a loop whose only receive sits in one does
-// not wait between its writes.
-func forLoopBlocks(pass *analysis.Pass, loop *ast.ForStmt) bool {
-	return forLoopWaits(pass, loop, false)
-}
-
-func forLoopWaits(pass *analysis.Pass, loop *ast.ForStmt, polled bool) bool {
 	blocks := false
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
+	ast.Inspect(loop.Body, func(n ast.Node) bool {
 		switch e := n.(type) {
 		case *ast.FuncLit:
 			return false
 		case *ast.SelectStmt:
-			if !polled && selectHasDefault(e) {
-				// Its receive cases never wait; only the clause bodies can.
-				for _, cl := range e.Body.List {
-					if comm, ok := cl.(*ast.CommClause); ok {
-						for _, st := range comm.Body {
-							ast.Inspect(st, visit)
-						}
-					}
-				}
-				return false
-			}
 			for _, cl := range e.Body.List {
 				comm, ok := cl.(*ast.CommClause)
 				if !ok || comm.Comm == nil {
@@ -718,6 +696,55 @@ func forLoopWaits(pass *analysis.Pass, loop *ast.ForStmt, polled bool) bool {
 			}
 		}
 		return true
+	})
+	return blocks
+}
+
+// forLoopBlocks: the loop's body can wait between its writes: a select
+// with no default, a channel receive, send or range anywhere, or a
+// conn-read call. A select with a default does not wait on its
+// communication, but it evaluates the operands first (`<-(<-ch)` waits
+// on ch), and its clause bodies can wait. forLoopParks asks a narrower
+// question, input only, and counts a polling loop as a park.
+func forLoopBlocks(pass *analysis.Pass, loop *ast.ForStmt) bool {
+	blocks := false
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		switch e := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.SelectStmt:
+			if !selectHasDefault(e) {
+				blocks = true
+				return false
+			}
+			for _, cl := range e.Body.List {
+				if comm, ok := cl.(*ast.CommClause); ok {
+					for _, x := range commOperands(comm.Comm) {
+						ast.Inspect(x, visit)
+					}
+					for _, st := range comm.Body {
+						ast.Inspect(st, visit)
+					}
+				}
+			}
+			return false
+		case *ast.SendStmt:
+			blocks = true
+		case *ast.UnaryExpr:
+			if e.Op == token.ARROW {
+				blocks = true
+			}
+		case *ast.RangeStmt:
+			if _, ok := underlyingChan(typeOf(pass, e.X)); ok {
+				blocks = true
+			}
+		case *ast.CallExpr:
+			if sel, ok := e.Fun.(*ast.SelectorExpr); ok && readLoopName.MatchString(sel.Sel.Name) {
+				blocks = true
+			}
+		}
+		return !blocks
 	}
 	ast.Inspect(loop.Body, visit)
 	return blocks
@@ -732,6 +759,29 @@ func selectHasDefault(s *ast.SelectStmt) bool {
 		}
 	}
 	return false
+}
+
+// commOperands: the expressions a select evaluates for one comm clause
+// before it chooses a case: the channel of a receive, or the channel and
+// value of a send. The receive or send itself is left out.
+func commOperands(comm ast.Stmt) []ast.Expr {
+	recvOf := func(x ast.Expr) []ast.Expr {
+		if recv, ok := ast.Unparen(x).(*ast.UnaryExpr); ok && recv.Op == token.ARROW {
+			return []ast.Expr{recv.X}
+		}
+		return nil
+	}
+	switch c := comm.(type) {
+	case *ast.ExprStmt:
+		return recvOf(c.X)
+	case *ast.AssignStmt:
+		if len(c.Rhs) == 1 {
+			return recvOf(c.Rhs[0])
+		}
+	case *ast.SendStmt:
+		return []ast.Expr{c.Chan, c.Value}
+	}
+	return nil
 }
 
 // receiveShaped: a comm clause whose value is a channel receive

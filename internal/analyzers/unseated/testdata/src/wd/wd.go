@@ -201,6 +201,138 @@ func clearedPerChunkPolled(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func groups() <-chan chan chan string { return make(chan chan chan string, 1) }
+
+// clearedAfterPolledOperand drains with a select that has a default,
+// but the select evaluates its operand first: <-sources waits on an
+// empty, open group under the deadline the last write armed.
+func clearedAfterPolledOperand(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for sources := range groups() {
+	drain:
+		for {
+			select {
+			case ev := <-(<-sources):
+				_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+				fmt.Fprintf(w, "data: %s\n\n", ev)
+				_ = rc.Flush()
+			default:
+				break drain
+			}
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// clearedAfterPolledSend forwards with a select that has a default; the
+// send's value, <-sources, is evaluated first and waits the same way.
+func clearedAfterPolledSend(w http.ResponseWriter, r *http.Request, relay chan chan string) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for sources := range groups() {
+	drain:
+		for {
+			select {
+			case relay <- (<-sources):
+				_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+				fmt.Fprintf(w, "data: relayed\n\n")
+				_ = rc.Flush()
+			default:
+				break drain
+			}
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// clearedAfterSendSelect hands each chunk on through a select with no
+// default: it waits on relay even with no receive case, under the
+// deadline the previous write armed.
+func clearedAfterSendSelect(w http.ResponseWriter, r *http.Request, relay chan string) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for i := 0; i < 2; i++ {
+			select {
+			case relay <- ev:
+			}
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// clearedAfterSend is the same wait as a bare send.
+func clearedAfterSend(w http.ResponseWriter, r *http.Request, relay chan string) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for i := 0; i < 2; i++ {
+			relay <- ev
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// clearedAfterPolledBody polls for cancellation, but the default clause
+// itself waits on relay.
+func clearedAfterPolledBody(w http.ResponseWriter, r *http.Request, relay chan string) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for i := 0; i < 2; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+				relay <- ev
+			}
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+// clearedAfterInnerRange waits on a channel range ahead of the arm, in
+// a counted loop that holds it.
+func clearedAfterInnerRange(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for i := 0; i < 2; i++ {
+			for range feed() {
+				break
+			}
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
+type frames struct{}
+
+func (frames) ReadFrame() ([]byte, error) { return nil, nil }
+
+// clearedAfterInnerRead reads a frame from the client between writes.
+func clearedAfterInnerRead(w http.ResponseWriter, r *http.Request, in frames) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	for ev := range feed() {
+		for i := 0; i < 2; i++ {
+			_, _ = in.ReadFrame()
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+}
+
 // clearedAfterLoop clears once the loop ends: every wait for the next
 // event still runs under the deadline the last write armed.
 func clearedAfterLoop(w http.ResponseWriter, r *http.Request) {
