@@ -185,10 +185,14 @@
 // resets the stream when it fires, write pending or not, so a deadline
 // armed for one write and left in place killed core/stream's SSEWriter,
 // core/a2a's sseStream, core/mcp's GET stream and the harness MCP GET
-// stream in their first idle gap longer than 10s. A stream family whose
-// flood parks and arms a future rc.SetWriteDeadline with no
-// rc.SetWriteDeadline(time.Time{}) anywhere in the flood is reported at
-// each arm. A past-deadline cut (time.Now(), the SSEBroker's eviction)
+// stream in their first idle gap longer than 10s. In a stream family
+// whose flood parks, each future rc.SetWriteDeadline must be followed,
+// in the body that arms it, by a call that reaches
+// rc.SetWriteDeadline(time.Time{}); an arm in a helper with no clear of
+// its own passes when every call of the helper in the flood is followed
+// by one (core/stream's armDeadline under send and Flush). A clear that
+// only comes first (the inherited deadline wiped before the loop) leaves
+// each later arm standing, and the arm is reported. A past-deadline cut (time.Now(), the SSEBroker's eviction)
 // is meant to end the stream and is not an arm; a hijacked conn's
 // deadline is HTTP/1 only and out of scope; a one-shot answer with no
 // park has no idle gap.

@@ -20,6 +20,8 @@
 package datexport
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"slices"
@@ -216,22 +218,19 @@ func Register(e DataExporter) {
 	})
 }
 
-// validExporterName reports whether n is a safe archive key: one path
-// segment of [A-Za-z0-9_-], non-empty. Separators and dots are refused so
-// the name can never traverse out of the export dir once it is joined into
-// a filename.
 // ScopedName is the registration Name for a store that a host can build
 // more than once on different tables. Registration replaces by Name, so
 // two stores sharing a constant would leave the first table out of every
 // export and erasure. The store's default table keeps the bare base;
 // any other table is appended after a '-', with each byte outside
 // [A-Za-z0-9_] written as '-' and two hex digits, so the result is a
-// valid exporter name and no two tables share one.
+// valid exporter name and no two tables share one. A name past
+// maxScopedName bytes keeps its first bytes and ends in '-' and 16 hex
+// digits of the table's SHA-256, so <name>.ndjson fits one file name.
 func ScopedName(base, table string) string {
 	if table == base {
 		return base
 	}
-	const hex = "0123456789abcdef"
 	b := []byte(base + "-")
 	for i := 0; i < len(table); i++ {
 		c := table[i]
@@ -239,12 +238,27 @@ func ScopedName(base, table string) string {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
 			b = append(b, c)
 		default:
-			b = append(b, '-', hex[c>>4], hex[c&0xf])
+			b = append(b, '-', hexDigits[c>>4], hexDigits[c&0xf])
 		}
+	}
+	if len(b) > maxScopedName {
+		sum := sha256.Sum256([]byte(table))
+		b = append(b[:maxScopedName-17], '-')
+		b = hex.AppendEncode(b, sum[:8])
 	}
 	return string(b)
 }
 
+// maxScopedName bounds a ScopedName so the archive's <name>.ndjson stays
+// inside a 255-byte path component.
+const maxScopedName = 200
+
+const hexDigits = "0123456789abcdef"
+
+// validExporterName reports whether n is a safe archive key: one path
+// segment of [A-Za-z0-9_-], non-empty. Separators and dots are refused so
+// the name can never traverse out of the export dir once it is joined into
+// a filename.
 func validExporterName(n string) bool {
 	if n == "" {
 		return false

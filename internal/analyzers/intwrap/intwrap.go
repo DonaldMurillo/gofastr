@@ -347,8 +347,9 @@ func matchesSubject(pass *analysis.Pass, e ast.Expr, s subject) bool {
 // (`uint64(n) > math.MaxInt64` for a uint). A sign-changing conversion
 // stays, so `int64(n) > math.MaxInt64` proves nothing about a uint.
 func unwrapWidening(pass *analysis.Pass, e ast.Expr) ast.Expr {
+	e = ast.Unparen(e)
 	for {
-		call, ok := ast.Unparen(e).(*ast.CallExpr)
+		call, ok := e.(*ast.CallExpr)
 		if !ok || len(call.Args) != 1 {
 			return e
 		}
@@ -368,7 +369,7 @@ func unwrapWidening(pass *analysis.Pass, e ast.Expr) ast.Expr {
 		if pass.TypesSizes.Sizeof(to) < intWidth(pass, from) {
 			return e
 		}
-		e = call.Args[0]
+		e = ast.Unparen(call.Args[0])
 	}
 }
 

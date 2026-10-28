@@ -44,7 +44,8 @@
 //     comes before that call. Reported at the RoundTrip call (B64, P54).
 //   - nil-only guard install: the function resolves a host, and an
 //     `if <client>.Transport == nil { ... }` with no else (or a
-//     tagless switch case on the same test, with no default) assigns
+//     switch case on the same test, tagless or `case nil` on a
+//     `switch <client>.Transport`, with no default) assigns
 //     the client's Transport, so a non-nil, caller-supplied transport
 //     keeps its own dialer behind a check that already happened.
 //     Reported at the if or the case (H12).
@@ -295,13 +296,11 @@ func rewrittenBefore(rewrites []token.Pos, pos token.Pos) bool {
 	return false
 }
 
-// nilOnlySwitchCases: the case clauses of a tagless switch with no
-// default that install a transport only under `x.Transport == nil`,
-// the switch spelling of the nil-only if.
+// nilOnlySwitchCases: the case clauses of a switch with no default
+// that install a transport only under `x.Transport == nil` (a tagless
+// case) or `case nil` on a `switch x.Transport`: the switch spellings
+// of the nil-only if.
 func nilOnlySwitchCases(pass *analysis.Pass, s *ast.SwitchStmt) []ast.Node {
-	if s.Tag != nil {
-		return nil
-	}
 	var hits []ast.Node
 	for _, st := range s.Body.List {
 		cc, ok := st.(*ast.CaseClause)
@@ -311,8 +310,19 @@ func nilOnlySwitchCases(pass *analysis.Pass, s *ast.SwitchStmt) []ast.Node {
 		if cc.List == nil {
 			return nil // a default branch covers the caller's transport
 		}
-		if len(cc.List) == 1 && nilTransportInstall(pass, cc.List[0], cc.Body) {
-			hits = append(hits, cc)
+		if s.Tag == nil {
+			if len(cc.List) == 1 && nilTransportInstall(pass, cc.List[0], cc.Body) {
+				hits = append(hits, cc)
+			}
+			continue
+		}
+		// `switch c.Transport { case nil: ... }` tests the tag against
+		// each listed value; the nil one is the nil-only install.
+		for _, e := range cc.List {
+			if nilTransportInstall(pass, &ast.BinaryExpr{X: s.Tag, Op: token.EQL, Y: e}, cc.Body) {
+				hits = append(hits, cc)
+				break
+			}
 		}
 	}
 	return hits

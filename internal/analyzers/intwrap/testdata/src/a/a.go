@@ -62,6 +62,17 @@ func toInt64Widened(v any) (int64, bool) {
 	return 0, false
 }
 
+// The same check with the operand in parentheses.
+func toInt64WidenedParen(v any) (int64, bool) {
+	if n, ok := v.(uint); ok {
+		if uint64((n)) > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(n), true
+	}
+	return 0, false
+}
+
 // toInt64SignFlipped checks the already-wrapped value: int64(n) is
 // never above MaxInt64, so the guard is vacuous.
 func toInt64SignFlipped(v any) (int64, bool) {

@@ -79,7 +79,10 @@ with the same `Name`, so these stores name each entry with
 `datexport.ScopedName(base, table)`: the default table keeps the bare name
 (`feature_flags.ndjson`), and any other table is appended after a `-`
 (`feature_flags-rollouts.ndjson`), so two stores on two tables both stay
-registered. A store of your own that a host can build twice does the same.
+registered. A name longer than 200 bytes is cut to that length and ends in
+16 hex digits of the table name's SHA-256, so the file name stays inside
+one 255-byte path component. A store of your own that a host can build
+twice does the same.
 `gofastr verify` reports a store
 table that holds a user column and is registered for neither plane
 (GOFASTR1415).

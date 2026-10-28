@@ -341,12 +341,12 @@ func runWriteDeadline(pass *analysis.Pass) (any, error) {
 		if !opened {
 			continue
 		}
-		if parks && !a.floodHas(entry, "cleardeadline", a.clearedDeadline) {
+		if parks {
 			for r := range reach {
 				for _, site := range a.armedDeadlines(r) {
-					if !reported[site] {
-						reported[site] = true
-						pass.Reportf(site.Pos(), "%s", staleDeadlineMsg)
+					if !reported[site.call] && !a.clearedAfter(r, site.call, site.body, reach, map[*family]bool{}) {
+						reported[site.call] = true
+						pass.Reportf(site.call.Pos(), "%s", staleDeadlineMsg)
 					}
 				}
 			}
@@ -422,12 +422,77 @@ func (a *arms) clearedDeadline(call *ast.CallExpr) bool {
 	return ok && len(lit.Elts) == 0 && astx.IsNamed(typeOf(a.pass, lit), "time", "Time")
 }
 
+// armedSite is a deadline armed in the future, with the body that
+// holds it.
+type armedSite struct {
+	call *ast.CallExpr
+	body ast.Node
+}
+
+// clearedAfter: a call after the armed site, in the body that holds
+// it, clears the deadline: directly, or through a closure or a
+// package-local callee that does. A clear earlier in the handler (the
+// inherited deadline wiped once before the loop) leaves every later
+// arm standing through the idle gap. When the arm sits in a helper
+// with no clear of its own (core/stream's armDeadline), every call of
+// that helper in the stream's reach must be followed by one instead.
+func (a *arms) clearedAfter(f *family, site ast.Node, body ast.Node, reach map[*family]bool, seen map[*family]bool) bool {
+	if a.clearFollows(f, site, body) {
+		return true
+	}
+	if seen[f] {
+		return false
+	}
+	seen[f] = true
+	callers := 0
+	for g := range reach {
+		for _, gb := range g.bodies {
+			ok := true
+			ast.Inspect(gb, func(n ast.Node) bool {
+				call, isCall := n.(*ast.CallExpr)
+				if !isCall || !ok || a.resolve(call) != f {
+					return ok
+				}
+				callers++
+				if !a.clearedAfter(g, call, gb, reach, seen) {
+					ok = false
+				}
+				return true
+			})
+			if !ok {
+				return false
+			}
+		}
+	}
+	return callers > 0
+}
+
+// clearFollows: a call after site, inside body, reaches a clear.
+func (a *arms) clearFollows(f *family, site ast.Node, body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok || call.Pos() <= site.End() {
+			return true
+		}
+		if a.reaches(call, f, "cleardeadline", a.clearedDeadline) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // armedDeadlines: the ResponseController deadlines f arms in the future.
 // A clear is not one, and neither is a past-deadline cut
 // (rc.SetWriteDeadline(time.Now()), the SSEBroker's eviction), which is
 // meant to end the stream.
-func (a *arms) armedDeadlines(f *family) []*ast.CallExpr {
-	var sites []*ast.CallExpr
+func (a *arms) armedDeadlines(f *family) []armedSite {
+	var sites []armedSite
 	for _, body := range f.bodies {
 		ast.Inspect(body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -441,7 +506,7 @@ func (a *arms) armedDeadlines(f *family) []*ast.CallExpr {
 			if now, ok := ast.Unparen(arg).(*ast.CallExpr); ok && astx.PkgFuncName(a.pass, now.Fun) == "time.Now" {
 				return true
 			}
-			sites = append(sites, call)
+			sites = append(sites, armedSite{call: call, body: body})
 			return true
 		})
 	}

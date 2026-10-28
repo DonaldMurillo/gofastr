@@ -143,6 +143,15 @@ func fetchSwitch(c *http.Client, host string) {
 	}
 }
 
+// The same, on a tagged switch over the transport.
+func fetchTaggedSwitch(c *http.Client, host string) {
+	_ = checkHost(host)
+	switch c.Transport {
+	case nil: // want `resolvedial: the dial-time guard is installed only when Transport is nil`
+		c.Transport = guarded()
+	}
+}
+
 // A rewrite after the RoundTrip changes nothing the dial used.
 type lateRewriteRT struct{ inner http.RoundTripper }
 
@@ -292,6 +301,17 @@ func switchWithDefault(c *http.Client, host string) {
 	_ = checkHost(host)
 	switch {
 	case c.Transport == nil:
+		c.Transport = guarded()
+	default:
+		c.Transport = plainRT{inner: c.Transport}
+	}
+}
+
+// A tagged switch whose default wraps the caller's transport.
+func taggedSwitchWithDefault(c *http.Client, host string) {
+	_ = checkHost(host)
+	switch c.Transport {
+	case nil:
 		c.Transport = guarded()
 	default:
 		c.Transport = plainRT{inner: c.Transport}

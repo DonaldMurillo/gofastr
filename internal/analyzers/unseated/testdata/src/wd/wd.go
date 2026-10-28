@@ -129,6 +129,25 @@ func armedNeverCleared(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// clearedOnlyFirst wipes the inherited deadline once, then arms one per
+// write and never clears it: the clear comes before every arm, so each
+// write still leaves a timer running through the idle gap.
+func clearedOnlyFirst(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+	w.Header().Set("Content-Type", "text/event-stream")
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) // want `write deadline armed on an http.ResponseController in a long-lived stream and never cleared`
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+			_ = rc.Flush()
+		}
+	}
+}
+
 // ---- quiet: the fix spellings -----------------------------------------
 
 // perWriteDeadline is the core/mcp GET spelling: a closure arms a fresh
@@ -184,6 +203,35 @@ func (st *deadlineStream) write(ev string) {
 	fmt.Fprintf(st.w, "data: %s\n\n", ev)
 	_ = st.rc.Flush()
 	_ = st.rc.SetWriteDeadline(time.Time{})
+}
+
+// helperArmed is the core/stream SSEWriter spelling: a helper arms the
+// deadline, and every caller clears it after its flush.
+type helperArmed struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func openHelperArmed(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	h := &helperArmed{w: w, rc: http.NewResponseController(w)}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-feed():
+			h.send(ev)
+		}
+	}
+}
+
+func (h *helperArmed) arm() { _ = h.rc.SetWriteDeadline(time.Now().Add(10 * time.Second)) }
+
+func (h *helperArmed) send(ev string) {
+	h.arm()
+	fmt.Fprintf(h.w, "data: %s\n\n", ev)
+	_ = h.rc.Flush()
+	_ = h.rc.SetWriteDeadline(time.Time{})
 }
 
 // brokerCut is the SSEBroker spelling: the stream installs a
