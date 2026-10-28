@@ -58,7 +58,7 @@
       failed();
       return;
     }
-    const said = (btn.getAttribute('data-hui-selection-copied') || '').replaceAll('{{n}}', () => String(ids.length));
+    const said = (btn.getAttribute('data-hui-selection-copied') || '').replaceAll('{{n}}', () => NS.formatNumber(ids.length));
     done.then(() => toast({ title: said, variant: 'success', ttl: 4000 }), failed);
   }
 

@@ -164,6 +164,7 @@ kernel	2	collectParams
 kernel	2	currentPath
 kernel	2	doc
 kernel	2	docEl
+kernel	2	formatNumber
 kernel	2	handlers
 kernel	2	own
 kernel	2	registerRoutes

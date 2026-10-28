@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -103,7 +104,9 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 			return fmt.Errorf("audit: %w", err)
 		}
 	}
-	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+	stmt := fmt.Sprintf(
+		//gofastr:allow(GOFASTR1415) EraseUserData anonymizes this table on its built-in audit plane (actor_id and the diff); registerAuditExport below covers the export
+		`CREATE TABLE IF NOT EXISTS %s (
 		id          TEXT PRIMARY KEY,
 		entity      TEXT NOT NULL,
 		op          TEXT NOT NULL,
@@ -128,7 +131,23 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 	if err != nil {
 		return fmt.Errorf("audit: read %s columns: %w", safeTable, err)
 	}
-	return addAuditColumns(db, safeTable, dialect, live)
+	if err := addAuditColumns(db, safeTable, dialect, live); err != nil {
+		return err
+	}
+	registerAuditExport(safeTable)
+	return nil
+}
+
+// registerAuditExport declares the audit table to App.ExportData under
+// its configured name, so a dump and restore keeps the trail. The erase
+// half is EraseUserData's built-in audit plane, which tombstones the
+// actor and the diff and keeps the rows; a registered eraser on top of
+// it would match nothing.
+func registerAuditExport(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: "audit_log", Source: "audit", Table: table, PrimaryKey: "id",
+		Columns: []string{"id", "entity", "op", "record_id", "actor_id", "tenant_id", "created_at", "diff", "reason"},
+	})
 }
 
 // addAuditColumns adds each audit column live does not hold. live may be
@@ -435,9 +454,10 @@ func sanitizeAuditField(s string) string {
 
 // defaultSensitiveSuffixes lists field-name suffixes the framework
 // scrubs from the audit `diff` column when the host did NOT set a
-// custom Redact callback. Match is case-insensitive: `password`,
-// `Password`, `password_hash`, `api_key`, `oauth_token`, and
-// `recovery_secret` all qualify. The list is intentionally narrow:
+// custom Redact callback. Match is case-insensitive and folds camel,
+// kebab and dotted keys to snake case: `password`, `Password`,
+// `password_hash`, `api_key`, `oauth_token`, `oauthToken`, `reset-token`
+// and `recovery_secret` all qualify. The list is intentionally narrow:
 // any host with broader scrubbing needs should provide a Redact
 // callback.
 var defaultSensitiveSuffixes = []string{
@@ -480,10 +500,20 @@ func defaultRedact(row map[string]any) map[string]any {
 }
 
 func isDefaultSensitiveField(name string) bool {
-	lower := strings.ToLower(name)
-	for _, suf := range defaultSensitiveSuffixes {
-		if lower == suf || strings.HasSuffix(lower, "_"+suf) {
-			return true
+	// The key arrives in the app's JSON case (camelCase by default) or
+	// with a kebab or dotted separator, so it is also folded to snake
+	// case: resetToken and reset-token match the way reset_token does.
+	folded := strings.Map(func(r rune) rune {
+		if r == '-' || r == '.' || r == ' ' {
+			return '_'
+		}
+		return r
+	}, casing.ToSnake(name))
+	for _, form := range [2]string{strings.ToLower(name), strings.ToLower(folded)} {
+		for _, suf := range defaultSensitiveSuffixes {
+			if form == suf || strings.HasSuffix(form, "_"+suf) {
+				return true
+			}
 		}
 	}
 	return false

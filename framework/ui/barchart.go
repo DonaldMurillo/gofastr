@@ -109,6 +109,11 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	var dataMax float64
 	for _, b := range cfg.Bars {
+		// A NaN or Inf value is a reading that never arrived: its slot
+		// and label stay, with no bar and no value.
+		if !finite(b.Value) {
+			continue
+		}
 		if b.Value < 0 {
 			panic("ui: BarChart Bar.Value must be ≥0")
 		}
@@ -286,50 +291,54 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 		y := baseY - barH
 
-		// Palette tokens and an empty Color are class-based (theme-aware).
-		// A registered status variant or a plausible CSS color is a raw
-		// fill; anything else falls back to primary, so a typo like
-		// "draft" never renders an invalid (black) fill.
-		barCls := "fui-bar-chart__bar"
-		tone := seriesTone(b.Color, 0)
-		fill := tone.fill
-		if tone.palette != "" {
-			barCls += " fui-bar-chart__bar--" + tone.palette
-		}
+		// A reading that never arrived draws no bar and no value; its
+		// category label below still holds the slot.
+		if finite(b.Value) {
+			// Palette tokens and an empty Color are class-based (theme-aware).
+			// A registered status variant or a plausible CSS color is a raw
+			// fill; anything else falls back to primary, so a typo like
+			// "draft" never renders an invalid (black) fill.
+			barCls := "fui-bar-chart__bar"
+			tone := seriesTone(b.Color, 0)
+			fill := tone.fill
+			if tone.palette != "" {
+				barCls += " fui-bar-chart__bar--" + tone.palette
+			}
 
-		sb.WriteString(`<rect x="`)
-		sb.WriteString(ftoa(x))
-		sb.WriteString(`" y="`)
-		sb.WriteString(ftoa(y))
-		sb.WriteString(`" width="`)
-		sb.WriteString(ftoa(drawW))
-		sb.WriteString(`" height="`)
-		sb.WriteString(ftoa(barH))
-		sb.WriteString(`" rx="4" class="`)
-		sb.WriteString(barCls)
-		sb.WriteString(`" data-cui-internal=""`)
-		if fill != "" {
-			sb.WriteString(` fill="`)
-			sb.WriteString(escapeXML(fill))
-			sb.WriteString(`"`)
-		}
-		if b.Label != "" {
-			sb.WriteString(`><title>`)
-			sb.WriteString(escapeXML(i18nui.ChartValue.Text(cfg.Ctx, map[string]any{"label": b.Label, "value": chartNumber(cfg.Ctx, b.Value)})))
-			sb.WriteString(`</title></rect>`)
-		} else {
-			sb.WriteString(`/>`)
-		}
-
-		// Value label above the cap.
-		if showValues {
-			sb.WriteString(`<text x="`)
-			sb.WriteString(ftoa(cx))
+			sb.WriteString(`<rect x="`)
+			sb.WriteString(ftoa(x))
 			sb.WriteString(`" y="`)
-			sb.WriteString(ftoa(y - 4))
-			sb.WriteString(`" class="fui-bar-chart__value" data-cui-internal="" text-anchor="middle">`)
-			sb.WriteString(escapeXML(chartNumber(cfg.Ctx, b.Value)))
-			sb.WriteString(`</text>`)
+			sb.WriteString(ftoa(y))
+			sb.WriteString(`" width="`)
+			sb.WriteString(ftoa(drawW))
+			sb.WriteString(`" height="`)
+			sb.WriteString(ftoa(barH))
+			sb.WriteString(`" rx="4" class="`)
+			sb.WriteString(barCls)
+			sb.WriteString(`" data-cui-internal=""`)
+			if fill != "" {
+				sb.WriteString(` fill="`)
+				sb.WriteString(escapeXML(fill))
+				sb.WriteString(`"`)
+			}
+			if b.Label != "" {
+				sb.WriteString(`><title>`)
+				sb.WriteString(escapeXML(i18nui.ChartValue.Text(cfg.Ctx, map[string]any{"label": b.Label, "value": chartNumber(cfg.Ctx, b.Value)})))
+				sb.WriteString(`</title></rect>`)
+			} else {
+				sb.WriteString(`/>`)
+			}
+
+			// Value label above the cap.
+			if showValues {
+				sb.WriteString(`<text x="`)
+				sb.WriteString(ftoa(cx))
+				sb.WriteString(`" y="`)
+				sb.WriteString(ftoa(y - 4))
+				sb.WriteString(`" class="fui-bar-chart__value" data-cui-internal="" text-anchor="middle">`)
+				sb.WriteString(escapeXML(chartNumber(cfg.Ctx, b.Value)))
+				sb.WriteString(`</text>`)
+			}
 		}
 
 		// Category label(s) under the bar, wrapped onto multiple lines.

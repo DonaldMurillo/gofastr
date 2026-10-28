@@ -637,8 +637,9 @@ const (
 	// a GET (no method, PUT, PATCH) and replaying a JSON form's GET adds 19.
 	// Back/Forward comparing every value of a repeated query key adds 28;
 	// a whole document's page-scoped seed riding its swap and the boot
-	// cache entry adds 114.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114
+	// cache entry adds 114. The kernel's formatNumber, which every {{n}}
+	// fill in the runtime and its modules goes through, adds 40.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1065,7 +1066,13 @@ const (
 	// every document swap, measure 17670 at level 1. Both run in the
 	// navigator's popstate and swap paths, before any demand module
 	// could. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17672
+	// The kernel's formatNumber, which every {{n}} fill in core and in the
+	// demand modules calls synchronously (a toast, an aria-label, a live
+	// count), measures 17704 at level 1. Eight modules share it, so it
+	// cannot carve into one of them. The padded fixture reaches 17706, so
+	// the line is 17705: the bracket [real 17704, fixture 17706], verified
+	// by running TestCoreBudgetRejectsCliffOverflow.
+	coreCongestionWindowGZ = 17705
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1133,6 +1140,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestFullDocNavAppliesPageSignals (docSeed).
 		"popstate compares every value of a query key":              28,
 		"whole-document page seed on boot entry and document swaps": 114,
+		// Measured 15254 → 15294 (2026-10-28): TestLintNumberFill_Repo.
+		"kernel formatNumber for {{n}} fills (toLocaleString on <html lang>)": 40, // (l1: 34)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
