@@ -24,6 +24,10 @@ Three click-time primitives mutate it:
 | `data-cui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default 1; negative decrements) |
 | `data-cui-signal-toggle="name"` | Flips `name` between `"true"` and `"false"` |
 
+They work anywhere on the page, inside a modal, drawer or popover too. On
+a node that also carries `data-cui-rpc`, the signal mutation wins and no
+request is sent.
+
 Any element with `data-cui-signal="<name>"` re-renders when the value changes.
 For typed, shared, SSR-seeded state, wrap signals with `core-ui/store` (see
 [Signal store](signal-store.md)).

@@ -179,9 +179,9 @@
 
   // Client signal mutations are core behavior. Keep this delegated listener
   // outside RPC so tabs, counters, and toggles work before any network module
-  // loads. Widget roots retain their own event ownership.
+  // loads. It serves widget roots too: their scoped listener handles only RPC
+  // and close, and leaves a node carrying a signal mutation to this one.
   document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-cui-widget]')) return;
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
     e.preventDefault();

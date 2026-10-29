@@ -1341,7 +1341,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// AbortController per mount and a stale mount's dismiss is spent,
 		// so a reopened SSR widget sends one RPC per click and a second
 		// close re-hides it (2026-10-26, TestHydratedWidgetReopenWiresOnce).
-		"widgets": 3212,
+		// 3247 measured (3245 + 2): its click listener leaves a node
+		// carrying a signal mutation to the document signal delegate,
+		// which now serves widget roots, so a signal-and-rpc node sends
+		// nothing, as outside a widget (2026-10-27 bug bash R1,
+		// TestSignalControlsWorkInWidget).
+		"widgets": 3247,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

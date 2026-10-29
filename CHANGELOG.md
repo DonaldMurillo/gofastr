@@ -2370,6 +2370,14 @@ few lines, and link the PR or the docs page for the rest.
   the module backs off, restarts, and opens its circuit if it keeps
   faulting. See
   [process modules](framework/docs/content/process-modules.md).
+- **Signal controls work inside a modal, drawer or popover.** The
+  runtime's signal delegate skipped widget roots, and the widget's own
+  listener handles only `data-cui-rpc` and close, so
+  `data-cui-signal-set`, `-inc` and `-toggle` did nothing there:
+  `ui.Tabs` in a drawer never switched and a `headless.Button` with a
+  signal action was dead. On a node that also carries `data-cui-rpc`,
+  the signal mutation wins inside a widget as it does outside one. See
+  [reactivity](framework/docs/content/reactivity.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
