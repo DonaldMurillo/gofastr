@@ -419,6 +419,15 @@ adapter script (registered via `window.__gofastrPluginHost.register`)
 that supplies its `Manifest` and handles its plugin-specific events;
 the generic broker owns everything protocol-level.
 
+The broker follows the page as it changes without a reload. A marker
+that arrives with a client-side navigation or an island swap mounts
+when it lands. An instance whose marker leaves the DOM is torn down:
+its pending requests reject with `E_TEARDOWN`, and since the frame left
+with the marker, it never receives a `teardown` request. A marker that
+stays in place, in a layout region the navigation kept, keeps its
+running frame. Each marker element mounts once, and mounts again if it
+is removed and put back.
+
 ### Progressive enhancement: MountConfig.Fallback
 
 A plugin with a Go-side renderer sets `MountConfig.Fallback` to a

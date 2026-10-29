@@ -2596,6 +2596,13 @@ few lines, and link the PR or the docs page for the rest.
   log in one `EventsSince` call, which the SQLite store caps at 10,000
   rows, so a longer session exported a bundle missing its tail with no
   error. It now pages through the log until a page comes back empty.
+- **A heavy-JS plugin mounts after a client-side navigation.** The
+  plugin host broker scanned for `data-fui-plugin` markers only at boot
+  and tore down every instance on `gofastr:navigate`, so a page reached
+  by navigation or an island swap showed the fallback forever, and a
+  plugin in a retained layout region was destroyed. The broker now
+  mounts markers as they arrive and tears down only the instances whose
+  marker left the DOM.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
