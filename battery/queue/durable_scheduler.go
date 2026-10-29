@@ -245,6 +245,9 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		// instant (vixie/cronie parity), not silently a day later. See
 		// durable_scheduler_dst.go.
 		next = nextFire(sc, base.Location(), base)
+		if next.IsZero() {
+			return fmt.Errorf("queue: cron spec %q has no firing in the next five years", b.cronSpec)
+		}
 	} else {
 		if b.interval <= 0 {
 			return errors.New("queue: durable interval must be positive")

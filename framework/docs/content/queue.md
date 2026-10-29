@@ -445,9 +445,12 @@ so the queue does not carry a second cron parser; it accepts the same
 5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
 in one scheduler.
 
-`Register()` returns an `error` only when a `Cron` spec is invalid;
-`Every` schedules never error, so existing callers that ignore the
-return value are unaffected. `RegisterAt(base)` is the deterministic
+`Register()` returns an `error` only when a `Cron` spec is invalid or
+has no firing in the next five years (`0 0 30 2 *`, February 30, which
+`DurableScheduler` refuses too); `Every` schedules never error, so
+existing callers that ignore the return value are unaffected. A cron schedule whose next firing
+lies past that search stops and logs a warning (February 29 after 2096,
+since 2100 is not a leap year). `RegisterAt(base)` is the deterministic
 variant: it anchors the first run to `base` instead of `time.Now()`,
 which is handy for tests and replayed fixtures.
 

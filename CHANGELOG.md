@@ -2732,6 +2732,11 @@ few lines, and link the PR or the docs page for the rest.
   four-line Lua script, in [queue](framework/docs/content/queue.md#optional-poprecorder))
   records the job as it pops it, and `Reclaim` puts back a record older
   than the visibility timeout. A client without it behaves as before.
+- **A cron schedule that never fires no longer enqueues on every tick.**
+  For a spec like `0 0 30 2 *` (February 30), the next run was the zero
+  time, which is always due. `Register` on both schedulers now refuses a
+  spec with no firing in the next five years, and an in-memory schedule
+  whose next firing lies past that search stops and logs a warning.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

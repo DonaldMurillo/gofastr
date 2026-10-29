@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -190,6 +191,11 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 		}
 		job.cron = &sc
 		job.NextRun = sc.Next(base)
+		// Next returns the zero time when no minute in its five-year search
+		// matches (February 30), and a zero NextRun is due on every tick.
+		if job.NextRun.IsZero() {
+			return fmt.Errorf("queue: cron spec %q has no firing in the next five years", b.cronSpec)
+		}
 	} else {
 		job.NextRun = base.Add(b.interval)
 	}
@@ -278,6 +284,9 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 
 	for i := range s.schedules {
 		sch := &s.schedules[i]
+		if sch.cron != nil && sch.NextRun.IsZero() {
+			continue // stopped: its re-arm found no next firing (below)
+		}
 		if now.After(sch.NextRun) || now.Equal(sch.NextRun) {
 			job := Job{
 				Type:        sch.Type,
@@ -306,6 +315,14 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 
 			if sch.cron != nil {
 				sch.NextRun = sch.cron.Next(now)
+				if sch.NextRun.IsZero() {
+					// Past Next's five-year search: February 29 after
+					// 2096 waits eight years. The schedule stops rather
+					// than fire on every tick.
+					s.logger.Warn("scheduler: cron schedule stopped, no firing in the next five years",
+						"job_type", sch.Type,
+					)
+				}
 			} else {
 				sch.NextRun = now.Add(sch.Interval)
 			}
