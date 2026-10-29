@@ -2332,6 +2332,14 @@ few lines, and link the PR or the docs page for the rest.
   requests the first call was still draining. A later or concurrent call
   now waits for the first to finish, or for its own context to end. See
   [deploy](framework/docs/content/deploy.md).
+- `App.Shutdown` no longer restarts the process modules it drains. The
+  supervise loops kept running and read each drained exit as a crash,
+  so they started a new child during or after shutdown. The drain now
+  closes the supervisor first, and runs before batteries stop rather than
+  after, so a child's in-flight reverse calls still reach them. A child
+  still starting when the supervisor closes is killed instead of
+  installed. See
+  [process modules](framework/docs/content/process-modules.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

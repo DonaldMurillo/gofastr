@@ -131,6 +131,19 @@ can only 404, so the Ready layer lives in the proxy handler and the tool
 handler. Upgrades exploit it: a module stays Enabled (no 404) but not-Ready
 (`DrainingUpgrade`) while the old generation drains and the new one starts.
 
+## Shutdown
+
+`App.Shutdown` drains process modules after the HTTP server has drained
+and before batteries stop, so a child's in-flight reverse calls still reach
+the queue and the DB. Every child drains at once: it gets `module.drain`,
+then EOF on stdin, and is killed when its budget runs out
+(`SupervisorConfig.DrainPerModule`, 30 s by default, capped by the
+Shutdown context's deadline). The drain closes the supervisor first, so no
+module restarts during or after shutdown, and a child still starting when
+it closes is killed instead of installed. `ProcessModuleSupervisor.Close`
+stops the loops and kills the children without the drain; after a drain it
+does nothing.
+
 ## Sandbox trust tiers (the honest limit)
 
 A bare subprocess is **not** a security boundary. `TrustUntrusted` requires

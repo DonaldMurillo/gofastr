@@ -363,36 +363,12 @@ func NewProcessModuleSupervisor(cfg SupervisorConfig) (*ProcessModuleSupervisor,
 // Closed reports whether Close has been called.
 func (s *ProcessModuleSupervisor) Closed() bool { return s.closed.Load() }
 
-// Close stops every supervise loop, drains every child with a short
-// deadline, and waits for the loops to exit. Idempotent. It does NOT close
-// the store (the store is shared across the app and closed elsewhere).
+// Close stops every supervise loop, waits for the loops to exit, and kills
+// every child still running. Idempotent, and a no-op after [Drain], which
+// closes the supervisor itself. It does NOT close the store (the store is
+// shared across the app and closed elsewhere).
 func (s *ProcessModuleSupervisor) Close(ctx context.Context) error {
-	if !s.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	close(s.closeCh)
-
-	// Stop the supervise loops. Each slot's drain runs as part of its own
-	// supervise exit path.
-	s.mu.Lock()
-	slots := make([]*moduleSlot, 0, len(s.slots))
-	for _, sl := range s.slots {
-		slots = append(slots, sl)
-	}
-	s.mu.Unlock()
-	for _, sl := range slots {
-		close(sl.done)
-	}
-	// Wait for loops to exit (they each take one final reconcile pass).
-	waitCh := make(chan struct{})
-	go func() {
-		s.wg.Wait()
-		close(waitCh)
-	}()
-	select {
-	case <-waitCh:
-	case <-ctx.Done():
-	}
+	slots := s.stopLoops(ctx)
 	// Best-effort kill any child that survived.
 	for _, sl := range slots {
 		sl.mu.Lock()
@@ -404,17 +380,46 @@ func (s *ProcessModuleSupervisor) Close(ctx context.Context) error {
 	return nil
 }
 
-// Drain is the lifecycle.Drainer entry point. It drains every child
-// concurrently (design §8: a single shared 30s budget across the app, so a
-// per-child 30s drain applied serially to N children would blow the budget).
-// Each child gets min(DrainPerModule, remaining shared budget).
-func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
+// stopLoops closes the supervisor, stops every supervise and heartbeat
+// loop, and waits for them to exit or ctx to end. A spawn still in flight
+// sees the closed supervisor and kills its child (spawnOnce). It returns
+// the slots, or nil when the supervisor was already closed.
+func (s *ProcessModuleSupervisor) stopLoops(ctx context.Context) []*moduleSlot {
+	if !s.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	close(s.closeCh)
 	s.mu.Lock()
 	slots := make([]*moduleSlot, 0, len(s.slots))
 	for _, sl := range s.slots {
 		slots = append(slots, sl)
 	}
 	s.mu.Unlock()
+	for _, sl := range slots {
+		close(sl.done)
+	}
+	waitCh := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(waitCh)
+	}()
+	select {
+	case <-waitCh:
+	case <-ctx.Done():
+	}
+	return slots
+}
+
+// Drain is the shutdown entry point: App.Shutdown calls it after the HTTP
+// drain and before batteries stop (design §8), so a child's in-flight
+// reverse calls still reach them. It closes the supervisor first, so no
+// loop restarts a drained child, then drains every child concurrently
+// (a single shared budget across the app, so a per-child drain applied
+// serially to N children would blow it). Each child gets
+// min(DrainPerModule, remaining shared budget). A second call, or a call
+// after [Close], does nothing.
+func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
+	slots := s.stopLoops(ctx)
 
 	deadline, ok := ctx.Deadline()
 	remaining := s.cfg.DrainPerModule
@@ -1207,8 +1212,10 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	}
 	// State → Handshaking under lock.
 	sl.mu.Lock()
-	if sl.state == StateFailed || sl.state == StateDrainingDisable {
-		// State changed under us (operator disabled, integrity fault).
+	if sl.state == StateFailed || sl.state == StateDrainingDisable || sl.sup.closed.Load() {
+		// State changed under us (operator disabled, integrity fault), or
+		// the supervisor closed: its kill pass reads sl.child after
+		// setting closed, so a child installed now would outlive it.
 		sl.mu.Unlock()
 		_ = child.Kill()
 		_ = child.Wait()
@@ -1325,7 +1332,10 @@ func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
 	// drain, not a crash: charging the circuit for it let a few
 	// store outages wedge a healthy module in Crashed.
 	leaseDrain := sl.leaseFailing
-	expected := sl.state == StateDrainingDisable ||
+	// A closed supervisor drained or killed the child itself: shutdown,
+	// not a crash.
+	expected := sup.closed.Load() ||
+		sl.state == StateDrainingDisable ||
 		sl.state == StateDrainingUpgrade ||
 		sl.state == StateInstalledDisabled ||
 		sl.state == StateFailed ||

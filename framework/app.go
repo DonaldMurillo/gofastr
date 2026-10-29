@@ -285,8 +285,8 @@ type App struct {
 
 	// processModules supervises out-of-process third-party modules
 	// (issue #37, wave 2a). Lazily constructed by RegisterProcessModule;
-	// nil when the app has no process modules. StartLoops + PrependDrainer
-	// are wired in [App.Start].
+	// nil when the app has no process modules. [App.Start] starts its
+	// loops and [App.Shutdown] drains it.
 	processModules *ProcessModuleSupervisor
 
 	// moduleTools is the MCP tool registry shared across every process
@@ -295,12 +295,6 @@ type App struct {
 	// its ToolRegistrar; the composite MCP call gate consults it so a
 	// disabled module's tools are omitted from tools/list.
 	moduleTools *ModuleToolRegistry
-
-	// processDrainRegistered guards the supervisor's PrependDrainer call
-	// so repeated Start paths (canonical + setup-interactive) don't
-	// double-register. Read/written under no lock. runStartHooks is
-	// single-threaded through Start.
-	processDrainRegistered bool
 
 	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
 	server   *http.Server
@@ -3040,18 +3034,10 @@ func (a *App) runStartHooks() error {
 
 	// Start the process-module supervisor's per-module loops (issue #37).
 	// Each registered module's supervise goroutine launches here, after
-	// InitPlugins has loaded module state. The supervisor's drain drainer
-	// is registered via PrependDrainer so children drain FIRST, before
-	// the DB/queue batteries they may need for in-flight reverse calls
-	// (design §8). Idempotent via processDrainRegistered.
+	// InitPlugins has loaded module state. Shutdown drains the children
+	// before batteries stop. StartLoops is idempotent.
 	if a.processModules != nil {
 		a.processModules.StartLoops()
-		if !a.processDrainRegistered {
-			a.processDrainRegistered = true
-			if err := a.lc.PrependDrainer(a.processModules); err != nil {
-				a.Logger().Warn("process module drain drainer not registered", "error", err)
-			}
-		}
 	}
 
 	// Then app-level start hooks (cron, queues, custom)
@@ -3221,6 +3207,13 @@ func (a *App) shutdown(ctx context.Context) error {
 			_ = srv.Close()
 			firstErr = fmt.Errorf("draining http server: %w", err)
 		}
+	}
+
+	// Process-module children drain next, while the batteries their
+	// in-flight reverse calls reach are still running (design §8). The
+	// drain closes the supervisor, so no loop restarts a drained child.
+	if a.processModules != nil {
+		_ = a.processModules.Drain(ctx)
 	}
 
 	// Stop batteries in reverse dependency order (dependents first)
