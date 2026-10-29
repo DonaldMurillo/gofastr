@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -14,6 +15,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
+
+// ErrRevokedByWildcard is returned by [GrantStore.Grant] for a permission
+// that a wildcard revocation the grant does not lift still covers:
+// Revoke("teams:*") then Grant("teams:read"). Every reload expands the
+// wildcard tombstone and subtracts the permission again, so the grant would
+// hold on the calling replica alone until its next reload. Grant the
+// wildcard to lift the revocation, then revoke what the role should not
+// hold.
+var ErrRevokedByWildcard = errors.New("access: a wildcard revocation covers the permission")
 
 // GrantStore persists role→permission grants to a database table so RBAC
 // edits survive restarts. It wraps a live *RolePolicy: Grant/Revoke write
@@ -271,10 +281,13 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 // permission is a no-op in both layers. In strict capability mode, validation
 // happens before any database write.
 //
-// Grant also DELETES any matching revocation tombstone for the granted
-// (role, perm) pairs, a re-grant is the ONE way to lift a prior revocation.
-// A tombstoned permission stays revoked across replicas and restarts until
-// Grant removes the tombstone, even if the code keeps declaring it.
+// Grant also DELETES the revocation tombstones Revoke would write for the
+// same input (a wildcard's literal and its expansion), so a re-grant is the
+// ONE way to lift a prior revocation. A tombstoned permission stays revoked
+// across replicas and restarts until Grant removes the tombstone, even if
+// the code keeps declaring it. A grant inside a wildcard revocation it does
+// not lift (Revoke("teams:*"), then Grant("teams:read")) returns
+// [ErrRevokedByWildcard] and writes nothing.
 //
 // Role and permission are bound as $n parameters, never interpolated.
 func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission) error {
@@ -303,6 +316,10 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	// ReplaceRole after this grant and undo it.
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
+	lifted, err := s.refuseCoveredGrant(ctx, role, perms, prepared)
+	if err != nil {
+		return err
+	}
 	// One INSERT per (role, perm) with ON CONFLICT DO NOTHING. A batch
 	// VALUES clause would be marginally faster but complicates the
 	// placeholder math; the grant matrix is small and admin-driven, so
@@ -319,7 +336,7 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	// A re-grant lifts a prior revocation: delete any tombstone for these
 	// (role, perm) pairs so the next reload (on this replica or a peer) no
 	// longer subtracts them.
-	for _, permission := range prepared {
+	for _, permission := range lifted {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
 			query.QuoteFolded(s.revokedTable()),
@@ -340,6 +357,58 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	// (non-blocking; a stalled bus never wedges the grant).
 	s.publish(role)
 	return nil
+}
+
+// CheckGrant reports the error [GrantStore.Grant] would return for the same
+// call before it writes anything: a strict-mode unknown capability or
+// [ErrRevokedByWildcard]. It writes nothing. A caller applying several
+// changes checks each grant first, so a refused one applies none of them;
+// Grant checks again, since a peer may revoke in between.
+func (s *GrantStore) CheckGrant(ctx context.Context, role string, perms ...Permission) error {
+	if s.policy == nil {
+		return fmt.Errorf("access: GrantStore has no policy: call LoadInto first")
+	}
+	if role == "" {
+		return fmt.Errorf("access: Grant requires a non-empty role name")
+	}
+	if len(perms) == 0 {
+		return nil
+	}
+	prepared, err := s.policy.prepareGrants(perms)
+	if err != nil {
+		return err
+	}
+	_, err = s.refuseCoveredGrant(ctx, role, perms, prepared)
+	return err
+}
+
+// refuseCoveredGrant returns the tombstones a grant of perms lifts, the
+// ones Revoke writes for the same input: the raw literal as well as its
+// expansion. Revoke tombstones "teams:*" itself, and a surviving literal
+// expands again on every reload (2026-10-27 D22). A wildcard tombstone the
+// grant does not lift still covers what it expands to, here and on every
+// reload, so a grant inside it would hold on this replica alone; that
+// grant is refused with ErrRevokedByWildcard.
+func (s *GrantStore) refuseCoveredGrant(ctx context.Context, role string, perms, prepared []Permission) ([]Permission, error) {
+	lifted := s.policy.prepareRevokes(perms)
+	tombstones, err := s.tombstonesForRole(ctx, role)
+	if err != nil {
+		return nil, err
+	}
+	for _, stone := range tombstones {
+		if permIn(lifted, stone) {
+			continue
+		}
+		// lifted holds every granted permission, so stone is a wildcard
+		// here and what it covers is its expansion.
+		for _, covered := range s.policy.prepareRevokes([]Permission{stone}) {
+			if permIn(prepared, covered) {
+				return nil, fmt.Errorf("%w: role %q, %q revokes %q; grant %q, then revoke what the role should not hold",
+					ErrRevokedByWildcard, role, stone, covered, stone)
+			}
+		}
+	}
+	return lifted, nil
 }
 
 // Revoke deletes (role, permission) rows from the database, records a

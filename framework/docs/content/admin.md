@@ -554,7 +554,10 @@ row, so a narrower admin tier cannot mint a role above its own. An
 `DecisionDeny` refuses the change even when the policy grants it, and its
 `DecisionAllow` admits nothing the policy does not. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
-it is applied.
+it is applied. A grant inside a wildcard revocation (the role's
+`teams:*` was revoked, and the save grants `teams:read`) is refused that
+way with a 409 (`GrantStore.CheckGrant`, see
+[access control](access-control.md)).
 
 ### Process modules
 

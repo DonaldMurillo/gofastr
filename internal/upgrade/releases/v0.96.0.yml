@@ -348,3 +348,10 @@ notes:
     breaking: true
     guidance: "A multipart client that sent an empty value meaning false stored false and now stores NULL or the default, or gets a 400 for a required field. Send false (or 0, no, off) for false."
     nodetect: "the values come from clients' multipart bodies at request time, not from the app's source"
+  - change: "BREAKING - GrantStore.Grant returns access.ErrRevokedByWildcard, and writes nothing, for a permission a wildcard revocation it does not lift still covers (Revoke(\"teams:*\") then Grant(\"teams:read\")); a grant of the wildcard itself now lifts its tombstone"
+    breaking: true
+    hits: review
+    guidance: "That grant used to succeed on the calling replica while peers and restarts kept denying it. Grant the wildcard, then revoke what the role should not hold. GrantStore.CheckGrant reports the same error without writing."
+    find:
+      uses:
+        - gofastr/framework/access.GrantStore.Grant

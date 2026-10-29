@@ -575,11 +575,24 @@ revoked grant stays revoked on every replica:
   `LoadInto`, which subtracts tombstones from both the captured baseline
   and the installed DB grants (and revokes them from the live policy), so
   a re-seeded code grant does not resurrect the permission.
-- **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes any
-  matching tombstone. It is the ONE way to un-revoke. A tombstoned
-  permission stays revoked even if the code keeps declaring it, until
-  `Grant()` is called. DB intent outlives code declarations, the same
-  precedence the store already gives DB grants over the code baseline.
+- **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes the
+  tombstones `Revoke` writes for the same input: `Grant("teams:*")` lifts
+  the `teams:*` tombstone and the tombstones of everything it expands to.
+  It is the ONE way to un-revoke. A tombstoned permission stays revoked
+  even if the code keeps declaring it, until `Grant()` is called. DB
+  intent outlives code declarations, the same precedence the store
+  already gives DB grants over the code baseline.
+- **A wildcard revocation is lifted whole.** After `Revoke("teams:*")`,
+  `Grant("teams:read")` returns `access.ErrRevokedByWildcard` and writes
+  nothing: every reload expands the `teams:*` tombstone against the
+  registry and would subtract `teams:read` again, so the grant would hold
+  on one replica only. Grant `teams:*`, then revoke what the role should
+  not hold. `GrantStore.CheckGrant(ctx, role, perms...)` returns the
+  error `Grant` would (this one, or a strict-mode
+  `*access.UnknownCapabilityError`) without writing, so a caller applying
+  several changes can refuse them all before writing any. The admin RBAC
+  page answers the refusal as a 409 with that advice. The global `*`
+  tombstone is never expanded, so it refuses nothing.
 - **Tombstone wins on conflict.** If a permission is somehow both granted
   and tombstoned (an inconsistent write), reloads fail closed: the
   tombstone wins.

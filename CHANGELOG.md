@@ -2282,6 +2282,16 @@ few lines, and link the PR or the docs page for the rest.
   required Bool left blank passed. A blank now means "not provided", as on
   the JSON path: an update stores NULL, a create applies the default, and a
   required field answers 400. See [uploads](framework/docs/content/uploads.md).
+- **A re-granted wildcard holds on every replica.** `Revoke("teams:*")`
+  tombstones the wildcard and its expansion, and `Grant("teams:*")` lifted
+  only the expansion, so peers and restarts expanded the surviving
+  `teams:*` tombstone and denied what the origin allowed. Grant now lifts
+  the same tombstones Revoke writes. A grant inside a wildcard revocation
+  it does not lift (`Grant("teams:read")` after that revoke) returns
+  `access.ErrRevokedByWildcard` and writes nothing, where it used to hold
+  on the origin until its next reload. `GrantStore.CheckGrant` runs the
+  same checks without writing; the admin RBAC page uses it and answers
+  409. See [access control](framework/docs/content/access-control.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
