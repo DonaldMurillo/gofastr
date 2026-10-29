@@ -214,7 +214,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// (useful for the sidebar to show prior conversations); default
 	// returns just the active in-memory sessions.
 	if r.URL.Query().Get("past") == "true" && s.SessionStore != nil {
-		past, err := s.SessionStore.ListPastSessions(r.Context(), 50)
+		// The scope goes to the store so it applies before the cap.
+		past, err := s.SessionStore.ListPastSessions(r.Context(), 50, claims.Sessions)
 		if err != nil {
 			log.Printf("rest: store: %v", err)
 			writeError(w, http.StatusInternalServerError, "StoreError", "store operation failed")

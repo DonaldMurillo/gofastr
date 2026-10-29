@@ -158,18 +158,21 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 // summaries. Newest-last-seen first. Uses two passes, one for the
 // counts/timestamps (fast), one for the first user-message text per
 // session (slower; bounded by `limit`).
-func (s *Store) ListPastSessions(ctx context.Context, limit int) ([]session.PastSession, error) {
-	if limit <= 0 {
-		limit = 50
+func (s *Store) ListPastSessions(ctx context.Context, limit int, only []ids.SessionID) ([]session.PastSession, error) {
+	stmt := `SELECT session, MIN(ts), MAX(ts), COUNT(*) FROM events`
+	var args []any
+	if len(only) > 0 {
+		stmt += ` WHERE session IN (?` + strings.Repeat(`, ?`, len(only)-1) + `)`
+		for _, id := range only {
+			args = append(args, string(id))
+		}
 	}
-	rows, err := s.db.QueryContext(ctx, `
-        SELECT session, MIN(ts), MAX(ts), COUNT(*)
-          FROM events
-      GROUP BY session
-      ORDER BY MAX(ts) DESC
-         LIMIT ?`,
-		limit,
-	)
+	stmt += ` GROUP BY session ORDER BY MAX(ts) DESC`
+	if limit > 0 {
+		stmt += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -12,6 +12,46 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
+// The past listing capped the log at 50 sessions before the token's
+// scope applied, so a token bound to an older session found nothing
+// (#621 review). The scope goes to the store, ahead of the cap.
+func TestPastSessionScopeBeforeCap(t *testing.T) {
+	s := newServer(t)
+	old := ids.NewSessionID()
+	var rows []session.PastSession
+	for range 60 {
+		rows = append(rows, session.PastSession{SessionID: ids.NewSessionID()})
+	}
+	rows = append(rows, session.PastSession{SessionID: old, FirstMessage: "mine"})
+	s.SessionStore = fakePastStore{rows: rows}
+	tok, err := s.Encoder.Encode(auth.Claims{Ver: auth.VerCurrent, JTI: ids.NewJTI(), Sessions: []ids.SessionID{old}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/v1/sessions?past=true", nil)
+	req.Header.Set("X-Harness-Token", tok)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var got []session.PastSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("%d %s: %v", rec.Code, rec.Body, err)
+	}
+	if len(got) != 1 || got[0].SessionID != old {
+		t.Errorf("a token bound to a session behind 60 newer ones listed %v", got)
+	}
+}
+
+// The route wrapper always installs claims, so the guard for a request
+// without them is driven on the handler itself.
+func TestSessionsWithoutClaimsIs403(t *testing.T) {
+	s := newServer(t)
+	rec := httptest.NewRecorder()
+	s.handleSessions(rec, httptest.NewRequest("GET", "/v1/sessions", nil))
+	if rec.Code != 403 {
+		t.Errorf("handleSessions with no claims = %d, want 403", rec.Code)
+	}
+}
+
 // A token bound to session A listed every live and past session, past
 // ones with the first 80 bytes of their first prompt (2026-10-27 H10).
 // The listings now hold only the sessions the token may attach to.
