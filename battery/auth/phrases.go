@@ -14,6 +14,7 @@ var (
 // The words on the page that finishes linking a sign-in provider.
 var (
 	oauthHopTitle    = i18n.Define("auth.oauth_hop_title", "Finishing the link")
+	verifyHopTitle   = i18n.Define("auth.verify_hop_title", "Verifying your email")
 	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
 )
 

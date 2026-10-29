@@ -108,6 +108,12 @@ few lines, and link the PR or the docs page for the rest.
   It skipped an empty watched view only when the formatted count was
   `"0"`, so under `ar-EG` (`٠`) or `fa` (`۰`) each empty view drew an
   empty preview instead of the all-clear line. It compares the number.
+- **Email verification links opened from webmail work.** A click in
+  Gmail or Outlook on the web is a cross-site navigation, so the browser
+  withheld the `SameSite=Strict` session cookie and `GET
+  /auth/verify-email` always answered 401. That click now gets a page
+  from this origin that opens the link again with the cookie, the hop
+  OAuth linking already uses. See [auth](framework/docs/content/auth.md).
 - **An `EmitAsync` subscriber no longer runs on a cancelled request
   context.** CRUD emits on the request's context, and the handler
   returned before the subscriber ran, so the webhook bridge's subscriber
