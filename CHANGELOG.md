@@ -2378,6 +2378,14 @@ few lines, and link the PR or the docs page for the rest.
   signal action was dead. On a node that also carries `data-cui-rpc`,
   the signal mutation wins inside a widget as it does outside one. See
   [reactivity](framework/docs/content/reactivity.md).
+- **A superseded navigation no longer destroys a loading region's
+  original content.** When a second click replaced a navigation whose
+  `data-cui-loading` content was showing, the first navigation dropped
+  the hidden nodes it had parked, so a second navigation that then failed
+  or was aborted left the region on the skeleton, and its input values,
+  listeners and island state were gone. The newer navigation now takes
+  the parked nodes over, and a region no apply replaced gets them back.
+  See [layouts](framework/docs/content/layouts.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

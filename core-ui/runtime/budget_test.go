@@ -1398,7 +1398,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// reads a marked region's data-cui-area beside its outlet and
 		// slot attributes, so an area's loading template is found by
 		// its "~" address like an outlet's "#".
-		"loading": 1368,
+		// 1384 measured (1382 + 2): a superseded navigation keeps the
+		// park holding a region's original nodes. A newer navigation's
+		// show takes it over, and finish and the apply sweep restore it
+		// on a region the winning apply did not replace (2026-10-27 bug
+		// bash R2, TestSupersededNavKeepsPark,
+		// TestSweepRestoresUnfilledRegion).
+		"loading": 1384,
 		// parts 1997 measured after the session-reset retry
 		// (2026-09-27, spike/layout-showcase): a `session` 409 waits
 		// for the page commit (whose Set-Cookie stores the re-minted

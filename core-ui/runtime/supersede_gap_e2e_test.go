@@ -31,6 +31,9 @@ type gapRig struct {
 	mu       sync.Mutex
 	gates    map[string]chan struct{}
 	partGate chan struct{}
+	// noAside names chained paths whose envelope answer fills the slot
+	// only, leaving the aside outlet alone. Set before the first request.
+	noAside map[string]bool
 }
 
 func (r *gapRig) hold(path string) {
@@ -124,6 +127,7 @@ func newGapRig(t *testing.T, loadingTpl, deferredRoute string, failPath string) 
 		// the wire shape.
 		r.mu.Lock()
 		g, held := r.gates[req.URL.Path]
+		noAside := r.noAside[req.URL.Path]
 		r.mu.Unlock()
 		if held {
 			<-g
@@ -145,7 +149,11 @@ func newGapRig(t *testing.T, loadingTpl, deferredRoute string, failPath string) 
 				w.Header().Set("X-Gofastr-Swap", "l:x")
 				if req.Header.Get("X-Gofastr-Fills") == "2" {
 					w.Header().Set("X-Gofastr-Envelope", "2")
-					fmt.Fprint(w, fill("l:x", "MAIN-"+name)+fill("l:x#aside", "ASIDE-"+name))
+					if noAside {
+						fmt.Fprint(w, fill("l:x", "MAIN-"+name))
+					} else {
+						fmt.Fprint(w, fill("l:x", "MAIN-"+name)+fill("l:x#aside", "ASIDE-"+name))
+					}
 				} else {
 					fmt.Fprint(w, `<p id="mk-`+strings.ToLower(name)+`">MAIN-`+name+`</p>`)
 				}

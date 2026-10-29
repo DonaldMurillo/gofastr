@@ -1114,10 +1114,9 @@
     } finally {
       // A stale navigation leaves a newer one's dedup entry alone.
       if (_pend.get(path) === myEpoch) _pend.delete(path);
-      // P9-A: a navigation that owns the epoch RESTORES (failure,
-      // abort); a superseded one only settles — the newer navigation
-      // owns the regions now.
-      if (load) load.finish(NS._navLive(myEpoch));
+      // P9-A: a shown region this navigation did not replace gets its
+      // parked nodes back, superseded or not (loading.js finish).
+      if (load) load.finish();
       // A navigation that neither committed nor has a commit pending
       // discards its parts: the buffer dies and the regions restore.
       if (P) P.finish(parts);

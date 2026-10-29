@@ -553,7 +553,9 @@ The server renders `Show` into an inert `<template>` beside the
 region, so the browser holds the bytes before the fetch starts. Past
 `After` the runtime parks the region's old nodes and clones the
 template in; a response faster than `After` paints nothing extra, and a
-failed navigation puts the parked nodes back as they were. Loading
+failed navigation puts the parked nodes back as they were. So does a
+navigation a second click replaced: the newer one keeps the parked
+nodes, and a region its answer does not fill gets them back. Loading
 content is presentational: no `Load`, no DI, no params. A slow screen
 `Load` is the swap slot's loading case; a slow outlet fill is the
 outlet's (or a deferred part).
