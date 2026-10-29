@@ -44,8 +44,10 @@ type Engine struct {
 	// registry changes.
 	Tools []provider.ToolSchema
 
-	// Tree owns cancellation for the active turn. Child turns and
-	// child engines branch off this.
+	// Tree is the engine's root cancellation node: every turn's context
+	// derives from it, so cancelling it ends the running turn and every
+	// later one. The multiplex cancels a single turn on a context of its
+	// own under this one.
 	Tree *CancelTree
 
 	// OnTurnEnd, when non-nil, runs JUST BEFORE the engine publishes
@@ -146,6 +148,10 @@ func (e *Engine) RunTurn(ctx context.Context, originator ids.ClientID, input []c
 		providerStart := time.Now()
 		stream, err := handler(ctx, req)
 		if err != nil {
+			if ctx.Err() != nil {
+				e.publishTurnEnd(turnNo, "cancelled", originator, componentTimings, toolTimings)
+				return err
+			}
 			_, _ = e.Bus.Publish(control.Error{
 				Reason:  control.ReasonInvalidCommand,
 				Message: err.Error(),
@@ -157,7 +163,14 @@ func (e *Engine) RunTurn(ctx context.Context, originator ids.ClientID, input []c
 		summary, err := CollectStreamWithCap(ctx, e.Bus, originator, stream, e.MaxStreamBytesPerTurn)
 		componentTimings["provider.chat"] += time.Since(providerStart)
 		if err != nil {
-			e.publishTurnEnd(turnNo, "error", originator, componentTimings, toolTimings)
+			// A cancel mid-stream surfaces as the stream's error (the
+			// context's, or a channel the provider closed on it); the
+			// turn ended because it was cancelled, not because it failed.
+			reason := "error"
+			if ctx.Err() != nil {
+				reason = "cancelled"
+			}
+			e.publishTurnEnd(turnNo, reason, originator, componentTimings, toolTimings)
 			return err
 		}
 

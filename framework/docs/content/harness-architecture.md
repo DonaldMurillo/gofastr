@@ -522,7 +522,9 @@ it "150 lines of pure orchestration" was overstated. The honest list:
    policy in the loop. Yield conditions, all explicit:
    - The stream ended with no tool calls (model produced a final
      answer).
-   - `CancelTurn` arrived.
+   - `CancelTurn` arrived. It ends the running turn with reason
+     `cancelled` and nothing else: the next `SendInput` starts a
+     fresh turn, and a `CancelTurn` sent while idle does nothing.
    - A middleware returned a terminal error.
    - A `Yield` content block appeared in the response (explicit
      end-turn signal from a provider that supports it).

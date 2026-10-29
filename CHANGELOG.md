@@ -2585,6 +2585,13 @@ few lines, and link the PR or the docs page for the rest.
   Both match the trigger by key and pane: one key could label a
   record's view and its edit trigger, and the first one in the page
   opened. See [pane host](framework/docs/content/pane-host.md).
+- **A cancelled harness turn no longer cancels every turn after it.**
+  `CancelTurn` cancelled the engine's root context, which every turn
+  starts from, so after one cancel (even one sent while idle) each new
+  turn began already cancelled. It now ends the running turn alone. A
+  turn cancelled mid-stream or while connecting ends with reason
+  `cancelled`, not `error`. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
