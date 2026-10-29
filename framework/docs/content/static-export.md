@@ -400,7 +400,7 @@ against the serverless host:
 | Signal mutations (`set`/`inc`/`toggle`) | ✓ works | client-only |
 | SPA navigation | ✓ works | fetches pre-rendered pages |
 | `data-cui-rpc` (island round-trips) | disabled | needs the Go handler |
-| `data-cui-open` (modals, ⌘K palette) | ✓ works | the export writes the widget catalog (`widgets.json`); an unregistered widget shows a "Needs the Go server." toast |
+| `data-cui-open` (modals, ⌘K palette) | ✓ works | the export writes the widget catalog (`widgets.json`) and each widget's chrome and style sheet; an unregistered widget shows a "Needs the Go server." toast. A widget with `RequireSession` or `RequireAuthenticated` gets its style sheet and no chrome file, since the live `/chrome` endpoint refuses an anonymous caller and every exported file is public |
 | Palette search (`Search: true`) | ✓ works | reads the [site search](site-search.md) index files |
 | SSE islands | not emitted | the SSE `<meta>` is omitted at render time |
 

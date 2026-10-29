@@ -1142,7 +1142,20 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	b.log("wrote %s", "/__gofastr/widgets.json")
 	pages := pageSet(res.Pages)
 	locales, byPrefix := b.Host.PathLocales()
+	// Every file in the export is public. A widget whose live /chrome
+	// endpoint refuses an anonymous caller (RequireSession,
+	// RequireAuthenticated) gets its style sheet, which the live host
+	// serves ungated, and no chrome.
+	anon := httptest.NewRequest(http.MethodGet, "/", nil)
 	for _, d := range defs {
+		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/style.css", []byte(widget.RenderCSS(d))); err != nil {
+			return err
+		}
+		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/style.css")
+		if !widget.GateSatisfied(d, anon) {
+			b.log("wrote widget %s (css only: its chrome is gated)", d.Name)
+			continue
+		}
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
 		// them the same way page HTML is rewritten for a subpath deploy,
 		// and slash its page links the way slashLinks does a page's (a
@@ -1171,10 +1184,6 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 				res.Assets = append(res.Assets, at)
 			}
 		}
-		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/style.css", []byte(widget.RenderCSS(d))); err != nil {
-			return err
-		}
-		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/style.css")
 		b.log("wrote widget %s (chrome + css)", d.Name)
 	}
 	return nil

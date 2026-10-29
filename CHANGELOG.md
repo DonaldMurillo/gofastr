@@ -3016,6 +3016,13 @@ few lines, and link the PR or the docs page for the rest.
   pattern that requires a resolver, as it does for one under a region
   guard, so such an action must name a page of its screen, and the
   llm.md index and pattern doc withhold that screen's metadata.
+- **A static export leaves out gated widgets' chrome.** The export wrote
+  every registered widget's chrome HTML to
+  `/core-ui/widget/<name>/chrome`, including widgets with
+  `RequireSession` or `RequireAuthenticated` whose live endpoint refuses
+  an anonymous caller, so their slot HTML was public on the static host.
+  Such a widget now gets its style sheet (ungated live too) and no chrome
+  file.
 
 ## [0.95.0] - 2026-10-26
 
