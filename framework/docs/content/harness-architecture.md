@@ -651,7 +651,17 @@ Read, Glob, Ls (anywhere under the repo)
 ```
 
 Never prompts for these. `--strict-permissions` disables the
-preset for users who want every call gated.
+preset for users who want every call gated. `git branch` counts
+only when it lists: listing flags alone (`-a`, `-r`, `-v`, `-vv`,
+`--show-current`), and patterns only behind `--list`.
+
+The preset and argv-glob rules match a Bash call's argv summary,
+which spells the call as the shell command it amounts to: a `cwd`
+becomes `cd <dir> && ` in front and an `env` map becomes
+`env K=V …` (keys sorted). A listed command carrying either one
+(`GIT_EXTERNAL_DIFF`, `PATH`, or a directory whose `.git/config`
+names a program) is prompted, and a rule written for the bare
+command does not match it.
 
 Session-scoped allows persist for the `EngineRun` only; they
 never carry across sessions or persist to disk. The user can

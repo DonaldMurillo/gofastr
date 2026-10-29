@@ -2943,6 +2943,14 @@ few lines, and link the PR or the docs page for the rest.
   names the token that started it. WebSocket already used the token's
   class. See
   [harness architecture](framework/docs/content/harness-architecture.md).
+- **Harness quiet mode prompts for a Bash call that sets `env` or
+  `cwd`.** Quiet mode and argv-glob rules matched the command string
+  alone, so `{"cmd":"git diff","env":{"GIT_EXTERNAL_DIFF":"sh -c …"}}`
+  ran its program with no prompt. A Bash call's argv summary now spells
+  the `cwd` and `env` in front of the command, which no quiet-listed
+  prefix or bare-command rule matches. `git branch` is quiet only when
+  it lists, so `git branch -D main` prompts. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 
 ## [0.95.0] - 2026-10-26
 
