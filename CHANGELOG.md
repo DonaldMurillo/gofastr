@@ -2340,6 +2340,13 @@ few lines, and link the PR or the docs page for the rest.
   still starting when the supervisor closes is killed instead of
   installed. See
   [process modules](framework/docs/content/process-modules.md).
+- An entity, view or routine declared from a module's or battery's
+  `Init` is migrated and seeded. Start ran its only migrate-and-seed pass
+  before `Init`, so the table never existed: Start succeeded and the
+  module failed at its first query. Start now migrates and seeds again
+  once `Init` has declared something new. A host binary's `migrate
+  generate` verb calls `app.InitPlugins()` before `app.MigrationPlan()`
+  to include them. See [modules](framework/docs/content/modules.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

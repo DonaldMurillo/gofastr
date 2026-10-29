@@ -3230,6 +3230,34 @@ func (a *App) shutdown(ctx context.Context) error {
 	return firstErr
 }
 
+// migrateAndSeed auto-migrates every registered entity, view and routine,
+// unless the deployment opted into explicit migrations only
+// (WithoutAutoMigrate), then runs entity seeds. Seeds run either way: they
+// are idempotent data writes, not schema, and a seeded entity whose table
+// is missing fails Start here rather than serving against an unmigrated
+// schema. No DB, nothing to do.
+func (a *App) migrateAndSeed() error {
+	if a.DB == nil {
+		return nil
+	}
+	if !a.noAutoMigrate {
+		if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, a.MigrationPlan()); err != nil {
+			return fmt.Errorf("auto-migrate: %w", err)
+		}
+	}
+	if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
+		return fmt.Errorf("run seeds: %w", err)
+	}
+	return nil
+}
+
+// schemaSize counts the schema declarations Start migrates: entities and
+// tables (every registered version), views and routines. All three only
+// grow, so a change means something new to migrate.
+func (a *App) schemaSize() int {
+	return a.Registry.size() + len(a.migrationViews) + len(a.migrationRoutines)
+}
+
 // runSeedHooksSerialized runs the App.WithSeed hooks, serializing them across
 // replicas behind the seed advisory lock (DISTINCT from the migration lock) so
 // two booting replicas don't race a hook. A MaxOpenConns(1) Postgres pool
@@ -3384,21 +3412,8 @@ func (a *App) Start(addr string) error {
 		return err
 	}
 
-	// Auto-migrate all registered entities, unless the deployment opted
-	// into explicit migrations only (WithoutAutoMigrate). Seeds run
-	// either way: they are idempotent data writes, not schema, and a
-	// seeded entity whose table is missing fails Start here rather than
-	// serving against an unmigrated schema.
-	if a.DB != nil {
-		if !a.noAutoMigrate {
-			plan := migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
-			if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, plan); err != nil {
-				return abort(fmt.Errorf("auto-migrate: %w", err))
-			}
-		}
-		if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
-			return abort(fmt.Errorf("run seeds: %w", err))
-		}
+	if err := a.migrateAndSeed(); err != nil {
+		return abort(err)
 	}
 	// App-level seed hooks (App.WithSeed). Run after auto-migration + the
 	// per-entity RunSeeds phase so every table exists, and before plugins
@@ -3416,8 +3431,18 @@ func (a *App) Start(addr string) error {
 	// Initialize plugins and batteries (routes, middleware, tools, hooks).
 	// Must happen after auto-migrate (so entity tables exist) but before
 	// start hooks (so batteries can reference their routes).
+	schemaBefore := a.schemaSize()
 	if err := a.InitPlugins(); err != nil {
 		return abort(fmt.Errorf("init plugins: %w", err))
+	}
+	// An entity, view or routine declared from a battery's or module's
+	// Init (the pattern modules.md documents) missed the pass above, so
+	// migrate and seed again. Both are idempotent: what the first pass
+	// covered diffs to nothing and its seeds are in the ledger.
+	if a.schemaSize() != schemaBefore {
+		if err := a.migrateAndSeed(); err != nil {
+			return abort(fmt.Errorf("after init plugins: %w", err))
+		}
 	}
 	// `gofastr export` runs the app with GOFASTR_EXPORT set: export
 	// every page now (migrations and seeds have run, so data-backed

@@ -55,6 +55,11 @@ topo-sort orders module init, and records the manifest.
 Registering two modules with the same name panics, exactly like a
 duplicate battery.
 
+`Init` runs after Start's first migrate-and-seed pass, so Start migrates
+and seeds again once every `Init` has run: an entity, view or routine a
+module declares there has its table and seed rows before the server
+listens. See [migrations](migrations.md) for the generate path.
+
 ## What gets attributed to a module
 
 During a module's `Init`, the framework marks the module as "current" and

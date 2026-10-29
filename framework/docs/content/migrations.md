@@ -566,6 +566,13 @@ flow through as a non-destructive `RENAME COLUMN` (not a drop+add), exactly as
 they do from the app spec path. Generation is deterministic: the same Plan
 always produces byte-identical files, so diffs and checksums stay stable.
 
+An entity, view or routine that a plugin, battery or module declares from
+its `Init` joins the plan only once `Init` has run. `App.Start` calls
+`InitPlugins` after its first migrate-and-seed pass, then migrates and
+seeds again when `Init` declared anything new. A generate verb for such an
+app calls `app.InitPlugins()` before `app.MigrationPlan()`; InitPlugins
+also loads module enable state, from the database when the app has one.
+
 ## Non-entity tables (raw tables)
 
 Not every table wants the entity machinery: no auto-CRUD, no HTTP routes, no
