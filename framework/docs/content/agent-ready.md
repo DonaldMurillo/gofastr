@@ -476,7 +476,9 @@ behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
 and ungated over MCP. Declare something stricter with
 `Endpoint.MCPGate`, or opt out with `Endpoint.Public: true` for an
 endpoint that really is anonymous. `Public` opens the HTTP route too,
-which otherwise answers 401 to a caller with no user:
+which otherwise answers 401 to a caller with no user. An API token
+reaches a twin only with `<table>:read` (GET, HEAD) or `<table>:write`
+(any other method) among its scopes, whichever gate decides it:
 
 ```go
 entity.Endpoint{

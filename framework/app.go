@@ -1663,7 +1663,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2673,7 +2673,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2711,15 +2711,36 @@ func endpointRoute(ep entity.Endpoint) http.Handler {
 // straight onto the MCP server and sees none of it. So the twin defaults to
 // requiring an authenticated caller, and an endpoint that really is
 // anonymous says so with Public.
-func endpointMCPOptions(ep entity.Endpoint) []mcp.ToolOption {
+//
+// A scope-restricted caller (an API token, access.WithHeldScopes) must also
+// hold "<table>:<verb>", GET and HEAD reading and every other method
+// writing: the scope auth.RequireAPIScopes demands of the REST route. This
+// holds under MCPGate and Public too, as RequireAPIScopes holds on a Public
+// route, since scopes only narrow what a credential may reach.
+func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption {
+	var gate func(context.Context) error
 	switch {
 	case ep.MCPGate != nil:
-		return []mcp.ToolOption{mcp.WithToolGate(ep.MCPGate)}
-	case ep.Public:
-		return nil
-	default:
-		return []mcp.ToolOption{mcp.WithToolGate(MCPRequireUser())}
+		gate = ep.MCPGate
+	case !ep.Public:
+		gate = MCPRequireUser()
 	}
+	verb := "write"
+	if m := strings.ToUpper(strings.TrimSpace(ep.Method)); m == http.MethodGet || m == http.MethodHead {
+		verb = "read"
+	}
+	scope := access.Permission(ent.GetTable() + ":" + verb)
+	return []mcp.ToolOption{mcp.WithToolGate(func(ctx context.Context) error {
+		if gate != nil {
+			if err := gate(ctx); err != nil {
+				return err
+			}
+		}
+		if !access.ScopeAllows(ctx, scope) {
+			return errScopeNotHeld
+		}
+		return nil
+	})}
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to

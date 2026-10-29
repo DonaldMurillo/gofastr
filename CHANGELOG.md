@@ -2304,6 +2304,15 @@ few lines, and link the PR or the docs page for the rest.
   row or the hook errors; the write itself stands. A `BeforeGet` hook
   therefore also runs on those writes. See
   [hooks](framework/docs/content/hooks-and-transactions.md).
+- **An entity endpoint's MCP twin asks for the API token scope its
+  route does.** `auth.RequireAPIScopes` holds the HTTP route to
+  `<table>:<verb>`, but the `MCPHandler` twin is registered straight on
+  the MCP server, so an editor's `customers:read` token called a `posts`
+  endpoint twin its route refused. The twin now needs `<table>:read`
+  (GET, HEAD) or `<table>:write` (any other method) from a token caller
+  before it runs or shows in `tools/list`, under `MCPGate` and `Public`
+  too; sessions are not narrowed. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

@@ -2228,7 +2228,11 @@ passes; the browser's CORS preflight already stands in front of it. The
 carries the same default as its own gate: an authenticated caller.
 Declare something stricter for the twin with `MCPGate`, or set
 `Public: true` for an endpoint that really is anonymous; `Public` opens
-both doors:
+both doors. Under any of the three, a caller holding an API token's scopes
+must also hold `<table>:read` for a GET or HEAD endpoint, or
+`<table>:write` for any other method, before the twin runs or shows in
+`tools/list`: the scope `auth.RequireAPIScopes` asks of the HTTP route.
+Sessions are not narrowed.
 
 ```go
 entity.Endpoint{
