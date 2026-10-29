@@ -408,3 +408,7 @@ notes:
       config:
         - key: app.auth.base_path
           value: '(/$|^[^/]|//|/\.|[^A-Za-z0-9._/-])'
+  - change: "BREAKING for gofastr harness - --listen refuses an address that is not loopback (a LAN IP, 0.0.0.0, :PORT, or a name that resolves off loopback)"
+    breaking: true
+    guidance: "The chat page at / hands its 24 h session token to anyone who loads it, so the harness binds 127.0.0.1:PORT, [::1]:PORT or localhost:PORT. To reach it from another machine, forward the port over SSH (ssh -L PORT:127.0.0.1:PORT host)."
+    nodetect: "the address is a command-line argument; nothing in an app's source spells it"

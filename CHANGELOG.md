@@ -2962,6 +2962,14 @@ few lines, and link the PR or the docs page for the rest.
   prefix or bare-command rule matches. `git branch` is quiet only when
   it lists, so `git branch -D main` prompts. See
   [harness architecture](framework/docs/content/harness-architecture.md).
+- **BREAKING: `gofastr harness --listen` binds loopback only.** The
+  chat page at `/` embeds a 24 h human-class token and takes no auth,
+  and its `Host` check does not stop a direct peer, so
+  `--listen 0.0.0.0:PORT` or a LAN address handed the token to anyone
+  on the network who sent `Host: localhost`. A bind whose address is
+  not loopback now fails at startup; forward the port over SSH to reach
+  it from another machine. The docs described a LAN mode gated on TLS
+  and `--auth-token-file`; neither flag existed, and that text is gone.
 
 ## [0.95.0] - 2026-10-26
 

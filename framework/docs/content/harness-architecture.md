@@ -1258,10 +1258,13 @@ it never sees how clients are wired.
     `X-Harness-Token` (not `Authorization`) so browsers must
     preflight; the preflight fails closed for unauthorized
     origins.
-- **`--listen 0.0.0.0:PORT`**: bind LAN. Capability token + TLS
-  required; harness refuses to start without `--auth-token-file`
-  and `--tls-cert`/`--tls-key`. Token must be bound to specific
-  `sessions: [...]` in its claim set.
+- **A non-loopback `--listen`** (a LAN address, a wildcard such as
+  `0.0.0.0:PORT` or `:PORT`, or a name that resolves off loopback) is
+  refused at startup. The chat page at `/` embeds a 24 h human-class
+  token for whoever loads it, and the `Host` check stops DNS
+  rebinding, not a peer that reaches the port and sends
+  `Host: localhost`. The check reads the address the listener bound,
+  not the spelling passed. There is no LAN mode.
 - **`--no-listen`**: in-process clients only (engine speaks only
   through `inproc`). Useful for tests or pure-CLI use.
 - **`gofastr harness mcp`** (v0.2): launches a one-shot stdio MCP
