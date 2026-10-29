@@ -2416,6 +2416,13 @@ few lines, and link the PR or the docs page for the rest.
   caller waits for the first and shares its value, and a constructor
   that panics releases the waiters with an error. A constructor that
   needs its own type still waits on itself.
+- **The documented notify wiring sends without an error.** The examples
+  in the notifications guide, the package doc and the agent recipe set a
+  template for one channel while registering another, so every `Send`
+  returned `no template for ("order.shipped", "log")`, after the email
+  had already gone out. Each now sets a template per channel, and the
+  guide says a `Send` error can follow other channels' delivery. See
+  [notifications](framework/docs/content/notifications.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

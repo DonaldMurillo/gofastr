@@ -20,10 +20,14 @@ import (
 )
 
 tmpl := notify.NewMapTemplater()
-tmpl.Set("order.shipped", "email", notify.Template{
+shipped := notify.Template{
     Subject:  "Order #{{id}} shipped",
     TextBody: "Hi {{name}}, your order is on its way.",
-})
+}
+// One template per registered channel the router selects: the default
+// router always picks "log", so it needs one as well as "email".
+tmpl.Set("order.shipped", "email", shipped)
+tmpl.Set("order.shipped", "log", shipped)
 
 n := notify.New(
     notify.WithTemplater(tmpl),
@@ -173,6 +177,9 @@ channel breaks, but want metrics / alerts when something does.
 
 Channels are fired concurrently; a slow channel doesn't block the
 others, and the call returns only after every channel has finished.
+So an error from `Send` does not mean nothing went out: the other
+channels may already have delivered, and retrying the whole `Send`
+delivers to them again.
 
 Channels, templaters, and the error callback are host-supplied code, so
 every invocation runs under a recover guard: a panicking `Send`, `Render`,
@@ -194,6 +201,12 @@ still delivered to `WithErrorCallback`) instead of crashing the process.
   from the rendered subject and text body before writing, via
   `email.RedactBody`, so a reset-link notification never lands
   token-first in the log.
+- **Don't leave a routed channel without a template.** `MapTemplater`
+  fails a channel it has no template for, and the default router always
+  selects `log` and `inapp` when they are registered. An email-only
+  template set beside a `LoggerChannel` makes every `Send` return
+  `notify: no template for ("order.shipped", "log")` after the email
+  went out.
 - **Don't forget the templater.** Without one, every `Send` returns
   `ErrNoTemplater` unless you supply `Data["_rendered_*"]` per
   channel.
