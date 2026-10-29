@@ -945,7 +945,8 @@ skipped: they don't ride on cookies and aren't subject to CSRF.
 
 The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
 HTTPS, including behind a TLS-terminating proxy that sets
-`X-Forwarded-Proto: https` (the app itself sees plain HTTP there).
+`X-Forwarded-Proto: https` (the app itself sees plain HTTP there). A
+name set with `WithCSRFCookieName` gets the prefix too.
 
 **Login/register/logout carry their own cross-site guard.** Those
 endpoints can't rely on the CSRF cookie: a login CSRF needs no

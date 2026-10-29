@@ -2675,6 +2675,18 @@ few lines, and link the PR or the docs page for the rest.
   next one faults the peer with `moduleproto.ErrStalled`, and a faulted
   peer starts no handler for a frame it reads after the fault. See
   [process modules](framework/docs/content/process-modules.md).
+- **BREAKING: a custom CSRF cookie name gets the `__Host-` prefix on
+  HTTPS.** `middleware.CSRF` prefixed only its default name unless the
+  host set `HostPrefixWhenSecure`, so the documented production config
+  (`CookieName: "fui_csrf"`) sent a plain cookie. The token is not tied
+  to a session, so a sibling subdomain could fetch one, plant it as a
+  `Domain` cookie and post it with the victim's credentials.
+  `HostPrefixWhenSecure` is removed: every name, `auth.WithCSRFCookieName`
+  included, becomes `__Host-<name>` on a secure request, and
+  `NoHostPrefix` opts out. `CSRF` panics on a `CookiePath` other than
+  `/` unless `NoHostPrefix` is set, since the browser drops a `__Host-`
+  cookie with any other path. See
+  [security](framework/docs/content/security.md).
 
 ## [0.95.0] - 2026-10-26
 

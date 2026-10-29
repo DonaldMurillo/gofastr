@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -44,9 +45,12 @@ func logSlogWarnDefault(msg string) {
 // subdomains. Strongly recommended; defaults to a per-process random key
 // if left empty (rotates on restart).
 //
-// When SecretKey is set AND CookieSecure (or r.TLS) is true, the cookie
-// name automatically gets the __Host- prefix, which forbids subdomain
-// cookie injection at the browser level.
+// On a request the middleware considers secure (CookieSecure, r.TLS, or
+// X-Forwarded-Proto: https) the cookie name gets the __Host- prefix, a
+// caller-supplied CookieName included. The browser refuses a __Host-
+// cookie set from a sibling subdomain, and the token is not bound to a
+// session, so the prefix is what stops a sibling from planting a token
+// it fetched itself. NoHostPrefix opts out.
 type CSRFConfig struct {
 	CookieName string
 	HeaderName string
@@ -56,18 +60,15 @@ type CSRFConfig struct {
 	// for local dev; set true in production.
 	CookieSecure bool
 
-	// HostPrefixWhenSecure promotes a caller-supplied CookieName to
-	// "__Host-"+CookieName on requests the middleware considers secure,
-	// resolved PER REQUEST, the same signal that decides the Secure
-	// flag (r.TLS or X-Forwarded-Proto), not construction-time
-	// CookieSecure.
-	//
-	// The two had drifted: with TLS terminated at a proxy and the host
-	// never setting CookieSecure, the cookie came back Secure but named
-	// plainly, so the __Host- guarantee, the thing stopping a sibling
-	// subdomain from planting a valid token, silently did not apply.
-	// A CookieName that already carries the prefix is left alone.
-	HostPrefixWhenSecure bool
+	// NoHostPrefix keeps CookieName as given on secure requests instead
+	// of naming the cookie "__Host-"+CookieName ("__Host-csrf" for the
+	// default). The prefix is resolved PER REQUEST from the same signal
+	// that sets the Secure flag (r.TLS or X-Forwarded-Proto), and a name
+	// that already carries it is left alone. Without the prefix a sibling
+	// subdomain can plant a valid token as a Domain cookie, so set this
+	// only where the cookie must not be host-only, such as a CookiePath
+	// other than "/", which a __Host- cookie cannot carry.
+	NoHostPrefix bool
 
 	// SecretKey is the HMAC key used to sign the CSRF token. Empty means
 	// the middleware autogenerates a per-process key on first use;
@@ -167,18 +168,24 @@ func CSRF(cfg CSRFConfig) Middleware {
 	if cfg.MaxFormBytes <= 0 {
 		cfg.MaxFormBytes = defaultCSRFMaxFormBytes
 	}
+	if cfg.CookiePath != "/" && (!cfg.NoHostPrefix || strings.HasPrefix(cfg.CookieName, "__Host-")) {
+		// The browser drops a __Host- cookie whose Path is not "/", so
+		// every secure write would 403 on a missing cookie. A name that
+		// carries the prefix itself keeps it under NoHostPrefix.
+		panic(fmt.Sprintf("csrf: CookiePath %q cannot carry the __Host- prefix, which needs Path=/; set NoHostPrefix to accept a cookie a sibling subdomain can plant", cfg.CookiePath))
+	}
 	ensureCSRFKey(&cfg)
 	// Resolve the cookie name. __Host- prefix requires Path=/, Secure,
 	// and no Domain, all of which we satisfy. The browser refuses to
 	// accept a __Host- cookie set from a sibling subdomain.
 	resolveCookieName := func(secure bool) string {
 		if cfg.CookieName != "" {
-			if secure && cfg.HostPrefixWhenSecure && !strings.HasPrefix(cfg.CookieName, "__Host-") {
+			if secure && !cfg.NoHostPrefix && !strings.HasPrefix(cfg.CookieName, "__Host-") {
 				return "__Host-" + cfg.CookieName
 			}
 			return cfg.CookieName
 		}
-		if secure {
+		if secure && !cfg.NoHostPrefix {
 			return "__Host-csrf"
 		}
 		return "csrf_token"

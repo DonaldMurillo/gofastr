@@ -367,3 +367,14 @@ notes:
     breaking: false
     guidance: "One of the two keys used to win by map order. Send each child field once, under its wire key."
     nodetect: "the keys come from request bodies at request time, not from the app's source"
+  - change: "BREAKING - middleware.CSRFConfig.HostPrefixWhenSecure is removed: a caller-supplied CookieName (and auth.WithCSRFCookieName) gets the __Host- prefix on every secure request, NoHostPrefix opts out, and CSRF panics on a CookiePath other than / unless NoHostPrefix is set"
+    breaking: true
+    hits: review
+    guidance: "Delete HostPrefixWhenSecure: true; the prefix is the default now. A custom name that stayed plain on HTTPS becomes __Host-<name>: a browser holding the old cookie gets the new one on its next GET, and a form loaded before the deploy is refused once. Code that reads the cookie by name reads __Host-<name> on HTTPS. Set NoHostPrefix: true only for a CookiePath other than /, and accept that a sibling subdomain can then plant a token."
+    find:
+      fields:
+        - field: gofastr/core/middleware.CSRFConfig.HostPrefixWhenSecure
+        - field: gofastr/core/middleware.CSRFConfig.CookieName
+        - field: gofastr/core/middleware.CSRFConfig.CookiePath
+      uses:
+        - gofastr/battery/auth.WithCSRFCookieName

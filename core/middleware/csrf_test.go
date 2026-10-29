@@ -103,7 +103,7 @@ func TestCSRFCookieHostPrefixedBehindProxy(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// A host-supplied cookie name, which is what battery/auth
 			// passes; the branch the per-request resolution skipped.
-			h := CSRF(CSRFConfig{CookieName: "auth_csrf", HostPrefixWhenSecure: true})(
+			h := CSRF(CSRFConfig{CookieName: "auth_csrf"})(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)

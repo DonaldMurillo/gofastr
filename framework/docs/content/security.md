@@ -241,10 +241,17 @@ deployments where the browser is not involved.
 will autogenerate one if omitted, but that key rotates every process
 restart, and the auditable signing seam moves into the binary
 instead of into your secret store. Source it from your config /
-secret manager the same way you'd source `SessionSecret`. With
-`SecretKey` set AND `CookieSecure=true`, the cookie also gets the
-`__Host-` prefix in production, blocking subdomain cookie-injection
-attacks.
+secret manager the same way you'd source `SessionSecret`.
+
+On a secure request (`CookieSecure`, TLS, or `X-Forwarded-Proto:
+https`) the cookie is named `__Host-` plus `CookieName`, so the example
+above sets `__Host-fui_csrf`. The browser refuses a `__Host-` cookie
+from a sibling subdomain. That matters because the token is not tied
+to a session: a sibling such as `evil.example.com` could otherwise fetch
+a valid token, plant it as a `Domain=example.com` cookie, and post it
+with the victim's credentials. `NoHostPrefix: true` keeps the name as
+given; `CSRF` refuses a `CookiePath` other than `/` without it, since a
+`__Host-` cookie must have `Path=/`.
 
 On the next safe-method request (GET / HEAD / OPTIONS) the middleware
 **self-heals** stale or tampered cookies: it verifies any incoming
