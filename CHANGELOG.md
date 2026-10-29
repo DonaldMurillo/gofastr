@@ -2592,6 +2592,10 @@ few lines, and link the PR or the docs page for the rest.
   turn cancelled mid-stream or while connecting ends with reason
   `cancelled`, not `error`. See
   [harness architecture](framework/docs/content/harness-architecture.md).
+- **A harness session export holds every event.** The export read the
+  log in one `EventsSince` call, which the SQLite store caps at 10,000
+  rows, so a longer session exported a bundle missing its tail with no
+  error. It now pages through the log until a page comes back empty.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
