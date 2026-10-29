@@ -60,6 +60,17 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   rationale.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
+- One caller holds at most 16 streams on an entity
+  (`CrudHandler.EventStreamSeats`, settable via `WithEventStreamSeats`;
+  a negative value lifts the cap). The caller is the owner id on an
+  owner-scoped entity, else the signed-in user, else the tenant; every
+  anonymous stream shares one bucket. Past the cap the default answers
+  429 with `Retry-After`. `WithEventStreamSeatOverflow(stream.SeatOverflowEvictOldest)`
+  closes that caller's oldest stream instead and seats the new one. An
+  evicted stream's handler returns even when it is parked in a write to a
+  client that stopped reading: eviction sets a past write deadline on its
+  response, so the cap bounds handlers and connections without a server
+  `WriteTimeout`.
 - The stream re-validates its caller for its whole life, not just at
   connect. On every delivery and on a 30-second ticker
   (`CrudHandler.EventStreamReauth`, settable via

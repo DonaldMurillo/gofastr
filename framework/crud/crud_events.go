@@ -308,9 +308,17 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// left holding an empty stream. The seat is released on every
 		// exit below: disconnect, write error, re-auth refusal, or an
 		// EvictOldest admission closing this stream's done channel.
+		//
+		// An eviction also cuts a write this stream is parked in: a client
+		// that stopped reading holds the handler inside Write, where done
+		// never reaches it. A writer that cannot take a deadline
+		// (ErrNotSupported) leaves the parked write to the server's own
+		// WriteTimeout.
+		rc := http.NewResponseController(w)
 		seat, admitted := ch.seatRegistry().admit(
 			ch.streamSeatPrincipal(r, ownerID),
-			ch.EventStreamSeats, ch.EventStreamSeatOverflow)
+			ch.EventStreamSeats, ch.EventStreamSeatOverflow,
+			func() { _ = rc.SetWriteDeadline(time.Now()) })
 		if !admitted {
 			w.Header().Set("Retry-After", "1")
 			writeJSONError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)

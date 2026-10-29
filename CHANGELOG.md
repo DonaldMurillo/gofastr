@@ -2369,6 +2369,12 @@ few lines, and link the PR or the docs page for the rest.
   `AfterGet` came back raw from a `POST` or `PATCH` that wrote two
   levels. Every written level now runs its own entity's read hooks. See
   [hooks and transactions](framework/docs/content/hooks-and-transactions.md).
+- **An evicted `_events` stream leaves at once.** Under
+  `SeatOverflowEvictOldest` an evicted stream parked in a write to a
+  client that stopped reading held its handler until the 10-second write
+  deadline fired, so a caller reconnecting in a loop kept more handlers
+  than its seat cap. Eviction now cuts the parked write with a past
+  deadline, as the SSE broker does. See [events](framework/docs/content/events.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but
