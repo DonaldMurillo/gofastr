@@ -2265,6 +2265,16 @@ few lines, and link the PR or the docs page for the rest.
   re-picked the customer. A reference the update leaves as stored, every
   column of it, is no longer checked; one that changes in any column
   still is. See [security](framework/docs/content/security.md).
+- **A SQLite restore keeps timestamps filterable.** The export wrote every
+  time the driver parsed in RFC 3339 with trailing zeros trimmed, so
+  crud's `...05.120000Z` came back `...05.12Z` and a date came back
+  `...T00:00:00Z`. SQLite compares the text, so after a restore an
+  equality filter missed those rows and same-second rows reordered under
+  a cursor. A battery's `DATETIME` changed spelling too. The export now
+  reads a SQLite time column as stored and writes a Postgres instant in
+  the layout crud uses; an import rewrites an older archive's declared
+  `Timestamp` and `Date` columns in it. See
+  [data export](framework/docs/content/data-export.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

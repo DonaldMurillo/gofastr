@@ -337,3 +337,10 @@ notes:
     find:
       uses:
         - gofastr/framework/crud.TypedQuery.UpdateAll
+  - change: "An export archive spells a Postgres timestamp in schema.TimestampLayout and a DATE as YYYY-MM-DD, keeps a SQLite time column's stored text, and an import rewrites a declared Timestamp or Date column in those layouts"
+    breaking: false
+    guidance: "A tool that reads archives itself sees 2024-01-03T10:00:05.120000Z where it saw 2024-01-03T10:00:05.12Z, a bare date where it saw 2024-01-03T00:00:00Z, and a SQLite battery column as the database stored it. A SQLite database already restored from an older archive keeps the trimmed spellings; restore once more on this version (export, then import into an empty database) to rewrite its declared Timestamp and Date columns."
+    find:
+      uses:
+        - gofastr/framework.App.ExportData
+        - gofastr/framework.App.ImportData

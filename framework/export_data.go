@@ -154,6 +154,10 @@ type exportSource struct {
 	// raw is a registered battery table: no field declares its
 	// auto-increment columns, so a restore asks the catalog for them.
 	raw bool
+	// timestamps and dates are the columns an entity declares Timestamp
+	// and Date, which a restore writes in the layouts crud writes them in
+	// (canonicalTimes).
+	timestamps, dates []string
 }
 
 // ExportData dumps every entity's rows plus every registered battery table to
@@ -376,6 +380,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		if err != nil {
 			return fmt.Errorf("framework: import: parse %q: %w", p.src.name, err)
 		}
+		canonicalTimes(rows, p.src.timestamps, p.src.dates)
 		var deferred []deferredRef
 		if len(p.src.selfRefs) > 0 {
 			rows, deferred = parentRowsFirst(rows, p.src.primaryKey, p.src.selfRefs)
@@ -458,6 +463,8 @@ func (a *App) collectSources() ([]exportSource, error) {
 		tableName := map[string]string{}   // table → lex-first entity name
 		tablePK := map[string][]string{}   // table → primary-key columns
 		tableSerial := map[string][]string{}
+		tableTimestamps := map[string][]string{}
+		tableDates := map[string][]string{}
 		// The maps are keyed by the folded table: Widgets and widgets are one
 		// table to the unquoted DDL, and two sources for it exported its rows
 		// twice and failed the restore on the second copy's keys. A source
@@ -475,6 +482,14 @@ func (a *App) collectSources() ([]exportSource, error) {
 			for _, f := range ent.GetFields() {
 				if f.AutoGenerate == schema.AutoIncrement {
 					tableSerial[table] = appendUnique(tableSerial[table], f.Name)
+				}
+				switch f.Type {
+				case schema.Timestamp:
+					tableTimestamps[table] = appendUnique(tableTimestamps[table], f.Name)
+				case schema.Date:
+					tableDates[table] = appendUnique(tableDates[table], f.Name)
+				default:
+					// Every other type restores as the archive holds it.
 				}
 			}
 			// Union this entity's columns into the table's set. Duplicates are
@@ -526,7 +541,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 			src := exportSource{
 				name: n, source: "entity",
 				table: tableSpell[t], primaryKey: tablePK[t], columns: tableCols[t],
-				serial: tableSerial[t],
+				serial: tableSerial[t], timestamps: tableTimestamps[t], dates: tableDates[t],
 			}
 			if pivot[t] {
 				src.source = "pivot"
@@ -800,8 +815,10 @@ func (a *App) registryView() entity.Registry {
 // rawReadAll reads every physical row of table, all columns, ordered and paged
 // by primary-key keyset. No soft-delete filter, no owner/tenant scope, a full
 // backup. Scanned values are normalized so the JSON form round-trips: a binary
-// value → {"$bytes": base64}, any other []byte → string, time.Time → RFC3339
-// string; int64/float64/bool/nil pass through.
+// value → {"$bytes": base64}, any other []byte → string, time.Time →
+// schema.TimestampLayout (YYYY-MM-DD for a DATE column); int64/float64/
+// bool/nil pass through. SQLite time columns are read as stored
+// (exportSelectList), so only Postgres hands back a time.Time.
 //
 // A composite key pages by row value, (a, b) > ($1, $2), which Postgres and
 // SQLite both compare column by column. A table with no key has nothing to
@@ -822,11 +839,10 @@ func rawReadAll(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table 
 			readCols = append(readCols, k)
 		}
 	}
-	selList := make([]string, len(readCols))
-	for i, c := range readCols {
-		selList[i] = query.QuoteFolded(query.MustIdent(c))
+	colList, err := exportSelectList(ctx, db, dialect, qt, readCols)
+	if err != nil {
+		return nil, err
 	}
-	colList := strings.Join(selList, ", ")
 	keyIdx := make([]int, len(keys))
 	quotedKeys := make([]string, len(keys))
 	marks := make([]string, len(keys))
@@ -886,8 +902,48 @@ func rawReadUnkeyed(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("no columns to read for table %q", qt)
 	}
-	q := fmt.Sprintf("SELECT %s FROM %s", quotedCols("", columns), qt)
+	colList, err := exportSelectList(ctx, db, dialect, qt, columns)
+	if err != nil {
+		return nil, err
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s", colList, qt)
 	return scanExportRows(ctx, db, dialect, q, nil, len(columns), columns, nil)
+}
+
+// exportSelectList is the SELECT list an export reads cols with. On SQLite
+// a column declared DATE, DATETIME or TIMESTAMP is read as +c: the driver
+// parses those columns' text into time.Time by the declared type, which
+// drops the spelling the row stored, and SQLite compares the spelling. A
+// restore that wrote back a reformatted value ("...05.12Z" for crud's
+// "...05.120000Z", or a battery's "2024-01-03 10:00:00+00:00" as
+// "2024-01-03T10:00:00Z") made filters miss it and same-second rows
+// reorder (2026-10-27 D12). Unary + returns its operand unchanged, text,
+// number or blob, and an expression has no declared type, so the driver
+// hands the stored value through. The driver upper-cases declared types.
+func exportSelectList(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt string, cols []string) (string, error) {
+	list := make([]string, len(cols))
+	for i, c := range cols {
+		list[i] = query.QuoteFolded(query.MustIdent(c))
+	}
+	if dialect == migrate.DialectPostgres {
+		return strings.Join(list, ", "), nil
+	}
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s LIMIT 0", strings.Join(list, ", "), qt))
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return "", err
+	}
+	for i := range list {
+		switch types[i].DatabaseTypeName() {
+		case "DATE", "DATETIME", "TIMESTAMP":
+			list[i] = "+" + list[i]
+		}
+	}
+	return strings.Join(list, ", "), rows.Err()
 }
 
 // scanExportRows runs q and returns its rows as maps of the first
@@ -908,8 +964,10 @@ func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q 
 		return nil, err
 	}
 	binary := make([]bool, len(columns))
+	date := make([]bool, len(columns))
 	for i := range columns {
 		binary[i] = dialect != migrate.DialectPostgres || strings.EqualFold(types[i].DatabaseTypeName(), "BYTEA")
+		date[i] = types[i].DatabaseTypeName() == "DATE"
 	}
 	var out []map[string]any
 	for rows.Next() {
@@ -927,7 +985,7 @@ func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q 
 				row[c] = map[string]string{bytesTag: base64.StdEncoding.EncodeToString(b)}
 				continue
 			}
-			row[c] = normalizeScan(vals[i])
+			row[c] = normalizeScan(vals[i], date[i])
 		}
 		if seen != nil {
 			seen(vals)
@@ -969,15 +1027,48 @@ func rawWriteAll(ctx context.Context, tx *sql.Tx, table string, columns []string
 	return nil
 }
 
-// normalizeScan maps driver-returned values to a JSON-stable form.
-func normalizeScan(v any) any {
+// normalizeScan maps driver-returned values to a JSON-stable form. An
+// instant (Postgres; SQLite reads its time columns as text) leaves in the
+// layout crud writes a Timestamp in, or YYYY-MM-DD for a DATE column, so a
+// restore into SQLite stores what crud would have.
+func normalizeScan(v any, date bool) any {
 	switch x := v.(type) {
 	case []byte:
 		return string(x)
 	case time.Time:
-		return x.UTC().Format(time.RFC3339Nano)
+		if date {
+			return x.Format(time.DateOnly)
+		}
+		return schema.FormatTimestamp(x)
 	default:
 		return v
+	}
+}
+
+// canonicalTimes rewrites, in place, each RFC 3339 value of a declared
+// Timestamp column in schema.TimestampLayout, and each midnight-UTC one of
+// a Date column as YYYY-MM-DD. Archives written before v0.96.0 hold the
+// trimmed spelling the export used to write, which a SQLite filter or
+// cursor bound in the canonical layout does not match. A value of any
+// other shape is kept as the archive holds it.
+func canonicalTimes(rows []map[string]any, timestamps, dates []string) {
+	for _, row := range rows {
+		for _, c := range timestamps {
+			if s, ok := row[c].(string); ok {
+				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+					row[c] = schema.FormatTimestamp(t)
+				}
+			}
+		}
+		for _, c := range dates {
+			if s, ok := row[c].(string); ok {
+				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+					if day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC); t.Equal(day) {
+						row[c] = day.Format(time.DateOnly)
+					}
+				}
+			}
+		}
 	}
 }
 

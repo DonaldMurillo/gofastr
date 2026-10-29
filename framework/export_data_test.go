@@ -62,20 +62,22 @@ func newExportTestApp(t *testing.T) (*App, *sql.DB) {
 }
 
 // seedExportRows inserts rows with explicit ids/timestamps/owner/tenant,
-// including one soft-deleted row and one hidden-column value.
+// including one soft-deleted row and one hidden-column value. Timestamps
+// are in schema.TimestampLayout, as crud writes them: a restore writes a
+// declared Timestamp column in that layout (canonicalTimes).
 func seedExportRows(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := db.ExecContext(ctx, `INSERT INTO documents
 		(id, title, body, owner_id, views, internal_note, created_at, updated_at, tenant_id, deleted_at)
 		VALUES
-		('d1','Doc One','alpha','u1',5,'secret-1','2024-01-01T00:00:00Z','2024-01-02T00:00:00Z','t1',NULL),
-		('d2','Doc Two','beta','u2',9,'secret-2','2024-01-03T00:00:00Z','2024-01-04T00:00:00Z','t2','2024-01-05T00:00:00Z')`)
+		('d1','Doc One','alpha','u1',5,'secret-1','2024-01-01T00:00:00.000000Z','2024-01-02T00:00:00.000000Z','t1',NULL),
+		('d2','Doc Two','beta','u2',9,'secret-2','2024-01-03T00:00:00.000000Z','2024-01-04T00:00:00.000000Z','t2','2024-01-05T00:00:00.000000Z')`)
 	if err != nil {
 		t.Fatalf("seed documents: %v", err)
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO tags (id, name, created_at, updated_at)
-		VALUES ('g1','go','2024-02-01T00:00:00Z','2024-02-02T00:00:00Z')`)
+		VALUES ('g1','go','2024-02-01T00:00:00.000000Z','2024-02-02T00:00:00.000000Z')`)
 	if err != nil {
 		t.Fatalf("seed tags: %v", err)
 	}
@@ -164,7 +166,7 @@ func TestExportImportDataRoundTrip(t *testing.T) {
 	if d2["internal_note"] != "secret-2" {
 		t.Errorf("d2 hidden column not preserved: %v", d2["internal_note"])
 	}
-	if d2["created_at"] != "2024-01-03T00:00:00Z" {
+	if d2["created_at"] != "2024-01-03T00:00:00.000000Z" {
 		t.Errorf("d2 created_at not preserved: %v", d2["created_at"])
 	}
 	d1 := byID["d1"]
