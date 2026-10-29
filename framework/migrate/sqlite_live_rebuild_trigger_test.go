@@ -149,6 +149,30 @@ func TestLiveSQLiteRebuildKeepsTriggerOrder(t *testing.T) {
 	}
 }
 
+// A view that reads a table does not stop boot from rebuilding it for a
+// key change. The rebuild's final RENAME re-parses every view on modern
+// SQLite and fails on the dropped table, so boot runs it with
+// legacy_alter_table on, as the live path and the generated file do, and
+// turns it back off after (2026-10-27 M4).
+func TestBootKeyRebuildWithView(t *testing.T) {
+	db := testdb.Open(t, migrate.DialectSQLite)
+	db.SetMaxOpenConns(1) // the pragma check below reads boot's connection
+	bootPlan(t, db, "1", widgetsIn("widgets", []string{"id"}, nil))
+	// Boot changes only an empty table's key; the row goes in after.
+	fkExec(t, db, `CREATE VIEW widget_titles AS SELECT id, title FROM widgets`)
+	bootPlan(t, db, "2", widgetsIn("widgets", []string{"code"}, nil))
+	fkExec(t, db, `INSERT INTO widgets (id, title, code) VALUES ('a', 't', 'ca')`)
+	if got := sqliteKeyCols(t, db, "main", "widgets"); len(got) != 1 || got[0] != "code" {
+		t.Fatalf("key after boot = %v, want [code]", got)
+	}
+	if n := countRows(t, db, `SELECT COUNT(*) FROM widget_titles WHERE id = 'a'`); n != 1 {
+		t.Fatalf("the view reads %d rows after the rebuild, want 1", n)
+	}
+	if n := countRows(t, db, `PRAGMA legacy_alter_table`); n != 0 {
+		t.Fatalf("legacy_alter_table = %d after boot, want 0", n)
+	}
+}
+
 // Boot rebuilds a SQLite table whose key changes and re-runs the declared
 // routines after it, but a trigger written by hand is no routine: the
 // rebuild's DROP TABLE took it and boot said nothing.

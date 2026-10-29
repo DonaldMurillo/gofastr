@@ -2755,6 +2755,15 @@ few lines, and link the PR or the docs page for the rest.
   now returns an error naming the routine. Declaring it again with a
   `Down` and generating records the drop, and the removal then carries
   it.
+- **A view on a SQLite table no longer fails boot's key-change rebuild.**
+  The rebuild's final `RENAME` re-parsed every view and failed with
+  `error in view …: no such table`. Boot now runs it under
+  `PRAGMA legacy_alter_table`, as the live apply and generated files do,
+  and turns the pragma back off afterwards.
+- **Declared renames run in order of the old name.** Map order picked
+  the order of the `RENAME COLUMN` statements and of an app spec's rename
+  errors, so the same declaration could generate a different migration or
+  error text on each run.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

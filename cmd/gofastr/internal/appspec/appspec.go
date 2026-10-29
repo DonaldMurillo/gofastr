@@ -2597,7 +2597,8 @@ func ValidateAppSpec(bp AppSpec) error {
 		for _, field := range decl.Fields {
 			declaredFields[field.Name] = true
 		}
-		for old, next := range decl.Renames {
+		for _, old := range slices.Sorted(maps.Keys(decl.Renames)) {
+			next := decl.Renames[old]
 			if _, err := query.SafeIdent(old); err != nil {
 				errs.add(fmt.Errorf("app spec: entity %q rename key %q is not a safe column name: %w", decl.Name, old, err))
 			}

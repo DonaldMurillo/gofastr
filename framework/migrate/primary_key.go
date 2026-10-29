@@ -398,8 +398,26 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 	if err != nil {
 		return err
 	}
-	if err := execRebuild(ctx, exec, change); err != nil {
-		return fmt.Errorf("%s: %w", change.Summary, err)
+	if dialect == DialectSQLite {
+		// The rebuild ends in a RENAME, which modern SQLite runs only
+		// after re-parsing every view and trigger in the schema; a view
+		// that reads this table names a table the rebuild just dropped,
+		// so the RENAME fails. Legacy mode skips that check, as the live
+		// path (withSQLiteRebuildConn) and the generated file already do.
+		// The pragma belongs to the connection, not the transaction, so
+		// it goes back off whether or not the rebuild worked.
+		if _, err := exec.ExecContext(ctx, "PRAGMA legacy_alter_table=ON"); err != nil {
+			return fmt.Errorf("enable legacy_alter_table for the rebuild: %w", err)
+		}
+	}
+	rerr := execRebuild(ctx, exec, change)
+	if dialect == DialectSQLite {
+		if _, err := exec.ExecContext(context.WithoutCancel(ctx), "PRAGMA legacy_alter_table=OFF"); err != nil && rerr == nil {
+			return fmt.Errorf("restore legacy_alter_table after the rebuild: %w", err)
+		}
+	}
+	if rerr != nil {
+		return fmt.Errorf("%s: %w", change.Summary, rerr)
 	}
 	if deferred != nil {
 		*deferred = append(*deferred, change.deferredFKs...)

@@ -335,7 +335,10 @@ routines to re-run, so it reads the table's own triggers from
 `sqlite_master` just before the rebuild and recreates them right after
 it, oldest first, since SQLite fires a table's triggers newest first.
 Boot's key-change rebuild does the same, so a trigger written by hand,
-which is no routine, survives it too.
+which is no routine, survives it too, and it runs the rename under
+`PRAGMA legacy_alter_table` as well, so a view that reads the table does
+not fail the boot. It turns the pragma back off afterwards, whether or not
+the rebuild worked.
 `migrate generate` cannot turn foreign keys off that way, because the runner applies each file inside a
 transaction, where the pragma has no effect: it refuses a rebuild that a
 `CASCADE` or `SET NULL` key references and names those tables. It reads
@@ -371,7 +374,9 @@ entities:
 
 The new name must be a declared field and the old one must not be, since the
 diff would otherwise see both columns. Both sides are checked as column
-identifiers at validate time.
+identifiers at validate time. Renames run, and their errors are reported, in
+order of the old name, so the same declaration gives the same migration and
+the same error text on every run.
 
 Type-change detection catches the type *class* (e.g. TEXT→INTEGER) but NOT
 size/precision changes: `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`

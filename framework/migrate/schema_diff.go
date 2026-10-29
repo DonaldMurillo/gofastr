@@ -369,7 +369,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	renameSources := map[string]bool{}    // old column names consumed by a rename
 	renameOldByNew := map[string]string{} // new (lower) → old (lower), so the type-change loop can compare a renamed column's declared type against its live (old-name) type
 	renameNewByOld := map[string]string{} // old (lower) → new, so the live key reads by the names the renames give it
-	for oldName, newName := range ent.Config.Renames {
+	// Sorted by the old name: map order would give the same plan a
+	// different statement order on every run.
+	for _, oldName := range slices.Sorted(maps.Keys(ent.Config.Renames)) {
+		newName := ent.Config.Renames[oldName]
 		oldLow := strings.ToLower(oldName)
 		newLow := strings.ToLower(newName)
 		if _, oldLive := liveLower[oldLow]; !oldLive {
