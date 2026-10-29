@@ -2322,6 +2322,12 @@ few lines, and link the PR or the docs page for the rest.
   tenant from a server-side lookup and runs it again on each
   `handler.RecheckPrincipal`, so the stream closes at the next check.
   See [multi-tenant](framework/docs/content/multi-tenant.md).
+- **A TURN refresh re-checks each RTC peer before minting its
+  credential.** A joined socket re-checks its principal on every frame
+  and every 30 seconds when idle, but a TURN refresh landing in that
+  window still sent a revoked peer a fresh credential. The refresh now
+  re-checks every peer first and closes the ones that no longer hold.
+  See [rtc](framework/docs/content/rtc.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

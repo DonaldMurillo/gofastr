@@ -48,6 +48,15 @@ leave). Set a stable per-tab `PeerID` only when you can mint one the
 client cannot forge, and a reconnect becomes a rejoin that keeps its
 connected peer connections.
 
+**A joined socket keeps checking its principal.** Before acting on each
+inbound frame, on an idle ticker (30 seconds), and before each TURN
+refresh, the socket re-establishes its principal
+(`handler.RecheckPrincipal`) and, under `ServeHTTP`, runs `Authorize`
+again on the refreshed request. A refusal, or an `Authorize` that now
+names another room, closes the socket with code 4401, so a signed-out or
+revoked user stops signaling, stops receiving room events and gets no
+fresh TURN credential.
+
 **Refusals reach the browser.** An error from `Authorize`, a bad
 `Join`, a full room, or a closed signaler keeps its HTTP status for a
 plain request (curl, a Go peer). A WebSocket upgrade request is
