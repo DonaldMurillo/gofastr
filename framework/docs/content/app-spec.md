@@ -1167,16 +1167,32 @@ visible to everyone.
 not gate the route. Whether the destination is protected depends entirely on
 what guards the destination: entity `access:` permissions gate the DATA a
 screen renders (a caller without them sees the "Not available" notice in place
-of rows), and the admin battery gates its own console. An app spec screen
-cannot declare a role of its own; `screens: role:` is not a key. A plain
-generated screen sitting at a role-gated href answers 200 to anyone who types
-the URL, with whatever ungated content it holds. Every screen path also appears
-in the route manifest embedded in each page, so the href is discoverable
-regardless of whether its nav link renders.
+of rows), the screen's own `access:` block gates the route, and the admin
+battery gates its own console. A generated screen with no `access:` block
+sitting at a role-gated href answers 200 to anyone who types the URL, with
+whatever ungated content it holds. Every screen path also appears in the route
+manifest embedded in each page, so the href is discoverable regardless of
+whether its nav link renders.
 
 Put anything that must not be reached behind a gate on the destination: give
-the entities it reads an `access:` permission, or mount it under the admin
-battery.
+the screen an `access:` block, give the entities it reads an `access:`
+permission, or mount it under the admin battery.
+
+```yaml
+screens:
+  - name: billing
+    route: /app/billing
+    access:
+      auth: true    # redirect an anonymous visitor to the login page
+      role: admin   # 403 a signed-in user without the role
+```
+
+The generated `authPolicy` composes `auth.SessionPolicy` and
+`auth.RolePolicy`, so an access decider installed with
+`access.DeciderMiddleware` binds the role check the same way it binds every
+other battery/auth role gate (see
+[access control](access-control.md#wiring-it-decidermiddleware)), and a
+scoped API token is refused.
 
 ### Seed data
 

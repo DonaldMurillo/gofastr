@@ -281,3 +281,7 @@ notes:
     breaking: false
     guidance: "The refresh used LinkOAuthEnriched, an upsert that put back a link an account claim had just removed. Implement RefreshOAuthProfile(ctx, userID, provider, providerID, profile) as an UPDATE of the link's profile columns, matching all three keys, to keep profiles current. EntityUserStore does already."
     nodetect: "a custom store implements the method on its own type; no framework name appears at the site"
+  - change: "A generated app's authPolicy checks a screen's role through auth.RolePolicy, so an access decider binds it and a scoped API token is refused"
+    breaking: false
+    guidance: "The generated function read the user's roles itself and never asked the decider installed by access.DeciderMiddleware. An app generated before this release keeps that function in its app.go: replace authPolicy with the one gofastr new now writes, which composes auth.SessionPolicy(auth.WithRedirect(loginPath)) and auth.RolePolicy(auth.Roles(role))."
+    nodetect: "the old authPolicy is the app's own function in its app.go; no framework name appears at the role check"

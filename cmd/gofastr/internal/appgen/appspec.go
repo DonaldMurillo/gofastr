@@ -502,6 +502,31 @@ func redactDSN(dsn string) string {
 	return dsnredact.Redact(dsn)
 }
 
+// appSpecAuthPolicyFunc is the generated authPolicy. It composes
+// battery/auth's policies rather than reading the user's roles itself: a
+// hand-written role loop never asked an access Decider, so a host's
+// DeciderMiddleware deny did not bind generated role-gated screens.
+func appSpecAuthPolicyFunc() string {
+	return `// authPolicy gates a screen: redirect an anonymous visitor to the login
+// page (with ?next=) and 403 a signed-in user missing the required role.
+// The role check is auth.RolePolicy, so an access Decider binds it.
+func authPolicy(loginPath, role string) app.Policy {
+	signedIn := auth.SessionPolicy(auth.WithRedirect(loginPath))
+	if role == "" {
+		return signedIn
+	}
+	hasRole := auth.RolePolicy(auth.Roles(role))
+	return app.PolicyFunc(func(ctx context.Context) app.Decision {
+		if d := signedIn.Decide(ctx); d.Kind != app.DecisionAllow {
+			return d
+		}
+		return hasRole.Decide(ctx)
+	})
+}
+
+`
+}
+
 // appSpecE2EScreenRoutes splits the app spec's STATIC screen routes (those
 // without a `{param}`) into public (anonymous-renderable) and gated (auth) sets.
 // Dynamic routes are exercised by the CRUD lifecycle, which has a real id.
@@ -3979,9 +4004,6 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if adminSeed {
 		sb.WriteString("\t\"fmt\"\n")
 	}
-	if hasAccess {
-		sb.WriteString("\t\"net/url\"\n")
-	}
 	if bp.App.Auth.Enabled {
 		// JWT_SECRET + ADMIN_SEED_PASSWORD are read from the environment.
 		sb.WriteString("\t\"os\"\n")
@@ -3992,7 +4014,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
-	if hasAccess || guestRedirect {
+	if guestRedirect {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app/decide\"\n")
 	}
 	if hasShell {
@@ -4031,7 +4053,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
-	if hasAccess || rbac || roleNav || authHeader || guestRedirect || authSidebar {
+	if rbac || roleNav || authHeader || guestRedirect || authSidebar {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if needUI {
@@ -4044,7 +4066,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if rbac {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/access\"\n")
 	}
-	if bp.App.Auth.Enabled {
+	if bp.App.Auth.Enabled || hasAccess {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/auth\"\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
@@ -4062,25 +4084,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	sb.WriteString(")\n\n")
 	sb.WriteString(appSpecBaseCSSFunc())
 	if hasAccess {
-		sb.WriteString("// authPolicy gates a screen: redirect anonymous GETs to the login\n")
-		sb.WriteString("// page (with ?next=) and 403 a signed-in user missing the required role.\n")
-		sb.WriteString("func authPolicy(loginPath, role string) app.Policy {\n")
-		sb.WriteString("\treturn app.PolicyFunc(func(ctx context.Context) app.Decision {\n")
-		sb.WriteString("\t\tu, ok := handler.GetUser(ctx)\n")
-		sb.WriteString("\t\tif !ok || u == nil {\n")
-		sb.WriteString("\t\t\tnext := \"/\"\n")
-		sb.WriteString("\t\t\tif r := app.RequestFromContext(ctx); r != nil { next = r.URL.Path }\n")
-		sb.WriteString("\t\t\treturn decide.Redirect(loginPath + \"?next=\" + url.QueryEscape(next))\n")
-		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t\tif role != \"\" {\n")
-		sb.WriteString("\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
-		sb.WriteString("\t\t\t\tfor _, r := range rh.GetRoles() { if r == role { return decide.Allow() } }\n")
-		sb.WriteString("\t\t\t}\n")
-		sb.WriteString("\t\t\treturn decide.Block(403)\n")
-		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t\treturn decide.Allow()\n")
-		sb.WriteString("\t})\n")
-		sb.WriteString("}\n\n")
+		sb.WriteString(appSpecAuthPolicyFunc())
 	}
 	if guestRedirect {
 		sb.WriteString("// guestPolicy gates a guest-only screen (login / signup): a\n")

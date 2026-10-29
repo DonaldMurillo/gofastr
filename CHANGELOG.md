@@ -2270,6 +2270,13 @@ few lines, and link the PR or the docs page for the rest.
   `access.Decider` that denied an admin one of them was never asked. Its
   deny now refuses; its allow still admits nothing the policy does not.
   See [admin](framework/docs/content/admin.md#process-modules).
+- **An access decider binds a generated screen's role gate.** The
+  `authPolicy` the app spec writes into `app.go` read the user's roles
+  itself, so an `access.DeciderMiddleware` deny never reached a screen with
+  `access: { role: ... }`, and a scoped API token passed on its owner's
+  roles. It composes `auth.SessionPolicy` and `auth.RolePolicy` now; an app
+  generated earlier replaces the function by hand. Meridian carries the
+  same function. See [app spec](framework/docs/content/app-spec.md).
 - **A session-scoped harness token lists only its own sessions.**
   `GET /v1/sessions` (live and `?past=true`), the MCP
   `harness.list_sessions` tool and the `harness/v1://sessions` resource
