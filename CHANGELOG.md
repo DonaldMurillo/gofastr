@@ -3023,6 +3023,15 @@ few lines, and link the PR or the docs page for the rest.
   an anonymous caller, so their slot HTML was public on the static host.
   Such a widget now gets its style sheet (ungated live too) and no chrome
   file.
+- **`fs.writeText` stays inside its grant.** The fs allow-list checked a
+  path's cleaned form, then resolved the raw path and passed whenever
+  that resolution failed, which it always does for a file that does not
+  exist yet. A save target spelled `dir/link/../name`, which cleans to
+  the grant while the OS follows the link, or one whose missing parent
+  became a symlink after the grant, was written outside the granted
+  directory. A path must now arrive in the exact clean form the dialog
+  returned (the dialogs return that form), and a missing file resolves
+  through its deepest existing parent.
 
 ## [0.95.0] - 2026-10-26
 

@@ -215,9 +215,14 @@ The core capabilities:
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants): the cleaned absolute path
-AND its symlink resolution must both be on the list, so a symlink
-already in place when the request arrives cannot widen access. It is
+(`Battery.AllowPath` for in-process grants). The path must arrive in
+the exact cleaned absolute form the dialog returned: `a/link/../x` or
+`a//x` is refused even when it cleans to a grant, because the OS opens
+the raw string and walks `link/..` through the link. Its live symlink
+resolution must be on the list too, and for a file that does not exist
+yet that means its deepest existing parent's, so a symlink already in
+place when the request arrives, or a missing parent replaced by one
+after the grant, cannot widen access. It is
 not open-then-verify: a local process running as the same user could
 still win the race between the resolution and the open, but such a
 process can read the file directly anyway, so the bridge is not a
