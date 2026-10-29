@@ -331,3 +331,9 @@ notes:
       text:
         - glob: "**/gofastr.yml"
           match: '^\s+cascade_write:\s*true'
+  - change: "TypedQuery.UpdateAll names columns as CreateOne and UpdateOne do, and returns \"no fields to update\" for a body that sets no writable field"
+    breaking: false
+    guidance: "A MarshalEntity key such as line2 now writes its line_2 column instead of being dropped. A call whose body named no writable column used to restamp updated_at alone and report the rows it matched; it now errors, so a caller that bumped updated_at that way passes updated_at itself. Two keys naming one column (line2 and line_2) are refused."
+    find:
+      uses:
+        - gofastr/framework/crud.TypedQuery.UpdateAll

@@ -2245,6 +2245,13 @@ few lines, and link the PR or the docs page for the rest.
   reading is treated as one that never arrived, as `Gauge`, `Heatmap` and
   `Scatter` already did. `LineChart` labels now sit over the points of
   the longest series.
+- **`TypedQuery.UpdateAll` writes a field whose column has a digit
+  segment.** `MarshalEntity` spells a `Line2` field `line2`, which
+  `UpdateAll` matched to no column; the `updated_at` restamp then counted
+  as a write, so the call reported the rows it touched having changed
+  only the timestamp. It now names columns as `CreateOne` and `UpdateOne`
+  do, leaves the caller's map alone, and returns "no fields to update"
+  for a body that sets nothing.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
