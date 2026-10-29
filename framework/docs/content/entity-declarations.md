@@ -1703,7 +1703,11 @@ links nothing. Its `BeforeList` hooks run on `?include=` and nested
 filters too, so a link `GET /enrollments` would not list for the caller
 links nothing either, and a hook that refuses refuses the read. Boot refuses the relation when the entity does not
 declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
-creates no pivot of its own. A `cascade_write` link writes its pivot
+creates no pivot of its own. `Through` matches the entity's `Table`
+ignoring case, and must spell the schema the same way: `public.enrollments`
+against a `Table` of `enrollments` (or the reverse) may be one table under
+the connection's `search_path`, so boot refuses it and so does every read
+through the relation. A `cascade_write` link writes its pivot
 row through that entity's own create: its `access` create permission
 and `CRUD: false` refuse the link, its tenant and owner columns are
 stamped, its hooks run, and its `belongs_to` checks read the row as the

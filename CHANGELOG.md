@@ -2348,6 +2348,14 @@ few lines, and link the PR or the docs page for the rest.
   deleting the documented key removed nothing and the value shipped, an
   aliased JSON column went out as a string, and a field renamed with an
   API version's `Rename` kept its old name on the list.
+- **A schema-qualified `Through` no longer skips its join entity's
+  gates.** The join entity was found by an exact table-name match, so
+  `Through: "public.memberships"` against a `Table` of `memberships`
+  found none, and includes and nested filters joined the table with no
+  owner, tenant, soft-delete or read predicate on the links. Boot and
+  every read now refuse a `Through` and a join entity's `Table` that
+  differ only in naming a schema; spell them the same. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

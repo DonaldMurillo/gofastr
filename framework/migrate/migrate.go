@@ -1439,11 +1439,16 @@ func generatedPivots(ordered []*entity.Entity, all map[string]*entity.Entity) it
 // checkPivotEntity refuses a many_to_many whose Through table a registered
 // entity owns but whose two link columns that entity does not declare: the
 // migrator creates no pivot then, and every read of the relation would
-// name a column the table lacks.
+// name a column the table lacks. It also refuses a Through that spells a
+// join entity's table with a schema the entity's Table leaves off, or the
+// reverse: reads would find no join entity and skip its gates.
 func checkPivotEntity(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
 	for _, name := range slices.Sorted(maps.Keys(all)) {
 		e := all[name]
 		if !strings.EqualFold(e.GetTable(), rel.Through) {
+			if entity.TableSchemaSpellingDiffers(e.GetTable(), rel.Through) {
+				return fmt.Errorf("entity %q relation %q: through table %q and join entity %q's table %q may name one table with and without its schema: spell them the same", ent.GetName(), rel.Name, rel.Through, e.GetName(), e.GetTable())
+			}
 			continue
 		}
 		for _, col := range []string{rel.LocalKey, rel.ForeignKeyTarget} {

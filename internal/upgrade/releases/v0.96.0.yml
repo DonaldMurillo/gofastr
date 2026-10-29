@@ -305,3 +305,19 @@ notes:
     find:
       uses:
         - gofastr/framework.OnBeforeGet
+  - change: "A list without ?fields= serves each field under its WireName, as GET /{id} and ?fields= already did; since v0.85.0 it served the column name in the JSON case"
+    breaking: false
+    guidance: "A client that read an aliased field from a list by its column name reads the WireName instead, the key every other read serves. An AfterList hook that redacts by the WireName now finds the field on the list."
+    find:
+      uses:
+        - gofastr/core/schema.Field.WireName
+  - change: "BREAKING - boot and every read refuse a many_to_many whose Through and its join entity's Table differ only in naming a schema (public.memberships against memberships)"
+    breaking: true
+    hits: review
+    guidance: "Reads found no join entity for the mismatched spelling and skipped its owner, tenant, soft-delete and read gates. Spell Through exactly as the join entity's Table spells it; a Through that no entity owns, or that names the same schema, is unaffected."
+    find:
+      uses:
+        - gofastr/framework/entity.ManyToMany
+      text:
+        - glob: "**/*.json"
+          match: '"through":\s*"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_]'
