@@ -760,6 +760,43 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 	return false, nil
 }
 
+// getScopeHidesRow reports whether the BeforeGet chain GET runs would hide
+// a row an HTTP write just committed (2026-10-27 D4). readScopeHidesRow
+// covers the declared ReadScope; an app that scopes reads with a BeforeGet
+// hook and grants writes more widely handed a writer every column of a row
+// GET answers 404 for, a no-op PATCH being enough to read it.
+//
+// The write routes call it after commit, outside the transaction, where
+// GET would run the chain: a hook that reads the database would otherwise
+// wait on the write's own connection. A hook error, or a row it cannot
+// name, hides the row: the write stands, and the response names it by id.
+func (ch *CrudHandler) getScopeHidesRow(r *http.Request, row map[string]any) bool {
+	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.BeforeGet)) == 0 {
+		return false
+	}
+	vals, ok := ch.rowKeyVals(row)
+	if !ok {
+		return true
+	}
+	id, _ := ch.rowID(row)
+	ctx := r.Context()
+	payload := &hook.GetPayload{Request: r, ID: id}
+	if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, payload); err != nil {
+		return true
+	}
+	if len(payload.Where) == 0 {
+		return false
+	}
+	kc, ka := ch.keyCond(vals)
+	qb := query.Select(ch.keyCols()[0]).From(ch.Entity.GetTable()).Where(kc, ka...)
+	for _, c := range payload.Where {
+		qb.Where(c.SQL, c.Args...)
+	}
+	sqlStr, args := qb.Build()
+	var hit any
+	return ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&hit) != nil
+}
+
 // scopedReadBack returns row, or only its id when the caller's read scope
 // hides it. See readScopeHidesRow.
 func (ch *CrudHandler) scopedReadBack(ctx context.Context, row map[string]any) (map[string]any, error) {

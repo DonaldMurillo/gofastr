@@ -300,7 +300,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 				if res.Data == nil {
 					continue
 				}
-				if hidden[i] {
+				if hidden[i] || ch.getScopeHidesRow(r, res.Data) {
 					results[i].Data = ch.identityOnly(res.Data)
 					continue
 				}
@@ -436,7 +436,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				if res.Data == nil {
 					continue
 				}
-				if hidden[i] {
+				if hidden[i] || ch.getScopeHidesRow(r, res.Data) {
 					results[i].Data = ch.identityOnly(res.Data)
 					continue
 				}

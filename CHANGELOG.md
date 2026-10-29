@@ -2295,6 +2295,15 @@ few lines, and link the PR or the docs page for the rest.
   the list hides, and a Decimal `neq "1.50"` delivered Postgres's
   `"1.5000"`. Bool, Int, Float, Decimal and Timestamp values now compare
   as the SQL side reads them. See [events](framework/docs/content/events.md#read-scope).
+- **A write's response runs the `BeforeGet` scope GET applies.** An app
+  that scopes reads with a `BeforeGet` hook and grants writes more
+  widely handed the writer every column of a row GET answers 404 for: a
+  no-op `PATCH` of another team's row read it. Create, update, `_batch`
+  create and update, and transition responses now run the chain after
+  the commit and answer with the row's id when its clauses exclude the
+  row or the hook errors; the write itself stands. A `BeforeGet` hook
+  therefore also runs on those writes. See
+  [hooks](framework/docs/content/hooks-and-transactions.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

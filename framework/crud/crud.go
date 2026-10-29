@@ -1065,9 +1065,10 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		//
 		// A row the caller's ReadScope hides comes back as its id only, as
 		// on Update: RETURNING carries server-stamped values (defaults,
-		// hook writes) a GET of the row would answer 404 for.
+		// hook writes) a GET of the row would answer 404 for. The same holds
+		// for a BeforeGet hook's scope (getScopeHidesRow).
 		var resp map[string]any
-		if hidden {
+		if hidden || ch.getScopeHidesRow(r, result) {
 			resp = ch.identityOnly(result)
 		} else {
 			var hookErr error
@@ -1155,7 +1156,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 // leak it.
 func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, result map[string]any, hidden bool) {
 	var resp map[string]any
-	if hidden {
+	if hidden || ch.getScopeHidesRow(r, result) {
 		resp = ch.identityOnly(result)
 	} else {
 		var hookErr error

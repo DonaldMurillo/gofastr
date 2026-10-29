@@ -299,3 +299,9 @@ notes:
     breaking: false
     guidance: "A posts screen whose author_id points at a users entity with CRUD off (auth.UserEntityConfig) now draws an em dash for the author and offers no picker rows. To show those names, expose the related entity's read routes, or draw the column with the app's own component under a check the app owns."
     nodetect: "the related entity's exposure is configuration read at runtime; a screen that shows its labels has no distinct spelling"
+  - change: "A CRUD write's response runs the entity's BeforeGet hooks and answers with the row's id when their clauses exclude it"
+    breaking: false
+    guidance: "Create, update, _batch create and update, and transition responses now run the BeforeGet chain GET runs, after the commit, with the written row's id and the write's request. A BeforeGet hook that assumed a GET (reading the method, or recording a view) runs on those writes too; a hook error hides the row from the response but keeps the write."
+    find:
+      uses:
+        - gofastr/framework.OnBeforeGet
