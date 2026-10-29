@@ -226,6 +226,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) {
+				// The insert arm only: sent stays false, so the conflict
+				// arm keeps the stored state.
+				if ch.writesStateDefault(f) {
+					cols = append(cols, f.Name)
+					vals = append(vals, ch.bindJSONValue(f.Name, f.Default))
+				}
 				continue
 			}
 			val, ok := body[f.Name]

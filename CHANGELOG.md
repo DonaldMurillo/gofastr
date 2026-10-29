@@ -2392,6 +2392,12 @@ few lines, and link the PR or the docs page for the rest.
   outlets and slot the winner had marked read as idle while its request
   was still in flight. Each mark now records the navigation that set it,
   and only that navigation clears it.
+- **A state field with no `Default` starts at its first `Initial` value.**
+  A create or upsert that left the state out stored NULL, a state no move
+  starts from, so the record could never move, and a Required state field
+  failed every entityui and admin create, since the form never sends the
+  state. Define now sets the field's `Default` to that value. See
+  [states](framework/docs/content/states.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

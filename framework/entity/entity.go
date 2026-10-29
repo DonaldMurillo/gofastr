@@ -871,6 +871,7 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 	// populates.
 	c.Display = copyDisplayConfig(c.Display)
 	c.States = copyStatesConfig(c.States)
+	c.Fields = c.States.withStateDefault(c.Fields)
 	return c
 }
 

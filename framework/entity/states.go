@@ -28,7 +28,9 @@ type StatesConfig struct {
 	// Field is the Enum field holding the state.
 	Field string `json:"field"`
 	// Initial lists the values a create may set. Empty means the field's
-	// Default alone; a field with neither is refused at boot.
+	// Default alone; a field with neither is refused at boot. A field with
+	// no Default takes the first Initial value as its Default, so a create
+	// that leaves the state out starts there.
 	Initial []string `json:"initial,omitempty"`
 	// Transitions are the moves, in the order screens draw them.
 	Transitions []Transition `json:"transitions,omitempty"`
@@ -126,6 +128,29 @@ func (s *StatesConfig) Guarded() []string {
 		}
 	}
 	return cols
+}
+
+// withStateDefault returns fields with the state field's Default set to
+// the first Initial value when it has none (nil or ""). Without it a create
+// that leaves the state out stores NULL, a state no move starts from, and
+// a Required state field fails every create from a form that cannot send
+// it. The slice is cloned first so the caller's declaration is unchanged.
+func (s *StatesConfig) withStateDefault(fields []schema.Field) []schema.Field {
+	if s == nil || len(s.Initial) == 0 {
+		return fields
+	}
+	for i, f := range fields {
+		if f.Name != s.Field {
+			continue
+		}
+		if f.Default != nil && f.Default != "" {
+			return fields
+		}
+		out := slices.Clone(fields)
+		out[i].Default = s.Initial[0]
+		return out
+	}
+	return fields
 }
 
 // InitialValues returns Initial, or the field's Default when Initial is

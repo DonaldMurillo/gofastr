@@ -180,6 +180,16 @@ func (ch *CrudHandler) enforcedStates() *entity.StatesConfig {
 	return st
 }
 
+// writesStateDefault reports whether a create writes f's Default although
+// f is ReadOnly or Hidden: f is the state field, whose Default Define
+// fills from Initial when it has none. The field loops leave every other
+// such column to the table's DDL default, and a table created before the
+// state field had a Default has none, so the row would start at NULL.
+func (ch *CrudHandler) writesStateDefault(f schema.Field) bool {
+	st := ch.Entity.Config.States
+	return st != nil && f.Name == st.Field
+}
+
 // stateOverrideColumn reports whether col is a guarded column ctx's state
 // override releases, so the field loops write it even when the schema
 // marks it ReadOnly or Hidden.

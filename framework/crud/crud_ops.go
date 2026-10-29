@@ -115,6 +115,10 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		}
 		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
 			if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
+				if ch.writesStateDefault(f) {
+					cols = append(cols, f.Name)
+					vals = append(vals, ch.bindJSONValue(f.Name, f.Default))
+				}
 				continue
 			}
 		}
