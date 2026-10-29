@@ -2637,6 +2637,14 @@ few lines, and link the PR or the docs page for the rest.
   `html.Parse`, which `battery/sitesearch` calls to extract page text.
   The bump brings the other `golang.org/x` modules to their current
   releases, in the root module and in `battery/print/chromepdf`.
+- **`middleware.RateLimit` keeps an exhausted key denied.** Its idle
+  reap and its `MaxKeys` shed both read the refill clock, which a denied
+  request does not move, so any traffic from other keys dropped a key
+  that had spent a `1`-per-hour budget and its next request got a full
+  bucket. An hourly login limit became a five-minute one. The reap now
+  drops only buckets that have refilled to capacity, and the shed goes
+  nearest-to-full first. See
+  [security](framework/docs/content/security.md).
 
 ## [0.95.0] - 2026-10-26
 

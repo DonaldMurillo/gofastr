@@ -367,9 +367,14 @@ middlewares in different `middleware.Chain` calls.
 
 The in-memory bucket store caps its resident entry count at `MaxKeys`
 (default 100_000, the `framework/ratelimit` convention): an IPv6 peer
-rotates source addresses without limit, and the 5-minute idle reap never
-catches a flood of fresh keys, so past the cap the store evicts
-idle-first (oldest `lastSeen` first) down to a low-water mark.
+rotates source addresses without limit, and the reap only drops buckets
+that have refilled to capacity, which a flood's fresh keys have not. Past
+the cap the store sheds down to a low-water mark, nearest-to-full first:
+a flood's buckets have each spent one token, so they go before a key
+that spent its whole budget. A bucket that still owes tokens is never
+reaped for being quiet, so a key denied by a `Capacity: 1`,
+`RefillEvery: time.Hour` limit stays denied for the hour however much
+other traffic arrives.
 
 On every response that passes through it (both allowed and 429) the
 middleware also emits the IETF-draft budget headers so well-behaved API

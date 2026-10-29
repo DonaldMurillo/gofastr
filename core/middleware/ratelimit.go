@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"cmp"
 	"net"
 	"net/http"
 	"slices"
@@ -84,18 +85,20 @@ type RateLimitConfig struct {
 	// tracks at once. The default key is the client address, and an
 	// IPv6 peer rotates source addresses without limit (a single host
 	// owns a /64), so an attacker can mint a fresh bucket per request;
-	// the idle reap only drops buckets idle > 5 minutes and never
-	// catches a flood whose keys are all younger than that. Past the
-	// cap the store evicts idle-first (oldest lastSeen first) down to
-	// a low-water mark. 0 keeps the default, 100_000 — the
+	// the reap only drops buckets that have refilled to capacity and
+	// never catches a flood whose keys are all still refilling. Past
+	// the cap the store sheds the buckets nearest to full first down
+	// to a low-water mark, so a flood sheds its own one-token-spent
+	// buckets before a key that spent its whole budget. 0 keeps the
+	// default, 100_000 — the
 	// framework/ratelimit maxKeys convention, far above any legitimate
 	// concurrent client count.
 	MaxKeys int
 }
 
 // RateLimit returns Middleware that enforces a token-bucket rate limit per
-// extracted key. Each key gets its own bucket; expired buckets eventually
-// get reaped (every 5 minutes of inactivity).
+// extracted key. Each key gets its own bucket; a bucket is reclaimed once
+// it has refilled to capacity, never while it still owes tokens.
 //
 // Usage:
 //
@@ -220,15 +223,15 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 		// Fresh bucket starts full; this request consumes its token.
 		remaining := s.capacity - 1
 		s.buckets[key] = &bucket{tokens: remaining, lastSeen: now}
-		// Opportunistic reclaim: stale buckets on every 64th insert,
-		// and an absolute cap evicting idle-first, so neither idle
-		// age (a sustained flood of fresh keys never ages past the
-		// 5-minute cutoff) nor key churn alone grows the map.
+		// Opportunistic reclaim: full buckets on every 64th insert,
+		// and an absolute cap shedding the nearest-to-full first, so
+		// key churn cannot grow the map (a flood's fresh buckets are
+		// not full yet when the reap runs, so only the cap bounds it).
 		if len(s.buckets)%64 == 0 {
 			s.reapLocked(now)
 		}
 		if len(s.buckets) > s.maxKeys {
-			s.evictIdleLocked()
+			s.evictLocked(now)
 		}
 		return true, 0, remaining, s.timeToFull(remaining, now, now)
 	}
@@ -299,37 +302,42 @@ func ceilSeconds(d time.Duration) int {
 	return int(secs)
 }
 
-// reapLocked drops buckets idle for more than 5 minutes. Caller must hold mu.
+// reapLocked drops buckets whose refill has caught up to capacity. Such a
+// bucket holds nothing a fresh one would not, so dropping it is lossless.
+// A bucket that still owes tokens stays, however long its key has been
+// quiet: lastSeen is the refill clock, not the last request, and an
+// exhausted key that keeps getting denied never moves it. Caller must
+// hold mu.
 func (s *bucketStore) reapLocked(now time.Time) {
-	cutoff := now.Add(-5 * time.Minute)
 	for k, b := range s.buckets {
-		if b.lastSeen.Before(cutoff) {
+		if s.timeToFull(b.tokens, b.lastSeen, now) == 0 {
 			delete(s.buckets, k)
 		}
 	}
 }
 
-// evictIdleLocked sheds buckets idle-first (oldest lastSeen first) down
-// to a low-water mark of the cap, so the shed runs at most once per
-// ~10% of new-key inserts under a sustained flood instead of on every
-// insert. Idle-first keeps pre-flood legitimate clients (older
-// lastSeen) resident while the flood evicts the flood. Caller must
-// hold mu.
-func (s *bucketStore) evictIdleLocked() {
+// evictLocked sheds buckets down to a low-water mark of the cap, so the
+// shed runs at most once per ~10% of new-key inserts under a sustained
+// flood instead of on every insert. It sheds the buckets nearest to full
+// first: a full one loses nothing, and one that owes a single tick loses
+// less enforcement than an exhausted one. A flood's fresh keys have each
+// spent one token, so the flood sheds itself before a key that spent its
+// whole budget. Caller must hold mu.
+func (s *bucketStore) evictLocked(now time.Time) {
 	lowWater := s.maxKeys * 9 / 10
 	if len(s.buckets) <= lowWater {
 		return
 	}
-	type idleBucket struct {
-		key  string
-		seen time.Time
+	type owingBucket struct {
+		key   string
+		owing time.Duration
 	}
-	pending := make([]idleBucket, 0, len(s.buckets))
+	pending := make([]owingBucket, 0, len(s.buckets))
 	for k, b := range s.buckets {
-		pending = append(pending, idleBucket{key: k, seen: b.lastSeen})
+		pending = append(pending, owingBucket{key: k, owing: s.timeToFull(b.tokens, b.lastSeen, now)})
 	}
-	slices.SortFunc(pending, func(a, b idleBucket) int {
-		return a.seen.Compare(b.seen)
+	slices.SortFunc(pending, func(a, b owingBucket) int {
+		return cmp.Compare(a.owing, b.owing)
 	})
 	for i := 0; i < len(pending) && len(s.buckets) > lowWater; i++ {
 		delete(s.buckets, pending[i].key)
