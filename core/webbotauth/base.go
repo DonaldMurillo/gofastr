@@ -62,7 +62,11 @@ func newRequestCtx(r *http.Request) *requestCtx {
 		}
 	}
 	authority := normalizeAuthority(r.Host, scheme)
-	path := r.URL.Path
+	// RFC 9421 section 2.2.6: the path before any percent-encoded octet
+	// is decoded. URL.Path is the decoded form, which reads /a%2Fb as
+	// /a/b; EscapedPath keeps RawPath, the octets as sent, and a client
+	// request sends EscapedPath on the wire.
+	path := r.URL.EscapedPath()
 	query := r.URL.RawQuery
 	reqTarget := path
 	if query != "" {

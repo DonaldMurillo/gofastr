@@ -86,6 +86,11 @@ key thumbprint); it says a key that URL published signed the covered
 message, nothing more. Authorization, reputation, and rate limits
 remain the origin's policy.
 
+`@path`, `@request-target` and `@target-uri` carry the path as the
+client sent it, before percent-decoding (RFC 9421 section 2.2.6), so a
+signature over `/docs/a%20b` verifies and one over `/a/b` does not
+verify on `/a%2Fb`.
+
 ### The two modes
 
 | Mode | Behaviour |

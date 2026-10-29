@@ -2915,6 +2915,12 @@ few lines, and link the PR or the docs page for the rest.
   `Host`, so host middleware (a site or tenant chosen by host, a host
   allowlist) served it as some other site. See
   [mcp](framework/docs/content/mcp.md).
+- **Web Bot Auth signs the path as sent.** `@path`, `@request-target`
+  and `@target-uri` read the percent-decoded path, so a signature over
+  `/a/b` also verified on `/a%2Fb`, a different route, and a bot that
+  signed `/docs/a%20b` as RFC 9421 says failed to verify. They now carry
+  the path before decoding. See
+  [Web Bot Auth](framework/docs/content/web-bot-auth.md).
 
 ## [0.95.0] - 2026-10-26
 
