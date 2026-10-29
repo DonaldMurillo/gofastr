@@ -2935,6 +2935,14 @@ few lines, and link the PR or the docs page for the rest.
   signed `/docs/a%20b` as RFC 9421 says failed to verify. They now carry
   the path before decoding. See
   [Web Bot Auth](framework/docs/content/web-bot-auth.md).
+- **A harness REST call runs as its token's identity class.** The REST
+  transport stamped every request `human` with a fresh client id, so an
+  `agent` token could answer a permission prompt that needs a human.
+  It now dispatches as the verified token: its `identity_class`, and
+  one client id for every request made with it, so a turn's originator
+  names the token that started it. WebSocket already used the token's
+  class. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
 
 ## [0.95.0] - 2026-10-26
 

@@ -120,7 +120,10 @@ engine itself knows about *clients*, never about transports.
     cannot self-approve a permission for a turn it originated:
     `AnswerPermission` from the same `Client.ID()` that originated
     the turn is rejected. By default, at least one `human` ack is
-    required; `--auto-approve` bypasses, honestly named.
+    required; `--auto-approve` bypasses, honestly named. A REST
+    request has no connection to attach, so it dispatches as its
+    token: the token's `identity_class`, and one `Client.ID()` for
+    every request made with that token.
 12. **Every byte from outside the trust boundary is untrusted
     content.** AGENTS.md, SKILL.md, MCP-server-supplied tool
     descriptions and resource bodies, fetched web pages, tool
@@ -248,9 +251,9 @@ audited against this matrix.
 | Transport | Auth | Identity class | Extra policy |
 |---|---|---|---|
 | `inproc` | trust boundary = process | `human` | None |
-| `rest` over Unix socket | filesystem perms `0600` + capability token | `human` (override allowed) | Host/Origin checks; `X-Harness-Token` header |
-| `rest` / `ws` over TCP loopback | capability token + Host/Origin checks | `human` | Custom header (anti-DNS-rebinding) |
-| `rest` / `ws` over LAN | capability token + TLS | `human` | Token must be bound to specific session IDs |
+| `rest` over Unix socket | filesystem perms `0600` + capability token | the token's `identity_class` | Host/Origin checks; `X-Harness-Token` header |
+| `rest` / `ws` over TCP loopback | capability token + Host/Origin checks | the token's `identity_class` | Custom header (anti-DNS-rebinding) |
+| `rest` / `ws` over LAN | capability token + TLS | the token's `identity_class` | Token must be bound to specific session IDs |
 | `mcp` stdio | capability token via **env var** + parent-process attestation | `agent` | Tool exposed as `harness.run_agent_with_shell_access` (honest name) |
 | `mcp` streamable HTTP | capability token in `Authorization` header | `agent` | Same as TCP transport rules |
 

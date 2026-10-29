@@ -45,6 +45,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/multiplex"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/resources"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/internal/ulid"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/session"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/builtins"
 )
@@ -338,11 +339,13 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		return
 	}
 
-	// Synthesize an ephemeral Client for the dispatch. For v0.1 the
-	// REST transport's Client is HTTP-shaped, request-scoped, no
-	// persistent ID. In v0.2 we'll persist a per-token attach so
-	// originator IDs are stable across HTTP requests.
-	c := &restClient{id: ids.NewClientID(), class: control.IdentityHuman}
+	// Synthesize a request-scoped Client for the dispatch, as the
+	// verified token: its identity class decides what the mux lets it
+	// do (only a human answers a permission prompt), and its JTI names
+	// one client across requests, so a turn's originator is the token
+	// that started it.
+	claims, _ := claimsFrom(r)
+	c := &restClient{id: tokenClientID(claims.JTI), class: claims.IdentityClass}
 	if err := s.Mux.Dispatch(r.Context(), c, cmd); err != nil {
 		writeError(w, http.StatusConflict, classifyMuxError(err), err.Error())
 		return
@@ -495,6 +498,17 @@ func classifyMuxError(err error) string {
 		return control.ReasonTurnInProgress
 	}
 	return control.ReasonInvalidCommand
+}
+
+// tokenClientID is the client a token's requests dispatch as: the
+// token's ULID under the client prefix. The verifier requires only a
+// non-empty JTI, so one without the tok_ shape keeps the whole JTI
+// under the prefix: still one client per token.
+func tokenClientID(jti ids.JTI) ids.ClientID {
+	if _, u, err := ulid.SplitPrefixed(string(jti)); err == nil {
+		return ids.ClientID(ids.PrefixClient + "_" + u.String())
+	}
+	return ids.ClientID(ids.PrefixClient + "_" + string(jti))
 }
 
 // restClient is the per-HTTP-request synthesized Client. For v0.1
