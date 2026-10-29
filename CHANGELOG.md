@@ -2398,6 +2398,10 @@ few lines, and link the PR or the docs page for the rest.
   failed every entityui and admin create, since the form never sends the
   state. Define now sets the field's `Default` to that value. See
   [states](framework/docs/content/states.md).
+- **An in-process include filter is read as written.** `TypedQuery.Include`,
+  `GetOne` and `ListAll` pasted the include names into a URL unescaped, so a
+  filter value with a space (`comments(body=hello world)`) panicked, a `+`
+  matched a space and a `#` cut the rest of the filter off.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

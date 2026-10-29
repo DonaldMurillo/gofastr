@@ -722,9 +722,9 @@ func buildIncludeNodesFromNames(ent *entity.Entity, registry entity.Registry, na
 	if len(names) == 0 {
 		return nil, nil
 	}
-	// Synthesize a request whose ?include= we'll re-use parseIncludeTree on.
-	r := httptest.NewRequest(http.MethodGet, "/?include="+joinNonEmpty(names, ","), nil)
-	return parseIncludeTree(r, ent, registry)
+	// The query value as parsed, not a URL: a space, + or # in a filter
+	// must reach the parser as written.
+	return parseIncludeTreeQ(url.Values{"include": {joinNonEmpty(names, ",")}}, ent, registry)
 }
 
 // joinNonEmpty is strings.Join but trims and drops empties.
