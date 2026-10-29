@@ -2423,6 +2423,13 @@ few lines, and link the PR or the docs page for the rest.
   had already gone out. Each now sets a template per channel, and the
   guide says a `Send` error can follow other channels' delivery. See
   [notifications](framework/docs/content/notifications.md).
+- **A static export keeps the app's `_headers` and `_redirects`.** The
+  build refused a static-dir (or static FS) `_headers`, and a
+  `_redirects` when the app had redirects, as if each were a rendered
+  page, so the app's caching headers and legacy redirects never reached
+  the host. The app's file is now appended after the generated rules,
+  which stay first. A `Builder.ExtraDirs` copy is still refused. See
+  [static export](framework/docs/content/static-export.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

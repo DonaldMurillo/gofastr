@@ -635,7 +635,7 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 // writes a `_redirects` rule per redirect (`/old /new 308`, the live
 // status) for Netlify and Cloudflare Pages, the hosts that read the
 // `_headers` file beside it, which then answer with a real redirect. A
-// `_redirects` in the static source is copied over it.
+// `_redirects` in the static source is appended after these rules.
 //
 // A pattern redirect (app.RedirectPattern) matches URLs no file can
 // stand for; it is logged as skipped and its URLs answer 404.html. A
@@ -1835,6 +1835,35 @@ func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)
 	return true
 }
 
+// generatedHostRules reports whether rel (a slash path) is a host rule
+// file the build wrote: the root _headers, always, and the root
+// _redirects when the app has redirects. A static source's copy of one is
+// appended to it rather than refused, so the app's rules (Cache-Control,
+// HSTS, legacy redirects) apply and the generated ones, the header-only
+// frame-ancestors guard among them, stay first.
+func generatedHostRules(rel string, rendered map[string]bool) bool {
+	return (rel == "_headers" || rel == "_redirects") && rendered[rel]
+}
+
+// appendHostRules appends the static source's rules to the generated
+// file at rel. Both generated files end in a newline, so the first
+// appended line starts a line of its own.
+func appendHostRules(root *os.Root, rel string, data []byte, log func(string, ...any)) error {
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	log("appended the static source's %s to the generated one", rel)
+	return nil
+}
+
 func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
@@ -1851,6 +1880,13 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
 			return err
+		}
+		if generatedHostRules(filepath.ToSlash(rel), rendered) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			return appendHostRules(root, rel, data, log)
 		}
 		if keepRendered(filepath.ToSlash(rel), rendered, log) {
 			return nil
@@ -1890,6 +1926,13 @@ func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log f
 		}
 		if d.IsDir() {
 			return nil
+		}
+		if generatedHostRules(path, rendered) {
+			data, err := fs.ReadFile(fsys, path)
+			if err != nil {
+				return err
+			}
+			return appendHostRules(root, filepath.FromSlash(path), data, log)
 		}
 		if keepRendered(path, rendered, log) {
 			return nil

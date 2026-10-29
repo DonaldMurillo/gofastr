@@ -190,3 +190,79 @@ func TestExtraDirsKeepGeneratedHostRules(t *testing.T) {
 		t.Errorf("an extra dir replaced the generated _redirects:\n%s", got)
 	}
 }
+
+// TestStaticSourceHostRulesAppend: a static-dir (or static FS) _headers
+// or _redirects reaches the export, appended after the rules the build
+// wrote. It was refused as a "rendered page", so an app's Cache-Control,
+// HSTS or legacy redirect rules never applied (2026-10-27 bug bash
+// U64). Appending keeps the generated frame-ancestors guard.
+func TestStaticSourceHostRulesAppend(t *testing.T) {
+	for _, viaFS := range []bool{false, true} {
+		name := "dir"
+		if viaFS {
+			name = "fs"
+		}
+		t.Run(name, func(t *testing.T) {
+			src := t.TempDir()
+			for rel, body := range map[string]string{
+				"_headers":   "/assets/*\n  Cache-Control: max-age=31536000\n",
+				"_redirects": "/legacy /about 301\n",
+			} {
+				if err := os.WriteFile(filepath.Join(src, rel), []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			a := coreapp.NewApp("HostRulesStatic")
+			a.Register("/", &homeScreen{}, nil)
+			a.Register("/about", &homeScreen{}, nil)
+			a.Redirect("/old", "/about")
+			var host *uihost.UIHost
+			if viaFS {
+				host = uihost.New(a)
+				host.SetStaticFS(os.DirFS(src))
+			} else {
+				host = uihost.New(a, uihost.WithStaticDir(src))
+			}
+			out := t.TempDir()
+			res, err := (&Builder{Host: host, OutDir: out}).Build(context.Background())
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			headers := readOut(t, out, "_headers")
+			csp := strings.Index(headers, "Content-Security-Policy:")
+			cache := strings.Index(headers, "Cache-Control: max-age=31536000")
+			if csp < 0 || cache < csp {
+				t.Errorf("_headers wants the generated block, then the app's rules:\n%s", headers)
+			}
+			redirects := readOut(t, out, "_redirects")
+			old := strings.Index(redirects, "/old /about/ 308")
+			legacy := strings.Index(redirects, "/legacy /about 301")
+			if old < 0 || legacy < old {
+				t.Errorf("_redirects wants the generated rules, then the app's:\n%s", redirects)
+			}
+			for _, asset := range res.Assets {
+				if asset == "/_headers" || asset == "/_redirects" {
+					t.Errorf("host rule file %s listed as a precached asset", asset)
+				}
+			}
+		})
+	}
+}
+
+// TestStaticRedirectsWithoutAppRedirects: with no app.Redirect the build
+// writes no _redirects, and the static source's copies as it is.
+func TestStaticRedirectsWithoutAppRedirects(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "_redirects"), []byte("/legacy / 301\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := coreapp.NewApp("HostRulesPlain")
+	a.Register("/", &homeScreen{}, nil)
+	out := t.TempDir()
+	if _, err := (&Builder{Host: uihost.New(a, uihost.WithStaticDir(src)), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := readOut(t, out, "_redirects"); got != "/legacy / 301\n" {
+		t.Errorf("_redirects = %q, want the static source's file", got)
+	}
+}

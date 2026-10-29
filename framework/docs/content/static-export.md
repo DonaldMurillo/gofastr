@@ -153,7 +153,9 @@ go build -o site ./examples/site/
   to the same path, `index.html` files included. The one file refused
   is one at the path of a page the build rendered (`about/index.html`
   beside an `/about` route); the build log names it. A static-dir
-  `_headers` or `_redirects` replaces the generated one.
+  `_headers` or `_redirects` is appended to the generated one, so its
+  rules apply and the generated ones (the security headers and the
+  `app.Redirect` rules) stay first.
 - `Builder.ExtraDirs` files under their mount path. A page or asset
   the build wrote (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
@@ -280,8 +282,12 @@ keeps its path.
 
 The export also writes `_redirects` with one `/old /new/ 308` rule per
 redirect, which Netlify and Cloudflare Pages (the hosts that read
-`_headers`) answer with a real 308. An app with no redirects writes
-none, and removes one an earlier build left in the output directory.
+`_headers`) answer with a real 308. A static-dir `_redirects` is
+appended after these rules, and both hosts apply the first rule that
+matches, so an `app.Redirect` wins over a static rule for the same
+path. An app with no redirects writes none, removes one an earlier
+build left in the output directory, and copies the static dir's
+`_redirects` as it is.
 
 An exact redirect may take one concrete path of a dynamic screen
 (`/products/alpha` beside `/products/:slug`). The live router answers
