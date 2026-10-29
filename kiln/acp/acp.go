@@ -87,7 +87,7 @@ func (a *Agent) NewSession(ctx context.Context, cwd string) (acpcore.Session, er
 		return nil, errors.New("kiln/acp: nil tools")
 	}
 	id := "kiln-" + kid.Hex(16)
-	s := &session{agent: a, id: id}
+	s := &session{agent: a, id: id, turn: make(chan struct{}, 1)}
 	a.mu.Lock()
 	a.sessions[id] = s
 	a.mu.Unlock()
@@ -137,6 +137,16 @@ func (a *Agent) LoadSession(ctx context.Context, sessionID, cwd string, out *acp
 type session struct {
 	agent *Agent
 	id    string
+
+	// turn admits one prompt at a time. The ACP server serializes a
+	// session's prompts on one connection, but a second connection can
+	// load the same session and prompt beside the first.
+	turn chan struct{}
+	// history is the conversation the provider has seen across this
+	// session's prompts, tool calls and results included. Read and
+	// written only while holding turn. It always ends on a complete
+	// exchange: every tool call in it has a result.
+	history []agent.Message
 }
 
 func (s *session) ID() string { return s.id }
@@ -149,6 +159,12 @@ func (s *session) Prompt(ctx context.Context, prompt []acpcore.ContentBlock, out
 	if text == "" {
 		return acpcore.StopRefusal, nil
 	}
+	select {
+	case s.turn <- struct{}{}:
+	case <-ctx.Done():
+		return acpcore.StopCancelled, nil
+	}
+	defer func() { <-s.turn }()
 	if res := s.agent.tools.Chat(ctx, protocol.ChatArgs{Role: "user", Text: text, ACPSession: s.id}); !res.OK {
 		return "", fmt.Errorf("journal user message: %s", res.Error)
 	}
@@ -173,7 +189,8 @@ func (s *session) runTurns(ctx context.Context, userText string, out *acpcore.Cl
 	if maxTurns <= 0 {
 		maxTurns = 16
 	}
-	messages := []agent.Message{{Role: "user", Text: userText}}
+	messages := append(s.history, agent.Message{Role: "user", Text: userText})
+	defer func() { s.history = messages }()
 	for turn := range maxTurns {
 		if ctx.Err() != nil {
 			return acpcore.StopCancelled, nil
@@ -213,18 +230,34 @@ func (s *session) runTurns(ctx context.Context, userText string, out *acpcore.Cl
 		if len(t.ToolCalls) == 0 {
 			return acpcore.StopEndTurn, nil
 		}
-		for _, call := range t.ToolCalls {
+		for i, call := range t.ToolCalls {
+			var res protocol.Result
+			stop := ""
 			if ctx.Err() != nil {
-				return acpcore.StopCancelled, nil
+				stop = acpcore.StopCancelled
+			} else {
+				res, stop = s.runToolCall(ctx, call, out)
 			}
-			res, stop := s.runToolCall(ctx, call, out)
 			if stop != "" {
+				// The calls that did not run still get results, so the
+				// next prompt never sends a tool call without one.
+				messages = append(messages, notRun(t.ToolCalls[i:])...)
 				return stop, nil
 			}
 			messages = append(messages, agent.Message{Role: "tool_result", ToolUseID: call.CallID, Result: &res})
 		}
 	}
 	return acpcore.StopMaxTurnRequests, nil
+}
+
+// notRun answers tool calls a stopped prompt never ran.
+func notRun(calls []agent.ToolCall) []agent.Message {
+	out := make([]agent.Message, 0, len(calls))
+	for _, call := range calls {
+		res := protocol.Result{OK: false, Kind: "cancelled", Error: "not run: the prompt was cancelled"}
+		out = append(out, agent.Message{Role: "tool_result", ToolUseID: call.CallID, Result: &res})
+	}
+	return out
 }
 
 // runToolCall executes one model tool call as a visible ACP tool call:

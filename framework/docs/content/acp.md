@@ -147,6 +147,13 @@ answered `session/prompt: internal error`; its text stays on the server.
   attached (`kiln/acp.WithProvider`), streaming text and tool calls as
   `session/update` frames — tool invocations surface as `tool_call` /
   `tool_call_update`, replacing the pre-v0.x bespoke `tools/call` method;
+- keeps each session's conversation with the provider across prompts: a
+  prompt's request carries the session's earlier prompts, replies, tool
+  calls and results. A tool call that a cancelled prompt never ran is
+  answered with a failed result of kind `cancelled`, so no call is left
+  without a result. A session runs one prompt at a time, also when a
+  second connection loads it; a prompt cancelled while it waits answers
+  `cancelled` and is not journaled;
 - gates `approve_plan` on `session/request_permission`: the model may
   propose plans freely, but only the user at the client can approve one,
   and a rejection is fed back to the model as a `needs_plan` result;

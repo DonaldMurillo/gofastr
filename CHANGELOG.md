@@ -2711,6 +2711,13 @@ few lines, and link the PR or the docs page for the rest.
   served the old rows. The drops now run with foreign keys off on one
   connection that is set back before it returns to the pool, and a rebuild
   that still fails is reported by `reset_session`, `undo` and boot.
+- **Kiln's ACP agent remembers earlier prompts in a session.** Each prompt
+  sent the provider only its own text, so a follow-up such as "now add a
+  title field" reached a model that had never seen the request before it.
+  A session now keeps its conversation, tool calls and results included,
+  and runs one prompt at a time even when a second connection loads it. A
+  tool call that a cancelled prompt never ran gets a `cancelled` result,
+  so the next request never carries a call without its result.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
