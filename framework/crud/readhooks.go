@@ -374,37 +374,8 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 		if node == nil || node.Target == nil {
 			continue
 		}
-		outKey := keyOf(node.Relation.Name)
 		childKeyOf := ch.wireConverterOf(node.Target)
-		seen := map[uintptr]bool{}
-		var childRows []map[string]any
-		add := func(m map[string]any) {
-			if m == nil {
-				return
-			}
-			p := reflect.ValueOf(m).Pointer()
-			if seen[p] {
-				return
-			}
-			seen[p] = true
-			childRows = append(childRows, m)
-		}
-		for _, row := range rows {
-			switch v := row[outKey].(type) {
-			case map[string]any:
-				add(v)
-			case []map[string]any:
-				for _, m := range v {
-					add(m)
-				}
-			case []any:
-				for _, e := range v {
-					if m, ok := e.(map[string]any); ok {
-						add(m)
-					}
-				}
-			}
-		}
+		childRows := attachedRows(rows, keyOf(node.Relation.Name))
 		if len(childRows) == 0 {
 			continue
 		}
@@ -479,6 +450,43 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 		}
 	}
 	return nil
+}
+
+// attachedRows collects the related rows attached under key across rows: a
+// to-one map, or the elements of a to-many slice. Rows are deduped by
+// pointer: a belongs-to target attached to many parents is one map, and must
+// be masked once.
+func attachedRows(rows []map[string]any, key string) []map[string]any {
+	seen := map[uintptr]bool{}
+	var out []map[string]any
+	add := func(m map[string]any) {
+		if m == nil {
+			return
+		}
+		p := reflect.ValueOf(m).Pointer()
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, m)
+	}
+	for _, row := range rows {
+		switch v := row[key].(type) {
+		case map[string]any:
+			add(v)
+		case []map[string]any:
+			for _, m := range v {
+				add(m)
+			}
+		case []any:
+			for _, e := range v {
+				if m, ok := e.(map[string]any); ok {
+					add(m)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // runResponseHooks applies AfterGet to a write's response body.
@@ -709,16 +717,31 @@ func (ch *CrudHandler) applyCascadeChildReadHooks(ctx context.Context, result ma
 	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(result) == 0 || ch.Entity == nil {
 		return nil
 	}
+	rows := []map[string]any{result}
+	nodes := ch.cascadeNodes(ch.Entity, ch.convertKey, rows)
+	if len(nodes) == 0 {
+		return nil
+	}
+	return ch.applyChildReadHooks(ctx, nodes, rows)
+}
+
+// cascadeNodes builds the include tree a cascade write's response carries:
+// one node per cascade relation of ent attached to rows, each with the nodes
+// of the levels written beneath it. A nested write answers with its
+// grandchildren under each child, and a flat tree ran only the children's
+// hooks, so a field the grandchild's entity masks came back raw. The tree is
+// read off the response itself, so it ends where the written rows end.
+func (ch *CrudHandler) cascadeNodes(ent *entity.Entity, keyOf func(string) string, rows []map[string]any) []*IncludeNode {
 	var nodes []*IncludeNode
-	for _, rel := range ch.Entity.Config.Relations {
+	for _, rel := range ent.Config.Relations {
 		if !rel.CascadeWrite {
 			continue
 		}
-		key := ch.convertKey(rel.Name)
-		if _, ok := result[key]; !ok {
+		childRows := attachedRows(rows, keyOf(rel.Name))
+		if len(childRows) == 0 {
 			continue
 		}
-		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
+		target, err := entity.ResolveTarget(ch.Registry, ent, rel.Entity)
 		if err != nil || target == nil {
 			continue
 		}
@@ -726,10 +749,8 @@ func (ch *CrudHandler) applyCascadeChildReadHooks(ctx context.Context, result ma
 			Name:     rel.Name,
 			Relation: rel,
 			Target:   target,
+			Children: ch.cascadeNodes(target, ch.wireConverterOf(target), childRows),
 		})
 	}
-	if len(nodes) == 0 {
-		return nil
-	}
-	return ch.applyChildReadHooks(ctx, nodes, []map[string]any{result})
+	return nodes
 }

@@ -2363,6 +2363,12 @@ few lines, and link the PR or the docs page for the rest.
   response showed them attached. The nested create now answers 400
   `validation.cascade_key_not_writable` and rolls the parent back, as
   the `belongs_to` arm already did.
+- **A cascade write's response masks grandchildren.** The body ran the
+  read hooks of the children it nested but not of the rows nested under
+  them, so a field the grandchild's entity masks in `AfterList` or
+  `AfterGet` came back raw from a `POST` or `PATCH` that wrote two
+  levels. Every written level now runs its own entity's read hooks. See
+  [hooks and transactions](framework/docs/content/hooks-and-transactions.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but
