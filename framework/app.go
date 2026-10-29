@@ -304,6 +304,11 @@ type App struct {
 
 	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
 	server   *http.Server
+	// shutdownDone is set by the first Shutdown and closed when its
+	// teardown returns; every later call waits on it instead of tearing
+	// down again. Guarded by shutdownMu.
+	shutdownMu   sync.Mutex
+	shutdownDone chan struct{}
 	// newConns holds connections the server accepted that have not sent
 	// a request yet (net/http's StateNew): a browser's speculative
 	// preconnect, a Transport's spare dial. Server.Shutdown spares such a
@@ -3159,10 +3164,38 @@ func (a *App) closeNewConns() {
 // battery in reverse dependency order, then runs each OnStop hook in
 // reverse registration order. Matches net/http.Server.Shutdown's
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
-// Safe to call multiple times. Subsequent calls are no-ops.
+// Safe to call multiple times: the teardown runs once, and a later or
+// concurrent call waits for it to finish, then returns nil, or returns
+// ctx's error if its own ctx ends first.
 //
 // Call this from your signal handler.
 func (a *App) Shutdown(ctx context.Context) error {
+	// A second call used to find the server already detached and go
+	// straight to stopping batteries: sequentially every OnStop ran
+	// twice, and concurrently (a signal handler plus a deferred Shutdown)
+	// batteries closed under requests the first call was still draining
+	// (2026-10-27 S3). Later callers wait on ctx as well as the teardown,
+	// so a Shutdown called from inside the teardown is bounded by its own
+	// deadline rather than deadlocked.
+	a.shutdownMu.Lock()
+	if done := a.shutdownDone; done != nil {
+		a.shutdownMu.Unlock()
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	done := make(chan struct{})
+	a.shutdownDone = done
+	a.shutdownMu.Unlock()
+	defer close(done)
+	return a.shutdown(ctx)
+}
+
+// shutdown is Shutdown's teardown, run once.
+func (a *App) shutdown(ctx context.Context) error {
 	// Snapshot the cancel func and detach the server under the same lock
 	// that Start/runStartHooks use to assign them. Invoke cancel OUTSIDE
 	// the lock so a cancel-triggered teardown can't re-enter and deadlock.

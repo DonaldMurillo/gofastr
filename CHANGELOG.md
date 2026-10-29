@@ -2326,6 +2326,12 @@ few lines, and link the PR or the docs page for the rest.
   second declaration used to ship beside the first, so the client failed
   to compile or TypeScript merged the two interfaces. Rename the entity.
   See [SDK](framework/docs/content/sdk.md).
+- `App.Shutdown` tears down once. A second call found the server
+  already detached and stopped every battery again; called concurrently
+  (a signal handler plus a deferred Shutdown), it closed batteries under
+  requests the first call was still draining. A later or concurrent call
+  now waits for the first to finish, or for its own context to end. See
+  [deploy](framework/docs/content/deploy.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
