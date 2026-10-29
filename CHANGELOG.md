@@ -2409,6 +2409,13 @@ few lines, and link the PR or the docs page for the rest.
   `MarkEnvelopeProcessing` on both bundled inbound stores returns
   `(bool, error)`, false when it marked nothing. See
   [webhooks](framework/docs/content/webhooks.md).
+- **A DI constructor can resolve the services it needs.** The container
+  held its lock while a constructor ran, so a factory that called
+  `Resolve` or `Inject` blocked every container call for good. A
+  constructor now runs outside the lock, still once per type: a second
+  caller waits for the first and shares its value, and a constructor
+  that panics releases the waiters with an error. A constructor that
+  needs its own type still waits on itself.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
