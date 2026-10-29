@@ -489,6 +489,13 @@ retry marks the envelope `processing` again, consumes an attempt, and
 records its own error. Only `processed` is fenced, so a stale runner's
 late failure cannot overwrite a success.
 
+A job for an envelope already `processed` (redelivered after a crash
+before the queue's ack, or after a lease expiry) is acked without
+calling your function. The store-side claim reports whether it marked
+the envelope, so one that settled or was deleted between the load and
+the claim is skipped too. Two runs that overlap while the envelope is
+still `processing` both call your function, so keep it idempotent.
+
 ### Stores
 
 Two `InboundStore` implementations ship:

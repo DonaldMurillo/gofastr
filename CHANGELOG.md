@@ -2402,6 +2402,13 @@ few lines, and link the PR or the docs page for the rest.
   `GetOne` and `ListAll` pasted the include names into a URL unescaped, so a
   filter value with a space (`comments(body=hello world)`) panicked, a `+`
   matched a space and a `#` cut the rest of the filter off.
+- **A redelivered inbound webhook job for a processed envelope does not
+  run the handler again.** A crash before the queue's ack, or a lease
+  expiry under a slow first run, redelivered the job, and `ProcessInbound`
+  called the business function a second time. BREAKING:
+  `MarkEnvelopeProcessing` on both bundled inbound stores returns
+  `(bool, error)`, false when it marked nothing. See
+  [webhooks](framework/docs/content/webhooks.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -378,3 +378,13 @@ notes:
         - field: gofastr/core/middleware.CSRFConfig.CookiePath
       uses:
         - gofastr/battery/auth.WithCSRFCookieName
+  - change: "BREAKING - MemoryInboundStore.MarkEnvelopeProcessing and SQLInboundStore.MarkEnvelopeProcessing return (bool, error): false means no envelope was marked, because it is missing or already processed"
+    breaking: true
+    hits: edit
+    guidance: "ProcessInbound is the only caller the framework has, and it now skips the handler on false. A direct caller takes the extra result: if _, err := store.MarkEnvelopeProcessing(ctx, id); err != nil. A store of your own that wraps one of these keeps the same signature for ProcessInbound to find the claim."
+    find:
+      shapes:
+        - symbol: gofastr/battery/webhook.MemoryInboundStore.MarkEnvelopeProcessing
+          type: '^func\(\w+ context\.Context, id string\) error$'
+        - symbol: gofastr/battery/webhook.SQLInboundStore.MarkEnvelopeProcessing
+          type: '^func\(\w+ context\.Context, id string\) error$'

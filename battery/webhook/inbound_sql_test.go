@@ -85,7 +85,7 @@ func TestSQLInbound_UpdateLifecycle(t *testing.T) {
 	// Two processing passes consume two attempts (the queue-lease
 	// re-run shape), each marking the envelope in-flight first.
 	for range 2 {
-		if err := s.MarkEnvelopeProcessing(ctx, "e-2"); err != nil {
+		if _, err := s.MarkEnvelopeProcessing(ctx, "e-2"); err != nil {
 			t.Fatalf("mark processing: %v", err)
 		}
 	}
