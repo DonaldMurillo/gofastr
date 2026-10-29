@@ -200,6 +200,12 @@ cannot cross into the native layer; responses `{ok:true,result}` or
 `unsupported`, `invalid_input`, `cancelled`, `not_found`,
 `internal`).
 
+A call can wait on a person (a file picker, a permission alert), so the
+call route runs on its own 11-minute budget instead of the app's
+`RequestTimeout` and `HTTPServerTimeouts.WriteTimeout` (30 s and 60 s
+by default). The macOS shell bounds each alert and panel at 10 minutes.
+A plugin method that can hang should bound itself on its context.
+
 The core capabilities:
 
 | Capability | Methods | Permission |

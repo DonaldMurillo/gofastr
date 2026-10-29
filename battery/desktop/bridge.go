@@ -32,6 +32,14 @@ const (
 // maxCallBody caps a bridge call body (the unboundedbody posture).
 const maxCallBody = 1 << 20
 
+// callBudget bounds one bridge call in place of the app's request and
+// write timeouts (30 s and 60 s by default). A call can wait on a
+// person, a file picker or a permission alert, and the macOS shell
+// gives those ten minutes; the app's budgets cancelled the picker (the
+// Windows and Linux pickers close on the request context) or dropped
+// its answer, so the user's choice never reached the page.
+const callBudget = 11 * time.Minute
+
 // registerBridgeRoutes wires the four desktop routes onto the app
 // router. Called from Init.
 func (b *Battery) registerBridgeRoutes(r *router.Router) {
@@ -39,6 +47,7 @@ func (b *Battery) registerBridgeRoutes(r *router.Router) {
 	r.Get(manifestPath, b.serveManifest())
 	r.Get(bridgeScriptFn, b.serveBridgeScript())
 	r.Post(callPattern, http.HandlerFunc(b.handleCall))
+	r.SetRouteTimeout(http.MethodPost, callPattern, callBudget)
 	r.Post(preferencesFormPath, b.handlePreferencesForm())
 }
 
@@ -250,6 +259,11 @@ func (b *Battery) handleCall(w http.ResponseWriter, r *http.Request) {
 		}
 		input = json.RawMessage(body)
 	}
+
+	// The permission alert and the handler may wait on a person: lift
+	// the server's write deadline to the route's budget. A writer that
+	// cannot move it keeps the server's.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(callBudget))
 
 	if proceed, derr := b.authorizeCall(r.Context(), cap, method); !proceed {
 		writeBridgeError(w, derr, bridgeDenyMessage(derr))

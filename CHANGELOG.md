@@ -2648,6 +2648,13 @@ few lines, and link the PR or the docs page for the rest.
   page that mirrors `document.title` through `setTitle` renamed the main
   window, and a secondary window's `snapshot` returned the main window's
   pixels. A call from a window that has closed now answers `not_found`.
+- **A file picker keeps the user's choice however long they take.**
+  The macOS open, save and folder panels gave up after 10 seconds while
+  still on screen, and on every platform the app's 30-second request
+  timeout and 60-second write timeout cut a bridge call short, so a
+  path picked after that was never granted or never reached the page.
+  The call route now has an 11-minute budget, and the macOS panels wait
+  10 minutes like the permission alert.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
