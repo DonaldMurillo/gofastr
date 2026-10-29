@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -16,12 +18,41 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
+// Build one real, standalone ELF instead of depending on the host's printf or
+// echo layout (which may be symlinks to an argv[0]-dispatching multicall binary).
+// Retain only bytes: the build directory is removed before this helper returns.
+var linuxInstallFixtureBinary = sync.OnceValues(buildLinuxInstallFixtureBinary)
+
+func buildLinuxInstallFixtureBinary() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "gofastr-install-fixture-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	source := "package main\nimport (\"os\"; \"strings\")\nfunc main() { _, err := os.Stdout.WriteString(strings.Join(os.Args[1:], \"\\x00\") + \"\\x00\"); if err != nil { os.Exit(1) } }\n"
+	main := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(main, []byte(source), 0600); err != nil {
+		return nil, err
+	}
+	executable := filepath.Join(dir, "argv-fixture")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(runtime.GOROOT(), "bin", "go"), "build", "-trimpath", "-ldflags=-s -w", "-o", executable, main)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH, "GOWORK=off", "GO111MODULE=off")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("build standalone installer fixture: %w\n%s", err, output)
+	}
+	return os.ReadFile(executable)
+}
+
 func linuxInstallFixture(t *testing.T, scheme string) (string, linuxBundleManifest) {
 	t.Helper()
-	// A real small native ELF gives the same header checks as an app. printf
-	// lets launcher tests observe each unchanged argument without a native UI.
-	executable, err := exec.LookPath("printf")
+	payload, err := linuxInstallFixtureBinary()
 	if err != nil {
+		t.Fatal(err)
+	}
+	executable := filepath.Join(t.TempDir(), "argv-fixture")
+	if err := os.WriteFile(executable, payload, 0700); err != nil {
 		t.Fatal(err)
 	}
 	flags := desktopBuildFlags{id: "dev.example.install", version: "1.2.3", scheme: scheme}
@@ -56,6 +87,39 @@ func linuxInstallFixture(t *testing.T, scheme string) (string, linuxBundleManife
 	}
 	return dir, manifest
 }
+
+func TestLinuxInstallFixtureIgnoresHostApplets(t *testing.T) {
+	bin := t.TempDir()
+	target := filepath.Join(bin, "multicall-placeholder")
+	if err := os.WriteFile(target, []byte("not an app ELF\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, applet := range []string{"printf", "echo"} {
+		if err := os.Symlink(target, filepath.Join(bin, applet)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// Exercise the uncached builder too; an earlier fixture must not hide a
+	// dependency on an applet that only existed when the cache was populated.
+	payload, err := buildLinuxInstallFixtureBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	standalone := filepath.Join(bin, "standalone")
+	if err := os.WriteFile(standalone, payload, 0700); err != nil {
+		t.Fatal(err)
+	}
+	dir, manifest := linuxInstallFixture(t, "")
+	args := []string{"", "argv with space", "'\"$HOME; %u"}
+	for _, executable := range []string{standalone, filepath.Join(dir, "bin", manifest.ID)} {
+		output, err := exec.Command(executable, args...).Output()
+		if err != nil || !bytes.Equal(output, []byte(strings.Join(args, "\x00")+"\x00")) {
+			t.Fatalf("standalone fixture depended on host applets: %v; %q", err, output)
+		}
+	}
+}
+
 func linuxInstallTestHome(t *testing.T) linuxInstallPaths {
 	t.Helper()
 	dir := t.TempDir()
@@ -111,12 +175,12 @@ func TestLinuxInstallRoundTrip(t *testing.T) {
 			t.Errorf("%s mode %o, want %o", test.path, st.Mode().Perm(), test.mode)
 		}
 	}
-	args := []string{"%s\\000", "", "route with spaces", "'\"$HOME; %u ", "gofastr-install-test://a?b=%20&c=x"}
+	args := []string{"", "route with spaces", "'\"$HOME; %u ", "gofastr-install-test://a?b=%20&c=x"}
 	output, err := exec.Command(launcher, args...).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []byte(strings.Join(args[1:], "\x00") + "\x00")
+	want := []byte(strings.Join(args, "\x00") + "\x00")
 	if !bytes.Equal(output, want) {
 		t.Fatalf("launcher arguments %q, want %q", output, want)
 	}
@@ -486,29 +550,11 @@ func TestLinuxInstallerRealDesktopExec(t *testing.T) {
 	}
 	paths := linuxInstallTestHome(t)
 	source, m := linuxInstallFixture(t, "gofastr-install-test")
-	echo, err := exec.LookPath("echo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := os.ReadFile(echo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(filepath.Join(source, "bin", m.ID), payload, 0700); err != nil {
-		t.Fatal(err)
-	}
-	for i := range m.Files {
-		if m.Files[i].Path == "bin/"+m.ID {
-			m.Files[i].Size = int64(len(payload))
-			m.Files[i].SHA256 = linuxInstallDigest(payload)
-		}
-	}
-	writeLinuxTestManifest(t, source, m)
 	if err = installLinuxBundle(source); err != nil {
 		t.Fatal(err)
 	}
 	// Real GIO parsing, MIME lookup, and handler resolution, not our own parser.
-	// echo prints the literal URL; there is no shell -c or app/bus dependency.
+	// Our ELF prints the literal URL; there is no shell -c or app/bus dependency.
 	uri := "gofastr-install-test://route/space%20here?literal=$HOME&quote='&pct=%25"
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -519,11 +565,7 @@ func TestLinuxInstallerRealDesktopExec(t *testing.T) {
 		entry, _ := os.ReadFile(filepath.Join(paths.applications, m.ID+".desktop"))
 		t.Fatalf("gio launch: %v\n%s\n%s", err, out, entry)
 	}
-	exe := filepath.Join(paths.apps, m.ID, "bin", m.ID)
-	want, wantErr := exec.Command(exe, uri).CombinedOutput()
-	if wantErr != nil {
-		t.Fatalf("fixture: %v %s", wantErr, want)
-	}
+	want := []byte(uri + "\x00")
 	if !bytes.Equal(out, want) {
 		t.Fatalf("real desktop activation argv differs:\ngot %q\nwant %q", out, want)
 	}
