@@ -2351,6 +2351,13 @@ few lines, and link the PR or the docs page for the rest.
   once `Init` has declared something new. A host binary's `migrate
   generate` verb calls `app.InitPlugins()` before `app.MigrationPlan()`
   to include them. See [modules](framework/docs/content/modules.md).
+- A process module that stops reading stdin no longer hangs shutdown.
+  The drain wrote `module.drain` before it closed stdin or started the
+  kill timer, and that write blocks on a full pipe whatever its context
+  says. The budget now runs from the drain call and the kill ends the
+  write. The call waits at most half the budget for an answer, so a
+  child that never answers still has time to exit at EOF. See
+  [process modules](framework/docs/content/process-modules.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

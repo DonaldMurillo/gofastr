@@ -444,8 +444,9 @@ func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
 }
 
 // drainOneForShutdown performs the §4.6 teardown for one child during
-// shutdown: send module.drain, close stdin (EOF), wait the remaining
-// budget, then Kill + Wait. It is best-effort and never panics.
+// shutdown: send module.drain, close stdin (EOF), and Kill + Wait once
+// the budget, counted from the drain call, runs out. It is best-effort
+// and never panics.
 func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -459,21 +460,45 @@ func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget tim
 	if child == nil {
 		return
 	}
-	// Best-effort module.drain notification (child may be mid-crash).
-	if peer != nil {
-		drainCtx, cancel := context.WithTimeout(context.Background(), minDur(budget, 2*time.Second))
-		_, _ = peer.Call(drainCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
-			Reason:     "shutdown",
-			DeadlineMs: int(budget.Milliseconds()),
-		})
-		cancel()
-	}
-	_ = child.CloseStdin()
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- child.Wait() }()
+	// The budget runs from the start of the drain, not from CloseStdin:
+	// the module.drain frame write cannot be abandoned, and a child that
+	// stopped reading stdin holds it on a full pipe. Only the kill, which
+	// takes the pipe's reader away, fails that write. The drain call gets
+	// at most half the budget, so a child that never answers it still
+	// has the rest to exit at EOF.
+	deadline := time.NewTimer(budget)
+	defer deadline.Stop()
+	if peer != nil {
+		// Best-effort module.drain notification (child may be mid-crash).
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			defer func() {
+				if r := recover(); r != nil {
+					s.logf("processmodule: drain %s panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
+				}
+			}()
+			drainCtx, cancel := context.WithTimeout(context.Background(), minDur(budget/2, 2*time.Second))
+			defer cancel()
+			_, _ = peer.Call(drainCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
+				Reason:     "shutdown",
+				DeadlineMs: int(budget.Milliseconds()),
+			})
+		}()
+		select {
+		case <-drained:
+		case <-deadline.C:
+			_ = child.Kill()
+			<-waitCh
+			return
+		}
+	}
+	_ = child.CloseStdin()
 	select {
 	case <-waitCh:
-	case <-time.After(budget):
+	case <-deadline.C:
 		_ = child.Kill()
 		<-waitCh
 	}

@@ -138,7 +138,10 @@ and before batteries stop, so a child's in-flight reverse calls still reach
 the queue and the DB. Every child drains at once: it gets `module.drain`,
 then EOF on stdin, and is killed when its budget runs out
 (`SupervisorConfig.DrainPerModule`, 30 s by default, capped by the
-Shutdown context's deadline). The drain closes the supervisor first, so no
+Shutdown context's deadline). The budget counts from `module.drain`, and
+the drain call waits at most half of it (2 s at most) for an answer. A
+child that stopped reading stdin, so the drain frame cannot be written,
+is still killed on time. The drain closes the supervisor first, so no
 module restarts during or after shutdown, and a child still starting when
 it closes is killed instead of installed. `ProcessModuleSupervisor.Close`
 stops the loops and kills the children without the drain; after a drain it
