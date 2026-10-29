@@ -995,7 +995,10 @@ default `search_path`. With a `search_path` that puts `widgets` in
 another schema, `public.widgets` is a different table, and generate
 neither creates it nor drops the old one, whose rows stay where they
 are. Any other schema is another table: `archive.widgets` is created
-and `widgets` dropped.
+and `widgets` dropped. Generate reads a recorded `REFERENCES` the way
+the engine does: on SQLite a bare parent is in the child's schema, so
+`aux.kids` referencing `parents` is a child of `aux.parents` and drops
+before it; on Postgres a bare parent is in `public`.
 
 ## Tracking table
 

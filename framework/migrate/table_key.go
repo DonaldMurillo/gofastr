@@ -21,6 +21,20 @@ func tableKey(dialect Dialect, table string) string {
 	return strings.TrimPrefix(strings.ToLower(table), def)
 }
 
+// refersTo reports whether ref, the parent a REFERENCES clause in child's
+// CREATE TABLE names, is table. SQLite takes an unqualified parent from
+// the child's schema (a REFERENCES clause cannot name one), so a bare
+// ref in aux.kids is aux.parents; Postgres resolves it like any
+// unqualified name, to public.
+func refersTo(dialect Dialect, child, ref, table string) bool {
+	if dialect == DialectSQLite && !strings.Contains(ref, ".") {
+		if i := strings.LastIndexByte(child, '.'); i >= 0 {
+			ref = child[:i+1] + ref
+		}
+	}
+	return tableKey(dialect, ref) == tableKey(dialect, table)
+}
+
 // declaredTableNames is every table the plan's entities name: each
 // entity's Table and each many-to-many Through.
 func declaredTableNames(all map[string]*entity.Entity) []string {

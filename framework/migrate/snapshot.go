@@ -316,7 +316,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			ent := all[c.sqliteRebuildOf]
 			oldKey, _ := lookupKeyCase(prev.PrimaryKeys, ent.GetTable())
 			renames := renamesApplied(ent, lookupTableCols(prev.Tables, ent.GetTable()))
-			refs := recordedReferencesOnto(prev.TableDDL, ent.GetTable())
+			refs := recordedReferencesOnto(dialect, prev.TableDDL, ent.GetTable())
 			var stranded []string
 			for _, t := range slices.Sorted(maps.Keys(refs)) {
 				if rebuilt[strings.ToLower(t)] || !declaredTables[tableKey(dialect, t)] {
@@ -357,7 +357,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		}
 		ent := all[c.sqliteRebuildOf]
 		refs := mutatingFKReferrers(ent, all)
-		for _, t := range snapshotMutatingReferrers(prev, ent.GetTable()) {
+		for _, t := range snapshotMutatingReferrers(dialect, prev, ent.GetTable()) {
 			if declaredTables[tableKey(dialect, t)] && !slices.ContainsFunc(refs, func(r string) bool { return strings.EqualFold(r, t) }) {
 				refs = append(refs, t)
 			}
@@ -379,7 +379,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			dropped = append(dropped, table)
 		}
 	}
-	dropped = sortDroppedTables(dropped, prev.TableDDL)
+	dropped = sortDroppedTables(dialect, dropped, prev.TableDDL)
 	for _, table := range dropped {
 		qtable, qerr := query.SafeIdent(table)
 		if qerr != nil {
@@ -804,11 +804,11 @@ func ddlWithoutLiterals(ddl string) string {
 // snapshotMutatingReferrers names the tables whose CREATE TABLE in the
 // snapshot holds a CASCADE or SET NULL foreign key onto table, sorted. A
 // snapshot written before TableDDL existed records none.
-func snapshotMutatingReferrers(prev SchemaSnapshot, table string) []string {
+func snapshotMutatingReferrers(dialect Dialect, prev SchemaSnapshot, table string) []string {
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(prev.TableDDL)) {
 		for _, m := range reMutatingFK.FindAllStringSubmatch(ddlWithoutLiterals(prev.TableDDL[name]), -1) {
-			if strings.EqualFold(m[1], table) {
+			if refersTo(dialect, name, m[1], table) {
 				out = append(out, name)
 				break
 			}
@@ -822,13 +822,9 @@ func snapshotMutatingReferrers(prev SchemaSnapshot, table string) []string {
 // they reference. Because formatPlan reverses the changes slice for Down migrations
 // (via slices.Backward), this ordering simultaneously guarantees that Down migrations
 // recreate referenced/parent tables BEFORE the child tables that reference them.
-func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
+func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]string) []string {
 	if len(tables) <= 1 {
 		return tables
-	}
-	droppedSet := make(map[string]bool, len(tables))
-	for _, t := range tables {
-		droppedSet[strings.ToLower(t)] = true
 	}
 
 	// dep[A] = list of tables that A references (A must be dropped before B)
@@ -850,9 +846,12 @@ func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
 		matches := reFKReferences.FindAllStringSubmatch(ddlWithoutLiterals(ddl), -1)
 		seenRef := make(map[string]bool)
 		for _, m := range matches {
-			if len(m) > 1 {
-				target := strings.ToLower(m[1])
-				if target != low && droppedSet[target] && !seenRef[target] {
+			if len(m) < 2 {
+				continue
+			}
+			for _, u := range tables {
+				target := strings.ToLower(u)
+				if target != low && !seenRef[target] && refersTo(dialect, t, m[1], u) {
 					seenRef[target] = true
 					dep[low] = append(dep[low], target)
 					inDegree[target]++

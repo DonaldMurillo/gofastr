@@ -24,7 +24,7 @@ func TestSortDroppedTables_ForeignKeyDependency(t *testing.T) {
 	}
 
 	dropped := []string{"posts", "posts_tags", "tags"}
-	ordered := sortDroppedTables(dropped, tableDDL)
+	ordered := sortDroppedTables(DialectSQLite, dropped, tableDDL)
 
 	// posts_tags must appear before posts and tags in the drop order
 	pos := make(map[string]int)
@@ -50,7 +50,7 @@ func TestDropOrderSkipsLiterals(t *testing.T) {
 		"a": `CREATE TABLE a (id TEXT PRIMARY KEY, note TEXT DEFAULT 'REFERENCES b(id)')`,
 		"b": `CREATE TABLE b (id TEXT PRIMARY KEY, a_id TEXT REFERENCES a(id))`,
 	}
-	if got := sortDroppedTables([]string{"a", "b"}, tableDDL); strings.Join(got, ",") != "b,a" {
+	if got := sortDroppedTables(DialectSQLite, []string{"a", "b"}, tableDDL); strings.Join(got, ",") != "b,a" {
 		t.Fatalf("drop order = %v, want [b a]", got)
 	}
 }

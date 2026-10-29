@@ -2510,6 +2510,15 @@ few lines, and link the PR or the docs page for the rest.
   followed by `DROP TABLE widgets`, which took the rows. The two
   spellings are now one table, and the change generates nothing. See
   [migrations](framework/docs/content/migrations.md).
+- **`migrate generate` finds the children of a schema-qualified SQLite
+  table.** A SQLite foreign key names its parent without a schema, and
+  generate compared that bare name with the parent's qualified `Table`,
+  so it saw no child. Dropping `main.ap` and its child together dropped
+  the parent first, and the migration failed with `FOREIGN KEY
+  constraint failed` while the child held rows. The rebuild guards that
+  read the same references missed them too, and a bare reference in
+  `aux.b` was read as one onto `main.a`. A bare parent now resolves into
+  the child's schema.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
