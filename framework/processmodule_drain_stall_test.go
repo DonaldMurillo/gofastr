@@ -226,3 +226,92 @@ func peerClosed(t *testing.T, peer *moduleproto.Peer) bool {
 	_, err := peer.Call(ctx, "probe", nil)
 	return errors.Is(err, moduleproto.ErrClosed)
 }
+
+// A protocol fault leaves the peer refusing every call while the child
+// keeps running, so nothing restarted the module: the supervisor never
+// watched FatalDone, though the peer's docs said it tore the transport
+// down. The fault now kills the child, and the exit watcher records the
+// crash.
+func TestPeerFaultKillsChild(t *testing.T) {
+	child := newStalledChild(t)
+	go func() { _, _ = io.Copy(io.Discard, child.stdinR) }()
+	peer := moduleproto.NewPeer(child.codec, moduleproto.RoleHost)
+	peer.Start()
+	t.Cleanup(func() { _ = peer.Close() })
+	sup := &ProcessModuleSupervisor{logf: t.Logf}
+	sl := &moduleSlot{name: "m", sup: sup, child: child, peer: peer, state: StateReady, instanceID: "i1"}
+	go sl.watchFault(peer, child, "i1")
+
+	// A frame with neither a method nor an id is a terminal fault.
+	if _, err := child.stdoutW.Write([]byte(`{"jsonrpc":"2.0","result":1}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-child.killed:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("a faulted peer (%v) left its child running", peer.FatalError())
+	}
+}
+
+// TestFaultWatcherSparesReplacement checks a late fault on a peer the
+// slot no longer holds kills nothing: a drain already settled that child
+// and may have started a replacement.
+func TestFaultWatcherSparesReplacement(t *testing.T) {
+	child := newStalledChild(t)
+	go func() { _, _ = io.Copy(io.Discard, child.stdinR) }()
+	peer := moduleproto.NewPeer(child.codec, moduleproto.RoleHost)
+	peer.Start()
+	t.Cleanup(func() { _ = peer.Close() })
+	sup := &ProcessModuleSupervisor{logf: t.Logf}
+	replacement := newStalledChild(t)
+	sl := &moduleSlot{name: "m", sup: sup, child: replacement, state: StateReady, instanceID: "i2"}
+	done := make(chan struct{})
+	go func() {
+		sl.watchFault(peer, child, "i1")
+		close(done)
+	}()
+	if _, err := child.stdoutW.Write([]byte(`{"jsonrpc":"2.0","result":1}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the fault watcher never returned")
+	}
+	select {
+	case <-child.killed:
+		t.Fatal("a fault on a settled child's peer killed it after the slot moved on")
+	case <-replacement.killed:
+		t.Fatal("a fault on the old peer killed the replacement")
+	default:
+	}
+}
+
+// TestFaultWatcherEndsOnCleanEOF checks the watcher returns without a
+// kill when the child closes its stdout and the read loop ends with no
+// fault, so a module that exits cleanly leaves no watcher behind.
+func TestFaultWatcherEndsOnCleanEOF(t *testing.T) {
+	child := newStalledChild(t)
+	go func() { _, _ = io.Copy(io.Discard, child.stdinR) }()
+	peer := moduleproto.NewPeer(child.codec, moduleproto.RoleHost)
+	peer.Start()
+	t.Cleanup(func() { _ = peer.Close() })
+	sup := &ProcessModuleSupervisor{logf: t.Logf}
+	sl := &moduleSlot{name: "m", sup: sup, child: child, peer: peer, state: StateReady, instanceID: "i1"}
+	done := make(chan struct{})
+	go func() {
+		sl.watchFault(peer, child, "i1")
+		close(done)
+	}()
+	_ = child.stdoutW.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the fault watcher outlived a clean end of the read loop")
+	}
+	select {
+	case <-child.killed:
+		t.Fatal("a clean end of the read loop killed the child")
+	default:
+	}
+}

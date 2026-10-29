@@ -1333,6 +1333,7 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	sl.mu.Unlock()
 
 	go sl.watchExit(child, instanceID)
+	go sl.watchFault(hostPeer, child, instanceID)
 	return nil
 }
 
@@ -1392,6 +1393,34 @@ func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
 	case sl.wake <- struct{}{}:
 	default:
 	}
+}
+
+// watchFault kills child once its peer records a terminal protocol fault
+// (a malformed or unsolicited frame, a stalled transport). A faulted peer
+// refuses every call while the child keeps running, so without this the
+// module stayed Ready and failing until something else killed it. The
+// kill hands the exit to watchExit, which records the crash and lets the
+// supervise loop restart the module. The watcher ends without a kill when
+// the read loop ends cleanly, and skips a child the slot no longer holds:
+// that child was already reaped, and its process group id may name
+// another process by now.
+func (sl *moduleSlot) watchFault(peer *moduleproto.Peer, child RunningChild, instanceID string) {
+	select {
+	case <-peer.FatalDone():
+	case <-peer.Done():
+		if peer.FatalError() == nil {
+			return
+		}
+	}
+	sl.mu.Lock()
+	current := sl.child != nil && sl.instanceID == instanceID
+	sl.mu.Unlock()
+	if !current {
+		return
+	}
+	reason := textsafe.Truncate(textsafe.ScrubControlBytes(peer.FatalError().Error()), 200)
+	sl.sup.logf("processmodule: %s peer fault, killing the child: %s", sl.name, reason)
+	_ = child.Kill()
 }
 
 // verifyToolSurface fetches module.tool.list and requires byte-equality

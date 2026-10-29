@@ -124,8 +124,14 @@ with `ErrModuleInstalled` and leaves the row alone.
   overflow with an inflight-cap error. It also holds at most that many
   answers waiting to be written: a child that keeps sending calls but
   stops reading stdin faults its peer with `moduleproto.ErrStalled`,
-  after which the peer serves nothing more and every call to the module
-  fails.
+  after which the peer serves nothing more.
+- **A protocol fault restarts the module.** When the host peer records a
+  terminal fault (a malformed, over-cap or unsolicited frame, or a
+  stalled transport), the supervisor kills the child and counts the exit
+  as a crash: the module goes through `Crashed` → `Backoff` → `Starting`
+  like any other crash, and `CircuitThreshold` faults inside
+  `CircuitWindow` open its restart circuit. A module must read stdin for
+  as long as it sends requests.
 
 ## The two-layer 404 / 503 gate
 

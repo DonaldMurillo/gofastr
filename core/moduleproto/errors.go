@@ -7,9 +7,10 @@ import (
 )
 
 // Sentinel errors. These describe protocol-fatal or call-local conditions.
-// Terminal protocol faults (over-cap, unsolicited response, malformed frame)
-// tear down the Peer; the supervisor maps them to a restart-vs-Failed
-// classification (design §8).
+// A terminal protocol fault (over-cap, unsolicited response, malformed frame,
+// stalled transport) ends the Peer. The process-module supervisor kills the
+// child on one and counts the exit as a crash, so the module restarts and
+// repeated faults open its restart circuit (design §8).
 var (
 	// ErrClosed is returned by a Peer method after [Peer.Close] or once the
 	// read loop has exited for any reason.

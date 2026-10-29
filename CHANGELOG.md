@@ -2359,6 +2359,13 @@ few lines, and link the PR or the docs page for the rest.
   and the kill ends the write. The call waits at most half the budget for an answer, so a
   child that never answers still has time to exit at EOF. See
   [process modules](framework/docs/content/process-modules.md).
+- A process module whose host peer faulted now restarts. A malformed,
+  over-cap or unsolicited frame left the child running in `Ready` while
+  every call to it failed, because nothing watched the peer's fault. The
+  supervisor now kills the child on a fault and counts it as a crash, so
+  the module backs off, restarts, and opens its circuit if it keeps
+  faulting. See
+  [process modules](framework/docs/content/process-modules.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

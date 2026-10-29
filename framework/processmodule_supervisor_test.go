@@ -49,6 +49,7 @@ const (
 	childModeBadDigest childMode = "bad_digest" // surface_sha256 mismatch → terminal
 	childModeSlow      childMode = "slow"       // http handler sleeps so kill -9 lands mid-call
 	childModeCrashExit childMode = "crash_exit" // exit 1 immediately on each spawn
+	childModeFault     childMode = "fault"      // module.http answers with an unsolicited response
 )
 
 // buildChildArtifact compiles a tiny symlink to the running test binary so
@@ -469,6 +470,10 @@ func processModuleChildMain(mode childMode) int {
 		case childModeSlow:
 			// Sleep so a kill -9 lands mid-call.
 			time.Sleep(2 * time.Second)
+		case childModeFault:
+			// A response to an id the host never sent faults the host peer.
+			id := uint64(1 << 40)
+			_ = codec.WriteFrame(&moduleproto.Frame{JSONRPC: "2.0", ID: &id, Result: json.RawMessage("1")})
 		}
 		body, _ := json.Marshal(map[string]any{"route": p.RouteID, "ok": true})
 		return moduleproto.HTTPResponseResult{

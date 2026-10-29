@@ -255,18 +255,19 @@ func (p *Peer) setFatal(err error) {
 		close(p.fatalCh)
 		// Mark closed so the read loop's next error is treated as graceful
 		// and so new Call/Notify return ErrClosed. The Peer does NOT own
-		// its transport; the supervisor closes the transport in response
-		// to FatalDone() firing, which in turn lets the blocked read loop
-		// exit and close p.done.
+		// its transport. The process-module supervisor kills the child
+		// when FatalDone fires, which ends the transport, lets a blocked
+		// read loop exit, and closes p.done.
 		p.closed.Store(true)
 	}
 }
 
 // FatalDone returns a channel closed when the first terminal protocol fault is
-// observed. The supervisor observes FatalDone, calls FatalError to retrieve
-// the cause, then tears down the transport (which lets the read loop exit and
-// Done fire). In-flight Calls also select on FatalDone and return the fatal
-// error promptly without waiting for transport teardown.
+// observed. The owner of the transport watches it and tears the transport
+// down, which lets the read loop exit and Done fire; the process-module
+// supervisor does this by killing the child. In-flight Calls also select on
+// FatalDone and return the fatal error promptly without waiting for
+// transport teardown.
 func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 
 // Call originates a request with the given method and params, waits for the
