@@ -189,6 +189,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			return "", "", SchemaSnapshot{}, err
 		}
 	}
+	prev = respellTables(prev, declaredTableNames(all), dialect)
 
 	// Views and routines: new and changed ones are created after the tables
 	// (they select from them), and removed ones are dropped BEFORE any table
@@ -290,14 +291,10 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		changes = append(changes, pivotChanges...)
 	}
 
+	// Keyed by tableKey, so no spelling of a declared table is dropped.
 	declaredTables := map[string]bool{}
-	for _, ent := range all {
-		declaredTables[strings.ToLower(ent.GetTable())] = true
-		for _, rel := range ent.Config.Relations {
-			if rel.Type == entity.RelManyToMany && rel.Through != "" {
-				declaredTables[strings.ToLower(rel.Through)] = true
-			}
-		}
+	for _, t := range declaredTableNames(all) {
+		declaredTables[tableKey(dialect, t)] = true
 	}
 
 	// SQLite names a foreign key's referenced columns, so a rebuild that
@@ -322,7 +319,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			refs := recordedReferencesOnto(prev.TableDDL, ent.GetTable())
 			var stranded []string
 			for _, t := range slices.Sorted(maps.Keys(refs)) {
-				if rebuilt[strings.ToLower(t)] || !declaredTables[strings.ToLower(t)] {
+				if rebuilt[strings.ToLower(t)] || !declaredTables[tableKey(dialect, t)] {
 					continue
 				}
 				for _, cols := range refs[t] {
@@ -361,7 +358,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		ent := all[c.sqliteRebuildOf]
 		refs := mutatingFKReferrers(ent, all)
 		for _, t := range snapshotMutatingReferrers(prev, ent.GetTable()) {
-			if declaredTables[strings.ToLower(t)] && !slices.ContainsFunc(refs, func(r string) bool { return strings.EqualFold(r, t) }) {
+			if declaredTables[tableKey(dialect, t)] && !slices.ContainsFunc(refs, func(r string) bool { return strings.EqualFold(r, t) }) {
 				refs = append(refs, t)
 			}
 		}
@@ -378,7 +375,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
 	dropped := make([]string, 0)
 	for table := range prev.Tables {
-		if !declaredTables[strings.ToLower(table)] {
+		if !declaredTables[tableKey(dialect, table)] {
 			dropped = append(dropped, table)
 		}
 	}

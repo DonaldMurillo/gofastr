@@ -986,6 +986,17 @@ every attached database. On Postgres only folded
 (lower-case) columns count as the entity's: a quoted legacy `"Title"`
 is left alone and `title` is added beside it.
 
+`migrate generate` reads a table's default schema as the bare name:
+changing `Table` from `widgets` to `main.widgets` on SQLite, or to
+`public.widgets` on Postgres (or back), generates nothing, and the
+table's columns, key, indexes and unique columns are compared as
+before. Postgres is assumed to put unqualified tables in `public`, its
+default `search_path`. With a `search_path` that puts `widgets` in
+another schema, `public.widgets` is a different table, and generate
+neither creates it nor drops the old one, whose rows stay where they
+are. Any other schema is another table: `archive.widgets` is created
+and `widgets` dropped.
+
 ## Tracking table
 
 ```sql

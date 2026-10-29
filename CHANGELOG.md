@@ -2503,6 +2503,13 @@ few lines, and link the PR or the docs page for the rest.
   Its GraphQL query fetched the first 100 threads with no cursor, so an
   open thread past them passed the gate. It now pages through all of
   them and counts one line per open thread.
+- **Writing a table's default schema into `Table` no longer drops it.**
+  After `widgets` became `main.widgets` (SQLite) or `public.widgets`
+  (Postgres), `migrate generate` read the table as new and the recorded
+  one as removed, and wrote a `CREATE TABLE IF NOT EXISTS` (a no-op)
+  followed by `DROP TABLE widgets`, which took the rows. The two
+  spellings are now one table, and the change generates nothing. See
+  [migrations](framework/docs/content/migrations.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
