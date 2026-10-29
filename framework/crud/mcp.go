@@ -405,6 +405,10 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	// carried.
 	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
 		req.RemoteAddr = orig.RemoteAddr
+		// The host the caller reached, not httptest's example.com: host
+		// middleware (a site or tenant picked from the host, a host
+		// allowlist) must see the request the caller made.
+		req.Host = orig.Host
 		// Two lists: the credential headers must match credentialFingerprint
 		// and the broker's (TestCredentialCanonsAgree); the proxy headers
 		// are address, not credential.

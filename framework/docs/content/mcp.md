@@ -620,7 +620,9 @@ foreign Origins for tunnels and split-origin dev clients.
 `WithRequest` stashes the inbound `*http.Request` in the context the
 transports hand to handlers; `RequestFromContext` reads it back. Tool handlers
 that re-dispatch through an HTTP router copy the caller's Cookie /
-Authorization header from it so session middleware re-resolves the same user.
+Authorization header from it so session middleware re-resolves the same user,
+and its `Host`, so host middleware sees the site the caller reached. The
+generated CRUD tools do both.
 `StreamSSE(w, event, data)` is the hardened entry point for streaming a tool
 result as one SSE event.
 

@@ -2741,6 +2741,11 @@ few lines, and link the PR or the docs page for the rest.
   example now keeps the default, which keys on the request's
   credential. Return a constant such as `"anon"` to share a namespace on
   purpose. See [idempotency](framework/docs/content/idempotency.md).
+- **A generated MCP tool runs against the host the caller reached.** The
+  tool re-dispatched its CRUD request with `httptest`'s `example.com` as
+  `Host`, so host middleware (a site or tenant chosen by host, a host
+  allowlist) served it as some other site. See
+  [mcp](framework/docs/content/mcp.md).
 
 ## [0.95.0] - 2026-10-26
 
