@@ -80,6 +80,16 @@ nested alternative included) are cryptographically random and checked
 against the body, so template output cannot inject or terminate a MIME
 part.
 
+Header text that is not ASCII goes out encoded, so a relay that does not
+offer SMTPUTF8 accepts it: a `Subject` such as `¡Confirma tu correo!`
+and a display name in `From`, `To` or `Cc` (`José Pérez <jose@example.com>`)
+are written as RFC 2047 encoded words, and an attachment filename as an
+RFC 2231 `name*=` / `filename*=` parameter. ASCII values keep their
+bytes. A mailbox address that is not ASCII (`josé@example.com`) cannot be
+encoded and is sent as written; it needs a relay that offers SMTPUTF8,
+which `Send` requests when the relay advertises it. Custom `Headers`
+values are written as given.
+
 `Send` succeeds once the relay answers `250` to the message: the mail is
 queued. A failed `QUIT` after that (the relay drops the connection or
 stalls) is ignored, so a retrying queue does not deliver the message

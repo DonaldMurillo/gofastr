@@ -280,12 +280,12 @@ func buildMessage(email Email) ([]byte, error) {
 	// no C0/DEL byte can reach a header line even if a future code
 	// path skips assertNoHeaderInjection (defense in depth; the assert
 	// is the fail-closed gate, the scrub is the wire guarantee).
-	buf.WriteString("From: " + scrubHeaderValue(email.From) + "\r\n")
-	buf.WriteString("To: " + scrubHeaderValue(strings.Join(email.To, ", ")) + "\r\n")
+	buf.WriteString("From: " + scrubHeaderValue(encodeAddrHeader(email.From)) + "\r\n")
+	buf.WriteString("To: " + scrubHeaderValue(encodeAddrHeader(strings.Join(email.To, ", "))) + "\r\n")
 	if len(email.CC) > 0 {
-		buf.WriteString("Cc: " + scrubHeaderValue(strings.Join(email.CC, ", ")) + "\r\n")
+		buf.WriteString("Cc: " + scrubHeaderValue(encodeAddrHeader(strings.Join(email.CC, ", "))) + "\r\n")
 	}
-	buf.WriteString("Subject: " + scrubHeaderValue(email.Subject) + "\r\n")
+	buf.WriteString("Subject: " + scrubHeaderValue(encodeTextHeader(email.Subject)) + "\r\n")
 
 	// Custom headers, sorted so the wire message is byte-stable per send.
 	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
@@ -363,11 +363,10 @@ func buildMessage(email Email) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%w: invalid attachment content-type: %v", ErrSendFailed, err)
 			}
-			name := quoteParamValue(att.Filename)
 			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: " + scrubHeaderValue(baseCT) + "; name=" + name + "\r\n")
+			buf.WriteString("Content-Type: " + scrubHeaderValue(baseCT) + "; " + scrubHeaderValue(encodeParam("name", att.Filename)) + "\r\n")
 			buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-			buf.WriteString("Content-Disposition: attachment; filename=" + name + "\r\n")
+			buf.WriteString("Content-Disposition: attachment; " + scrubHeaderValue(encodeParam("filename", att.Filename)) + "\r\n")
 			buf.WriteString("\r\n")
 			buf.WriteString(encodeBase64(att.Content))
 			buf.WriteString("\r\n")
@@ -514,6 +513,77 @@ func quoteParamValue(s string) string {
 		b.WriteByte(c)
 	}
 	b.WriteByte('"')
+	return b.String()
+}
+
+// isASCII reports whether s needs no header encoding.
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// encodeTextHeader renders an unstructured header value (Subject) for
+// the wire: scrubbed, then, when any byte is not ASCII, written as RFC
+// 2047 encoded words. A server that did not offer SMTPUTF8 must not see
+// raw UTF-8 in a header, and an encoded word is valid where it did. The
+// encoder leaves printable ASCII as it is, and the scrub leaves nothing
+// else that is ASCII, so an ASCII value keeps its bytes.
+func encodeTextHeader(s string) string {
+	return mime.QEncoding.Encode("utf-8", scrubHeaderValue(s))
+}
+
+// encodeAddrHeader renders an address-list header (From, To, Cc). A
+// non-ASCII value is parsed and re-rendered by net/mail, which writes a
+// display name as encoded words; an encoded word is not allowed inside
+// an addr-spec, so a non-ASCII mailbox stays as written and needs a
+// server that offers SMTPUTF8. A value that does not parse, or an ASCII
+// one, keeps its scrubbed bytes.
+func encodeAddrHeader(s string) string {
+	s = scrubHeaderValue(s)
+	if isASCII(s) {
+		return s
+	}
+	addrs, err := mail.ParseAddressList(s)
+	if err != nil {
+		return s
+	}
+	out := make([]string, len(addrs))
+	for i, a := range addrs {
+		out[i] = a.String()
+	}
+	return strings.Join(out, ", ")
+}
+
+// encodeParam renders one MIME parameter. An ASCII value is the quoted
+// string quoteParamValue writes; any other value is an RFC 2231
+// extended value (key*= then the utf-8 charset and its empty language
+// tag), in which every byte outside the attribute-char set is
+// percent-encoded, so no quote, semicolon or control byte can end the
+// parameter. The strip quoteParamValue
+// applies (C0, DEL, C1, the invisible set) runs first.
+func encodeParam(key, v string) string {
+	if isASCII(v) {
+		return key + "=" + quoteParamValue(v)
+	}
+	var raw []byte
+	for _, r := range textsafe.StripInvisible(v) {
+		if r >= 0x20 && r != 0x7f && !textsafe.IsC1(r) {
+			raw = utf8.AppendRune(raw, r)
+		}
+	}
+	var b strings.Builder
+	b.WriteString(key + "*=utf-8''")
+	for _, c := range raw {
+		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("!#$&+-.^_`|~", c) >= 0 {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
 	return b.String()
 }
 

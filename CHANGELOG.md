@@ -2482,6 +2482,13 @@ few lines, and link the PR or the docs page for the rest.
   replay now applies only the entry's cell for the deepest layer both
   pages share, with the entry's page metadata and page signals. See
   [core-ui/ARCHITECTURE.md](core-ui/ARCHITECTURE.md).
+- **Email headers that are not ASCII are encoded.** The SMTP sender
+  wrote a localized `Subject` (`¡Confirma tu correo!`), a display name
+  in `From`, `To` or `Cc`, and an attachment filename as raw UTF-8,
+  which a relay without SMTPUTF8 may reject or mangle. They now go out
+  as RFC 2047 encoded words and RFC 2231 `name*=` / `filename*=`
+  parameters; ASCII values keep their bytes. See
+  [email](framework/docs/content/email.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
