@@ -588,7 +588,8 @@ When evaluation wakes after several ticks, only the newest due tick is
 enqueued. Older retained ticks are stored as `skipped` occurrences instead of
 causing a catch-up burst. `MaxCatchUpOccurrences` bounds that materialized
 history window and defaults to 1,000: after a longer outage, the scheduler
-fast-forwards the watermark and retains only the newest bounded window. This
+fast-forwards the watermark and retains only the newest bounded window; the
+walk over missed ticks never holds more than that many at once. This
 prevents a stale fixed-interval or cron watermark from allocating unbounded
 memory or creating an unbounded transaction. The enqueued `Job.OccurrenceID`
 is stable for that schedule ID and tick, so handlers and run-history records

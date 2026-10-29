@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -168,7 +169,14 @@ func (eb *EventBus) Subscribe(eventType string, handler EventHandler) (cancel fu
 		entries := eb.handlers[eventType]
 		for i, e := range entries {
 			if e.id == id {
-				eb.handlers[eventType] = append(entries[:i], entries[i+1:]...)
+				// slices.Delete clears the vacated tail slot, so the backing
+				// array does not keep the cancelled closure (and whatever it
+				// captured) alive; an emptied type drops its map entry.
+				if entries = slices.Delete(entries, i, i+1); len(entries) == 0 {
+					delete(eb.handlers, eventType)
+				} else {
+					eb.handlers[eventType] = entries
+				}
 				break
 			}
 		}

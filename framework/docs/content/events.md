@@ -147,7 +147,9 @@ defer unsubscribe()
 ```
 
 `app.Events()` is a method that returns the in-process `*EventBus`,
-the same bus the SSE stream subscribes to.
+the same bus the SSE stream subscribes to. Calling `unsubscribe`
+removes the handler and the bus keeps no reference to it, so a closure
+that captured a request context or buffered events can be collected.
 
 In-process subscribers are not subject to the 32-event SSE buffer.
 `EmitAsync` runs each subscriber on its own goroutine, so a slow or

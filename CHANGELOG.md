@@ -2737,6 +2737,12 @@ few lines, and link the PR or the docs page for the rest.
   time, which is always due. `Register` on both schedulers now refuses a
   spec with no firing in the next five years, and an in-memory schedule
   whose next firing lies past that search stops and logs a warning.
+- **An event-bus unsubscribe releases the handler, and cron catch-up holds
+  only the ticks it keeps.** Cancelling a `Subscribe` left the handler in
+  the slice's backing array and kept an emptied event type in the map, so
+  a long-lived bus kept every cancelled SSE closure alive. A durable cron
+  schedule waking after an outage collected every missed tick before
+  trimming to `MaxCatchUpOccurrences`; it now keeps a ring of that size.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

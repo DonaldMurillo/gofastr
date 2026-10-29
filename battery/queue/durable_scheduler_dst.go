@@ -2,6 +2,7 @@ package queue
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/cron"
@@ -111,23 +112,38 @@ func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Tim
 	if floor := end.Add(-time.Duration(maxCronCatchUpSearchMinutes-1) * time.Minute); start.Before(floor) {
 		start = floor
 	}
-	var all []time.Time
+	// Retain the newest `limit` ticks (matches the original backwards-walk
+	// memory-bounded retention so audit history keeps the most recent rows).
+	// The walk keeps them in a ring of `limit` slots, so an every-minute
+	// spec over the whole search bound never holds every missed minute.
+	var ring []time.Time
+	seen := 0
 	t := start
 	prevWall := t.Add(-time.Minute).In(loc)
 	for scanned := 0; scanned < maxCronCatchUpSearchMinutes && !t.After(end); scanned++ {
 		if fires(parsed, loc, prevWall, t) {
-			all = append(all, t.UTC())
+			if len(ring) < limit {
+				ring = append(ring, t.UTC())
+			} else {
+				ring[seen%limit] = t.UTC()
+			}
+			seen++
 		}
 		prevWall = t
 		t = t.Add(time.Minute).In(loc)
 	}
-
-	// Retain the newest `limit` ticks (matches the original backwards-walk
-	// memory-bounded retention so audit history keeps the most recent rows).
-	if len(all) > limit {
-		all = all[len(all)-limit:]
+	// At seen == limit the ring never wrapped (head is 0), so either
+	// branch returns the same ticks.
+	if seen <= limit {
+		return slices.Clip(ring), nil
 	}
-	return all, nil
+	// The ring is full and wrapped: the oldest kept tick sits at the next
+	// write position.
+	head := seen % limit
+	out := make([]time.Time, limit)
+	copy(out, ring[head:])
+	copy(out[limit-head:], ring[:head])
+	return out, nil
 }
 
 // skippedMatchInGap reports whether the absolute-minute step from `a` to `b`
