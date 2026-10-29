@@ -104,6 +104,13 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An `EmitAsync` subscriber no longer runs on a cancelled request
+  context.** CRUD emits on the request's context, and the handler
+  returned before the subscriber ran, so the webhook bridge's subscriber
+  query failed with `context canceled` and a committed write lost its
+  webhook. Subscribers and the fanout tap keep the context's values
+  without its cancel, each bounded by the new `event.AsyncHandlerTimeout`
+  (one minute). See [events](framework/docs/content/events.md).
 - **Bulk "Every match" and CSV export on a keyed list stay in its view.**
   The every-match read rebuilt the list without its key, so it looked
   for `view` instead of `<key>_view`. On `List(e).Key("inv").View("open")`
@@ -2230,6 +2237,29 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A password reset overtaking a passkey sign-in leaves no session, and
+  a failed session purge is no longer reported as success.** A passkey
+  sign-in that recorded its use just before a reset minted its session
+  afterwards, for a key the reset had removed. It now re-reads the key
+  after minting, and the reset removes passkeys before it revokes
+  sessions. A reset or password change whose session purge failed
+  answered `{"updated": true}` while the old sessions kept working; the
+  reset answers 500 `auth.reset_incomplete` and the change 500
+  `auth.change_incomplete`. See [auth](framework/docs/content/auth.md).
+- **A sibling subdomain can no longer plant the OAuth state cookie.** The
+  browser-binding cookie was `gofastr_oauth_state` even over Secure, so a
+  page on another subdomain could set it for the parent domain with its own
+  flow's state and sign a victim into the attacker's account at the
+  callback. With `SessionSecure` on it is now `__Host-gofastr_oauth_state`;
+  DevMode keeps the plain name. A flow started before the upgrade and
+  finished after it fails once and is retried. See
+  [auth](framework/docs/content/auth.md).
+- **A soft-deleted user no longer signs in.** With `Scope.SoftDelete` on
+  the users entity, `EntityUserStore` looked accounts up by id or email
+  alone, so a trashed account kept its password login and every session,
+  API token and JWT. The store now skips a row with `deleted_at` set, and
+  `GET /auth/me` answers 401 for a session whose account is gone. See
+  [auth](framework/docs/content/auth.md).
 - **BREAKING: the MCP control tools and the log MCP tools need the
   `admin` role.** `app_module_enable`/`app_module_disable`
   (`WithMCPControl`) and battery/log's `log_*` tools asked only for a

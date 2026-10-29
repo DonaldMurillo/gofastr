@@ -153,9 +153,13 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 				reset.dropLinks(ctx, sess.UserID, "password_change", remoteHost(r))
 			}
 		}
-		c.mgr.revokeUserSessions(ctx, sess.UserID, "password_change", remoteHost(r))
-		// The change stands either way, and the other purges here log
-		// rather than fail, so a failed link purge does too.
+		// The change stands, but a failed purge leaves a stolen cookie on
+		// another device working, so it is not reported as done.
+		if err := c.mgr.revokeUserSessions(ctx, sess.UserID, "password_change", remoteHost(r)); err != nil {
+			writeAuthError(w, r, http.StatusInternalServerError, reasonChangeIncomplete)
+			return
+		}
+		// A failed link purge logs rather than fails: the change stands.
 		if err := c.mgr.dropMagicLinks(ctx, sess.UserID, "password_change", remoteHost(r)); err != nil {
 			slog.Warn("magic-link purge failed", "reason", "password_change",
 				"user_hash", hashedIdentifier(sess.UserID), "err", err)
@@ -218,22 +222,25 @@ func (m *AuthManager) twoFactorEnabled(ctx context.Context, userID string) (bool
 
 // revokeUserSessions deletes every session of the user and records it.
 // A store without SessionUserPurger leaves them, and that gap is logged.
-func (m *AuthManager) revokeUserSessions(ctx context.Context, userID, reason, remote string) {
+// A purge that fails returns its error: the caller must not report the
+// account secured while the old sessions still work.
+func (m *AuthManager) revokeUserSessions(ctx context.Context, userID, reason, remote string) error {
 	purger, ok := m.SessionStore().(SessionUserPurger)
 	if !ok {
 		slog.Warn("could not revoke existing sessions: session store does not implement SessionUserPurger",
 			"reason", reason, "user_hash", hashedIdentifier(userID))
-		return
+		return nil
 	}
 	n, err := purger.DeleteByUser(ctx, userID)
 	if err != nil {
 		slog.Warn("session revocation failed", "reason", reason, "user_hash", hashedIdentifier(userID), "err", err)
-		return
+		return err
 	}
 	m.emitSecurity(ctx, SecurityEvent{
 		Kind: "session.revoked", UserID: userID, Remote: remote,
 		Meta: map[string]string{"reason": reason, "count": strconv.Itoa(n)},
 	})
+	return nil
 }
 
 // dropMagicLinks spends every outstanding magic link mailed to the user.

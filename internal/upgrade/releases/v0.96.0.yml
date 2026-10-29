@@ -273,3 +273,7 @@ notes:
     find:
       uses:
         - gofastr/battery/admin.New
+  - change: "The OAuth state cookie is __Host-gofastr_oauth_state when SessionSecure is on"
+    breaking: true
+    guidance: "A sibling subdomain could plant the plain gofastr_oauth_state cookie and pass the callback's browser binding. DevMode keeps the plain name. A test that synthesises a production-mode callback sends the __Host- name; anything that reads or strips the cookie by name (a proxy rule, a cookie-consent list) uses it too."
+    nodetect: the cookie is planted and checked by the framework; a name in a proxy rule or test has no Go shape

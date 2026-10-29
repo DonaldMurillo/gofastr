@@ -483,7 +483,32 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// mailbox an hour ago still sets the password again after the victim's
 	// own reset completes, and the account returns to the attacker.
 	p.dropLinks(r.Context(), userID, "password_reset", remoteHost(r))
-	p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r))
+	// Passkeys go before sessions, as an account claim orders them. A
+	// passkey sign-in re-reads its key after minting; with the revoke
+	// first, one that minted after it and re-read before the purge kept
+	// its session. Purged first, a later mint finds the key gone and an
+	// earlier one is caught by the revoke.
+	// One added from a stolen session signs in again after the reset
+	// otherwise.
+	if n, err := p.mgr.purgeUserPasskeys(r.Context(), userID); err != nil {
+		slog.Warn("password-reset passkey removal failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
+		return
+	} else if n > 0 {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "passkey.deleted",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
+		})
+	}
+	// A failed purge left the attacker's live cookie working behind a
+	// reset that answered success. It answers 500 like the purges below.
+	if err := p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
+		return
+	}
 	// A magic link mailed before the reset signs in like a session does.
 	// A failed purge answers 500, as the API token and passkey purges
 	// below do: a fresh reset link retries safely.
@@ -505,21 +530,6 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	} else if supported && n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "token.revoked",
-			UserID: userID,
-			Remote: remoteHost(r),
-			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
-		})
-	}
-	// So are passkeys: one added from a stolen session signs in again
-	// after the reset otherwise.
-	if n, err := p.mgr.purgeUserPasskeys(r.Context(), userID); err != nil {
-		slog.Warn("password-reset passkey removal failed",
-			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
-		return
-	} else if n > 0 {
-		p.mgr.emitSecurity(r.Context(), SecurityEvent{
-			Kind:   "passkey.deleted",
 			UserID: userID,
 			Remote: remoteHost(r),
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
