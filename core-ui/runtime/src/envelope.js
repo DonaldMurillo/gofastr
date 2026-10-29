@@ -732,6 +732,7 @@
         for (let i = 0; i < busyDepth; i++) {
           if (addr.startsWith(keys[i] + '#') || addr.startsWith(keys[i] + '~')) {
             el.setAttribute('aria-busy', 'true');
+            el._cuiBusy = myEpoch;
             marks.push(el);
             break;
           }
@@ -739,7 +740,7 @@
       }
       const busySlot = findSlot(keys[busyDepth - 1]);
       if (busySlot) {
-        busySlot.setAttribute('aria-busy', 'true'); marks.push(busySlot);
+        busySlot.setAttribute('aria-busy', 'true'); busySlot._cuiBusy = myEpoch; marks.push(busySlot);
         // P13-B: refresh the LEAVING page's cache entry keyed at THIS
         // navigation's swap layer, before anything touches the DOM.
         // An entry captured shallower replays by replacing every layer
@@ -1120,7 +1121,8 @@
       // A navigation that neither committed nor has a commit pending
       // discards its parts: the buffer dies and the regions restore.
       if (P) P.finish(parts);
-      for (const el of marks) el.removeAttribute('aria-busy');
+      // A newer navigation that marked the same region owns its mark.
+      for (const el of marks) if (el._cuiBusy === myEpoch) el.removeAttribute('aria-busy');
       if (NS._navLive(myEpoch)) NS.doc.removeHtmlAttr('aria-busy');
     }
   };

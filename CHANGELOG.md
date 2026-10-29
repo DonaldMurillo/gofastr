@@ -2386,6 +2386,12 @@ few lines, and link the PR or the docs page for the rest.
   listeners and island state were gone. The newer navigation now takes
   the parked nodes over, and a region no apply replaced gets them back.
   See [layouts](framework/docs/content/layouts.md).
+- **A second click no longer clears the first click's busy marks off
+  the regions both navigations change.** The superseded navigation's
+  cleanup removed `aria-busy` from every region it had marked, so the
+  outlets and slot the winner had marked read as idle while its request
+  was still in flight. Each mark now records the navigation that set it,
+  and only that navigation clears it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

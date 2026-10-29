@@ -1316,7 +1316,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// uihost percent-encodes for a layer key holding non-ASCII or %
 		// (2026-10-26, TestSwapKeyDecodesNonASCII drives the plain
 		// navigator's twin in core).
-		"envelope": 7878,
+		// 7901 measured (7899 + 2) after each busy mark records the
+		// navigation that set it, so a superseded navigation's finally
+		// leaves the winner's marks alone (2026-10-27 bug bash R3,
+		// TestSupersededNavKeepsRegionBusy).
+		"envelope": 7901,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

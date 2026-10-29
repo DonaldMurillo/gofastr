@@ -462,3 +462,47 @@ func TestSupersededPartDoesNotShowLoading(t *testing.T) {
 		t.Error("the superseded navigation's part showed its claimed loading content over the winner — the claimed-entry show's epoch guard let a dead part park a skeleton")
 	}
 }
+
+// TestSupersededNavKeepsRegionBusy pins the region half of the busy
+// rule: both navigations mark the same kept-layer regions, and the
+// superseded one's finally cleared their aria-busy while the winner was
+// still in flight (2026-10-27 bug bash R3). The winner still clears its
+// own marks when it lands.
+func TestSupersededNavKeepsRegionBusy(t *testing.T) {
+	r := newGapRig(t, "", "", "")
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
+	warmModule(t, ctx, r)
+	r.hold("/x3")
+	r.hold("/d")
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#goX3`, chromedp.ByID),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Click(`#goD`, chromedp.ByID),
+		chromedp.Sleep(100*time.Millisecond),
+	); err != nil {
+		t.Fatal(err)
+	}
+	r.release("/x3")
+	var main, aside string
+	if err := chromedp.Run(ctx,
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`String(document.getElementById('main').getAttribute('aria-busy'))`, &main),
+		chromedp.Evaluate(`String(document.getElementById('aside').getAttribute('aria-busy'))`, &aside),
+	); err != nil {
+		t.Fatal(err)
+	}
+	r.release("/d")
+	var after, asideAfter string
+	_ = chromedp.Run(ctx,
+		chromedp.Poll(`document.getElementById('main').textContent.includes('MAIN-D')`, new(bool), chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`String(document.getElementById('main').getAttribute('aria-busy'))`, &after),
+		chromedp.Evaluate(`String(document.getElementById('aside').getAttribute('aria-busy'))`, &asideAfter),
+	)
+	if main != "true" || aside != "true" {
+		t.Errorf("main aria-busy = %q, aside = %q while the winner was in flight — the superseded navigation cleared marks the winner set", main, aside)
+	}
+	if after == "true" || asideAfter == "true" {
+		t.Errorf("main aria-busy = %q, aside = %q after the winner landed", after, asideAfter)
+	}
+}
