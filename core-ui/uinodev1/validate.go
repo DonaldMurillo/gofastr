@@ -308,6 +308,9 @@ func rejectDuplicateKeys(data []byte) error {
 }
 
 // walkDupCheck descends into one JSON value (object, array, or scalar).
+// It recurses once per nesting level before decodeNode's MaxDepth runs;
+// json.Decoder.Token bounds that at 10000 on Go 1.27, which go.mod
+// requires (TestDupWalkDepthBound).
 func walkDupCheck(dec *json.Decoder) error {
 	t, err := dec.Token()
 	if err != nil {
