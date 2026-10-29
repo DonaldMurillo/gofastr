@@ -121,7 +121,12 @@ Entities and data:
   entity the world does not hold is refused, and so is a row key that is
   neither a declared field nor `id` (`kind: "validation"`, naming the row
   and the key). A seed for an entity that already has one adds rows; the
-  freeze merges them into one block
+  freeze merges them into one block. A row that leaves out `id` (or sets
+  it to null) gets a generated UUID, and one that leaves out `created_at`
+  or `updated_at` on an entity with timestamps gets the current time, as a
+  CRUD create would. A generated id changes each time Kiln rebuilds the
+  database from the journal (boot, reset, undo), so give an `id` to a row
+  another seed or a saved link refers to
 
 Screens and behavior:
 

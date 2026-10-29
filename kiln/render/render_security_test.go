@@ -113,7 +113,10 @@ func openSeedDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if _, err := db.Exec(`CREATE TABLE users (name TEXT)`); err != nil {
+	// The columns kiln's migration gives an entity with only a name
+	// field: the implicit UUID key and the default timestamps, with no
+	// NOT NULL on the key (SQLite's TEXT PRIMARY KEY allows NULL).
+	if _, err := db.Exec(`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, created_at TEXT, updated_at TEXT)`); err != nil {
 		t.Fatal(err)
 	}
 	return db

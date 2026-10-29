@@ -2698,6 +2698,12 @@ few lines, and link the PR or the docs page for the rest.
   sit until the 10-second readiness poll ran out and then abort with Go's
   "all goroutines are asleep - deadlock!" and a goroutine dump. It now prints
   the serve's error and exits 1 at once.
+- **A Kiln seed row without an id gets one.** `add_seed` inserted only the
+  row's own keys, so a row with no `id` stored a NULL primary key (SQLite
+  allows NULL in a `TEXT PRIMARY KEY`) and the row could not be fetched,
+  edited, deleted or referenced; `created_at` and `updated_at` stayed NULL
+  too. Seeds now fill an omitted or null UUID id and timestamps the way a
+  CRUD create does, and keep any value the row gives.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
