@@ -2341,6 +2341,13 @@ few lines, and link the PR or the docs page for the rest.
   entity, for a field sharing the nested relation's name, hid the rows
   from the lookup, and `?include=author.card` served the cards' stored
   values past their `AfterList` and `AfterGet` masks.
+- **A list serves every field under its `WireName`.** Since v0.85.0 a
+  list that selected every visible column took a cached key list built
+  without `WireName`, so `GET /cards` served `card_number` where
+  `GET /cards/{id}` and `?fields=` served `pan`. An `AfterList` hook
+  deleting the documented key removed nothing and the value shipped, an
+  aliased JSON column went out as a string, and a field renamed with an
+  API version's `Rename` kept its old name on the list.
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but
