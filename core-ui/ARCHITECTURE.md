@@ -430,7 +430,13 @@ the DOM does not show the named page (a superseded navigation's origin
 mismatch), so a mid-flight drop cannot poison the dropped destination's
 entry; the route seed a replay restores comes from the tracked live route
 state, not the first-paint head island (which is stale after the first
-SPA navigation).
+SPA navigation). That leave capture is the envelope module's. The plain
+navigator, which runs until a page with an outlet or area loads that
+module, narrows the
+replay instead: an entry keyed above the navigation's deepest shared
+layer applies only that layer's cell of the entry, with the entry's
+page-head carrier and seed island, so Back from `/group/b` to the
+visit's first page `/group/a` keeps the group layout's DOM.
 
 When a navigation response is a **full HTML document** — a static host
 that serves whole pages and ignores the request headers — the runtime

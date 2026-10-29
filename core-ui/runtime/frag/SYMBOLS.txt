@@ -213,9 +213,11 @@ kernel	8	key
 kernel	8	n
 kernel	8	parsed
 kernel	8	result
+nav	10	cell
 nav	10	el
 nav	10	slot
 nav	10	sourceRoot
+nav	10	t
 nav	10	u
 nav	12	m
 nav	2	MAX_CACHE_SIZE
@@ -374,6 +376,7 @@ nav	8	pdoc
 nav	8	pdoc
 nav	8	pf
 nav	8	root
+nav	8	sd
 nav	8	slot
 nav	8	t
 nav	8	to

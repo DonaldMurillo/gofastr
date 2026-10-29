@@ -638,8 +638,10 @@ const (
 	// Back/Forward comparing every value of a repeated query key adds 28;
 	// a whole document's page-scoped seed riding its swap and the boot
 	// cache entry adds 114. The kernel's formatNumber, which every {{n}}
-	// fill in the runtime and its modules goes through, adds 40.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40
+	// fill in the runtime and its modules goes through, adds 40. The plain
+	// navigator narrowing a replay keyed above the deepest shared layer to
+	// that layer's cell adds 118.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1078,7 +1080,12 @@ const (
 	// reaches 17698, short of 17705 (the bracket had gone vacuous). As
 	// in #577 the line moves DOWN to 17697: the bracket [real 17688,
 	// fixture 17698], verified by running TestCoreBudgetRejectsCliffOverflow.
-	coreCongestionWindowGZ = 17697
+	// The plain navigator narrowing a replay keyed above the deepest
+	// shared layer to that layer's cell (Back to a visit's first page
+	// under a shared nested layout) measures 17816 at level 1. It runs on
+	// the replay path before any demand module could, so it does not
+	// carve. Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17818
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1148,6 +1155,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"whole-document page seed on boot entry and document swaps": 114,
 		// Measured 15254 → 15294 (2026-10-28): TestLintNumberFill_Repo.
 		"kernel formatNumber for {{n}} fills (toLocaleString on <html lang>)": 40, // (l1: 34)
+		// Measured 15289 → 15407 (2026-10-29): TestPlainBackKeepsSharedNestedLayout.
+		"plain replay narrows to the deepest shared layer's cell": 118, // (l1: 128)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

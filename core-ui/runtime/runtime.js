@@ -1582,13 +1582,28 @@
       // A cached entry is replayable iff the layer it renders below is
       // live in the DOM right now ('' = both pages are layout-less).
       if (cached) {
-        const slot = cached.layer
-          ? findSlot(cached.layer)
+        let { html, layer } = cached;
+        // An entry keyed above this move's deepest shared layer (the boot
+        // entry sits at <main>'s slot) replays only that layer's cell, with
+        // the entry's page head and seed: replayed whole, it rebuilt the
+        // kept layer's DOM. The envelope module re-captures on leave.
+        const sd = sharedDepth(layouts), deep = sd && domChainKeys()[sd - 1];
+        if (deep && layer !== deep) {
+          const t = document.createElement('template');
+          t.innerHTML = html;
+          const cell = t.content.querySelector(`[data-cui-layout-slot="${CSS.escape(deep)}"]`);
+          if (cell) {
+            html = [...t.content.children].filter((e) => e.matches('template[data-cui-page-head],#gofastr-signals-partial')).map((e) => e.outerHTML).join('') + cell.innerHTML;
+            layer = deep;
+          }
+        }
+        const slot = layer
+          ? findSlot(layer)
           : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
         if (slot) {
           await _swapCommit(myEpoch, prevPath, path, () => {
-            finishNav(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
-          }, cached, cached.html, cached.title);
+            finishNav(path, prevPath, true, swapAtSlot(slot, html), ps);
+          }, cached, html, cached.title);
           return;
         }
       }

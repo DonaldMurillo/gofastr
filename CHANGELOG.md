@@ -2475,6 +2475,13 @@ few lines, and link the PR or the docs page for the rest.
   files (`../../../battery/admin/` → the GitHub source) are rewritten,
   so they no longer land on the raw-markdown route or a 404. See
   [core-ui/ARCHITECTURE.md](core-ui/ARCHITECTURE.md).
+- **Back to a visit's first page keeps a shared nested layout.** On a
+  page with no outlets, `/group/a` → `/group/b` → Back replayed the
+  first page's cache entry, keyed at `<main>`, over the group layout:
+  its DOM was rebuilt and lost its listeners and typed input. The
+  replay now applies only the entry's cell for the deepest layer both
+  pages share, with the entry's page metadata and page signals. See
+  [core-ui/ARCHITECTURE.md](core-ui/ARCHITECTURE.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
