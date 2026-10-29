@@ -419,3 +419,10 @@ notes:
     find:
       uses:
         - gofastr/battery/semantic.NewPgVector
+  - change: "BREAKING for battery/semantic on pgvector - Open records each table's embedding model in semantic_models (created by EnsureSchema) and returns *ModelMismatchError for another model while the table holds rows"
+    breaking: true
+    hits: review
+    guidance: "Call store.EnsureSchema(ctx) before semantic.Open, as the docs show; Open without it now fails. A table filled before this release takes the model that opens it first. To change models, empty the chunk table, open with the new embedder, and re-add the documents."
+    find:
+      uses:
+        - gofastr/battery/semantic.NewPgVector

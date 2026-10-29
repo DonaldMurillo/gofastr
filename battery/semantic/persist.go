@@ -171,10 +171,12 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 	return nil
 }
 
-// ModelMismatchError is returned when a persisted snapshot was produced
-// by a different embedder than the one configured on the store. Mixing
+// ModelMismatchError is returned when stored vectors (a persisted
+// snapshot or WAL, or a PgVectorStore table's recorded model) were
+// produced by a different embedder than the one configured. Mixing
 // vectors from different models is silently catastrophic for retrieval
-// quality, so the load is refused loudly instead.
+// quality, so the open is refused loudly instead. The Snapshot fields
+// name what is stored.
 type ModelMismatchError struct {
 	SnapshotModel, StoreModel string
 	SnapshotDim, StoreDim     int
@@ -182,7 +184,7 @@ type ModelMismatchError struct {
 
 func (e *ModelMismatchError) Error() string {
 	return fmt.Sprintf(
-		"semantic: snapshot embedded with model=%q dim=%d, store configured with model=%q dim=%d: re-index after model changes",
+		"semantic: stored vectors were embedded with model=%q dim=%d, the index is configured with model=%q dim=%d: re-index after model changes",
 		e.SnapshotModel, e.SnapshotDim, e.StoreModel, e.StoreDim,
 	)
 }

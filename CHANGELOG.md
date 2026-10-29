@@ -2664,6 +2664,15 @@ few lines, and link the PR or the docs page for the rest.
   `Keyword: semantic.NewMemoryKeyword()` with `Keyword: store.Keyword()`;
   [semantic-search.md](framework/docs/content/semantic-search.md) has the
   matching rules and the GIN index for a large table.
+- **BREAKING: a pgvector table refuses a second embedding model.** A
+  pgvector column fixes the dimension only, so an index opened with a new
+  model of the same dimension ranked old and new vectors as one space;
+  the file-backed store already refused that. `EnsureSchema` now creates
+  `semantic_models`, `Open` records the table's model and dimension and
+  returns `*ModelMismatchError` for another while the table holds rows,
+  and each write checks the record in its own transaction. An emptied
+  table takes the new model. `Open` before `EnsureSchema` fails with an
+  error naming it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

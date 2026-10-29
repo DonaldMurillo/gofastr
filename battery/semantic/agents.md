@@ -74,7 +74,8 @@ or a local model server by implementing the three-method interface.
 **Persistence and model lock-in:** when `Options.Path` is set, the
 snapshot records the embedder's `Name()` and `Dim()`; reloading with a
 different model returns `*ModelMismatchError` rather than silently
-serving mixed-model vectors.
+serving mixed-model vectors. A `PgVectorStore` table records the same
+pair and refuses another model the same way.
 
 **Watcher (auto-index a directory tree):**
 ```go

@@ -195,7 +195,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, docIdx); err != nil {
 		return fmt.Errorf("semantic: create doc_id index: %w", err)
 	}
-	return nil
+	return s.ensureModelTable(ctx)
 }
 
 // Add inserts (or replaces by id) chunks. Vectors are L2-normalized in place
@@ -283,7 +283,7 @@ func (s *PgVectorStore) insertChunks(ctx context.Context, tx *sql.Tx, chunks []C
 // RemoveDoc deletes every chunk belonging to docID, under the same
 // per-document lock replaceDocs takes.
 func (s *PgVectorStore) RemoveDoc(ctx context.Context, docID string) error {
-	return s.replaceDocs(ctx, []string{docID}, nil)
+	return s.replaceDocs(ctx, "", []string{docID}, nil)
 }
 
 // replaceDocs deletes every chunk of docIDs and inserts chunks in one
@@ -297,7 +297,7 @@ func (s *PgVectorStore) RemoveDoc(ctx context.Context, docID string) error {
 // document could run delete, delete, insert, insert and keep chunks of
 // both versions. Keys are taken in ascending order so two batches naming
 // the same documents cannot deadlock each other.
-func (s *PgVectorStore) replaceDocs(ctx context.Context, docIDs []string, chunks []Chunk) error {
+func (s *PgVectorStore) replaceDocs(ctx context.Context, model string, docIDs []string, chunks []Chunk) error {
 	if len(docIDs) == 0 && len(chunks) == 0 {
 		return nil
 	}
@@ -310,6 +310,11 @@ func (s *PgVectorStore) replaceDocs(ctx context.Context, docIDs []string, chunks
 		return fmt.Errorf("semantic: begin replace: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if model != "" && len(chunks) > 0 {
+		if err := s.checkModel(ctx, tx, model); err != nil {
+			return err
+		}
+	}
 	for _, key := range s.docLockKeys(docIDs) {
 		//gofastr:allow(GOFASTR1502) locks are taken one at a time in ascending key order so two batches cannot deadlock; one statement would not fix the order
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, key); err != nil {

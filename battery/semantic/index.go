@@ -395,9 +395,10 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 
 // docReplacer is a store that removes documents and stores their new
 // chunks in one atomic step, serialized per document across every process
-// sharing the store.
+// sharing the store. model is the embedder that produced chunks; a store
+// that records its model refuses chunks of another.
 type docReplacer interface {
-	replaceDocs(ctx context.Context, docIDs []string, chunks []Chunk) error
+	replaceDocs(ctx context.Context, model string, docIDs []string, chunks []Chunk) error
 }
 
 // applyReplaceLocked replaces docIDs with chunks through the store's own
@@ -415,7 +416,7 @@ func (i *index) applyReplaceLocked(ctx context.Context, r docReplacer, docIDs []
 	for _, id := range docIDs {
 		prior = append(prior, i.collectChunkIDs(id)...)
 	}
-	if err := r.replaceDocs(ctx, docIDs, chunks); err != nil {
+	if err := r.replaceDocs(ctx, i.embedder.Name(), docIDs, chunks); err != nil {
 		return err
 	}
 	if err := i.keywordRemoveDoc(ctx, "", prior); err != nil {

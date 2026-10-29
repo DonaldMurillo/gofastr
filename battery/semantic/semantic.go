@@ -234,6 +234,16 @@ func Open(opts Options) (Index, error) {
 	if pk, ok := opts.Keyword.(pgKeyword); ok && opts.Store != Store(pk.s) {
 		return nil, errors.New("semantic: Options.Keyword is the keyword index of another store than Options.Store; its hits would not hydrate")
 	}
+	// A durable store records the model its vectors came from; vectors of
+	// another model of the same dimension would rank as one space.
+	if mb, ok := opts.Store.(modelBinder); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), bindTimeout)
+		err := mb.bindModel(ctx, opts.Embedder.Name())
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if opts.SnapshotEvery == 0 {
 		opts.SnapshotEvery = 1000
 	}

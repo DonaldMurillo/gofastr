@@ -387,6 +387,18 @@ CREATE INDEX ON embed_chunks USING hnsw (embedding vector_cosine_ops);
 
 **Extension note.** `EnsureSchema` runs `CREATE EXTENSION IF NOT EXISTS vector`. On managed Postgres (RDS, Cloud SQL) that is a one-time superuser action the app role often lacks: pre-install it once as admin. If the `vector` type is genuinely absent, `EnsureSchema` fails closed with an actionable error rather than proceeding.
 
+**One model per table.** A pgvector column fixes the dimension and nothing
+else, so `EnsureSchema` also creates `semantic_models`, one row per chunk
+table naming the embedder (`Name()`) and dimension its vectors came from.
+`Open` records the pair on a table's first open and returns
+`*ModelMismatchError` when a later open names another while the table holds
+rows; each write checks the row in its own transaction, so a replica still
+running the old model cannot add to a table re-bound to a new one. To change
+models, empty the table (`DELETE FROM embed_chunks`), open with the new
+embedder, and re-add the documents; an empty table takes the new model. A
+table filled before this check existed takes whatever model opens it first.
+`Open` before `EnsureSchema` fails with an error naming `EnsureSchema`.
+
 **No snapshot, no `Path`.** A Postgres table *is* the durable copy, so `PgVectorStore` deliberately does not implement the gob-snapshot capability. Pairing it with `Options.Path` fails closed at `Open` with an error; do not set `Path` with this store.
 
 **Erasure.** `Document.Owner` names the user a document belongs to, and
