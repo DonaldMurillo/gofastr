@@ -342,7 +342,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-screen-group="<prefix>"` | On the `.cui-screen-group` wrapper div around each group layer. Since the layout-chain rewrite the swap logic no longer keys on it (chains carry group identity in `data-cui-layout-key`); the runtime still reads it in one place, locating the outermost shell element for a cross-chain shell replacement, and it remains the CSS/introspection contract for group boundaries. The prefix matches the group's URL prefix (trailing slash). |
 | `data-hui-pane="primary\|secondary\|tertiary"` | Emitted by `PaneHost` (headless.PaneHost) on each of its three slot children. The runtime addresses a pane by this value when opening/closing it; CSS keys the open-state grid columns and the overlay-drawer chrome off the combination of the root's open modifier classes and this slot marker. |
 | `data-hui-pane-mode="overlay"` | Written by the registered `headless-panehost` module onto the host when `matchMedia('(max-width: 768px)')` matches AND a pane is open. CSS flips the open pane to a fixed overlay drawer (backdrop scrim via `::before`, right edge, full height) and the module applies a focus trap + scroll lock + ESC/backdrop-to-close. Cleared when the viewport widens or the pane closes. |
-| `data-hui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set: opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` replays the state by re-clicking the matching `[data-hui-pane-key]`. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink`. Without that a shared link paints the pane closed and opens it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
+| `data-hui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set: opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` and a page load replay the state by re-clicking the matching trigger: the `[data-hui-pane-key]` that opens or swaps to the named pane (one key may label a trigger for each pane). A key no trigger on the page carries opens the pane empty. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink`. Without that a shared link paints the pane closed and opens and fills it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
 | `data-cui-intercept-overlay` | Written by the demand-loaded `intercept` module on the container it appends to `<body>` for an intercepted route. Holds the screen render the server returned as an overlay variant; the scrim and docking come from `app.InterceptOverlayCSS()`, which the host injects only when some route declares an intercept. The container's children are the LAYERS of an open stack, deepest first. Removed when the last layer closes. |
 | `data-cui-intercept-as="drawer\|sheet"` | On each layer (a child of the overlay container): which presentation the SERVER chose for it, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys each layer's docking edge off it, so one stack can hold a sheet over a drawer. The client never picks its own chrome: a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
 | `data-cui-intercept-close` | On a button inside intercepted overlay content: click closes the TOP layer (through `history.back()`'s path, so the button, ESC, and the backdrop all resolve to the same history move and the page underneath is never refetched). A layer whose form carries `data-hui-leave-guard` and unsaved edits asks first. |
@@ -659,15 +659,16 @@ pane. `PaneHost` does not fetch.
 
 URL round-tripping is opt-in per host: set `PaneHostConfig.DeepLinkParam`
 and label each trigger with `interactive.PaneKey`. Opening writes
-`?<param>=<pane>:<key>`, closing strips it, and Back replays the state by
-re-clicking the matching trigger, so the RPC that fills the pane runs
-again and the content comes back with it, not just the open column. This
+`?<param>=<pane>:<key>`, closing strips it, and Back, a refresh and a
+shared link replay the state by re-clicking the trigger with that key
+for that pane, so the RPC that fills the pane runs again and the content
+comes back with it, not just the open column. This
 does not make a pane a route: the parameter records in-page state so
 refresh and share reproduce it, which is the same thing widget deep
 links do for modals. Because the server owns first paint, read the
 parameter with `ui.PaneDeepLink` and set `SecondaryOpen`/`TertiaryOpen`
 plus the pane's content from it; skip that and a shared link paints the
-pane closed, then pops it open after hydration.
+pane closed, then opens and fills it after hydration.
 
 ### Intercepting routes (`app.InterceptFrom`)
 

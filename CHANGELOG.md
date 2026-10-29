@@ -2578,6 +2578,13 @@ few lines, and link the PR or the docs page for the rest.
   rebuild, in the order they were made, with any column rename earlier
   in the change set kept in their bodies. See
   [migrations](framework/docs/content/migrations.md).
+- **A refreshed or shared pane link opens the pane with its content.**
+  Back and Forward re-clicked the keyed trigger, so its RPC filled the
+  pane, but a page load only opened the pane on its generic content. A
+  load now replays the trigger the same way, without a history entry.
+  Both match the trigger by key and pane: one key could label a
+  record's view and its edit trigger, and the first one in the page
+  opened. See [pane host](framework/docs/content/pane-host.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
