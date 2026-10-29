@@ -290,6 +290,12 @@ is the curl tour, covering eager loading, cursor paging, atomic batch, SSE,
 uploads, and sparse updates. Hooks run inside the write's transaction
 ([hooks-and-transactions](framework/docs/content/hooks-and-transactions.md)).
 
+Experimental desktop apps use the OS WebView with `CGO_ENABLED=0`. On Linux,
+`gofastr desktop build --format=tar.gz` creates a bundle; the separate
+`desktop install --bundle=<extracted-directory>` and `desktop uninstall --id=<app.id>`
+commands manage a per-user installation without changing saved default handlers
+or removing app data. See the [desktop reference](framework/docs/content/desktop.md).
+
 ## The design bets
 
 - **Two layers.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Use the framework for the common path; drop to core and write plain `net/http` when it's in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)

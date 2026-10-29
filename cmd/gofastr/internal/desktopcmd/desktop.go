@@ -36,6 +36,8 @@ func RunDesktop(args []string) {
 		runDesktopRun(args[1:])
 	case "build":
 		runDesktopBuild(args[1:])
+	case "install", "uninstall":
+		runDesktopInstall(args[1:], args[0] == "uninstall", runtime.GOOS)
 	case "types":
 		runDesktopTypes(args[1:])
 	case "--help", "-h":
@@ -44,7 +46,7 @@ func RunDesktop(args []string) {
 		if desktopExtraVerb(args) {
 			return
 		}
-		cli.Fail("Unknown desktop verb: %s (want run, build, types, keygen, or feed)", args[0])
+		cli.Fail("Unknown desktop verb: %s (want run, build, install, uninstall, types, keygen, or feed)", args[0])
 		printDesktopUsage()
 		cli.OsExit(1)
 	}
