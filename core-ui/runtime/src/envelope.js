@@ -670,6 +670,8 @@
     finishNav(path, prevPath, cached, root, ps);
   };
   const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
+  // core's rule (nav.js): an HTML answer applies, any status; any other
+  // answer, a 200 included, throws so the toast names it.
   const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
   const routeLayouts = (path) => {
     const m = routeInfo(path);
@@ -915,13 +917,15 @@
         if (P && parts) P.kill(parts);
         const fr = await fetch(path);
         if (!NS._navLive(myEpoch)) return;
-        if (!fr.ok && !respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         NS._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
         if (!NS._navLive(myEpoch)) return;
         // A followed redirect into another document loads it (nav.js).
         const to = NS._followed(fr, path);
         if (to === null) return;
+        // Checked after the redirect: an X-Gofastr-Document answer is
+        // bodiless and untyped. Any other non-HTML answer throws.
+        if (!respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         const dest = to || path;
         if (to) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
         if (!(await cssWait(myEpoch, pdoc.body))) return;
@@ -985,7 +989,6 @@
       // A session change is an identity change: one identity's pages
       // must never replay for another.
       if (rs) NS.invalidate('*');
-      if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
       NS._inval(resp);
       // A followed 3xx takes the same leg as the header (nav.js).
@@ -1007,6 +1010,9 @@
         if (P && parts) P.kill(parts);
         return retry(redirectTo, { bypassCache, from: prevPath, restore: ps });
       }
+      // The redirect legs above read no body: a 200 X-Gofastr-Location
+      // or -Document answer carries none and no Content-Type.
+      if (!respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       // Every response body is read with text(): Chrome keeps no body
       // for a fetch() read through a stream reader and reports the
       // request as net::ERR_ABORTED in DevTools even when the page

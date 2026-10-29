@@ -1072,7 +1072,13 @@ const (
 	// cannot carve into one of them. The padded fixture reaches 17706, so
 	// the line is 17705: the bracket [real 17704, fixture 17706], verified
 	// by running TestCoreBudgetRejectsCliffOverflow.
-	coreCongestionWindowGZ = 17705
+	// 2026-10-29: the navigators refuse a 200 answer that is not HTML,
+	// after their redirect legs, through one throwing helper. Core
+	// measures 15289/17688, SMALLER on both, and the padded fixture
+	// reaches 17698, short of 17705 (the bracket had gone vacuous). As
+	// in #577 the line moves DOWN to 17697: the bracket [real 17688,
+	// fixture 17698], verified by running TestCoreBudgetRejectsCliffOverflow.
+	coreCongestionWindowGZ = 17697
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation

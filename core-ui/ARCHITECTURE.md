@@ -1613,9 +1613,12 @@ On the client, a non-OK response whose Content-Type is `text/html`
 flows through the same apply paths a 200 takes (envelope, partial,
 whole document via the doc-envelope reader, then the `<main>` swap):
 the URL stays the target so Back works, the title comes from the
-response, and the entry is never cached. A non-HTML error body cannot
-be applied and toasts naming the status (`Could not load /x (HTTP
-404)`); only a failed fetch keeps the "check your connection" wording.
+response, and the entry is never cached. A body that is not
+`text/html` cannot be applied, whatever its status: a 200 included
+(a raw-markdown or JSON route the client router intercepted), it
+toasts naming the status (`Could not load /x (HTTP 404)`), the URL
+goes back and the page stays. Only a failed fetch keeps the "check
+your connection" wording.
 Never a `location.href` fallback. A static export ships the same page
 as `404.html` at the root (see `framework/docs/content/static-export.md`).
 

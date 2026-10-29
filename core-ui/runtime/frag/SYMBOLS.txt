@@ -252,6 +252,7 @@ nav	2	domChainKeys
 nav	2	findSlot
 nav	2	finishNav
 nav	2	getCachedScreen
+nav	2	htmlOnly
 nav	2	initialMain
 nav	2	isInternalLink
 nav	2	isKnownRoute
@@ -260,7 +261,6 @@ nav	2	mainEl
 nav	2	mainSlotKey
 nav	2	mergeSeedFromDOM
 nav	2	resolvePath
-nav	2	respIsHTML
 nav	2	routeEntry
 nav	2	routeLayouts
 nav	2	screenCache

@@ -1485,8 +1485,9 @@
   // A navigation answer that arrives as HTML — 200 or NOT — can be
   // applied through the same swap paths a 200 takes (an error page
   // shows inside the shell instead of toasting). Anything else cannot,
-  // and its fetch throws so the toast names the status.
-  const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
+  // and its fetch throws so the toast names the status, a 200 too:
+  // its text has no <main>, so it would swap in a blank screen.
+  const htmlOnly = (r) => { if (!(r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html')) throw new Error(`HTTP ${r.status}`); };
 
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
       from names the origin route when the caller already moved the URL,
@@ -1625,7 +1626,6 @@
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (!_navLive(myEpoch)) return;
-        if (!fr.ok && !respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
@@ -1633,6 +1633,8 @@
         // bar must carry a redirect-added query (e.g. ?next=/admin).
         const to = _followed(fr, path);
         if (to === null) return;
+        // After the redirect: a Document answer is bodiless.
+        htmlOnly(fr);
         const dest = to || path;
         if (to) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
@@ -1684,7 +1686,6 @@
       // A session change is an identity change: one identity's pages
       // must never replay for another.
       if (rs) window.__gofastr.invalidate('*');
-      if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
 
       // Evict server-named stale screens BEFORE chasing a redirect, so
@@ -1718,6 +1719,8 @@
         return loadPage(redirectTo, { bypassCache, from: prevPath, restore: ps });
       }
 
+      // After the redirect legs: their 200s carry no body.
+      htmlOnly(resp);
       const html = await resp.text();
       if (!_navLive(myEpoch)) return;
 

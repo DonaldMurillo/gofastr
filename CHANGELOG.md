@@ -2465,6 +2465,16 @@ few lines, and link the PR or the docs page for the rest.
   does, and a re-captured page keeps the seed it arrived with. Globals
   keep the value the user gave them. See
   [signal store](framework/docs/content/signal-store.md).
+- **A navigation answered 200 with a body that is not HTML no longer
+  blanks the page.** The navigators refused a non-HTML body only on an
+  error status, so a 200 `text/markdown` or JSON answer swapped an
+  empty `<main>` in, or left the address bar on the link. Any answer
+  not typed `text/html` now toasts naming its status, the URL goes back
+  and the page stays, an untyped 200 included. On the site, the docs
+  pages' links to sibling pages (`a2a.md` → `/docs/a2a`) and to repo
+  files (`../../../battery/admin/` → the GitHub source) are rewritten,
+  so they no longer land on the raw-markdown route or a 404. See
+  [core-ui/ARCHITECTURE.md](core-ui/ARCHITECTURE.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
