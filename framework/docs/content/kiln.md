@@ -171,7 +171,10 @@ drop every table, re-migrate, and re-apply the world's seeds, and an
 approved `delete_entity` drops the entity's table, so rows from a reset
 or undone world cannot resurrect through the CRUD surface. That includes
 rows written through the CRUD API: after an `undo`, only seed rows
-remain. A seed's
+remain. Tables linked by foreign keys drop together whatever rows link
+them. A rebuild that fails anyway (an unwritable database) fails the
+`undo` or `reset_session` with an internal error, and fails boot,
+instead of serving rows the journal does not hold. A seed's
 rows are inserted in one transaction before its journal entry is
 durable; a seed the database refuses part way (a unique conflict, say)
 lands none of its rows and leaves the rows already in the database,

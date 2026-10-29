@@ -2704,6 +2704,13 @@ few lines, and link the PR or the docs page for the rest.
   edited, deleted or referenced; `created_at` and `updated_at` stayed NULL
   too. Seeds now fill an omitted or null UUID id and timestamps the way a
   CRUD create does, and keep any value the row gives.
+- **Kiln's `reset_session` and `undo` drop tables linked by foreign keys.**
+  The rebuild dropped tables in name order with foreign keys on, so a parent
+  table with linked rows (`authors` under `books`) refused the drop; the
+  failure was logged, the reset answered OK, and re-adding the entities
+  served the old rows. The drops now run with foreign keys off on one
+  connection that is set back before it returns to the pool, and a rebuild
+  that still fails is reported by `reset_session`, `undo` and boot.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -1,7 +1,10 @@
 package db
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -192,11 +195,21 @@ func sqlDefault(f schema.Field) string {
 // tables. IF EXISTS because a rebuild may not have created the table
 // yet.
 func DropTable(d *sql.DB, table string) error {
+	return dropTable(context.Background(), d, table)
+}
+
+// execer is what dropTable runs on: the pool, or the one connection
+// DropAllTables holds.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func dropTable(ctx context.Context, d execer, table string) error {
 	t, err := query.SafeIdent(table)
 	if err != nil {
 		return fmt.Errorf("kiln/db: drop: %w", err)
 	}
-	if _, err := d.Exec("DROP TABLE IF EXISTS " + query.QuoteFolded(t)); err != nil {
+	if _, err := d.ExecContext(ctx, "DROP TABLE IF EXISTS "+query.QuoteFolded(t)); err != nil {
 		return fmt.Errorf("kiln/db: drop %s: %w", table, err)
 	}
 	return nil
@@ -207,30 +220,83 @@ func DropTable(d *sql.DB, table string) error {
 // the ephemeral runtime DB from the journal: the DB is derived state,
 // so a reset, undo, or reboot rebuilds it rather than carrying rows no
 // journal entry authorizes.
+//
+// DROP TABLE deletes the rows first and checks foreign keys as it does,
+// so a parent with linked rows refuses the drop, and a cycle (a
+// self-reference, two tables pointing at each other) has no order that
+// works. The drops run on one connection with foreign_keys off, which
+// is then set back and read back: a connection whose setting cannot be
+// confirmed is discarded rather than returned to the pool with foreign
+// keys off.
 func DropAllTables(d *sql.DB) error {
-	rows, err := d.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	ctx := context.Background()
+	conn, err := d.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("kiln/db: list tables: %w", err)
+		return fmt.Errorf("kiln/db: drop: %w", err)
 	}
+	defer conn.Close()
+	tables, err := listTables(ctx, conn)
+	if err != nil {
+		return err
+	}
+	var fk int
+	if err := conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk); err != nil {
+		return fmt.Errorf("kiln/db: read foreign_keys: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("kiln/db: foreign_keys off: %w", err)
+	}
+	var dropErr error
+	for _, t := range tables {
+		if dropErr = dropTable(ctx, conn, t); dropErr != nil {
+			break
+		}
+	}
+	if err := restoreForeignKeys(ctx, conn, fk); err != nil {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		return errors.Join(dropErr, err)
+	}
+	return dropErr
+}
+
+func listTables(ctx context.Context, conn *sql.Conn) ([]string, error) {
+	rows, err := conn.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		return nil, fmt.Errorf("kiln/db: list tables: %w", err)
+	}
+	defer rows.Close()
 	var tables []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			rows.Close()
-			return fmt.Errorf("kiln/db: scan table name: %w", err)
+			return nil, fmt.Errorf("kiln/db: scan table name: %w", err)
 		}
 		tables = append(tables, name)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("kiln/db: list tables: %w", err)
+		return nil, fmt.Errorf("kiln/db: list tables: %w", err)
 	}
-	rows.Close()
 	sort.Strings(tables)
-	for _, t := range tables {
-		if err := DropTable(d, t); err != nil {
-			return err
-		}
+	return tables, nil
+}
+
+// restoreForeignKeys sets foreign_keys back to want and reads it back.
+// The read-back and DropAllTables' discard on failure are not reached by
+// a test: SQLite documents the pragma as a silent no-op only inside a
+// transaction, which this connection never opens, and query_only does
+// not block it. They are the guarantee that a pooled connection never
+// keeps foreign keys off, kept for a driver or SQLite that behaves
+// otherwise.
+func restoreForeignKeys(ctx context.Context, conn *sql.Conn, want int) error {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA foreign_keys = %d`, want)); err != nil {
+		return fmt.Errorf("kiln/db: restore foreign_keys: %w", err)
+	}
+	var got int
+	if err := conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&got); err != nil {
+		return fmt.Errorf("kiln/db: read foreign_keys: %w", err)
+	}
+	if got != want {
+		return fmt.Errorf("kiln/db: foreign_keys is %d after restore, want %d", got, want)
 	}
 	return nil
 }
