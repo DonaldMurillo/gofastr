@@ -2448,6 +2448,13 @@ few lines, and link the PR or the docs page for the rest.
   leave paths already did. `recovercallback` now follows a callback
   read through a package-local accessor, the spelling that hid the
   heartbeat site. See [presence](framework/docs/content/presence.md).
+- **`ExportData` streams each table instead of holding it in memory.**
+  The export collected every page of a table into one slice, then built
+  the whole `.ndjson` file in a buffer before writing it, so
+  `WithExportPageSize` bounded nothing and a large table could exhaust
+  memory. Each page now reaches the file, hashed on the way, before the
+  next is read. The archive format is unchanged. See
+  [data export](framework/docs/content/data-export.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

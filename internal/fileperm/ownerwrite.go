@@ -37,6 +37,28 @@ func fillOwnerOnly(f *os.File, data []byte) error {
 	return f.Close()
 }
 
+// CreateOwnerOnly is WriteOwnerOnly for a write too large to hold in
+// memory first: it opens path for writing as an owner-only (0600) file,
+// truncating one that exists, and tightens the open handle before the
+// caller writes a byte. The caller closes it.
+func CreateOwnerOnly(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return restrictedHandle(f)
+}
+
+// restrictedHandle is CreateOwnerOnly's handle half, split out for the
+// same reason as fillOwnerOnly.
+func restrictedHandle(f *os.File) (*os.File, error) {
+	if err := RestrictOpenFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
 // SeedOwnerOnly creates path as an empty owner-only (0600) file if it
 // does not exist and tightens it to 0600 if it does, for a file some
 // other library will open next. database/sql's SQLite driver creates a

@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -9,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -235,15 +238,19 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 			fmt.Fprintf(os.Stderr, "framework: export: table %q absent, skipping\n", src.table)
 			continue
 		}
-		rows, err := rawReadAll(ctx, a.DB, dialect, phys, cols, pk, cfg.pageSize)
-		if err != nil {
-			return fmt.Errorf("framework: export read %q: %w", src.table, err)
-		}
-		sum, err := writeNDJSON(ndjsonPath, rows)
+		w, err := createNDJSON(ndjsonPath)
 		if err != nil {
 			return fmt.Errorf("framework: export write %q: %w", src.name, err)
 		}
-		entry.RowCount = len(rows)
+		if err := rawReadEach(ctx, a.DB, dialect, phys, cols, pk, cfg.pageSize, w.write, w.flush); err != nil {
+			w.f.Close()
+			return fmt.Errorf("framework: export %q: %w", src.table, err)
+		}
+		sum, err := w.close()
+		if err != nil {
+			return fmt.Errorf("framework: export write %q: %w", src.name, err)
+		}
+		entry.RowCount = w.rows
 		entry.SHA256 = sum
 		manifest.Entities = append(manifest.Entities, entry)
 	}
@@ -826,9 +833,12 @@ func (a *App) registryView() entity.Registry {
 	return a.Registry
 }
 
-// rawReadAll reads every physical row of table, all columns, ordered and paged
-// by primary-key keyset. No soft-delete filter, no owner/tenant scope, a full
-// backup. Scanned values are normalized so the JSON form round-trips: a binary
+// rawReadEach hands every physical row of table, all columns, to emit,
+// ordered and paged by primary-key keyset, and calls pageDone after each
+// page. No soft-delete filter, no owner/tenant scope, a full backup. Only
+// the row in hand is held: collecting every page into one slice let a
+// large table exhaust memory whatever the page size (2026-10-27 S11).
+// Scanned values are normalized so the JSON form round-trips: a binary
 // value → {"$bytes": base64}, any other []byte → string, time.Time →
 // schema.TimestampLayout (YYYY-MM-DD for a DATE column); int64/float64/
 // bool/nil pass through. SQLite time columns are read as stored
@@ -837,12 +847,12 @@ func (a *App) registryView() entity.Registry {
 // A composite key pages by row value, (a, b) > ($1, $2), which Postgres and
 // SQLite both compare column by column. A table with no key has nothing to
 // page by and is read in one statement.
-func rawReadAll(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table string, columns []string, keys []string, pageSize int) ([]map[string]any, error) {
+func rawReadEach(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table string, columns []string, keys []string, pageSize int, emit func(map[string]any) error, pageDone func() error) error {
 	// table is a physicalTable spelling; quotePhysical validates it and keeps
 	// its case.
 	qt := quotePhysical(table)
 	if len(keys) == 0 {
-		return rawReadUnkeyed(ctx, db, dialect, qt, columns)
+		return rawReadUnkeyed(ctx, db, dialect, qt, columns, emit)
 	}
 	// readCols is the column list we SELECT. It always includes the keyset
 	// columns; a key column that isn't declared is appended for paging only
@@ -855,7 +865,7 @@ func rawReadAll(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table 
 	}
 	colList, err := exportSelectList(ctx, db, dialect, qt, readCols)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	keyIdx := make([]int, len(keys))
 	quotedKeys := make([]string, len(keys))
@@ -871,7 +881,6 @@ func rawReadAll(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table 
 		after = "(" + orderBy + ") > (" + strings.Join(marks, ", ") + ")"
 	}
 
-	var out []map[string]any
 	lastVals := make([]any, len(keys))
 	first := true
 	for {
@@ -887,41 +896,43 @@ func rawReadAll(ctx context.Context, db *sql.DB, dialect migrate.Dialect, table 
 			args = append(slices.Clone(lastVals), pageSize)
 		}
 		nullKey := false
-		page, err := scanExportRows(ctx, db, dialect, q, args, len(readCols), columns, func(vals []any) {
+		n, err := scanExportRows(ctx, db, dialect, q, args, len(readCols), columns, emit, func(vals []any) {
 			for i, ki := range keyIdx {
 				lastVals[i] = vals[ki]
 				nullKey = nullKey || vals[ki] == nil
 			}
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// SQLite lets a non-INTEGER key hold NULL. Paging past one asks
 		// for key > NULL, which matches nothing: the rest of the table
 		// was dropped under a valid checksum.
 		if nullKey {
-			return nil, fmt.Errorf("table %q has a row with a NULL primary key, which the export cannot page past; give the row a key", table)
+			return fmt.Errorf("table %q has a row with a NULL primary key, which the export cannot page past; give the row a key", table)
 		}
-		out = append(out, page...)
+		if err := pageDone(); err != nil {
+			return err
+		}
 		first = false
-		if len(page) < pageSize {
-			break
+		if n < pageSize {
+			return nil
 		}
 	}
-	return out, nil
 }
 
 // rawReadUnkeyed reads every row of a table with no key in one statement.
-func rawReadUnkeyed(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt string, columns []string) ([]map[string]any, error) {
+func rawReadUnkeyed(ctx context.Context, db *sql.DB, dialect migrate.Dialect, qt string, columns []string, emit func(map[string]any) error) error {
 	if len(columns) == 0 {
-		return nil, fmt.Errorf("no columns to read for table %q", qt)
+		return fmt.Errorf("no columns to read for table %q", qt)
 	}
 	colList, err := exportSelectList(ctx, db, dialect, qt, columns)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	q := fmt.Sprintf("SELECT %s FROM %s", colList, qt)
-	return scanExportRows(ctx, db, dialect, q, nil, len(columns), columns, nil)
+	_, err = scanExportRows(ctx, db, dialect, q, nil, len(columns), columns, emit, nil)
+	return err
 }
 
 // exportSelectList is the SELECT list an export reads cols with. On SQLite
@@ -960,22 +971,22 @@ func exportSelectList(ctx context.Context, db *sql.DB, dialect migrate.Dialect, 
 	return strings.Join(list, ", "), rows.Err()
 }
 
-// scanExportRows runs q and returns its rows as maps of the first
-// len(columns) values, normalized for JSON. seen, when set, sees each row's
-// raw values.
+// scanExportRows runs q and hands each row to emit as a map of the first
+// len(columns) values, normalized for JSON, and returns how many it read.
+// seen, when set, sees each row's raw values first.
 //
 // A binary value is tagged (see exportFormatVersion). On SQLite every
 // []byte the driver returns is a BLOB; on Postgres the driver returns
 // numeric, uuid and json as []byte text too, so only a bytea column is.
-func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q string, args []any, width int, columns []string, seen func(vals []any)) ([]map[string]any, error) {
+func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q string, args []any, width int, columns []string, emit func(map[string]any) error, seen func(vals []any)) (int, error) {
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer rows.Close()
 	types, err := rows.ColumnTypes()
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	binary := make([]bool, len(columns))
 	date := make([]bool, len(columns))
@@ -983,7 +994,7 @@ func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q 
 		binary[i] = dialect != migrate.DialectPostgres || strings.EqualFold(types[i].DatabaseTypeName(), "BYTEA")
 		date[i] = types[i].DatabaseTypeName() == "DATE"
 	}
-	var out []map[string]any
+	n := 0
 	for rows.Next() {
 		vals := make([]any, width)
 		ptrs := make([]any, width)
@@ -991,7 +1002,7 @@ func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q 
 			ptrs[i] = &vals[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
+			return n, err
 		}
 		row := make(map[string]any, len(columns))
 		for i, c := range columns {
@@ -1004,9 +1015,12 @@ func scanExportRows(ctx context.Context, db *sql.DB, dialect migrate.Dialect, q 
 		if seen != nil {
 			seen(vals)
 		}
-		out = append(out, row)
+		if err := emit(row); err != nil {
+			return n, err
+		}
+		n++
 	}
-	return out, rows.Err()
+	return n, rows.Err()
 }
 
 // rawWriteAll inserts every row into table (all values verbatim) inside the
@@ -1213,25 +1227,51 @@ func foldASCII(s string) string {
 	return string(b)
 }
 
-// writeNDJSON writes rows one JSON object per line and returns the hex sha256
-// of the file bytes. The JSON is buffered first so the checksum and the file
-// share one byte stream.
-func writeNDJSON(path string, rows []map[string]any) (string, error) {
-	var buf strings.Builder
-	h := sha256.New()
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	for _, row := range rows {
-		if err := enc.Encode(row); err != nil {
-			return "", err
-		}
+// ndjsonFile writes rows one JSON object per line to an owner-only file and
+// hashes the bytes on their way to it, so the checksum and the file share
+// one byte stream without the file being held in memory: the export used
+// to build the whole serialized table in a buffer first (2026-10-27 S11).
+type ndjsonFile struct {
+	f    *os.File
+	buf  *bufio.Writer
+	h    hash.Hash
+	enc  *json.Encoder
+	rows int
+}
+
+func createNDJSON(path string) (*ndjsonFile, error) {
+	f, err := fileperm.CreateOwnerOnly(path)
+	if err != nil {
+		return nil, err
 	}
-	data := []byte(buf.String())
-	h.Write(data) // hash.Hash.Write never returns an error (documented)
-	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
+	h := sha256.New()
+	buf := bufio.NewWriter(io.MultiWriter(f, h))
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	return &ndjsonFile{f: f, buf: buf, h: h, enc: enc}, nil
+}
+
+func (w *ndjsonFile) write(row map[string]any) error {
+	if err := w.enc.Encode(row); err != nil {
+		return err
+	}
+	w.rows++
+	return nil
+}
+
+// flush hands the buffered rows to the file, once per page.
+func (w *ndjsonFile) flush() error { return w.buf.Flush() }
+
+// close flushes and closes the file and returns the hex sha256 of its bytes.
+func (w *ndjsonFile) close() (string, error) {
+	if err := w.buf.Flush(); err != nil {
+		w.f.Close()
 		return "", err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	if err := w.f.Close(); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(w.h.Sum(nil)), nil
 }
 
 // readNDJSON reads one JSON object per line into a slice of maps. Numbers

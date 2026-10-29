@@ -41,6 +41,13 @@ paged by primary-key keyset) and import writes raw (parameterized `INSERT`
 preserving every column value verbatim). No hooks, no validation, no
 auto-generation. The data was already valid when it was written.
 
+Export streams. Each page is written to its `.ndjson` file, and hashed on
+the way, before the next page is read, so `WithExportPageSize` (1000 rows
+by default) bounds how many rows an export holds at once. A table with no
+key is read in one statement and still reaches the file row by row.
+Import reads each file whole before it writes, because it validates the
+entire archive first.
+
 Timestamps keep the spelling a filter or cursor matches. SQLite compares a
 time column as text, so the export reads a column declared `DATE`,
 `DATETIME` or `TIMESTAMP` as the row stores it, and a battery's
