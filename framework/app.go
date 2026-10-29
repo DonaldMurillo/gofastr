@@ -1579,21 +1579,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		crudHandler = crud.NewCrudHandler(e, a.DB)
-		crudHandler.JSONCase = a.JSONCasing()
-		crudHandler.Hooks = a.HookRegistry(name)
-		crudHandler.ChildHooks = a.lookupHookRegistry
-		crudHandler.Storage = a.Storage
-		crudHandler.ImageDeriver = a.imageDeriver
-		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
-		crudHandler.StripUploadMetadata = a.stripUploadMetadata
-		crudHandler.Events = a.Events()
-		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
-		// in the EventOutbox interface and silently swallow every event.
-		if a.outbox != nil {
-			crudHandler.Outbox = a.outbox
-		}
-		crudHandler.Registry = a.Registry
+		crudHandler = a.wireCrudHandler(e)
 		// The MCP tools re-dispatch through the router: that is what makes
 		// them inherit auth, owner and tenant scoping rather than
 		// re-implementing it, so they must address the path the routes are
@@ -2207,21 +2193,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		crudHandler = crud.NewCrudHandler(e, a.DB)
-		crudHandler.JSONCase = a.JSONCasing()
-		crudHandler.Hooks = a.HookRegistry(name)
-		crudHandler.ChildHooks = a.lookupHookRegistry
-		crudHandler.Storage = a.Storage
-		crudHandler.ImageDeriver = a.imageDeriver
-		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
-		crudHandler.StripUploadMetadata = a.stripUploadMetadata
-		crudHandler.Events = a.Events()
-		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
-		// in the EventOutbox interface and silently swallow every event.
-		if a.outbox != nil {
-			crudHandler.Outbox = a.outbox
-		}
-		crudHandler.Registry = a.Registry
+		crudHandler = a.wireCrudHandler(e)
 		// MCP tools dispatch in-process against a.router, where these routes are
 		// mounted under the API prefix, tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
@@ -2263,20 +2235,33 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app.CrudHandler: %w", err)
 	}
+	return a.wireCrudHandler(ent), nil
+}
+
+// wireCrudHandler is the one constructor behind every entity's CRUD handler:
+// the mounted routes (App.Entity, App.GroupEntity), CrudHandler and
+// CrudHandlerForEntity. Each used to copy the field list, and
+// CrudHandlerForEntity's copy dropped ChildHooks, the image pipeline and the
+// metadata strip, so the entityui back office saved images with no renditions
+// and cascaded without child hooks. Callers set BasePath for their own mount.
+func (a *App) wireCrudHandler(ent *entity.Entity) *crud.CrudHandler {
+	name := ent.GetName()
 	ch := crud.NewCrudHandler(ent, a.DB)
 	ch.JSONCase = a.JSONCasing()
 	ch.Hooks = a.HookRegistry(name)
+	ch.ChildHooks = a.lookupHookRegistry
 	ch.Storage = a.Storage
 	ch.ImageDeriver = a.imageDeriver
 	ch.FieldImageDerivers = a.fieldImageDerivers[name]
 	ch.StripUploadMetadata = a.stripUploadMetadata
 	ch.Events = a.Events()
+	// Guarded assignment: a bare `= a.outbox` would wrap a typed nil in the
+	// EventOutbox interface and silently swallow every event.
 	if a.outbox != nil {
 		ch.Outbox = a.outbox
 	}
 	ch.Registry = a.Registry
-	ch.ChildHooks = a.lookupHookRegistry
-	return ch, nil
+	return ch
 }
 
 // CrudHandlerForEntity is CrudHandler that takes the entity directly instead
@@ -2302,15 +2287,7 @@ func (a *App) CrudHandlerForEntity(ent *entity.Entity) (*crud.CrudHandler, error
 	if registered != ent {
 		return nil, fmt.Errorf("app.CrudHandlerForEntity: entity %q at version %q is not the registered instance", ent.Config.Name, ent.Version)
 	}
-	ch := crud.NewCrudHandler(ent, a.DB)
-	ch.JSONCase = a.JSONCasing()
-	ch.Hooks = a.HookRegistry(ent.GetName())
-	ch.Storage = a.Storage
-	ch.Events = a.Events()
-	if a.outbox != nil {
-		ch.Outbox = a.outbox
-	}
-	ch.Registry = a.Registry
+	ch := a.wireCrudHandler(ent)
 	// BasePath is where the entity's routes are actually mounted. mcpBase() is
 	// BasePath + "/" + table, so leaving it empty addresses "/posts" while a
 	// versioned entity's routes live at "/api/v1/posts". An unversioned entity

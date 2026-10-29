@@ -2328,6 +2328,12 @@ few lines, and link the PR or the docs page for the rest.
   window still sent a revoked peer a fresh credential. The refresh now
   re-checks every peer first and closes the ones that no longer hold.
   See [rtc](framework/docs/content/rtc.md).
+- **`App.CrudHandlerForEntity` is wired like `App.CrudHandler`.** It
+  left out child hooks, the image pipeline and
+  `WithStripUploadMetadata`, so the entity UI and `/admin/entities`,
+  which build their handlers through it, cascaded writes past child hooks, saved
+  images with no renditions and kept their EXIF metadata, GPS included.
+  Both now build through one constructor.
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but
