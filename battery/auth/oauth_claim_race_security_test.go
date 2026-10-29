@@ -54,6 +54,22 @@ func (h *hookedLinks) mustHaveFired(t *testing.T) {
 // (2026-10-27 A3). The refresh is UPDATE-only now, and the callback
 // re-resolves the link after minting and drops the session when it no
 // longer names that account.
+// nilLinker is a custom linker that answers a missing link with
+// (nil, nil) instead of an error.
+type nilLinker struct{ UserStore }
+
+func (nilLinker) FindByOAuth(context.Context, string, string) (User, error) { return nil, nil }
+func (nilLinker) LinkOAuth(context.Context, string, string, string) error   { return nil }
+
+// A (nil, nil) link lookup reads as a link gone, never a nil-pointer
+// panic after the session is stored (#621 review).
+func TestLinkRecheckNilUserIsGone(t *testing.T) {
+	p := &OAuth2Plugin{}
+	if p.linkStillNames(context.Background(), nilLinker{}, &OAuth2UserInfo{Provider: "github", ID: "1"}, "alice") {
+		t.Error("a (nil, nil) link lookup kept the session")
+	}
+}
+
 func TestOAuthLoginOvertakenByClaim(t *testing.T) {
 	const email = "victim@example.com"
 	var hooked *hookedLinks

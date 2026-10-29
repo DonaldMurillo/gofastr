@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // credentialSnapshot is the user's stored password hash, read before a
@@ -41,6 +42,18 @@ func (m *AuthManager) snapshotCredential(ctx context.Context, userID string) (cr
 // moved reports whether the hash changed since the snapshot. A failed
 // re-read counts as moved: the caller undoes its write rather than keep
 // a credential it could not vouch for.
+// undoTimeout bounds the store call that takes back a credential a fence
+// refused.
+const undoTimeout = 10 * time.Second
+
+// undoContext is the context a fence's undo runs on: the request's values
+// without its cancellation, bounded by undoTimeout. A client that hangs up
+// between the insert and the undo cancels the request context, and an
+// undo run on it fails and leaves the credential it raced in the store.
+func undoContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), undoTimeout)
+}
+
 func (s credentialSnapshot) moved(ctx context.Context, m *AuthManager) bool {
 	if !s.ok {
 		return false

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -102,6 +103,14 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	return u.GetID(), true
 }
 
+// sessionStillHolds re-runs the request's principal check (the session
+// middleware's re-resolve of its cookie). A request with no check
+// installed passes, as handler.RecheckPrincipal does.
+func sessionStillHolds(ctx context.Context) bool {
+	_, ok := handler.RecheckPrincipal(ctx)
+	return ok
+}
+
 // createTokenRequest is the POST /tokens body. OwnerKind/OwnerID are decoded
 // intentionally so we can prove they are IGNORED, the owner is always the
 // session user. They never reach IssueToken.
@@ -155,8 +164,15 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCreateToken)
 			return
 		}
-		if snap.moved(r.Context(), p.mgr) {
-			if err := p.tokens.Revoke(r.Context(), rec.ID, OwnerKindUser, userID); err != nil {
+		// The snapshot catches a reset that lands after it. One that
+		// finished between the session check and the snapshot left the
+		// snapshot reading the new hash, so the session this request came
+		// in on is re-checked too: the reset deleted it.
+		if snap.moved(r.Context(), p.mgr) || !sessionStillHolds(r.Context()) {
+			undo, cancel := undoContext(r.Context())
+			err := p.tokens.Revoke(undo, rec.ID, OwnerKindUser, userID)
+			cancel()
+			if err != nil {
 				log.Printf("auth: revoking a token minted across a credential change: %v", err)
 				writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCreateToken)
 				return

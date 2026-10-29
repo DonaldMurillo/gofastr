@@ -535,8 +535,11 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	// The hash catches a reset or change; the session catches an account
 	// claim, which may leave a passwordless hash where it was.
 	if _, err := p.mgr.SessionStore().Get(r.Context(), sess.Token); err != nil || snap.moved(r.Context(), p.mgr) {
-		if _, err := p.store.DeletePasskey(r.Context(), sess.UserID, cred.ID); err != nil {
-			slog.Warn("auth: removing a passkey registered across a credential change failed",
+		undo, cancel := undoContext(r.Context())
+		_, err := p.store.DeletePasskey(undo, sess.UserID, cred.ID)
+		cancel()
+		if err != nil {
+			slog.Error("auth: removing a passkey registered across a credential change failed",
 				"user_hash", hashedIdentifier(sess.UserID), "err", err)
 			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
 			return
@@ -685,7 +688,10 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// it revokes sessions, so a key still here means any revoke is still
 	// to come and reaches this session, and a key gone drops it.
 	if _, err := p.store.GetPasskey(r.Context(), cred.ID); err != nil {
-		if delErr := p.mgr.SessionStore().Delete(r.Context(), sess.Token); delErr != nil {
+		undo, cancel := undoContext(r.Context())
+		delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
+		cancel()
+		if delErr != nil {
 			slog.Warn("auth: dropping a session minted under a removed passkey failed",
 				"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
 		}

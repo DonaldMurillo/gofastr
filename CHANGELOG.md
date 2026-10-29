@@ -2258,8 +2258,10 @@ few lines, and link the PR or the docs page for the rest.
   caller before the body, and a reset revokes tokens and passkeys once.
   A request held open with its body withheld until the reset finished
   stored a lasting credential after that purge. Both now read the
-  password hash before the body and, when it moved, undo what they
-  stored and answer 401. See [auth](framework/docs/content/auth.md).
+  password hash before the body and, when it moved or the request's
+  session is gone, undo what they stored and answer 401. The undo runs
+  detached from the request, so a client that hangs up after the insert
+  cannot cancel it. See [auth](framework/docs/content/auth.md).
 - **A stale password change no longer overwrites a completed reset.** A
   change verified the current password, computed the new hash, then wrote
   it keyed on the user id alone, so a reset that landed in between was

@@ -583,7 +583,10 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// revokes, so a link still naming this user means any revoke is
 		// still to come and reaches this session, and a link gone drops it.
 		if !p.linkStillNames(r.Context(), userStore, info, user.GetID()) {
-			if delErr := p.mgr.SessionStore().Delete(r.Context(), sess.Token); delErr != nil {
+			undo, cancel := undoContext(r.Context())
+			delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
+			cancel()
+			if delErr != nil {
 				slog.Warn("auth: dropping a session minted under a removed OAuth link failed",
 					"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
 			}
@@ -932,7 +935,7 @@ func (p *OAuth2Plugin) linkStillNames(ctx context.Context, store UserStore, info
 		return false
 	}
 	u, err := linker.FindByOAuth(ctx, info.Provider, info.ID)
-	return err == nil && u.GetID() == userID
+	return err == nil && u != nil && u.GetID() == userID
 }
 
 // linkOAuthPreferEnriched persists the (provider, providerID) bind plus

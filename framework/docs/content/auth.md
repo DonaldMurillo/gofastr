@@ -589,7 +589,7 @@ Self-service token management for logged-in users:
 
 | Endpoint | Effect |
 |---|---|
-| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. A reset or password change that lands while the request is open (its body still unread) wins: the new token is revoked and the request answers 401. |
+| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. A reset or password change that lands while the request is open (its body still unread), or one that already ended the request's session, wins: the new token is revoked and the request answers 401. The revoke runs detached from the request, so a client that hangs up cannot stop it. |
 | `GET {base}/tokens` | List the caller's tokens (prefix only, never the plaintext or hash). |
 | `DELETE {base}/tokens/{id}` | Revoke one of the caller's tokens. A foreign id is a 404 (owner-scoped). |
 
