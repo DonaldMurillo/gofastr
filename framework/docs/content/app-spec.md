@@ -1098,6 +1098,8 @@ The names differ from the raw node kinds `button`, `form`, `select`,
 the node renderer. That renderer draws only node kinds, so validation
 refuses a catalog block nested under a node block (`type: div` holding a
 `custom_form`): put it in a `stack`, `cluster`, `card` or `section`.
+A raw `textarea` takes its text from `props.value` (or `text`, then
+`content`), rendered as the element's content; children are not drawn.
 A `type: link` block renders through `ui.Link`, the styled anchor;
 validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
 

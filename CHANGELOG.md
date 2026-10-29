@@ -2687,6 +2687,12 @@ few lines, and link the PR or the docs page for the rest.
   (CRAM-MD5, then PLAIN, then LOGIN, which Office 365 offers alone) and
   makes one attempt. LOGIN runs only over TLS or to localhost, as PLAIN
   does.
+- **A node-tree `textarea` shows its value.** `core-ui/noderender` built
+  the element with no content and passed `value` through as an attribute,
+  which a textarea ignores, so an edit form drawn from a node tree (Kiln,
+  an app spec's raw `textarea` block) showed an empty box and saving it
+  blanked the field. `value` (or `text`, then `content`) is now the
+  element's text.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
