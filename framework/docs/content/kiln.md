@@ -27,6 +27,11 @@ kiln serve --agent auto
 kiln serve --agent "omp -p --model glm-5.2"
 ```
 
+`kiln agent` writes its journal to `.kiln.session.jsonl` in the current
+directory. If the serve it starts exits before answering (a journal it cannot
+open, a bad flag), `kiln agent` prints the serve's error and exits 1 without
+launching OMP.
+
 The `omp` adapter runs OMP in an isolated temporary working directory with
 `--model glm-5.2`, the Bash tool, auto-approval, no session persistence, and
 Kiln's system prompt. Authentication stays with the installed CLI; Kiln does

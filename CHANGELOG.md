@@ -2693,6 +2693,11 @@ few lines, and link the PR or the docs page for the rest.
   an app spec's raw `textarea` block) showed an empty box and saving it
   blanked the field. `value` (or `text`, then `content`) is now the
   element's text.
+- **`kiln agent` exits cleanly when its serve fails to start.** A serve that
+  died before answering (an unopenable journal, a bad flag) made the launcher
+  sit until the 10-second readiness poll ran out and then abort with Go's
+  "all goroutines are asleep - deadlock!" and a goroutine dump. It now prints
+  the serve's error and exits 1 at once.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
