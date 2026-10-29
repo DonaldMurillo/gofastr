@@ -130,6 +130,10 @@ retryable-unavailable error. This split is load-bearing: the router gate
 can only 404, so the Ready layer lives in the proxy handler and the tool
 handler. Upgrades exploit it: a module stays Enabled (no 404) but not-Ready
 (`DrainingUpgrade`) while the old generation drains and the new one starts.
+A disable or upgrade drain runs the same steps as the shutdown drain below,
+under the same `DrainPerModule` budget, and closes the module's peer once
+the `module.drain` call is done, which cancels its in-flight reverse
+calls.
 
 ## Shutdown
 

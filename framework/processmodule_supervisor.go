@@ -460,14 +460,25 @@ func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget tim
 	if child == nil {
 		return
 	}
+	// The peer stays open: the child's in-flight reverse calls still
+	// reach the queue and the DB until it exits.
+	s.drainChild(sl.name, child, peer, budget, "shutdown", false)
+}
+
+// drainChild is the §4.6 teardown both drains share: module.drain, EOF on
+// stdin, and Kill + Wait once budget, counted from the drain call, runs
+// out. closePeer closes the peer once the drain call is done, which
+// cancels the child's in-flight reverse calls.
+//
+// The budget runs from the drain call, not from CloseStdin: the
+// module.drain frame write cannot be abandoned, and a child that stopped
+// reading stdin holds it on a full pipe. Only the kill, which takes the
+// pipe's reader away, fails that write. The drain call gets at most half
+// the budget, so a child that never answers it still has the rest to
+// exit at EOF.
+func (s *ProcessModuleSupervisor) drainChild(name string, child RunningChild, peer *moduleproto.Peer, budget time.Duration, reason string, closePeer bool) {
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- child.Wait() }()
-	// The budget runs from the start of the drain, not from CloseStdin:
-	// the module.drain frame write cannot be abandoned, and a child that
-	// stopped reading stdin holds it on a full pipe. Only the kill, which
-	// takes the pipe's reader away, fails that write. The drain call gets
-	// at most half the budget, so a child that never answers it still
-	// has the rest to exit at EOF.
 	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	if peer != nil {
@@ -477,13 +488,13 @@ func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget tim
 			defer close(drained)
 			defer func() {
 				if r := recover(); r != nil {
-					s.logf("processmodule: drain %s panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
+					s.logf("processmodule: drain %s panic: %v\n%s", name, textsafe.Recovered(r), debug.Stack())
 				}
 			}()
 			drainCtx, cancel := context.WithTimeout(context.Background(), minDur(budget/2, 2*time.Second))
 			defer cancel()
 			_, _ = peer.Call(drainCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
-				Reason:     "shutdown",
+				Reason:     reason,
 				DeadlineMs: int(budget.Milliseconds()),
 			})
 		}()
@@ -492,7 +503,13 @@ func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget tim
 		case <-deadline.C:
 			_ = child.Kill()
 			<-waitCh
+			if closePeer {
+				_ = peer.Close()
+			}
 			return
+		}
+		if closePeer {
+			_ = peer.Close()
 		}
 	}
 	_ = child.CloseStdin()
@@ -1113,26 +1130,8 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
 		sl.finishDrain(drainState, gen)
 		return
 	}
-	budget := sl.sup.cfg.DrainPerModule
 	// Notify the child; it may finish in-flight work and exit cleanly.
-	if peer != nil {
-		dCtx, cancel := context.WithTimeout(context.Background(), minDur(budget, 2*time.Second))
-		_, _ = peer.Call(dCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
-			Reason:     drainReason(drainState),
-			DeadlineMs: int(budget.Milliseconds()),
-		})
-		cancel()
-		_ = peer.Close()
-	}
-	_ = child.CloseStdin()
-	waitCh := make(chan error, 1)
-	go func() { waitCh <- child.Wait() }()
-	select {
-	case <-waitCh:
-	case <-time.After(budget):
-		_ = child.Kill()
-		<-waitCh
-	}
+	sl.sup.drainChild(sl.name, child, peer, sl.sup.cfg.DrainPerModule, drainReason(drainState), true)
 	sl.mu.Lock()
 	sl.child = nil
 	sl.peer = nil

@@ -1,6 +1,8 @@
 package framework
 
 import (
+	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -119,6 +121,11 @@ func TestShutdownDrainSparesExitingChild(t *testing.T) {
 		t.Fatal("a child that exited at EOF inside its budget was killed")
 	default:
 	}
+	// The shutdown drain leaves the peer open: the child's in-flight
+	// reverse calls still reach the queue and the DB.
+	if peerClosed(t, peer) {
+		t.Fatal("the shutdown drain closed the peer")
+	}
 }
 
 // TestShutdownDrainKillsChildIgnoringEOF covers the last step: a child
@@ -148,4 +155,74 @@ func TestShutdownDrainKillsChildIgnoringEOF(t *testing.T) {
 	default:
 		t.Fatal("the drain returned without killing a child that ignored EOF")
 	}
+}
+
+// The runtime drain (disable, upgrade) had the same order, inside the
+// slot's supervise loop: a child that stopped reading stdin hung the
+// loop on the module.drain write, so the module never left Draining.
+func TestDisableDrainKillsStalledChild(t *testing.T) {
+	child := newStalledChild(t)
+	peer := moduleproto.NewPeer(child.codec, moduleproto.RoleHost)
+	peer.Start()
+	t.Cleanup(func() { _ = peer.Close() })
+	sup := &ProcessModuleSupervisor{logf: t.Logf}
+	sup.cfg.DrainPerModule = 100 * time.Millisecond
+	sl := &moduleSlot{name: "m", sup: sup, child: child, peer: peer, state: StateReady}
+
+	done := make(chan struct{})
+	go func() {
+		sl.transitionDrain(StateDrainingDisable, 1)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the disable drain hung on a child that stopped reading stdin")
+	}
+	select {
+	case <-child.killed:
+	default:
+		t.Fatal("the disable drain returned without killing the stalled child")
+	}
+	if sl.state != StateInstalledDisabled || sl.child != nil {
+		t.Fatalf("state = %v, child = %v, want InstalledDisabled and no child", sl.state, sl.child)
+	}
+	if !peerClosed(t, peer) {
+		t.Fatal("the disable drain left the killed child's peer open")
+	}
+}
+
+// TestDisableDrainClosesPeer covers the polite path: the child reads,
+// exits at EOF, and the disable drain closes its peer, which cancels the
+// child's in-flight reverse calls.
+func TestDisableDrainClosesPeer(t *testing.T) {
+	child := newStalledChild(t)
+	child.exitOnEOF = true
+	go func() { _, _ = io.Copy(io.Discard, child.stdinR) }()
+	peer := moduleproto.NewPeer(child.codec, moduleproto.RoleHost)
+	peer.Start()
+	t.Cleanup(func() { _ = peer.Close() })
+	sup := &ProcessModuleSupervisor{logf: t.Logf}
+	sup.cfg.DrainPerModule = 2 * time.Second
+	sl := &moduleSlot{name: "m", sup: sup, child: child, peer: peer, state: StateReady}
+
+	sl.transitionDrain(StateDrainingDisable, 1)
+	select {
+	case <-child.killed:
+		t.Fatal("a child that exited at EOF was killed")
+	default:
+	}
+	if !peerClosed(t, peer) {
+		t.Fatal("the disable drain left the peer open")
+	}
+}
+
+// peerClosed reports whether a call on peer fails as closed. An open
+// peer over a reading child gets no answer and times out instead.
+func peerClosed(t *testing.T, peer *moduleproto.Peer) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err := peer.Call(ctx, "probe", nil)
+	return errors.Is(err, moduleproto.ErrClosed)
 }
