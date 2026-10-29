@@ -80,7 +80,10 @@ DROP TABLE posts;
 
 Required directives: `Version` (positive integer) and `Up`. `Name`
 and `Down` are optional but `Down` is strongly recommended. Without
-it, `migrate down` fails for that version. The `Up` section is truly
+it (or with only whitespace in it), `migrate down` fails for that
+version with `ErrNoDown`, before it rolls back anything, including the
+newer versions that do have a Down. To get past it, write the Down, or
+undo the Up by hand and run `migrate force <V> --not-applied`. The `Up` section is truly
 required, not defaulted: directives are case-sensitive, and a file whose
 `-- +migrate Up` line is missing or misspelled (lower-case `up`) is
 rejected at parse time instead of registering a migration whose SQL was
@@ -1231,6 +1234,9 @@ development convenience. What it guarantees:
   `dirty` marker; `up`/`down` refuse to proceed (`ErrDirty`) until an
   operator reconciles the schema and runs `migrate force`. This is the
   same posture as golang-migrate's dirty flag.
+- **No silent rollback.** `down` refuses (`ErrNoDown`) when any
+  version it would roll back has no Down SQL, so a version never reads
+  as pending while its Up's changes are still in the schema.
 - **Destructive-change gate.** `DiffSchema` flags `DROP COLUMN` (and a
   dropped foreign key) as destructive and `ApplySchemaDiff` refuses to run destructive changes
   unless the caller opts in (`ApplySchemaDiffWithOptions`). The default

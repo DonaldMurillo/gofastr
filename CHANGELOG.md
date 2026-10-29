@@ -2564,6 +2564,11 @@ few lines, and link the PR or the docs page for the rest.
   tool offered one and no longer does. `gofastr generate cli
   --from-openapi` reads a `[T, "null"]` type as `T`; it made such a
   field a string flag. See [core packages](framework/docs/content/core-packages.md).
+- **`migrate down` refuses a migration that has no Down.** It ran the
+  empty Down, which succeeds, and deleted the tracking row, so the
+  version read as pending while its Up's changes stayed and the next
+  `up` ran it again. `Down` now returns `ErrNoDown` naming the version
+  before it rolls back anything. See [migrations](framework/docs/content/migrations.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
