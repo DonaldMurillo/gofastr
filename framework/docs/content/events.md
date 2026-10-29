@@ -85,7 +85,13 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 
 When the entity is multi-tenant, the SSE stream filters events to the
 tenant ID extracted from the request context. Other tenants' events
-never reach the subscriber.
+never reach the subscriber. Each re-check compares the refreshed
+principal's tenant with the one the stream connected under, and closes
+the stream when they differ. The tenant changes on a re-check only when
+the middleware that set it re-resolves it: `tenant.ResolveMiddleware`
+does, so a member removed from a tenant, or moved to another, loses the
+feed at the next check. A middleware that calls `SetTenantID` once keeps
+the connect-time tenant for the life of the stream.
 
 ## Read scope
 

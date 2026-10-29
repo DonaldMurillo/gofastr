@@ -49,10 +49,26 @@ their tenant resolver; nothing the request carried chooses the tenant.
 Downstream handlers and hooks call `framework.GetTenantID(ctx)` to
 read it.
 
-If your tenants come from JWT claims, a subdomain, a session lookup,
-or anywhere else, write your own middleware that calls
-`framework.SetTenantID(ctx, id)`; the framework only cares that the
-context value is set.
+If your tenants come from a membership table, a session field, or any
+other server-side lookup on the signed-in caller, mount
+`tenant.ResolveMiddleware` after the auth middleware:
+
+```go
+app.Use(tenant.ResolveMiddleware(func(ctx context.Context) string {
+    return memberships.TenantOf(ctx) // "" when the caller has none
+}))
+```
+
+It sets the tenant from `resolve` (replacing any set before it) and
+runs `resolve` again for the refreshed principal whenever a held request
+re-checks it (`handler.RecheckPrincipal`). The CRUD event stream re-checks
+on an interval, so a member removed from a tenant stops receiving its
+events at the next check instead of at disconnect.
+
+A middleware of your own that calls `framework.SetTenantID(ctx, id)`
+works for ordinary requests too. It installs no re-check, so a stream
+opened under it keeps the tenant it connected with; add one with
+`handler.AddPrincipalCheck` if your tenants change while a session lives.
 
 ## Custom tenant column
 

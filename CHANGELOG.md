@@ -2313,6 +2313,15 @@ few lines, and link the PR or the docs page for the rest.
   before it runs or shows in `tools/list`, under `MCPGate` and `Public`
   too; sessions are not narrowed. See
   [entity declarations](framework/docs/content/entity-declarations.md).
+- **`tenant.ResolveMiddleware` re-resolves the tenant on a held
+  stream.** The CRUD event stream closed when a re-check placed the
+  caller in another tenant, but a host middleware that called
+  `SetTenantID` once replayed the connect-time tenant on every re-check,
+  so a member removed from a tenant kept its create, update and delete
+  feed until disconnect. `tenant.ResolveMiddleware(resolve)` sets the
+  tenant from a server-side lookup and runs it again on each
+  `handler.RecheckPrincipal`, so the stream closes at the next check.
+  See [multi-tenant](framework/docs/content/multi-tenant.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

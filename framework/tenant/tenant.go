@@ -126,6 +126,32 @@ func TenantMiddleware(header string) func(http.Handler) http.Handler {
 	}
 }
 
+// ResolveMiddleware resolves the request's tenant with resolve, which reads
+// server-side state for the authenticated principal (a membership lookup, a
+// session field) and returns "" when the caller belongs to no tenant. Mount
+// it after the auth middleware.
+//
+// A request that stays open, the CRUD event stream in particular, runs
+// resolve again for the refreshed principal on every handler.RecheckPrincipal,
+// so a member removed from a tenant, or moved to another, stops receiving
+// the old tenant's data at the next check. A middleware that calls SetTenantID
+// itself installs no such re-check: the stream keeps the tenant it read at
+// connect.
+func ResolveMiddleware(resolve func(ctx context.Context) string) func(http.Handler) http.Handler {
+	if resolve == nil {
+		panic("tenant.ResolveMiddleware: nil resolve")
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := SetTenantID(r.Context(), resolve(r.Context()))
+			ctx = handler.AddPrincipalCheck(ctx, func(c context.Context) (context.Context, bool) {
+				return SetTenantID(c, resolve(c)), true
+			})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // SetTenantID stores the tenant ID string in the context. The slot is
 // core/handler's (handler.SetTenantID), so packages below this one, such as
 // access.CachedResolver, can read the same tenant.
