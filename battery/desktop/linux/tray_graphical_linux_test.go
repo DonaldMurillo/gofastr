@@ -41,14 +41,13 @@ func TestNativeTrayGraphical(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 65*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestTrayGraphicalChild$", "-test.v", "-test.timeout=60s")
-			cmd.WaitDelay = 2 * time.Second
 			for _, entry := range os.Environ() {
 				if !strings.HasPrefix(entry, trayGraphicalRole+"=") {
 					cmd.Env = append(cmd.Env, entry)
 				}
 			}
 			cmd.Env = append(cmd.Env, trayGraphicalRole+"="+role)
-			output, err := cmd.CombinedOutput()
+			output, err := nativeTrayChildOutput(cmd)
 			if err != nil || !trayGraphicalChildPassed(output) {
 				t.Fatalf("native tray %s failed: %v\n%s", role, err, output)
 			}
