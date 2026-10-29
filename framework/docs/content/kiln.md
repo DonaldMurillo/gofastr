@@ -85,6 +85,11 @@ Kiln injects `KILN_URL`, installs the current embedded skill, and enforces an
 HTTP boundary for built-in adapters: they must mutate the app by calling
 Kiln's tools, not by editing the repository.
 
+Each turn's adapter runs in its own process group on Unix. Cancelling,
+superseding or switching away from a turn kills the whole group, and so does
+the turn ending: a shell the adapter left in the background does not keep
+calling Kiln. On Windows only the adapter process itself is killed.
+
 ## Tools
 
 Read and configuration:

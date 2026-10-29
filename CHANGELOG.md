@@ -3100,6 +3100,11 @@ few lines, and link the PR or the docs page for the rest.
   `window.__gofastr.navigate`. Each script now runs inside
   `if (location.origin === "<app origin>") { ... }`, checked in the
   page when the script runs.
+- **Cancelling a Kiln agent turn kills what the adapter started.** The turn
+  ran in its own process group, but cancelling it killed only the adapter's
+  own pid, so a shell it had backgrounded kept running and could keep
+  calling Kiln's tools and changing the world. Cancel, supersede and the end
+  of a turn now kill the whole group on Unix.
 
 ## [0.95.0] - 2026-10-26
 
