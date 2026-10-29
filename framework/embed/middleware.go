@@ -163,7 +163,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				})
 				return
 			}
-			if !surface.MayReach(routed) {
+			if !surface.MayReach(routed) && !h.widgetReach(surface, routed) {
 				i18n.HTTPError(w, r, http.StatusForbidden, reasonOutsideReach, map[string]any{
 					"surface": strconv.Quote(g.Surface), "path": routed,
 					"suggestion": fmt.Sprintf("[]string{%q}", reachSuggestion(routed)),

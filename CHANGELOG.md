@@ -2624,6 +2624,14 @@ few lines, and link the PR or the docs page for the rest.
   also split into chips that were rejoined with `and`. Groups now keep
   their parentheses in chips, in the query box and in nested terms,
   and an `or` filter is one chip.
+- **Widgets open and poll on embedded screens.** The embed middleware
+  listed `/__gofastr/widget` as a runtime path, but widgets serve their
+  style, state and chrome from `/core-ui/widget/<name>/`, so it answered
+  403 to every one of them before the widget's own gate ran. Those three
+  routes now pass for a widget offered on the grant's surface page and
+  stay refused for a widget scoped elsewhere, whatever session gate it
+  carries. New `(*embed.Host).SetWidgetReach` takes the check;
+  framework/uihost installs it from the widget registry.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

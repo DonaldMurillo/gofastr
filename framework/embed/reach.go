@@ -206,6 +206,9 @@ func pathWithin(prefix, p string) bool {
 // for a surface with no Reach at all opened an rtc room as its subject. A new
 // runtime route an embed needs is added here, next to the uihost mount.
 //
+// The widgets' own style, state and chrome routes sit outside /__gofastr, at
+// /core-ui/widget/<name>/; widgetReach admits those per widget.
+//
 // /__gofastr/session is left out deliberately: it mints an anonymous session
 // and refuses a grant itself (see uihost handleCreateSession).
 var runtimeEndpoints = []string{
@@ -247,6 +250,32 @@ func runtimeReach(p string) bool {
 		}
 	}
 	return false
+}
+
+// widgetLeaves are the routes core-ui/widget mounts per widget under
+// /core-ui/widget/<name>/.
+var widgetLeaves = []string{"style.css", "state", "chrome"}
+
+// widgetReach reports whether p is a widget style, state or chrome route
+// for a widget offered on surface's page. The name is checked against the
+// host's widget registry hook, so a grant for one surface never reads the
+// state of a widget scoped to another, whatever gate that widget carries.
+// p is the routed path (RoutedPath refused dot segments), parsed exactly
+// rather than cleaned, so the name checked is the name the router serves.
+func (h *Host) widgetReach(surface *ResolvedSurface, p string) bool {
+	if h.widgetOnSurface == nil {
+		return false
+	}
+	rest, ok := strings.CutPrefix(p, "/core-ui/widget/")
+	if !ok {
+		return false
+	}
+	// No "/" after the name leaves leaf empty, which no widget route is.
+	name, leaf, _ := strings.Cut(rest, "/")
+	if name == "" || !slices.Contains(widgetLeaves, leaf) {
+		return false
+	}
+	return h.widgetOnSurface(name, surface.path)
 }
 
 // reservedFor reports the reserved prefix p falls under, if any.

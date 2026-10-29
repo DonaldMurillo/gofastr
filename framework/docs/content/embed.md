@@ -66,9 +66,18 @@ reportsRoutes.Use(embeds.RequireScope("reports:read"))
 A grant reaches its surface's own route subtree (the path of the screen it
 carries) and the browser-runtime endpoints uihost mounts under `/__gofastr`:
 the runtime scripts and stylesheets, `/__gofastr/action`, `/__gofastr/sse`,
-the widget routes (`/__gofastr/widgets`, `/__gofastr/widget/*`), the
-`comp`, `runtime`, `compute`, `pwa` and `icons` asset trees, and the embed
-endpoints themselves. That is a fixed list, not the whole `/__gofastr`
+the widget catalog and action scripts (`/__gofastr/widgets`,
+`/__gofastr/widget/*`), the `comp`, `runtime`, `compute`, `pwa` and
+`icons` asset trees, and the embed endpoints themselves. A widget's own
+style, state and chrome routes (`/core-ui/widget/<name>/style.css`,
+`/state`, `/chrome`) pass only for a widget offered on the surface's
+page (its `Routes` match the surface path, or it has none); a widget
+scoped elsewhere answers 403, whatever session gate it carries.
+framework/uihost installs that check through `(*embed.Host).SetWidgetReach`;
+a `Host` used without uihost and without the call refuses every widget
+route. A
+widget's RPC paths are app routes and need a `Reach` entry, as do a
+widget's `StylePath` or `StatePath` moved off the default. That is a fixed list, not the whole `/__gofastr`
 subtree: batteries mount there too (`battery/rtc` at `/__gofastr/rtc`, the
 desktop bridge at `/__gofastr/desktop`), and a grant reaches none of them.
 **Everything else answers 403** until the surface says otherwise:

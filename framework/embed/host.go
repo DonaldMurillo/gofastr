@@ -196,6 +196,11 @@ type Host struct {
 	// app actually mounted. Per-host rather than package-global so one app's
 	// mount cannot change another's validation, which matters most in tests.
 	reserved []string
+
+	// widgetOnSurface reports whether the widget named name is offered on a
+	// surface rendering surfacePath. Nil refuses every widget path. See
+	// SetWidgetReach.
+	widgetOnSurface func(name, surfacePath string) bool
 }
 
 // ResolvedSurface is a declared Surface with its origins normalized once at
@@ -349,6 +354,17 @@ func New(cfg Config) (*Host, error) {
 func (h *Host) SetKeys(nonceKey, grantKey []byte) {
 	h.nonceKey = nonceKey
 	h.grantKey = grantKey
+}
+
+// SetWidgetReach installs the check that lets a grant reach a widget's
+// style, state and chrome routes (/core-ui/widget/<name>/style.css, /state,
+// /chrome): onSurface reports whether the widget named name is offered on
+// the page at surfacePath. framework/uihost installs it at construction,
+// from the widget registry. Without it every widget path is outside every
+// surface's reach. A widget's RPC paths are the app's own routes and need
+// a Reach entry like any other.
+func (h *Host) SetWidgetReach(onSurface func(name, surfacePath string) bool) {
+	h.widgetOnSurface = onSurface
 }
 
 // SetPreviousKeys installs retired nonce and grant keys accepted for
