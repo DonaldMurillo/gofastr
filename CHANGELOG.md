@@ -2356,6 +2356,13 @@ few lines, and link the PR or the docs page for the rest.
   every read now refuse a `Through` and a join entity's `Table` that
   differ only in naming a schema; spell them the same. See
   [entity declarations](framework/docs/content/entity-declarations.md).
+- **A `has_one` or `has_many` cascade create refuses a child link it
+  cannot write.** The child's create skips a `ReadOnly` or `Hidden`
+  field, or one it does not declare, so a post created with nested notes
+  whose `post_id` was hidden stored the notes with no parent while the
+  response showed them attached. The nested create now answers 400
+  `validation.cascade_key_not_writable` and rolls the parent back, as
+  the `belongs_to` arm already did.
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

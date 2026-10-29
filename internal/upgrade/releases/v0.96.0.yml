@@ -321,3 +321,13 @@ notes:
       text:
         - glob: "**/*.json"
           match: '"through":\s*"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_]'
+  - change: "BREAKING - a has_one or has_many cascade_write create answers 400 validation.cascade_key_not_writable when the child's foreign key is ReadOnly, Hidden, its tenant column, or not declared"
+    breaking: true
+    hits: review
+    guidance: "Those children were stored with no parent while the response showed them attached. Declare the child's foreign key as a plain field, or create the children through their own route."
+    find:
+      uses:
+        - gofastr/framework/entity.Relation.WithCascadeWrite
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^\s+cascade_write:\s*true'

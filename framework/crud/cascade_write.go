@@ -588,6 +588,21 @@ func (ch *CrudHandler) parentSetsKey(ctx context.Context, f schema.Field, isUpda
 	return ch.createWrite(ctx, nil).sets(f)
 }
 
+// refuseUnwrittenLink refuses a has_one or has_many cascade create whose
+// child would not store the link: the child's create skips a foreign key
+// it does not declare, or one that is ReadOnly, Hidden or its tenant
+// column, so the child would be stored with no parent while the response
+// showed it attached. ch is the child's handler.
+func (ch *CrudHandler) refuseUnwrittenLink(ctx context.Context, rel entity.Relation) error {
+	fk := oneFK(rel)
+	if ch.declaresField(fk) && ch.createWrite(ctx, nil).sets(ch.fieldByName(fk)) {
+		return nil
+	}
+	return &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
+		Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
+	}}}}
+}
+
 // processDependentCascadeWrites handles nested mutations for dependent relations
 // (HasOne, HasMany, ManyToMany) after the parent entity has been created or updated.
 func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *http.Request, parentID any, body map[string]any, isUpdate bool) (map[string]any, error) {
@@ -664,6 +679,9 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 						}
 					} else {
+						if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
+							return nil, err
+						}
 						if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 							return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 						}
@@ -674,6 +692,9 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 				}
 			} else {
+				if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
+					return nil, err
+				}
 				if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 					return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 				}
@@ -726,6 +747,9 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
+					if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
+						return nil, err
+					}
 					if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 						return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 					}
