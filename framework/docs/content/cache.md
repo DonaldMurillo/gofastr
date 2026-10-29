@@ -186,6 +186,10 @@ The middleware is RFC 9111-compliant by default:
   `/pricing` are separate entries.
 - Responses larger than `maxBodyBytes` (default 8 MiB) are streamed
   without caching.
+- A handler that flushes (an SSE stream) or hijacks the connection (a
+  websocket upgrade) gets the client writer from then on, and its
+  response is not stored, so the middleware can sit in front of
+  `/__gofastr/sse` and upgrade routes.
 - The `X-Cache: HIT` / `MISS` header is set on every response.
 
 ## Battery wrapper (lifecycle)
