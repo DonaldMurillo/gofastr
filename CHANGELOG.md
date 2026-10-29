@@ -2489,6 +2489,16 @@ few lines, and link the PR or the docs page for the rest.
   as RFC 2047 encoded words and RFC 2231 `name*=` / `filename*=`
   parameters; ASCII values keep their bytes. See
   [email](framework/docs/content/email.md).
+- **`Unique` set or cleared on an existing column reaches the schema.**
+  Only `CREATE TABLE` and `ADD COLUMN` wrote a field's uniqueness, so a
+  column made `Unique` later kept accepting duplicates, and clearing it
+  left the constraint. Boot now creates `<table>_<column>_key` when no
+  single-column unique index covers the column; rows that already repeat
+  a value fail the boot with an error naming the column. `migrate
+  generate` records each table's unique columns in the snapshot
+  (`unique_columns`) and creates or drops the index; on SQLite a clear
+  rebuilds the table. See
+  [migrations](framework/docs/content/migrations.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

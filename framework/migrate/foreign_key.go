@@ -252,6 +252,9 @@ type fkDiffEnv struct {
 	tables     map[string]map[string]string
 	keyChanged map[string][]string
 	deferred   []SchemaChange
+	// uniques is the snapshot's unique columns per table (snapshotUniques);
+	// nil (the live diff) or a missing table skips the comparison.
+	uniques map[string][]string
 }
 
 // renamesApplied maps each column a rename hint renames (lower case) to its

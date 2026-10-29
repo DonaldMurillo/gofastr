@@ -431,9 +431,9 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		// the way Postgres names the inline constraint. Its Down runs before
 		// the column's, which SQLite needs to drop an indexed column.
 		if f.Unique {
-			uqName, err := query.SafeIdent(tableBase(ent.GetTable()) + "_" + f.Name + "_key")
+			uqName, err := uniqueIndexName(ent, f.Name)
 			if err != nil {
-				return nil, fmt.Errorf("invalid unique index name for %q: %w", f.Name, err)
+				return nil, err
 			}
 			changes = append(changes, SchemaChange{
 				Summary: fmt.Sprintf("%s: unique index %s", ent.GetName(), uqName),
@@ -608,11 +608,30 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		fkDiffer = differ && dialect == DialectSQLite
 	}
 
+	// Unique set or cleared on an existing column, when the snapshot
+	// knows the table's unique columns (see unique.go). A SQLite clear
+	// rebuilds the table below. An add that precedes a rebuild is spent
+	// work, since the DROP takes its index and the new CREATE writes the
+	// UNIQUE inline, but it leaves the same table.
+	var uniqueCleared []string
+	if env != nil && env.uniques != nil {
+		if prevUnique, ok := lookupKeyCase(env.uniques, ent.GetTable()); ok {
+			adds, drops, cleared, err := uniqueFlipChanges(ent, dialect, qtable, liveLower, renameOldByNew, prevUnique)
+			if err != nil {
+				return nil, err
+			}
+			uniqueCleared = cleared
+			changes = append(changes, drops...)
+			changes = append(changes, adds...)
+		}
+	}
+	uniqueRebuild := len(uniqueCleared) > 0 && dialect == DialectSQLite
+
 	// The SQLite retype rebuild goes LAST: it recreates the table from the
 	// entity, so it must see the column set the renames/adds/drops above
 	// already converged. One change per table, no matter how many columns
 	// retyped — the rebuild converges every declared type at once.
-	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer {
+	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer || uniqueRebuild {
 		var parts []string
 		for _, r := range sqliteRetypes {
 			parts = append(parts, fmt.Sprintf("%s type %s → %s", r.name, r.liveType, r.declaredType))
@@ -629,6 +648,9 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		if fkDiffer {
 			summary = strings.TrimPrefix(summary+"; change foreign keys to the declared relations", "; ")
+		}
+		if uniqueRebuild {
+			summary = strings.TrimPrefix(summary+"; drop unique on "+strings.Join(uniqueCleared, ", "), "; ")
 		}
 		// The ADD changes above run first, so by the time the rebuild runs
 		// the old table holds the columns they add, filled from their

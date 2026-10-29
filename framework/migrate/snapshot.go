@@ -41,9 +41,14 @@ type SchemaSnapshot struct {
 	// PrimaryKeys holds each entity table's key columns in key order, so a
 	// later generation can see a key change. A snapshot written before it
 	// existed has none, and the first generation after records them.
-	PrimaryKeys map[string][]string   `json:"primary_keys,omitempty"`
-	Views       map[string]RoutineDef `json:"views,omitempty"`
-	Routines    map[string]RoutineDef `json:"routines,omitempty"`
+	PrimaryKeys map[string][]string `json:"primary_keys,omitempty"`
+	// UniqueColumns holds each entity table's field-level Unique columns
+	// (an empty list for a table with none), so a later generation can
+	// see Unique set or cleared on a column that already exists. A table
+	// missing from it is unknown, and its unique columns are not compared.
+	UniqueColumns map[string][]string   `json:"unique_columns,omitempty"`
+	Views         map[string]RoutineDef `json:"views,omitempty"`
+	Routines      map[string]RoutineDef `json:"routines,omitempty"`
 }
 
 // RoutineDef is the snapshot record for a routine: its Up and Down bodies, so
@@ -78,6 +83,10 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				snap.PrimaryKeys = map[string][]string{}
 			}
 			snap.PrimaryKeys[ent.GetTable()] = ent.KeyColumns()
+			if snap.UniqueColumns == nil {
+				snap.UniqueColumns = map[string][]string{}
+			}
+			snap.UniqueColumns[ent.GetTable()] = uniqueColumns(ent)
 			// Capture the exact CREATE TABLE so a future drop is faithfully
 			// reversible. Skip silently if the entity can't render (it would
 			// have failed the diff anyway).
@@ -156,9 +165,11 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 // snapshot) and returns the forward (up) and inverse (down) DDL for the delta,
 // plus the new snapshot to persist. up is empty when there is nothing to do.
 //
-// Covered changes: create table, add column, drop column, and drop table (when
-// an entity is removed). Type changes are out of scope, same limitation as
-// DiffSchema.
+// Covered changes: create and drop table (an entity removed); add, drop and
+// rename column; a column type change (in place on Postgres, a table rebuild
+// on SQLite); a primary-key change; declared and belongs_to indexes; and a
+// field's Unique set or cleared. Foreign keys are not compared: the snapshot
+// records no constraint names.
 func GenerateMigration(reg entity.Registry, prev SchemaSnapshot, dialect Dialect) (up, down string, next SchemaSnapshot, err error) {
 	return GeneratePlan(Plan{Registry: reg}, prev, dialect)
 }
@@ -205,7 +216,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// foreign keys themselves are not compared (fks stays nil). The keys a
 	// key change re-adds only after their child's own changes run after
 	// every table's.
-	env := &fkDiffEnv{tables: prev.Tables}
+	env := &fkDiffEnv{tables: prev.Tables, uniques: snapshotUniques(prev)}
 	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue // views / external tables generate no table DDL

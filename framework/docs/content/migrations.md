@@ -7,7 +7,11 @@ GoFastr has two migration paths:
    with the entity declarations: it creates missing tables (with
    indexes and foreign keys) **and adds missing columns to existing
    tables** (`ALTER TABLE ADD COLUMN`, additive only: boot never drops,
-   renames, or retypes). Type changes and renames are surfaced by the
+   renames, or retypes). A field made `Unique` after its column exists
+   gets its `<table>_<column>_key` unique index on boot unless a
+   single-column unique index already covers the column; rows that
+   already repeat a value fail the boot with an error naming the column.
+   Clearing `Unique` is left to `migrate generate`. Type changes and renames are surfaced by the
    declarative diff (`DiffSchema` / `migrate generate`): type changes as
    destructive changes refused by default, renames as non-destructive
    `RENAME COLUMN` when declared via `EntityConfig.Renames`. But
@@ -259,7 +263,13 @@ Within an entity the file drops changed indexes first, then changes
 columns, then creates indexes, so a unique index retargeted to a new
 column and an indexed column dropped with its index both apply. A
 `Unique` field added to an existing table gets a unique index,
-`<table>_<column>_key`, after its `ADD COLUMN`. Defaults render as the
+`<table>_<column>_key`, after its `ADD COLUMN`. `Unique` set on a column
+that already exists gets the same index, and `Unique` cleared removes
+it: on Postgres the file drops the constraint and the index of that
+name, and on SQLite it rebuilds the table, since only a rebuild removes
+an inline `UNIQUE`. The snapshot records each table's unique columns for
+this; for a snapshot written before it, the diff reads them from the
+`CREATE TABLE` the snapshot recorded. Defaults render as the
 value they hold: a float in its shortest exact form (`1e-07`, not
 `0.000000`), and a scalar on a JSON field JSON-encoded (`'true'`).
 
@@ -474,6 +484,9 @@ The schema snapshot file records the declarative state migrations have been gene
   "primary_keys": {
     "posts": ["id"]
   },
+  "unique_columns": {
+    "posts": []
+  },
   "views": {
     "published_posts": {
       "up": "CREATE VIEW published_posts AS SELECT ...",
@@ -493,6 +506,7 @@ The schema snapshot file records the declarative state migrations have been gene
 - `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
 - `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
 - `primary_keys`: Map of table names to their primary-key columns in key order. The diff compares these to detect a [primary-key change](#primary-key-changes).
+- `unique_columns`: Map of table names to their field-level `Unique` columns, an empty list for a table with none. The diff compares these to see `Unique` set or cleared on a column that already exists.
 - `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
 - `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
 
