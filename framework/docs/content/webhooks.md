@@ -360,6 +360,13 @@ so a redactor that drops it from the payload keeps the tag. The returned
 `cancel` detaches every subscription at once; call it before
 `Manager.Stop` so no Emit lands after the worker exits.
 
+With several replicas on one fanout (`framework.WithFanout`), the bridge queues
+an event only on the replica that emitted it and skips the copies other
+replicas receive (`event.IsRemote`). Every replica that emits events must
+run the bridge, and the replicas must share one `Store`: with a store per
+replica, an event emitted on one never reaches subscribers recorded only in
+another's.
+
 ## Inbound ingestion
 
 Everything above is outbound: you calling other systems. The receiving

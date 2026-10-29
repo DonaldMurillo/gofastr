@@ -2673,6 +2673,12 @@ few lines, and link the PR or the docs page for the rest.
   and each write checks the record in its own transaction. An emptied
   table takes the new model. `Open` before `EnsureSchema` fails with an
   error naming it.
+- **`webhook.Bridge` queues one delivery per event across replicas.** With
+  a fanout attached, every replica re-emits the events of the others, and
+  each replica's bridge queued its own delivery under a fresh id, so an
+  endpoint behind N replicas received N copies of each change. The bridge
+  now skips events that arrived from another replica (`event.IsRemote`);
+  the emitting replica queues them into the shared store.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
