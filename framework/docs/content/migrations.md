@@ -179,7 +179,9 @@ Flags & inputs:
 way to **baseline** an existing database: it marks a version applied
 *without running its Up SQL*, recording the migration's checksum so
 later drift checks line up. Use `--not-applied` to drop a version's row
-so it re-runs.
+so it re-runs. It takes exactly one version, a whole non-negative
+integer: `force 7x` or `force 7 8` exits with an error before the
+tracking table is touched.
 
 The migrations directory is hardcoded to `./migrations` relative to
 the working directory. The tracking table name is `_migrations`. Both

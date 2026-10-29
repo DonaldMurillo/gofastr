@@ -2315,6 +2315,17 @@ few lines, and link the PR or the docs page for the rest.
   returned the session's own map, encoded after the read lock was
   released, so a concurrent `propose_plan` or `approve_plan` could crash
   kiln with a concurrent map write.
+- `gofastr migrate force` takes exactly one version, parsed whole.
+  `force 3x` read 3 and marked migration 3 applied without running its
+  SQL, and with two versions the last one won. See
+  [migrations](framework/docs/content/migrations.md).
+- **BREAKING: `gofastr sdk` refuses an entity whose `client.d.ts` type
+  name is already declared.** The name can be taken by the runtime
+  (`Resource`, `Client`, `CursorPage`, and the other runtime types) or
+  by another entity (`order_input` beside `order`'s `OrderInput`). The
+  second declaration used to ship beside the first, so the client failed
+  to compile or TypeScript merged the two interfaces. Rename the entity.
+  See [SDK](framework/docs/content/sdk.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

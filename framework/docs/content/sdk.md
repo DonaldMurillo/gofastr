@@ -159,6 +159,17 @@ names are `Client`'s own (`baseURL`, `token`, `do`, `_fetch`,
 `toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`,
 `propertyIsEnumerable`, `toLocaleString`). Rename the table.
 
+Each entity also names interfaces in `client.d.ts`: `<Struct>`,
+`<Struct>Input` and `<Struct>Patch`, plus `<Struct>Moves` when it has
+transitions and `<Struct>Endpoints` when it has SDK endpoints, where
+`<Struct>` is the entity name in PascalCase. The generator refuses an
+entity whose name is already declared, by the runtime (`Resource`,
+`Client`, `CursorPage`, `ListResponse`, `ListParams`, `CursorParams`,
+`BatchResult`, `BatchResponse`, `ApiError`) or by another entity
+(`order_input` beside `order`'s `OrderInput`): TypeScript would merge the
+two interfaces into one, or fail on the generic `CursorPage<T>`. Rename
+the entity.
+
 A `Blob` (a `File` is one) as the value of an Image or File field sends
 that create, update or patch as multipart/form-data, every part named
 by its column; `client.d.ts` types those fields `string | Blob`. A

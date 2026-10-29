@@ -355,6 +355,14 @@ notes:
     find:
       uses:
         - gofastr/framework/access.GrantStore.Grant
+  - change: "BREAKING for generated SDKs - gofastr sdk refuses an entity whose client.d.ts type name is already declared: by the runtime (Resource, Client, CursorPage, ListResponse, ListParams, CursorParams, BatchResult, BatchResponse, ApiError) or by another entity (order_input beside order's OrderInput)"
+    breaking: true
+    hits: review
+    guidance: "The second declaration used to ship beside the first: a tsc error, or two interfaces TypeScript merged into one. Rename the entity; the error names the type and its owner."
+    find:
+      fields:
+        - field: gofastr/framework/entity.EntityDeclaration.Name
+          value: '^(resource|client|cursor_page|list_response|list_params|cursor_params|batch_result|batch_response|api_error|Resource|Client|CursorPage|ListResponse|ListParams|CursorParams|BatchResult|BatchResponse|ApiError)$'
   - change: "A cascade_write child whose keys name one column twice (bodyText and body_text) answers 400 validation.keys_fold, and an in-process nested child reads the keys MarshalEntity derives"
     breaking: false
     guidance: "One of the two keys used to win by map order. Send each child field once, under its wire key."

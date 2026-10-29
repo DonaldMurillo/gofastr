@@ -306,9 +306,24 @@ func checkDTSTypeNames(spec sdkSpec) error {
 	for _, n := range dtsRuntimeTypes {
 		owner[n] = "the SDK runtime"
 	}
-	for _, ent := range spec.Entities {
-		for _, suffix := range []string{"", "Input", "Patch", "Moves", "Endpoints"} {
-			owner[ent.Struct+suffix] = "entity " + ent.Table
+	// An entity's names are checked too: assigned blind, entity resource
+	// overwrote the runtime's Resource and shipped a second interface of
+	// that name (2026-10-27 G2). Only the names writeJSEntity emits count,
+	// so order_moves beside an order with no moves stays legal.
+	for i, ent := range spec.Entities {
+		suffixes := []string{"", "Input", "Patch"}
+		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
+			suffixes = append(suffixes, "Moves")
+		}
+		if len(sdkEndpoints(spec.Decls[i])) > 0 {
+			suffixes = append(suffixes, "Endpoints")
+		}
+		for _, suffix := range suffixes {
+			name := ent.Struct + suffix
+			if prev, dup := owner[name]; dup {
+				return fmt.Errorf("entity %q: its type %s is already declared by %s in client.d.ts; rename the entity", ent.Table, name, prev)
+			}
+			owner[name] = "entity " + ent.Table
 		}
 	}
 	for _, d := range spec.Decls {
