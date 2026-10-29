@@ -329,7 +329,10 @@ func (systemInfoPlugin) Init(app *framework.App) error {
 The method then appears in `/__gofastr/desktop/manifest.json`, in the
 generated `bridge.js`, and in the `.d.ts`, with no host change.
 Registration is open until `Run` freezes the registry; a duplicate
-name is refused naming the first registration site. Bump
+name is refused naming the first registration site. The names
+`available`, `call`, `on`, `off` and `manifest` are refused too:
+`bridge.js` assigns each capability onto `NS.desktop`, where the
+runtime already keeps those members. Bump
 `Capability.Version` when you remove a method or change an input
 shape.
 
@@ -1007,10 +1010,13 @@ path space, keeps the query, and drops the fragment:
 | `gofastr-notes://notes/123?q=1` | `/notes/123?q=1` |
 | `gofastr-notes://notes/123#sec` | `/notes/123` |
 | `gofastr-notes://` | `/` |
+| `gofastr-notes://notes/a%3Fb` | `/notes/a%3Fb` (the path stays escaped, so `%3F` and `%23` never start a query or fragment) |
 
 The result must pass the same grammar a menu `Navigate` path passes
 (leading `/`, no scheme, no control characters, no `.` or `..`
-segments); a link that cannot pass is dropped with a Warn. These are
+segments, percent-encoded ones such as `%2e%2e` included); a link
+that cannot pass is dropped with a Warn. A link that reaches an app with
+no `DeepLink` config is dropped with a Warn as well. These are
 also dropped, each with a Warn and a scrubbed copy in the log: links on
 any other scheme (the match folds case, so `NOTES://` is the app's
 scheme), links carrying userinfo (`gofastr-notes://user:pass@host/`), and
@@ -1286,7 +1292,10 @@ manifest bytes, base64-encoded in the `.sig` file.
   shape as the top level; `UpdateConfig.Channel` selects
   `channels[channel]` when present, and the top level otherwise.
 - URLs in the feed are https. Plain http is accepted only for
-  127.0.0.1 so tests can serve a feed locally.
+  127.0.0.1 so tests can serve a feed locally. Every redirect target
+  is held to the same rule: when an https URL redirects to plain http
+  elsewhere, the fetch fails before the target is asked, and the Warn
+  in the log names the scheme rule.
 
 ### Configuring the app
 

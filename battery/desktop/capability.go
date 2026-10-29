@@ -23,6 +23,18 @@ var (
 	rePermission     = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*$`)
 )
 
+// reservedCapabilityNames are the runtime's own NS.desktop members that
+// the name grammar admits. The bridge assigns NS.desktop[name], so a
+// capability named "call" would replace the transport every typed
+// method goes through.
+var reservedCapabilityNames = map[string]bool{
+	"available": true,
+	"call":      true,
+	"on":        true,
+	"off":       true,
+	"manifest":  true,
+}
+
 // Capability is one named group of bridge methods ("clipboard",
 // "window", a plugin's own). Registered before Run freezes the
 // registry; duplicate names are refused naming both registrants.
@@ -199,6 +211,9 @@ func (r *registry) build() Manifest {
 func validateCapability(cap Capability) error {
 	if !reCapabilityName.MatchString(cap.Name) {
 		return fmt.Errorf("desktop: capability name %q must match %s", cap.Name, reCapabilityName.String())
+	}
+	if reservedCapabilityNames[cap.Name] {
+		return fmt.Errorf("desktop: capability name %q is reserved by the runtime's desktop object", cap.Name)
 	}
 	if cap.Version < 1 {
 		return fmt.Errorf("desktop: capability %q: version must be >= 1, got %d", cap.Name, cap.Version)

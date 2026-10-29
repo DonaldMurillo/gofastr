@@ -3144,6 +3144,16 @@ few lines, and link the PR or the docs page for the rest.
   own pid, so a shell it had backgrounded kept running and could keep
   calling Kiln's tools and changing the world. Cancel, supersede and the end
   of a turn now kill the whole group on Unix.
+- **The desktop updater holds redirects to its https rule, and deep links
+  keep their escaped path.** A feed, signature or archive URL that
+  redirects to plain http off 127.0.0.1 now fails before the target is
+  asked. The default deep-link mapping keeps the path escaped, so
+  `%3F` and `%23` no longer start a query or fragment, and the navigate
+  grammar refuses percent-encoded dot segments (`%2e%2e`) for every
+  caller. A deep link that reaches an app with no `DeepLink` config is
+  dropped instead of panicking, and a capability named `available`,
+  `call`, `on`, `off` or `manifest` is refused at `Register`, since the
+  bridge would overwrite the runtime's own `NS.desktop` member.
 
 ## [0.95.0] - 2026-10-26
 

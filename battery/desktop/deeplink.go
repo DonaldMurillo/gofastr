@@ -168,6 +168,12 @@ func (b *Battery) handleDeepLink(rawURL string) {
 // app path. ok is false when the link is dropped.
 func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 	cfg := b.cfg.DeepLink
+	if cfg == nil {
+		// Deep links are off, yet a shell can still deliver one (a
+		// second instance forwarding its argument).
+		b.logger.Warn("desktop: dropping a deep link with deep links off", "url", scrubDeepLink(rawURL))
+		return "", false
+	}
 	if err := validateDeepLink(cfg); err != nil {
 		b.logger.Warn("desktop: dropping a deep link with no valid DeepLink config",
 			"reason", err.Error(), "url", scrubDeepLink(rawURL))
@@ -203,8 +209,9 @@ func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 	} else {
 		// Default: notes://host/path?q -> /host/path?q. The fragment
 		// never crosses (the page owns its own anchors), and the
-		// scheme alone maps to the app root.
-		path = "/" + u.Host + u.Path
+		// scheme alone maps to the app root. The path stays escaped:
+		// a decoded %3F or %23 would start a query or fragment.
+		path = "/" + u.Host + u.EscapedPath()
 		if u.RawQuery != "" {
 			path += "?" + u.RawQuery
 		}
