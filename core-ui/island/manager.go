@@ -595,11 +595,7 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 			}
 			cb := m.presenceCallback()
 			m.mu.Unlock()
-			if cb != nil {
-				for _, topic := range changed {
-					cb(topic)
-				}
-			}
+			firePresenceChange(cb, changed)
 		})
 	}, nil
 }

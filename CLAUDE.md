@@ -499,8 +499,10 @@ expose them to agents connected to a live app.**
   is judged by its body, never its name), `emitident` (a `strings.*`
   result is a transform, gated only when its inputs are),
   `unboundedbody` (the cap must sit on the read request's own path),
-  and `unboundedresp` (only a rebind of `resp.Body` caps it). The
-  contracts rule `GOFASTR1415 erasecover`
+  `unboundedresp` (only a rebind of `resp.Body` caps it), and
+  `recovercallback` (a local read through a package-local accessor of
+  a callback field or `atomic.Pointer` slot is the host's callback).
+  The contracts rule `GOFASTR1415 erasecover`
   fires on DDL for a user-keyed table that no `datexport.DataEraser`
   and `DataExporter` cover. The runtime JS lint
   `core-ui/check.LintNumberFill` fires on `{{n}}` filled with

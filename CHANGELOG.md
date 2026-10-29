@@ -2439,6 +2439,15 @@ few lines, and link the PR or the docs page for the rest.
   refuses to stamp a row that has moved to another artifact. Run the
   coordinator as part of every module deploy. See
   [process modules](framework/docs/content/process-modules.md).
+- **A panicking presence hook no longer ends the process.** The
+  heartbeat's expiry sweep called the `SetOnPresenceChange` callback
+  with no recover, so an app hook that panicked on a departed remote
+  roster crashed the replica. The remote-roster merge and the fanout
+  `stop` called it bare too, so one panic skipped the topics after it.
+  Every path now recovers and logs per topic, as the local join and
+  leave paths already did. `recovercallback` now follows a callback
+  read through a package-local accessor, the spelling that hid the
+  heartbeat site. See [presence](framework/docs/content/presence.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

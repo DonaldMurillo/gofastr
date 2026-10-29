@@ -214,6 +214,7 @@ func (m *Manager) filterAuthorizedTopics(ctx context.Context, topics []string) [
 	}
 	out := make([]string, 0, len(topics))
 	for _, t := range topics {
+		//gofastr:allow(recovercallback) both callers run on ServeSSEWithPresence's request goroutine, its connect gate and its stream loop's re-check, so net/http's per-request recover ends the stream, not the process
 		if auth(ctx, t) {
 			out = append(out, t)
 		}

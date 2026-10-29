@@ -240,12 +240,14 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	after := mergedRosterLocked(m, msg.Topic, now)
 	cb := m.presenceCallback()
 	m.mu.Unlock()
-	if evicted != "" && cb != nil {
-		cb(evicted)
+	var changed []string
+	if evicted != "" {
+		changed = append(changed, evicted)
 	}
-	if !membersEqual(before, after) && cb != nil {
-		cb(msg.Topic)
+	if !membersEqual(before, after) {
+		changed = append(changed, msg.Topic)
 	}
+	firePresenceChange(cb, changed)
 }
 
 // evictStalestRemoteTopicLocked drops the remote-roster topic whose last
@@ -319,11 +321,9 @@ func (m *Manager) presenceBeat() {
 	m.mu.RLock()
 	cb := m.presenceCallback()
 	m.mu.RUnlock()
-	if cb != nil {
-		for _, t := range changed {
-			cb(t)
-		}
-	}
+	// The heartbeat goroutine has no recover of its own: an app hook's
+	// panic here would end the process.
+	firePresenceChange(cb, changed)
 }
 
 // presenceHeartbeatLoop is the per-replica presence goroutine: every
