@@ -2305,6 +2305,16 @@ few lines, and link the PR or the docs page for the rest.
   closes an active connection, so Stop returned at the deadline and left
   the stream's handler, seat and bus subscription running. Stop still
   returns the context's error when it had to close connections.
+- A kiln journal append that fails part way (a full disk, a failed
+  fsync) no longer corrupts the journal. The fragment stayed in the
+  file, the next append completed it into a line of invalid JSON, and
+  the next boot refused to replay the session. The failed append's bytes
+  are now cut back off; if that fails too, appends are refused until
+  restart. See [kiln](framework/docs/content/kiln.md).
+- `world_get` with path `_plans` returns a copy of the plans. It
+  returned the session's own map, encoded after the read lock was
+  released, so a concurrent `propose_plan` or `approve_plan` could crash
+  kiln with a concurrent map write.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

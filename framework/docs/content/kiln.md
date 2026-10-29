@@ -161,7 +161,11 @@ rows are inserted in one transaction before its journal entry is
 durable; a seed the database refuses part way (a unique conflict, say)
 lands none of its rows and leaves the rows already in the database,
 CRUD writes included, where they were. A journal whose last line was
-torn by a crash loses exactly that in-flight entry at open.
+torn by a crash loses exactly that in-flight entry at open. An append
+that fails while kiln runs (a full disk, a failed fsync) cuts its bytes
+back off, so the next append starts a clean line; if the cut fails too,
+kiln refuses further appends until it restarts, and the restart heals
+the fragment.
 
 Two dispatch-side postures: an internal failure of a tool (a panic, a
 filesystem error) answers the caller with a generic "internal error"

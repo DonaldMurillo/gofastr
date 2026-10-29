@@ -229,10 +229,12 @@ func (t *Tools) WorldGet(_ context.Context, args WorldGetArgs) Result {
 		}
 		switch args.Path {
 		case "_chat":
+			// Replay only appends to Chat and never rewrites an event, so
+			// the slice header is safe to hand out.
 			res = ok(sess.Chat)
 			return
 		case "_plans":
-			res = ok(sess.Plans)
+			res = ok(clonePlans(sess.Plans))
 			return
 		}
 		if after, ok0 := strings.CutPrefix(args.Path, "entities."); ok0 {
@@ -262,6 +264,21 @@ func (t *Tools) WorldGet(_ context.Context, args WorldGetArgs) Result {
 		res = invalid("unknown path %q", args.Path)
 	})
 	return res
+}
+
+// clonePlans copies the plan map and each plan for a result encoded after
+// Live's read lock is released: approve_plan and reject_plan set fields on
+// the stored *Plan, and propose_plan writes the map, so handing out the
+// session's own map let a concurrent plan call race the encoder, a fatal
+// map iteration/write (2026-10-27 K2). Steps and Targets are set once at
+// proposal and never written again, so they are shared.
+func clonePlans(plans map[string]*journal.Plan) map[string]*journal.Plan {
+	out := make(map[string]*journal.Plan, len(plans))
+	for id, p := range plans {
+		cp := *p
+		out[id] = &cp
+	}
+	return out
 }
 
 // cloneWorld copies w deeply enough to be safe to read after Live's

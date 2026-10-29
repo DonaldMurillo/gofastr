@@ -98,6 +98,9 @@ type JSONL struct {
 	mu    sync.Mutex
 	file  *os.File
 	count int // entries in file (read at Open, maintained on Append/Truncate)
+	// broken is set when a failed Append's bytes could not be cut back
+	// off; Append refuses with it from then on.
+	broken error
 }
 
 // OpenJSONL opens or creates a JSONL journal at path. The parent directory
@@ -211,15 +214,49 @@ func (j *JSONL) Append(e Entry) (int, error) {
 
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if _, err := j.file.Write(buf); err != nil {
-		return 0, fmt.Errorf("journal: write: %w", err)
+	if j.broken != nil {
+		return 0, j.broken
 	}
-	if err := j.file.Sync(); err != nil {
-		return 0, fmt.Errorf("journal: fsync: %w", err)
+	off, err := j.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return 0, fmt.Errorf("journal: seek end: %w", err)
+	}
+	if _, err := writeJournal(j.file, buf); err != nil {
+		return 0, j.undoAppend(off, fmt.Errorf("journal: write: %w", err))
+	}
+	if err := syncJournal(j.file); err != nil {
+		return 0, j.undoAppend(off, fmt.Errorf("journal: fsync: %w", err))
 	}
 	j.count++
 	return j.count, nil
 }
+
+// undoAppend cuts a failed Append's bytes back off at off, the size the
+// file had before it. Left in place, a short write's fragment became the
+// head of the next Append's line, one line of invalid JSON every later
+// Read refuses, and a written line whose fsync failed would replay an
+// entry its caller was told did not land (2026-10-27 K1). When the cut
+// fails, the journal refuses every later Append instead of writing past
+// the fragment; the next open heals the unterminated tail.
+func (j *JSONL) undoAppend(off int64, cause error) error {
+	err := truncateJournal(j.file, off)
+	if err == nil {
+		err = j.file.Sync()
+	}
+	if err != nil {
+		j.broken = fmt.Errorf("journal: a failed append could not be cut back off, so appends are refused until the journal is reopened: %w", err)
+		return errors.Join(cause, j.broken)
+	}
+	return cause
+}
+
+// The file calls Append makes, as variables so a test can fail one
+// mid-line.
+var (
+	writeJournal    = (*os.File).Write
+	syncJournal     = (*os.File).Sync
+	truncateJournal = (*os.File).Truncate
+)
 
 func (j *JSONL) Read() ([]Entry, error) {
 	j.mu.Lock()
