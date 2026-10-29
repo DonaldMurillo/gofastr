@@ -282,7 +282,11 @@ if handler.IsCrossSiteRequest(r) {
 a cross-site form post: `Sec-Fetch-Site: cross-site` decides when the
 browser sends Fetch Metadata, and an Origin-header host compare
 against the request's own host is the fallback for clients (older
-browsers, tests, native apps) that send neither. `IsForgeableRequest`
+browsers, tests, native apps) that send neither. `Sec-Fetch-Site:
+same-site` also goes to the host compare, since a sibling subdomain is
+same-site, and there an absent or `null` Origin is refused: a page on
+the same origin says `same-origin`, so only a sibling sending
+`Referrer-Policy: no-referrer` arrives that way. `IsForgeableRequest`
 answers whether the request's content type is one a plain HTML form
 can produce, for guards that only need to worry form-shaped posts.
 `IsCrossSiteRequestStrict` is for surfaces only ever called by

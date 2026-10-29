@@ -2270,6 +2270,15 @@ few lines, and link the PR or the docs page for the rest.
   `access.Decider` that denied an admin one of them was never asked. Its
   deny now refuses; its allow still admits nothing the policy does not.
   See [admin](framework/docs/content/admin.md#process-modules).
+- **The cross-site guard refuses a same-site request with a `null`
+  Origin.** `handler.IsCrossSiteRequest` took `Sec-Fetch-Site:
+  same-site` plus an absent or `null` Origin as safe, and a page on a
+  sibling subdomain sending `Referrer-Policy: no-referrer` posts exactly
+  that, so it passed every guard built on it: auth's form guards
+  (login CSRF included), the admin and entity UI restore, purge and
+  views posts, and Kiln's reset. A same-site request now needs an Origin
+  naming the request's own host. See
+  [security](framework/docs/content/security.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but
