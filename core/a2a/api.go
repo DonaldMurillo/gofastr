@@ -86,6 +86,11 @@ type TaskRecord struct {
 	Task    Task
 	Owner   string
 	SkillID string
+	// Scope is the scope set of the credential that created the task, in
+	// the canonical form ScopeKey writes: "" for an unscoped caller (a
+	// session, server code), a JSON array otherwise. A scoped caller sees
+	// only the tasks whose Scope equals its own; see Config.Scopes.
+	Scope string
 	// Version is bumped on every UpdateTask; an update whose Version does
 	// not match the stored row fails with ErrConflict.
 	Version   int64
@@ -106,7 +111,11 @@ type ListQuery struct {
 	Status    TaskState
 	// After filters to tasks whose status timestamp is after this instant
 	// (zero: no filter).
-	After  time.Time
+	After time.Time
+	// Scoped filters to tasks whose Scope equals Scope: the tasks a
+	// scoped caller may see. False lists every task of the owner.
+	Scoped bool
+	Scope  string
 	Limit  int
 	Offset int
 }

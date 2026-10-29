@@ -137,6 +137,9 @@ func matchesQuery(rec *TaskRecord, q ListQuery) bool {
 	if q.ContextID != "" && rec.Task.ContextID != q.ContextID {
 		return false
 	}
+	if q.Scoped && rec.Scope != q.Scope {
+		return false
+	}
 	if q.Status != "" && rec.Task.Status.State != q.Status {
 		return false
 	}

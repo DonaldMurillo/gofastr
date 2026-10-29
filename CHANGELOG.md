@@ -2270,6 +2270,14 @@ few lines, and link the PR or the docs page for the rest.
   `access.Decider` that denied an admin one of them was never asked. Its
   deny now refuses; its allow still admits nothing the policy does not.
   See [admin](framework/docs/content/admin.md#process-modules).
+- **A narrow API token no longer reads the A2A tasks a stronger credential
+  ran.** Tasks were keyed by the owner id alone, so a `customers:read`
+  token listed its user's session tasks with their artifacts, and could
+  resume, cancel and subscribe to them. A task records its creator's
+  scopes (`TaskRecord.Scope`), and a scoped caller reaches only the tasks
+  made under the same scopes. `WithA2A` wires it; a hand-built server sets
+  `a2a.Config.Scopes`. The SQL store adds a `scope` column on open. See
+  [A2A](framework/docs/content/a2a.md#auth-and-owner-scoping).
 - **An access decider binds a generated screen's role gate.** The
   `authPolicy` the app spec writes into `app.go` read the user's roles
   itself, so an `access.DeciderMiddleware` deny never reached a screen with

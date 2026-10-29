@@ -179,6 +179,18 @@ cancels, and push configs are scoped to that owner in the store; another
 owner's task id is indistinguishable from an unknown one
 (`-32001` task not found), so ids do not enumerate across users.
 
+A task also records the scopes of the credential that created it. A
+caller whose API token or embed grant narrows it (`access.HeldScopes`)
+sees only the tasks made under the same scope set, in any order; to it,
+a task its owner's session or a broader token ran is `-32001` too, and
+`ListTasks` leaves it out of the page and `totalSize`. A session sees
+every task of its owner. `WithA2A` wires this; a server built by hand
+passes `a2a.Config.Scopes`. A custom `a2a.Store` keeps
+`TaskRecord.Scope` and honors `ListQuery.Scoped`; the server re-checks
+both, so a store that does not still leaks nothing. The SQL store adds
+the `scope` column to an older table on open, and its rows read as a
+session's.
+
 The SQL task store registers its task and push-config tables with
 `App.ExportData` and `App.EraseUserData`, keyed on the owner column, so
 erasing a user deletes their tasks and push configs (see
