@@ -112,6 +112,65 @@ macOS), created 0700. Four files live there:
 paths only); tests and CI use it to avoid touching a real profile.
 `Config.DataDir` overrides the whole path per battery.
 
+### Persistent browser profiles on Linux
+
+Set `desktop.Config.PersistentProfile: true` to retain a Linux app's browser
+cookies and website data across launches. This is an opt-in **browser profile**,
+not a cookies-only store. Linux's default stays ephemeral, shared among the
+windows of that running shell. The option is supported by the Linux native
+shell; other shells return `ErrUnsupported` before starting the app rather than
+silently ignoring it. It does not change other platforms' existing defaults.
+
+The profile lives at `<resolved DataDir>/browser-profiles/<Config.ID>/`, never
+under a window title. Even apps that explicitly share a `DataDir` have separate
+browser profiles by ID. The data directory and profile root must be owned by
+the current user with mode `0700`; missing directories are created privately,
+but existing permissions are not changed. Symlinked paths, foreign-owned or
+unsafe writable ancestors, non-regular profile files, hard links, malformed
+origin metadata and invalid cookie databases are refused, not reset. Startup
+inspects a bounded profile tree (100,000 entries, depth32); these checks are not
+a defense against a hostile process running as the same user.
+
+**The origin is stable.** On the first launch, `Run` binds an unused IPv4
+loopback port and records the actual port before opening WebKit. Later launches
+bind exactly that port. This retains the origin needed by `localStorage` and
+IndexedDB instead of silently abandoning them at a new random port. A busy
+port, port-remapping configuration, or invalid origin record stops startup
+before a window opens. Stop the conflicting process or restore the profile;
+there is no automatic port migration. Failed first app startup can retry the
+pending profile. Packaged secondary deep-link launches forward to the primary
+before attempting to lock its profile.
+
+Only non-session cookies with an expiry persist; session cookies and expired
+or deleted cookies do not. Each launch still mints fresh boot-token/session
+credentials, and old credentials cannot authorize the next process. The Host
+pin, same-site checks and permission grants are unchanged. The profile does
+not implement login/logout: application auth determines whether its cookies
+persist and clears them on logout. Turning this option off starts an ephemeral
+browser but does not erase the saved profile, app database or grants.
+
+Two intentional exceptions keep browser persistence from bypassing the native
+boot contract: stored service-worker registrations are cleared and their native
+completion awaited **before any view opens** (a failure/timeout aborts startup),
+and persistent HTTP-auth credential storage is disabled. Applications can use
+workers during a launch, but cannot rely on a worker surviving the next launch.
+
+One process owns a profile at a time. Once WebKit has used it, its exclusive
+lock is retained until process exit, not merely until the GTK loop returns:
+WebKit's network process shuts down asynchronously. Do not delete the lock file
+to force access. Kernel locks release when the owning process exits, including
+a crash; this is not an acknowledgement that every native child has flushed or
+that storage survives a crash. Filesystem write preflight and SQLite cookie
+integrity checks catch startup failures, but WebKit's cookie-storage setter
+returns no durable-write acknowledgement; later disk-full/native write errors
+cannot be promised synchronously by `Run`. Other website stores retain WebKit's
+own format and recovery behavior.
+
+To reset browser data, exit every process using the profile, then move aside or
+remove the **whole AppID profile directory**, not just `origin.json` or the lock.
+The next launch creates a new origin and empty browser data. Keep the separate
+application database, identity and grants unless you also intend to reset those.
+
 ## Single-user mode
 
 A desktop app is one user on one machine: every request the window
@@ -2119,9 +2178,9 @@ native shell, not the authenticated browser bridge or every desktop's portal.
 darwin/amd64 has no native shell yet. Linux does not yet support tray icons,
 OS deep-link registration, transparent/compositor materials, custom title bars
 or native drag regions. A configured Linux tray returns an explicit unsupported
-error rather than silently hiding the app. Linux uses an ephemeral WebKit
-store shared by all windows in the process; cookies are not retained across
-launches. The Linux shell runs once per process. Windows currently
+error rather than silently hiding the app. Linux defaults to an ephemeral WebKit
+store shared by all windows in the process; `Config.PersistentProfile` opts
+into the private persistent browser profile described above. The Linux shell runs once per process. Windows currently
 supports amd64 and needs the Evergreen WebView2 Runtime. Windows builds
 do not include code signing or an installer. The updater is macOS-only.
 macOS notifications need a signed `.app` bundle (ad-hoc is

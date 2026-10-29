@@ -102,6 +102,15 @@ type Config struct {
 	// DataDir overrides DataDir(ID). Must be absolute when set.
 	DataDir string
 
+	// PersistentProfile opts into a private, AppID-scoped browser profile on
+	// Linux. The default remains ephemeral. Other shells must explicitly
+	// support this option or Run returns ErrUnsupported before app startup.
+	// The profile remembers its first loopback port, retaining the origin for
+	// cookies and website storage; a busy port is an error, never a fallback.
+	// Exit the process before reopening this profile. See the desktop reference
+	// for storage/reset semantics and the limits of native write acknowledgement.
+	PersistentProfile bool
+
 	// Shell is the native layer. nil selects NewUnsupportedShell() on
 	// every platform: the darwin default moved to battery/desktop/native
 	// with the platform split, so a host that wants the real shell
@@ -963,6 +972,14 @@ func (b *Battery) Run(app *framework.App) error {
 		}
 	}
 
+	listenAddr, profile, err := b.prepareProfile()
+	if err != nil {
+		return err
+	}
+	if profile != nil {
+		defer profile.ReleaseProfile()
+	}
+
 	// Arm the boot gate BEFORE the listener opens (see gateMiddleware):
 	// from the moment the port answers, every request needs the session
 	// cookie. An app that never calls Run keeps the gate unarmed and its
@@ -979,7 +996,7 @@ func (b *Battery) Run(app *framework.App) error {
 		os.Setenv("GOFASTR_ISOLATION", "off")
 	}
 	startErr := make(chan error, 1)
-	go func() { startErr <- app.Start("127.0.0.1:0") }()
+	go func() { startErr <- app.Start(listenAddr) }()
 
 	var addr string
 	select {
@@ -999,6 +1016,13 @@ func (b *Battery) Run(app *framework.App) error {
 		b.shell.Quit()
 		b.shutdownApp()
 		return fmt.Errorf("desktop: app bound a non-loopback address %q; the desktop host requires 127.0.0.1", addr)
+	}
+	if profile != nil {
+		if err := profile.CommitProfile(addr); err != nil {
+			b.shell.Quit()
+			b.shutdownApp()
+			return fmt.Errorf("desktop: persist browser origin: %w", err)
+		}
 	}
 	b.setHostPin(addr)
 	b.reg.freeze()

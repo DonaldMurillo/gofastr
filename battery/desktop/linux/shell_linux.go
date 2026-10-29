@@ -108,6 +108,7 @@ type linuxShell struct {
 	windows       map[string]*linuxWindow
 	webContext    uintptr
 	activation    *activationBroker
+	profile       *browserProfile
 	inLoop        bool // UI thread only
 	capGate       chan struct{}
 	promptQueue   []desktop.Decision
@@ -140,6 +141,7 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	s.mu.Unlock()
 	defer close(s.done)
 	defer s.ReleaseLaunch()
+	defer s.ReleaseProfile()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -169,10 +171,11 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if cfg.Tray != nil {
 		return &desktop.Error{Code: desktop.CodeUnsupported, Message: "Linux tray icons are not implemented"}
 	}
-	s.webContext = call(gtk.Sym.WebkitWebContextNewEphemeral)
-	if s.webContext == 0 {
-		return errors.New("desktop/linux: create WebKit context")
+	webContext, err := s.createWebContext(ctx)
+	if err != nil {
+		return err
 	}
+	s.webContext = webContext
 	defer call(gtk.Sym.GObjectUnref, s.webContext)
 	s.running.Store(true)
 	defer func() {
