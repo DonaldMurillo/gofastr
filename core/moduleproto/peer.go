@@ -104,7 +104,11 @@ type Peer struct {
 	abandonedFIFO []uint64
 	inflight      int
 	serveInflight int
-	handlers      map[string]Handler
+	// respPending counts served responses waiting to be written: the
+	// handler returned and released its serve slot, the write has not.
+	// dispatch bounds it by maxServeInflight too.
+	respPending int
+	handlers    map[string]Handler
 	// cancels maps an inbound-request id to every handler currently serving
 	// it. A counterparty is free to reuse ids; nothing on the wire forbids
 	// it, so this cannot be a 1:1 map: keyed by id alone, a second request
@@ -151,6 +155,13 @@ func WithMaxInflight(n int) PeerOption {
 // (there is no response frame to write and no caller to hang).
 // [MethodCancel] is exempt: its built-in handler does no I/O, so it runs on
 // the read loop and a flood can never starve cancellation.
+//
+// The cap also bounds served responses still waiting on their write. A
+// counterparty that stops reading leaves them parked; once n are parked
+// and another is ready, the Peer records [ErrStalled] as its terminal
+// fault and serves nothing more. A counterparty that keeps no more than n
+// requests open, as the descriptor's inflight limit requires, never
+// reaches it.
 func WithMaxServeInflight(n int) PeerOption {
 	return func(p *Peer) {
 		if n > 0 {
@@ -504,6 +515,14 @@ func (p *Peer) readLoop() {
 // dispatch routes an inbound Frame to the request/notification/response branch.
 // This is where the per-direction correlation invariant lives.
 func (p *Peer) dispatch(f *Frame) {
+	// A faulted peer serves nothing more: its calls already failed, and a
+	// handler run now would only add a response the stalled or desynced
+	// transport cannot carry.
+	select {
+	case <-p.fatalCh:
+		return
+	default:
+	}
 	switch {
 	case f.Method != "" && f.ID != nil:
 		// Inbound REQUEST. Dispatch to a handler in its own goroutine so a
@@ -543,12 +562,33 @@ func (p *Peer) dispatch(f *Frame) {
 			// even though the counterparty stayed within the agreed
 			// concurrency. Freeing at handler completion makes exactly N
 			// concurrent callers succeed with no spurious CodeInflightCap.
+			//
+			// A response still waiting on its write is bounded separately.
+			// A counterparty that stops reading what it is sent but keeps
+			// sending paced requests would otherwise park one goroutine per
+			// request on the codec write. Every unwritten response is a call
+			// the counterparty still has open, and so is this one, so a full
+			// count here means it has more open than the serve cap. The
+			// supervisor sets both caps from the module descriptor, which a
+			// conforming child honors; one that exceeds it while not reading
+			// has stalled the transport.
 			resp := p.buildResponse(f)
 			p.mu.Lock()
 			p.serveInflight--
+			stalled := resp != nil && p.respPending >= p.maxServeInflight
+			if resp != nil && !stalled {
+				p.respPending++
+			}
 			p.mu.Unlock()
+			if stalled {
+				p.setFatal(fmt.Errorf("%w: %d responses unwritten", ErrStalled, p.maxServeInflight))
+				return
+			}
 			if resp != nil {
 				_ = p.writeFrame(resp)
+				p.mu.Lock()
+				p.respPending--
+				p.mu.Unlock()
 			}
 		}()
 	case f.Method != "" && f.ID == nil:

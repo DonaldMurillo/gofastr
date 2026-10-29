@@ -119,6 +119,13 @@ with `ErrModuleInstalled` and leaves the row alone.
   token. The host mints it for an inbound call, the child echoes it on
   reverse calls, and the host re-attaches that request's caller context.
   An exfiltrated handle is meaningless on another replica.
+- **Reverse calls are bounded both ways.** The host serves at most
+  `Limits.Inflight` of a child's reverse calls at once and answers the
+  overflow with an inflight-cap error. It also holds at most that many
+  answers waiting to be written: a child that keeps sending calls but
+  stops reading stdin faults its peer with `moduleproto.ErrStalled`,
+  after which the peer serves nothing more and every call to the module
+  fails.
 
 ## The two-layer 404 / 503 gate
 

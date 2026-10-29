@@ -2656,6 +2656,14 @@ few lines, and link the PR or the docs page for the rest.
   drops only buckets that have refilled to capacity, and the shed goes
   nearest-to-full first. See
   [security](framework/docs/content/security.md).
+- **A process module that stops reading cannot pile up host goroutines.**
+  A served reverse call released its serve slot when the handler
+  returned and then waited on the write, so a child that sent paced
+  calls and never read stdin parked one host goroutine per call with no
+  bound. At most `Limits.Inflight` answers now wait on the write; the
+  next one faults the peer with `moduleproto.ErrStalled`, and a faulted
+  peer starts no handler for a frame it reads after the fault. See
+  [process modules](framework/docs/content/process-modules.md).
 
 ## [0.95.0] - 2026-10-26
 

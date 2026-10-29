@@ -38,6 +38,12 @@ var (
 	// supervisor counts it as a crash rather than an integrity fault. An
 	// RPC error reply is an answer and does not carry it.
 	ErrHandshakeUnanswered = errors.New("moduleproto: handshake unanswered")
+
+	// ErrStalled is the terminal fault a Peer records when the
+	// counterparty stops reading what it is sent: more served responses
+	// wait to be written than the serve cap ([WithMaxServeInflight])
+	// allows. The Peer serves nothing more after it.
+	ErrStalled = errors.New("moduleproto: transport stalled: the counterparty stopped reading")
 )
 
 // Standard JSON-RPC 2.0 error codes (the -32xxx reserved band), plus
