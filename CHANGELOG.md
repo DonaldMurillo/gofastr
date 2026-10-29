@@ -2237,6 +2237,12 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A session-scoped harness token lists only its own sessions.**
+  `GET /v1/sessions` (live and `?past=true`), the MCP
+  `harness.list_sessions` tool and the `harness/v1://sessions` resource
+  listed every session, past ones with the first 80 bytes of their
+  first prompt. Each now keeps the sessions the token's claims allow.
+  See [harness architecture](framework/docs/content/harness-architecture.md#rest-api).
 - **An OAuth sign-in no longer survives an account claim that overtakes
   it.** A returning sign-in refreshed its link's profile with an
   upsert, so a claim that removed the link between the lookup and the

@@ -203,6 +203,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
 		return
 	}
+	// A token bound to some sessions lists only those: a past session
+	// carries the start of its first prompt.
+	claims, ok := claimsFrom(r)
+	if !ok {
+		writeError(w, http.StatusForbidden, "Forbidden", "no token claims")
+		return
+	}
 	// ?past=true returns historical sessions from the on-disk log
 	// (useful for the sidebar to show prior conversations); default
 	// returns just the active in-memory sessions.
@@ -213,10 +220,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "StoreError", "store operation failed")
 			return
 		}
-		writeJSON(w, http.StatusOK, past)
+		writeJSON(w, http.StatusOK, slices.DeleteFunc(past, func(p session.PastSession) bool {
+			return !claims.AllowsSession(p.SessionID)
+		}))
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Catalog.ListSessions())
+	writeJSON(w, http.StatusOK, resources.SessionsAllowed(s.Catalog.ListSessions(), claims))
 }
 
 // handleSessionItem handles /v1/sessions/{id}/<verb>.
