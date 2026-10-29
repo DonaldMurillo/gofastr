@@ -2252,6 +2252,12 @@ few lines, and link the PR or the docs page for the rest.
   only the timestamp. It now names columns as `CreateOne` and `UpdateOne`
   do, leaves the caller's map alone, and returns "no fields to update"
   for a body that sets nothing.
+- **A grant refresh that keeps failing waits between tries and lets the
+  app stop.** With the database down, a replica's refresh of a role
+  another replica changed retried at once, forever, and the fanout stop
+  waited on it, so shutdown hung. Each wake now reloads the roles it
+  found once and leaves a failure for the next try 5 seconds later. See
+  [scaling](framework/docs/content/scaling.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

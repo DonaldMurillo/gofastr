@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -569,24 +570,20 @@ func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}) {
 	}
 }
 
-// drainDirty reloads every currently-dirty role. Returns true if any reload
-// failed (and was re-marked dirty for retry).
+// drainDirty reloads the roles dirty when it starts, each once. Returns true
+// if any reload failed (and was re-marked dirty for the worker's retry).
+//
+// It drains a snapshot, not the live set: looping until the set emptied
+// took a failed role straight back off it, so with the database down the
+// loop retried at once, forever, never reaching the worker's backoff or
+// its stopWork check, and the fanout stop waited on it for good. A role
+// marked dirty during the pass is the next wake's.
 func (s *GrantStore) drainDirty() (anyFailed bool) {
-	for {
-		s.dirtyMu.Lock()
-		var role string
-		found := false
-		for r := range s.dirty {
-			role, found = r, true
-			break
-		}
-		if found {
-			delete(s.dirty, role)
-		}
-		s.dirtyMu.Unlock()
-		if !found {
-			return anyFailed
-		}
+	s.dirtyMu.Lock()
+	roles := slices.Sorted(maps.Keys(s.dirty))
+	clear(s.dirty)
+	s.dirtyMu.Unlock()
+	for _, role := range roles {
 		ctx, cancel := context.WithTimeout(context.Background(), reloadTimeout)
 		err := s.reloadRole(ctx, role)
 		cancel()
@@ -601,6 +598,7 @@ func (s *GrantStore) drainDirty() (anyFailed bool) {
 			anyFailed = true
 		}
 	}
+	return anyFailed
 }
 
 // reloadRole rebuilds role's effective permissions as
