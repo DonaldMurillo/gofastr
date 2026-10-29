@@ -2334,6 +2334,13 @@ few lines, and link the PR or the docs page for the rest.
   which build their handlers through it, cascaded writes past child hooks, saved
   images with no renditions and kept their EXIF metadata, GPS included.
   Both now build through one constructor.
+- **A nested include runs its rows' read hooks when a `WireName` is in
+  the way.** The child read hooks looked up every level's rows with the
+  root entity's wire keys, while each level's rows sit under the key its
+  parent entity's wire map gives the relation. A `WireName` on either
+  entity, for a field sharing the nested relation's name, hid the rows
+  from the lookup, and `?include=author.card` served the cards' stored
+  values past their `AfterList` and `AfterGet` masks.
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

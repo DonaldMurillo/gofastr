@@ -358,6 +358,15 @@ func (ch *CrudHandler) runAfterList(ctx context.Context, r *http.Request, result
 // in-process read returned raw top-level fields alongside masked included
 // ones, and code that wrote an included row back persisted the mask.
 func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*IncludeNode, rows []map[string]any) error {
+	return ch.applyChildReadHooksUnder(ctx, nodes, rows, ch.convertKey)
+}
+
+// applyChildReadHooksUnder is applyChildReadHooks over rows whose keys
+// convert with keyOf. A relation's rows sit under the key its PARENT hop's
+// wire map gives it, so a nested level looks them up with the parent
+// target's converter, never the root handler's: a WireName on either side
+// otherwise misses the rows, and the child's masking never runs.
+func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*IncludeNode, rows []map[string]any, keyOf func(string) string) error {
 	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(nodes) == 0 || len(rows) == 0 {
 		return nil
 	}
@@ -365,7 +374,8 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 		if node == nil || node.Target == nil {
 			continue
 		}
-		outKey := ch.convertKey(node.Relation.Name)
+		outKey := keyOf(node.Relation.Name)
+		childKeyOf := ch.wireConverterOf(node.Target)
 		seen := map[uintptr]bool{}
 		var childRows []map[string]any
 		add := func(m map[string]any) {
@@ -400,7 +410,7 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 		}
 		reg := ch.ChildHooks(node.Target.GetName())
 		if reg == nil {
-			if err := ch.applyChildReadHooks(ctx, node.Children, childRows); err != nil {
+			if err := ch.applyChildReadHooksUnder(ctx, node.Children, childRows, childKeyOf); err != nil {
 				return err
 			}
 			continue
@@ -463,8 +473,8 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 			}
 		}
 		// Deeper levels: this node's rows are the parents for its children,
-		// and they are already converted, so the same key logic applies.
-		if err := ch.applyChildReadHooks(ctx, node.Children, childRows); err != nil {
+		// and they carry this target's wire keys.
+		if err := ch.applyChildReadHooksUnder(ctx, node.Children, childRows, childKeyOf); err != nil {
 			return err
 		}
 	}
