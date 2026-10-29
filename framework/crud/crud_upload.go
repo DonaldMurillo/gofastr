@@ -493,10 +493,14 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 				return n
 			}
 		case schema.Bool:
+			// A blank stays "", which dropEmptyFormValues reads as "not
+			// provided", as on the JSON path: a stored NULL drawn as a
+			// select with its empty choice selected saved as false
+			// (2026-10-27 D19).
 			switch strings.ToLower(raw) {
 			case "true", "1", "yes", "on":
 				return true
-			case "false", "0", "no", "off", "":
+			case "false", "0", "no", "off":
 				return false
 			}
 		default:

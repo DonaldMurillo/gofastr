@@ -344,3 +344,7 @@ notes:
       uses:
         - gofastr/framework.App.ExportData
         - gofastr/framework.App.ImportData
+  - change: "BREAKING - a blank Bool value in a multipart create or update is \"not provided\", as on the JSON path: an update stores NULL, a create applies the default, and a required Bool sent blank answers 400"
+    breaking: true
+    guidance: "A multipart client that sent an empty value meaning false stored false and now stores NULL or the default, or gets a 400 for a required field. Send false (or 0, no, off) for false."
+    nodetect: "the values come from clients' multipart bodies at request time, not from the app's source"

@@ -53,7 +53,10 @@ The framework:
    temp files). The two limits are different things: the first caps the
    wire body, the second is only the in-RAM spill threshold.
 2. Coerces non-file values to the schema field's Go type
-   (`Int` → `int64`, `Bool` → `bool`, etc.). A form key repeated across
+   (`Int` → `int64`, `Bool` → `bool`, etc.). A blank value is "not
+   provided", as an empty string is on the JSON path, for a `Bool` too:
+   an update stores NULL, a create applies the field's default, and a
+   required field left blank answers `400`. A form key repeated across
    parts is refused with `400` — the JSON body path refuses duplicate
    keys for the same reason: a proxy inspecting one of the two parts
    would see a payload the server never executes. The one carve-out: a

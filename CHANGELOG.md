@@ -2275,6 +2275,13 @@ few lines, and link the PR or the docs page for the rest.
   the layout crud uses; an import rewrites an older archive's declared
   `Timestamp` and `Date` columns in it. See
   [data export](framework/docs/content/data-export.md).
+- **A blank Bool on a multipart form is not false.** The multipart parse
+  read an empty value as false, so saving a record through a form with an
+  upload field wrote false into every unset optional Bool (the entity form
+  draws a stored NULL as a select whose empty choice submits ""), and a
+  required Bool left blank passed. A blank now means "not provided", as on
+  the JSON path: an update stores NULL, a create applies the default, and a
+  required field answers 400. See [uploads](framework/docs/content/uploads.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
