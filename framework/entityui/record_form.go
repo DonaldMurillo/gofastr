@@ -528,7 +528,7 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 	// controller to watch.
 	if sw := fb.m.hint(f.Name).ShowWhen; sw != "" {
 		cond, err := parseShowWhen(fb.m, sw)
-		if err == nil && cond.field == fb.m.states.Field {
+		if err == nil && fb.m.states != nil && cond.field == fb.m.states.Field {
 			current := ""
 			if fb.row != nil {
 				current = cell(fb.m.rowValue(fb.row, fb.m.states.Field))

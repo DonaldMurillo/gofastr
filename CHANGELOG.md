@@ -2603,6 +2603,11 @@ few lines, and link the PR or the docs page for the rest.
   plugin in a retained layout region was destroyed. The broker now
   mounts markers as they arrive and tears down only the instances whose
   marker left the DOM.
+- **A `ShowWhen` field draws on an entity with no States.** The record
+  form compared the condition's field with the States field before
+  checking the entity had States, so any `ShowWhen` on such an entity
+  panicked and the create and edit forms showed "Couldn't load this
+  section".
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
