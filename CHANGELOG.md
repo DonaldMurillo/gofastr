@@ -2743,6 +2743,12 @@ few lines, and link the PR or the docs page for the rest.
   a long-lived bus kept every cancelled SSE closure alive. A durable cron
   schedule waking after an outage collected every missed tick before
   trimming to `MaxCatchUpOccurrences`; it now keeps a ring of that size.
+- **Sent email carries `Date` and `Message-ID`, and the dev log scrubs
+  every line.** `SMTPSender` wrote neither header, which direct delivery,
+  threading and dedupe need. Each message now gets a `Date` and a random
+  `Message-ID` on the sender's domain; a `Headers` entry of either name
+  replaces it. `LogSender` printed bodies and attachment names raw, so an
+  escape sequence in a template reached the terminal.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

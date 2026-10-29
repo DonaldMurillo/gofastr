@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -288,6 +289,20 @@ func buildMessage(email Email) ([]byte, error) {
 	}
 	buf.WriteString("Subject: " + scrubHeaderValue(encodeTextHeader(email.Subject)) + "\r\n")
 
+	// Date and Message-ID (RFC 5322 3.6.1, 3.6.4). A submission relay
+	// adds both, but direct delivery, threading and dedupe need them
+	// from the sender. A value the caller sets in Headers replaces ours.
+	if !hasHeader(email.Headers, "Date") {
+		buf.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")
+	}
+	if !hasHeader(email.Headers, "Message-ID") {
+		id, err := newMessageID(email.From)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSendFailed, err)
+		}
+		buf.WriteString("Message-ID: " + scrubHeaderValue(id) + "\r\n")
+	}
+
 	// Custom headers, sorted so the wire message is byte-stable per send.
 	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
 		buf.WriteString(scrubHeaderValue(k) + ": " + scrubHeaderValue(email.Headers[k]) + "\r\n")
@@ -450,6 +465,41 @@ func randomBoundary() (string, error) {
 		return "", fmt.Errorf("boundary generation failed: %w", err)
 	}
 	return "gofastr-boundary-" + hex.EncodeToString(b[:]), nil
+}
+
+// hasHeader reports whether headers sets name, folding ASCII case the
+// way header names compare. A key with a non-ASCII byte never matches,
+// so a homoglyph cannot stand in for the name.
+func hasHeader(headers map[string]string, name string) bool {
+	for k := range headers {
+		if isASCII(k) && strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// reMessageIDDomain is a plain host name: dot-separated labels of
+// letters, digits and inner hyphens.
+var reMessageIDDomain = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$`)
+
+// newMessageID mints "<32 hex digits@domain>" from crypto/rand. The
+// domain is the first From address's when it is a plain host name, and
+// localhost otherwise.
+func newMessageID(from string) (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("message id generation failed: %w", err)
+	}
+	domain := "localhost"
+	if addrs, err := mail.ParseAddressList(from); err == nil && len(addrs) > 0 {
+		if at := strings.LastIndexByte(addrs[0].Address, '@'); at >= 0 {
+			if d := addrs[0].Address[at+1:]; len(d) <= 253 && reMessageIDDomain.MatchString(d) {
+				domain = d
+			}
+		}
+	}
+	return "<" + hex.EncodeToString(b[:]) + "@" + domain + ">", nil
 }
 
 // bodyContainsBoundary reports whether any line of body equals the

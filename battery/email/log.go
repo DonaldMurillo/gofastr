@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // sensitiveHeaderNames lists headers that LogSender refuses to print.
@@ -50,6 +52,23 @@ func RedactBody(s string) string {
 	return s
 }
 
+// logText scrubs a multi-line body for the dev terminal: it drops every
+// control, C1 and invisible/bidi codepoint (an ESC sequence in a
+// template would otherwise drive the terminal) and keeps newlines and
+// tabs. strings.Map turns invalid UTF-8 into U+FFFD, so a stray 8-bit
+// C1 byte goes too.
+func logText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if textsafe.IsUnsafe(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // LogSender is a development email sender that logs email details
 // to an io.Writer instead of actually sending them.
 type LogSender struct {
@@ -86,13 +105,13 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 
 	if email.TextBody != "" {
 		sb.WriteString("--- Text Body ---\n")
-		sb.WriteString(RedactBody(email.TextBody))
+		sb.WriteString(logText(RedactBody(email.TextBody)))
 		sb.WriteString("\n")
 	}
 
 	if email.HTMLBody != "" {
 		sb.WriteString("--- HTML Body ---\n")
-		sb.WriteString(RedactBody(email.HTMLBody))
+		sb.WriteString(logText(RedactBody(email.HTMLBody)))
 		sb.WriteString("\n")
 	}
 
@@ -113,7 +132,7 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 			if ct == "" {
 				ct = "application/octet-stream"
 			}
-			sb.WriteString(fmt.Sprintf("  - %s (%s, %d bytes)\n", att.Filename, ct, len(att.Content)))
+			sb.WriteString(fmt.Sprintf("  - %s (%s, %d bytes)\n", scrubHeaderValue(att.Filename), scrubHeaderValue(ct), len(att.Content)))
 		}
 	}
 

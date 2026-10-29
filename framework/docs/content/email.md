@@ -93,6 +93,12 @@ encoded and is sent as written; it needs a relay that offers SMTPUTF8,
 which `Send` requests when the relay advertises it. Custom `Headers`
 values are written as given.
 
+Every message carries a `Date` and a `Message-ID` of the form
+`<32 hex digits@domain>`, random per message. The domain is the
+first `From` address's when it is a plain host name, and `localhost`
+otherwise. A `Date` or `Message-ID` key in `Headers` (any ASCII
+case) replaces the stamped one, so a message never carries two.
+
 `Send` succeeds once the relay answers `250` to the message: the mail is
 queued. A failed `QUIT` after that (the relay drops the connection or
 stalls) is ignored, so a retrying queue does not deliver the message
@@ -130,7 +136,9 @@ sending it. Before logging, it redacts URL query strings carrying
 with their secrets stripped, so a dev log never captures a live
 credential. The redaction is exported as `email.RedactBody`, so sibling
 dev-log surfaces (notify's `LoggerChannel`) scrub the same shapes
-instead of forging their own patterns.
+instead of forging their own patterns. Every printed value is scrubbed of control, C1 and bidi characters
+(bodies keep their newlines and tabs), so an escape sequence in a
+template or an attachment name never reaches the terminal.
 
 ## Templates
 
