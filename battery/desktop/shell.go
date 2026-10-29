@@ -235,15 +235,18 @@ type Tray struct {
 	// Tooltip is the hover help on the tray item, in the OS language
 	// the shell reads.
 	Tooltip i18n.Phrase
-	// Icon is a PNG rendered as a template image at 18x18 points.
+	// Icon is a PNG. macOS renders an 18x18-point template; Linux sends
+	// full-color pixels to the status host (at most 1 MiB and 256x256).
 	Icon []byte
 	// Menu is the tray menu; same model as Config.Menu.
 	Menu *Menu
 	// CloseHidesWindow makes the main window's close button hide the
 	// window instead of quitting; the app stays alive in the menu bar
-	// and RoleShow (or the tray icon's own click) brings it back.
+	// and RoleShow (or the tray icon's own click) brings it back. Linux
+	// hides only while a registered status host provides recovery.
 	CloseHidesWindow bool
-	// HideDock removes the Dock icon (activation policy Accessory).
+	// HideDock removes the macOS Dock icon (activation policy Accessory).
+	// It does not hide a Linux taskbar entry.
 	HideDock bool
 }
 
@@ -275,6 +278,11 @@ type WindowConfig struct {
 	// "about", "settings", "show", "separator") are handled by the
 	// shell itself and are never dispatched through OnMenu.
 	OnMenu func(id string)
+	// OnTrayMenu is optional synchronous tray dispatch. A shell with a bounded
+	// callback worker uses it instead of OnMenu, and must not call it on its UI
+	// thread. Return means the Handler completed; a handler ignoring its context
+	// may block that one worker. Main-menu dispatch is unchanged.
+	OnTrayMenu func(id string)
 	// OnWindowClosed is called by the shell (on a goroutine) when a
 	// secondary window the user closed goes away, with the id OpenWindow
 	// assigned. The main window never reports through it.

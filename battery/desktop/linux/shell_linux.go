@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
@@ -168,9 +169,6 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if call(gtk.Sym.GtkInitCheck, 0, 0) == 0 {
 		return errors.New("desktop/linux: GTK cannot open a display; run in an X11 or Wayland desktop session")
 	}
-	if cfg.Tray != nil {
-		return &desktop.Error{Code: desktop.CodeUnsupported, Message: "Linux tray icons are not implemented"}
-	}
 	webContext, err := s.createWebContext(ctx)
 	if err != nil {
 		return err
@@ -198,6 +196,11 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if err != nil {
 		return err
 	}
+	if err := startLinuxTray(w); err != nil {
+		slog.Default().Warn("desktop/linux: tray unavailable; keeping normal window close behavior", "error", err)
+	}
+	// Remove native endpoints before destroying their window or web context.
+	defer stopLinuxTray(s)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -295,8 +298,8 @@ func (s *linuxShell) Quit() {
 	call(gtk.Sym.GIdleAdd, quitCallback, 0)
 }
 
-func (s *linuxShell) SetTrayTitle(string) error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "Linux tray icons are not implemented"}
+func (s *linuxShell) SetTrayTitle(title string) error {
+	return setLinuxTrayTitle(s, title)
 }
 
 func (s *linuxShell) OpenWindow(id string, spec desktop.WindowSpec, url string) (desktop.Window, error) {

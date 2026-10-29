@@ -209,7 +209,13 @@ const menuHandlerTimeout = 30 * time.Second
 // navigate call in the window; Handler items run on a goroutine with a
 // deadline. Role items never arrive here (the shell handles them); an
 // unknown id is a Warn.
-func (b *Battery) dispatchMenu(id string) {
+func (b *Battery) dispatchMenu(id string) { b.dispatchMenuMode(id, true) }
+
+// dispatchTrayMenu keeps Handler completion inside the native tray's bounded
+// callback worker. Main-menu and existing platform dispatch remain asynchronous.
+func (b *Battery) dispatchTrayMenu(id string) { b.dispatchMenuMode(id, false) }
+
+func (b *Battery) dispatchMenuMode(id string, async bool) {
 	item, ok := b.menu.find(id)
 	if !ok {
 		b.logger.Warn("desktop: menu activation for unknown item id", "id", id)
@@ -233,7 +239,7 @@ func (b *Battery) dispatchMenu(id string) {
 		}
 	case item.Handler != nil:
 		handlerFn := item.Handler
-		go func() {
+		run := func() {
 			// A menu handler is app-supplied code on a bare goroutine:
 			// recover so one panic cannot kill the process.
 			defer func() {
@@ -246,6 +252,11 @@ func (b *Battery) dispatchMenu(id string) {
 			if err := handlerFn(ctx); err != nil {
 				b.logger.Error("desktop: menu handler failed", "id", id, "error", err)
 			}
-		}()
+		}
+		if async {
+			go run()
+		} else {
+			run()
+		}
 	}
 }

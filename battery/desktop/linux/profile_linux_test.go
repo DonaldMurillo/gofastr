@@ -111,7 +111,8 @@ func TestProfileUnsafePaths(t *testing.T) {
 			case "cookie-corrupt":
 				must(os.WriteFile(cookie, []byte("not a SQLite database"), 0o600))
 			case "sidecar-public":
-				must(os.WriteFile(cookie+"-wal", []byte("x"), 0o644))
+				must(os.WriteFile(cookie+"-wal", []byte("x"), 0o600))
+				must(os.Chmod(cookie+"-wal", 0o644)) // Do not let a restrictive umask mask this fixture.
 			case "nested-symlink":
 				must(os.Symlink(t.TempDir(), filepath.Join(p.dir, "data", "alias")))
 			case "data-public":

@@ -22,16 +22,31 @@ import (
 const trayWatcherXML = `<node><interface name="org.kde.StatusNotifierWatcher">
 <method name="RegisterStatusNotifierItem"><arg type="s" direction="in"/></method>
 <property name="IsStatusNotifierHostRegistered" type="b" access="read"/>
+<property name="RegisteredStatusNotifierItems" type="as" access="read"/>
 </interface></node>`
 
 type trayTestWatcher struct {
 	host          atomic.Bool
 	registrations atomic.Int32
+	service       atomic.Value // registered unique bus name for freedesktop
+	iface         string
+	broker        *trayBroker
+	registered    atomic.Bool
+	retain        atomic.Bool
 }
 
 func (w *trayTestWatcher) property(_, name string) uintptr {
 	if name == "IsStatusNotifierHostRegistered" {
 		return trayBool(w.host.Load())
+	}
+	if name == "RegisteredStatusNotifierItems" {
+		if service, ok := w.service.Load().(string); ok && w.registered.Load() {
+			if w.iface == "org.kde.StatusNotifierWatcher" {
+				service += trayPath
+			}
+			return trayArray("s", trayString(service))
+		}
+		return trayArray("s")
 	}
 	return 0
 }
@@ -39,19 +54,37 @@ func (w *trayTestWatcher) method(_, name string, args uintptr) (uintptr, error) 
 	if name != "RegisterStatusNotifierItem" {
 		return 0, errors.New("unknown method")
 	}
-	path, ok := trayArgString(args, 0)
-	if !ok || path != trayPath {
+	service, ok := trayArgString(args, 0)
+	if !ok || !strings.HasPrefix(service, ":") {
 		return 0, errors.New("invalid item")
 	}
+	if w.iface == "org.freedesktop.StatusNotifierWatcher" {
+		// A strict standard watcher receives a service, then queries the
+		// standard object while registration is in flight. The item's private
+		// context must keep dispatching; a synchronous-on-context broker hangs.
+		reply, err := w.broker.call(service, trayPath, "org.freedesktop.DBus.Properties", "GetAll", trayTuple(trayString("org.freedesktop.StatusNotifierItem")), "(a{sv})")
+		trayUnref(reply)
+		if err != nil {
+			return 0, err
+		}
+	}
+	w.service.Store(service)
+	w.registered.Store(w.retain.Load())
 	w.registrations.Add(1)
 	return 0, nil
 }
 
 func startTrayTestWatcher(t *testing.T, host bool) (*trayBroker, *trayTestWatcher) {
+	return startTrayTestWatcherInterface(t, host, "org.kde.StatusNotifierWatcher")
+}
+
+func startTrayTestWatcherInterface(t *testing.T, host bool, iface string) (*trayBroker, *trayTestWatcher) {
 	t.Helper()
-	w := &trayTestWatcher{}
+	w := &trayTestWatcher{iface: iface}
 	w.host.Store(host)
+	w.retain.Store(true)
 	b := newTrayBroker(&trayModel{}, nil, nil)
+	w.broker = b
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
@@ -65,13 +98,13 @@ func startTrayTestWatcher(t *testing.T, host bool) (*trayBroker, *trayTestWatche
 			return
 		}
 		defer b.cleanup(ctx)
-		reg, err := registerTrayEndpoint(b.connection, "/StatusNotifierWatcher", trayWatcherXML, "org.kde.StatusNotifierWatcher", w)
+		reg, err := registerTrayEndpoint(b.connection, "/StatusNotifierWatcher", strings.ReplaceAll(trayWatcherXML, "org.kde.StatusNotifierWatcher", iface), iface, w)
 		if err != nil {
 			b.ready <- err
 			return
 		}
 		b.registrations = append(b.registrations, reg)
-		reply, err := b.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", trayTuple(trayString("org.kde.StatusNotifierWatcher"), trayCall("g_variant_new_uint32", 4)), "(u)")
+		reply, err := b.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", trayTuple(trayString(iface), trayCall("g_variant_new_uint32", 4)), "(u)")
 		if err != nil {
 			b.ready <- err
 			return
@@ -246,12 +279,14 @@ func TestNativeTray(t *testing.T) {
 		}
 		trayUnref(reply)
 	}
-	for _, role := range []string{desktop.RoleShow, desktop.RoleQuit} {
+	seenActions := make(map[string]bool)
+	for range 2 {
 		select {
 		case action := <-actions:
-			if action.plan.Role != role {
-				t.Fatalf("action=%s want=%s", action.plan.Role, role)
+			if seenActions[action.plan.Role] || (action.plan.Role != desktop.RoleShow && action.plan.Role != desktop.RoleQuit) {
+				t.Fatalf("unexpected or duplicate recovery action=%s", action.plan.Role)
 			}
+			seenActions[action.plan.Role] = true
 		case <-time.After(time.Second):
 			t.Fatal("missing action")
 		}
@@ -270,10 +305,23 @@ func TestNativeTray(t *testing.T) {
 	}
 	host.host.Store(true)
 	trayTestWait(t, "host return", b.available.Load)
+	host.retain.Store(false)
+	host.registered.Store(false)
+	trayTestWait(t, "item removed with host still live", func() bool { return !b.available.Load() })
+	select {
+	case <-lost:
+	case <-time.After(time.Second):
+		t.Fatal("same-host registration loss did not request reveal")
+	}
+	host.retain.Store(true)
+	trayTestWait(t, "item re-registration", b.available.Load)
 	watcher.close()
 	trayTestWait(t, "watcher loss", func() bool { return !b.available.Load() })
-	_, replacement := startTrayTestWatcher(t, true)
+	_, replacement := startTrayTestWatcherInterface(t, true, "org.freedesktop.StatusNotifierWatcher")
 	trayTestWait(t, "watcher replacement", func() bool { return b.available.Load() && replacement.registrations.Load() > 0 })
+	if replacement.service.Load() != b.uniqueName {
+		t.Fatal("freedesktop watcher did not register and introspect the owned service")
+	}
 	if err := command.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}

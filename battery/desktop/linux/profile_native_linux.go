@@ -6,16 +6,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
-	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/gtk"
 	"path/filepath"
 	"runtime"
 	"time"
 	"unsafe"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/gtk"
 )
 
 // WebKitGTK API4.1 keeps the deprecated WebSQL/plugin bits in this enum.
-// Its service-worker flag is1<<12, NOT the1<<10 used by API6.0.
+// Its service-worker flag is 1<<12, NOT the 1<<10 used by API 6.0.
 const profileServiceWorkers = 1 << 12
 
 func (s *linuxShell) createWebContext(ctx context.Context) (uintptr, error) {

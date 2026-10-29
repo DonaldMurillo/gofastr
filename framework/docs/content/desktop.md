@@ -502,8 +502,36 @@ the menu bar after the main window closes; `HideDock` runs the app as
 an accessory (no Dock icon, menu bar only). `d.SetTrayTitle` and
 `__gofastr.desktop.tray.setTitle` change the bar title at runtime.
 
-The tray is macOS-only for now. On a host without a tray surface, Run
-logs a Warn naming the host error and the rest of the app works.
+Linux uses an app-owned local session-bus connection and the
+StatusNotifierItem/DBusMenu protocols. It requires a compatible status host
+(for example, a desktop panel with SNI support); it does not install a host,
+enable desktop extensions, or implement an XEmbed fallback. Title/icon placement
+and whether text is shown are the host's choice. `HideDock` has no Linux effect.
+Linux accepts full-color PNGs up to 1 MiB and 256x256 pixels; an omitted icon gets
+a small built-in fallback. Menus are bounded to 128 entries and eight levels;
+text is valid UTF-8, NUL-free and at most 4096 bytes. Top-level Show and Quit
+recovery actions are always added, even with a custom menu.
+
+`CloseHidesWindow` on Linux hides only after a watcher has registered the item
+and reports a live status host. Without that proof, close behaves normally.
+Host loss/replacement, removal of this item from the watcher's registry, or bus
+disconnection marks the tray unavailable and
+restores a hidden window; a busy GTK thread delays restoration, which is retried
+rather than forgotten. A functioning main loop is still required to show it.
+`Window.Close` follows the close-button behavior, while explicit Quit always
+exits. Linux tray application callbacks run one at a time with at most 16 queued
+actions. Handler contexts retain the normal 30-second deadline, but a handler
+that ignores cancellation can occupy that one worker until it returns, even
+after shutdown; the tray does not wait indefinitely for it or spawn a replacement. Show,
+host-loss recovery and Quit use independent bounded/coalesced paths, so that
+handler does not trap a hidden window. Custom shells can opt into this contract
+with `WindowConfig.OnTrayMenu`: invoke it off the UI thread on a bounded worker;
+it returns only after the handler completes. `OnMenu` preserves the existing
+asynchronous main-menu handler behavior. Broker requests are also bounded;
+overload can reject an action rather than grow memory without limit. No protocol can prove that a
+third-party host actually painted the icon: a visible tray still depends on
+the desktop's host. On a host without a tray surface, Run logs a Warn naming
+the host error and the rest of the app works.
 
 ## Window styles, frameless windows, widgets
 
@@ -1036,8 +1064,9 @@ If the app is already running, the new process forwards the URL to its
 open window. Windows refuses to replace a scheme owned by another
 per-user or machine-wide handler. The embedded scheme supplies a default
 `DeepLinkConfig` on Windows and Linux when the app has none; a custom
-config must use the same scheme. Linux does not register a handler or
-change default associations. Without `--scheme`, these builds do not
+config must use the same scheme. Linux builds do not register a handler;
+`desktop install` advertises it without changing saved default-handler
+preferences. Without `--scheme`, these builds do not
 enable native launch handoff. Development runs (`go run`, `gofastr
 desktop run`) do not register a scheme.
 
@@ -2128,8 +2157,8 @@ above. This is not a D-Bus activation service.
 
 The installer generates a real desktop entry; it never trusts or naively
 substitutes the archive's inert `.desktop.in` template. Paths are escaped for
-the desktop-entry and argument layers. HOME/XDG paths must be absolute UTF-8
-and contain neither '=' nor control bytes. Symlinked destination components,
+the desktop-entry and argument layers. Resolved installation paths must be
+absolute UTF-8 and contain neither '=' nor control bytes. Symlinked destination components,
 foreign-owned ancestors, and unsafe writable directories are refused (trusted
 sticky temp roots are permitted for isolated tests). This does not protect
 against another malicious process running as the same UID.
@@ -2198,9 +2227,22 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_PROFILE=1 dbus-run-session --
   go test ./battery/desktop/linux -run '^TestNativeProfile$' -count=1 -timeout=240s -v
 ```
 
+The tray tests use a disposable private bus and test watcher, never the real
+desktop's watcher. `TestNativeTray` checks protocol/property/menu contracts;
+`TestNativeTrayGraphical` runs separate GTK processes for hide/restore, delayed
+recovery, bus loss, explicit Quit and ordinary no-host/no-bus closing, including
+a real WebKit snapshot. They do **not** prove a panel rendered an icon:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_TRAY=1 \
+  go test ./battery/desktop/linux -run '^TestNativeTray$' -count=1 -timeout=120s -v
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_TRAY=1 \
+  go test ./battery/desktop/linux -run '^TestNativeTrayGraphical$' -count=1 -timeout=180s -v
+```
+
 For a headless Linux worker with GTK/WebKitGTK, `dbus` (including
 `dbus-daemon`), `xvfb` and `xauth` installed, the repository's runner
-executes these tests and the fresh-process profile test in separate processes:
+executes all seven automated tests in separate invocations:
 
 ```sh
 ./scripts/test-linux-desktop.sh
@@ -2209,7 +2251,7 @@ executes these tests and the fresh-process profile test in separate processes:
 The blocking Linux CI job runs this script with `CGO_ENABLED=0`, a private
 session bus per invocation and an authenticated Xvfb for graphical cases.
 Only the activation tests get the test-only embedded scheme; the two original
-smoke tests and profile test retain unembedded defaults. Logs and the PNG captures go to
+smoke, profile and tray tests retain unembedded defaults. Logs and PNG captures go to
 `dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
 coverage does not validate Wayland, compositor effects, notification delivery,
 or interactive file selection and overwrite confirmation.
@@ -2249,10 +2291,10 @@ native shell, not the authenticated browser bridge or every desktop's portal.
 
 ## What does not work yet
 
-darwin/amd64 has no native shell yet. Linux does not yet support tray icons,
-transparent/compositor materials, custom title bars
-or native drag regions. A configured Linux tray returns an explicit unsupported
-error rather than silently hiding the app. Linux defaults to an ephemeral WebKit
+darwin/amd64 has no native shell yet. Linux does not yet support
+transparent/compositor materials, custom title bars or native drag regions.
+Linux tray icons require a compatible StatusNotifierItem host; no-host operation
+keeps ordinary visible-window and close behavior. Linux defaults to an ephemeral WebKit
 store shared by all windows in the process; `Config.PersistentProfile` opts
 into the private persistent browser profile described above. The explicit Linux
 installer advertises a per-user OS handler but does not choose default handlers,

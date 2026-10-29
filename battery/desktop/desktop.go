@@ -128,9 +128,9 @@ type Config struct {
 	// panics on a bad one.
 	Settings *WindowSpec
 
-	// Tray, when set, puts the app in the OS menu bar. macOS only for
-	// now: on a host without a tray, Run logs a Warn and the config is
-	// ignored.
+	// Tray, when set, requests an OS status item. Linux requires a live
+	// StatusNotifierItem host; without one the window stays accessible and
+	// closes normally. Hosts without a tray report an actionable warning.
 	Tray *Tray
 
 	// DeepLink, when set, makes the app answer URLs on its own scheme
@@ -1043,15 +1043,16 @@ func (b *Battery) Run(app *framework.App) error {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
 	shellErr := b.shell.Run(ctx, WindowConfig{
-		AppID:    b.cfg.ID,
-		Title:    b.windowTitle(),
-		Width:    b.windowWidth(),
-		Height:   b.windowHeight(),
-		Style:    b.cfg.Style,
-		Menu:     b.runMenu,
-		Tray:     b.tray,
-		Settings: b.cfg.Settings,
-		OnMenu:   b.dispatchMenu,
+		AppID:      b.cfg.ID,
+		Title:      b.windowTitle(),
+		Width:      b.windowWidth(),
+		Height:     b.windowHeight(),
+		Style:      b.cfg.Style,
+		Menu:       b.runMenu,
+		Tray:       b.tray,
+		Settings:   b.cfg.Settings,
+		OnMenu:     b.dispatchMenu,
+		OnTrayMenu: b.dispatchTrayMenu,
 		OnSettings: func(ctx context.Context) {
 			if _, err := b.OpenSettings(ctx); err != nil {
 				b.logger.Error("desktop: opening the settings window failed", "error", err)

@@ -15,6 +15,7 @@ type trayWindowState struct {
 	broker *trayBroker
 	window *linuxWindow
 	hidden atomic.Bool
+	about  uintptr // GTK thread only; reset by its destroy signal
 }
 
 var trayShells sync.Map // *linuxShell -> *trayWindowState, removed before window destruction
@@ -29,17 +30,7 @@ func startLinuxTray(w *linuxWindow) error {
 		return err
 	}
 	state := &trayWindowState{window: w}
-	state.broker = newTrayBroker(model, func(action trayAction) {
-		if action.plan.Role == desktop.RoleShow {
-			state.show()
-			return
-		}
-		_ = s.Main(func() {
-			if !w.closed.Load() {
-				menuAction{window: w, plan: action.plan, id: action.id}.activate()
-			}
-		})
-	}, func() bool {
+	state.broker = newTrayBroker(model, state.action, func() bool {
 		// Test hidden INSIDE GTK dispatch. A watcher may disappear between the
 		// close callback's availability check and its gtk_widget_hide call.
 		err := s.Main(func() {
@@ -56,6 +47,65 @@ func startLinuxTray(w *linuxWindow) error {
 	connect(w.handle, "delete-event", trayDeleteCallback, 0)
 	return nil
 }
+
+func (state *trayWindowState) action(action trayAction) {
+	w, s := state.window, state.window.shell
+	if w.closed.Load() {
+		return
+	}
+	switch action.plan.Role {
+	case desktop.RoleQuit:
+		// Quit is deliberately not timeout-cancellable GTK dispatch. A busy
+		// main loop must retain the user's explicit shutdown request.
+		s.Quit()
+	case desktop.RoleShow:
+		state.show()
+	case desktop.RoleSettings:
+		if s.cfg.OnSettings != nil {
+			s.cfg.OnSettings(s.text())
+		}
+	case desktop.RoleAbout:
+		_ = w.withMain(state.showAboutMain)
+	default:
+		if action.id != "" {
+			if s.cfg.OnTrayMenu != nil {
+				s.cfg.OnTrayMenu(action.id)
+			} else if s.cfg.OnMenu != nil {
+				s.cfg.OnMenu(action.id)
+			}
+		}
+	}
+}
+
+func (state *trayWindowState) showAboutMain() {
+	if state.about != 0 {
+		call(gtk.Sym.GtkWindowPresent, state.about)
+		return
+	}
+	title, body := desktop.AboutText(state.window.shell.text())
+	withString("%s", func(format uintptr) {
+		withString(body, func(text uintptr) {
+			state.about = call(gtk.Sym.GtkMessageDialogNew, state.window.handle, 2, 0, 2, format, text)
+		})
+	})
+	withString(title, func(p uintptr) { call(gtk.Sym.GtkWindowSetTitle, state.about, p) })
+	connect(state.about, "response", aboutResponse, 0)
+	connect(state.about, "destroy", trayAboutDestroyed, state.window.handle)
+	call(gtk.Sym.GtkWidgetShowAll, state.about)
+}
+
+var trayAboutDestroyed = ffi.NewCallback(func(a *ffi.Args) uintptr {
+	if value, ok := nativeWindows.Load(a.Int[1]); ok {
+		if value, ok := trayShells.Load(value.(*linuxWindow).shell); ok {
+			state := value.(*trayWindowState)
+			if state.about == a.Int[0] {
+				state.about = 0
+			}
+		}
+	}
+	return 0
+})
+
 func stopLinuxTray(s *linuxShell) {
 	if value, ok := trayShells.LoadAndDelete(s); ok {
 		value.(*trayWindowState).broker.close()

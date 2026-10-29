@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"io"
 	"net"
 	"net/url"
@@ -20,6 +19,8 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 type browserProfile struct {

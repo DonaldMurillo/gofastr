@@ -150,3 +150,84 @@ func TestTrayCallbackPanicContained(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func TestTrayBlockedCallbackBoundAndRecovery(t *testing.T) {
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	revealed, shown, quit := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
+	var calls atomic.Int32
+	s := New().(*linuxShell)
+	s.cfg.OnMenu = func(string) {
+		if calls.Add(1) == 1 {
+			entered <- struct{}{}
+		}
+		<-release
+	}
+	state := &trayWindowState{window: &linuxWindow{shell: s}}
+	b := newTrayBroker(&trayModel{}, func(action trayAction) {
+		switch action.plan.Role {
+		case desktop.RoleShow:
+			shown <- struct{}{}
+		case desktop.RoleQuit:
+			state.action(action)
+			quit <- struct{}{}
+		default:
+			state.action(action) // Actual shell dispatch, not only the raw queue.
+		}
+	}, func() bool { revealed <- struct{}{}; return true })
+	go b.deliver()
+	defer close(b.stop)
+	defer close(release)
+	b.enqueue(trayAction{id: "blocked"})
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("callback did not start")
+	}
+	for range 16 {
+		if !b.enqueue(trayAction{id: "blocked"}) {
+			t.Fatal("queue rejected its bounded capacity")
+		}
+	}
+	if b.enqueue(trayAction{id: "blocked"}) {
+		t.Fatal("blocked callback did not bound pending actions")
+	}
+	b.setAvailable(true)
+	b.setAvailable(false)
+	b.enqueue(trayAction{plan: desktop.MenuItemPlan{Role: desktop.RoleShow}})
+	b.enqueue(trayAction{plan: desktop.MenuItemPlan{Role: desktop.RoleQuit}})
+	for _, completed := range []<-chan struct{}{revealed, shown, quit} {
+		select {
+		case <-completed:
+		case <-time.After(time.Second):
+			t.Fatal("blocked user callback suppressed recovery, Show or Quit")
+		}
+	}
+	if calls.Load() != 1 || !s.quitting.Load() || len(b.actions) != 16 {
+		t.Fatal("delivery was not one in-flight plus sixteen pending callbacks")
+	}
+}
+
+func TestTrayPrefersDedicatedCallback(t *testing.T) {
+	s := New().(*linuxShell)
+	var ordinary, tray int
+	s.cfg.OnMenu = func(string) { ordinary++ }
+	s.cfg.OnTrayMenu = func(string) { tray++ }
+	state := &trayWindowState{window: &linuxWindow{shell: s}}
+	state.action(trayAction{id: "configured"})
+	if tray != 1 || ordinary != 0 {
+		t.Fatal("tray did not use the synchronous completion callback")
+	}
+}
+
+func TestTrayStoppedDeliveryDiscardsPending(t *testing.T) {
+	var calls atomic.Int32
+	for range 64 {
+		b := newTrayBroker(&trayModel{}, func(trayAction) { calls.Add(1) }, nil)
+		b.enqueue(trayAction{id: "pending"})
+		close(b.stop)
+		b.deliver()
+	}
+	if calls.Load() != 0 {
+		t.Fatal("stopped tray delivered a pending application callback")
+	}
+}

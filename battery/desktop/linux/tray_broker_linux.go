@@ -37,8 +37,10 @@ type trayBroker struct {
 	available             atomic.Bool
 	stopping              atomic.Bool
 	stop, done, watchDone chan struct{}
+	initialProbe          chan struct{}
 	ready                 chan error
 	updates, recovery     chan struct{}
+	show, quit            chan struct{}
 	actions               chan trayAction
 	onAction              func(trayAction)
 	onLost                func() bool
@@ -47,7 +49,7 @@ type trayBroker struct {
 }
 
 func newTrayBroker(model *trayModel, onAction func(trayAction), onLost func() bool) *trayBroker {
-	return &trayBroker{model: model, title: model.title, stop: make(chan struct{}), done: make(chan struct{}), watchDone: make(chan struct{}), ready: make(chan error, 1), updates: make(chan struct{}, 1), recovery: make(chan struct{}, 1), actions: make(chan trayAction, 16), onAction: onAction, onLost: onLost}
+	return &trayBroker{model: model, title: model.title, stop: make(chan struct{}), done: make(chan struct{}), watchDone: make(chan struct{}), initialProbe: make(chan struct{}), ready: make(chan error, 1), updates: make(chan struct{}, 1), recovery: make(chan struct{}, 1), show: make(chan struct{}, 1), quit: make(chan struct{}, 1), actions: make(chan trayAction, 16), onAction: onAction, onLost: onLost}
 }
 
 func (b *trayBroker) start() error {
@@ -59,6 +61,17 @@ func (b *trayBroker) start() error {
 		return err
 	}
 	go b.deliver()
+	// Battery's ready callback immediately sets the configured title. Allow
+	// the first bounded proof to finish while the private context keeps serving
+	// watcher introspection, avoiding a false "no host" during normal startup.
+	// A stalled peer never makes startup indefinite or enables hiding early.
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-b.initialProbe:
+	case <-b.done:
+	case <-timer.C:
+	}
 	return nil
 }
 func (b *trayBroker) setAvailable(available bool) {
@@ -76,6 +89,20 @@ func (b *trayBroker) enqueue(action trayAction) bool {
 	if b.stopping.Load() {
 		return false
 	}
+	var urgent chan struct{}
+	switch action.plan.Role {
+	case desktop.RoleShow:
+		urgent = b.show
+	case desktop.RoleQuit:
+		urgent = b.quit
+	}
+	if urgent != nil {
+		select {
+		case urgent <- struct{}{}:
+		default: // Coalesce repeated recovery/shutdown requests.
+		}
+		return true
+	}
 	select {
 	case b.actions <- action:
 		return true
@@ -84,8 +111,51 @@ func (b *trayBroker) enqueue(action trayAction) bool {
 	}
 }
 func (b *trayBroker) deliver() {
+	// A blocked application handler occupies only this one worker. Recovery,
+	// Show and Quit have separate bounded lanes and never wait behind it.
+	go b.deliverRecoveryLoop()
+	go b.deliverQuitLoop()
+	for {
+		select {
+		case <-b.stop:
+			return
+		case action := <-b.actions:
+			select {
+			case <-b.stop:
+				return
+			default:
+			}
+			if b.onAction != nil {
+				b.deliverAction(action)
+			}
+		}
+	}
+}
+
+func (b *trayBroker) deliverQuitLoop() {
+	for {
+		select {
+		case <-b.stop:
+			return
+		case <-b.quit:
+			if b.stopping.Load() {
+				return
+			}
+			if b.onAction != nil {
+				b.deliverAction(trayAction{plan: desktop.MenuItemPlan{Role: desktop.RoleQuit}})
+			}
+		}
+	}
+}
+
+func (b *trayBroker) deliverRecoveryLoop() {
 	pendingRecovery := false
 	for {
+		select {
+		case <-b.stop:
+			return
+		default:
+		}
 		if pendingRecovery {
 			if b.onLost == nil || b.deliverRecovery() {
 				pendingRecovery = false
@@ -103,9 +173,12 @@ func (b *trayBroker) deliver() {
 			return
 		case <-b.recovery:
 			pendingRecovery = true
-		case action := <-b.actions:
+		case <-b.show:
+			if b.stopping.Load() {
+				return
+			}
 			if b.onAction != nil {
-				b.deliverAction(action)
+				b.deliverAction(trayAction{plan: desktop.MenuItemPlan{Role: desktop.RoleShow}})
 			}
 		}
 	}
@@ -283,6 +356,13 @@ func (b *trayBroker) cleanup(ctx uintptr) {
 // No shared GIO connection or automatic bus activation is used.
 func (b *trayBroker) watch() {
 	defer close(b.watchDone)
+	initial := true
+	initialAttempts := 0
+	defer func() {
+		if initial {
+			close(b.initialProbe)
+		}
+	}()
 	registeredOwner := ""
 	for {
 		if b.stopping.Load() || trayCall("g_dbus_connection_is_closed", b.connection) != 0 {
@@ -299,7 +379,9 @@ func (b *trayBroker) watch() {
 			identity := watcher + owner
 			if registeredOwner != identity {
 				b.setAvailable(false)
-				reply, err := b.call(owner, "/StatusNotifierWatcher", watcher, "RegisterStatusNotifierItem", trayTuple(trayString(trayPath)), "()")
+				// Both variants accept a bus service name with the standard object
+				// path. Do not acquire another name or depend on KDE's path extension.
+				reply, err := b.call(owner, "/StatusNotifierWatcher", watcher, "RegisterStatusNotifierItem", trayTuple(trayString(b.uniqueName)), "()")
 				trayUnref(reply)
 				if err != nil {
 					registeredOwner = ""
@@ -323,12 +405,25 @@ func (b *trayBroker) watch() {
 			}
 			// Bind the proof to this exact watcher generation. A stale reply may
 			// never resurrect recovery after the well-known owner was replaced.
-			b.setAvailable(live && b.owner(watcher) == owner)
+			member := b.registeredItem(owner, watcher)
+			if !member {
+				// A watcher may forget this item without losing its owner/host.
+				// Retain the reveal request even if re-registration soon succeeds.
+				registeredOwner = ""
+			}
+			b.setAvailable(live && member && b.owner(watcher) == owner)
 			break
 		}
 		if !found {
 			registeredOwner = ""
 			b.setAvailable(false)
+		}
+		initialAttempts++
+		// Registration may populate the list asynchronously. Give it a short
+		// bounded settling window, but never infer recoverability from an ACK.
+		if initial && (!found || b.available.Load() || initialAttempts >= 4) {
+			close(b.initialProbe)
+			initial = false
 		}
 		select {
 		case <-b.stop:
@@ -336,6 +431,42 @@ func (b *trayBroker) watch() {
 		case <-time.After(300 * time.Millisecond):
 		}
 	}
+}
+
+func (b *trayBroker) registeredItem(owner, watcher string) bool {
+	reply, err := b.call(owner, "/StatusNotifierWatcher", "org.freedesktop.DBus.Properties", "Get", trayTuple(trayString(watcher), trayString("RegisteredStatusNotifierItems")), "(v)")
+	if err != nil {
+		return false
+	}
+	defer trayUnref(reply)
+	if trayCall("g_variant_get_size", reply) > 64*1024 {
+		return false
+	}
+	outer := trayChild(reply, 0)
+	defer trayUnref(outer)
+	items := trayCall("g_variant_get_variant", outer)
+	defer trayUnref(items)
+	typ := trayType("as")
+	defer trayCall("g_variant_type_free", typ)
+	if trayCall("g_variant_is_of_type", items, typ) == 0 || trayCall("g_variant_n_children", items) > 1024 {
+		return false
+	}
+	want := b.uniqueName
+	if watcher == "org.kde.StatusNotifierWatcher" {
+		want += trayPath
+	}
+	for index := 0; index < int(trayCall("g_variant_n_children", items)); index++ {
+		item := trayChild(items, index)
+		name, ok := trayReadString(item, 512)
+		trayUnref(item)
+		if !ok {
+			return false
+		}
+		if name == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *trayBroker) owner(name string) string {
