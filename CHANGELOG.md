@@ -2289,6 +2289,12 @@ few lines, and link the PR or the docs page for the rest.
   reads the row's owner and tenant before changing it, on update,
   delete, batch, transition, restore and purge. See
   [entity declarations](framework/docs/content/entity-declarations.md).
+- **The `_events` read-scope filter compares values by column type.**
+  It compared text, while List and Get bind the scope value typed, so a
+  `neq` scope written `"1"` on a Bool column delivered every `true` row
+  the list hides, and a Decimal `neq "1.50"` delivered Postgres's
+  `"1.5000"`. Bool, Int, Float, Decimal and Timestamp values now compare
+  as the SQL side reads them. See [events](framework/docs/content/events.md#read-scope).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

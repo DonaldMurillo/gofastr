@@ -941,3 +941,58 @@ CREATE TABLE comments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, post_id TEXT 
 		t.Errorf("AllowCrossOwner ListAll returned %d rows, want 1: the escape hatch does not reach the nested filter", len(server))
 	}
 }
+
+// SECURITY (2026-10-27 D2): the feed compares a scope value the way the
+// SQL side binds it, by the column's type. It compared text, so a `neq`
+// scope written "1" on a Bool column admitted every `true` row that List
+// and Get exclude, and an `eq` scope spelled "t", "+5" or "1.0" dropped
+// the rows it names.
+func TestReadScopeAllowsRecordComparesTyped(t *testing.T) {
+	mk := func(p entity.RowPredicate) *CrudHandler {
+		cfg := makeEntityConfig("notes", "notes", "", []schema.Field{
+			{Name: "private", Type: schema.Bool},
+			{Name: "rank", Type: schema.Int},
+			{Name: "score", Type: schema.Float},
+			{Name: "due", Type: schema.Timestamp},
+			{Name: "price", Type: schema.Decimal},
+		})
+		cfg.Exposure = &entity.ExposureConfig{
+			Public:    true,
+			ReadScope: &entity.ReadScopeConfig{Filter: []entity.RowPredicate{p}},
+		}
+		return &CrudHandler{Entity: entity.Define("notes", cfg), JSONCase: "camel"}
+	}
+	due := time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name   string
+		p      entity.RowPredicate
+		record map[string]any
+		want   bool
+	}{
+		{"bool neq 1 withholds true", entity.RowPredicate{Field: "private", Op: "neq", Value: "1"}, map[string]any{"private": true}, false},
+		{"bool neq 1 admits false", entity.RowPredicate{Field: "private", Op: "neq", Value: "1"}, map[string]any{"private": false}, true},
+		{"bool not_in t withholds true", entity.RowPredicate{Field: "private", Op: "not_in", Values: []string{"t"}}, map[string]any{"private": true}, false},
+		{"bool neq true withholds an int 1", entity.RowPredicate{Field: "private", Op: "neq", Value: "true"}, map[string]any{"private": int64(1)}, false},
+		{"bool neq true withholds a fanned-out 1", entity.RowPredicate{Field: "private", Op: "neq", Value: "true"}, map[string]any{"private": float64(1)}, false},
+		{"bool eq t admits true", entity.RowPredicate{Field: "private", Op: "eq", Value: "t"}, map[string]any{"private": true}, true},
+		{"int eq +5 admits 5", entity.RowPredicate{Field: "rank", Value: "+5"}, map[string]any{"rank": int64(5)}, true},
+		{"int neq 05 withholds a fanned-out 5", entity.RowPredicate{Field: "rank", Op: "neq", Value: "05"}, map[string]any{"rank": float64(5)}, false},
+		{"float in 1.0 admits 1", entity.RowPredicate{Field: "score", Op: "in", Values: []string{"1.0"}}, map[string]any{"score": float64(1)}, true},
+		{"decimal neq withholds the Postgres spelling", entity.RowPredicate{Field: "price", Op: "neq", Value: "1.50"}, map[string]any{"price": "1.5000"}, false},
+		{"decimal neq withholds the SQLite float", entity.RowPredicate{Field: "price", Op: "neq", Value: "1.50"}, map[string]any{"price": float64(1.5)}, false},
+		{"decimal eq admits a REAL 1.1", entity.RowPredicate{Field: "price", Value: "1.1"}, map[string]any{"price": float64(1.1)}, true},
+		{"decimal eq admits an integer", entity.RowPredicate{Field: "price", Value: "2.0000"}, map[string]any{"price": int64(2)}, true},
+		{"decimal exponent reads as a number", entity.RowPredicate{Field: "price", Op: "neq", Value: "1.5e0"}, map[string]any{"price": "1.5000"}, false},
+		{"decimal eq refuses a fraction", entity.RowPredicate{Field: "price", Value: "3/2"}, map[string]any{"price": "1.5000"}, false},
+		{"decimal neq admits another value", entity.RowPredicate{Field: "price", Op: "neq", Value: "1.50"}, map[string]any{"price": "1.5001"}, true},
+		{"timestamp neq withholds the time", entity.RowPredicate{Field: "due", Op: "neq", Value: "2026-10-28T09:00:00Z"}, map[string]any{"due": due}, false},
+		{"timestamp eq admits its text", entity.RowPredicate{Field: "due", Value: "2026-10-28 09:00:00"}, map[string]any{"due": "2026-10-28T11:00:00+02:00"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mk(tc.p).readScopeAllowsRecord(tc.record); got != tc.want {
+				t.Errorf("SECURITY: readScopeAllowsRecord(%v) under %+v = %v, want %v", tc.record, tc.p, got, tc.want)
+			}
+		})
+	}
+}

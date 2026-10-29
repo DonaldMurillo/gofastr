@@ -87,6 +87,17 @@ When the entity is multi-tenant, the SSE stream filters events to the
 tenant ID extracted from the request context. Other tenants' events
 never reach the subscriber.
 
+## Read scope
+
+An entity with `Exposure.ReadScope` filters each event against the
+declared predicates in Go, since the feed has no query to narrow. Values
+compare by the column's type, as List and Get bind them: a Bool scope
+written `"1"`, `"t"` or `"true"` is the same value, as are `"+5"` and
+`"5"` on an Int, `"1.50"` and `"1.5000"` on a Decimal, and two spellings
+of one Timestamp instant. A record that lacks a scoped column, or holds
+NULL in one, is withheld, so a delete (its payload is the key alone) does
+not reach a restricted caller.
+
 ## Payload shape
 
 ```json
