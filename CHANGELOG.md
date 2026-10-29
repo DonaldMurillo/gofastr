@@ -2245,6 +2245,15 @@ few lines, and link the PR or the docs page for the rest.
   unless another row of the table still names the key; a soft delete
   keeps them for a restore. See
   [uploads](framework/docs/content/uploads.md#when-stored-objects-are-deleted).
+- **CRUD multipart writes refuse a cross-site sender; `_batch` and
+  transitions take JSON only.** The write gate took
+  `multipart/form-data` as a JSON stand-in, and a browser sends that type
+  cross-site with no preflight, so a page on a sibling subdomain could
+  create records, run `_batch` (which reads the body as JSON whatever the
+  label) and fire transitions as the signed-in user. A multipart create
+  or update now passes `handler.IsCrossSiteRequest` or answers 403, and
+  `_batch` and transitions answer 415 to anything but
+  `application/json`. See [uploads](framework/docs/content/uploads.md).
 - **A session-scoped harness token lists only its own sessions.**
   `GET /v1/sessions` (live and `?past=true`), the MCP
   `harness.list_sessions` tool and the `harness/v1://sessions` resource

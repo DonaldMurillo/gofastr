@@ -5,6 +5,14 @@ or `File` fields. Uploads are streamed through the configured
 `upload.Storage` backend; only the resulting URL is stored on the
 record.
 
+A browser sends `multipart/form-data` from another site with no CORS
+preflight and the user's cookies, so a multipart create or update must
+also pass the cross-site form guard (`handler.IsCrossSiteRequest`): a
+request whose `Sec-Fetch-Site` or `Origin` names another site, a sibling
+subdomain included, answers 403. The `_batch` routes and state
+transitions take `application/json` only and answer 415 to anything
+else.
+
 ## Wire it up
 
 ```go

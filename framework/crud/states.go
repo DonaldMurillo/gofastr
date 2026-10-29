@@ -685,8 +685,8 @@ func nonNil(s []string) []string {
 func (ch *CrudHandler) Transition() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+		if err := enforceJSONOnly(r); err != nil {
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {

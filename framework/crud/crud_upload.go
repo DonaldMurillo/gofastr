@@ -70,26 +70,69 @@ func isMultipart(r *http.Request) bool {
 	return err == nil && mediaType == "multipart/form-data"
 }
 
+// errCrossSiteForm is returned by enforceJSONContentType for a multipart
+// write another site sent. Callers map it to 403 Forbidden.
+var errCrossSiteForm = errors.New("cross-site form write")
+
 // enforceJSONContentType refuses requests whose Content-Type isn't either
 // application/json or multipart/form-data. Returns errUnsupportedMediaType
 // for text/plain, application/x-www-form-urlencoded, missing, or any other
 // type, these are the "simple-request" content types a browser can send
 // cross-origin without a CORS preflight, so accepting them on JSON-only
 // write endpoints opens a CSRF vector.
+//
+// multipart/form-data is one of those types too: a page on another site,
+// a sibling subdomain included, can POST it with the victim's cookies and
+// no preflight. The record routes take it for file uploads, so a
+// multipart write must also pass the shared cross-site guard
+// (handler.IsCrossSiteRequest), or it gets errCrossSiteForm.
 func enforceJSONContentType(r *http.Request) error {
-	ct := r.Header.Get("Content-Type")
-	if ct == "" {
-		return errUnsupportedMediaType
-	}
-	mediaType, _, err := mime.ParseMediaType(ct)
+	mediaType, err := writeMediaType(r)
 	if err != nil {
-		return errUnsupportedMediaType
+		return err
 	}
 	switch mediaType {
-	case "application/json", "multipart/form-data":
+	case "application/json":
+		return nil
+	case "multipart/form-data":
+		if handler.IsCrossSiteRequest(r) {
+			return errCrossSiteForm
+		}
 		return nil
 	}
 	return errUnsupportedMediaType
+}
+
+// enforceJSONOnly is enforceJSONContentType for the routes that never
+// take a form: _batch and transitions. A browser cannot send
+// application/json cross-site without a preflight.
+func enforceJSONOnly(r *http.Request) error {
+	mediaType, err := writeMediaType(r)
+	if err != nil || mediaType != "application/json" {
+		return errUnsupportedMediaType
+	}
+	return nil
+}
+
+func writeMediaType(r *http.Request) (string, error) {
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		return "", errUnsupportedMediaType
+	}
+	mediaType, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return "", errUnsupportedMediaType
+	}
+	return mediaType, nil
+}
+
+// writeContentTypeError answers a refused write content type.
+func writeContentTypeError(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusUnsupportedMediaType
+	if errors.Is(err, errCrossSiteForm) {
+		status = http.StatusForbidden
+	}
+	writeJSONError(w, r, status, i18n.StatusPhrase(status))
 }
 
 // limitRequestBody wraps r.Body with the http.MaxBytesReader matching the

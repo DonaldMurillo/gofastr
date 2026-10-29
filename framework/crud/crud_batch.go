@@ -205,8 +205,8 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+		if err := enforceJSONOnly(r); err != nil {
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opCreate) {
@@ -334,8 +334,8 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+		if err := enforceJSONOnly(r); err != nil {
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {
@@ -468,8 +468,8 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+		if err := enforceJSONOnly(r); err != nil {
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opDelete) {

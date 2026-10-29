@@ -1006,7 +1006,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opCreate) {
@@ -1097,7 +1097,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {
