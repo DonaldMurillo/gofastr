@@ -470,9 +470,9 @@ func WithLangFunc(fn func(path string) string) Option {
 // request misses every registered screen, static file, and configured
 // favicon, the host renders this component through the active layout,
 // so the 404 page sees the same nav/footer chrome every other page
-// gets. The component's Render() result is wrapped in the default
-// layout; pages without their own layout end up with the framework's
-// bare <main>.
+// gets. The component renders as any component does (RenderNotFound
+// first, then RenderCtx, then Render) inside the default layout; an app
+// with no root layout gets it in the framework's bare <main>.
 func WithNotFoundScreen(c component.Component) Option {
 	app.RefuseRetiredScreenMethods("not-found screen", c)
 	return func(ds *UIHost) {
@@ -2508,19 +2508,26 @@ type NotFoundRenderer interface {
 
 // notFoundBodyScreen adapts the host's configured 404 screen
 // ([WithNotFoundScreen]) to the app render pipeline's component slot:
-// RenderNotFound(path) when the screen implements it, else Render. A
-// panicking screen stays contained — the pipeline renders the adapter
-// under component.SafeRenderCtx, the guard this path used to hand-roll.
+// RenderNotFound(path) when the screen implements it, else RenderCtx or
+// Render, the way any component renders. A panicking screen stays
+// contained — the pipeline renders the adapter under
+// component.SafeRenderCtx, the guard this path used to hand-roll.
 type notFoundBodyScreen struct {
 	path string
 	comp component.Component
 }
 
 func (s *notFoundBodyScreen) Render() render.HTML {
+	return s.RenderCtx(context.Background())
+}
+
+// RenderCtx hands the request context to a screen written as
+// component.ContextOnly + RenderCtx, whose Render answers "".
+func (s *notFoundBodyScreen) RenderCtx(ctx context.Context) render.HTML {
 	if nf, ok := s.comp.(NotFoundRenderer); ok {
 		return nf.RenderNotFound(s.path)
 	}
-	return s.comp.Render()
+	return component.RenderComponentCtx(ctx, s.comp)
 }
 
 // defaultNotFoundScreen is the framework's built-in 404 body, the same
@@ -2643,7 +2650,16 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		appName = ds.App.Name
 	}
 	ctx := r.Context()
-	writeMinimalPage(w, ds.LangFor(ctx, path), pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName}),
+	title := pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName})
+	// With no root layout the configured screen still renders, in the
+	// bare <main>; a screen that panics gets the built-in body.
+	if ds.notFoundScreen != nil {
+		if body, err := component.SafeRenderCtx(ctx, ds.notFoundBodyComponent(path)); err == nil {
+			writeMinimalPage(w, ds.LangFor(ctx, path), title, body)
+			return
+		}
+	}
+	writeMinimalPage(w, ds.LangFor(ctx, path), title,
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
 			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),

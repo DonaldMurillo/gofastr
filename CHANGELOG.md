@@ -2632,6 +2632,13 @@ few lines, and link the PR or the docs page for the rest.
   stay refused for a widget scoped elsewhere, whatever session gate it
   carries. New `(*embed.Host).SetWidgetReach` takes the check;
   framework/uihost installs it from the widget registry.
+- **A custom 404 screen built on `component.ContextOnly` renders its
+  body.** The `WithNotFoundScreen` adapter called `Render`, which
+  `ContextOnly` answers with "", so the page body was empty; it now
+  dispatches `RenderNotFound`, then `RenderCtx`, then `Render`. An app
+  with no root layout ignored the configured screen and served the
+  built-in body; it now renders the screen in the bare `<main>`, falling
+  back to the built-in body when the screen panics.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
