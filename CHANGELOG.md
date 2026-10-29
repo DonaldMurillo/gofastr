@@ -2733,6 +2733,14 @@ few lines, and link the PR or the docs page for the rest.
   and the rest as an `ORCPT` parameter. The envelope
   now quotes a local part that needs it, and refuses one holding `<`, `>`
   or `@`. See [email](framework/docs/content/email.md).
+- **An idempotency `Principal` that returns `""` caches nothing.** Every
+  such request shared one namespace, so a second caller who sent the
+  same key and body got the first caller's stored response. The
+  documented `WithIdempotency` example returned `""` for every request,
+  since its `auth.SessionFrom` lookup runs before the app's auth; the
+  example now keeps the default, which keys on the request's
+  credential. Return a constant such as `"anon"` to share a namespace on
+  purpose. See [idempotency](framework/docs/content/idempotency.md).
 
 ## [0.95.0] - 2026-10-26
 
