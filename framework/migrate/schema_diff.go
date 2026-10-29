@@ -51,6 +51,9 @@ type SchemaChange struct {
 	// one with foreign keys off, and GeneratePlan refuses one that a
 	// row-mutating ON DELETE action references.
 	sqliteRebuildOf string
+	// rebuiltTable is that entity's table as declared, so the apply
+	// can read the triggers its DROP TABLE takes.
+	rebuiltTable string
 
 	// deferredFKs are the declared foreign keys this Postgres key change
 	// detaches and cannot re-add yet, because their child table gains the
@@ -267,6 +270,9 @@ func execChanges(ctx context.Context, tx *sql.Tx, changes []SchemaChange) (int, 
 // lost its rows and a SET NULL child lost its link. The set runs in one
 // transaction on a connection with foreign keys off, and is rolled back if
 // PRAGMA foreign_key_check finds a dangling reference before commit.
+//
+// Each change runs through execRebuild, which puts back the triggers the
+// DROP takes.
 func applySQLiteRebuild(ctx context.Context, db *sql.DB, changes []SchemaChange) (int, error) {
 	applied := 0
 	err := withSQLiteRebuildConn(ctx, db, func(conn *sql.Conn) error {
@@ -282,9 +288,11 @@ func applySQLiteRebuild(ctx context.Context, db *sql.DB, changes []SchemaChange)
 		if err != nil {
 			return fmt.Errorf("verify foreign keys before the rebuild: %w", err)
 		}
-		if i, err := execChanges(ctx, tx, changes); err != nil {
-			applied = i
-			return err
+		for i, c := range changes {
+			if err := execRebuild(ctx, tx, c); err != nil {
+				applied = i
+				return fmt.Errorf("apply %q: %w", c.Summary, err)
+			}
 		}
 		after, err := foreignKeyViolations(ctx, tx)
 		if err != nil {
@@ -914,8 +922,62 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 		SQL:             b.String(),
 		Destructive:     true,
 		sqliteRebuildOf: ent.GetName(),
+		rebuiltTable:    ent.GetTable(),
 		irreversible:    true,
 	}, nil
+}
+
+// execRebuild runs c and, when c rebuilds a SQLite table, puts back the
+// table's own triggers, which its DROP TABLE takes. A generated file and
+// boot put declared routines back by running them, but a trigger written
+// by hand is no routine, and the live apply has no routines at all. The
+// triggers are read just before c runs, not before its change set, so
+// what an earlier RENAME COLUMN in the set rewrote in their bodies stays.
+func execRebuild(ctx context.Context, exec execQueryer, c SchemaChange) error {
+	var triggers []string
+	if c.rebuiltTable != "" {
+		var err error
+		if triggers, err = sqliteTableTriggers(ctx, exec, c.rebuiltTable); err != nil {
+			return fmt.Errorf("read the table's triggers: %w", err)
+		}
+	}
+	if _, err := exec.ExecContext(ctx, c.SQL); err != nil {
+		return err
+	}
+	for _, ddl := range triggers {
+		if _, err := exec.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("recreate a trigger the rebuild dropped: %w", err)
+		}
+	}
+	return nil
+}
+
+// sqliteTableTriggers returns the CREATE TRIGGER statement of each trigger
+// on table, in its schema, as sqlite_master records it, oldest first.
+// table must already be validated.
+func sqliteTableTriggers(ctx context.Context, q queryer, table string) ([]string, error) {
+	schema, base := splitTable(table)
+	// SQLite resolves table names without case, so a trigger written
+	// ON Widgets is on widgets; sqlite_master compares exactly unless told.
+	// SQLite fires a table's triggers for one event newest first, so they
+	// are recreated in the order they were created (rowid order).
+	rows, err := q.QueryContext(ctx, "SELECT sql FROM "+sqliteMaster(table)+
+		" WHERE type = 'trigger' AND tbl_name = ? COLLATE NOCASE ORDER BY rowid", base)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var ddl string
+		if err := rows.Scan(&ddl); err != nil {
+			return nil, err
+		}
+		// sqlite_master records the DDL without its schema, and an
+		// unqualified CREATE TRIGGER lands in main.
+		out = append(out, inSchema(ddl, schema))
+	}
+	return out, rows.Err()
 }
 
 // sqliteRebuildTable names the replacement table a SQLite rebuild fills.

@@ -330,8 +330,13 @@ afterwards, since dropping the table dropped its triggers. Dropping the old tabl
 (every many_to_many pivot) would lose its rows and a `SET NULL` child its
 links. `ApplySchemaDiffWithOptions` therefore runs a rebuild on one
 connection with foreign keys off and rolls it back if `PRAGMA
-foreign_key_check` finds a violation the change introduced. `migrate
-generate` cannot do the same, because the runner applies each file inside a
+foreign_key_check` finds a violation the change introduced. It has no
+routines to re-run, so it reads the table's own triggers from
+`sqlite_master` just before the rebuild and recreates them right after
+it, oldest first, since SQLite fires a table's triggers newest first.
+Boot's key-change rebuild does the same, so a trigger written by hand,
+which is no routine, survives it too.
+`migrate generate` cannot turn foreign keys off that way, because the runner applies each file inside a
 transaction, where the pragma has no effect: it refuses a rebuild that a
 `CASCADE` or `SET NULL` key references and names those tables. It reads
 those keys from the declared relations and from the snapshot's recorded

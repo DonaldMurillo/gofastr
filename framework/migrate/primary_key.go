@@ -398,7 +398,7 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 	if err != nil {
 		return err
 	}
-	if _, err := exec.ExecContext(ctx, change.SQL); err != nil {
+	if err := execRebuild(ctx, exec, change); err != nil {
 		return fmt.Errorf("%s: %w", change.Summary, err)
 	}
 	if deferred != nil {

@@ -2569,6 +2569,15 @@ few lines, and link the PR or the docs page for the rest.
   version read as pending while its Up's changes stayed and the next
   `up` ran it again. `Down` now returns `ErrNoDown` naming the version
   before it rolls back anything. See [migrations](framework/docs/content/migrations.md).
+- **A SQLite table rebuild keeps the table's triggers.**
+  `ApplySchemaDiffWithOptions` rebuilds a SQLite table for a retype or a
+  key change, and boot does for a key change. The `DROP TABLE` took the
+  table's triggers with it: the live apply put none back, and boot put
+  back only the declared routines, so an audit trigger stopped firing
+  with no error. Both now recreate the table's triggers right after the
+  rebuild, in the order they were made, with any column rename earlier
+  in the change set kept in their bodies. See
+  [migrations](framework/docs/content/migrations.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
