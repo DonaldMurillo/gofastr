@@ -420,6 +420,11 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 		if slices.Contains(raws, nil) {
 			continue
 		}
+		// A reference the write leaves as stored crosses no boundary: the
+		// caller only re-sends what its own row holds.
+		if w.kept != nil && w.kept(rel, raws) {
+			continue
+		}
 		parts := make([]string, len(raws))
 		for i, v := range raws {
 			parts[i] = fmt.Sprint(v)
@@ -521,6 +526,10 @@ type fkWrite struct {
 	// cannot know it: an upsert's two arms and a bulk update's rows can
 	// each leave a different value there.
 	holds func(c string) (any, bool)
+	// kept reports whether rel's tuple, as the row will hold it, is the
+	// one the row holds now. Only an update reads the stored row; every
+	// other write leaves it nil and checks each reference it names.
+	kept func(rel entity.Relation, raws []any) bool
 }
 
 // takes reports whether the write takes column c from the body and the
@@ -612,7 +621,10 @@ func (ch *CrudHandler) createWrite(ctx context.Context, body map[string]any) fkW
 
 // updateWrite reads a PATCH as its SET writes it. A column the SET does
 // not write (a key column, a ReadOnly one, the tenant) holds its stored
-// value, read once for every reference the body names in part.
+// value. Every column of each reference the body names is read once,
+// under the scopes the UPDATE runs under, so a reference the PATCH leaves
+// as stored is kept without a check (2026-10-27 D42): the record form
+// re-sends a target the caller can no longer read.
 func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id string, body map[string]any) (fkWrite, error) {
 	w := fkWrite{
 		body:  body,
@@ -628,7 +640,7 @@ func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id stri
 			continue
 		}
 		for _, c := range rel.ForeignKey {
-			if !w.takes(ch, c) && !slices.Contains(read, c) {
+			if !slices.Contains(read, c) {
 				read = append(read, c)
 			}
 		}
@@ -646,6 +658,19 @@ func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id stri
 	w.holds = func(c string) (any, bool) {
 		v, ok := stored[ch.convertKey(c)] // rows are keyed by wire name
 		return v, ok
+	}
+	// Values compare as the scope check keys them. A spelling that differs
+	// from the stored one ("01" for 1) is not kept, so it is checked. A
+	// stored null is never kept: it prints as "<nil>", a spelling a body
+	// can send.
+	w.kept = func(rel entity.Relation, raws []any) bool {
+		for i, c := range rel.ForeignKey {
+			v, _ := w.holds(c)
+			if v == nil || fmt.Sprint(v) != fmt.Sprint(raws[i]) {
+				return false
+			}
+		}
+		return true
 	}
 	return w, nil
 }

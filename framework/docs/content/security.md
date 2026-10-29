@@ -662,7 +662,14 @@ The gate mirrors the read side's exemptions exactly: a caller holding
 `tenant.AllowCrossTenant`, or a `crud.WithServerWrites` context (a
 host-driven write: jobs, imports, admin tooling) writes the reference
 unchanged. A NULL or absent FK, an unscoped target, or a target the
-registry does not know is skipped. The same reasoning a
+registry does not know is skipped. So is an update that sends the
+reference the row already holds, every column of it, read under the
+same tenant and owner scopes as the UPDATE: an edit form re-sends a
+target the caller may no longer read (an archived customer), and keeping
+it crosses no boundary. A reference that changes in any column, or one
+that leaves a stored NULL, is checked. Creates, upserts and
+`TypedQuery.UpdateAll` read no stored row and check every reference
+they name. The same reasoning a
 `BeforeCreate`/`BeforeUpdate` hook was told to do in earlier versions
 ([hooks and transactions](hooks-and-transactions.md)) is framework
 behaviour for BelongsTo now; a hook is only needed for has-many

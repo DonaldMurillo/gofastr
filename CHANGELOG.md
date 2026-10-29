@@ -2258,6 +2258,13 @@ few lines, and link the PR or the docs page for the rest.
   waited on it, so shutdown hung. Each wake now reloads the roles it
   found once and leaves a failure for the next try 5 seconds later. See
   [scaling](framework/docs/content/scaling.md).
+- **An update that keeps a `belongs_to` reference saves when the caller
+  can no longer read its target.** Once an invoice's customer was
+  archived out of the caller's read scope, the edit form, which re-sends
+  every field, answered 404 on any change to the invoice until someone
+  re-picked the customer. A reference the update leaves as stored, every
+  column of it, is no longer checked; one that changes in any column
+  still is. See [security](framework/docs/content/security.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
