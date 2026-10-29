@@ -2991,6 +2991,16 @@ few lines, and link the PR or the docs page for the rest.
   not loopback now fails at startup; forward the port over SSH to reach
   it from another machine. The docs described a LAN mode gated on TLS
   and `--auth-token-file`; neither flag existed, and that text is gone.
+- **A server action on a dynamic screen runs its `Requires` resolvers.**
+  An action POST that named no page, or a page of another screen, was
+  judged by `(*App).PatternPolicy`, which ran the screen chain and the
+  region-guard check but skipped the eager resolvers. A screen like
+  `/projects/:id` whose access comes from a `Requires(project)` resolver
+  refusing with `ErrNotFound` ran its actions for any caller holding a
+  self-minted session. `PatternPolicy` now answers Block for a dynamic
+  pattern that requires a resolver, as it does for one under a region
+  guard, so such an action must name a page of its screen, and the
+  llm.md index and pattern doc withhold that screen's metadata.
 
 ## [0.95.0] - 2026-10-26
 

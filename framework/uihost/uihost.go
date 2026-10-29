@@ -3637,7 +3637,8 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// outlet guard that sends the visitor to /login keeps them off the
 	// page as surely as the screen chain does. With no page of this screen
 	// named, PatternPolicy decides, and a dynamic screen carrying a region
-	// guard refuses, since the guard has no URL to judge.
+	// guard or a Requires resolver refuses, since neither has a URL to
+	// judge.
 	ds.mu.RLock()
 	screen := ds.actionScreens[componentID]
 	ds.mu.RUnlock()

@@ -444,7 +444,9 @@ requests, server actions (a redirect refuses the action with 403), the
 sitemap and the llm.md documents. `(*App).PagePolicy(ctx, path)` is
 that policy phase for one URL; `(*App).PatternPolicy(ctx, screen)` is
 the answer for a route pattern, which withholds a dynamic pattern whose
-layout carries any region guard.
+layout carries any region guard or whose group `Requires` a resolver.
+A server action that names no page of its screen gets the pattern's
+answer, so an action on such a screen must name one.
 
 The policy phase runs in one order on every surface: the eager
 resolvers, the screen chain, then the region guards (skipped when the

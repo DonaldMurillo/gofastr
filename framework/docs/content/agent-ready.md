@@ -335,8 +335,9 @@ authenticated agent whose request passes the policy sees the full docs.
 The pattern-level surfaces (the index, the `/llm.md` beside a route
 pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
 path runs its full policy phase, region guards and resolvers included,
-and a dynamic pattern under a layout that carries any region guard is
-withheld, because a guard decides per URL. The per-URL doc of such a
+and a dynamic pattern under a layout that carries any region guard, or
+in a group that `Requires` a resolver, is withheld, because a guard or
+a required resolver decides per URL. The per-URL doc of such a
 page still runs its guards and serves.
 
 ### Rendered values cannot inject markdown structure

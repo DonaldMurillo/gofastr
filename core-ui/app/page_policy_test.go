@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // PagePolicy decides what the render's policy phase decides: a region
@@ -79,3 +80,33 @@ func TestPatternPolicyWithholdsFailedPage(t *testing.T) {
 		t.Errorf("PatternPolicy = %+v, want Block", d)
 	}
 }
+
+// A dynamic pattern whose group Requires a resolver withholds: the
+// resolver decides per URL (ErrNotFound for a row the caller may not
+// see) and a pattern names none. The same pattern without Requires
+// answers its chain's Allow.
+func TestPatternPolicyWithholdsDynamicRequires(t *testing.T) {
+	a := app.NewApp("t")
+	row := app.NewKey[string]("row")
+	g := app.NewScreenGroup("/p", nil)
+	g.Resolve(row.From(func(context.Context) (string, error) { return "", app.ErrNotFound }))
+	g.Requires(row)
+	req := app.NewScreen("/p/:id", &paramStub{})
+	g.Screen(req, nil)
+	a.Router.ScreenGroup(g)
+	open := app.NewScreen("/q/:id", &paramStub{})
+	a.RegisterScreen(open, nil)
+
+	if d := a.PatternPolicy(context.Background(), req); d.Kind != app.DecisionBlock {
+		t.Errorf("/p/:id with Requires: %+v, want Block", d)
+	}
+	if d := a.PatternPolicy(context.Background(), open); d.Kind != app.DecisionAllow {
+		t.Errorf("/q/:id: %+v, want Allow", d)
+	}
+}
+
+// paramStub is a component for a dynamic route.
+type paramStub struct{}
+
+func (*paramStub) Render() render.HTML         { return "" }
+func (*paramStub) SetParams(map[string]string) {}
