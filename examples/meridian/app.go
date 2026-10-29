@@ -389,7 +389,9 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			log.Fatalf("service account store: %v", err)
 		}
 		authMgr.Use(auth.NewTokensPlugin(apiTokens))
-		authMgr.Init(fwApp)
+		if err := authMgr.Init(fwApp); err != nil {
+			log.Fatal(err)
+		}
 		auth.SetDefaultLoginErrorPath("/login")
 		// Bootstrap admin account so the back-office is reachable on a
 		// fresh database. Created only when absent (idempotent). The

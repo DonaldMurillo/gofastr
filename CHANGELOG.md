@@ -2519,6 +2519,12 @@ few lines, and link the PR or the docs page for the rest.
   read the same references missed them too, and a bare reference in
   `aux.b` was read as one onto `main.a`. A bare parent now resolves into
   the child's schema.
+- **A generated app stops when auth fails to start.** The app generator
+  emitted `authMgr.Init(fwApp)` and dropped its error, so a production
+  app with `JWT_SECRET` unset served its screens with no `/auth/login`.
+  The generated `app.go` now exits with Init's error. Regenerate, or
+  wrap the call yourself in an app you own. See
+  [app specs](framework/docs/content/app-spec.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

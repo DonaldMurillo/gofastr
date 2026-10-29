@@ -4005,6 +4005,8 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		sb.WriteString("\t\"fmt\"\n")
 	}
 	if bp.App.Auth.Enabled {
+		// An auth Init error stops the boot.
+		sb.WriteString("\t\"log\"\n")
 		// JWT_SECRET + ADMIN_SEED_PASSWORD are read from the environment.
 		sb.WriteString("\t\"os\"\n")
 	}
@@ -4460,7 +4462,10 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		sb.WriteString("\t\tauthMgr.Use(auth.NewCorePlugin())\n")
 		// auth_users / auth_sessions are the auth battery's own tables; it
 		// creates them in Init (EnsureSchema). The generated app ships no DDL.
-		sb.WriteString("\t\tauthMgr.Init(fwApp)\n")
+		// Init refuses a bad config (a production app with no JWT key)
+		// before it mounts a route, so its error stops the boot: dropped,
+		// the app served its screens with no /auth/login.
+		sb.WriteString("\t\tif err := authMgr.Init(fwApp); err != nil {\n\t\t\tlog.Fatal(err)\n\t\t}\n")
 		// Point the auth battery's form-error redirect at the login page, so a
 		// failed form login (wrong password, no Referer) lands back on the login
 		// form with ?error=… instead of rendering the raw JSON error body.

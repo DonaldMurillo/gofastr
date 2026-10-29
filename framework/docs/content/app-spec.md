@@ -1304,7 +1304,10 @@ everywhere, not just enforced:
 
 The bootstrap admin (`app.admin.seed_email` / `seed_password`) is created on a
 fresh database, and the auth battery creates its own `auth_users` /
-`auth_sessions` tables in `Init`; the generated app ships no DDL.
+`auth_sessions` tables in `Init`; the generated app ships no DDL. An
+`Init` error stops the boot: with `dev_mode: false` and `JWT_SECRET`
+unset, the app exits naming the missing key instead of serving its
+screens with no auth routes.
 
 #### Secrets never land in generated source
 
