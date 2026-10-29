@@ -234,6 +234,17 @@ then provisions the schema+role, runs `Up` under the advisory lock
 authenticated as the role, and stamps `MigrationsAppliedAt` so the
 supervisor lets the module reach Ready.
 
+The stamp belongs to one artifact. When a replica boots a module whose
+artifact digest differs from the stored one, `InstallOrUpdate` clears
+`MigrationsAppliedAt` with the generation bump, so the new version waits
+for its own migrations: a supervisor whose descriptor declares a
+migration group drains its running child and holds the module in
+`InstalledDisabled` until the coordinator runs again with the new
+descriptor. A grants-only change keeps the stamp. `Apply` stamps only
+while the row still names the descriptor's `ArtifactSHA256`, so a
+coordinator run for the old artifact that finishes after the upgrade
+returns an error without stamping (its DDL has already run).
+
 ```go
 coord, _ := app.NewModuleMigrationCoordinator(
     framework.WithCoordinatorAdminDSN(postgresURL),
@@ -431,7 +442,9 @@ bookkeeping.
   schema. Claiming otherwise is the common, wrong take on fixed `search_path`.
 - **Forgetting to run the migration coordinator.** A module with a
   declared migration group never reaches Ready until the coordinator stamps
-  `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s.
+  `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s. The
+  same holds after every artifact upgrade: the new artifact clears the
+  stamp, so run the coordinator as part of the deploy.
 - **Expecting an untrusted module to run on stock macOS / Windows / some
   Linux.** Sandbox backends need a probe-passing conforming wrapper; until
   the operator provisions one, fail-closed refusal is correct, not a bug.

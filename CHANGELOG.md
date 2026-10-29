@@ -2430,6 +2430,15 @@ few lines, and link the PR or the docs page for the rest.
   the host. The app's file is now appended after the generated rules,
   which stay first. A `Builder.ExtraDirs` copy is still refused. See
   [static export](framework/docs/content/static-export.md).
+- **BREAKING: a process module's artifact upgrade waits for its own
+  migrations.** The upgrade kept the previous artifact's
+  `MigrationsAppliedAt`, so a new version that added tables reached Ready
+  against the old schema. A new artifact digest now clears the stamp;
+  the supervisor drains the module and holds it in `InstalledDisabled`
+  until the migration coordinator runs for the new artifact, and `Apply`
+  refuses to stamp a row that has moved to another artifact. Run the
+  coordinator as part of every module deploy. See
+  [process modules](framework/docs/content/process-modules.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

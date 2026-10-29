@@ -981,9 +981,17 @@ func (sl *moduleSlot) reconcile() {
 		// in InstalledDisabled so the proxy returns 503 and module tools
 		// return retryable-unavailable until the operator runs the
 		// coordinator, which stamps MigrationsAppliedAt and (via a
-		// generation bump) re-arms reconcile. setState no-ops when already
-		// InstalledDisabled, so this does not spam the periodic poll.
-		if state != StateInstalledDisabled {
+		// generation bump) re-arms reconcile. A running child is drained
+		// first: the stamp clears under a Ready module when another
+		// replica boots a new artifact, and the child must not keep
+		// serving against the schema it no longer matches. setState
+		// no-ops when already InstalledDisabled, so this does not spam
+		// the periodic poll.
+		if state == StateReady || state == StateStarting ||
+			state == StateHandshaking || state == StateCrashed ||
+			state == StateBackoff {
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+		} else if state != StateInstalledDisabled {
 			sl.setState(StateInstalledDisabled)
 		}
 	case desired.Enabled && (state == StateInstalledDisabled || state == StateAbsent):
@@ -1166,7 +1174,9 @@ func (sl *moduleSlot) finishDrain(drainState ProcessState, gen uint64) {
 		if desired.DesiredGeneration < gen {
 			desired.DesiredGeneration = gen
 		}
-		if desired.Enabled {
+		// The stamp may have cleared while the old child drained (a new
+		// artifact's migrations are pending): hold, as reconcile does.
+		if desired.Enabled && !migrationsPending(sl.desc, desired) {
 			sl.spawnAsync(desired)
 		} else {
 			sl.setState(StateInstalledDisabled)

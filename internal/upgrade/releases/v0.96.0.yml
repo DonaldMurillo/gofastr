@@ -388,3 +388,11 @@ notes:
           type: '^func\(\w+ context\.Context, id string\) error$'
         - symbol: gofastr/battery/webhook.SQLInboundStore.MarkEnvelopeProcessing
           type: '^func\(\w+ context\.Context, id string\) error$'
+  - change: "BREAKING for process modules with a migration group - an artifact upgrade clears MigrationsAppliedAt, so the module holds in InstalledDisabled until the migration coordinator runs for the new artifact"
+    breaking: true
+    hits: review
+    guidance: "The previous artifact's approval used to carry over, so a new version reached Ready without its DDL. After deploying a new module artifact, run App.NewModuleMigrationCoordinator and Apply with the new descriptor and its migrations. Apply refuses to stamp when the row has moved to another artifact; run it for the artifact the row names."
+    find:
+      uses:
+        - gofastr/framework.App.NewModuleMigrationCoordinator
+        - gofastr/framework.NewMigrationCoordinator
