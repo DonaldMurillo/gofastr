@@ -111,8 +111,10 @@ a schema-qualified name (`app.widgets`) is looked up in its own schema.
 Entities and exporters whose tables differ only in case are one source,
 named after the entity that sorts first.
 
-A user table that is ALSO a registry entity is already covered by the registry
-walk; the framework dedups by table name, so it is never exported twice.
+A user table that is ALSO a registry entity is exported once, as the entity.
+An exporter's columns that the entity does not declare join that source
+(compared case-insensitively), so auth's `name` column on an entity user
+table is exported and restored with the rest of the row.
 
 ## Archive layout
 

@@ -422,8 +422,10 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 
 // collectSources enumerates every table to dump/restore: one source per
 // PHYSICAL TABLE, then registered DataExporters whose table is not already an
-// entity table. Identifiers are SafeIdent-checked at the use sites (export
-// read / import write), so a single choke point enforces D2.
+// entity table. An exporter for an entity table adds the columns the entity
+// does not declare to that table's source. Identifiers are SafeIdent-checked
+// at the use sites (export read / import write), so a single choke point
+// enforces D2.
 //
 // Registry entities are collapsed through migrate.UnionEntities, the same
 // version-union helper migration, snapshot, and the seed runner use, so two
@@ -445,6 +447,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 	var out []exportSource
 	seenTable := make(map[string]bool)
 	seenName := make(map[string]bool)
+	entitySource := make(map[string]int) // folded table → index in out
 
 	if a.Registry != nil {
 		g, err := a.buildDataGraph()
@@ -556,15 +559,26 @@ func (a *App) collectSources() ([]exportSource, error) {
 				}
 			}
 			emitted[t] = true
+			entitySource[t] = len(out)
 			out = append(out, src)
 			seenTable[t] = true
 			seenName[n] = true
 		}
 	}
 	for _, ex := range datexport.All() {
+		if i, ok := entitySource[foldASCII(ex.Table)]; ok {
+			// An entity already exports this table, and its source keeps
+			// it. A battery can own columns the entity does not declare
+			// (auth's name column on an entity user table), so those join
+			// the entity's column list: skipping the exporter whole lost
+			// them on export and restore.
+			out[i].columns = appendFoldUnique(out[i].columns, ex.Columns)
+			continue
+		}
 		if seenTable[foldASCII(ex.Table)] || seenName[ex.Name] {
-			// Already covered by an entity (or a name collision), registry wins.
-			// Tables compare folded, as the entity sources do.
+			// A name collision, or a table an earlier exporter claimed:
+			// the first wins. Tables compare folded, as the entity
+			// sources do.
 			continue
 		}
 		// An empty PrimaryKey means the table has no key: rawReadAll reads
@@ -1172,6 +1186,23 @@ func quotePhysical(phys string) string {
 
 // foldASCII lowers ASCII letters, the folding Postgres applies to an
 // unquoted identifier.
+// appendFoldUnique appends each of add that cols does not already hold,
+// comparing ASCII-folded as the unquoted DDL does, so EMAIL beside email
+// is not read twice.
+func appendFoldUnique(cols, add []string) []string {
+	have := make(map[string]bool, len(cols)+len(add))
+	for _, c := range cols {
+		have[foldASCII(c)] = true
+	}
+	for _, c := range add {
+		if k := foldASCII(c); !have[k] {
+			have[k] = true
+			cols = append(cols, c)
+		}
+	}
+	return cols
+}
+
 func foldASCII(s string) string {
 	b := []byte(s)
 	for i, c := range b {

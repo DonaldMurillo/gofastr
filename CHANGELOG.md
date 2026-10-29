@@ -484,8 +484,9 @@ few lines, and link the PR or the docs page for the rest.
   (2FA accounts fell back to password-only), OAuth links (OAuth-only
   accounts were locked out), and each user's name and verified flag.
   Exporters now follow the configured stores' tables and cover 2FA
-  enrolments and OAuth links. Magic-link and reset tokens stay out on
-  purpose.
+  enrolments and OAuth links. When the user table is also an app entity,
+  the entity's export carries the columns auth adds to it, so names
+  survive there too. Magic-link and reset tokens stay out on purpose.
 - **Development email logs redact links in HTML bodies.** An HTML
   template writes `&token=` in an `href` as `&amp;token=`, which
   `LogSender` and `RedactBody` did not recognise, so a live reset or
