@@ -588,7 +588,10 @@ the one Apply/Reset pair, with a badge counting the filters set) and
 the Columns menu at the row's end. Saved views are tabs beside the
 declared views, and the "Save view" dropdown sits at the tab row's
 end. Active filters show as chips under the toolbar, each linking to
-the list without it, plus a "Clear all".
+the list without it, plus a "Clear all". A `?filter=` makes one chip
+per top-level `and` term; an `or` group is one chip, written in
+parentheses beside the others, so removing a chip leaves the remaining
+terms meaning what they meant.
 
 <!-- gofastr:compile
 import "context"

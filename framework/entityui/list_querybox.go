@@ -144,15 +144,24 @@ func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
 			terms = append(terms, &s.filterPred.Children[i])
 		}
 	}
-	var rest []string
+	var rest []*filter.Predicate
 	for _, t := range terms {
 		if op, ok := rowOp(t); ok {
 			rows = append(rows, ui.FilterRow{Field: t.Field, Op: op, Value: t.Value})
 			continue
 		}
-		rest = append(rest, predicateText(t))
+		rest = append(rest, t)
 	}
-	return rows, strings.Join(rest, " and ")
+	// One term stands alone (composeFilter parenthesizes it beside the
+	// rows); several join with and, each group in parentheses.
+	if len(rest) == 1 {
+		return rows, predicateText(rest[0])
+	}
+	texts := make([]string, 0, len(rest))
+	for _, t := range rest {
+		texts = append(texts, termText(t))
+	}
+	return rows, strings.Join(texts, " and ")
 }
 
 // rowOp is a leaf's row operator, or false for a term a row cannot say.

@@ -2615,6 +2615,15 @@ few lines, and link the PR or the docs page for the rest.
   one-column key with no `AutoGenerate` now draws as an input on create,
   read-only after, and blank on a Duplicate, the way a composite key's
   columns do. See [entityui](framework/docs/content/entityui.md).
+- **Removing a filter chip keeps the other terms' meaning.** The list
+  rebuilt the filter from the kept chips without parentheses, so
+  removing `active = true` from `(status = "open" or status = "paid")
+  and amount > 100 and active = true` left `status = "open" or
+  status = "paid" and amount > 100`, which matches every open row, and
+  "Every match" bulk actions acted on that wider set. A top-level `or`
+  also split into chips that were rejoined with `and`. Groups now keep
+  their parentheses in chips, in the query box and in nested terms,
+  and an `or` filter is one chip.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
