@@ -355,3 +355,7 @@ notes:
     find:
       uses:
         - gofastr/framework/access.GrantStore.Grant
+  - change: "A cascade_write child whose keys name one column twice (bodyText and body_text) answers 400 validation.keys_fold, and an in-process nested child reads the keys MarshalEntity derives"
+    breaking: false
+    guidance: "One of the two keys used to win by map order. Send each child field once, under its wire key."
+    nodetect: "the keys come from request bodies at request time, not from the app's source"

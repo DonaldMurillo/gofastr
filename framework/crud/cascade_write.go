@@ -482,6 +482,34 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 	return false
 }
 
+// childColumns names a cascade child's keys the way its parent's body was
+// named. An in-process write runs bodyColumns, which also reads the key
+// MarshalEntity derives (line2 for line_2); the HTTP rule left that key
+// naming no column, so the child dropped the field. A request keeps the
+// wire rule, and two keys folding onto one column are refused, as a
+// batch item's are, rather than one winning by map order. field is the
+// child's path in the parent body; m is not modified.
+func (ch *CrudHandler) childColumns(r *http.Request, field string, m map[string]any) (map[string]any, error) {
+	if inProcess(r) {
+		out := maps.Clone(m)
+		if err := ch.bodyColumns(out); err != nil {
+			return nil, fmt.Errorf("%s: %w", field, err)
+		}
+		return out, nil
+	}
+	seen := make(map[string]string, len(m))
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		col := ch.wireKeyColumn(k)
+		if prev, dup := seen[col]; dup {
+			return nil, &ValidationError{fields: map[string][]schema.Violation{field: {{
+				Reason: reasonKeysFold, Params: map[string]any{"first": prev, "second": k, "column": col},
+			}}}}
+		}
+		seen[col] = k
+	}
+	return ch.unconvertMapKeys(m), nil
+}
+
 // processBelongsToCascadeWrites executes cascade writes for BelongsTo relations
 // BEFORE the parent record is inserted/updated, so the child's primary key
 // can be set as the parent's foreign key.
@@ -523,7 +551,10 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		}
 
 		childHandler := ch.childHandlerFor(target)
-		childMap = childHandler.unconvertMapKeys(childMap)
+		childMap, err = childHandler.childColumns(r, rel.Name, childMap)
+		if err != nil {
+			return nil, err
+		}
 		targetPK, err := target.KeyColumn()
 		if err != nil {
 			return nil, fmt.Errorf("cascade write for relation %q: %w", rel.Name, err)
@@ -645,7 +676,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			if !ok {
 				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotObject}}}}
 			}
-			childMap = childHandler.unconvertMapKeys(childMap)
+			childMap, err = childHandler.childColumns(r, rel.Name, childMap)
+			if err != nil {
+				return nil, err
+			}
 			childMap[oneFK(rel)] = parentID
 
 			var childResult map[string]any
@@ -727,7 +761,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				if !ok {
 					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObject}}}}
 				}
-				childMap = childHandler.unconvertMapKeys(childMap)
+				childMap, err = childHandler.childColumns(r, fmt.Sprintf("%s.%d", rel.Name, idx), childMap)
+				if err != nil {
+					return nil, err
+				}
 				childMap[oneFK(rel)] = parentID
 
 				var childResult map[string]any
@@ -797,7 +834,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 
 				switch it := item.(type) {
 				case map[string]any:
-					childMap := childHandler.unconvertMapKeys(it)
+					childMap, err := childHandler.childColumns(r, fieldPrefix, it)
+					if err != nil {
+						return nil, err
+					}
 					idVal, hasID := childMap[targetPK]
 					if !hasID {
 						idVal, hasID = childMap[childHandler.convertKey(targetPK)]

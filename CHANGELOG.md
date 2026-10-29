@@ -2292,6 +2292,14 @@ few lines, and link the PR or the docs page for the rest.
   on the origin until its next reload. `GrantStore.CheckGrant` runs the
   same checks without writing; the admin RBAC page uses it and answers
   409. See [access control](framework/docs/content/access-control.md).
+- **A cascade child's keys are named like its parent's.** In process, a
+  nested child built with `MarshalEntity` lost every field whose derived
+  key is not its column (`line2` for `line_2`), since the children were
+  read by the HTTP rule while the parent was not. Over HTTP, two child keys
+  naming one column (`bodyText` and `body_text`) were settled by map order;
+  they now answer 400 `validation.keys_fold`, as the parent's keys and
+  batch items do. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
