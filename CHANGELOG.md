@@ -2237,6 +2237,14 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **Deleting a record, or replacing its file, deletes the stored
+  object.** A hard delete, a purge, `TypedQuery.DeleteAll`, and an update
+  or upsert that replaced an `Image`/`File` value left the old object
+  (and its renditions) in storage, still served at `/uploads/<key>` to
+  anyone holding the link. They are now deleted after the write commits,
+  unless another row of the table still names the key; a soft delete
+  keeps them for a restore. See
+  [uploads](framework/docs/content/uploads.md#when-stored-objects-are-deleted).
 - **A session-scoped harness token lists only its own sessions.**
   `GET /v1/sessions` (live and `?past=true`), the MCP
   `harness.list_sessions` tool and the `harness/v1://sessions` resource

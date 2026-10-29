@@ -625,13 +625,8 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)
-	sqlStr, args := db.Build()
-	res, err := q.exec(ctx).ExecContext(ctx, sqlStr, args...)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	// The removed rows' stored objects go with them (media_cleanup.go).
+	return q.handler.deleteReturningObjects(ctx, db)
 }
 
 // IsNotFound reports whether err corresponds to a not-found result on a

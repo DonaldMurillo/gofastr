@@ -152,6 +152,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err != nil {
 			return err
 		}
+		// A file the conflict arm replaces is deleted once the upsert
+		// commits (media_cleanup.go).
+		objs, err := ch.objectsBefore(ctx, req, "", ch.colKeyVals(body), body, false)
+		if err != nil {
+			return err
+		}
 		if existed {
 			eventType = event.EntityUpdated
 		}
@@ -352,6 +358,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			return fmt.Errorf("upsert: %w", err)
 		}
 		result = res
+		if err := ch.releaseObjects(ctx, req, "", ch.colKeyVals(body), objs, false); err != nil {
+			return fmt.Errorf("upsert: %w", err)
+		}
 
 		if ch.Hooks != nil {
 			if err := ch.afterRow(ctx, hook.AfterCreate, result); err != nil {

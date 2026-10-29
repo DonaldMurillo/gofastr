@@ -280,6 +280,13 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 		}
 	}
 
+	// The trashed row's stored objects go with it once the purge commits
+	// (media_cleanup.go).
+	idKey, _ := ch.idVals(id)
+	objs, err := ch.objectsBefore(ctx, r, id, idKey, nil, true)
+	if err != nil {
+		return fmt.Errorf("purge: %w", err)
+	}
 	kc, ka := ch.keyWhere(id)
 	db := query.Delete(ch.Entity.GetTable()).
 		Where(kc, ka...)
@@ -296,6 +303,9 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 	}
 	if affected == 0 {
 		return errNotFound
+	}
+	if err := ch.releaseObjects(ctx, r, id, idKey, objs, true); err != nil {
+		return fmt.Errorf("purge: %w", err)
 	}
 
 	if ch.Hooks != nil {

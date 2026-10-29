@@ -150,6 +150,32 @@ own row, erase their account, and delete the other user's file.
 `TypedQuery.UpdateAll` writes one value onto many rows, so "already on the
 row" cannot apply there; it needs `WithUploadedKeys` or `WithServerWrites`.
 
+## When stored objects are deleted
+
+A row's objects (the key in each `Image`/`File` field and the renditions its
+`<field>_variants` column lists) are deleted from the handler's `Storage`
+when the row lets them go:
+
+- a hard delete (`DELETE /{entity}/{id}`, batch delete, `DeleteOne`,
+  `TypedQuery.DeleteAll`) or a purge of a soft-deleted row deletes them all;
+- an update or upsert that replaces or clears a file deletes the old key and
+  its renditions.
+
+The delete runs after the write's transaction commits; a rollback keeps the
+objects. A failed delete is logged, not returned, since the row change has
+already committed. The objects stay when:
+
+- another row of the same table still names the key, live or soft-deleted
+  (one default image a seed set on many rows, say);
+- the value is an absolute `http(s)` URL, an external link;
+- the delete is a soft delete, so a restore gets the file back;
+- the write runs on a transaction with no commit queue (a bare `db.WithTx`),
+  where nothing reports the commit. `App.InTx` has one.
+
+A key that host code copied into a different entity's table is not checked:
+deleting the first row deletes the object the second still names.
+`TypedQuery.UpdateAll` does not delete what it replaces.
+
 ## Field-name casing
 
 Multipart field names are **taken literally** as column names; there

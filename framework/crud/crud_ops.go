@@ -271,6 +271,13 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, err
 	}
 
+	// A file the write replaces or clears is deleted once it commits
+	// (media_cleanup.go).
+	objs, err := ch.objectsBefore(ctx, r, id, idKey, body, false)
+	if err != nil {
+		return nil, err
+	}
+
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
 	for _, f := range ch.Entity.GetFields() {
@@ -335,6 +342,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 				return nil, errNotFound
 			}
 			return nil, fmt.Errorf("update: %w", scanErr)
+		}
+		if err := ch.releaseObjects(ctx, r, id, idKey, objs, false); err != nil {
+			return nil, fmt.Errorf("update: %w", err)
 		}
 	}
 
@@ -810,6 +820,13 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		}
 		affected = n
 	} else {
+		// The row's stored objects go with it once the delete commits
+		// (media_cleanup.go). A soft delete keeps them for a restore.
+		idKey, _ := ch.idVals(id)
+		objs, err := ch.objectsBefore(ctx, r, id, idKey, nil, false)
+		if err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
 		db := query.Delete(ch.Entity.GetTable()).
 			Where(kc, ka...)
 		ch.ApplyTenantScopeDelete(db, r)
@@ -821,6 +838,11 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 			return fmt.Errorf("delete: %w", err)
 		}
 		affected = n
+		if n > 0 {
+			if err := ch.releaseObjects(ctx, r, id, idKey, objs, true); err != nil {
+				return fmt.Errorf("delete: %w", err)
+			}
+		}
 	}
 	if affected == 0 {
 		return errNotFound
