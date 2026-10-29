@@ -200,7 +200,7 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 	if err != nil {
 		return zero, err
 	}
-	if err := c.conn.writeFrame(struct {
+	if err := c.conn.writeFrameCtx(ctx, struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
 		Method  string          `json:"method"`
@@ -270,6 +270,10 @@ func newConn(w io.Writer) *conn {
 // errConnClosed is what a Client call made after Serve returned gets.
 var errConnClosed = errors.New("acp: connection closed")
 
+// errWriterPanicked breaks the stream after the output writer panicked
+// mid-frame: how much of the frame went out is unknown.
+var errWriterPanicked = errors.New("acp: output writer panicked; the stream is broken")
+
 // writeFrame refuses once the connection is closed: Serve has returned
 // and its caller owns w again, and a write to an output nobody reads
 // any more would block the turn that a retained Client is writing for.
@@ -286,6 +290,60 @@ func (c *conn) writeFrame(v any) error {
 		return errConnClosed
 	}
 	defer func() { <-c.wslot }()
+	return c.writeHeld(buf)
+}
+
+// writeFrameCtx is writeFrame for a caller with a context: it gives up
+// when ctx ends or the connection closes, whether it is queued for the
+// slot or its own write is stuck on an output the client stopped
+// reading. A Write cannot be interrupted, so a write abandoned that way
+// runs on in its own goroutine and keeps the slot until it returns; the
+// frame still goes out whole or breaks the stream, never interleaves
+// with the next one.
+func (c *conn) writeFrameCtx(ctx context.Context, v any) error {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	select {
+	case c.wslot <- struct{}{}:
+	case <-c.closed:
+		return errConnClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		// The slot and the cancel were both ready and select took the
+		// slot: a cancelled call sends nothing.
+		<-c.wslot
+		return err
+	}
+	done := make(chan error, 1)
+	go func() {
+		defer func() { <-c.wslot }()
+		// The write left the caller's goroutine, so a panicking output
+		// writer is recovered here, as runPrompt recovered it before.
+		// How much of the frame went out is unknown: the stream is broken.
+		defer func() {
+			if recover() != nil {
+				c.werr = errWriterPanicked
+				done <- errWriterPanicked
+			}
+		}()
+		done <- c.writeHeld(buf)
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.closed:
+		return errConnClosed
+	}
+}
+
+// writeHeld writes one frame. The caller holds the write slot.
+func (c *conn) writeHeld(buf []byte) error {
 	select {
 	case <-c.closed:
 		return errConnClosed

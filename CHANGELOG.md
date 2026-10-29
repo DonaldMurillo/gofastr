@@ -983,6 +983,9 @@ few lines, and link the PR or the docs page for the rest.
   `Update` and `RequestPermission` blocked on an output nobody read;
   they return "acp: connection closed", and so does a call that was
   queued behind a stalled write when the connection closed.
+  `RequestPermission` also returns when its `ctx` ends, whether it is
+  queued behind a stalled write or its own request is the write stuck on
+  a client that stopped reading. See [ACP](framework/docs/content/acp.md).
 - **Kiln's ACP `session/load` replays only that session's chat.**
   Loading a session replayed every message in the journal, other
   sessions' prompts included. Messages an ACP turn writes carry

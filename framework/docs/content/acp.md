@@ -108,7 +108,10 @@ func main() {
   up to 256 frames or 16 MiB; past that a request is refused with an
   internal error. A `session/cancel` still reaches a running turn at
   once. Input EOF cancels the waiting handler's `ctx` and drops the
-  frames held behind it.
+  frames held behind it. The call returns when `ctx` ends or the
+  connection closes even while its request is still being written to a
+  client that stopped reading output; that write finishes, or breaks the
+  stream, on its own, so the next frame never lands inside it.
 - Honor `ctx`: it is cancelled when the client sends `session/cancel` and
   when `Serve` returns (input EOF or the caller's ctx ending), and the
   server can only answer the client once `Prompt` returns.
