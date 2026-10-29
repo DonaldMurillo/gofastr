@@ -9,7 +9,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 
 | Capability | `MemoryQueue` | `DBQueue` | `RedisQueue` |
 |---|---|---|---|
-| Durable across restart | No | Yes | Yes |
+| Durable across restart | No | Yes | Yes ([a worker that dies mid-claim needs `PopRecorder`](#optional-poprecorder)) |
 | Multiple workers | Yes | Yes | Manual |
 | Priority ordering | Yes (heap) | Yes | No (FIFO list) |
 | Lane reservations | Yes (`WithLaneWorkers`) | Yes (`WithDBLaneWorkers`) | No (instance-per-lane) |
@@ -366,6 +366,13 @@ The ticker calls `q.Reclaim(ctx)` on each tick, which scans the
 processing hash and re-enqueues any job whose `expiresAt` has passed.
 Without `Start`, crashed-worker jobs strand silently until you call
 `Reclaim` manually.
+
+A worker that dies inside `Dequeue`, after the pop and before the
+processing write, leaves no processing entry to expire. With a client that
+implements [`PopRecorder`](#optional-poprecorder), the pop leaves a record
+of the job in `<queue>:popped`, and `Reclaim` puts a record older than
+the visibility timeout back on the main list. Without it, that job is
+lost.
 
 You can also call `Reclaim` directly from your own ticker:
 
@@ -730,6 +737,40 @@ queue a hash-tagged name (`{jobs}`) so its lists and hash share one.
 Return `false` when the entry had changed; the queue counts it in
 `StaleClaimCount()` and pushes nothing. Without it, `RedisQueue` pushes
 and then releases with `HDelIfEqual`, which leaves that window open.
+
+### Optional: `PopRecorder`
+
+```go
+type PopRecorder interface {
+    RPopHSet(ctx, list, hash, field string) (string, error)
+}
+```
+
+`Dequeue` pops a job and writes it to the processing hash in two round
+trips. A worker killed between them (a deploy, an OOM kill) runs no
+recovery write, and the job is on no list. `RPopHSet` pops the tail of
+`list` and stores the value in `hash` under `field` in one step:
+
+```lua
+local v = redis.call('RPOP', KEYS[1])
+if not v then return false end
+redis.call('HSET', KEYS[2], ARGV[1], v)
+return v
+```
+
+The record's field holds the pop time. `Dequeue` deletes the record once
+the job has its next home: the processing hash, the dead-letter list, or
+back on the main list. `Reclaim` handles a record older than the
+visibility timeout: if the processing hash holds the job under the same
+claim, it drops the record, and otherwise it puts the job back on the
+main list. Report an empty list as `queue.ErrRedisEmpty` (go-redis
+returns `redis.Nil` for the script's `false`). Use the same hash-tagged
+queue name on Redis Cluster as for `CompareAndMover`.
+
+Two cases deliver a job twice, which the at-least-once contract allows:
+a record whose delete failed, once its job has finished and left the
+processing hash, and a record that a `Dequeue` slower than the visibility
+timeout still holds.
 
 **`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
 signal "nothing there" with their own sentinel (go-redis returns

@@ -2725,6 +2725,13 @@ few lines, and link the PR or the docs page for the rest.
   unique, or a column SQLite cannot drop in place, rebuilds the table
   with its rows. Rows the rebuilt table refuses refuse the edit and
   leave the table as it was.
+- **A Redis worker that dies inside `Dequeue` no longer loses the job,
+  with a client that implements the new `queue.PopRecorder`.** `Dequeue`
+  popped the job and wrote the processing entry in two round trips, and a
+  worker killed between them left the job on no list. `RPopHSet` (a
+  four-line Lua script, in [queue](framework/docs/content/queue.md#optional-poprecorder))
+  records the job as it pops it, and `Reclaim` puts back a record older
+  than the visibility timeout. A client without it behaves as before.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
