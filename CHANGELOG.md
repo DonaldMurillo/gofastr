@@ -2237,6 +2237,45 @@ few lines, and link the PR or the docs page for the rest.
   the longest series.
 
 ### Security
+- **A session-scoped harness token lists only its own sessions.**
+  `GET /v1/sessions` (live and `?past=true`), the MCP
+  `harness.list_sessions` tool and the `harness/v1://sessions` resource
+  listed every session, past ones with the first 80 bytes of their
+  first prompt. Each now keeps the sessions the token's claims allow.
+  See [harness architecture](framework/docs/content/harness-architecture.md#rest-api).
+- **An OAuth sign-in no longer survives an account claim that overtakes
+  it.** A returning sign-in refreshed its link's profile with an
+  upsert, so a claim that removed the link between the lookup and the
+  refresh had the squatter's link put back, and the session minted
+  afterwards outlived the claim's purge. The refresh is UPDATE-only
+  through the new `OAuthProfileRefresher` (implemented by
+  `EntityUserStore`; a custom store without it keeps the link-time
+  profile), and the callback resolves the link again after minting and
+  answers 401 when it no longer names the account. See
+  [auth](framework/docs/content/auth.md#proving-the-mailbox-claims-an-unverified-account).
+- **An API token or passkey created across a reset no longer survives
+  it.** `POST /auth/tokens` and `POST /auth/passkey/register` read the
+  caller before the body, and a reset revokes tokens and passkeys once.
+  A request held open with its body withheld until the reset finished
+  stored a lasting credential after that purge. Both now read the
+  password hash before the body and, when it moved or the request's
+  session is gone, undo what they stored and answer 401. The undo runs
+  detached from the request, so a client that hangs up after the insert
+  cannot cancel it. See [auth](framework/docs/content/auth.md).
+- **A stale password change no longer overwrites a completed reset.** A
+  change verified the current password, computed the new hash, then wrote
+  it keyed on the user id alone, so a reset that landed in between was
+  replaced by the stale request's password and the change handed out a
+  fresh session. The write now needs the verified hash to still be stored
+  (new optional `PasswordSwapper`, implemented by `EntityUserStore`), and
+  a change that loses answers 422 like a wrong current password. See
+  [auth](framework/docs/content/auth.md).
+- **OIDC no longer borrows `email_verified` for a different address.** An
+  id_token with an email but no `email_verified` took the flag from
+  userinfo even when userinfo named another address, so the id_token's
+  email came out verified and the callback could auto-link that
+  address's account. The userinfo flag now counts only when its email is
+  the one kept. See [auth](framework/docs/content/auth.md).
 - **A password reset overtaking a passkey sign-in leaves no session, and
   a failed session purge is no longer reported as success.** A passkey
   sign-in that recorded its use just before a reset minted its session

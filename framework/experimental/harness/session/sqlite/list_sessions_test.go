@@ -52,7 +52,7 @@ func TestListPastSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := store.ListPastSessions(ctx, 0)
+	got, err := store.ListPastSessions(ctx, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,36 @@ func TestListPastSessions(t *testing.T) {
 	}
 }
 
+// only filters before LIMIT, and a non-positive limit is unbounded as the
+// Store contract says (it clamped to 50).
+func TestListPastSessionsOnlyBeforeLimit(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	base := time.Now()
+	var all []ids.SessionID
+	for i := range 55 {
+		sess := ids.NewSessionID()
+		all = append(all, sess)
+		env, _ := control.EncodeEvent(1, control.TextDelta{Text: "x"},
+			sess, ids.NewClientID(), base.Add(time.Duration(i)*time.Second))
+		if err := store.AppendEvent(ctx, env); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldest := all[0]
+	got, err := store.ListPastSessions(ctx, 3, []ids.SessionID{oldest})
+	if err != nil || len(got) != 1 || got[0].SessionID != oldest {
+		t.Errorf("only=[oldest], limit=3 = %v, %v; want the oldest session", got, err)
+	}
+	if got, _ := store.ListPastSessions(ctx, 0, nil); len(got) != 55 {
+		t.Errorf("limit=0 returned %d rows, want all 55", len(got))
+	}
+}
+
 func TestListPastSessions_LimitRespected(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -90,7 +120,7 @@ func TestListPastSessions_LimitRespected(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, _ := store.ListPastSessions(ctx, 3)
+	got, _ := store.ListPastSessions(ctx, 3, nil)
 	if len(got) != 3 {
 		t.Errorf("limit=3 returned %d rows", len(got))
 	}

@@ -1039,6 +1039,12 @@ GET    /v1/health                            Liveness + version
 GET    /v1/auth/token                        Issue capability token (when running with --listen)
 ```
 
+A token bound to some sessions sees only those in `GET /v1/sessions`
+(live and `?past=true`), in the MCP `harness.list_sessions` tool and in
+the `harness/v1://sessions` resource. A past session carries the start
+of its first prompt, so an unfiltered list would read other sessions'
+prompts.
+
 `POST /v1/sessions/{id}/input` accepts either a one-shot synchronous
 mode (`?wait=turn`) or the streaming default (returns 202; events
 flow via SSE).

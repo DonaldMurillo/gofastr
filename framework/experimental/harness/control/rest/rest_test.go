@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -143,8 +144,17 @@ func (fakePastStore) AppendEvent(ctx context.Context, env control.EventEnvelope)
 func (fakePastStore) EventsSince(_ context.Context, _ ids.SessionID, _ uint64, _ int) ([]control.EventEnvelope, error) {
 	return nil, nil
 }
-func (s fakePastStore) ListPastSessions(_ context.Context, _ int) ([]session.PastSession, error) {
-	return s.rows, nil
+func (s fakePastStore) ListPastSessions(_ context.Context, limit int, only []ids.SessionID) ([]session.PastSession, error) {
+	var out []session.PastSession
+	for _, row := range s.rows {
+		if len(only) == 0 || slices.Contains(only, row.SessionID) {
+			out = append(out, row)
+		}
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 func (fakePastStore) RecordToolIntent(_ context.Context, _ session.ToolIntent) error   { return nil }
 func (fakePastStore) RecordToolOutcome(_ context.Context, _ session.ToolOutcome) error { return nil }

@@ -34,7 +34,7 @@ func (f *fakeStore) EventsSince(_ context.Context, _ ids.SessionID, since uint64
 	return out, nil
 }
 
-func (f *fakeStore) ListPastSessions(_ context.Context, _ int) ([]PastSession, error) {
+func (f *fakeStore) ListPastSessions(_ context.Context, _ int, _ []ids.SessionID) ([]PastSession, error) {
 	return nil, nil
 }
 func (f *fakeStore) RecordToolIntent(_ context.Context, _ ToolIntent) error   { return nil }

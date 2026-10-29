@@ -489,8 +489,11 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 				}
 				// A signature-bound id_token email_verified ALWAYS wins, never
 				// overwrite a signed `false` with an unsigned userinfo `true`.
-				// Consult userinfo only when the id_token did NOT carry the claim.
-				if !verifiedPresent {
+				// Consult userinfo only when the id_token did NOT carry the claim,
+				// and only for the address kept: a userinfo flag describing
+				// another address marked the id_token's email verified, and
+				// the callback auto-linked that address's account.
+				if !verifiedPresent && claimString(ui, p.cfg.Claims.EmailClaim) == email {
 					emailVerified, _ = parseEmailVerifiedClaim(ui, p.cfg.Claims.EmailVerifiedClaim)
 				}
 			}
