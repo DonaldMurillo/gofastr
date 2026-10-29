@@ -50,6 +50,13 @@ An entity with a composite `PrimaryKey` links its records as one segment
 per key column, `/enrollments/{student_id}/{course_id}`; register that
 screen and pass `entity.JoinKey` of the params as the id.
 
+A key the caller assigns draws as an input on the create form, read-only
+on the record's form after that, and blank on a Duplicate: each column
+of a composite key, and a one-column key that is `Required` with no
+`AutoGenerate` (a plan keyed on its `code`). Any other one-column key
+belongs to the server and stays off the forms; an optional key may be
+filled by a hook, which a blank input would defeat.
+
 Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;

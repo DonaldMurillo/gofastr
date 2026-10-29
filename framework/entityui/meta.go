@@ -225,9 +225,16 @@ func (m *meta) valueLabel(ctx context.Context, field, value string) string {
 // primary key, auto-generated fields and ReadOnly fields. The record
 // header shows them; forms never carry them. A composite key's columns
 // name the record the caller creates (the pair a join row links), so a
-// create sets them and every later write leaves them (locked).
+// create sets them and every later write leaves them (locked). So does
+// a Required one-column key with no generator (a plan's code): crud
+// fills no such key, so only the caller can supply it. An optional one
+// stays the server's, since a hook may fill it and a blank input would
+// post "" over the absence the hook checks for.
 func (m *meta) system(f schema.Field) bool {
-	return f.Name == m.pk || f.AutoGenerate != schema.AutoNone || f.ReadOnly
+	if f.AutoGenerate != schema.AutoNone || f.ReadOnly {
+		return true
+	}
+	return f.Name == m.pk && !f.Required
 }
 
 // guarded is the state field and every stamp of enforced or advisory

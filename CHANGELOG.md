@@ -2608,6 +2608,13 @@ few lines, and link the PR or the docs page for the rest.
   checking the entity had States, so any `ShowWhen` on such an entity
   panicked and the create and edit forms showed "Couldn't load this
   section".
+- **A create form sets a required key the caller assigns.** entityui
+  and the admin treated every one-column primary key as server-owned and
+  left it off the create form, so an entity keyed on a required `code`
+  with no generator failed validation on every create. A `Required`
+  one-column key with no `AutoGenerate` now draws as an input on create,
+  read-only after, and blank on a Duplicate, the way a composite key's
+  columns do. See [entityui](framework/docs/content/entityui.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
