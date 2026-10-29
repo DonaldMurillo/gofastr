@@ -2639,6 +2639,10 @@ few lines, and link the PR or the docs page for the rest.
   with no root layout ignored the configured screen and served the
   built-in body; it now renders the screen in the bare `<main>`, falling
   back to the built-in body when the screen panics.
+- **macOS deep links reach the app.** The darwin shell registered its
+  GetURL handler for the Apple Event code `'GURT'` instead of `'GURL'`,
+  so a URL on the app's scheme opened from a browser or `open` never
+  reached `Config.DeepLink`.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
