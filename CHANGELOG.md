@@ -2353,11 +2353,15 @@ few lines, and link the PR or the docs page for the rest.
   to include them. See [modules](framework/docs/content/modules.md).
 - A process module that stops reading stdin no longer hangs shutdown,
   or a disable or upgrade drain. The drain wrote `module.drain` before
-  it closed stdin or started the kill timer, and that write blocks on a
-  full pipe whatever its context says; a stuck runtime drain kept the
+  it closed stdin or started the kill timer, and that write blocked on a
+  full pipe whatever its context said; a stuck runtime drain kept the
   module in Draining for good. The budget now runs from the drain call
-  and the kill ends the write. The call waits at most half the budget for an answer, so a
-  child that never answers still has time to exit at EOF. See
+  and the kill ends the write. The call waits at most half the budget
+  for an answer, so a child that never answers still has time to exit
+  at EOF. `moduleproto.Peer.Call` also returns once its context ends,
+  the peer closes or the peer faults, even while its request write is
+  blocked; the write keeps the call's inflight slot until it returns.
+  See
   [process modules](framework/docs/content/process-modules.md).
 - A process module whose host peer faulted now restarts. A malformed,
   over-cap or unsolicited frame left the child running in `Ready` while

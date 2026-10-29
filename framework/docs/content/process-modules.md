@@ -357,6 +357,12 @@ when no id was allocated (the peer is closed, the method is empty, or the
 in-flight cap is reached). Plain `Call` is unchanged and still correct
 wherever the caller has nothing to cancel.
 
+Either call returns once its context ends, even while its request frame
+is still waiting to be written to a peer that stopped reading. The write
+carries on in the background and holds the call's in-flight slot until
+it returns, so stuck writes never exceed the cap. A call whose context
+had already ended writes nothing.
+
 ```go
 codec, _ := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
 peer := moduleproto.NewPeer(codec, moduleproto.RoleChild)

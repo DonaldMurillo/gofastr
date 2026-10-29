@@ -285,7 +285,11 @@ func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 //     paired response is dropped instead of faulting the peer (see
 //     [Peer.deliverResponse]). Call does NOT automatically emit
 //     module.cancel; that is supervisor policy, one [Peer.Notify] away
-//     naming the id [Peer.CallWithID] reports.
+//     naming the id [Peer.CallWithID] reports. This holds while the
+//     request frame is still being written to a counterparty that stopped
+//     reading: the write carries on in the background and keeps the
+//     Call's inflight slot until it returns, so such writes never exceed
+//     the cap.
 //   - inflight cap reached: returns [ErrInflightCap] without writing anything.
 //   - Peer closed (or read loop exited): returns [ErrClosed] (or the terminal
 //     [Peer.FatalError] if one was observed).
@@ -344,6 +348,9 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 		onID(id)
 	}
 
+	// writing is the pending request write, nil once it returned.
+	var writing chan error
+
 	// Cleanup on all return paths.
 	defer func() {
 		p.mu.Lock()
@@ -356,8 +363,21 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 			delete(p.pending, id)
 			p.noteAbandonedLocked(id)
 		}
-		p.inflight--
+		if writing == nil {
+			p.inflight--
+		}
 		p.mu.Unlock()
+		if writing != nil {
+			// An abandoned write keeps the inflight slot until it returns,
+			// so writes parked on a counterparty that stopped reading stay
+			// bounded by the cap.
+			go func(w <-chan error) {
+				<-w
+				p.mu.Lock()
+				p.inflight--
+				p.mu.Unlock()
+			}(writing)
+		}
 	}()
 
 	paramsRaw, err := marshalParams(params)
@@ -371,29 +391,60 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 		Method:  method,
 		Params:  paramsRaw,
 	}
-	if err := p.codec.WriteFrame(frame); err != nil {
+	// The codec write has no deadline and blocks while the counterparty
+	// is not reading, so it runs in its own goroutine: ctx, Close and a
+	// fault end the Call while the write is still pending. A Call whose
+	// ctx already ended sends nothing, and frees its slot at once.
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	wrote := make(chan error, 1)
+	writing = wrote
+	go func() { wrote <- p.codec.WriteFrame(frame) }()
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-p.closeCh:
-		return nil, ErrClosed
-	case <-p.fatalCh:
-		return nil, p.FatalError()
-	case <-p.done:
-		// Read loop exited. Surface the terminal error if any, else ErrClosed.
-		if ferr := p.FatalError(); ferr != nil {
-			return nil, ferr
+	// answer holds a response that arrived before the write reported back
+	// (the counterparty read the frame while Write was still returning).
+	// The Call returns it once the write has, so the slot is already free
+	// when the caller's next Call starts.
+	var answer *Frame
+	for {
+		select {
+		case err := <-writing:
+			writing = nil // a nil channel never fires again
+			if answer != nil {
+				return answerResult(answer)
+			}
+			if err != nil {
+				return nil, err
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-p.closeCh:
+			return nil, ErrClosed
+		case <-p.fatalCh:
+			return nil, p.FatalError()
+		case <-p.done:
+			// Read loop exited. Surface the terminal error if any, else ErrClosed.
+			if ferr := p.FatalError(); ferr != nil {
+				return nil, ferr
+			}
+			return nil, ErrClosed
+		case f := <-ch:
+			if writing != nil {
+				answer = f
+				continue
+			}
+			return answerResult(f)
 		}
-		return nil, ErrClosed
-	case f := <-ch:
-		if f.Error != nil {
-			return nil, f.Error
-		}
-		return f.Result, nil
 	}
+}
+
+// answerResult is a Call's return for the paired response f.
+func answerResult(f *Frame) (json.RawMessage, error) {
+	if f.Error != nil {
+		return nil, f.Error
+	}
+	return f.Result, nil
 }
 
 // Notify sends a notification (no id, no response expected) with the given
