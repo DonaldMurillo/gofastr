@@ -29,6 +29,14 @@ func TestAuthPolicyAsksDecider(t *testing.T) {
 	if d := gate.Decide(access.WithDecider(signedIn, deny)); d.Kind == app.DecisionAllow {
 		t.Error("SECURITY: a denying Decider did not bind the role-gated screen")
 	}
+	// A scoped API token installs its owner as the user; the screen gate
+	// must still refuse it (2026-10-27 G23).
+	if d := gate.Decide(auth.WithTokenScopes(signedIn, []string{"customers:read"})); d.Kind == app.DecisionAllow {
+		t.Error("SECURITY: a scoped API token passed the role-gated screen on its owner's roles")
+	}
+	if d := authPolicy("/login", "").Decide(auth.WithTokenScopes(signedIn, []string{"customers:read"})); d.Kind == app.DecisionAllow {
+		t.Error("SECURITY: a scoped API token passed the signed-in screen gate")
+	}
 	member := handler.SetUser(context.Background(), &auth.BasicUser{ID: "u2", Roles: []string{"member"}})
 	if d := gate.Decide(member); d.Kind != app.DecisionBlock || d.Status != 403 {
 		t.Errorf("a signed-in user without the role = %+v, want 403", d)
