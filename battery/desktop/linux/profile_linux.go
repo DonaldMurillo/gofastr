@@ -241,6 +241,7 @@ func inspectProfileTree(dir string) error {
 		if !ok || st.Uid != uint32(os.Geteuid()) || !(info.IsDir() || info.Mode().IsRegular()) || info.Mode().Perm()&0o022 != 0 || (info.Mode().IsRegular() && st.Nlink != 1) {
 			return fmt.Errorf("desktop/linux: unsafe file in browser profile: %s", rel)
 		}
+		//gofastr:allow(routing/prefix-without-segment-boundary) cookie filename family, not a route/tree: SQLite sidecars and any backup suffix must all remain owner-only
 		if (strings.HasPrefix(rel, "cookies.sqlite") || rel == "origin.json" || rel == "profile.lock") && (!info.Mode().IsRegular() || info.Mode().Perm() != 0o600) {
 			return fmt.Errorf("desktop/linux: browser profile metadata/cookie file is not private: %s", rel)
 		}

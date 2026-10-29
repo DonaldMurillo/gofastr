@@ -380,19 +380,15 @@ func installProfileFixtureRoutes(app *framework.App, shell *profileNativeShell) 
 		shell.mu.Lock()
 		shell.evidence.ExpiresUnix = expires.Unix()
 		shell.mu.Unlock()
-		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
+		// Disposable test cookies for this native fixture's HTTP loopback origin.
 		http.SetCookie(w, &http.Cookie{Name: "profile-kept", Value: "kept", Path: "/", MaxAge: 3600, SameSite: http.SameSiteStrictMode})
-		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
 		http.SetCookie(w, &http.Cookie{Name: "profile-expiring", Value: "short-lived", Path: "/", Expires: expires, SameSite: http.SameSiteStrictMode})
-		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
 		http.SetCookie(w, &http.Cookie{Name: "profile-session", Value: "temporary", Path: "/", SameSite: http.SameSiteStrictMode})
-		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
 		http.SetCookie(w, &http.Cookie{Name: "profile-deleted", Value: "temporary", Path: "/", MaxAge: 3600, SameSite: http.SameSiteStrictMode})
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusNoContent)
 	})
 	app.Router().HandleFunc(http.MethodGet, "/__profile/expire", func(w http.ResponseWriter, _ *http.Request) {
-		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
 		http.SetCookie(w, &http.Cookie{Name: "profile-deleted", Path: "/", MaxAge: -1, Expires: time.Unix(1, 0), SameSite: http.SameSiteStrictMode})
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusNoContent)

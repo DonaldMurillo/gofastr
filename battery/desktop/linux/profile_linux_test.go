@@ -129,6 +129,30 @@ func TestProfileUnsafePaths(t *testing.T) {
 		})
 	}
 }
+
+func TestProfileCookieFilenameFamilyIsPrivate(t *testing.T) {
+	// This is intentionally a filename-prefix policy, not a path-segment
+	// selector. Unknown siblings and backup suffixes must not escape it.
+	for _, name := range []string{"cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm", "cookies.sqlite-journal", "cookies.sqlite.backup", "cookies.sqlitex", "origin.json", "profile.lock"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, name)
+			if err := os.WriteFile(path, []byte("private fixture"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := inspectProfileTree(dir); err != nil {
+				t.Fatal("owner-only record refused: ", err)
+			}
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := inspectProfileTree(dir); err == nil || !strings.Contains(err.Error(), "not private") {
+				t.Fatalf("readable cookie/metadata sibling accepted: %v", err)
+			}
+		})
+	}
+}
+
 func TestProfileOriginValidation(t *testing.T) {
 	for _, body := range []string{
 		`{"version":1,"app_id":"dev.gofastr.profile-test","port":43127,"port":43128}`,
