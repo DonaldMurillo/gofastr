@@ -58,7 +58,10 @@ one base64 part per attachment.
 | `Host`           | `string`         | Required.                                                      |
 | `Port`           | `int`            | Required.                                                      |
 | `Username`       | `string`         | Optional (a cleartext relay may leave it empty).               |
-| `Password`       | `string`         | Optional.                                                      |
+| `Password`       | `string`         | Optional. With both set, `Send` logs in with one mechanism the |
+|                  |                  | relay advertises: CRAM-MD5, else PLAIN, else LOGIN. PLAIN and  |
+|                  |                  | LOGIN run only over TLS or to localhost. A relay offering none |
+|                  |                  | of the three fails with an error naming what it offers.        |
 | `UseTLS`         | `bool`           | Implicit TLS (e.g. port 465). False (default) attempts         |
 |                  |                  | STARTTLS on the cleartext connection.                          |
 | `AllowCleartext` | `bool`           | Send unencrypted when neither implicit TLS nor STARTTLS is     |

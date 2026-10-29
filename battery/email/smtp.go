@@ -184,15 +184,16 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 
 	// Authenticate if credentials are provided.
 	if s.config.Username != "" && s.config.Password != "" {
-		if ok, _ := client.Extension("AUTH"); ok {
-			// Try CRAM-MD5 first, then fall back to PLAIN.
-			auth := smtp.CRAMMD5Auth(s.config.Username, s.config.Password)
+		if ok, offered := client.Extension("AUTH"); ok {
+			// One attempt with a mechanism the relay advertised: when the
+			// relay refuses a mechanism, net/smtp aborts and sends QUIT, so
+			// a second try on this client writes to a closed connection.
+			auth, err := s.pickAuth(offered)
+			if err != nil {
+				return err
+			}
 			if err := client.Auth(auth); err != nil {
-				// Fall back to PLAIN auth.
-				auth = smtp.PlainAuth("", s.config.Username, s.config.Password, s.config.Host)
-				if err := client.Auth(auth); err != nil {
-					return fmt.Errorf("%w: auth failed: %v", ErrSendFailed, err)
-				}
+				return fmt.Errorf("%w: auth failed: %v", ErrSendFailed, err)
 			}
 		}
 	}

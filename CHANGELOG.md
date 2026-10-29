@@ -2679,6 +2679,14 @@ few lines, and link the PR or the docs page for the rest.
   endpoint behind N replicas received N copies of each change. The bridge
   now skips events that arrived from another replica (`event.IsRemote`);
   the emitting replica queues them into the shared store.
+- **SMTP login works against relays without CRAM-MD5.** `SMTPSender`
+  tried CRAM-MD5 first and fell back to PLAIN on the same connection, but
+  `net/smtp` closes the connection when a relay refuses a mechanism, so
+  relays offering only PLAIN and LOGIN (SES, Gmail) never authenticated
+  and every send failed. The sender now picks one advertised mechanism
+  (CRAM-MD5, then PLAIN, then LOGIN, which Office 365 offers alone) and
+  makes one attempt. LOGIN runs only over TLS or to localhost, as PLAIN
+  does.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
