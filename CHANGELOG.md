@@ -2499,6 +2499,10 @@ few lines, and link the PR or the docs page for the rest.
   (`unique_columns`) and creates or drops the index; on SQLite a clear
   rebuilds the table. See
   [migrations](framework/docs/content/migrations.md).
+- **`scripts/pr-review-findings.sh --gate` reads every review thread.**
+  Its GraphQL query fetched the first 100 threads with no cursor, so an
+  open thread past them passed the gate. It now pages through all of
+  them and counts one line per open thread.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
