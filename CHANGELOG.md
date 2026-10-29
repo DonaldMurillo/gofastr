@@ -2300,6 +2300,11 @@ few lines, and link the PR or the docs page for the rest.
   they now answer 400 `validation.keys_fold`, as the parent's keys and
   batch items do. See
   [entity declarations](framework/docs/content/entity-declarations.md).
+- The experimental harness web client's `Server.Stop` closes an open
+  `/events` stream once its context ends. `http.Server.Shutdown` never
+  closes an active connection, so Stop returned at the deadline and left
+  the stream's handler, seat and bus subscription running. Stop still
+  returns the context's error when it had to close connections.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
