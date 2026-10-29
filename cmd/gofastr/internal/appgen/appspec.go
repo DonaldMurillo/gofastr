@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/scanner"
@@ -25,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 )
 
@@ -549,7 +551,7 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 // create→read→update→delete lifecycle.
 type appSpecCRUDTarget struct {
 	entity      string
-	apiPath     string   // /api/<entity>
+	apiPath     string   // /api/<table>
 	newRoute    string   // /app/<entity>/create
 	detailBase  string   // /app/<entity>  (detail = detailBase + "/" + id), "" if no detail screen
 	createJSON  string   // a valid create payload
@@ -593,7 +595,7 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
 		t := appSpecCRUDTarget{
-			entity: e, apiPath: apiBase + "/" + e,
+			entity: e, apiPath: appSpecEntityAPIPath(apiBase, decl),
 			newRoute:    strings.TrimRight(createOf[e], "/") + "/create",
 			createJSON:  createJSON,
 			updateJSON:  updateJSON,
@@ -2894,7 +2896,7 @@ func screenActions(screen appspec.AppSpecScreen, entityMap map[string]framework.
 				if appSpecFormHasRelation(block, entityMap) {
 					actions = append(actions, appspec.AppSpecAction{
 						Name:     appSpecEntityFormActionName(screen, block, blockPath),
-						ClientJS: appSpecEntityFormClientJS(block, apiBase),
+						ClientJS: appSpecEntityFormClientJS(block, entityMap, apiBase),
 					})
 				}
 			}
@@ -3560,6 +3562,14 @@ func appSpecAPIBase(apiPrefix string) string {
 	return "/" + p
 }
 
+// appSpecEntityAPIPath is where App.Entity mounts decl's CRUD routes:
+// apiBase plus the table, which is the declared Table or the name in
+// snake_case. Define spells the default, so the path is the framework's
+// and not a copy of its rule.
+func appSpecEntityAPIPath(apiBase string, decl framework.EntityDeclaration) string {
+	return apiBase + "/" + entity.Define(decl.Name, entity.EntityConfig{Table: decl.Table}).GetTable()
+}
+
 // appSpecFormInputType maps an entity field type to an <input type=…>.
 func appSpecFormInputType(fieldType string) string {
 	switch fieldType {
@@ -3592,7 +3602,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	if title == "" {
 		title = "New " + appspec.ToDisplayName(entity)
 	}
-	rpcPath := apiBase + "/" + entity
+	rpcPath := appSpecEntityAPIPath(apiBase, decl)
 	// The form carries entity-form markers (data-entity-form/mode, plus
 	// data-action-mount when relation selects need populating) alongside
 	// the RPC wiring. Build the RPC attrs via the typed interactive layer
@@ -3704,33 +3714,61 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 }
 
 // appSpecEntityFormClientJS populates the form's relation <select>s on
-// mount by fetching each related entity's collection.
-func appSpecEntityFormClientJS(block appspec.AppSpecBlock, apiBase string) string {
-	entity := strings.Trim(block.Entity, "/")
+// mount by fetching each related entity's collection. targets maps a
+// related entity to its route and the wire name of its key, the column a
+// relation stores: a target keyed on currency_code is read as
+// row.currencyCode, and one on its own table is fetched there. A target
+// with a multi-column key has no single value a relation can hold, so it
+// gets no entry and its select stays empty.
+func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	name := strings.Trim(block.Entity, "/")
+	type relTarget struct {
+		Key  string `json:"key"`
+		Path string `json:"path"`
+	}
+	targets := map[string]relTarget{}
+	for _, f := range entityMap[name].Fields {
+		if f.Type != "relation" || f.To == "" {
+			continue
+		}
+		decl, ok := entityMap[f.To]
+		keys := appspec.AppSpecKeyColNames(decl)
+		if !ok || len(keys) != 1 {
+			continue
+		}
+		targets[f.To] = relTarget{Key: appspec.ToCamelJSON(keys[0]), Path: appSpecEntityAPIPath(apiBase, decl)}
+	}
+	// json.Marshal sorts map keys, so the emitted literal is stable.
+	targetsJSON, err := json.Marshal(targets)
+	if err != nil {
+		targetsJSON = []byte("{}")
+	}
 	//gofastr:allow(emitident) block.Entity is checked against the entities map in appspec validation
 	return fmt.Sprintf(`(async () => {
-  const apiBase = %q;
+  const targets = %s;
   const form = document.querySelector('[data-entity-form="%s"]');
   if (!form) return;
   const labelFor = (row) => String(row.name ?? row.title ?? row.label ?? row.email ?? row.code ?? row.id ?? '');
   for (const sel of form.querySelectorAll('select[data-rel-entity]')) {
-    const target = sel.getAttribute('data-rel-entity');
-    if (!target || sel.dataset.relLoaded) continue;
+    const rel = sel.getAttribute('data-rel-entity');
+    const t = rel && Object.hasOwn(targets, rel) ? targets[rel] : null;
+    if (!t || sel.dataset.relLoaded) continue;
     try {
-      const res = await fetch(apiBase + '/' + target + '?limit=100', { headers: { 'Accept': 'application/json' } });
+      const res = await fetch(t.path + '?limit=100', { headers: { 'Accept': 'application/json' } });
       if (!res.ok) continue;
       const payload = await res.json();
       const rows = Array.isArray(payload.data) ? payload.data : [];
       for (const row of rows) {
+        if (row[t.key] == null) continue;
         const opt = document.createElement('option');
-        opt.value = row.id;
+        opt.value = row[t.key];
         opt.textContent = labelFor(row);
         sel.appendChild(opt);
       }
       sel.dataset.relLoaded = '1';
     } catch (_) {}
   }
-})();`, apiBase, entity)
+})();`, targetsJSON, name)
 }
 
 func appSpecEntityFormActionName(screen appspec.AppSpecScreen, block appspec.AppSpecBlock, path []int) string {

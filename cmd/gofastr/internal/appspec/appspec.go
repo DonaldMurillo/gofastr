@@ -3198,29 +3198,6 @@ func seedValueInFinalForm(f schema.Field, value any) bool {
 	}
 }
 
-func appSpecEntityTable(decl framework.EntityDeclaration) string {
-	if decl.Table != "" {
-		return strings.Trim(decl.Table, "/")
-	}
-	return appSpecDefaultTableName(decl.Name)
-}
-
-func appSpecDefaultTableName(name string) string {
-	name = strings.ReplaceAll(name, "-", "_")
-	name = strings.ReplaceAll(name, " ", "_")
-	if strings.ToLower(name) == name {
-		return name
-	}
-	var b strings.Builder
-	for i, r := range name {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('_')
-		}
-		b.WriteRune(r)
-	}
-	return strings.ToLower(b.String())
-}
-
 func validateAppSpecBlock(screenName string, entities map[string]framework.EntityDeclaration, block AppSpecBlock) error {
 	kind := block.Kind
 	if kind == "" {

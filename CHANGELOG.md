@@ -2525,6 +2525,15 @@ few lines, and link the PR or the docs page for the rest.
   The generated `app.go` now exits with Init's error. Regenerate, or
   wrap the call yourself in an app you own. See
   [app specs](framework/docs/content/app-spec.md).
+- **A generated `entity_form` posts to the entity's table and offers its
+  related records by key.** The form submitted to `<api_prefix>/<entity>`
+  while the routes mount at the table, so an entity with `table:` set
+  answered 404, and the generated e2e test called the same wrong path.
+  A relation select fetched its target by entity name and gave each
+  option the row's `id`; a target with `primary_key: [currency_code]`
+  has no `id`, so every option posted `undefined`. The select now reads
+  the target's key column from its table's route. Regenerate to pick it
+  up. See [app specs](framework/docs/content/app-spec.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

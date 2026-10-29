@@ -134,7 +134,8 @@ handler at the same path. MCP tools and the OpenAPI spec follow the prefix
 automatically. Set `api_prefix: ""` to mount entity APIs at the bare
 `/<table>` (the historical behavior); a screen must then not reuse an entity
 path. The generated `entity_list` / `entity_form` / `entity_detail` blocks
-fetch and submit against `<api_prefix>/<entity>` accordingly.
+fetch and submit against `<api_prefix>/<table>` accordingly, where the
+table is the entity's `table:` or, without one, its name in snake_case.
 
 ## YAML subset
 
@@ -816,9 +817,12 @@ partial and keeps the shell).
   **`<home list>/create`** (not `/new`), rendering
   `appUI.Create("<entity>").Base(<home route>)`. It inherits the home
   screen's `layout` + `access` and is not added to `nav`.
-- `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<entity>">`
+- `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<table>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
-  related entity; a number input steps by 1 for `int`, 0.0001 for
+  related entity's route, each option's value its key column, so a
+  target with `primary_key: [currency_code]` offers its codes; a target
+  keyed on more than one column has no single value to offer and its
+  select stays empty; a number input steps by 1 for `int`, 0.0001 for
   `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
