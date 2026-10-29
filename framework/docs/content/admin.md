@@ -549,7 +549,10 @@ the policy grants nothing, or does not know, is checked by name
 (`auth.RequireRole`), so only a caller holding it or the wildcard
 assigns or removes it. An unknown account is a 400. A refusal is a 403
 with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
-row, so a narrower admin tier cannot mint a role above its own. A grid save is checked whole
+row, so a narrower admin tier cannot mint a role above its own. An
+`access.Decider` on the request is asked about each permission first: its
+`DecisionDeny` refuses the change even when the policy grants it, and its
+`DecisionAllow` admits nothing the policy does not. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
 it is applied.
 
@@ -562,8 +565,8 @@ flags. Its levers (enable, disable, bump generation, revoke a grant,
 which takes that one grant away and keeps the rest) post
 to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
-caller's roles in `Config.Policy`; without it, or without a policy, the
-page is read-only. Each lever writes an audit row (`module_enable`, ...), and
+caller's roles in `Config.Policy` and not denied by an `access.Decider`;
+without it, or without a policy, the page is read-only. Each lever writes an audit row (`module_enable`, ...), and
 a refused one a `*_refused` row. A failed lever answers a generic
 notice and logs the error.
 

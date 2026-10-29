@@ -642,9 +642,16 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 }
 
 // callerHoldsPermission reports whether the caller's own roles grant
-// perm or Wildcard. With no policy nothing can be proven held, so it
+// perm or Wildcard. A Decider's deny of perm wins first, as it does on
+// every other gate; as with the admin gate, its allow admits nothing
+// the policy does not. With no policy nothing can be proven held, so it
 // refuses.
 func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
+	if d := access.GetDecider(ctx); d != nil {
+		if d(ctx, access.GetRoles(ctx), perm, access.Ref{}) == access.DecisionDeny {
+			return false
+		}
+	}
 	if b.cfg.Policy == nil {
 		return false
 	}

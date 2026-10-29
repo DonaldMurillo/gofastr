@@ -104,6 +104,10 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **The admin's Needs attention panel reads clear under every locale.**
+  It skipped an empty watched view only when the formatted count was
+  `"0"`, so under `ar-EG` (`٠`) or `fa` (`۰`) each empty view drew an
+  empty preview instead of the all-clear line. It compares the number.
 - **An `EmitAsync` subscriber no longer runs on a cancelled request
   context.** CRUD emits on the request's context, and the handler
   returned before the subscriber ran, so the webhook bridge's subscriber
@@ -2254,6 +2258,12 @@ few lines, and link the PR or the docs page for the rest.
   or update now passes `handler.IsCrossSiteRequest` or answers 403, and
   `_batch` and transitions answer 415 to anything but
   `application/json`. See [uploads](framework/docs/content/uploads.md).
+- **The admin's permission checks ask the Decider.** The
+  `modules:manage` levers and the grant and revoke checks read the
+  caller's permissions from `Config.Policy` alone, so an
+  `access.Decider` that denied an admin one of them was never asked. Its
+  deny now refuses; its allow still admits nothing the policy does not.
+  See [admin](framework/docs/content/admin.md#process-modules).
 - **A session-scoped harness token lists only its own sessions.**
   `GET /v1/sessions` (live and `?past=true`), the MCP
   `harness.list_sessions` tool and the `harness/v1://sessions` resource
