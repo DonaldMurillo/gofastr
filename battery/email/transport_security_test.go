@@ -350,6 +350,69 @@ func TestSmtpEnvelopeParsesRecipients(t *testing.T) {
 	}
 }
 
+// Property: a local part that needs quoting keeps its quotes on the wire.
+// net/mail hands back the local part unquoted, so "john doe"@example.com
+// reached RCPT TO as john doe@example.com (2026-10-27 bug bash E9).
+func TestSmtpEnvelopeQuotesLocalPart(t *testing.T) {
+	cases := map[string]string{
+		`"john doe"@example.com`:  `"john doe"@example.com`,
+		`"a\\b\"c"@x.test`:        `"a\\b\"c"@x.test`,
+		`"plain"@example.com`:     `plain@example.com`,
+		`o'brien+tag@example.com`: `o'brien+tag@example.com`,
+		`josé@example.com`:        `josé@example.com`,
+		`user@[192.0.2.1]`:        `user@[192.0.2.1]`,
+	}
+	for to, want := range cases {
+		t.Run(to, func(t *testing.T) {
+			srv := newRecordingSMTP(t)
+			defer srv.ln.Close()
+			if err := srv.senderFor().Send(context.Background(), Email{
+				From: "noreply@example.test", To: []string{to},
+				Subject: "quoted", TextBody: "body",
+			}); err != nil {
+				t.Fatalf("send: %v", err)
+			}
+			if got := srv.recordedRcptTo(); !slices.Equal(got, []string{want}) {
+				t.Errorf("RCPT args = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Property: a local part holding an angle bracket or an @ is refused.
+// Unquoted on the wire, "attacker@evil.test> ORCPT=rfc822;x"@company.test
+// closed the RCPT path early, so a relay read attacker@evil.test as the
+// recipient of an address the app checked as company.test (2026-10-27 bug
+// bash E9). Quoted, a lenient relay that scans for the first > still
+// splits it, and no real mailbox needs these bytes.
+func TestSmtpEnvelopeRefusesPathBreak(t *testing.T) {
+	for _, addr := range []string{
+		`"attacker@evil.test> ORCPT=rfc822;x"@company.test`,
+		`"a<b"@x.test`,
+		`"a>b"@x.test`,
+		`"a@b"@x.test`,
+	} {
+		t.Run(addr, func(t *testing.T) {
+			for _, e := range []Email{
+				{From: "noreply@example.test", To: []string{addr}},
+				{From: "noreply@example.test", To: []string{"ok@x.test"}, CC: []string{addr}},
+				{From: "noreply@example.test", To: []string{"ok@x.test"}, BCC: []string{addr}},
+				{From: addr, To: []string{"ok@x.test"}},
+			} {
+				srv := newRecordingSMTP(t)
+				e.Subject, e.TextBody = "break", "body"
+				if err := srv.senderFor().Send(context.Background(), e); err == nil {
+					t.Errorf("Send(%+v) = nil, want the address refused", e)
+				}
+				if got := srv.recordedRcptTo(); len(got) != 0 {
+					t.Errorf("RCPT args = %q, want none", got)
+				}
+				srv.ln.Close()
+			}
+		})
+	}
+}
+
 // Property: display-name forms ("Bob <bob@x>") reach MAIL FROM / RCPT TO as
 // bare addr-specs, never as the raw string — net/smtp writes MAIL
 // FROM:<%s> with no quoting of its own, so the raw form emits nested angle

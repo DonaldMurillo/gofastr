@@ -2726,6 +2726,13 @@ few lines, and link the PR or the docs page for the rest.
   `/` unless `NoHostPrefix` is set, since the browser drops a `__Host-`
   cookie with any other path. See
   [security](framework/docs/content/security.md).
+- **A quoted local part cannot rewrite the SMTP envelope.** The SMTP
+  sender wrote `net/mail`'s unquoted local part into `RCPT TO:<…>`, so
+  `"attacker@evil.test> ORCPT=rfc822;x"@company.test` closed the path
+  early: a DSN-capable relay reads `attacker@evil.test` as the recipient
+  and the rest as an `ORCPT` parameter. The envelope
+  now quotes a local part that needs it, and refuses one holding `<`, `>`
+  or `@`. See [email](framework/docs/content/email.md).
 
 ## [0.95.0] - 2026-10-26
 

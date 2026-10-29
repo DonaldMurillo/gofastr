@@ -609,9 +609,32 @@ func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
 	}
 	specs := make([]string, 0, len(addrs))
 	for _, a := range addrs {
-		specs = append(specs, a.Address)
+		spec, err := envelopeSpec(a.Address)
+		if err != nil {
+			return nil, fmt.Errorf("%s %q: %v", field, raw, err)
+		}
+		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// envelopeSpec turns a parsed address back into SMTP mailbox syntax.
+// net/mail returns the local part unquoted, so "john doe"@example.com
+// would reach the wire as john doe@example.com; Address.String quotes it
+// again. A local part holding <, > or @ is refused even quoted: a relay
+// that ends the path at the first > reads "a@evil.test> ORCPT=x"@company.test
+// as a recipient at evil.test, and no real mailbox needs those bytes.
+// net/mail accepts only an IP inside a domain literal, so the domain
+// cannot carry them.
+func envelopeSpec(addr string) (string, error) {
+	// net/mail never returns an address without an @; the max keeps a
+	// future caller's bare string from panicking.
+	local := addr[:max(strings.LastIndexByte(addr, '@'), 0)]
+	if strings.ContainsAny(local, "<>@") {
+		return "", fmt.Errorf("local part %q holds <, > or @: refusing envelope address", local)
+	}
+	s := (&mail.Address{Address: addr}).String()
+	return s[1 : len(s)-1], nil
 }
 
 // envelopeRecipients builds the RCPT TO list from To + CC + BCC. The

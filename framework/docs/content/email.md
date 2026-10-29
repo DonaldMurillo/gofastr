@@ -92,6 +92,10 @@ recipient). A display-name form like `"Bob <bob@x>"` or a comma-joined
 entry is expanded the same way the header side reads it, so the envelope
 recipient set can never diverge from the parsed header set; entries that
 fail to parse, parse to zero addresses, or carry control bytes are refused.
+A local part that needs quoting keeps its quotes on the wire
+(`"john doe"@example.com`), and one holding `<`, `>` or `@` is refused,
+quoted or not: a relay that ends the path at the first `>` would read a
+different recipient out of it.
 `Send` also never writes into the caller's slices — the recipient list is
 an explicit-length copy, so a reused `To` backing array cannot observe a
 BCC address.
