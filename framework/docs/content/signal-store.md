@@ -70,7 +70,9 @@ id="gofastr-signals-page">` listing the page's page-scoped signal names
 (omitted when there are none). A navigation that swaps in a whole
 document, and Back or Forward to the first page loaded, reset those
 names to that document's seed and leave globals alone, so going back to
-page A shows A's values rather than the ones page B left behind.
+page A shows A's values rather than the ones page B left behind. Back or
+Forward to any cached page, on a layout with outlets too, restores the
+values that page arrived with.
 
 ## Computed (derived) values
 

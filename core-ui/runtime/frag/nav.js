@@ -218,6 +218,7 @@
   // first page of a visit, or a fetched document, restores page state
   // the way a partial does. A host that names no keys restores none.
   // (A whole document never carries a partial island of its own.)
+  // The envelope module reads it too.
   const docSeed = (source) => {
     const flat = _json(source.getElementById('gofastr-signals')?.textContent);
     const names = _json(source.getElementById('gofastr-signals-page')?.textContent);
@@ -229,6 +230,7 @@
     // "</script>" must not end it.
     return '<script type="application/json" id="gofastr-signals-partial">' + JSON.stringify({ p }).replace(/</g, '\\u003c') + '</script>';
   };
+  window.__gofastr._docSeed = docSeed;
 
   // Cache the initial page so back-navigation to it works instantly.
   // Route through cacheScreen() so the LRU cap is enforced uniformly.

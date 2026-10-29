@@ -327,12 +327,15 @@
   // through core's swapAtSlot so seed merge + CSS + focus all run),
   // then the fills, then the detached seed island merged through the
   // shared partial path.
-  const applyEnvelope = (slot, primaryHtml, resolved, seedEl) => {
-    swapAtSlot(slot, primaryHtml);
-    applyFillTargets(resolved);
+  const applySeedEl = (seedEl) => {
     if (seedEl) {
       try { applyPartialSeed(JSON.parse(seedEl.textContent || 'null')); } catch (_) { /* malformed island */ }
     }
+  };
+  const applyEnvelope = (slot, primaryHtml, resolved, seedEl) => {
+    swapAtSlot(slot, primaryHtml);
+    applyFillTargets(resolved);
+    applySeedEl(seedEl);
     return slot;
   };
 
@@ -366,16 +369,16 @@
 
   // P7-B (spike/layout-client): a first paint carries no partial seed
   // island, but its HEAD seed holds the route.* values (SeedFor seeds
-  // every referenced name). Synthesize a partial-shaped, route-only
-  // seed from it so a Back replay of the boot entry rewrites route
-  // state like every other replay (page-scoped keys only — globals
-  // keep their first-seen rule).
+  // every referenced name). A partial-shaped seed synthesized from it
+  // lets a Back replay of the boot entry rewrite page state like every
+  // other replay (page-scoped keys only — globals keep their
+  // first-seen rule).
   // routeSeedFrom folds a parsed FLAT head seed (the #gofastr-signals
   // island) into a partial-shaped {p} carrying only the route.* keys:
   // the flat island mixes scopes (globals beside page-scoped values),
   // and feeding a global through the page arm would clobber a value
-  // the user mutated. P7-C: shared by the boot capture (live head) and
-  // the cross-chain full-document swap (fetched document's head).
+  // the user mutated. pageSeedIsland (below) adds the keys the host names
+  // page-scoped; the route fold alone tracks _routeSeedP.
   const routeSeedFrom = (flat) => {
     const p = {};
     for (const k in flat) {
@@ -391,6 +394,23 @@
     if (!el) return null;
     try { return routeSeedFrom(JSON.parse(el.textContent || '{}')); } catch (_) { return null; }
   };
+  // islandIn finds the partial seed island in markup, parsed in an
+  // inert template: nothing in it runs or loads.
+  const islandIn = (html) => {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    return t.content.querySelector('script#gofastr-signals-partial');
+  };
+  // pageSeedIsland is a whole document's page-scoped seed island: the
+  // keys #gofastr-signals-page names (core's docSeed, the plain
+  // navigator's rule), so a replay or a swapped document restores the
+  // page's own values, not only its route. The host names every
+  // non-global key of the seed, route.* included; globals stay out. A
+  // document with no list gets the route fold alone.
+  const pageSeedIsland = (d) => islandIn(NS._docSeed(d || document)) || routeSeedIsland(routeSeedFromHead(d));
+  // seedOf is the seed a cache entry replays: its seed field, else the
+  // island a plain partial's bytes carry inline.
+  const seedOf = (entry) => entry && (entry.seed || islandIn(entry.html));
   // _routeSeedP tracks the route.* values a cache replay must restore.
   // The head island is a FIRST-PAINT artifact — after any SPA
   // navigation the store has moved and the head has not, so reading it
@@ -419,8 +439,8 @@
   // is a fill applied through the same resolveFillTargets /
   // applyEnvelope path a served envelope takes (P8-B: re-applied every
   // navigation, no hashes). The seed rides along too: the document's
-  // partial island when it carries one, else its route keys folded
-  // from the head island (the P7-C route-only scoping rule). Returns
+  // partial island when it carries one, else its page-scoped keys
+  // folded from the head island (pageSeedIsland). Returns
   // null on any miss (no shared layer, no matching slot); the caller
   // falls back to the plain whole-main swap it always had.
   const readDocEnvelope = (pdoc) => {
@@ -434,7 +454,7 @@
     if (!slot || !docSlot) return null;
     // captureLiveFills' walk, on the fetched document: everything the
     // chain keeps above the boundary travels as a fill.
-    const seed = pdoc.querySelector('script#gofastr-signals-partial') || routeSeedIsland(routeSeedFromHead(pdoc));
+    const seed = pdoc.querySelector('script#gofastr-signals-partial') || pageSeedIsland(pdoc);
     return {
       swapKey, slot, html: NS._docCarrier(pdoc) + docSlot.innerHTML, fills: captureLiveFills(docSlot, pdoc), seed,
       title: pdoc.querySelector('title')?.textContent || document.title,
@@ -750,12 +770,15 @@
         // addresses the leaving page deferred and what landed.
         // (A page whose own answer was NOT OK keeps _liveDomPath
         // stale, so this condition misses and it is never captured.)
+        // The seed carries forward from the page's own entry: the
+        // live DOM has merged its island away, and the snapshot's
+        // fallback is the route keys alone.
         if (prevPath && prevPath !== path && _liveDomPath === prevPath) {
           const prevEntry = getCachedScreen(prevPath);
           const lsnap = captureEnvelopeSnapshot(busySlot);
           const ps0 = P && P.leaveSnap(prevEntry);
           cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
-            lsnap.fills, lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
+            lsnap.fills, seedOf(prevEntry) || lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
         }
         // The loading module starts loading at evaluation; the first
         // navigation may beat its script. The marks paint now (the
@@ -830,6 +853,9 @@
           swapCommit(myEpoch, prevPath, path, () => {
             _applied(slot);
             const root = swapAtSlot(slot, cached.html);
+            // A leave capture with no fills lands here; its seed is
+            // a field, not part of the bytes.
+            applySeedEl(cached.seed);
             if (load) load.sweep();
             _done(path, prevPath, true, root, ps);
           }, cached);
@@ -914,25 +940,20 @@
           // never recaptured on leave.
           (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
           const el = swapShell(sourceRoot);
-          // The fetched head's route keys fold through the same atomic
-          // merge (route-only for the scoping reason on routeFold;
-          // non-route page-scoped signals keep their correct SSR
-          // stamps — pre-existing behavior, recorded). swapShell's
-          // merge finds no PARTIAL island in a full document, and the
-          // live head still carries the ORIGIN's seed — without this,
-          // the store's route.* stays one chain behind the DOM after
-          // every cross-chain swap.
-          const hEl = pdoc.querySelector('script#gofastr-signals');
-          if (hEl) {
-            try {
-              const rsd = routeSeedFrom(JSON.parse(hEl.textContent || '{}'));
-              if (rsd) applyPartialSeed(rsd);
-            } catch (_) { /* a malformed head island changes nothing */ }
-          }
+          // The fetched head's page-scoped keys (pageSeedIsland: route.*
+          // plus the names #gofastr-signals-page lists; globals keep
+          // their first-seen rule) fold through the same atomic merge.
+          // swapShell's merge finds no PARTIAL island in a full
+          // document, and the live head still carries the ORIGIN's
+          // seed — without this, the store stays one page behind the
+          // DOM after every cross-chain swap. A malformed head island
+          // folds to nothing.
+          const dsd = pageSeedIsland(pdoc);
+          applySeedEl(dsd);
           if (fr.ok) {
             const fsnap = captureEnvelopeSnapshot(_mainEl());
             cacheScreen(dest, nm ? nm.innerHTML : '', t,
-              nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '', fsnap.fills, fsnap.seed);
+              nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '', fsnap.fills, dsd || fsnap.seed);
           }
           _done(dest, prevPath, false, el || _mainEl(), ps, !fr.ok);
         }, null);
@@ -1064,7 +1085,7 @@
         }
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
-        body = NS._docCarrier(pdoc) + (nm?.innerHTML ?? '');
+        body = NS._docCarrier(pdoc) + NS._docSeed(pdoc) + (nm?.innerHTML ?? '');
         swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? _mainEl() : null);
@@ -1266,13 +1287,15 @@
   // it replays them) and record its scroll anchors, both keyed under
   // the served path — currentPath may already name a hand-off's pushed
   // destination, and keying under it would replay the served page's
-  // bytes as the destination (TestHandoffDoubleClickCacheClean).
+  // bytes as the destination (TestHandoffDoubleClickCacheClean). The
+  // live head is the served page's too, so its page-scoped seed rides
+  // the entry.
   {
     const m = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (m) {
       const snap = captureEnvelopeSnapshot(m);
       cacheScreen(_liveDomPath, captureHTML(m), document.title,
-        m.getAttribute('data-cui-layout-slot') || '', snap.fills, snap.seed);
+        m.getAttribute('data-cui-layout-slot') || '', snap.fills, pageSeedIsland() || snap.seed);
     }
     recordScroll(_liveDomPath);
   }

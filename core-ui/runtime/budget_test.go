@@ -1320,7 +1320,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// navigation that set it, so a superseded navigation's finally
 		// leaves the winner's marks alone (2026-10-27 bug bash R3,
 		// TestSupersededNavKeepsRegionBusy).
-		"envelope": 7901,
+		// 8004 measured (8002 + 2) after its cache entries carry the
+		// page's #gofastr-signals-page seed and a leave capture keeps
+		// the entry's own (2026-10-29 bug bash R30,
+		// TestEnvelopeReplayRestoresPageSignals).
+		"envelope": 8004,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

@@ -811,7 +811,10 @@ client-side with no per-consumer round-trip.
   puts it in the boot cache entry and in any fetched document it swaps
   in, so Back to the first page of a visit and a cross-chain or
   full-answer navigation restore page state as a partial does. A host
-  that sends no list restores none.
+  that sends no list restores none. The envelope navigator follows the
+  same rule, and a page it re-captures on leave keeps the seed it
+  arrived with, so a cached Back or Forward on either navigator
+  restores the values that page arrived with.
 - **Computed.** `store.Computed` derives a value client-side from dependency
   slices via a host-registered JS reducer (CSP-safe, no `eval`). Register
   reducers on `window.__gofastr._reducers` from a script loaded **after**

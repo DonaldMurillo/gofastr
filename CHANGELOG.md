@@ -2455,6 +2455,16 @@ few lines, and link the PR or the docs page for the rest.
   memory. Each page now reaches the file, hashed on the way, before the
   next is read. The archive format is unchanged. See
   [data export](framework/docs/content/data-export.md).
+- **Back and Forward through a layout with outlets restore the page's
+  own signals.** The envelope navigator seeded its cache entries with
+  the `route.*` keys alone, so Back to the first page kept the quantity
+  the page you left had set, a page re-captured on leave lost the seed
+  its own answer carried, and a fetched whole document (a cross-chain
+  swap or a static host's answer) applied its route keys at most.
+  It now reads the `#gofastr-signals-page` names as the plain navigator
+  does, and a re-captured page keeps the seed it arrived with. Globals
+  keep the value the user gave them. See
+  [signal store](framework/docs/content/signal-store.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
