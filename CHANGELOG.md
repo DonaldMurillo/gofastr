@@ -2749,6 +2749,12 @@ few lines, and link the PR or the docs page for the rest.
   `Message-ID` on the sender's domain; a `Headers` entry of either name
   replaces it. `LogSender` printed bodies and attachment names raw, so an
   escape sequence in a template reached the terminal.
+- **Removing a routine with no `Down` is refused instead of writing an
+  empty migration.** `GeneratePlan` wrote a migration of only `;` and
+  advanced the snapshot, while the routine stayed in the database. It
+  now returns an error naming the routine. Declaring it again with a
+  `Down` and generating records the drop, and the removal then carries
+  it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

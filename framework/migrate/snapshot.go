@@ -205,11 +205,17 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Boot skips a routine scoped to another dialect, so a migration
 	// generated for this one must not carry it either.
 	routines, _ := partitionRoutinesByDialect(plan.Routines, dialect)
-	viewUpserts, viewDrops := routineChanges(viewRoutines, prev.Views)
+	viewUpserts, viewDrops, err := routineChanges(viewRoutines, prev.Views)
+	if err != nil {
+		return "", "", SchemaSnapshot{}, err
+	}
 	if dialect == DialectPostgres {
 		viewUpserts = pgViewUpserts(topoSortViews(plan.Views), prev.Views)
 	}
-	routineUpserts, routineDrops := routineChanges(routines, prev.Routines)
+	routineUpserts, routineDrops, err := routineChanges(routines, prev.Routines)
+	if err != nil {
+		return "", "", SchemaSnapshot{}, err
+	}
 
 	changes := append(routineDrops, viewDrops...)
 	// The snapshot's column sets let a Postgres key change detach the
@@ -430,7 +436,8 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			changes[i].SQL = strings.Replace(c.SQL, rename,
 				"PRAGMA legacy_alter_table=ON;\n"+rename+";\nPRAGMA legacy_alter_table=OFF", 1)
 		}
-		routineUpserts, _ = routineChanges(routines, nil)
+		// No previous definitions, so no removals and no error.
+		routineUpserts, _, _ = routineChanges(routines, nil)
 	}
 
 	changes = append(changes, viewUpserts...)
@@ -550,7 +557,7 @@ func pgViewUpserts(ordered []View, prev map[string]RoutineDef) []SchemaChange {
 // Down is its own Down. Removed routines come back separately, name-sorted,
 // so the caller can drop them before the tables they read: each is dropped
 // via the snapshot's stored Down, with its recreation as the inverse.
-func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange) {
+func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange, err error) {
 	seen := map[string]bool{}
 	byName := map[string]Routine{}
 	for _, r := range current {
@@ -577,6 +584,14 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 				SQL:     r.Up,
 				Down:    prevDef.Up, // restore the previous definition
 			})
+		case strings.TrimSpace(prevDef.Down) == "" && strings.TrimSpace(r.Down) != "":
+			// The snapshot recorded no Down, so a later removal could not
+			// be generated. Re-running the idempotent Up records the Down
+			// it now declares; rolling this back changes nothing.
+			upserts = append(upserts, SchemaChange{
+				Summary: fmt.Sprintf("routine %s: record Down", name),
+				SQL:     r.Up,
+			})
 		}
 	}
 
@@ -588,22 +603,16 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 	}
 	sort.Strings(removed)
 	for _, name := range removed {
-		// A Routine's Down is optional (see routine.go), so a routine
-		// removed without one used to emit an EMPTY statement here. The
-		// generated migration then contained nothing but ";": the drop
-		// silently did nothing while the snapshot advanced to record the
-		// routine as gone, and a rollback would CREATE OR REPLACE it
-		// back. Surface it as a change the author must resolve instead
-		// of writing a no-op that looks applied.
+		// A Routine's Down is optional (see routine.go), so the snapshot
+		// may hold no drop for a removed routine. Writing the removal
+		// anyway made a migration of nothing but ";" while the snapshot
+		// advanced to record the routine as gone, and the routine stayed
+		// in the database. Refuse, and say how to record the drop.
 		drop := strings.TrimSpace(prev[name].Down)
 		if drop == "" {
-			removals = append(removals, SchemaChange{
-				Summary: fmt.Sprintf("routine %s: drop SKIPPED: the routine declares no Down; "+
-					"add one (e.g. DROP FUNCTION ...) so the removal actually runs", name),
-				SQL:  "",
-				Down: prev[name].Up,
-			})
-			continue
+			return nil, nil, fmt.Errorf("routine %q was removed, but the snapshot records no Down for it, "+
+				"so its drop cannot be generated: declare it again with the same Up and a Down "+
+				"(e.g. DROP FUNCTION ...), generate to record the Down, then remove it", name)
 		}
 		removals = append(removals, SchemaChange{
 			Summary: fmt.Sprintf("routine %s: drop", name),
@@ -611,7 +620,7 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 			Down:    prev[name].Up, // recreate on rollback
 		})
 	}
-	return upserts, removals
+	return upserts, removals, nil
 }
 
 // recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set,

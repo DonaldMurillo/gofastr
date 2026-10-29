@@ -779,7 +779,11 @@ up, down, next, _ := migrate.GeneratePlan(plan, prevSnapshot, migrate.DialectPos
 
 `GeneratePlan` emits each new/changed routine's body forward and restores the
 previous body on rollback; a removed routine is dropped (and recreated on
-`Down`). Everything lands in one migration, in this order: removed
+`Down`). The drop is the routine's own `Down`, as the snapshot recorded
+it, so removing a routine that never declared one is refused with an
+error naming it: declare it again with the same `Up` and a `Down`,
+generate (which records the `Down` by re-running the idempotent `Up`),
+then remove it. Everything lands in one migration, in this order: removed
 routines, then removed views, then the table changes (Postgres refuses to
 drop a table or column a view still reads), then new and changed views in
 `DependsOn` order, then new and changed routines in the plan's order, the
