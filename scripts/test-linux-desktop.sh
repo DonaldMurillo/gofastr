@@ -28,7 +28,7 @@ fi
 export GOOS="$host_os" GOARCH="$(go env GOHOSTARCH)"
 output="$PWD/dist/ci/linux-native"
 mkdir -p "$output"
-export CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_ACTIVATION=1 GDK_BACKEND=x11
+export CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_ACTIVATION=1 GOFASTR_LINUX_PROFILE=1 GDK_BACKEND=x11
 # The permission-dialog test selects an English label. Do not inherit the
 # developer's desktop locale (LANGUAGE takes precedence over LANG in gettext).
 export LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=en
@@ -37,13 +37,14 @@ export GOFASTR_LINUX_TEST_OUTPUT="$output"
 # Do not combine these in a single go test invocation: GTK currently keeps
 # ownership of its UI thread after a shell exits. -count=1 also forbids a
 # cached success from standing in for actual graphical execution.
-for test in TestNativeGTKWebKit TestNativeGoFastrBridge TestNativeActivation TestNativeActivationGraphical; do
+for test in TestNativeGTKWebKit TestNativeGoFastrBridge TestNativeActivation TestNativeActivationGraphical TestNativeProfile; do
   log="$output/$test.log"
   timeout=90s
   linker=()
   case "$test" in
     TestNativeActivation) timeout=120s ;;
     TestNativeActivationGraphical) timeout=150s ;;
+    TestNativeProfile) timeout=240s ;;
   esac
   if [[ $test == TestNativeActivation* ]]; then
     # Exercise the production embedded-scheme gate. Do not set this for the

@@ -171,7 +171,7 @@ func TestProfileValidCookieDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("CREATE TABLE cookies(name TEXT, value TEXT); INSERT INTO cookies VALUES('kept', 'yes')"); err != nil {
+	if _, err := db.Exec(nativeCookieSchema); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
@@ -180,6 +180,40 @@ func TestProfileValidCookieDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	next.lock.Close()
+}
+
+const nativeCookieSchema = "CREATE TABLE moz_cookies (id INTEGER PRIMARY KEY, name TEXT, value TEXT, host TEXT, path TEXT, expiry INTEGER, lastAccessed INTEGER, isSecure INTEGER, isHttpOnly INTEGER, sameSite INTEGER)"
+
+func TestProfileCookieSchema(t *testing.T) {
+	for _, test := range []struct {
+		name, schema string
+		valid        bool
+	}{
+		{"current", nativeCookieSchema, true},
+		{"legacy", strings.Replace(nativeCookieSchema, ", sameSite INTEGER", "", 1), true},
+		{"wrong-table", "CREATE TABLE cookies(name TEXT, value TEXT)", false},
+		{"view", "CREATE VIEW moz_cookies AS SELECT 1 AS id", false},
+		{"extra-column", strings.TrimSuffix(nativeCookieSchema, ")") + ", extra TEXT)", false},
+		{"missing-column", strings.Replace(nativeCookieSchema, ", expiry INTEGER", "", 1), false},
+		{"wrong-type", strings.Replace(nativeCookieSchema, "expiry INTEGER", "expiry TEXT", 1), false},
+		{"not-null", strings.Replace(nativeCookieSchema, "lastAccessed INTEGER", "lastAccessed INTEGER NOT NULL", 1), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "cookies.sqlite")
+			db, err := sql.Open("sqlite3", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = db.Exec(test.schema); err != nil {
+				t.Fatal(err)
+			}
+			db.Close()
+			err = checkCookieDatabase(path)
+			if (err == nil) != test.valid {
+				t.Fatalf("schema validation=%v valid=%v", err, test.valid)
+			}
+		})
+	}
 }
 
 // An abrupt process exit releases the kernel lock without deleting its file.

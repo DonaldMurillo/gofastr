@@ -99,16 +99,20 @@ func TestNativeProfile(t *testing.T) {
 		t.Fatal("PROFILE: worker disk witness failed: " + err.Error())
 	}
 	t.Log("PROFILE disk witness: non-session cookie and worker registration exist; session/boot/deleted cookies absent")
+	previous, err := readProfileNativeEvidence(root)
+	if err != nil {
+		t.Fatal("PROFILE: private expiry witness unavailable")
+	}
+	if err := waitProfileNativeExpiry(ctx, previous.ExpiresUnix); err != nil {
+		t.Fatal("PROFILE: " + err.Error())
+	}
+	t.Log("PROFILE natural expiry: writer observed future cookie; recorded deadline elapsed before fresh reader")
 	run("read")
 	run("other-id")
 	run("ephemeral-write")
 	run("ephemeral-read")
 	if _, err := os.Stat(filepath.Join(root, "ephemeral-data", "browser-profiles")); !os.IsNotExist(err) {
 		t.Fatal("PROFILE: default ephemeral launches created a persistent browser profile")
-	}
-	previous, err := readProfileNativeEvidence(root)
-	if err != nil {
-		t.Fatal("PROFILE: private origin evidence unavailable")
 	}
 	u, err := url.Parse(previous.Origin)
 	if err != nil {
@@ -160,6 +164,49 @@ func runProfileChild(ctx context.Context, root, role string) ([]byte, error) {
 // Neither credential values nor URLs containing tokens are diagnostic output.
 type profileNativeEvidence struct {
 	BootURL, Origin, SessionName, SessionValue string
+	ExpiresUnix                                int64
+}
+
+// Cookie dates have one-second resolution. Wait for the actual fixture expiry,
+// plus one second to cross that boundary, rather than assuming native startup
+// happened quickly enough for a fixed sleep. Expired rows may remain in SQLite;
+// only the browser's fresh-process cookie behavior is asserted for this cookie.
+func waitProfileNativeExpiry(ctx context.Context, expires int64) error {
+	if expires <= 0 {
+		return errors.New("natural-expiry deadline was not recorded by the writer")
+	}
+	delay := time.Until(time.Unix(expires, 0).Add(time.Second))
+	if delay <= 0 {
+		return nil
+	}
+	if delay > 15*time.Second {
+		return errors.New("natural-expiry fixture deadline exceeds its wait bound")
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return errors.New("natural-expiry fixture wait cancelled")
+	}
+}
+
+func TestProfileExpiryWaitBounds(t *testing.T) {
+	if err := waitProfileNativeExpiry(context.Background(), 0); err == nil {
+		t.Fatal("missing expiry deadline accepted")
+	}
+	if err := waitProfileNativeExpiry(context.Background(), time.Now().Add(-time.Minute).Unix()); err != nil {
+		t.Fatal("already elapsed deadline refused")
+	}
+	if err := waitProfileNativeExpiry(context.Background(), time.Now().Add(time.Hour).Unix()); err == nil {
+		t.Fatal("unbounded expiry deadline accepted")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitProfileNativeExpiry(ctx, time.Now().Add(5*time.Second).Unix()); err == nil {
+		t.Fatal("cancelled expiry wait accepted")
+	}
 }
 
 func readProfileNativeEvidence(root string) (profileNativeEvidence, error) {
@@ -243,6 +290,12 @@ func TestProfileNativeChild(t *testing.T) {
 	if !persistent {
 		id += ".ephemeral"
 		dataDir = filepath.Join(root, "ephemeral-data")
+		// Config.DataDir has always been caller-managed. Persistent-profile
+		// preparation creates its private root, but the unchanged ephemeral
+		// path requires this disposable fixture to create its own directory.
+		if err := os.MkdirAll(dataDir, 0700); err != nil {
+			t.Fatal("PROFILE: cannot create ephemeral fixture data directory")
+		}
 	}
 	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", dataDir)
 	shell := &profileNativeShell{linuxShell: New().(*linuxShell)}
@@ -323,8 +376,14 @@ func installProfileFixtureRoutes(app *framework.App, shell *profileNativeShell) 
 		}
 	})
 	app.Router().HandleFunc(http.MethodGet, "/__profile/seed", func(w http.ResponseWriter, _ *http.Request) {
+		expires := time.Now().Add(8 * time.Second).Truncate(time.Second)
+		shell.mu.Lock()
+		shell.evidence.ExpiresUnix = expires.Unix()
+		shell.mu.Unlock()
 		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
 		http.SetCookie(w, &http.Cookie{Name: "profile-kept", Value: "kept", Path: "/", MaxAge: 3600, SameSite: http.SameSiteStrictMode})
+		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
+		http.SetCookie(w, &http.Cookie{Name: "profile-expiring", Value: "short-lived", Path: "/", Expires: expires, SameSite: http.SameSiteStrictMode})
 		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
 		http.SetCookie(w, &http.Cookie{Name: "profile-session", Value: "temporary", Path: "/", SameSite: http.SameSiteStrictMode})
 		//gofastr:allow(security/insecure-cookie) disposable native test's HTTP loopback origin only
@@ -357,13 +416,13 @@ self.addEventListener('fetch', e => {
 }
 
 type profilePageObservation struct {
-	Ready                                           bool
-	Origin, Heading, Local                          string
-	Kept, Session, Deleted, BootVisible, Controlled bool
-	Registrations                                   int
-	ProbeStatus                                     int
-	OldSession                                      bool
-	Title                                           string
+	Ready                                                     bool
+	Origin, Heading, Local                                    string
+	Kept, Session, Deleted, Expiring, BootVisible, Controlled bool
+	Registrations                                             int
+	ProbeStatus                                               int
+	OldSession                                                bool
+	Title                                                     string
 }
 
 func observeProfilePage(ctx context.Context, evaluator desktop.PageEvaluator) (profilePageObservation, error) {
@@ -377,6 +436,7 @@ const cookies = document.cookie.split(';').map(s => s.trim());
 return {ready, origin:location.origin, heading:document.querySelector('h1')?.textContent || '',
  local:localStorage.getItem('profile-persisted') || '', kept:cookies.includes('profile-kept=kept'),
  session:cookies.includes('profile-session=temporary'), deleted:cookies.some(c => c.startsWith('profile-deleted=')),
+ expiring:cookies.some(c => c.startsWith('profile-expiring=')),
  bootVisible:document.cookie.includes('__gofastr_desktop'), controlled:!!navigator.serviceWorker?.controller,
  registrations:navigator.serviceWorker ? (await navigator.serviceWorker.getRegistrations()).length : -1,
  probeStatus:response.status, oldSession:probe.oldSession === true, title:title.title};`)
@@ -410,16 +470,16 @@ func exerciseProfileNative(ctx context.Context, role, root, id, dataDir string, 
 		return errors.New("fresh bridge/session/HttpOnly or pre-boot worker clearing assertion failed")
 	}
 	if role == "read" {
-		if state.Origin != shell.previous.Origin || !state.Kept || state.Local != "stored" || state.Session || state.Deleted {
+		if state.Origin != shell.previous.Origin || !state.Kept || state.Local != "stored" || state.Session || state.Deleted || state.Expiring {
 			return errors.New("fresh-process cookie/localStorage/origin persistence or session/expiry semantics failed")
 		}
-	} else if state.Kept || state.Local != "" || state.Session || state.Deleted {
+	} else if state.Kept || state.Local != "" || state.Session || state.Deleted || state.Expiring {
 		return errors.New("fresh or isolated profile unexpectedly inherited website data")
 	}
 	if role == "write" || role == "ephemeral-write" {
 		raw, err := evaluator.EvalAsync(ctx, `await fetch('/__profile/seed', {cache:'no-store'});
 localStorage.setItem('profile-persisted', 'stored');
-const seeded = document.cookie.includes('profile-deleted=temporary') && document.cookie.includes('profile-session=temporary') && document.cookie.includes('profile-kept=kept');
+const seeded = document.cookie.includes('profile-deleted=temporary') && document.cookie.includes('profile-session=temporary') && document.cookie.includes('profile-kept=kept') && document.cookie.includes('profile-expiring=short-lived');
 await fetch('/__profile/expire', {cache:'no-store'});
 return seeded && !document.cookie.includes('profile-deleted=');`)
 		if err != nil || string(raw) != "true" {

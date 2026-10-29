@@ -276,7 +276,7 @@ jobs:
           go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
 
       - name: Linux desktop graphical tests (CGO-free GTK and WebKit)
-        timeout-minutes: 10
+        timeout-minutes: 15
         # Separate processes for every GTK lifetime and the bus-only check.
         # Fail closed: an opt-in skip must never satisfy this blocking gate.
         run: ./scripts/test-linux-desktop.sh

@@ -385,5 +385,49 @@ func checkCookieDatabase(path string) error {
 	if result != "ok" {
 		return errors.New("desktop/linux: corrupt persistent cookies; refusing to reset them")
 	}
+	return checkCookieSchema(ctx, db)
+}
+
+// Soup's SQLite cookie jar logs query errors rather than returning them through
+// WebKit's void configuration setter. It SELECTs these columns and INSERTs by
+// position. Reject a valid SQLite file that would silently become an empty or
+// unwritable jar. Soup migrates its legacy nine-column table by adding sameSite.
+func checkCookieSchema(ctx context.Context, db *sql.DB) error {
+	var kind string
+	if err := db.QueryRowContext(ctx, "SELECT type FROM sqlite_schema WHERE name = 'moz_cookies'").Scan(&kind); err != nil || kind != "table" {
+		return errors.New("desktop/linux: persistent cookies have no compatible native table; use a compatible runtime or restore a backup while the app is stopped; refusing to reset them")
+	}
+	rows, err := db.QueryContext(ctx, "PRAGMA table_xinfo(moz_cookies)")
+	if err != nil {
+		return fmt.Errorf("desktop/linux: inspect persistent cookie schema: %w", err)
+	}
+	defer rows.Close()
+	names := []string{"id", "name", "value", "host", "path", "expiry", "lastAccessed", "isSecure", "isHttpOnly", "sameSite"}
+	count := 0
+	for rows.Next() {
+		var position, notNull, primary, hidden int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&position, &name, &kind, &notNull, &defaultValue, &primary, &hidden); err != nil {
+			return err
+		}
+		wantType, wantPrimary := "INTEGER", 0
+		if count >= 1 && count <= 4 {
+			wantType = "TEXT"
+		}
+		if count == 0 {
+			wantPrimary = 1
+		}
+		if count >= len(names) || position != count || !strings.EqualFold(name, names[count]) || !strings.EqualFold(kind, wantType) || primary != wantPrimary || notNull != 0 || hidden != 0 {
+			return errors.New("desktop/linux: incompatible native cookie schema; use a compatible runtime or restore a backup while the app is stopped; refusing to reset cookies")
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if count != 9 && count != 10 {
+		return errors.New("desktop/linux: incomplete native cookie schema; restore a backup while the app is stopped; refusing to reset cookies")
+	}
 	return nil
 }
