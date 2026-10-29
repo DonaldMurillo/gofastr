@@ -739,10 +739,7 @@ func renderAppSpecAxeTest(bp appspec.AppSpec) string {
 		}
 	}
 	login := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
-	authBase := strings.TrimRight(bp.App.Auth.BasePath, "/")
-	if authBase == "" {
-		authBase = "/auth"
-	}
+	authBase := appSpecAuthBase(bp)
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
 
@@ -1186,7 +1183,7 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 		b.WriteString("\n\t// Sign in, then every gated screen renders.\n")
 		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
 		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second}\n")
-		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+\"/auth/login\", url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", adminEmail))
+		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+%q, url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", appSpecAuthBase(bp)+"/login", adminEmail))
 		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
 		b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
 		b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 200\", p, code)\n")
@@ -3502,7 +3499,7 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = "/auth/register"
+		action = appSpecAuthBase(bp) + "/register"
 	}
 	next := propStr("next")
 	if next == "" {
@@ -3516,12 +3513,12 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 }
 
 // renderAppSpecLoginFormExpr emits the login form. props: action (default
-// /auth/login), next (post-login redirect, default /), register_href (optional).
+// <auth base>/login), next (post-login redirect, default /), register_href (optional).
 func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = "/auth/login"
+		action = appSpecAuthBase(bp) + "/login"
 	}
 	next := propStr("next")
 	if next == "" {
@@ -3560,6 +3557,27 @@ func appSpecAPIBase(apiPrefix string) string {
 		return ""
 	}
 	return "/" + p
+}
+
+// appSpecAuthBase is where the auth battery mounts its routes:
+// app.auth.base_path, else the battery's default /auth. Validation keeps
+// base_path an absolute path with no trailing slash, so base + "/login"
+// is the battery's login route.
+func appSpecAuthBase(bp appspec.AppSpec) string {
+	if bp.App.Auth.BasePath != "" {
+		return bp.App.Auth.BasePath
+	}
+	return "/auth"
+}
+
+// appSpecSignOutExpr is the sign-out control, posting to the battery's
+// logout route. ui.SignOut defaults to /auth/logout, so only another
+// base names an Action.
+func appSpecSignOutExpr(bp appspec.AppSpec) string {
+	if base := appSpecAuthBase(bp); base != "/auth" {
+		return fmt.Sprintf("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\", Action: %q})", base+"/logout")
+	}
+	return `ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"})`
 }
 
 // appSpecEntityAPIPath is where App.Entity mounts decl's CRUD routes:
@@ -4170,7 +4188,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: %s, Href: %q})\n", tx("Dashboard"), appHome))
-			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})", themeToggle) + "\n")
+			sb.WriteString("\t\tactions = " + barActions(appSpecSignOutExpr(bp), themeToggle) + "\n")
 			sb.WriteString("\t} else {\n")
 			// appSpecLoginRoute, not a hardcoded "/login": the app-shell
 			// sidebar had the same literal and it pointed at a route six of
@@ -4334,7 +4352,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		case bp.App.Auth.Enabled:
 			sb.WriteString("\tvar authAction render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})\n")
+			sb.WriteString("\t\tauthAction = " + appSpecSignOutExpr(bp) + "\n")
 			// Only offer Sign in when a screen actually hosts the login form.
 			// Six of the seven shipped app specs never route /login, so an
 			// unconditional button would make the app shell's only auth
@@ -5055,7 +5073,7 @@ func appSpecPWAOptionLiteral(bp appspec.AppSpec) string {
 		deny = append(deny, "/"+prefix)
 	}
 	if bp.App.Auth.Enabled {
-		if base := strings.TrimRight(bp.App.Auth.BasePath, "/"); base != "" && base != "/auth" {
+		if base := appSpecAuthBase(bp); base != "/auth" {
 			deny = append(deny, base)
 		}
 	}

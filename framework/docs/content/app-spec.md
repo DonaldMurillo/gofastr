@@ -1288,7 +1288,12 @@ app:
 With `enabled: true` the generated app wires the [auth battery](auth.md):
 an `AuthManager` backed by entity stores over auto-created `auth_users` /
 `auth_sessions` tables, with the core plugin's register/login/logout/me
-endpoints mounted under `base_path`. The generated app also mounts
+endpoints mounted under `base_path`. Everything the generator emits that
+calls those endpoints uses `base_path` too: the `login_form` and
+`signup_form` default actions, the Sign out control, and the generated
+e2e test's login. `base_path` must be an absolute path with no trailing
+slash, such as `/account`; its segments hold letters, digits, `-`, `_`
+and `.`, and none starts with a dot. The generated app also mounts
 `auth.SessionMiddleware` on the router, so the session cookie issued at
 login resolves to a user on every request; this is what makes
 `owner_field` and `access` scoping work for logged-in users on the
@@ -1299,7 +1304,7 @@ The generated app also wires the **auth UX** so the session is reflected
 everywhere, not just enforced:
 
 - **Sign out**: the app sidebar footer and (on marketing pages) the header
-  carry a `ui.SignOut` control that POSTs to `/auth/logout` and returns home.
+  carry a `ui.SignOut` control that POSTs to `<base_path>/logout` and returns home.
 - **Auth-aware marketing header**: a signed-in visitor sees a *Dashboard* link
   + *Sign out* instead of *Sign in*; the header re-renders per request from the
   session (`app.NewContextComponent`).
@@ -1395,7 +1400,7 @@ screens:
       - kind: login_form
         text: Sign in            # form heading
         props:
-          action: /auth/login    # default /auth/login
+          action: /auth/login    # default <base_path>/login
           next: /admin           # where to land after login (default /)
           register_href: /signup  # optional link
 ```
@@ -1659,6 +1664,9 @@ The generator rejects:
   `screens[].access.role`, and `app.admin.role` each name one value;
   a list or map there used to decode as the zero value and silently
   drop the gate it was configuring
+- an `app.auth.base_path` that is not an absolute path with no trailing
+  slash (`/auth/`, `auth`, `//host`, `/a//b` and `/..` are refused): the
+  battery mounts its routes at it, and the generated forms post there
 - a `login_form`/`signup_form` `action:` that is not a safe link
   target (it must pass `urlsafe.Anchor`: http(s), relative, or
   fragment schemes only — the form posts its credentials there)

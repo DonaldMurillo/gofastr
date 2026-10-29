@@ -20,6 +20,8 @@ app:
   auth:
     enabled: true
     dev_mode: true
+    # Not the default /auth: the generated forms, Sign out and e2e follow it.
+    base_path: /account
   admin:
     enabled: true
     path: /admin

@@ -2534,6 +2534,15 @@ few lines, and link the PR or the docs page for the rest.
   has no `id`, so every option posted `undefined`. The select now reads
   the target's key column from its table's route. Regenerate to pick it
   up. See [app specs](framework/docs/content/app-spec.md).
+- **A generated app's Sign out, login and signup forms follow
+  `app.auth.base_path`.** The battery mounted its routes at `base_path`,
+  but the generated Sign out button posted to `/auth/logout`, so signing
+  out failed and the session stayed. The `login_form` and `signup_form`
+  defaults and the generated e2e test's login named `/auth` too. They now
+  post under `base_path`. BREAKING for app specs: `base_path` must be an
+  absolute path with no trailing slash, such as `/account`, and
+  `gofastr generate` refuses `/auth/`, `auth`, `//host`, `/a//b` and
+  `/..`. See [app specs](framework/docs/content/app-spec.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
