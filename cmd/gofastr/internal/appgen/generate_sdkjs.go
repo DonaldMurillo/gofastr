@@ -833,7 +833,8 @@ export interface CursorPage<T> {
   data: T[];
   cursor: string;
   hasMore: boolean;
-  total: number;
+  /** Not sent: cursor mode does not count rows. */
+  total?: number;
 }
 
 export interface BatchResult<T> {

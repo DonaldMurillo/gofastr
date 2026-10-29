@@ -2543,6 +2543,16 @@ few lines, and link the PR or the docs page for the rest.
   absolute path with no trailing slash, such as `/account`, and
   `gofastr generate` refuses `/auth/`, `auth`, `//host`, `/a//b` and
   `/..`. See [app specs](framework/docs/content/app-spec.md).
+- **A strict OpenAPI validator accepts list responses.** The list
+  route's 200 is `oneOf` `ListResponse` and `CursorPage`, which had no
+  required keys, so every list body matched both and `oneOf` refused it.
+  `ListResponse` now requires `data`, `total`, `page`, `perPage` and
+  `totalPages`, and `CursorPage` requires `data`, `cursor` and
+  `hasMore`. The generated `client.d.ts` typed `CursorPage.total` as
+  always present; cursor mode never sends it, so it is optional now. With
+  `strictNullChecks`, code that read it as a number now gets a type
+  error instead of `undefined` at run time.
+  See [cursor pagination](framework/docs/content/cursor-pagination.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
