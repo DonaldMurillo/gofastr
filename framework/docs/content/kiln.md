@@ -115,7 +115,13 @@ Entities and data:
 - `add_field`, `delete_field`: deleting a field, or an `update_entity`
   that leaves one out, removes that column from the entity's seed rows
   and weights in the same edit, drops a row left with no column, and
-  `undo` brings them back
+  `undo` brings them back. The column also leaves the live table. A
+  UNIQUE, key, indexed or foreign-key column, which SQLite's
+  `DROP COLUMN` refuses, and an `update_entity` that makes a field
+  optional or no longer unique, rebuild the table from the declared
+  entity with its rows copied across. Rows the rebuilt table refuses (a
+  NULL in a required column `add_field` could only add as nullable)
+  refuse the edit, and the table stays as it was
 - `add_seed`: rows go into the entity's table, its declared `table` or
   else the framework default (`blogPosts` → `blog_posts`); a seed for an
   entity the world does not hold is refused, and so is a row key that is

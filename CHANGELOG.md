@@ -2718,6 +2718,13 @@ few lines, and link the PR or the docs page for the rest.
   and runs one prompt at a time even when a second connection loads it. A
   tool call that a cancelled prompt never ran gets a `cancelled` result,
   so the next request never carries a call without its result.
+- **Kiln's `delete_field` and `update_entity` change the live table.**
+  Kiln migrated additively, so a deleted required field kept its
+  `NOT NULL` column and every later create failed. A dropped field's
+  column now leaves the table. A field that is made optional or no longer
+  unique, or a column SQLite cannot drop in place, rebuilds the table
+  with its rows. Rows the rebuilt table refuses refuse the edit and
+  leave the table as it was.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -123,6 +124,11 @@ func (l *Live) Apply(e journal.Entry) error {
 			}
 		}
 	}
+	// update_entity and delete_field can take a column off a table or
+	// relax one, which the additive migrate never does: keep the fields
+	// as they stand, so the side effect sees what the edit changed.
+	// delete_field shifts the field slice in place, hence the clone.
+	cut := l.columnCut(e)
 	if err := journal.Apply(l.sess, e); err != nil {
 		// A refused entry may have changed the session before it failed
 		// (journal.Apply is not transactional), and nothing durable
@@ -144,15 +150,16 @@ func (l *Live) Apply(e journal.Entry) error {
 	// side effects) reported failure with the entry already durable, so
 	// every restart and every freeze replayed a seed the runtime itself
 	// refused to apply.
-	if err := l.applySideEffects(e, dropTable); err != nil {
+	if err := l.applySideEffects(e, dropTable, cut); err != nil {
 		l.restoreFromJournal()
-		// A refused seed rolled back its own transaction, so the DB still
-		// matches the journal. Rederiving drops every table, and with them
-		// the CRUD rows the journal never recorded.
+		// A refused seed rolled back its own transaction, and a refused
+		// table rebuild put its table back, so the DB still matches the
+		// journal. Rederiving drops every table, and with them the CRUD
+		// rows the journal never recorded.
 		// The edit fails either way; a re-derive failure joins it so the
 		// caller sees the database no longer matches the journal.
 		var dbErr error
-		if e.Op != journal.OpAddSeed {
+		if e.Op != journal.OpAddSeed && !errors.Is(err, kilndb.ErrTableRestored) {
 			dbErr = l.rederiveDB()
 		}
 		return errors.Join(fmt.Errorf("kiln/live: side-effects: %w", err), dbErr)
@@ -197,7 +204,7 @@ func (l *Live) Notify(kind, summary string) {
 // inserts its rows, a delete_entity drops the entity's table. It runs
 // BEFORE the durable Append (validation stage), so a failure rolls the
 // session back and re-derives the DB leaving nothing durable behind.
-func (l *Live) applySideEffects(e journal.Entry, dropTable string) error {
+func (l *Live) applySideEffects(e journal.Entry, dropTable string, cut *columnCut) error {
 	if e.Kind != journal.KindWorldEdit {
 		return nil
 	}
@@ -220,8 +227,88 @@ func (l *Live) applySideEffects(e journal.Entry, dropTable string) error {
 			return nil
 		}
 		return kilndb.DropTable(l.app.DB, dropTable)
+	case journal.OpDeleteField, journal.OpUpdateEntity:
+		return l.convergeColumns(cut)
 	}
 	return nil
+}
+
+// columnCut is an entity's fields before an update_entity or
+// delete_field.
+type columnCut struct {
+	entity string
+	before []world.Field
+}
+
+// columnCut records the fields of the entity e edits, or nil when e is
+// not an edit that can take columns away.
+func (l *Live) columnCut(e journal.Entry) *columnCut {
+	if e.Kind != journal.KindWorldEdit {
+		return nil
+	}
+	var name string
+	switch e.Op {
+	case journal.OpDeleteField:
+		var p journal.DeleteFieldPayload
+		if e.Decode(&p) != nil {
+			return nil
+		}
+		name = p.Entity
+	case journal.OpUpdateEntity:
+		var p journal.UpdateEntityPayload
+		if e.Decode(&p) != nil || p.Entity == nil {
+			return nil
+		}
+		name = p.Entity.Name
+	default:
+		return nil
+	}
+	ent, ok := l.sess.World.Entities[name]
+	if !ok || ent == nil {
+		return nil
+	}
+	return &columnCut{entity: name, before: slices.Clone(ent.Fields)}
+}
+
+// convergeColumns brings the edited entity's table to what the registry
+// declares when the edit took a field away or relaxed one: a dropped
+// field's column goes, and a field that is no longer required or unique
+// loses its NOT NULL or UNIQUE, which needs the table rebuilt.
+func (l *Live) convergeColumns(cut *columnCut) error {
+	if cut == nil {
+		return nil
+	}
+	after, ok := l.sess.World.Entities[cut.entity]
+	if !ok || after == nil {
+		return nil
+	}
+	table := ""
+	for _, ent := range l.app.Registry.All() {
+		if ent.GetName() == cut.entity {
+			table = ent.GetTable()
+			break
+		}
+	}
+	if table == "" {
+		return nil
+	}
+	var drop []string
+	relaxed := false
+	for _, f := range cut.before {
+		i := slices.IndexFunc(after.Fields, func(g world.Field) bool { return g.Name == f.Name })
+		if i < 0 {
+			drop = append(drop, f.Name)
+			continue
+		}
+		g := after.Fields[i]
+		if (f.Required && !g.Required) || (f.Unique && !g.Unique) {
+			relaxed = true
+		}
+	}
+	if relaxed {
+		return kilndb.RebuildTable(l.app.DB, l.app.Registry, table)
+	}
+	return kilndb.DropColumns(l.app.DB, l.app.Registry, table, drop)
 }
 
 // rederiveDB rebuilds the runtime DB from the journal-derived world:

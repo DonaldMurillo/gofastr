@@ -252,7 +252,7 @@ func DropAllTables(d *sql.DB) error {
 			break
 		}
 	}
-	if err := restoreForeignKeys(ctx, conn, fk); err != nil {
+	if err := restorePragma(ctx, conn, "foreign_keys", fk); err != nil {
 		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		return errors.Join(dropErr, err)
 	}
@@ -280,23 +280,24 @@ func listTables(ctx context.Context, conn *sql.Conn) ([]string, error) {
 	return tables, nil
 }
 
-// restoreForeignKeys sets foreign_keys back to want and reads it back.
-// The read-back and DropAllTables' discard on failure are not reached by
-// a test: SQLite documents the pragma as a silent no-op only inside a
-// transaction, which this connection never opens, and query_only does
-// not block it. They are the guarantee that a pooled connection never
-// keeps foreign keys off, kept for a driver or SQLite that behaves
+// restorePragma sets the named pragma (a constant of this package) back
+// to want and reads it back. The read-back and the callers' discard on
+// failure are not reached by a test: SQLite documents foreign_keys as a
+// silent no-op only inside a transaction, which these connections never
+// hold here, and query_only blocks neither pragma. They are the
+// guarantee that a pooled connection never keeps foreign keys off or
+// the legacy rename on, kept for a driver or SQLite that behaves
 // otherwise.
-func restoreForeignKeys(ctx context.Context, conn *sql.Conn, want int) error {
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA foreign_keys = %d`, want)); err != nil {
-		return fmt.Errorf("kiln/db: restore foreign_keys: %w", err)
+func restorePragma(ctx context.Context, conn *sql.Conn, name string, want int) error {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA %s = %d`, name, want)); err != nil {
+		return fmt.Errorf("kiln/db: restore %s: %w", name, err)
 	}
 	var got int
-	if err := conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&got); err != nil {
-		return fmt.Errorf("kiln/db: read foreign_keys: %w", err)
+	if err := conn.QueryRowContext(ctx, `PRAGMA `+name).Scan(&got); err != nil {
+		return fmt.Errorf("kiln/db: read %s: %w", name, err)
 	}
 	if got != want {
-		return fmt.Errorf("kiln/db: foreign_keys is %d after restore, want %d", got, want)
+		return fmt.Errorf("kiln/db: %s is %d after restore, want %d", name, got, want)
 	}
 	return nil
 }
