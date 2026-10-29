@@ -63,7 +63,7 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 | Event | Behaviour |
 | --- | --- |
 | `Open(Options{Path: dir})` | Load `dir/store.snap` if present; replay `dir/store.wal`, recovering a torn final record; checkpoint replayed state before new writes. |
-| `Open` with `Options.Keyword` | Rebuild the keyword index from every chunk the store holds, after the snapshot and WAL load. Snapshots carry no keyword state, and a durable store (`PgVectorStore`) holds chunks a fresh process has never indexed, so without the rebuild the hybrid keyword leg starts empty. |
+| `Open` with `Options.Keyword` | Rebuild the keyword index from every chunk the store holds, after the snapshot and WAL load. Snapshots carry no keyword state, so without the rebuild the hybrid keyword leg starts empty. `PgVectorStore.Keyword()` reads the table itself and is not rebuilt. |
 | `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. An append that fails (a full disk) is cut back off the WAL and the write fails; the next write snapshots first, so a later restart still opens. Replacing a document (remove its chunks, add the new ones) runs as one step and is one WAL record, so two concurrent `Add`s of one `ID` leave one version and a crash replays all of the replace or none of it. A WAL written by an earlier release, with separate add and remove records, still replays. Metadata may hold nested JSON objects and arrays; an `Add` whose metadata the WAL cannot encode (an unregistered Go type) fails before anything is removed. A batch that names one `ID` twice keeps the last `Document`, the way a second `Add` would. |
 | `Snapshot()` | Write a unique owner-only temporary file beside `dir/store.snap`, then rename it atomically; truncate WAL. |
 | `Add` / `Remove` every `SnapshotEvery` writes | Auto-triggers `Snapshot()`. |
@@ -95,7 +95,8 @@ implementation surfaces as an attributed error from `Add` / `Remove` /
 
 `Options.Keyword` injects a `KeywordBackend`. Two implementations ship:
 
-- **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default.
+- **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default for `FlatStore`.
+- **`PgVectorStore.Keyword()`**: Postgres full-text search over the pgvector table (below). The keyword leg for `PgVectorStore`.
 - **`WrapSearchBackend(b search.Backend)`**: adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
 
 When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. With a `filter`, the keyword leg widens its window until enough candidates pass the filter, the backend runs out, or the window covers the whole store, so matches in scope are not cut by out-of-scope ones ranked above them. The keyword leg receives at most the first 64 terms of the query text, counted as runs of letters and Unicode numbers the way the keyword index tokenizes them (`H₂O` is one term), the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
@@ -344,15 +345,29 @@ if err := store.EnsureSchema(ctx); err != nil { return err } // creates extensio
 idx, err := semantic.Open(semantic.Options{
     Embedder: embedder,
     Store:    store,
-    Keyword:  semantic.NewMemoryKeyword(), // PgVectorStore implements chunkLister → hybrid works
+    Keyword:  store.Keyword(), // full-text search over the same table
 })
 ```
 
-`Open` fills `MemoryKeyword` from the table's rows, so hybrid queries in a
-fresh process or a second replica see the keyword leg. The rebuild reads the
-whole table into memory once per `Open`, with no deadline, and a read that
-fails fails `Open`: an index rebuilt from a partial read would answer hybrid
-queries without their keyword matches.
+**The keyword leg reads the table.** `store.Keyword()` answers hybrid
+queries with Postgres full-text search over the rows the vector leg ranks,
+so a document one replica writes is in every replica's keyword leg at once.
+It matches any query term against `to_tsvector('simple', text)` (no
+stemming) and ranks by `ts_rank`; fusion uses rank order only. Terms are
+split the way `MemoryKeyword` splits them, runs of letters and digits, so a
+token Postgres keeps whole (an email address, a URL, `3.14`) is not matched
+by its parts. The search scans the table; for a large one, add the index
+the query can use:
+
+```sql
+CREATE INDEX ON embed_chunks USING gin (to_tsvector('simple', text));
+```
+
+`Open` refuses `MemoryKeyword` with a `PgVectorStore`: it would hold only
+the writes of the process that made it, so replicas' hybrid results would
+drift apart. It also refuses one store's `Keyword()` paired with another
+store. A host's own in-process `KeywordBackend` is filled from the table's
+rows at `Open`, with no deadline, and a read that fails fails `Open`.
 
 **Replace is one transaction.** `Index.Add` and `Index.Remove` on a
 `PgVectorStore` delete a document's old chunks and insert its new ones in a
@@ -385,7 +400,8 @@ backend; a backend that implements `OwnedKeywordBackend`
 (`IndexOwned(ctx, id, owner, text)`) receives the chunk's owner with it.
 `WrapSearchBackend` does, so the copy lands as a `search.Document` with
 `Owner` set and the search store's eraser removes it. `MemoryKeyword`
-holds its copy in memory only.
+holds its copy in memory only. `PgVectorStore.Keyword()` keeps no copy:
+it searches the chunk rows the eraser deletes.
 
 **Honest trade-off.** `FlatStore` brute-force-scans a memory slice (~3 ms / 100k chunks on M-class, no network hop). `PgVectorStore` pays a Postgres round-trip per query but gains durability, multi-replica sharing, and a growth path to ANN indexing. Use `FlatStore` until the in-process limitation bites; switch when it does.
 

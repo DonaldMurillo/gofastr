@@ -5,10 +5,12 @@ import (
 	"testing"
 )
 
-// assertKeywordRebuiltOnOpen opens two indexes over one durable store,
-// the way a restarted process or a second replica does, each with its
-// own in-memory keyword backend and no Path. The second never saw the
-// write, so its keyword leg is whatever Open rebuilt from the store.
+// assertKeywordRebuiltOnOpen opens two indexes over one store, the way
+// a restarted process does, each with its own in-memory keyword backend
+// and no Path. The second never saw the write, so its keyword leg is
+// whatever Open rebuilt from the store. A PgVectorStore refuses an
+// in-memory keyword backend; its replicas share the table's own index
+// (TestPgReplicasShareKeywordLeg).
 func assertKeywordRebuiltOnOpen(t *testing.T, store Store) {
 	t.Helper()
 	ctx := context.Background()
@@ -35,8 +37,4 @@ func assertKeywordRebuiltOnOpen(t *testing.T, store Store) {
 
 func TestKeywordRebuiltOnOpenFlat(t *testing.T) {
 	assertKeywordRebuiltOnOpen(t, NewFlatStore(8, "stub-fnv-bow"))
-}
-
-func TestKeywordRebuiltOnOpenPgVector(t *testing.T) {
-	assertKeywordRebuiltOnOpen(t, newPgStore(t, 8))
 }

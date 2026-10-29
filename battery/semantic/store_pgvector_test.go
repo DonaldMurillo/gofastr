@@ -390,7 +390,7 @@ func TestPgVectorHybridEndToEnd(t *testing.T) {
 	idx, err := Open(Options{
 		Embedder: emb,
 		Store:    store,
-		Keyword:  NewMemoryKeyword(),
+		Keyword:  store.Keyword(),
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -436,18 +436,30 @@ func TestPgVectorOpenRejectsPath(t *testing.T) {
 }
 
 // A store that cannot be read at Open fails Open: a keyword index rebuilt
-// from nothing would answer hybrid queries with no keyword half.
+// from nothing would answer hybrid queries with no keyword half. The
+// backend is a host's own in-process one; Open refuses MemoryKeyword
+// over this store before reading anything, which would pass this test
+// for the wrong reason.
 func TestPgVectorOpenFailsUnreadableStore(t *testing.T) {
 	store := newPgStore(t, 3)
+	idx, err := Open(Options{Embedder: NewStubEmbedder(3), Store: store, Keyword: hostKeyword{NewMemoryKeyword()}})
+	if err != nil {
+		t.Fatalf("Open over a readable store: %v", err)
+	}
+	idx.Close()
 	if _, err := store.db.Exec(`ALTER TABLE embed_chunks RENAME COLUMN text TO body`); err != nil {
 		t.Fatal(err)
 	}
-	idx, err := Open(Options{Embedder: NewStubEmbedder(3), Store: store, Keyword: NewMemoryKeyword()})
+	idx, err = Open(Options{Embedder: NewStubEmbedder(3), Store: store, Keyword: hostKeyword{NewMemoryKeyword()}})
 	if err == nil {
 		idx.Close()
 		t.Fatal("Open over an unreadable store succeeded with an empty keyword index")
 	}
 }
+
+// hostKeyword stands for a host's own KeywordBackend: not a
+// *MemoryKeyword, so Open rebuilds it from the store.
+type hostKeyword struct{ *MemoryKeyword }
 
 // --- helpers ---
 
@@ -458,7 +470,7 @@ func TestPgVectorOpenFailsUnreadableStore(t *testing.T) {
 func TestPgVectorHybridExactMetaFilter(t *testing.T) {
 	emb := NewStubEmbedder(16)
 	store := newPgStore(t, emb.Dim())
-	idx, err := Open(Options{Embedder: emb, Store: store, Keyword: NewMemoryKeyword()})
+	idx, err := Open(Options{Embedder: emb, Store: store, Keyword: store.Keyword()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -223,6 +223,17 @@ func Open(opts Options) (Index, error) {
 			return nil, fmt.Errorf("semantic: Options.Keyword is set but Store %T cannot list chunks: it must implement ChunkIDsForDoc(docID)/ChunkByID(id) for hybrid search", opts.Store)
 		}
 	}
+	// A MemoryKeyword holds the writes of this process only. Over a store
+	// every replica writes, another replica's documents would never reach
+	// this one's keyword leg, and hybrid results would differ by replica.
+	if _, local := opts.Keyword.(*MemoryKeyword); local {
+		if _, shared := opts.Store.(sharedStore); shared {
+			return nil, fmt.Errorf("semantic: Options.Keyword is a MemoryKeyword, which holds one process's writes, but Store %T is shared by every replica: use the store's own keyword index (PgVectorStore.Keyword()) or a shared search backend (WrapSearchBackend)", opts.Store)
+		}
+	}
+	if pk, ok := opts.Keyword.(pgKeyword); ok && opts.Store != Store(pk.s) {
+		return nil, errors.New("semantic: Options.Keyword is the keyword index of another store than Options.Store; its hits would not hydrate")
+	}
 	if opts.SnapshotEvery == 0 {
 		opts.SnapshotEvery = 1000
 	}

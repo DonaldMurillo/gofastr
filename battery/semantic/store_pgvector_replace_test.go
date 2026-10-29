@@ -52,7 +52,7 @@ func TestPgReplaceFailKeepsOldDoc(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			emb := NewStubEmbedder(8)
 			store := newPgStore(t, emb.Dim())
-			kw := NewMemoryKeyword()
+			kw := store.Keyword()
 			idx, err := Open(Options{Embedder: emb, Store: store, Keyword: kw})
 			if err != nil {
 				t.Fatal(err)

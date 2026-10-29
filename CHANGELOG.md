@@ -2655,6 +2655,15 @@ few lines, and link the PR or the docs page for the rest.
   path picked after that was never granted or never reached the page.
   The call route now has an 11-minute budget, and the macOS panels wait
   10 minutes like the permission alert.
+- **BREAKING: pgvector replicas share one keyword leg.** `Open` filled a
+  `MemoryKeyword` from the table once, so a document written through one
+  replica never reached another replica's hybrid keyword leg until that
+  replica restarted. `PgVectorStore.Keyword()` answers the keyword leg
+  with Postgres full-text search over the same table, and `Open` refuses
+  `MemoryKeyword` with a `PgVectorStore`. Replace
+  `Keyword: semantic.NewMemoryKeyword()` with `Keyword: store.Keyword()`;
+  [semantic-search.md](framework/docs/content/semantic-search.md) has the
+  matching rules and the GIN index for a large table.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

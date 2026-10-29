@@ -134,6 +134,11 @@ func (i *index) rebuildKeyword() error {
 	if i.keyword == nil {
 		return nil
 	}
+	// The store's own keyword index reads the store; there is nothing
+	// to fill, and reading every row would load the table into memory.
+	if _, ok := i.keyword.(pgKeyword); ok {
+		return nil
+	}
 	ctx := context.Background()
 	var chunks []Chunk
 	if ce, ok := i.store.(chunkEnumerator); ok {
@@ -184,6 +189,13 @@ func (i *index) docSources(ctx context.Context) (map[string]string, error) {
 		out[c.DocID] = c.Source
 	}
 	return out, nil
+}
+
+// sharedStore is a store other processes write to as well
+// (PgVectorStore). A keyword index held in one process's memory cannot
+// follow their writes, so Open refuses MemoryKeyword over one.
+type sharedStore interface {
+	sharedAcrossProcesses()
 }
 
 // chunkEnumerator is a store whose full read can fail (PgVectorStore).

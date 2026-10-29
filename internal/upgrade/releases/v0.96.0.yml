@@ -412,3 +412,10 @@ notes:
     breaking: true
     guidance: "The chat page at / hands its 24 h session token to anyone who loads it, so the harness binds 127.0.0.1:PORT, [::1]:PORT or localhost:PORT. To reach it from another machine, forward the port over SSH (ssh -L PORT:127.0.0.1:PORT host)."
     nodetect: "the address is a command-line argument; nothing in an app's source spells it"
+  - change: "BREAKING for battery/semantic on pgvector - Open refuses Options.Keyword: semantic.NewMemoryKeyword() with a PgVectorStore; pass store.Keyword(), which searches the table with Postgres full-text search"
+    breaking: true
+    hits: edit
+    guidance: "A MemoryKeyword held only the writes of the process that made it, so a document written through one replica never reached another's keyword leg and hybrid results differed by replica until a restart. Replace Keyword: semantic.NewMemoryKeyword() with Keyword: store.Keyword() where Store is the PgVectorStore. For a large table, CREATE INDEX ON <table> USING gin (to_tsvector('simple', text)). FlatStore apps change nothing."
+    find:
+      uses:
+        - gofastr/battery/semantic.NewPgVector
