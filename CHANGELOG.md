@@ -2270,6 +2270,17 @@ few lines, and link the PR or the docs page for the rest.
   `access.Decider` that denied an admin one of them was never asked. Its
   deny now refuses; its allow still admits nothing the policy does not.
   See [admin](framework/docs/content/admin.md#process-modules).
+- **Entity UI screens read a related entity only where `?include=`
+  could.** The relation picker, relation labels, facets and headings
+  checked the related entity's session, owner, tenant and RBAC gates but
+  not its exposure, so any posts writer could list every user's id and
+  name through `_pick?field=author_id` while users had CRUD off, and a
+  `posts:write` token read them without `users:read`. They now go
+  through the new `crud.CanReadRelatedScoped`, which also refuses an
+  entity with `Exposure.CRUD` false and a token without `<table>:read`.
+  Labels, facets and a named CSV export (`_export.csv?_id=`) also leave
+  out a row a resource-aware Decider refuses by id. See
+  [entity UI](framework/docs/content/entityui.md#the-read-gates).
 - **A narrow API token no longer reads the A2A tasks a stronger credential
   ran.** Tasks were keyed by the owner id alone, so a `customers:read`
   token listed its user's session tasks with their artifacts, and could

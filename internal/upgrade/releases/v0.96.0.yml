@@ -291,3 +291,11 @@ notes:
     find:
       uses:
         - gofastr/core/a2a.NewServer
+  - change: "BREAKING - CRUD _batch and transition routes answer 415 to a body that is not application/json, and a multipart create or update from a cross-site sender answers 403"
+    breaking: true
+    guidance: "A browser sends multipart/form-data cross-site with no preflight, so a page on a sibling subdomain could write as the signed-in user. The runtime and the generated SDKs already send JSON. A client that posted _batch or a transition as a form switches to a JSON body; a same-site multipart upload is unaffected."
+    nodetect: "the content type is chosen by clients at request time, not in the app's source"
+  - change: "Entity UI relation labels, facets, headings and pickers read a related entity only when ?include= could: never one with Exposure.CRUD false, and never one a scoped token lacks <table>:read for"
+    breaking: false
+    guidance: "A posts screen whose author_id points at a users entity with CRUD off (auth.UserEntityConfig) now draws an em dash for the author and offers no picker rows. To show those names, expose the related entity's read routes, or draw the column with the app's own component under a check the app owns."
+    nodetect: "the related entity's exposure is configuration read at runtime; a screen that shows its labels has no distinct spelling"

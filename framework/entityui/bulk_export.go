@@ -139,14 +139,22 @@ func exportFilename(table string) string {
 
 // namedRows reads the named rows' fields through the scoped CRUD handler
 // with read hooks, in primary-key order: a name the caller may not read
-// drops out. More than InRequestCap names, repeats counted, is refused.
+// drops out, and so does one the Decider refuses by id, as GET
+// <api>/<id> would. More than InRequestCap names, repeats counted, is
+// refused.
 func (u *UI) namedRows(ctx context.Context, m *meta, named, fields []string) ([]map[string]any, error) {
 	if len(named) > InRequestCap {
 		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 	}
 	ids := dedupeIDs(named)
-	return m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
+	rows, err := m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
 		Fields: fields,
 		Sorts:  m.keySorts(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(rows, func(row map[string]any) bool {
+		return !canReadRecord(ctx, m.ch, m.rowID(row))
+	}), nil
 }

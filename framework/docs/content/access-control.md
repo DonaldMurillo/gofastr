@@ -445,13 +445,21 @@ specific row, which matters when a resource-aware `Decider` allows the listing
 and denies one record; the collection-level predicate would render a row the
 read-one route refuses.
 
+For rows of an entity reached through another one's relation (a label, a
+facet, a picker), use `CanReadRelatedScoped(ctx)`. It adds the gate
+`?include=` applies: it refuses an entity whose `Exposure.CRUD` is false and a
+scope-restricted request (an API token or embed grant) that does not hold
+`<table>:read`.
+
 `framework/entityui` (the list, record and create screens generated apps
 and the admin draw) calls these for you, so a screen inherits the check:
 `List` runs `CanReadScoped` before any read, `Record` runs
 `CanReadScoped` and `CanReadRecordScoped`, and every read of a DIFFERENT
 entity — relation cell labels, the create form's relation picker, a
 relation facet's options, the Related tab's lists, and the stats and
-charts — passes that entity's own gate first.
+charts — passes that entity's own gate first. Labels, facets and the picker
+use `CanReadRelatedScoped` and leave out a related row the Decider refuses by
+id; a named CSV export drops such a row too.
 
 A relation to an entity the caller may not read renders muted (an em
 dash), never the raw foreign key. A bare id is useless to a reader and

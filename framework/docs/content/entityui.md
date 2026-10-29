@@ -526,7 +526,13 @@ JSON API applies live in the builders themselves:
 - Every read of a DIFFERENT entity — relation cell labels (one IN read
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
-  that entity's own gate first.
+  that entity's own gate first. A label, facet or picker also needs what
+  `?include=` needs (`CanReadRelatedScoped`): the related entity's CRUD
+  routes on (`Exposure.CRUD` not false), and a scope-restricted request
+  (an API token or embed grant) holding `<table>:read`. So a posts
+  screen shows no author names when the users entity has CRUD off, as
+  `auth.UserEntityConfig()` declares. A related row a resource-aware
+  Decider refuses by id is left out of labels, facets and the picker.
 - A relation the caller may not read renders muted (an em dash), never
   the related record's name and never the raw foreign key. A refused
   relation facet draws no options, so the facet is absent. A refused
@@ -805,7 +811,8 @@ and so does an entity with no REST write routes.
   query, and a pin is not in it. Repeated `_id=<id>` parameters replace
   the query with those rows (at most `InRequestCap`, repeats counted),
   still through the scoped handler, so a row the caller may not read
-  drops out. The floating bulk bar's **Copy CSV** uses it: it fetches
+  drops out, and so does a row the Decider refuses by id, as
+  `GET <api>/<entity>/<id>` would. The floating bulk bar's **Copy CSV** uses it: it fetches
   the checked rows' ids and writes the CSV to the clipboard. It shows
   where Export does.
 
