@@ -2553,6 +2553,17 @@ few lines, and link the PR or the docs page for the rest.
   `strictNullChecks`, code that read it as a number now gets a type
   error instead of `undefined` at run time.
   See [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **The OpenAPI spec lets an optional field be `null`.** The route takes
+  `null` for an optional field and stores it, so reads return it, but
+  the spec typed the field `string` (or `integer`, and so on), and a
+  strict validator refused the write and every read of the row after
+  it. An optional field's type is now `[T, "null"]` and its enum lists
+  `null`; a required field, a generated value and a key column stay
+  non-null. The create schema's state field under enforced states stays
+  non-null, as the route refuses a null state there; the MCP create
+  tool offered one and no longer does. `gofastr generate cli
+  --from-openapi` reads a `[T, "null"]` type as `T`; it made such a
+  field a string flag. See [core packages](framework/docs/content/core-packages.md).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

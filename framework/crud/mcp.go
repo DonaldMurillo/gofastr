@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
@@ -649,8 +650,11 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 		}
 		if field.Required && field.Default == nil && !serverStamped[field.Name] {
 			required = append(required, key)
-		} else if !field.Required {
-			nullableToolSchema(fs)
+		} else if !field.Required && key != stateKey {
+			// The route takes null for an optional field. The state field
+			// reaches here only on a create, which must start it at an
+			// initial value.
+			coreoa.Nullable(fs)
 		}
 		props[key] = fs
 	}
@@ -664,21 +668,6 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 // mcpFieldKey returns the parameter name a field is exposed under in MCP
 // tool schemas: WireName when set (the version-specific alias), else the
 // raw DB column Name. The CRUD filter parser accepts both forms.
-// nullableToolSchema lets fs accept null as well, the way the route
-// takes null for an optional field.
-func nullableToolSchema(fs map[string]any) {
-	if t, ok := fs["type"].(string); ok {
-		fs["type"] = []any{t, "null"}
-	}
-	if values, ok := fs["enum"].([]string); ok {
-		enum := make([]any, 0, len(values)+1)
-		for _, v := range values {
-			enum = append(enum, v)
-		}
-		fs["enum"] = append(enum, nil)
-	}
-}
-
 func mcpFieldKey(field schema.Field) string {
 	if field.WireName != "" {
 		return field.WireName

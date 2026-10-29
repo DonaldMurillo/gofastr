@@ -3,6 +3,7 @@ package framework
 import (
 	"database/sql"
 	"net/http"
+	"slices"
 	"testing"
 )
 
@@ -62,15 +63,18 @@ func TestListBodiesMatchOneVariant(t *testing.T) {
 	})
 }
 
-// schemaAccepts is the JSON Schema subset the envelopes use: $ref, type,
-// required, properties and items. Extra keys are allowed, as the spec
-// does not close the envelopes.
+// schemaAccepts is the JSON Schema subset the generated spec uses: $ref,
+// type, enum, required, properties and items. Extra keys are allowed, as
+// the spec does not close its objects.
 func schemaAccepts(t *testing.T, specDoc, s map[string]any, v any) bool {
 	t.Helper()
 	if _, ok := s["$ref"]; ok {
 		s = resolveSchemaRef(t, specDoc, s)
 	}
 	if typ, ok := s["type"]; ok && !jsonTypeIs(typ, v) {
+		return false
+	}
+	if enum, ok := s["enum"].([]any); ok && !slices.Contains(enum, v) {
 		return false
 	}
 	obj, isObj := v.(map[string]any)

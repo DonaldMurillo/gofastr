@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
@@ -236,6 +237,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			wireFields[i] = f
 		}
 		entitySchema := openapi.FieldsToSchema(wireFields)
+		// The route stores a null for an optional field, so reads return
+		// it. A generated value and a key column are never null.
+		wireProps := entitySchema["properties"].(map[string]any)
+		keyCols := ent.KeyColumns()
+		for i, f := range visibleFields {
+			if !f.Required && f.AutoGenerate == schema.AutoNone && !slices.Contains(keyCols, f.Name) {
+				openapi.Nullable(wireProps[wireFields[i].Name].(map[string]any))
+			}
+		}
 		s.AddSchema(schemaName, entitySchema)
 
 		// The router mounts auto-CRUD only when Exposure.CRUD is unset
@@ -793,8 +803,10 @@ func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.
 		if p, ok := props[stateKey].(map[string]any); ok {
 			// Copy before narrowing: the property map is shared with the
 			// response schema, whose enum stays the field's full value set.
+			// A create refuses a null state, so the type drops null too.
 			narrowed := make(map[string]any, len(p))
 			maps.Copy(narrowed, p)
+			narrowed["type"] = openapi.FieldToSchema(byName[st.Field])["type"]
 			narrowed["enum"] = st.InitialValues(fields)
 			props[stateKey] = narrowed
 		}

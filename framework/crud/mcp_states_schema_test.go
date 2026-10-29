@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -36,6 +37,9 @@ func invoicesEntity(advisory bool) *entity.Entity {
 // enumValues returns a field schema's string enum values. An optional
 // field's enum also lists null, which is not a value the field holds.
 func enumValues(field map[string]any) []string {
+	if values, ok := field["enum"].([]string); ok {
+		return values
+	}
 	var out []string
 	values, _ := field["enum"].([]any)
 	for _, v := range values {
@@ -68,6 +72,11 @@ func TestWriteToolSchemaNarrowsStates(t *testing.T) {
 	enum := enumValues(status)
 	if len(enum) != 2 || enum[0] != "draft" || enum[1] != "open" {
 		t.Errorf("create tool status enum = %v, want [draft open]", enum)
+	}
+	// The route refuses a null state on a create, so the tool must not
+	// offer one.
+	if values, _ := status["enum"].([]any); slices.Contains(values, nil) || status["type"] != "string" {
+		t.Errorf("create tool status takes null: %v", status)
 	}
 	if _, has := props["paid_on"]; has {
 		t.Error("create tool offers the paid_on stamp; the pay move sets it, never a create")

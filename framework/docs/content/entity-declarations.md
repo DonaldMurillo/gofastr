@@ -2150,8 +2150,10 @@ The tools use the same validation and CRUD handler behavior as HTTP routes.
 Their input schemas take what the route takes: a `json` field accepts any
 JSON value (an array as well as an object), a `decimal` field takes its
 text (`"12.34"`) as the route does, an optional field accepts
-`null`, and the owner and tenant columns the server stamps on create are
-never required. Results carry numbers exactly as the route wrote them, so
+`null` (except the state field on a create under enforced
+[States](states.md), which must start at an initial value), and the
+owner and tenant columns the server stamps on create are never
+required. Results carry numbers exactly as the route wrote them, so
 an integer above 2^53 is not rounded, and an `int` argument spelled with
 a point or an exponent past 2^53 (`9007199254740993e0`) is refused as
 the route refuses it, never stored rounded. The route sees the `/mcp` caller's

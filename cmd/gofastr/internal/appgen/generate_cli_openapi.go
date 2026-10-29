@@ -304,9 +304,24 @@ func oaParamJoined(pm map[string]any, name, in string, repeated bool) (bool, err
 }
 
 // oaGoType maps a scalar schema type to the CLI's flag Go type.
-// ok=false means the type has no flag representation.
+// ok=false means the type has no flag representation. An OpenAPI 3.1
+// type list maps through its one non-null entry, [T, "null"] as T: an
+// unset flag already sends nothing. A list naming two value types has
+// no flag.
 func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
 	t, _ := schema["type"].(string)
+	if list, isList := schema["type"].([]any); isList {
+		var types []string
+		for _, e := range list {
+			if s, _ := e.(string); s != "null" {
+				types = append(types, s)
+			}
+		}
+		if len(types) != 1 || types[0] == "" {
+			return "", false, false
+		}
+		t = types[0]
+	}
 	switch t {
 	case "string", "":
 		return "string", false, true
