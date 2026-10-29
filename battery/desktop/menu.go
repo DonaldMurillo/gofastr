@@ -228,7 +228,7 @@ func (b *Battery) dispatchMenu(id string) {
 			b.logger.Warn("desktop: menu navigate before the window opened", "id", id)
 			return
 		}
-		if err := w.Eval(js); err != nil {
+		if err := w.Eval(b.inAppJS(js)); err != nil {
 			b.logger.Error("desktop: menu navigate eval failed", "id", id, "error", err)
 		}
 	case item.Handler != nil:

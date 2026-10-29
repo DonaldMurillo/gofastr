@@ -35,6 +35,23 @@ func dispatchJS(name, data string) string {
 		"window.__gofastr.desktop._dispatch(" + jsQuote(name) + ", JSON.parse(" + jsQuote(data) + "))"
 }
 
+// inAppJS wraps js so it runs only while the page shows the app's own
+// origin; every script the battery sends a page goes through it
+// (TestEveryPageEvalIsOriginGated). A window can leave the app: the
+// runtime lets an external link navigate normally, and a page there
+// that defines window.__gofastr.desktop._dispatch or
+// window.__gofastr.navigate would receive every event, posted message
+// and deep link (an OAuth callback's code included). The check runs in
+// the page at eval time, so a navigation between the battery's lookup
+// and the eval cannot slip past it. Before Run binds, the origin is
+// "http://", which no page has.
+func (b *Battery) inAppJS(js string) string {
+	b.windowMu.Lock()
+	origin := "http://" + b.addr
+	b.windowMu.Unlock()
+	return "if (location.origin === " + jsQuote(origin) + ") { " + js + " }"
+}
+
 // emitToWindowID delivers one prepared event to a live window. A window
 // that closed between the lookup and the eval reads as not_found, not
 // internal: the user clicking a close button mid-delivery is normal
@@ -44,7 +61,7 @@ func (b *Battery) emitToWindowID(windowID, name, data string) error {
 	if !ok {
 		return &Error{Code: CodeNotFound, Message: "no window with that id"}
 	}
-	if err := w.Eval(dispatchJS(name, data)); err != nil {
+	if err := w.Eval(b.inAppJS(dispatchJS(name, data))); err != nil {
 		if _, ok := b.windowByID(windowID); !ok {
 			return &Error{Code: CodeNotFound, Message: "no window with that id"}
 		}
@@ -153,7 +170,7 @@ func (b *Battery) windowsMessagingMethods() []Method {
 					if w.ID() == caller {
 						continue
 					}
-					if err := w.Eval(dispatchJS(req.Name, data)); err != nil {
+					if err := w.Eval(b.inAppJS(dispatchJS(req.Name, data))); err != nil {
 						b.logger.Warn("desktop: broadcasting an event to a window failed",
 							"window", w.ID(), "error", err.Error())
 						continue

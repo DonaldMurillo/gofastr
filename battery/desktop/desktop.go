@@ -870,7 +870,7 @@ func (b *Battery) Emit(name string, payload any) error {
 	js := dispatchJS(name, data)
 	var firstErr error
 	for _, w := range ws {
-		if err := w.Eval(js); err != nil {
+		if err := w.Eval(b.inAppJS(js)); err != nil {
 			b.logger.Warn("desktop: emitting an event to a window failed",
 				"window", w.ID(), "error", err.Error())
 			if firstErr == nil {

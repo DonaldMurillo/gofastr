@@ -317,7 +317,7 @@ func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
 		return
 	}
 	js := "window.__gofastr.navigate(" + string(pathJSON) + ")"
-	if err := w.Eval(js); err != nil {
+	if err := w.Eval(b.inAppJS(js)); err != nil {
 		b.logger.Error("desktop: deep-link navigate eval failed", "error", err.Error())
 	}
 	if err := b.Emit("deep_link", deepLinkPayload{URL: rawURL, Path: path}); err != nil {

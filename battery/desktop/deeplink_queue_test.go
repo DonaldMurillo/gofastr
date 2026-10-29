@@ -67,6 +67,9 @@ func TestWarmDeepLinkQueueBoundAndReplay(t *testing.T) {
 	})
 	var navigations []string
 	for _, js := range win.evals() {
+		// Every page script runs behind the origin guard; before Run the
+		// app origin is the empty "http://".
+		js = strings.TrimSuffix(strings.TrimPrefix(js, `if (location.origin === "http://") { `), " }")
 		if strings.HasPrefix(js, "window.__gofastr.navigate(") {
 			navigations = append(navigations, js)
 		}

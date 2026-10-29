@@ -3048,6 +3048,15 @@ few lines, and link the PR or the docs page for the rest.
   directory. A path must now arrive in the exact clean form the dialog
   returned (the dialogs return that form), and a missing file resolves
   through its deepest existing parent.
+- **Desktop events and deep links reach only the app's own pages.** The
+  battery evaluated every event, posted window message, menu navigation
+  and deep-link navigation in whatever page a window showed. A window
+  that had followed an external link to another site handed that site
+  each of them, an OAuth callback's code included, once the page
+  defined `window.__gofastr.desktop._dispatch` or
+  `window.__gofastr.navigate`. Each script now runs inside
+  `if (location.origin === "<app origin>") { ... }`, checked in the
+  page when the script runs.
 
 ## [0.95.0] - 2026-10-26
 

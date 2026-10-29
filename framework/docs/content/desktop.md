@@ -888,6 +888,16 @@ Both deliver with the same `_dispatch` eval shape: the name and the
 payload's JSON travel as quoted strings and the page parses the payload
 with `JSON.parse`, never an object literal.
 
+Every script the battery sends a page (events, posted messages, menu
+and deep-link navigations) is wrapped in
+`if (location.origin === "<app origin>") { ... }`, and the page checks
+it when the script runs. A window that has followed an external link
+to another site gets nothing: a page there that defines
+`window.__gofastr.desktop._dispatch` or `window.__gofastr.navigate`
+would otherwise receive every event, message and deep link, an OAuth
+callback's code included. A script sent before `Run` binds its port
+runs on no page.
+
 ### Pages message each other through the bridge
 
 Three methods on the `windows` capability, all ungated (only the app's
@@ -1034,6 +1044,10 @@ A link that arrives while the window is up:
    client-side call a menu Navigate item makes (no reload).
 3. Emits `deep_link` to every open window's page listeners with
    `{url, path}`: the raw link and the path it became.
+
+Both scripts run only while the window shows the app's own origin
+(the guard in "Native events reach every window" above); a window on
+another site is skipped.
 
 ```js
 __gofastr.desktop.on('deep_link', ({ url, path }) => { ... })
