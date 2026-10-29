@@ -2643,6 +2643,11 @@ few lines, and link the PR or the docs page for the rest.
   GetURL handler for the Apple Event code `'GURT'` instead of `'GURL'`,
   so a URL on the app's scheme opened from a browser or `open` never
   reached `Config.DeepLink`.
+- **The `window` capability acts on the calling window.** `title`,
+  `setTitle` and `snapshot` always used the main window, so a Settings
+  page that mirrors `document.title` through `setTitle` renamed the main
+  window, and a secondary window's `snapshot` returned the main window's
+  pixels. A call from a window that has closed now answers `not_found`.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
