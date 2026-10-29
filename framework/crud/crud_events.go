@@ -79,10 +79,12 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		// The record's own tenant column names whose row this is; the
 		// writer's tenant differs from it under tenant.AllowCrossTenant,
 		// and stamping the writer's sent the row to their tenant's
-		// subscribers. The context is the fallback for a record that does
-		// not carry the column.
+		// subscribers. A record that does not carry the column falls back
+		// to the row's stamp (event_stamp.go), then the context.
 		if tid, ok := ch.recordColumn(record, ch.Entity.Config.TenantColumn()); ok && tid != nil && fmt.Sprint(tid) != "" {
 			data[eventKeyTenantID] = fmt.Sprint(tid)
+		} else if s, ok := ch.rowStampFor(ctx, record); ok && s.tenant != nil && fmt.Sprint(s.tenant) != "" {
+			data[eventKeyTenantID] = fmt.Sprint(s.tenant)
 		} else if tid := tenant.GetTenantID(ctx); tid != "" {
 			data[eventKeyTenantID] = tid
 		}
@@ -108,10 +110,14 @@ func (ch *CrudHandler) eventOwner(ctx context.Context, record any) (string, bool
 		// row, and the subscriber filter routes it to the row's owner.
 		// The writer is not always the owner: under owner.AllowCrossOwner
 		// Alice updates Bob's row, and stamping her id delivered Bob's
-		// record to Alice's subscription and not to Bob's. The context
-		// is the fallback for a record that does not carry the column.
+		// record to Alice's subscription and not to Bob's. A record that
+		// does not carry the column (a Hidden owner field, a delete's key
+		// payload) falls back to the row's stamp (event_stamp.go), then
+		// the context.
 		if id, ok := ch.recordColumn(record, ch.Entity.Config.Scope.OwnerField); ok && id != nil {
 			return fmt.Sprint(id), true
+		} else if s, ok := ch.rowStampFor(ctx, record); ok && s.owner != nil {
+			return fmt.Sprint(s.owner), true
 		} else if id, ok := owner.Get(ctx); ok {
 			return fmt.Sprint(id), true
 		}

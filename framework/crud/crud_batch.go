@@ -331,6 +331,7 @@ type batchUpdateRequest struct {
 // fields are the partial update. All items share one transaction.
 func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
@@ -465,6 +466,7 @@ type batchDeleteRequest struct {
 // with {ids:[...]}. All deletes share one transaction.
 func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")

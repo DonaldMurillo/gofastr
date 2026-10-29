@@ -2279,6 +2279,16 @@ few lines, and link the PR or the docs page for the rest.
   views posts, and Kiln's reset. A same-site request now needs an Origin
   naming the request's own host. See
   [security](framework/docs/content/security.md).
+- **A cross-owner update or delete reaches the row owner's `_events`
+  stream, not the writer's.** With the owner column Hidden (the default
+  for an injected `OwnerField`), an update's record left it out, and a
+  delete's payload is the key alone, so the event and its outbox row
+  took the owner and tenant from the writer's context: Alice's
+  `AllowCrossOwner` edit of Bob's row went to Alice's stream, Bob's
+  missed it, and the outbox named Alice for erasure. The write now
+  reads the row's owner and tenant before changing it, on update,
+  delete, batch, transition, restore and purge. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
 - **Entity UI screens read a related entity only where `?include=`
   could.** The relation picker, relation labels, facets and headings
   checked the related entity's session, owner, tenant and RBAC gates but

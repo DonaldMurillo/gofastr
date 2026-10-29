@@ -846,7 +846,12 @@ you want for anything a user sees about *their own* data. Two hard rules:
 A write made under `AllowCrossOwner` publishes its `_events` update to
 the row's owner, not the actor: the event's owner and tenant come from
 the record's own columns, so promoting another member's booking reaches
-that member's stream and not yours.
+that member's stream and not yours. A record that does not carry those
+columns (a Hidden owner field, which an update's response leaves out, or
+a delete, whose payload is the key alone) takes them from the stored
+row, read before the write changes it. The same holds for the outbox
+row's owner and for update, delete, batch, transition, restore and
+purge writes alike.
 
 ### Auth entities are NOT auto-private
 

@@ -163,6 +163,7 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 // Wrap ctx with WithServerWrites to persist them from trusted server
 // code; the owner and tenant columns are never writable from the body.
 func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string]any) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -194,6 +195,7 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 
 // DeleteOne deletes (or soft-deletes) a record by id.
 func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return err
 	}
@@ -494,6 +496,7 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 // BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -536,6 +539,7 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 // BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the
 // ids that were successfully removed.
 func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]string, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}

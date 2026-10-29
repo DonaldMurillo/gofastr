@@ -271,6 +271,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, err
 	}
 
+	if err := ch.stampRow(ctx, id); err != nil {
+		return nil, err
+	}
 	// A file the write replaces or clears is deleted once it commits
 	// (media_cleanup.go).
 	objs, err := ch.objectsBefore(ctx, r, id, idKey, body, false)
@@ -798,6 +801,9 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		}
 	}
 
+	if err := ch.stampRow(ctx, id); err != nil {
+		return err
+	}
 	var affected int64
 	kc, ka := ch.keyWhere(id)
 	if ch.Entity.Config.Scope.SoftDelete {

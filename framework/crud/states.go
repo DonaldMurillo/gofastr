@@ -472,6 +472,7 @@ func dateOf(v any) (string, bool) {
 //
 // It works on an Advisory entity too, where the moves stay as calls.
 func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	st := ch.Entity.Config.States
 	if st == nil {
 		return nil, ErrNoStates
@@ -541,6 +542,9 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	// is a no-op; the conditional UPDATE already serializes there.
 	lock := "UPDATE " + query.QuoteFolded(ch.Entity.GetTable()) + " SET " + query.QuoteFolded(st.Field) + " = " + query.QuoteFolded(st.Field) + " WHERE 1 = 0"
 	if _, err := ch.conn(ctx).ExecContext(ctx, lock); err != nil {
+		return nil, err
+	}
+	if err := ch.stampRow(ctx, id); err != nil {
 		return nil, err
 	}
 	cols := ch.visibleFields()

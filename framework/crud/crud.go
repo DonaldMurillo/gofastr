@@ -1089,6 +1089,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 // Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller data (owner/tenant/read-scope rows, or the row a write
 		// just accepted) must never be stored by a shared cache or the
 		// bfcache: RFC 9111's storage restriction covers Authorization
@@ -1174,6 +1175,7 @@ func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, resu
 // (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller data (owner/tenant/read-scope rows, or the row a write
 		// just accepted) must never be stored by a shared cache or the
 		// bfcache: RFC 9111's storage restriction covers Authorization
