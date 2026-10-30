@@ -3010,6 +3010,14 @@ few lines, and link the PR or the docs page for the rest.
   (`middleware.VerifiedCSRFSubmission`), and the tool presents it under
   the configured header, where the inner check compares it with the
   cookie again.
+- **SQLite webhook leases and due times compare in UTC.** SQLite stores
+  a timestamp as text with its offset, and the claim compared that
+  text. When two workers' clocks carried different zones, or a lease
+  spanned a DST change, a live lease read as expired and the same
+  delivery went out twice, or a due retry waited out the offset. The
+  webhook SQL stores now bind every timestamp in UTC, and opening a
+  `SQLStore` on SQLite rewrites the due times of pending rows an
+  earlier release stored in the writer's zone.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

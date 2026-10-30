@@ -314,6 +314,15 @@ rejected by both bundled stores — a negative lease can only be a sign
 or unit error, and folding it onto the default would hand the caller a
 longer lease than they asked for.
 
+SQLite stores a timestamp as text with its offset and compares the
+text, so the SQL stores bind every timestamp in UTC whatever zone the
+caller's clock carries. Workers in different zones, or a lease that
+spans a DST change, then read each other's leases and due times
+correctly. Opening a `SQLStore` on SQLite rewrites in UTC the due
+times of pending rows an earlier release stored in the writer's zone.
+A replica still running that earlier release keeps writing its own
+zone until it is upgraded.
+
 ## Secret encryption at rest
 
 The SQL store can encrypt `webhook_subscribers.secret` so a DB

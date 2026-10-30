@@ -139,7 +139,7 @@ func (s *SQLInboundStore) AddEnvelope(ctx context.Context, e InboundEnvelope) er
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, s.insert(), e.ID, e.Source, e.DedupeKey,
-		headers, e.Payload, e.Status, e.Attempts, e.LastError, e.ReceivedAt, e.UpdatedAt, e.Owner)
+		headers, e.Payload, e.Status, e.Attempts, e.LastError, e.ReceivedAt.UTC(), e.UpdatedAt.UTC(), e.Owner)
 	return err
 }
 
@@ -173,7 +173,7 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 		return err
 	}
 	q := s.update()
-	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt, e.ID}
+	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt.UTC(), e.ID}
 	if e.Status != InboundStatusProcessed {
 		// Fence, mirroring the outbound UpdateDelivery fence: a late
 		// settle must not overwrite a terminal row
