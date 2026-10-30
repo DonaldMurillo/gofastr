@@ -3002,6 +3002,14 @@ few lines, and link the PR or the docs page for the rest.
   `App.InTx`. Such a handler still publishes its events before the
   caller commits; `hooks-and-transactions.md` says so and points at
   `db.WithTxQueue`.
+- **MCP write tools work behind CSRF.** With CSRF on every route, a
+  cookie-authenticated `_create`, `_update`, `_delete` or transition
+  tool always got a 403: the `/mcp` request passed the check, and the
+  internal request the tool re-dispatched carried the CSRF cookie but
+  not the token. `CSRF` now records the token a request passed with
+  (`middleware.VerifiedCSRFSubmission`), and the tool presents it under
+  the configured header, where the inner check compares it with the
+  cookie again.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

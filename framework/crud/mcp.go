@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -465,9 +466,9 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	// rate-limit bucket. The headers count only where the original's did,
 	// because the lookup trusts them only when RemoteAddr is a trusted
 	// proxy, and RemoteAddr is the original's.
-	// Nothing beyond these rides along: the re-dispatch re-presents the
-	// caller's credentials and address, never other headers the original
-	// carried.
+	// Nothing beyond these and the verified CSRF token below rides along:
+	// the re-dispatch re-presents the caller's credentials and address,
+	// never other headers the original carried.
 	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
 		req.RemoteAddr = orig.RemoteAddr
 		// The host the caller reached, not httptest's example.com: host
@@ -485,6 +486,14 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 				}
 				req.Header.Add(name, v)
 			}
+		}
+		// The CSRF token the caller's request passed the check with,
+		// under the header that check reads: the write carries the CSRF
+		// cookie in Cookie above and would get a 403 without it. It is
+		// presented, not exempted; the check compares it with the cookie
+		// again. A request no check passed has none.
+		if name, token, ok := middleware.VerifiedCSRFSubmission(orig.Context()); ok {
+			req.Header.Set(name, token)
 		}
 	}
 	rec := httptest.NewRecorder()

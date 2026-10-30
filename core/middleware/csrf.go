@@ -126,6 +126,24 @@ func TokenFromContext(ctx context.Context) string {
 	return v
 }
 
+// csrfSubmissionKey carries the token an unsafe request passed the check
+// with, and the header the check read it from.
+type csrfSubmissionKey struct{}
+
+type csrfSubmission struct{ header, token string }
+
+// VerifiedCSRFSubmission returns the header name and token an unsafe
+// request passed CSRF with, or ok false when no check passed it (a safe
+// method, or a request the check skipped). A server-side re-dispatch of
+// the request, such as an MCP tool's internal write, presents them again:
+// the re-dispatched request carries the same cookie, and its own check
+// compares them once more, so nothing is exempted. The token is the raw
+// cookie value: never render it.
+func VerifiedCSRFSubmission(ctx context.Context) (header, token string, ok bool) {
+	s, ok := ctx.Value(csrfSubmissionKey{}).(csrfSubmission)
+	return s.header, s.token, ok
+}
+
 var (
 	csrfAutoKeyOnce sync.Once
 	csrfAutoKey     []byte
@@ -288,7 +306,8 @@ func CSRF(cfg CSRFConfig) Middleware {
 				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFBadSignature)
 				return
 			}
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), csrfSubmissionKey{}, csrfSubmission{header: cfg.HeaderName, token: submitted})
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

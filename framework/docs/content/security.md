@@ -277,6 +277,20 @@ tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
 runtime forwards as `X-CSRF-Token`) is masked too.
 `middleware.TokenFromContext` stays raw: never render it.
 
+### Re-dispatched writes
+
+An entity's MCP write tools (and the A2A skills built on them) send the
+call through the router again as an internal request carrying the
+caller's cookies, so the same middleware decides it. With `CSRF` on
+that route the internal request needs the token as well. `CSRF`
+records the token an unsafe request passed with, and
+`middleware.VerifiedCSRFSubmission(ctx)` returns it with the header
+name it was checked under. The entity tools present it on the internal
+request, whose own check compares it with the cookie again, so nothing
+is exempted. A request the check skipped (a bearer token, an embed
+endpoint) has no token to present. The token is the raw cookie value:
+never render it.
+
 ## Cross-site form guard (Fetch Metadata)
 
 ```go
@@ -489,6 +503,8 @@ in the gateway / docs pipeline.
 - `CSRF(CSRFConfig)`: double-submit cookie pattern.
 - `MaskCSRFToken(token)`: per-render masked form of a CSRF token for
   page bodies.
+- `VerifiedCSRFSubmission(ctx)`: the header name and raw token an
+  unsafe request passed CSRF with, for a server-side re-dispatch.
 - `Compress()`: gzip for text responses (see [Compression](#compression)).
 - `RateLimit(RateLimitConfig)`: token-bucket per key.
 - `Timeout(d)`: per-request deadline; cancels context on expiry.
