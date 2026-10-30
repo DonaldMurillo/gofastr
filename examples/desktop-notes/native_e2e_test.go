@@ -195,7 +195,7 @@ func TestWidgetSubmitsAndClosesInShell(t *testing.T) {
 		r, err := nw.EvalQuiet(`return JSON.stringify({` +
 			`marker: window.__gofastr_desktop ? window.__gofastr_desktop.window : null,` +
 			` module: !!(window.__gofastr && window.__gofastr.desktop),` +
-			` available: !!(window.__gofastr && window.__gofastr.desktop && window.__gofastr.desktop.available()),` +
+			` available: !!(window.__gofastr && window.__gofastr.desktop && window.__gofastr.desktop.available),` +
 			` drag: !!(window.__gofastr && window.__gofastr.desktop && window.__gofastr.desktop.window &&` +
 			` typeof window.__gofastr.desktop.window.startDrag === "function")})`)
 		if err != nil {

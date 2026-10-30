@@ -13,16 +13,16 @@
 //
 //   const room = __gofastr.connectRoom(url, opts)
 //
-// The 'ws' module is loaded inside a one-time init before the first
-// socket opens. Nothing here logs: SDP, candidates, credentials,
+// The 'ws' module is loaded before each room's first socket opens. Nothing here logs: SDP, candidates, credentials,
 // status bodies, and close reasons never reach console output.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
 
-  let wsInit = null;
-  const wsReady = () => (wsInit ||= NS.loadModule('ws'));
+  // No local cache: the loader keeps a loaded module's promise and drops
+  // a failed one, so one transient failure does not stick to the page.
+  const wsReady = () => NS.loadModule('ws');
 
   // connectRoom(url, opts) joins the room at url. The wire is the rtc
   // protocol: snapshot/join/leave/status envelopes reduced through
@@ -315,6 +315,9 @@
         roster.clear();
         const was = self && self.id;
         self = p.self || null;
+        // A reconnected socket is a fresh server member with no status;
+        // afterHydrate resends ours, and the server never echoes it back.
+        if (self && statusDoc) self.status = statusDoc;
         reborn = !!(was && self && self.id !== was);
         iceList = p.iceServers || [];
         applyIce();

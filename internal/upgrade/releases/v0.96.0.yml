@@ -445,3 +445,11 @@ notes:
     breaking: true
     guidance: "The browser already ignored these at-rules: they count only at the top of a stylesheet, and an owned sheet compiles after the kit's rules. Delete the line. Load a web font with style.FontFaceCSS through the theme, and write the rules an @import named in the sheet itself."
     nodetect: "the css matcher has no at-rule form; gofastr gen styles and gofastr verify report GOFASTR1825 at the line"
+  - change: "BREAKING - __gofastr.desktop.available is a boolean getter, as the generated d.ts says, instead of the checking function"
+    breaking: true
+    hits: edit
+    guidance: "A function is truthy, so if (desktop.available) passed in a plain browser and the page went on to call the bridge. Read it as a property: desktop.available() now throws a TypeError."
+    find:
+      text:
+        - glob: "**/*.js"
+          match: 'desktop\.available\s*\('

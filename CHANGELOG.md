@@ -3057,6 +3057,20 @@ few lines, and link the PR or the docs page for the rest.
   or YAML comment) was taken as a heading, named as the heading of the
   hits after it and counted toward heading relevance; it is now an
   ordinary line, and a topic's title skips fences too.
+- **rtc recovers from a failed `ws` module load and keeps its own
+  status across a reconnect.** The module cached the first
+  `loadModule('ws')` promise, so one transient load failure left every
+  later `connectRoom` on the page at `closed:error` until a full page
+  load; it now asks the loader each time, and the loader already drops
+  a failed load. After a signalling reconnect `room.self.status` was
+  empty while peers saw the resent document; the module puts it back
+  on the new `self` before `onSnapshot` runs.
+- **BREAKING: `__gofastr.desktop.available` is a boolean.** It was the
+  checking function itself, so `if (desktop.available)` passed in a
+  plain browser and the page went on to call the bridge. It is now a
+  getter that reads the host marker, as the generated d.ts and the
+  desktop docs already said. `desktop.available()` now throws a
+  TypeError: read it as a property.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
