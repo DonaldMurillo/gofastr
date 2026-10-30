@@ -458,8 +458,9 @@ tighten it, both installed by the host:
   when the app's session middleware (`battery/auth`
   `SessionMiddleware`/`RequireAuth`, wired app-wide with `fwApp.Use`)
   loaded a user onto the request context; the anonymous session a page
-  load mints never does. This is the level for signals "not safe to
-  expose anonymously".
+  load mints never does. An embed grant and a scoped API token never
+  satisfy it, though `TokenMiddleware` loads the token's owner as the
+  user. This is the level for signals "not safe to expose anonymously".
 
 Both fail closed when the host installed no predicate, and both gate the
 RPC routes too. The predicate a host installs (`widget.SetSessionCheck`,

@@ -73,8 +73,9 @@ generated SDKs and agents see the correct error contract instead of treating
 RBAC-gated routes as public.
 
 The auth-gated spec is also **filtered per request**: an authenticated caller
-who holds no read grant for an entity (failed owner/tenant context, or a
-missing `Access.Read` permission) does not see that entity at all in the
+who holds no read grant for an entity (failed owner/tenant context, a
+missing `Access.Read` permission, or a scoped API token or embed grant
+without `<table>:read`) does not see that entity at all in the
 document — no schema component, no paths — the same read-scope filter
 `/api/llm.md`'s index runs. The schema is the disclosure; a caller who would
 only ever get 401/403 on an entity's rows never learns its name or columns

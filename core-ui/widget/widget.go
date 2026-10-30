@@ -117,7 +117,8 @@ type Definition struct {
 	// only when the app's session middleware (battery/auth
 	// SessionMiddleware or RequireAuth) resolved a user onto the request
 	// context, which the anonymous session a page load auto-mints never
-	// does. When no check is installed, a widget that asks for one fails
+	// does, and never for an embed grant or a scoped API token. When no
+	// check is installed, a widget that asks for one fails
 	// closed (the endpoints 403 rather than serving). Setting both
 	// RequireSession and RequireAuthenticated means the stricter level
 	// wins.

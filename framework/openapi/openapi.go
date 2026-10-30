@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -77,8 +78,12 @@ func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crud
 // scoping, RBAC — the same bundle llm.md's canListEntity assembles
 // in-process). An entity this caller would only ever see 401/403 on is
 // omitted from their spec document entirely; the spec is the disclosure.
+// A scoped token also needs "<table>:read", which auth.RequireAPIScopes
+// demands on the List route: CanReadScoped passes an entity with no read
+// permission without reading held scopes.
 func canReadSpecEntity(ctx context.Context, ent *entity.Entity) bool {
-	return (&crud.CrudHandler{Entity: ent}).CanReadScoped(ctx)
+	return access.ScopeAllows(ctx, access.Permission(ent.GetTable()+":read")) &&
+		(&crud.CrudHandler{Entity: ent}).CanReadScoped(ctx)
 }
 
 // objectSchemaWith wraps a property map in the OpenAPI object envelope

@@ -3755,6 +3755,17 @@ few lines, and link the PR or the docs page for the rest.
   say where the server is and how to reach it (`host`, `port`,
   `dbname`, the `ssl*` settings and a few more, listed in
   process-modules.md) and drops the rest.
+- **The signed-in `/openapi.json` and `/api/llm.md` follow a scoped
+  token's scopes.** A token holding `customers:read` got the schema and
+  paths of every entity that declares no read permission, while
+  `RequireAPIScopes` refused the reads. Both now keep only the entities
+  whose `<table>:read` scope the token or embed grant holds. Sessions
+  are unaffected.
+- **A `RequireAuthenticated` widget refuses a scoped API token.**
+  `TokenMiddleware` loads the token's owner as the user, which satisfied
+  the gate, so a leaked token read the widget's state, chrome and RPC
+  whatever its scopes. The gate now refuses a token as it refuses an
+  embed grant, and as `auth.RequireSession` does.
 
 ## [0.95.0] - 2026-10-26
 

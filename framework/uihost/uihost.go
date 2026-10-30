@@ -55,6 +55,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
@@ -3918,8 +3919,17 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// vouched. Grant-bearing requests are refused outright rather than
 	// falling through to an ambient cookie, mirroring the catalog and
 	// any-session rules above.
+	//
+	// A scoped API token is refused for the same reason, as
+	// battery/auth's RequireSession refuses it: its owner is the user,
+	// but a leaked token must not escape its scopes through a gate that
+	// asks only whether someone signed in. Held scopes mark both a
+	// token and a resolved grant.
 	widget.SetAuthenticatedCheck(func(req *http.Request) bool {
 		if req.Header.Get(embedGrantHeader) != "" {
+			return false
+		}
+		if _, scoped := access.HeldScopes(req.Context()); scoped {
 			return false
 		}
 		u, ok := handler.GetUser(req.Context())
