@@ -3513,7 +3513,10 @@ few lines, and link the PR or the docs page for the rest.
   resume, cancel and subscribe to them. A task records its creator's
   scopes (`TaskRecord.Scope`), and a scoped caller reaches only the tasks
   made under the same scopes. `WithA2A` wires it; a hand-built server sets
-  `a2a.Config.Scopes`. The SQL store adds a `scope` column on open. See
+  `a2a.Config.Scopes`. The SQL store adds a `scope` column on open. A
+  custom store that filters `ListTasks` by `ListQuery.Scoped` declares
+  `a2a.ScopeFilter`; one that does not is walked, so a scoped list's
+  `totalSize` and page token count only the caller's tasks. See
   [A2A](framework/docs/content/a2a.md#auth-and-owner-scoping).
 - **An access decider binds a generated screen's role gate.** The
   `authPolicy` the app spec writes into `app.go` read the user's roles

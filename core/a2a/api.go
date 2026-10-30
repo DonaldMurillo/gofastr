@@ -143,6 +143,16 @@ type Store interface {
 	DeletePushConfig(ctx context.Context, owner, taskID, id string) error
 }
 
+// ScopeFilter is the optional Store capability that says ListTasks
+// applies ListQuery.Scoped and Scope in its query, so its page and total
+// count only a scoped caller's tasks. The server lists a scoped caller
+// through a Store without it by walking every task of the owner and
+// counting the caller's alone, which costs one read of the owner's tasks
+// per list. Both built-in stores implement it.
+type ScopeFilter interface {
+	FiltersByScope()
+}
+
 // RetentionTrimmer is the optional Store capability that bounds the
 // rows cheap authenticated writes mint. The server asks the store to
 // trim after every persist that leaves a task terminal and after every

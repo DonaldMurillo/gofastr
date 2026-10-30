@@ -1581,14 +1581,23 @@ func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner s
 	}
 	q := ListQuery{ContextID: p.ContextID, Status: p.Status, After: after,
 		Scoped: sc.scoped, Scope: sc.key, Limit: size, Offset: offset}
-	recs, total, err := s.store.ListTasks(context.Background(), owner, q)
+	var recs []*TaskRecord
+	var total, advance int
+	var err error
+	if _, filters := s.store.(ScopeFilter); sc.scoped && !filters {
+		recs, total, err = s.walkScopedTasks(owner, q, sc)
+		advance = len(recs)
+	} else {
+		recs, total, err = s.store.ListTasks(context.Background(), owner, q)
+		advance = len(recs)
+		// A store that claims ScopeFilter and still returns another
+		// tier's task must not hand it to a scoped caller.
+		recs = slices.DeleteFunc(recs, func(rec *TaskRecord) bool { return !sc.sees(rec) })
+	}
 	if err != nil {
 		s.internalErr(w, req.ID, "list tasks", err)
 		return
 	}
-	// A store that ignores q.Scoped must still not hand a scoped caller
-	// another tier's task.
-	recs = slices.DeleteFunc(recs, func(rec *TaskRecord) bool { return !sc.sees(rec) })
 	includeArtifacts := p.IncludeArtifacts != nil && *p.IncludeArtifacts
 	tasks := make([]Task, 0, len(recs))
 	for _, rec := range recs {
@@ -1600,11 +1609,48 @@ func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner s
 		tasks = append(tasks, task)
 	}
 	resp := ListTasksResponse{Tasks: tasks, PageSize: size, TotalSize: total}
-	if offset+len(recs) < total {
-		resp.NextPageToken = encodePageToken(offset + len(recs))
+	if offset+advance < total {
+		resp.NextPageToken = encodePageToken(offset + advance)
 	}
 	s.writeResult(w, req.ID, resp, nil)
 }
+
+// walkScopedTasks lists a scoped caller through a Store that does not
+// declare ScopeFilter. Such a store's page and total may count other
+// tiers' tasks, so a narrow token would read how many tasks a stronger
+// credential ran, and a page of dropped rows would hand back its own
+// offset. The walk reads every task of the owner that matches q's other
+// filters and counts the caller's alone: q.Offset and q.Limit index the
+// caller's tasks, and total is how many there are.
+func (s *Server) walkScopedTasks(owner string, q ListQuery, sc taskScope) ([]*TaskRecord, int, error) {
+	offset, size := q.Offset, q.Limit
+	q.Limit = max(size, walkScopedBatch)
+	var page []*TaskRecord
+	seen, read := 0, 0
+	for {
+		q.Offset = read
+		recs, total, err := s.store.ListTasks(context.Background(), owner, q)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, rec := range recs {
+			if !sc.sees(rec) {
+				continue
+			}
+			if seen >= offset && len(page) < size {
+				page = append(page, rec)
+			}
+			seen++
+		}
+		read += len(recs)
+		if len(recs) == 0 || read >= total {
+			return page, seen, nil
+		}
+	}
+}
+
+// walkScopedBatch is the store page walkScopedTasks reads per call.
+const walkScopedBatch = 200
 
 func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p CancelTaskRequest

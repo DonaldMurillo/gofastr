@@ -321,6 +321,10 @@ func (s *SQLStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
 	return nil
 }
 
+// FiltersByScope implements ScopeFilter: ListTasks filters by
+// ListQuery.Scoped in its query.
+func (s *SQLStore) FiltersByScope() {}
+
 func (s *SQLStore) ListTasks(ctx context.Context, owner string, q ListQuery) ([]*TaskRecord, int, error) {
 	w := s.where("owner = %s", owner)
 	if q.ContextID != "" {

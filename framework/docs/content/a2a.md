@@ -188,8 +188,14 @@ a task its owner's session or a broader token ran is `-32001` too, and
 `ListTasks` leaves it out of the page and `totalSize`. A session sees
 every task of its owner. `WithA2A` wires this; a server built by hand
 passes `a2a.Config.Scopes`. A custom `a2a.Store` keeps
-`TaskRecord.Scope` and honors `ListQuery.Scoped`; the server re-checks
-both, so a store that does not still leaks nothing. The SQL store adds
+`TaskRecord.Scope`. One that filters `ListTasks` by `ListQuery.Scoped`
+in its query declares the optional `a2a.ScopeFilter` interface (both
+built-in stores do); without it, the server lists a scoped caller by
+walking every task of the owner and counting the caller's alone, so the
+page, `totalSize` and `nextPageToken` never count another tier's tasks.
+The server also drops another tier's task from a declaring store's page,
+so a store that declares it wrongly hands out no task, though its
+`totalSize` is then its own. The SQL store adds
 the `scope` column to an older table on open, and its rows read as a
 session's.
 

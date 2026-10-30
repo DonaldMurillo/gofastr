@@ -2,9 +2,11 @@ package a2a
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // scopedHarness reads X-Owner as "<owner>" (a session) or
@@ -98,6 +100,135 @@ func TestListFiltersScopeOverLaxStore(t *testing.T) {
 	}
 }
 
+// The server dropped a lax store's other-tier rows from the page but sent
+// the store's total and advanced the cursor by the kept rows: a narrow
+// token read how many session tasks its owner had, and a page whose rows
+// were all dropped handed back its own offset forever. A store that does
+// not declare ScopeFilter is walked, so the page, totalSize and cursor
+// count only the caller's tier.
+func TestLaxStorePagesOnlyCallerTier(t *testing.T) {
+	h := scopedHarness(t)
+	h.srv.store = unscopedListStore{h.srv.store}
+	narrow := "alice|customers:read"
+	want := map[string]bool{}
+	for _, owner := range []string{"alice", narrow, "alice", narrow, "alice"} {
+		if task := h.send(owner); owner == narrow {
+			want[task.ID] = true
+		}
+	}
+	got := map[string]bool{}
+	token := ""
+	for page := 0; page < 4; page++ {
+		params := map[string]any{"pageSize": 1}
+		if token != "" {
+			params["pageToken"] = token
+		}
+		_, e, raw := h.call(narrow, MethodListTasks, params)
+		var out ListTasksResponse
+		if e.Error != nil || json.Unmarshal(e.Result, &out) != nil {
+			t.Fatalf("ListTasks: %s", raw)
+		}
+		if out.TotalSize != len(want) {
+			t.Errorf("SECURITY: totalSize = %d through a lax store, want %d (the caller's tier)", out.TotalSize, len(want))
+		}
+		if len(out.Tasks) > 1 {
+			t.Errorf("a page of size 1 held %d tasks", len(out.Tasks))
+		}
+		for _, task := range out.Tasks {
+			got[task.ID] = true
+		}
+		if token = out.NextPageToken; token == "" {
+			break
+		}
+	}
+	if token != "" || len(got) != len(want) {
+		t.Fatalf("paged %v (next %q), want exactly %v", got, token, want)
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("the walk skipped the caller's task %s", id)
+		}
+	}
+}
+
+// skewedListStore is a lax store whose total disagrees with its rows: a
+// total past the rows (a task deleted between count and page) or rows
+// that ignore Offset (the same page on every call).
+type skewedListStore struct {
+	unscopedListStore
+	extraTotal   int
+	ignoreOffset bool
+}
+
+func (s skewedListStore) ListTasks(ctx context.Context, owner string, q ListQuery) ([]*TaskRecord, int, error) {
+	if s.ignoreOffset {
+		q.Offset = 0
+	}
+	recs, total, err := s.unscopedListStore.ListTasks(ctx, owner, q)
+	return recs, total + s.extraTotal, err
+}
+
+// The walk ends on an empty page when the total overstates the rows, and
+// on the total when a store repeats a page.
+func TestLaxStoreWalkEnds(t *testing.T) {
+	for name, st := range map[string]func(Store) Store{
+		"total past rows": func(b Store) Store { return skewedListStore{unscopedListStore{b}, 3, false} },
+		"offset ignored":  func(b Store) Store { return skewedListStore{unscopedListStore{b}, 0, true} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := scopedHarness(t)
+			h.srv.store = st(h.srv.store)
+			h.send("alice|customers:read")
+			done := make(chan []Task, 1)
+			go func() { done <- h.listTasks("alice|customers:read") }()
+			select {
+			case got := <-done:
+				if len(got) != 1 {
+					t.Errorf("listed %d tasks, want 1", len(got))
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("the walk never ended")
+			}
+		})
+	}
+}
+
+// lyingScopeStore claims ScopeFilter and still lists every tier.
+type lyingScopeStore struct{ unscopedListStore }
+
+func (lyingScopeStore) FiltersByScope() {}
+
+// A store that claims ScopeFilter and lies still hands a scoped caller no
+// other tier's task, and its cursor still moves past the dropped rows.
+func TestLyingScopeStoreLeaksNoTask(t *testing.T) {
+	h := scopedHarness(t)
+	h.srv.store = lyingScopeStore{unscopedListStore{h.srv.store}}
+	narrow := "alice|customers:read"
+	h.send("alice")
+	mine := h.send(narrow)
+	token, got := "", []string{}
+	for page := 0; page < 3; page++ {
+		params := map[string]any{"pageSize": 1}
+		if token != "" {
+			params["pageToken"] = token
+		}
+		_, e, raw := h.call(narrow, MethodListTasks, params)
+		var out ListTasksResponse
+		if e.Error != nil || json.Unmarshal(e.Result, &out) != nil {
+			t.Fatalf("ListTasks: %s", raw)
+		}
+		for _, task := range out.Tasks {
+			got = append(got, task.ID)
+		}
+		if token = out.NextPageToken; token == "" {
+			break
+		}
+	}
+	if token != "" || len(got) != 1 || got[0] != mine.ID {
+		t.Errorf("SECURITY: paged %v (next %q), want only %s", got, token, mine.ID)
+	}
+}
+
 // Every store keeps a task's creator scope and filters a scoped list by
 // it in the query, so the page and its total count only the caller's tier.
 func TestStoresFilterTasksByScope(t *testing.T) {
@@ -105,6 +236,9 @@ func TestStoresFilterTasksByScope(t *testing.T) {
 	for _, c := range storeConstructors(t) {
 		t.Run(c.name, func(t *testing.T) {
 			st := c.new(t)
+			if _, ok := st.(ScopeFilter); !ok {
+				t.Errorf("%T does not declare ScopeFilter, so every scoped list walks the owner's tasks", st)
+			}
 			ctx := context.Background()
 			session := rec("alice", "t-session", string(TaskStateCompleted), t0)
 			token := rec("alice", "t-token", string(TaskStateCompleted), t0)

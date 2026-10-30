@@ -287,7 +287,7 @@ notes:
     nodetect: "the old authPolicy is the app's own function in its app.go; no framework name appears at the role check"
   - change: "An A2A task records the scopes of the credential that created it, and a scoped API token or embed grant sees only the tasks made under the same scopes"
     breaking: false
-    guidance: "A narrow token of a user read the tasks that user's session ran. A custom a2a.Store persists TaskRecord.Scope and filters ListTasks by ListQuery.Scoped/Scope; the server re-checks both, so a store that does not hides every task from scoped callers rather than leaking one. Tasks stored before the upgrade read as a session's, so a token no longer sees the tasks it ran earlier."
+    guidance: "A narrow token of a user read the tasks that user's session ran. A custom a2a.Store persists TaskRecord.Scope. One that filters ListTasks by ListQuery.Scoped/Scope declares a2a.ScopeFilter (a FiltersByScope() method); without it the server walks the owner's tasks for every scoped list, so the page and totalSize count only the caller's tier. Tasks stored before the upgrade read as a session's, so a token no longer sees the tasks it ran earlier."
     find:
       uses:
         - gofastr/core/a2a.NewServer
