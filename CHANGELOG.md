@@ -2994,6 +2994,14 @@ few lines, and link the PR or the docs page for the rest.
   `POST`/`PATCH` on one row said what was wrong. Both now share one
   error classifier, so the item's `error`, `reason`, `fields` and
   `field_reasons` match the single write's body.
+- **A failed batch on a handler bound to a `*sql.Tx` undoes its own
+  writes.** With `ch.DB` set to a caller's transaction, a batch ran its
+  items straight on it, so the items before the one that failed stayed
+  written for a caller that handled the error and committed. Each
+  operation now runs under a savepoint there, as it does inside
+  `App.InTx`. Such a handler still publishes its events before the
+  caller commits; `hooks-and-transactions.md` says so and points at
+  `db.WithTxQueue`.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

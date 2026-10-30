@@ -21,10 +21,10 @@ func (ch *CrudHandler) conn(ctx context.Context) DBExecutor {
 }
 
 // inTx executes fn within a database transaction. On error, the transaction
-// is rolled back; otherwise it commits. If the handler's DB does not support
-// BeginTx (e.g., it is already a *sql.Tx from a parent operation, or a mock
-// without tx support), fn runs against the existing executor and the caller
-// owns the transaction lifecycle.
+// is rolled back; otherwise it commits. A transaction in ctx, or a handler
+// whose DB is already a *sql.Tx, gets a savepoint instead, and the caller
+// owns the transaction lifecycle. An executor with neither (a mock without
+// tx support) runs fn as is.
 //
 // fn receives a derived context carrying the *sql.Tx (accessible via
 // db.TxFromContext) and a tx-bound copy of the handler, its DB field points
@@ -51,6 +51,23 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 			txCh := *ch
 			txCh.DB = tx
 			return fn(ctx, &txCh)
+		}); err != nil {
+			return err
+		}
+		held.release(ctx, ch.DB)
+		return nil
+	}
+	// A handler bound to a caller's transaction (ch.DB is the *sql.Tx)
+	// runs the operation under a savepoint too: run straight on the
+	// transaction, a batch whose third item failed left the first two
+	// written for a caller that handled the error and committed. Its
+	// live-bus events still go out once the operation succeeds: nothing
+	// tells this handler when, or whether, the caller commits, which is
+	// what a context-carried transaction (App.InTx) is for.
+	if tx, ok := ch.DB.(*sql.Tx); ok {
+		opCtx, held := holdCascadeEmits(ctx)
+		if err := db.InSavepoint(opCtx, tx, func(ctx context.Context, _ *sql.Tx) error {
+			return fn(ctx, ch)
 		}); err != nil {
 			return err
 		}

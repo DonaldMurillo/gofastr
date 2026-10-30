@@ -294,6 +294,15 @@ The deferred rollback matters: a panic between `Begin` and `Commit`
 otherwise keeps the pooled connection and any row locks until the
 finalizer. It is the same shape `App.InTx` uses internally.
 
+A handler whose `DB` is your `*sql.Tx` itself (a copy with
+`ch.DB = tx`, the context carrying no transaction) also runs each
+operation under a savepoint, so one that fails, a batch included,
+leaves none of its writes on your transaction. Its events, though, go
+out as soon as the operation succeeds, before your `Commit` and even if
+you roll back: nothing tells the handler how your transaction ends.
+Carry the transaction on the context with `db.WithTxQueue` when events
+must wait for the commit.
+
 ### Handling validation errors
 
 When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call
