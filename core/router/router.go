@@ -901,6 +901,12 @@ func (r *Router) probe() (*http.ServeMux, []string) {
 			probeMux.Handle(key, probeRoute(key))
 		}()
 	}
+	// ServeMux answers HEAD on a GET pattern, so HEAD is probed too: it
+	// resolves to the GET route and shares its gate, and on a path with no
+	// GET it resolves to nothing and is not listed.
+	if !seen[http.MethodHead] {
+		methods = append(methods, http.MethodHead)
+	}
 	sort.Strings(methods)
 
 	root.probeMux = probeMux

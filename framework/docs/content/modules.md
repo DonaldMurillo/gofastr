@@ -116,6 +116,8 @@ rules apply identically.
   leak. Method probing (e.g. `DELETE` against a path that only has a
   gated `GET`) also returns 404: the `Allow` header in a 405 response
   lists only non-gated methods, so a disabled method is never advertised.
+  A live GET route's `Allow` names `HEAD` too, since the mux answers it,
+  and a gated GET takes its `HEAD` with it.
 - **Disabled → jobs deferred, not dropped.** Cron jobs skip the tick.
   Queue jobs are released back to pending (without consuming a retry
   attempt) and run when the module re-enables.

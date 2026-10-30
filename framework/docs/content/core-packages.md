@@ -19,6 +19,8 @@ serializes `O`. It also owns the `*Error` shape and the context
 accessors (`SetUser`, `GetUser`, `SetTenant`, `SetRequestID`) the
 middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
+`Respond` encodes `O` before it writes the status, so a value JSON cannot
+encode (a NaN, a channel) answers the generic 500, never an empty 200.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON

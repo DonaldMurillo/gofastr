@@ -2771,6 +2771,19 @@ few lines, and link the PR or the docs page for the rest.
   EXISTS` did nothing and its new columns never landed. A table read as
   missing is now read again under the lock and converged like any
   existing table.
+- **A response JSON cannot encode is an error, not an empty success.**
+  `handler.Respond` wrote `200` and then dropped the encode error, so a
+  NaN or a channel in a handler's result answered an empty 200. It now
+  encodes first and answers the generic 500. An MCP tool whose result,
+  or whose `structuredContent`, cannot be encoded gets the "internal tool
+  error" reply instead of a successful call with empty text.
+- **MCP echoes a numeric id past float64's range.** An id such as `1e400`
+  failed the strict decode before the id was rebuilt from its literal, so
+  the client got an invalid-request reply with a null id. The envelope now
+  decodes numbers as their literal from the start.
+- **A 405 `Allow` header names `HEAD` on a GET route.** The mux answers
+  HEAD on every GET pattern, but `Allow` listed GET alone. A gated GET
+  drops its HEAD with it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

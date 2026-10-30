@@ -21,15 +21,15 @@ func TestAllowListsEveryMatchingPattern(t *testing.T) {
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE /foo = %d, want 405", w.Code)
 	}
-	if got := w.Header().Get("Allow"); got != "GET, POST" {
-		t.Fatalf("Allow = %q, want %q", got, "GET, POST")
+	if got := w.Header().Get("Allow"); got != "GET, HEAD, POST" {
+		t.Fatalf("Allow = %q, want %q", got, "GET, HEAD, POST")
 	}
 
 	// A path only the wildcard matches still lists only its methods.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/bar", nil))
-	if got := w.Header().Get("Allow"); w.Code != http.StatusMethodNotAllowed || got != "GET" {
-		t.Fatalf("DELETE /bar = %d Allow %q, want 405 Allow %q", w.Code, got, "GET")
+	if got := w.Header().Get("Allow"); w.Code != http.StatusMethodNotAllowed || got != "GET, HEAD" {
+		t.Fatalf("DELETE /bar = %d Allow %q, want 405 Allow %q", w.Code, got, "GET, HEAD")
 	}
 }
 
@@ -47,8 +47,8 @@ func TestAllowSurvivesGatedSpecificPattern(t *testing.T) {
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE /foo = %d, want 405 (GET /{id} is live)", w.Code)
 	}
-	if got := w.Header().Get("Allow"); got != "GET" {
-		t.Fatalf("Allow = %q, want %q (gated POST must not be listed)", got, "GET")
+	if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("Allow = %q, want %q (gated POST must not be listed)", got, "GET, HEAD")
 	}
 }
 

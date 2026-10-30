@@ -146,7 +146,9 @@ A non-nil error becomes a JSON-RPC error, but only a deliberate
 server-side and answered with the generic "internal tool error", so
 handler text (filesystem paths, driver messages) never crosses the
 transport. For a failure the caller should see as tool output rather
-than a transport error, return `mcp.ToolResult{IsError: true}`.
+than a transport error, return `mcp.ToolResult{IsError: true}`. A result
+JSON cannot encode (a NaN, a channel), as a plain value or as
+`structuredContent`, is answered with the same "internal tool error".
 
 Options:
 
