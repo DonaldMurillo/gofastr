@@ -83,7 +83,10 @@ refuses at query time while SQLite compares it as text.
 
 ### `where(...)`
 
-Comma-separated predicates. Multiple predicates AND together. There is
+Comma-separated predicates. Each one splits at its leftmost operator,
+so an operator word inside a value is part of the value:
+`title="Drive in Cinema"` compares `title` with `=`. Multiple
+predicates AND together. There is
 no DSL-level `or`; express it as separate calls if your registry
 supports it, or use the lower-level `core/query` builder.
 

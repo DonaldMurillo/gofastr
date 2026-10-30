@@ -2968,6 +2968,10 @@ few lines, and link the PR or the docs page for the rest.
   would trim or drop (`name = ""`, `name = " x "`, a value over 200
   characters) now stays in the box instead of becoming a row, so
   applying the page unchanged keeps the filter.
+- **A `where()` value holding an operator word parses.** The fluent
+  DSL searched each operator across the whole term, ` in ` and
+  ` contains ` first, so `title="Drive in Cinema"` split inside the
+  quotes and was refused. A term now splits at its leftmost operator.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
