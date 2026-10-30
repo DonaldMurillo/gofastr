@@ -3173,6 +3173,16 @@ few lines, and link the PR or the docs page for the rest.
   claimed with an attempt spent until the lease ran out, so a restart
   waited out the lease, and a delivery at `MaxAttempts` 1 was
   dead-lettered without a send.
+- **A replica's presence and rtc goodbye is its last message on the
+  fanout.** Island presence `stop` and the rtc `Signaler`'s detach
+  published the empty roster before stopping the heartbeat and the
+  publish queue, and the queue's stop did not wait for a publish in
+  flight, so an older roster could land after the goodbye and restore
+  the departed members on every peer until the TTL.
+  `fanout.PublishQueue`'s `stop` now waits for the publish in flight
+  (at most the 5-second publish deadline on a stalled backend) and
+  starts none after it returns; both callers stop the heartbeat and
+  the queue before the goodbye.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

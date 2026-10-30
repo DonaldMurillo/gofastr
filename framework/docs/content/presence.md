@@ -212,8 +212,9 @@ presence); there is no separate presence wiring to do.
   heartbeating and its members vanish from peers within the TTL; no
   explicit goodbye needed. The expiry fires `SetOnPresenceChange` like
   any other departure, so viewers get the shrunk roster pushed. A **graceful stop** (`SetFanout`'s returned
-  `stop`, called by app `Shutdown`) publishes an empty roster first, so a
-  rolling restart converges promptly. The stopping replica drops every
+  `stop`, called by app `Shutdown`) stops the heartbeat, waits for a
+  roster already being published, then publishes an empty roster as the
+  replica's last message, so a rolling restart converges promptly. The stopping replica drops every
   remote member and fires `SetOnPresenceChange` for each topic whose
   roster shrank, so its own viewers see them leave.
 - A roster change from a remote merge fires the same `SetOnPresenceChange` callback →

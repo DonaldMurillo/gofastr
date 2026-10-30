@@ -3,6 +3,7 @@ package fanout
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -20,11 +21,33 @@ const publishTimeout = 5 * time.Second
 // goroutine that publishes each payload under a fixed per-publish deadline;
 // it never blocks and never returns an error. Publish failures are logged
 // at Debug (lossy lane: the durable path is the outbox's job). After stop,
-// send is a silent no-op; stop is prompt and safe to call multiple times.
+// send is a silent no-op, and stop is safe to call multiple times.
+//
+// stop drops what is still queued and returns once a publish already in
+// flight has finished, which the per-publish deadline bounds. A caller
+// that sends a final message directly after stop (a presence goodbye)
+// can rely on no earlier queued message landing after it. stop must not
+// be called while holding a lock the backend's Publish takes.
 //
 // depth <= 0 selects the default queue depth.
 func PublishQueue(f Fanout, topic string, depth int) (send func([]byte), stop func()) {
-	return SubscriberQueue(func(payload []byte) {
+	var (
+		mu       sync.Mutex
+		closed   bool
+		inflight sync.WaitGroup
+	)
+	send, stopQueue := SubscriberQueue(func(payload []byte) {
+		// The drainer can take a payload in the same instant stop closes
+		// the queue; the gate keeps that publish from starting after stop
+		// returned.
+		mu.Lock()
+		if closed {
+			mu.Unlock()
+			return
+		}
+		inflight.Add(1)
+		mu.Unlock()
+		defer inflight.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 		defer cancel()
 		if err := f.Publish(ctx, topic, payload); err != nil {
@@ -32,4 +55,12 @@ func PublishQueue(f Fanout, topic string, depth int) (send func([]byte), stop fu
 				"topic", topic, "err", err)
 		}
 	}, depth)
+	stop = func() {
+		stopQueue()
+		mu.Lock()
+		closed = true
+		mu.Unlock()
+		inflight.Wait()
+	}
+	return send, stop
 }

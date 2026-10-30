@@ -379,8 +379,9 @@ timer, whether the last peer left or migrated to another replica; what
 other replicas hold for that name stays under the remote TTL. Signals
 addressed to a peer on another replica are published on the fanout and
 delivered by the owning replica. A crashed replica's peers vanish from
-rosters within the TTL; `Close` publishes empty rosters first so a
-rolling restart converges promptly. Without a fanout, nothing runs and
+rosters within the TTL. `Close` stops the heartbeat, waits for a
+roster already being published, then publishes empty rosters as the
+replica's last messages, so a rolling restart converges promptly. Without a fanout, nothing runs and
 behaviour is byte-for-byte the single-replica result.
 
 ## Deployment

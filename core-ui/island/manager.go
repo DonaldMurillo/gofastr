@@ -558,22 +558,27 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			// Graceful leave: tell peers to drop this replica now (TTL is
-			// only the crash fallback). No-op if the heartbeat was halted.
-			m.gracefulLeaveLocalTopics(f)
-			// Stop the heartbeat goroutine.
+			// Silence every roster publisher first: joins (presenceSend
+			// cleared), the heartbeat, and the queue's publish in flight,
+			// which presenceStopQueue waits out. A roster that landed after
+			// the goodbye restored this replica's members on peers until
+			// their TTL.
 			m.mu.Lock()
 			done := m.presenceDone
+			m.presenceSend = nil
 			m.mu.Unlock()
 			if done != nil {
 				close(done)
 			}
 			m.presenceWG.Wait()
-			// Detach both lanes' subscriptions + publish queues.
+			presenceStopQueue()
+			// Graceful leave: tell peers to drop this replica now (TTL is
+			// only the crash fallback). No-op if the heartbeat was halted.
+			m.gracefulLeaveLocalTopics(f)
+			// Detach both lanes' subscriptions and the island queue.
 			islandCancel()
 			presenceCancel()
 			islandStopQueue()
-			presenceStopQueue()
 			// Clear all fanout + presence state. The remote members go
 			// with it, so local viewers of a topic that held any are
 			// told, as they are for a TTL expiry.
