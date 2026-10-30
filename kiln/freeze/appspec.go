@@ -291,6 +291,16 @@ func screenMaps(w *world.World) []any {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	// An unnamed page takes its name from its path and the root is
+	// "home", so `/` and `/home` both froze to one screen and the
+	// generator refused the pair (2026-10-27 K23). A derived name that a
+	// named page or an earlier path already holds gains a suffix.
+	taken := map[string]bool{}
+	for _, p := range w.Pages {
+		if p != nil && p.Name != "" {
+			taken[identifier(p.Name)] = true
+		}
+	}
 	out := make([]any, 0, len(paths))
 	for _, path := range paths {
 		p := w.Pages[path]
@@ -303,10 +313,15 @@ func screenMaps(w *world.World) []any {
 		}
 		name := p.Name
 		if name == "" {
-			name = identifier(strings.Trim(path, "/"))
-			if name == "" {
-				name = "home"
+			base := identifier(strings.Trim(path, "/"))
+			if base == "" {
+				base = "home"
 			}
+			name = base
+			for n := 2; taken[name]; n++ {
+				name = fmt.Sprintf("%s_%d", base, n)
+			}
+			taken[name] = true
 		}
 		route := p.Path
 		if route == "" {

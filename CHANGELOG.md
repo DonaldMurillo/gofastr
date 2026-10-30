@@ -3348,6 +3348,16 @@ few lines, and link the PR or the docs page for the rest.
   map or slice, and the seed failed with an internal error where a CRUD
   create of the same row succeeds. The value is now stored as its JSON
   text, as CRUD stores it, and reads back as the value seeded.
+- **A Kiln page patch read before a delete and re-add no longer
+  replaces the new page.** A re-added page restarts at version 1, so a
+  patch read from the old page matched it and swapped the old tree in.
+  Each `add_page` now gives the page a `gen`, and a patch built from
+  another one answers `kind: "conflict"`.
+- **Kiln's freeze gives every unnamed page its own screen name.** A
+  page without a name took one from its path and the root was `home`,
+  so `/` and `/home` both froze to `home` and the generator refused
+  the spec. A derived name that a named page or an earlier path holds
+  now gains a suffix (`home_2`).
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

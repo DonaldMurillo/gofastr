@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -572,6 +573,9 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 	// First version is 1, agents read this back via /kiln/world and
 	// pass it as if_match on update_page_element to detect drift.
 	args.Page.Version = 1
+	// A fresh generation per add, never the caller's: replay refuses a
+	// patch read from an earlier page at this path by it.
+	args.Page.Gen = rand.Text()
 	return t.applyEdit(journal.OpAddPage, journal.AddPagePayload{Page: args.Page})
 }
 
@@ -1062,6 +1066,10 @@ func pageConflict(pc *journal.PageConflictError) Result {
 	if pc.Have < 0 {
 		return conflict("page %q was deleted while the patch was being applied", pc.Path).
 			withHint("GET $KILN_URL/kiln/world to see the current pages")
+	}
+	if pc.Replaced {
+		return conflict("page %q was deleted and added again while the patch was being applied: refetch and retry", pc.Path).
+			withHint(pageRefetchHint)
 	}
 	return conflict("page %q changed while the patch was being applied (now version %d, patch built from version %d): refetch and retry",
 		pc.Path, pc.Have, pc.Want).withHint(pageRefetchHint)

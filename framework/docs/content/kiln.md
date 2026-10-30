@@ -301,8 +301,11 @@ Example:
 and an optional `if_match` version. The version is checked again when the
 patch applies, with or without `if_match`: a patch that another edit of the
 same page beat to the apply answers `kind: "conflict"` with a refetch hint,
-so concurrent patches never overwrite each other's edits. Re-read the page
-and send the patch again. A session journal written before this check may
+so concurrent patches never overwrite each other's edits. A page deleted
+and added again also starts at version `1`, so each `add_page` gives the
+page a new `gen`, and a patch read from the earlier page is a conflict
+too, even when the versions match. `if_match` compares only the version.
+Re-read the page and send the patch again. A session journal written before this check may
 hold two patches built from one version; it still loads, and the later
 patch wins.
 
@@ -341,6 +344,11 @@ and an endpoint whose path sits outside its entity's route: none has an app
 spec spelling, so delete it and register the route in owned Go after
 generation. The removed pre-v0.1 `entities/*.json`
 format is not emitted.
+
+Each page freezes to one screen. A page without a `name` takes one from
+its path (`/blog/posts` → `blog_posts`, `/` → `home`); when a named page
+or an earlier path already holds that name, it gains a suffix, so `/`
+and `/home` freeze to `home` and `home_2`.
 
 Freeze writes one `seed:` block per entity: several seeds for one entity
 merge into the first one's place, rows in order, counts summed and weights
