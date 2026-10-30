@@ -283,6 +283,16 @@ func applyWorldEdit(s *Session, e Entry) error {
 			}
 		}
 		w.Seeds = kept
+		// Its hooks go too, for the same reason: the generator refuses a
+		// hook naming an absent entity, so a frozen world kept one it
+		// could never build (2026-10-27 K22).
+		keptHooks := make([]*world.Hook, 0, len(w.Hooks))
+		for _, h := range w.Hooks {
+			if h == nil || h.Entity != p.Name {
+				keptHooks = append(keptHooks, h)
+			}
+		}
+		w.Hooks = keptHooks
 		return nil
 
 	case OpAddField:

@@ -3338,6 +3338,16 @@ few lines, and link the PR or the docs page for the rest.
   (`featureflag.WithEvaluator`, read back with `EvaluatorFrom`), and
   `Bool` prefers it to `Default()`. An app without the default chain
   adds `App.FlagContextMiddleware()`.
+- **Kiln's `delete_entity` removes the entity's hooks.** It dropped
+  the entity and its seeds and kept its hooks, so a frozen world named
+  a hook on an entity it no longer had, and the app spec generator
+  refused the spec. The hooks now go in the same edit, and `undo`
+  brings them back.
+- **A Kiln seed row can set a `json` field to an object or array.**
+  `add_seed` bound the decoded value as-is, database/sql refused the
+  map or slice, and the seed failed with an internal error where a CRUD
+  create of the same row succeeds. The value is now stored as its JSON
+  text, as CRUD stores it, and reads back as the value seeded.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

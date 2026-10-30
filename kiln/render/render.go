@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -307,7 +308,7 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 	if err != nil {
 		return fmt.Errorf("seed entity table: %w", err)
 	}
-	auto, err := seedAutoFields(ent)
+	auto, jsonCols, err := seedFields(ent)
 	if err != nil {
 		return err
 	}
@@ -338,6 +339,11 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 		for i, c := range cols {
 			placeholders[i] = "?"
 			args[i] = row[c]
+			if jsonCols[c] {
+				if args[i], err = seedJSONValue(row[c]); err != nil {
+					return fmt.Errorf("seed column %q: %w", c, err)
+				}
+			}
 		}
 		q := buildInsert(table, cols, placeholders)
 		if _, err := tx.Exec(q, args...); err != nil {
@@ -347,28 +353,49 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 	return nil
 }
 
-// seedAutoFields returns the entity's UUID and timestamp fields: the
-// values crud's create path generates, which a seed row's raw INSERT
-// would otherwise leave NULL (an implicit id is a TEXT primary key, and
-// SQLite stores NULL in one). An AutoIncrement field is left to the
+// seedFields returns the entity's UUID and timestamp fields, the values
+// crud's create path generates, which a seed row's raw INSERT would
+// otherwise leave NULL (an implicit id is a TEXT primary key, and SQLite
+// stores NULL in one), and its JSON columns, whose decoded values the
+// INSERT must encode first. An AutoIncrement field is left to the
 // database. Define panics on a config it refuses, so that is recovered
 // into the seed's error.
-func seedAutoFields(ent *world.Entity) (fields []schema.Field, err error) {
+func seedFields(ent *world.Entity) (auto []schema.Field, jsonCols map[string]bool, err error) {
 	cfg, err := entityConfig(ent)
 	if err != nil {
-		return nil, fmt.Errorf("seed entity %q: %w", ent.Name, err)
+		return nil, nil, fmt.Errorf("seed entity %q: %w", ent.Name, err)
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			fields, err = nil, fmt.Errorf("seed entity %q: %s", ent.Name, textsafe.Recovered(rec))
+			auto, jsonCols, err = nil, nil, fmt.Errorf("seed entity %q: %s", ent.Name, textsafe.Recovered(rec))
 		}
 	}()
+	jsonCols = map[string]bool{}
 	for _, f := range framework.Define(ent.Name, cfg).GetFields() {
 		if f.AutoGenerate == schema.AutoUUID || f.AutoGenerate == schema.AutoTimestamp {
-			fields = append(fields, f)
+			auto = append(auto, f)
+		}
+		if f.Type == schema.JSON {
+			jsonCols[f.Name] = true
 		}
 	}
-	return fields, nil
+	return auto, jsonCols, nil
+}
+
+// seedJSONValue is a json column's seed value as the text the driver
+// binds. database/sql refuses a map or a non-byte slice, so a decoded
+// object or array is encoded, as crud's write path encodes it; a string
+// is JSON text already and is stored as written (2026-10-27 K21).
+func seedJSONValue(v any) (any, error) {
+	switch v.(type) {
+	case nil, string, []byte:
+		return v, nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return string(raw), nil
 }
 
 // withAutoFields returns row with a generated value for each auto field
