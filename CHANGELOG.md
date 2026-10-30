@@ -2909,6 +2909,11 @@ few lines, and link the PR or the docs page for the rest.
   so two rows titled alike shared trigger and panel ids, and the second
   row's trigger opened the first row's menu. Each row menu is now keyed
   by its row, the way its copy-link span already was.
+- **A number field's − and + step their own input when another field on
+  the page shares its name.** The input's id defaults to the field name,
+  and the buttons found it with a page-wide `getElementById`, so the
+  second of two forms with a "replicas" field stepped the first form's
+  input. The buttons now look for the input in their own row.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
