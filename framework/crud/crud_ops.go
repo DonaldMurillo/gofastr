@@ -404,15 +404,12 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 	if serverWrites(ctx) {
 		return nil
 	}
-	rels := ch.Entity.Config.Relations
+	rels := ch.referenceRelations()
 	if len(rels) == 0 || ch.Registry == nil {
 		return nil
 	}
 	var registered map[string]*entity.Entity
 	for _, rel := range rels {
-		if rel.Type != entity.RelManyToOne {
-			continue
-		}
 		// A reference the write does not name does not move.
 		raws, named := w.tuple(ch, rel)
 		if !named {
@@ -493,6 +490,27 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error
 		}
 	}
 	return nil
+}
+
+// referenceRelations is every reference a write's scope check reads: the
+// belongs-to relations, and a Many relation field, whose column holds
+// one target id as a string. Define derives no relation for a Many
+// field (it emits no FK), so without this a write stored another owner's
+// id there unchecked (2026-10-27 D43).
+func (ch *CrudHandler) referenceRelations() []entity.Relation {
+	var out []entity.Relation
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type == entity.RelManyToOne {
+			out = append(out, rel)
+		}
+	}
+	for _, f := range ch.Entity.Config.Fields {
+		if f.Type != schema.Relation || !f.Many || f.To == "" {
+			continue
+		}
+		out = append(out, entity.BelongsTo(f.Name, f.To, f.Name))
+	}
+	return out
 }
 
 // updateSets reports whether an update writes f from the body. Key
@@ -636,10 +654,7 @@ func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id stri
 		holds: unknownHeld,
 	}
 	var read []string
-	for _, rel := range ch.Entity.Config.Relations {
-		if rel.Type != entity.RelManyToOne {
-			continue
-		}
+	for _, rel := range ch.referenceRelations() {
 		if _, named := w.tuple(ch, rel); !named {
 			continue
 		}

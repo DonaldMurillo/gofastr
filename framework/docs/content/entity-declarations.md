@@ -672,6 +672,10 @@ absent FK, an unscoped target, or a target the registry does not
 know is skipped — no registry means no read-side resolver either.
 The FK's existence check (`FOREIGN KEY` on both dialects) still runs
 underneath; the scope gate is what answers "someone else's row".
+A `relation` field with `many: true` gets the same scope gate on the
+id its own column stores, though it has no derived relation and no FK
+constraint. An update that sends back the id the row already stores
+is not checked again, for either kind.
 
 ### Column naming
 

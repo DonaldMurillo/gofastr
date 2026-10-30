@@ -3820,6 +3820,12 @@ few lines, and link the PR or the docs page for the rest.
   the gate, so a leaked token read the widget's state, chrome and RPC
   whatever its scopes. The gate now refuses a token as it refuses an
   embed grant, and as `auth.RequireSession` does.
+- **A `many: true` relation field's id follows the target's scopes on
+  write.** Define derives no relation for a Many field, so the
+  belongs-to scope check never read its column, and a create or
+  update stored another owner's id there. The id is now checked as a
+  belongs-to's is: a target the caller cannot read answers 404, and an
+  update that keeps the stored id passes.
 
 ## [0.95.0] - 2026-10-26
 
