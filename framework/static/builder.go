@@ -1429,7 +1429,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	if !b.Host.PWAEnabled() {
 		return nil
 	}
-	manifest, err := b.Host.PWAManifestJSON(b.BasePath)
+	manifest, err := b.Host.PWAManifestJSON(context.Background(), b.BasePath)
 	if err != nil {
 		return fmt.Errorf("static: pwa manifest: %w", err)
 	}
@@ -1473,15 +1473,27 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// no other policy.
 	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
 	offline = applyStaticCSP(offline, b.policy())
-	files := []struct {
+	type pwaFile struct {
 		urlPath string
 		relFile string
 		body    []byte
-	}{
+	}
+	files := []pwaFile{
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
 		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
 		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
+	}
+	// A locale tree's pages link their own manifest, whose start_url
+	// launches into that tree.
+	if locales, byPrefix := b.Host.PathLocales(); byPrefix {
+		for _, tag := range locales.Prefixed {
+			body, err := b.Host.PWAManifestJSON(localeContext(context.Background(), locales, tag), b.BasePath)
+			if err != nil {
+				return fmt.Errorf("static: pwa manifest %s: %w", tag, err)
+			}
+			files = append(files, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
+		}
 	}
 	for _, f := range files {
 		// User-supplied files win: before this surface moved to the end of

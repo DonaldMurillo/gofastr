@@ -426,3 +426,10 @@ notes:
     find:
       uses:
         - gofastr/battery/semantic.NewPgVector
+  - change: "BREAKING - uihost.UIHost.PWAManifestJSON takes a context.Context first, so the manifest's start_url follows the locale prefix the context carries"
+    breaking: true
+    hits: edit
+    guidance: "Pass the request context, or context.Background() for the default locale: ds.PWAManifestJSON(r.Context(), basePath). The UI host and the static export call it themselves, so apps that never call it change nothing."
+    find:
+      uses:
+        - gofastr/framework/uihost.UIHost.PWAManifestJSON

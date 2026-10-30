@@ -2219,6 +2219,9 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	if ds.headHTML != "" {
 		headParts = append(headParts, stripInlineScripts(ds.headHTML))
 	}
+	if ds.pwaConfig != nil {
+		headParts = append(headParts, pwaManifestLink(ctx))
+	}
 	for _, tag := range ds.headTags {
 		headParts = append(headParts, tag)
 	}

@@ -43,6 +43,14 @@ Generated apps scaffold placeholder icons automatically (see
 Every rendered page also gains `<link rel="manifest">` and, when
 `ThemeColor` is set, a `<meta name="theme-color">` in `<head>`.
 
+In an app with locale prefixes (`framework.WithLocalePrefixes`), a page
+under `/es/` links `/es/manifest.webmanifest`, whose `start_url` is the
+configured one with the prefix (`/` becomes `/es`, `/app` becomes
+`/es/app`). An absolute `StartURL` on another site is left alone. `id`
+and `scope` are the same in every locale, so the browser treats each
+locale's manifest as one app and a reader who switches language stays
+inside it. The worker precaches each locale's manifest.
+
 Without `WithPWA` none of these routes or tags exist; existing apps
 are unchanged.
 
@@ -187,7 +195,8 @@ default CSP blocks inline JS.)
 
 `App.ExportStatic` emits all of the PWA files alongside the pages:
 `manifest.webmanifest`, `service-worker.js`,
-`__gofastr/pwa/register.js`, and `__gofastr/pwa/offline/index.html`.
+`__gofastr/pwa/register.js`, and `__gofastr/pwa/offline/index.html`,
+plus `<locale>/manifest.webmanifest` for each prefixed locale tree.
 Under a non-root `BasePath` (e.g. a GitHub Pages project site) the
 manifest's `start_url`/`scope`/`id`/icon paths, the worker's precache
 list and deny list, and the registration target are all prefixed, so

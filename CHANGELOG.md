@@ -2802,6 +2802,14 @@ few lines, and link the PR or the docs page for the rest.
   an open, empty group that nothing loaded until the reader closed and
   reopened it. With no `Children`, `Expanded` is now ignored, so the
   first toggle opens the group and loads it.
+- **An app installed from a locale page launches in that locale.** Every
+  page linked one `/manifest.webmanifest` whose `start_url` had no
+  locale prefix, so a reader who installed from `/es/` landed on `/`. A
+  locale page now links `/es/manifest.webmanifest`, whose `start_url`
+  carries the prefix; `id` and `scope` are unchanged, so it is still one
+  app. The worker precaches each locale's manifest and the static export
+  writes one per locale tree. BREAKING: `UIHost.PWAManifestJSON` takes a
+  `context.Context` first.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -1274,7 +1274,10 @@ the rest of this document:
   `<script defer src="/__gofastr/pwa/register.js">` on the script rail:
   no inline JS, same CSP posture as `runtime.js`. Routes mounted:
   `/manifest.webmanifest`, `/service-worker.js` (root-scoped),
-  `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.
+  `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`. With locale
+  prefixes, a locale page links its own manifest (`/es/manifest.webmanifest`)
+  whose `start_url` carries the prefix; `id` and `scope` stay the same,
+  so every locale installs one app.
 - **The service worker never interferes with the runtime's rails.**
   Its fetch handler has a baked deny list (`/__gofastr/sse`,
   `/__gofastr/session`, `/__gofastr/action`,
