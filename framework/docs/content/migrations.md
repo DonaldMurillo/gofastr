@@ -276,6 +276,18 @@ this; for a snapshot written before it, the diff reads them from the
 value they hold: a float in its shortest exact form (`1e-07`, not
 `0.000000`), and a scalar on a JSON field JSON-encoded (`'true'`).
 
+`required` or `default` changed on a column that already exists is
+compared against the `CREATE TABLE` the snapshot recorded. On Postgres
+the file sets or drops `NOT NULL` (setting it fails while a row holds
+`NULL`, so backfill first) and sets or drops the default, each with its
+inverse as the `Down`; a text-to-integer retype sets the declared
+default itself. On SQLite, which has no `ALTER COLUMN`, the change joins
+the table rebuild, which has no `Down`. A snapshot whose `CREATE TABLE`
+holds a default in an older rendering (`0.000000` for `1e-07`)
+converges on the declared one, since that is the default the table
+holds. Boot (auto-migrate) compares neither: a `NOT NULL` a hand-written
+migration put on a column the entity leaves optional is not removed.
+
 > **Scope.** The standalone `gofastr migrate generate` CLI reads schema
 > **only from the `--from=<gofastr.yml>` app spec's entities** (see
 > [app specs](app-spec.md)). That is the pre-graduation bootstrap path. It does

@@ -3226,6 +3226,16 @@ few lines, and link the PR or the docs page for the rest.
   the restart circuit and left the slot `Failed`. `BumpGeneration`, a
   grant revoke or an artifact change now respawns it, and the new
   child goes through the same digest checks.
+- **`migrate generate` carries `required` and `default` changes on an
+  existing column.** The snapshot diff compared column types only, so
+  a field made optional kept its `NOT NULL` and a changed default
+  never reached the table. Generate now compares each column with the
+  `CREATE TABLE` the snapshot recorded: Postgres gets `SET`/`DROP NOT
+  NULL` and `SET`/`DROP DEFAULT` with their inverses as the `Down`;
+  SQLite rebuilds the table, under the same refusal as any rebuild
+  when a `CASCADE` or `SET NULL` foreign key references it. A snapshot
+  holding a default in an older rendering (`0.000000` for `1e-07`)
+  converges on the declared one. Boot does not compare either.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

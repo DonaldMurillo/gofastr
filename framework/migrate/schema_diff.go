@@ -481,6 +481,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	// must run last: it recreates the table from the entity, so it has to
 	// see the post-rename/post-add/post-drop column set).
 	var sqliteRetypes []retypeCol
+	defaultOwned := map[string]bool{}
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
 			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
@@ -507,6 +508,9 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if dialect == DialectSQLite {
 			sqliteRetypes = append(sqliteRetypes, retypeCol{name: f.Name, liveType: liveType, declaredType: declaredType})
 			continue
+		}
+		if isTextType(liveType) && isIntegerType(declaredType) {
+			defaultOwned[nameLow] = true // the USING form sets the declared default
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
@@ -638,11 +642,27 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	}
 	uniqueRebuild := len(uniqueCleared) > 0 && dialect == DialectSQLite
 
+	// NOT NULL or DEFAULT changed on an existing column, when the
+	// snapshot recorded the table's CREATE TABLE (see
+	// column_constraint.go). A SQLite change rebuilds the table below.
+	var constraintChanged []string
+	if env != nil && env.tableDDL != nil {
+		if prevDDL := lookupStringCase(env.tableDDL, ent.GetTable()); prevDDL != "" {
+			alters, changed, err := constraintChanges(ent, dialect, qtable, prevDDL, renameOldByNew, defaultOwned)
+			if err != nil {
+				return nil, err
+			}
+			constraintChanged = changed
+			changes = append(changes, alters...)
+		}
+	}
+	constraintRebuild := len(constraintChanged) > 0 && dialect == DialectSQLite
+
 	// The SQLite retype rebuild goes LAST: it recreates the table from the
 	// entity, so it must see the column set the renames/adds/drops above
 	// already converged. One change per table, no matter how many columns
 	// retyped — the rebuild converges every declared type at once.
-	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer || uniqueRebuild {
+	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer || uniqueRebuild || constraintRebuild {
 		var parts []string
 		for _, r := range sqliteRetypes {
 			parts = append(parts, fmt.Sprintf("%s type %s → %s", r.name, r.liveType, r.declaredType))
@@ -662,6 +682,9 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		if uniqueRebuild {
 			summary = strings.TrimPrefix(summary+"; drop unique on "+strings.Join(uniqueCleared, ", "), "; ")
+		}
+		if constraintRebuild {
+			summary = strings.TrimPrefix(summary+"; change NOT NULL or default on "+strings.Join(constraintChanged, ", "), "; ")
 		}
 		// The ADD changes above run first, so by the time the rebuild runs
 		// the old table holds the columns they add, filled from their
@@ -1160,10 +1183,11 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if f.Unique {
 			col += " UNIQUE"
 		}
-		if (f.Required && f.AutoGenerate == schema.AutoNone) || (inKey && len(keys) > 1) {
+		c := declaredConstraint(f, keys, dialect)
+		if c.notNull {
 			col += " NOT NULL"
 		}
-		col += ColumnDefaultClause(f, dialect)
+		col += c.dflt
 		columns = append(columns, col)
 	}
 	if len(keys) > 1 {

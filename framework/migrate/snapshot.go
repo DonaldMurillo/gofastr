@@ -169,8 +169,10 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 //
 // Covered changes: create and drop table (an entity removed); add, drop and
 // rename column; a column type change (in place on Postgres, a table rebuild
-// on SQLite); a primary-key change; declared and belongs_to indexes; and a
-// field's Unique set or cleared. Foreign keys are not compared: the snapshot
+// on SQLite); a primary-key change; declared and belongs_to indexes; a
+// field's Unique set or cleared; and a column's NOT NULL or DEFAULT
+// changed (ALTER COLUMN on Postgres, a table rebuild on SQLite). Foreign
+// keys are not compared: the snapshot
 // records no constraint names.
 func GenerateMigration(reg entity.Registry, prev SchemaSnapshot, dialect Dialect) (up, down string, next SchemaSnapshot, err error) {
 	return GeneratePlan(Plan{Registry: reg}, prev, dialect)
@@ -226,7 +228,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// foreign keys themselves are not compared (fks stays nil). The keys a
 	// key change re-adds only after their child's own changes run after
 	// every table's.
-	env := &fkDiffEnv{tables: prev.Tables, uniques: snapshotUniques(prev)}
+	env := &fkDiffEnv{tables: prev.Tables, uniques: snapshotUniques(prev), tableDDL: prev.TableDDL}
 	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue // views / external tables generate no table DDL
@@ -373,7 +375,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		}
 		if len(refs) > 0 {
 			sort.Strings(refs)
-			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite column type change: rebuilding the table drops it, "+
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite table rebuild: it drops the table, "+
 				"and the ON DELETE CASCADE / SET NULL foreign keys in %s would delete or unlink their rows; "+
 				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
 				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",

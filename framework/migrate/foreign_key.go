@@ -255,6 +255,10 @@ type fkDiffEnv struct {
 	// uniques is the snapshot's unique columns per table (snapshotUniques);
 	// nil (the live diff) or a missing table skips the comparison.
 	uniques map[string][]string
+	// tableDDL is the snapshot's CREATE TABLE per table, which the NOT
+	// NULL and DEFAULT diff reads; nil (the live diff) or a missing
+	// table skips it.
+	tableDDL map[string]string
 }
 
 // renamesApplied maps each column a rename hint renames (lower case) to its
