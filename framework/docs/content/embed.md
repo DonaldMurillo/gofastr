@@ -262,6 +262,13 @@ Use `NewSQLBurnStore` for anything beyond a single long-lived process.
 so one nonce is spendable once per replica, and a restart forgets every burn,
 so a nonce still inside its TTL becomes spendable again.
 
+A `SQLBurnStore` row keeps the grant it issued, so a replayed exchange
+returns the same grant, and the grant's subject in a `subject` column.
+`App.EraseUserData` overwrites both for the erased user and keeps the row,
+which still marks the nonce spent; a replay of it is refused. Opening the
+store adds the column to a table an older build created. `App.ExportData`
+leaves the table out, since a restored row would be a live grant.
+
 ## Origins
 
 Exact origins only. There is no wildcard and no "allow any" spelling; every

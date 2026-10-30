@@ -3198,6 +3198,22 @@ few lines, and link the PR or the docs page for the rest.
   which leaves out system fields such as `created_at`, JSON fields and
   `Where`-pinned ones, so a typed `?cols=` naming one of those no
   longer shows it.
+- **A user erasure deletes the per-account login limiter's rows.**
+  With `LoginRateLimitPerAccount` on a `SQLRateLimitStore`, the attempt
+  and block rows are keyed by the limiter's scope, `account:` and the
+  email, and `EraseUserData` left them until the window sweep.
+  `AuthManager.Init` now registers both tables by email
+  (`IdentityEmail`), following the limiter's `Scope`; other limiters'
+  rows on the same store stay.
+- **A user erasure overwrites the embed grants `SQLBurnStore` keeps
+  for that user.** A burn row keeps the grant it issued, and the
+  grant's claims name the subject, so `EraseUserData` left a signed
+  credential naming the erased user until `Prune`. The row now records
+  the subject in a `subject` column (added on open to a table an older
+  build created; its existing rows keep an empty subject until they
+  are pruned), and the erasure overwrites the grant and the subject
+  while keeping the row, so the nonce stays spent and its replay is
+  refused.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

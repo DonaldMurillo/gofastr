@@ -354,6 +354,8 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    |---|---|---|
    | `auth_api_tokens` | `owner_id` where `owner_kind = 'user'` | delete |
    | `oauth_tokens` | `user_id` | delete |
+   | the per-account login limiter's `SQLRateLimitStore` (both tables) | `rl_key`, the limiter scope plus `account:` plus the email (`IdentityEmail`) | delete |
+   | `gofastr_embed_nonces` (`embed.SQLBurnStore`) | `subject` (the grant's subject) | anonymize: `grant_token` overwritten, the row kept as the nonce's tombstone |
    | `admin_saved_views` | `owner` | delete |
    | `a2a_tasks`, `a2a_push_configs` | `owner` | delete |
    | `feature_flags` | the user's id in the `users` allow list | remove member |

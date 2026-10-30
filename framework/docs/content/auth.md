@@ -819,7 +819,11 @@ against the table names the CONFIGURED stores actually use (the
 `NewEntityUserStore(db, "users")` + `NewEntitySessionStore(db,
 "sessions")` gets its `users` row, `sessions` rows, resolved
 `IdentityEmail`, and magic-link tokens erased — not just the canonical
-`auth_*` spellings the package registers at import time.
+`auth_*` spellings the package registers at import time. When
+`LoginRateLimitPerAccount` uses a `SQLRateLimitStore`, the erasure also
+deletes that limiter's attempt and block rows for the user's email
+(the key is its `Scope`, `login_account` by default, then
+`|account:` and the email); other limiters' rows on the same store stay.
 
 ## Email identity is canonical (invisible-stripped + NFC-normalized + trimmed + lowercased)
 

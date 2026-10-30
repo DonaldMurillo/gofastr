@@ -1,6 +1,9 @@
 package auth
 
-import "github.com/DonaldMurillo/gofastr/core/datexport"
+import (
+	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
+)
 
 // The auth battery's right-to-be-forgotten registrations, the erase-plane
 // mirror of export.go. Registering from init() means any app that imports
@@ -50,6 +53,9 @@ import "github.com/DonaldMurillo/gofastr/core/datexport"
 //   - OAuth provider tokens (oauth_tokens, oauth_token_store.go):
 //     EraseDelete by user_id. A surviving refresh token still mints access
 //     to the user's provider account.
+//
+// resolveEraseTables also registers the per-account login limiter's two
+// SQLRateLimitStore tables, by email, when that limiter has one.
 //
 // The audit trail is deliberately NOT registered as an eraser. It is the
 // framework's table (audit_log), host-configurable via AuditConfig.Table, and
@@ -151,6 +157,29 @@ func resolveEraseTables(mgr *AuthManager) {
 		}
 	}
 	// Each flow mints only its own purpose, into its own configured store.
+	// The per-account login limiter keys its rows "<scope>|account:<email>"
+	// (core.go), so a shared SQL store keeps the erased address in both of
+	// its tables until the window sweep. Match the whole key: the scope
+	// is the limiter's own, so another limiter's rows on the store stay.
+	if cfg := mgr.Config().LoginRateLimitPerAccount; cfg != nil {
+		if rs, ok := cfg.Store.(*SQLRateLimitStore); ok {
+			scope := cfg.Scope
+			if scope == "" {
+				scope = loginAccountScope
+			}
+			prefix := ratelimit.NamespaceScope(scope) + "|account:"
+			for _, e := range []struct{ name, table string }{
+				{"auth_login_limits", rs.table},
+				{"auth_login_limit_attempts", rs.table + "_attempts"},
+			} {
+				datexport.RegisterEraser(datexport.DataEraser{
+					Name: e.name, Source: "auth", Table: e.table, Column: "rl_key",
+					Mode: datexport.EraseDelete, Identity: datexport.IdentityEmail,
+					ValuePrefix: prefix,
+				})
+			}
+		}
+	}
 	if p, ok := mgr.Plugin("magic-link"); ok {
 		if mp, ok := p.(*MagicLinkPlugin); ok {
 			if ms, ok := mp.tokenStore.(*SQLMagicLinkTokenStore); ok {
