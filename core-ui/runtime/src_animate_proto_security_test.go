@@ -1,5 +1,7 @@
 package runtime
 
+//gofastr:test-reads /framework/headless/feedback.js
+
 import (
 	"os"
 	"strings"
@@ -73,13 +75,15 @@ func TestToastsRedReservedKeyWrite(t *testing.T) {
 		t.Fatalf("reading framework/headless/feedback.js: %v", err)
 	}
 	src := string(raw)
-	start := strings.Index(src, "data-hui-toast-id")
+	// The arm pass: from its id read to the end of _initToasts (the
+	// dismiss helper is defined next).
+	start := strings.Index(src, "const id = item.getAttribute('data-hui-toast-id');")
 	if start < 0 {
 		t.Fatalf("setup broken: could not locate _initToasts' id read in feedback.js")
 	}
-	endRel := strings.Index(src[start:], "NS._toastTimers.forEach(")
+	endRel := strings.Index(src[start:], "NS._dismissToast = ")
 	if endRel < 0 {
-		t.Fatalf("setup broken: could not locate the cleanup pass after the id read in feedback.js")
+		t.Fatalf("setup broken: could not locate the end of _initToasts after the id read in feedback.js")
 	}
 	body := src[start : start+endRel]
 	if strings.Contains(body, "NS._toastTimers.set(") {
