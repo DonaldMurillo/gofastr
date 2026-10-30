@@ -166,6 +166,14 @@ r.Use(cache.CacheMiddlewareWithLimit(c, 30*time.Second, 2<<20)) // 2 MiB
 The middleware is RFC 9111-compliant by default:
 
 - Only `GET` requests are cached.
+- An unsafe request (`POST`, `PUT`, `PATCH`, `DELETE`, any method but
+  `GET`, `HEAD`, `OPTIONS` and `TRACE`) evicts the stored `GET` of its
+  own URL, path and query, on every locale under `WithLocalePrefixes`,
+  after its handler runs (RFC 9111 §4.4). Only that URL: a `DELETE
+  /items/1` leaves a stored `/items` list in place until its TTL. The
+  eviction runs whatever the status, so a refused request costs at
+  most one origin fetch. A `GET` that started before the change
+  committed can still store the old body, which then lasts its TTL.
 - Requests with `Authorization`, `Cookie`, or `X-Gofastr-Embed` headers bypass
   the cache. The last one is an embeddable surface's grant: it authenticates a
   request exactly as the other two do, and it deliberately travels without

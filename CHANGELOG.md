@@ -3138,6 +3138,19 @@ few lines, and link the PR or the docs page for the rest.
   listed. `SitemapFiles` now takes a `keep` filter the export fills
   from the pages it wrote, asked about each page by its routing path,
   and a hreflang alternate naming a skipped page goes as well.
+- **The HTTP cache middleware evicts a URL's stored `GET` after an
+  unsafe request to it.** Every method but `GET` passed straight
+  through, so after a `DELETE` or `PUT` the anonymous `GET` of the same
+  URL answered `HIT` with the old body until the TTL, while the docs
+  called the middleware RFC 9111-compliant (§4.4 requires the
+  invalidation). Any method but `GET`, `HEAD`, `OPTIONS` and `TRACE`
+  now evicts that URL's entry on every locale once its handler ran.
+  Lists that showed the record are not evicted.
+- **Back after an entityui delete fetches the record page again.** The
+  delete navigated away with `data-cui-rpc-navigate`, which refreshes
+  only the destination, so Back replayed the deleted record from the
+  runtime's screen cache. A successful RPC whose method is not `GET`
+  now evicts the page it ran on before it navigates.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

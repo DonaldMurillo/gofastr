@@ -1538,7 +1538,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3602 measured (3600 + 2) after a data-cui-rpc form's body
 		// carries the pressed submit button (2026-10-27,
 		// TestRPCFormSendsClickedSubmitter).
-		"rpc": 3602,
+		// 3633 measured (3631 + 2) after a successful non-GET RPC evicts
+		// the page it ran on before its navigate (2026-10-30,
+		// TestUnsafeRPCEvictsItsPage): Back after an entityui delete
+		// replayed the deleted record. The eviction has to sit here,
+		// beside the navigate only this module runs.
+		"rpc": 3633,
 	}
 	const coreOverride = 0
 

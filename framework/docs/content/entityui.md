@@ -574,7 +574,9 @@ The record's tabs are the same shape (`?tab=related`). Writes — save,
 delete, a state move — are form RPCs (`data-cui-rpc`) to the entity's
 REST routes whose answer re-fetches the page
 (`data-cui-rpc-navigate`), carrying a toast and, on a refusal, the
-runtime's error toast. The edit form's inputs prefill from the unhooked
+runtime's error toast. The runtime drops the page the write ran on from
+its screen cache before it navigates, so Back after a delete fetches
+the record again instead of replaying it. The edit form's inputs prefill from the unhooked
 read so they round-trip; read-only values show what an `AfterGet`
 redaction shows.
 
