@@ -483,6 +483,7 @@ func sanitizeIdent(s string) string {
 // against the same host/db the admin DSN points at. adminDSN must be
 // URL-form (postgres://...). The role's search_path/statement_timeout are
 // set by provisioning (ALTER ROLE ... SET), so the DSN needs no options.
+// Of the admin DSN's query it keeps only roleDSNParams.
 func moduleRoleDSN(adminDSN, role, password string) (string, error) {
 	u, err := url.Parse(adminDSN)
 	if err != nil {
@@ -492,7 +493,30 @@ func moduleRoleDSN(adminDSN, role, password string) (string, error) {
 		return "", fmt.Errorf("admin DSN must be URL-form (postgres://...), got %q", adminDSN)
 	}
 	u.User = url.UserPassword(role, password)
+	q := u.Query()
+	for k := range q {
+		if !roleDSNParams[k] {
+			q.Del(k)
+		}
+	}
+	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+// roleDSNParams are the admin DSN query keys the module-role DSN keeps:
+// where the server is and how to reach it. The rest go. user, password,
+// passfile and service name a login, and lib/pq sorts its key=value
+// pairs, so the admin's can outrank the role's userinfo. lib/pq also
+// sends any key it does not know as a startup setting, so options,
+// search_path or role would override what provisioning set on the role.
+var roleDSNParams = map[string]bool{
+	"host": true, "hostaddr": true, "port": true, "dbname": true,
+	"sslmode": true, "sslrootcert": true, "sslcert": true, "sslkey": true,
+	"sslinline": true, "sslsni": true, "sslnegotiation": true,
+	"ssl_min_protocol_version": true, "ssl_max_protocol_version": true,
+	"connect_timeout": true, "target_session_attrs": true, "load_balance_hosts": true,
+	"application_name": true, "fallback_application_name": true,
+	"krbsrvname": true, "krbspn": true,
 }
 
 // shortHash trims a hex digest to 12 chars for log/error lines.

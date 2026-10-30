@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // ProcessState is the supervisor's per-module state (design §8). The state
@@ -1006,6 +1007,20 @@ func (sl *moduleSlot) reconcile() {
 		} else if state != StateInstalledDisabled {
 			sl.setState(StateInstalledDisabled)
 		}
+	case desired.Enabled && otherArtifact(sl.desc, desired):
+		// Another replica registered a different artifact: the row's
+		// generation and grants are that executable's, and this replica's
+		// descriptor names the old one. Drain and hold, as for pending
+		// migrations, until this replica's own deploy registers the
+		// artifact the row names. The log fires on the transition only.
+		if state == StateReady || state == StateStarting ||
+			state == StateHandshaking || state == StateCrashed ||
+			state == StateBackoff {
+			sl.sup.logf("processmodule: %s row names artifact %s, this replica runs %s: holding", sl.name, shortHash(desired.ArtifactSHA256), shortHash(sl.desc.ArtifactSHA256))
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+		} else if state != StateInstalledDisabled {
+			sl.setState(StateInstalledDisabled)
+		}
 	case desired.Enabled && (state == StateInstalledDisabled || state == StateAbsent):
 		// Desired enabled, currently down. Spawn.
 		sl.spawnAsync(desired)
@@ -1030,7 +1045,13 @@ func (sl *moduleSlot) reconcile() {
 		// Backoff elapsed: try again.
 		sl.spawnAsync(desired)
 	case desired.Enabled && state == StateFailed:
-		// Terminal; do nothing until generation bump.
+		// Terminal until the generation advances, the operator's recovery
+		// lever (design §8): the bump re-arms the slot with a fresh spawn,
+		// which verifies the artifact and handshake digests again, so an
+		// unfixed integrity fault lands back in Failed.
+		if genAdvanced {
+			sl.spawnAsync(desired)
+		}
 	case desired.Enabled && state == StateReady:
 		// Healthy; nothing to do.
 	default:
@@ -1188,7 +1209,7 @@ func (sl *moduleSlot) finishDrain(drainState ProcessState, gen uint64) {
 		}
 		// The stamp may have cleared while the old child drained (a new
 		// artifact's migrations are pending): hold, as reconcile does.
-		if desired.Enabled && !migrationsPending(sl.desc, desired) {
+		if desired.Enabled && !migrationsPending(sl.desc, desired) && !otherArtifact(sl.desc, desired) {
 			sl.spawnAsync(desired)
 		} else {
 			sl.setState(StateInstalledDisabled)
@@ -1568,6 +1589,14 @@ func (sl *moduleSlot) registerToolsSafely(name string, tools []moduleproto.Tool)
 // never pending.
 func migrationsPending(desc ProcessModuleDescriptor, desired DesiredState) bool {
 	return desc.MigrationGroup != "" && desired.MigrationsAppliedAt == nil
+}
+
+// otherArtifact reports whether the store's row names a different
+// executable than this replica's descriptor: another replica booted a
+// newer (or older) build and moved the row. Digests are hex, compared
+// without regard to case; an empty row digest names nothing.
+func otherArtifact(desc ProcessModuleDescriptor, desired DesiredState) bool {
+	return desired.ArtifactSHA256 != "" && asciicase.Lower(desired.ArtifactSHA256) != asciicase.Lower(desc.ArtifactSHA256)
 }
 
 // handleCrashed charges the restart circuit and transitions to Backoff (or

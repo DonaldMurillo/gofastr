@@ -20,7 +20,9 @@ descriptor**: a Go value (`ProcessModuleDescriptor`) whose fields are
 authoritative at runtime. The running child only ever *cross-checks*
 digests at handshake; it never supplies values. A mismatch on digest,
 identity, or an extra grant is terminal (the module is quarantined to
-`Failed`, never silently restarted).
+`Failed`, never silently restarted). A generation bump is the way back:
+`BumpGeneration`, a grant revoke or an artifact change re-arms a
+`Failed` module, and the new child goes through the same digest checks.
 
 ```go
 app.RegisterProcessModule(framework.ProcessModuleDescriptor{
@@ -87,8 +89,11 @@ reports in `RegisterResult.Outcome`):
 - **Same artifact and grants** (order and repeats ignored): nothing is
   written, and the module keeps its enabled state and generation.
 - **New artifact, same grants**: the digest is updated and the
-  generation bumped, and the module stays enabled, so replicas restart
-  their children on the new build.
+  generation bumped, and the module stays enabled. A replica restarts
+  its child only once its own descriptor names the new digest: during a
+  rolling deploy, a replica still on the old build drains its child and
+  holds the module in `InstalledDisabled` (its routes answer 503) until
+  its deploy registers the new artifact.
 - **Any grant change**, wider or narrower: the grants and digest are
   updated, the generation bumped, and the module **disabled** until an
   operator enables it again, with a Warn naming the previous and new
@@ -253,6 +258,16 @@ coord.Apply(ctx, desc, []framework.ApprovedMigration{
     {Version: 1, Name: "init", Up: "CREATE TABLE invoices (id int)", SHA256: "…"},
 })
 ```
+
+The coordinator runs `Up` over a DSN built from the admin DSN with the
+module role's login in place of the admin's. Of the admin DSN's query
+it keeps only the keys that say where the server is and how to reach
+it: `host`, `hostaddr`, `port`, `dbname`, the `ssl*` settings,
+`connect_timeout`, `target_session_attrs`, `load_balance_hosts`,
+`application_name`, `fallback_application_name`, `krbsrvname` and
+`krbspn`. Everything else is dropped: a `user`, `password`, `passfile`
+or `service` would name a login, and `options`, `search_path` or any
+other startup setting would override what provisioning set on the role.
 
 **SQLite is not a third-party DDL boundary**: it has no roles/`GRANT`/
 schemas. The coordinator rejects an **untrusted** module's migrations on

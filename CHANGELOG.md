@@ -3214,6 +3214,18 @@ few lines, and link the PR or the docs page for the rest.
   are pruned), and the erasure overwrites the grant and the subject
   while keeping the row, so the nonce stays spent and its replay is
   refused.
+- **A replica on an old build no longer runs it under a newer
+  artifact's generation.** When one replica registers a new artifact,
+  the row's digest moves and the generation bumps with the module still
+  enabled. A replica whose descriptor still named the old executable
+  respawned it after the upgrade drain. It now drains its child and
+  holds the module in `InstalledDisabled` (routes answer 503) until its
+  own deploy registers the matching artifact.
+- **A generation bump re-arms a `Failed` process module.** The docs
+  name the bump as the way out of `Failed`, but the supervisor reset
+  the restart circuit and left the slot `Failed`. `BumpGeneration`, a
+  grant revoke or an artifact change now respawns it, and the new
+  child goes through the same digest checks.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -3691,6 +3703,16 @@ few lines, and link the PR or the docs page for the rest.
   other request gets a 404. The router now gates that redirect on the
   route's methodless and CONNECT keys. Routes registered with
   `Get`/`Post` and the other method helpers were not affected.
+- **A module's migrations run under the module role alone.** The
+  coordinator built the role's DSN from the admin DSN with the role's
+  login in place, and kept the rest of the query. lib/pq sorts its
+  key=value pairs, so an admin `user` or `password` in the query could
+  outrank the role's login, and any key it does not know, such as
+  `options` or `search_path`, went to the server as a startup setting
+  that overrode the role's. The role DSN now keeps only the keys that
+  say where the server is and how to reach it (`host`, `port`,
+  `dbname`, the `ssl*` settings and a few more, listed in
+  process-modules.md) and drops the rest.
 
 ## [0.95.0] - 2026-10-26
 
