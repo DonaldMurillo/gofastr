@@ -173,6 +173,22 @@ func TestDocsGetNotFound(t *testing.T) {
 	}
 }
 
+// A term under three characters, or none at all, is the caller's
+// mistake and answered as a tool error, not as zero hits: an agent must
+// be able to tell "too short" from "not found".
+func TestDocsSearchShortTermIsAToolError(t *testing.T) {
+	for _, params := range []map[string]any{{"term": "ab"}, {"term": ""}, {}} {
+		res, err := toolDocsSearch(context.Background(), params)
+		if err != nil {
+			t.Fatalf("%v: plain error %v; want a tool error result", params, err)
+		}
+		tr, ok := res.(mcp.ToolResult)
+		if !ok || !tr.IsError || len(tr.Content) == 0 || !strings.Contains(tr.Content[0].Text, "at least 3") {
+			t.Fatalf("%v: result = %#v, want IsError naming the minimum", params, res)
+		}
+	}
+}
+
 // TestDocsSearchRespectsLimit: framework_docs_search returns hits and
 // honours the int limit param in every JSON-decoded shape.
 func TestDocsSearchRespectsLimit(t *testing.T) {

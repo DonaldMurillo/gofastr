@@ -3045,6 +3045,18 @@ few lines, and link the PR or the docs page for the rest.
   under the hash already issued for it. `AllThemeOverrides` handed out
   the same shared sets. All three now store or return a copy from the
   new `Theme.Clone`, which copies the maps and every extension.
+- **Docs search says when it cut the list, refuses a short term, and
+  skips code comments as headings.** `gofastr docs --grep` printed
+  its 50-hit cap as the match total; it now prints "More than 50
+  matches" when there were more. A term under three characters
+  returned zero hits as success, from the CLI and from
+  `framework_docs_search`, so "too short" read as "not found";
+  `docs.Search` and `docs.SearchWithLimit` now return
+  `docs.ErrSearchTermTooShort`, the CLI exits 1 and the MCP tool
+  answers a tool error. A `#` line inside a fenced code block (a shell
+  or YAML comment) was taken as a heading, named as the heading of the
+  hits after it and counted toward heading relevance; it is now an
+  ordinary line, and a topic's title skips fences too.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

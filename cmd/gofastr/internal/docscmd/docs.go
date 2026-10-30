@@ -104,17 +104,28 @@ func runDocsList() {
 	fmt.Printf("\n%s `gofastr docs --grep <term>` to search across every topic.\n", cli.Dim("→"))
 }
 
+// grepHitCap is how many hits `docs --grep` prints. It asks for one
+// more, so it can say when the list was cut rather than print the cap
+// as the total.
+const grepHitCap = 50
+
 func runDocsGrep(term string) {
-	hits, err := docs.Search(term)
+	hits, err := docs.SearchWithLimit(term, grepHitCap+1)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		cli.OsExit(1)
+		return
 	}
 	if len(hits) == 0 {
 		fmt.Printf("No matches for %q.\n", term)
 		return
 	}
-	fmt.Printf("%d match%s for %q:\n\n", len(hits), pluralS(len(hits)), term)
+	if len(hits) > grepHitCap {
+		hits = hits[:grepHitCap]
+		fmt.Printf("More than %d matches for %q; the first %d, most relevant topics first (narrow the term to see the rest):\n\n", grepHitCap, term, grepHitCap)
+	} else {
+		fmt.Printf("%d match%s for %q:\n\n", len(hits), pluralS(len(hits)), term)
+	}
 	currentTopic := ""
 	for _, h := range hits {
 		if h.Topic != currentTopic {
