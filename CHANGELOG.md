@@ -2977,6 +2977,12 @@ few lines, and link the PR or the docs page for the rest.
   `tenant-id` scope that worked on Memory and Postgres errored on every
   SQLite search. The key is now a bound parameter matched through
   `json_each`, like the value.
+- **Memory search matches whole words, like the SQL backends.** It
+  split the query on whitespace and counted substrings, so `error`
+  found `xerror` and `foo,bar` missed "foo bar"; an app built on the
+  Memory default gained and lost matches on Postgres or SQLite. It now
+  splits words the way they do and matches the last term as a prefix.
+  It still does not stem.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

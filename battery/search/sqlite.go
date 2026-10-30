@@ -335,8 +335,8 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure
-	// punctuation) matches nothing, the same split Memory gets from
-	// normalizeTerms + its score==0 skip.
+	// punctuation) matches nothing, the same split Memory makes on
+	// queryTerms.
 	if len(strings.Fields(q.Text)) == 0 {
 		return s.searchAll(ctx, q)
 	}
@@ -399,7 +399,7 @@ ORDER BY h.score DESC, m.id ASC%[4]s`,
 
 // searchAll is the empty-query path: every document (score 0) that passes
 // the Type/FieldEquals filters, ordered by id for a stable page walk,
-// the same result Memory produces when normalizeTerms yields no terms.
+// the same documents Memory returns for empty text.
 func (s *SQLiteFTS) searchAll(ctx context.Context, q Query) ([]Result, error) {
 	args := []any{}
 	var where strings.Builder

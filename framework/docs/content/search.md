@@ -100,6 +100,14 @@ Documents are stored in a map, so:
 - Memory usage is `O(total text size)`.
 - Search is `O(n)` over the corpus.
 
+It splits the query and the documents into words the way the SQL
+backends do (letters, digits, `-` and `_`; a hyphenated word also
+matches its parts) and matches whole words, the last query term as the
+start of a word, so `error` does not find `xerror`. Two differences
+remain: it does not stem (`pages` does not find `page`), and it also
+searches a document's string `Fields`, which the SQL backends store
+but do not index.
+
 The implementation is in `battery/search/memory.go`; read it before
 using it in anything user-facing.
 
