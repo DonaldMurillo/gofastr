@@ -789,10 +789,16 @@ it, so removing a routine that never declared one is refused with an
 error naming it: declare it again with the same `Up` and a `Down`,
 generate (which records the `Down` by re-running the idempotent `Up`),
 then remove it. Everything lands in one migration, in this order: removed
-routines, then removed views, then the table changes (Postgres refuses to
-drop a table or column a view still reads), then new and changed views in
-`DependsOn` order, then new and changed routines in the plan's order, the
-order boot applies them. The `Down` runs the changes backwards. Removed
+routines, then removed views, then changed views, then the table changes
+(both engines refuse to drop a table or column a view still reads), then
+new and changed views in `DependsOn` order, then new and changed routines
+in the plan's order, the order boot applies them. A changed view is
+dropped before the table changes and created again after them, together
+with every declared view that reads it, since its old body may read a
+column the same migration drops. On Postgres that means a changed view is
+not replaced in place: grants on it go with the drop, and a view that
+reads it but is not declared in the plan makes the drop fail, so declare
+it with `DependsOn`. The `Down` runs the changes backwards. Removed
 views drop in name order, since the snapshot records no `DependsOn`: when
 one removed view reads another, remove them in separate migrations.
 
@@ -903,9 +909,11 @@ app.View(migrate.View{
   view between plain and `Materialized` drops the live object of the
   other kind (and its dependents) first. `migrate generate` tracks
   the definition by checksum and writes a reversible migration when it
-  changes (the `Down` restores the previous definition / drops a new one);
-  on Postgres the file drops and recreates the declared dependents of a
-  changed materialized view, and a kind change drops the old kind first.
+  changes (the `Down` restores the previous definition / drops a new one).
+  The file drops a changed view and its declared dependents before the
+  table changes and recreates them after, and a kind change drops the old
+  kind first (see the ordering under "Generating versioned migrations"
+  above).
 - **ORM**: with `Columns` declared, three read routes are mounted —
   `GET /active_users`, `GET /active_users/{id}` and
   `GET /active_users/_events` — and no write routes. The view's

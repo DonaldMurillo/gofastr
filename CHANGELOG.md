@@ -2890,6 +2890,14 @@ few lines, and link the PR or the docs page for the rest.
   `public.embed_chunks` took different locks, and two replaces of one
   document could keep chunks of both versions. The lock now hashes the
   table's OID, resolved in each replace's transaction.
+- **A generated migration that changes a view and drops a column the old
+  view reads applies.** `migrate generate` replaced a changed view only
+  after the table changes, so the column drop ran while the old view
+  still read it, and both Postgres and SQLite refused it. A changed view
+  and the declared views that read it are now dropped before the table
+  changes and created again after them. On Postgres a changed view is no
+  longer replaced in place: grants on it go with the drop, and a view
+  outside the plan that reads it makes the drop fail.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

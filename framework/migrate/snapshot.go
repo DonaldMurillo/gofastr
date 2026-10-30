@@ -193,11 +193,13 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 
 	// Views and routines: new and changed ones are created after the tables
 	// (they select from them), and removed ones are dropped BEFORE any table
-	// change, since Postgres refuses to drop a table or column a view still
-	// reads. Views keep their DependsOn order, and routines the plan's
-	// order, which is the order boot applies them in; removals drop
-	// routines, then views, the reverse of creation. The Down runs the
-	// changes backwards, so it unwinds the same way.
+	// change, since both engines refuse to drop a table or column a view
+	// still reads. A changed view is dropped before the table changes too,
+	// since its old body may read what they drop (viewChanges). Views keep
+	// their DependsOn order, and routines the plan's order, which is the
+	// order boot applies them in; removals drop routines, then views, the
+	// reverse of creation. The Down runs the changes backwards, so it
+	// unwinds the same way.
 	viewRoutines := make([]Routine, 0, len(plan.Views))
 	for _, v := range topoSortViews(plan.Views) {
 		viewRoutines = append(viewRoutines, v.routine(dialect))
@@ -205,19 +207,18 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Boot skips a routine scoped to another dialect, so a migration
 	// generated for this one must not carry it either.
 	routines, _ := partitionRoutinesByDialect(plan.Routines, dialect)
-	viewUpserts, viewDrops, err := routineChanges(viewRoutines, prev.Views)
+	_, viewDrops, err := routineChanges(viewRoutines, prev.Views)
 	if err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}
-	if dialect == DialectPostgres {
-		viewUpserts = pgViewUpserts(topoSortViews(plan.Views), prev.Views)
-	}
+	viewRedrops, viewUpserts := viewChanges(topoSortViews(plan.Views), prev.Views, dialect)
 	routineUpserts, routineDrops, err := routineChanges(routines, prev.Routines)
 	if err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}
 
 	changes := append(routineDrops, viewDrops...)
+	changes = append(changes, viewRedrops...)
 	// The snapshot's column sets let a Postgres key change detach the
 	// foreign keys onto its table; it records no constraint names, so
 	// foreign keys themselves are not compared (fks stays nil). The keys a
@@ -491,63 +492,43 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	return up, down, next, nil
 }
 
-// pgViewUpserts is routineChanges for Postgres views, in dependency order.
-// Only a plain view replaces itself in place. A changed materialized view,
-// or a view changing kind, drops the existing object first, and Postgres
-// refuses that while another view reads it: the declared views that read
-// it are dropped before it, deepest first, and created again after it.
-// A view changing kind is dropped with its old kind's statement, since
-// DROP MATERIALIZED VIEW refuses a plain view and CREATE OR REPLACE VIEW a
-// materialized one. Every dropped view's Down recreates the old one, and
-// every recreated view's Down drops it, so the rollback runs the same
-// steps backwards.
-func pgViewUpserts(ordered []View, prev map[string]RoutineDef) []SchemaChange {
+// viewChanges diffs the declared views, in dependency order, against the
+// snapshot. A new view is created after the table changes. A changed one
+// is dropped BEFORE them and created again after: its old body may read a
+// column the same migration drops, and both engines refuse that while the
+// view exists (Postgres also refuses a CREATE OR REPLACE that drops or
+// renames a view column). Every declared view that reads a changed one
+// goes with it, dropped deepest first, since Postgres refuses to drop a
+// view another still reads. A drop runs the snapshot's own Down, the old
+// kind's statement, so a view changing kind drops cleanly. Each drop's
+// Down recreates the old view and each creation's Down drops the new one,
+// so the rollback runs the same steps backwards. Every snapshot has
+// recorded a view's Down since views were added, so the drop always has
+// one.
+func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect) (drops, creates []SchemaChange) {
 	dependents := viewDependents(ordered)
-	recreated := map[string]bool{}
+	redo := map[string]bool{}
 	for _, v := range ordered {
-		p, ok := prev[v.Name]
-		up, down := v.render(DialectPostgres)
-		if ok && p.Up != up && (v.Materialized || p.Down != down) {
-			recreated[v.Name] = true
+		up, _ := v.render(dialect)
+		if p, ok := prev[v.Name]; ok && p.Up != up {
+			redo[v.Name] = true
+			for _, d := range dependents[v.Name] {
+				redo[d.Name] = true
+			}
 		}
 	}
-	dropped := map[string]bool{}
-	var out []SchemaChange
-	for _, v := range ordered {
-		up, down := v.render(DialectPostgres)
-		p, existed := prev[v.Name]
-		switch {
-		case dropped[v.Name]:
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("view %s: recreate", v.Name), SQL: up, Down: down})
-		case recreated[v.Name]:
-			for _, d := range slices.Backward(dependents[v.Name]) {
-				if dropped[d.Name] {
-					continue
-				}
-				dropped[d.Name] = true
-				dp, ok := prev[d.Name]
-				if !ok {
-					continue // new in this plan: nothing to drop
-				}
-				out = append(out, SchemaChange{
-					Summary: fmt.Sprintf("view %s: drop, it reads %s", d.Name, v.Name),
-					SQL:     dp.Down,
-					Down:    dp.Up,
-				})
-			}
-			sql, undo := up, p.Up
-			if p.Down != down {
-				sql = p.Down + ";\n" + up
-				undo = down + ";\n" + p.Up
-			}
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("view %s: replace", v.Name), SQL: sql, Down: undo})
-		case !existed:
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("routine %s: create", v.Name), SQL: up, Down: down})
-		case p.Up != up:
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("routine %s: replace", v.Name), SQL: up, Down: p.Up})
+	for _, v := range slices.Backward(ordered) {
+		if p, ok := prev[v.Name]; ok && redo[v.Name] {
+			drops = append(drops, SchemaChange{Summary: fmt.Sprintf("view %s: drop to recreate", v.Name), SQL: p.Down, Down: p.Up})
 		}
 	}
-	return out
+	for _, v := range ordered {
+		up, down := v.render(dialect)
+		if _, existed := prev[v.Name]; !existed || redo[v.Name] {
+			creates = append(creates, SchemaChange{Summary: fmt.Sprintf("view %s: create", v.Name), SQL: up, Down: down})
+		}
+	}
+	return drops, creates
 }
 
 // routineChanges diffs current routines against the snapshot. New or changed
