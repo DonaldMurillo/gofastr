@@ -375,9 +375,10 @@ single transaction. Metadata is marshalled before anything is deleted, and a
 failed insert (metadata JSON cannot carry, such as `NaN`, or a NUL byte in the
 text) rolls the delete back, so the old version stays. The transaction first
 takes a transaction-scoped advisory lock (`pg_advisory_xact_lock`) per
-document, keyed on the table and the document ID, so two replicas replacing
-the same document run one after the other and the table keeps one whole
-version. The keyword backend is updated only after the transaction commits.
+document, keyed on the table's OID and the document ID, so two replicas
+replacing the same document run one after the other and the table keeps one
+whole version, even when one replica names the table `embed_chunks` and
+another `public.embed_chunks`. The keyword backend is updated only after the transaction commits.
 
 **Ranking parity.** `PgVectorStore` scores with pgvector's cosine-distance operator (`<=>`); because the embedder produces L2-normalized vectors, cosine equals the dot product `FlatStore` uses, so the two stores return the same top-K order given identical vectors (`Hit.Score = 1 − distance`). Default retrieval is brute-force cosine (correct, matches `FlatStore`); an operator can add an HNSW index for scale without code changes:
 

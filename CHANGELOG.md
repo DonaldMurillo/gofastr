@@ -2884,6 +2884,12 @@ few lines, and link the PR or the docs page for the rest.
   stale image. Every snapshot after it then ran one capture behind. The
   next snapshot now waits for the abandoned capture to finish and
   discards it.
+- **Replicas naming one pgvector table two ways share its document
+  locks.** The per-document replace lock hashed the configured table
+  name, so a replica set to `embed_chunks` and one set to
+  `public.embed_chunks` took different locks, and two replaces of one
+  document could keep chunks of both versions. The lock now hashes the
+  table's OID, resolved in each replace's transaction.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

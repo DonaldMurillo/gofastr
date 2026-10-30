@@ -315,7 +315,11 @@ func (s *PgVectorStore) replaceDocs(ctx context.Context, model string, docIDs []
 			return err
 		}
 	}
-	for _, key := range s.docLockKeys(docIDs) {
+	keys, err := s.docLockKeys(ctx, tx, docIDs)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
 		//gofastr:allow(GOFASTR1502) locks are taken one at a time in ascending key order so two batches cannot deadlock; one statement would not fix the order
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, key); err != nil {
 			return fmt.Errorf("semantic: lock docs: %w", err)
@@ -341,15 +345,28 @@ func (s *PgVectorStore) replaceDocs(ctx context.Context, model string, docIDs []
 }
 
 // docLockKeys returns the advisory-lock key of each distinct document,
-// sorted ascending. A key hashes the table and the document ID, each
-// length-prefixed so no pair of names can spell another pair. Two
+// sorted ascending. A key hashes the table's OID and the document ID,
+// each length-prefixed so no pair of names can spell another pair. Two
 // documents that collide share a lock, which only serializes them.
-func (s *PgVectorStore) docLockKeys(docIDs []string) []int64 {
+//
+// The OID, not the configured spelling: embed_chunks and
+// public.embed_chunks name one table, and replicas configured with
+// either must take one lock. It is resolved in the replace's own
+// transaction on every call, since a table dropped and created again
+// gets a new OID.
+func (s *PgVectorStore) docLockKeys(ctx context.Context, tx *sql.Tx, docIDs []string) ([]int64, error) {
+	if len(docIDs) == 0 {
+		return nil, nil // nothing to lock; skips the lookup's round trip
+	}
+	var oid string
+	if err := tx.QueryRowContext(ctx, `SELECT $1::regclass::oid::text`, s.quotedTable).Scan(&oid); err != nil {
+		return nil, fmt.Errorf("semantic: resolve table: %w", err)
+	}
 	keys := make([]int64, 0, len(docIDs))
 	for _, id := range docIDs {
 		h := fnv.New64a()
 		var n [8]byte
-		for _, part := range []string{s.quotedTable, id} {
+		for _, part := range []string{oid, id} {
 			binary.BigEndian.PutUint64(n[:], uint64(len(part)))
 			h.Write(n[:])
 			h.Write([]byte(part))
@@ -357,7 +374,7 @@ func (s *PgVectorStore) docLockKeys(docIDs []string) []int64 {
 		keys = append(keys, int64(h.Sum64())) //gofastr:allow(intwrap) a lock key is any 64-bit pattern; wrapping is the intent
 	}
 	slices.Sort(keys)
-	return slices.Compact(keys)
+	return slices.Compact(keys), nil
 }
 
 // Candidates returns up to top chunks by cosine similarity to qv, applying

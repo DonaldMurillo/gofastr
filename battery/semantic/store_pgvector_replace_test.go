@@ -82,13 +82,26 @@ func TestPgReplaceFailKeepsOldDoc(t *testing.T) {
 // Two replicas replacing one document over a shared table leave one whole
 // version. Replica A pauses after its delete; replica B replaces the same
 // document meanwhile. Without a cross-process lock the two deletes run
-// before both inserts and the table keeps chunks of both versions.
+// before both inserts and the table keeps chunks of both versions. The
+// lock names the table Postgres resolved, so a replica configured with the
+// schema-qualified spelling of the same table takes the same lock
+// (2026-10-27 bug bash M8).
 func TestPgReplaceSerializesReplicas(t *testing.T) {
+	for _, qualified := range []bool{false, true} {
+		name := "same spelling"
+		if qualified {
+			name = "schema-qualified spelling"
+		}
+		t.Run(name, func(t *testing.T) { replicaReplaceRace(t, qualified) })
+	}
+}
+
+func replicaReplaceRace(t *testing.T, qualified bool) {
 	emb := NewStubEmbedder(8)
 	dbA := openPgVector(t)
 	dbB := pgtest.Replica(t, dbA)
-	mk := func(db *sql.DB) *PgVectorStore {
-		s, err := NewPgVector(db, PgVectorConfig{Dim: emb.Dim()})
+	mk := func(db *sql.DB, table string) *PgVectorStore {
+		s, err := NewPgVector(db, PgVectorConfig{Dim: emb.Dim(), Table: table})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +110,15 @@ func TestPgReplaceSerializesReplicas(t *testing.T) {
 		}
 		return s
 	}
-	sa, sb := mk(dbA), mk(dbB)
+	tableB := ""
+	if qualified {
+		var schema string
+		if err := dbB.QueryRow(`SELECT current_schema()`).Scan(&schema); err != nil {
+			t.Fatal(err)
+		}
+		tableB = schema + ".embed_chunks"
+	}
+	sa, sb := mk(dbA, ""), mk(dbB, tableB)
 	ch := NewFixedWindow(8, 0)
 	open := func(s *PgVectorStore) Index {
 		idx, err := Open(Options{Embedder: emb, Store: s, Chunker: ch})
