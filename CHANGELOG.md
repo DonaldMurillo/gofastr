@@ -2784,6 +2784,20 @@ few lines, and link the PR or the docs page for the rest.
 - **A 405 `Allow` header names `HEAD` on a GET route.** The mux answers
   HEAD on every GET pattern, but `Allow` listed GET alone. A gated GET
   drops its HEAD with it.
+- **Two image variants that name the same file are refused.** Variants
+  with the same `Suffix` (or a `Suffix` equal to another's width) and the
+  same `Format` saved over each other while the variants column listed
+  both, so a srcset served the wrong bytes. `VariantSet.Process`,
+  `ProcessTo` and `imagefield.New` now return an error naming both
+  indices, and `image.CheckVariantNames` runs the same check.
+- **A resize target past `MaxPixels` is an error, not a runtime panic.**
+  `Resize`, `Placeholder` and `NewGradient` allocated whatever size they
+  were asked for, and the aspect arithmetic could overflow. A target
+  whose area exceeds the image's `MaxPixels` (`DefaultMaxPixels` for
+  `FromImage`) now returns `image.ErrTargetTooLarge` from
+  `VariantSet.Process`, `ProcessTo`, `Placeholder` and `NewGradient`.
+  `Resize` panics with an error wrapping it. An image decoded with a
+  small `MaxPixels` can no longer be upscaled past that cap.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

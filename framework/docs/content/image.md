@@ -91,6 +91,13 @@ img.Modulate(image.Modulation{
 img.AutoOrient()                     // apply EXIF orientation, then clear it
 ```
 
+A resize target larger than the image's `MaxPixels` (the `Config` it
+was decoded with, or `DefaultMaxPixels` for `FromImage`) is refused
+before any pixel buffer is allocated. `Resize` has no error result, so
+it panics with an error wrapping `ErrTargetTooLarge`; `VariantSet.Process`,
+`ProcessTo` and `Placeholder` check first and return that error.
+`NewGradient` returns it past `DefaultMaxPixels`.
+
 ### Resize filters
 
 `x/image/draw` ships four kernels; this package exposes them with the
@@ -228,6 +235,12 @@ ui.PipelineImage(ui.PipelineImageConfig{
     Sizes:       "(min-width: 1024px) 1024px, 100vw",
 })
 ```
+
+Each variant's file name is `<BaseName>-<Suffix or width>.<ext>`. Two
+variants that compose the same name would overwrite each other in
+storage, so `Process` and `ProcessTo` refuse the set before encoding
+anything, and `CheckVariantNames` reports the same error for a list
+you want to check at startup. Same suffix, different `Format` is fine.
 
 `PipelineImage` emits one `<source type="…" srcset="…">` per distinct
 `Type` in input order. Put the modern format first so legacy browsers
@@ -427,6 +440,7 @@ hand it directly to `storage.Save`).
 | Knob | Default | Configurable via |
 | ---- | ------: | --- |
 | Max decoded pixels | 64 MP (8192²) | `Config.MaxPixels` |
+| Max resize target | the image's `MaxPixels` (`ErrTargetTooLarge` past it) | `Config.MaxPixels` at decode |
 | Max source bytes | 64 MiB (`ErrSourceTooLarge` past it) | `Config.MaxSourceBytes` |
 | Max encoded WebP dim | 16384 per axis | hard cap (spec) |
 | `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |

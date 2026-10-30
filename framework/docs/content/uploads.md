@@ -307,7 +307,7 @@ BlurHash-versus-LQIP trade-off.
 
 | Field            | Effect                                                      |
 |------------------|-------------------------------------------------------------|
-| `Variants`       | Renditions to produce and store. `Suffix` (or width) distinguishes each key. |
+| `Variants`       | Renditions to produce and store. `Suffix` (or width) plus the format's extension names each file; `New` refuses two that name the same one. |
 | `BlurHashX/Y`    | BlurHash component counts, 1..9. Both zero = no hash; setting only one is an error. 4×3 landscape, 3×4 portrait. |
 | `Placeholder`    | Also store an LQIP data URL. Usually redundant next to a BlurHash; ~28 bytes versus a few hundred, and both render identically. |
 | `RejectAnimated` | Fail the upload on a multi-frame source instead of silently keeping frame one. Worth setting on avatars. |
