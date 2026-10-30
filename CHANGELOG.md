@@ -2904,6 +2904,11 @@ few lines, and link the PR or the docs page for the rest.
   stayed up for good. A timer is now dropped only when its row has left
   the page, and a row that replaces one under the same id arms its own
   timer.
+- **Two list rows with the same title open their own row menus.** A row
+  menu's id was a hash of its label ("Actions for {{title}}") and items,
+  so two rows titled alike shared trigger and panel ids, and the second
+  row's trigger opened the first row's menu. Each row menu is now keyed
+  by its row, the way its copy-link span already was.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
