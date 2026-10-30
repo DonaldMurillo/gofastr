@@ -3886,6 +3886,20 @@ few lines, and link the PR or the docs page for the rest.
   so `Init`) now fails on a prefix that is not a path below the root,
   `"/"` or one with no leading slash, so the reservation always names
   what is mounted.
+- **BREAKING: a desktop window stays on the app's origin.** The
+  runtime let an external link navigate the window in place, and no
+  shell had a navigation policy, so a foreign page ran in the app's
+  window and looked like the app. Each shell now asks the battery
+  before a main-frame navigation commits (macOS
+  `decidePolicyForNavigationAction`, Windows `NavigationStarting`,
+  Linux the main-frame response in `decide-policy`), and the battery
+  allows only its loopback origin and `about:blank`. An external link
+  does nothing. `Config.DangerouslyAllowForeignNavigation` restores the
+  old behaviour, for an in-window OAuth flow say. A custom `Shell`
+  enforces the new `WindowConfig.AllowNavigation`;
+  `desktoptest.Harness.AllowsNavigation` checks it in a test. On Linux
+  the refused request still reaches the other host; nothing it returns
+  renders. The Windows hook has no test runner yet.
 
 ## [0.95.0] - 2026-10-26
 

@@ -464,3 +464,7 @@ notes:
     breaking: true
     guidance: "PathPrefix / mounted every print route at the root, outside the embed reservation that keeps grants off the headless-Chrome PDF route. Name a path below the root, such as /print (the default when PathPrefix is empty)."
     nodetect: "the prefix is a runtime string; the mount error names it at startup"
+  - change: "BREAKING - a desktop window refuses a main-frame navigation off the app's loopback origin, so an external link does nothing"
+    breaking: true
+    guidance: "A foreign page in the app's window looked like the app. Keep flows on the app's own pages, or set desktop.Config.DangerouslyAllowForeignNavigation to let a window leave (an in-window OAuth sign-in, say). A custom Shell must call WindowConfig.AllowNavigation before a main-frame navigation commits."
+    nodetect: "the refused navigation is a runtime URL; the shell logs the refused host"

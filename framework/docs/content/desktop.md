@@ -185,6 +185,44 @@ The `Host` pin closes DNS rebinding from a browser tab; the cookie
 closes every other local process. Neither value is ever logged. An app
 that never calls `Run` never arms the gate.
 
+## Where a window may navigate
+
+A window's main frame stays on the app's own origin. Each shell asks
+the battery before a main-frame navigation commits, and the battery
+allows only `http://<the loopback address Run bound>` and the
+`about:blank` page a web view starts on. Anything else is cancelled:
+an external link, `location.href = "https://…"`, a redirect to another
+host, a `data:` URL. The page stays where it was and the shell logs a
+warning naming the refused host (`desktop.NavigationHost`, which drops
+the path and query so an OAuth code in the URL is never logged).
+Iframes are not checked; the page's own CSP decides what it frames.
+
+A foreign page in the app's window looks like the app to the user, and
+native events are evaluated into whatever the window shows, so the
+default is to refuse. An app that wants the old behaviour (an in-window
+OAuth flow, say) sets `Config.DangerouslyAllowForeignNavigation: true`.
+There is no "open in the system browser" hand-off yet: a refused link
+does nothing.
+
+How each shell enforces it:
+
+| Shell | Hook | When it runs |
+|-------|------|--------------|
+| macOS | `WKNavigationDelegate` `decidePolicyForNavigationAction` | Before the request, main frame only |
+| Windows | `ICoreWebView2::add_NavigationStarting` | Before the request and on each redirect; WebView2 raises it for the main frame only |
+| Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | After the response arrives, before the page commits. WebKitGTK's navigation action has no main-frame flag, so a refused request still reaches the other host; nothing it returns renders |
+
+A custom `Shell` gets the policy as `WindowConfig.AllowNavigation` and
+must call it, on the UI thread, before a main-frame navigation commits;
+a shell that ignores the field lets every navigation through.
+
+A test checks the policy without a shell: `desktoptest.Harness`'s
+`AllowsNavigation(url)` runs the battery's check with the harness's
+bound address (`battery/desktop/navigation_policy_security_test.go`).
+The macOS e2e (`phaseForeignNavigation`) and the Linux graphical test
+(`TestNativeGTKWebKit`) drive a real web view at a second origin. The
+Windows hook has no test runner yet.
+
 ## Capabilities
 
 The page reaches native surfaces through ONE chokepoint,

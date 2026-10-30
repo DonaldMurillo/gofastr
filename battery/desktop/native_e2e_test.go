@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -255,6 +256,7 @@ func runNativePhase(h *desktoptest.NativeHarness) bool {
 		{"ChromeContractOnTheOS", phaseWindowChrome},
 		{"SnapshotDecodesAtWindowScale", phaseSnapshot},
 		{"SnapshotAfterCancelIsFresh", phaseSnapshotAfterCancel},
+		{"ForeignNavigationIsCancelled", phaseForeignNavigation},
 		{"ShellScenario", phaseShellScenario},
 	}
 	for _, step := range steps {
@@ -978,6 +980,29 @@ func phaseSnapshotAfterCancel(t desktoptest.TB, h *desktoptest.NativeHarness) {
 // the WKWebView is the main window's content view, so the page is on
 // screen. A refactor once dropped setContentView: for the main window
 // and every app opened blank while every snapshot test passed.
+// phaseForeignNavigation: the page sends the window to another origin
+// (a second loopback server, so nothing leaves the machine) and the
+// shell's navigation policy cancels it: the window stays on the app
+// (2026-10-27 L15). The boot navigation every other phase stands on is
+// the allowed half.
+func phaseForeignNavigation(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<!doctype html><title>foreign</title>"))
+	}))
+	defer foreign.Close()
+	var appOrigin string
+	h.EvalInto(t, "return location.origin", &appOrigin)
+	target, _ := json.Marshal(foreign.URL + "/")
+	h.Eval(t, "location.href = "+string(target)+"; return true;")
+	time.Sleep(1500 * time.Millisecond)
+	var origin, title string
+	h.EvalInto(t, "return location.origin", &origin)
+	h.EvalInto(t, "return document.title", &title)
+	if origin != appOrigin || title == "foreign" {
+		t.Fatalf("after a foreign navigation the window shows %s (%q), want the app at %s", origin, title, appOrigin)
+	}
+}
+
 func phaseMainWindowHoldsPage(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	st, err := h.WindowState("main")
 	if err != nil {

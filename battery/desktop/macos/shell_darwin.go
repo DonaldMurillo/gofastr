@@ -326,6 +326,9 @@ type darwinShell struct {
 	// the native driver matches (nameMenuItem).
 	menuNames      map[objc.ID]menuName
 	onWindowClosed func(id string)
+	// allowNavigation decides every main-frame navigation
+	// (decidePolicyForNavigationAction:), on the main thread.
+	allowNavigation func(url string) bool
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.
 	onWindowFrame func(id string, f desktop.Frame)
@@ -476,6 +479,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.onSettings = cfg.OnSettings
 	s.textCtx = textCtx
 	s.onWindowClosed = cfg.OnWindowClosed
+	s.allowNavigation = cfg.AllowNavigation
 	s.onWindowFrame = cfg.OnWindowFrame
 	s.onWindowFocus = cfg.OnWindowFocus
 	s.onWindowBlur = cfg.OnWindowBlur

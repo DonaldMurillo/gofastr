@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/url"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // The windows capability's cross-window messaging methods: post to one
@@ -50,6 +53,34 @@ func (b *Battery) inAppJS(js string) string {
 	origin := "http://" + b.addr
 	b.windowMu.Unlock()
 	return "if (location.origin === " + jsQuote(origin) + ") { " + js + " }"
+}
+
+// allowNavigation is WindowConfig.AllowNavigation: a window's main
+// frame may show the app's own origin and the blank page a web view
+// starts on (2026-10-27 L15). The origin is the one inAppJS gates on.
+func (b *Battery) allowNavigation(raw string) bool {
+	if b.cfg.DangerouslyAllowForeignNavigation || raw == "about:blank" {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	b.windowMu.Lock()
+	addr := b.addr
+	b.windowMu.Unlock()
+	return addr != "" && u.Scheme == "http" && u.Host == addr
+}
+
+// NavigationHost is what a shell logs for a navigation it refused: the
+// URL's host with control bytes scrubbed, never its path or query, which
+// may carry a token or an OAuth code.
+func NavigationHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return textsafe.ScrubControlBytes(u.Host)
 }
 
 // emitToWindowID delivers one prepared event to a live window. A window

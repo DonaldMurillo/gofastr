@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/win32"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const (
@@ -75,6 +77,7 @@ const (
 	iidWebViewController2       = "C979903E-D4CA-4228-92EB-47EE3FA96EAB"
 	iidWebViewSettings9         = "0528A73B-E92D-49F4-927A-E547DDDAA37D"
 	iidWebMessageHandler        = "57213F19-00E6-49FA-8E07-898EA01ECBD2"
+	iidNavigationStarting       = "9ADBE429-F36D-432B-9DDC-F8881FBD76E3"
 	iidAddScriptHandler         = "B99369F3-9B11-47B5-BC6F-8E7895FCEA17"
 	iidExecuteScriptHandler     = "49511172-CC67-4BCA-9923-137112F4C4CC"
 	iidCapturePreviewHandler    = "697E05E9-3D8F-45FA-96F4-8FFE1EDEDAF5"
@@ -120,6 +123,7 @@ type winShell struct {
 	onMenu      func(string)
 	onSettings  func(context.Context)
 	onClosed    func(string)
+	allowNav    func(string) bool
 	onFrame     func(string, desktop.Frame)
 	onFocus     func(string)
 	onBlur      func(string)
@@ -209,6 +213,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.onMenu = cfg.OnMenu
 	s.onSettings = cfg.OnSettings
 	s.onClosed = cfg.OnWindowClosed
+	s.allowNav = cfg.AllowNavigation
 	s.onFrame = cfg.OnWindowFrame
 	s.onFocus = cfg.OnWindowFocus
 	s.onBlur = cfg.OnWindowBlur
@@ -952,6 +957,10 @@ func (s *winShell) createController(w *winWindow, env uintptr) error {
 				win32.Release(c2)
 			}
 		}
+		if err := s.installNavigationPolicy(w); err != nil {
+			s.windowInitializationFailed(w, err)
+			return 0
+		}
 		if err := s.enableWebViewChrome(w); err != nil {
 			s.windowInitializationFailed(w, err)
 			return 0
@@ -974,6 +983,57 @@ func (s *winShell) createController(w *winWindow, env uintptr) error {
 		err = fmt.Errorf("desktop/windows: create WebView2 controller: %w", err)
 		s.windowInitializationFailed(w, err)
 		return err
+	}
+	return nil
+}
+
+// maxNavigationURL is Chromium's URL length limit (kMaxURLChars), so a
+// URI WebView2 will navigate to is never cut short when it is read.
+const maxNavigationURL = 2 << 20
+
+// installNavigationPolicy cancels a main-frame navigation the config's
+// AllowNavigation refuses. NavigationStarting fires before the request
+// is sent, for the main frame only (iframes raise FrameNavigationStarting),
+// and again for each redirect. A panic cancels.
+func (s *winShell) installNavigationPolicy(w *winWindow) error {
+	allow := s.allowNav
+	if allow == nil {
+		return nil
+	}
+	cb, err := win32.NewCOMHandler(iidNavigationStarting, func(sender, args uintptr) (hr uintptr) {
+		if args == 0 {
+			return 0
+		}
+		defer func() {
+			if v := recover(); v != nil {
+				slog.Default().Error("desktop/windows: navigation policy panicked", "panic", textsafe.Recovered(v))
+				_, _ = win32.COMCall(args, 8 /* put_Cancel */, 1)
+				hr = 0
+			}
+		}()
+		var uri uintptr
+		if _, err := win32.COMCall(args, 3 /* get_Uri */, uintptr(unsafe.Pointer(&uri))); err != nil {
+			_, _ = win32.COMCall(args, 8 /* put_Cancel */, 1)
+			return 0
+		}
+		raw := win32.ReadUTF16(uri, maxNavigationURL+1)
+		if uri != 0 {
+			win32.CoTaskMemFree(uri)
+		}
+		if !allow(raw) {
+			slog.Default().Warn("desktop/windows: refused a navigation off the app's origin", "host", desktop.NavigationHost(raw))
+			_, _ = win32.COMCall(args, 8 /* put_Cancel */, 1)
+		}
+		return 0
+	})
+	if err != nil {
+		return fmt.Errorf("desktop/windows: create navigation policy handler: %w", err)
+	}
+	var token int64
+	_, addErr := win32.COMCall(w.webview, 7 /* add_NavigationStarting */, cb, uintptr(unsafe.Pointer(&token)))
+	win32.Release(cb)
+	if addErr != nil {
+		return fmt.Errorf("desktop/windows: register navigation policy handler: %w", addErr)
 	}
 	return nil
 }
