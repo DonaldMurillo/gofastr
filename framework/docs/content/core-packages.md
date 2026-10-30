@@ -127,6 +127,13 @@ the Ping does not eat into the peer's time to answer. An app that never
 calls `Read` is push-only: once the buffer fills, further inbound data
 is dropped so pings and the Close handshake still flow.
 
+`Upgrade` refuses a handshake RFC 6455 does not accept before it
+hijacks: a method other than GET, no `Connection: Upgrade` token, a
+version other than 13, or a key that is not base64 of 16 bytes. A
+transport that hijacks the connection itself runs the same check,
+`stream.CheckUpgradeRequest(r, originOK)`, before writing its 101;
+`originOK` decides the Origin as `WSConfig.CheckOrigin` does.
+
 `battery/rtc`, the WebRTC signaling package, is the
 packaged StateChannel consumer for rooms of peers (see
 [WebRTC rooms](rtc.md)).

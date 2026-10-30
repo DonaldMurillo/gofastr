@@ -1081,6 +1081,14 @@ Bidirectional. Frames are tagged JSON:
 
 Reconnect resumes from a `lastEventId` query param.
 
+The upgrade must be a well-formed RFC 6455 handshake (GET, a
+`Connection: Upgrade` token, version 13, a 16-byte key), or it answers
+400. A command may arrive in fragments: a text frame without FIN, then
+continuation frames, with pings between them. A continuation with no
+message open, a text frame inside one, a fragmented control frame, a
+control frame over 125 bytes, or a message over 16 MiB closes the
+socket.
+
 ### MCP server API
 
 The harness exposes its own engine as an MCP server so any

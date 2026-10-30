@@ -3322,6 +3322,14 @@ few lines, and link the PR or the docs page for the rest.
   every scheduler pass before the schedules after it. `Register`
   refuses the interval, and a stored row with one is logged and
   skipped while the rest fire.
+- **The harness websocket assembles fragmented messages.** It ignored
+  the FIN bit, so a client library that split a command ran the first
+  half as a command of its own and closed on the continuation. A text
+  frame without FIN now opens a message that continuation frames
+  extend, with control frames allowed between them. A stray
+  continuation, a text frame inside a message, a fragmented control
+  frame, a control frame over 125 bytes, or a message over 16 MiB
+  closes the socket.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -3826,6 +3834,15 @@ few lines, and link the PR or the docs page for the rest.
   update stored another owner's id there. The id is now checked as a
   belongs-to's is: a target the caller cannot read answers 404, and an
   update that keeps the stored id passes.
+- **The harness websocket refuses a malformed handshake.** `/v1/ws`
+  answered 101 to any request with an Upgrade header and a non-empty
+  key, POST included: the upgrade-desync shape `core/stream` already
+  refused, where a proxy that does not see an upgrade waits for an
+  ordinary response and reads the frames as one. It now answers 400
+  unless the request is GET with a `Connection: Upgrade` token,
+  version 13 and a 16-byte key.
+  `core/stream` exports the check as `CheckUpgradeRequest`, which
+  `Upgrade` runs too.
 
 ## [0.95.0] - 2026-10-26
 
