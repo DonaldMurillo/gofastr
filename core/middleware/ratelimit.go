@@ -321,8 +321,9 @@ func (s *bucketStore) reapLocked(now time.Time) {
 // flood instead of on every insert. It sheds the buckets nearest to full
 // first: a full one loses nothing, and one that owes a single tick loses
 // less enforcement than an exhausted one. A flood's fresh keys have each
-// spent one token, so the flood sheds itself before a key that spent its
-// whole budget. Caller must hold mu.
+// spent one token, so the flood sheds itself before a key that spent
+// more. At Capacity 1 that one token is a whole budget, so the bucket
+// nearest refill goes first, flood or not. Caller must hold mu.
 func (s *bucketStore) evictLocked(now time.Time) {
 	lowWater := s.maxKeys * 9 / 10
 	if len(s.buckets) <= lowWater {
