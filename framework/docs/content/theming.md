@@ -553,6 +553,13 @@ every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
 same handle, so its CSS only ships once.
 
+Registration stores a `Theme.Clone()` of the theme: its maps and every
+`Extensions` token set are copied, so writing the theme, or a token
+struct you put in `Extensions` by hand, after registering changes
+nothing the class serves. `uihost.RegisterThemeVariant` clones the same
+way. Call `Clone` yourself when you keep a theme and hand it out for
+changes elsewhere.
+
 ### Scoped themes and dark mode
 
 A registered override with a dark palette (`DarkColors` or `DarkCode`)

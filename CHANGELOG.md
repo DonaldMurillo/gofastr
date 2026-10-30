@@ -3038,6 +3038,13 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr gen styles` stops on the sheet. Delete the line; load a web
   font with `style.FontFaceCSS`. `@layer` statements are allowed. The
   contract catalog holds 82 rules.
+- **Registering a theme copies its extensions.**
+  `style.RegisterThemeOverride` and `uihost.RegisterThemeVariant`
+  copied the theme's four maps but kept the caller's `Extensions`
+  token sets, so writing one after registering changed the served CSS
+  under the hash already issued for it. `AllThemeOverrides` handed out
+  the same shared sets. All three now store or return a copy from the
+  new `Theme.Clone`, which copies the maps and every extension.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
