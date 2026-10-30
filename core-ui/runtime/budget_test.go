@@ -641,7 +641,7 @@ const (
 	// fill in the runtime and its modules goes through, adds 40. The plain
 	// navigator narrowing a replay keyed above the deepest shared layer to
 	// that layer's cell adds 118.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1090,7 +1090,11 @@ const (
 	// failure arm and clear when the live one ends) measures 17855 at
 	// level 1. It is core's own navigator's failure path, so it does not
 	// carve. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17857
+	// Core's navigator marking that it swapped the DOM (_navShown, read
+	// by an envelope module that loads one navigation late) measures
+	// 17862 at level 1. The flag is set on core's own swap path, so it
+	// does not carve. Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17864
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1164,6 +1168,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"plain replay narrows to the deepest shared layer's cell": 118, // (l1: 128)
 		// Measured 15407 → 15444 (2026-10-29): TestFailedNavRollsBackToTheShownPage.
 		"a failed navigation rolls back to the page still shown (_navBase)": 37,
+		// Measured 15444 → 15460 (2026-10-29): TestLateEnvelopeKeepsTheBootPage.
+		"the envelope keys no boot capture once core's navigator ran (_navShown)": 16, // (l1: 7)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1350,7 +1356,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// to the page the DOM still shows, not a superseded one's
 		// destination (2026-10-29 bug bash R31,
 		// TestFailedNavRollsBackToTheShownPage).
-		"envelope": 8023,
+		// 8034 measured (8032 + 2) after a module that loads once core's
+		// navigator has swapped the DOM keys no capture on the served
+		// URL (2026-10-29 bug bash R29,
+		// TestLateEnvelopeKeepsTheBootPage).
+		"envelope": 8034,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

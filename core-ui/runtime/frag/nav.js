@@ -512,6 +512,7 @@
   // back/forward can never leak its position into a later click's
   // finishNav.
   const finishNav = (path, prevPath, cached, root, ps) => {
+    window.__gofastr._navShown = true;
     applyDocShell(root);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));

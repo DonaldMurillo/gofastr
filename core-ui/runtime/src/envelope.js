@@ -653,12 +653,16 @@
   // declines per request) leaves it STALE on purpose: the capture then
   // misses, so a 404 page is never cached by any path and Back
   // refetches a fresh verdict (DESIGN "404 outlet" / apply step 13).
-  // What the DOM actually shows. The module only ever loads before
-  // its first navigation applies (the hand-off runs it, or the parts
-  // module's deferred walk loads it at boot), so the DOM shows the
-  // SERVED page — read off the performance navigation entry, which a
-  // click's pushState cannot rewrite the way it rewrites location.
-  let _liveDomPath = (() => {
+  // What the DOM actually shows. The module usually loads before any
+  // navigation applies (the hand-off runs it, or the parts module's
+  // deferred walk loads it at boot), so the DOM shows the SERVED page
+  // — read off the performance navigation entry, which a click's
+  // pushState cannot rewrite the way it rewrites location. A plain
+  // navigation to a page that brought an outlet in loads it one
+  // navigation late: core's navigator has swapped the DOM (an error
+  // page included), so the page shown is unknown here and null keys
+  // no capture until this navigator's first OK answer.
+  let _liveDomPath = NS._navShown ? null : (() => {
     try {
       const n = performance.getEntriesByType('navigation')[0];
       if (n && n.name) { const u = new URL(n.name); return u.pathname + u.search; }
@@ -1294,8 +1298,10 @@
   const _loadingReady = document.querySelector('template[data-cui-loading]')
     ? NS.loadModule('loading').catch(() => null) : null;
 
-  // The module loads before any of its navigations applies, so the DOM
-  // shows the served page: capture its entry WITH fills (so a Back to
+  // Unless core's navigator ran first (_liveDomPath null, and then the
+  // check below only keeps a dead null-keyed entry out of the cache's
+  // slots: no lookup ever names null), the DOM shows the served page:
+  // capture its entry WITH fills (so a Back to
   // it replays them) and record its scroll anchors, both keyed under
   // the served path — currentPath may already name a hand-off's pushed
   // destination, and keying under it would replay the served page's
@@ -1304,7 +1310,7 @@
   // the entry.
   {
     const m = document.querySelector('[role="main"]') ?? document.querySelector('main');
-    if (m) {
+    if (m && _liveDomPath) {
       const snap = captureEnvelopeSnapshot(m);
       cacheScreen(_liveDomPath, captureHTML(m), document.title,
         m.getAttribute('data-cui-layout-slot') || '', snap.fills, pageSeedIsland() || snap.seed);

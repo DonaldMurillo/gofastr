@@ -430,7 +430,10 @@ the DOM does not show the named page (a superseded navigation's origin
 mismatch), so a mid-flight drop cannot poison the dropped destination's
 entry; the route seed a replay restores comes from the tracked live route
 state, not the first-paint head island (which is stale after the first
-SPA navigation). That leave capture is the envelope module's. The plain
+SPA navigation). That leave capture is the envelope module's. A module
+that loads only after the plain navigator has swapped the DOM cannot tell
+which page the DOM shows, so it takes no boot capture and keys nothing
+until its own first navigation answers OK. The plain
 navigator, which runs until a page with an outlet or area loads that
 module, narrows the
 replay instead: an entry keyed above the navigation's deepest shared

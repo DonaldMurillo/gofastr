@@ -2872,6 +2872,12 @@ few lines, and link the PR or the docs page for the rest.
   fail, left the address bar and the router on the first one's
   destination, a page that never rendered. Both navigators now roll
   back to the page the DOM shows.
+- **Back to the first page of a visit shows that page.** When the first
+  page had no outlet and a later navigation brought one in, the module
+  that caches outlet pages loaded one navigation late and filed the page
+  then on screen under the first page's URL, so Back to the first page
+  replayed the wrong one. It now caches nothing until its own first
+  navigation answers.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
