@@ -1789,6 +1789,11 @@ portability rules are built into that template:
   ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
 
+With gated screens and a seeded admin, the test signs in as that admin and
+then requires each gated screen to answer 200. Its client does not follow a
+redirect to the login screen's route, so a sign-in that left no session
+fails with the redirect's 303 instead of passing on the login page.
+
 ## Common mistakes
 
 - **Deploying with `dev_mode` left at its default.** Omitting

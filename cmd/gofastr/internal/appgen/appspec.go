@@ -1180,9 +1180,17 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	}
 
 	if needsAuthClient {
-		b.WriteString("\n\t// Sign in, then every gated screen renders.\n")
+		// The client stops at a redirect to a login page: with no session
+		// each gated screen bounced there, the client followed, and the
+		// login page's 200 passed for the screen (2026-10-27 G14).
+		b.WriteString("\n\t// Sign in, then every gated screen renders. A redirect to a login\n")
+		b.WriteString("\t// page is returned, not followed: it means the session did not take.\n")
 		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
-		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second}\n")
+		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, _ []*http.Request) error {\n")
+		// authPolicy sends an anonymous caller to the login screen's route.
+		b.WriteString(fmt.Sprintf("\t\tif req.URL.Path == %q { return http.ErrUseLastResponse }\n", appSpecLoginRoute(bp)))
+		b.WriteString("\t\treturn nil\n")
+		b.WriteString("\t}}\n")
 		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+%q, url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", appSpecAuthBase(bp)+"/login", adminEmail))
 		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
 		b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")

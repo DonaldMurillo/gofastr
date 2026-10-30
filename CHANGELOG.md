@@ -2832,6 +2832,12 @@ few lines, and link the PR or the docs page for the rest.
   starts every subscriber on a new goroutine per event, so a subscriber
   can receive them in any order. `hooks-and-transactions.md`, `events.md`
   and the `BatchCreateMany` doc comment now say so.
+- **A generated `e2e_test.go` fails when sign-in leaves no session.** It
+  signed in as the seeded admin and then accepted any 200 from each gated
+  screen, following redirects, so with no session the login page passed
+  for every screen. The signed-in client now stops at a redirect to the
+  login screen's route and the screen check reports the 303. Meridian's
+  own e2e test had the same gap and gets the same client.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
