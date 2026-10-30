@@ -18,7 +18,7 @@ func (s *SMTPSender) pickAuth(offered string) (smtp.Auth, error) {
 			mechs = append(mechs, strings.ToUpper(m))
 		}
 	}
-	user, pass, host := s.config.Username, s.config.Password, s.config.Host
+	user, pass, host := s.config.Username, s.config.Password, s.config.hostname()
 	switch {
 	case slices.Contains(mechs, "CRAM-MD5"):
 		return smtp.CRAMMD5Auth(user, pass), nil

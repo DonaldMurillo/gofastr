@@ -3081,6 +3081,17 @@ few lines, and link the PR or the docs page for the rest.
   package, where it used to check no floor at all. `scripts/dupl.sh`
   refuses a baseline that is not one non-negative integer; `-gt` errored
   on it inside `if` and the gate printed its success line.
+- **A graceful shutdown mid-batch no longer spends the outbox's attempt
+  budget on deliveries that never ran.** The claim counts an attempt on
+  every row of a batch; on shutdown the relay left the unstarted rest
+  leased, and once the lease ran out the budget sweep could dead-letter
+  them (with `WithMaxAttempts(1)`, after one shutdown). The relay now
+  hands them back with the attempt refunded, as it already did when its
+  lease ran short.
+- **`email.SMTPConfig` takes an IPv6 host.** `Host: "::1"` dialled
+  `::1:587`, which Go's dialer refuses; the address is built with
+  `net.JoinHostPort`. A host written in brackets (`[::1]`) reaches the
+  TLS server name and the PLAIN/LOGIN host check without them.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

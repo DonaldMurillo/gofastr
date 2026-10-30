@@ -506,5 +506,7 @@ handler)` + `ob.StartRelay(ctx)`.
   the delivery mid-run. The current claimant's outcome decides the row.
   A relay that has less lease left than one handler run plus its settle
   hands the rest of its batch back unstarted, attempts refunded; the
-  first delivery of a batch always runs.
+  first delivery of a batch always runs. A graceful shutdown mid-batch
+  (the relay's context cancelled) hands back the unstarted rest the same
+  way; only a relay that dies outright leaves them leased.
   There is no double-processing beyond the at-least-once caveat.

@@ -14,6 +14,7 @@ import (
 	"net/smtp"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -79,9 +80,19 @@ func (c SMTPConfig) Validate() error {
 	return nil
 }
 
-// addr returns the host:port address string.
+// hostname is Host without the brackets an IPv6 literal may be written
+// in: the dial address adds its own, and a TLS ServerName never has them.
+func (c SMTPConfig) hostname() string {
+	if strings.HasPrefix(c.Host, "[") && strings.HasSuffix(c.Host, "]") {
+		return c.Host[1 : len(c.Host)-1]
+	}
+	return c.Host
+}
+
+// addr returns the host:port address string. "%s:%d" made "::1:587" for
+// an IPv6 host, which the dialer refuses.
 func (c SMTPConfig) addr() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return net.JoinHostPort(c.hostname(), strconv.Itoa(c.Port))
 }
 
 // Send implements the Sender interface using SMTP.
@@ -155,14 +166,14 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	_ = conn.SetDeadline(deadline)
 
 	if s.config.UseTLS {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: s.config.Host})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: s.config.hostname()})
 		if err := tlsConn.HandshakeContext(dialCtx); err != nil {
 			_ = conn.Close()
 			return fmt.Errorf("%w: tls handshake failed: %v", ErrSendFailed, err)
 		}
 		conn = tlsConn
 	}
-	client, err := smtp.NewClient(conn, s.config.Host)
+	client, err := smtp.NewClient(conn, s.config.hostname())
 	if err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("%w: smtp client creation failed: %v", ErrSendFailed, err)
@@ -175,7 +186,7 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	// continue over cleartext unless AllowCleartext was explicitly set.
 	if !s.config.UseTLS {
 		if ok, _ := client.Extension("STARTTLS"); ok {
-			tlsConfig := &tls.Config{ServerName: s.config.Host}
+			tlsConfig := &tls.Config{ServerName: s.config.hostname()}
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return fmt.Errorf("%w: starttls failed: %v", ErrSendFailed, err)
 			}

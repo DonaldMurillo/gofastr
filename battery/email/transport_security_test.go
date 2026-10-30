@@ -67,6 +67,8 @@ func (f *fakeSMTP) handle(conn net.Conn) {
 			} else {
 				w("250 fake\r\n")
 			}
+		case strings.HasPrefix(cmd, "AUTH"):
+			w("235 Authentication successful\r\n")
 		case strings.HasPrefix(cmd, "MAIL"):
 			w("250 OK\r\n")
 		case strings.HasPrefix(cmd, "RCPT"):
