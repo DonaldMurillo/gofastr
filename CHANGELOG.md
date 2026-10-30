@@ -2827,6 +2827,11 @@ few lines, and link the PR or the docs page for the rest.
   `Content-Transfer-Encoding` or `MIME-Version` (the send fails with
   `ErrSendFailed`), and notify's `Extra["headers"]` refuses
   `Content-Transfer-Encoding` as it already refused the other two.
+- **The batch docs no longer promise event delivery in input order.**
+  A `_batch` emits its lifecycle events in input order, but `EmitAsync`
+  starts every subscriber on a new goroutine per event, so a subscriber
+  can receive them in any order. `hooks-and-transactions.md`, `events.md`
+  and the `BatchCreateMany` doc comment now say so.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

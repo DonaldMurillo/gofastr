@@ -324,7 +324,9 @@ In a `_batch` request, every item shares one transaction:
 - All `Before*` and `After*` hooks fire per item, in input order.
 - The first per-item hook error rolls back the entire batch.
 - Lifecycle events emit only on a successful commit, never on
-  rollback, in input order.
+  rollback, one per item in input order. Delivery is asynchronous
+  ([events](events.md)): each subscriber runs on its own goroutine per
+  event, so a subscriber can receive the items in any order.
 
 ## Hook-skip matrix
 

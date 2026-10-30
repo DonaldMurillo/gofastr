@@ -153,7 +153,11 @@ that captured a request context or buffered events can be collected.
 
 In-process subscribers are not subject to the 32-event SSE buffer.
 `EmitAsync` runs each subscriber on its own goroutine, so a slow or
-blocked handler does not hold back the others. The subscriber's context
+blocked handler does not hold back the others. That goroutine is new for
+every event, so two events emitted one after the other can reach the same
+subscriber in either order, or both at once. A subscriber that needs
+order reads it from the data (a timestamp or version column), not from
+arrival. The subscriber's context
 keeps the emitter's values (the user, the tenant, the request id) but not
 its cancel, because CRUD emits on the request context and the handler
 has usually returned by the time a subscriber runs. Each run is bounded

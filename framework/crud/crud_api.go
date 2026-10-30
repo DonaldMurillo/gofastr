@@ -453,7 +453,8 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 }
 
 // BatchCreateMany runs CreateOne for each body in a single transaction.
-// Events fire after commit (per item, in input order). Any per-item error
+// Events are emitted after commit, per item in input order; subscribers
+// run asynchronously, so they can arrive in any order. Any per-item error
 // rolls back the whole batch, same semantics as the HTTP _batch endpoint.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
