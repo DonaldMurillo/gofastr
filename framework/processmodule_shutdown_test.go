@@ -114,6 +114,86 @@ func TestShutdownStopsProcessModules(t *testing.T) {
 	}
 }
 
+// heldWatchRunner starts children whose first Wait, the exit watcher the
+// supervisor starts at spawn, returns only once gate closes. Every later
+// Wait passes straight through.
+type heldWatchRunner struct {
+	inner Runner
+	gate  chan struct{}
+}
+
+func (r *heldWatchRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
+	c, err := r.inner.Start(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return &heldWatchChild{RunningChild: c, gate: r.gate}, nil
+}
+
+type heldWatchChild struct {
+	RunningChild
+	gate  chan struct{}
+	waits atomic.Int32
+}
+
+func (c *heldWatchChild) Wait() error {
+	err := c.RunningChild.Wait()
+	if c.waits.Add(1) == 1 {
+		<-c.gate
+	}
+	return err
+}
+
+// The shutdown drain waited for the child to exit but left it in the slot
+// for the exit watcher to clear, so batteries could stop while the slot
+// still held a child that had already exited, and the window grew with
+// load. Drain now settles the slot itself, as a disable drain does.
+func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
+	if os.Getenv(childEnvName) != "" {
+		return
+	}
+	db := newStoreDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	d := descriptorForChild(t, childModeEcho)
+	app.RegisterProcessModule(d, ApprovedGrants{"articles:read"})
+
+	sup := app.ProcessModules()
+	sup.cfg.PollInterval = 20 * time.Millisecond
+	sup.cfg.DrainPerModule = 2 * time.Second
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	sup.Slot(d.Name).runner = &heldWatchRunner{
+		inner: &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)},
+		gate:  gate,
+	}
+	probe := &childProbe{sup: sup, name: d.Name}
+	app.RegisterBattery(probe)
+
+	_, done := startForTest(t, app)
+	if err := sup.Enable(context.Background(), d.Name); err != nil {
+		t.Fatal(err)
+	}
+	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := app.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	<-done
+	if probe.liveAtStop.Load() {
+		t.Error("batteries stopped while the slot still held the drained child")
+	}
+	sl := sup.Slot(d.Name)
+	sl.mu.RLock()
+	peer, codec, lastExit := sl.peer, sl.codec, sl.lastExit
+	sl.mu.RUnlock()
+	if peer != nil || codec != nil || lastExit != "drained" {
+		t.Errorf("after Shutdown: peer kept %t, codec kept %t, last exit %q, want neither and drained", peer != nil, codec != nil, lastExit)
+	}
+}
+
 // Close killed only the child a slot already held, so a spawn still
 // inside the runner when Close ran installed its child afterwards and it
 // ran on with nothing left to stop it (2026-10-27 S48).

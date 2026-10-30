@@ -463,6 +463,18 @@ func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget tim
 	// The peer stays open: the child's in-flight reverse calls still
 	// reach the queue and the DB until it exits.
 	s.drainChild(sl.name, child, peer, budget, "shutdown", false)
+	// drainChild returns once the child has exited. Settle the slot here,
+	// as transitionDrain does, rather than leave it to the exit watcher:
+	// App.Shutdown stops the batteries next, and the watcher may not have
+	// run yet. The watcher then finds no child and leaves the slot alone.
+	// The supervisor is closed, so no replacement can be in the slot: a
+	// spawn that finishes now kills its own child (spawnOnce).
+	sl.mu.Lock()
+	sl.child = nil
+	sl.peer = nil
+	sl.codec = nil
+	sl.lastExit = exitLabel(nil, true)
+	sl.mu.Unlock()
 }
 
 // drainChild is the §4.6 teardown both drains share: module.drain, EOF on
