@@ -3151,6 +3151,28 @@ few lines, and link the PR or the docs page for the rest.
   only the destination, so Back replayed the deleted record from the
   runtime's screen cache. A successful RPC whose method is not `GET`
   now evicts the page it ran on before it navigates.
+- **The blog example's search drops deleted posts.** `/posts/search`
+  answered from an index the seed filled once with fixed documents, so
+  a soft-deleted post stayed searchable, and came back after a restart.
+  The index is now built from the live rows at start and kept by
+  `AfterCreate`, `AfterUpdate` and `AfterDelete` hooks that run once
+  the write commits.
+- **Web bot auth keeps an IPv6 literal's brackets in `@authority`
+  when it drops a default port.** `Host: [2001:db8::1]:443` produced
+  `2001:db8::1`, so a signature over the compliant `[2001:db8::1]`
+  never verified. Brackets were restored only when a non-default port
+  stayed.
+- **The auth form-error redirect keeps an escaped `?` or `#` in the
+  Referer's path escaped.** It returned the decoded path, so a Referer
+  of `/login%3Fnext=/admin` came back as `/login?next=/admin`, a query
+  the redirect then extended with `&error=…`, though the Referer's
+  query is meant to be dropped. The redirect now uses the escaped path;
+  the protocol-relative refusal still reads it decoded.
+- **A webhook worker stopped mid-batch hands back the deliveries it
+  had not started, attempt refunded.** On a `LeasedStore` they stayed
+  claimed with an attempt spent until the lease ran out, so a restart
+  waited out the lease, and a delivery at `MaxAttempts` 1 was
+  dead-lettered without a send.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -3614,6 +3636,13 @@ few lines, and link the PR or the docs page for the rest.
   a root `.nojekyll`. An export that needs another dotfile, such as an
   Apache `.htaccess`, copies it into the output after the build. The
   new `static.Refuses` exposes the check.
+- **An embed origin with a Unicode host is refused instead of folded
+  onto an ASCII one.** `NormalizeOrigin` lowercased the host with
+  `strings.ToLower` before the check that refuses non-ASCII bytes, and
+  Go folds U+0130 to `i` and the Kelvin sign to `k`, so an allowlist
+  entry `https://İ.example` was accepted as `https://i.example`. The
+  fold is ASCII-only now, and such an entry fails at boot like any
+  other Unicode host.
 
 ## [0.95.0] - 2026-10-26
 

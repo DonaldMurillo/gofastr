@@ -92,18 +92,16 @@ func normalizeAuthority(host, scheme string) string {
 		return ""
 	}
 	h, port, err := splitAuthority(host)
-	defaultPort := (scheme == "https" && port == "443") || (scheme == "http" && port == "80")
-	switch {
-	case err != nil || port == "":
+	if err != nil || port == "" {
 		return strings.ToLower(host)
-	case defaultPort:
-		return strings.ToLower(h)
-	default:
-		if strings.Contains(h, ":") { // bare IPv6 literal
-			h = "[" + h + "]"
-		}
-		return strings.ToLower(h) + ":" + port
 	}
+	if strings.Contains(h, ":") { // bare IPv6 literal, with or without the default port
+		h = "[" + h + "]"
+	}
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		return strings.ToLower(h)
+	}
+	return strings.ToLower(h) + ":" + port
 }
 
 // splitAuthority splits host:port, tolerating bracketed IPv6 literals.

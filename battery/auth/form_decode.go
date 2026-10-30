@@ -308,12 +308,15 @@ func safeReferer(r *http.Request) string {
 	if err != nil {
 		return ""
 	}
+	// The path stays escaped: the decoded u.Path turns
+	// /login%3Fnext=/admin into /login?next=/admin, a query the
+	// redirect then extends. IsSafeRelativePath checks it decoded too.
 	// Relative Referer (rare but possible): keep its path only.
 	if u.Host == "" {
-		if !handler.IsSafeRelativePath(u.Path) {
+		if !handler.IsSafeRelativePath(u.EscapedPath()) {
 			return ""
 		}
-		return u.Path
+		return u.EscapedPath()
 	}
 	// Absolute Referer: must match the request's own Host.
 	if !strings.EqualFold(u.Host, r.Host) {
@@ -322,7 +325,7 @@ func safeReferer(r *http.Request) string {
 	if u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https" {
 		return ""
 	}
-	out := u.Path
+	out := u.EscapedPath()
 	if out == "" {
 		out = "/"
 	}

@@ -28,6 +28,9 @@ defer mgr.Stop(ctx)
 `Stop(ctx)` cancels any in-flight HTTP attempt via the worker's context
 and waits for the worker goroutine to drain. Pass a tight context if
 shutdown speed matters more than letting a hung receiver complete.
+On a `LeasedStore`, the deliveries of the claimed batch that had not
+started go back with their attempt refunded, so the next process
+sends them at once instead of after the lease.
 
 Register a subscriber and publish:
 
