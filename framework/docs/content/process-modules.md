@@ -127,9 +127,11 @@ with `ErrModuleInstalled` and leaves the row alone.
 - **Reverse calls are bounded both ways.** The host serves at most
   `Limits.Inflight` of a child's reverse calls at once and answers the
   overflow with an inflight-cap error. It also holds at most that many
-  answers waiting to be written: a child that keeps sending calls but
-  stops reading stdin faults its peer with `moduleproto.ErrStalled`,
-  after which the peer serves nothing more.
+  answers waiting behind a blocked write: a child that keeps sending
+  calls but stops reading stdin faults its peer with
+  `moduleproto.ErrStalled`, after which the peer serves nothing more.
+  An answer stops counting when its write starts, so a child at its cap
+  that reads every answer never trips it.
 - **A protocol fault restarts the module.** When the host peer records a
   terminal fault (a malformed, over-cap or unsolicited frame, or a
   stalled transport), the supervisor kills the child and counts the exit
@@ -351,7 +353,11 @@ The shape is fixed:
    routes), `module.drain`, and optionally `module.tool.list` /
    `module.tool.call` (`module.cancel` is built into the Peer; do not
    re-register it).
-3. Call `peer.Start()`, then block on `<-peer.Done()` (clean EOF on stdin).
+3. Call `peer.Start()`, then block until `peer.Done()` (clean EOF on
+   stdin) or `peer.FatalDone()`, and exit non-zero on a fault. A faulted
+   peer answers nothing more while its read loop keeps draining stdin, so a
+   child that stays up leaves every host call to wait out its deadline;
+   once it exits, the supervisor restarts the module.
 
 ### Cancelling an in-flight call
 
@@ -407,7 +413,14 @@ peer.Handle(moduleproto.MethodHandshake, func(_ context.Context, p json.RawMessa
 })
 // …module.ready / module.health / module.http (by RouteID) / module.drain…
 peer.Start()
-<-peer.Done()
+select {
+case <-peer.Done():
+case <-peer.FatalDone():
+}
+if err := peer.FatalError(); err != nil {
+    fmt.Fprintln(os.Stderr, "peer fault:", err)
+    os.Exit(1)
+}
 ```
 
 Three contracts the child MUST honor (the host enforces them; violation is

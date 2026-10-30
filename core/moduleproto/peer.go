@@ -104,9 +104,12 @@ type Peer struct {
 	abandonedFIFO []uint64
 	inflight      int
 	serveInflight int
-	// respPending counts served responses waiting to be written: the
-	// handler returned and released its serve slot, the write has not.
-	// dispatch bounds it by maxServeInflight too.
+	// respPending counts served responses whose write has not reached the
+	// codec: the handler returned and released its serve slot, and the
+	// write waits behind another one. dispatch bounds it by
+	// maxServeInflight too. A response leaves the count when its write
+	// takes the codec, before the counterparty can read it, so every
+	// counted response is a call the counterparty still has open.
 	respPending int
 	handlers    map[string]Handler
 	// cancels maps an inbound-request id to every handler currently serving
@@ -637,10 +640,7 @@ func (p *Peer) dispatch(f *Frame) {
 				return
 			}
 			if resp != nil {
-				_ = p.writeFrame(resp)
-				p.mu.Lock()
-				p.respPending--
-				p.mu.Unlock()
+				p.writeServed(resp)
 			}
 		}()
 	case f.Method != "" && f.ID == nil:
@@ -842,6 +842,24 @@ func (p *Peer) deliverResponse(f *Frame) {
 	// ch is buffered (cap 1) so this never blocks even if the Call goroutine
 	// has not yet entered its select.
 	ch <- f
+}
+
+// writeServed writes a served response counted in respPending and takes
+// it out of the count the moment the write holds the codec. Counting it
+// until the write returned let the counterparty read the response, free
+// its slot and send its next call first, so a counterparty at the cap
+// read as one over it and faulted the peer. A write that fails before
+// it holds the codec leaves the response counted; the failure is
+// terminal, and dispatch serves nothing once the peer has faulted.
+func (p *Peer) writeServed(resp *Frame) {
+	err := p.codec.writeFrame(resp, func() {
+		p.mu.Lock()
+		p.respPending--
+		p.mu.Unlock()
+	})
+	if err != nil {
+		p.setFatal(err)
+	}
 }
 
 func (p *Peer) writeFrame(f *Frame) error {

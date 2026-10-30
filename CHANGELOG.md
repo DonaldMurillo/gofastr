@@ -3670,9 +3670,12 @@ few lines, and link the PR or the docs page for the rest.
   A served reverse call released its serve slot when the handler
   returned and then waited on the write, so a child that sent paced
   calls and never read stdin parked one host goroutine per call with no
-  bound. At most `Limits.Inflight` answers now wait on the write; the
-  next one faults the peer with `moduleproto.ErrStalled`, and a faulted
-  peer starts no handler for a frame it reads after the fault. See
+  bound. At most `Limits.Inflight` answers now wait behind a blocked
+  write; the next one faults the peer with `moduleproto.ErrStalled`, and
+  a faulted peer starts no handler for a frame it reads after the fault.
+  An answer leaves the count when its write starts, before the child can
+  read it, so a child with `Limits.Inflight` calls open is never taken
+  for one that stopped reading. See
   [process modules](framework/docs/content/process-modules.md).
 - **BREAKING: a custom CSRF cookie name gets the `__Host-` prefix on
   HTTPS.** `middleware.CSRF` prefixed only its default name unless the
