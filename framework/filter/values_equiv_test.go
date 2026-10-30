@@ -63,6 +63,7 @@ func TestParseSort_ValuesEquiv(t *testing.T) {
 		"sort=score",
 		"sort=-status",
 		"sort=score&sort=-status",
+		"sort=score,-status",
 		"sort=unknown",
 	}
 	for _, raw := range cases {

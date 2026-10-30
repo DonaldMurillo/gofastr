@@ -2943,6 +2943,11 @@ few lines, and link the PR or the docs page for the rest.
   `onError({code: 'no-ready'})` and a console warning for a frame it
   had already removed. `destroy()` now stops the watchdog.
   `embed.md` documents the handle `mount` returns.
+- **`?sort=` takes a comma-separated list.** `sort=title,-created_at`
+  sorts by both fields. The generated CLI's `--sort` and process-module
+  sort arrays already sent that form, and every such request got a 400
+  naming `title,-created_at` as an unknown field. The 16-field limit
+  counts the fields across every `sort` value.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

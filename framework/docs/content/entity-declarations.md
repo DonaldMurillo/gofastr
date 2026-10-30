@@ -1119,6 +1119,10 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_like`  | case-insensitive literal `contains` (`LOWER(col) LIKE '%value%'`) |
 | `_in`    | `IN (…)`, comma-separated, capped at 1000 |
 
+`sort` names a field, with a `-` prefix for descending. Several fields
+go comma-separated (`sort=status,-created_at`) or as repeated `sort`
+keys, at most 16 in all; an unknown field is a 400.
+
 `_ne` follows `=`'s NULL semantics rather than SQL three-valued intuition:
 a row whose column is NULL matches neither `=` nor `!=`, and no
 `OR column IS NULL` arm is added. Combine with `_in` (or a `?where=`
