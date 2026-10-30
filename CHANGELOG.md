@@ -2972,6 +2972,11 @@ few lines, and link the PR or the docs page for the rest.
   DSL searched each operator across the whole term, ` in ` and
   ` contains ` first, so `title="Drive in Cinema"` split inside the
   quotes and was refused. A term now splits at its leftmost operator.
+- **SQLite search accepts every `FieldEquals` key the other backends
+  match.** `SQLiteFTS` refused any key outside `^[A-Za-z0-9_]+$`, so a
+  `tenant-id` scope that worked on Memory and Postgres errored on every
+  SQLite search. The key is now a bound parameter matched through
+  `json_each`, like the value.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

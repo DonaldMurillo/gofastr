@@ -210,7 +210,7 @@ results, _ := idx.Search(ctx, search.Query{
 })
 ```
 
-Matching is string-only and identical across the memory and Postgres backends:
+Matching is string-only and identical across the three backends:
 a document matches iff, for every key/value pair, `Fields[key]` is present and
 its value is a string equal to `value`. A field whose value is not a string
 never matches. The Postgres backend encodes this as JSONB containment
@@ -291,7 +291,7 @@ so the default `go test ./...` stays green.
 |---------|----------|----------------------------------------------------|
 | `Table` | `string` | Destination FTS5 virtual table. Defaults to `search_documents`. |
 
-The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, text, tokenize='porter unicode61')`. Only `Document.Text` is tokenised; structured fields are stored (UNINDEXED) for `FieldEquals` filtering via `json_extract`.
+The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, text, tokenize='porter unicode61')`. Only `Document.Text` is tokenised; structured fields are stored (UNINDEXED) for `FieldEquals` filtering via `json_each`.
 
 Beside it `EnsureSchema` keeps `<table>_prefix`, a contentless FTS5 table over
 the same text with the `unicode61` tokenizer and no stemming. The porter
@@ -318,12 +318,13 @@ The tiebreak is `id ASC`.
 
 ### Scoping with `FieldEquals`
 
-`FieldEquals` uses `json_extract(fields, '$."key"') = ?`: the key is validated
-against `^[A-Za-z0-9_]+$` before the JSON path is interpolated, and the value
-is parameterised. A `json_type(fields, '$."key"') = 'text'` check beside it
-keeps matching string-only: `json_extract` returns an array or object as its
-JSON text, so without it a stored `tenant: ["acme"]` would equal the filter
-value `["acme"]`.
+`FieldEquals` checks each pair with
+`EXISTS (SELECT 1 FROM json_each(fields) WHERE key = ? AND type = 'text' AND value = ?)`:
+the key and the value are both bound parameters, so any key the memory
+and Postgres backends match (`tenant-id`, `org.id`) matches here too.
+The `type = 'text'` check keeps matching string-only: `json_each` gives
+an array or object its JSON text, so without it a stored
+`tenant: ["acme"]` would equal the filter value `["acme"]`.
 
 ### Indexing
 
