@@ -44,6 +44,7 @@ func init() {
 			contracts.RuleOwnedHandleLeak,
 			contracts.RuleAppSheetSelector,
 			contracts.RuleTokenCustomProperty,
+			contracts.RuleOwnedStatementAtRule,
 			contracts.RuleDuplicateTokenValue,
 			contracts.RuleRepeatedLiteral,
 			contracts.RuleBareThemeLiteral, contracts.RulePhysicalSide,

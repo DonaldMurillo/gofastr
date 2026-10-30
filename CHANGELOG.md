@@ -3025,6 +3025,19 @@ few lines, and link the PR or the docs page for the rest.
   the value shipped. The examples now delete `"passwordHash"` and
   `"internalNotes"`, and the guide says which keys the rows carry. A
   hook copied from the old examples needs the same change.
+- **GOFASTR1808 reads a function fallback as one argument.** The
+  fallback scan counted `(` but not a nested function token, so the
+  inner commas of `var(--spacing-lg, var(--spacing-md, 8px))` or
+  `clamp(4px, 2vw, 8px)` split the fallback, and the check reported
+  drift against the last piece and `gofastr gen styles` refused to
+  write the sheet. A fallback that is a function is not judged.
+- **BREAKING: owned sheets refuse statement at-rules (GOFASTR1825).**
+  `@import`, `@charset` and `@namespace` in a `*.style.css` compiled
+  into app.css after the kit's rules, where the browser ignores them,
+  and no check said so. GOFASTR1825 now reports them and
+  `gofastr gen styles` stops on the sheet. Delete the line; load a web
+  font with `style.FontFaceCSS`. `@layer` statements are allowed. The
+  contract catalog holds 82 rules.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

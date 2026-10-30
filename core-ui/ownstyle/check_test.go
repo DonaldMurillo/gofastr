@@ -197,6 +197,11 @@ func TestCheckFallbackDrift(t *testing.T) {
 		{".a{color:var(--color-text, #18181B)}", ""},
 		// Complex fallbacks are left alone.
 		{".a{padding:var(--spacing-lg, var(--spacing-md))}", ""},
+		// A fallback that is a function with commas is one argument: the
+		// inner commas do not split it (2026-10-27 bug bash C19).
+		{".a{padding:var(--spacing-lg, var(--spacing-md, 8px))}", ""},
+		{".a{padding:var(--spacing-lg, clamp(4px, 2vw, 8px))}", ""},
+		{".a{padding:var(--spacing-lg, min(8px, 2vw))}", ""},
 		// Unknown name is 1806, not drift.
 		{".a{padding:var(--spacing-xxl, 8px)}", "GOFASTR1806"},
 	}
@@ -459,5 +464,44 @@ func TestCheckRawMediaWidthRemEmMatchesBreakpoint(t *testing.T) {
 	ds = Check("t.style.css", "@media (min-width: 60rem) { .a { color: red; } }", KindScoped, defaultTokens(t))
 	if !strings.Contains(ds[0].Message, "(--above-md)") || !strings.Contains(ds[0].Message, "(--above-lg)") {
 		t.Fatalf("bracketing message for rem: %s", joinDiags(ds))
+	}
+}
+
+// @import, @charset and @namespace count only at the top of a
+// stylesheet, and an owned sheet compiles after the kit's rules (and,
+// scoped, inside its @scope), so the browser drops them (2026-10-27 bug
+// bash C20). The @layer statement is legal there and stays quiet.
+func TestCheckStatementAtRule(t *testing.T) {
+	cases := []struct {
+		src  string
+		kind Kind
+		want string
+	}{
+		{"@import url(fonts.css);\n.a{order:1}", KindScoped, "1:1"},
+		{".a{order:1}\n@charset \"utf-8\";", KindScoped, "2:1"},
+		{"@namespace svg url(http://www.w3.org/2000/svg);", KindApp, "1:1"},
+		{"@IMPORT \"x.css\";", KindApp, "1:1"},
+		{"@layer base, overrides;\n.a{order:1}", KindScoped, ""},
+		{"@media (--above-md){.a{order:1}}", KindScoped, ""},
+		{"@supports (display:grid){.a{order:1}}", KindScoped, ""},
+		{"@container (min-width: 30rem){.a{order:1}}", KindScoped, ""},
+	}
+	for _, tc := range cases {
+		ds := Check("t.style.css", tc.src, tc.kind, defaultTokens(t))
+		var got []string
+		for _, d := range ds {
+			if d.Rule == RuleStatementAtRule {
+				got = append(got, d.String())
+			}
+		}
+		if tc.want == "" {
+			if len(got) != 0 {
+				t.Errorf("%q: unexpected %v", tc.src, got)
+			}
+			continue
+		}
+		if len(got) != 1 || !strings.HasPrefix(got[0], tc.want+" error ") {
+			t.Errorf("%q: want one %s at %s, got %v (all: %s)", tc.src, RuleStatementAtRule, tc.want, got, joinDiags(ds))
+		}
 	}
 }

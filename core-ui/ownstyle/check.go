@@ -57,6 +57,11 @@ const (
 	// RuleTokenCustomProperty is GOFASTR1820: an owned sheet declaring
 	// a custom property whose name is a theme token.
 	RuleTokenCustomProperty = "GOFASTR1820"
+	// RuleStatementAtRule is GOFASTR1825: @import, @charset or
+	// @namespace, which count only at the top of a stylesheet. An owned
+	// sheet compiles after the kit's rules, a scoped one inside its
+	// @scope, so the browser drops them.
+	RuleStatementAtRule = "GOFASTR1825"
 	// RuleClassTwice: a class used as both base and variant in one file
 	// (model error).
 	RuleClassTwice = "class-base-and-variant"
@@ -361,6 +366,15 @@ func (c *checker) walk(r *Rule, inRM, inKF bool) {
 	switch {
 	case r.At && r.Name == "media":
 		c.checkMediaWidths(r)
+	case r.At && !r.Block && r.Name != "layer":
+		c.report(Diagnostic{
+			Rule:     RuleStatementAtRule,
+			Severity: SeverityError,
+			Line:     r.Pos.Line,
+			Col:      r.Pos.Col,
+			Message: fmt.Sprintf("@%s is dropped: it counts only at the top of a stylesheet, and an owned sheet "+
+				"compiles after the kit's rules; load fonts through the theme (style.FontFaceCSS)", r.Name),
+		})
 	case !r.At && !inKF:
 		c.checkSelector(r)
 	}
@@ -704,7 +718,9 @@ func (c *checker) checkVarRefs(d *Decl) {
 		afterComma := false
 		for j := i + 2; j < len(val) && depth > 0; j++ {
 			switch val[j].Type {
-			case TokenOpenParen:
+			case TokenFunction, TokenOpenParen:
+				// A nested function ("var(", "clamp(") is one token whose
+				// ")" arrives as a close-paren, like "(".
 				depth++
 			case TokenCloseParen:
 				depth--

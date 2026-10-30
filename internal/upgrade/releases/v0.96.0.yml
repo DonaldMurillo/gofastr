@@ -441,3 +441,7 @@ notes:
       uses:
         - gofastr/core-ui/widget.Builder.RPC
         - gofastr/core-ui/widget.RPCEndpoint
+  - change: "BREAKING - GOFASTR1825 refuses @import, @charset and @namespace in a *.style.css, so gofastr gen styles stops on a sheet that holds one"
+    breaking: true
+    guidance: "The browser already ignored these at-rules: they count only at the top of a stylesheet, and an owned sheet compiles after the kit's rules. Delete the line. Load a web font with style.FontFaceCSS through the theme, and write the rules an @import named in the sheet itself."
+    nodetect: "the css matcher has no at-rule form; gofastr gen styles and gofastr verify report GOFASTR1825 at the line"
