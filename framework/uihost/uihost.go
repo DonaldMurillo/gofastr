@@ -2506,6 +2506,14 @@ type NotFoundRenderer interface {
 	RenderNotFound(path string) render.HTML
 }
 
+// NotFoundTitler supplies the title for a custom 404 screen. The context
+// and path belong to the current render. An empty path identifies an outlet
+// fallback. Returning an empty title falls back to app.ScreenTitler, then
+// the framework's default not-found title.
+type NotFoundTitler interface {
+	NotFoundTitle(ctx context.Context, path string) string
+}
+
 // notFoundBodyScreen adapts the host's configured 404 screen
 // ([WithNotFoundScreen]) to the app render pipeline's component slot:
 // RenderNotFound(path) when the screen implements it, else Render. A
@@ -2521,6 +2529,18 @@ func (s *notFoundBodyScreen) Render() render.HTML {
 		return nf.RenderNotFound(s.path)
 	}
 	return s.comp.Render()
+}
+
+func (s *notFoundBodyScreen) ScreenTitle(ctx context.Context) string {
+	if nf, ok := s.comp.(NotFoundTitler); ok {
+		if title := nf.NotFoundTitle(ctx, s.path); title != "" {
+			return title
+		}
+	}
+	if titled, ok := s.comp.(app.ScreenTitler); ok {
+		return titled.ScreenTitle(ctx)
+	}
+	return ""
 }
 
 // defaultNotFoundScreen is the framework's built-in 404 body, the same

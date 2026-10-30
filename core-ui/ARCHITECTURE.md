@@ -71,6 +71,14 @@ not already end with that exact suffix. Full pages, not-found outlet
 outcomes, recovery screens, and partial-navigation title headers follow
 the same rule.
 
+Custom not-found screens can implement
+`uihost.NotFoundTitler.NotFoundTitle(context.Context, string)` to choose
+the title for the current request path, without storing that path on the
+shared screen. An empty path identifies a missing-outlet outcome. Empty
+custom titles fall back to `app.ScreenTitler.ScreenTitle(ctx)`, then the
+generic not-found title. Full loads and partial navigation use the same
+effective title; a failed route's registered title cannot replace it.
+
 ---
 
 ## The five scenarios

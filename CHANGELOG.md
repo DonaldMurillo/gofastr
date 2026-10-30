@@ -104,6 +104,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- Custom not-found screens retain their context-aware title provider.
+  `uihost.NotFoundTitler` can choose a title from the request path; empty
+  titles use the standard screen title or generic not-found title.
+  Navigation partials carry the effective 404 title instead of retaining
+  the previous page title or borrowing the failed route's title.
 - **An `EmitAsync` subscriber no longer runs on a cancelled request
   context.** CRUD emits on the request's context, and the handler
   returned before the subscriber ran, so the webhook bridge's subscriber

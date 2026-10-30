@@ -586,6 +586,9 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 	if err != nil {
 		return res, err
 	}
+	if res.Title == "" {
+		res.Title = target.Title
+	}
 	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
 		return res, nil
 	}
