@@ -141,6 +141,11 @@ await api.posts.patch(id, { views: 0 });   // JS objects are presence-faithful
 await api.posts.watch((event, data) => console.log(event), { signal });
 ```
 
+A filter value may be an array, which goes as one comma-joined value
+(`filters: { status_in: ["open", "paid"] }` sends `status_in=open,paid`).
+The server splits it on commas, so an element holding a comma throws
+before any request is sent.
+
 `watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable
 envelope) resolve normally with `committed: false`. Every response body

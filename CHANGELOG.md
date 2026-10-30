@@ -2956,6 +2956,10 @@ few lines, and link the PR or the docs page for the rest.
   holding a comma (`["Doe, Jane"]`) was split by the route into `Doe`
   and ` Jane`; it is now refused. The tool schema gives `_in` arrays
   `minItems: 1`.
+- **The generated JS client refuses a filter list element holding a
+  comma.** It joined a filter array with commas, so
+  `title_in: ["Doe, Jane"]` reached the server as `Doe` and ` Jane`.
+  The client now throws before sending such a list.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
