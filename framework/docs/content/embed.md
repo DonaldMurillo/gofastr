@@ -533,9 +533,11 @@ boundary. Hand them this much along with the snippet:
   </script>
   ```
 
-  `onError` fires for a refused handshake, an expired credential, and the
-  20-second no-load watchdog. It is the only signal that crosses the origin
-  boundary into their monitoring.
+  `onError` fires for a refused handshake, an expired credential, the
+  20-second no-load watchdog, and a link or form the panel refuses to follow
+  (`link-navigation-blocked`, `form-navigation-blocked`). A
+  `target="_blank"` link opens its tab and reports nothing. It is the only
+  signal that crosses the origin boundary into their monitoring.
 - **The token is per page load, not per site.** If they cache the page that
   carries it, every visitor served that cached copy arrives as the same
   identity for as long as the nonce lives.

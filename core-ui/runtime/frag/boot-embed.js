@@ -420,13 +420,12 @@
       //
       // Opened through window.open with noopener rather than by letting the
       // browser handle it, so the new window cannot reach back through
-      // window.opener to navigate the frame.
+      // window.opener to navigate the frame. With noopener, window.open
+      // returns null whether or not a tab opened, so its result says
+      // nothing about a refused popup and is not read.
       if (link.target === '_blank') {
         e.preventDefault();
-        const opened = window.open(href, '_blank', 'noopener');
-        if (opened) { opened.opener = null; return; }
-        // The browser refused the popup. Say so rather than appear inert.
-        showBlockedNavigation('link', href);
+        window.open(href, '_blank', 'noopener');
         return;
       }
       e.preventDefault();

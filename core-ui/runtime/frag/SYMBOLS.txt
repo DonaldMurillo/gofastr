@@ -137,7 +137,6 @@ boot-embed	8	body
 boot-embed	8	h
 boot-embed	8	html
 boot-embed	8	notice
-boot-embed	8	opened
 boot-embed	8	original
 boot-embed	8	r
 boot-embed	8	r

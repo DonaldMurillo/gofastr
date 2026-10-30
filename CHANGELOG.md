@@ -2930,6 +2930,13 @@ few lines, and link the PR or the docs page for the rest.
   was the tag's own, so "3×5" was announced as "35× removed". The
   announcement now reads the chip's hidden value. The submitted value
   was always right.
+- **An embed's new-tab link no longer reports an error.** A
+  `target="_blank"` link inside an embed opened its tab, then also
+  showed "This panel cannot open links." and sent
+  `link-navigation-blocked` to the customer's `onError`. The frame
+  read `window.open`'s null return as a refused popup, but with
+  `noopener` it is always null. The link now opens its tab and
+  reports nothing.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
