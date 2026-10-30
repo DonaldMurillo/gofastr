@@ -460,3 +460,7 @@ notes:
     find:
       uses:
         - gofastr/battery/admin.AuthPrincipal
+  - change: "BREAKING - the print battery's RegisterRoutes (and Init) fails on a PathPrefix of / or one with no leading slash"
+    breaking: true
+    guidance: "PathPrefix / mounted every print route at the root, outside the embed reservation that keeps grants off the headless-Chrome PDF route. Name a path below the root, such as /print (the default when PathPrefix is empty)."
+    nodetect: "the prefix is a runtime string; the mount error names it at startup"

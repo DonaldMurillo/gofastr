@@ -50,10 +50,11 @@ func firstParamValue(r *http.Request) string {
 // lives in battery/print/chromepdf.
 type PDFRenderer interface {
 	// RenderPDF converts the shelled HTML into a PDF. page carries the
-	// resolved page setup (paper size + margins). baseURL is the
-	// scheme+host origin of the originating request, so an adapter can
-	// resolve absolute resource links (e.g. the app.css stylesheet)
-	// against the live host.
+	// resolved page setup (paper size + margins). baseURL is
+	// Config.BaseURL, the host-configured origin, never the request's
+	// Host header; it is empty when unset. When it and AppCSSURL are
+	// both set, the shelled HTML already carries the absolute app.css
+	// link built from it.
 	RenderPDF(ctx context.Context, html string, page PageConfig, baseURL string) ([]byte, error)
 }
 

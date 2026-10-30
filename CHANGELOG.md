@@ -3330,6 +3330,14 @@ few lines, and link the PR or the docs page for the rest.
   continuation, a text frame inside a message, a fragmented control
   frame, a control frame over 125 bytes, or a message over 16 MiB
   closes the socket.
+- **`featureflag.Bool` on a request context reads that request's App.**
+  `Flags` and `SetFlagStore` install the App's evaluator as the
+  process-wide default, so with two Apps in one process a handler in
+  the first read the second's store. The default middleware now puts
+  each App's evaluator on the request context
+  (`featureflag.WithEvaluator`, read back with `EvaluatorFrom`), and
+  `Bool` prefers it to `Default()`. An app without the default chain
+  adds `App.FlagContextMiddleware()`.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -3843,6 +3851,13 @@ few lines, and link the PR or the docs page for the rest.
   version 13 and a 16-byte key.
   `core/stream` exports the check as `CheckUpgradeRequest`, which
   `Upgrade` runs too.
+- **BREAKING: the print battery refuses a root `PathPrefix`.** `"/"` trimmed to
+  `""`, so the routes mounted at the root while the embed reservation
+  still named `/print`, and the embed gate did not refuse a grant on
+  the PDF route, which starts headless Chrome. `RegisterRoutes` (and
+  so `Init`) now fails on a prefix that is not a path below the root,
+  `"/"` or one with no leading slash, so the reservation always names
+  what is mounted.
 
 ## [0.95.0] - 2026-10-26
 

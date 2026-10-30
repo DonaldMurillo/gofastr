@@ -1302,6 +1302,11 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	if a != nil && a.DB != nil {
 		chain = append(chain, a.DBContextMiddleware())
 	}
+	// The App's flag evaluator, so featureflag.Bool on a request context
+	// reads this App's flags and not the process default.
+	if a != nil {
+		chain = append(chain, a.FlagContextMiddleware())
+	}
 	if a != nil && a.tracing {
 		chain = append(chain, middleware.Tracing())
 	}
