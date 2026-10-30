@@ -62,12 +62,14 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 
 | Event | Behaviour |
 | --- | --- |
-| `Open(Options{Path: dir})` | Load `dir/store.snap` if present; replay `dir/store.wal`, recovering a torn final record; checkpoint replayed state before new writes. |
+| `Open(Options{Path: dir})` | Take the writer's lock on `dir/lock` (held until `Close`; another writer, in this process or another, gets `ErrIndexLocked`); load `dir/store.snap` if present; replay `dir/store.wal`, recovering a torn final record; checkpoint replayed state before new writes. |
+| `Open(Options{Path: dir, ReadOnly: true})` | Load the snapshot and every whole WAL record, beside a writer that holds the lock. Takes no lock and writes nothing: a torn final record is the writer's append in flight and stays, `Close` takes no snapshot, and a missing `dir` is an empty index. `Add`, `Remove` and `Snapshot` return `ErrReadOnly`. The CLI's `query` and `stats` open this way. |
 | `Open` with `Options.Keyword` | Rebuild the keyword index from every chunk the store holds, after the snapshot and WAL load. Snapshots carry no keyword state, so without the rebuild the hybrid keyword leg starts empty. `PgVectorStore.Keyword()` reads the table itself and is not rebuilt. |
-| `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. An append that fails (a full disk) is cut back off the WAL and the write fails; the next write snapshots first, so a later restart still opens. Replacing a document (remove its chunks, add the new ones) runs as one step and is one WAL record, so two concurrent `Add`s of one `ID` leave one version and a crash replays all of the replace or none of it. A WAL written by an earlier release, with separate add and remove records, still replays. Metadata may hold nested JSON objects and arrays; an `Add` whose metadata the WAL cannot encode (an unregistered Go type) fails before anything is removed. A batch that names one `ID` twice keeps the last `Document`, the way a second `Add` would. |
+| `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. An append that fails (a full disk) is cut back off the WAL and the write fails; the next write snapshots first, so a later restart still opens. Replacing a document (remove its chunks, add the new ones) runs as one step and is one WAL record, so two concurrent `Add`s of one `ID` leave one version and a crash replays all of the replace or none of it. A WAL written by an earlier release, with separate add and remove records, still replays. Metadata may hold nested JSON objects and arrays, and `FlatStore` keeps a deep copy, so neither the caller nor a returned hit can change what it filters and snapshots; an `Add` whose metadata the WAL cannot encode (an unregistered Go type) fails before anything is removed. A batch that names one `ID` twice keeps the last `Document`, the way a second `Add` would. |
 | `Snapshot()` | Write a unique owner-only temporary file beside `dir/store.snap`, then rename it atomically; truncate WAL. |
 | `Add` / `Remove` every `SnapshotEvery` writes | Auto-triggers `Snapshot()`. |
-| `Close()` | Final `Snapshot()`; close WAL; close store. |
+| `Close()` | Final `Snapshot()`; close WAL; close store; release the lock. |
+| A write that fails after its WAL record (a keyword backend refusing a delete) | The write returns the error and the record is applied again before the next write and before any snapshot. While it still fails, writes, `Snapshot()` and `Close()` return the error and the WAL keeps the record, so the next `Open` replays it: a snapshot of the store without the document would have truncated the record that restores it. |
 
 The snapshot's header records the embedder's `Name()` and `Dim()`, and every WAL add entry records the `Name()`, so writes that never reached a snapshot are checked on replay too. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
 
@@ -143,6 +145,8 @@ w.ScanOnce(ctx, "./src")          // one-shot
 
 A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
+A deleted file's document is removed on the next scan; if `Remove` fails, the scan returns the error and the scan after it tries again.
+
 The first scan after a watcher starts also removes the documents it indexed in an earlier run for files under its roots that are gone, so a file deleted while the app was down leaves the index. Only documents whose ID is the watcher's own for that path are touched; documents the app added itself, and files under another watcher's roots, stay. An index that is not the one `Open` returns is not reconciled.
 
 `Watcher` is polling-based on purpose: no third-party deps, deterministic behaviour, and the dev-time cost on a tree of a few thousand files is well under the embedding cost of any actual file edit. For very large trees, swap the implementation for fsnotify-backed without changing the public API.
@@ -161,6 +165,12 @@ gofastr semantic query "router middleware" --mmr 0.4
 gofastr semantic stats
 gofastr semantic clear
 ```
+
+`index` and `watch` hold the snapshot directory's writer lock, so a second
+`index` or `watch` on the same directory fails with "another process has
+this index open for writing" until the first exits. `query` and `stats`
+open the directory read-only and run beside a `watch` in another terminal,
+seeing every write it has logged.
 
 The CLI indexes with the deterministic **stub** embedder unless you say
 otherwise, which is fine for wiring a pipeline and useless for real retrieval,
@@ -182,6 +192,17 @@ built by the other embedder returns a `ModelMismatchError` rather than quietly
 poor results.
 
 When `GOFASTR_URL` is set, `query` and `stats` are dispatched to that running server's `/semantic/*` routes. `index`, `watch`, and `clear` are always local: they mutate state and we don't want two writers fighting for the same file.
+
+The routes require a bearer token (see below), so set
+`GOFASTR_SEMANTIC_TOKEN` to the token the mount passes to `WithAuthToken`;
+the CLI sends it as `Authorization: Bearer <token>`. It goes to the
+`GOFASTR_URL` server only: the CLI refuses a redirect instead of following
+it, so `GOFASTR_URL` must name the server itself, not a host that
+redirects to it.
+
+```sh
+GOFASTR_URL=https://app.example.com GOFASTR_SEMANTIC_TOKEN=… gofastr semantic stats
+```
 
 ## HTTP routes
 

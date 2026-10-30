@@ -99,9 +99,7 @@ func TestWALTornAppendKeepsRestart(t *testing.T) {
 		t.Fatalf("writing did not resume once the disk did: %v", err)
 	}
 	// A crash: no closing snapshot, the WAL is all a restart has.
-	if err := w.close(); err != nil {
-		t.Fatal(err)
-	}
+	crash(idx)
 
 	idx = open()
 	defer idx.Close()

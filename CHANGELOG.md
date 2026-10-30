@@ -3236,6 +3236,38 @@ few lines, and link the PR or the docs page for the rest.
   when a `CASCADE` or `SET NULL` foreign key references it. A snapshot
   holding a default in an older rendering (`0.000000` for `1e-07`)
   converges on the declared one. Boot does not compare either.
+- **`gofastr semantic query` and `stats` no longer truncate a running
+  `watch`'s WAL.** Both opened the same directory as a second writer,
+  and `Close` snapshotted and truncated the log the watcher was still
+  appending to. An index opened with `Options.Path` now takes an
+  exclusive lock on the directory (a `lock` file) until `Close`, and a
+  second writer, in this process or another, gets `ErrIndexLocked`.
+  The new `Options.ReadOnly` loads the snapshot and every whole WAL
+  record without a lock and writes nothing (`Add`, `Remove` and
+  `Snapshot` return `ErrReadOnly`); `query` and `stats` open that way.
+- **A semantic write that failed after its WAL record no longer loses
+  the document at the next snapshot.** A keyword delete refused
+  mid-replace left the store without the document, and the next
+  snapshot wrote that store and truncated the record that would have
+  restored it. The record now applies again before the next write and
+  before any snapshot; while it still fails, writes, `Snapshot` and
+  `Close` return the error and the WAL keeps it for replay.
+- **The remote `gofastr semantic query` and `stats` send a token.**
+  With `GOFASTR_URL` set they sent no `Authorization` header, so a
+  mount with `WithAuthToken` answered 401. Set
+  `GOFASTR_SEMANTIC_TOKEN`; it is sent as a bearer token to the
+  `GOFASTR_URL` server only, and a redirect is refused.
+- **A cancelled semantic write on `PgVectorStore` stops waiting.** The
+  replace dropped cancellation before its transaction, so a caller
+  that gave up kept waiting on another replica's document lock while
+  every other write on the replica queued behind it. The transaction
+  gets the caller's context; a cancel rolls it back.
+- **The semantic watcher retries a failed removal.** It forgot a
+  deleted file before `Remove` returned, so a failed removal left the
+  document in the index for good.
+- **`FlatStore` deep-copies chunk metadata.** A nested map or slice
+  was shared with the caller and with returned hits, so writing into
+  either changed what the store filters and snapshots on.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

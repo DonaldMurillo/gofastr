@@ -76,10 +76,7 @@ func TestWALReplayRecoversUnsnapshottedWrites(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 	// Simulate a crash: close the WAL file handle without snapshotting.
-	if internal, ok := idx.(*index); ok && internal.wal != nil {
-		_ = internal.wal.close()
-		internal.wal = nil
-	}
+	crash(idx)
 
 	// Reopen: snapshot is missing/empty, WAL must carry the state.
 	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
@@ -238,9 +235,7 @@ func TestWALReplayRefusesOtherModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Crash before any snapshot: drop the WAL handle without Close.
-	in := idx.(*index)
-	_ = in.wal.close()
-	in.wal = nil
+	crash(idx)
 	if _, err := os.Stat(filepath.Join(dir, "store.snap")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("snapshot exists before reopen: %v", err)
 	}

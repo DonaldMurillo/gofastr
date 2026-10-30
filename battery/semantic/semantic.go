@@ -158,6 +158,15 @@ type Index interface {
 	Close() error
 }
 
+// ErrIndexLocked is returned by [Open] when another open index, in this
+// process or another, is writing Options.Path. Close that one, or open
+// with Options.ReadOnly to read beside it.
+var ErrIndexLocked = errors.New("semantic: another process has this index open for writing")
+
+// ErrReadOnly is returned by Add, Remove and Snapshot on an index opened
+// with Options.ReadOnly.
+var ErrReadOnly = errors.New("semantic: index is open read-only")
+
 // Options configures [Open].
 type Options struct {
 	// Embedder produces vectors. Required.
@@ -189,6 +198,17 @@ type Options struct {
 	// no-op. When set, [Open] loads any existing snapshot, replays the
 	// WAL on top, and persists subsequent writes through the WAL.
 	Path string
+	// ReadOnly opens Path for reading beside a process that writes it,
+	// such as `gofastr semantic query` while `semantic watch` runs. It
+	// loads the snapshot and every whole WAL record, takes no lock,
+	// and never snapshots, truncates or creates anything; Add, Remove
+	// and Snapshot return [ErrReadOnly]. It requires Path.
+	//
+	// Without it an Open with Path takes an exclusive lock on the
+	// directory (a "lock" file in it), held until Close, and a second
+	// writer gets [ErrIndexLocked]: each writer snapshots and truncates
+	// the WAL the other appends to.
+	ReadOnly bool
 	// SnapshotEvery is the number of mutating ops after which the index
 	// automatically flushes a full snapshot and truncates the WAL. 0
 	// means the default, 1000; -1 snapshots after every op (mostly for
@@ -202,6 +222,9 @@ type Options struct {
 func Open(opts Options) (Index, error) {
 	if opts.Embedder == nil {
 		return nil, errors.New("semantic: Options.Embedder is required")
+	}
+	if opts.ReadOnly && opts.Path == "" {
+		return nil, errors.New("semantic: Options.ReadOnly needs Options.Path: an in-memory index has nothing to read")
 	}
 	if opts.Chunker == nil {
 		opts.Chunker = NewFixedWindow(512, 64)
@@ -254,6 +277,7 @@ func Open(opts Options) (Index, error) {
 		keyword:       opts.Keyword,
 		reranker:      opts.Reranker,
 		path:          opts.Path,
+		readOnly:      opts.ReadOnly,
 		snapshotEvery: opts.SnapshotEvery,
 	}
 	err := idx.loadAndReplay()
@@ -263,6 +287,9 @@ func Open(opts Options) (Index, error) {
 	if err != nil {
 		if idx.wal != nil {
 			_ = idx.wal.close()
+		}
+		if idx.lock != nil {
+			_ = idx.lock.Close()
 		}
 		return nil, err
 	}

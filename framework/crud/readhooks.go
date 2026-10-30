@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/internal/deepcopy"
 )
 
 // The in-process read API (ListAll, CountAll, GetOne) hands back STORED
@@ -516,9 +517,9 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	// so a hook masking a field INSIDE an embedded object (row["profile"]
 	// ["ssn"], the ordinary shape for a computed sub-document) wrote straight
 	// through the copy into the event lane, deterministically contaminating
-	// it and racing the subscriber that reads it. deepCopyRecord is the same
+	// it and racing the subscriber that reads it. deepcopy.Map is the same
 	// helper redactEventRecord uses, for the same reason.
-	row := deepCopyRecord(result)
+	row := deepcopy.Map(result)
 	// Cascade-written children get their own entity's read hooks here, on
 	// the copy, after commit: running them inside the write handed the
 	// redacted child to AfterCreate/AfterUpdate, the outbox and the event.
