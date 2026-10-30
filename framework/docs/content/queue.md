@@ -73,7 +73,11 @@ defer q.Close()
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
 exist. Pass `WithTable("my_jobs")` to use a custom table name. An
 index name longer than Postgres's 63-byte limit ends in a hash of the
-table name, so a long table name still gets each of its indexes.
+table name, so a long table name still gets each of its indexes. The
+durable scheduler's tables and indexes (`<table>_scheduler_schedules`,
+`_occurrences`, `_leases`) follow the same rule on Postgres when the cut
+Postgres would make collides with another name; a cut that collides with
+nothing keeps that name, the one earlier releases created.
 
 ## Quickstart: RedisQueue
 
@@ -445,10 +449,11 @@ so the queue does not carry a second cron parser; it accepts the same
 5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
 in one scheduler.
 
-`Register()` returns an `error` only when a `Cron` spec is invalid or
-has no firing in the next five years (`0 0 30 2 *`, February 30, which
-`DurableScheduler` refuses too); `Every` schedules never error, so
-existing callers that ignore the return value are unaffected. A cron schedule whose next firing
+`Register()` returns an `error`, and registers nothing, when the
+payload given to `Job` cannot be encoded as JSON (a `NaN`, a channel),
+or when a `Cron` spec is invalid or has no firing in the next five
+years (`0 0 30 2 *`, February 30, which `DurableScheduler` refuses too).
+A cron schedule whose next firing
 lies past that search stops and logs a warning (February 29 after 2096,
 since 2100 is not a leap year). `RegisterAt(base)` is the deterministic
 variant: it anchors the first run to `base` instead of `time.Now()`,
@@ -561,7 +566,8 @@ the transition.
 The zone name persists with the schedule (a `tz` column added by the same
 idempotent migration as the options columns). UTC, fixed-offset zones
 (`time.FixedZone`), and `time.Local` store the empty default and evaluate
-in UTC; `time.Local` would resolve to a different zone on every replica.
+in UTC, the first run included; `time.Local` would resolve to a different
+zone on every replica.
 The in-memory `Scheduler` differs here: it has no persistence, so its cron
 specs evaluate against the process clock in the process's local zone.
 Moving a schedule from `Scheduler` to `DurableScheduler.Register()` on a

@@ -112,14 +112,18 @@ type ScheduleBuilder struct {
 	hasCron     bool
 	jobType     string
 	payload     json.RawMessage
+	payloadErr  error
 	lane        string
 	priority    int
 	maxAttempts int
 }
 
-// Job sets the job type and payload for the scheduled job.
+// Job sets the job type and payload for the scheduled job. A payload
+// json.Marshal refuses is returned by Register or RegisterAt, so the
+// builder remains fluent.
 func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 	b.jobType = jobType
+	b.payloadErr = nil
 	if payload != nil {
 		switch v := payload.(type) {
 		case json.RawMessage:
@@ -129,7 +133,12 @@ func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 		case string:
 			b.payload = json.RawMessage(v)
 		default:
-			data, _ := json.Marshal(payload)
+			data, err := json.Marshal(payload)
+			if err != nil {
+				b.payload = nil
+				b.payloadErr = fmt.Errorf("queue: marshal schedule payload: %w", err)
+				return b
+			}
 			b.payload = data
 		}
 	}
@@ -137,9 +146,9 @@ func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 }
 
 // Register adds the scheduled job to the scheduler, computing the first
-// NextRun relative to the current wall clock. It returns an error only when a
-// Cron schedule's spec is invalid; interval (Every) schedules never error, so
-// existing callers that ignore the return value are unaffected.
+// NextRun relative to the current wall clock. It returns an error when the
+// payload given to Job cannot be encoded as JSON or a Cron schedule's spec
+// is invalid, and registers nothing then.
 func (b *ScheduleBuilder) Register() error {
 	return b.RegisterAt(time.Now())
 }
@@ -173,6 +182,9 @@ func (b *ScheduleBuilder) MaxAttempts(n int) *ScheduleBuilder {
 func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.jobType == "" {
 		return nil
+	}
+	if b.payloadErr != nil {
+		return b.payloadErr
 	}
 
 	job := ScheduledJob{

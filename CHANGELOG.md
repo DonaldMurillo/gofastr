@@ -3092,6 +3092,28 @@ few lines, and link the PR or the docs page for the rest.
   `::1:587`, which Go's dialer refuses; the address is built with
   `net.JoinHostPort`. A host written in brackets (`[::1]`) reaches the
   TLS server name and the PLAIN/LOGIN host check without them.
+- **A durable cron schedule registered in a fixed-offset zone no longer
+  skips its first run.** A zone the `tz` column cannot store
+  (`time.FixedZone`, `time.Local`) evaluates in UTC, but the first
+  watermark came from the registration zone, so `0 2 * * *` registered at
+  03:00 -05:00 waited for 07:00 UTC, which is no firing in UTC, and the
+  catch-up moved the first run to the next day. The first watermark is
+  now taken in the zone that persists.
+- **A long Postgres queue table name gets scheduler tables of its own.**
+  `<table>_scheduler_schedules` and its siblings were cut at Postgres's
+  63-byte limit; from a 52-byte table name the three tables shared one
+  name (from 63 bytes, the queue table's), and from 40 bytes an
+  occurrence index was skipped as an existing name. A
+  name whose cut collides now ends in a hash of the table name, as the
+  queue's own indexes do; a cut that collides with nothing keeps the
+  name earlier releases created.
+- **`queue_dead_letter_total` counts dead-lettered jobs.** The collector
+  read a `dead` status no backend writes; every backend files a job that
+  spent its attempts under `failed`, so the metric stayed 0.
+- **`Scheduler`'s `Job` keeps a payload's encoding error.** A payload
+  `json.Marshal` refuses (a `NaN`, a channel) registered fine and every
+  run received `null`; `Register` now returns the error and registers
+  nothing, as `DurableScheduler`'s builder already did.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
