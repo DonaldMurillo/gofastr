@@ -219,6 +219,8 @@ Useful options:
   also uses the generic title. Both full pages and navigation partials
   carry this title through the normal escaping and app-name suffix rules,
   rather than borrowing the failed route's title.
+  An unmatched route retains its request path even if the root layout has
+  a `FallbackNotFound` outlet; it is already rendering the not-found page.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.

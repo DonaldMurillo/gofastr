@@ -78,6 +78,9 @@ shared screen. An empty path identifies a missing-outlet outcome. Empty
 custom titles fall back to `app.ScreenTitler.ScreenTitle(ctx)`, then the
 generic not-found title. Full loads and partial navigation use the same
 effective title; a failed route's registered title cannot replace it.
+An unmatched route keeps its request path even when the root layout has
+a `FallbackNotFound` outlet. The empty-path outcome applies only when a
+registered route cannot fill its required outlet.
 
 ---
 

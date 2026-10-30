@@ -109,6 +109,8 @@ few lines, and link the PR or the docs page for the rest.
   titles use the standard screen title or generic not-found title.
   Navigation partials carry the effective 404 title instead of retaining
   the previous page title or borrowing the failed route's title.
+  Unmatched routes retain their path when a root layout outlet also has
+  a not-found fallback.
 - **An `EmitAsync` subscriber no longer runs on a cancelled request
   context.** CRUD emits on the request's context, and the handler
   returned before the subscriber ran, so the webhook bridge's subscriber

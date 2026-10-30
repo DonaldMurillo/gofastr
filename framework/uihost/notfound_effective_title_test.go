@@ -144,3 +144,29 @@ func TestNotFoundTitleOutletKeepsEmptyPath(t *testing.T) {
 		}
 	}
 }
+
+func TestNotFoundTitlePreservesUnmatchedPathWithMissingOutlet(t *testing.T) {
+	host := New(outlet404App(), WithNotFoundScreen(nfPathTitle{value: "by-path"}))
+	for _, partial := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodGet, "/unmatched", nil)
+		req = req.WithContext(context.WithValue(req.Context(), notFoundTitleContextKey{}, "Unmatched "))
+		if partial {
+			req.Header.Set("X-Gofastr-Navigate", "1")
+			req.Header.Set("X-Gofastr-From", "/present")
+		}
+		res := httptest.NewRecorder()
+		host.ServeHTTP(res, req)
+		if res.Code != http.StatusNotFound {
+			t.Fatalf("partial=%v status=%d", partial, res.Code)
+		}
+		const want = "Unmatched /unmatched — nf"
+		if partial {
+			got, err := url.PathUnescape(res.Header().Get("X-Gofastr-Title"))
+			if err != nil || got != want {
+				t.Errorf("partial title=%q err=%v want=%q", got, err, want)
+			}
+		} else if !strings.Contains(res.Body.String(), "<title>"+want+"</title>") {
+			t.Errorf("full title lost unmatched request path: want=%q", want)
+		}
+	}
+}
