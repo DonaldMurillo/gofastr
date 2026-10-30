@@ -2764,6 +2764,13 @@ few lines, and link the PR or the docs page for the rest.
   the order of the `RENAME COLUMN` statements and of an app spec's rename
   errors, so the same declaration could generate a different migration or
   error text on each run.
+- **Two versions booting at once no longer leave a table without the
+  newer one's columns.** Auto-migrate reads the live schema before it
+  takes the migrate lock. When both boots saw a table missing and the
+  older version created it first, the newer boot's `CREATE TABLE IF NOT
+  EXISTS` did nothing and its new columns never landed. A table read as
+  missing is now read again under the lock and converged like any
+  existing table.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -559,6 +559,26 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 		return nil
 	}
 
+	// AutoMigrate's read ran before the lock, so a table it saw absent may
+	// have been created since by a peer booting an older version, without
+	// this version's columns. CREATE TABLE IF NOT EXISTS would then do
+	// nothing; read it again here, under the lock, and converge it.
+	if len(live) == 0 && all != nil {
+		table := ent.GetTable()
+		fresh, err := readEntityColumnsQ(ctx, exec, table, dialect)
+		if err != nil {
+			return fmt.Errorf("re-read columns for %s: %w", table, err)
+		}
+		if len(fresh) > 0 {
+			keys, err := readLiveKeysQ(ctx, exec, []string{table}, dialect)
+			if err != nil {
+				return fmt.Errorf("re-read the key of %s: %w", table, err)
+			}
+			k := keys[table]
+			live, lk = fresh, &k
+		}
+	}
+
 	if len(live) == 0 {
 		stmt, err := buildCreateTableSQL(ent, all, dialect)
 		if err != nil {

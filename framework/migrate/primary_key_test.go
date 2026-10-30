@@ -40,11 +40,75 @@ func TestConvergeKeyRereadsLiveKey(t *testing.T) {
 	}
 }
 
-// failExec fails each statement containing one of match and counts them.
+// Two first boots of different versions both read the table as absent
+// before the lock; the older one creates it. The newer one reaches its
+// migrateEntity with that stale read, so CREATE TABLE IF NOT EXISTS was a
+// no-op and its new column never landed (2026-10-27 M9). Under the lock a
+// table read as absent is read again.
+func TestMigrateEntityRereadsAbsentTable(t *testing.T) {
+	db := openSQLiteForMigrateTest(t)
+	db.SetMaxOpenConns(1)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, "CREATE TABLE widgets (id TEXT NOT NULL PRIMARY KEY, title TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	ent := entity.Define("widget", entity.EntityConfig{
+		Table: "widgets",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String, Required: true},
+			{Name: "title", Type: schema.String},
+			{Name: "sku", Type: schema.String, Required: true},
+		},
+		// The newer version also keys the table differently, so the
+		// re-read has to carry the live key into convergeKey too.
+		PrimaryKey: []string{"sku"},
+	}.WithTimestamps(false))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var deferred []SchemaChange
+	// live and lk are the pre-lock read: no table.
+	if err := migrateEntity(ctx, tx, ent, map[string]*entity.Entity{"widget": ent}, DialectSQLite, nil, nil, &deferred); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO widgets (id, title, sku) VALUES ('a', 't', 's')"); err != nil {
+		t.Fatalf("the newer version's column is missing: %v", err)
+	}
+	var pk string
+	if err := db.QueryRowContext(ctx, "SELECT name FROM pragma_table_info('widgets') WHERE pk > 0").Scan(&pk); err != nil || pk != "sku" {
+		t.Fatalf("key after migrate = %q (%v), want sku", pk, err)
+	}
+
+	// A failed re-read stops the migration instead of reading as absent:
+	// the first query re-reads the columns, the second the key.
+	for _, nth := range []int{1, 2} {
+		exec := &failExec{DB: db, failQuery: nth}
+		if err := migrateEntity(ctx, exec, ent, map[string]*entity.Entity{"widget": ent}, DialectSQLite, nil, nil, &deferred); err == nil || !strings.Contains(err.Error(), "injected query failure") {
+			t.Fatalf("query %d failing: err %v, want it reported", nth, err)
+		}
+	}
+}
+
+// failExec fails each statement containing one of match and counts them,
+// and fails query number failQuery (from 1) when it is set.
 type failExec struct {
 	*sql.DB
-	match []string
-	hits  int
+	match     []string
+	hits      int
+	failQuery int
+	queries   int
+}
+
+func (f *failExec) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	if f.queries++; f.queries == f.failQuery {
+		return nil, errors.New("injected query failure")
+	}
+	return f.DB.QueryContext(ctx, q, args...)
 }
 
 func (f *failExec) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {

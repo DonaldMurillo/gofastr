@@ -1216,6 +1216,9 @@ development convenience. What it guarantees:
   the versioned `Up`/`Down`/`Force`, is serialized by a Postgres
   advisory lock (`pg_advisory_lock`, keyed on a fixed constant). Boot N
   replicas at once and only one migrates at a time; the others wait.
+  A waiting boot reads again, under the lock, any table it saw missing
+  before it, so a table that a replica running an older version created
+  in the meantime still gets this version's columns and key.
   The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
   context (shutdown) returns promptly instead of hanging on a stuck
   holder. SQLite gets the same cross-process serialization from a twin:
