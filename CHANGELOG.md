@@ -2948,6 +2948,14 @@ few lines, and link the PR or the docs page for the rest.
   sort arrays already sent that form, and every such request got a 400
   naming `title,-created_at` as an unknown field. The 16-field limit
   counts the fields across every `sort` value.
+- **The MCP list tool sends each filter in the shape the route reads.**
+  A JSON field's argument was sent as its first array element
+  (`{"payload": [1, 2]}` filtered on `1`) or as Go's `map[x:1]` for an
+  object; it is now sent as JSON. An empty `_in` array dropped the
+  filter and listed every row; it is now refused. An `_in` element
+  holding a comma (`["Doe, Jane"]`) was split by the route into `Doe`
+  and ` Jane`; it is now refused. The tool schema gives `_in` arrays
+  `minItems: 1`.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

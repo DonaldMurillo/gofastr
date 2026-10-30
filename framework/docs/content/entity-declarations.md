@@ -125,6 +125,14 @@ were mounted or not, and hooks and typed queries work as usual). Setting
 `MCP: true` alongside `CRUD: false` is a registration error, not a silent
 mismatch: MCP CRUD tools dispatch through the routes.
 
+The `<table>_list` tool takes the list route's filters as arguments, one per
+key (`status`, `amount_gte`, `status_in`), and sends them on as the query
+string. An `_in` argument is a JSON array of at least one value, and no
+element may hold a comma, because the route splits `_in` values on commas;
+the tool refuses either rather than drop the filter or split the value. A
+JSON field's argument is any JSON value, compared as JSON: `{"payload": [1,
+2]}` matches the stored array `[1,2]`.
+
 No generated route reaches the rows of a `CRUD: false` entity, including
 routes that belong to OTHER entities. Another entity's `?include=` of a
 relation that targets it, and a `?rel.field=` filter across such a relation,
