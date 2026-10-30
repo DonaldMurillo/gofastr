@@ -2983,6 +2983,10 @@ few lines, and link the PR or the docs page for the rest.
   Memory default gained and lost matches on Postgres or SQLite. It now
   splits words the way they do and matches the last term as a prefix.
   It still does not stem.
+- **The site search page says when a query is too long.** A `q` over
+  256 bytes was dropped and the page drew the empty state, as if
+  nothing had been typed, while the query endpoint answered 414 for the
+  same text. The page now shows a "query too long" notice.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

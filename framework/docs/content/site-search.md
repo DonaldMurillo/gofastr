@@ -255,7 +255,8 @@ Measured on 10,000 generated pages drawn from these docs' own vocabulary
 ## Limits
 
 - The query endpoint refuses `q` over 256 bytes (414) and a `limit` below 1
-  (400); `limit` defaults to 8 and caps at 20.
+  (400); `limit` defaults to 8 and caps at 20. The search page does not
+  search such a `q` either and shows a "query too long" notice.
 - Each section keeps its first 2000 characters.
 - Words of one letter are not searchable, and a term of two letters matches
   only the whole word.
