@@ -731,7 +731,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		//
 		// So: gate the redirect on its target route's key, and when it
 		// survives, run it through the chain like any other response.
-		if r.gateAllows(pattern) {
+		//
+		// For CONNECT, net/http returns the bare target path, not the
+		// route's pattern. The route it completes to is methodless
+		// (" /tree/") or a CONNECT route ("CONNECT /tree/"); gate both.
+		allowed := r.gateAllows(pattern)
+		if !strings.ContainsAny(pattern, " \t") {
+			allowed = r.gateAllows(" "+pattern) && r.gateAllows(req.Method+" "+pattern)
+		}
+		if allowed {
 			r.wrap(h).ServeHTTP(w, req)
 			return
 		}

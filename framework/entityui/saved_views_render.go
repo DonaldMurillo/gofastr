@@ -76,7 +76,17 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 		s.savedFilter = v.Filter
 	}
 	if len(v.Columns) > 0 && !s.q.Has(s.p.cols) {
-		s.setColumns(slices.Clone(v.Columns))
+		// Views belong to the entity, so one saved on a wider list can
+		// open here: it shows the columns this list offers, in its order.
+		var cols []string
+		for _, c := range v.Columns {
+			if slices.Contains(s.available, c) {
+				cols = append(cols, c)
+			}
+		}
+		if len(cols) > 0 {
+			s.setColumns(cols)
+		}
 	}
 	return nil
 }

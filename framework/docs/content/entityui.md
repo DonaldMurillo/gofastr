@@ -653,8 +653,9 @@ _ = list.RenderCtx(ctx)
   `cols` param and keeps the filter and the sort, plus a Reset row that
   drops it. The title row is checked and disabled. A `cols` param
   typed by hand still sets the order. Every
-  `cols` name must be a visible, non-omitted field; an unknown,
-  Hidden, omitted or duplicate name makes the whole param ignored —
+  `cols` name must be one of the list's resolved columns (the menu's
+  rows); an unknown, Hidden, omitted or duplicate name, or a field the
+  list left out of `Columns(...)`, makes the whole param ignored —
   the list's resolved columns stand. The title column carries the
   record link, so it may not be hidden: a `cols` that leaves it out
   gets it back, first. Columns change what a row shows, not which rows
@@ -707,7 +708,10 @@ _ = list.RenderCtx(ctx)
   follows.
 
 A saved view's own columns apply even when the columns menu is off:
-they are the saved-view feature's state, not the menu's.
+they are the saved-view feature's state, not the menu's. Views belong
+to the entity, so one saved on a wider list can open on a narrower
+one: it shows the columns that list offers, in the view's order, and
+the list's own columns when it offers none of them.
 
 ## API tab and status override
 

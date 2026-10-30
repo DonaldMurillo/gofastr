@@ -647,7 +647,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
-			ch.serveCursorList(ctx, w, r, includes, filters, nested, listPayload.Where)
+			// ?fields= likewise: refused and honoured as on an offset page.
+			cols, err := ch.projectFromRequestQ(q)
+			if err != nil {
+				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+				return
+			}
+			ch.serveCursorList(ctx, w, r, cols, includes, filters, nested, listPayload.Where)
 			return
 		}
 

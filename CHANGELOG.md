@@ -3183,6 +3183,21 @@ few lines, and link the PR or the docs page for the rest.
   (at most the 5-second publish deadline on a stalled backend) and
   starts none after it returns; both callers stop the heartbeat and
   the queue before the goodbye.
+- **A keyset list page honours and validates `?fields=`.** With
+  `?cursor=` present the list returned every visible column and
+  answered 200 to an unknown field the offset list refuses with 400. A
+  cursor column the projection leaves out is still read to build the
+  next cursor and is dropped from the rows.
+- **An entityui list's `cols` param and saved-view columns stay within
+  the columns the list offers.** A list built with `Columns("name")`
+  rendered `?cols=internal_notes` because the check only asked for a
+  visible field. A `cols` param naming a column the list does not
+  offer is now ignored whole, and a saved view opened on a narrower
+  list shows only the columns that list offers. The offered set is
+  the menu's: `Columns(...)`, else `Display.Columns`, else the default,
+  which leaves out system fields such as `created_at`, JSON fields and
+  `Where`-pinned ones, so a typed `?cols=` naming one of those no
+  longer shows it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -3653,6 +3668,13 @@ few lines, and link the PR or the docs page for the rest.
   entry `https://İ.example` was accepted as `https://i.example`. The
   fold is ASCII-only now, and such an entry fails at boot like any
   other Unicode host.
+- **A CONNECT request no longer confirms a disabled module's
+  methodless or CONNECT route.** For CONNECT, net/http names the
+  trailing-slash redirect by its bare path, which matched no gate key,
+  so `CONNECT /admin/panel` answered 307 to `/admin/panel/` where every
+  other request gets a 404. The router now gates that redirect on the
+  route's methodless and CONNECT keys. Routes registered with
+  `Get`/`Post` and the other method helpers were not affected.
 
 ## [0.95.0] - 2026-10-26
 
