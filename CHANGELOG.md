@@ -2937,6 +2937,12 @@ few lines, and link the PR or the docs page for the rest.
   read `window.open`'s null return as a refused popup, but with
   `noopener` it is always null. The link now opens its tab and
   reports nothing.
+- **A destroyed embed no longer reports that it never loaded.** The
+  loader's 20-second no-load watchdog outlived `handle.destroy()`, so
+  a single-page host that unmounted an embed before it loaded got
+  `onError({code: 'no-ready'})` and a console warning for a frame it
+  had already removed. `destroy()` now stops the watchdog.
+  `embed.md` documents the handle `mount` returns.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

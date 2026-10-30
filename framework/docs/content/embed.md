@@ -487,6 +487,12 @@ GoFastrEmbed.mount({
 Same code path as the `data-*` form. The loader mounts once per target element,
 so a double-mount does not create a second frame.
 
+`mount` returns a handle, or `null` when `origin`, `surface`, `token` or the
+target is missing: `handle.frame` is the iframe, and
+`handle.destroy()` removes it and stops listening. A single-page host calls
+`destroy()` when it unmounts the view. After it, `onError` is never called for
+that embed, the 20-second no-load report included.
+
 ## Destructive actions
 
 The allowlist makes a compromised customer, not the open internet, the
