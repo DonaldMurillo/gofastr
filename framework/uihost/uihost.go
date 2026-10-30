@@ -53,6 +53,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
@@ -4143,6 +4144,15 @@ func staticRel(urlPath string) string {
 	return strings.TrimPrefix(path.Clean("/"+urlPath), "/")
 }
 
+// staticServable reports whether rel, a slash path below the static
+// directory or FS, may be served: not one core/static refuses (a dot
+// segment such as .env or .git/config, or a server config file), except
+// that a leading .well-known/ is the public namespace RFC 8615 reserves,
+// so the files under it are served unless they are dotfiles themselves.
+func staticServable(rel string) bool {
+	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
+}
+
 // resolvesStaticOrScreen reports whether serveOrRender would produce
 // content for this request's path rather than a 404: a static file
 // (filesystem or embedded FS), a registered screen, or the favicon
@@ -4158,7 +4168,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" {
+			if rel := staticRel(path); rel != "" && staticServable(rel) {
 				if info, err := root.Stat(filepath.FromSlash(rel)); err == nil && !info.IsDir() {
 					return true
 				}
@@ -4166,7 +4176,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" {
+			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					f.Close()
@@ -4305,7 +4315,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" {
+			if rel := staticRel(path); rel != "" && staticServable(rel) {
 				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
 					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
 						devStaticNoStore(w)
@@ -4319,7 +4329,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" {
+			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					devStaticNoStore(w)

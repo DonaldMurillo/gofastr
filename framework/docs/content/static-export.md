@@ -150,13 +150,19 @@ go build -o site ./examples/site/
 - For each `app.Redirect`, a page at the old path and a `_redirects`
   rule; see [Redirects](#redirects) below.
 - Every file in the app's static dir (or embedded static FS), copied
-  to the same path, `index.html` files included. The one file refused
-  is one at the path of a page the build rendered (`about/index.html`
-  beside an `/about` route); the build log names it. A static-dir
+  to the same path, `index.html` files included. Two kinds of file are
+  refused: one the UI host would not serve (a path with a dot segment
+  such as `.env` or `.git/config`, or a server config file name such
+  as `web.config`), and one at the path of a page the build rendered
+  (`about/index.html` beside an `/about` route). The build log names
+  each. Files under a leading `.well-known/`, unless they are dotfiles
+  themselves, and the root `.nojekyll` GitHub Pages reads are copied.
+  A static-dir
   `_headers` or `_redirects` is appended to the generated one, so its
   rules apply and the generated ones (the security headers and the
   `app.Redirect` rules) stay first.
-- `Builder.ExtraDirs` files under their mount path. A page or asset
+- `Builder.ExtraDirs` files under their mount path, minus the dotfiles
+  and config files the static dir also skips. A page or asset
   the build wrote (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
   same path. Which file wins is decided by this

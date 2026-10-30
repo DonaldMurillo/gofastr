@@ -29,6 +29,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -1789,6 +1790,10 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 			}
 			urlPath := path.Join(cleanMount, p)
 			rel := strings.TrimPrefix(urlPath, "/")
+			if !publishable(rel) {
+				b.log("skipped %s (not published)", urlPath)
+				return nil
+			}
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
 			if err := b.ensureContained(dst); err != nil {
 				return err
@@ -1872,6 +1877,19 @@ func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)
 	return true
 }
 
+// publishable reports whether rel, a slash path in the export, is copied
+// into the public tree: not a path core/static refuses (a dot segment
+// such as .env or .git/config, or a server config file), the same set
+// the UI host refuses to serve. A leading .well-known/ is the public
+// namespace RFC 8615 reserves, and the root .nojekyll is the marker
+// GitHub Pages reads; both are copied.
+func publishable(rel string) bool {
+	if rel == ".nojekyll" {
+		return true
+	}
+	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
+}
+
 // generatedHostRules reports whether rel (a slash path) is a host rule
 // file the build wrote: the root _headers, always, and the root
 // _redirects when the app has redirects. A static source's copy of one is
@@ -1918,6 +1936,10 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 		if err != nil {
 			return err
 		}
+		if !publishable(filepath.ToSlash(rel)) {
+			log("skipped %s (not published)", rel)
+			return nil
+		}
 		if generatedHostRules(filepath.ToSlash(rel), rendered) {
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -1962,6 +1984,10 @@ func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log f
 			return err
 		}
 		if d.IsDir() {
+			return nil
+		}
+		if !publishable(path) {
+			log("skipped %s (not published)", path)
 			return nil
 		}
 		if generatedHostRules(path, rendered) {

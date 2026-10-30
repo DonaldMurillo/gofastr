@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
@@ -362,7 +363,7 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			if a, ok := m.Artifacts[key]; ok && a.SHA256 != "" {
 				etag := `"` + a.SHA256 + `"`
 				w.Header().Set("ETag", etag)
-				if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, etag) {
+				if corestatic.IfNoneMatch(r, etag) {
 					w.WriteHeader(http.StatusNotModified)
 					return
 				}

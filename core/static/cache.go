@@ -225,6 +225,13 @@ func preconditionStatus(r *http.Request, etag string, modTime time.Time) int {
 	return 0
 }
 
+// IfNoneMatch reports whether r's If-None-Match names etag, the RFC 9110
+// way: a comma-separated list, "*", and a weak comparison that ignores
+// W/ on either side. A handler answers 304 when it does.
+func IfNoneMatch(r *http.Request, etag string) bool {
+	return etagListMatch(r.Header.Get("If-None-Match"), etag, true)
+}
+
 // etagListMatch reports whether a comma-separated If-Match/If-None-Match
 // list names etag. "*" matches any current file. A weak comparison
 // ignores the W/ prefix on either side; a strong one refuses weak tags.

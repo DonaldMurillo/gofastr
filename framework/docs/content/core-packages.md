@@ -277,8 +277,12 @@ are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
 uses it for its own assets too. `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
-`404.html`; `gofastr docs serve` uses it). Start at
-`core/static/static.go`: `Handler`.
+`404.html`; `gofastr docs serve` uses it). For a handler that serves
+its own bytes, `Refuses(path)` reports whether the handler would refuse
+a path for a dot segment or a config file name (the UI host's static
+dir and the static export use it), and `IfNoneMatch(r, etag)` checks
+an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
+comparison. Start at `core/static/static.go`: `Handler`.
 
 ## App plumbing
 

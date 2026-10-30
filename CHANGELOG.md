@@ -3114,6 +3114,13 @@ few lines, and link the PR or the docs page for the rest.
   `json.Marshal` refuses (a `NaN`, a channel) registered fine and every
   run received `null`; `Register` now returns the error and registers
   nothing, as `DurableScheduler`'s builder already did.
+- **`If-None-Match` lists revalidate everywhere.** The UI host's
+  `/__gofastr/*` assets and the webmcp script, manifest and
+  instructions compared the header to the ETag as one string, so a
+  client sending a list or a `W/` tag got the whole body again, and
+  the SDK download matched a substring and ignored `*`. They now share
+  the new `static.IfNoneMatch`, the RFC 9110 comparison `core/static`
+  already used.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
@@ -3564,6 +3571,19 @@ few lines, and link the PR or the docs page for the rest.
   (`admin.TenantMember`) first and stops the run on false or an error.
   A tenant run with a nil `member` is refused; `admin.AnyTenant` admits
   every run, for an app whose users never leave a tenant.
+- **The UI host and the static export no longer publish dotfiles.**
+  `uihost.WithStaticDir` and `SetStaticFS` served every file under
+  them, `.env`, `.git/config` and `web.config` included, and the
+  static export copied the same files, and every `Builder.ExtraDirs`
+  file, into the public tree. Both now refuse what `core/static`
+  refuses: a path with a dot segment, or a server config file name
+  (`web.config`, `global.asax` and their kin, any case). A refused
+  request falls through to page rendering, and the export logs each
+  file it skips. Files under a leading `.well-known/` stay public
+  (RFC 8615) unless they are dotfiles themselves, and the export keeps
+  a root `.nojekyll`. An export that needs another dotfile, such as an
+  Apache `.htaccess`, copies it into the output after the build. The
+  new `static.Refuses` exposes the check.
 
 ## [0.95.0] - 2026-10-26
 

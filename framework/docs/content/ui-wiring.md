@@ -156,7 +156,12 @@ Useful options:
   Reads are contained by an `os.Root` over the directory: a symlinked
   file or subdirectory pointing outside it is refused (the request
   falls through to page rendering) rather than served. Symlinks that
-  stay inside the directory keep working.
+  stay inside the directory keep working. A path with a dot segment
+  (`/.env`, `/.git/config`, `/assets/.htpasswd`) or a server config
+  file name (`web.config`, `global.asax` and their kin, any case) is
+  never served, the set `core/static` refuses; it falls through to
+  page rendering. Files under a leading `/.well-known/` are served
+  unless they are dotfiles themselves.
 - `uihost.SetStaticFS(fsys)`: serve static files from an `fs.FS`
   instead of a directory (the embed route). A value that came from
   `os.DirFS(dir)` is re-rooted through `os.OpenRoot(dir).FS()` at
@@ -166,7 +171,8 @@ Useful options:
   served. `embed.FS` values pass through unchanged. A custom `fs.FS`
   you write yourself must not follow symlinks out of its tree —
   `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
-  cannot carry symlinks at all.
+  cannot carry symlinks at all. The dotfile and config-file refusal
+  applies here too.
 - `host.AssetURL("/logo.svg")`: the URL of a static file with its
   content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
   page links a file from the static directory or static FS. A request

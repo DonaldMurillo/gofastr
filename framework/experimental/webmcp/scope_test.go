@@ -76,7 +76,7 @@ func TestDefaultMountKeepsPublicPolicies(t *testing.T) {
 		t.Fatal("script has no ETag")
 	}
 	req := httptest.NewRequest(http.MethodGet, scriptURL, nil)
-	req.Header.Set("If-None-Match", etag)
+	req.Header.Set("If-None-Match", `"stale", `+etag)
 	rec = httptest.NewRecorder()
 	rt.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotModified {
@@ -159,7 +159,7 @@ func TestPrivateAssetsOptionSetsNoStore(t *testing.T) {
 			t.Fatalf("%s has no ETag", path)
 		}
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		req.Header.Set("If-None-Match", etag)
+		req.Header.Set("If-None-Match", `"stale", `+etag)
 		rec = httptest.NewRecorder()
 		rt.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotModified {
