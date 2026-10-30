@@ -2862,6 +2862,11 @@ few lines, and link the PR or the docs page for the rest.
   the check its own definition, which `widget.GatedWidget(r)` returns, and
   the grant passes when that widget is offered on the grant's surface, the
   rule its state and chrome already followed.
+- **`cmd/affected` selects what still imports a package the change
+  deleted.** A package whose last file was deleted is no longer in the
+  `go list` set, so nothing owned the change and a test still importing
+  the package was not selected. Each changed file's directory now counts
+  by its import path, which the remaining importers still list.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

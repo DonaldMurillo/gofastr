@@ -710,3 +710,30 @@ func TestEmptySelectionSkipsTheCommand(t *testing.T) {
 		t.Fatalf("stderr %q does not start with the line CI's replay gate greps", stderr.String())
 	}
 }
+
+// A package whose last file the change deleted is in no current package's
+// directory, so nothing owned the change and nothing that still imported
+// the package was selected (2026-10-27 I17). d's external test imports c;
+// b imports a, and e's test imports b.
+func TestDeletedPackageSelectsItsImporters(t *testing.T) {
+	root := newRepo(t)
+	for _, f := range []string{"a/a.go", "c/c.go"} {
+		if err := os.Remove(filepath.Join(root, filepath.FromSlash(f))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"test-only importer", []string{"c/c.go"}, []string{"d"}},
+		{"build importer and its test importer", []string{"a/a.go"}, []string{"b", "e"}},
+		{"beside an ordinary change", []string{"c/c.go", "f/f.go"}, []string{"d", "f"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want(t, run(t, options{root: root, files: tc.files}), tc.want...)
+		})
+	}
+}

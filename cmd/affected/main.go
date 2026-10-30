@@ -18,6 +18,9 @@
 //     Deps);
 //   - the package's test files import an affected package (TestImports
 //     and XTestImports, whose own transitive deps the first rule covers);
+//   - the package, or its test files, import a package the change
+//     deleted or moved: a changed file's directory counts by its import
+//     path even when go list no longer reports a package there;
 //   - a changed file matches a pattern one of the package's test files
 //     declares it reads (see "Files a test reads" below).
 //
@@ -391,7 +394,7 @@ func compute(o options) ([]string, []string, error) {
 	}
 
 	owners := ownerDirs(o.root, files, all)
-	affected := closure(all, owners)
+	affected := closure(all, owners, dirImportPaths(o.root, files, all))
 	named := namedImports(o.root, base, files, owners, all)
 	for _, p := range all {
 		if p.reads.matches(files, owners, all, named) {
@@ -452,6 +455,27 @@ func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 	return owners
 }
 
+// dirImportPaths returns the import path of each changed file's
+// directory. For a current package that is its own path, already in the
+// changed set. What it adds is the path of a package the change deleted,
+// or the old place of a moved one: no current package owns that file, but
+// whatever still imports the old path (a test-only import the build never
+// sees) no longer compiles and has to be selected. A directory no package
+// ever had (testdata, assets) adds a path nothing imports.
+func dirImportPaths(root string, files []string, all []pkg) []string {
+	module := ""
+	if len(all) > 0 {
+		rel, _ := filepath.Rel(root, all[0].Dir)
+		// A root package's path stays whole: "/." is never its suffix.
+		module, _ = strings.CutSuffix(all[0].ImportPath, "/"+filepath.ToSlash(rel))
+	}
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		paths = append(paths, path.Join(module, path.Dir(f)))
+	}
+	return paths
+}
+
 // embeds reports whether one of p's //go:embed patterns, test patterns
 // included, names file or a directory above it. Go leaves out a matched
 // directory's dot and underscore files unless the pattern says "all:";
@@ -476,15 +500,21 @@ func embeds(p pkg, file string) bool {
 	return false
 }
 
-// closure returns the import paths affected by the packages in dirs: the
-// packages themselves, their transitive importers, and every package
-// whose test files import one of those.
-func closure(all []pkg, dirs map[string]bool) map[string]bool {
+// closure returns the import paths affected by the packages in dirs and
+// the import paths in extra: the packages themselves, their transitive
+// importers, and every package whose test files import one of those. An
+// extra path that is no longer a package is in no package's ImportPath
+// but still in its importers' Deps and test imports, which go list -e
+// keeps.
+func closure(all []pkg, dirs map[string]bool, extra []string) map[string]bool {
 	changed := map[string]bool{}
 	for _, p := range all {
 		if dirs[p.Dir] {
 			changed[p.ImportPath] = true
 		}
+	}
+	for _, e := range extra {
+		changed[e] = true
 	}
 	hit := func(list []string, set map[string]bool) bool {
 		for _, d := range list {
@@ -502,10 +532,12 @@ func closure(all []pkg, dirs map[string]bool) map[string]bool {
 	}
 	// Test imports are direct, not transitive, so one more pass over the
 	// first set is exact: a test import's own deps are regular deps,
-	// already resolved above.
+	// already resolved above. changed also holds the extra paths of
+	// packages that are gone, which are never in affected.
 	viaTests := map[string]bool{}
 	for _, p := range all {
-		if hit(p.TestImports, affected) || hit(p.XTestImports, affected) {
+		if hit(p.TestImports, affected) || hit(p.XTestImports, affected) ||
+			hit(p.TestImports, changed) || hit(p.XTestImports, changed) {
 			viaTests[p.ImportPath] = true
 		}
 	}
