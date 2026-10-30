@@ -138,6 +138,7 @@ type UIHost struct {
 	pageLoading         component.Component                  // WithPageLoading: rendered once into every full page, shown while a navigation is in flight (replaces the default progress strip)
 	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	sitemapMemo         sitemapMemo                          // the live sitemap's last render (liveSitemap)
 	pathLocales         *i18n.PathLocales                    // SetPathLocales: the app routes by locale prefix
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
@@ -3947,6 +3948,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// expose either endpoint.
 	if ds.sitemapConfig != nil {
 		r.Get("/sitemap.xml", http.HandlerFunc(ds.handleSitemap))
+		r.Get("/sitemap/{part}", http.HandlerFunc(ds.handleSitemapPart))
 	}
 	if ds.robotsConfig != nil {
 		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))

@@ -283,10 +283,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// SEO surface: sitemap.xml and robots.txt, mirroring the live
 	// WithSitemap/WithRobots handlers so a static deploy keeps the same
-	// crawler contract as the live server. Same bytes as the HTTP
-	// handlers (single source: UIHost.SitemapXML / UIHost.RobotsTXT),
-	// with BasePath folded into <loc> entries and the derived Sitemap:
-	// URL. User-supplied files in the static source win, matching the
+	// crawler contract as the live server. One source with the HTTP
+	// handlers (UIHost.SitemapFiles / UIHost.RobotsTXT), listing only the
+	// pages this build wrote, with BasePath folded into <loc> entries and
+	// the derived Sitemap: URL. User-supplied files in the static source win, matching the
 	// PWA-surface precedence below.
 	if err := b.dumpSEOAssets(&res); err != nil {
 		return res, err
@@ -1272,34 +1272,34 @@ func localeContext(ctx context.Context, locales i18n.PathLocales, tag string) co
 	return i18n.WithPathLocale(i18n.WithContext(ctx, i18n.Locale{Tag: tag}), locales, tag)
 }
 
-// dumpSEOAssets writes sitemap.xml and robots.txt when the host
-// configured WithSitemap/WithRobots. Skips any file the app's static
-// source already provides (the user's copy is copied verbatim later and
-// must win). No-op when neither option is configured.
+// dumpSEOAssets writes sitemap.xml (with the parts it indexes, past one
+// file's limits) and robots.txt when the host configured
+// WithSitemap/WithRobots. Skips any file the app's static source already
+// provides (the user's copy is copied verbatim later and must win); a
+// user-supplied sitemap.xml replaces the generated parts too. No-op when
+// neither option is configured.
 func (b *Builder) dumpSEOAssets(res *Result) error {
-	type seoFile struct {
-		name string
-		body string
-		ok   bool
+	var files []uihost.SitemapFile
+	if sitemaps, ok := b.exportedSitemap(pageSet(res.Pages)); ok {
+		if b.staticSourceHas("sitemap.xml") {
+			b.log("kept user-supplied /sitemap.xml")
+		} else {
+			files = append(files, sitemaps...)
+		}
 	}
-	sitemap, sitemapOK := b.exportedSitemap(pageSet(res.Pages))
-	robots, robotsOK := b.Host.RobotsTXT(b.BasePath)
-	for _, f := range []seoFile{
-		{"sitemap.xml", sitemap, sitemapOK},
-		{"robots.txt", robots, robotsOK},
-	} {
-		if !f.ok {
-			continue
+	if robots, ok := b.Host.RobotsTXT(b.BasePath); ok {
+		if b.staticSourceHas("robots.txt") {
+			b.log("kept user-supplied /robots.txt")
+		} else {
+			files = append(files, uihost.SitemapFile{Path: "/robots.txt", Body: robots})
 		}
-		if b.staticSourceHas(f.name) {
-			b.log("kept user-supplied /%s", f.name)
-			continue
-		}
-		if err := b.writeRawAsset("/"+f.name, []byte(f.body)); err != nil {
+	}
+	for _, f := range files {
+		if err := b.writeRawAsset(f.Path, []byte(f.Body)); err != nil {
 			return err
 		}
-		res.Assets = append(res.Assets, "/"+f.name)
-		b.log("wrote /%s", f.name)
+		res.Assets = append(res.Assets, f.Path)
+		b.log("wrote %s", f.Path)
 	}
 	return nil
 }
@@ -1307,71 +1307,27 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 // sitemapLoc matches one sitemap URL.
 var sitemapLoc = regexp.MustCompile(`<loc>([^<]*)</loc>`)
 
-// sitemapEntry matches one <url> entry with its indent and line end.
-var sitemapEntry = regexp.MustCompile(`(?s)[ \t]*<url>.*?</url>\n?`)
-
-// sitemapProbe is the base path exportedSitemap asks the host to put
-// between the site URL and each page path, so it can read the page
-// path off each entry wherever the site URL is mounted.
-const sitemapProbe = "/__gofastr-sitemap-probe__"
-
-// exportedSitemap is the host's sitemap with only the pages this export
-// wrote: a page it skipped (an excluded route, a 404-outlet route, one
-// that answers a status other than 200, one a redirect takes) has no
-// file on the static host, so a crawler sent there finds 404.html.
-//
-// A <loc> is the site URL, the base path and the page path run
-// together, and the site URL can carry a path of its own, so the page
-// path cannot be cut off it reliably. The host renders the document a
-// second time with sitemapProbe as the base path, entries in the same
-// order: each probe entry's page path is what follows the marker, and
-// the real entry at the same index is kept when that path was
-// exported. Page URLs then take the slash their links carry
-// (slashSitemapLocs).
-func (b *Builder) exportedSitemap(pages map[string]bool) (string, bool) {
-	doc, ok := b.Host.SitemapXML(b.BasePath)
+// exportedSitemap is the host's sitemap files with only the pages this
+// export wrote: a page it skipped (an excluded route, a 404-outlet
+// route, one that answers a status other than 200, one a redirect
+// takes) has no file on the static host, so a crawler sent there finds
+// 404.html. The host asks about each page by the routing path the
+// export wrote it under, so a StaticPaths that answers differently
+// per call can only drop an entry, never list an unwritten page. Page
+// URLs then take the slash their links carry (slashSitemapLocs); a
+// sitemap index names part files, not pages, and is left alone.
+func (b *Builder) exportedSitemap(pages map[string]bool) ([]uihost.SitemapFile, bool) {
+	files, ok := b.Host.SitemapFiles(b.BasePath, func(p string) bool { return pages[p] })
 	if !ok {
-		return "", false
+		return nil, false
 	}
 	escaped := escapedPageSet(pages)
-	probe, _ := b.Host.SitemapXML(sitemapProbe)
-	probeEntries := sitemapEntry.FindAllString(probe, -1)
-	docEntries := sitemapEntry.FindAllString(doc, -1)
-	// Pair by index, and check each pair names one page: the real
-	// entry's URL ends in the page path the probe's follows the marker
-	// with. StaticPaths that differ per call (a count, or an order, as
-	// a map yields) leave no pairing to trust.
-	keep := make([]bool, len(docEntries))
-	paired := len(probeEntries) == len(docEntries)
-	for i := 0; paired && i < len(docEntries); i++ {
-		pm, dm := sitemapLoc.FindStringSubmatch(probeEntries[i]), sitemapLoc.FindStringSubmatch(docEntries[i])
-		if pm == nil || dm == nil {
-			continue
+	for i := range files {
+		if len(files) == 1 || i > 0 {
+			files[i].Body = slashSitemapLocs(files[i].Body, escaped)
 		}
-		_, p, found := strings.Cut(stdhtml.UnescapeString(pm[1]), sitemapProbe)
-		if !found {
-			continue
-		}
-		if !strings.HasSuffix(stdhtml.UnescapeString(dm[1]), p) {
-			paired = false
-			break
-		}
-		keep[i] = escaped[p]
 	}
-	if !paired {
-		slog.Warn("static: sitemap kept whole: its entries changed between two renders, so the pages the export skipped could not be told apart")
-		return slashSitemapLocs(doc, escaped), true
-	}
-	i := 0
-	doc = sitemapEntry.ReplaceAllStringFunc(doc, func(entry string) string {
-		k := keep[i]
-		i++
-		if !k {
-			return ""
-		}
-		return entry
-	})
-	return slashSitemapLocs(doc, escaped), true
+	return files, true
 }
 
 // escapedPageSet is pages keyed by the escaped path a sitemap <loc>

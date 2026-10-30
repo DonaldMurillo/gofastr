@@ -3121,6 +3121,23 @@ few lines, and link the PR or the docs page for the rest.
   the SDK download matched a substring and ignored `*`. They now share
   the new `static.IfNoneMatch`, the RFC 9110 comparison `core/static`
   already used.
+- **A sitemap past 50,000 URLs becomes a sitemap index.** `SitemapXML`
+  wrote every page into one URL set, which a search engine rejects
+  whole past 50,000 URLs or 50 MiB. Past either limit `/sitemap.xml`
+  now names parts at `/sitemap/1.xml`, `/sitemap/2.xml`, …, and the
+  static export writes them as `sitemap/<n>.xml`. The new
+  `UIHost.SitemapFiles` returns every file. The live server also kept
+  no render, so each anonymous GET ran every `StaticPaths` and the
+  page policy for every path; it now keeps one render for a minute
+  (none under `gofastr dev`).
+- **The static export's sitemap lists only pages it wrote.** It
+  rendered the sitemap twice and paired the entries to find skipped
+  pages; when a `StaticPaths` answered in a different order or count
+  the second time, it warned and kept the whole document, so
+  `ExcludeRoutes` pages, redirected paths and pages it never wrote were
+  listed. `SitemapFiles` now takes a `keep` filter the export fills
+  from the pages it wrote, asked about each page by its routing path,
+  and a hreflang alternate naming a skipped page goes as well.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

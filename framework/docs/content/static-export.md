@@ -107,13 +107,17 @@ go build -o site ./examples/site/
   (a gated screen, an `ExcludeRoutes` route, a 404-outlet route, a page
   that answers a status other than 200, a path a redirect takes) has no
   file on the static host, so its `<url>` entry is dropped, in every
-  locale. The export renders the sitemap twice to tell the entries
-  apart; when a `StaticPaths` answers in a different order or count
-  the second time, the build warns and keeps the sitemap whole. Under `--export-base` every sitemap `<loc>` and the
+  locale, and so is every hreflang alternate naming it. The host asks
+  about each page by the path the export wrote it under, so a
+  `StaticPaths` that answers differently from one call to the next can
+  drop an entry but never list a page the export did not write. Past
+  50,000 URLs the sitemap is an index with its parts under
+  `sitemap/<n>.xml`. Under `--export-base` every sitemap `<loc>` and the
   derived `Sitemap:` line in robots.txt include the subpath, once
   even when the sitemap's `BaseURL` already ends in it. A
   `sitemap.xml` or `robots.txt` in the app's static dir wins over the
-  generated one. Note that on a subpath deploy (e.g. a GitHub Pages
+  generated one (a user's `sitemap.xml` replaces the generated parts
+  too). Note that on a subpath deploy (e.g. a GitHub Pages
   *project* site) crawlers only honor a robots.txt at the origin root;
   the file is still emitted for apex/custom-domain deploys.
 - With [`uihost.WithPWA`](pwa.md): `manifest.webmanifest`,
