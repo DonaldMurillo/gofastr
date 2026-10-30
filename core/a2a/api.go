@@ -77,7 +77,8 @@ type TaskContext interface {
 // Router picks the skill for a message. The default reads
 // msg.Metadata["skill"], then the first data part carrying a "skill"
 // key, then the only skill when exactly one is registered, and otherwise
-// rejects the task with a message naming the available skill ids.
+// rejects the task, without listing the registered skill ids (see
+// DefaultRouter).
 type Router func(ctx context.Context, msg *Message, skills []Skill) (skillID string, err error)
 
 // TaskRecord is a task as the Store holds it: the wire Task plus the

@@ -997,7 +997,7 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		if sk, ok := s.byID[skillID]; ok {
 			h = sk.Handler
 		} else {
-			rerr = fmt.Errorf("no skill named %q; available: %s", skillID, strings.Join(s.skillIDs(), ", "))
+			rerr = fmt.Errorf("no skill named %q", skillID)
 		}
 	}
 
@@ -1129,7 +1129,7 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	sk, ok := s.byID[rec.SkillID]
 	if !ok || sk.Handler == nil {
 		// The skill this task was routed to is no longer registered.
-		if err := t.Reject(TextPart(fmt.Sprintf("no skill named %q; available: %s", rec.SkillID, strings.Join(s.skillIDs(), ", ")))); err != nil {
+		if err := t.Reject(TextPart(fmt.Sprintf("no skill named %q", rec.SkillID))); err != nil {
 			s.log.Error("a2a: reject resume without skill", "taskId", taskID, "err", err)
 		}
 		s.finishRun(rn)
@@ -1255,14 +1255,6 @@ func (s *Server) trimPushConfigs(ctx context.Context, owner, taskID string) {
 	if err := rt.TrimPushConfigs(c, owner, taskID, s.maxPushConfigs); err != nil {
 		s.log.Error("a2a: trim push configs", "taskId", taskID, "err", err)
 	}
-}
-
-func (s *Server) skillIDs() []string {
-	ids := make([]string, len(s.skills))
-	for i, sk := range s.skills {
-		ids[i] = sk.ID
-	}
-	return ids
 }
 
 // snapshot returns a deep copy of the run's current task.
@@ -2159,24 +2151,20 @@ func (s *Server) handleExtendedCard(w http.ResponseWriter, req *rpcRequest, owne
 //  2. else the first data part whose Data is a JSON object with a
 //     string "skill" key;
 //  3. else the only registered skill, when exactly one is;
-//  4. else an error naming the available ids.
+//  4. else an error.
 //
-// A skill id that is not registered is an error at step 1 and 2 alike —
-// the router names what exists rather than guessing.
+// A skill id that is not registered is an error at step 1 and 2 alike,
+// rather than a guess. No error lists the registered ids: they include
+// skills a gate withholds from this caller, and the agent card already
+// lists the ones it publishes.
 func DefaultRouter(_ context.Context, msg *Message, skills []Skill) (string, error) {
-	available := make([]string, len(skills))
-	for i, sk := range skills {
-		available[i] = sk.ID
-	}
-	names := strings.Join(available, ", ")
-
 	if msg != nil && msg.Metadata != nil {
 		if v, ok := msg.Metadata["skill"]; ok {
 			if name, isStr := v.(string); isStr && name != "" {
 				if skillKnown(skills, name) {
 					return name, nil
 				}
-				return "", fmt.Errorf("no skill named %q; available: %s", name, names)
+				return "", fmt.Errorf("no skill named %q", name)
 			}
 		}
 	}
@@ -2194,14 +2182,14 @@ func DefaultRouter(_ context.Context, msg *Message, skills []Skill) (string, err
 				if skillKnown(skills, name) {
 					return name, nil
 				}
-				return "", fmt.Errorf("no skill named %q; available: %s", name, names)
+				return "", fmt.Errorf("no skill named %q", name)
 			}
 		}
 	}
 	if len(skills) == 1 {
 		return skills[0].ID, nil
 	}
-	return "", fmt.Errorf("no skill named; available: %s", names)
+	return "", errors.New("the message names no skill")
 }
 
 func skillKnown(skills []Skill, id string) bool {

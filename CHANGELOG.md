@@ -3427,6 +3427,13 @@ few lines, and link the PR or the docs page for the rest.
   dropped instead of panicking, and a capability named `available`,
   `call`, `on`, `off` or `manifest` is refused at `Register`, since the
   bridge would overwrite the runtime's own `NS.desktop` member.
+- **An A2A unknown-skill refusal lists no skill ids.** A message naming
+  a skill the server does not have, or naming none with several
+  registered, was rejected with `available:` and every registered id,
+  entity skills the MCP gate withholds from the caller included. The
+  refusal now names only the skill asked for (`no skill named "x"`), or
+  says `the message names no skill`; the agent card lists the callable
+  skills.
 
 ## [0.95.0] - 2026-10-26
 

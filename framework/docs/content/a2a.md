@@ -50,7 +50,9 @@ The one thing an integrator must know: **a skill is invoked by name,
 never inferred from prose.** The router reads `message.metadata.skill`,
 then the first data part carrying a `"skill"` key, then (only when
 exactly one skill is registered) that skill — and anything else is
-rejected with a message naming the available skill ids. There is no
+rejected. The rejection names the skill asked for and lists no others:
+the exchange serves entity skills the public card leaves out, so the
+card is where a client finds the skills it can call. There is no
 model call, no intent classification, no fallback guess on the server
 side. A client that sends "please list my invoices" as text gets a
 rejected task; a client that sends
