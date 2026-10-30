@@ -2854,6 +2854,14 @@ few lines, and link the PR or the docs page for the rest.
   widget's files at those URLs, and prefixes them for a base path
   whatever they are, a custom `StylePath` outside `/core-ui/widget/`
   included.
+- **An embed grant reaches a `RequireSession` widget's RPCs on its own
+  surface.** The session check uihost installs read the widget's name out
+  of a `/core-ui/widget/<name>/` URL. An RPC path (or a custom or
+  group-prefixed state path) names no widget, so a grant was refused there
+  even with the path in the surface's `Reach`. Each widget gate now hands
+  the check its own definition, which `widget.GatedWidget(r)` returns, and
+  the grant passes when that widget is offered on the grant's surface, the
+  rule its state and chrome already followed.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

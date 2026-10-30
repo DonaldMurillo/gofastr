@@ -77,7 +77,11 @@ framework/uihost installs that check through `(*embed.Host).SetWidgetReach`;
 a `Host` used without uihost and without the call refuses every widget
 route. A
 widget's RPC paths are app routes and need a `Reach` entry, as do a
-widget's `StylePath` or `StatePath` moved off the default. That is a fixed list, not the whole `/__gofastr`
+widget's `StylePath` or `StatePath` moved off the default and a widget
+mounted on a prefixed router group. Behind that entry a `RequireSession`
+widget's state, chrome and RPC routes take the grant by the same rule:
+the widget must be offered on the surface's page. A
+`RequireAuthenticated` widget refuses a grant on every route. That is a fixed list, not the whole `/__gofastr`
 subtree: batteries mount there too (`battery/rtc` at `/__gofastr/rtc`, the
 desktop bridge at `/__gofastr/desktop`), and a grant reaches none of them.
 **Everything else answers 403** until the surface says otherwise:

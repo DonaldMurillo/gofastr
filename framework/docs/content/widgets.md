@@ -462,7 +462,12 @@ tighten it, both installed by the host:
   expose anonymously".
 
 Both fail closed when the host installed no predicate, and both gate the
-RPC routes too. SSR-inlined chrome honors the same verdict
+RPC routes too. The predicate a host installs (`widget.SetSessionCheck`,
+`widget.SetAuthenticatedCheck`) learns which widget is asking from
+`widget.GatedWidget(r)`, the definition whose route or `GateSatisfied`
+call is being decided, never from the URL; `framework/uihost` uses it to
+admit an embed grant only for widgets offered on the grant's surface.
+SSR-inlined chrome honors the same verdict
 (`widget.GateSatisfied`), so a gated widget's chrome is not baked into a
 page its endpoints would refuse. See
 [Security](security.md) → "Widget signal exposure".

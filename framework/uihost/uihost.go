@@ -3404,22 +3404,6 @@ func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (s
 	return id, true
 }
 
-// widgetNameFromPath pulls the widget name out of /core-ui/widget/<name>/<leaf>.
-// Returns "" for anything that is not that shape, so a caller cannot smuggle a
-// traversal or an empty name past a lookup.
-func widgetNameFromPath(p string) string {
-	const prefix = "/core-ui/widget/"
-	if !strings.HasPrefix(p, prefix) {
-		return ""
-	}
-	rest := strings.TrimPrefix(p, prefix)
-	name, _, ok := strings.Cut(rest, "/")
-	if !ok || name == "" || strings.Contains(name, ".") {
-		return ""
-	}
-	return name
-}
-
 // requireSessionOrEmbedGrant gates a /__gofastr/* endpoint that an embedded
 // surface must also be able to reach.
 //
@@ -3894,11 +3878,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 			// hides names from a caller who does not need them. Reducing the
 			// grant to a boolean here let anyone with devtools on a legitimate
 			// customer page read the state of a widget scoped to /admin.
-			name := widgetNameFromPath(req.URL.Path)
-			if name == "" {
-				return false
-			}
-			def, found := widget.Lookup(name)
+			//
+			// The widget comes from the gate that is asking, not the URL: a
+			// name parsed from /core-ui/widget/<name>/ left every RPC (and
+			// every custom or group-prefixed path) with no widget, so a
+			// grant was refused on routes Reach admits.
+			def, found := widget.GatedWidget(req)
 			if !found {
 				return false
 			}

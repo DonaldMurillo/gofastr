@@ -647,9 +647,24 @@ func (d *Definition) gateLevelOf() gateLevel {
 	return gateOff
 }
 
+// gatedWidgetKey carries the widget whose gate is consulting the host
+// predicate, so the predicate never has to work it out from the URL.
+type gatedWidgetKey struct{}
+
+// GatedWidget returns the widget whose session gate is asking the
+// predicate installed with SetSessionCheck or SetAuthenticatedCheck about
+// r: the definition that owns the /state, /chrome or RPC route being
+// served, or the one GateSatisfied was called with. A request the widget
+// package did not hand to a predicate carries none.
+func GatedWidget(r *http.Request) (*Definition, bool) {
+	d, ok := r.Context().Value(gatedWidgetKey{}).(*Definition)
+	return d, ok
+}
+
 // gateSatisfied reports whether the request passes the gate the level
-// names. Fails closed: a level whose host predicate is missing says no.
-func gateSatisfied(level gateLevel, r *http.Request) bool {
+// names, for the widget d. Fails closed: a level whose host predicate is
+// missing says no.
+func gateSatisfied(level gateLevel, d *Definition, r *http.Request) bool {
 	var p *atomic.Pointer[func(*http.Request) bool]
 	switch level {
 	case gateAnySession:
@@ -660,7 +675,10 @@ func gateSatisfied(level gateLevel, r *http.Request) bool {
 		return true
 	}
 	fn := p.Load()
-	return fn != nil && (*fn)(r)
+	if fn == nil {
+		return false
+	}
+	return (*fn)(r.WithContext(context.WithValue(r.Context(), gatedWidgetKey{}, d)))
 }
 
 // GateSatisfied reports whether this request passes def's session gate
@@ -671,18 +689,18 @@ func gateSatisfied(level gateLevel, r *http.Request) bool {
 // /chrome endpoint: a def whose endpoints 403 must not have its chrome
 // baked into the anonymous page.
 func GateSatisfied(def *Definition, r *http.Request) bool {
-	return gateSatisfied(def.gateLevelOf(), r)
+	return gateSatisfied(def.gateLevelOf(), def, r)
 }
 
 // gateSession wraps h so it only runs for callers passing the level's
 // predicate. Fails closed: a widget that asked for a gate but runs in a
 // host that installed no check serves nothing.
-func gateSession(level gateLevel, h http.Handler) http.Handler {
+func gateSession(level gateLevel, d *Definition, h http.Handler) http.Handler {
 	if level == gateOff {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !gateSatisfied(level, r) {
+		if !gateSatisfied(level, d, r) {
 			i18n.HTTPError(w, r, http.StatusForbidden, reasonWidgetNeedsSession)
 			return
 		}
@@ -732,11 +750,11 @@ func Mount(r *router.Router, def *Definition) {
 	def.mountPrefix = r.Prefix()
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
-	r.Get(def.StatePath, gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveState)))
+	r.Get(def.StatePath, gateSession(def.gateLevelOf(), def, http.HandlerFunc(srv.serveState)))
 	// Chrome endpoint: runtime fetches HTML lazily on first open
 	// instead of receiving it inline in the /widgets catalog. Keeps
 	// the registry small and lets browsers cache by URL.
-	r.Get(chromePathFor(def), gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveChrome)))
+	r.Get(chromePathFor(def), gateSession(def.gateLevelOf(), def, http.HandlerFunc(srv.serveChrome)))
 
 	for _, rpc := range def.RPCs {
 		// Same gate the widget's own /state and chrome endpoints carry.
@@ -745,7 +763,7 @@ func Mount(r *router.Router, def *Definition) {
 		// caller its RPCs in the same process -- and the RPCs are the
 		// mutating half. A gate that covers the read and not the write is
 		// not a gate.
-		h := gateSession(def.gateLevelOf(), rpc.Handler)
+		h := gateSession(def.gateLevelOf(), def, rpc.Handler)
 		switch rpc.Method {
 		case "GET":
 			r.Get(rpc.Path, h)
