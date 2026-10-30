@@ -187,7 +187,10 @@ optional field takes its declared `Default` on create and clears the
 column to null on update, and a blank required field fails with
 `is required` rather than `must be an integer`. A blank `Image` or
 `File` on update keeps the stored file, since a file input cannot
-carry it back. Empty text stays an
+carry it back. An upsert reads a blank as a create does when no row
+holds the key and as an update does when one does. A blank in a key
+column is never dropped, so an `Int` key part still refuses it. Empty
+text stays an
 empty string, since that is a value a user can mean. A filled number
 input arrives as text too: an `Int` field takes `"42"` and a `Float`
 field takes `"42.5"` as the number each spells, and a `Float` refuses
@@ -613,6 +616,12 @@ integer, or as a 64-bit float past about 15 significant digits, so
 `"90071992547409.1234"` reads back rounded there. Keep money that needs
 all 19 digits on Postgres, or store it as an `int` count of the smallest
 unit.
+
+A `decimal` field's `Min` and `Max` are compared in exact decimal
+arithmetic, reading the float bound as its shortest spelling: `0.1` is
+0.1 and `1e30` is 10^30, not their binary expansions. A whole-number
+bound that needs 16 or more significant digits (2^60, spelled in full or
+computed) is its exact binary value.
 
 An `int` field takes a JSON number only when its text is a whole number:
 `3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though

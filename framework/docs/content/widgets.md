@@ -427,7 +427,10 @@ and that close → reopen cycle fires `fui:widget-close` followed by
 | `<RPC method> <RPC.Path>` | Each registered RPC handler |
 
 Default paths are filled in on `def` if unset, so the caller can read
-them after `Mount` returns. Mounting is idempotent on `def.Name`.
+them after `Mount` returns. Mount each widget once per router: a second
+`Mount` of the same name registers the same routes, and the router
+panics on the conflict. When a battery already mounts a widget, the app
+uses it rather than mounting it again.
 
 Every route sits under the prefix of the router group `Mount` is given.
 A widget mounted on `root.Group("/v2")` serves its styles at

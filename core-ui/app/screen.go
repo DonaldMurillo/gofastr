@@ -121,7 +121,9 @@ type ScreenComponentID interface {
 }
 
 // ScreenActions is an optional interface for screens that declare server actions.
-// If implemented, the host auto-compiles actions when the screen is registered.
+// The host compiles them at Mount, and again at App.Start for a screen a
+// plugin registered after Mount; a screen registered once the app is
+// serving is not compiled, and its data-action clicks answer 404.
 // The Actions method uses component.On() to register handlers, same as InteractiveComponent.
 type ScreenActions interface {
 	Actions()

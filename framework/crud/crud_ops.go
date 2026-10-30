@@ -988,7 +988,11 @@ func (ch *CrudHandler) selectStored(ctx context.Context, r *http.Request, id str
 // "" as a value: empty text is a thing a user says. A file input cannot
 // carry the stored value, so a blank Image or File on update means "no
 // new file" and leaves the column alone.
-func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) {
+//
+// It returns the fields it removed that the update reading would have set
+// to nil instead (the blank optional non-file fields of a create), so an
+// upsert that lands on an existing row can clear them as update does.
+func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) (cleared []string) {
 	for _, f := range s.Fields {
 		v, ok := body[f.Name]
 		if !ok {
@@ -1017,5 +1021,9 @@ func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) {
 			continue
 		}
 		delete(body, f.Name)
+		if f.Type != schema.Image && f.Type != schema.File {
+			cleared = append(cleared, f.Name)
+		}
 	}
+	return cleared
 }

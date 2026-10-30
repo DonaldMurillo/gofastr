@@ -3268,6 +3268,37 @@ few lines, and link the PR or the docs page for the rest.
 - **`FlatStore` deep-copies chunk metadata.** A nested map or slice
   was shared with the caller and with returned hits, so writing into
   either changed what the store filters and snapshots on.
+- **A whole-number `decimal` bound written as a short decimal is that
+  decimal.** `Min: 1e30` was read as its binary expansion,
+  1000000000000000019884624838656, so `"1e30"` failed its own minimum.
+  A bound of up to 15 significant digits is now read as written; a
+  whole-number bound that needs more (2^60) keeps its exact binary
+  value.
+- **An upsert accepts a blank optional field as create and update do.**
+  `{"id":"k1","qty":""}` with an optional `Int` answered 422 "must be an
+  integer" on upsert and succeeded on create. A blank non-text value now
+  reads
+  as not provided when the upsert inserts, and clears the column when
+  it updates an existing row; a blank `Image` or `File` keeps the stored
+  file, and a blank in a key column is never dropped (an `Int` key part
+  still refuses it).
+- **A screen a plugin registers in `Init` gets its server actions.**
+  The UI host compiled actions only at `Mount`, which runs before
+  `App.Start` calls plugin `Init`, so a screen registered there
+  rendered its `data-action` buttons and every click answered 404.
+  `ValidateBoot` now compiles them after every `Init`, and the
+  action-id collision and embed server-action refusals cover those
+  screens too, so a late screen that trips either stops the boot.
+- **A widget's `/state` omits a signal with no JSON form.** A
+  `SignalSource` returning NaN or Inf failed the whole encode after
+  the headers went, so `/state` answered an empty 200 and every
+  signal kept its server-rendered value. Each signal now encodes on
+  its own; one that fails is logged and left out, as a signal whose
+  `Read` fails already was.
+- **`widget.Mount` no longer claims to be idempotent.** A second
+  `Mount` of one widget on one router registers its routes again and
+  the router panics on the conflict; the doc now says to mount a
+  widget once per router.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

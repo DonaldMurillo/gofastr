@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -110,6 +111,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				return &beforeHookError{err: err}
 			}
 		}
+		// Blank form values go first, as on create and update: a "" for a
+		// number is a blank control, not a value to coerce. They are read
+		// as a create's until the arm is known below. A key column keeps
+		// its "": the upsert's conflict target is never a blank control,
+		// and dropped it would insert a row with no key.
+		s := ch.entitySchema()
+		keys := ch.keyCols()
+		s.Fields = slices.DeleteFunc(slices.Clone(s.Fields), func(f schema.Field) bool {
+			return slices.Contains(keys, f.Name)
+		})
+		blanked := dropEmptyFormValues(s, body, false)
 		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}
@@ -160,6 +172,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 		if existed {
 			eventType = event.EntityUpdated
+			// The conflict arm updates the row, so a blank clears its
+			// column, as update reads it.
+			for _, name := range blanked {
+				body[name] = nil
+			}
 		}
 		// The state check, as an update of the existing row or a create
 		// (states.go).

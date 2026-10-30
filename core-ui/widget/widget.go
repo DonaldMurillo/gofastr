@@ -728,7 +728,10 @@ func gateSession(level gateLevel, d *Definition, h http.Handler) http.Handler {
 // too; markup that triggers an RPC names the full URL.
 //
 // Default paths are filled in on def if unset so the caller can read
-// them after Mount returns. Mount is idempotent on def.Name.
+// them after Mount returns. Mount a widget once per router: a second
+// Mount of the same name registers the same routes again, and the router
+// panics on the conflict. The catalog keeps the last definition mounted
+// under a name.
 func Mount(r *router.Router, def *Definition) {
 	if def.StylePath == "" {
 		def.StylePath = "/core-ui/widget/" + def.Name + "/style.css"

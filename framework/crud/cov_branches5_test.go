@@ -107,6 +107,88 @@ func TestUpsert_WithHooksDefaultsAutoFields(t *testing.T) {
 	}
 }
 
+// A blank optional non-text value is a blank control, as create and update
+// read it: upsert answered 422 "must be an integer" (D41). On insert it is
+// not provided; on a row that exists it clears, as update clears it.
+func TestUpsertBlankOptionalField(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE upq (id TEXT PRIMARY KEY, title TEXT, qty INTEGER, due TEXT)`)
+	ent := entity.Define("upq", entity.EntityConfig{
+		Name: "upq", Table: "upq",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "qty", Type: schema.Int},
+			{Name: "due", Type: schema.Date},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	ctx := context.Background()
+
+	res, err := ch.UpsertOne(ctx, map[string]any{"id": "k1", "title": "a", "qty": "", "due": ""})
+	if err != nil {
+		t.Fatalf("insert with blanks: %v", err)
+	}
+	if res["qty"] != nil {
+		t.Errorf("insert qty = %v, want nil", res["qty"])
+	}
+	if _, err := ch.UpsertOne(ctx, map[string]any{"id": "k1", "title": "a", "qty": 5}); err != nil {
+		t.Fatal(err)
+	}
+	res, err = ch.UpsertOne(ctx, map[string]any{"id": "k1", "title": "b", "qty": ""})
+	if err != nil {
+		t.Fatalf("update with a blank: %v", err)
+	}
+	if res["qty"] != nil || res["title"] != "b" {
+		t.Errorf("update = %v, want qty cleared and title b", res)
+	}
+}
+
+// A file input cannot carry the stored value, so a blank Image on a row
+// that exists means "no new file", as update reads it: the image stays.
+func TestUpsertBlankImageKeepsFile(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE upi (id TEXT PRIMARY KEY, title TEXT, cover TEXT)`)
+	ent := entity.Define("upi", entity.EntityConfig{
+		Name: "upi", Table: "upi",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "cover", Type: schema.Image},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	ctx := context.Background()
+	if _, err := ch.UpsertOne(ctx, map[string]any{"id": "k1", "title": "a", "cover": "https://cdn.example.com/a.png"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ch.UpsertOne(ctx, map[string]any{"id": "k1", "title": "b", "cover": ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res["cover"] != "https://cdn.example.com/a.png" {
+		t.Errorf("cover = %v, want the stored image kept", res["cover"])
+	}
+}
+
+// A blank key part is never a blank control: dropped, the insert would
+// carry no key. It stays a refusal.
+func TestUpsertBlankKeyPartRefused(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE upk (org TEXT, seq INTEGER, title TEXT, PRIMARY KEY (org, seq))`)
+	ent := entity.Define("upk", entity.EntityConfig{
+		Name: "upk", Table: "upk", PrimaryKey: []string{"org", "seq"},
+		Fields: []schema.Field{
+			{Name: "org", Type: schema.String},
+			{Name: "seq", Type: schema.Int},
+			{Name: "title", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	var ve *ValidationError
+	if _, err := ch.UpsertOne(context.Background(), map[string]any{"org": "a", "seq": "", "title": "c"}); !errors.As(err, &ve) {
+		t.Errorf("blank key part upsert = %v, want a ValidationError", err)
+	}
+}
+
 func TestUpsert_BeforeCreateHookError(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	ch.Hooks = hook.NewHookRegistry()
