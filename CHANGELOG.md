@@ -3527,6 +3527,21 @@ few lines, and link the PR or the docs page for the rest.
   CLI's entity selection and the GOFASTR1808 fallback comparison
   folded the same way. All of them now fold A–Z only, and an
   upper-case ASCII spelling still matches.
+- **An MCP notification stream closes when its caller changes tenant.**
+  The stream re-checked the caller before each delivery and ran the
+  gates on the result, but a gate that does not read the tenant kept
+  sending the connect-time tenant's resource URIs and `list_changed`
+  notices to a member removed from it. The stream now closes when the
+  re-check (`tenant.ResolveMiddleware` installs one) returns another
+  tenant, as a tenant-scoped CRUD event stream already did.
+- **BREAKING: `admin.AuthPrincipal(am, member)` checks that a bulk
+  job's creator still belongs to its tenant.** The principal re-read the
+  creator's roles before every chunk but stamped the confirm-time tenant
+  unchecked, so a queued bulk delete or update kept writing tenant A's
+  rows after its creator left A. It now asks `member`
+  (`admin.TenantMember`) first and stops the run on false or an error.
+  A tenant run with a nil `member` is refused; `admin.AnyTenant` admits
+  every run, for an app whose users never leave a tenant.
 
 ## [0.95.0] - 2026-10-26
 

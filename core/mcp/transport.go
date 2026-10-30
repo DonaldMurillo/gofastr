@@ -540,9 +540,12 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// answering for a session since revoked or a token since
 			// expired. A caller a fresh request would no longer carry
 			// has the stream closed, as framework/crud's event stream
-			// does.
+			// does. So does one the re-check placed in another tenant
+			// (tenant.ResolveMiddleware re-resolves it): the stream was
+			// admitted for the connect-time tenant, and a gate that
+			// does not read the tenant would keep delivering its URIs.
 			live, held := handler.RecheckPrincipal(sub.ctx)
-			if !held {
+			if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
 				return
 			}
 			if !s.subscriberMayReceive(live, n) {

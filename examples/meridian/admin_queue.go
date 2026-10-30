@@ -60,8 +60,10 @@ func setupQueue(fwApp *framework.App, db *sql.DB) {
 	})
 	// The bulk runner rebuilds the confirming user from the auth
 	// manager, which the generated wiring creates after this call.
+	// Meridian has no tenants, so it has no membership check: a tenant
+	// run would be refused.
 	bulk, err := admin.NewBulkJobs(q, func(ctx context.Context, user, tenant string) (context.Context, error) {
-		return admin.AuthPrincipal(authMgr)(ctx, user, tenant)
+		return admin.AuthPrincipal(authMgr, nil)(ctx, user, tenant)
 	})
 	if err != nil {
 		log.Fatalf("bulk jobs: %v", err)

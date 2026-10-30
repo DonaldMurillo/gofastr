@@ -458,8 +458,11 @@ caller anything the matching methods would not:
   callers its gate refuses, who cannot see the item in that listing
   either.
 - Both gates are evaluated at delivery time against the identity the
-  stream's GET request presented, not once when the stream opened. A
-  session revoked mid-stream stops receiving immediately.
+  stream's GET request presented, re-checked before each delivery
+  (`handler.RecheckPrincipal`), not once when the stream opened. A
+  session revoked mid-stream has its stream closed at the next
+  notification, and so does a caller the re-check places in another
+  tenant (`tenant.ResolveMiddleware` re-resolves it).
 
 A slow subscriber never blocks the server. Each stream has a bounded
 buffer (16 notifications); a full buffer means the client stopped

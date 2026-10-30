@@ -453,3 +453,10 @@ notes:
       text:
         - glob: "**/*.js"
           match: 'desktop\.available\s*\('
+  - change: "BREAKING - admin.AuthPrincipal takes a TenantMember second, and a bulk job with a tenant runs only while it reports the creator still belongs to that tenant"
+    breaking: true
+    hits: edit
+    guidance: "AuthPrincipal stamped the confirm-time tenant unchecked, so a queued bulk delete or update kept writing tenant A's rows after its creator left A. Pass your membership lookup, func(ctx, userID, tenantID string) (bool, error). An app with no tenants can pass nil, and one whose users never leave a tenant passes admin.AnyTenant."
+    find:
+      uses:
+        - gofastr/battery/admin.AuthPrincipal

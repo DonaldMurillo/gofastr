@@ -61,9 +61,10 @@ app.Use(tenant.ResolveMiddleware(func(ctx context.Context) string {
 
 It sets the tenant from `resolve` (replacing any set before it) and
 runs `resolve` again for the refreshed principal whenever a held request
-re-checks it (`handler.RecheckPrincipal`). The CRUD event stream re-checks
-on an interval, so a member removed from a tenant stops receiving its
-events at the next check instead of at disconnect.
+re-checks it (`handler.RecheckPrincipal`). A tenant-scoped entity's CRUD
+event stream re-checks on an interval and the MCP notification stream
+before each delivery; both close when the tenant changed, so a member removed from a tenant stops
+receiving its events at the next check instead of at disconnect.
 
 A middleware of your own that calls `framework.SetTenantID(ctx, id)`
 works for ordinary requests too. It installs no re-check, so a stream
