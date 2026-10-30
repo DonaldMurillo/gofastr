@@ -2898,6 +2898,12 @@ few lines, and link the PR or the docs page for the rest.
   changes and created again after them. On Postgres a changed view is no
   longer replaced in place: grants on it go with the drop, and a view
   outside the plan that reads it makes the drop fail.
+- **A toast swapped in by an island no longer stops the stack's other
+  toasts from closing.** The arm pass ran on the swapped region alone and
+  cancelled the timer of every toast outside it, so the stack's toasts
+  stayed up for good. A timer is now dropped only when its row has left
+  the page, and a row that replaces one under the same id arms its own
+  timer.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
