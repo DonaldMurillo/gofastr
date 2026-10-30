@@ -2798,6 +2798,10 @@ few lines, and link the PR or the docs page for the rest.
   `VariantSet.Process`, `ProcessTo`, `Placeholder` and `NewGradient`.
   `Resize` panics with an error wrapping it. An image decoded with a
   small `MaxPixels` can no longer be upscaled past that cap.
+- **A lazy `Tree` branch set `Expanded` starts collapsed.** It rendered
+  an open, empty group that nothing loaded until the reader closed and
+  reopened it. With no `Children`, `Expanded` is now ignored, so the
+  first toggle opens the group and loads it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
