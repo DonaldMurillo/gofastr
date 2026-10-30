@@ -2925,6 +2925,11 @@ few lines, and link the PR or the docs page for the rest.
   still wrote its signal and moved the selection on a click, showing its
   panel. A disabled tab now renders without its signal write or its href,
   and the tabs module ignores clicks on it.
+- **Removing a tag that holds "×" announces the tag as written.** The tag
+  input read the removed chip's text and stripped the first "×", which
+  was the tag's own, so "3×5" was announced as "35× removed". The
+  announcement now reads the chip's hidden value. The submitted value
+  was always right.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
