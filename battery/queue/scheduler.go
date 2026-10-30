@@ -203,10 +203,10 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 		}
 		job.cron = &sc
 		job.NextRun = sc.Next(base)
-		// Next returns the zero time when no minute in its five-year search
-		// matches (February 30), and a zero NextRun is due on every tick.
+		// Next returns the zero time for a spec that never fires
+		// (February 30), and a zero NextRun is due on every tick.
 		if job.NextRun.IsZero() {
-			return fmt.Errorf("queue: cron spec %q has no firing in the next five years", b.cronSpec)
+			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
 		}
 	} else {
 		job.NextRun = base.Add(b.interval)
@@ -328,10 +328,10 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 			if sch.cron != nil {
 				sch.NextRun = sch.cron.Next(now)
 				if sch.NextRun.IsZero() {
-					// Past Next's five-year search: February 29 after
-					// 2096 waits eight years. The schedule stops rather
-					// than fire on every tick.
-					s.logger.Warn("scheduler: cron schedule stopped, no firing in the next five years",
+					// Registration refuses a spec that never fires, so
+					// this guards Next alone: a zero NextRun would fire
+					// on every tick, and the schedule stops instead.
+					s.logger.Warn("scheduler: cron schedule stopped, no next firing",
 						"job_type", sch.Type,
 					)
 				}

@@ -127,6 +127,7 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 
 // Every defines a durable fixed-interval schedule. id is the stable identity
 // used to preserve its watermark across restarts and replica registration.
+// Register refuses an interval below one millisecond.
 func (s *DurableScheduler) Every(id string, interval time.Duration) *DurableScheduleBuilder {
 	return &DurableScheduleBuilder{scheduler: s, id: id, interval: interval}
 }
@@ -252,11 +253,11 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		// durable_scheduler_dst.go.
 		next = nextFire(sc, durableSchedule{tz: tz}.location(), base)
 		if next.IsZero() {
-			return fmt.Errorf("queue: cron spec %q has no firing in the next five years", b.cronSpec)
+			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
 		}
 	} else {
-		if b.interval <= 0 {
-			return errors.New("queue: durable interval must be positive")
+		if b.interval < minDurableInterval {
+			return fmt.Errorf("queue: durable interval %s is below the %s floor", b.interval, minDurableInterval)
 		}
 		next = base.Add(b.interval)
 	}

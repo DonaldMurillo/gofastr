@@ -513,6 +513,10 @@ go func() {
 }()
 ```
 
+A durable `Every` takes one millisecond or more; `Register` refuses a
+shorter interval, and a stored row with one is skipped like a corrupted
+row.
+
 `Start` survives evaluation errors: a corrupted schedule row (a bad
 `next_run`, a half-applied manual repair) is skipped with an ERROR log and
 the remaining due schedules still fire, and a transient database failure is
@@ -556,12 +560,20 @@ if err := durable.Cron("nightly-rollup", "0 2 * * *").
 }
 ```
 
-Across DST shifts the schedule behaves like vixie cron. When clocks go
-back, a wall-clock minute in the repeated hour fires once, at its first
-occurrence: `"0,30 1 * * *"` in New York fires at 01:00 and 01:30 EDT and
-not again at 01:00 or 01:30 EST, however the scheduler's heartbeats split
-the night. When clocks go forward, a minute the jump skips fires once, at
-the transition.
+Across DST shifts the schedule behaves like vixie cron. A fixed-time
+spec, one whose minute and hour fields both name values, fires once per
+wall-clock time. When clocks go back, a minute in the repeated hour fires
+at its first occurrence: `"0,30 1 * * *"` in New York fires at 01:00 and
+01:30 EDT and not again at 01:00 or 01:30 EST, however the scheduler's
+heartbeats split the night. When clocks go forward, a minute the jump
+skips fires once, at the transition. A spec whose minute or hour field
+begins with `*` runs by the new wall clock: `"*/30 * * * *"` fires
+through both 01:00 hours, and `"15 * * * *"` does not fire for the 02:15
+a spring-forward skips.
+
+A spec that never fires (`"0 0 30 2 *"`) is refused at registration. A
+rare one is not: `"0 0 29 2 */7"` (February 29 on a Sunday) next fires in
+2032, and its gap across 2100 is 40 years.
 
 The zone name persists with the schedule (a `tz` column added by the same
 idempotent migration as the options columns). UTC, fixed-offset zones

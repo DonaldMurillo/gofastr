@@ -1,10 +1,7 @@
 package queue
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -128,30 +125,28 @@ func TestDurableCronNeverFiringRefused(t *testing.T) {
 	}
 }
 
-// A schedule whose next firing lies past Next's five-year search stops
-// instead of firing on every tick. 2100 is not a leap year, so after
-// 2096-02-29 the next February 29 is in 2104.
-func TestCronPastSearchHorizonStops(t *testing.T) {
+// A schedule whose next firing is more than five years out keeps it
+// (S33). 2100 is not a leap year, so after 2096-02-29 the next February 29
+// is in 2104; Next's five-year search used to return zero, and the
+// schedule stopped.
+func TestCronLongGapKeepsNextRun(t *testing.T) {
 	rq := &recordQueue{}
-	var log bytes.Buffer
-	sched := NewSchedulerWithLogger(rq, slog.New(slog.NewTextHandler(&log, nil)))
+	sched := NewScheduler(rq)
 	base := time.Date(2096, 1, 1, 0, 0, 0, 0, time.UTC)
 	if err := sched.Cron("0 0 29 2 *").Job("leap", nil).RegisterAt(base); err != nil {
 		t.Fatalf("RegisterAt: %v", err)
 	}
 	fire := time.Date(2096, 2, 29, 0, 0, 0, 0, time.UTC)
 	sched.dispatchDue(context.Background(), fire)
+	sched.dispatchDue(context.Background(), fire.Add(time.Minute))
 	if got := rq.count(); got != 1 {
-		t.Fatalf("on 2096-02-29: got %d enqueues, want 1", got)
+		t.Fatalf("got %d enqueues, want 1", got)
 	}
-	for i := 1; i <= 3; i++ {
-		sched.dispatchDue(context.Background(), fire.Add(time.Duration(i)*time.Minute))
-	}
-	if got := rq.count(); got != 1 {
-		t.Fatalf("after the last firing: got %d enqueues, want 1", got)
-	}
-	if !strings.Contains(log.String(), "cron schedule stopped") || !strings.Contains(log.String(), "job_type=leap") {
-		t.Fatalf("no stop warning naming the job type: %q", log.String())
+	sched.mu.Lock()
+	next := sched.schedules[0].NextRun
+	sched.mu.Unlock()
+	if want := time.Date(2104, 2, 29, 0, 0, 0, 0, time.UTC); !next.Equal(want) {
+		t.Fatalf("NextRun = %s, want %s", next, want)
 	}
 }
 

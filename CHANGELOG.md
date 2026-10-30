@@ -3299,6 +3299,29 @@ few lines, and link the PR or the docs page for the rest.
   `Mount` of one widget on one router registers its routes again and
   the router panics on the conflict; the doc now says to mount a
   widget once per router.
+- **A cron spec rarer than five years has a next firing.**
+  `cron.Schedule.Next` searched five years of minutes, so
+  `"0 0 29 2 */7"` (February 29 on a Sunday, next in 2032) read as
+  never firing, and both queue schedulers refused it. `Next` now skips
+  the dates the day fields refuse and searches 401 years, one full
+  Gregorian cycle; a spec that names no date (`"0 0 30 2 *"`) is
+  answered from its fields at once. The schedule gains `MatchesDay`,
+  `SkipDay`, `Satisfiable`, `FixedTime` and `cron.HorizonYears`, and
+  the refusal reads "never fires".
+- **A wildcard durable cron runs through a DST change, as vixie cron
+  does.** Every spec skipped the repeated hour when clocks went back,
+  so `"*/5 * * * *"` in New York stopped from 01:00 to 01:59 EST. The
+  once-only rules now apply to fixed-time specs alone, those whose
+  minute and hour fields both name values. A spec whose minute or hour
+  begins with `*` fires through both copies of the repeated hour, and
+  no longer fires at a spring-forward transition for a minute the jump
+  skipped.
+- **A durable `Every` below one millisecond is refused.** Ticks closer
+  than a microsecond collapse to one Postgres timestamp, and the
+  occurrence insert broke the tick's unique constraint, which ended
+  every scheduler pass before the schedules after it. `Register`
+  refuses the interval, and a stored row with one is logged and
+  skipped while the rest fire.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
