@@ -28,6 +28,8 @@ import (
 	"sort"
 	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // DataExporter describes one physical table owned by a battery or app that the
@@ -232,9 +234,9 @@ func Register(e DataExporter) {
 // '-' and 16 hex digits of the table's SHA-256, so <name>.ndjson fits one
 // file name.
 func ScopedName(base, table string) string {
-	table = foldASCII(table)
+	table = asciicase.Lower(table)
 	b := []byte(base)
-	if table != foldASCII(base) {
+	if table != asciicase.Lower(base) {
 		b = append(b, '-')
 		for i := 0; i < len(table); i++ {
 			c := table[i]
@@ -261,18 +263,6 @@ func ScopedName(base, table string) string {
 const maxScopedName = 200
 
 const hexDigits = "0123456789abcdef"
-
-// foldASCII lowers ASCII letters, the folding Postgres applies to an
-// unquoted identifier.
-func foldASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
-}
 
 // validExporterName reports whether n is a safe archive key: one path
 // segment of [A-Za-z0-9_-], non-empty. Separators and dots are refused so

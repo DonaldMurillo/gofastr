@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Severity grades a Diagnostic.
@@ -843,9 +844,10 @@ var reLengthOrTime = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|ms|s)$`)
 // length or time. rem is compared to px at the browser's 16px root
 // default, and s to ms, so `1rem` is the right fallback for a `16px`
 // token and `.5s` for a `500ms` one. Anything the regex does not parse
-// is compared as a case-folded string.
+// is compared as an ASCII case-folded string, the way CSS matches
+// keywords and units.
 func sameScaleValue(a, b string) bool {
-	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	a, b = asciicase.Lower(strings.TrimSpace(a)), asciicase.Lower(strings.TrimSpace(b))
 	if a == b {
 		return true
 	}

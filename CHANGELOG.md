@@ -3481,6 +3481,17 @@ few lines, and link the PR or the docs page for the rest.
   refusal now names only the skill asked for (`no skill named "x"`), or
   says `the message names no skill`; the agent card lists the callable
   skills.
+- **Name and extension comparisons fold ASCII only.** Go's
+  `strings.ToLower` maps U+212A KELVIN SIGN onto `k` and U+0130 onto
+  `i`, and several comparisons folded both sides with it. A reference
+  URL such as `/docs/api/entities/%E2%84%AAiosk` served the `kiosk`
+  page, and a `sdkdocs.Config.Entities` name matched the same way.
+  `upload.ValidateExt` let `photo.gİf` through an allow list of
+  `gif`. A migration dropping two tables whose names folded alike left
+  one of them out of the drop plan. The generated
+  CLI's entity selection and the GOFASTR1808 fallback comparison
+  folded the same way. All of them now fold A–Z only, and an
+  upper-case ASCII spelling still matches.
 
 ## [0.95.0] - 2026-10-26
 

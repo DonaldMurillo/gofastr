@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -482,7 +483,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 		tableSpell := map[string]string{}
 		for _, n := range names {
 			ent := merged[n]
-			table := foldASCII(ent.GetTable())
+			table := asciicase.Lower(ent.GetTable())
 			if _, first := tableCols[table]; !first {
 				tableSpell[table] = ent.GetTable()
 				tableName[table] = n
@@ -522,7 +523,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 		// their columns and their key.
 		pivot := map[string]bool{}
 		for _, raw := range g.sorted {
-			dt, t := g.tables[raw], foldASCII(raw)
+			dt, t := g.tables[raw], asciicase.Lower(raw)
 			if !dt.pivot || tableCols[t] != nil {
 				continue
 			}
@@ -534,7 +535,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 		}
 		edges := make([]fkEdge, len(g.edges))
 		for i, e := range g.edges {
-			e.child, e.parent = foldASCII(e.child), foldASCII(e.parent)
+			e.child, e.parent = asciicase.Lower(e.child), asciicase.Lower(e.parent)
 			edges[i] = e
 		}
 		// Emit one source per table, parents first; tables with no
@@ -573,7 +574,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 		}
 	}
 	for _, ex := range datexport.All() {
-		if i, ok := entitySource[foldASCII(ex.Table)]; ok {
+		if i, ok := entitySource[asciicase.Lower(ex.Table)]; ok {
 			// An entity already exports this table, and its source keeps
 			// it. A battery can own columns the entity does not declare
 			// (auth's name column on an entity user table), so those join
@@ -582,7 +583,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 			out[i].columns = appendFoldUnique(out[i].columns, ex.Columns)
 			continue
 		}
-		if seenTable[foldASCII(ex.Table)] || seenName[ex.Name] {
+		if seenTable[asciicase.Lower(ex.Table)] || seenName[ex.Name] {
 			// A name collision, or a table an earlier exporter claimed:
 			// the first wins. Tables compare folded, as the entity
 			// sources do.
@@ -604,7 +605,7 @@ func (a *App) collectSources() ([]exportSource, error) {
 			table: ex.Table, primaryKey: pk, columns: append([]string(nil), ex.Columns...),
 			raw: true,
 		})
-		seenTable[foldASCII(ex.Table)] = true
+		seenTable[asciicase.Lower(ex.Table)] = true
 		seenName[ex.Name] = true
 	}
 	return out, nil
@@ -1155,9 +1156,9 @@ func physicalTable(ctx context.Context, db rowQueryer, table string, dialect mig
 	// spellings is the owner's spelling first, then the folded one.
 	spellings := func(s string) (string, string) {
 		if folded {
-			return foldASCII(s), foldASCII(s)
+			return asciicase.Lower(s), asciicase.Lower(s)
 		}
-		return s, foldASCII(s)
+		return s, asciicase.Lower(s)
 	}
 	relA, relB := spellings(rel)
 	var physSchema, physRel string
@@ -1198,33 +1199,21 @@ func quotePhysical(phys string) string {
 	return strings.Join(parts, ".")
 }
 
-// foldASCII lowers ASCII letters, the folding Postgres applies to an
-// unquoted identifier.
 // appendFoldUnique appends each of add that cols does not already hold,
 // comparing ASCII-folded as the unquoted DDL does, so EMAIL beside email
 // is not read twice.
 func appendFoldUnique(cols, add []string) []string {
 	have := make(map[string]bool, len(cols)+len(add))
 	for _, c := range cols {
-		have[foldASCII(c)] = true
+		have[asciicase.Lower(c)] = true
 	}
 	for _, c := range add {
-		if k := foldASCII(c); !have[k] {
+		if k := asciicase.Lower(c); !have[k] {
 			have[k] = true
 			cols = append(cols, c)
 		}
 	}
 	return cols
-}
-
-func foldASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
 }
 
 // ndjsonFile writes rows one JSON object per line to an owner-only file and

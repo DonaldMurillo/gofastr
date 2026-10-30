@@ -201,8 +201,10 @@ expose them to agents connected to a live app.**
   Sprintf an ungated name into an identifier slot of emitted code — Go
   declarations, SQL DDL, CSS string slots, route paths; toCamelCase
   transforms but does not validate), `asciifold` (never key a registry
-  lookup on `strings.ToLower`/`ToUpper` — Unicode folding maps
-  homoglyphs onto ASCII, ſ → S; refuse non-ASCII first), `laxcoerce` (a
+  lookup on `strings.ToLower`/`ToUpper`, nor compare two folds with
+  `==` — Unicode folding maps homoglyphs onto ASCII, ſ → S, K → k;
+  fold with `internal/asciicase.Lower` or refuse non-ASCII first),
+  `laxcoerce` (a
   failed type assertion on a `map[string]any` entry is not absence —
   split presence from type, or return an error), `rootwrite` (writes
   under a root contained by `filepath.Join` + prefix only, with no

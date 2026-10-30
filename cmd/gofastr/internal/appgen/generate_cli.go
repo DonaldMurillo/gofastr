@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // `gofastr generate cli` emits a customer-facing terminal client for the
@@ -576,16 +577,16 @@ func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 }
 
 // cliEntityMatches reports whether a selection name refers to decl, by
-// entity name, table, or the kebab command form.
+// entity name, table, or the kebab command form, folding ASCII only.
 func cliEntityMatches(decl framework.EntityDeclaration, name string) bool {
-	n := strings.ToLower(strings.TrimSpace(name))
+	n := asciicase.Lower(strings.TrimSpace(name))
 	table := decl.Table
 	if table == "" {
 		table = decl.Name
 	}
-	return n == strings.ToLower(decl.Name) ||
-		n == strings.ToLower(table) ||
-		n == strings.ToLower(strings.ReplaceAll(table, "_", "-"))
+	return n == asciicase.Lower(decl.Name) ||
+		n == asciicase.Lower(table) ||
+		n == asciicase.Lower(strings.ReplaceAll(table, "_", "-"))
 }
 
 // cliAnyEntityMatches reports whether a selection name resolves to any

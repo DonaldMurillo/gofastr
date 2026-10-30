@@ -14,6 +14,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Incremental migration generation
@@ -820,15 +822,17 @@ func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]str
 	// dep[A] = list of tables that A references (A must be dropped before B)
 	dep := make(map[string][]string, len(tables))
 	inDegree := make(map[string]int, len(tables))
+	// Keys fold ASCII only, as Postgres folds an unquoted identifier:
+	// strings.ToLower would give look-alike names one key and lose a table.
 	canon := make(map[string]string, len(tables)) // lower -> original casing
 	for _, t := range tables {
-		low := strings.ToLower(t)
+		low := asciicase.Lower(t)
 		canon[low] = t
 		inDegree[low] = 0
 	}
 
 	for _, t := range tables {
-		low := strings.ToLower(t)
+		low := asciicase.Lower(t)
 		ddl := lookupStringCase(tableDDL, t)
 		if ddl == "" {
 			continue
@@ -840,7 +844,7 @@ func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]str
 				continue
 			}
 			for _, u := range tables {
-				target := strings.ToLower(u)
+				target := asciicase.Lower(u)
 				if target != low && !seenRef[target] && refersTo(dialect, t, m[1], u) {
 					seenRef[target] = true
 					dep[low] = append(dep[low], target)
@@ -880,7 +884,7 @@ func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]str
 		// In case of cycles or unvisited nodes, append remaining deterministically.
 		var remaining []string
 		for _, t := range tables {
-			if !visited[strings.ToLower(t)] {
+			if !visited[asciicase.Lower(t)] {
 				remaining = append(remaining, t)
 			}
 		}
