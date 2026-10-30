@@ -235,7 +235,25 @@ type Definition struct {
 	// it must not branch on per-user data (/state is unauthenticated
 	// unless RequireSession is set).
 	PollTerminal func() bool
+
+	// mountPrefix is the router group prefix Mount registered the routes
+	// under. StylePath and StatePath stay as declared; StyleURL, StateURL
+	// and ChromeURL put the prefix in front.
+	mountPrefix string
 }
+
+// StyleURL returns the URL Mount serves the widget's stylesheet at:
+// StylePath under the prefix of the router group it was mounted on.
+func (d *Definition) StyleURL() string { return d.mountPrefix + d.StylePath }
+
+// StateURL returns the URL Mount serves the widget's signal snapshot at:
+// StatePath under the prefix of the router group it was mounted on.
+func (d *Definition) StateURL() string { return d.mountPrefix + d.StatePath }
+
+// ChromeURL returns the URL Mount serves the widget's chrome HTML at,
+// /core-ui/widget/<name>/chrome under the prefix of the router group it
+// was mounted on.
+func (d *Definition) ChromeURL() string { return d.mountPrefix + chromePathFor(d) }
 
 // registry is the process-global list of mounted widgets. The framework
 // runtime (window.__gofastr) fetches /__gofastr/widgets at startup and
@@ -684,6 +702,12 @@ func gateSession(level gateLevel, h http.Handler) http.Handler {
 //	GET  /core-ui/widget/<name>/chrome   rendered chrome HTML (lazy)
 //	*    <RPC.Path>          for each RPC, the host's handler
 //
+// Each path is under r's group prefix, as every route registered on r is.
+// The catalog publishes the prefixed URLs (StyleURL, StateURL,
+// ChromeURL), so a widget mounted on root.Group("/v2") is fetched at
+// /v2/core-ui/widget/<name>/…. RPC paths are registered under the prefix
+// too; markup that triggers an RPC names the full URL.
+//
 // Default paths are filled in on def if unset so the caller can read
 // them after Mount returns. Mount is idempotent on def.Name.
 func Mount(r *router.Router, def *Definition) {
@@ -705,6 +729,7 @@ func Mount(r *router.Router, def *Definition) {
 		}
 	}
 
+	def.mountPrefix = r.Prefix()
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
 	r.Get(def.StatePath, gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveState)))

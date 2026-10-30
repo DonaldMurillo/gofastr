@@ -427,7 +427,21 @@ and that close → reopen cycle fires `fui:widget-close` followed by
 | `<RPC method> <RPC.Path>` | Each registered RPC handler |
 
 Default paths are filled in on `def` if unset, so the caller can read
-them after `Mount` returns. Mounting is idempotent on `def.Name`. The
+them after `Mount` returns. Mounting is idempotent on `def.Name`.
+
+Every route sits under the prefix of the router group `Mount` is given.
+A widget mounted on `root.Group("/v2")` serves its styles at
+`/v2/core-ui/widget/<name>/style.css`, and the `/__gofastr/widgets`
+catalog publishes that URL. `StylePath` and `StatePath` keep the value
+you declared; `def.StyleURL()`, `def.StateURL()` and `def.ChromeURL()`
+return the served URLs, and `gofastr static` writes the widget's files at
+those URLs. RPC paths are registered under the prefix too, so markup that
+triggers an RPC names the full URL. Embedded screens
+(`framework/embed`) recognise widget routes by the unprefixed
+`/core-ui/widget/<name>/` path and refuse the prefixed ones, so mount a
+widget an embedded screen opens on an unprefixed router.
+
+The
 process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
 come from `widget.MountRuntime(r)`, once per host, not per widget.
 

@@ -2389,8 +2389,10 @@ position chrome, slot composition, RPC endpoints). Widgets that
 host styled components benefit from the same on-demand loader: the
 mounted chrome HTML is scanned in `mountWidget` and any new
 `data-cui-comp` triggers a load. Widget chrome CSS itself still
-serves from `/core-ui/widget/<name>/style.css` for backwards
-compatibility; future work may collapse the two paths.
+serves from the widget's `StylePath` (default
+`/core-ui/widget/<name>/style.css`) under the prefix of the router
+group `Mount` was given, the URL the widget catalog publishes; future
+work may collapse the two paths.
 
 Both registries coexist safely: they share the
 `data-cui-style="<name>"` link dedup key on the client, so a widget

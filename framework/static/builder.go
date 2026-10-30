@@ -1115,6 +1115,16 @@ var baseLocales = regexp.MustCompile(`(<script type="application/json" id="gofas
 // up by.
 var baseRouteGraph = regexp.MustCompile(`(?s)(<script type="application/json" id="gofastr-routes">)(.*?)(</script>)`)
 
+// jsonString is s as the widget catalog encodes it: a quoted JSON string
+// with HTML escaping off (ServeWidgetList's encoder setting).
+func jsonString(s string) string {
+	var sb strings.Builder
+	enc := json.NewEncoder(&sb)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s) // a string always encodes
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
 // dumpWidgetAssets writes the widget catalog JSON and each widget's chrome
 // HTML + CSS as query-free static files. Hidden click-to-open widgets
 // (command palette, section-menu drawers, modals) are not SSR-inlined, so
@@ -1127,13 +1137,19 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 		return nil
 	}
 	// Catalog JSON: canonical shape from ServeWidgetList (no page filter =
-	// every widget). chromePath/stylePath are root-absolute /core-ui/widget/…
-	// values the runtime fetches at open time; prefix them for a subpath deploy.
+	// every widget). Its style, chrome and state URLs are root-absolute
+	// values the runtime fetches at open time; prefix each one for a
+	// subpath deploy. They are matched whole and quoted, so a custom
+	// StylePath outside /core-ui/widget/ is prefixed too.
 	rec := httptest.NewRecorder()
 	widget.ServeWidgetList(rec, httptest.NewRequest(http.MethodGet, "/__gofastr/widgets", nil))
 	cat := rec.Body.String()
 	if b.BasePath != "" {
-		cat = strings.ReplaceAll(cat, `"/core-ui/widget/`, `"`+b.BasePath+`/core-ui/widget/`)
+		for _, d := range defs {
+			for _, u := range []string{d.StyleURL(), d.ChromeURL(), d.StateURL()} {
+				cat = strings.ReplaceAll(cat, jsonString(u), jsonString(b.BasePath+u))
+			}
+		}
 	}
 	if err := b.writeRawAsset("/__gofastr/widgets.json", []byte(cat)); err != nil {
 		return err
@@ -1148,10 +1164,10 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	// serves ungated, and no chrome.
 	anon := httptest.NewRequest(http.MethodGet, "/", nil)
 	for _, d := range defs {
-		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/style.css", []byte(widget.RenderCSS(d))); err != nil {
+		if err := b.writeRawAsset(d.StyleURL(), []byte(widget.RenderCSS(d))); err != nil {
 			return err
 		}
-		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/style.css")
+		res.Assets = append(res.Assets, d.StyleURL())
 		if !widget.GateSatisfied(d, anon) {
 			b.log("wrote widget %s (css only: its chrome is gated)", d.Name)
 			continue
@@ -1166,10 +1182,10 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 			dctx = localeContext(ctx, locales, locales.Default)
 		}
 		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChromeCtx(dctx, d)), pages)
-		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
+		if err := b.writeRawAsset(d.ChromeURL(), []byte(chrome)); err != nil {
 			return err
 		}
-		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/chrome")
+		res.Assets = append(res.Assets, d.ChromeURL())
 		// On a /<tag>/ page the runtime asks for the chrome under the
 		// same prefix, the way the live router serves it.
 		if byPrefix {
@@ -1177,7 +1193,7 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 				rule := urlprefix.Rule{Prefix: "/" + tag, Locales: locales.All(), Keep: b.keepUnprefixed}
 				raw := widget.RenderChromeCtx(localeContext(ctx, locales, tag), d)
 				local := b.slashPageLinks(b.rewriteBaseURLs(string(urlprefix.HTML([]byte(raw), rule))), pages)
-				at := "/" + tag + "/core-ui/widget/" + d.Name + "/chrome"
+				at := "/" + tag + d.ChromeURL()
 				if err := b.writeRawAsset(at, []byte(local)); err != nil {
 					return err
 				}

@@ -32,6 +32,8 @@ func (helloScreen) RenderCtx(ctx context.Context) render.HTML {
 func TestExportWritesLocaleTrees(t *testing.T) {
 	def := widget.New("ssg-locale-test").Hidden().Slot("body", helloScreen{}).Build()
 	widget.Mount(router.New(), &def)
+	grouped := widget.New("ssg-locale-grouped").Hidden().Slot("body", helloScreen{}).Build()
+	widget.Mount(router.New().Group("/v2"), &grouped)
 	a := coreapp.NewApp("SSGLocale")
 	a.Register("/", &helloScreen{}, nil)
 	a.Register("/about", &helloScreen{}, nil)
@@ -74,6 +76,9 @@ func TestExportWritesLocaleTrees(t *testing.T) {
 	}
 	// A hidden widget's chrome is fetched when it opens, so each locale
 	// tree carries its own copy, rendered in that locale.
+	if got := read("es/v2/core-ui/widget/ssg-locale-grouped/chrome"); !strings.Contains(got, "Hola") {
+		t.Errorf("the /es/ chrome of a widget mounted under /v2 is not Spanish:\n%s", got)
+	}
 	if got := read("es/core-ui/widget/ssg-locale-test/chrome"); !strings.Contains(got, "Hola") {
 		t.Errorf("the /es/ widget chrome is not Spanish:\n%s", got)
 	}

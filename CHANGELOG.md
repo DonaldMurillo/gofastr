@@ -2845,6 +2845,15 @@ few lines, and link the PR or the docs page for the rest.
   registering any route on a method other than `GET`, `POST`, `PUT`,
   `PATCH`, `DELETE` or `""` (which still means `POST`), lower-case
   spellings included.
+- **A widget mounted on a router group publishes the URLs it is served
+  at.** The `/__gofastr/widgets` catalog listed the declared style,
+  state and chrome paths without the group prefix, so a widget mounted
+  on `root.Group("/v2")` was fetched at URLs with no route. The catalog
+  now publishes the prefixed URLs, which `Definition.StyleURL`,
+  `StateURL` and `ChromeURL` also return. `gofastr static` writes each
+  widget's files at those URLs, and prefixes them for a base path
+  whatever they are, a custom `StylePath` outside `/core-ui/widget/`
+  included.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -289,8 +289,8 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 			"backdrop":       d.Backdrop,
 			"closeOnEscape":  d.CloseOnEscape,
 			"closeOnClick":   d.CloseOnClickOutside,
-			"stylePath":      d.StylePath,
-			"chromePath":     chromePathFor(d),
+			"stylePath":      d.StyleURL(),
+			"chromePath":     d.ChromeURL(),
 			"deepLinkKey":    d.DeepLinkKey,
 			"deepLinkValue":  d.DeepLinkValue,
 			"deepLinkParams": d.DeepLinkParams,
@@ -302,7 +302,7 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 		// widget without signals never carries pollMs even if PollMS
 		// was set, the runtime would have nothing to fetch.
 		if len(d.Signals) > 0 {
-			cfg["statePath"] = d.StatePath
+			cfg["statePath"] = d.StateURL()
 			if d.PollMS > 0 {
 				cfg["pollMs"] = d.PollMS
 			}
