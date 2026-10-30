@@ -2816,6 +2816,17 @@ few lines, and link the PR or the docs page for the rest.
   `store.Computed` now panics on a declaration that closes a cycle and
   names the path, and the runtime never re-runs a node inside its own
   recompute, which stops a cycle written by hand in the attributes.
+- **SMTP bodies go out quoted-printable.** The text and HTML bodies were
+  written as given, so a template saved with Unix line endings put bare
+  LFs under CRLF headers and a minified one-line HTML body passed SMTP's
+  998-octet line limit. Each body part now carries
+  `Content-Transfer-Encoding: quoted-printable`, with every line ending
+  made CRLF, and a single-part message declares `MIME-Version`. The
+  boundary check reads the encoded body and refuses a line that starts
+  with a delimiter. `Email.Headers` can no longer set `Content-Type`,
+  `Content-Transfer-Encoding` or `MIME-Version` (the send fails with
+  `ErrSendFailed`), and notify's `Extra["headers"]` refuses
+  `Content-Transfer-Encoding` as it already refused the other two.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

@@ -121,20 +121,22 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (er
 var ErrUnsafeHeader = errors.New("notify: unsafe header")
 
 // reservedHeaderNames are header keys that callers must NOT override
-// through Rendered.Extra["headers"]. The channel computes them itself
-// (To/From/Subject/Content-Type) or routing-critical fields a caller
-// could weaponize for recipient smuggling (Bcc, Cc) or reply hijacking
-// (Reply-To). Compared case-insensitively.
+// through Rendered.Extra["headers"]. The channel or the sender computes
+// them itself (To/From/Subject and the MIME structure headers), or they
+// are routing-critical fields a caller could weaponize for recipient
+// smuggling (Bcc, Cc) or reply hijacking (Reply-To). Compared
+// case-insensitively.
 var reservedHeaderNames = map[string]struct{}{
-	"to":           {},
-	"cc":           {},
-	"bcc":          {},
-	"from":         {},
-	"sender":       {},
-	"reply-to":     {},
-	"subject":      {},
-	"content-type": {},
-	"mime-version": {},
+	"to":                        {},
+	"cc":                        {},
+	"bcc":                       {},
+	"from":                      {},
+	"sender":                    {},
+	"reply-to":                  {},
+	"subject":                   {},
+	"content-type":              {},
+	"content-transfer-encoding": {},
+	"mime-version":              {},
 }
 
 func validateCustomHeaders(h map[string]string) error {

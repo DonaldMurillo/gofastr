@@ -42,7 +42,9 @@ err := sender.Send(ctx, email.Email{
 |               |                  | message is `multipart/alternative` (text first,    |
 |               |                  | HTML last), so a client shows one of them.         |
 | `Attachments` | `[]Attachment`   | Optional.                                          |
-| `Headers`     | `map[string]string` | Optional custom headers.                       |
+| `Headers`     | `map[string]string` | Optional custom headers. `Content-Type`,       |
+|               |                  | `Content-Transfer-Encoding` and `MIME-Version`   |
+|               |                  | are refused: the sender writes them.             |
 
 `Attachment` carries `Filename`, `Content` (`[]byte`), and `ContentType`.
 A message with attachments is `multipart/mixed`: the body comes first
@@ -92,6 +94,12 @@ bytes. A mailbox address that is not ASCII (`josé@example.com`) cannot be
 encoded and is sent as written; it needs a relay that offers SMTPUTF8,
 which `Send` requests when the relay advertises it. Custom `Headers`
 values are written as given.
+
+Both bodies go out quoted-printable (RFC 2045): CR, LF and CRLF line
+endings all become CRLF, no line passes 76 octets, and non-ASCII text is
+escaped, so a template saved with Unix line endings or a minified
+one-line HTML body reaches the recipient intact. The boundary check reads
+the encoded body, and refuses any line that starts with a delimiter.
 
 Every message carries a `Date` and a `Message-ID` of the form
 `<32 hex digits@domain>`, random per message. The domain is the

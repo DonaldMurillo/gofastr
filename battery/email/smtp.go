@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -267,6 +268,13 @@ func buildMessage(email Email) ([]byte, error) {
 			return nil, err
 		}
 	}
+	// The MIME structure headers are written below; a caller's copy
+	// would give the message two that disagree.
+	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version"} {
+		if hasHeader(email.Headers, name) {
+			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it", ErrSendFailed, name)
+		}
+	}
 	for _, att := range email.Attachments {
 		if err := assertNoHeaderInjection("Attachment.Filename", att.Filename); err != nil {
 			return nil, err
@@ -316,6 +324,8 @@ func buildMessage(email Email) ([]byte, error) {
 	// both renderings, one after the other.
 	hasAttachments := len(email.Attachments) > 0
 	hasTextAndHTML := email.TextBody != "" && email.HTMLBody != ""
+	// The bodies go out quoted-printable, as they are checked below.
+	email.TextBody, email.HTMLBody = qpBody(email.TextBody), qpBody(email.HTMLBody)
 
 	if hasAttachments || hasTextAndHTML {
 		// Use a cryptographically random boundary per container so body
@@ -391,12 +401,13 @@ func buildMessage(email Email) ([]byte, error) {
 		buf.WriteString("--" + boundary + "--\r\n")
 	} else {
 		// Simple single-part message.
+		buf.WriteString("MIME-Version: 1.0\r\n")
 		if email.HTMLBody != "" {
-			buf.WriteString("MIME-Version: 1.0\r\n")
 			buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
 		} else {
 			buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 		}
+		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		if email.TextBody != "" {
 			buf.WriteString(email.TextBody)
@@ -411,16 +422,18 @@ func buildMessage(email Email) ([]byte, error) {
 // writeBodyEntity writes the message body as one complete MIME entity
 // (its Content-Type header, the blank line, then the content): a
 // multipart/alternative of text then HTML when both are set, otherwise
-// the single text/plain or text/html part. mint returns the
-// alternative container's checked boundary.
+// the single text/plain or text/html part. The bodies arrive encoded by
+// qpBody. mint returns the alternative container's checked boundary.
 func writeBodyEntity(buf *strings.Builder, email Email, mint func() (string, error)) error {
 	textPart := func() {
 		buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		buf.WriteString(email.TextBody + "\r\n")
 	}
 	htmlPart := func() {
 		buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
+		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		buf.WriteString(email.HTMLBody + "\r\n")
 	}
@@ -443,6 +456,20 @@ func writeBodyEntity(buf *strings.Builder, email Email, mint func() (string, err
 		textPart()
 	}
 	return nil
+}
+
+// qpBody encodes a text body quoted-printable (RFC 2045 §6.7): CR, LF
+// and CRLF line endings all become CRLF, no line passes 76 octets, and
+// non-ASCII bytes are escaped. Sent as written, a Unix-saved template
+// put bare LFs under CRLF headers (RFC 5321 §2.3.8) and a minified
+// one-line HTML body passed the 998-octet line limit.
+func qpBody(s string) string {
+	var b strings.Builder
+	w := quotedprintable.NewWriter(&b)
+	// A strings.Builder never fails a write, so neither does w.
+	_, _ = w.Write([]byte(s))
+	_ = w.Close()
+	return b.String()
 }
 
 // encodeBase64 wraps base64-encoded content at 76 characters per line.
@@ -510,8 +537,9 @@ func newMessageID(from string) (string, error) {
 func bodyContainsBoundary(body, boundary string) bool {
 	delim := "--" + boundary
 	for line := range strings.SplitSeq(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		line = strings.TrimRight(line, "\r")
-		if line == delim || line == delim+"--" {
+		// A line that starts with the delimiter ends the part even with
+		// more after it in some parsers, and RFC 2046 §5.1.1 bars it.
+		if strings.HasPrefix(line, delim) {
 			return true
 		}
 	}
