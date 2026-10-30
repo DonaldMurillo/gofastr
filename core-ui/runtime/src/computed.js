@@ -40,7 +40,17 @@
     G._reducers = G._reducers || {};
     G._signals = G._signals || {};
 
+    // A node never recomputes inside its own recompute: re-entry can only
+    // come round through a cycle (a reads b, b reads a), which would
+    // otherwise ping-pong until the stack overflowed. store.Computed
+    // refuses cycles it can see; this covers hand-written attributes.
+    let running = false;
     const recompute = () => {
+      if (running) return;
+      running = true;
+      try { run(); } finally { running = false; }
+    };
+    const run = () => {
       // Own-property lookup only: a reducer name like "constructor" /
       // "toString" / "valueOf" would otherwise resolve to the inherited
       // Object.prototype method (typeof === 'function') and get invoked

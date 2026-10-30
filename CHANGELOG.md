@@ -2810,6 +2810,12 @@ few lines, and link the PR or the docs page for the rest.
   app. The worker precaches each locale's manifest and the static export
   writes one per locale tree. BREAKING: `UIHost.PWAManifestJSON` takes a
   `context.Context` first.
+- **A computed-signal cycle no longer freezes the page.** With `a`
+  reading `b` and `b` reading `a`, every write ping-ponged until the
+  stack overflowed, re-running each reducer over a thousand times.
+  `store.Computed` now panics on a declaration that closes a cycle and
+  names the path, and the runtime never re-runs a node inside its own
+  recompute, which stops a cycle written by hand in the attributes.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

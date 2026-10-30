@@ -95,6 +95,14 @@ the JS reducer registered under its name. Register reducers as real functions,
 > `window.__gofastr` namespace wholesale on boot, which would wipe a
 > `_reducers` map set before it.
 
+Computed slices may read other computed slices, but not in a circle.
+`Computed` panics when a declaration closes a cycle (`a` reads `b`, `b`
+reads `a`, or a slice listing itself) and names the path:
+`store: computed "c.b" has a dependency cycle: c.b -> c.a -> c.b`. The
+runtime also never re-runs a node inside its own recompute, so a cycle in
+hand-written `data-cui-computed-deps` stops when it comes back round to a
+node still recomputing, instead of recursing until the stack overflows.
+
 ## Retrofitted components
 
 `ui.Counter`, `ui.Tabs`, and `ui.SignalToggle` accept a typed `Slice` (their
