@@ -25,7 +25,8 @@
 //     declares it reads (see "Files a test reads" below).
 //
 // Some changes make the graph meaningless and widen the set to every
-// package: go.mod, go.sum, go.work, and this tool's own source. A base ref
+// package: go.mod, go.sum, go.work, this tool's own source, and the
+// coverage-floor table (scripts/coverage-floors.sh). A base ref
 // that cannot be resolved, or a merge base that cannot be computed, also
 // widens to everything, so a misconfigured checkout degrades to the full
 // run and never to a skipped one. -all-if-changed adds callers' own
@@ -127,8 +128,11 @@ import (
 )
 
 // alwaysAll lists repo-relative paths whose change widens the set to every
-// package. Directory entries match everything beneath them.
-var alwaysAll = []string{"go.mod", "go.sum", "go.work", "go.work.sum", "cmd/affected/"}
+// package. Directory entries match everything beneath them. The coverage
+// floor table is in scripts/coverage-floors.sh, which owns no package: a
+// floor edit must reach the floored packages, and CI's coverage gate reads
+// the profile the widened test run writes.
+var alwaysAll = []string{"go.mod", "go.sum", "go.work", "go.work.sum", "cmd/affected/", "scripts/coverage-floors.sh"}
 
 type options struct {
 	root         string   // repository root (absolute)

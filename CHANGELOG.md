@@ -3071,6 +3071,16 @@ few lines, and link the PR or the docs page for the rest.
   getter that reads the host marker, as the generated d.ts and the
   desktop docs already said. `desktop.available()` now throws a
   TypeError: read it as a property.
+- **Test-selection gates fail instead of passing quietly.** CI's
+  browser-suite scope step tested `[ -n "$(go run ./cmd/affected …)" ]`,
+  which drops the selector's exit status, so a selector error skipped
+  the suite with a notice; it assigns the output first now, and
+  `cmd/repolint`'s new `selector-status-discarded` rule refuses the old
+  spelling in workflows and build scripts. An edit to the coverage-floor
+  table in `scripts/coverage-floors.sh` widens `cmd/affected` to every
+  package, where it used to check no floor at all. `scripts/dupl.sh`
+  refuses a baseline that is not one non-negative integer; `-gt` errored
+  on it inside `if` and the gate printed its success line.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

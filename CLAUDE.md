@@ -153,8 +153,9 @@ expose them to agents connected to a live app.**
   `origin/main` (staged, unstaged, untracked and deleted files; a file
   under testdata or an embedded asset marks its owning package) and
   prints the closure, or runs the command after `--` with it appended.
-  Changing go.mod, go.sum or cmd/affected widens to everything, as does
-  a base ref that cannot be resolved: the tool degrades to the full run,
+  Changing go.mod, go.sum, cmd/affected or the coverage-floor table
+  (scripts/coverage-floors.sh) widens to everything, as does a base ref
+  that cannot be resolved: the tool degrades to the full run,
   never to a skipped one. A test that reads files outside its package
   (a repo walk, a doc, another package's source) declares them with
   `//gofastr:test-reads <pattern>` in the test file, or the selection

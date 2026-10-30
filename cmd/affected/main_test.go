@@ -323,7 +323,9 @@ func writeFiles(t *testing.T, root string, files map[string]string) {
 func TestModuleFilesWidenToEverything(t *testing.T) {
 	root := newRepo(t)
 	all := []string{"a", "b", "c", "d", "e", "f"}
-	for _, f := range []string{"go.mod", "go.sum", "cmd/affected/main.go"} {
+	// The coverage-floor table lives in its script and owns no package, so
+	// without the trigger a PR that only edits a floor checked none.
+	for _, f := range []string{"go.mod", "go.sum", "cmd/affected/main.go", "scripts/coverage-floors.sh"} {
 		t.Run(f, func(t *testing.T) {
 			var errb bytes.Buffer
 			want(t, run(t, options{root: root, files: []string{f}, stderr: &errb}), all...)
