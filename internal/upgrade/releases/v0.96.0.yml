@@ -468,3 +468,11 @@ notes:
     breaking: true
     guidance: "A foreign page in the app's window looked like the app. Keep flows on the app's own pages, or set desktop.Config.DangerouslyAllowForeignNavigation to let a window leave (an in-window OAuth sign-in, say). A custom Shell must call WindowConfig.AllowNavigation before a main-frame navigation commits."
     nodetect: "the refused navigation is a runtime URL; the shell logs the refused host"
+  - change: "BREAKING - island streams carry a per-client cap (256 by default) and Manager.ConnectSession takes the client key as a second argument"
+    breaking: true
+    hits: edit
+    guidance: "One client minting sessions could hold every stream slot. Pass m.ClientKey(r, identity) to ConnectSession, or \"\" for a server-side subscription the per-client cap should not count. Behind a reverse proxy, list it with uihost.WithTrustedProxies, or every anonymous visitor shares the proxy address's 256 streams."
+    find:
+      shapes:
+        - symbol: gofastr/core-ui/island.Manager.ConnectSession
+          type: '^func\(sessionID string\) \(<-chan island\.IslandUpdate, func\(\), error\)$'

@@ -194,6 +194,11 @@ Useful options:
   page, so the runtime never opens the shared SSE bus. For hosts (or
   test rigs waiting on network-idle) that want zero held connections;
   polling (`data-cui-poll`) and islands still work.
+- `uihost.WithTrustedProxies("10.0.0.0/8", …)`: the reverse proxies
+  (IPs or CIDRs) whose `X-Forwarded-For` hop the island stream's
+  per-client cap reads. Without it, behind a proxy, every anonymous
+  visitor counts as the proxy's address and shares its 256 streams. See
+  `gofastr docs reactivity`.
 - `uihost.WithNoInlineFirstPaint()`: keep the color-scheme bootstrap,
   the component bundle and app.css as links on every page. By default a
   first-load page whose head fits 16 KiB compressed carries them inline,

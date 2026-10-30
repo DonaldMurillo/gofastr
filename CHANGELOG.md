@@ -3900,6 +3900,18 @@ few lines, and link the PR or the docs page for the rest.
   `desktoptest.Harness.AllowsNavigation` checks it in a test. On Linux
   the refused request still reaches the other host; nothing it returns
   renders. The Windows hook has no test runner yet.
+- **BREAKING: one client can no longer hold every island stream.** A
+  session costs one same-origin POST and the caps counted streams per
+  session and per replica, so 256 minted sessions of 16 streams took all
+  4096 default slots and every other visitor's stream answered 429. A
+  per-client cap now counts the signed-in user, or an anonymous caller's
+  address (IPv6 by /64), across its sessions: 256 by default,
+  `island.WithPeerStreamCap` to change it. Behind a reverse proxy, list
+  it with `uihost.WithTrustedProxies` (`island.WithTrustedProxies`), or
+  every anonymous visitor shares the proxy address's 256 streams; the
+  first such refusal logs a warning. `Manager.ConnectSession` takes the
+  client key as a second argument (`Manager.ClientKey`; `""` for a
+  server-side subscription).
 
 ## [0.95.0] - 2026-10-26
 

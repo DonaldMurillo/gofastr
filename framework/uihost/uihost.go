@@ -131,6 +131,7 @@ type UIHost struct {
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
+	trustedProxies      []string                             // WithTrustedProxies: the island stream cap reads X-Forwarded-For from these peers
 	noInlineFirstPaint  bool                                 // WithNoInlineFirstPaint: head CSS and the color-scheme bootstrap always ship as links
 	firstPaint          firstPaintCache                      // blocks a live page carries inline in its head (firstpaint.go)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
@@ -529,6 +530,16 @@ func WithPageLoading(c component.Component) Option {
 // e2e pattern (60 spec files in the metacollector port alone).
 func WithNoLiveChannel() Option {
 	return func(ds *UIHost) { ds.noLiveChannel = true }
+}
+
+// WithTrustedProxies names the reverse proxies (IPs or CIDRs) in front of
+// the host, so the island stream cap counts an anonymous visitor under the
+// X-Forwarded-For address the proxy saw instead of the proxy's own. Without
+// it, behind a proxy, every anonymous visitor shares the proxy address's
+// budget of island.DefaultStreamsPerPeer streams. A header from a peer not
+// in the list is ignored. See island.WithTrustedProxies.
+func WithTrustedProxies(entries ...string) Option {
+	return func(ds *UIHost) { ds.trustedProxies = append(ds.trustedProxies, entries...) }
 }
 
 func WithFavicon(href string) Option {
@@ -1066,7 +1077,6 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 func New(application *app.App, opts ...Option) *UIHost {
 	ds := &UIHost{
 		App:            application,
-		Islands:        island.NewManager(),
 		sessionKey:     selfMintedSessionKey(),
 		actionJS:       make(map[string]string),
 		actionHash:     make(map[string]string),
@@ -1077,6 +1087,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 	for _, opt := range opts {
 		opt(ds)
 	}
+	ds.Islands = island.NewManager(island.WithTrustedProxies(ds.trustedProxies...))
 	// WithAppIcon ↔ WithPWA reconciliation happens after ALL options so
 	// their relative order doesn't matter.
 	// The app's 404-outlet outcome body (FallbackNotFound renders the
