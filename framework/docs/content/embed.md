@@ -239,7 +239,10 @@ a unique constraint, so "already used" is decided by the database rather than by
 a read followed by a write that two replicas could both win.
 
 The exchange is POST-only and idempotent within the grant's lifetime: a repeat
-returns the same grant. A browser has several ways to fire it twice: the
+returns the same grant. That holds after the nonce itself expires: a frame
+reloaded later re-sends the same nonce and gets the stored grant back while it
+lives. An expired nonce never mints a grant, so one that was never exchanged
+answers expired. A browser has several ways to fire it twice: the
 customer's page prefetches the iframe, a dev double-mounts the loader, a user
 refreshes, and without idempotency the feature surfaces as "the embed randomly
 doesn't load". The POST body is decoded under strict top-level key rules: a

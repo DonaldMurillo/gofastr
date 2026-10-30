@@ -3358,6 +3358,14 @@ few lines, and link the PR or the docs page for the rest.
   so `/` and `/home` both froze to `home` and the generator refused
   the spec. A derived name that a named page or an earlier path holds
   now gains a suffix (`home_2`).
+- **An embed frame reloaded after the nonce's minute gets its grant
+  back.** The loader re-sends the same nonce on every `ready`, and the
+  exchange checked the nonce's expiry before the burn store, so a
+  reload after the first minute of a 15-minute grant answered 401. A
+  nonce whose only fault is its age now passes every other check and
+  looks up the grant its first exchange stored, while that grant
+  lives. It never mints one: a nonce that was never exchanged still
+  answers expired.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
