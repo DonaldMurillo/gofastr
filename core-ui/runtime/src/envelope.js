@@ -725,6 +725,7 @@
     recordScroll(_liveDomPath);
     const parts = P ? P.begin(path, myEpoch) : null;
     const prevPath = from || NS.currentPath;
+    if (NS._navBase === null) NS._navBase = prevPath;
 
     NS._setCurrentPath(path);
     // Consume the popstate's restore target into this navigation.
@@ -1132,13 +1133,15 @@
       if (!NS._navLive(myEpoch)) return;
       // Hard rule 4, no location.href fallback. Surface a toast and
       // stay on the current page; the URL has already been pushState'd
-      // by the click handler so revert it.
+      // by the click handler so revert it, to the page the DOM still
+      // shows (NS._navBase), not a superseded navigation's destination.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
         ? NS.say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
         : NS.say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
-      NS._pushURL(prevPath || location.pathname, { replace: true });
-      NS._setCurrentPath(prevPath);
+      const base = NS._navBase;
+      NS._pushURL(base || location.pathname, { replace: true });
+      NS._setCurrentPath(base);
     } finally {
       // A stale navigation leaves a newer one's dedup entry alone.
       if (_pend.get(path) === myEpoch) _pend.delete(path);
@@ -1150,7 +1153,10 @@
       if (P) P.finish(parts);
       // A newer navigation that marked the same region owns its mark.
       for (const el of marks) if (el._cuiBusy === myEpoch) el.removeAttribute('aria-busy');
-      if (NS._navLive(myEpoch)) NS.doc.removeHtmlAttr('aria-busy');
+      if (NS._navLive(myEpoch)) {
+        NS.doc.removeHtmlAttr('aria-busy');
+        NS._navBase = null;
+      }
     }
   };
 

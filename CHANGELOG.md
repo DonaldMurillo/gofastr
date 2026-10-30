@@ -2867,6 +2867,11 @@ few lines, and link the PR or the docs page for the rest.
   `go list` set, so nothing owned the change and a test still importing
   the package was not selected. Each changed file's directory now counts
   by its import path, which the remaining importers still list.
+- **A failed navigation goes back to the page still shown.** Starting a
+  navigation while another was loading, then having the second one
+  fail, left the address bar and the router on the first one's
+  destination, a page that never rendered. Both navigators now roll
+  back to the page the DOM shows.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

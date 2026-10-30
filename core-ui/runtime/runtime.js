@@ -620,6 +620,12 @@
     // supersede rule (NS._navLive). A writable slot, not a closure,
     // because the module's navigator owns its own navigations.
     _navEpoch: 0,
+    // The path the DOM showed when the pending navigations began, or
+    // null while none is pending. A navigation started while another
+    // still loads keeps it, so a failure rolls back to the page still
+    // shown, never to a superseded destination that never rendered.
+    // Both navigators set it at entry and the live one clears it.
+    _navBase: null,
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
     // _toastTimers, _toastSeq) lives in the registered behaviour module
@@ -1563,6 +1569,7 @@
     // pick-edge rule to THIS navigation's epoch before any await.
     window.__gofastr._navHooks.transition?.take(myEpoch);
     const prevPath = from || currentPath;
+    if (window.__gofastr._navBase === null) window.__gofastr._navBase = prevPath;
     currentPath = path;
     // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
@@ -1775,19 +1782,26 @@
       if (!_navLive(myEpoch)) return;
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
-      // pushState'd by the click handler so revert it.
+      // pushState'd by the click handler so revert it, to the page the
+      // DOM still shows: prevPath names a superseded navigation's
+      // destination when this one started while that one loaded.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
         ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
         : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
-      _pushPub(prevPath || location.pathname, { replace: true });
-      currentPath = prevPath;
+      const base = window.__gofastr._navBase;
+      _pushPub(base || location.pathname, { replace: true });
+      currentPath = base;
     } finally {
       // A stale navigation leaves a newer one's dedup entry alone.
       if (_pendingNav.get(path) === myEpoch) _pendingNav.delete(path);
-      // Only the latest nav owns the aria-busy flag; a superseded nav
-      // that bailed early must leave it for the in-flight one to clear.
-      if (_navLive(myEpoch)) doc.removeHtmlAttr('aria-busy');
+      // Only the latest nav owns the aria-busy flag and the base; a
+      // superseded nav that bailed early must leave both for the
+      // in-flight one.
+      if (_navLive(myEpoch)) {
+        doc.removeHtmlAttr('aria-busy');
+        window.__gofastr._navBase = null;
+      }
     }
   };
 

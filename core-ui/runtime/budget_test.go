@@ -641,7 +641,7 @@ const (
 	// fill in the runtime and its modules goes through, adds 40. The plain
 	// navigator narrowing a replay keyed above the deepest shared layer to
 	// that layer's cell adds 118.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1085,7 +1085,12 @@ const (
 	// under a shared nested layout) measures 17816 at level 1. It runs on
 	// the replay path before any demand module could, so it does not
 	// carve. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17818
+	// A failed navigation rolling back to the page the DOM still shows
+	// (the shared _navBase both navigators set at entry, read in their
+	// failure arm and clear when the live one ends) measures 17855 at
+	// level 1. It is core's own navigator's failure path, so it does not
+	// carve. Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17857
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1157,6 +1162,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"kernel formatNumber for {{n}} fills (toLocaleString on <html lang>)": 40, // (l1: 34)
 		// Measured 15289 → 15407 (2026-10-29): TestPlainBackKeepsSharedNestedLayout.
 		"plain replay narrows to the deepest shared layer's cell": 118, // (l1: 128)
+		// Measured 15407 → 15444 (2026-10-29): TestFailedNavRollsBackToTheShownPage.
+		"a failed navigation rolls back to the page still shown (_navBase)": 37,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1339,7 +1346,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// page's #gofastr-signals-page seed and a leave capture keeps
 		// the entry's own (2026-10-29 bug bash R30,
 		// TestEnvelopeReplayRestoresPageSignals).
-		"envelope": 8004,
+		// 8023 measured (8021 + 2) after a failed navigation rolls back
+		// to the page the DOM still shows, not a superseded one's
+		// destination (2026-10-29 bug bash R31,
+		// TestFailedNavRollsBackToTheShownPage).
+		"envelope": 8023,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

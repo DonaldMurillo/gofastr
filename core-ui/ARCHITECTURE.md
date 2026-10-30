@@ -1627,7 +1627,9 @@ response, and the entry is never cached. A body that is not
 `text/html` cannot be applied, whatever its status: a 200 included
 (a raw-markdown or JSON route the client router intercepted), it
 toasts naming the status (`Could not load /x (HTTP 404)`), the URL
-goes back and the page stays. Only a failed fetch keeps the "check
+goes back to the page still shown and the page stays. A navigation
+started while another was loading rolls back past that one too: its
+destination never rendered. Only a failed fetch keeps the "check
 your connection" wording.
 Never a `location.href` fallback. A static export ships the same page
 as `404.html` at the root (see `framework/docs/content/static-export.md`).
