@@ -120,37 +120,16 @@ type BatchResponse struct {
 	Results   []batchResult `json:"results"`
 }
 
-// classifyDoErr converts a per-item error into the batchResult it
-// represents: the message in ctx's locale with its reason code, plus the
-// translated field errors for a validation failure.
-//
-// Validation and BeforeHook errors are surfaced verbatim, they're
-// user-actionable and don't carry driver text. Anything else (driver
-// errors, scan failures, after-hook exceptions) is redacted to a
-// generic "internal error" string so the per-item Error field can't
-// leak schema / connection details. The original error is still
-// logged via the caller's tx logger.
+// classifyDoErr reports one item's error as the single write refuses
+// it (crudRefusal): the same message in ctx's locale, reason code and
+// field errors. Validation, hook, state, transition and constraint
+// refusals are the caller's to act on and carry no driver text; anything
+// else is the generic "internal server error", with the error itself
+// only logged, so the per-item Error field cannot leak schema or
+// connection details.
 func classifyDoErr(ctx context.Context, index int, err error) batchResult {
-	phrased := func(p i18n.Phrase) batchResult {
-		return batchResult{Index: index, Error: p.Text(ctx), Reason: p.Code()}
-	}
-	if ve, ok := errors.AsType[*ValidationError](err); ok {
-		res := phrased(handler.ReasonValidationFailed)
-		res.Fields, res.FieldReasons = handler.ViolationBodies(ctx, ve.Fields())
-		return res
-	}
-	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
-		text, reason := i18n.ErrorText(ctx, bhe, i18n.Phrase{})
-		return batchResult{Index: index, Error: text, Reason: reason}
-	}
-	if errors.Is(err, errNotFound) {
-		return phrased(i18n.StatusPhrase(http.StatusNotFound))
-	}
-	if errors.Is(err, errNoFieldsToUpdate) {
-		return phrased(reasonNoFieldsToUpdate)
-	}
-	log.Printf("crud: batch item failed: %v", err)
-	return phrased(i18n.StatusPhrase(http.StatusInternalServerError))
+	f := crudRefusal(ctx, err)
+	return batchResult{Index: index, Error: f.text, Reason: f.reason, Fields: f.fields, FieldReasons: f.fieldReasons}
 }
 
 // initSkipped pre-fills a results slice with skipped entries. Each entry is

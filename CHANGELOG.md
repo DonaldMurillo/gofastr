@@ -2987,6 +2987,13 @@ few lines, and link the PR or the docs page for the rest.
   256 bytes was dropped and the page drew the empty state, as if
   nothing had been typed, while the query endpoint answered 414 for the
   same text. The page now shows a "query too long" notice.
+- **A batch item reports the refusal the single write sends.** An item
+  refused for a state change it may not make, a unique or foreign-key
+  conflict, a NOT NULL field, a transition, a reentrant move or a
+  missing tenant came back as `internal server error`, while
+  `POST`/`PATCH` on one row said what was wrong. Both now share one
+  error classifier, so the item's `error`, `reason`, `fields` and
+  `field_reasons` match the single write's body.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
