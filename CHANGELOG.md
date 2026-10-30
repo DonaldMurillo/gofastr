@@ -2920,6 +2920,11 @@ few lines, and link the PR or the docs page for the rest.
   removing a chip in an advanced filter form unchecked the quick filter's
   option while the form still submitted the value. The × now looks inside
   its own multiselect.
+- **A disabled tab can no longer be chosen with the mouse.**
+  `headless.Tab{Disabled: true}` kept the tab out of the arrow keys but
+  still wrote its signal and moved the selection on a click, showing its
+  panel. A disabled tab now renders without its signal write or its href,
+  and the tabs module ignores clicks on it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
