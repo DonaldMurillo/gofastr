@@ -235,6 +235,10 @@ The response is routed to a signal by the trigger's
 `data-cui-rpc-signal` attribute, not by the registration; name the
 target signal there.
 
+The method is `GET`, `POST`, `PUT`, `PATCH` or `DELETE`, spelled in
+upper case; `""` means `POST`. `Mount` panics on any other value,
+before it registers a route, rather than registering it as `POST`.
+
 Slot HTML wires it via `data-cui-rpc`:
 
 ```html

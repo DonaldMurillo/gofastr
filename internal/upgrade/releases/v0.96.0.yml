@@ -433,3 +433,11 @@ notes:
     find:
       uses:
         - gofastr/framework/uihost.UIHost.PWAManifestJSON
+  - change: "BREAKING - widget.Mount panics on an RPC method other than GET, POST, PUT, PATCH, DELETE or empty, where it registered any other value as POST; PATCH now registers as PATCH"
+    breaking: true
+    hits: review
+    guidance: "Spell the method in upper case (\"post\" used to work by falling through to POST and now panics at startup). An RPC declared PATCH that a client reached with POST now answers 405; send PATCH."
+    find:
+      uses:
+        - gofastr/core-ui/widget.Builder.RPC
+        - gofastr/core-ui/widget.RPCEndpoint

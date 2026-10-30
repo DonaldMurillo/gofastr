@@ -2,6 +2,7 @@ package widget
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
@@ -61,7 +62,7 @@ func (f SignalFunc) Read() (any, error) { return f() }
 // done client-side via the data-cui-rpc-signal DOM attribute on the trigger,
 // not via this struct.)
 type RPCEndpoint struct {
-	Method  string // "POST" by default
+	Method  string // GET, POST, PUT, PATCH or DELETE; "" means POST, anything else panics at Mount
 	Path    string
 	Handler http.Handler
 }
@@ -432,7 +433,8 @@ func (b *Builder) PollTerminal(fn func() bool) *Builder {
 }
 
 // RPC registers a server-side handler the widget can invoke from
-// the client. method=="" defaults to "POST".
+// the client. method is GET, POST, PUT, PATCH or DELETE; "" defaults to
+// "POST", and Mount panics on any other.
 func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
 	if method == "" {
 		method = "POST"
@@ -692,6 +694,17 @@ func Mount(r *router.Router, def *Definition) {
 		def.StatePath = "/core-ui/widget/" + def.Name + "/state"
 	}
 
+	// An RPC method Mount cannot register fails before any route is: a
+	// PATCH used to fall through to POST, so the runtime's PATCH found no
+	// handler and a POST reached it.
+	for _, rpc := range def.RPCs {
+		switch rpc.Method {
+		case "", "GET", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			panic(fmt.Sprintf("widget: %s RPC %s has method %q; want GET, POST, PUT, PATCH or DELETE (empty means POST)", def.Name, rpc.Path, rpc.Method))
+		}
+	}
+
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
 	r.Get(def.StatePath, gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveState)))
@@ -715,9 +728,11 @@ func Mount(r *router.Router, def *Definition) {
 			r.Post(rpc.Path, h)
 		case "PUT":
 			r.Put(rpc.Path, h)
+		case "PATCH":
+			r.Patch(rpc.Path, h)
 		case "DELETE":
 			r.Delete(rpc.Path, h)
-		default:
+		default: // "" or POST, the only other methods the check above lets through
 			r.Post(rpc.Path, h)
 		}
 	}

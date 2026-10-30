@@ -2838,6 +2838,13 @@ few lines, and link the PR or the docs page for the rest.
   for every screen. The signed-in client now stops at a redirect to the
   login screen's route and the screen check reports the 303. Meridian's
   own e2e test had the same gap and gets the same client.
+- **A widget RPC declared `PATCH` is registered as `PATCH`.** BREAKING.
+  `widget.Mount` had no `PATCH` case and registered every method it did
+  not know as `POST`, so the runtime's `PATCH` got 405 and a `POST`
+  reached the handler. `Mount` now registers `PATCH`, and panics before
+  registering any route on a method other than `GET`, `POST`, `PUT`,
+  `PATCH`, `DELETE` or `""` (which still means `POST`), lower-case
+  spellings included.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
