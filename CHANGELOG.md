@@ -2914,6 +2914,12 @@ few lines, and link the PR or the docs page for the rest.
   and the buttons found it with a page-wide `getElementById`, so the
   second of two forms with a "replicas" field stepped the first form's
   input. The buttons now look for the input in their own row.
+- **A multiselect chip's × unchecks its own option when another
+  multiselect on the page is for the same field.** Option ids derive from
+  the field name by default, and the × found its checkbox page-wide, so
+  removing a chip in an advanced filter form unchecked the quick filter's
+  option while the form still submitted the value. The × now looks inside
+  its own multiselect.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

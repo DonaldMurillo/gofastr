@@ -70,13 +70,17 @@
   });
 
   // Chip removal: clicking a chip's × unchecks the linked checkbox,
-  // which fires change and re-renders the chips.
+  // which fires change and re-renders the chips. The checkbox is looked
+  // up inside the chip's own multiselect: option ids derive from the
+  // instance id, which defaults to the field name, so two multiselects
+  // for one field share them and a page-wide lookup answers the first.
   document.addEventListener('click', function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest('[data-hui-multiselect-remove]');
     if (!btn) return;
     const cbID = btn.getAttribute('data-hui-multiselect-remove');
-    if (!cbID) return;
-    const cb = document.getElementById(cbID);
+    const root = rootOf(btn);
+    if (!cbID || !root) return;
+    const cb = [...root.querySelectorAll('input[type="checkbox"]')].find((c) => c.id === cbID);
     if (!cb) return;
     cb.checked = false;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
