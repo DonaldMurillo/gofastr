@@ -3,6 +3,7 @@ package live_test
 import (
 	"database/sql"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -47,25 +48,18 @@ func approve(t *testing.T, tools *protocol.Tools, id, op, name string) {
 	mustOK(t, "approve_plan", tools.ApprovePlan(t.Context(), protocol.ApprovePlanArgs{PlanID: id}))
 }
 
+// columnsOf lists a table's columns, in no particular order. The test
+// tables' column names hold no commas.
 func columnsOf(t *testing.T, d *sql.DB, table string) []string {
 	t.Helper()
-	rows, err := d.Query(`SELECT name FROM pragma_table_info(?)`, table)
-	if err != nil {
+	var joined sql.NullString
+	if err := d.QueryRow(`SELECT group_concat(name, ',') FROM pragma_table_info(?)`, table).Scan(&joined); err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
-	var cols []string
-	for rows.Next() {
-		var c string
-		if err := rows.Scan(&c); err != nil {
-			t.Fatal(err)
-		}
-		cols = append(cols, c)
+	if !joined.Valid {
+		return nil
 	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return cols
+	return strings.Split(joined.String, ",")
 }
 
 func count(t *testing.T, d *sql.DB, q string, args ...any) int {
@@ -142,53 +136,52 @@ func libraryWorld(t *testing.T, tools *protocol.Tools) {
 // rebuilt from the registry: rows kept, the column and its constraint
 // gone, the indexes and foreign keys the entity declares still there.
 func TestDeleteUniqueFieldRebuildsTable(t *testing.T) {
-	t.Run("parent", func(t *testing.T) {
-		tools, d := oneConnLive(t)
-		libraryWorld(t, tools)
-		approve(t, tools, "p1", "delete_field", "authors.handle")
-		mustOK(t, "delete_field", tools.DeleteField(t.Context(), protocol.DeleteFieldArgs{Entity: "authors", Field: "handle", PlanID: "p1"}))
-
-		if slices.Contains(columnsOf(t, d, "authors"), "handle") {
-			t.Error("the deleted field's column is still in the table")
-		}
-		if _, err := d.Exec(`INSERT INTO authors (id, name) VALUES ('a2', 'bo')`); err != nil {
-			t.Fatalf("create after delete_field: %v", err)
-		}
-		if n := count(t, d, `SELECT count(*) FROM authors WHERE id = 'a1' AND name = 'ada'`); n != 1 {
-			t.Error("the row from before the delete is gone")
-		}
+	for _, tc := range []struct {
+		name, entity, field string
+		create              string // an insert after the delete
+		kept                string // counts the row from before the delete
+		keyed, keyedWhat    string // counts what the rebuild must keep on books
+		orphan              string // an insert the foreign key must refuse
+	}{{
+		name: "parent", entity: "authors", field: "handle",
+		create: `INSERT INTO authors (id, name) VALUES ('a2', 'bo')`,
+		kept:   `SELECT count(*) FROM authors WHERE id = 'a1' AND name = 'ada'`,
 		// books still points at authors, not at the table set aside.
-		if n := count(t, d, `SELECT count(*) FROM pragma_foreign_key_list('books') WHERE "table" = 'authors'`); n != 1 {
-			t.Errorf("books has %d foreign keys to authors after the rebuild, want 1", n)
-		}
-		if _, err := d.Exec(`INSERT INTO books (id, title, isbn, author_id) VALUES ('b2', 'x', '2', 'nobody')`); err == nil {
-			t.Error("a book naming no author was accepted: the foreign key no longer holds")
-		}
-		checkConnRestored(t, d)
-	})
-	t.Run("child", func(t *testing.T) {
-		tools, d := oneConnLive(t)
-		libraryWorld(t, tools)
-		approve(t, tools, "p1", "delete_field", "books.isbn")
-		mustOK(t, "delete_field", tools.DeleteField(t.Context(), protocol.DeleteFieldArgs{Entity: "books", Field: "isbn", PlanID: "p1"}))
+		keyed:     `SELECT count(*) FROM pragma_foreign_key_list('books') WHERE "table" = 'authors'`,
+		keyedWhat: "foreign keys to authors",
+		orphan:    `INSERT INTO books (id, title, isbn, author_id) VALUES ('b2', 'x', '2', 'nobody')`,
+	}, {
+		name: "child", entity: "books", field: "isbn",
+		create:    `INSERT INTO books (id, title, author_id) VALUES ('b2', 'x', 'a1')`,
+		kept:      `SELECT count(*) FROM books WHERE id = 'b1' AND author_id = 'a1'`,
+		keyed:     `SELECT count(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'books' AND sql LIKE '%author_id%'`,
+		keyedWhat: "indexes on author_id",
+		orphan:    `INSERT INTO books (id, title, author_id) VALUES ('b3', 'y', 'nobody')`,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			tools, d := oneConnLive(t)
+			libraryWorld(t, tools)
+			approve(t, tools, "p1", "delete_field", tc.entity+"."+tc.field)
+			mustOK(t, "delete_field", tools.DeleteField(t.Context(), protocol.DeleteFieldArgs{Entity: tc.entity, Field: tc.field, PlanID: "p1"}))
 
-		if slices.Contains(columnsOf(t, d, "books"), "isbn") {
-			t.Error("the deleted field's column is still in the table")
-		}
-		if _, err := d.Exec(`INSERT INTO books (id, title, author_id) VALUES ('b2', 'x', 'a1')`); err != nil {
-			t.Fatalf("create after delete_field: %v", err)
-		}
-		if n := count(t, d, `SELECT count(*) FROM books WHERE id = 'b1' AND author_id = 'a1'`); n != 1 {
-			t.Error("the row from before the delete is gone")
-		}
-		if n := count(t, d, `SELECT count(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'books' AND sql LIKE '%author_id%'`); n != 1 {
-			t.Errorf("books has %d indexes on author_id after the rebuild, want 1", n)
-		}
-		if _, err := d.Exec(`INSERT INTO books (id, title, author_id) VALUES ('b3', 'y', 'nobody')`); err == nil {
-			t.Error("a book naming no author was accepted: the rebuilt table lost its foreign key")
-		}
-		checkConnRestored(t, d)
-	})
+			if slices.Contains(columnsOf(t, d, tc.entity), tc.field) {
+				t.Error("the deleted field's column is still in the table")
+			}
+			if _, err := d.Exec(tc.create); err != nil {
+				t.Fatalf("create after delete_field: %v", err)
+			}
+			if n := count(t, d, tc.kept); n != 1 {
+				t.Error("the row from before the delete is gone")
+			}
+			if n := count(t, d, tc.keyed); n != 1 {
+				t.Errorf("books has %d %s after the rebuild, want 1", n, tc.keyedWhat)
+			}
+			if _, err := d.Exec(tc.orphan); err == nil {
+				t.Error("a book naming no author was accepted: the foreign key no longer holds")
+			}
+			checkConnRestored(t, d)
+		})
+	}
 }
 
 // update_entity that makes a required field optional drops its NOT
