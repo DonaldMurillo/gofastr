@@ -3018,6 +3018,13 @@ few lines, and link the PR or the docs page for the rest.
   webhook SQL stores now bind every timestamp in UTC, and opening a
   `SQLStore` on SQLite rewrites the due times of pending rows an
   earlier release stored in the writer's zone.
+- **The read-hook redaction examples delete wire keys.** The
+  `AfterList` and `AfterGet` examples in the hooks guide deleted
+  `"password_hash"` and `"internal_notes"`, but read-hook rows are keyed
+  by wire names, camelCase by default, so the delete found nothing and
+  the value shipped. The examples now delete `"passwordHash"` and
+  `"internalNotes"`, and the guide says which keys the rows carry. A
+  hook copied from the old examples needs the same change.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

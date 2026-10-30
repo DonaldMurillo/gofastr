@@ -84,14 +84,18 @@ app.HookRegistry("posts").RegisterHook(framework.BeforeGet,
 ```
 
 `AfterList` and `AfterGet` see the fetched rows on the payload and
-may mutate them in place; handy for redaction:
+may mutate them in place; handy for redaction. The rows are keyed by
+the response's wire names, the handler's `JSONCase` (camelCase by
+default) or a field's `WireName`, not by column names: the
+`password_hash` column is `"passwordHash"` here, and deleting
+`"password_hash"` finds no key and ships the value.
 
 ```go
 app.HookRegistry("users").RegisterHook(framework.AfterList,
     func(ctx context.Context, data any) error {
         p := data.(*hook.ListPayload)
         for _, row := range p.Results {
-            delete(row, "password_hash")
+            delete(row, "passwordHash")
         }
         return nil
     })
@@ -465,7 +469,7 @@ framework.OnBeforeList(app, "posts",
 framework.OnAfterList(app, "posts",
     func(ctx context.Context, p *hook.ListPayload) error {
         for _, row := range p.Results {
-            delete(row, "internal_notes")
+            delete(row, "internalNotes") // the internal_notes column
         }
         return nil
     })
@@ -486,7 +490,7 @@ framework.OnBeforeGet(app, "posts",
 // Redact a field on a single-row response.
 framework.OnAfterGet(app, "posts",
     func(ctx context.Context, p *hook.GetPayload) error {
-        delete(p.Result, "internal_notes")
+        delete(p.Result, "internalNotes")
         return nil
     })
 ```
