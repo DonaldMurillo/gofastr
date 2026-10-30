@@ -2878,6 +2878,12 @@ few lines, and link the PR or the docs page for the rest.
   then on screen under the first page's URL, so Back to the first page
   replayed the wrong one. It now caches nothing until its own first
   navigation answers.
+- **A macOS window snapshot after a cancelled one shows the page now.**
+  A snapshot whose context was cancelled, or that timed out, still
+  finished later, and the next snapshot of any window returned that
+  stale image. Every snapshot after it then ran one capture behind. The
+  next snapshot now waits for the abandoned capture to finish and
+  discards it.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored
