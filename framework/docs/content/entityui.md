@@ -639,6 +639,13 @@ _ = list.RenderCtx(ctx)
   chips use, so both stay in sync; text that fails to parse, or names a
   Hidden, `NoQuery` or unknown field, keeps the filter-did-not-apply
   warning and lists without it — never an error page, never SQL.
+  Above the box, filter rows (field, operator, value) hold each plain
+  top-level term of the filter; the box keeps the rest: an `or` group,
+  an `in` list, or a value a row would change (empty, padded with
+  spaces, or over 200 characters). A row trims its value and is
+  dropped when the value is empty. On Apply the rows join with `and`,
+  and the box's text joins them in parentheses, so the `and` binds the
+  whole box however its `or` is spelled.
 - **The columns menu** (`.ColumnsMenu()`) is a menu of checkbox rows,
   one per available field, each a link that toggles that field in the
   `cols` param and keeps the filter and the sort, plus a Reset row that

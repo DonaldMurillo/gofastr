@@ -2960,6 +2960,14 @@ few lines, and link the PR or the docs page for the rest.
   comma.** It joined a filter array with commas, so
   `title_in: ["Doe, Jane"]` reached the server as `Doe` and ` Jane`.
   The client now throws before sending such a list.
+- **The entityui filter rows keep the query box's meaning on Apply.**
+  The box was put in parentheses beside the rows only when it held
+  ` or ` with spaces, so a row `status != "open"` and the box
+  `name = "zeta"or(name = "alpha")` listed the open alpha order. The
+  box is now always grouped beside rows. A term whose value a row
+  would trim or drop (`name = ""`, `name = " x "`, a value over 200
+  characters) now stays in the box instead of becoming a row, so
+  applying the page unchanged keeps the filter.
 
 ### Security
 - **Deleting a record, or replacing its file, deletes the stored

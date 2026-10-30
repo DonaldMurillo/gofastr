@@ -88,10 +88,17 @@ const maxFilterRows = 10
 // maxFilterRowValue caps one row's value, in runes.
 const maxFilterRowValue = 200
 
+// rowValue reports whether a row keeps v as it is. rowTerms trims a
+// value and drops an empty or over-long one, so filterRowsOf leaves a
+// term holding any other value in the box, which Apply sends unchanged.
+func rowValue(v string) bool {
+	return v != "" && v == strings.TrimSpace(v) && len([]rune(v)) <= maxFilterRowValue
+}
+
 // rowTerms are the submitted rows as DSL terms: a row whose field is not
 // a queryable field of the entity, whose operator is not a row
-// operator, or whose value is empty or over maxFilterRowValue is
-// dropped; at most maxFilterRows are read.
+// operator, or whose trimmed value fails rowValue is dropped; at most
+// maxFilterRows are read.
 func rowTerms(m *meta, fields, ops, values []string) []string {
 	var out []string
 	for i := 0; i < len(fields) && i < maxFilterRows; i++ {
@@ -100,7 +107,7 @@ func rowTerms(m *meta, fields, ops, values []string) []string {
 			continue
 		}
 		v := strings.TrimSpace(values[i])
-		if v == "" || len([]rune(v)) > maxFilterRowValue || !slices.ContainsFunc(rowOps, func(o struct {
+		if !rowValue(v) || !slices.ContainsFunc(rowOps, func(o struct {
 			op  string
 			key i18n.Phrase
 		}) bool {
@@ -117,11 +124,13 @@ func rowTerms(m *meta, fields, ops, values []string) []string {
 // round-trips through the parser.
 func dslQuote(v string) string { return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"` }
 
-// composeFilter joins the rows' terms and the box's text with and; the
-// box's text is grouped when it holds an or, so the and binds the whole.
+// composeFilter joins the rows' terms and the box's text with and. The
+// box's text is grouped whenever rows join it, so the and binds the
+// whole box however its or is spelled: the parser reads `"a"or(b)`
+// with no spaces around the or.
 func composeFilter(terms []string, box string) string {
 	if box != "" {
-		if len(terms) > 0 && strings.Contains(strings.ToLower(box), " or ") {
+		if len(terms) > 0 {
 			box = "(" + box + ")"
 		}
 		terms = append(terms, box)
@@ -130,9 +139,10 @@ func composeFilter(terms []string, box string) string {
 }
 
 // filterRowsOf splits the filter into rows, one per plain top-level
-// term (field, comparison, one value), and the box's text, the terms a
-// row cannot say (an or group, an in list). A filter that did not parse
-// stays whole in the box.
+// term (field, comparison, one value a row keeps: rowValue), and the
+// box's text, the terms a row cannot say (an or group, an in list, an
+// empty or space-padded value). A filter that did not parse stays whole
+// in the box.
 func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
 	if s.filterPred == nil {
 		return nil, s.filterText
@@ -146,7 +156,7 @@ func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
 	}
 	var rest []*filter.Predicate
 	for _, t := range terms {
-		if op, ok := rowOp(t); ok {
+		if op, ok := rowOp(t); ok && rowValue(t.Value) {
 			rows = append(rows, ui.FilterRow{Field: t.Field, Op: op, Value: t.Value})
 			continue
 		}
