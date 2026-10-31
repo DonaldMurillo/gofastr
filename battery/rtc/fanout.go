@@ -13,6 +13,7 @@ package rtc
 // the single-replica result.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -511,10 +512,12 @@ func (s *Signaler) remoteStatusLocked(origin string, msg *fanoutMsg) {
 	}
 	entry.expires = time.Now().Add(s.remoteTTL)
 	if i := slices.IndexFunc(entry.members, func(m PeerInfo) bool { return m.ID == msg.ID }); i >= 0 {
+		// The delta decides, as for a leave: a status from a replica
+		// whose seat the peer has since left (it reconnected elsewhere)
+		// changes no seat that stands for the peer, so it says nothing.
+		prev := s.remoteViewLocked(msg.Room, time.Time{})
 		entry.members[i].Status = append(json.RawMessage(nil), msg.Status...)
-		if rm := s.localRoomLocked(msg.Room); rm != nil {
-			s.publishLocked(rm, evStatus, roomEvent{kind: evStatus, id: msg.ID, status: entry.members[i].Status})
-		}
+		s.announceRemoteDeltaLocked(msg.Room, prev, s.remoteViewLocked(msg.Room, time.Time{}))
 	}
 }
 
@@ -594,8 +597,11 @@ func (s *Signaler) remoteRosterLocked(origin string, msg *fanoutMsg) {
 // moved from prev to after: the one place a remote membership change
 // reaches local sockets. A join goes out for an id new to the view or
 // whose Order rose (the peer reconnected on another replica with the
-// same id, which is what rtc.js reads a repeated join as). A leave
-// goes out only when no remote entry holds the id any more. Local wins
+// same id, which is what rtc.js reads a repeated join as). A status
+// goes out when the seat standing for an id kept its Order but carries
+// a different status, so a beat repairs a status mirror the lane
+// dropped. A leave goes out only when no remote entry holds the id any
+// more. Local wins
 // both ways: a beat cannot restate a peer this replica holds (its
 // name, user, and role are server-derived here), and a peer that
 // migrated onto this replica leaves the remote view but not the room.
@@ -609,8 +615,12 @@ func (s *Signaler) announceRemoteDeltaLocked(roomName string, prev, after map[st
 		if rm.peers[id] != nil {
 			continue
 		}
-		if was, had := prev[id]; !had || after[id].Order > was.Order {
-			s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: after[id]})
+		was, had := prev[id]
+		switch now := after[id]; {
+		case !had || now.Order > was.Order:
+			s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: now})
+		case len(now.Status) > 0 && !bytes.Equal(now.Status, was.Status):
+			s.publishLocked(rm, evStatus, roomEvent{kind: evStatus, id: id, status: now.Status})
 		}
 	}
 	for _, id := range slices.Sorted(maps.Keys(prev)) {

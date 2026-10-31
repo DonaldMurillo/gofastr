@@ -343,9 +343,12 @@ With `framework.WithFanout` attached (wired automatically by
 the same lossy self-healing model presence uses: each replica
 broadcasts its full local roster per room on every join and leave and
 on a 15 s heartbeat, and mirrors a status change as one event (the
-heartbeat is the backstop for a mirror a replica missed); receivers
+heartbeat is the backstop for a mirror a replica missed, and a beat
+that carries a changed status announces it); receivers
 keep a TTL'd (45 s) per-(replica, room) table capped at 512 replicas
-per room. A beat naming more than `MaxPeers` members is dropped whole,
+per room. A status reaches local peers only from the replica whose
+copy of the peer is newest, so one from a replica the peer has left is
+dropped. A beat naming more than `MaxPeers` members is dropped whole,
 and a beat cannot restate a peer this replica holds (local wins on the
 join mirror as on the leave mirror). A join mirror for a peer this
 replica holds displaces the local socket only when the mirror is newer

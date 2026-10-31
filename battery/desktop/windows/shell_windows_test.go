@@ -40,3 +40,14 @@ func TestWebView2LoaderCandidatesExcludeWorkingDirectory(t *testing.T) {
 		t.Fatalf("loader candidates without explicit paths = %v, want none", got)
 	}
 }
+
+// A Quit after Run marked the shell running but before the main window
+// exists has no window to post to, so it must leave the flag Run checks
+// once the window is up.
+func TestQuitBeforeMainWindowIsKept(t *testing.T) {
+	s := &winShell{running: true}
+	s.Quit()
+	if !s.quitBeforeRun.Load() {
+		t.Fatal("Quit with no main window yet was dropped")
+	}
+}

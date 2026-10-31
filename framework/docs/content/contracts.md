@@ -427,7 +427,9 @@ A handler can sit at 100% line coverage because a unit test called the
 function directly, while no request has ever reached it through the
 router. `framework/semcov` records what a test run genuinely exercised
 into `.gofastr/semantic-coverage.json`, and the `testing` rules diff that
-against the discovered surface.
+against the discovered surface. Every test binary merges into the same
+file under an OS lock on `.gofastr/semantic-coverage.lock`, so packages
+that finish together keep each other's records.
 
 The manifest sits under the project root unless
 `GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` is set, in

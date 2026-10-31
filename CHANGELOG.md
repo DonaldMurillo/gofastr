@@ -239,6 +239,39 @@ few lines, and link the PR or the docs page for the rest.
   to `--dangerously-skip-permissions`, so the agent kept Read, Write,
   Edit and the rest. It passes `--tools Bash` now. Bash still reaches
   the disk: this is no sandbox.
+- **An rtc status change from another replica reaches local peers once,
+  and only from the peer's current replica.** A remote status was applied
+  to whichever replica's copy of the member it named, then dropped if it
+  repeated, so a roster beat that repaired a missed status sent nothing,
+  and a status from a replica the peer had left was announced over the
+  newer one. Status now goes through the merged remote view, as joins
+  and leaves do.
+- **The SQLite legacy-timestamp normalizer keeps a lease taken while it
+  runs.** The queue and outbox rewrote each row's times from a read made
+  before the write, so a `claimed_at` a worker set in between went back
+  to the old value. Each column's write now checks it still holds the
+  text that was read. The queue also stopped rewriting rows that were
+  already in the canonical layout, which it did on every boot.
+- **`TryEntity` refuses routes that overlap an existing route.** Its
+  preflight compared patterns for equality, so `GET /{kind}/_events`
+  next to an entity's `GET /posts/{id}` passed it and the mux panicked
+  after half the routes were registered. The preflight asks the same
+  question the mux does, for the CRUD routes and the declaration's
+  endpoints, before anything is registered.
+- **A local-entity form keeps an untouched timestamp's seconds.** The
+  `datetime-local` control shows minutes, and saving wrote what it
+  showed, so editing any other field cut `14:30:45.123Z` to `14:30`. A
+  control the user did not change saves the stored value.
+- **Semantic coverage keeps every package's records when test binaries
+  finish together.** Each `Flush` read the manifest, merged and renamed
+  over it, so the later of two writers dropped the earlier one's routes.
+  The merge now runs under an OS file lock, as the axe-coverage manifest
+  already did.
+- **A desktop `Quit` on Windows before the main window exists is
+  kept.** A `Quit` after `Run` started but before the window was created
+  had no window to post to and was dropped, so the window opened on an
+  app that had been told to quit. `Run` checks again once the window is
+  up.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

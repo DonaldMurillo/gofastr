@@ -18,3 +18,7 @@ func TryLock(f *os.File) (bool, error) {
 	}
 	return err == nil, err
 }
+
+// Lock takes an exclusive flock on f, blocking until the holder, in this
+// process or another, releases it. Closing f releases it.
+func Lock(f *os.File) error { return unix.Flock(int(f.Fd()), unix.LOCK_EX) }

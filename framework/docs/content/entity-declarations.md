@@ -220,7 +220,10 @@ if err := app.TryEntity(name, cfg); err != nil {
 
 Registration is atomic with respect to configuration errors: every
 check that can reject a declaration runs before the registry, router,
-or MCP server is touched. A rejected declaration leaves no registry
+or MCP server is touched. That includes a route the mux would refuse
+as overlapping an existing one, such as `GET /{kind}/_events` next to
+the entity's `GET /posts/{id}`, and endpoints that overlap each other or
+the CRUD routes. A rejected declaration leaves no registry
 entry, no route, and no MCP tool, and a corrected retry under the same
 name succeeds, which is the property the authoring loop above depends on.
 

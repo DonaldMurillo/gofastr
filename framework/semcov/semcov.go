@@ -42,11 +42,15 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // FileName is the manifest location relative to the coverage root.
 const FileName = ".gofastr/semantic-coverage.json"
+
+// lockName is the cross-process lock file beside the manifest.
+const lockName = ".gofastr/semantic-coverage.lock"
 
 // Version is the manifest schema version. A reader that finds a higher
 // version reports the mismatch rather than guessing at the contents.
@@ -233,12 +237,26 @@ func addTo(m map[string][]string, key, value string) bool {
 // Flush writes the accumulated manifest. It merges with whatever is on
 // disk first, because `go test ./...` runs one process per package and
 // each one only knows about its own requests, without the merge, the
-// last package to finish would be the only one recorded.
+// last package to finish would be the only one recorded. The merge runs
+// under an OS lock on [lockName]: two binaries finishing together would
+// otherwise read the same base, and the later rename would drop what
+// the earlier one wrote.
 func Flush() error {
 	mu.Lock()
 	defer mu.Unlock()
 	if current == nil || dir == "" || !dirty {
 		return nil
+	}
+	if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(lockName)), 0o700); err != nil {
+		return fmt.Errorf("semcov: create %s: %w", filepath.Dir(lockName), err)
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, lockName), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("semcov: open lock: %w", err)
+	}
+	defer lock.Close() // releases the lock
+	if err := filelock.Lock(lock); err != nil {
+		return fmt.Errorf("semcov: lock manifest: %w", err)
 	}
 	merged := current
 	if onDisk, err := readFrom(dir); err == nil {
