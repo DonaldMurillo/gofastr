@@ -127,15 +127,38 @@ func (c *Container) Provide(constructor any) error {
 			return fmt.Errorf("di: constructor must return exactly one value, got %d", ft.NumOut())
 		}
 		outType := ft.Out(0)
+		// Resolution calls the constructor with no arguments: one that
+		// takes any would pass here and panic in reflect on every request
+		// that injects it. A dependency is resolved inside the constructor.
+		if ft.NumIn() != 0 {
+			return fmt.Errorf("di: constructor for %v must take no parameters, got %d; resolve dependencies inside it", outType, ft.NumIn())
+		}
+		if err := c.refuseResolvedLocked(outType); err != nil {
+			return err
+		}
 		c.providers[outType] = constructor
 		return nil
 	}
 
 	// Direct value: store as both provider and pre-resolved singleton.
 	outType := v.Type()
+	if err := c.refuseResolvedLocked(outType); err != nil {
+		return err
+	}
 	c.providers[outType] = constructor
 	c.singletons[outType] = constructor
 	c.resolved[outType] = true
+	return nil
+}
+
+// refuseResolvedLocked refuses a Provide for a type that already has a
+// value, from a resolved constructor or a value provided directly.
+// Resolve serves the cached value, so a later provider was ignored while
+// Provide returned nil. Caller holds c.mu.
+func (c *Container) refuseResolvedLocked(t reflect.Type) error {
+	if c.resolved[t] {
+		return fmt.Errorf("di: %v already has a value; Provide each type once, before its first use", t)
+	}
 	return nil
 }
 

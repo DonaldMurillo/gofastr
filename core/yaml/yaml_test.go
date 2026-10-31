@@ -178,3 +178,31 @@ func TestParseSubsetRejectsUnsupportedSyntax(t *testing.T) {
 		}
 	}
 }
+
+// A leading byte order mark is not part of the first key (YAML 1.2
+// section 5.2): a gofastr.yml saved by a Windows editor reported an
+// unknown key that named an invisible character.
+func TestParseSkipsLeadingBOM(t *testing.T) {
+	node, err := Parse("\ufeffapp: demo\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := node.Map["app"]; got == nil || got.Value != "demo" {
+		t.Fatalf("app = %#v, keys %v", got, node.Map)
+	}
+}
+
+// A # after a tab starts a comment, as after a space: `port: 8080<TAB>#
+// note` kept the comment in the value and the int failed to parse.
+func TestParseCommentAfterTab(t *testing.T) {
+	node, err := Parse("port: 8080\t# note\nname: demo \t # note\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := node.Map["port"].Value; got != int64(8080) {
+		t.Fatalf("port = %#v, want 8080", got)
+	}
+	if got := node.Map["name"].Value; got != "demo" {
+		t.Fatalf("name = %#v, want demo", got)
+	}
+}

@@ -38,6 +38,22 @@ func onlyJob(t *testing.T, q *DBQueue, status string) Job {
 	return jobs[0]
 }
 
+// A NULL payload, which the DDL allows and the dequeue path reads as
+// none, lists as an empty payload: one such row (restore tooling, an
+// external write) used to fail the whole admin job list.
+func TestDBListJobsToleratesNullPayload(t *testing.T) {
+	db, q := openHistoryQueue(t)
+	if err := q.Enqueue(context.Background(), Job{ID: "j1", Type: "mail"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE " + q.qt() + " SET payload = NULL"); err != nil {
+		t.Fatal(err)
+	}
+	if j := onlyJob(t, q, "pending"); j.ID != "j1" || len(j.Payload) != 0 {
+		t.Fatalf("listed job = %+v, want j1 with no payload", j)
+	}
+}
+
 // A listed job carries its status and when it last changed; a failed
 // attempt leaves its error, scrubbed of control bytes and cut short.
 func TestDBListJobsCarriesStatusUpdatedAndLastError(t *testing.T) {

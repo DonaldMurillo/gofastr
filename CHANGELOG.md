@@ -344,6 +344,17 @@ few lines, and link the PR or the docs page for the rest.
   them and a raw client could send them without limit. The new
   `WSConfig.MaxControlFramesPerSecond` (default 32 a second, burst twice
   that, negative disables) closes the connection with 1008 past it.
+- **`core/yaml` skips a leading byte order mark and reads `#` after a
+  tab as a comment.** A `gofastr.yml` saved with a BOM reported an
+  unknown key naming an invisible character, and `port: 8080<TAB># note`
+  kept the comment in the value.
+- **`di.Provide` refuses a constructor with parameters, and a second
+  Provide for a type that already has a value.** The first passed and
+  then panicked in reflect on every request that injected it; the second
+  returned nil while the first value went on being served.
+- **The queue's admin job list reads a NULL payload as none**, as the
+  dequeue path does. One such row (restore tooling, an external write)
+  failed the whole list.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.
