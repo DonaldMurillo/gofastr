@@ -94,7 +94,7 @@ posture is fixed:
 | No redirects | Any `3xx` carrying a `Location` header is replaced with a plain `502` and logged: forwarding it would leak the vendor origin (absolute) or point outside the mount (relative). `304` passes. |
 | Compression | Proxied bytes are never decompressed or re-encoded: a gzip body arrives byte-identical. |
 | Timeouts | Dial 5s, TLS handshake 5s, response headers 10s, whole request min(inherited context, 30s). Deadlines/timeouts → `504`; other transport failures → `502`. Error bodies are plain text; upstream error detail goes to the log only. |
-| Upstream restrictions | `https://` only, except `http://` for loopback (tests/dev). RFC1918, link-local (incl. cloud metadata), CGNAT, IPv6 unique-local, `*.internal`, and `*.localhost` upstreams are refused at `New` regardless of scheme. |
+| Upstream restrictions | `https://` only, except `http://` for loopback (tests/dev). RFC1918, link-local (incl. cloud metadata), CGNAT, IPv6 unique-local, and `*.internal` upstreams are refused at `New` regardless of scheme. `localhost` and `*.localhost` count as loopback. |
 
 ## Threat model
 

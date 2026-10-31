@@ -11,7 +11,8 @@
 // credential compare in the auth family is constant-time (battery/setup
 // token.go tokenEqual and battery/auth twofa.go TOTP via
 // subtle.ConstantTimeCompare; oauth state, webhook signatures, and the
-// harness bearer Decoder via hmac.Equal). The bug is still open.
+// harness bearer Decoder via hmac.Equal). Confirm now uses
+// subtle.ConstantTimeCompare.
 //
 // The rule reports an ==/!= between two runtime string or []byte
 // values where a credential-shaped operand faces a guessable side:

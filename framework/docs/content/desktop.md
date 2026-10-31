@@ -314,7 +314,7 @@ The core capabilities:
 | Capability | Methods | Permission |
 |---|---|---|
 | `window` | `title`, `setTitle`, `snapshot` | none (the page lives in that window; each method acts on the calling window, and a closed one answers `not_found`) |
-| `windows` | `open`, `openSettings`, `focus`, `close`, `list` | none (a page may only open the app's own screens; `close` refuses `"main"`) |
+| `windows` | `open`, `openSettings`, `focus`, `close`, `list`, `post`, `broadcast`, `self` | none (a page may only open the app's own screens; `close` refuses `"main"`) |
 | `dialogs` | `openFile`, `saveFile`, `openFolder` | none (the user mediates every dialog; returned paths join the `fs` allow-list) |
 | `clipboard` | `readText`, `writeText` | `clipboard:read`, `clipboard:write` |
 | `notifications` | `show` | `notifications:show` |

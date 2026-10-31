@@ -709,8 +709,10 @@ members whose elements left the document are pruned on
 The framework's own `headless` module is registered this way by
 `framework/headless/behavior.go`, binding that package's `data-hui-*`
 hooks with the markers `[data-hui-reveal]`, `[data-hui-color]`,
-`[data-hui-when]`, `[data-hui-form-errors]`, `[data-hui-action]`,
-`[data-hui-drop]` and `[data-hui-system]`.
+`[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]`,
+`[data-hui-system]`, `[data-hui-table]` and `[data-hui-selection]`. Its
+`headless-when` sibling (`framework/headless/when_behavior.go`) binds
+`[data-hui-when]`.
 
 ## See also
 
