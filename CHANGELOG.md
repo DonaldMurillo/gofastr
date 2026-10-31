@@ -128,6 +128,21 @@ few lines, and link the PR or the docs page for the rest.
   a bundle reported written that could not launch. The desktop shell is
   arm64-only, so another `GOARCH` is an error, and an Intel host gets a
   warning that the bundle will not run there.
+- **Kiln's `min` and `max` compare integers exactly.** Integers were
+  compared as float64, so past 2^53 two neighbours looked equal and
+  `min(9007199254740992, 9007199254740993)` returned the larger.
+- **A span's `error.type` sees through an error with several `%w`
+  verbs.** `fmt.Errorf("begin: %w (attempt %w)", err, ctxErr)` reported
+  `*fmt.wrapErrors`; it now reports the first wrapped error's type.
+- **The cache battery stops `MemoryCache`'s cleanup goroutine.**
+  `OnStop` looked for `io.Closer`, but `MemoryCache.Close` returns
+  nothing, so the goroutine outlived the app.
+- **`gofastr test` runs the packages it is given and refuses unknown
+  flags.** It dropped every argument it did not know and ran `./...`,
+  so `gofastr test ./pkg` or `--run TestFoo` (the space form) ran the
+  whole suite and could exit 0. Package patterns are passed through,
+  `--run`, `--bench` and `--timeout` take their value either way, and
+  another flag is an error.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

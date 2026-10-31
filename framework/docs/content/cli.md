@@ -211,7 +211,10 @@ with `go mod tidy` from that project directory.
   package, and `-o`/`--output` names the binary (default `bin/server`).
   `--allow-unverified-embeds` keeps proven embed violations fatal while
   downgrading a surface the analyzer cannot follow ([embed](embed.md)).
-- `gofastr test`: run the project's tests.
+- `gofastr test [flags] [packages]`: run the project's tests (`./...`
+  when no packages are named). Flags: `--run`, `--bench`, `--timeout`
+  (each as `--run=X` or `--run X`), `--race`, `--cover`, `--short`; an
+  unknown flag is an error.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` to search).
 - `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
