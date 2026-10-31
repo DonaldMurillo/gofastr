@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 )
 
@@ -53,14 +52,15 @@ func WithResourceMeta(meta map[string]any) ResourceOption {
 	return func(r *Resource) { r.Meta = meta }
 }
 
-// WithResourceGate auth-gates a resource's contents: the gate runs before
-// resources/read invokes the contents func, receiving the read's context
-// (auth/tenant enriched, carrying the inbound request). A non-nil error
-// refuses the read. This is the resource-side analogue of mcp.Gated. Use it
-// to serve per-caller or sensitive data via a first-class gate instead of an
-// inline check. Resource metadata (uri/name) still appears in resources/list;
-// the gate protects the contents. battery/auth's auth.MCPUser() /
-// auth.MCPRole(...) work as gates here too.
+// WithResourceGate attaches a per-caller precondition to a resource. The
+// gate runs on every resources/read before the contents func, and is also
+// evaluated during resources/list so a caller the gate refuses does not see
+// it, nor told by notifications/resources/list_changed that it appeared.
+// This is the resource-side analogue of [WithToolGate] and
+// [WithPromptGate]: the same predicate guards the listing and the read,
+// because a resource's URI, name and description can name internal
+// concepts the way a tool's inputSchema does. battery/auth's
+// auth.MCPUser() and auth.MCPRole("admin") are ready-made gates.
 func WithResourceGate(gate func(ctx context.Context) error) ResourceOption {
 	if gate == nil {
 		panic("mcp.WithResourceGate: nil gate — a nil precondition would silently allow every caller")
@@ -76,9 +76,11 @@ func WithResourceGate(gate func(ctx context.Context) error) ResourceOption {
 // Auth note: resources are NOT covered by the tool call gate (mcp.Gated /
 // auth.MCPUser / auth.MCPRole gate tool handlers, not resources/read). A
 // resource serving PUBLIC content (e.g. an MCP App's widget HTML) needs no
-// gating. To serve per-caller or sensitive data, self-gate inside the
-// contents func. It receives the auth/tenant-enriched request context, so it
-// can inspect the caller and return an error for unauthorized reads.
+// gating. To serve per-caller or sensitive data, pass [WithResourceGate]:
+// it hides the resource from a refused caller's resources/list and refuses
+// its resources/read. A check inside the contents func (it receives the
+// auth/tenant-enriched request context) guards only the read; the
+// resource stays listed.
 func (s *Server) RegisterResource(uri, name, mimeType string, contents ResourceContentsFunc, opts ...ResourceOption) error {
 	if uri == "" {
 		return fmt.Errorf("mcp: resource uri must not be empty")
@@ -108,7 +110,10 @@ func (s *Server) RegisterResource(uri, name, mimeType string, contents ResourceC
 
 	// Connected clients re-list. Before serving has begun this fans out
 	// to zero subscribers, so boot-time registration notifies nobody.
-	s.NotifyResourcesListChanged()
+	// The notification carries the resource's own gate: a caller the
+	// gate refuses cannot see the resource in resources/list and must
+	// not be told it appeared.
+	s.notifySubscribers(sseNotification{method: "notifications/resources/list_changed", itemGate: res.gate})
 	return nil
 }
 
@@ -154,24 +159,25 @@ type resourceContentItem struct {
 	Meta map[string]any `json:"_meta,omitempty"`
 }
 
-// handleResourcesList returns one page of registered resources in URI
-// order (without their contents funcs: those run only on read). The URI
-// sort keeps pages stable across requests; the resource registry has no
-// per-caller listing filter (WithResourceGate protects contents, not
-// metadata), so pagination pages the whole registry.
-func (s *Server) handleResourcesList(_ context.Context, req Request) Response {
+// handleResourcesList returns one page of the resources visible
+// to the caller, in URI order. The gate runs BEFORE the page is cut, so
+// pagination walks the post-filter set: a resource whose gate refuses the
+// caller never surfaces on a page and never bends the page sizes or cursor
+// arithmetic that would otherwise count it. A resource's URI, name and
+// description are the disclosure, the same way a template's uriTemplate
+// and description are.
+func (s *Server) handleResourcesList(ctx context.Context, req Request) Response {
 	offset, err := s.listOffset(req, "resources/list")
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
-	s.mu.RLock()
-	list := make([]Resource, 0, len(s.resources))
-	for _, r := range s.resources {
-		list = append(list, r)
-	}
-	s.mu.RUnlock()
-	slices.SortFunc(list, func(a, b Resource) int { return strings.Compare(a.URI, b.URI) })
-	page, next := pageList(s, "resources/list", list, offset)
+	// A resource the caller cannot read is not listed to them: the
+	// URI, name and description are the disclosure.
+	page, next := gatedListPage(s, ctx, "resources/list", offset,
+		func() map[string]Resource { return s.resources },
+		func(r Resource) func(context.Context) error { return r.gate },
+		func(a, b Resource) int { return strings.Compare(a.URI, b.URI) },
+	)
 	return newSuccessResponse(req.ID, resourcesListResult{Resources: page, NextCursor: next})
 }
 

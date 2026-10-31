@@ -41,8 +41,9 @@ type sseNotification struct {
 	// itemGate, when non-nil, is the per-item gate a subscriber's
 	// caller must pass to receive this notification. It carries: for
 	// notifications/resources/updated, the resource's own
-	// WithResourceGate; for the list_changed that RegisterTool and
-	// RegisterResourceTemplate fire, the registered item's gate — a
+	// WithResourceGate; for the list_changed that RegisterTool,
+	// RegisterResource and RegisterResourceTemplate fire, the
+	// registered item's gate — a
 	// caller the gate refuses cannot see the item in its list method
 	// and must not be told it appeared. It is evaluated per
 	// subscriber, at delivery time, against the identity the
@@ -186,16 +187,13 @@ func (s *Server) notifySubscribers(n sseNotification) {
 //     payload, so it is safe to broadcast — but only past this gate.
 //   - the notification's item gate: notifications/resources/updated
 //     carries the resource's own WithResourceGate, and the list_changed
-//     that a gated RegisterTool or RegisterResourceTemplate fires
-//     carries the item's own gate. list_changed is payload-free, so it
-//     names no item — but firing it past a refusing gate would still
+//     that a gated RegisterTool, RegisterPrompt, RegisterResource or
+//     RegisterResourceTemplate fires carries the item's own gate.
+//     list_changed is payload-free, so it names no item, but firing it
+//     past a refusing gate would still
 //     tell that caller that something they cannot see just appeared.
 //     An updated notification past a refusing gate would tell a caller
 //     who can never read the contents that they just changed.
-//     (Concrete resources are the deliberate asymmetry: their
-//     metadata stays listed — the gate guards the read and the update
-//     notice, not the listing — while tools, prompts and resource
-//     templates ARE hidden from their list methods.)
 func (s *Server) subscriberMayReceive(ctx context.Context, n sseNotification) bool {
 	if !gateAllows(s.checkServerGate, ctx) {
 		return false
@@ -247,12 +245,11 @@ func (s *Server) NotifyToolsListChanged() {
 }
 
 // NotifyResourcesListChanged raises notifications/resources/list_changed
-// on every eligible subscriber stream. RegisterResource fires it
-// directly — a concrete resource's metadata stays listed by design, so
-// there is no item gate to carry — and RegisterResourceTemplate fires
-// the gated internal form, carrying the template's own gate (the spec
-// folds templates under the one `resources` capability, and has no
-// separate template list_changed).
+// on every eligible subscriber stream, with no item gate. RegisterResource
+// and RegisterResourceTemplate fire the gated internal form instead,
+// carrying the registered item's own gate (the spec folds templates
+// under the one `resources` capability, and has no separate template
+// list_changed).
 func (s *Server) NotifyResourcesListChanged() {
 	s.notifySubscribers(sseNotification{method: "notifications/resources/list_changed"})
 }

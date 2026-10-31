@@ -596,6 +596,15 @@ few lines, and link the PR or the docs page for the rest.
   `map[string]any` field reached the handler as 9007199254740992, where
   the same body through the route's `Bind` kept its digits. The tool path
   now decodes the way `Bind` does.
+- **BREAKING: `WithResourceGate` hides the resource from callers it
+  refuses.** A refused caller still saw the resource's URI, name and
+  description in `resources/list`, and was told by
+  `notifications/resources/list_changed` that it appeared. Both now pass
+  the gate, the rule tools, prompts and resource templates already
+  follow, and pagination walks the filtered set. A resource that clients
+  must discover before they pass the gate drops `WithResourceGate` and
+  checks the caller inside its contents func. See
+  [MCP](framework/docs/content/mcp.md).
 - **Tags on an embedded struct bind.** `handler.Bind` and the MCP
   `ToolAdapter` ignored `header`, `query` and `path` tags on fields of an
   embedded struct, so an input that embedded a shared `Pagination` got
