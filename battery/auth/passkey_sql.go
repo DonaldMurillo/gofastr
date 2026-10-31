@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -82,13 +81,23 @@ func timeOrZero(sec int64) time.Time {
 }
 
 // AddPasskey implements PasskeyStore. It counts the user's passkeys and
-// inserts in one transaction. Postgres runs READ COMMITTED, where each
-// of two concurrent adds counts the other's insert out, so there the
-// transaction first takes an advisory lock on the user's passkeys.
-// SQLite allows one writer at a time: of two adds that both counted,
-// only the first commits.
+// inserts in one transaction. On Postgres, where each of two concurrent
+// adds would count the other's insert out, the transaction first takes
+// an advisory lock on the user's passkeys. The lock names the table by
+// its resolved oid, so two spellings of one table ("Passkeys",
+// "public.passkeys") share it, and the transaction is READ COMMITTED
+// whatever the server default: under REPEATABLE READ the count would
+// read the snapshot taken before the lock wait, missing the insert the
+// lock waited for. SQLite allows one writer at a time: of two adds that
+// both counted, only the first commits.
 func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) (err error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	t := query.QuoteFolded(s.table)
+	pg := s.dialect.of(s.db) == migrate.DialectPostgres
+	var opts *sql.TxOptions
+	if pg {
+		opts = &sql.TxOptions{Isolation: sql.LevelReadCommitted}
+	}
+	tx, err := s.db.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -97,10 +106,11 @@ func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, m
 			_ = tx.Rollback()
 		}
 	}()
-	t := query.QuoteFolded(s.table)
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-			passkeyLockKey(s.table, c.UserID)); err != nil {
+	if pg {
+		// An oid is digits, so the ':' cannot be forged by a user id.
+		if _, err = tx.ExecContext(ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended(($1::regclass)::oid::text || ':' || $2::text, 0))`,
+			t, c.UserID); err != nil {
 			return err
 		}
 	}
@@ -121,13 +131,6 @@ func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, m
 		return err
 	}
 	return tx.Commit()
-}
-
-// passkeyLockKey names one user's passkeys in one table for the advisory
-// lock. Each part is length-prefixed, so no user id can alias another
-// table's or user's key.
-func passkeyLockKey(table, userID string) string {
-	return strconv.Itoa(len(table)) + ":" + table + strconv.Itoa(len(userID)) + ":" + userID
 }
 
 func scanPasskey(row rowScanner) (PasskeyCredential, error) {

@@ -196,6 +196,39 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 	}
 }
 
+// adapterDirOpened runs between claimAdapterDir's open and its chmod.
+// Tests swap the name there.
+var adapterDirOpened = func() {}
+
+// claimAdapterDir tightens an adapter's fixed work dir to 0700, or
+// refuses it. The name must be a real directory: chmod by path follows
+// a symlink, so a co-user's link to a directory this user owns (a
+// ~/public_html) got that directory tightened and the turn ran inside
+// it. Checking with Lstat first still left a window: a co-user who
+// planted a real directory could swap the name for such a link before
+// the chmod. So the dir is opened without following a link, the handle
+// is chmodded (only its owner can, so a co-user's dir is refused, not
+// adopted), and the name must still be that directory afterwards.
+func claimAdapterDir(dir string) error {
+	f, err := openNoFollowDir(dir)
+	if err != nil {
+		return fmt.Errorf("not a directory (a symlink is refused): %w", err)
+	}
+	defer f.Close()
+	held, err := f.Stat()
+	if err != nil || !held.IsDir() {
+		return errors.New("not a directory")
+	}
+	adapterDirOpened()
+	if err := f.Chmod(0o700); err != nil {
+		return fmt.Errorf("not owned by this user (chmod 0700: %w)", err)
+	}
+	if now, err := os.Lstat(dir); err != nil || !os.SameFile(held, now) {
+		return errors.New("the name was replaced while it was being claimed")
+	}
+	return nil
+}
+
 // chatTextByEntryID is a chat message's text and the ACP session that
 // wrote it, "" for the panel and the HTTP and MCP tools.
 func chatTextByEntryID(l *live.Live, id string) (text, acpSession string) {
@@ -297,18 +330,8 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 			logger.Printf("agent: adapter %q work dir %s: %v", adapter.Name, adapter.Dir, err)
 			return
 		}
-		// The name must be a real directory. chmod follows a symlink,
-		// so a co-user's link to a directory this user owns (a
-		// ~/public_html) passed the ownership check below, tightened
-		// that directory to 0700, and the turn ran inside it.
-		if fi, err := os.Lstat(adapter.Dir); err != nil || !fi.IsDir() {
-			logger.Printf("agent: adapter %q work dir %s is not a directory (a symlink is refused); refusing to run in it", adapter.Name, adapter.Dir)
-			return
-		}
-		if err := os.Chmod(adapter.Dir, 0o700); err != nil {
-			// Fail closed: chmod only succeeds for the owner, so a
-			// co-user's pre-created dir is refused, not adopted.
-			logger.Printf("agent: adapter %q work dir %s is not owned by this user (chmod 0700: %v); refusing to run in it", adapter.Name, adapter.Dir, err)
+		if err := claimAdapterDir(adapter.Dir); err != nil {
+			logger.Printf("agent: adapter %q work dir %s: %v; refusing to run in it", adapter.Name, adapter.Dir, err)
 			return
 		}
 		if err := fileperm.Restrict(adapter.Dir, true); err != nil {

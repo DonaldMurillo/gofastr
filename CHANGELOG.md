@@ -122,7 +122,9 @@ few lines, and link the PR or the docs page for the rest.
   refused.** `stun:stun.example.net` and `turn:[2001:db8::1]` were
   refused, though RFC 7064/7065 make the port optional, while a host
   carrying `/path` passed. A host is now a DNS name, an IPv4 literal or
-  a bracketed IPv6 literal.
+  a bracketed IPv6 literal (brackets around anything else are refused),
+  and a path, userinfo or fragment is refused in the `stun://host` form
+  too.
 - **`gofastr desktop build` on macOS refuses a GOARCH other than arm64.**
   The build set arm64 whatever `GOARCH` asked for, and an Intel Mac got
   a bundle reported written that could not launch. The desktop shell is
@@ -206,8 +208,12 @@ few lines, and link the PR or the docs page for the rest.
   loader held every caller of the key past its deadline, after the
   timeout middleware had already answered. Each caller now returns
   `ctx.Err()` at its deadline while the fill runs on for the others,
-  and the loader's context is cancelled once no caller waits. A loader
-  panic comes back as an error instead of a re-panic.
+  and the loader's context is cancelled once no caller waits. A fill no
+  caller waits for stores nothing, so it cannot overwrite a value a
+  later caller filled, and it never writes the destination of a caller
+  that left. A cache with value receivers fills alone for each caller,
+  who still leaves at the deadline. A loader panic comes back as an
+  error instead of a re-panic.
 - **A rolled-back update that only set a column to NULL publishes no
   event.** The ambient-transaction confirm query skipped NULL values, so
   such an update was confirmed on its key alone. NULLs are matched with
@@ -373,7 +379,9 @@ few lines, and link the PR or the docs page for the rest.
   The plugin counted and then stored, so two registrations with one slot
   left both stored. `PasskeyStore.AddPasskey` now takes the cap and
   refuses past it with `auth.ErrPasskeyLimit`, counting and inserting as
-  one step; a custom store adds the parameter.
+  one step; a custom store adds the parameter. On Postgres the step is
+  READ COMMITTED whatever the server default, behind an advisory lock on
+  the table's resolved oid, so two spellings of one table share it.
 - **`kiln acp --agent X` no longer runs the agent on a refused ACP
   prompt.** The ACP session journals the prompt and answers `refusal`,
   and the chat watcher picked the journaled message up and ran a turn on
@@ -405,7 +413,9 @@ few lines, and link the PR or the docs page for the rest.
 - **Kiln refuses a symlinked adapter work directory.** A co-user could
   plant `/tmp/kiln-<adapter>` as a link to a directory this user owns;
   the chmod followed it, tightened that directory to 0700 and ran the
-  turn inside it.
+  turn inside it. The directory is opened without following a link and
+  chmodded through the handle, so a name swapped for a link between the
+  check and the chmod is refused too.
 - **OIDC follows the provider's token endpoint auth method.** The secret
   always went in the form body, so a provider accepting only
   `client_secret_basic` could not log anyone in. A provider whose

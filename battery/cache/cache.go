@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -137,8 +139,10 @@ func runFlight(ctx context.Context, key string, f *flight, fill func(context.Con
 // fails another waiter's fill. Each caller's own context still governs its
 // fast-path read, its wait (a caller whose context ends returns ctx.Err()
 // while the fill runs on for the others) and its final read-back. The
-// fill's context is cancelled when the last waiting caller leaves. A
-// loader panic is returned as an error.
+// fill's context is cancelled when the last waiting caller leaves, and an
+// abandoned fill stores nothing. A value-backed Cache shares no fill:
+// each caller fills alone, and still leaves at its deadline. A loader
+// panic is returned as an error.
 func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest any, loader Loader) error {
 	// Fast path: already cached.
 	if err := c.Get(ctx, key, dest); err == nil {
@@ -156,9 +160,17 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	// drops its cancellation and deadline; joinFill cancels it once no
 	// caller waits.
 	fill := func(flightCtx context.Context) error {
-		// Re-check: another waiter may have populated the cache while we
-		// queued for the flight.
-		if err := c.Get(flightCtx, key, dest); err == nil {
+		// Re-check: another writer may have populated the cache while we
+		// queued for the flight. It decodes into a fresh value of dest's
+		// type, never dest itself: the fill can outlive the caller whose
+		// dest it would write, and every caller reads its own dest back
+		// below. Not into an any either: that decodes a number as float64
+		// and refuses 1e400, which dest's own type may hold.
+		probe := dest
+		if t := reflect.TypeOf(dest); t != nil && t.Kind() == reflect.Pointer {
+			probe = reflect.New(t.Elem()).Interface()
+		}
+		if err := c.Get(flightCtx, key, probe); err == nil {
 			return nil
 		} else if !errors.Is(err, ErrCacheMiss) {
 			return err
@@ -166,6 +178,14 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 		val, lerr := loader(flightCtx)
 		if lerr != nil {
 			return lerr
+		}
+		// A fill abandoned by its last caller must not store: a later
+		// caller may already have filled the key afresh, and this value
+		// would overwrite it. A Set already under way when the last caller
+		// leaves still lands; fencing that needs a compare-and-set the
+		// Cache interface does not have.
+		if err := flightCtx.Err(); err != nil {
+			return err
 		}
 		return c.Set(flightCtx, key, val, ttl)
 	}
@@ -175,9 +195,10 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	} else {
 		// A value implementation may be a map- or slice-backed cache, so
 		// formatting its interface value cannot produce reliable instance
-		// identity. Fill directly instead of letting separate instances
-		// with the same type/key share a result.
-		err = fill(context.WithoutCancel(ctx))
+		// identity. Fill alone instead of letting separate instances
+		// with the same type/key share a result: a flight under a key no
+		// other call uses, so the caller still leaves at its deadline.
+		err = joinFill(ctx, "alone:"+strconv.FormatUint(aloneFills.Add(1), 10), fill)
 	}
 	if err != nil {
 		return err
@@ -187,6 +208,10 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	// canonical cached representation.
 	return c.Get(ctx, key, dest)
 }
+
+// aloneFills numbers the flights of value-backed caches. A shared key
+// starts with a %T, which is never the bare word "alone".
+var aloneFills atomic.Uint64
 
 func cacheFlightKey(c Cache, key string) (string, bool) {
 	v := reflect.ValueOf(c)

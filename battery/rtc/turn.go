@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"maps"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -37,6 +38,12 @@ func validICEURLs(urls []string) bool {
 		}
 		scheme := strings.ToLower(u.Scheme)
 		if !iceSchemes[scheme] {
+			return false
+		}
+		// The "//" form parses its userinfo and path apart from Host, and
+		// either form parses a fragment apart from the endpoint, where the
+		// checks below would never see them.
+		if u.User != nil || u.Path != "" || strings.Contains(raw, "#") {
 			return false
 		}
 		endpoint := u.Opaque
@@ -89,7 +96,13 @@ func validEndpointPort(endpoint string) bool {
 	if host == "" {
 		return false
 	}
-	if !strings.HasPrefix(host, "[") && !validHostname(host) {
+	if strings.HasPrefix(host, "[") {
+		// Brackets hold an IPv6 literal and nothing else.
+		a, err := netip.ParseAddr(host[1 : len(host)-1])
+		if err != nil || !a.Is6() || a.Zone() != "" {
+			return false
+		}
+	} else if !validHostname(host) {
 		return false // a path, query or other junk riding on the host
 	}
 	if endpoint == "" {
