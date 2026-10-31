@@ -143,6 +143,24 @@ few lines, and link the PR or the docs page for the rest.
   whole suite and could exit 0. Package patterns are passed through,
   `--run`, `--bench` and `--timeout` take their value either way, and
   another flag is an error.
+- **A language refused with `q=0` stays refused when a longer tag
+  falls back to it.** `Accept-Language: en;q=0, en-GB;q=0.9, fr;q=0.8`
+  served `en`, reached by trimming `en-GB`, ahead of the accepted `fr`.
+- **`store.Computed` validates its dependency names.** A dep holding a
+  comma split into two signals on the client, and an empty or reserved
+  name shipped a binding that never fired. Deps follow the slice-name
+  rules, and `route.*` signals stay readable.
+- **BREAKING: `ui.SparklineConfig.Color` takes a theme preset only.**
+  The doc said a raw CSS color passed through, but every value other
+  than `success`, `warning`, `danger` and `info` drew the default, and
+  a value with a space added classes to the chart. The field is now a
+  `ui.SparklineColor` (`SparklinePrimary`, `SparklineSuccess`,
+  `SparklineWarning`, `SparklineDanger`, `SparklineInfo`): a quoted
+  preset still compiles, a `string` variable needs the conversion, and
+  any other value panics.
+- **desktop-focus completes a session paused at 00:00.** The pause
+  stored no time left and a paused tick never completes, so the timer
+  froze and no break started.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

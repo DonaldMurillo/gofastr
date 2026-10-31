@@ -490,3 +490,10 @@ notes:
     find:
       uses:
         - gofastr/kiln/freeze.FreezeAndGenerate
+  - change: "BREAKING - ui.SparklineConfig.Color is a ui.SparklineColor (success, warning, danger, info or empty) and panics on any other value; it took any string and drew the default for all but those four"
+    breaking: true
+    hits: review
+    guidance: "A raw CSS color never reached the line: the value became a class the CSS does not style. Use a SparklineColor constant, or leave Color empty for the primary color; a string variable needs ui.SparklineColor(v). A new color is a theme token."
+    find:
+      uses:
+        - gofastr/framework/ui.SparklineConfig.Color
