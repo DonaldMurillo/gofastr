@@ -603,7 +603,9 @@ few lines, and link the PR or the docs page for the rest.
   the gate, the rule tools, prompts and resource templates already
   follow, and pagination walks the filtered set. A resource that clients
   must discover before they pass the gate drops `WithResourceGate` and
-  checks the caller inside its contents func. See
+  checks the caller inside its contents func. Its
+  `notifications/resources/updated` then reaches every subscriber too,
+  so keep the gate when even update timing is private. See
   [MCP](framework/docs/content/mcp.md).
 - **Tags on an embedded struct bind.** `handler.Bind` and the MCP
   `ToolAdapter` ignored `header`, `query` and `path` tags on fields of an

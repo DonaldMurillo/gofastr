@@ -459,6 +459,11 @@ caller anything the matching methods would not:
   session revoked mid-stream has its stream closed at the next
   notification, and so does a caller the re-check places in another
   tenant (`tenant.ResolveMiddleware` re-resolves it).
+- Nothing fires when a gate changes its answer for a connected caller
+  without a registration, such as a role granted mid-session. Call
+  `NotifyToolsListChanged`, `NotifyPromptsListChanged` or
+  `NotifyResourcesListChanged` after the change so clients re-list.
+  These carry no item gate, so they pass only the server-wide gate.
 
 A slow subscriber never blocks the server. Each stream has a bounded
 buffer (16 notifications); a full buffer means the client stopped
@@ -802,8 +807,10 @@ the merged state. The convention and its boundaries:
   `WithToolGate` registration option, which gates both.
 - **Checking the caller inside a resource's contents func instead of passing
   `WithResourceGate`.** The check refuses the read, but the resource stays in
-  `resources/list` with its URI, name and description. `WithResourceGate`
-  hides it from the listing and refuses the read.
+  `resources/list` with its URI, name and description, and its
+  `notifications/resources/updated` reach every subscriber.
+  `WithResourceGate` hides it from the listing, withholds its updates and
+  refuses the read.
 - **Reusing a cursor across list methods.** The minting method is inside the
   signed payload, so `tools/list`'s cursor is invalid-params everywhere else.
   Mint a fresh walk per method.
