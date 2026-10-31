@@ -44,11 +44,23 @@ func TestWSQuickCloseBacksOff(t *testing.T) {
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
+	// The client counts a generation when it starts the dial, before the
+	// request reaches the server, so wait for the server's own count.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		mu.Lock()
+		n := len(dials)
+		mu.Unlock()
+		if n >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server saw %d dials, want 3", n)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(dials) < 3 {
-		t.Fatalf("server saw %d dials, want 3", len(dials))
-	}
 	first, second := dials[1].Sub(dials[0]), dials[2].Sub(dials[1])
 	if second < 1700*time.Millisecond {
 		t.Fatalf("redial gaps %v then %v: the second must back off to about 2s", first, second)
