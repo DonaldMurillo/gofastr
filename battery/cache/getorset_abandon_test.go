@@ -157,3 +157,30 @@ func TestGetOrSetValueCacheStalledLoader(t *testing.T) {
 		}
 	})
 }
+
+// A dest that points at an interface holding the decoding target lost
+// that target in a zero-valued probe, and the re-check refused a value
+// dest decodes.
+func TestGetOrSetRecheckInterfaceDest(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mc := NewMemoryCache(WithMaxEntries(16))
+		defer mc.Close()
+		gc := &gateCache{MemoryCache: mc, gate: make(chan struct{})}
+		var raw json.RawMessage
+		var dst json.Unmarshaler = &raw
+		done := make(chan error, 1)
+		go func() {
+			done <- GetOrSet(context.Background(), gc, "k", time.Minute, &dst, func(context.Context) (any, error) {
+				return "loaded", nil
+			})
+		}()
+		synctest.Wait()
+		if err := mc.Set(context.Background(), "k", json.RawMessage(`{"n":1}`), time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		close(gc.gate)
+		if err := <-done; err != nil || string(raw) != `{"n":1}` {
+			t.Fatalf("GetOrSet = %q, %v; want the stored object", raw, err)
+		}
+	})
+}

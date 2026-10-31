@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -165,10 +166,16 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 		// type, never dest itself: the fill can outlive the caller whose
 		// dest it would write, and every caller reads its own dest back
 		// below. Not into an any either: that decodes a number as float64
-		// and refuses 1e400, which dest's own type may hold.
+		// and refuses 1e400, which dest's own type may hold. A dest that
+		// points at an interface may hold its decoding target there, which
+		// a zero value of the interface loses; any JSON fits a RawMessage.
 		probe := dest
 		if t := reflect.TypeOf(dest); t != nil && t.Kind() == reflect.Pointer {
-			probe = reflect.New(t.Elem()).Interface()
+			if t.Elem().Kind() == reflect.Interface {
+				probe = new(json.RawMessage)
+			} else {
+				probe = reflect.New(t.Elem()).Interface()
+			}
 		}
 		if err := c.Get(flightCtx, key, probe); err == nil {
 			return nil
