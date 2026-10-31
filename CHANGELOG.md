@@ -108,7 +108,8 @@ few lines, and link the PR or the docs page for the rest.
   `uihost.NotFoundTitler` can choose a title from the request path; empty
   titles use the standard screen title or generic not-found title.
   Navigation partials carry the effective 404 title instead of retaining
-  the previous page title or borrowing the failed route's title.
+  the previous page title or borrowing the failed route's title, and an
+  app with no default layout puts it on its bare 404 page.
   Unmatched routes retain their path when a root layout outlet also has
   a not-found fallback.
 - **The admin's Needs attention panel reads clear under every locale.**

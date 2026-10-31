@@ -227,9 +227,10 @@ Useful options:
   path is empty for a missing outlet. Keep the shared screen stateless.
   An empty result falls back to `app.ScreenTitler.ScreenTitle(ctx)`,
   then the framework's generic not-found title. A panicking title provider
-  also uses the generic title. Both full pages and navigation partials
-  carry this title through the normal escaping and app-name suffix rules,
-  rather than borrowing the failed route's title.
+  also uses the generic title. Full pages, navigation partials and the
+  bare page an app without a default layout serves all carry this title
+  through the normal escaping and app-name suffix rules, rather than
+  borrowing the failed route's title.
   An unmatched route retains its request path even if the root layout has
   a `FallbackNotFound` outlet; it is already rendering the not-found page.
 

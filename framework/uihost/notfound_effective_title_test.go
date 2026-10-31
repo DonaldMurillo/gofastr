@@ -98,6 +98,36 @@ func TestNotFoundEffectiveTitles(t *testing.T) {
 	}
 }
 
+// With no default layout the custom 404 body renders in the bare page,
+// and its title provider names that page too.
+func TestNotFoundTitleWithoutLayout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		comp component.Component
+		want string
+	}{
+		{"path", nfPathTitle{value: "by-path"}, "Bare /missing — Title test"},
+		{"escaped", nfPathTitle{value: `Notes <private> & unavailable`}, `Notes <private> & unavailable — Title test`},
+		{"static", nfStaticTitle{}, "Static unavailable — Title test"},
+		{"empty", nfPathTitle{}, "Not found: Title test"},
+		{"panic", nfPathTitle{panicTitle: true}, "Not found: Title test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := New(app.NewApp("Title test"), WithNotFoundScreen(tc.comp))
+			req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+			req = req.WithContext(context.WithValue(req.Context(), notFoundTitleContextKey{}, "Bare "))
+			res := httptest.NewRecorder()
+			host.ServeHTTP(res, req)
+			if res.Code != http.StatusNotFound {
+				t.Fatalf("status=%d", res.Code)
+			}
+			if !strings.Contains(res.Body.String(), "<title>"+html.EscapeString(tc.want)+"</title>") {
+				t.Errorf("bare 404 title: want %q in\n%s", tc.want, res.Body.String())
+			}
+		})
+	}
+}
+
 func TestNotFoundTitleUsesRequestContextAndPath(t *testing.T) {
 	a := app.NewApp("Title test")
 	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
