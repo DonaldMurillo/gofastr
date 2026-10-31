@@ -714,7 +714,10 @@ The owner column is created for you: when no field named like the
 `OwnerField` column is declared, `entity.Define` injects it as a hidden
 string column: AutoMigrate creates it, Create stamps it, and it stays
 out of responses, forms, and the OpenAPI spec. A field you *do* declare
-with that name always wins and is left untouched.
+with that name always wins and is left untouched. A declared owner
+column, like the `MultiTenant` tenant column, still appears in no
+OpenAPI request body, since the server sets both: the create body
+neither lists nor requires them.
 
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
 registers an extractor wires this up: `battery/auth` does so in

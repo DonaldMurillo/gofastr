@@ -167,6 +167,10 @@ var ErrIndexLocked = errors.New("semantic: another process has this index open f
 // with Options.ReadOnly.
 var ErrReadOnly = errors.New("semantic: index is open read-only")
 
+// ErrClosed is returned by Add, Remove and Snapshot on an index after
+// Close: the write would have nowhere durable to go.
+var ErrClosed = errors.New("semantic: index is closed")
+
 // Options configures [Open].
 type Options struct {
 	// Embedder produces vectors. Required.

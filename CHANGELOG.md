@@ -220,6 +220,25 @@ few lines, and link the PR or the docs page for the rest.
   listener failure or a `Shutdown` from elsewhere after the window
   opened left it on a dead app until the user closed it. `Run` now quits
   the window and returns.
+- **The OpenAPI write bodies match what the server reads.** The create
+  body listed the owner and `MultiTenant` tenant columns, required when
+  declared required, though the server stamps both. And the PUT body
+  kept the entity's required list, though PUT runs the same sparse
+  update as PATCH. No write body lists the scope columns now, and
+  neither update body requires a field.
+- **`PgVectorStore` ranks a zero-vector document at score 0.** The query
+  ordered by raw distance, where pgvector's NaN sorts last, so the
+  document ranked below negative matches and a small `topK` dropped it.
+- **A closed `semantic.Index` refuses writes.** `Add` and `Remove` after
+  `Close` returned nil for a change that was gone on reopen; they and
+  `Snapshot` return `semantic.ErrClosed` now. A second `Close` returns
+  nil instead of snapshotting stale state over the next writer's
+  directory.
+- **kiln's Claude Code adapter limits the agent to Bash.** It passed
+  `--allowedTools Bash`, which only skips Bash's permission prompt, next
+  to `--dangerously-skip-permissions`, so the agent kept Read, Write,
+  Edit and the rest. It passes `--tools Bash` now. Bash still reaches
+  the disk: this is no sandbox.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

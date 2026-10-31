@@ -118,7 +118,7 @@ var adapters = map[string]Adapter{
 	},
 	"claude-code": {
 		Name:    "claude-code",
-		Display: "claude --print --allowedTools Bash --append-system-prompt <kiln contract>  (Claude Code, reads ~/.claude/.credentials.json)",
+		Display: "claude --print --tools Bash --append-system-prompt <kiln contract>  (Claude Code, reads ~/.claude/.credentials.json)",
 		Dir:     filepath.Join(os.TempDir(), "kiln-claude"),
 		Detect:  func() bool { _, err := exec.LookPath("claude"); return err == nil },
 		BuildArgs: func(text string) []string {
@@ -126,9 +126,13 @@ var adapters = map[string]Adapter{
 			// runs. Without it claude --print hangs at the first Bash
 			// tool-use waiting for a permission prompt that nobody can answer.
 			//
-			// --allowedTools Bash strips Read/Write/Edit/Glob/Grep so claude
-			// has no on-disk fallback even if the model reaches for one.
-			// curl is reached via Bash, which is all kiln needs.
+			// --tools Bash leaves Bash as the only tool claude has, so
+			// Read/Write/Edit/Glob/Grep are not there to reach for. curl
+			// goes through Bash, which is all kiln needs. (--allowedTools
+			// only skips the prompt for the tools it names; with the flag
+			// above every tool stayed available.) Bash itself still reaches
+			// the disk: this narrows the model's easy fallbacks, it is not
+			// a sandbox.
 			//
 			// --append-system-prompt installs the kiln contract + skill at
 			// the system level, so it outranks claude's default tool autonomy.
@@ -137,7 +141,7 @@ var adapters = map[string]Adapter{
 			// a system prompt the contract is non-negotiable.
 			return []string{
 				"claude", "--print", "--dangerously-skip-permissions",
-				"--allowedTools", "Bash",
+				"--tools", "Bash",
 				"--append-system-prompt", kilnSystemPrompt(),
 				text,
 			}

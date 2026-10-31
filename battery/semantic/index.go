@@ -46,8 +46,12 @@ type index struct {
 	// by Close.
 	lock *os.File
 
-	mu           sync.Mutex
-	wal          *wal
+	mu  sync.Mutex
+	wal *wal
+	// closed is set by Close under mu. A write that reached mu after Close
+	// found the WAL gone and applied in memory only: acknowledged, then
+	// lost on reopen. Writes after Close return ErrClosed.
+	closed       bool
 	opsSinceSnap int
 	// halfApplied is the logged replace whose apply last failed part-way,
 	// nil once every logged write has applied whole.
@@ -352,6 +356,9 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return ErrClosed
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -657,6 +664,9 @@ func (i *index) Snapshot() error {
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return ErrClosed
+	}
 	return i.snapshotLocked()
 }
 
@@ -874,6 +884,10 @@ func (i *index) Stats() Stats {
 func (i *index) Close() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return nil
+	}
+	i.closed = true
 	var errs []error
 	if i.path != "" && !i.readOnly {
 		if err := i.snapshotLocked(); err != nil {
