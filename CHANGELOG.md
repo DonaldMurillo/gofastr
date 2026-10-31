@@ -334,6 +334,16 @@ few lines, and link the PR or the docs page for the rest.
   `.agents/` detail file used to block the next sync as hand-written.
   The `worldreadable` vet check reads the new `atomicfile.Rewrite` as
   it reads `os.WriteFile`, so the switch hid no mode from it.
+- **An rtc room spanning replicas stays within `MaxPeers`.** Two joins
+  on different replicas could each pass the cap before their roster
+  beats met, leaving a room capped at 1 with two members on both. Each
+  replica now ranks the merged room by join order and closes its own
+  peers past the cap with `4409` room full.
+- **A WebSocket client cannot flood Ping or Pong frames.** The read pump
+  answers each Ping itself, so rtc's `MaxFramesPerSecond` never counted
+  them and a raw client could send them without limit. The new
+  `WSConfig.MaxControlFramesPerSecond` (default 32 a second, burst twice
+  that, negative disables) closes the connection with 1008 past it.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

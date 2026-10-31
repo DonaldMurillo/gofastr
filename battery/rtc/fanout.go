@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"sync"
 	"time"
@@ -327,7 +328,7 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	if msg.Kind == "" || msg.Room == "" {
 		return
 	}
-	var kick []*stream.WebSocketConn
+	var kick, full []*stream.WebSocketConn
 	s.mu.Lock()
 	if s.fanout == nil || msg.Node == "" || msg.Node == s.nodeID || origin == s.nodeID {
 		s.mu.Unlock()
@@ -343,7 +344,7 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	case evSignal:
 		s.remoteSignalLocked(&msg)
 	case evRoster:
-		s.remoteRosterLocked(origin, &msg)
+		s.remoteRosterLocked(origin, &msg, &full)
 	}
 	s.mu.Unlock()
 	// Displaced local sockets close on their own goroutine: Close
@@ -352,6 +353,10 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	// stall here would expire live remote entries on other replicas).
 	for _, conn := range kick {
 		go conn.Close()
+	}
+	for _, conn := range full {
+		s.logger.Warn("rtc: peer closed", "reason", "room_full")
+		go func() { _ = conn.CloseWithStatus(4000+http.StatusConflict, "room full") }()
 	}
 }
 
@@ -548,8 +553,10 @@ func (s *Signaler) remoteSignalLocked(msg *fanoutMsg) {
 
 // remoteRosterLocked replaces one replica's contribution for a room
 // (the heartbeat payload) and mirrors membership deltas into the local
-// room. An empty roster deletes the entry (graceful leave).
-func (s *Signaler) remoteRosterLocked(origin string, msg *fanoutMsg) {
+// room. An empty roster deletes the entry (graceful leave). Local
+// sockets the beat pushed past MaxPeers are appended to full, closed
+// outside the lock as the remote join displacements are.
+func (s *Signaler) remoteRosterLocked(origin string, msg *fanoutMsg, full *[]*stream.WebSocketConn) {
 	if msg.Room == "" {
 		return
 	}
@@ -591,6 +598,32 @@ func (s *Signaler) remoteRosterLocked(origin string, msg *fanoutMsg) {
 	// local roster) so a periodic beat that changes nothing publishes
 	// nothing.
 	s.announceRemoteDeltaLocked(msg.Room, prev, s.remoteViewLocked(msg.Room, time.Time{}))
+	*full = append(*full, s.overCapLocalLocked(msg.Room)...)
+}
+
+// overCapLocalLocked returns the local sockets ranked past MaxPeers in a
+// room's merged roster. Two replicas can each admit a join before their
+// beats meet, each checking the cap against a view without the other's
+// peer, so the merged room can stand past the cap. Every replica ranks
+// the same merged roster by Order then ID and closes only its own peers
+// past the cap: the latest seats lose, each on its own replica, and
+// their leaves bring every view back under the cap. Caller holds s.mu.
+func (s *Signaler) overCapLocalLocked(roomName string) []*stream.WebSocketConn {
+	rm := s.rooms[roomName]
+	if rm == nil {
+		return nil
+	}
+	merged := s.mergedPeersLocked(roomName, time.Now())
+	if len(merged) <= s.cfg.MaxPeers {
+		return nil
+	}
+	var out []*stream.WebSocketConn
+	for _, p := range merged[s.cfg.MaxPeers:] {
+		if lp := rm.peers[p.ID]; lp != nil {
+			out = append(out, lp.conn)
+		}
+	}
+	return out
 }
 
 // announceRemoteDeltaLocked tells the local room how its remote view

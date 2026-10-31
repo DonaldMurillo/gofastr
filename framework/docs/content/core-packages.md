@@ -125,7 +125,11 @@ once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
 from the moment the Ping is written, so a long data write that delays
 the Ping does not eat into the peer's time to answer. An app that never
 calls `Read` is push-only: once the buffer fills, further inbound data
-is dropped so pings and the Close handshake still flow.
+is dropped so pings and the Close handshake still flow. The pump answers
+a Ping itself, so an app limiting its own frames never counts them:
+`MaxControlFramesPerSecond` (default 32, burst twice that; negative
+disables) caps the Pings and Pongs a client sends, and past it the
+connection closes with 1008.
 
 `Upgrade` refuses a handshake RFC 6455 does not accept before it
 hijacks: a method other than GET, no `Connection: Upgrade` token, a
