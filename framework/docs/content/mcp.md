@@ -41,7 +41,7 @@ the MCP server card mirrors it.
 | `ping` | Liveness check; empty result. |
 | `tools/list` | One page of the tools the caller may see, name order. |
 | `tools/call` | Invokes a tool by name with an `arguments` object. |
-| `resources/list` | One page of registered resources, URI order, metadata only. |
+| `resources/list` | One page of the resources the caller may see, URI order, metadata only. |
 | `resources/read` | A resource's contents by `uri`. |
 | `resources/templates/list` | One page of the templates the caller may see, uriTemplate order. |
 | `resources/subscribe` | Arms `resources/updated` notifications for a `uri`. Empty result. |

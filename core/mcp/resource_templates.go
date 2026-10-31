@@ -41,13 +41,11 @@ func WithResourceTemplateMeta(meta map[string]any) ResourceTemplateOption {
 }
 
 // WithResourceTemplateGate attaches a per-caller precondition to a
-// template. Unlike [WithResourceGate] — which protects a resource's
-// CONTENTS and leaves its metadata listed, because a concrete resource
-// still has a read to refuse — a template has no read path of its own:
-// the listing entry IS the whole disclosure. So the gate filters
-// resources/templates/list, the prompt-side contract
-// ([WithPromptGate]): a caller the gate refuses never sees the template,
-// and pagination walks the post-filter set.
+// template. A template has no read path of its own: the listing entry is
+// the whole disclosure. So the gate filters resources/templates/list,
+// the contract [WithResourceGate] and [WithPromptGate] follow too: a
+// caller the gate refuses never sees the template, and pagination walks
+// the post-filter set.
 //
 // battery/auth's MCPUser() / MCPRole("admin") are ready-made gates.
 func WithResourceTemplateGate(gate func(ctx context.Context) error) ResourceTemplateOption {
