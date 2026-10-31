@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/assets/brand"
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/battery/sitesearch"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -40,28 +41,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
-	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
-
-// appIconPNG generates the site's app-icon source at startup, a diagonal
-// gradient in the site's single amber accent (hex approximations of the
-// oklch tokens in theme.go). uihost.WithAppIcon derives /favicon.ico, the
-// sized PNGs under /__gofastr/icons/, and the head links from this one
-// image, so no binary icon assets live in the repo.
-func appIconPNG() []byte {
-	img, err := fwimage.NewGradient(512, 512, "#F2B14D", "#8F5D14")
-	if err != nil {
-		return nil // WithAppIcon warns and skips on undecodable input
-	}
-	b, err := img.PNG().Bytes()
-	if err != nil {
-		return nil
-	}
-	return b
-}
 
 func main() {
 	fwApp := setupServer()
@@ -202,7 +185,7 @@ func setupServer() *framework.App {
 		// Content negotiation itself is turned on by the bundle's
 		// ContentNegotiation field below.
 		uihost.WithPublicLLMMD(),
-		uihost.WithAppIcon(appIconPNG()),
+		uihost.WithAppIcon(brand.IconPNG()),
 		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder, plain Go you own. Early (v0.x)."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
