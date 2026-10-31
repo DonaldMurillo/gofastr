@@ -1,0 +1,23 @@
+# Cursor Bugbot configuration. Docs: https://cursor.com/docs/bugbot
+# Bugbot reads this file from the PR's base branch, so a PR cannot change
+# how it reviews itself. Review rules live in .cursor/BUGBOT.md (plus the
+# nested ones under framework/ui and cmd/gofastr).
+version: 1
+
+triggers:
+  # Matches CodeRabbit: drafts are not reviewed.
+  drafts: false
+  frequency: everyPush
+
+review:
+  effort: default
+  # Re-review only what changed since Bugbot's last pass.
+  incremental: true
+
+prSummary:
+  # CodeRabbit already posts the high-level summary.
+  mode: disabled
+
+autofix:
+  # Findings are triaged by hand (CLAUDE.md hard rule 10).
+  mode: disabled
