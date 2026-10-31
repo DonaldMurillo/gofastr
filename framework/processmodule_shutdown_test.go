@@ -116,10 +116,13 @@ func TestShutdownStopsProcessModules(t *testing.T) {
 
 // heldWatchRunner starts children whose first Wait, the exit watcher the
 // supervisor starts at spawn, returns only once gate closes. Every later
-// Wait passes straight through.
+// Wait passes straight through. watching closes when that first Wait has
+// begun: the watcher goroutine can be scheduled after the module reports
+// Ready, and a drain that called Wait before it would be the one held.
 type heldWatchRunner struct {
-	inner Runner
-	gate  chan struct{}
+	inner    Runner
+	gate     chan struct{}
+	watching chan struct{}
 }
 
 func (r *heldWatchRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
@@ -127,18 +130,23 @@ func (r *heldWatchRunner) Start(ctx context.Context, spec ChildSpec) (RunningChi
 	if err != nil {
 		return nil, err
 	}
-	return &heldWatchChild{RunningChild: c, gate: r.gate}, nil
+	return &heldWatchChild{RunningChild: c, gate: r.gate, watching: r.watching}, nil
 }
 
 type heldWatchChild struct {
 	RunningChild
-	gate  chan struct{}
-	waits atomic.Int32
+	gate     chan struct{}
+	watching chan struct{}
+	waits    atomic.Int32
 }
 
 func (c *heldWatchChild) Wait() error {
+	first := c.waits.Add(1) == 1
+	if first {
+		close(c.watching)
+	}
 	err := c.RunningChild.Wait()
-	if c.waits.Add(1) == 1 {
+	if first {
 		<-c.gate
 	}
 	return err
@@ -163,10 +171,12 @@ func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
 	sup.cfg.DrainPerModule = 2 * time.Second
 	gate := make(chan struct{})
 	t.Cleanup(func() { close(gate) })
-	sup.Slot(d.Name).runner = &heldWatchRunner{
-		inner: &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)},
-		gate:  gate,
+	runner := &heldWatchRunner{
+		inner:    &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)},
+		gate:     gate,
+		watching: make(chan struct{}),
 	}
+	sup.Slot(d.Name).runner = runner
 	probe := &childProbe{sup: sup, name: d.Name}
 	app.RegisterBattery(probe)
 
@@ -175,6 +185,11 @@ func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
+	select {
+	case <-runner.watching:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the exit watcher never waited on the child")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

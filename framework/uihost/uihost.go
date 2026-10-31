@@ -2523,6 +2523,14 @@ type NotFoundRenderer interface {
 	RenderNotFound(path string) render.HTML
 }
 
+// NotFoundTitler supplies the title for a custom 404 screen. The context
+// and path belong to the current render. An empty path identifies an outlet
+// fallback. Returning an empty title falls back to app.ScreenTitler, then
+// the framework's default not-found title.
+type NotFoundTitler interface {
+	NotFoundTitle(ctx context.Context, path string) string
+}
+
 // notFoundBodyScreen adapts the host's configured 404 screen
 // ([WithNotFoundScreen]) to the app render pipeline's component slot:
 // RenderNotFound(path) when the screen implements it, else RenderCtx or
@@ -2545,6 +2553,18 @@ func (s *notFoundBodyScreen) RenderCtx(ctx context.Context) render.HTML {
 		return nf.RenderNotFound(s.path)
 	}
 	return component.RenderComponentCtx(ctx, s.comp)
+}
+
+func (s *notFoundBodyScreen) ScreenTitle(ctx context.Context) string {
+	if nf, ok := s.comp.(NotFoundTitler); ok {
+		if title := nf.NotFoundTitle(ctx, s.path); title != "" {
+			return title
+		}
+	}
+	if titled, ok := s.comp.(app.ScreenTitler); ok {
+		return titled.ScreenTitle(ctx)
+	}
+	return ""
 }
 
 // defaultNotFoundScreen is the framework's built-in 404 body, the same
@@ -2671,8 +2691,16 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 	// With no root layout the configured screen still renders, in the
 	// bare <main>; a screen that panics gets the built-in body.
 	if ds.notFoundScreen != nil {
-		if body, err := component.SafeRenderCtx(ctx, ds.notFoundBodyComponent(path)); err == nil {
-			writeMinimalPage(w, ds.LangFor(ctx, path), title, body)
+		screen := ds.notFoundBodyComponent(path)
+		if body, err := component.SafeRenderCtx(ctx, screen); err == nil {
+			if name := safeNotFoundTitle(ctx, screen, path); name != "" {
+				// Same convention as the page pipeline: "<page> — <app>".
+				title = name
+				if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
+					title += suffix
+				}
+			}
+			writeMinimalPage(w, ds.LangFor(ctx, path), textsafe.StripInvisible(title), body)
 			return
 		}
 	}
@@ -2682,6 +2710,25 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),
 		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
 	)
+}
+
+// safeNotFoundTitle asks a configured 404 screen for its title. A title
+// provider that panics names nothing, and the page keeps the default
+// title, as the layout pipeline's title lookup does.
+func safeNotFoundTitle(ctx context.Context, screen component.Component, path string) (title string) {
+	t, ok := screen.(app.ScreenTitler)
+	if !ok {
+		return ""
+	}
+	defer func() {
+		if err := recover(); err != nil {
+			title = ""
+			slog.Error("uihost: not-found screen title panicked",
+				"path", textsafe.ScrubControlBytes(path),
+				"panic", textsafe.Recovered(err))
+		}
+	}()
+	return t.ScreenTitle(ctx)
 }
 
 // writeMinimalPage writes the bare error document a host with no root
