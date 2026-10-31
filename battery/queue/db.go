@@ -954,7 +954,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	var out []Job
 	for rows.Next() {
 		var j Job
-		var payload string
+		var payload sql.NullString // the DDL allows NULL, as scanJob reads it
 		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
@@ -975,7 +975,9 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 				return nil, fmt.Errorf("queue: decode job %q updated_at: %w", j.ID, err)
 			}
 		}
-		j.Payload = []byte(payload)
+		if payload.Valid {
+			j.Payload = []byte(payload.String)
+		}
 		out = append(out, j)
 	}
 	return out, rows.Err()

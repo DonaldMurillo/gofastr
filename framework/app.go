@@ -2465,12 +2465,14 @@ func (a *App) entityRouteCollision(ent *entity.Entity, mountPath string) string 
 	// them, better a loud false positive at registration than a panic
 	// halfway through the commit phase.
 	claimed := map[string][]string{}
-	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
+	patterns := crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()})
+	for _, pattern := range patterns {
 		method, path, _ := strings.Cut(pattern, " ")
 		path = normalizeRoutePattern(path)
 		claimed[path] = append(claimed[path], method)
 	}
-	for _, rt := range a.router.Routes() {
+	routes := a.router.Routes()
+	for _, rt := range routes {
 		methods, ok := claimed[normalizeRoutePattern(rt.Pattern)]
 		if !ok {
 			continue
@@ -2482,7 +2484,71 @@ func (a *App) entityRouteCollision(ent *entity.Entity, mountPath string) string 
 			}
 		}
 	}
+	// An equal shape is not the only conflict: ServeMux also refuses two
+	// patterns that overlap with neither more specific, such as GET
+	// /{kind}/_events against the generated GET /posts/{id}, and that
+	// panic came mid-commit (2026-10-27 S7). Every route goes through the
+	// router's one registration point and is recorded there, so replaying
+	// them into a scratch mux asks the real mux's question.
+	held := newMuxReplay(routes)
+	for _, pattern := range patterns {
+		if conflict, refused := held.add(pattern, "this entity's own generated CRUD route"); refused {
+			return entityScreenCollisionMessage(name, mountPath, conflict.pattern)
+		}
+	}
 	return ""
+}
+
+// muxReplay is a scratch ServeMux holding the router's registered routes
+// and any patterns added since, each with what owns it. Every route goes
+// through the router's one registration point and is recorded there, so
+// the scratch mux refuses exactly what the router's mux would, overlaps
+// included.
+type muxReplay struct {
+	mux  *http.ServeMux
+	held []heldPattern
+}
+
+type heldPattern struct{ pattern, owner string }
+
+func newMuxReplay(routes []router.RegisteredRoute) *muxReplay {
+	r := &muxReplay{mux: http.NewServeMux()}
+	for _, rt := range routes {
+		p := rt.Method + " " + rt.Pattern
+		muxAccepts(r.mux, p)
+		r.held = append(r.held, heldPattern{strings.TrimSpace(p), "an existing route"})
+	}
+	return r
+}
+
+// add registers pattern under owner. When the mux refuses it, add
+// returns the held pattern it conflicts with; a conflict only the whole
+// set produces names no single pattern.
+func (r *muxReplay) add(pattern, owner string) (heldPattern, bool) {
+	if muxAccepts(r.mux, pattern) {
+		r.held = append(r.held, heldPattern{pattern, owner})
+		return heldPattern{}, false
+	}
+	for _, h := range r.held {
+		pair := http.NewServeMux()
+		muxAccepts(pair, h.pattern)
+		if !muxAccepts(pair, pattern) {
+			return h, true
+		}
+	}
+	return heldPattern{pattern: "(the routes registered together)", owner: "a combination of routes"}, true
+}
+
+// muxAccepts registers pattern on mux with a no-op handler and reports
+// whether the mux took it rather than panicking on a conflict.
+func muxAccepts(mux *http.ServeMux, pattern string) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	mux.Handle(pattern, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	return true
 }
 
 // normalizeRoutePattern rewrites every wildcard segment to a constant, so
@@ -2559,15 +2625,21 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// pair through validation and into the commit phase, where the
 		// panic arrived with the registry entry and CRUD routes already
 		// published and no way to un-publish them.
+		routes := a.router.Routes()
 		taken := map[string]string{}
-		for _, rt := range a.router.Routes() {
+		for _, rt := range routes {
 			taken[normalizeRoutePattern(strings.ToUpper(rt.Method)+" "+rt.Pattern)] = "an existing route"
 		}
+		// An equal shape is not the only conflict: the scratch mux also
+		// refuses an endpoint that overlaps a route with neither more
+		// specific, as entityRouteCollision checks for CRUD routes.
+		held := newMuxReplay(routes)
 		// The CRUD routes are not on the router yet, this runs before
 		// the commit phase, so ask crud for the set it will mount.
 		if crudMount != "" {
 			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
+				held.add(pattern, "this entity's own generated CRUD route")
 			}
 		}
 		for _, endpoint := range endpoints {
@@ -2579,6 +2651,9 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			key := normalizeRoutePattern(method + " " + path)
 			if owner, clash := taken[key]; clash {
 				return fmt.Errorf("endpoint %q would register %s, but that route is %s: rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
+			}
+			if conflict, refused := held.add(method+" "+path, "a sibling endpoint on this declaration"); refused {
+				return fmt.Errorf("endpoint %q would register %s, which overlaps %s, %s: rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, method+" "+path, conflict.pattern, conflict.owner)
 			}
 			taken[key] = "a sibling endpoint on this declaration"
 		}
@@ -3196,9 +3271,19 @@ func (a *App) shutdown(ctx context.Context) error {
 	a.appCancel = nil
 	srv := a.server
 	a.server = nil
+	a2aSrv := a.a2a
 	a.serverMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	// A2A runs are detached from their requests, so nothing else stops
+	// them. Cancel and wait for them before the HTTP drain, which a
+	// blocking send would otherwise hold, and before the batteries close
+	// the store a run's final state goes to.
+	if a2aSrv != nil {
+		if err := a2aSrv.Shutdown(ctx); err != nil {
+			firstErr = fmt.Errorf("stopping a2a runs: %w", err)
+		}
 	}
 	if srv != nil {
 		// A connection that never sent a request would hold the drain

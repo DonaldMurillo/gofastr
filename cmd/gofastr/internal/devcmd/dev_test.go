@@ -74,12 +74,32 @@ func TestParseDevFlagsAcceptsEqualsAndSpaceForms(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			addr, dir, pkg, noA11y := parseDevFlags(tc.args)
+			addr, dir, pkg, noA11y, err := parseDevFlags(tc.args)
+			if err != nil {
+				t.Fatalf("parseDevFlags(%v): %v", tc.args, err)
+			}
 			if addr != tc.addr || dir != tc.dir || pkg != tc.pkg || noA11y != tc.noA11y {
 				t.Fatalf("parseDevFlags(%v) = (addr=%q dir=%q pkg=%q noA11y=%v), want (addr=%q dir=%q pkg=%q noA11y=%v)",
 					tc.args, addr, dir, pkg, noA11y, tc.addr, tc.dir, tc.pkg, tc.noA11y)
 			}
 		})
+	}
+}
+
+// A flag missing its value took the next flag as one (`--addr --no-a11y`
+// set the address to "--no-a11y" and kept the a11y gate on), and an
+// unknown flag kept every default.
+func TestParseDevFlagsRefusesTypos(t *testing.T) {
+	for _, args := range [][]string{
+		{"--addr", "--no-a11y"},
+		{"--dir", "-p", "9000"},
+		{"--adr=:9000"},
+		{"--no-a11y=false"},
+		{"--addr=:9000", "-p", "9001"},
+	} {
+		if _, _, _, _, err := parseDevFlags(args); err == nil {
+			t.Errorf("parseDevFlags(%q) accepted", args)
+		}
 	}
 }
 

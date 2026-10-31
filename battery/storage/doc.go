@@ -10,15 +10,18 @@ registry or factory indirection):
   - NewS3Storage(bucket, reg) , S3 (or S3-compatible) object storage.
 
 All implement the Storage interface (a re-export of upload.Storage), which
-covers save / get / delete / list. LocalStorage and MemoryStorage also
+covers save / get / delete / exists. LocalStorage and MemoryStorage also
 implement RangeGetter (re-export of upload.RangeGetter) so HTTP range
 requests can be answered; S3Storage declines and is instead paired with a
 presigner (WithPresigner) so uploads/downloads bypass the app entirely.
 
-Content checksums: SaveWithChecksum writes an object plus a checksum sidecar
-so a later read can detect bit-rot or an interrupted write.
+Content checksums: SaveWithChecksum stores an object and returns its size
+and SHA-256 digest; keeping the digest (to detect bit-rot or an
+interrupted write later) is the caller's job.
 
-Keys are validated (DefaultKeyValidator) to reject path-traversal and other
-forbidden sequences before they reach a backend.
+LocalStorage and S3Storage each validate keys before use and refuse
+path traversal; LocalStorage also refuses a key that resolves outside its
+directory. MemoryStorage takes keys as given. DefaultKeyValidator is a
+standalone check a caller can apply to keys of its own.
 */
 package storage

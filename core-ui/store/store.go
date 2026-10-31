@@ -73,6 +73,9 @@ func Computed[T any](s *Store, name, reducer string, deps ...string) *Slice[T] {
 	}
 	validateName(full)
 	validateName(reducer)
+	for _, dep := range deps {
+		validateDep(dep)
+	}
 	registerComputed(full, deps)
 	var zero T
 	return &Slice[T]{name: full, scope: ScopePage, def: zero, comp: &computedCfg{reducer: reducer, deps: deps}}
@@ -205,6 +208,18 @@ func validateName(name string) {
 		panic(fmt.Sprintf("store: slice name %q is reserved — the runtime kernel refuses every client write to __proto__/constructor/prototype, so the slice would be a dead binding", name))
 	}
 	validateNameChars(name)
+}
+
+// validateDep holds a computed slice's dependency to the slice-name
+// rules, except that a route.* signal is readable: the deps ride
+// comma-joined in data-cui-computed-deps, so a comma would split one
+// name into two.
+func validateDep(name string) {
+	if strings.HasPrefix(name, "route.") {
+		validateNameChars(name)
+		return
+	}
+	validateName(name)
 }
 
 // validateNameChars is the charset half of validateName, shared with

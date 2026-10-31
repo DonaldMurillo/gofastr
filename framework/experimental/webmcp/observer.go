@@ -169,7 +169,7 @@ type statusRecorder struct {
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
-	if s.status == 0 {
+	if s.status == 0 && !(code >= 100 && code < 200 && code != http.StatusSwitchingProtocols) {
 		s.status = code
 	}
 	s.ResponseWriter.WriteHeader(code)

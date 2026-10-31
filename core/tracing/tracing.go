@@ -37,11 +37,22 @@ func markError(span trace.Span, err error) {
 }
 
 // errorType is the Go type of the error under any fmt.Errorf wrapping, so
-// fmt.Errorf("insert: %w", pqErr) still reads as *pq.Error.
+// fmt.Errorf("insert: %w", pqErr) still reads as *pq.Error. A wrapper
+// with several %w verbs reads as the first error it wraps.
 func errorType(err error) string {
 	for {
-		inner := errors.Unwrap(err)
-		if inner == nil || fmt.Sprintf("%T", err) != "*fmt.wrapError" {
+		var inner error
+		switch fmt.Sprintf("%T", err) {
+		case "*fmt.wrapError":
+			inner = errors.Unwrap(err)
+		case "*fmt.wrapErrors":
+			if multi, ok := err.(interface{ Unwrap() []error }); ok {
+				if errs := multi.Unwrap(); len(errs) > 0 {
+					inner = errs[0]
+				}
+			}
+		}
+		if inner == nil {
 			return fmt.Sprintf("%T", err)
 		}
 		err = inner

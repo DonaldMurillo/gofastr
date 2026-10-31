@@ -793,7 +793,7 @@
       // stays as it came.
       try { swapKey = decodeURIComponent(swapKey); } catch (_) {}
       if (partial) {
-        title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+        title = window.__gofastr._title(resp);
         body = html;
       } else {
         const pdoc = new DOMParser().parseFromString(html, 'text/html');

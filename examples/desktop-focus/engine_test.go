@@ -214,6 +214,31 @@ func TestPauseStoresRemainingAndResumeMovesEndsAt(t *testing.T) {
 	}
 }
 
+// A pause at 00:00 has no time to freeze: it stored paused_left 0, and a
+// paused tick only re-emits state, so the session never completed and
+// no break started (2026-10-27 E2). It completes the session instead.
+func TestPauseAtZeroCompletesSession(t *testing.T) {
+	app, _, _, eng, clock := newEngineApp(t)
+	ctx := asOwner("u1")
+	if err := eng.Start(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(25*time.Minute + time.Second)
+	if err := eng.Pause(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st := eng.State(ctx); st.Phase != phaseBreak {
+		t.Fatalf("state after a pause at 00:00 = %+v, want the break", st)
+	}
+	for _, r := range sessionRows(t, app, "u1") {
+		if r["kind"] == "work" {
+			if completed, _ := r["completed"].(bool); !completed {
+				t.Fatalf("work session after a pause at 00:00 = %+v, want completed", r)
+			}
+		}
+	}
+}
+
 // Running time under a second still counts across a pause: resume shifts
 // the deadline by the pause, so two half-second runs spend one second.
 // Rebuilding it from the shown seconds, which round up, gave the part

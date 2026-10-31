@@ -190,8 +190,9 @@ translating.
 
 - A **Page** draws in the shell under `<PathPrefix><Path>` with a crumb
   and a palette entry. Its path may not take one of the admin's own
-  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/emails`,
-  `/entities`, `/api`, or anything under `/_`); boot fails if it does. `Access`
+  (`/`, `/search`, `/shortcuts`, `/account`, `/queue`, `/audit`, `/rbac`,
+  `/modules`, `/emails`, `/entities`, `/api`, or anything under `/_`);
+  boot fails if it does. `Access`
   refuses with 403, hides the nav entry and the palette entry, and Build
   never runs for a refused caller. An `Access` that panics refuses too,
   for that page alone; the rest of the admin draws. (A panicking
@@ -275,8 +276,9 @@ never elevated.
   the caller holds. When the store implements `auth.NameStore` the name
   is a form posting to `POST <PathPrefix>/account/_name`, which names
   the caller only (a `user_id` in the body is not read) and refuses what
-  `auth.CleanName` refuses. The account menu and its avatar's initials
-  use that name, falling back to the email.
+  `auth.CleanName` refuses. A saved name is audited as `account` /
+  `set-name` with the cleaned name. The account menu and its avatar's
+  initials use that name, falling back to the email.
 - **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
   the browser like the toolbar's toggle.
 - **Password** (only with `Config.Auth`): current, new and confirm

@@ -33,6 +33,8 @@ const runtimeProseFixture = `(() => {
     NS._toastOrFallback?.({ variant: 'success', title: kind || 'Done' });
     root.textContent = 'Error: ' + code;
     root.textContent += 'Pick a file';
+    root.textContent = input.value.length + ' chars';
+    root.textContent = ms < 1000 ? ms + 'ms' : Math.round(ms / 1000) + 's';
   }
   function quiet(c, root, input, r, kind) {
     c.setAttribute('aria-label', say('runtime.notifications', 'Notifications'));
@@ -41,6 +43,7 @@ const runtimeProseFixture = `(() => {
     root.textContent = NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status });
     root.textContent = kind === 'a' ? 'data-hui-x' : 'runtime.key';
     input.placeholder = '';
+    NS.toast({ variant: 'error', title: root.getAttribute(P + 'fail') || '' });
     NS._toastOrFallback({ variant: 'error', title: NS.say('runtime.request_failed', 'Request failed') });
     NS.toast({ variant: 'error', title: NS.say('runtime.request_failed', 'Request failed') });
     // gofastr:allow(runtimeprose) developer diagnostics, never shown to a reader
@@ -67,6 +70,10 @@ func TestLintRuntimeProseFiresOnLiterals(t *testing.T) {
 		"${code} panels is the limit", "Request failed", "Network error",
 		"A bare marker silences nothing", "Reload me", "Changes saved", "Done",
 		"Error: ", "Pick a file",
+		// A word glued to a value with + is prose too: widgethelpers.js
+		// wrote "12 chars" and "340ms" on every locale (2026-10-27 R4). A
+		// lone letter ('s') and punctuation (' (') stay quiet.
+		" chars", "ms",
 	}
 	got := map[string]int{}
 	for _, v := range res.Violations {

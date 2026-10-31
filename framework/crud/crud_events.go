@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"net/http"
 	"slices"
@@ -531,7 +530,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 	}
 	payload := &hook.GetPayload{Request: r, ID: id, Result: clone}
 	if err := runHooks(ch.Hooks, hookCtx(hctx), hook.AfterGet, payload); err != nil {
-		log.Printf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
+		logf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
 		payload.Result = nil
 	}
 
@@ -641,7 +640,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	// the caller can remove the probe entirely by switching to
 	// db.WithTxQueue and draining after Commit.
 	probeWarnOnce.Do(func() {
-		log.Printf("crud: a CRUD write joined a caller-owned transaction (db.WithTx with no commit queue); " +
+		logf("crud: a CRUD write joined a caller-owned transaction (db.WithTx with no commit queue); " +
 			"its lifecycle event is confirmed by polling the live *sql.Tx, which can race the owner's statements — " +
 			"prefer db.WithTxQueue + RunAfterCommit (see hooks-and-transactions docs)")
 	})
@@ -663,7 +662,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 				break
 			}
 			if time.Now().After(deadline) {
-				log.Printf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
+				logf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
 					eventType, table, fmt.Sprint(id...), ambientTxProbeTimeout)
 				return
 			}
@@ -672,7 +671,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 
 		committed, err := landed(base, eventType, table, pk, id, match)
 		if err != nil {
-			log.Printf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
+			logf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
 				eventType, table, fmt.Sprint(id...), err)
 			return
 		}
@@ -712,6 +711,12 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 			if err != nil {
 				continue
 			}
+			// A NULL never equals anything in SQL, so `col = NULL` would
+			// match no row; IS NULL is the comparison that finds it.
+			if match[col] == nil {
+				where = append(where, query.QuoteFolded(safeCol)+" IS NULL")
+				continue
+			}
 			where = append(where, fmt.Sprintf("%s = $%d",
 				query.QuoteFolded(safeCol), len(args)+1))
 			args = append(args, match[col])
@@ -730,9 +735,11 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 }
 
 // comparableColumns maps the scalar values an emitted record carries onto
-// their database columns, skipping the primary key, NULLs, and anything not
+// their database columns, skipping the primary key and anything not
 // directly comparable in SQL (nested objects, arrays, byte slices). It is
-// what lets an UPDATE be distinguished from its own rollback.
+// what lets an UPDATE be distinguished from its own rollback. A NULL is
+// kept as nil and matched with IS NULL: skipped, an edit that only set a
+// column to NULL was confirmed on its key alone, rollback or not.
 func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 	m, ok := record.(map[string]any)
 	if !ok {
@@ -748,10 +755,12 @@ func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 		// camel key misses a mixed-case column or a WireName, and a column
 		// left out is a value the confirm query no longer checks.
 		col := ch.wireKeyColumn(key)
-		if ch.isKeyCol(col) || !known[col] || v == nil {
+		if ch.isKeyCol(col) || !known[col] {
 			continue
 		}
 		switch v.(type) {
+		case nil:
+			out[col] = nil
 		case string, bool,
 			int, int8, int16, int32, int64,
 			uint, uint8, uint16, uint32, uint64,

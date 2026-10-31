@@ -44,10 +44,14 @@ func (b *Battery) Init(_ *framework.App) error { return nil }
 func (b *Battery) OnStart(_ context.Context) error { return nil }
 
 // OnStop implements framework.BatteryLifecycle.  Stops the background
-// cleanup goroutine on MemoryCache (or any cache that implements io.Closer).
+// cleanup goroutine on MemoryCache, whose Close returns nothing, and
+// closes any cache that implements io.Closer.
 func (b *Battery) OnStop(_ context.Context) error {
-	if cl, ok := b.c.(io.Closer); ok {
+	switch cl := b.c.(type) {
+	case io.Closer:
 		return cl.Close()
+	case interface{ Close() }:
+		cl.Close()
 	}
 	return nil
 }

@@ -68,7 +68,7 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 | `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. An append that fails (a full disk) is cut back off the WAL and the write fails; the next write snapshots first, so a later restart still opens. Replacing a document (remove its chunks, add the new ones) runs as one step and is one WAL record, so two concurrent `Add`s of one `ID` leave one version and a crash replays all of the replace or none of it. A WAL written by an earlier release, with separate add and remove records, still replays. Metadata may hold nested JSON objects and arrays, and `FlatStore` keeps a deep copy, so neither the caller nor a returned hit can change what it filters and snapshots; an `Add` whose metadata the WAL cannot encode (an unregistered Go type) fails before anything is removed. A batch that names one `ID` twice keeps the last `Document`, the way a second `Add` would. |
 | `Snapshot()` | Write a unique owner-only temporary file beside `dir/store.snap`, then rename it atomically; truncate WAL. |
 | `Add` / `Remove` every `SnapshotEvery` writes | Auto-triggers `Snapshot()`. |
-| `Close()` | Final `Snapshot()`; close WAL; close store; release the lock. |
+| `Close()` | Final `Snapshot()`; close WAL; close store; release the lock. Afterwards `Add`, `Remove` and `Snapshot` return `ErrClosed`, and a second `Close` returns nil without touching the directory, which the next writer may already hold. |
 | A write that fails after its WAL record (a keyword backend refusing a delete) | The write returns the error and the record is applied again before the next write and before any snapshot. While it still fails, writes, `Snapshot()` and `Close()` return the error and the WAL keeps the record, so the next `Open` replays it: a snapshot of the store without the document would have truncated the record that restores it. |
 
 The snapshot's header records the embedder's `Name()` and `Dim()`, and every WAL add entry records the `Name()`, so writes that never reached a snapshot are checked on replay too. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
@@ -252,8 +252,8 @@ document indexed over HTTP with tenant `2^53+1` matches only that tenant. Hit
 metadata `PgVectorStore` returns still decodes numbers as float64.
 
 A document whose embedding is the zero vector (text with no tokens) scores 0
-on every store; on `PgVectorStore` it sorts after documents with a negative
-score. A response the route cannot encode answers 500 with an error body,
+on every store, and both stores rank it at score 0: above a negative match,
+level with an orthogonal one. A response the route cannot encode answers 500 with an error body,
 never a 200 with an empty one. `POST /index` answers 400 for a document with
 no id (`doc_id_is_required`) or one the chunker refuses
 (`document_unchunkable`); the chunker's error text stays in the log.

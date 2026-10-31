@@ -58,8 +58,8 @@
 // open with no park reachable (core/mcp ssePostHandler writes one
 // event and returns; core/stream's Upgrade hands the socket back — the
 // caller parks or does not); a park that is solely a range over the
-// parking function's own channel-typed parameter (handler.SSEStream is
-// a caller-driven pump: the channel's owner, one frame up, owns the
+// parking function's own channel-typed parameter (a caller-driven
+// pump: the channel's owner, one frame up, owns the
 // admission decision); surfaces with no open spelling at all
 // (framework/crud's EventStream opens through core/stream's SSEWriter,
 // whose header set lives in another package, and seats itself at its
@@ -174,7 +174,7 @@
 // stream open on its flood; a loop that writes only to a buffer; a
 // one-shot answer with no park (core/mcp's POST SSE answer, P46, is
 // that shape and stays out of scope); and a range over the function's
-// own channel parameter (handler.SSEStream: the channel's owner one
+// own channel parameter (a caller-driven pump: the channel's owner one
 // frame up owns the stream). It cannot see a close path outside the
 // loop's flood that force-closes the connection (an http.Server.Close
 // on release, cmd/gofastr's dev hold): such a site carries the allow

@@ -58,6 +58,29 @@ func TestUnion_RejectsVersionExclusiveRequired(t *testing.T) {
 	}.WithTimestamps(false))
 }
 
+// Two entities on tables that differ only by case share one physical
+// table: AutoMigrate writes the name unquoted, so Postgres and SQLite fold
+// both to widgets. The exact-match table compare skipped them, and the
+// second entity reused the first one's VARCHAR(10) (2026-10-27 S8).
+func TestUnion_FoldsTableCase(t *testing.T) {
+	max10 := float64(10)
+	max200 := float64(200)
+	for _, tables := range [][2]string{{"widgets", "Widgets"}, {"Widgets", "widgets"}} {
+		t.Run(tables[0]+"_then_"+tables[1], func(t *testing.T) {
+			defer expectPanicContaining(t, "conflicting String.Max", "title")()
+			app := NewApp(WithoutDefaultMiddleware())
+			app.Entity("widgets", entity.EntityConfig{
+				Table:  tables[0],
+				Fields: []schema.Field{{Name: "title", Type: schema.String, Max: &max10}},
+			}.WithTimestamps(false))
+			app.Entity("legacyWidgets", entity.EntityConfig{
+				Table:  tables[1],
+				Fields: []schema.Field{{Name: "title", Type: schema.String, Max: &max200}},
+			}.WithTimestamps(false))
+		})
+	}
+}
+
 // TestUnion_RejectsConflictingStringMax (F7): String.Max selects VARCHAR(n),
 // which is DDL, not validation. v1 title Max 100 and v2 title Max 200 must
 // conflict, otherwise the lex-first width wins and a valid v2 request longer

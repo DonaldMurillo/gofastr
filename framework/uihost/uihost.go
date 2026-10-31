@@ -3241,7 +3241,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		}
 	}
 	// Same invisible-character posture as the full page's <title> element:
-	// nav.js writes decodeURIComponent(header) straight into document.title,
+	// the runtime writes the decoded header straight into document.title,
 	// so the header is the tab title. Strip before the suffix is appended.
 	title = textsafe.StripInvisible(title)
 	if title != "" {

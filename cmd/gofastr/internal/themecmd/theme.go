@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // RunTheme dispatches `gofastr theme <subcommand>`.
@@ -76,7 +77,9 @@ func runThemeInit(args []string) {
 		cli.OsExit(1)
 	}
 
-	if err := os.WriteFile(dest, []byte(themeStarter), 0o644); err != nil {
+	// --force replaces an existing theme through a temporary file, so a
+	// crash mid-write leaves the old one, not an empty one.
+	if err := atomicfile.Rewrite(dest, []byte(themeStarter), 0o644); err != nil {
 		fmt.Printf("%s write %s: %v\n", cli.Red("✗"), dest, err)
 		cli.OsExit(1)
 	}

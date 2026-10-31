@@ -483,6 +483,18 @@ func matchCatalog(tag string, available map[string]struct{}) string {
 	return ""
 }
 
+// matchAccepted is matchCatalog for an Accept-Language entry: a
+// fallback the header refused with q=0 is skipped, so "en-GB" does not
+// truncate to a refused "en".
+func matchAccepted(tag string, available map[string]struct{}, refused []string) string {
+	for _, candidate := range tagFallbacks(tag) {
+		if _, ok := available[candidate]; ok && !slices.Contains(refused, candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
 // Middleware returns an HTTP middleware that resolves the caller's
 // locale and attaches it, with tr, to the request context. Handlers
 // downstream call [T], [Translator.T] or [Phrase.Text] with
@@ -610,7 +622,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 			}
 			continue
 		}
-		if hit := matchCatalog(want, available); hit != "" {
+		if hit := matchAccepted(want, available, refused); hit != "" {
 			return Locale{Tag: hit}
 		}
 	}

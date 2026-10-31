@@ -154,7 +154,9 @@ gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carr
 | `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
 | `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
 
-Flags & inputs:
+Flags & inputs (each valued flag is written `--name=<value>`; a flag the
+subcommand does not read, or a valued one without `=`, is refused before
+anything opens):
 
 - `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
@@ -976,7 +978,7 @@ import "github.com/DonaldMurillo/gofastr/core/migrate"
 
 m := migrate.New(db,
     migrate.WithDialect(migrate.DialectPostgres),
-    migrate.WithTableName("_migrations"),
+    migrate.WithTableName("_migrations"), // or "aux._migrations": a schema, or on SQLite an ATTACHed database
 )
 m.Register(migrate.Migration{
     Version: 1,

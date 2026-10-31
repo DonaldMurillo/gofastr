@@ -81,3 +81,54 @@ func ProbeSQLiteBindLayout(ctx context.Context, db *sql.DB) string {
 	}
 	return time.RFC3339Nano
 }
+
+// StoredTime is one time column of a row as read back with
+// CAST(col AS TEXT): its name and the driver's raw value (nil for NULL).
+type StoredTime struct {
+	Col string
+	Raw any
+}
+
+// TimeFix is a time column to rewrite: the stored text it was read with
+// and the instant that text parses to, in UTC.
+type TimeFix struct {
+	Col  string
+	Read string
+	At   time.Time
+}
+
+// SQLiteTimeFixes returns the columns whose stored text is not already in
+// layout (from [ProbeSQLiteBindLayout]). A NULL column produces no fix,
+// and a canonical value parses and formats back to the same text, so it
+// is skipped and a normalization pass is idempotent. A value that is not
+// text, or that [ParseDBTime] cannot read, is an error: it is corrupt, and
+// keeping it would leave the bug in place. The caller binds At as a
+// time.Time, so the driver writes exactly what its own binds compare
+// against, and guards the write on Read so a value rewritten since the
+// read is kept.
+func SQLiteTimeFixes(layout string, cols []StoredTime) ([]TimeFix, error) {
+	var fixes []TimeFix
+	for _, c := range cols {
+		if c.Raw == nil {
+			continue
+		}
+		var read string
+		switch v := c.Raw.(type) {
+		case string:
+			read = v
+		case []byte:
+			read = string(v)
+		default:
+			return nil, fmt.Errorf("decode legacy %s: stored as %T, want text", c.Col, c.Raw)
+		}
+		parsed, err := ParseDBTime(read)
+		if err != nil {
+			return nil, fmt.Errorf("decode legacy %s: %w", c.Col, err)
+		}
+		if read == parsed.UTC().Format(layout) {
+			continue
+		}
+		fixes = append(fixes, TimeFix{Col: c.Col, Read: read, At: parsed.UTC()})
+	}
+	return fixes, nil
+}

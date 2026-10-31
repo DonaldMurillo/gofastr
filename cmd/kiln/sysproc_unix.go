@@ -7,6 +7,12 @@ import (
 	"syscall"
 )
 
+// openNoFollowDir opens path as a directory, refusing a symlink at its
+// last element.
+func openNoFollowDir(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_DIRECTORY, 0)
+}
+
 // childProcessGroup returns SysProcAttr that puts the child in its own
 // process group, so SIGTERM to the parent doesn't propagate before we
 // can clean up, and killGroup can reach every descendant.

@@ -111,7 +111,8 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusNotImplemented, "failed")
 		return
 	}
-	switch err := store.SetUserName(r.Context(), actor, vals.Get("name")); {
+	name := vals.Get("name")
+	switch err := store.SetUserName(r.Context(), actor, name); {
 	case errors.Is(err, auth.ErrInvalidName):
 		b.refuse(w, r, page, http.StatusBadRequest, "name-refused")
 		return
@@ -120,6 +121,10 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
+	// SetUserName accepted the name, so CleanName does too: the row
+	// records the name as stored.
+	stored, _ := auth.CleanName(name)
+	b.appendAudit(r.Context(), "account", "set-name", actor, actor, map[string]any{"name": stored})
 	b.done(w, r, page, "name-saved")
 }
 

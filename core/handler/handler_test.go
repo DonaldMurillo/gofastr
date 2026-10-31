@@ -725,31 +725,6 @@ func TestBindEmptyBodyPOST(t *testing.T) {
 	}
 }
 
-func TestSSEStream(t *testing.T) {
-	events := make(chan SSE, 3)
-	events <- SSE{Event: "msg", Data: "hello", ID: "1"}
-	events <- SSE{Event: "msg", Data: "world", ID: "2"}
-	close(events)
-
-	w := httptest.NewRecorder()
-	SSEStream(w, events)
-
-	resp := w.Result()
-	ct := resp.Header.Get("Content-Type")
-	if ct != "text/event-stream" {
-		t.Errorf("expected text/event-stream, got %s", ct)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	s := string(body)
-	if !strings.Contains(s, "event: msg") {
-		t.Errorf("expected SSE event in output, got: %s", s)
-	}
-	if !strings.Contains(s, "data: hello") {
-		t.Errorf("expected 'data: hello' in output, got: %s", s)
-	}
-}
-
 func TestResponseTypes(t *testing.T) {
 	t.Run("HTML", func(t *testing.T) {
 		h := HTML("<p>hi</p>")

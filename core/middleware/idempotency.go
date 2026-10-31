@@ -478,6 +478,14 @@ func (r *idempotencyRecorder) WriteHeader(status int) {
 	if r.wroteHeader {
 		return
 	}
+	// An informational status (103 Early Hints) comes before the final
+	// one: pass it on and keep waiting. Latching it dropped the final
+	// status, so the client saw 200 and nothing was stored to replay.
+	// 101 is final: the connection changes protocol.
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		r.ResponseWriter.WriteHeader(status)
+		return
+	}
 	r.status = status
 	r.wroteHeader = true
 	r.ResponseWriter.WriteHeader(status)

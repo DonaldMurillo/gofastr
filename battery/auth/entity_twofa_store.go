@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,8 +48,8 @@ type EntityTwoFAStore struct {
 	// drain window); they never seal.
 	previousSealers []*aeadSealer
 
-	// casTestHook, when set, fires inside ConsumeBackupCode between the read
-	// and the compare-and-swap UPDATE. It is nil in production; tests use it
+	// casTestHook, when set, fires inside ConsumeBackupCode and
+	// CompareAndSwapTwoFA between the read and the compare-and-swap write. It is nil in production; tests use it
 	// to mutate the row under an in-flight consume (e.g. delete + re-enrol)
 	// to exercise the CAS's ABA handling without contorting the call sites.
 	casTestHook func()
@@ -396,10 +398,29 @@ func (s *EntityTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *T
 	// on every write so a ConsumeBackupCode or CompareAndSwapTwoFA CAS in
 	// flight against the old state misses and re-reads (a full state
 	// replace must invalidate a concurrent per-code mutation).
+	start, err := freshTwoFAVersion()
+	if err != nil {
+		return err
+	}
 	tbl := query.QuoteFolded(s.table)
-	q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) VALUES ($1, $2, $3, $4, $5, $6, 0) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled, secret = excluded.secret, backup_codes = excluded.backup_codes, verified = excluded.verified, last_used_step = excluded.last_used_step, version = %s.version + 1", tbl, tbl)
-	_, err = s.db.ExecContext(ctx, q, userID, state.Enabled, secret, codesJSON, state.Verified, int64(state.LastUsedStep))
+	q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled, secret = excluded.secret, backup_codes = excluded.backup_codes, verified = excluded.verified, last_used_step = excluded.last_used_step, version = %s.version + 1", tbl, tbl)
+	_, err = s.db.ExecContext(ctx, q, userID, state.Enabled, secret, codesJSON, state.Verified, int64(state.LastUsedStep), start)
 	return err
+}
+
+// freshTwoFAVersion is the version a newly inserted row starts at. A row
+// deleted and re-created used to start again at 0, so a swap that read
+// the old row could match the new one when codes and flags agreed (a
+// disable plus re-enrol under an in-flight verify marked the new pending
+// enrolment verified with the old secret). A random start below 2^62
+// makes the re-created row's version differ from any read of the old
+// one and leaves room for version + 1.
+func freshTwoFAVersion() (int64, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0, err
+	}
+	return int64(binary.BigEndian.Uint64(b[:])>>2) | 1, nil
 }
 
 // CompareAndSwapTwoFA writes next only while the stored row still equals
@@ -429,9 +450,13 @@ func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID strin
 		// INSERT-only-if-absent: rows-affected 0 means a row exists (a
 		// concurrent enroll or a disable racing a re-enroll), so the
 		// caller's absent-row assumption is stale.
+		start, err := freshTwoFAVersion()
+		if err != nil {
+			return false, err
+		}
 		tbl := query.QuoteFolded(s.table)
-		q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) SELECT $1, $2, $3, $4, $5, $6, 0 WHERE NOT EXISTS (SELECT 1 FROM %s WHERE user_id = $1)", tbl, tbl)
-		res, err := s.db.ExecContext(ctx, q, userID, next.Enabled, secret, codesJSON, next.Verified, int64(next.LastUsedStep))
+		q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) SELECT $1, $2, $3, $4, $5, $6, $7 WHERE NOT EXISTS (SELECT 1 FROM %s WHERE user_id = $1)", tbl, tbl)
+		res, err := s.db.ExecContext(ctx, q, userID, next.Enabled, secret, codesJSON, next.Verified, int64(next.LastUsedStep), start)
 		if err != nil {
 			return false, err
 		}
@@ -447,6 +472,9 @@ func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID strin
 	}
 	if cur == nil || !twoFAStateEqual(cur, expect) {
 		return false, nil
+	}
+	if s.casTestHook != nil {
+		s.casTestHook()
 	}
 	if next == nil {
 		// Swap-to-absent: delete, still guarded by the same predicate.
@@ -490,12 +518,12 @@ func (s *EntityTwoFAStore) DeleteTwoFA(ctx context.Context, userID string) error
 // to consume the SAME code, exactly one CAS wins; the loser re-reads, no
 // longer finds the code, and returns false.
 //
-// The bytes predicate is what makes the CAS ABA-proof. version is NOT
-// monotonic across a row's lifetime. DeleteTwoFA drops the row and
-// SetTwoFA's INSERT arm recreates it at version 0, so a CAS on version
-// alone would let a consume that read the OLD row pass against a row that
-// was since deleted and re-enrolled (version wrapped back to 0),
-// overwriting the freshly issued code list with the stale one. Predicating
+// The bytes predicate keeps the CAS ABA-proof on its own. version is NOT
+// monotonic across a row's lifetime: DeleteTwoFA drops the row and an
+// INSERT recreates it at a fresh random version, which a stale read
+// misses only with overwhelming probability. A consume that read the OLD
+// row must never pass against a row that was since deleted and
+// re-enrolled, overwriting the freshly issued code list with the stale one. Predicating
 // on the raw bytes this round read makes the re-enrolled row fail the CAS
 // (its bytes differ) so the loop re-reads the fresh codes. Comparing the
 // stored bytes against themselves, the exact string this round's SELECT

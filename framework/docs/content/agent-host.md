@@ -32,7 +32,8 @@ Everything on this surface follows from three settled decisions:
 
 `GOFASTR_ROLE=agent` (or `framework.WithRole(framework.RoleAgent)`)
 serves the agent surface only: `/mcp` (POST JSON-RPC + GET SSE, plus its
-spec-reserved subpaths), `/healthz` and `/readyz`. Entity CRUD routes, OpenAPI,
+spec-reserved subpaths), `/healthz` and `/readyz`, plus the A2A exchange
+path (default `/a2a`) when `WithA2A` is set. Entity CRUD routes, OpenAPI,
 docs, admin, and well-known discovery are not served; worker consumers
 (cron, queues, the outbox relay) do not start.
 

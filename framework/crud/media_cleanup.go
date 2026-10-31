@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -162,7 +161,7 @@ func (ch *CrudHandler) deleteAfterCommit(ctx context.Context, keys []string) {
 		// backend that panics must not take the process with it.
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("crud: delete of released stored objects panicked: %s", textsafe.Recovered(rec))
+				logf("crud: delete of released stored objects panicked: %s", textsafe.Recovered(rec))
 			}
 		}()
 		// The delete outlives the request: a client that hung up after the
@@ -171,7 +170,7 @@ func (ch *CrudHandler) deleteAfterCommit(ctx context.Context, keys []string) {
 		defer cancel()
 		for _, key := range keys {
 			if err := store.Delete(ctx, key); err != nil && !errors.Is(err, os.ErrNotExist) {
-				log.Printf("crud: delete of released stored object %q failed: %v", key, err)
+				logf("crud: delete of released stored object %q failed: %v", key, err)
 			}
 		}
 	}

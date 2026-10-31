@@ -80,16 +80,57 @@ func timeOrZero(sec int64) time.Time {
 	return time.Unix(sec, 0).UTC()
 }
 
-// AddPasskey implements PasskeyStore.
-func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential) error {
-	q := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, query.QuoteFolded(s.table), passkeyColumns)
-	_, err := s.db.ExecContext(ctx, q,
+// AddPasskey implements PasskeyStore. It counts the user's passkeys and
+// inserts in one transaction. On Postgres, where each of two concurrent
+// adds would count the other's insert out, the transaction first takes
+// an advisory lock on the user's passkeys. The lock names the table by
+// its resolved oid, so two spellings of one table ("Passkeys",
+// "public.passkeys") share it, and the transaction is READ COMMITTED
+// whatever the server default: under REPEATABLE READ the count would
+// read the snapshot taken before the lock wait, missing the insert the
+// lock waited for. SQLite allows one writer at a time: of two adds that
+// both counted, only the first commits.
+func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) (err error) {
+	t := query.QuoteFolded(s.table)
+	pg := s.dialect.of(s.db) == migrate.DialectPostgres
+	var opts *sql.TxOptions
+	if pg {
+		opts = &sql.TxOptions{Isolation: sql.LevelReadCommitted}
+	}
+	tx, err := s.db.BeginTx(ctx, opts)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if pg {
+		// An oid is digits, so the ':' cannot be forged by a user id.
+		if _, err = tx.ExecContext(ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended(($1::regclass)::oid::text || ':' || $2::text, 0))`,
+			t, c.UserID); err != nil {
+			return err
+		}
+	}
+	var held int
+	if err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE user_id = $1`, t), c.UserID).Scan(&held); err != nil {
+		return err
+	}
+	if held >= maxPerUser {
+		return ErrPasskeyLimit
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, t, passkeyColumns),
 		b64url.EncodeToString(c.ID), c.UserID, b64url.EncodeToString(c.PublicKey), c.Algorithm, int64(c.SignCount),
 		c.Name, boolInt(c.BackupEligible), boolInt(c.BackedUp), unixOrZero(c.CreatedAt), unixOrZero(c.LastUsedAt))
-	if err != nil && isUniqueViolation(err) {
-		return ErrPasskeyExists
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrPasskeyExists
+		}
+		return err
 	}
-	return err
+	return tx.Commit()
 }
 
 func scanPasskey(row rowScanner) (PasskeyCredential, error) {

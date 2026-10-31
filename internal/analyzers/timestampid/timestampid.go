@@ -16,7 +16,7 @@
 // message ids (acp.go messageID). Every credential the rest of the
 // repo mints draws >=128 bits from crypto/rand
 // (framework/experimental/harness/ids, battery/auth token helpers).
-// All of these bugs are still open.
+// All of these are fixed: the ids now mint from kid.Hex (crypto/rand).
 //
 // The rule fires when the formatted wall-clock value is bound to a
 // credential-shaped name: a variable or struct field whose last

@@ -21,6 +21,11 @@
   // refusal). The node's own entry decides only its busy state, so a
   // button superseded by its form's submit still re-enables.
   const _rpcLatest = new WeakMap();
+  // Triggers with nothing to supersede them (no response signal, no form)
+  // while a dispatch is in flight. A second click on such a node is
+  // dropped: a span or link cannot be disabled, and two clicks during the
+  // cold module load both reached dispatch, so both POSTs landed.
+  const _rpcBusy = new WeakSet();
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
   // to schedule the request.
@@ -191,6 +196,19 @@
       if (!(await NS.ask(node))) return;
     }
 
+    // A form control that belongs to a form (every radio/input/select/
+    // textarea with node.form set) carries its value exactly like a FORM
+    // node: serialize the enclosing form so the handler sees name=value.
+    // An explicit data-cui-rpc-body (read above) still wins; a control with
+    // no enclosing form and no explicit body keeps the legacy empty body.
+    const formSource = node.tagName === 'FORM' ? node : (node.form || null);
+    // A trigger that carries a value (a form, a control, a carrier of
+    // controls) keeps superseding: the newest value must reach the server.
+    const guardBusy = !responseSignal && !formSource &&
+      !node.matches('input,select,textarea') &&
+      !node.querySelector('input[name],select[name],textarea[name]');
+    if (guardBusy && _rpcBusy.has(node)) return;
+
     if (responseSignal) {
       const prev = _rpcInFlight.get(responseSignal);
       if (prev) prev.abort();
@@ -200,12 +218,6 @@
 
     let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
-    // A form control that belongs to a form (every radio/input/select/
-    // textarea with node.form set) carries its value exactly like a FORM
-    // node: serialize the enclosing form so the handler sees name=value.
-    // An explicit data-cui-rpc-body (read above) still wins; a control with
-    // no enclosing form and no explicit body keeps the legacy empty body.
-    const formSource = node.tagName === 'FORM' ? node : (node.form || null);
     const tok = {};
     _rpcLatest.set(node, tok);
     if (formSource) _rpcLatest.set(formSource, tok);
@@ -277,6 +289,7 @@
     // makes rapid replacement safe. Other button/input triggers are disabled.
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
+    if (guardBusy) _rpcBusy.add(node);
     node.classList.add('cui-loading');
     node.setAttribute('aria-busy', 'true');
     try {
@@ -444,6 +457,7 @@
       if (responseSignal && _rpcInFlight.get(responseSignal) === ctl) {
         _rpcInFlight.delete(responseSignal);
       }
+      if (guardBusy) _rpcBusy.delete(node);
       // A superseded dispatch leaves the busy state to the newer one.
       if (_rpcLatest.get(node) === tok) {
         const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&

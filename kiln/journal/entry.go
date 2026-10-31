@@ -182,6 +182,10 @@ type AddMiddlewarePayload struct {
 	Middleware *world.Middleware `json:"middleware"`
 }
 
+// SetAppConfigPayload replaces the app config. Prev is the config the edit
+// was built from: a live apply refuses the entry with ErrAppConfigChanged
+// when the world no longer holds it, so set_theme cannot write back a
+// config another edit has since changed. Replay skips that check.
 type SetAppConfigPayload struct {
 	Config world.AppConfig  `json:"config"`
 	Prev   *world.AppConfig `json:"prev,omitempty"`

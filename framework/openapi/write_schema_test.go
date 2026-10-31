@@ -10,16 +10,18 @@ import (
 
 // A write may omit a required field that has a default, so no request
 // body lists it as required; the response keeps it, since every stored
-// row carries it. Update bodies leave out the owner and tenant columns,
-// which an update never sets; the create body keeps them.
+// row carries it. No write body lists the owner or tenant column: the
+// server stamps both on create and an update never sets them (2026-10-27
+// F6). PUT runs the same sparse update as PATCH (schema.ValidatePartial),
+// so neither update body requires anything (F5).
 func TestWriteSchemasFollowCrudWrites(t *testing.T) {
 	notes := entity.Define("notes", entity.EntityConfig{
 		Table: "notes",
 		Fields: []schema.Field{
 			{Name: "body", Type: schema.String, Required: true},
 			{Name: "kind", Type: schema.Enum, Values: []string{"note", "page"}, Required: true, Default: "note"},
-			{Name: "user_id", Type: schema.String},
-			{Name: "tenant_id", Type: schema.String},
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "tenant_id", Type: schema.String, Required: true},
 		},
 		Scope: &entity.ScopeConfig{OwnerField: "user_id", MultiTenant: true},
 	}.WithTimestamps(false))
@@ -31,18 +33,23 @@ func TestWriteSchemasFollowCrudWrites(t *testing.T) {
 		t.Errorf("create required = %v, want [body]: kind has a default", req)
 	}
 	createProps := create["properties"].(map[string]any)
-	for _, key := range []string{"kind", "userId", "tenantId"} {
+	for _, key := range []string{"body", "kind"} {
 		if _, has := createProps[key]; !has {
 			t.Errorf("create body lost %q", key)
 		}
 	}
-
-	put := requestBodyProps(t, getMap(t, getMap(t, paths, "/notes/{id}"), "put"))
-	if req, _ := put["required"].([]string); !slices.Equal(req, []string{"body"}) {
-		t.Errorf("put required = %v, want [body]", req)
+	for _, key := range []string{"userId", "tenantId"} {
+		if _, has := createProps[key]; has {
+			t.Errorf("create body offers %q, which the server stamps", key)
+		}
 	}
+
 	for _, verb := range []string{"put", "patch"} {
-		props := requestBodyProps(t, getMap(t, getMap(t, paths, "/notes/{id}"), verb))["properties"].(map[string]any)
+		body := requestBodyProps(t, getMap(t, getMap(t, paths, "/notes/{id}"), verb))
+		if req, has := body["required"]; has {
+			t.Errorf("%s required = %v, want none: the update is sparse", verb, req)
+		}
+		props := body["properties"].(map[string]any)
 		for _, key := range []string{"userId", "tenantId"} {
 			if _, has := props[key]; has {
 				t.Errorf("%s body offers %q, which an update never sets", verb, key)

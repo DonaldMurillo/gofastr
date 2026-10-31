@@ -641,7 +641,7 @@ const (
 	// fill in the runtime and its modules goes through, adds 40. The plain
 	// navigator narrowing a replay keyed above the deepest shared layer to
 	// that layer's cell adds 118.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1094,7 +1094,12 @@ const (
 	// by an envelope module that loads one navigation late) measures
 	// 17862 at level 1. The flag is set on core's own swap path, so it
 	// does not carve. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17864
+	// The page title decoding only the header (_title: an untitled
+	// screen keeps document.title verbatim, a "50% Off" title no longer
+	// throws out of navigation) measures 17918 at level 1. Core's
+	// navigator reads it on every partial swap, so it does not carve.
+	// Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17920
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1170,6 +1175,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"a failed navigation rolls back to the page still shown (_navBase)": 37,
 		// Measured 15444 → 15460 (2026-10-29): TestLateEnvelopeKeepsTheBootPage.
 		"the envelope keys no boot capture once core's navigator ran (_navShown)": 16, // (l1: 7)
+		// Measured 15460 → 15490 (2026-10-31): TestNavKeepsPercentTitle.
+		"page title decodes only the header, never document.title (_title)": 30, // (l1: 56)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1390,7 +1397,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// which now serves widget roots, so a signal-and-rpc node sends
 		// nothing, as outside a widget (2026-10-27 bug bash R1,
 		// TestSignalControlsWorkInWidget).
-		"widgets": 3247,
+		// 3261 measured (3259 + 2): Escape closes a popover only when it
+		// opened above the top modal, so a modal that refuses Escape keeps
+		// the popover under it open (2026-10-31 bug bash R14,
+		// TestEscapeSparesPopoverUnderModal). The open sequence lives here.
+		"widgets": 3261,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1543,7 +1554,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestUnsafeRPCEvictsItsPage): Back after an entityui delete
 		// replayed the deleted record. The eviction has to sit here,
 		// beside the navigate only this module runs.
-		"rpc": 3633,
+		// 3698 measured (3696 + 2) after a trigger with no value and no
+		// response signal ignores a click while its request is in flight
+		// (2026-10-31, TestBusyRPCTriggerSendsOnce,
+		// TestControlRPCSendsEveryChange): two clicks on a span during the
+		// cold module load both POSTed. The guard reads dispatch state only
+		// this module holds.
+		"rpc": 3698,
 	}
 	const coreOverride = 0
 

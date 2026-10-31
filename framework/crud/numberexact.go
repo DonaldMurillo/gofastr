@@ -176,7 +176,7 @@ func roundsInteger(f float64) bool {
 // gate; a float64 decode is NOT used because it is the precision loss
 // this function exists to prevent.
 func decodeStrictUseNumber(data []byte) (map[string]any, error) {
-	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return nil, err
 	}
 	//gofastr:allow(GOFASTR1407) CheckObjectKeys already verified key uniqueness and casing (see doc comment); this decode only preserves integer precision via UseNumber.
@@ -195,27 +195,13 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	return body, nil
 }
 
-// redecodeUseNumber re-decodes a body that already passed the strict
-// struct decode (gate) into a second instance of the same type with
-// UseNumber + number normalization, so integer literals inside it keep
-// their exact values. Used by the batch endpoints, whose envelope decode
-// is struct-shaped and therefore float64-based.
-func redecodeUseNumber(data []byte, items *[]map[string]any) error {
-	//gofastr:allow(GOFASTR1407) the strict struct decode already gated this body (see doc comment); this re-decode only preserves integer precision via UseNumber.
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	env := struct {
-		Items *[]map[string]any `json:"items"`
-	}{items}
-	if err := dec.Decode(&env); err != nil {
-		return handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
-	}
-	// Each item, not the envelope: the walk does not enter structs, so
-	// passing the envelope left every item number a json.Number.
-	for _, item := range *items {
+// normalizeItemNumbers gives each batch item's json.Numbers their exact
+// Go spellings (normalizeJSONNumbers). Each item, not the envelope: the
+// walk does not enter structs.
+func normalizeItemNumbers(items []map[string]any) {
+	for _, item := range items {
 		normalizeJSONNumbers(item)
 	}
-	return nil
 }
 
 // zonelessTimestamp reads s as the date and time an <input
@@ -264,7 +250,9 @@ func boolSpelling(v any) (bool, bool) {
 			return false, true
 		}
 	case json.Number:
-		if f, err := x.Float64(); err == nil && (f == 0 || f == 1) {
+		// The digits decide, not the float64: 1.0000000000000001 rounds
+		// to 1 and 1e-400 to 0. An integer that reads as 0 or 1 is one.
+		if f, err := x.Float64(); err == nil && (f == 0 || f == 1) && integerText(x.String()) {
 			return f == 1, true
 		}
 	case int64:

@@ -118,6 +118,12 @@ func (w *injectWriter) decide() {
 }
 
 func (w *injectWriter) WriteHeader(status int) {
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		if !w.sentHeader {
+			w.rw.WriteHeader(status) // informational: forward, keep waiting
+		}
+		return
+	}
 	w.decide()
 	w.status = status
 	if !w.buffering && !w.sentHeader {

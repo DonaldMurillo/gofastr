@@ -123,6 +123,11 @@ func (e *Engine) Pause(ctx context.Context) error {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "already paused"}
 	}
 	left := remainingSeconds(s.EndsAt, e.now())
+	if left <= 0 {
+		// Nothing is left to freeze: a paused tick never completes, so
+		// the session ends here as the tick would have ended it.
+		return e.completeSession(ctx, s, true)
+	}
 	updated, err := e.app.MustCrudHandler("sessions").UpdateOne(ctx, s.ID, map[string]any{
 		"paused_at":   stamp(e.now()),
 		"paused_left": left,

@@ -53,7 +53,7 @@ func TestNewCLIGeneratedHandlerBuilds(t *testing.T) {
 	dir := t.TempDir()
 	clitest.WriteTestFile(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
 
-	cmd := exec.Command(bin, "new", "handler", "Ping", "GET", "/ping")
+	cmd := exec.Command(bin, "new", "handler", "Ping", "--method", "GET", "--path", "/ping")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr new handler: %v\n%s", err, out)

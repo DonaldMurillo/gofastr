@@ -82,6 +82,28 @@ type connish interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
+// sqliteTableParts splits the tracking table name at its last dot into the
+// schema and the bare table, the two halves SQLite's pragma functions and
+// RENAME TO take apart. schema is "" for a bare name. qtable has already
+// validated the whole name, so each half is a safe identifier.
+func (m *Migrator) sqliteTableParts() (schema, table string) {
+	if i := strings.LastIndexByte(m.tableName, '.'); i >= 0 {
+		return m.tableName[:i], m.tableName[i+1:]
+	}
+	return "", m.tableName
+}
+
+// sqliteTableInfo returns the pragma_table_info call for the tracking table
+// and its args. A qualified name passes its schema as the second argument:
+// the whole name as one argument, quoted or not, names no table.
+func (m *Migrator) sqliteTableInfo() (string, []any) {
+	schema, table := m.sqliteTableParts()
+	if schema == "" {
+		return "pragma_table_info(?)", []any{table}
+	}
+	return "pragma_table_info(?, ?)", []any{table, schema}
+}
+
 // qtable validates the tracking table name once and returns it quoted. Every
 // public entry point calls this up front and threads the result into the
 // helpers, so the table name is checked exactly once per operation (no
@@ -225,9 +247,9 @@ func (m *Migrator) hasGroupColumn(ctx context.Context, x connish, tbl string) (b
 			return false, fmt.Errorf("migrate: detect group_name column: %w", err)
 		}
 	} else {
-		baseName := strings.Trim(tbl, `"`)
-		q := "SELECT COUNT(*) FROM pragma_table_info(" + m.placeholder(1) + ") WHERE name = 'group_name'"
-		if err := x.QueryRowContext(ctx, q, baseName).Scan(&n); err != nil {
+		info, args := m.sqliteTableInfo()
+		q := "SELECT COUNT(*) FROM " + info + " WHERE name = 'group_name'"
+		if err := x.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 			return false, fmt.Errorf("migrate: detect group_name column: %w", err)
 		}
 	}

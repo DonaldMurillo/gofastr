@@ -452,6 +452,12 @@ func (r *responseRecorder) Header() http.Header {
 }
 
 func (r *responseRecorder) WriteHeader(code int) {
+	// An informational status (103 Early Hints) is advisory and precedes
+	// the final one, which a buffered response has not sent yet: drop it
+	// rather than record it as the response.
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		return
+	}
 	if !r.wrote {
 		r.statusCode = code
 		r.wrote = true

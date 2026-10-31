@@ -483,3 +483,39 @@ notes:
       shapes:
         - symbol: gofastr/core-ui/island.Manager.ConnectSession
           type: '^func\(sessionID string\) \(<-chan island\.IslandUpdate, func\(\), error\)$'
+  - change: "BREAKING - freeze.FreezeAndGenerate takes a context.Context first and runs the generator under it"
+    breaking: true
+    hits: edit
+    guidance: "A generator that exited while a child it started still held the output pipe hung the call. Pass the request or command context: freeze.FreezeAndGenerate(ctx, w, dir, out). Output is collected for at most two seconds after the generator exits."
+    find:
+      uses:
+        - gofastr/kiln/freeze.FreezeAndGenerate
+  - change: "BREAKING - ui.SparklineConfig.Color is a ui.SparklineColor (success, warning, danger, info or empty) and panics on any other value; it took any string and drew the default for all but those four"
+    breaking: true
+    hits: review
+    guidance: "A raw CSS color never reached the line: the value became a class the CSS does not style. Use a SparklineColor constant, or leave Color empty for the primary color; a string variable needs ui.SparklineColor(v). A new color is a theme token."
+    find:
+      uses:
+        - gofastr/framework/ui.SparklineConfig.Color
+  - change: "BREAKING - auth.TwoFAConfig.Digits is removed; TOTP codes are six digits and the enrolment URL carries TwoFAConfig.Period"
+    breaking: true
+    hits: edit
+    guidance: "Digits was never read, and the enrolment URL always said period=30, so a Period other than 30 refused every code. Delete Digits from the config. A Period you set now reaches the authenticator app."
+    find:
+      fields:
+        - field: gofastr/battery/auth.TwoFAConfig.Digits
+  - change: "BREAKING - handler.SSEStream is removed"
+    breaking: true
+    hits: edit
+    guidance: "It never saw a client disconnect and took no stream seat. Push through the app's /__gofastr/sse bus, or stream through core/stream's SSEBroker, which admits through the seat policy and bounds each write."
+    find:
+      uses:
+        - gofastr/core/handler.SSEStream
+  - change: "BREAKING - auth.PasskeyStore.AddPasskey takes the per-user cap and refuses past it with auth.ErrPasskeyLimit"
+    breaking: true
+    guidance: "The plugin counted a user's passkeys and then stored, so two registrations racing for the last slot both stored. A custom PasskeyStore adds the maxPerUser parameter and counts and inserts as one atomic step; a direct caller passes the cap it wants."
+    nodetect: "a custom store or a direct call fails to compile and the error names AddPasskey"
+  - change: "BREAKING - an admin.Page at /account or /shortcuts fails boot"
+    breaking: true
+    guidance: "An app page at either path silently replaced the built-in account settings or shortcut sheet. Move the page to another path; the boot error names it."
+    nodetect: "the path is a runtime string in admin.Config.Pages; the boot error names it"

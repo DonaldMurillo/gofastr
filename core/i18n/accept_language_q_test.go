@@ -28,6 +28,23 @@ func TestWildcardSkipsRefusedLocale(t *testing.T) {
 	}
 }
 
+// A locale refused with q=0 stays refused when a longer accepted tag
+// truncates to it: en-GB falling back to the refused en served it ahead
+// of the accepted fr (2026-10-27 C11).
+func TestTruncationSkipsRefusedLocale(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("en", "k", Message{Text: "en"})
+	c.Set("fr", "k", Message{Text: "fr"})
+	tr := NewTranslator(c, "en")
+
+	if got := negotiateHeader(tr, "en;q=0, en-GB;q=0.9, fr;q=0.8"); got != "fr" {
+		t.Errorf("en;q=0, en-GB, fr negotiated %q, want fr", got)
+	}
+	if got := negotiateHeader(tr, "en-GB;q=0, en-GB-oxendict, fr;q=0.8"); got != "en" {
+		t.Errorf("refusing en-GB negotiated %q, want en (only en-GB was refused)", got)
+	}
+}
+
 // A q the grammar does not allow drops its entry; it used to keep the
 // default q=1 and outrank every well-formed entry.
 func TestMalformedQDropsEntry(t *testing.T) {

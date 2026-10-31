@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -95,28 +96,13 @@ type SSE struct {
 func (s SSE) ContentType() string { return "text/event-stream" }
 func (s SSE) WriteBody(w http.ResponseWriter) error {
 	flusher, canFlush := w.(http.Flusher)
-	writeSSEFrame(w, s)
+	if err := writeSSEFrame(w, s); err != nil {
+		return err
+	}
 	if canFlush {
 		flusher.Flush()
 	}
 	return nil
-}
-
-// SSEStream writes a channel of SSE events as a streaming response.
-func SSEStream(w http.ResponseWriter, events <-chan SSE) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-
-	flusher, canFlush := w.(http.Flusher)
-	for evt := range events {
-		writeSSEFrame(w, evt)
-		if canFlush {
-			flusher.Flush()
-		}
-	}
 }
 
 // writeSSEFrame emits a single SSE frame with id/event/data fields,
@@ -124,18 +110,23 @@ func SSEStream(w http.ResponseWriter, events <-chan SSE) {
 // field and forge a new directive) and re-prefixing every newline-split
 // line of data with "data: " (so an embedded blank line can't end the
 // frame and inject a second event).
-func writeSSEFrame(w http.ResponseWriter, evt SSE) {
+// writeSSEFrame writes one event in a single Write, so a failed write
+// is reported once and never leaves half a frame behind a good one.
+func writeSSEFrame(w http.ResponseWriter, evt SSE) error {
+	var b strings.Builder
 	if id := stripSSEField(evt.ID); id != "" {
-		fmt.Fprintf(w, "id: %s\n", id)
+		fmt.Fprintf(&b, "id: %s\n", id)
 	}
 	if event := stripSSEField(evt.Event); event != "" {
-		fmt.Fprintf(w, "event: %s\n", event)
+		fmt.Fprintf(&b, "event: %s\n", event)
 	}
 	data := sanitizeSSEData(evt.Data)
 	for line := range strings.SplitSeq(data, "\n") {
-		fmt.Fprintf(w, "data: %s\n", line)
+		fmt.Fprintf(&b, "data: %s\n", line)
 	}
-	fmt.Fprint(w, "\n")
+	b.WriteString("\n")
+	_, err := io.WriteString(w, b.String())
+	return err
 }
 
 // RawBytes is a response type for raw bytes with an explicit content type.

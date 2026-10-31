@@ -47,7 +47,8 @@ type fileSink struct {
 }
 
 // FileSink opens (creating if needed) the file at path and returns a
-// rotating sink. The parent directory is created with mode 0o755.
+// rotating sink. Missing parent directories are created owner-only
+// (0o700); an existing one keeps its mode.
 func FileSink(path string, opts FileOpts) (Sink, error) {
 	if opts.MaxSize <= 0 {
 		opts.MaxSize = 100 << 20

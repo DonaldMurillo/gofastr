@@ -41,9 +41,9 @@ type GlobalSearchConfig struct {
 	NoScriptAction string
 	// Placeholder for the input. Default "Search…".
 	Placeholder string
-	// Shortcut, when set, opts the input into runtime focus-on-key:
-	// `data-hui-shortcut-focus="<chord>"` (default "/"). Pass an
-	// explicit empty string to disable.
+	// Shortcut is the chord that focuses the input at runtime
+	// (`data-hui-shortcut-focus="<chord>"`). Empty takes the default
+	// "/"; a single space (" ") turns the shortcut and its hint off.
 	Shortcut string
 	// ShowHint renders a small "Press <chord>" hint chip on the right
 	// of the input. Default true when Shortcut is set.

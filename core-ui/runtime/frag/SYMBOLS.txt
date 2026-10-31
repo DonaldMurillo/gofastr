@@ -203,6 +203,7 @@ kernel	6	rIC
 kernel	6	self
 kernel	6	session
 kernel	6	sessionCookie
+kernel	6	t
 kernel	6	text
 kernel	6	trimmed
 kernel	6	v

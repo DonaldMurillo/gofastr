@@ -67,8 +67,9 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 			Values:     []float64{1, 2, 3},
 			ID:         idAttack,
 			LabelledBy: idAttack,
-			Color:      colorAttack,
-			Class:      idAttack,
+			// Color is a closed set: an attack value panics
+			// (TestSparklineRefusesUnknownColor), so it never renders.
+			Class: idAttack,
 		})
 		assertSafe(t, string(h))
 	})

@@ -278,7 +278,8 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	switch {
 	case mcpStdio:
 		// MCP over stdio. core/mcp.Server already implements this.
-		if err := mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil {
+		// A signal ends the session with ctx's error: a clean stop.
+		if err := mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil && ctx.Err() == nil {
 			logger.Printf("mcp stdio: %v", err)
 			return 1
 		}
@@ -286,7 +287,7 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		// ACP v1 over stdio: initialize/session negotiation with
 		// streamed session updates; see framework/docs/content/acp.md.
 		acpSrv := kilnacp.NewServer(tools)
-		if err := acpSrv.Serve(ctx, os.Stdin, os.Stdout); err != nil {
+		if err := acpSrv.Serve(ctx, os.Stdin, os.Stdout); err != nil && ctx.Err() == nil {
 			logger.Printf("acp stdio: %v", err)
 			return 1
 		}

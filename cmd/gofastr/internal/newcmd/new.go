@@ -107,14 +107,14 @@ func runNewHandler(args []string, overwrite bool) {
 	name := args[0]
 	method := "GET"
 	path := "/" + strings.ToLower(name)
-
-	for _, a := range args[1:] {
-		if strings.HasPrefix(a, "--method=") {
-			method = strings.ToUpper(strings.TrimPrefix(a, "--method="))
-		} else if strings.HasPrefix(a, "--path=") {
-			path = strings.TrimPrefix(a, "--path=")
-		}
+	// Both --method POST and --method=POST: the usage line shows the
+	// space form, which this loop once ignored, scaffolding GET /<name>.
+	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--path": &path}, nil); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
+	method = strings.ToUpper(method)
 
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
 		cli.Fail("%v", err)
@@ -133,14 +133,12 @@ func runNewRoute(args []string) {
 	path := args[0]
 	method := "GET"
 	handler := "handler"
-
-	for _, a := range args[1:] {
-		if strings.HasPrefix(a, "--method=") {
-			method = strings.ToUpper(strings.TrimPrefix(a, "--method="))
-		} else if strings.HasPrefix(a, "--handler=") {
-			handler = strings.TrimPrefix(a, "--handler=")
-		}
+	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--handler": &handler}, nil); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
+	method = strings.ToUpper(method)
 
 	cli.Info("Add this to your app setup:")
 	fmt.Printf("\n  %s\n\n", routeSnippet(method, path, handler))

@@ -145,7 +145,10 @@ no further fetches land. The header is opt-in: a handler that forgets
 it keeps polling, so a still-live poll cannot be terminated by
 accident. For `Builder.Poll` widgets, declare the terminal condition
 with `Builder.PollTerminal(func() bool)`; the `/state` handler emits
-the header automatically once the predicate returns true. A poll whose
+the header automatically once the predicate returns true. It asks the
+predicate before it reads the signals, so the stopping snapshot is never
+older than the terminal answer, and it skips the header on a response
+missing a signal whose read failed. A poll whose
 region is swapped out entirely (an island swap that replaces the
 `data-cui-poll` element, or a replacement carrying
 `data-cui-poll="off"`/`"0"`) is not re-wired either, so removing the

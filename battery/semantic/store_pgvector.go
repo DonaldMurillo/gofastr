@@ -406,11 +406,15 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 
 	// $1::vector is referenced twice (distance projection + ORDER BY);
 	// PostgreSQL permits reusing a positional parameter within a statement.
+	// A zero vector's distance is NaN, which Postgres sorts after every
+	// number: ranked raw, it fell behind negative matches and a LIMIT cut
+	// it. The ORDER BY ranks it at distance 1 (score 0), as the scan below
+	// scores it.
 	stmt := fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding, owner,
 		embedding <=> $1::vector AS distance
 	FROM %s
 	WHERE %s
-	ORDER BY embedding <=> $1::vector ASC, id ASC
+	ORDER BY COALESCE(NULLIF(embedding <=> $1::vector, 'NaN'::float8), 1) ASC, id ASC
 	LIMIT $%d`, s.quotedTable, where.String(), limitIdx)
 
 	rows, err := s.db.QueryContext(ctx, stmt, args...)

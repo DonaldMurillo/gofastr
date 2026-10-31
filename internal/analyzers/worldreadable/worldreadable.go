@@ -265,15 +265,16 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 		if s.isDir || s.mode == nil || s.perm&0o077 != 0 {
 			continue
 		}
-		if pathflow.QualifiedFunc(pass, s.call.Fun) != "os.WriteFile" {
+		callee := pathflow.QualifiedFunc(pass, s.call.Fun)
+		if callee != "os.WriteFile" && !isRewrite(callee) {
 			continue
 		}
 		if underTempRoot(pass, s.path, bound) || createTempMinted(pass, s.path, bound) {
 			continue // the file cannot pre-exist: the mode applies
 		}
 		pass.Reportf(s.call.Pos(),
-			"os.WriteFile mode 0o%03o applies only at create: a pre-existing group/world-readable file keeps its mode and the new content lands readable by every local co-user; open O_CREATE|O_TRUNC 0o600, Chmod the handle before writing (fileperm.WriteOwnerOnly / writeSecretFile)",
-			s.perm)
+			"%s mode 0o%03o applies only at create: a pre-existing group/world-readable file keeps its mode and the new content lands readable by every local co-user; open O_CREATE|O_TRUNC 0o600, Chmod the handle before writing (fileperm.WriteOwnerOnly / fileperm.ReplaceOwnerOnly)",
+			callName(callee), s.perm)
 	}
 
 	// RESTRICT arm (2026-10-28, B60): os.OpenFile(path, O_CREATE...,
@@ -428,7 +429,11 @@ func collectSites(pass *analysis.Pass, body *ast.BlockStmt) []site {
 		if !ok {
 			return true
 		}
-		switch pathflow.QualifiedFunc(pass, call.Fun) {
+		q := pathflow.QualifiedFunc(pass, call.Fun)
+		if isRewrite(q) {
+			q = "os.WriteFile" // the same signature and mode-at-create semantics
+		}
+		switch q {
 		case "os.WriteFile":
 			if mode, perm, ok := constPerm(pathflow.ArgAt(call, 2)); ok {
 				out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm})
@@ -449,6 +454,20 @@ func collectSites(pass *analysis.Pass, body *ast.BlockStmt) []site {
 		return true
 	})
 	return out
+}
+
+// isRewrite reports internal/atomicfile.Rewrite, os.WriteFile with the
+// write made atomic: perm applies when it creates the file and an
+// existing file keeps its mode, so both arms read it as os.WriteFile.
+func isRewrite(q string) bool { return strings.HasSuffix(q, "atomicfile.Rewrite") }
+
+// callName is the callee as a reader spells it: the package name, not
+// its import path.
+func callName(q string) string {
+	if i := strings.LastIndex(q, "/"); i >= 0 {
+		return q[i+1:]
+	}
+	return q
 }
 
 // readFirstPaths collects the resolved path expressions the same

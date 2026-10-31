@@ -396,10 +396,12 @@ package, registered by `behavior.go` through the same seam a
 stylesheet uses (`registry.RegisterBehavior`). The host serves it as
 the module `headless` at `/__gofastr/runtime/headless.js`, and the
 kernel loads it when one of its markers is on the page. The markers
-are `[data-hui-reveal]`, `[data-hui-color]`, `[data-hui-when]`,
+are `[data-hui-reveal]`, `[data-hui-color]`,
 `[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]`,
 `[data-hui-system]`, `[data-hui-table]` and `[data-hui-selection]`:
-one per behaviour, the root hook of each.
+one per behaviour, the root hook of each. The `when` behaviour is a
+separate module, `headless-when` (`when_behavior.go`), loaded by its
+own marker `[data-hui-when]`.
 
 What it does, one line per behaviour:
 

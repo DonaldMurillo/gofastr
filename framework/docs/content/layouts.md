@@ -968,7 +968,9 @@ application.Register("/pricing", &PricingScreen{}, nil, app.Preload(app.PreloadH
 
 `PreloadHover` fetches on link hover or keyboard focus, `PreloadVisible`
 when a link to the route scrolls into view, `PreloadEager` at idle
-after page load. The prefetched response lives in a small 30-second
+after page load. A hover or visible prefetch fetches the link's full
+URL, query included, so a link to `/orders?page=2` prefetches page 2.
+The prefetched response lives in a small 30-second
 cache the router checks before fetching; `ui.InvalidateScreens`
 selectors evict it like the screen cache. Prefetch requests carry
 `X-Gofastr-Prefetch: 1`, skip session side effects, and are never used

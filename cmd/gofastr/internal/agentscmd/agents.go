@@ -34,6 +34,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/framework/headless"
 	_ "github.com/DonaldMurillo/gofastr/framework/localentity"
 	_ "github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 const (
@@ -138,7 +139,9 @@ func runAgentsSync(args []string) {
 		warnMissingMarkdown()
 		return
 	}
-	if err := os.WriteFile(target, refreshed, 0o644); err != nil {
+	// AGENTS.md holds the project's own text around the TOC: replace it
+	// through a temporary file, so a crash mid-write cannot empty it.
+	if err := atomicfile.Rewrite(target, refreshed, 0o644); err != nil {
 		cli.Fail("Failed to write %s: %v", target, err)
 		cli.OsExit(1)
 	}
@@ -369,7 +372,9 @@ func WriteAgentDetailFiles(dir string) error {
 		b.WriteString(strings.TrimRight(e.Markdown, "\n"))
 		b.WriteString("\n\n---\n\n")
 		b.WriteString("← Back to [AGENTS.md](../AGENTS.md)\n")
-		if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+		// Through a temporary file: one emptied by a crash mid-write lacks
+		// the header, and the next sync would refuse it as hand-written.
+		if err := atomicfile.Rewrite(path, b.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
 	}

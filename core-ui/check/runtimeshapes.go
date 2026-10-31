@@ -3682,10 +3682,13 @@ func (c *provCtx) callSiteWitness(name string, index, depth int) string {
 // Silent on:
 //   - decodes inside a try block (trySpans): the throw is contained
 //     and the handler survives — the fix direction the red tests name;
-//   - header- and literal-borne arguments (nav.js's and preload.js's
-//     X-Gofastr-Title decode, decodeURIComponent('static')): no
+//   - literal-borne arguments (decodeURIComponent('static')): no
 //     attribute provenance, no fire — the trust boundary is data-fui,
-//     not every string;
+//     not every string. A response header or document.title read in
+//     the argument itself does fire (2026-10-31, R13): the
+//     X-Gofastr-Title decode fell back to document.title, which is never
+//     encoded, and a "50% Off" title threw out of every navigation to a
+//     screen that sends no title;
 //   - arguments whose provenance is not traceable (a parameter with no
 //     same-file attribute-derived call site, an imported helper's
 //     input): the out-of-scope posture lints 1/5 hold for untraceable
@@ -3729,6 +3732,10 @@ func LintDecodeURIRaw(roots ...string) (*Result, error) {
 			}
 			w := ctx.culprit(arg, open, 0)
 			if w == "" {
+				if h := reHeaderBorne.FindString(arg); h != "" {
+					res.add(f.Path, f.lineOf(loc[0]),
+						fmt.Sprintf("[decode-uri-raw] decodeURIComponent(%s) decodes %q with no try around the call — a header the server left unset falls back to text that was never encoded, and a page title like \"50%% Off\" throws URIError out of navigation; decode only the header, inside try, and keep the raw text on failure", arg, h))
+				}
 				continue
 			}
 			res.add(f.Path, f.lineOf(loc[0]),
@@ -3737,6 +3744,11 @@ func LintDecodeURIRaw(roots ...string) (*Result, error) {
 	}
 	return res, nil
 }
+
+// reHeaderBorne matches an argument that reads a response header or the
+// page title directly: neither is markup-borne, but the title is never
+// percent-encoded and a header can be absent, so the decode can throw.
+var reHeaderBorne = regexp.MustCompile(`\.headers\.get\s*\(|\bdocument\.title\b`)
 
 // reDecodeCall matches both decode globals on the blank view.
 var reDecodeCall = regexp.MustCompile(`\bdecodeURI(?:Component)?\s*\(`)

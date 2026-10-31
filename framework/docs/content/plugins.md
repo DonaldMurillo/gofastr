@@ -283,6 +283,7 @@ dereference. Prefer these over `Get(...)` + a manual assert.
   concurrent Use+ServeHTTP, but middleware added there only wraps
   requests that arrive AFTER the Use returns, which is operationally
   surprising. Stay in `Init` for chain composition.
-- **Naming a plugin with whitespace / control chars / very long
-  strings**. `RegisterPlugin` rejects these with a clear error; pick
+- **Naming a plugin with an empty or whitespace-only name, control
+  chars, or a very long string**. `RegisterPlugin` rejects these with a
+  clear error (interior spaces are accepted); pick
   a stable, human-readable name (`"auth"`, `"telemetry"`, `"log"`).

@@ -60,28 +60,26 @@ type desktopRunFlags struct {
 	watch bool
 }
 
-func parseDesktopRunFlags(args []string) desktopRunFlags {
+func parseDesktopRunFlags(args []string) (desktopRunFlags, error) {
 	f := desktopRunFlags{dir: ".", pkg: "."}
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := devcmd.SplitFlagEqual(args[i])
-		switch name {
-		case "--dir":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.dir = v
-			}
-		case "--pkg":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.pkg = v
-			}
-		case "--watch":
-			f.watch = true
-		}
-	}
-	return f
+	_, err := cli.ParseFlags(args,
+		map[string]*string{"--dir": &f.dir, "--pkg": &f.pkg},
+		map[string]*bool{"--watch": &f.watch})
+	return f, err
 }
 
 func runDesktopRun(args []string) {
-	f := parseDesktopRunFlags(args)
+	if cli.HasHelpFlag(args) {
+		printDesktopUsage()
+		return
+	}
+	f, err := parseDesktopRunFlags(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		printDesktopUsage()
+		cli.OsExit(1)
+		return
+	}
 
 	runtimeIsolation, err := isolation.Resolve(f.dir)
 	if err != nil {
@@ -254,63 +252,16 @@ type desktopBuildFlags struct {
 	entitlements  string
 }
 
-func parseDesktopBuildFlags(args []string) desktopBuildFlags {
+func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
 	f := desktopBuildFlags{pkg: ".", version: "0.1.0", out: "dist", notaryProfile: "gofastr"}
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := devcmd.SplitFlagEqual(args[i])
-		switch name {
-		case "--format":
-			f.formatSet = true
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.format = v
-			}
-		case "--id":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.id = v
-			}
-		case "--name":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.name = v
-			}
-		case "--icon":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.icon = v
-			}
-		case "--sign":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.sign = v
-			}
-		case "--no-sign":
-			f.noSign = true
-		case "--scheme":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.scheme = v
-			}
-		case "--notarize":
-			f.notarize = true
-		case "--notary-profile":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.notaryProfile = v
-			}
-		case "--entitlements":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.entitlements = v
-			}
-		case "--pkg":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.pkg = v
-			}
-		case "--version":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.version = v
-			}
-		case "-o", "--output":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.out = v
-			}
-		}
-	}
-	return f
+	seen, err := cli.ParseFlags(args, map[string]*string{
+		"--format": &f.format, "--id": &f.id, "--name": &f.name, "--icon": &f.icon,
+		"--sign": &f.sign, "--scheme": &f.scheme, "--notary-profile": &f.notaryProfile,
+		"--entitlements": &f.entitlements, "--pkg": &f.pkg, "--version": &f.version,
+		"-o": &f.out, "--output": &f.out,
+	}, map[string]*bool{"--no-sign": &f.noSign, "--notarize": &f.notarize})
+	f.formatSet = seen["--format"]
+	return f, err
 }
 
 var desktopIDRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
@@ -389,7 +340,17 @@ func runDesktopBuild(args []string) {
 }
 
 func runDesktopBuildForOS(args []string, targetOS string) {
-	f := parseDesktopBuildFlags(args)
+	if cli.HasHelpFlag(args) {
+		printDesktopUsage()
+		return
+	}
+	f, err := parseDesktopBuildFlags(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		printDesktopUsage()
+		cli.OsExit(1)
+		return
+	}
 	if f.formatSet && (targetOS != "linux" || (f.format != "executable" && f.format != "tar.gz")) {
 		cli.Fail("--format supports executable or tar.gz on Linux only")
 		cli.OsExit(1)
@@ -466,6 +427,16 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 			cli.OsExit(1)
 			return
 		}
+	}
+
+	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	if archWarn != "" {
+		cli.Warn("%s", archWarn)
 	}
 
 	exe := filepath.Join(macOS, name)
@@ -711,26 +682,24 @@ type desktopTypesFlags struct {
 	out string
 }
 
-func parseDesktopTypesFlags(args []string) desktopTypesFlags {
+func parseDesktopTypesFlags(args []string) (desktopTypesFlags, error) {
 	f := desktopTypesFlags{pkg: ".", out: "desktop.d.ts"}
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := devcmd.SplitFlagEqual(args[i])
-		switch name {
-		case "--pkg":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.pkg = v
-			}
-		case "--out":
-			if v, ok := devcmd.FlagValue(value, hasValue, args, &i); ok {
-				f.out = v
-			}
-		}
-	}
-	return f
+	_, err := cli.ParseFlags(args, map[string]*string{"--pkg": &f.pkg, "--out": &f.out}, nil)
+	return f, err
 }
 
 func runDesktopTypes(args []string) {
-	f := parseDesktopTypesFlags(args)
+	if cli.HasHelpFlag(args) {
+		printDesktopUsage()
+		return
+	}
+	f, err := parseDesktopTypesFlags(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		printDesktopUsage()
+		cli.OsExit(1)
+		return
+	}
 
 	dir, err := os.MkdirTemp("", "gofastr-desktop-types-*")
 	if err != nil {
@@ -786,4 +755,19 @@ func runDesktopTypes(args []string) {
 		return
 	}
 	cli.Success("Wrote %s (%d capabilities)", f.out, len(manifest.Capabilities))
+}
+
+// macDesktopArch checks the macOS bundle's architecture. The shell
+// (battery/desktop/macos) is arm64-only, so the bundle is always
+// darwin/arm64: a GOARCH naming anything else is refused, and building
+// on an Intel host returns a warning that the bundle will not launch
+// there. Cross-building for Apple silicon from an Intel Mac stays legal.
+func macDesktopArch(envArch, hostArch string) (warn string, err error) {
+	if envArch != "" && envArch != "arm64" {
+		return "", fmt.Errorf("macOS desktop builds target arm64 only (Apple silicon), not GOARCH=%s", envArch)
+	}
+	if hostArch != "arm64" {
+		return fmt.Sprintf("The bundle targets Apple silicon (arm64) and will not launch on this %s Mac.", hostArch), nil
+	}
+	return "", nil
 }

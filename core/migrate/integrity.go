@@ -148,8 +148,8 @@ func (m *Migrator) primaryKeyColumns(ctx context.Context, x connish, tbl string)
 			`ORDER BY array_position(i.indkey, a.attnum)`
 		rows, err = x.QueryContext(ctx, q, tbl)
 	} else {
-		q := fmt.Sprintf("SELECT name FROM pragma_table_info(%s) WHERE pk > 0 ORDER BY pk", m.placeholder(1))
-		rows, err = x.QueryContext(ctx, q, m.tableName)
+		info, args := m.sqliteTableInfo()
+		rows, err = x.QueryContext(ctx, "SELECT name FROM "+info+" WHERE pk > 0 ORDER BY pk", args...)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("migrate: read primary-key columns: %w", err)
@@ -192,12 +192,21 @@ func (m *Migrator) upgradePKPostgres(ctx context.Context, x connish, tbl string)
 // copying the rows, and renaming, all inside one transaction so a failure
 // rolls back atomically. SQLite cannot ALTER a primary key in place.
 func (m *Migrator) rebuildTableSQLite(ctx context.Context, x connish, tbl string) error {
-	baseName := strings.Trim(tbl, `"`)
-	tmpSafe, err := query.SafeIdent(baseName + "__grp_upg")
+	// The temp table goes in the tracking table's own schema (ATTACHed
+	// "aux._migrations" builds "aux"."_migrations__grp_upg"), and RENAME TO
+	// takes the bare name: SQLite renames within the schema and refuses a
+	// qualified target.
+	schema, base := m.sqliteTableParts()
+	tmpName := base + "__grp_upg"
+	if schema != "" {
+		tmpName = schema + "." + tmpName
+	}
+	tmpSafe, err := query.SafeIdent(tmpName)
 	if err != nil {
 		return fmt.Errorf("migrate: temp table name: %w", err)
 	}
 	tmpTbl := query.QuoteFolded(tmpSafe)
+	baseTbl := query.QuoteFolded(base)
 
 	tx, err := x.BeginTx(ctx, nil)
 	if err != nil {
@@ -229,7 +238,7 @@ func (m *Migrator) rebuildTableSQLite(ctx context.Context, x connish, tbl string
 		return fmt.Errorf("migrate: drop legacy tracking table: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s RENAME TO %s", tmpTbl, tbl)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s RENAME TO %s", tmpTbl, baseTbl)); err != nil {
 		return fmt.Errorf("migrate: rename tracking table: %w", err)
 	}
 

@@ -1,11 +1,13 @@
 package agentscmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/framework/agentsinv"
 )
 
 func TestRunAgentsInitWriteFailureExits(t *testing.T) {
@@ -66,7 +68,33 @@ func TestRunAgentsSyncChangedRewrites(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(stale), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Sync replaces AGENTS.md and the detail files through a temporary
+	// file: a handle opened before still reads what it opened.
+	held, err := os.Open(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	detail := filepath.Join(dir, agentDetailRelPath(agentsinv.All()[0]))
+	before := autoGenSentinel + " STALE\n"
+	if err := os.WriteFile(detail, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	heldDetail, err := os.Open(detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer heldDetail.Close()
 	clitest.CovT_capStdout(t, func() { runAgentsSync([]string{dir}) })
+	if got, _ := io.ReadAll(held); string(got) != stale {
+		t.Fatal("AGENTS.md was rewritten in place")
+	}
+	if got, _ := io.ReadAll(heldDetail); string(got) != before {
+		t.Fatal("a detail file was rewritten in place")
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md")); string(got) == stale {
+		t.Fatal("sync did not refresh AGENTS.md")
+	}
 }
 
 func indexOf(s, sub string) int {
