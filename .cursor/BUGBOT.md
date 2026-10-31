@@ -13,10 +13,15 @@ They already catch map ranging while writing output, unbounded request and
 response bodies, control bytes reaching log sinks, world-readable files,
 fixed temp paths, credential comparisons with `==`, timestamp-minted ids,
 discarded decode errors, bespoke CSS, hard navigation, bespoke
-`EventSource`, and bare user-facing English that skips `i18n.Phrase`. Do
-not repeat those findings. Spend the review on bugs a type-aware lint
-cannot see: wrong logic, missed edge cases, races, broken contracts
-between packages, and tests that pass without proving anything.
+`EventSource`, and bare user-facing English that skips `i18n.Phrase`.
+Don't re-report a site one of them already flags. The analyzers do miss
+cases, though, and each one's doc comment in `internal/analyzers/` lists
+the shapes it stays silent on (`unboundedresp`, for one, does not follow a
+response body into a helper that reads it). A bug of one of these kinds
+that the analyzer misses is a valid finding. Spend most of the review on
+bugs a type-aware lint cannot see: wrong logic, missed edge cases, races,
+broken contracts between packages, and tests that pass without proving
+anything.
 
 A `//gofastr:allow(<analyzer>) <why>` comment marks a site that has the
 shape on purpose. Flag it only when the stated reason is wrong.
