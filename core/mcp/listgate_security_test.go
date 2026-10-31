@@ -223,6 +223,33 @@ func TestGatedTemplateHiddenFromList(t *testing.T) {
 	}
 }
 
+// A gated resource (WithResourceGate) does not leak through
+// resources/list. The URI, name and description are the disclosure —
+// a resource names internal concepts the way a tool's inputSchema does.
+func TestGatedResourceHiddenFromList(t *testing.T) {
+	s := NewServer()
+	if err := staticResource(s, "ui://secret", "Secret", "text/markdown", "secret content", WithResourceGate(requireUser)); err != nil {
+		t.Fatal(err)
+	}
+	if err := staticResource(s, "ui://pub", "Pub", "text/markdown", "public"); err != nil {
+		t.Fatal(err)
+	}
+
+	uris := listResourceURIs(t, s, context.Background())
+	if contains(uris, "ui://secret") {
+		t.Errorf("SECURITY: [disclosure] unauthenticated resources/list exposed a gated resource; got %v", uris)
+	}
+	if !contains(uris, "ui://pub") {
+		t.Errorf("ungated resource vanished from the listing; got %v", uris)
+	}
+
+	// The caller who passes the gate must still see it.
+	uris = listResourceURIs(t, s, authed(context.Background()))
+	if !contains(uris, "ui://secret") {
+		t.Errorf("authenticated resources/list hid a visible resource; got %v", uris)
+	}
+}
+
 // Pagination must page the POST-GATE set, never the raw registry. Paging
 // the unfiltered set and dropping gated items from each page leaks their
 // existence twice: a short middle page tells the client an item was
@@ -233,29 +260,38 @@ func TestGatedTemplateHiddenFromList(t *testing.T) {
 func TestPagingNeverRevealsGatedItems(t *testing.T) {
 	s := NewServer()
 	s.listPageSize = 2
-	var publicTools, publicPrompts, publicTemplates []string
-	var hiddenTools, hiddenPrompts, hiddenTemplates []string
+	var publicTools, publicPrompts, publicTemplates, publicResources []string
+	var hiddenTools, hiddenPrompts, hiddenTemplates, hiddenResources []string
 	for i := range 7 { // p0 p2 p4 p6 public; p1 p3 p5 gated
 		name := fmt.Sprintf("p%d", i)
 		if i%2 == 1 {
 			mustRegisterGated(t, s, name, requireUser)
 			mustRegisterPrompt(t, s, name, noopPrompt, WithPromptGate(requireUser))
 			mustRegisterTemplate(t, s, "ui://"+name+"/{id}", name, WithResourceTemplateGate(requireUser))
+			if err := staticResource(s, "ui://"+name, name, "text/markdown", "secret", WithResourceGate(requireUser)); err != nil {
+				t.Fatal(err)
+			}
 			hiddenTools = append(hiddenTools, name)
 			hiddenPrompts = append(hiddenPrompts, name)
 			hiddenTemplates = append(hiddenTemplates, "ui://"+name+"/{id}")
+			hiddenResources = append(hiddenResources, "ui://"+name)
 		} else {
 			mustRegisterOpen(t, s, name)
 			mustRegisterPrompt(t, s, name, noopPrompt)
 			mustRegisterTemplate(t, s, "ui://"+name+"/{id}", name)
+			if err := staticResource(s, "ui://"+name, name, "text/markdown", "public"); err != nil {
+				t.Fatal(err)
+			}
 			publicTools = append(publicTools, name)
 			publicPrompts = append(publicPrompts, name)
 			publicTemplates = append(publicTemplates, "ui://"+name+"/{id}")
+			publicResources = append(publicResources, "ui://"+name)
 		}
 	}
 	assertPagedVisibility(t, s, "tools/list", "tools", "name", publicTools, hiddenTools)
 	assertPagedVisibility(t, s, "prompts/list", "prompts", "name", publicPrompts, hiddenPrompts)
 	assertPagedVisibility(t, s, "resources/templates/list", "resourceTemplates", "uriTemplate", publicTemplates, hiddenTemplates)
+	assertPagedVisibility(t, s, "resources/list", "resources", "uri", publicResources, hiddenResources)
 }
 
 // assertPagedVisibility walks a paginated list as the unauthenticated
@@ -324,6 +360,25 @@ func listToolNames(t *testing.T, s *Server, ctx context.Context) []string {
 	return names
 }
 
+// listResourceURIs issues resources/list for the caller ctx identifies
+// and returns the visible URIs (nil on an error response).
+func listResourceURIs(t *testing.T, s *Server, ctx context.Context) []string {
+	t.Helper()
+	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "resources/list"})
+	if resp.Error != nil {
+		return nil
+	}
+	res, ok := resp.Result.(resourcesListResult)
+	if !ok {
+		t.Fatalf("resources/list result type %T", resp.Result)
+	}
+	uris := make([]string, 0, len(res.Resources))
+	for _, r := range res.Resources {
+		uris = append(uris, r.URI)
+	}
+	return uris
+}
+
 func contains(hay []string, needle string) bool {
 	return slices.Contains(hay, needle)
 }
@@ -368,6 +423,18 @@ func TestListingGateNeverBlocksRegistry(t *testing.T) {
 			},
 			writer: func(s *Server) error {
 				return s.RegisterResourceTemplate("ui://writer/{id}", "writer", "text/markdown")
+			},
+		},
+		{
+			name:   "resources/list",
+			method: "resources/list",
+			gated: func(s *Server, g func(context.Context) error) {
+				if err := staticResource(s, "ui://gated", "gated", "text/markdown", "x", WithResourceGate(g)); err != nil {
+					t.Fatal(err)
+				}
+			},
+			writer: func(s *Server) error {
+				return staticResource(s, "ui://writer", "writer", "text/markdown", "y")
 			},
 		},
 	}
@@ -660,11 +727,9 @@ func TestGateRevokedMidStreamStopsDelivery(t *testing.T) {
 		})); err != nil {
 		t.Fatal(err)
 	}
-	// RegisterResource fires a (gate-less, by design) list_changed; drain
-	// it so the item-gate assertions below see only resources/updated.
-	if ev := awaitSSE(t, events, "list_changed from RegisterResource"); ev.event != "message" {
-		t.Fatalf("event = %q, want message", ev.event)
-	}
+	// The list_changed RegisterResource fires carries the resource's
+	// gate, which denies right now, so this stream is not told.
+	expectNoSSE(t, events, "list_changed from a gated RegisterResource the gate refuses")
 	postMCP(t, ts, true, `{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"secret://flip"}}`)
 	s.NotifyResourceUpdated("secret://flip")
 	expectNoSSE(t, events, "updated while the item gate denies")

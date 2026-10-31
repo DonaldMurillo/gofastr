@@ -822,9 +822,8 @@ func TestSSEEventClearsWriteDeadline(t *testing.T) {
 
 // The list_changed a gated registration fires carries the item's own
 // gate: a caller the gate refuses cannot see the item in its list
-// method and must not be told it appeared. Concrete resources are the
-// documented exception — their metadata stays listed; their gate
-// guards the read, so RegisterResource is not covered here.
+// method and must not be told it appeared. Concrete resources follow
+// the same rule now that resources/list filters by WithResourceGate.
 func TestGatedRegistrationWithholdsListChanged(t *testing.T) {
 	s := NewServer()
 	ts := newNotificationServer(t, s)
@@ -848,6 +847,16 @@ func TestGatedRegistrationWithholdsListChanged(t *testing.T) {
 		t.Errorf("allowed stream got %q (uri %q), want payload-free resources list_changed", method, uri)
 	}
 	expectNoSSE(t, anonEvents, "resources list_changed for a caller the template gate refuses")
+
+	if err := staticResource(s, "hidden://res", "Hidden", "text/plain", "secret",
+		WithResourceGate(requireUser)); err != nil {
+		t.Fatal(err)
+	}
+	method, uri = decodeNotification(t, awaitSSE(t, authedEvents, "resources list_changed for a gated resource on the allowed stream"))
+	if method != "notifications/resources/list_changed" || uri != "" {
+		t.Errorf("allowed stream got %q (uri %q), want payload-free resources list_changed", method, uri)
+	}
+	expectNoSSE(t, anonEvents, "resources list_changed for a caller the resource gate refuses")
 
 	if err := s.RegisterPrompt("hidden_prompt", func(context.Context, map[string]string) ([]PromptMessage, error) {
 		return nil, nil

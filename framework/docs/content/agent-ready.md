@@ -559,8 +559,9 @@ resources are **not** covered by the tool call gate: `mcp.Gated` /
 `auth.MCPUser` gate tool handlers, not `resources/read`. Public content (an
 MCP App's widget HTML) needs no gating; to serve sensitive or per-caller
 data, add `mcp.WithResourceGate(gate)` (the resource-side analogue of
-`mcp.Gated`, where `auth.MCPUser()` / `auth.MCPRole(...)` work as gates),
-which runs before the contents func on every read.
+`mcp.WithToolGate`, where `auth.MCPUser()` / `auth.MCPRole(...)` work as gates).
+It runs before the contents func on every read and hides the resource from
+`resources/list` for a caller it refuses.
 
 **MCP Apps.** The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)
 lets a tool declare an interactive HTML widget the host renders in a

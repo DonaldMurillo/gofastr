@@ -519,3 +519,10 @@ notes:
     breaking: true
     guidance: "An app page at either path silently replaced the built-in account settings or shortcut sheet. Move the page to another path; the boot error names it."
     nodetect: "the path is a runtime string in admin.Config.Pages; the boot error names it"
+  - change: "BREAKING - WithResourceGate now hides the resource from callers it refuses: resources/list and the list_changed a registration fires both pass the gate, as they already did for tools, prompts and resource templates"
+    breaking: true
+    hits: review
+    guidance: "Nothing to do unless a client must discover a gated resource before it passes the gate. For such a resource, drop WithResourceGate and check the caller inside its contents func, which refuses the read and keeps the resource listed; its resources/updated notifications then reach every subscriber, so keep the gate when update timing is private."
+    find:
+      uses:
+        - gofastr/core/mcp.WithResourceGate
