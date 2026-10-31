@@ -2257,7 +2257,18 @@ app. Debian/Ubuntu package names are `libgtk-3-0` (or `libgtk-3-0t64`) and
 or newer and glibc 2.34 or newer are required. Run from an X11 or Wayland
 desktop session; missing libraries and missing displays produce actionable
 errors from `Run`. System notifications also need optional `libnotify` and a
-notification daemon. Existing GTK window-manager limits apply under Wayland,
+notification daemon. The shell queries the current daemon's capabilities for
+each notification: plain-body daemons receive literal text; markup-capable
+or unknown daemons receive escaped body text. Empty or failed capability
+queries retain the conservative escaped fallback.
+
+libnotify performs synchronous native calls on the GTK thread. A caller on
+another goroutine can receive `ErrCancelled` while a daemon reply is still
+pending, but cancellation does not preempt that native call or retract a
+notification already sent. GTK work and shutdown wait for the reply or the
+native proxy's default timeout; calls made on the GTK thread also wait there.
+The bounded test below demonstrates recovery after releasing a held reply,
+not cancellation of an unresponsive daemon. Existing GTK window-manager limits apply under Wayland,
 including requests to place a window at an absolute screen position.
 
 The shell supports native menus (Command accelerators map to Control), file
@@ -2312,9 +2323,30 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_TRAY=1 \
   go test ./battery/desktop/linux -run '^TestNativeTrayGraphical$' -count=1 -timeout=180s -v
 ```
 
-For a headless Linux worker with GTK/WebKitGTK, `dbus` (including
-`dbus-daemon`), `xvfb` and `xauth` installed, the repository's runner
-executes all seven automated tests in separate invocations:
+Two notification tests use real GTK and libnotify without creating a WebKit
+view. `TestNativeNotifications` exports a fixture daemon on its own private bus
+and checks native payloads with and without markup support, failed capability
+queries, Unicode, daemon refusal, loss/restart and operation cleanup. A bounded
+held reply verifies caller cancellation and GTK recovery after release. The
+production `Run` refusal gate is checked against the fixture's retained GTK
+owner; this is not a test of production `Run` teardown. `TestNativeNotificationGraphical` starts an actual
+`dunst` daemon on another private bus, verifies displayed/dismissed counts and
+finds the daemon's unique mapped X11 window with `xdotool`. It captures that
+window as `notification.png`, checks its frame/text pixels, and requires it to
+unmap on dismissal. Inspect that PNG for text
+and layout; daemon counts alone are not pixel evidence. These fixtures never
+send notifications to the user's desktop session:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_NOTIFICATIONS=1 GDK_BACKEND=x11 xvfb-run -a \
+  go test ./battery/desktop/linux -run '^TestNativeNotifications$' -count=1 -timeout=90s -v
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_NOTIFICATIONS=1 GDK_BACKEND=x11 xvfb-run -a \
+  go test ./battery/desktop/linux -run '^TestNativeNotificationGraphical$' -count=1 -timeout=90s -v
+```
+
+For a headless Linux worker with GTK/WebKitGTK, `libnotify`, `dunst` (including
+`dunstctl`), `xdotool`, `dbus` (including `dbus-daemon`), `xvfb` and `xauth` installed, the repository's runner
+executes all nine automated tests in separate invocations:
 
 ```sh
 ./scripts/test-linux-desktop.sh
@@ -2323,10 +2355,11 @@ executes all seven automated tests in separate invocations:
 The blocking Linux CI job runs this script with `CGO_ENABLED=0`, a private
 session bus per invocation and an authenticated Xvfb for graphical cases.
 Only the activation tests get the test-only embedded scheme; the two original
-smoke, profile and tray tests retain unembedded defaults. Logs and PNG captures go to
-`dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
-coverage does not validate Wayland, compositor effects, notification delivery,
-or interactive file selection and overwrite confirmation.
+smoke, profile, tray and notification tests retain unembedded defaults. Logs and
+PNG captures go to `dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
+coverage validates notification rendering with dunst on X11, but does not
+validate other notification daemons, Wayland, compositor effects, or interactive
+file selection and overwrite confirmation.
 
 Do not disable WebKit's process sandbox to run the tests. Ordinary `go test`
 runs the no-display tests and skips these opt-in graphical tests. When running

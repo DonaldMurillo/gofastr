@@ -74,6 +74,7 @@ type Symbols struct {
 	GtkFileFilterSetName                     uintptr // gtk_file_filter_set_name
 	GtkFileFilterAddPattern                  uintptr // gtk_file_filter_add_pattern
 	GSListFree                               uintptr // g_slist_free
+	GListFreeFull                            uintptr // g_list_free_full
 	GMainContextIteration                    uintptr // g_main_context_iteration
 	GSourceRemove                            uintptr // g_source_remove
 	GtkWindowPresent                         uintptr // gtk_window_present
@@ -193,6 +194,7 @@ type Symbols struct {
 	// bytes; libnotify carries notifications.
 	GdkPixbufSaveToBufferv uintptr // gdk_pixbuf_save_to_bufferv
 	NotifyInit             uintptr // notify_init
+	NotifyGetServerCaps    uintptr // notify_get_server_caps
 	NotifyNotificationNew  uintptr // notify_notification_new
 	NotifyNotificationShow uintptr // notify_notification_show
 }
@@ -243,6 +245,7 @@ func table() []symbol {
 		{&Sym.GtkFileFilterSetName, libGtk, "gtk_file_filter_set_name"},
 		{&Sym.GtkFileFilterAddPattern, libGtk, "gtk_file_filter_add_pattern"},
 		{&Sym.GSListFree, libGLib, "g_slist_free"},
+		{&Sym.GListFreeFull, libGLib, "g_list_free_full"},
 		{&Sym.GMainContextIteration, libGLib, "g_main_context_iteration"},
 		{&Sym.GSourceRemove, libGLib, "g_source_remove"},
 		{&Sym.GtkWindowPresent, libGtk, "gtk_window_present"},
@@ -338,6 +341,7 @@ func table() []symbol {
 
 		{&Sym.GdkPixbufSaveToBufferv, libPixbuf, "gdk_pixbuf_save_to_bufferv"},
 		{&Sym.NotifyInit, libNotify, "notify_init"},
+		{&Sym.NotifyGetServerCaps, libNotify, "notify_get_server_caps"},
 		{&Sym.NotifyNotificationNew, libNotify, "notify_notification_new"},
 		{&Sym.NotifyNotificationShow, libNotify, "notify_notification_show"},
 	}
