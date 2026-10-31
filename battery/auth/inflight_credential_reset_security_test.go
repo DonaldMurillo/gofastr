@@ -166,12 +166,12 @@ type ctxStrictPasskeys struct {
 	beforeAdd, afterAdd func()
 }
 
-func (s *ctxStrictPasskeys) AddPasskey(ctx context.Context, c PasskeyCredential) error {
+func (s *ctxStrictPasskeys) AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) error {
 	if hook := s.beforeAdd; hook != nil {
 		s.beforeAdd = nil
 		hook()
 	}
-	err := s.PasskeyStore.AddPasskey(ctx, c)
+	err := s.PasskeyStore.AddPasskey(ctx, c, maxPerUser)
 	if hook := s.afterAdd; hook != nil && err == nil {
 		s.afterAdd = nil
 		hook()
@@ -279,12 +279,12 @@ type addHookPasskeys struct {
 	beforeAdd func()
 }
 
-func (s *addHookPasskeys) AddPasskey(ctx context.Context, c PasskeyCredential) error {
+func (s *addHookPasskeys) AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) error {
 	if hook := s.beforeAdd; hook != nil {
 		s.beforeAdd = nil
 		hook()
 	}
-	return s.PasskeyStore.AddPasskey(ctx, c)
+	return s.PasskeyStore.AddPasskey(ctx, c, maxPerUser)
 }
 
 // The same race reached passkey registration: a registration finished

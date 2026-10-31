@@ -93,12 +93,19 @@ var (
 	ErrPasskeyNotFound = errors.New("auth: passkey not found")
 	// ErrPasskeyExists is returned when a passkey id is already registered.
 	ErrPasskeyExists = errors.New("auth: passkey already registered")
+	// ErrPasskeyLimit is returned when the user already holds the most
+	// passkeys AddPasskey was told to allow.
+	ErrPasskeyLimit = errors.New("auth: passkey limit reached")
 )
 
 // PasskeyStore persists passkeys. Implementations must make AddPasskey
 // refuse a duplicate id and RecordPasskeyUse a compare-and-swap.
 type PasskeyStore interface {
-	AddPasskey(ctx context.Context, c PasskeyCredential) error
+	// AddPasskey stores c, refusing a duplicate id with ErrPasskeyExists
+	// and, when the user already holds maxPerUser passkeys or more,
+	// ErrPasskeyLimit. The count and the insert are one atomic step: two
+	// registrations racing for the last slot store one passkey, not two.
+	AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) error
 	GetPasskey(ctx context.Context, id []byte) (PasskeyCredential, error)
 	ListPasskeys(ctx context.Context, userID string) ([]PasskeyCredential, error)
 	// RecordPasskeyUse moves the sign count from old to next and stamps
@@ -131,11 +138,20 @@ func clonePasskey(c PasskeyCredential) PasskeyCredential {
 }
 
 // AddPasskey implements PasskeyStore.
-func (m *MemoryPasskeyStore) AddPasskey(_ context.Context, c PasskeyCredential) error {
+func (m *MemoryPasskeyStore) AddPasskey(_ context.Context, c PasskeyCredential, maxPerUser int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.creds[string(c.ID)]; ok {
 		return ErrPasskeyExists
+	}
+	held := 0
+	for _, have := range m.creds {
+		if have.UserID == c.UserID {
+			held++
+		}
+	}
+	if held >= maxPerUser {
+		return ErrPasskeyLimit
 	}
 	m.creds[string(c.ID)] = clonePasskey(c)
 	return nil
@@ -507,26 +523,23 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		p.refuse(w, r, sess.UserID, "register", "credential_mismatch", errors.New("credential id does not match the attestation"))
 		return
 	}
-	// The options call checked the cap, but challenges collected while
-	// under it would each register past it; count again before storing.
-	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)
-	if err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
-		return
-	}
-	if len(existing) >= p.config.MaxPerUser {
-		writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
-		return
-	}
 	now := time.Now().UTC()
 	cred := PasskeyCredential{
 		ID: res.credID, UserID: sess.UserID, PublicKey: res.publicKey, Algorithm: res.alg,
 		SignCount: res.signCount, Name: name, BackupEligible: res.backupEligible, BackedUp: res.backedUp,
 		CreatedAt: now,
 	}
-	if err := p.store.AddPasskey(r.Context(), cred); err != nil {
+	// The options call checked the cap, but challenges collected while
+	// under it would each register past it, so the store counts again as
+	// it inserts: a count here and then a store let two registrations
+	// racing for the last slot both through.
+	if err := p.store.AddPasskey(r.Context(), cred, p.config.MaxPerUser); err != nil {
 		if errors.Is(err, ErrPasskeyExists) {
 			writeAuthError(w, r, http.StatusConflict, reasonPasskeyAlreadyRegistered)
+			return
+		}
+		if errors.Is(err, ErrPasskeyLimit) {
+			writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
 			return
 		}
 		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)

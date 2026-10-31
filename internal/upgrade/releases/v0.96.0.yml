@@ -508,6 +508,10 @@ notes:
     find:
       uses:
         - gofastr/core/handler.SSEStream
+  - change: "BREAKING - auth.PasskeyStore.AddPasskey takes the per-user cap and refuses past it with auth.ErrPasskeyLimit"
+    breaking: true
+    guidance: "The plugin counted a user's passkeys and then stored, so two registrations racing for the last slot both stored. A custom PasskeyStore adds the maxPerUser parameter and counts and inserts as one atomic step; a direct caller passes the cap it wants."
+    nodetect: "a custom store or a direct call fails to compile and the error names AddPasskey"
   - change: "BREAKING - an admin.Page at /account or /shortcuts fails boot"
     breaking: true
     guidance: "An app page at either path silently replaced the built-in account settings or shortcut sheet. Move the page to another path; the boot error names it."

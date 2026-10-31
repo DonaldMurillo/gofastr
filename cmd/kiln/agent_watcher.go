@@ -154,8 +154,12 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 			if ev.Kind != string(journal.KindChatUser) {
 				continue
 			}
-			text := chatTextByEntryID(l, ev.EntryID)
-			if text == "" {
+			text, acpSession := chatTextByEntryID(l, ev.EntryID)
+			// An ACP session's message is that session's turn: kiln acp
+			// runs it on its own provider or answers it refused, and a
+			// watcher turn on it would run a prompt the client was told
+			// was refused.
+			if text == "" || acpSession != "" {
 				continue
 			}
 
@@ -192,19 +196,20 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 	}
 }
 
-func chatTextByEntryID(l *live.Live, id string) string {
+// chatTextByEntryID is a chat message's text and the ACP session that
+// wrote it, "" for the panel and the HTTP and MCP tools.
+func chatTextByEntryID(l *live.Live, id string) (text, acpSession string) {
 	// Read under Live's session lock: the watcher goroutine competes
 	// with the HTTP tool dispatcher's Applies for the chat slice.
-	var text string
 	l.ReadSession(func(sess *journal.Session) {
 		for _, e := range sess.Chat {
 			if e.EntryID == id && e.Message != nil {
-				text = e.Message.Text
+				text, acpSession = e.Message.Text, e.Message.ACPSession
 				return
 			}
 		}
 	})
-	return text
+	return text, acpSession
 }
 
 // destructiveIntent runs a quick keyword scan on the user message

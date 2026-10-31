@@ -369,6 +369,15 @@ few lines, and link the PR or the docs page for the rest.
 - **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
   string.** `"use":[]` or `"alg":false` read as absent, so the key
   passed both restriction checks.
+- **BREAKING: passkey `MaxPerUser` holds when registrations race.**
+  The plugin counted and then stored, so two registrations with one slot
+  left both stored. `PasskeyStore.AddPasskey` now takes the cap and
+  refuses past it with `auth.ErrPasskeyLimit`, counting and inserting as
+  one step; a custom store adds the parameter.
+- **`kiln acp --agent X` no longer runs the agent on a refused ACP
+  prompt.** The ACP session journals the prompt and answers `refusal`,
+  and the chat watcher picked the journaled message up and ran a turn on
+  it anyway. The watcher now skips messages an ACP session wrote.
 - **A Bool field refuses a number that only rounds to 0 or 1, and stores
   a text default as the boolean.** `1.0000000000000001` was stored as
   true and `1e-400` as false. A `Default: "true"` was bound as text, which
@@ -402,9 +411,9 @@ few lines, and link the PR or the docs page for the rest.
   `client_secret_basic` could not log anyone in. A provider whose
   discovery lists Basic and not post now gets an `Authorization` header;
   `OIDCConfig.TokenAuthMethod` overrides discovery.
-- **The admin audits a profile-name change and reserves `/account` and
-  `/shortcuts`.** The name change wrote no audit row, and an app `Page` at
-  either path silently replaced the built-in screen; boot now fails.
+- **BREAKING: the admin reserves `/account` and `/shortcuts`, and audits
+  a profile-name change.** An app `Page` at either path silently replaced
+  the built-in screen; boot now fails. The name change wrote no audit row.
 - **Strict JSON decoding folds nested keys the way the decoder does.**
   The nested-key check folded with `strings.ToLower`, which keeps `ſ`
   (U+017F) apart from `s`, while `encoding/json` binds `ſource` to the

@@ -156,7 +156,7 @@ func TestTokenStoresFoldTable(t *testing.T) {
 			t.Fatal(err)
 		}
 		cred := PasskeyCredential{ID: []byte("k1"), UserID: "u1", PublicKey: []byte("pk"), Algorithm: -7, CreatedAt: time.Now()}
-		if err := pk.AddPasskey(ctx, cred); err != nil {
+		if err := pk.AddPasskey(ctx, cred, 20); err != nil {
 			t.Fatal(err)
 		}
 		if n := entityRows(t, db, "Passkeys"); n != 1 {

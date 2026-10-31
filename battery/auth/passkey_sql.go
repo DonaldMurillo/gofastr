@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -80,16 +81,53 @@ func timeOrZero(sec int64) time.Time {
 	return time.Unix(sec, 0).UTC()
 }
 
-// AddPasskey implements PasskeyStore.
-func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential) error {
-	q := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, query.QuoteFolded(s.table), passkeyColumns)
-	_, err := s.db.ExecContext(ctx, q,
+// AddPasskey implements PasskeyStore. It counts the user's passkeys and
+// inserts in one transaction. Postgres runs READ COMMITTED, where each
+// of two concurrent adds counts the other's insert out, so there the
+// transaction first takes an advisory lock on the user's passkeys.
+// SQLite allows one writer at a time: of two adds that both counted,
+// only the first commits.
+func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) (err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	t := query.QuoteFolded(s.table)
+	if s.dialect.of(s.db) == migrate.DialectPostgres {
+		if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+			passkeyLockKey(s.table, c.UserID)); err != nil {
+			return err
+		}
+	}
+	var held int
+	if err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE user_id = $1`, t), c.UserID).Scan(&held); err != nil {
+		return err
+	}
+	if held >= maxPerUser {
+		return ErrPasskeyLimit
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, t, passkeyColumns),
 		b64url.EncodeToString(c.ID), c.UserID, b64url.EncodeToString(c.PublicKey), c.Algorithm, int64(c.SignCount),
 		c.Name, boolInt(c.BackupEligible), boolInt(c.BackedUp), unixOrZero(c.CreatedAt), unixOrZero(c.LastUsedAt))
-	if err != nil && isUniqueViolation(err) {
-		return ErrPasskeyExists
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrPasskeyExists
+		}
+		return err
 	}
-	return err
+	return tx.Commit()
+}
+
+// passkeyLockKey names one user's passkeys in one table for the advisory
+// lock. Each part is length-prefixed, so no user id can alias another
+// table's or user's key.
+func passkeyLockKey(table, userID string) string {
+	return strconv.Itoa(len(table)) + ":" + table + strconv.Itoa(len(userID)) + ":" + userID
 }
 
 func scanPasskey(row rowScanner) (PasskeyCredential, error) {

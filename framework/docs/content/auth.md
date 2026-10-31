@@ -1303,6 +1303,13 @@ Other knobs: `RPName` (shown by the browser, default `RPID`),
 `RateLimit` (default 30 requests a minute per client, then a 5-minute
 block).
 
+`MaxPerUser` holds when registrations race: the plugin passes it to
+`PasskeyStore.AddPasskey(ctx, cred, maxPerUser)`, which counts the
+user's passkeys and inserts as one step and answers `auth.ErrPasskeyLimit`
+past it. The SQL store does both in one transaction, behind an advisory
+lock on the user on Postgres; a custom store must make the pair atomic
+the same way.
+
 ### Routes
 
 | Route | Who | What |
