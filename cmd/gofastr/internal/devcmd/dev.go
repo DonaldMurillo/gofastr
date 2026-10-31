@@ -75,7 +75,13 @@ func RunDev(args []string) {
 	// is the command, but the watch root and the server's cwd must stay at the
 	// project root; otherwise the watcher misses internal/ and relative paths
 	// (sqlite db_url, static dirs) resolve against the command dir instead.
-	addr, dir, pkg, noA11y := parseDevFlags(args)
+	addr, dir, pkg, noA11y, err := parseDevFlags(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		printDevUsage()
+		cli.OsExit(1)
+		return
+	}
 
 	runtimeIsolation, resolvedAddr, err := resolveDevIsolation(dir, addr)
 	if err != nil {
@@ -180,36 +186,25 @@ func RunDev(args []string) {
 	}
 }
 
-// parseDevFlags parses dev's hand-rolled flags, accepting BOTH the
-// space-separated form (--addr x) and the equals form (--addr=x) that the
-// help text documents. Previously only the space form was recognised, so
-// `gofastr dev --addr=:9000` silently kept the default address.
-func parseDevFlags(args []string) (addr, dir, pkg string, noA11y bool) {
+// parseDevFlags parses dev's flags in both the --addr=x and the --addr x
+// form (cli.ParseFlags). -p <port> is shorthand for --addr localhost:<port>;
+// giving both is refused rather than letting one silently win.
+func parseDevFlags(args []string) (addr, dir, pkg string, noA11y bool, err error) {
 	addr, dir, pkg = "localhost:8080", ".", "."
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := SplitFlagEqual(args[i])
-		switch name {
-		case "--addr":
-			if v, ok := FlagValue(value, hasValue, args, &i); ok {
-				addr = v
-			}
-		case "-p":
-			if v, ok := FlagValue(value, hasValue, args, &i); ok {
-				addr = "localhost:" + v
-			}
-		case "--dir":
-			if v, ok := FlagValue(value, hasValue, args, &i); ok {
-				dir = v
-			}
-		case "--pkg":
-			if v, ok := FlagValue(value, hasValue, args, &i); ok {
-				pkg = v
-			}
-		case "--no-a11y":
-			noA11y = true
-		}
+	var port string
+	seen, err := cli.ParseFlags(args,
+		map[string]*string{"--addr": &addr, "-p": &port, "--dir": &dir, "--pkg": &pkg},
+		map[string]*bool{"--no-a11y": &noA11y})
+	if err != nil {
+		return addr, dir, pkg, noA11y, err
 	}
-	return
+	if seen["-p"] {
+		if seen["--addr"] {
+			return addr, dir, pkg, noA11y, fmt.Errorf("pass --addr or -p, not both")
+		}
+		addr = "localhost:" + port
+	}
+	return addr, dir, pkg, noA11y, nil
 }
 
 // SplitFlagEqual splits "--name=value" into ("--name", "value", true). A bare
@@ -220,21 +215,6 @@ func SplitFlagEqual(arg string) (name, value string, hasValue bool) {
 		return arg[:idx], arg[idx+1:], true
 	}
 	return arg, "", false
-}
-
-// FlagValue returns a flag's value: the inline =value when present, otherwise
-// the next argument (advancing i past it). Mirrors the original parser, which
-// consumed the following token unconditionally.
-func FlagValue(inline string, hasInline bool, args []string, i *int) (string, bool) {
-	if hasInline {
-		return inline, true
-	}
-	if *i+1 < len(args) {
-		v := args[*i+1]
-		*i++
-		return v, true
-	}
-	return "", false
 }
 
 func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {

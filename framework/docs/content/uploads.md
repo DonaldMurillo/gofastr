@@ -545,8 +545,6 @@ Behaviour worth knowing:
   derived from the stripped bytes, and `FileField.Size` reflects them.
 - It fails closed: a JPEG, PNG, or WebP whose structure cannot be
   walked fails the upload rather than being stored unstripped.
-- The auto-CRUD multipart path does not expose a strip knob yet;
-  `StripMetadata` applies when you drive `ProcessFileField` yourself.
 
 ## Storage backends
 

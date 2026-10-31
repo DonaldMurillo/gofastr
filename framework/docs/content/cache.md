@@ -150,10 +150,15 @@ err := cache.GetOrSet(ctx, c, "user:42", time.Minute, &u,
 
 `GetOrSet` collapses concurrent misses on the same key so the loader
 runs exactly once and all waiters share the result.  A loader error
-propagates and is never cached. The loader runs under
-`context.WithoutCancel`: the first caller's values (trace, auth) are
-kept but its abort is not, so one caller cancelling their request no
-longer fails the loader for every waiter joined behind it.
+propagates and is never cached. The shared loader keeps the first
+caller's context values (trace, auth) but not its cancellation, so one
+caller cancelling their request does not fail the loader for every
+waiter joined behind it. Each caller still leaves at its own deadline
+with `ctx.Err()`; the loader's context is cancelled when the last
+waiter leaves, and a fill nobody waits for any more stores nothing, so
+it cannot overwrite a value a later caller filled. A cache with value
+receivers has no identity to share a fill by, so each caller fills on
+its own, and still leaves at its deadline.
 
 ## HTTP caching middleware
 
@@ -249,6 +254,8 @@ entry appears in the generated `AGENTS.md` output from
   headers before suspecting the middleware.
 - **Hand-rolling get-miss-then-set under concurrency.** N concurrent
   misses run the loader N times (thundering herd). `cache.GetOrSet`
-  collapses concurrent misses per key via singleflight so the loader
+  collapses concurrent misses per key into one shared fill so the loader
   runs exactly once, and a loader error propagates without being
-  cached.
+  cached. Each caller waits under its own context: one whose deadline
+  passes returns `ctx.Err()` while the fill runs on for the others, and
+  the loader's context is cancelled once no caller is left waiting.

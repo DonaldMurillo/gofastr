@@ -46,7 +46,8 @@ type AuthConfig struct {
 	// Defaults to "session_id".
 	SessionCookie string
 
-	// SessionTTL is how long a session lives. Defaults to 7 days.
+	// SessionTTL is how long a session lives. Zero means 7 days; Init
+	// refuses a negative one.
 	SessionTTL time.Duration
 
 	// SessionSecure sets the Secure flag on session cookies.
@@ -173,10 +174,11 @@ func (c *AuthConfig) defaults() {
 	if c.BasePath == "" {
 		c.BasePath = "/auth"
 	}
-	if c.SessionTTL <= 0 {
+	if c.SessionTTL == 0 {
 		// 7 days matches MemorySessionStore.Create's previous fallback.
 		// Without this, EntitySessionStore.Create would silently mint
 		// already-expired sessions (broken login on the very next request).
+		// A negative TTL is not unset: Init refuses it.
 		c.SessionTTL = 7 * 24 * time.Hour
 	}
 	// Default brute-force throttles. These run in BOTH DevMode and
@@ -562,6 +564,11 @@ func (m *AuthManager) Init(app *framework.App) error {
 	// warn. DevMode mints its own per-process secret, so it's exempt.
 	if !m.config.DevMode && m.config.JWTSecret == "" {
 		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret: set it from your secret store, or set DevMode: true for local development")
+	}
+	// A negative SessionTTL is a sign or unit error. Substituting the
+	// default would log users in for a lifetime nobody chose.
+	if m.config.SessionTTL < 0 {
+		return fmt.Errorf("auth: AuthConfig.SessionTTL is negative (%v): set a positive duration, or leave it zero for the 7-day default", m.config.SessionTTL)
 	}
 
 	// Single-node session state in production is the silent multi-replica

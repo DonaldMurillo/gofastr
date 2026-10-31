@@ -99,6 +99,10 @@
     let generation = 0;
     let socket = null;
     let retryTimer = 0;
+    // A socket counts as recovered once it has stayed open this long. A
+    // server that accepts and closes at once (a 4503 "not now") used to
+    // reset the backoff on every open, so it was redialed every second.
+    let stableTimer = 0;
     let userClosed = false;
     let endedGeneration = 0;
     let hydratedGeneration = 0;
@@ -111,6 +115,7 @@
     const endGeneration = (reasonClass) => {
       if (endedGeneration === generation) return;
       endedGeneration = generation;
+      clearTimeout(stableTimer);
       status.phase = 'closed';
       status.reasonClass = reasonClass;
       hook('onGenerationEnd', { generation, reasonClass });
@@ -130,7 +135,7 @@
       try { ws = new WebSocket(url); } catch (_) { endGeneration('error'); return; }
       socket = ws;
       ws.onopen = () => {
-        status.attempts = 0;
+        stableTimer = setTimeout(() => { status.attempts = 0; }, 10000);
         status.phase = 'open';
         hook('onGenerationStart', { generation, resumedAfterSequence: status.lastSequence });
       };

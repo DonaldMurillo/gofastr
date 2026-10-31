@@ -399,8 +399,10 @@ expose them to agents connected to a live app.**
   family in core-ui/check grew to ten: `decodeuriraw`
   (decodeURIComponent of a data-cui-* value outside every try —
   decodeURIComponent('%E0%A4') throws URIError out of the delegated
-  handler; wrap it, or route through a same-file safeDecode helper)
-  and `protokey` (a bracket write keyed by a data-cui-* value with
+  handler; wrap it, or route through a same-file safeDecode helper;
+  since 2026-10-31 it also fires on a response header or
+  `document.title` read in the argument, the title fallback that threw
+  on a "50% Off" app name) and `protokey` (a bracket write keyed by a data-cui-* value with
   no reserved-key guard — reject __proto__/constructor/prototype
   first, or key the store by Map). Two gates landed with them: the
   docs corpus gate runs the contracts security rules (GOFASTR1404

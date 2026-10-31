@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // classify is the part of this tool that was wrong first: the original read
@@ -86,6 +87,22 @@ func TestClassifyRefusesToScoreAHarnessProblem(t *testing.T) {
 			t.Errorf("classify scored a harness problem instead of refusing: %q", output)
 		} else if !strings.Contains(err.Error(), "harness problem") {
 			t.Errorf("error should name this as a harness problem, got: %v", err)
+		}
+	}
+}
+
+// A mutant run killed at its wall-clock deadline is caught only when the
+// test binary hit its own -timeout. Without that panic in the output the
+// deadline went on the build, no test ran, and scoring it caught printed
+// "N caught, 0 survived" for a slow machine (2026-10-27 I7).
+func TestExpiredRunNeedsTheTestTimeout(t *testing.T) {
+	hung := "panic: test timed out after 30s\n\trunning tests:\n\t\tTestX (30s)\n"
+	if st, err := expiredVerdict(hung, time.Minute); err != nil || st != caughtStatus {
+		t.Errorf("hung test binary: got (%v, %v), want caught", st, err)
+	}
+	for _, out := range []string{"", "# github.com/x/y\n", "ok  \tgithub.com/x/y\t0.10s\n"} {
+		if _, err := expiredVerdict(out, time.Minute); err == nil {
+			t.Errorf("deadline with no test timeout scored a verdict: %q", out)
 		}
 	}
 }

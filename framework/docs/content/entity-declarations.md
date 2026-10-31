@@ -220,7 +220,10 @@ if err := app.TryEntity(name, cfg); err != nil {
 
 Registration is atomic with respect to configuration errors: every
 check that can reject a declaration runs before the registry, router,
-or MCP server is touched. A rejected declaration leaves no registry
+or MCP server is touched. That includes a route the mux would refuse
+as overlapping an existing one, such as `GET /{kind}/_events` next to
+the entity's `GET /posts/{id}`, and endpoints that overlap each other or
+the CRUD routes. A rejected declaration leaves no registry
 entry, no route, and no MCP tool, and a corrected retry under the same
 name succeeds, which is the property the authoring loop above depends on.
 
@@ -418,6 +421,10 @@ declaration is not JSON:
   equivalent to `Default: "0"`; both render `DEFAULT 0` in DDL and bind as a
   number on insert.
 - `timestamp` and `date` written as a `time.Time`.
+
+A `bool` default written as text (`Default: "true"`, or `"false"`, `"1"`,
+`"0"`) is stored as the boolean, as the same text in a body is, so a
+`?field=true` filter finds the defaulted rows on SQLite too.
 
 A default on an `auto_generate` field is not validated, because the create path
 never writes it: the generated value takes that slot. It still becomes the
@@ -625,7 +632,9 @@ computed) is its exact binary value.
 
 An `int` field takes a JSON number only when its text is a whole number:
 `3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though
-it rounds to the float `1`. A `date` field reads back as `YYYY-MM-DD` on
+it rounds to the float `1`. A `bool` field takes a number the same way,
+only when its text is exactly 0 or 1: `1.0` and `10e-1` pass,
+`1.0000000000000001` and `1e-400` are refused. A `date` field reads back as `YYYY-MM-DD` on
 every read path and in hooks; a typed read into a `time.Time` field
 still decodes it as midnight UTC. An in-process write (`CreateOne`,
 `UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
@@ -635,7 +644,7 @@ date. A `json` field reads back as the JSON
 text it holds, so a document that is the string `"123"` stays a string.
 
 A JSON number past the float64 range (`1e400`) is stored as written in a
-`json` field. Any other column answers a validation 400 naming the
+`json` field, by a single write and a `_batch` item alike. Any other column answers a validation 400 naming the
 field, `not_finite` (or `not_integer` on an `int`), not `invalid_json`.
 
 A `relation` field with a `to` target (e.g. a field named `author_id`, type
@@ -714,7 +723,10 @@ The owner column is created for you: when no field named like the
 `OwnerField` column is declared, `entity.Define` injects it as a hidden
 string column: AutoMigrate creates it, Create stamps it, and it stays
 out of responses, forms, and the OpenAPI spec. A field you *do* declare
-with that name always wins and is left untouched.
+with that name always wins and is left untouched. A declared owner
+column, like the `MultiTenant` tenant column, still appears in no
+OpenAPI request body, since the server sets both: the create body
+neither lists nor requires them.
 
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
 registers an extractor wires this up: `battery/auth` does so in

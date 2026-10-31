@@ -1,6 +1,8 @@
 package journal
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -162,6 +164,19 @@ func applyWorldEdit(s *Session, e Entry) error {
 		// and a fresh world has no name yet, so requiring a name there
 		// would refuse an edit the live API produces. A derived edit
 		// still may not BLANK a name the world already had.
+		if p.Prev != nil && !s.replaying {
+			have, err := json.Marshal(w.App)
+			if err != nil {
+				return err
+			}
+			want, err := json.Marshal(*p.Prev)
+			if err != nil {
+				return err
+			}
+			if string(have) != string(want) {
+				return ErrAppConfigChanged
+			}
+		}
 		cfg := p.Config
 		switch {
 		case p.Prev == nil:
@@ -535,6 +550,11 @@ func applyWorldEdit(s *Session, e Entry) error {
 		return fmt.Errorf("unknown world edit op %q", e.Op)
 	}
 }
+
+// ErrAppConfigChanged refuses a set_app_config entry built from an app
+// config the world no longer holds: another edit landed between the read
+// and the apply, and writing this one would undo it.
+var ErrAppConfigChanged = errors.New("set_app_config: the app config changed after this edit read it")
 
 // PageConflictError is the refusal of an update_page_element entry built
 // against a page version the world no longer holds. Have is -1 when the

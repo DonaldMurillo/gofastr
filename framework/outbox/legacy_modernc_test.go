@@ -31,7 +31,7 @@ func openModerncOutbox(t *testing.T) (*sql.DB, *Outbox) {
 
 // TestNormalizeReadsStoredTextNotDriverParsedTime pins the mechanism the
 // idempotency skip depends on. The skip compares the stored text against the
-// canonical text (legacyTimeSets: `c.raw.(string)`). modernc returns a
+// canonical text (legacyTimeFixes reads it as a string). modernc returns a
 // time.Time for a DATETIME column, so without an explicit text cast that
 // comparison can never match and EVERY row is rewritten on EVERY relay
 // start, unbounded write churn against SQLite's single writer.

@@ -15,11 +15,11 @@ import (
 // this asserts a request-scoped failure never crosses request boundaries;
 // if leader-ctx propagation is deliberate, document it and delete this.
 // Property: one caller's abandoned request must not fail other callers'
-// cache fill — the singleflight loader runs under the LEADER's context, so
+// cache fill — the shared loader ran under the LEADER's context, so
 // one attacker canceling mid-load (trivial client disconnect) hands
 // context.Canceled to every concurrent waiter with live contexts;
 // per-expiry repeat = targeted availability DoS on hot keys.
-// Surfaces: battery/cache/cache.go::GetOrSet :70-84 — the getOrSetGroup.Do
+// Surfaces: battery/cache/cache.go::GetOrSet — the shared fill
 // closure calls loader(leaderCtx) and the single (nil, err) result is
 // shared with all waiters.
 // Finding: verified today waiterErr == context.Canceled for a waiter whose
@@ -82,10 +82,6 @@ func redCtxScene(t *testing.T, cancelLeader bool) (leaderErr, waiterErr error, w
 
 	<-started // the leader is inside the loader; the flight is open.
 
-	if cancelLeader {
-		cancel() // the attacker disconnects; the flight stays open.
-	}
-
 	waiterDone := make(chan error, 1)
 	go func() {
 		waiterDone <- GetOrSet(context.Background(), c, "hot", time.Minute, &waiterVal, loader)
@@ -105,6 +101,26 @@ func redCtxScene(t *testing.T, cancelLeader bool) (leaderErr, waiterErr error, w
 	// surfaces as a setup failure, never a false pass.
 	time.Sleep(100 * time.Millisecond)
 
+	// The attacker disconnects after the waiter joined. A sole caller
+	// leaving before anyone joins ends the fill (nobody is left to fill
+	// for), and the next caller starts a fresh one: that is
+	// TestGetOrSetCallerLeavesAtDeadline. Here the waiter still waits, so
+	// the flight must stay open for it.
+	leaderGot := false
+	if cancelLeader {
+		cancel()
+		// The leader leaves at once. Let its leave (and any cancel it
+		// wrongly carries into the fill) land before the release, or the
+		// loader takes the release first and a wrong cancel goes unseen.
+		// Bounded: under the original bug the leader waits on the loader.
+		select {
+		case leaderErr = <-leaderDone:
+			leaderGot = true
+		case <-time.After(time.Second):
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	close(canceledOkay)
 	close(release)
 
@@ -113,10 +129,12 @@ func redCtxScene(t *testing.T, cancelLeader bool) (leaderErr, waiterErr error, w
 	case <-time.After(5 * time.Second):
 		t.Fatalf("setup broken: waiter GetOrSet did not return")
 	}
-	select {
-	case leaderErr = <-leaderDone:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("setup broken: leader GetOrSet did not return")
+	if !leaderGot {
+		select {
+		case leaderErr = <-leaderDone:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("setup broken: leader GetOrSet did not return")
+		}
 	}
 	return leaderErr, waiterErr, waiterVal, loaderRuns.Load()
 }
@@ -129,7 +147,7 @@ func TestGetOrSetRedWaiterKeepsOwnCtx(t *testing.T) {
 		t.Fatalf("setup broken: loader ran %d times, want 1 — the waiter missed the open flight and re-loaded; widen the join window", runs)
 	}
 	if errors.Is(waiterErr, context.Canceled) {
-		t.Errorf("SECURITY: [cache-leader-ctx] waiter's GetOrSet failed with context.Canceled although its own context is live: the singleflight loader runs under the LEADER's context (cache.go:76) and the shared error crosses request boundaries — one attacker disconnect fails every joined waiter's fill, and per-expiry repeat is a targeted availability DoS on hot keys")
+		t.Errorf("SECURITY: [cache-leader-ctx] waiter's GetOrSet failed with context.Canceled although its own context is live: the shared loader runs under the LEADER's context and the shared error crosses request boundaries — one attacker disconnect fails every joined waiter's fill, and per-expiry repeat is a targeted availability DoS on hot keys")
 	}
 	if waiterErr == nil && waiterVal != "loaded" {
 		t.Errorf("SECURITY: [cache-leader-ctx] waiter succeeded but decoded %q, want the loader's value", waiterVal)

@@ -50,8 +50,27 @@ func NewSemanticContextHook(idx semantic.Index, k int) func(context.Context, str
 			// refuses for journal-derived identifiers. The prefix up to
 			// the first structure-breaking rune survives (the fix is a
 			// structure scan, not a content rewrite).
-			fmt.Fprintf(&b, "## %d. %s\n```\n%s\n```\n\n", i+1, source, h.Chunk.Text)
+			// The fence is longer than any backtick run in the text, so a
+			// ``` line inside the chunk cannot close it and leave the rest of
+			// the chunk as bare prompt structure.
+			fence := chunkFence(h.Chunk.Text)
+			fmt.Fprintf(&b, "## %d. %s\n%s\n%s\n%s\n\n", i+1, source, fence, h.Chunk.Text, fence)
 		}
 		return strings.TrimRight(b.String(), "\n")
 	}
+}
+
+// chunkFence returns a backtick fence one longer than the longest
+// backtick run in text, and never shorter than three.
+func chunkFence(text string) string {
+	longest, run := 0, 0
+	for i := 0; i < len(text); i++ {
+		if text[i] == '`' {
+			run++
+			longest = max(longest, run)
+			continue
+		}
+		run = 0
+	}
+	return strings.Repeat("`", max(3, longest+1))
 }

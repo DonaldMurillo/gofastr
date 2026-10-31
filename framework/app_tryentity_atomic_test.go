@@ -110,6 +110,36 @@ func TestEndpointRouteConflictIsAtomic(t *testing.T) {
 	}
 }
 
+// An endpoint that overlaps an existing route without sharing its shape
+// (GET /stats/x/{id} beside GET /{kind}/x/summary: both match
+// /stats/x/summary) is refused in validation too (2026-10-27 S7).
+func TestEndpointOverlapIsAtomic(t *testing.T) {
+	app := atomicTestApp(t)
+	app.Router().HandleFunc("GET", "/{kind}/x/summary", func(w http.ResponseWriter, r *http.Request) {})
+
+	err := app.TryEntity("posts", EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+		Endpoints: []entity.Endpoint{{
+			Method: "GET", Path: "/stats/x/{id}",
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		}},
+	})
+	if err == nil {
+		t.Fatal("an endpoint overlapping an existing route must be rejected")
+	}
+	if !strings.Contains(err.Error(), "/{kind}/x/summary") {
+		t.Errorf("error %q does not name the overlapping route", err)
+	}
+	if _, gerr := app.Registry.Get("posts"); gerr == nil {
+		t.Error("rejected entity must not remain in the registry")
+	}
+	if rerr := app.TryEntity("posts", EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+	}); rerr != nil {
+		t.Errorf("corrected retry must succeed, got: %v", rerr)
+	}
+}
+
 // Two endpoints on one entity claiming the same route collide with each
 // other. The second Handle panics mid-commit. Catch it in validation.
 func TestDuplicateEndpointPathsRejected(t *testing.T) {
@@ -256,6 +286,35 @@ func TestEntityAllowsUnclaimedMethodOnClaimedPath(t *testing.T) {
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	}); err != nil {
 		t.Fatalf("POST /posts/{id} is not claimed by the CRUD mount, got: %v", err)
+	}
+}
+
+// ServeMux also refuses a pattern that overlaps a registered one without
+// being equal to it: GET /{kind}/_events and the generated GET
+// /posts/{id} both match /posts/_events and neither is more specific.
+// The preflight compared shapes for equality only, so the mux panicked
+// mid-commit with the registry entry and GET /posts already published,
+// and the corrected retry under the same name failed (2026-10-27 S7).
+func TestEntityOverlapsWildcardRoute(t *testing.T) {
+	app := atomicTestApp(t)
+	app.Router().HandleFunc("GET", "/{kind}/_events", func(w http.ResponseWriter, r *http.Request) {})
+
+	err := app.TryEntity("posts", EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+	})
+	if err == nil {
+		t.Fatal("an entity whose routes overlap GET /{kind}/_events must be rejected")
+	}
+	if !strings.Contains(err.Error(), "/{kind}/_events") {
+		t.Errorf("error %q does not name the overlapping route", err)
+	}
+	if _, gerr := app.Registry.Get("posts"); gerr == nil {
+		t.Error("rejected entity must not remain in the registry")
+	}
+	for _, rt := range app.Router().Routes() {
+		if strings.HasPrefix(rt.Pattern, "/posts") {
+			t.Errorf("rejected entity left %s %s mounted", rt.Method, rt.Pattern)
+		}
 	}
 }
 

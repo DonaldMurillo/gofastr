@@ -247,6 +247,15 @@ a handler that finishes late cannot mark the task completed. A run
 whose task another replica settled and retention then removed is
 cancelled too; its local subscribers' streams end with no status event.
 
+`App.Shutdown` ends runs as well. A run outlives its request (a
+`returnImmediately` send, a dropped stream), so the app calls
+`Server.Shutdown(ctx)` first: no run is claimed after it, every live
+run's context is cancelled, and it waits until each run has stored and
+published its final state (`TASK_STATE_CANCELED` for one cut short) or
+`ctx` ends. A send or resume during shutdown gets an
+unsupported-operation error; reads still answer. A host driving
+`a2a.Server` itself calls `Shutdown` the same way.
+
 Terminal rows do not accumulate without end: each owner retains at most
 64 settled (completed / failed / canceled / rejected) tasks — the oldest
 terminal rows are deleted after each settle, in-flight tasks never.

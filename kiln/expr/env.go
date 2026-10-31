@@ -133,27 +133,29 @@ func builtinMin(args []any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("min: %w", ErrArity)
 	}
-	return foldNumeric(args, func(a, b float64) float64 {
-		if a < b {
-			return a
-		}
-		return b
-	})
+	return foldNumeric(args, true)
 }
 
 func builtinMax(args []any) (any, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("max: %w", ErrArity)
 	}
-	return foldNumeric(args, func(a, b float64) float64 {
-		if a > b {
-			return a
-		}
-		return b
-	})
+	return foldNumeric(args, false)
 }
 
-func foldNumeric(args []any, op func(a, b float64) float64) (any, error) {
+// pick returns a when it wins (the smaller for minimum, else the
+// larger), and b otherwise.
+func pick[T int64 | float64](a, b T, minimum bool) T {
+	if (minimum && a < b) || (!minimum && a > b) {
+		return a
+	}
+	return b
+}
+
+// foldNumeric folds min (minimum) or max over args. All-integer
+// arguments compare as int64: past 2^53 two of them can share a
+// float64, and a float comparison keeps the wrong one.
+func foldNumeric(args []any, minimum bool) (any, error) {
 	allInt := true
 	values := make([]float64, len(args))
 	intValues := make([]int64, len(args))
@@ -179,15 +181,13 @@ func foldNumeric(args []any, op func(a, b float64) float64) (any, error) {
 	if allInt {
 		result := intValues[0]
 		for i := 1; i < len(intValues); i++ {
-			if op(float64(result), float64(intValues[i])) == float64(intValues[i]) {
-				result = intValues[i]
-			}
+			result = pick(result, intValues[i], minimum)
 		}
 		return result, nil
 	}
 	result := values[0]
 	for i := 1; i < len(values); i++ {
-		result = op(result, values[i])
+		result = pick(result, values[i], minimum)
 	}
 	return result, nil
 }

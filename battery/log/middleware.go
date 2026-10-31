@@ -122,6 +122,10 @@ func (rw *countingResponseWriter) WriteHeader(code int) {
 	if rw.wroteHeader {
 		return
 	}
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		rw.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
+		return
+	}
 	rw.status = code
 	rw.wroteHeader = true
 	rw.ResponseWriter.WriteHeader(code)

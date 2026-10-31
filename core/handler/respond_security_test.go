@@ -65,19 +65,6 @@ func TestRespond_SetsNosniffOnCustomTypes(t *testing.T) {
 	}
 }
 
-func TestSSEStream_SetsNosniff(t *testing.T) {
-	events := make(chan SSE, 1)
-	events <- SSE{Event: "msg", Data: "ok"}
-	close(events)
-
-	rec := httptest.NewRecorder()
-	SSEStream(rec, events)
-
-	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Fatalf("SSEStream missing nosniff (got %q)", got)
-	}
-}
-
 // Property: every ResponseType surface routes its caller-supplied
 // Content-Type through textsafe.SanitizeControlBytes before it reaches
 // the wire, and a value that sanitizes to EMPTY falls back to

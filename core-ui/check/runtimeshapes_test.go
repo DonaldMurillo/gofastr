@@ -1987,17 +1987,23 @@ const decodeFixtureRaw = `(() => {
     try { return decodeURIComponent(v); } catch (_) { return ''; }
   }
 
-  // Quiet postures: header- and literal-borne decodes (nav.js and
-  // preload.js read X-Gofastr-Title, never an attribute).
+  // A header- or title-borne decode outside try fires (nav.js and
+  // preload.js, pre-fix: a "50% Off" title threw out of navigation).
   function titleFrom(resp) {
     return decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+  }
+  // Quiet: the header decoded inside try, and a literal.
+  function titleFixed(resp) {
+    const t = resp.headers.get('X-Gofastr-Title');
+    if (!t) return document.title;
+    try { return decodeURIComponent(t); } catch (_) { return t; }
   }
   decodeURIComponent('static-value');
 
   window.__probe = { installDelegators: installDelegators, srcOf: srcOf,
     parseDeeplink: parseDeeplink, step: step, decodeTag: decodeTag,
     viaVar: viaVar, parseFixed: parseFixed, viaHelper: viaHelper,
-    safeDecode: safeDecode, titleFrom: titleFrom };
+    safeDecode: safeDecode, titleFrom: titleFrom, titleFixed: titleFixed };
 })();
 `
 
@@ -2011,16 +2017,17 @@ func TestLintDecodeURIRaw_FiresOnAttrDerived(t *testing.T) {
 	}
 	// The eight uncontained attribute-borne decodes: the delegator
 	// (×2, raw), srcOf (×2, dl), parseDeeplink (×2, dl via step()'s
-	// call), decodeTag (dataset read in the argument), viaVar (v).
-	if len(res.Violations) != 8 {
-		t.Fatalf("expected 8 findings, got %d:\n%s", len(res.Violations), res.Error())
+	// call), decodeTag (dataset read in the argument), viaVar (v); and
+	// titleFrom's header-borne one.
+	if len(res.Violations) != 9 {
+		t.Fatalf("expected 9 findings, got %d:\n%s", len(res.Violations), res.Error())
 	}
 	for _, v := range res.Violations {
 		if !strings.HasPrefix(v.Message, "[decode-uri-raw]") {
 			t.Errorf("unexpected message: %s", v.Message)
 		}
 	}
-	for _, w := range []string{`"raw"`, `"dl"`, `"el.dataset.cuiTag"`, `"v"`} {
+	for _, w := range []string{`"raw"`, `"dl"`, `"el.dataset.cuiTag"`, `"v"`, `".headers.get("`} {
 		if !strings.Contains(res.Error(), w) {
 			t.Errorf("expected a finding naming witness %s (full result:\n%s)", w, res.Error())
 		}

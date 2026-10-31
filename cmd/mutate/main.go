@@ -230,7 +230,9 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 	// loop hangs the run, the user kills it, and the kill is what leaves a
 	// mutant in the source tree. Bound both the child and go test itself.
 	args = append(args, fmt.Sprintf("-timeout=%s", timeout))
-	ctx, cancel := context.WithTimeout(context.Background(), timeout+30*time.Second)
+	// The same build head-room the baseline gets: a mutated file recompiles
+	// its package and every dependent before the test binary exists.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+baselineBuildGrace)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = moduleRoot
@@ -242,15 +244,30 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 	cmd.WaitDelay = 5 * time.Second
 	out, testErr := cmd.CombinedOutput()
 	if ctx.Err() != nil {
-		// A hung mutant is a result, not a harness fault: the guard mattered
-		// enough that removing it stopped the tests terminating.
-		return caughtStatus, nil
+		st, err := expiredVerdict(string(out), timeout+baselineBuildGrace)
+		if err != nil {
+			return 0, fmt.Errorf("%s: %w", g, err)
+		}
+		return st, nil
 	}
 	st, err := classify(testErr, string(out))
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", g, err)
 	}
 	return st, nil
+}
+
+// expiredVerdict scores a mutant run killed at its wall-clock deadline. A
+// hung mutant is a result, not a harness fault: the guard mattered enough
+// that removing it stopped the tests terminating, and the test binary says
+// so with its own -timeout panic. Without that panic the deadline went on
+// loading and building, no test ran, and there is no verdict to give.
+func expiredVerdict(output string, limit time.Duration) (status, error) {
+	if strings.Contains(output, "panic: test timed out") {
+		return caughtStatus, nil
+	}
+	return 0, fmt.Errorf("go test ran past %s without the test binary timing out, so no test ran; "+
+		"this is a harness problem, not a mutation result:\n%s", limit, truncate(output))
 }
 
 // writeVerified writes a mutant and proves it landed, changed, and differs

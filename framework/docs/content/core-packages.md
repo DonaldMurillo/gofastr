@@ -39,7 +39,12 @@ frame, a buffered body; pass `handler.UseNumber()` to keep numbers in
 digits), and `CheckTopLevelKeys(data, fold)` when the
 caller normalises keys itself. Struct destinations refuse duplicate,
 case-folded, and unknown top-level keys; map destinations refuse
-duplicate and case-folded ones. Stdlib `encoding/json` keeps the last
+duplicate and case-folded ones. Nested objects get the same check at
+every depth (`CheckObjectKeys`), folded with `FoldJSONKey`, the
+decoder's own rule: `ſource` (U+017F) and the Kelvin sign fold onto
+ASCII exactly as `encoding/json` matches them to a field, which
+`strings.ToLower` does not. Pass `FoldJSONKey` when you call either
+check yourself ahead of a decode into a struct. Stdlib `encoding/json` keeps the last
 duplicate and matches tags case-insensitively, so the same body can
 mean two things to two readers; refusing it is the only resolution that
 privileges neither. Cap the size first (`http.MaxBytesReader`). The
@@ -125,7 +130,11 @@ once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
 from the moment the Ping is written, so a long data write that delays
 the Ping does not eat into the peer's time to answer. An app that never
 calls `Read` is push-only: once the buffer fills, further inbound data
-is dropped so pings and the Close handshake still flow.
+is dropped so pings and the Close handshake still flow. The pump answers
+a Ping itself, so an app limiting its own frames never counts them:
+`MaxControlFramesPerSecond` (default 32, burst twice that; negative
+disables) caps the Pings and Pongs a client sends, and past it the
+connection closes with 1008.
 
 `Upgrade` refuses a handshake RFC 6455 does not accept before it
 hijacks: a method other than GET, no `Connection: Upgrade` token, a

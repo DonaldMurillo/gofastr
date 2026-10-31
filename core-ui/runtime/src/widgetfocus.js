@@ -8,6 +8,9 @@
     document.__fuiModalEsc = true;
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
+      // A modal that refuses Escape still owns it: only a popover opened
+      // above it may close (one opened before sits under the scrim).
+      let floor = 0;
       if (G._modalStack && G._modalStack.length) {
         const name = G._modalStack[G._modalStack.length - 1];
         const top = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
@@ -18,13 +21,14 @@
           G.closeWidget(name);
           return;
         }
+        floor = (top && top.seq) || 0;
       }
       if (G._popoverStack && G._popoverStack.length) {
         const name = G._popoverStack[G._popoverStack.length - 1];
         const top = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
           ? G._widgets[name]
           : undefined;
-        if (top && top.closeOnEscape) {
+        if (top && top.closeOnEscape && (top.seq || 0) > floor) {
           e.stopPropagation();
           G.closeWidget(name);
         }

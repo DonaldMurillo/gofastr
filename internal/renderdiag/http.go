@@ -71,6 +71,10 @@ func (w *testResponse) WriteHeader(status int) {
 	if w.wroteHeader {
 		return
 	}
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(status) // informational: forward, keep waiting
+		return
+	}
 	w.wroteHeader = true
 	if w.failed.Load() {
 		status = http.StatusInternalServerError

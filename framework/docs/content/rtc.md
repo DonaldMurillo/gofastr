@@ -93,7 +93,9 @@ named recipient only. The server never decodes SDP or candidates.
 
 **Sockets are bounded.** Inbound frames are rate-limited
 (`MaxFramesPerSecond`, default 128, token bucket); over the limit the
-socket closes. Outbound, a peer whose send buffer overflows
+socket closes. Ping and Pong frames never reach that limit, since the
+transport answers them; `WS.MaxControlFramesPerSecond` (default 32)
+caps them and closes with 1008. Outbound, a peer whose send buffer overflows
 (`WS.SendBuffer`, default 128 frames) is closed rather than starved:
 signals are not in the snapshot, so a dropped answer could never be
 recovered, while a closed socket reconnects, re-hydrates, and the far
@@ -343,10 +345,16 @@ With `framework.WithFanout` attached (wired automatically by
 the same lossy self-healing model presence uses: each replica
 broadcasts its full local roster per room on every join and leave and
 on a 15 s heartbeat, and mirrors a status change as one event (the
-heartbeat is the backstop for a mirror a replica missed); receivers
+heartbeat is the backstop for a mirror a replica missed, and a beat
+that carries a changed status announces it); receivers
 keep a TTL'd (45 s) per-(replica, room) table capped at 512 replicas
-per room. A beat naming more than `MaxPeers` members is dropped whole,
-and a beat cannot restate a peer this replica holds (local wins on the
+per room. A status reaches local peers only from the replica whose
+copy of the peer is newest, so one from a replica the peer has left is
+dropped. A beat naming more than `MaxPeers` members is dropped whole.
+Two replicas can each admit a join before their beats meet, so a beat
+can bring the merged room past `MaxPeers`; every replica then ranks the
+merged room by join order and closes its own peers past the cap with
+`4409` room full, so the latest seats lose. A beat cannot restate a peer this replica holds (local wins on the
 join mirror as on the leave mirror). A join mirror for a peer this
 replica holds displaces the local socket only when the mirror is newer
 than that socket (every lane message carries the sender's clock): one

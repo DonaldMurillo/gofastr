@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 )
@@ -221,10 +222,15 @@ func (qb *QueryBuilder) Build() (string, []any) {
 		}
 	}
 
-	// LIMIT
+	// LIMIT. SQLite refuses an OFFSET with no LIMIT before it, so an
+	// offset alone carries the largest LIMIT both dialects accept
+	// (SQLite's -1 and Postgres's ALL are each one dialect's only).
 	if qb.limit != nil {
 		fmt.Fprintf(&sb, " LIMIT $%d", len(args)+1)
 		args = append(args, *qb.limit)
+	} else if qb.offset != nil {
+		fmt.Fprintf(&sb, " LIMIT $%d", len(args)+1)
+		args = append(args, int64(math.MaxInt64))
 	}
 
 	// OFFSET

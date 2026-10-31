@@ -145,7 +145,7 @@ func TestDesktopBuildNotarizeRefusesAdhoc(t *testing.T) {
 }
 
 func TestDesktopBuildNotarizeFlagParsing(t *testing.T) {
-	f := parseDesktopBuildFlags([]string{
+	f := buildFlags(t, []string{
 		"--id=dev.gofastr.x", "--notarize",
 		"--notary-profile", "prod",
 		"--entitlements", "ent.plist",
@@ -154,38 +154,38 @@ func TestDesktopBuildNotarizeFlagParsing(t *testing.T) {
 	if !f.notarize || f.notaryProfile != "prod" || f.entitlements != "ent.plist" {
 		t.Fatalf("notarize flags = %+v", f)
 	}
-	f = parseDesktopBuildFlags([]string{
+	f = buildFlags(t, []string{
 		"--id=dev.gofastr.x", "--notarize", "--notary-profile=ci", "--entitlements=e.plist",
 	})
 	if f.notaryProfile != "ci" || f.entitlements != "e.plist" {
 		t.Fatalf("inline notarize flags = %+v", f)
 	}
-	def := parseDesktopBuildFlags([]string{"--id=dev.gofastr.x"})
+	def := buildFlags(t, []string{"--id=dev.gofastr.x"})
 	if def.notarize || def.notaryProfile != "gofastr" || def.entitlements != "" {
 		t.Fatalf("defaults = %+v (want notaryProfile gofastr)", def)
 	}
 }
 
 func TestNotarizeFlagsRefusalIsNamedError(t *testing.T) {
-	f := parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--notarize"})
+	f := buildFlags(t, []string{"--id=dev.gofastr.x", "--notarize"})
 	if err := validateNotarizeFlags(f); !errors.Is(err, errNotarizeRequiresIdentity) {
 		t.Fatalf("validateNotarizeFlags = %v, want errNotarizeRequiresIdentity", err)
 	}
-	f = parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--notarize", "--sign", "-"})
+	f = buildFlags(t, []string{"--id=dev.gofastr.x", "--notarize", "--sign", "-"})
 	if err := validateNotarizeFlags(f); !errors.Is(err, errNotarizeRequiresIdentity) {
 		t.Fatalf("--sign - accepted: %v", err)
 	}
-	f = parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--notarize", "--no-sign"})
+	f = buildFlags(t, []string{"--id=dev.gofastr.x", "--notarize", "--no-sign"})
 	if err := validateNotarizeFlags(f); !errors.Is(err, errNotarizeRequiresIdentity) {
 		t.Fatalf("--no-sign accepted: %v", err)
 	}
-	f = parseDesktopBuildFlags([]string{
+	f = buildFlags(t, []string{
 		"--id=dev.gofastr.x", "--notarize", "--sign", "Developer ID Application: Example",
 	})
 	if err := validateNotarizeFlags(f); err != nil {
 		t.Fatalf("real identity refused: %v", err)
 	}
-	f = parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--sign", "anything"})
+	f = buildFlags(t, []string{"--id=dev.gofastr.x", "--sign", "anything"})
 	if err := validateNotarizeFlags(f); err != nil {
 		t.Fatalf("no notarize refused: %v", err)
 	}
@@ -197,7 +197,7 @@ func notarizeFakeBundle(t *testing.T, flagArgs ...string) (desktopBuildFlags, st
 	t.Helper()
 	dir := t.TempDir()
 	appDir := writeFakeBundle(t, dir)
-	f := parseDesktopBuildFlags(flagArgs)
+	f := buildFlags(t, flagArgs)
 	f.out = dir
 	return f, dir, appDir
 }

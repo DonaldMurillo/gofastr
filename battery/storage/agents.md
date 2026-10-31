@@ -13,9 +13,8 @@ hosting.
 
 **Shape (local disk):**
 ```go
-st := storage.NewLocalStorage("/var/uploads",
-    storage.WithPermissions(0o644),
-)
+st := storage.NewLocalStorage("/var/uploads") // files are 0600 by default
+
 app := framework.NewApp(
     framework.WithFileStorage(st),
 )

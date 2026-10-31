@@ -20,3 +20,9 @@ func TryLock(f *os.File) (bool, error) {
 	}
 	return err == nil, err
 }
+
+// Lock takes an exclusive LockFileEx lock on the first byte of f,
+// blocking until the holder releases it. Closing f releases it.
+func Lock(f *os.File) error {
+	return windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, new(windows.Overlapped))
+}

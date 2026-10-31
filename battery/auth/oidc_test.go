@@ -14,7 +14,9 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -203,6 +205,15 @@ type fakeIdP struct {
 	// endpointsOverride replaces individual discovery endpoint fields
 	// (token_endpoint, jwks_uri, userinfo_endpoint) — the downgrade tests.
 	endpointsOverride map[string]string
+	// authMethods, when set, is the discovery document's
+	// token_endpoint_auth_methods_supported.
+	authMethods []string
+
+	// tokenMu guards what the last /token request carried.
+	tokenMu     sync.Mutex
+	tokenForm   url.Values
+	tokenBasic  [2]string // client id and secret from an Authorization header
+	tokenHasHdr bool
 }
 
 func newFakeIdP(t *testing.T) *fakeIdP {
@@ -236,6 +247,9 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 		for k, v := range f.endpointsOverride {
 			doc[k] = v
 		}
+		if f.authMethods != nil {
+			doc["token_endpoint_auth_methods_supported"] = f.authMethods
+		}
 		writeJSON(t, w, doc)
 	})
 
@@ -252,6 +266,12 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		user, pass, hasBasic := r.BasicAuth()
+		f.tokenMu.Lock()
+		f.tokenForm = r.PostForm
+		f.tokenHasHdr = hasBasic
+		f.tokenBasic = [2]string{user, pass}
+		f.tokenMu.Unlock()
 		resp := map[string]any{
 			"access_token":  "test-access-token",
 			"token_type":    "Bearer",

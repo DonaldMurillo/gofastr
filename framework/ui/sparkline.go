@@ -29,6 +29,18 @@ const (
 	SparklineArea SparklineShape = "area"
 )
 
+// SparklineColor picks the theme token the line is drawn in. A new
+// color is a theme token, never a raw CSS value set here.
+type SparklineColor string
+
+const (
+	SparklinePrimary SparklineColor = "" // var(--color-primary)
+	SparklineSuccess SparklineColor = "success"
+	SparklineWarning SparklineColor = "warning"
+	SparklineDanger  SparklineColor = "danger"
+	SparklineInfo    SparklineColor = "info"
+)
+
 // SparklineConfig configures a Sparkline.
 type SparklineConfig struct {
 	// Values are the points in order (≥2 finite). A NaN or Inf value is
@@ -45,11 +57,9 @@ type SparklineConfig struct {
 	FullWidth bool
 	// Shape picks line or area. Default line.
 	Shape SparklineShape
-	// Color override: defaults to var(--color-primary) via CSS.
-	// Set to "danger" / "success" / "warning" / "info" to use the
-	// matching theme token; any other string is passed through as a
-	// raw CSS color.
-	Color string
+	// Color picks the line's theme token. Default SparklinePrimary;
+	// any value outside the SparklineColor constants panics.
+	Color SparklineColor
 	// LabelledBy is the id of an element naming the chart (e.g. the
 	// StatCard label), used as the SVG's aria-labelledby. Without
 	// it the chart is aria-hidden (decorative).
@@ -71,6 +81,12 @@ type SparklineConfig struct {
 
 // Sparkline renders a tiny inline trend chart.
 func Sparkline(cfg SparklineConfig) render.HTML {
+	switch cfg.Color {
+	case SparklinePrimary, SparklineSuccess, SparklineWarning, SparklineDanger, SparklineInfo:
+	default:
+		panic("ui: Sparkline unknown Color " + strconv.Quote(string(cfg.Color)) +
+			`. Pick one of: "" (primary), success, warning, danger, info`)
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -129,7 +145,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 
 	cls := "fui-sparkline"
 	if cfg.Color != "" {
-		cls += " fui-sparkline--" + escapeXML(cfg.Color)
+		cls += " fui-sparkline--" + string(cfg.Color)
 	}
 	if cfg.Class != "" {
 		cls += " " + escapeXML(cfg.Class)

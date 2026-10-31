@@ -1,6 +1,7 @@
 package tracing
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -73,6 +74,12 @@ func TestErrorTypeSeesThroughWrapping(t *testing.T) {
 	}
 	if got := errorType(errors.New("plain")); got != "*errors.errorString" {
 		t.Errorf("errorType = %q", got)
+	}
+	// A two-%w wrapper is *fmt.wrapErrors; the first wrapped error is
+	// the cause (2026-10-27 C12).
+	multi := fmt.Errorf("begin: %w (attempt %w)", &customErr{}, context.Canceled)
+	if got := errorType(fmt.Errorf("outer: %w", multi)); got != "*tracing.customErr" {
+		t.Errorf("errorType through a multi-%%w wrapper = %q", got)
 	}
 }
 

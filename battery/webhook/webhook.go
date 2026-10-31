@@ -638,8 +638,14 @@ type claimReleaser interface {
 
 // leaseTooShort reports whether d's claim has less lease left than one
 // attempt may take: the HTTP client's timeout, capped at half the lease
-// (also the bar for a client with no timeout).
+// (also the bar for a client with no timeout). A claim with no lease
+// recorded is never too short.
 func (m *Manager) leaseTooShort(d Delivery) bool {
+	if d.claimedUntil.IsZero() {
+		// No lease known: a host store that claims rows itself never set
+		// one, and refusing every such claim would deliver nothing.
+		return false
+	}
 	need := m.opts.LeasePeriod / 2
 	if t := m.opts.HTTPClient.Timeout; t > 0 {
 		need = min(t, need)

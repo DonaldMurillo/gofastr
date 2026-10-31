@@ -50,6 +50,13 @@ func TestICEURIDepthRedRefusesBadPorts(t *testing.T) {
 		"turn:host:",                 // empty port
 		"turn:user:secret@host:3478", // userinfo: RFC 7065 has no such production
 		"stun:host:70000",            // port above 65535, stun spelling
+		"stun:host/path",             // a path on a portless host
+		"turn:host/path:3478",        // a path before the port
+		"stun:[not-an-ip]",           // brackets hold an IPv6 literal only
+		"stun:[10.0.0.1]:3478",       // an IPv4 literal is not bracketed
+		"stun://host/path",           // the // form keeps its path apart from the host
+		"turn://user:pw@host:3478",   // and its userinfo
+		"stun:host#frag",             // a fragment rides outside the opaque part
 	} {
 		if validICEURLs([]string{u}) {
 			t.Errorf("SECURITY: [rtc-ice-uri-depth] validICEURLs accepted %q: RFC 7064/7065 grammar requires a port in 1-65535 (never empty) and no userinfo; iceServersFor copies the URL verbatim into every peer snapshot", u)
@@ -68,9 +75,15 @@ func TestICEURIDepthRedRefusesBadPorts(t *testing.T) {
 	// Positive control, guarding over-refusal: a bracketed IPv6 host with a
 	// port and the transport query are legal RFC 7065 URIs today and must
 	// stay legal after the depth check lands.
+	// A portless endpoint takes the scheme's default port (RFC 7064/7065);
+	// the hostname alone was refused as "a suffix that is not :port"
+	// (2026-10-27 B14).
 	for _, u := range []string{
 		"turn:[2001:db8::1]:3478",
 		"turn:host:3478?transport=tcp",
+		"stun:stun.example.net",
+		"turns:turn.example.net?transport=tcp",
+		"turn:[2001:db8::1]",
 	} {
 		if !validICEURLs([]string{u}) {
 			t.Errorf("validICEURLs over-refuses %q: a legal RFC 7065 ICE URI", u)

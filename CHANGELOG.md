@@ -104,6 +104,360 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An offset with no limit runs on SQLite.** `query.Build` wrote
+  `OFFSET $n` alone, which SQLite refuses, so `TypedQuery.Offset`
+  without `Limit` failed there and ran on Postgres. An offset alone now
+  carries the largest `LIMIT` both dialects accept.
+- **`kiln agent` starts when ports 8765–8774 are all busy.** The
+  fallback handed serve port 0 while the panel URL said `localhost:0`,
+  so the readiness check timed out and killed a healthy server. The
+  fallback now asks the kernel for a free loopback port and uses it.
+- **BREAKING: `freeze.FreezeAndGenerate` takes a context.** A generator
+  that exited while a child it started still held the output pipe hung
+  the call until that child exited. It now runs under the caller's
+  context and collects output for at most two seconds after the
+  generator exits. Pass the context first:
+  `freeze.FreezeAndGenerate(ctx, w, dir, out)`.
+- **An ICE URL with no port is accepted, and one with a path is
+  refused.** `stun:stun.example.net` and `turn:[2001:db8::1]` were
+  refused, though RFC 7064/7065 make the port optional, while a host
+  carrying `/path` passed. A host is now a DNS name, an IPv4 literal or
+  a bracketed IPv6 literal (brackets around anything else are refused),
+  and a path, userinfo or fragment is refused in the `stun://host` form
+  too.
+- **`gofastr desktop build` on macOS refuses a GOARCH other than arm64.**
+  The build set arm64 whatever `GOARCH` asked for, and an Intel Mac got
+  a bundle reported written that could not launch. The desktop shell is
+  arm64-only, so another `GOARCH` is an error, and an Intel host gets a
+  warning that the bundle will not run there.
+- **Kiln's `min` and `max` compare integers exactly.** Integers were
+  compared as float64, so past 2^53 two neighbours looked equal and
+  `min(9007199254740992, 9007199254740993)` returned the larger.
+- **A span's `error.type` sees through an error with several `%w`
+  verbs.** `fmt.Errorf("begin: %w (attempt %w)", err, ctxErr)` reported
+  `*fmt.wrapErrors`; it now reports the first wrapped error's type.
+- **The cache battery stops `MemoryCache`'s cleanup goroutine.**
+  `OnStop` looked for `io.Closer`, but `MemoryCache.Close` returns
+  nothing, so the goroutine outlived the app.
+- **`gofastr test` runs the packages it is given and refuses unknown
+  flags.** It dropped every argument it did not know and ran `./...`,
+  so `gofastr test ./pkg` or `--run TestFoo` (the space form) ran the
+  whole suite and could exit 0. Package patterns are passed through,
+  `--run`, `--bench` and `--timeout` take their value either way, and
+  another flag is an error.
+- **A language refused with `q=0` stays refused when a longer tag
+  falls back to it.** `Accept-Language: en;q=0, en-GB;q=0.9, fr;q=0.8`
+  served `en`, reached by trimming `en-GB`, ahead of the accepted `fr`.
+- **`store.Computed` validates its dependency names.** A dep holding a
+  comma split into two signals on the client, and an empty or reserved
+  name shipped a binding that never fired. Deps follow the slice-name
+  rules, and `route.*` signals stay readable.
+- **BREAKING: `ui.SparklineConfig.Color` takes a theme preset only.**
+  The doc said a raw CSS color passed through, but every value other
+  than `success`, `warning`, `danger` and `info` drew the default, and
+  a value with a space added classes to the chart. The field is now a
+  `ui.SparklineColor` (`SparklinePrimary`, `SparklineSuccess`,
+  `SparklineWarning`, `SparklineDanger`, `SparklineInfo`): a quoted
+  preset still compiles, a `string` variable needs the conversion, and
+  any other value panics.
+- **desktop-focus completes a session paused at 00:00.** The pause
+  stored no time left and a paused tick never completes, so the timer
+  froze and no break started.
+- **Entities on tables that differ only by case get the column-conflict
+  check.** `Widgets` and `widgets` are one table once AutoMigrate's
+  unquoted DDL folds them, but the registry compared names exactly, so a
+  second entity's wider `String.Max` reused the first one's
+  `VARCHAR(10)`. The names are folded and the conflict panics at
+  registration.
+- **An include that names a relation twice returns each row once.**
+  `?include=comments(status=draft),comments(body=x)` loads both filters
+  into one list, and a comment matching both came back twice, at the top
+  level and one hop down.
+- **The log webhook sink refuses a write that races Close.** A write
+  that passed the closed check while Close ran could append behind the
+  final drain, an entry never sent and never counted in `Dropped()`. It
+  returns `ErrSinkClosed`.
+- **`cmd/mutate` no longer scores a slow build as a caught mutant.** A
+  mutant run past its deadline counted as caught, though with a cold
+  cache the deadline usually went on the build and no test ran. It is
+  caught only when the test binary hit its own `-timeout`, otherwise the
+  run stops with a harness error, and mutant runs get the baseline's
+  five-minute build allowance.
+- **webmcp-remote-assist answers 410 for a command on a session swept
+  mid-command.** The command looked the session up and wrote to it under
+  two separate locks, so a sweep in between dropped it and the caller
+  still got 200.
+- **The character counter and elapsed ticker follow the reader's
+  locale.** `data-cui-charcount-source` wrote `1234 chars` and
+  `data-cui-tick-elapsed` wrote `2.4s` on every locale. Both say their
+  words through the `runtime.charcount`, `runtime.elapsed_ms` and
+  `runtime.elapsed_s` phrases, with the number in the page's language.
+  `core-ui/check.LintRuntimeProse` now also refuses a word glued to a
+  value with `+`, the shape both sites used.
+- **The elapsed ticker stops when no ticker is left.** After a client
+  navigation removed every `[data-cui-tick-elapsed]` node, the interval
+  kept querying the document five times a second. It clears itself, and
+  the next ticker the scan finds starts it again.
+- **A widget poll never stops on a stale or partial snapshot.** The
+  `/state` handler read the signals and asked `Builder.PollTerminal`
+  afterwards, so a job that finished in between stopped the poll on a
+  value still saying "running". It asks first now, and sends no
+  `X-Gofastr-Poll-Stop` on a response missing a signal whose read or
+  JSON encoding failed.
+- **`cache.GetOrSet` callers leave at their own deadline.** A stalled
+  loader held every caller of the key past its deadline, after the
+  timeout middleware had already answered. Each caller now returns
+  `ctx.Err()` at its deadline while the fill runs on for the others,
+  and the loader's context is cancelled once no caller waits. A fill no
+  caller waits for stores nothing, so it cannot overwrite a value a
+  later caller filled, and it never writes the destination of a caller
+  that left. A cache with value receivers fills alone for each caller,
+  who still leaves at the deadline. A loader panic comes back as an
+  error instead of a re-panic.
+- **A rolled-back update that only set a column to NULL publishes no
+  event.** The ambient-transaction confirm query skipped NULL values, so
+  such an update was confirmed on its key alone. NULLs are matched with
+  `IS NULL`.
+- **`migrate` group mode works with a tracking table in an ATTACHed
+  SQLite database.** A name like `aux._migrations` made the column and
+  key probes miss the table and the key upgrade build an invalid temp
+  name, so every `Up` failed once a group was registered.
+- **The desktop window closes when the app server stops under it.** A
+  listener failure or a `Shutdown` from elsewhere after the window
+  opened left it on a dead app until the user closed it. `Run` now quits
+  the window and returns.
+- **The OpenAPI write bodies match what the server reads.** The create
+  body listed the owner and `MultiTenant` tenant columns, required when
+  declared required, though the server stamps both. And the PUT body
+  kept the entity's required list, though PUT runs the same sparse
+  update as PATCH. No write body lists the scope columns now, and
+  neither update body requires a field.
+- **`PgVectorStore` ranks a zero-vector document at score 0.** The query
+  ordered by raw distance, where pgvector's NaN sorts last, so the
+  document ranked below negative matches and a small `topK` dropped it.
+- **A closed `semantic.Index` refuses writes.** `Add` and `Remove` after
+  `Close` returned nil for a change that was gone on reopen; they and
+  `Snapshot` return `semantic.ErrClosed` now. A second `Close` returns
+  nil instead of snapshotting stale state over the next writer's
+  directory.
+- **kiln's Claude Code adapter limits the agent to Bash.** It passed
+  `--allowedTools Bash`, which only skips Bash's permission prompt, next
+  to `--dangerously-skip-permissions`, so the agent kept Read, Write,
+  Edit and the rest. It passes `--tools Bash` now. Bash still reaches
+  the disk: this is no sandbox.
+- **An rtc status change from another replica reaches local peers once,
+  and only from the peer's current replica.** A remote status was applied
+  to whichever replica's copy of the member it named, then dropped if it
+  repeated, so a roster beat that repaired a missed status sent nothing,
+  and a status from a replica the peer had left was announced over the
+  newer one. Status now goes through the merged remote view, as joins
+  and leaves do.
+- **The SQLite legacy-timestamp normalizer keeps a lease taken while it
+  runs.** The queue and outbox rewrote each row's times from a read made
+  before the write, so a `claimed_at` a worker set in between went back
+  to the old value. Each column's write now checks it still holds the
+  text that was read. The queue also stopped rewriting rows that were
+  already in the canonical layout, which it did on every boot.
+- **`TryEntity` refuses routes that overlap an existing route.** Its
+  preflight compared patterns for equality, so `GET /{kind}/_events`
+  next to an entity's `GET /posts/{id}` passed it and the mux panicked
+  after half the routes were registered. The preflight asks the same
+  question the mux does, for the CRUD routes and the declaration's
+  endpoints, before anything is registered.
+- **A local-entity form keeps an untouched timestamp's seconds.** The
+  `datetime-local` control shows minutes, and saving wrote what it
+  showed, so editing any other field cut `14:30:45.123Z` to `14:30`. A
+  control the user did not change saves the stored value.
+- **Semantic coverage keeps every package's records when test binaries
+  finish together.** Each `Flush` read the manifest, merged and renamed
+  over it, so the later of two writers dropped the earlier one's routes.
+  The merge now runs under an OS file lock, as the axe-coverage manifest
+  already did.
+- **A desktop `Quit` on Windows before the main window exists is
+  kept.** A `Quit` after `Run` started but before the window was created
+  had no window to post to and was dropped, so the window opened on an
+  app that had been told to quit. `Run` checks again once the window is
+  up.
+- **A handler that sends 103 Early Hints keeps its real status.**
+  Idempotency, metrics, tracing, timeout, the access log, the cache, the
+  dev live-reload injector and the test-binary render writer each took
+  the 103 as the response, dropped the handler's own status, and the
+  client got 200. The idempotency store also never saved the response,
+  so a retry ran the handler again. Each wrapper now forwards an
+  informational status and waits for the final one; the buffering
+  wrappers (timeout, cache) drop the hint. The WebMCP observer reported
+  such a tool call as status 103, and the dev retired-markup scan read
+  the body kind from the header as it stood at the hint.
+- **Kiln's `set_theme` no longer undoes an app config edit that landed
+  while it ran.** It wrote back the whole config it had read, so a
+  rename in between was lost. A config edit built from a config the
+  world no longer holds now answers `conflict` (the journal returns
+  `journal.ErrAppConfigChanged`); replaying an older log still applies it.
+- **A double click on an RPC span or link sends one request.** Only
+  buttons and inputs were disabled while in flight, and two clicks
+  before the rpc module loaded both dispatched. A trigger that carries
+  no value and no response signal now ignores a click while its request
+  is in flight; forms, controls and signal-targeted triggers still let
+  the newest dispatch win.
+- **A webhook claim with no lease recorded is delivered.** A host store
+  that claims rows itself leaves the lease unset, and the worker read
+  that as expired, so it handed every claim back and sent nothing.
+- **A WebSocket server that accepts and closes at once is not redialed
+  every second.** The backoff reset on every open, so a 4503 "not now"
+  close came back after one second forever. `attempts` now resets only
+  after a socket stays open 10 seconds.
+- **A `%` in the page title no longer breaks client navigation.** A
+  screen with no title sends no `X-Gofastr-Title`, and the runtime
+  decoded `document.title` in its place; an app named "50% Off Co."
+  threw on every such navigation and showed the connection error. Only
+  the header is decoded now. The `decodeuriraw` lint fires on a header
+  or `document.title` decoded outside `try`.
+- **Escape leaves a popover open under a modal that refuses Escape.**
+  The key fell through to the popover stack and closed a popover beneath
+  the scrim. A popover opened after the modal still closes.
+- **Back keeps the scroll anchor of a page visited recently.** The
+  50-page anchor store evicted paths in alphabetical order, so a busy
+  `/orders` lost its anchor to a page seen once. It evicts the least
+  recently recorded now.
+- **A hover or visible prefetch keeps the link's query.** It fetched the
+  bare path, so the click on `/detail?page=2` missed the entry and
+  fetched again.
+- **`gofastr dev`, `desktop run|build|types` and `new` refuse an unknown
+  flag.** A typo kept the defaults, and a flag with no value took the
+  next flag as one: `--addr --no-a11y` set the address to `--no-a11y`
+  and kept the a11y gate on. `new handler --method POST` (the space form
+  its usage shows) scaffolded GET. `dev` refuses `--addr` with `-p`.
+- **`gofastr migrate` refuses a flag its subcommand does not read.**
+  `migrate down --db-ur=<url>` or `--db-url <url>` rolled back the
+  database `DATABASE_URL` names.
+- **CLI rewrites of existing files are atomic.** `init . --force`,
+  `init`'s `.gitignore`, `AGENTS.md` and `CLAUDE.md` merges, `agents
+  sync`, `theme init --force`, `pack -o` and the unmount/remount import
+  rewire truncated each file and wrote it in place, so a crash or a full
+  disk left it empty or half written. Each now writes a temporary file
+  beside it and renames it over, keeping the file's mode, writing
+  through a symlink, and refusing a read-only file as before. An emptied
+  `.agents/` detail file used to block the next sync as hand-written.
+  The `worldreadable` vet check reads the new `atomicfile.Rewrite` as
+  it reads `os.WriteFile`, so the switch hid no mode from it.
+- **An rtc room spanning replicas stays within `MaxPeers`.** Two joins
+  on different replicas could each pass the cap before their roster
+  beats met, leaving a room capped at 1 with two members on both. Each
+  replica now ranks the merged room by join order and closes its own
+  peers past the cap with `4409` room full.
+- **A WebSocket client cannot flood Ping or Pong frames.** The read pump
+  answers each Ping itself, so rtc's `MaxFramesPerSecond` never counted
+  them and a raw client could send them without limit. The new
+  `WSConfig.MaxControlFramesPerSecond` (default 32 a second, burst twice
+  that, negative disables) closes the connection with 1008 past it.
+- **`core/yaml` skips a leading byte order mark and reads `#` after a
+  tab as a comment.** A `gofastr.yml` saved with a BOM reported an
+  unknown key naming an invisible character, and `port: 8080<TAB># note`
+  kept the comment in the value.
+- **`di.Provide` refuses a constructor with parameters, and a second
+  Provide for a type that already has a value.** The first passed and
+  then panicked in reflect on every request that injected it; the second
+  returned nil while the first value went on being served.
+- **The queue's admin job list reads a NULL payload as none**, as the
+  dequeue path does. One such row (restore tooling, an external write)
+  failed the whole list.
+- **`AuthManager.Init` refuses a negative `SessionTTL`.** It used to
+  become the 7-day default, against auth.md; zero still means seven
+  days.
+- **BREAKING: `TwoFAConfig.Digits` is removed, and the enrolment URL
+  carries `TwoFAConfig.Period`.** The URL always said `period=30` while
+  verification used the configured period, so with `Period: 60` every
+  code was refused. `Digits` was never read: codes are six digits.
+  Delete the field from your config.
+- **`ui.NetworkRetryBanner` refuses an unsafe `HealthEndpoint`.** It
+  went into the retry link's `href` with no URL policy; a value
+  `urlsafe.CleanAnchor` refuses now panics, as an empty one does.
+- **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
+  string.** `"use":[]` or `"alg":false` read as absent, so the key
+  passed both restriction checks.
+- **BREAKING: passkey `MaxPerUser` holds when registrations race.**
+  The plugin counted and then stored, so two registrations with one slot
+  left both stored. `PasskeyStore.AddPasskey` now takes the cap and
+  refuses past it with `auth.ErrPasskeyLimit`, counting and inserting as
+  one step; a custom store adds the parameter. On Postgres the step is
+  READ COMMITTED whatever the server default, behind an advisory lock on
+  the table's resolved oid, so two spellings of one table share it.
+- **`kiln acp --agent X` no longer runs the agent on a refused ACP
+  prompt.** The ACP session journals the prompt and answers `refusal`,
+  and the chat watcher picked the journaled message up and ran a turn on
+  it anyway. The watcher now skips messages an ACP session wrote.
+- **A Bool field refuses a number that only rounds to 0 or 1, and stores
+  a text default as the boolean.** `1.0000000000000001` was stored as
+  true and `1e-400` as false. A `Default: "true"` was bound as text, which
+  `?field=true` never matched on SQLite.
+- **A batch write keeps a JSON field's numbers the way a single write
+  does.** The `_batch` envelope decoded item numbers as float64, so a
+  `json` field's `1e400` failed the whole batch as invalid JSON.
+- **`access.CachedResolver` at a zero TTL shares one lookup with its
+  waiters.** The result expired as it landed, so each waiting call ran
+  its own lookup in turn, in place of the single flight `WithTTL`
+  documents.
+- **The relay aborts an upstream response that runs past
+  `MaxBodyBytes`.** The cap ended the body with a clean EOF, so a chunked
+  response arrived as a whole 200 that was cut short, and `CacheOK` could
+  keep it. It is now a read error, which aborts the stream.
+- **`mcp.Server.ServeStdio` returns when its context ends on silent
+  input.** It checked the context only between lines, so `kiln mcp` with
+  an idle client ignored SIGTERM until the supervisor's SIGKILL. Kiln's
+  stdio modes now exit 0 on the signal.
+- **`App.Shutdown` cancels A2A runs and waits for them.** A run is
+  detached from its request, so nothing stopped it: Shutdown returned
+  while skills ran, and they died with the process. The new
+  `a2a.Server.Shutdown(ctx)` refuses new runs, cancels the live ones and
+  waits for each to store its final state.
+- **Kiln refuses a symlinked adapter work directory.** A co-user could
+  plant `/tmp/kiln-<adapter>` as a link to a directory this user owns;
+  the chmod followed it, tightened that directory to 0700 and ran the
+  turn inside it. The directory is opened without following a link and
+  chmodded through the handle, so a name swapped for a link between the
+  check and the chmod is refused too.
+- **OIDC follows the provider's token endpoint auth method.** The secret
+  always went in the form body, so a provider accepting only
+  `client_secret_basic` could not log anyone in. A provider whose
+  discovery lists Basic and not post now gets an `Authorization` header;
+  `OIDCConfig.TokenAuthMethod` overrides discovery.
+- **BREAKING: the admin reserves `/account` and `/shortcuts`, and audits
+  a profile-name change.** An app `Page` at either path silently replaced
+  the built-in screen; boot now fails. The name change wrote no audit row.
+- **Strict JSON decoding folds nested keys the way the decoder does.**
+  The nested-key check folded with `strings.ToLower`, which keeps `ſ`
+  (U+017F) apart from `s`, while `encoding/json` binds `ſource` to the
+  `source` field, so `{"source":"a","ſource":"b"}` passed and decoded
+  as `"b"`. The new `handler.FoldJSONKey` matches `bytes.EqualFold`;
+  `UnmarshalStrict` and every `CheckObjectKeys`/`CheckTopLevelKeys`
+  caller in the repo (MCP, A2A, ACP, module protocol, cursors, crud
+  numbers, the harness) use it.
+- **A 2FA re-enrolment no longer takes a pending verify's write.** A
+  disable plus re-enrol between `/2fa/verify`'s read and its update
+  re-created the row at version 0 with the same empty codes and flags,
+  so the swap marked the new pending enrolment verified with the old
+  secret. `EntityTwoFAStore` starts a new row at a random version.
+- **`ui.StatStrip` no longer marks its cells `data-cui-internal`.** A
+  cell holds the caller's content, so an owned style sheet could not
+  reach what the app placed there.
+- **Kiln's semantic context fences each chunk with a run longer than
+  any backtick run in it.** A chunk holding its own ```` ``` ```` line
+  closed the fixed fence and left the rest as bare system-prompt text.
+- **BREAKING: `handler.SSEStream` is removed.** It ranged over its
+  channel with no request context and ignored write errors, so a quiet
+  channel kept the handler parked after the client left, and it took no
+  stream seat. Nothing in the repo called it. Server push goes through
+  the one `/__gofastr/sse` bus, or `core/stream`'s `SSEBroker`, which
+  admits through the seat policy and bounds each write. `handler.SSE`, the one-event
+  response, stays and now reports a failed write.
+- **CRUD log lines percent-encode control bytes.** A driver error
+  quotes the request's value back (Postgres names the invalid `uuid` it
+  was handed), so `GET /legacy/%1B%5B2J%0AFORGED` forged a log line
+  through `CrudHandler.Get`. Every log line in `framework/crud` is
+  scrubbed now.
+- **The search results count follows the reader's locale.** The status
+  line wrote 1234 as `1234` on every locale; it now reads `1 234` in
+  French, as the chart numbers do.
 - Custom not-found screens retain their context-aware title provider.
   `uihost.NotFoundTitler` can choose a title from the request path; empty
   titles use the standard screen title or generic not-found title.

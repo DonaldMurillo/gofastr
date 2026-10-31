@@ -309,14 +309,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// route is mounted for every non-system move, Advisory or not.
 		st := ent.Config.States
 		statesGuarded := st != nil && !st.Advisory
-		// An update never sets the owner field or the MultiTenant tenant
-		// column (crud doUpdate skips both), so no update body lists them.
-		var updateSkip []string
+		// The server sets the owner field and the MultiTenant tenant column
+		// on create (InjectOwner, the context tenant) and never on update
+		// (crud doUpdate skips both), so no write body lists them.
+		var scopeSkip []string
 		if owner := ent.Config.Scope.OwnerField; owner != "" {
-			updateSkip = append(updateSkip, owner)
+			scopeSkip = append(scopeSkip, owner)
 		}
 		if ent.Config.Scope.MultiTenant {
-			updateSkip = append(updateSkip, ent.Config.TenantColumn())
+			scopeSkip = append(scopeSkip, ent.Config.TenantColumn())
 		}
 		// apiPrefix first, then any per-entity version group: the router
 		// mounts /api/v2/posts, so the document has to key it that way.
@@ -453,7 +454,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// Create request body excludes auto-generated and read-only
 		// fields; enforced states narrow the state field's enum to the
 		// values a create may set and drop the stamps.
-		createSchema := requestSchema(entitySchema, fields, st, nil, false)
+		createSchema := requestSchema(entitySchema, fields, st, scopeSkip, false)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
@@ -493,7 +494,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		updateOp.Tags = []string{tagName}
 		// An enforced states block removes the state field and the stamps
 		// from the update body: they change only through a move's route.
-		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, updateSkip, true), false)
+		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
 		if statesGuarded {
@@ -513,8 +514,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
 		patchOp.Tags = []string{tagName}
-		patchSchema := requestSchema(entitySchema, fields, st, updateSkip, true)
-		delete(patchSchema, "required")
+		patchSchema := requestSchema(entitySchema, fields, st, scopeSkip, true)
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
@@ -638,8 +638,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		}
 		// An item is sparse like a single PATCH: the key part below is
 		// all it must carry.
-		batchPatch := requestSchema(entitySchema, fields, st, updateSkip, true)
-		delete(batchPatch, "required")
+		batchPatch := requestSchema(entitySchema, fields, st, scopeSkip, true)
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
 				batchPatch,
@@ -759,25 +758,24 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 }
 
 // requestSchema returns the write-request view of the entity schema:
-// excludeFieldsByBehavior, then the update skips, then the states rules.
-// An update drops the fields named in updateSkip (the owner and tenant
-// columns, which an update never sets). With enforced states (declared
+// excludeFieldsByBehavior, then the scope skips, then the states rules.
+// Every write drops the fields named in scopeSkip (the owner and tenant
+// columns, which the server sets). An update requires nothing: PUT and
+// PATCH both run the sparse update (schema.ValidatePartial). With enforced states (declared
 // and not Advisory) a create keeps the state field but narrows its enum
 // to the values a create may set, and drops every stamp; an update drops
 // the state field and the stamps entirely — they change only through a
 // move's own route.
-func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, updateSkip []string, update bool) map[string]any {
+func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, scopeSkip []string, update bool) map[string]any {
 	cp := excludeFieldsByBehavior(specSchema, fields)
 	byName := make(map[string]schema.Field, len(fields))
 	for _, f := range fields {
 		byName[f.Name] = f
 	}
 	drop := map[string]bool{} // wire keys no write may carry
-	if update {
-		for _, name := range updateSkip {
-			if f, ok := byName[name]; ok {
-				drop[wireKeyOf(f)] = true
-			}
+	for _, name := range scopeSkip {
+		if f, ok := byName[name]; ok {
+			drop[wireKeyOf(f)] = true
 		}
 	}
 	stateKey := ""
@@ -815,6 +813,9 @@ func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.
 			narrowed["enum"] = st.InitialValues(fields)
 			props[stateKey] = narrowed
 		}
+	}
+	if update {
+		delete(cp, "required")
 	}
 	if reqs, ok := cp["required"].([]string); ok {
 		kept := make([]string, 0, len(reqs))

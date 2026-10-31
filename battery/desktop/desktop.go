@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
@@ -1050,6 +1051,29 @@ func (b *Battery) Run(app *framework.App) error {
 	if b.cfg.RememberWindows {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
+	// app.Start returns when the server stops. Read only before the
+	// window opened and after it closed, a server that stopped in between
+	// (a listener failure, a Shutdown from elsewhere) left the window up
+	// on a dead app. The watcher quits the window on a stop Run did not
+	// start, and hands the result to the drain below.
+	var closing atomic.Bool
+	startDone := make(chan error, 1)
+	go func() {
+		err := <-startErr
+		startDone <- err
+		if closing.Load() {
+			return
+		}
+		// Quit is the host shell's, on a bare goroutine: a panic in it
+		// must not end the process.
+		defer func() {
+			if v := recover(); v != nil {
+				b.logger.Error("desktop: quitting the window panicked", "panic", textsafe.Recovered(v))
+			}
+		}()
+		b.logger.Error("desktop: the app server stopped while the window was open; closing it", "error", err)
+		b.shell.Quit()
+	}()
 	shellErr := b.shell.Run(ctx, WindowConfig{
 		AppID:      b.cfg.ID,
 		Title:      b.windowTitle(),
@@ -1109,9 +1133,10 @@ func (b *Battery) Run(app *framework.App) error {
 	}
 
 	// Drain the app: Start returns once Shutdown completes.
+	closing.Store(true)
 	shutdownErr := b.shutdownApp()
 	select {
-	case err := <-startErr:
+	case err := <-startDone:
 		if shellErr != nil {
 			return shellErr
 		}

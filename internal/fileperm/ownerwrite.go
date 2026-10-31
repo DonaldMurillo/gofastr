@@ -1,6 +1,10 @@
 package fileperm
 
-import "os"
+import (
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
+)
 
 // WriteOwnerOnly writes data to path as an owner-only (0600) file, on
 // CREATE and on OVERWRITE alike.
@@ -19,6 +23,15 @@ func WriteOwnerOnly(path string, data []byte) error {
 		return err
 	}
 	return fillOwnerOnly(f, data)
+}
+
+// ReplaceOwnerOnly is WriteOwnerOnly for a file a crash must not leave
+// empty or half-written (a .env, a packed spec): the owner-only
+// temporary file beside path is synced and renamed over it
+// (atomicfile.WriteFile), so the old content stays until the new is
+// whole.
+func ReplaceOwnerOnly(path string, data []byte) error {
+	return atomicfile.WriteFile(path, data, RestrictOpenFile)
 }
 
 // fillOwnerOnly tightens the open handle to 0600, writes data, and

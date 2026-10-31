@@ -300,9 +300,10 @@ One contract, both directions:
   `{code: "E_HANDLER"}`. Silence is not a protocol state.
 - The in-flight map is bounded (64); a saturated sender gets an
   immediate `{code: "E_SATURATED"}` rejection and nothing is posted.
-  The bound is sender-side: inbound dispatch is uncapped, the same
-  trust posture as the event path, so host-side request handlers must
-  stay cheap or debounce, exactly like `onEvent` handlers.
+  The same bound of 64 applies to inbound frame-to-host requests: past
+  it the host answers `{code: "E_SATURATED"}` without running a
+  handler. Host-side request handlers should still stay cheap or
+  debounce, like `onEvent` handlers.
 - Invalid timeouts fall back to the 5s default; a timed-out request
   rejects `{code: "E_TIMEOUT"}` and its late response is dropped by id.
 - Teardown rejects every outstanding request with

@@ -101,3 +101,23 @@ func TestComputedRefusesCycles(t *testing.T) {
 	// Re-declaring an acyclic computed with its own deps stays allowed.
 	_ = Computed[int](New("d"), "c", "r", "d.a", "d.b")
 }
+
+// A dependency name was never validated: the runtime splits
+// data-cui-computed-deps on commas, so "a,b" became two signals, and a
+// reserved or empty name shipped a dead binding (2026-10-27 C9). Deps
+// take the slice-name rules; route.* stays readable.
+func TestComputedValidatesDeps(t *testing.T) {
+	for _, dep := range []string{"", "a,b", "a b", "__proto__", "constructor"} {
+		t.Run(dep, func(t *testing.T) {
+			resetForTest()
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("dep %q accepted", dep)
+				}
+			}()
+			_ = Computed[int](New("v"), "x", "r", dep)
+		})
+	}
+	resetForTest()
+	_ = Computed[string](New("v"), "crumbs", "r", "route.path", "route.params.id")
+}

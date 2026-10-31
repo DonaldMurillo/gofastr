@@ -37,7 +37,9 @@ func StatStrip(cfg StatStripConfig) render.HTML {
 	}
 	cells := make([]render.HTML, len(cfg.Cells))
 	for i, c := range cfg.Cells {
-		cells[i] = html.Div(html.DivConfig{Class: "fui-stat-strip__cell", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, c)
+		// No internal mark: the cell holds the caller's content, which an
+		// owned style sheet must be able to reach.
+		cells[i] = html.Div(html.DivConfig{Class: "fui-stat-strip__cell"}, c)
 	}
 	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
 	if attrs == nil {

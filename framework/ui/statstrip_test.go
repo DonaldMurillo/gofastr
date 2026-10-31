@@ -19,7 +19,7 @@ func TestStatStrip(t *testing.T) {
 	for _, want := range []string{
 		`class="fui-stat-strip fui-stat-strip--2"`,
 		`role="group"`, `aria-label="Figures"`,
-		`<div class="fui-stat-strip__cell" data-cui-internal=""><div class="fui-stat-card fui-stat-card--plain"`,
+		`<div class="fui-stat-strip__cell"><div class="fui-stat-card fui-stat-card--plain"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("strip missing %q:\n%s", want, out)

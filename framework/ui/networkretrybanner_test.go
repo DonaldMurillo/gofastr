@@ -14,6 +14,17 @@ func TestRetryBannerRequiresHealth(t *testing.T) {
 	NetworkRetryBanner(NetworkRetryBannerConfig{})
 }
 
+// HealthEndpoint went into the retry link's href with no URL policy,
+// unlike every other anchor the kit renders.
+func TestRetryBannerRefusesUnsafeHealth(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on a javascript: HealthEndpoint")
+		}
+	}()
+	NetworkRetryBanner(NetworkRetryBannerConfig{HealthEndpoint: "javascript:alert(1)"})
+}
+
 func TestRetryBannerHiddenByDefault(t *testing.T) {
 	got := string(NetworkRetryBanner(NetworkRetryBannerConfig{HealthEndpoint: "/health"}))
 	if !strings.Contains(got, "hidden=") {

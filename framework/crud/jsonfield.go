@@ -42,12 +42,24 @@ import (
 // Timestamp filter. SQLite compares the column as text, so a client's
 // "...00Z" stored as sent sorted after the token "...00.000000Z" for the
 // same instant and a keyset walk on the column repeated its first page.
+//
+// A Bool column binds every spelling validation accepts as the boolean. A
+// body's value is already one (coerceNumberColumnValues); a declared
+// Default is not, and SQLite kept a "true" default as text, which a
+// boolean filter (bound as 1) never matched.
 func (ch *CrudHandler) bindJSONValue(col string, v any) any {
 	if v == nil {
 		return v
 	}
-	if _, ok := ch.snapshot().timestampColumns[col]; ok {
+	snap := ch.snapshot()
+	if _, ok := snap.timestampColumns[col]; ok {
 		return storedTime(v)
+	}
+	if _, ok := snap.boolColumns[col]; ok {
+		if b, ok := boolSpelling(v); ok {
+			return b
+		}
+		return v
 	}
 	if !ch.isJSONColumn(col) {
 		return v

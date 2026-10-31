@@ -68,7 +68,7 @@ func TestPageAccessRefuses(t *testing.T) {
 }
 
 func TestPageRefusesTheAdminsOwnPaths(t *testing.T) {
-	for _, path := range []string{"/", "/queue", "/audit/x", "/rbac", "/entities/posts", "/api", "/_count", "/_new", "/search", "reports", "//evil", "/a?b"} {
+	for _, path := range []string{"/", "/queue", "/audit/x", "/rbac", "/entities/posts", "/api", "/_count", "/_new", "/search", "/account", "/account/x", "/shortcuts", "reports", "//evil", "/a?b"} {
 		_, _, err := trySetup(t, nil, Config{Pages: []Page{page(path, "X", says("x"))}}, nil)
 		if err == nil {
 			t.Errorf("Pages path %q was accepted", path)

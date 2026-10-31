@@ -1052,6 +1052,10 @@ func (t *Tools) applyEntry(kind journal.Kind, op journal.Op, payload any) Result
 		if pc, ok := errors.AsType[*journal.PageConflictError](err); ok {
 			return pageConflict(pc)
 		}
+		if errors.Is(err, journal.ErrAppConfigChanged) {
+			return conflict("the app config changed while this edit was being applied: refetch and retry").
+				withHint("GET $KILN_URL/kiln/world to read the current app config, then send the edit again")
+		}
 		return internalFailure("apply entry", err)
 	}
 	return Result{OK: true, Result: map[string]any{"entry_id": entry.ID}}

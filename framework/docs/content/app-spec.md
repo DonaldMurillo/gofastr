@@ -145,7 +145,9 @@ is required. Supported syntax:
 - indentation-based maps and lists
 - strings, quoted strings, booleans, numbers, and `null`
 - inline scalar lists such as `[draft, published]`
-- comments starting with `#` outside quoted strings
+- comments starting with `#` outside quoted strings, at the start of a line
+  or after a space or tab
+- a leading byte order mark, which is skipped
 
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, and mixed advanced YAML forms are not part

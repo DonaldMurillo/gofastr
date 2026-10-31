@@ -42,6 +42,7 @@ var (
 		{Name: "code", Type: schema.String, Pattern: `^[A-Z]{2}$`},
 		{Name: "due", Type: schema.Date},
 		{Name: "at", Type: schema.Timestamp},
+		{Name: "when", Type: schema.Timestamp},
 	})
 	pins = localentity.Define(e2eDB, "pins", []schema.Field{{Name: "label", Type: schema.String, Required: true}})
 )
@@ -57,6 +58,7 @@ func form(ctx context.Context) render.HTML {
 		ui.TextField(ui.TextFieldConfig{Name: "code", Label: "Code", ID: "f-code"}),
 		ui.TextField(ui.TextFieldConfig{Name: "due", Label: "Due", ID: "f-due"}),
 		ui.TextField(ui.TextFieldConfig{Name: "at", Label: "At", ID: "f-at"}),
+		ui.DateTimeField(ui.DateTimeFieldConfig{Name: "when", Label: "When", ID: "f-when"}),
 		ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
 		ui.Button(ui.ButtonConfig{Label: "Clear", Type: "reset"}),
 	))
@@ -388,5 +390,55 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		if r["memo"] == "orphan" {
 			t.Fatalf("a record without its Required title was created: %v", r)
 		}
+	}
+}
+
+// A datetime-local control shows minutes. Fill wrote the stored stamp at
+// that precision and save wrote the control back, so an edit that never
+// touched it truncated 14:30:45.123 to 14:30:00 (2026-10-27 H7). An
+// untouched control keeps the stored value; a changed one saves the new
+// one.
+func TestUntouchedDateTimeKeepsSeconds(t *testing.T) {
+	base := startHost(t)
+	tab := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	const stored = "2024-05-01T14:30:45.123Z"
+	edit := chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-local-item]'))
+		.find((n) => n.textContent.includes('s1')).querySelector('[data-fui-local-edit] button').click()`, nil)
+	if err := chromedp.Run(tab,
+		chromedp.Navigate(base+"/"),
+		chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.put('notes', {
+			id: 's1', title: 's1', when: '`+stored+`',
+			created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z' }))`, nil, await),
+		poll(`Array.from(document.querySelectorAll('[data-fui-local-item]')).some((n) => n.textContent.includes('s1'))`),
+		edit,
+		poll(`document.querySelector('#f-when').value !== ''`),
+		save(),
+	); err != nil {
+		t.Fatalf("edit untouched: %v", err)
+	}
+	when := func() string {
+		var rec map[string]any
+		if err := chromedp.Run(tab, chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.get('notes', 's1'))`, &rec, await)); err != nil {
+			t.Fatal(err)
+		}
+		s, _ := rec["when"].(string)
+		return s
+	}
+	if got := when(); got != stored {
+		t.Fatalf("untouched when saved as %q, want %q", got, stored)
+	}
+
+	var want string
+	if err := chromedp.Run(tab,
+		edit,
+		poll(`document.querySelector('#f-when').value !== ''`),
+		chromedp.SetValue(`#f-when`, "2024-05-01T15:00", chromedp.ByQuery),
+		chromedp.Evaluate(`new Date('2024-05-01T15:00').toISOString()`, &want),
+		save(),
+	); err != nil {
+		t.Fatalf("edit changed: %v", err)
+	}
+	if got := when(); got != want {
+		t.Fatalf("changed when saved as %q, want %q", got, want)
 	}
 }

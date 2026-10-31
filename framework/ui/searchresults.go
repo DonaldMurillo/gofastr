@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -113,7 +114,7 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 	})
 	status := render.Tag("p", map[string]string{
 		"class": "fui-search-results__status", "role": "status", "data-search-page-status": "",
-	}, render.Text(searchStatus(strings.TrimSpace(cfg.Query), cfg.Total, count, one, none)))
+	}, render.Text(searchStatus(ctx, strings.TrimSpace(cfg.Query), cfg.Total, count, one, none)))
 
 	items := make([]render.HTML, len(cfg.Results))
 	for i, r := range cfg.Results {
@@ -156,8 +157,9 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 	return searchResultsStyle.WrapHTML(render.Tag("section", attrs, parts...))
 }
 
-// searchStatus words the status line: empty with no query.
-func searchStatus(q string, total int, count, one, none string) string {
+// searchStatus words the status line, its count in ctx's locale: empty
+// with no query.
+func searchStatus(ctx context.Context, q string, total int, count, one, none string) string {
 	if q == "" {
 		return ""
 	}
@@ -168,7 +170,7 @@ func searchStatus(q string, total int, count, one, none string) string {
 	case 1:
 		f = one
 	}
-	return strings.NewReplacer("{{n}}", strconv.Itoa(total), "{{q}}", q).Replace(f)
+	return i18n.FillContext(ctx, f, map[string]any{"n": total, "q": q})
 }
 
 func searchResultItem(r SearchResult) render.HTML {

@@ -445,6 +445,10 @@ func (b *Builder) Poll(interval time.Duration) *Builder {
 // it for a polling widget whose freshness job finishes once a terminal
 // state is reached (a job-status pill that hits completed, a batch that
 // finishes); without it the widget polls forever after going terminal.
+// The predicate runs before the signals are read, so the snapshot that
+// stops the poll is never older than the answer, and a snapshot missing
+// a signal whose Read failed never carries the stop. That ordering
+// holds only for a predicate that stays true once it turns true.
 // No-op when the widget does not also call Poll.
 func (b *Builder) PollTerminal(fn func() bool) *Builder {
 	b.def.PollTerminal = fn

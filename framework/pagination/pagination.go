@@ -218,7 +218,7 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	if err := handler.CheckObjectKeys(b, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(b, handler.FoldJSONKey); err != nil {
 		return "", "", &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
 	}
 	var token cursorToken
@@ -271,7 +271,7 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	// Same no-ambiguity rule as DecodeCursor; the duplicated member key
 	// lives one level down inside the f array, which the any-depth walk
 	// sees and a top-level-only check would not.
-	if err := handler.CheckObjectKeys(b, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(b, handler.FoldJSONKey); err != nil {
 		return nil, &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
 	}
 	var tok multiCursorToken

@@ -160,7 +160,9 @@ answered `session/prompt: internal error`; its text stays on the server.
 - without a provider, refuses prompts loudly (one message chunk plus
   stop reason `refusal`) — the `kiln` CLI attaches no model today; drive
   Kiln's tools through `kiln mcp` or the HTTP panel, or embed
-  `kiln/acp` with a provider.
+  `kiln/acp` with a provider. `kiln acp --agent X` still runs the panel's
+  agent on panel messages, never on an ACP session's: the refused prompt
+  stays refused.
 
 Kiln sessions are process-lifetime: `session/load` replays a session minted
 by the current process (from the journal's chat) and reports any other ID

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,12 @@ func RunMigrate(args []string) {
 		rest = args[1:]
 	}
 
+	if err := migrateFlagsError(subcmd, rest); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+
 	switch subcmd {
 	case "up":
 		runMigrateUp(rest)
@@ -62,6 +69,47 @@ func RunMigrate(args []string) {
 		cli.Info("Usage: gofastr migrate [up|down|status|generate|force|repair]")
 		cli.OsExit(1)
 	}
+}
+
+// migrateFlags names the flags each subcommand reads: valued ones take
+// --name=<value>, bare ones nothing. The readers match by prefix and
+// skip the rest, so a typo was dropped in silence: --db-ur=<url> ran
+// against DATABASE_URL, and --db-url <url> (the space form) did too.
+var migrateFlags = map[string]struct{ valued, bare []string }{
+	"up":       {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--create-db"}},
+	"down":     {[]string{"--db-url", "--db", "--driver", "--group"}, nil},
+	"status":   {[]string{"--db-url", "--db", "--driver", "--group"}, nil},
+	"force":    {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--not-applied"}},
+	"repair":   {[]string{"--db-url", "--db", "--driver", "--from"}, []string{"--apply"}},
+	"generate": {[]string{"--db", "--driver", "--from", "--group", "--migrations", "--snapshot"}, nil},
+}
+
+// migrateFlagsError refuses a flag the subcommand does not read, a valued
+// flag written without =<value>, and a bare flag given one.
+func migrateFlagsError(subcmd string, args []string) error {
+	known, ok := migrateFlags[subcmd]
+	if !ok {
+		return nil
+	}
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
+		name, _, hasValue := strings.Cut(a, "=")
+		switch {
+		case slices.Contains(known.valued, name):
+			if !hasValue {
+				return fmt.Errorf("migrate %s: write %s=<value>", subcmd, name)
+			}
+		case slices.Contains(known.bare, name):
+			if hasValue {
+				return fmt.Errorf("migrate %s: %s takes no value", subcmd, name)
+			}
+		default:
+			return fmt.Errorf("migrate %s: unknown flag %s", subcmd, name)
+		}
+	}
+	return nil
 }
 
 // runMigrateForce reconciles the tracking table by hand: the recovery path out

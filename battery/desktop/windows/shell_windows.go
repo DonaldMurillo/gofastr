@@ -249,7 +249,14 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.windowsByID[main.id] = main
 	s.windowsHWND[main.hwnd] = main
 	s.hwnd = main.hwnd
+	// A Quit that ran after the check at the top of Run found no window
+	// to post to and left the flag. Read it under the same lock Quit
+	// holds, so it either sees this hwnd or its flag is seen here.
+	quitEarly := s.quitBeforeRun.Swap(false)
 	s.mu.Unlock()
+	if quitEarly {
+		_ = win32.PostMessage(main.hwnd, wmQuitApp, 0, 0)
+	}
 	activeWindows.Store(main.hwnd, main)
 	activeShells.Store(main.hwnd, s)
 	s.textCtx = desktop.ShellContext(ctx, preferredLanguages())
@@ -394,14 +401,16 @@ func (s *winShell) closeRunError(err error) {
 	}
 }
 
+// Quit closes the app. Before the main window exists there is nothing
+// to post to, so it leaves quitBeforeRun for Run, which checks it on
+// entry and again once the window is up.
 func (s *winShell) Quit() {
 	s.mu.RLock()
-	hwnd, running := s.hwnd, s.running
-	s.mu.RUnlock()
-	if !running {
+	hwnd := s.hwnd
+	if hwnd == 0 {
 		s.quitBeforeRun.Store(true)
-		return
 	}
+	s.mu.RUnlock()
 	if hwnd != 0 {
 		_ = win32.PostMessage(hwnd, wmQuitApp, 0, 0)
 	}
