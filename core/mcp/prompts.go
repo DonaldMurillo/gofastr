@@ -178,7 +178,7 @@ func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
 }
 
 // gatedListPage snapshots one of the gated registries (prompts,
-// resource templates) under the read lock, evaluates the per-caller
+// resources, resource templates) under the read lock, evaluates the per-caller
 // gates outside it, sorts, and cuts the page at offset. The gate runs
 // BEFORE the page is cut, so pagination walks the post-filter set: a
 // gated item never surfaces on a page and never bends the page sizes or

@@ -223,14 +223,14 @@ Options:
 |---|---|
 | `WithResourceDescription(desc)` | Human/agent-readable description, listed. |
 | `WithResourceMeta(meta)` | Attaches `_meta`, serialized verbatim in `resources/list`. MCP Apps ride `csp`/`permissions` on `_meta.ui`. |
-| `WithResourceGate(gate)` | Refuses unauthorized reads; see below. |
+| `WithResourceGate(gate)` | Hides the resource from callers the gate refuses and refuses their reads; see below. |
 
 `WithResourceGate` runs before the contents func on every read and refuses the
-read on error. Unlike `WithResourceTemplateGate`, a resource gate protects
-**both** the listing and the contents: a caller the gate refuses does not see
-the resource in `resources/list` at all, and pagination walks the post-filter
+read on error. It also guards the listing: a caller the gate refuses does not
+see the resource in `resources/list`, and pagination walks the post-filter
 set. The resource's uri, name, and description are the disclosure, the same
-way a template's uriTemplate and description are.
+way a template's uriTemplate and description are, so the rule matches
+`WithResourceTemplateGate`, `WithToolGate` and `WithPromptGate`.
 
 <!-- gofastr:compile
 import (
@@ -448,15 +448,11 @@ caller anything the matching methods would not:
   `list_changed`, which is otherwise safe to broadcast.
 - `notifications/resources/updated` additionally passes the resource's
   own `WithResourceGate`, so it reaches only streams whose caller may
-  read that resource's contents. This does not hide the resource from
-  `resources/list` — resource metadata stays listed by design, and the
-  gate refuses the read, not the listing; it keeps the update notice
-  from callers who could never read the result. Tools, prompts and
-  resource templates are the other shape: their gates hide the item
-  from its list method, and the `list_changed` a gated tool, prompt or
-  resource template registration fires is likewise withheld from
-  callers its gate refuses, who cannot see the item in that listing
-  either.
+  read that resource's contents.
+- The `list_changed` a gated tool, prompt, resource or resource
+  template registration fires passes that item's gate. A caller the
+  gate refuses cannot see the item in its list method, so it is not
+  told the item appeared.
 - Both gates are evaluated at delivery time against the identity the
   stream's GET request presented, re-checked before each delivery
   (`handler.RecheckPrincipal`), not once when the stream opened. A
@@ -804,11 +800,10 @@ the merged state. The convention and its boundaries:
   `tools/list`.** `Gated` wraps the handler, so it only reaches `tools/call`;
   the listing still shows the tool and its full `inputSchema`. Use the
   `WithToolGate` registration option, which gates both.
-- **Expecting `WithResourceGate` to hide the resource from `resources/list`.**
-  It does: the gate runs before the page is cut, so a caller it refuses never sees
-  the resource's URI, name or description. The gate also refuses the read, so
-  both listing and contents are protected. This is the same contract
-  `WithResourceTemplateGate`, `WithToolGate`, and `WithPromptGate` use.
+- **Checking the caller inside a resource's contents func instead of passing
+  `WithResourceGate`.** The check refuses the read, but the resource stays in
+  `resources/list` with its URI, name and description. `WithResourceGate`
+  hides it from the listing and refuses the read.
 - **Reusing a cursor across list methods.** The minting method is inside the
   signed payload, so `tools/list`'s cursor is invalid-params everywhere else.
   Mint a fresh walk per method.

@@ -727,11 +727,9 @@ func TestGateRevokedMidStreamStopsDelivery(t *testing.T) {
 		})); err != nil {
 		t.Fatal(err)
 	}
-	// RegisterResource fires a (gate-less, by design) list_changed; drain
-	// it so the item-gate assertions below see only resources/updated.
-	if ev := awaitSSE(t, events, "list_changed from RegisterResource"); ev.event != "message" {
-		t.Fatalf("event = %q, want message", ev.event)
-	}
+	// The list_changed RegisterResource fires carries the resource's
+	// gate, which denies right now, so this stream is not told.
+	expectNoSSE(t, events, "list_changed from a gated RegisterResource the gate refuses")
 	postMCP(t, ts, true, `{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"secret://flip"}}`)
 	s.NotifyResourceUpdated("secret://flip")
 	expectNoSSE(t, events, "updated while the item gate denies")

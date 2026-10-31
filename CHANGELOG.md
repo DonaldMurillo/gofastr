@@ -596,14 +596,14 @@ few lines, and link the PR or the docs page for the rest.
   `map[string]any` field reached the handler as 9007199254740992, where
   the same body through the route's `Bind` kept its digits. The tool path
   now decodes the way `Bind` does.
-- **BREAKING: `resources/list` now respects `WithResourceGate`.** A
-  resource whose gate refused a caller still appeared in `resources/list`
-  with its URI, name and description disclosed. Now the gate filters the
-  listing, the same contract `resources/templates/list` already used: a
-  caller the gate refuses never sees the resource, and pagination walks
-  the post-filter set. A host relying on gated resources still appearing
-  must move sensitive metadata out of the resource itself (into a
-  resource template, a tool, or a prompt) or drop the gate. See
+- **BREAKING: `WithResourceGate` hides the resource from callers it
+  refuses.** A refused caller still saw the resource's URI, name and
+  description in `resources/list`, and was told by
+  `notifications/resources/list_changed` that it appeared. Both now pass
+  the gate, the rule tools, prompts and resource templates already
+  follow, and pagination walks the filtered set. A resource that clients
+  must discover before they pass the gate drops `WithResourceGate` and
+  checks the caller inside its contents func. See
   [MCP](framework/docs/content/mcp.md).
 - **Tags on an embedded struct bind.** `handler.Bind` and the MCP
   `ToolAdapter` ignored `header`, `query` and `path` tags on fields of an
