@@ -140,7 +140,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
-| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
+| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
 | `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
@@ -819,7 +819,11 @@ against the table names the CONFIGURED stores actually use (the
 `NewEntityUserStore(db, "users")` + `NewEntitySessionStore(db,
 "sessions")` gets its `users` row, `sessions` rows, resolved
 `IdentityEmail`, and magic-link tokens erased — not just the canonical
-`auth_*` spellings the package registers at import time.
+`auth_*` spellings the package registers at import time. When
+`LoginRateLimitPerAccount` uses a `SQLRateLimitStore`, the erasure also
+deletes that limiter's attempt and block rows for the user's email
+(the key is its `Scope`, `login_account` by default, then
+`|account:` and the email); other limiters' rows on the same store stay.
 
 ## Email identity is canonical (invisible-stripped + NFC-normalized + trimmed + lowercased)
 
@@ -945,7 +949,8 @@ skipped: they don't ride on cookies and aren't subject to CSRF.
 
 The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
 HTTPS, including behind a TLS-terminating proxy that sets
-`X-Forwarded-Proto: https` (the app itself sees plain HTTP there).
+`X-Forwarded-Proto: https` (the app itself sees plain HTTP there). A
+name set with `WithCSRFCookieName` gets the prefix too.
 
 **Login/register/logout carry their own cross-site guard.** Those
 endpoints can't rely on the CSRF cookie: a login CSRF needs no

@@ -31,9 +31,14 @@ the whole transaction.
 - Every batch response carries `Cache-Control: no-store`, as the
   single-row writes do, and audit rows a batch writes carry the
   request's client IP and user agent.
-- The first per-item failure populates `error` (and optionally
-  `fields` for validation failures) on that index. Later indices are
-  marked `"skipped": true`.
+- The first per-item failure populates `error` on that index, and
+  `reason` when the refusal has a code (a hook's own wording has none):
+  the same message and code the single-row write answers for that
+  item. A validation, state, transition, unique or foreign-key
+  refusal says what was wrong, with `fields` and `field_reasons` where
+  the single write names fields. Any other error reads
+  `internal server error`, and the cause stays in the server log.
+  Later indices are marked `"skipped": true`.
 - On `committed: false` no result carries `data`. Errors and
   `fields` remain.
 

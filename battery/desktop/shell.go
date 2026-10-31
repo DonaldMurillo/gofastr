@@ -275,6 +275,12 @@ type WindowConfig struct {
 	// "about", "settings", "show", "separator") are handled by the
 	// shell itself and are never dispatched through OnMenu.
 	OnMenu func(id string)
+	// AllowNavigation is asked, on the UI thread, before any window's
+	// main frame navigates to url; false cancels the navigation. The
+	// battery allows only the app's own origin and the blank page a web
+	// view starts on, unless Config.DangerouslyAllowForeignNavigation is
+	// set. A nil func allows every navigation. It must not block.
+	AllowNavigation func(url string) bool
 	// OnWindowClosed is called by the shell (on a goroutine) when a
 	// secondary window the user closed goes away, with the id OpenWindow
 	// assigned. The main window never reports through it.

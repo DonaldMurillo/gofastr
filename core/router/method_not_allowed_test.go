@@ -49,8 +49,8 @@ func TestMethodNotAllowedKeepsAllowHeader(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if allow := w.Header().Get("Allow"); allow != "GET" {
-		t.Fatalf("expected Allow: GET, got %q", allow)
+	if allow := w.Header().Get("Allow"); allow != "GET, HEAD" {
+		t.Fatalf("expected Allow: GET, HEAD, got %q", allow)
 	}
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
@@ -70,8 +70,8 @@ func TestMethodNotAllowedDefaultIsBare405(t *testing.T) {
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
 	}
-	if allow := w.Header().Get("Allow"); allow != "GET" {
-		t.Fatalf("expected Allow: GET, got %q", allow)
+	if allow := w.Header().Get("Allow"); allow != "GET, HEAD" {
+		t.Fatalf("expected Allow: GET, HEAD, got %q", allow)
 	}
 }
 

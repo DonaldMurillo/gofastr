@@ -35,21 +35,30 @@
   NS._toastSeq = NS._toastSeq || 0;
 
   NS._initToasts = (root) => {
+    // A timer goes with its row: one whose row left the document is
+    // dropped, and every other one runs on. root may be only a swapped
+    // region (signals.js hands over the node it filled), so rows
+    // outside it are still showing; dropping first also lets a row a
+    // swap replaced under the same id arm afresh below.
+    NS._toastTimers.forEach((rec, id) => {
+      if (!rec.item.isConnected) {
+        clearTimeout(rec.timer);
+        NS._toastTimers.delete(id);
+      }
+    });
     // A row the module built carries its id; a row the server
     // rendered carries the toast marker and, when it has a lifetime,
     // the TTL. Both arm here; a server row is given its id on sight.
     const items = root.querySelectorAll('[data-hui-toast-id], [data-hui-toast-ttl-ms]');
-    const present = new Set();
     items.forEach((item) => {
       if (!item.hasAttribute('data-hui-toast-id')) item.setAttribute('data-hui-toast-id', 's' + (++NS._toastSeq));
       const id = item.getAttribute('data-hui-toast-id');
-      present.add(id);
       // Ids are attribute-borne, so the registry is a Map: plain
       // string keys, no prototype re-parenting.
       if (NS._toastTimers.get(id)) return;
       const ttl = parseInt(item.getAttribute('data-hui-toast-ttl-ms') || '0', 10);
       if (ttl > 0) {
-        const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
+        const rec = { item, remaining: ttl, startedAt: Date.now(), timer: 0 };
         NS._toastTimers.set(id, rec);
         const arm = () => {
           rec.startedAt = Date.now();
@@ -82,12 +91,6 @@
         // it (the stack widget's listener, or the document's).
         if (e.target.closest('[data-hui-toast-action]')) NS._dismissToast(item, id);
       });
-    });
-    NS._toastTimers.forEach((rec, id) => {
-      if (!present.has(id)) {
-        clearTimeout(rec.timer);
-        NS._toastTimers.delete(id);
-      }
     });
   };
 

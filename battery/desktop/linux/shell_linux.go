@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/gtk"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const mainTimeout = 15 * time.Second
@@ -93,6 +95,39 @@ var focusCallback = ffi.NewCallback(func(a *ffi.Args) uintptr {
 		}
 	}
 	return 0
+})
+
+// decidePolicyCallback is a web view's "decide-policy" handler. A
+// navigation action carries no main-frame flag in WebKitGTK, so the
+// check runs on the response: a refused main-frame document is ignored
+// before it commits. The request has reached the other host by then,
+// but nothing it returns renders in the window. Subframes load as on
+// the other shells. A panic refuses.
+var decidePolicyCallback = ffi.NewCallback(func(a *ffi.Args) (handled uintptr) {
+	decision := a.Int[1]
+	defer func() {
+		if v := recover(); v != nil {
+			slog.Default().Error("desktop/linux: navigation policy panicked", "panic", textsafe.Recovered(v))
+			call(gtk.Sym.WebkitPolicyDecisionIgnore, decision)
+			handled = 1
+		}
+	}()
+	if a.Int[2] != 2 /* WEBKIT_POLICY_DECISION_TYPE_RESPONSE */ ||
+		call(gtk.Sym.WebkitResponsePolicyDecisionIsMainFrameMainResource, decision)&0xff == 0 {
+		return 0
+	}
+	s := toolkitOwner.Load()
+	if s == nil || s.cfg.AllowNavigation == nil {
+		return 0
+	}
+	response := call(gtk.Sym.WebkitResponsePolicyDecisionGetResponse, decision)
+	raw := capsGoString(call(gtk.Sym.WebkitURIResponseGetURI, response))
+	if s.cfg.AllowNavigation(raw) {
+		return 0
+	}
+	slog.Default().Warn("desktop/linux: refused a navigation off the app's origin", "host", desktop.NavigationHost(raw))
+	call(gtk.Sym.WebkitPolicyDecisionIgnore, decision)
+	return 1
 })
 
 type linuxShell struct {
@@ -395,6 +430,7 @@ func (s *linuxShell) createWindow(id string, spec desktop.WindowSpec) (*linuxWin
 	connect(handle, "configure-event", configureCallback, 0)
 	connect(handle, "focus-in-event", focusCallback, 0)
 	connect(handle, "focus-out-event", focusCallback, 1)
+	connect(webview, "decide-policy", decidePolicyCallback, 0)
 	call(gtk.Sym.GtkWidgetShowAll, handle)
 	return w, nil
 }

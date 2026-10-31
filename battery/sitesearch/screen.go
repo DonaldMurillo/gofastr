@@ -72,7 +72,8 @@ func (s *searchScreen) ScreenRobots() string { return "noindex" }
 func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	params := coreapp.QueryFromContext(ctx)
 	q := params.Get("q")
-	if len(q) > maxQueryBytes {
+	tooLong := len(q) > maxQueryBytes
+	if tooLong {
 		q = ""
 	}
 	page, err := strconv.Atoi(params.Get("page"))
@@ -82,6 +83,11 @@ func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	page = min(page, maxPage)
 	cfg := ui.SearchResultsConfig{Action: s.path, Query: q, Page: page, PerPage: perPage, Ctx: ctx}
 	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.SearchLabel.Text(ctx)})}
+	if tooLong {
+		// The query endpoint answers this 414; the page says so rather
+		// than drawing the dropped query as no query at all.
+		body = append(body, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning}, render.Text(reasonQueryTooLong.Text(ctx))))
+	}
 	if strings.TrimSpace(q) != "" {
 		idx, err := s.b.Index(ctx)
 		if err != nil {

@@ -213,7 +213,8 @@ func TestVariantSetAtCap(t *testing.T) {
 	img := FromImage(src, FormatPNG)
 	variants := make([]Variant, MaxVariantsPerSet)
 	for i := range variants {
-		variants[i] = Variant{Width: 16 + (i%50)*2, Format: FormatPNG}
+		// Widths repeat past 50, so each variant names its own file.
+		variants[i] = Variant{Width: 16 + (i%50)*2, Suffix: fmt.Sprint("v", i), Format: FormatPNG}
 	}
 	set := VariantSet{Variants: variants}
 
@@ -238,10 +239,10 @@ func TestVariantQualityExtremes(t *testing.T) {
 	img := FromImage(src, FormatJPEG)
 	naCast := int(math.NaN()) // platform-specific but a valid int
 	set := VariantSet{Variants: []Variant{
-		{Width: 16, Format: FormatJPEG, Quality: -1},
-		{Width: 16, Format: FormatJPEG, Quality: 110},
-		{Width: 16, Format: FormatJPEG, Quality: naCast},
-		{Width: 16, Format: FormatJPEG, Quality: math.MinInt32},
+		{Width: 16, Suffix: "q0", Format: FormatJPEG, Quality: -1},
+		{Width: 16, Suffix: "q1", Format: FormatJPEG, Quality: 110},
+		{Width: 16, Suffix: "q2", Format: FormatJPEG, Quality: naCast},
+		{Width: 16, Suffix: "q3", Format: FormatJPEG, Quality: math.MinInt32},
 	}}
 	res, err := set.Process(img)
 	if err != nil {

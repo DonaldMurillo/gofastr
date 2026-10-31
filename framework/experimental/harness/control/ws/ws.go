@@ -25,7 +25,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -44,11 +43,12 @@ const handshakeMagic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 // Opcode constants from RFC 6455 §5.2.
 const (
-	opcodeText   = 0x1
-	opcodeBinary = 0x2
-	opcodeClose  = 0x8
-	opcodePing   = 0x9
-	opcodePong   = 0xA
+	opcodeContinuation = 0x0
+	opcodeText         = 0x1
+	opcodeBinary       = 0x2
+	opcodeClose        = 0x8
+	opcodePing         = 0x9
+	opcodePong         = 0xA
 )
 
 // Handler is the WebSocket-upgrading HTTP handler. Configure with the
@@ -122,8 +122,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Standard WebSocket upgrade.
-	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+	// The whole RFC 6455 opening handshake, before the seat and the
+	// hijack: a POST, or a request with no Connection token, version 13
+	// or 16-byte key, got a 101 a proxy in front never expected.
+	// originOK ran above, so the shared check admits any Origin here.
+	if err := stream.CheckUpgradeRequest(r, func(*http.Request) bool { return true }); err != nil {
 		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonWebSocketRequired)
 		return
 	}
@@ -205,11 +208,9 @@ func (h *Handler) originOK(r *http.Request) bool {
 }
 
 // completeHandshake writes the 101 Switching Protocols response.
+// ServeHTTP has checked the request with stream.CheckUpgradeRequest.
 func completeHandshake(rw *bufio.ReadWriter, r *http.Request) error {
 	key := r.Header.Get("Sec-WebSocket-Key")
-	if key == "" {
-		return errors.New("missing Sec-WebSocket-Key")
-	}
 	h := sha1.New()
 	h.Write([]byte(key + handshakeMagic))
 	accept := base64.StdEncoding.EncodeToString(h.Sum(nil))
@@ -304,15 +305,39 @@ func (c *Conn) run(parentCtx context.Context) {
 	// client happened to speak (the read loop blocks on input).
 	go c.revocationWatch(ctx)
 
-	// Client→engine read loop.
+	// Client→engine read loop. A message may arrive in fragments (RFC
+	// 6455 §5.4): a TEXT frame without FIN opens it, continuation frames
+	// extend it, the one with FIN completes it, and control frames may
+	// fall between them.
+	var msg []byte
+	assembling := false
 	for {
-		op, payload, err := c.readFrame()
+		fin, op, payload, err := c.readFrame(wsMessageLimit - len(msg))
 		if err != nil {
+			if errors.Is(err, errFrameTooLarge) {
+				c.writeClose()
+			}
+			return
+		}
+		// A control frame is never fragmented (§5.5).
+		if op >= opcodeClose && !fin {
+			c.writeClose()
 			return
 		}
 		switch op {
-		case opcodeText:
-			c.handleText(ctx, payload)
+		case opcodeText, opcodeContinuation:
+			// A continuation opens nothing, and a TEXT frame cannot
+			// start while a message is open.
+			if (op == opcodeText) == assembling {
+				c.writeClose()
+				return
+			}
+			msg = append(msg, payload...)
+			assembling = !fin
+			if fin {
+				c.handleText(ctx, msg)
+				msg = nil
+			}
 		case opcodeClose:
 			c.writeClose()
 			return
@@ -492,6 +517,12 @@ func (c *Conn) Close() error                                    { return c.netCo
 // length a header claims (core/stream's grown-reader contract).
 const wsPayloadChunk = 32 << 10
 
+// wsMessageLimit caps one frame and one assembled message alike.
+const wsMessageLimit = 16 << 20
+
+// errFrameTooLarge is readFrame's refusal of a frame past its limit.
+var errFrameTooLarge = errors.New("ws: frame too large")
+
 // wsFrameReadTimeout bounds one frame's payload read: net/http no
 // longer manages this connection after Hijack, so without a deadline a
 // half-sent frame holds its buffer (and its socket's goroutines) for
@@ -504,40 +535,47 @@ const wsFrameReadTimeout = 60 * time.Second
 // can shrink it.
 var wsFrameWriteTimeout = 10 * time.Second
 
-func (c *Conn) readFrame() (op byte, payload []byte, err error) {
+func (c *Conn) readFrame(room int) (fin bool, op byte, payload []byte, err error) {
 	b0, err := c.reader.ReadByte()
 	if err != nil {
-		return 0, nil, err
+		return false, 0, nil, err
 	}
 	b1, err := c.reader.ReadByte()
 	if err != nil {
-		return 0, nil, err
+		return false, 0, nil, err
 	}
-	fin := b0&0x80 != 0
-	_ = fin // continuation frames are rare; v0.1 expects whole frames.
+	fin = b0&0x80 != 0
 	op = b0 & 0x0F
 	masked := b1&0x80 != 0
 	length := uint64(b1 & 0x7F)
 	if length == 126 {
 		var ext [2]byte
 		if _, err := io.ReadFull(c.reader, ext[:]); err != nil {
-			return 0, nil, err
+			return false, 0, nil, err
 		}
 		length = uint64(binary.BigEndian.Uint16(ext[:]))
 	} else if length == 127 {
 		var ext [8]byte
 		if _, err := io.ReadFull(c.reader, ext[:]); err != nil {
-			return 0, nil, err
+			return false, 0, nil, err
 		}
 		length = binary.BigEndian.Uint64(ext[:])
 	}
-	if length > 16<<20 {
-		return 0, nil, fmt.Errorf("ws: frame too large (%d bytes)", length)
+	// A data frame may carry only what is left of the message it adds
+	// to, so an open message and the frame after it never hold more
+	// than the cap between them. A control frame carries 125 bytes at
+	// most (RFC 6455 §5.5).
+	limit := uint64(room)
+	if op >= opcodeClose {
+		limit = 125
+	}
+	if length > limit {
+		return false, 0, nil, fmt.Errorf("%w (%d bytes)", errFrameTooLarge, length)
 	}
 	var mask [4]byte
 	if masked {
 		if _, err := io.ReadFull(c.reader, mask[:]); err != nil {
-			return 0, nil, err
+			return false, 0, nil, err
 		}
 	}
 	// Payload.
@@ -557,7 +595,7 @@ func (c *Conn) readFrame() (op byte, payload []byte, err error) {
 			n, rerr := io.ReadFull(c.reader, buf[:want])
 			if rerr != nil {
 				_ = c.netConn.SetReadDeadline(time.Time{})
-				return 0, nil, rerr
+				return false, 0, nil, rerr
 			}
 			payloadBuf = append(payloadBuf, buf[:n]...)
 		}
@@ -568,7 +606,7 @@ func (c *Conn) readFrame() (op byte, payload []byte, err error) {
 			payloadBuf[i] ^= mask[i%4]
 		}
 	}
-	return op, payloadBuf, nil
+	return fin, op, payloadBuf, nil
 }
 
 func (c *Conn) writeText(payload []byte) {

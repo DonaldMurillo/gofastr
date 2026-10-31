@@ -207,7 +207,10 @@ An operation's parameter overrides a path-level one with the same `name`
 and `in`, as OpenAPI defines it, so the flag takes the operation's type
 and description;
 `application/json` object bodies get a flag per top-level scalar
-property plus the `--json` raw escape. A body property named exactly
+property plus the `--json` raw escape. An OpenAPI 3.1 type list
+`[T, "null"]` reads as `T` (an unset flag sends nothing, and `--json`
+can send the `null`); a list naming two value types gets no flag.
+A body property named exactly
 like a path parameter gets no flag of its own: it repeats the record the
 path names, as a composite key's columns do in a GoFastr app's PUT body,
 and `--json` can still send it. Binary bodies

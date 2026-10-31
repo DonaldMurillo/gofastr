@@ -274,3 +274,25 @@ func TestE2E_TagInputDollarValueIsLiteral(t *testing.T) {
 		t.Errorf("added sentence expanded the value: %q, want %q", got.Status, v+" added")
 	}
 }
+
+// A removed tag is announced by its value. The module read the chip's
+// text and stripped the first ×, so the tag "3×5" (text "3×5×") was
+// announced as "35× removed" (2026-10-27 bug bash U40).
+func TestE2E_TagInputRemovalSaysTheValue(t *testing.T) {
+	body := TagInput(TagInputProps{Name: "tags", Label: "Tags", Values: []string{"3×5"}}, nil)
+	b := startBehaviorServer(t, string(body))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(CollectionsBehaviorName)) {
+		t.Fatal("the tag field marker never loaded headless-collections")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('[data-hui-tag-input-remove] button').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	const said = `document.querySelector('[data-hui-tag-input-status]').textContent`
+	if !pollTrue(ctx, said+` === '3×5 removed'`) {
+		var got string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(said, &got))
+		t.Fatalf("the removal said %q, want %q", got, "3×5 removed")
+	}
+}

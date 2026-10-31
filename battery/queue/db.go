@@ -241,7 +241,8 @@ func (q *DBQueue) ensureTable() error {
 	if q.dialect == dialectPostgres {
 		tsType = "TIMESTAMPTZ"
 		if err := query.RefuseCaseKeptTables(context.Background(), q.db, q.table,
-			q.table+"_scheduler_schedules", q.table+"_scheduler_occurrences", q.table+"_scheduler_leases"); err != nil {
+			q.schedulerName("_scheduler_schedules"), q.schedulerName("_scheduler_occurrences"),
+			q.schedulerName("_scheduler_leases")); err != nil {
 			return fmt.Errorf("queue: %w", err)
 		}
 	}

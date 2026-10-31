@@ -24,8 +24,8 @@ import (
 // the existing route gate (Enabled → 404, indistinguishable from
 // uninstalled) governs them. The Ready layer lives in the proxy handler
 // (enabled-but-not-Ready → 503 + Retry-After). The supervisor's loops
-// are started in [App.runStartHooks]; the drain drainer is registered
-// via [lifecycle.PrependDrainer] so children drain first during shutdown.
+// are started in [App.runStartHooks]; [App.Shutdown] drains the children
+// after the HTTP drain and before batteries stop.
 //
 // Panics on validation or schema errors (caller-time misconfiguration,
 // the descriptor is operator-supplied at install). Returns the App for

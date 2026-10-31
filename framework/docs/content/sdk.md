@@ -141,6 +141,11 @@ await api.posts.patch(id, { views: 0 });   // JS objects are presence-faithful
 await api.posts.watch((event, data) => console.log(event), { signal });
 ```
 
+A filter value may be an array, which goes as one comma-joined value
+(`filters: { status_in: ["open", "paid"] }` sends `status_in=open,paid`).
+The server splits it on commas, so an element holding a comma throws
+before any request is sent.
+
 `watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable
 envelope) resolve normally with `committed: false`. Every response body
@@ -158,6 +163,17 @@ names are `Client`'s own (`baseURL`, `token`, `do`, `_fetch`,
 `_readBody`, `_sse`) and the `Object` prototype's (`constructor`,
 `toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`,
 `propertyIsEnumerable`, `toLocaleString`). Rename the table.
+
+Each entity also names interfaces in `client.d.ts`: `<Struct>`,
+`<Struct>Input` and `<Struct>Patch`, plus `<Struct>Moves` when it has
+transitions and `<Struct>Endpoints` when it has SDK endpoints, where
+`<Struct>` is the entity name in PascalCase. The generator refuses an
+entity whose name is already declared, by the runtime (`Resource`,
+`Client`, `CursorPage`, `ListResponse`, `ListParams`, `CursorParams`,
+`BatchResult`, `BatchResponse`, `ApiError`) or by another entity
+(`order_input` beside `order`'s `OrderInput`): TypeScript would merge the
+two interfaces into one, or fail on the generic `CursorPage<T>`. Rename
+the entity.
 
 A `Blob` (a `File` is one) as the value of an Image or File field sends
 that create, update or patch as multipart/form-data, every part named

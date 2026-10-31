@@ -134,6 +134,38 @@ func TestQuietAllowRejectsExecFlags(t *testing.T) {
 	}
 }
 
+// git branch is on the quiet list to list branches, but with a name it
+// creates one, -D deletes one, and --edit-description opens an editor.
+// Only the listing flags pass; a pattern needs --list, which makes the
+// positional arguments patterns instead of names.
+func TestQuietGitBranchListsOnly(t *testing.T) {
+	for _, cmd := range []string{
+		"git branch -D main",
+		"git branch new-feature",
+		"git branch --edit-description",
+		"git branch -m old new",
+		"git branch -f main HEAD~3",
+		"git branch --set-upstream-to=origin/x",
+		"git branch -a new-feature",
+	} {
+		if bashQuietAllow(cmd) {
+			t.Errorf("SECURITY: [write] quiet mode auto-allowed %q with no prompt", cmd)
+		}
+	}
+	for _, cmd := range []string{
+		"git branch",
+		"git branch -a",
+		"git branch -vv",
+		"git branch --show-current",
+		"git branch --list feat*",
+		"git branch -r -v",
+	} {
+		if !bashQuietAllow(cmd) {
+			t.Errorf("quiet mode refused the branch listing %q", cmd)
+		}
+	}
+}
+
 // Property: a deny at a narrower scope beats an allow at a wider or
 // staler one. The human's most recent expression of intent — "stop
 // allowing this" via a session deny, or a profile-authored deny —

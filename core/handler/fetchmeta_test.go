@@ -19,6 +19,12 @@ func TestIsCrossSiteRequest(t *testing.T) {
 		{"same-site sibling subdomain falls through to Origin", "same-site", "https://evil.app.example", true},
 		{"same-site sibling port falls through to Origin", "same-site", "http://localhost:3000", true},
 		{"same-site with matching Origin", "same-site", "https://app.example", false},
+		// SECURITY (2026-10-27 P37): a sibling page under
+		// Referrer-Policy: no-referrer sends Origin: null; a same-origin
+		// form says same-origin, so same-site + null is another origin.
+		{"same-site with null Origin", "same-site", "null", true},
+		{"same-site with no Origin", "same-site", "", true},
+		{"same-site with unparseable Origin", "same-site", "://", true},
 		{"unknown value falls through", "weird", "https://evil.example", true},
 		{"no metadata, foreign Origin", "", "https://evil.example", true},
 		{"no metadata, matching Origin case-folded", "", "https://APP.example", false},

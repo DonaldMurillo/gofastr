@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // The bridge class: one NSObject subclass whose IMPs are Go callbacks
@@ -42,6 +43,11 @@ func ensureBridgeClass() objc.ID {
 				Sel:   "webView:didFailProvisionalNavigation:withError:",
 				Types: "v@:@@@",
 				Fn:    ffi.NewCallback(bridgeFailNavigation),
+			},
+			{
+				Sel:   "webView:decidePolicyForNavigationAction:decisionHandler:",
+				Types: "v@:@@@?",
+				Fn:    ffi.NewCallback(bridgeDecideNavigation),
 			},
 			{
 				Sel:   "windowShouldClose:",
@@ -259,6 +265,57 @@ func bridgeFailNavigation(a *ffi.Args) uintptr {
 		}
 	}
 	return 0
+}
+
+// WKNavigationActionPolicy values.
+const (
+	navigationCancel = 0
+	navigationAllow  = 1
+)
+
+// bridgeDecideNavigation is the navigation delegate's policy call. A
+// main-frame navigation the battery refuses (WindowConfig.AllowNavigation)
+// is cancelled, so a window stays on the app's own pages (2026-10-27 L15).
+// A subframe navigation, or one with no target frame (a new-window
+// request, which this web view never opens), goes through. A panic in
+// the decision cancels: the handler must be called exactly once.
+func bridgeDecideNavigation(a *ffi.Args) uintptr {
+	action, handler := objc.ID(a.Int[3]), a.Int[4]
+	policy := uintptr(navigationCancel)
+	defer func() {
+		if r := recover(); r != nil {
+			policy = navigationCancel
+			if s := activeShell.Load(); s != nil {
+				s.logger.Error("desktop: navigation policy panicked", "panic", textsafe.Recovered(r))
+			}
+		}
+		objc.CallBlock(handler, policy)
+	}()
+	if decideNavigation(activeShell.Load(), action) {
+		policy = navigationAllow
+	}
+	return 0
+}
+
+func decideNavigation(s *darwinShell, action objc.ID) bool {
+	if s == nil || s.allowNavigation == nil || action == 0 {
+		return true
+	}
+	frame := objc.ID(objc.Send(action, objc.Sel("targetFrame")))
+	if frame == 0 || objc.Send(frame, objc.Sel("isMainFrame"))&0xff == 0 {
+		return true
+	}
+	req := objc.ID(objc.Send(action, objc.Sel("request")))
+	u := objc.ID(objc.Send(req, objc.Sel("URL")))
+	raw := ""
+	if u != 0 {
+		raw = objc.GoString(objc.ID(objc.Send(u, objc.Sel("absoluteString"))))
+	}
+	if s.allowNavigation(raw) {
+		return true
+	}
+	s.logger.Warn("desktop: refused a navigation off the app's origin", "host", desktop.NavigationHost(raw))
+	return false
 }
 
 // bridgeWindowShouldClose routes the sender NSWindow: the main window

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -120,5 +121,35 @@ func TestLLMMDIndexShowsGrantedEntity(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), "orders") {
 		t.Error("index hid orders from a caller who holds orders:read")
+	}
+}
+
+// A scoped token holding llm.md:read and customers:read passed the index
+// route and got every entity with no read permission listed, while /api
+// refused their reads (F9's twin). The index keeps only what the token's
+// scopes read.
+func TestLLMMDIndexFollowsTokenScopes(t *testing.T) {
+	customers := entity.Define("customers", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "name", Type: schema.String},
+	}, Exposure: &entity.ExposureConfig{}})
+	invoices := entity.Define("invoices", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "total", Type: schema.Int},
+	}, Exposure: &entity.ExposureConfig{}})
+	reg := stubRegistry{byName: map[string]*entity.Entity{
+		"customers": customers,
+		"invoices":  invoices,
+	}}
+
+	rec := httptest.NewRecorder()
+	req := reqWithRolesOnly(httptest.NewRequest("GET", "/api/llm.md", nil), "u1")
+	req = req.WithContext(access.WithHeldScopes(req.Context(), []string{"llm.md:read", "customers:read"}))
+	RegistryLLMMDHandler(reg, "Test API", nil, "").ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "customers") {
+		t.Errorf("index hid customers from a customers:read token: %s", body)
+	}
+	if strings.Contains(body, "invoices") {
+		t.Error("index listed invoices to a token without invoices:read")
 	}
 }

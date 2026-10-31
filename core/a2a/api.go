@@ -77,7 +77,8 @@ type TaskContext interface {
 // Router picks the skill for a message. The default reads
 // msg.Metadata["skill"], then the first data part carrying a "skill"
 // key, then the only skill when exactly one is registered, and otherwise
-// rejects the task with a message naming the available skill ids.
+// rejects the task, without listing the registered skill ids (see
+// DefaultRouter).
 type Router func(ctx context.Context, msg *Message, skills []Skill) (skillID string, err error)
 
 // TaskRecord is a task as the Store holds it: the wire Task plus the
@@ -86,6 +87,11 @@ type TaskRecord struct {
 	Task    Task
 	Owner   string
 	SkillID string
+	// Scope is the scope set of the credential that created the task, in
+	// the canonical form ScopeKey writes: "" for an unscoped caller (a
+	// session, server code), a JSON array otherwise. A scoped caller sees
+	// only the tasks whose Scope equals its own; see Config.Scopes.
+	Scope string
 	// Version is bumped on every UpdateTask; an update whose Version does
 	// not match the stored row fails with ErrConflict.
 	Version   int64
@@ -106,7 +112,11 @@ type ListQuery struct {
 	Status    TaskState
 	// After filters to tasks whose status timestamp is after this instant
 	// (zero: no filter).
-	After  time.Time
+	After time.Time
+	// Scoped filters to tasks whose Scope equals Scope: the tasks a
+	// scoped caller may see. False lists every task of the owner.
+	Scoped bool
+	Scope  string
 	Limit  int
 	Offset int
 }
@@ -131,6 +141,16 @@ type Store interface {
 	GetPushConfig(ctx context.Context, owner, taskID, id string) (*PushConfigRecord, error)
 	ListPushConfigs(ctx context.Context, owner, taskID string) ([]*PushConfigRecord, error)
 	DeletePushConfig(ctx context.Context, owner, taskID, id string) error
+}
+
+// ScopeFilter is the optional Store capability that says ListTasks
+// applies ListQuery.Scoped and Scope in its query, so its page and total
+// count only a scoped caller's tasks. The server lists a scoped caller
+// through a Store without it by walking every task of the owner and
+// counting the caller's alone, which costs one read of the owner's tasks
+// per list. Both built-in stores implement it.
+type ScopeFilter interface {
+	FiltersByScope()
 }
 
 // RetentionTrimmer is the optional Store capability that bounds the

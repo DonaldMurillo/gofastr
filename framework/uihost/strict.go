@@ -263,6 +263,12 @@ func (ds *UIHost) enforceStrict() {
 func (ds *UIHost) ValidateBoot() {
 	// Strict or not: the toast region is a boot guarantee, not a check.
 	ds.ensureToastStack()
+	// A screen a plugin's Init registered after Mount has had no compile
+	// pass, so its data-action clicks answered 404. Scan again here, where
+	// the screen table is complete: screens compiled at Mount keep their
+	// registry, and the id-collision and embed refusals see the late ones.
+	ds.AutoCompileActions()
+	ds.enforceNoServerActionsOnEmbeds()
 	if !ds.strict || ds.strictConfig.level(strictCheckInternalLinks) == StrictOff {
 		return
 	}

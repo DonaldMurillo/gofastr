@@ -33,7 +33,8 @@ import (
 // snapshot() copies leaseFailing and the proxy/tools gates read the real flag.
 type redLeaseFlakyStore struct {
 	*SQLProcessModuleStore
-	broken atomic.Bool // set: GetDesired fails with a DB-shaped error
+	broken atomic.Bool  // set: GetDesired fails with a DB-shaped error
+	fails  atomic.Int64 // GetDesired calls that failed
 }
 
 // GetDesired delegates to the real SQLite store unless broken is set. The
@@ -42,6 +43,7 @@ type redLeaseFlakyStore struct {
 // leaves every other method (heartbeats, Enable, ...) healthy.
 func (s *redLeaseFlakyStore) GetDesired(ctx context.Context, module string) (DesiredState, error) {
 	if s.broken.Load() {
+		s.fails.Add(1)
 		return DesiredState{}, errors.New("sql: database is closed (simulated GetDesired outage)")
 	}
 	return s.SQLProcessModuleStore.GetDesired(ctx, module)

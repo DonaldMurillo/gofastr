@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -56,7 +57,17 @@ const embedThemeWait = 2 * time.Second
 // rather than minting anything, so a missing app secret is a loud failure
 // instead of a silently unverifiable token.
 func WithEmbed(h *fembed.Host) Option {
-	return func(ds *UIHost) { ds.embedHost = h }
+	return func(ds *UIHost) {
+		ds.embedHost = h
+		if h != nil {
+			// The embed middleware lets a grant reach a widget's style,
+			// state and chrome only for a widget its surface's page offers.
+			h.SetWidgetReach(func(name, surfacePath string) bool {
+				def, ok := widget.Lookup(name)
+				return ok && def.IsAvailableOn(surfacePath)
+			})
+		}
+	}
 }
 
 // EmbedHost returns the configured embed host, or nil.

@@ -26,4 +26,10 @@ var (
 	// pixel guard ever runs (DecodeWithConfig buffers through
 	// io.LimitReader).
 	ErrSourceTooLarge = errors.New("image: source exceeds MaxSourceBytes")
+
+	// ErrTargetTooLarge reports a resize target whose area exceeds the
+	// image's MaxPixels: Resize panics with it, and VariantSet.Process,
+	// VariantSet.ProcessTo and Placeholder return it. NewGradient returns
+	// it past DefaultMaxPixels.
+	ErrTargetTooLarge = errors.New("image: resize target exceeds MaxPixels")
 )

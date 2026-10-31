@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // ValidateMIME reads the first 512 bytes from file to detect MIME type,
@@ -75,20 +76,22 @@ func ValidateSize(size int64, max int64) error {
 }
 
 // ValidateExt checks that the file extension is in the allowed list.
-// Extensions are compared case-insensitively without the leading dot.
+// Extensions are compared ASCII case-insensitively without the leading
+// dot: a Unicode fold would let a look-alike (U+0130 lowers to i) pass
+// for an allowed extension.
 // If allowed is empty, all extensions are permitted.
 func ValidateExt(filename string, allowed []string) error {
 	if len(allowed) == 0 {
 		return nil
 	}
 
-	fileExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
+	fileExt := asciicase.Lower(strings.TrimPrefix(filepath.Ext(filename), "."))
 	if fileExt == "" {
 		return i18n.NewError(reasonNoExtension)
 	}
 
 	for _, a := range allowed {
-		if strings.ToLower(a) == fileExt {
+		if asciicase.Lower(a) == fileExt {
 			return nil
 		}
 	}

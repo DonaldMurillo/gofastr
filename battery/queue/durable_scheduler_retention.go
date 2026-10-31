@@ -161,7 +161,7 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 // indexOn renders "<index> ON <table>" for the scheduler index named by
 // the queue table and suffix, on table (already quoted).
 func (q *DBQueue) indexOn(suffix, table string) string {
-	name, err := query.SafeIdent(q.table + "_" + suffix)
+	name, err := query.SafeIdent(q.schedulerName("_" + suffix))
 	if err != nil {
 		panic(err)
 	}

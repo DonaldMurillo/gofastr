@@ -35,7 +35,8 @@ There are no optional interfaces: no `HasRoutes`, `HasMiddleware`,
 `HasHooks`, `HasTools`. The router resolves its middleware chain
 late-bound per request, so middleware added from `Init` wraps routes
 registered earlier (e.g. by `Mount`). There is no ordering footgun to
-dodge.
+dodge. A screen registered from `Init` gets its server actions
+compiled at `Start`, after every `Init` has run.
 
 Directly registered MCP tools do NOT pass through route middleware;
 the handler runs as-is for any caller who can reach `/mcp`. To

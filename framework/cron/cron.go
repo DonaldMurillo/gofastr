@@ -436,9 +436,19 @@ type cronExpr struct {
 	dow    uint64 // 0-6 (Sun=0)
 	domAny bool   // day-of-month field begins with wildcard syntax
 	dowAny bool   // day-of-week field begins with wildcard syntax
+
+	minuteAny bool // minute field begins with wildcard syntax
+	hourAny   bool // hour field begins with wildcard syntax
 }
 
 func (e cronExpr) matches(t time.Time) bool {
+	return e.minute&(1<<uint(t.Minute())) != 0 &&
+		e.hour&(1<<uint(t.Hour())) != 0 &&
+		e.matchesDay(t)
+}
+
+// matchesDay reports whether t's date passes the month and day fields.
+func (e cronExpr) matchesDay(t time.Time) bool {
 	domMatch := e.dom&(1<<uint(t.Day())) != 0
 	dowMatch := e.dow&(1<<uint(t.Weekday())) != 0
 	dayMatch := domMatch && dowMatch
@@ -446,10 +456,31 @@ func (e cronExpr) matches(t time.Time) bool {
 		// Standard cron runs when either restricted day field matches.
 		dayMatch = domMatch || dowMatch
 	}
-	return e.minute&(1<<uint(t.Minute())) != 0 &&
-		e.hour&(1<<uint(t.Hour())) != 0 &&
-		dayMatch &&
-		e.month&(1<<uint(t.Month())) != 0
+	return dayMatch && e.month&(1<<uint(t.Month())) != 0
+}
+
+// satisfiable reports whether some date passes the month and day fields.
+// With both day fields restricted either one matching is enough, and every
+// month holds every weekday. Otherwise the date must exist (Feb 29 does,
+// Feb 30 does not), and every date meets every weekday within one 400-year
+// Gregorian cycle.
+func (e cronExpr) satisfiable() bool {
+	if e.month == 0 || e.dow == 0 {
+		return false
+	}
+	if !e.domAny && !e.dowAny {
+		return true
+	}
+	for m := 1; m <= 12; m++ {
+		if e.month&(1<<uint(m)) == 0 {
+			continue
+		}
+		last := time.Date(2024, time.Month(m)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		if e.dom&(uint64(1)<<uint(last+1)-1) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseCron accepts the standard 5-field syntax plus the shortcuts
@@ -491,6 +522,8 @@ func ParseCron(spec string) (cronExpr, error) {
 	if e.dow, err = parseField(fields[4], 0, 6); err != nil {
 		return cronExpr{}, fmt.Errorf("day-of-week: %w", err)
 	}
+	e.minuteAny = strings.HasPrefix(fields[0], "*")
+	e.hourAny = strings.HasPrefix(fields[1], "*")
 	e.domAny = strings.HasPrefix(fields[2], "*")
 	e.dowAny = strings.HasPrefix(fields[4], "*")
 	return e, nil

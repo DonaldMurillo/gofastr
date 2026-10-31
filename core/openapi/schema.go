@@ -131,6 +131,23 @@ func FieldToSchema(field schema.Field) map[string]any {
 	return prop
 }
 
+// Nullable widens prop to accept null as well: a type T becomes
+// [T, "null"] (OpenAPI 3.1), and an enum gains null, which it must
+// list for a null to pass. A prop with no type, such as a JSON
+// field's, accepts null already.
+func Nullable(prop map[string]any) {
+	if t, ok := prop["type"].(string); ok {
+		prop["type"] = []any{t, "null"}
+	}
+	if values, ok := prop["enum"].([]string); ok {
+		enum := make([]any, 0, len(values)+1)
+		for _, v := range values {
+			enum = append(enum, v)
+		}
+		prop["enum"] = append(enum, nil)
+	}
+}
+
 // FieldsToSchema converts a slice of Fields into a JSON Schema object
 // suitable for use as an OpenAPI schema.
 func FieldsToSchema(fields []schema.Field) map[string]any {

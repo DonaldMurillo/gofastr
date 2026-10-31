@@ -124,6 +124,7 @@ func TestMenuNavigateDispatchEmitsExactEval(t *testing.T) {
 	win := &fakeWindow{}
 	b.windowMu.Lock()
 	b.window = win
+	b.addr = "127.0.0.1:8123"
 	b.windowMu.Unlock()
 	b.menu = &Menu{Items: []MenuItem{{ID: "m1", Title: testPhrase("Go"), Navigate: "/x"}}}
 	b.dispatchMenu("m1")
@@ -131,7 +132,7 @@ func TestMenuNavigateDispatchEmitsExactEval(t *testing.T) {
 	if len(evals) != 1 {
 		t.Fatalf("evals = %v", evals)
 	}
-	if evals[0] != `window.__gofastr.navigate("/x")` {
+	if evals[0] != `if (location.origin === "http://127.0.0.1:8123") { window.__gofastr.navigate("/x") }` {
 		t.Fatalf("eval = %q", evals[0])
 	}
 }

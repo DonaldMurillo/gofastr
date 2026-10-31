@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -143,7 +144,9 @@ func (it MenuItem) displayID() string {
 
 // validNavigatePath enforces the same-origin absolute path grammar
 // (deviation 4): starts with "/", no scheme, no protocol-relative //,
-// no control characters, no "." or ".." segments.
+// no control characters, no "." or ".." segments. The path part, up
+// to the query or fragment, is also read the way a URL parser reads it:
+// %2e is a dot, so "/a/%2e%2e?x" holds a ".." segment.
 func validNavigatePath(p string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false
@@ -153,6 +156,15 @@ func validNavigatePath(p string) bool {
 	}
 	for _, seg := range strings.Split(p, "/") {
 		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	path := p
+	if i := strings.IndexAny(path, "?#"); i >= 0 {
+		path = path[:i]
+	}
+	for _, seg := range strings.Split(path, "/") {
+		if dec, err := url.PathUnescape(seg); err == nil && (dec == "." || dec == "..") {
 			return false
 		}
 	}
@@ -228,7 +240,7 @@ func (b *Battery) dispatchMenu(id string) {
 			b.logger.Warn("desktop: menu navigate before the window opened", "id", id)
 			return
 		}
-		if err := w.Eval(js); err != nil {
+		if err := w.Eval(b.inAppJS(js)); err != nil {
 			b.logger.Error("desktop: menu navigate eval failed", "id", id, "error", err)
 		}
 	case item.Handler != nil:

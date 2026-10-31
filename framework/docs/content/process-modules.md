@@ -20,7 +20,9 @@ descriptor**: a Go value (`ProcessModuleDescriptor`) whose fields are
 authoritative at runtime. The running child only ever *cross-checks*
 digests at handshake; it never supplies values. A mismatch on digest,
 identity, or an extra grant is terminal (the module is quarantined to
-`Failed`, never silently restarted).
+`Failed`, never silently restarted). A generation bump is the way back:
+`BumpGeneration`, a grant revoke or an artifact change re-arms a
+`Failed` module, and the new child goes through the same digest checks.
 
 ```go
 app.RegisterProcessModule(framework.ProcessModuleDescriptor{
@@ -87,8 +89,11 @@ reports in `RegisterResult.Outcome`):
 - **Same artifact and grants** (order and repeats ignored): nothing is
   written, and the module keeps its enabled state and generation.
 - **New artifact, same grants**: the digest is updated and the
-  generation bumped, and the module stays enabled, so replicas restart
-  their children on the new build.
+  generation bumped, and the module stays enabled. A replica restarts
+  its child only once its own descriptor names the new digest: during a
+  rolling deploy, a replica still on the old build drains its child and
+  holds the module in `InstalledDisabled` (its routes answer 503) until
+  its deploy registers the new artifact.
 - **Any grant change**, wider or narrower: the grants and digest are
   updated, the generation bumped, and the module **disabled** until an
   operator enables it again, with a Warn naming the previous and new
@@ -119,6 +124,21 @@ with `ErrModuleInstalled` and leaves the row alone.
   token. The host mints it for an inbound call, the child echoes it on
   reverse calls, and the host re-attaches that request's caller context.
   An exfiltrated handle is meaningless on another replica.
+- **Reverse calls are bounded both ways.** The host serves at most
+  `Limits.Inflight` of a child's reverse calls at once and answers the
+  overflow with an inflight-cap error. It also holds at most that many
+  answers waiting behind a blocked write: a child that keeps sending
+  calls but stops reading stdin faults its peer with
+  `moduleproto.ErrStalled`, after which the peer serves nothing more.
+  An answer stops counting when its write starts, so a child at its cap
+  that reads every answer never trips it.
+- **A protocol fault restarts the module.** When the host peer records a
+  terminal fault (a malformed, over-cap or unsolicited frame, or a
+  stalled transport), the supervisor kills the child and counts the exit
+  as a crash: the module goes through `Crashed` → `Backoff` → `Starting`
+  like any other crash, and `CircuitThreshold` faults inside
+  `CircuitWindow` open its restart circuit. A module must read stdin for
+  as long as it sends requests.
 
 ## The two-layer 404 / 503 gate
 
@@ -130,6 +150,26 @@ retryable-unavailable error. This split is load-bearing: the router gate
 can only 404, so the Ready layer lives in the proxy handler and the tool
 handler. Upgrades exploit it: a module stays Enabled (no 404) but not-Ready
 (`DrainingUpgrade`) while the old generation drains and the new one starts.
+A disable or upgrade drain runs the same steps as the shutdown drain below,
+under the same `DrainPerModule` budget, and closes the module's peer once
+the `module.drain` call is done, which cancels its in-flight reverse
+calls.
+
+## Shutdown
+
+`App.Shutdown` drains process modules after the HTTP server has drained
+and before batteries stop, so a child's in-flight reverse calls still reach
+the queue and the DB. Every child drains at once: it gets `module.drain`,
+then EOF on stdin, and is killed when its budget runs out
+(`SupervisorConfig.DrainPerModule`, 30 s by default, capped by the
+Shutdown context's deadline). The budget counts from `module.drain`, and
+the drain call waits at most half of it (2 s at most) for an answer. A
+child that stopped reading stdin, so the drain frame cannot be written,
+is still killed on time. The drain closes the supervisor first, so no
+module restarts during or after shutdown, and a child still starting when
+it closes is killed instead of installed. `ProcessModuleSupervisor.Close`
+stops the loops and kills the children without the drain; after a drain it
+does nothing.
 
 ## Sandbox trust tiers (the honest limit)
 
@@ -201,6 +241,17 @@ then provisions the schema+role, runs `Up` under the advisory lock
 authenticated as the role, and stamps `MigrationsAppliedAt` so the
 supervisor lets the module reach Ready.
 
+The stamp belongs to one artifact. When a replica boots a module whose
+artifact digest differs from the stored one, `InstallOrUpdate` clears
+`MigrationsAppliedAt` with the generation bump, so the new version waits
+for its own migrations: a supervisor whose descriptor declares a
+migration group drains its running child and holds the module in
+`InstalledDisabled` until the coordinator runs again with the new
+descriptor. A grants-only change keeps the stamp. `Apply` stamps only
+while the row still names the descriptor's `ArtifactSHA256`, so a
+coordinator run for the old artifact that finishes after the upgrade
+returns an error without stamping (its DDL has already run).
+
 ```go
 coord, _ := app.NewModuleMigrationCoordinator(
     framework.WithCoordinatorAdminDSN(postgresURL),
@@ -209,6 +260,16 @@ coord.Apply(ctx, desc, []framework.ApprovedMigration{
     {Version: 1, Name: "init", Up: "CREATE TABLE invoices (id int)", SHA256: "…"},
 })
 ```
+
+The coordinator runs `Up` over a DSN built from the admin DSN with the
+module role's login in place of the admin's. Of the admin DSN's query
+it keeps only the keys that say where the server is and how to reach
+it: `host`, `hostaddr`, `port`, `dbname`, the `ssl*` settings,
+`connect_timeout`, `target_session_attrs`, `load_balance_hosts`,
+`application_name`, `fallback_application_name`, `krbsrvname` and
+`krbspn`. Everything else is dropped: a `user`, `password`, `passfile`
+or `service` would name a login, and `options`, `search_path` or any
+other startup setting would override what provisioning set on the role.
 
 **SQLite is not a third-party DDL boundary**: it has no roles/`GRANT`/
 schemas. The coordinator rejects an **untrusted** module's migrations on
@@ -292,7 +353,11 @@ The shape is fixed:
    routes), `module.drain`, and optionally `module.tool.list` /
    `module.tool.call` (`module.cancel` is built into the Peer; do not
    re-register it).
-3. Call `peer.Start()`, then block on `<-peer.Done()` (clean EOF on stdin).
+3. Call `peer.Start()`, then block until `peer.Done()` (clean EOF on
+   stdin) or `peer.FatalDone()`, and exit non-zero on a fault. A faulted
+   peer answers nothing more while its read loop keeps draining stdin, so a
+   child that stays up leaves every host call to wait out its deadline;
+   once it exits, the supervisor restarts the module.
 
 ### Cancelling an in-flight call
 
@@ -324,6 +389,12 @@ when no id was allocated (the peer is closed, the method is empty, or the
 in-flight cap is reached). Plain `Call` is unchanged and still correct
 wherever the caller has nothing to cancel.
 
+Either call returns once its context ends, even while its request frame
+is still waiting to be written to a peer that stopped reading. The write
+carries on in the background and holds the call's in-flight slot until
+it returns, so stuck writes never exceed the cap. A call whose context
+had already ended writes nothing.
+
 ```go
 codec, _ := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
 peer := moduleproto.NewPeer(codec, moduleproto.RoleChild)
@@ -342,7 +413,14 @@ peer.Handle(moduleproto.MethodHandshake, func(_ context.Context, p json.RawMessa
 })
 // …module.ready / module.health / module.http (by RouteID) / module.drain…
 peer.Start()
-<-peer.Done()
+select {
+case <-peer.Done():
+case <-peer.FatalDone():
+}
+if err := peer.FatalError(); err != nil {
+    fmt.Fprintln(os.Stderr, "peer fault:", err)
+    os.Exit(1)
+}
 ```
 
 Three contracts the child MUST honor (the host enforces them; violation is
@@ -392,7 +470,9 @@ bookkeeping.
   schema. Claiming otherwise is the common, wrong take on fixed `search_path`.
 - **Forgetting to run the migration coordinator.** A module with a
   declared migration group never reaches Ready until the coordinator stamps
-  `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s.
+  `MigrationsAppliedAt`; it looks "stuck disabled" with proxy 503s. The
+  same holds after every artifact upgrade: the new artifact clears the
+  stamp, so run the coordinator as part of the deploy.
 - **Expecting an untrusted module to run on stock macOS / Windows / some
   Linux.** Sandbox backends need a probe-passing conforming wrapper; until
   the operator provisions one, fail-closed refusal is correct, not a bug.

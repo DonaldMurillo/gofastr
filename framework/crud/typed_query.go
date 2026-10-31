@@ -458,9 +458,11 @@ func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
 // owner, soft-delete, and Where/WhereNested predicates applied (mirroring
 // write-side scoping, without read scopes).
 //
-// Fields are snake-cased map[string]any (the framework's wire shape). For
-// type-safe updates, marshal a partial struct with framework.MarshalEntity
-// and pass the resulting map.
+// Fields name columns as CreateOne and UpdateOne read them: the column, its
+// wire key, or the key MarshalEntity derives. For type-safe updates,
+// marshal a partial struct with framework.MarshalEntity and pass the
+// resulting map; the map itself is not modified. A body that sets no
+// writable field returns an error rather than restamping updated_at alone.
 func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (int, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
 		return 0, err
@@ -468,8 +470,13 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	if len(fields) == 0 {
 		return 0, fmt.Errorf("UpdateAll: no fields to set")
 	}
-	// Normalize incoming keys (e.g. camelCase wire shapes) to canonical DB column names.
-	body := q.handler.unconvertMapKeys(fields)
+	// Name columns the way CreateOne and UpdateOne do: a wire key, or the
+	// snake key MarshalEntity derives (line2 for line_2). bodyColumns
+	// renames in place, so it works on a copy of the caller's map.
+	body := maps.Clone(fields)
+	if err := q.handler.bodyColumns(body); err != nil {
+		return 0, err
+	}
 	// The state field and stamps move per record (states.go).
 	if err := q.handler.checkStateBulk(body); err != nil {
 		return 0, err
@@ -520,14 +527,17 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	// Restamp updated_at on the bulk update, mirroring the single-row
 	// doUpdate path. A caller-supplied updated_at (a backfill) is written
 	// as given instead: the field loop above skips every AutoGenerate
-	// column, so it is set here or not at all.
+	// column, so it is set here or not at all. The restamp alone is not a
+	// write, as in doUpdate: a body that sets nothing else answers
+	// errNoFieldsToUpdate instead of a row count for a timestamp-only
+	// update.
 	if col := autoUpdatedAtColumn(q.handler.Entity); col != "" {
 		if val, supplied := body[col]; supplied {
 			ub.Set(col, q.handler.bindJSONValue(col, val))
+			anySet = true
 		} else {
 			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 		}
-		anySet = true
 	}
 	if !anySet {
 		return 0, errNoFieldsToUpdate
@@ -625,13 +635,8 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)
-	sqlStr, args := db.Build()
-	res, err := q.exec(ctx).ExecContext(ctx, sqlStr, args...)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	// The removed rows' stored objects go with them (media_cleanup.go).
+	return q.handler.deleteReturningObjects(ctx, db)
 }
 
 // IsNotFound reports whether err corresponds to a not-found result on a

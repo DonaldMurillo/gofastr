@@ -5,6 +5,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"net/textproto"
 	"strings"
@@ -15,8 +16,9 @@ import (
 // child parts (multipart/*) or its body.
 type mimeNode struct {
 	mediaType string
+	encoding  string // Content-Transfer-Encoding of a leaf
 	parts     []mimeNode
-	body      string
+	body      string // a leaf's body, decoded
 }
 
 // shape renders the tree as "multipart/mixed[multipart/alternative[text/plain,text/html],application/pdf]".
@@ -61,7 +63,14 @@ func parseEntity(t *testing.T, h textproto.MIMEHeader, body io.Reader) mimeNode 
 	}
 	n := mimeNode{mediaType: mt}
 	if !strings.HasPrefix(mt, "multipart/") {
-		b, _ := io.ReadAll(body)
+		n.encoding = h.Get("Content-Transfer-Encoding")
+		if n.encoding == "quoted-printable" {
+			body = quotedprintable.NewReader(body)
+		}
+		b, err := io.ReadAll(body)
+		if err != nil {
+			t.Fatalf("read %s body: %v", mt, err)
+		}
 		n.body = string(b)
 		return n
 	}

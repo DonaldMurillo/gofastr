@@ -104,7 +104,7 @@ are in the display block.
 | Setting | What it does |
 | --- | --- |
 | `Field` | The Enum field holding the state. |
-| `Initial` | The values a create may set. Empty means the field's `Default` alone; a field with neither is refused at boot. |
+| `Initial` | The values a create may set. Empty means the field's `Default` alone; a field with neither is refused at boot. A field with no `Default` takes the first `Initial` value as its `Default`. |
 | `Transitions` | The moves, in the order screens draw them. |
 | `Advisory` | Releases the state field and the stamps to direct writes; the moves stay as calls and buttons. |
 
@@ -137,8 +137,10 @@ config holds, so a typo fails the app at boot naming the offender:
 Unless `Advisory` is set, the state field and every stamp are guarded
 columns: a write changes them only through a move.
 
-- **Create.** The state field may be absent (the `Default`) or hold an
-  `Initial` value; a stamp may be absent or null. Anything else is a 422
+- **Create.** The state field may be absent (the `Default`, or the first
+  `Initial` value when the field declares none, whether it is Required,
+  Hidden or ReadOnly) or hold an `Initial` value; a stamp may be absent or
+  null. Anything else is a 422
   `StateError`: the state field names the values a new record starts at,
   a stamp says it is set by a move, not on create.
 - **Update.** A guarded column sent with its stored value passes: writing

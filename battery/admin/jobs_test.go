@@ -279,7 +279,7 @@ func TestAuthPrincipalBuildsCurrentContext(t *testing.T) {
 		"u1": {ID: "u1", Email: "u1@example.com", Roles: []string{"admin"}},
 	}}
 	am := auth.New(auth.AuthConfig{JWTSecret: "test-secret", UserStore: store})
-	p := AuthPrincipal(am)
+	p := AuthPrincipal(am, AnyTenant)
 
 	store.setRoles("u1", "editor")
 	ctx, err := p(context.Background(), "u1", "t9")
@@ -304,8 +304,54 @@ func TestAuthPrincipalBuildsCurrentContext(t *testing.T) {
 	if _, err := p(context.Background(), "u1", ""); err == nil {
 		t.Fatal("a deleted user rebuilt a context; the run must stop")
 	}
-	if _, err := AuthPrincipal(nil)(context.Background(), "u1", ""); err == nil {
+	if _, err := AuthPrincipal(nil, AnyTenant)(context.Background(), "u1", ""); err == nil {
 		t.Fatal("a nil manager rebuilt a context")
+	}
+}
+
+// A tenant run checks the creator still belongs to the tenant before
+// every chunk: a removed member, a lookup error and a principal with no
+// membership check all stop it. Roles were re-read per chunk while the
+// tenant was stamped as given, so a bulk job kept writing tenant A's
+// rows after its creator left A.
+func TestAuthPrincipalChecksTenantMember(t *testing.T) {
+	store := &stubUserStore{users: map[string]*auth.BasicUser{
+		"u1": {ID: "u1", Email: "u1@example.com", Roles: []string{"admin"}},
+	}}
+	am := auth.New(auth.AuthConfig{JWTSecret: "test-secret", UserStore: store})
+	var members sync.Map
+	members.Store("u1/t9", true)
+	p := AuthPrincipal(am, func(_ context.Context, userID, tenantID string) (bool, error) {
+		if tenantID == "broken" {
+			// true beside the error: the error alone must stop the run.
+			return true, errors.New("membership store down")
+		}
+		_, ok := members.Load(userID + "/" + tenantID)
+		return ok, nil
+	})
+
+	ctx, err := p(context.Background(), "u1", "t9")
+	if err != nil {
+		t.Fatalf("a member was refused: %v", err)
+	}
+	if tenant.GetTenantID(ctx) != "t9" {
+		t.Fatalf("ctx tenant = %q", tenant.GetTenantID(ctx))
+	}
+	members.Delete("u1/t9")
+	if _, err := p(context.Background(), "u1", "t9"); err == nil {
+		t.Fatal("SECURITY: [tenant] a creator removed from the tenant kept running its bulk job")
+	}
+	if _, err := p(context.Background(), "u1", "broken"); err == nil {
+		t.Fatal("a failed membership lookup admitted the run")
+	}
+	if _, err := p(context.Background(), "u1", ""); err != nil {
+		t.Fatalf("a run with no tenant asked for membership: %v", err)
+	}
+	if _, err := AuthPrincipal(am, nil)(context.Background(), "u1", "t9"); err == nil {
+		t.Fatal("SECURITY: [tenant] a principal with no membership check stamped tenant t9")
+	}
+	if _, err := AuthPrincipal(am, nil)(context.Background(), "u1", ""); err != nil {
+		t.Fatalf("a run with no tenant needs no membership check: %v", err)
 	}
 }
 

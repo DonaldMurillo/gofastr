@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -111,14 +112,18 @@ type ScheduleBuilder struct {
 	hasCron     bool
 	jobType     string
 	payload     json.RawMessage
+	payloadErr  error
 	lane        string
 	priority    int
 	maxAttempts int
 }
 
-// Job sets the job type and payload for the scheduled job.
+// Job sets the job type and payload for the scheduled job. A payload
+// json.Marshal refuses is returned by Register or RegisterAt, so the
+// builder remains fluent.
 func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 	b.jobType = jobType
+	b.payloadErr = nil
 	if payload != nil {
 		switch v := payload.(type) {
 		case json.RawMessage:
@@ -128,7 +133,12 @@ func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 		case string:
 			b.payload = json.RawMessage(v)
 		default:
-			data, _ := json.Marshal(payload)
+			data, err := json.Marshal(payload)
+			if err != nil {
+				b.payload = nil
+				b.payloadErr = fmt.Errorf("queue: marshal schedule payload: %w", err)
+				return b
+			}
 			b.payload = data
 		}
 	}
@@ -136,9 +146,9 @@ func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 }
 
 // Register adds the scheduled job to the scheduler, computing the first
-// NextRun relative to the current wall clock. It returns an error only when a
-// Cron schedule's spec is invalid; interval (Every) schedules never error, so
-// existing callers that ignore the return value are unaffected.
+// NextRun relative to the current wall clock. It returns an error when the
+// payload given to Job cannot be encoded as JSON or a Cron schedule's spec
+// is invalid, and registers nothing then.
 func (b *ScheduleBuilder) Register() error {
 	return b.RegisterAt(time.Now())
 }
@@ -173,6 +183,9 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.jobType == "" {
 		return nil
 	}
+	if b.payloadErr != nil {
+		return b.payloadErr
+	}
 
 	job := ScheduledJob{
 		Type:        b.jobType,
@@ -190,6 +203,11 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 		}
 		job.cron = &sc
 		job.NextRun = sc.Next(base)
+		// Next returns the zero time for a spec that never fires
+		// (February 30), and a zero NextRun is due on every tick.
+		if job.NextRun.IsZero() {
+			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
+		}
 	} else {
 		job.NextRun = base.Add(b.interval)
 	}
@@ -278,6 +296,9 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 
 	for i := range s.schedules {
 		sch := &s.schedules[i]
+		if sch.cron != nil && sch.NextRun.IsZero() {
+			continue // stopped: its re-arm found no next firing (below)
+		}
 		if now.After(sch.NextRun) || now.Equal(sch.NextRun) {
 			job := Job{
 				Type:        sch.Type,
@@ -306,6 +327,14 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 
 			if sch.cron != nil {
 				sch.NextRun = sch.cron.Next(now)
+				if sch.NextRun.IsZero() {
+					// Registration refuses a spec that never fires, so
+					// this guards Next alone: a zero NextRun would fire
+					// on every tick, and the schedule stops instead.
+					s.logger.Warn("scheduler: cron schedule stopped, no next firing",
+						"job_type", sch.Type,
+					)
+				}
 			} else {
 				sch.NextRun = now.Add(sch.Interval)
 			}

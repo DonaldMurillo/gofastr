@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -218,6 +219,18 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 	// leaves the token for the real click.
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
+		// A link clicked in webmail is a cross-site navigation, and the
+		// browser withholds the SameSite=Strict session cookie on it.
+		// Answer it with a page from this origin that loads the same
+		// link again: that navigation starts on this site, so the cookie
+		// rides it. The hop redeems nothing, and its follow-up is
+		// same-origin, so a browser with no session gets this 401 then.
+		if handler.IsCrossSiteRequest(r) {
+			if target, ok := sameOriginTarget(r); ok {
+				writeSameSiteHop(w, r, target, verifyHopTitle)
+				return
+			}
+		}
 		writeAuthError(w, r, http.StatusUnauthorized, reasonVerifySignIn)
 		return
 	}

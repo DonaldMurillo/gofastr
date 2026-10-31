@@ -107,13 +107,17 @@ go build -o site ./examples/site/
   (a gated screen, an `ExcludeRoutes` route, a 404-outlet route, a page
   that answers a status other than 200, a path a redirect takes) has no
   file on the static host, so its `<url>` entry is dropped, in every
-  locale. The export renders the sitemap twice to tell the entries
-  apart; when a `StaticPaths` answers in a different order or count
-  the second time, the build warns and keeps the sitemap whole. Under `--export-base` every sitemap `<loc>` and the
+  locale, and so is every hreflang alternate naming it. The host asks
+  about each page by the path the export wrote it under, so a
+  `StaticPaths` that answers differently from one call to the next can
+  drop an entry but never list a page the export did not write. Past
+  50,000 URLs the sitemap is an index with its parts under
+  `sitemap/<n>.xml`. Under `--export-base` every sitemap `<loc>` and the
   derived `Sitemap:` line in robots.txt include the subpath, once
   even when the sitemap's `BaseURL` already ends in it. A
   `sitemap.xml` or `robots.txt` in the app's static dir wins over the
-  generated one. Note that on a subpath deploy (e.g. a GitHub Pages
+  generated one (a user's `sitemap.xml` replaces the generated parts
+  too). Note that on a subpath deploy (e.g. a GitHub Pages
   *project* site) crawlers only honor a robots.txt at the origin root;
   the file is still emitted for apex/custom-domain deploys.
 - With [`uihost.WithPWA`](pwa.md): `manifest.webmanifest`,
@@ -150,11 +154,19 @@ go build -o site ./examples/site/
 - For each `app.Redirect`, a page at the old path and a `_redirects`
   rule; see [Redirects](#redirects) below.
 - Every file in the app's static dir (or embedded static FS), copied
-  to the same path, `index.html` files included. The one file refused
-  is one at the path of a page the build rendered (`about/index.html`
-  beside an `/about` route); the build log names it. A static-dir
-  `_headers` or `_redirects` replaces the generated one.
-- `Builder.ExtraDirs` files under their mount path. A page or asset
+  to the same path, `index.html` files included. Two kinds of file are
+  refused: one the UI host would not serve (a path with a dot segment
+  such as `.env` or `.git/config`, or a server config file name such
+  as `web.config`), and one at the path of a page the build rendered
+  (`about/index.html` beside an `/about` route). The build log names
+  each. Files under a leading `.well-known/`, unless they are dotfiles
+  themselves, and the root `.nojekyll` GitHub Pages reads are copied.
+  A static-dir
+  `_headers` or `_redirects` is appended to the generated one, so its
+  rules apply and the generated ones (the security headers and the
+  `app.Redirect` rules) stay first.
+- `Builder.ExtraDirs` files under their mount path, minus the dotfiles
+  and config files the static dir also skips. A page or asset
   the build wrote (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
   same path. Which file wins is decided by this
@@ -280,8 +292,12 @@ keeps its path.
 
 The export also writes `_redirects` with one `/old /new/ 308` rule per
 redirect, which Netlify and Cloudflare Pages (the hosts that read
-`_headers`) answer with a real 308. An app with no redirects writes
-none, and removes one an earlier build left in the output directory.
+`_headers`) answer with a real 308. A static-dir `_redirects` is
+appended after these rules, and both hosts apply the first rule that
+matches, so an `app.Redirect` wins over a static rule for the same
+path. An app with no redirects writes none, removes one an earlier
+build left in the output directory, and copies the static dir's
+`_redirects` as it is.
 
 An exact redirect may take one concrete path of a dynamic screen
 (`/products/alpha` beside `/products/:slug`). The live router answers
@@ -394,7 +410,7 @@ against the serverless host:
 | Signal mutations (`set`/`inc`/`toggle`) | ✓ works | client-only |
 | SPA navigation | ✓ works | fetches pre-rendered pages |
 | `data-cui-rpc` (island round-trips) | disabled | needs the Go handler |
-| `data-cui-open` (modals, ⌘K palette) | ✓ works | the export writes the widget catalog (`widgets.json`); an unregistered widget shows a "Needs the Go server." toast |
+| `data-cui-open` (modals, ⌘K palette) | ✓ works | the export writes the widget catalog (`widgets.json`) and each widget's chrome and style sheet; an unregistered widget shows a "Needs the Go server." toast. A widget with `RequireSession` or `RequireAuthenticated` gets its style sheet and no chrome file, since the live `/chrome` endpoint refuses an anonymous caller and every exported file is public |
 | Palette search (`Search: true`) | ✓ works | reads the [site search](site-search.md) index files |
 | SSE islands | not emitted | the SSE `<meta>` is omitted at render time |
 

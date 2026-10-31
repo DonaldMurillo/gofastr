@@ -36,7 +36,9 @@ type Tab struct {
 	Panel render.HTML
 	// Href overrides the fragment href (a same-origin deep link).
 	Href string
-	// Disabled removes the tab from the keyboard rotation.
+	// Disabled removes the tab from the keyboard rotation and makes a
+	// click do nothing: the tab renders with aria-disabled and without
+	// its signal write or its href (Href is ignored).
 	Disabled bool
 }
 
@@ -117,7 +119,11 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		}
 		own["aria-controls"] = p.ID + "-panel-" + strconv.Itoa(i)
 		if tab.Disabled {
+			// A disabled anchor is not a thing in HTML: the signal write
+			// and the href go, so a click neither selects the tab nor
+			// follows its link, and aria-disabled says why.
 			own["aria-disabled"] = "true"
+			delete(own, "data-cui-signal-set")
 		}
 		href := tab.Href
 		fragment := "#" + p.ID + "-panel-" + strconv.Itoa(i)
@@ -132,7 +138,9 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 				href = fragment
 			}
 		}
-		own["href"] = href
+		if !tab.Disabled {
+			own["href"] = href
+		}
 		if p.StateAttrs {
 			if i == p.Active {
 				own["data-state"] = "active"

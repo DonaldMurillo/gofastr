@@ -47,6 +47,9 @@ type ExportBundle struct {
 	OutPath string
 }
 
+// exportPage is how many events one EventsSince call asks for.
+const exportPage = 1000
+
 // Write produces the bundle on disk. Returns the bundle path.
 func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 	if e.OutPath == "" {
@@ -87,25 +90,41 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// Events.
-	events, err := e.Store.EventsSince(ctx, e.Session, 0, 0)
-	if err != nil {
-		return "", err
-	}
+	// Events, page by page: a store caps one EventsSince call (SQLite
+	// at 10,000 rows), so a single call exported a long session minus
+	// its tail. Read until a page comes back empty, not merely short:
+	// a store may return fewer rows than asked while more remain.
 	report := newRedactionReport()
 	jsonl, err := zw.Create("events.jsonl")
 	if err != nil {
 		return "", err
 	}
-	for _, env := range events {
-		out := applyExportRedaction(env, e.Level, report)
-		body, err := json.Marshal(out)
+	var since uint64
+	for {
+		events, err := e.Store.EventsSince(ctx, e.Session, since, exportPage)
 		if err != nil {
-			continue
-		}
-		if _, err := jsonl.Write(append(body, '\n')); err != nil {
 			return "", err
 		}
+		if len(events) == 0 {
+			break
+		}
+		for _, env := range events {
+			out := applyExportRedaction(env, e.Level, report)
+			body, err := json.Marshal(out)
+			if err != nil {
+				continue
+			}
+			if _, err := jsonl.Write(append(body, '\n')); err != nil {
+				return "", err
+			}
+		}
+		// A page that does not move past since would be read again
+		// forever: a store that ignores since is an error, not a hang.
+		last := events[len(events)-1].ID
+		if last <= since {
+			return "", fmt.Errorf("session export: EventsSince returned id %d after %d", last, since)
+		}
+		since = last
 	}
 
 	// Maintainer report.

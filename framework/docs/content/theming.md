@@ -328,6 +328,11 @@ one package can read a token declared in another.
   owned sheets of one program for the same token type. Declare it once as a token and
   read `var()` in each. Values that are not a design choice pass: a zero
   in any unit (`margin: 0`, `padding: 0 0`), `100%`, and `z-index: -1`.
+- **GOFASTR1825**: a statement at-rule other than `@layer` (`@import`,
+  `@charset`, `@namespace`). These count only at the top of a
+  stylesheet, and an owned sheet compiles into app.css after the kit's
+  rules, so the browser ignores them. Load a web font with
+  `style.FontFaceCSS` (see Self-hosting web fonts below).
 
 A tokens file may not reuse a built-in name (`--color-primary`), and a
 token is declared in one file only.
@@ -547,6 +552,13 @@ override's token block ships in `app.css` scoped to that class, and
 every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
 same handle, so its CSS only ships once.
+
+Registration stores a `Theme.Clone()` of the theme: its maps and every
+`Extensions` token set are copied, so writing the theme, or a token
+struct you put in `Extensions` by hand, after registering changes
+nothing the class serves. `uihost.RegisterThemeVariant` clones the same
+way. Call `Clone` yourself when you keep a theme and hand it out for
+changes elsewhere.
 
 ### Scoped themes and dark mode
 

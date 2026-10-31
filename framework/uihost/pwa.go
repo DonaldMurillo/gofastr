@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -120,13 +121,13 @@ type PWAConfig struct {
 // WithPWA opts the host into the installable-PWA surface: it mounts
 // /manifest.webmanifest, /service-worker.js, /__gofastr/pwa/register.js,
 // and /__gofastr/pwa/offline, and injects the manifest link + external
-// registration script into every rendered page. The injection rides
-// the generic headTags/extraScripts rails (all values are fixed at
-// option time), so chrome assembly has a single code path.
+// registration script into every rendered page. The theme color and the
+// script ride the generic headTags/extraScripts rails (fixed at option
+// time); the manifest link is written per page, since a locale page
+// links its own locale's manifest (pwaManifestLink).
 func WithPWA(cfg PWAConfig) Option {
 	return func(ds *UIHost) {
 		ds.pwaConfig = &cfg
-		ds.headTags = append(ds.headTags, `<link rel="manifest" href="/manifest.webmanifest">`)
 		if cfg.ThemeColor != "" {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="theme-color" content="%s">`, stdhtml.EscapeString(cfg.ThemeColor)))
 		}
@@ -260,6 +261,12 @@ func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHT
 		"/manifest.webmanifest":      true,
 		pwaOfflinePath:               true,
 	}
+	// Each locale's pages link their own manifest (pwaManifestLink).
+	if ds.pathLocales != nil {
+		for _, tag := range ds.pathLocales.Prefixed {
+			set[ds.pathLocales.Path(tag, "/manifest.webmanifest")] = true
+		}
+	}
 	if live {
 		// LIVE pages request the ?v=<hash> spellings plus manifest.js;
 		// the worker matches exactly, so those must be cached alongside
@@ -361,10 +368,27 @@ type pwaManifestIcon struct {
 	Purpose string `json:"purpose,omitempty"`
 }
 
-// PWAManifestJSON renders the web app manifest. basePath prefixes
-// start_url, scope, id, and same-origin icon paths for static exports
-// mounted under a subpath; pass "" for the live server.
-func (ds *UIHost) PWAManifestJSON(basePath string) ([]byte, error) {
+// pwaManifestPath is the manifest a page in ctx's locale links: the
+// locale's prefix in front of /manifest.webmanifest.
+func pwaManifestPath(ctx context.Context) string {
+	return i18n.PathPrefix(ctx) + "/manifest.webmanifest"
+}
+
+// pwaManifestLink is the page's <link rel="manifest">. The path is
+// built from the router's locale tag, a root-relative path that the
+// Resource policy always passes.
+func pwaManifestLink(ctx context.Context) string {
+	return `<link rel="manifest" href="` + stdhtml.EscapeString(urlsafe.Clean(pwaManifestPath(ctx), urlsafe.Resource)) + `">`
+}
+
+// PWAManifestJSON renders the web app manifest for ctx's locale (see
+// i18n.WithPathLocale): start_url carries the locale prefix, so a reader
+// who installs from /es/ launches into /es/. id and scope do not, so
+// every locale's manifest names one app and a language switch stays
+// inside it. basePath prefixes start_url, scope, id, and same-origin
+// icon paths for static exports mounted under a subpath; pass "" for
+// the live server.
+func (ds *UIHost) PWAManifestJSON(ctx context.Context, basePath string) ([]byte, error) {
 	if ds.pwaConfig == nil {
 		return nil, fmt.Errorf("uihost: PWA not configured")
 	}
@@ -374,7 +398,7 @@ func (ds *UIHost) PWAManifestJSON(basePath string) ([]byte, error) {
 		Name:            cfg.Name,
 		ShortName:       cfg.ShortName,
 		Description:     cfg.Description,
-		StartURL:        pwaPrefix(basePath, cfg.StartURL),
+		StartURL:        pwaPrefix(basePath, ds.localizeURL(ctx, cfg.StartURL)),
 		Scope:           pwaPrefix(basePath, cfg.Scope),
 		Display:         string(cfg.Display),
 		ThemeColor:      cfg.ThemeColor,
@@ -570,7 +594,9 @@ func (ds *UIHost) serviceWorkerJS(ctx context.Context, basePath string) (string,
 	}
 	cfg := ds.resolvedPWA()
 	offlineHTML := ds.PWAOfflineHTML()
-	manifest, err := ds.PWAManifestJSON("")
+	// The default locale's manifest versions the cache: the others
+	// differ only in start_url, from the same config and locale set.
+	manifest, err := ds.PWAManifestJSON(context.Background(), "")
 	if err != nil {
 		return "", err
 	}
@@ -682,7 +708,9 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 	}
 	cfg := ds.resolvedPWA()
 	offlineHTML := ds.PWAOfflineHTML()
-	manifest, err := ds.PWAManifestJSON("")
+	// The default locale's manifest versions the cache: the others
+	// differ only in start_url, from the same config and locale set.
+	manifest, err := ds.PWAManifestJSON(context.Background(), "")
 	if err != nil {
 		return "", err
 	}
@@ -998,7 +1026,7 @@ const pwaRegisterTemplate = `/* goFastr PWA registration: generated by uihost.Wi
 // ─── Handlers ──────────────────────────────────────────────────────
 
 func (ds *UIHost) handlePWAManifest(w http.ResponseWriter, r *http.Request) {
-	body, err := ds.PWAManifestJSON("")
+	body, err := ds.PWAManifestJSON(r.Context(), "")
 	if err != nil {
 		i18n.HTTPError(w, r, http.StatusNotFound, reasonPWANotConfigured)
 		return

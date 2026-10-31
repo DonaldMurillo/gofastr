@@ -243,7 +243,8 @@ trap 'rm -rf "$profdir"' EXIT
 # Affected packages only: a floor can move only when the package or
 # something it imports changed, so unaffected rows are skipped. cmd/affected
 # computes the closure against origin/main; GOFASTR_TEST_ALL=1 checks every
-# floor. A row whose package is not in the set prints nothing, the summary
+# floor, and so does an edit to this file: cmd/affected lists the floor
+# table as a widen-to-everything trigger, so a changed floor is checked. A row whose package is not in the set prints nothing, the summary
 # line below says how many were skipped.
 #
 # COVERPROFILE=<file>: measure every floor from one merged profile that an

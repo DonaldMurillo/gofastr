@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"maps"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -134,6 +135,32 @@ func (t TURN) Credentials(peerID string, now time.Time) ICEServer {
 	}
 }
 
+// closeRevokedPeers re-checks every joined socket and closes the ones
+// whose principal no longer holds, before a TURN refresh mints each a
+// credential: the idle re-check runs on its own ticker, and a refresh
+// landing between a revocation and that tick would otherwise hand the
+// revoked peer a fresh credential. The checks run outside s.mu (a
+// principal check may read a store); a closed socket's write fails, so
+// the refresh published after it never reaches the peer.
+func (s *Signaler) closeRevokedPeers() {
+	s.mu.Lock()
+	var peers []*roomPeer
+	for _, rm := range s.rooms {
+		for _, p := range rm.peers {
+			if p.req != nil {
+				peers = append(peers, p)
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, p := range peers {
+		if !s.peerHeld(p.req, p.recheck) {
+			s.logger.Warn("rtc: peer closed", "reason", "unauthorized")
+			_ = p.conn.CloseWithStatus(4000+http.StatusUnauthorized, "session ended")
+		}
+	}
+}
+
 // turnRefreshLoop pushes the iceServers event to every populated room
 // each half TTL (or the test knob), so a peer connection that outlives
 // its credential holds a fresh one before an ICE restart needs it:
@@ -154,6 +181,7 @@ func (s *Signaler) turnRefreshLoop(done chan struct{}) {
 			return
 		case <-time.After(every):
 		}
+		s.closeRevokedPeers()
 		s.mu.Lock()
 		if s.closed {
 			s.mu.Unlock()

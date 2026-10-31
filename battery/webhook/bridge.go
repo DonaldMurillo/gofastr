@@ -74,6 +74,10 @@ func WithBridgePublishError(fn func(eventType string, err error)) BridgeOption {
 // payload. Marshal and publish failures are silently dropped by
 // default; install callbacks via [WithBridgeMarshalError] /
 // [WithBridgePublishError] to observe them.
+//
+// An event a fanout re-emits from another replica ([event.IsRemote]) is
+// skipped: the replica that emitted it queues the deliveries, so every
+// replica that emits must run the bridge over one shared Store.
 func Bridge(bus *event.EventBus, mgr *Manager, events ...string) (cancel func()) {
 	return BridgeWithOptions(bus, mgr, events)
 }
@@ -97,6 +101,12 @@ func BridgeWithOptions(bus *event.EventBus, mgr *Manager, events []string, opts 
 	for _, et := range events {
 		eventType := et
 		c := bus.Subscribe(eventType, func(ctx context.Context, e event.Event) error {
+			// The replica that emitted the event queues its deliveries
+			// into the shared store; a fanned-out copy queuing again
+			// would send the endpoint one delivery per replica.
+			if event.IsRemote(ctx) {
+				return nil
+			}
 			// Read before the redactor runs: the owner tags the stored
 			// delivery for erasure whatever the payload keeps.
 			owner := eventOwner(e)

@@ -58,7 +58,9 @@ type VersionedRegistry interface {
 
 // PivotEntity returns the registered entity that owns a many_to_many's
 // Through table, or nil when no entity does and the migrator creates the
-// table itself. Tables match ignoring case. Of several entities sharing the
+// table itself. Tables match ignoring case, and a Through that differs from
+// an entity's table only by naming a schema the other leaves off is an
+// error (TableSchemaSpellingDiffers). Of several entities sharing the
 // table it takes the source's own version, then the unversioned
 // declaration, then the only one. Several other versions are an error, as
 // in ResolveTarget: each can scope its rows differently, so picking one
@@ -71,6 +73,9 @@ func PivotEntity(reg Registry, source *Entity, table string) (*Entity, error) {
 	var others []*Entity
 	for _, e := range reg.AllSorted() {
 		if !strings.EqualFold(e.GetTable(), table) {
+			if TableSchemaSpellingDiffers(e.GetTable(), table) {
+				return nil, fmt.Errorf("entity: many_to_many through table %q and entity %q's table %q may name one table with and without its schema: spell Through the way the join entity's Table spells it", table, e.GetName(), e.GetTable())
+			}
 			continue
 		}
 		if source != nil && source.Version != "" && e.Version == source.Version {
@@ -90,6 +95,19 @@ func PivotEntity(reg Registry, source *Entity, table string) (*Entity, error) {
 		return nil, fmt.Errorf("entity: pivot table %q is owned by %d versions and none matches the source's: declare it at the source's version or unversioned", table, len(others))
 	}
 	return nil, nil
+}
+
+// TableSchemaSpellingDiffers reports whether a and b differ only in that one
+// names a schema and the other does not (public.memberships, memberships).
+// Under the connection's search_path the two may be one table, so a string
+// match would miss a join entity whose gates the loader then skips while it
+// still joins the table. Two different schemas (a.m, b.m) are two tables.
+func TableSchemaSpellingDiffers(a, b string) bool {
+	ia, ib := strings.LastIndexByte(a, '.'), strings.LastIndexByte(b, '.')
+	if (ia < 0) == (ib < 0) {
+		return false
+	}
+	return strings.EqualFold(a[ia+1:], b[ib+1:])
 }
 
 // ResolveTarget resolves a relation target for a source entity, preferring the

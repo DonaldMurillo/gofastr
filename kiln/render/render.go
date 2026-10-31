@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -10,8 +11,12 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
+	"uuid"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/effect"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
@@ -303,15 +308,29 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 	if err != nil {
 		return fmt.Errorf("seed entity table: %w", err)
 	}
+	auto, jsonCols, err := seedFields(ent)
+	if err != nil {
+		return err
+	}
 	for _, row := range s.Rows {
 		if len(row) == 0 {
 			continue
 		}
-		cols := make([]string, 0, len(row))
+		folded := make(map[string]bool, len(row))
 		for k := range row {
 			if _, err := query.SafeIdent(k); err != nil {
 				return fmt.Errorf("seed column: %w", err)
 			}
+			// Two keys that fold to one column would both reach the
+			// INSERT, and SQLite accepts that and keeps one silently.
+			if folded[strings.ToLower(k)] { //gofastr:allow(asciifold) k cleared SafeIdent, an ASCII-only identifier pattern
+				return fmt.Errorf("seed column %q is named twice", k)
+			}
+			folded[strings.ToLower(k)] = true //gofastr:allow(asciifold) k cleared SafeIdent, an ASCII-only identifier pattern
+		}
+		row = withAutoFields(row, auto)
+		cols := make([]string, 0, len(row))
+		for k := range row {
 			cols = append(cols, k)
 		}
 		sort.Strings(cols)
@@ -320,6 +339,11 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 		for i, c := range cols {
 			placeholders[i] = "?"
 			args[i] = row[c]
+			if jsonCols[c] {
+				if args[i], err = seedJSONValue(row[c]); err != nil {
+					return fmt.Errorf("seed column %q: %w", c, err)
+				}
+			}
 		}
 		q := buildInsert(table, cols, placeholders)
 		if _, err := tx.Exec(q, args...); err != nil {
@@ -328,6 +352,83 @@ func insertSeed(tx *sql.Tx, w *world.World, s *world.Seed) error {
 	}
 	return nil
 }
+
+// seedFields returns the entity's UUID and timestamp fields, the values
+// crud's create path generates, which a seed row's raw INSERT would
+// otherwise leave NULL (an implicit id is a TEXT primary key, and SQLite
+// stores NULL in one), and its JSON columns, whose decoded values the
+// INSERT must encode first. An AutoIncrement field is left to the
+// database. Define panics on a config it refuses, so that is recovered
+// into the seed's error.
+func seedFields(ent *world.Entity) (auto []schema.Field, jsonCols map[string]bool, err error) {
+	cfg, err := entityConfig(ent)
+	if err != nil {
+		return nil, nil, fmt.Errorf("seed entity %q: %w", ent.Name, err)
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			auto, jsonCols, err = nil, nil, fmt.Errorf("seed entity %q: %s", ent.Name, textsafe.Recovered(rec))
+		}
+	}()
+	jsonCols = map[string]bool{}
+	for _, f := range framework.Define(ent.Name, cfg).GetFields() {
+		if f.AutoGenerate == schema.AutoUUID || f.AutoGenerate == schema.AutoTimestamp {
+			auto = append(auto, f)
+		}
+		if f.Type == schema.JSON {
+			jsonCols[f.Name] = true
+		}
+	}
+	return auto, jsonCols, nil
+}
+
+// seedJSONValue is a json column's seed value as the text the driver
+// binds. database/sql refuses a map or a non-byte slice, so a decoded
+// object or array is encoded, as crud's write path encodes it; a string
+// is JSON text already and is stored as written (2026-10-27 K21).
+func seedJSONValue(v any) (any, error) {
+	switch v.(type) {
+	case nil, string, []byte:
+		return v, nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return string(raw), nil
+}
+
+// withAutoFields returns row with a generated value for each auto field
+// it leaves out or sets to null. A value the row gives is kept, under
+// whatever case it was spelled in: a seed names its own ids so other
+// seeds can reference them. Keys have cleared SafeIdent and are unique
+// after folding (insertSeed), so the fold match is exact.
+func withAutoFields(row map[string]any, auto []schema.Field) map[string]any {
+	out := maps.Clone(row)
+	for _, f := range auto {
+		key := f.Name
+		for k := range out {
+			if strings.EqualFold(k, f.Name) {
+				key = k
+				break
+			}
+		}
+		if out[key] != nil {
+			continue
+		}
+		delete(out, key)
+		if f.AutoGenerate == schema.AutoUUID {
+			out[f.Name] = uuid.NewV4().String()
+		} else {
+			out[f.Name] = schema.FormatTimestamp(seedNow())
+		}
+	}
+	return out
+}
+
+// seedNow is the clock withAutoFields stamps timestamps from; a test
+// pins it to check the stored layout.
+var seedNow = time.Now
 
 // buildInsert assumes table and cols have already cleared query.SafeIdent,
 // insertSeed is the only caller and validates both up front. Seed entity

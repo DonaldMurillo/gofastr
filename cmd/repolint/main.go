@@ -143,6 +143,11 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, shardFindings...)
+	selectorFindings, err := lintSelectorStatus(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, selectorFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File
@@ -205,6 +210,9 @@ func lintBytes(rel string, body []byte) []finding {
 			Rule:    "crud-exposure-rederived",
 			Message: "reads Exposure.CRUD to decide whether an entity's routes exist: that flag alone misses the no-DB case, where App mounts no CRUD while every entity still reads \"auto\". Take a mounted predicate (framework.App.EntityCRUDMounted) instead — or, if this read genuinely is not an exposure decision, add the file to crudExposureClassified with a reason",
 		})
+	}
+	if isBuildScript(rel) {
+		out = append(out, selectorStatusFindings(rel, body)...)
 	}
 	lines := strings.Split(string(body), "\n")
 	for i, line := range lines {

@@ -226,17 +226,20 @@ func TestImportExecErrorRollsBack(t *testing.T) {
 // every branch through ExportData/ImportData.
 
 func TestNormalizeScan(t *testing.T) {
-	if got := normalizeScan([]byte("hi")); got != "hi" {
+	if got := normalizeScan([]byte("hi"), false); got != "hi" {
 		t.Errorf("[]byte → %v, want string", got)
 	}
 	tm := timeMustParse(t, "2024-01-02T03:04:05Z")
-	if got := normalizeScan(tm); got != "2024-01-02T03:04:05Z" {
-		t.Errorf("time.Time → %v, want RFC3339 string", got)
+	if got := normalizeScan(tm, false); got != "2024-01-02T03:04:05.000000Z" {
+		t.Errorf("time.Time → %v, want schema.TimestampLayout", got)
 	}
-	if got := normalizeScan(int64(7)); got != int64(7) {
+	if got := normalizeScan(timeMustParse(t, "2024-01-02T00:00:00Z"), true); got != "2024-01-02" {
+		t.Errorf("time.Time of a DATE column → %v, want YYYY-MM-DD", got)
+	}
+	if got := normalizeScan(int64(7), false); got != int64(7) {
 		t.Errorf("int64 passthrough → %v", got)
 	}
-	if got := normalizeScan(nil); got != nil {
+	if got := normalizeScan(nil, false); got != nil {
 		t.Errorf("nil passthrough → %v", got)
 	}
 }

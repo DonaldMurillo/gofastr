@@ -647,7 +647,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
-			ch.serveCursorList(ctx, w, r, includes, filters, nested, listPayload.Where)
+			// ?fields= likewise: refused and honoured as on an offset page.
+			cols, err := ch.projectFromRequestQ(q)
+			if err != nil {
+				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+				return
+			}
+			ch.serveCursorList(ctx, w, r, cols, includes, filters, nested, listPayload.Where)
 			return
 		}
 
@@ -1006,7 +1012,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opCreate) {
@@ -1065,9 +1071,10 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		//
 		// A row the caller's ReadScope hides comes back as its id only, as
 		// on Update: RETURNING carries server-stamped values (defaults,
-		// hook writes) a GET of the row would answer 404 for.
+		// hook writes) a GET of the row would answer 404 for. The same holds
+		// for a BeforeGet hook's scope (getScopeHidesRow).
 		var resp map[string]any
-		if hidden {
+		if hidden || ch.getScopeHidesRow(r, result) {
 			resp = ch.identityOnly(result)
 		} else {
 			var hookErr error
@@ -1089,6 +1096,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 // Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller data (owner/tenant/read-scope rows, or the row a write
 		// just accepted) must never be stored by a shared cache or the
 		// bfcache: RFC 9111's storage restriction covers Authorization
@@ -1097,7 +1105,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {
@@ -1154,7 +1162,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 // leak it.
 func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, result map[string]any, hidden bool) {
 	var resp map[string]any
-	if hidden {
+	if hidden || ch.getScopeHidesRow(r, result) {
 		resp = ch.identityOnly(result)
 	} else {
 		var hookErr error
@@ -1174,6 +1182,7 @@ func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, resu
 // (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller data (owner/tenant/read-scope rows, or the row a write
 		// just accepted) must never be stored by a shared cache or the
 		// bfcache: RFC 9111's storage restriction covers Authorization
@@ -1245,40 +1254,81 @@ var (
 	errNoFieldsToUpdate = errors.New("no fields to update")
 )
 
-// writeFieldsError writes the validation shape: head as "error", the
-// field violations translated under "fields" with their codes under
-// "field_reasons", and any extra keys.
-func writeFieldsError(w http.ResponseWriter, r *http.Request, code int, head schema.Violation, fields map[string][]schema.Violation, extra map[string]any) {
-	messages, codes := handler.ViolationBodies(r.Context(), fields)
-	reason := head.Reason
-	body := map[string]any{
-		"error":         head.Text(r.Context()),
-		"reason":        reason.Code(),
-		"fields":        messages,
-		"field_reasons": codes,
-	}
-	maps.Copy(body, extra)
-	writeErrorBody(w, code, body)
+// refusal is one write's error response: its status and what
+// writeErrorBody sends. writeCRUDError writes it, and a batch item
+// reports its message, reason and field errors (classifyDoErr), so the
+// two never disagree about an error.
+type refusal struct {
+	code   int
+	text   string // "error"
+	reason string // "reason", sent when set
+	// fieldsShape is the validation shape: "fields" and "field_reasons"
+	// are sent even when empty.
+	fieldsShape          bool
+	fields, fieldReasons map[string][]string
+	extra                map[string]any
 }
 
-// writeCRUDError maps a CRUD-flow error to the appropriate HTTP response.
-// Sentinel and typed errors are translated to specific status codes; anything
-// else becomes a 500.
+func (f refusal) body() map[string]any {
+	body := map[string]any{"error": f.text}
+	if f.reason != "" {
+		body["reason"] = f.reason
+	}
+	if f.fieldsShape {
+		body["fields"] = f.fields
+		body["field_reasons"] = f.fieldReasons
+	}
+	maps.Copy(body, f.extra)
+	return body
+}
+
+// phraseRefusal is reason translated into ctx's locale, with its code.
+func phraseRefusal(ctx context.Context, code int, reason i18n.Phrase, params ...map[string]any) refusal {
+	return refusal{code: code, text: reason.Text(ctx, params...), reason: reason.Code()}
+}
+
+// errRefusal is err as a refusal: a phrased error in its chain
+// translates; any other error renders inside frame as its {{detail}},
+// or as written (an app hook's own wording) when frame is zero. See
+// i18n.ErrorText.
+func errRefusal(ctx context.Context, code int, err error, frame i18n.Phrase) refusal {
+	text, reason := i18n.ErrorText(ctx, err, frame)
+	return refusal{code: code, text: text, reason: reason}
+}
+
+// fieldsRefusal is the validation shape: head as "error", the field
+// violations translated under "fields" with their codes under
+// "field_reasons", and any extra keys.
+func fieldsRefusal(ctx context.Context, code int, head schema.Violation, fields map[string][]schema.Violation, extra map[string]any) refusal {
+	messages, codes := handler.ViolationBodies(ctx, fields)
+	return refusal{
+		code: code, text: head.Text(ctx), reason: head.Reason.Code(),
+		fieldsShape: true, fields: messages, fieldReasons: codes, extra: extra,
+	}
+}
+
+// writeCRUDError maps a CRUD-flow error to the appropriate HTTP response
+// (crudRefusal).
 func writeCRUDError(w http.ResponseWriter, r *http.Request, err error) {
+	f := crudRefusal(r.Context(), err)
+	writeErrorBody(w, f.code, f.body())
+}
+
+// crudRefusal maps a CRUD-flow error to its refusal. Sentinel and typed
+// errors are translated to specific status codes; anything else becomes
+// a 500.
+func crudRefusal(ctx context.Context, err error) refusal {
 	// Ahead of the hook arm: a hook that hands back a reentrant move's
 	// refusal fails its write with the conflict, not a 400.
 	if errors.Is(err, ErrReentrantMove) {
-		writeJSONError(w, r, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
-		return
+		return phraseRefusal(ctx, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
 	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		// The hook's own wording, or its phrase when it returned one.
-		writeErrJSON(w, r, http.StatusBadRequest, bhe, i18n.Phrase{})
-		return
+		return errRefusal(ctx, http.StatusBadRequest, bhe, i18n.Phrase{})
 	}
 	if ve, ok := errors.AsType[*ValidationError](err); ok {
-		writeFieldsError(w, r, http.StatusBadRequest, validationFailed, ve.Fields(), nil)
-		return
+		return fieldsRefusal(ctx, http.StatusBadRequest, validationFailed, ve.Fields(), nil)
 	}
 	if se, ok := errors.AsType[*StateError](err); ok {
 		// 422: the body is well-formed, but the state field changes only
@@ -1286,62 +1336,48 @@ func writeCRUDError(w http.ResponseWriter, r *http.Request, err error) {
 		// shows the message in place, plus the moves the caller can run.
 		p, params := se.Phrased()
 		v := schema.Violation{Reason: p, Params: params}
-		writeFieldsError(w, r, http.StatusUnprocessableEntity, v,
+		return fieldsRefusal(ctx, http.StatusUnprocessableEntity, v,
 			map[string][]schema.Violation{se.Field: {v}},
 			map[string]any{"moves": nonNil(se.Moves)})
-		return
 	}
 	if tce, ok := errors.AsType[*TransitionConflictError](err); ok {
-		text, reason := i18n.ErrorText(r.Context(), tce, i18n.Phrase{})
-		writeErrorBody(w, http.StatusConflict, map[string]any{
-			"error":   text,
-			"reason":  reason,
-			"current": tce.Current,
-			"moves":   nonNil(tce.Moves),
-		})
-		return
+		f := errRefusal(ctx, http.StatusConflict, tce, i18n.Phrase{})
+		f.extra = map[string]any{"current": tce.Current, "moves": nonNil(tce.Moves)}
+		return f
 	}
 	if tde, ok := errors.AsType[*transitionDeniedError](err); ok {
-		writeErrJSON(w, r, http.StatusForbidden, tde, i18n.Phrase{})
-		return
+		return errRefusal(ctx, http.StatusForbidden, tde, i18n.Phrase{})
 	}
 	if errors.Is(err, ErrUnknownTransition) {
-		writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
-		return
+		return phraseRefusal(ctx, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	}
 	if tme, ok := errors.AsType[*tenantMissingError](err); ok {
-		writeErrJSON(w, r, http.StatusBadRequest, tme, i18n.Phrase{})
-		return
+		return errRefusal(ctx, http.StatusBadRequest, tme, i18n.Phrase{})
 	}
 	if errors.Is(err, errNotFound) {
-		writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
-		return
+		return phraseRefusal(ctx, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	}
 	if errors.Is(err, errNoFieldsToUpdate) {
-		writeJSONError(w, r, http.StatusBadRequest, reasonNoFieldsToUpdate)
-		return
+		return phraseRefusal(ctx, http.StatusBadRequest, reasonNoFieldsToUpdate)
 	}
 	if isUniqueViolation(err) {
 		// Map UNIQUE-constraint failures to 409 Conflict so callers can
 		// distinguish duplicate-key errors from a real server fault.
 		// The driver's text never reaches the body; the declared fields
 		// the caller sent do (conflict_fields.go).
-		writeConflict(w, r, err, i18n.StatusPhrase(http.StatusConflict))
-		return
+		return conflictRefusal(ctx, err, i18n.StatusPhrase(http.StatusConflict))
 	}
 	if isForeignKeyViolation(err) {
 		// A dangling reference on create/update, or a delete of a row
 		// other rows still point at, is a state conflict the caller can
 		// resolve, not a server fault. Same no-leak posture as above:
 		// the constraint and table names stay in the server log.
-		writeConflict(w, r, err, reasonReferenced)
-		return
+		return conflictRefusal(ctx, err, reasonReferenced)
 	}
 	if cf, ok := errors.AsType[*constraintFieldsError](err); ok && isNotNullViolation(err) {
 		// A NOT NULL refusal on a declared field is the caller's to
 		// fix: the validation shape, naming it (conflict_fields.go).
-		writeFieldsError(w, r, http.StatusBadRequest, validationFailed, cf.fields, nil)
-		return
+		return fieldsRefusal(ctx, http.StatusBadRequest, validationFailed, cf.fields, nil)
 	}
 	// Unrecognised error → 500 with a generic message. Returning
 	// err.Error() here leaks driver-specific details (`pq: relation
@@ -1351,7 +1387,7 @@ func writeCRUDError(w http.ResponseWriter, r *http.Request, err error) {
 	// side; the client sees a generic "internal server error" with
 	// the original error remaining matchable via errors.Is in tests.
 	log.Printf("crud: internal error: %v", err)
-	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+	return phraseRefusal(ctx, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 
 // writeBatchItemError refuses one batch item: its own message, framed
@@ -1692,23 +1728,12 @@ func textIsTrue(s string) bool {
 // writeJSONError writes a structured JSON error response: reason
 // translated into r's locale as "error", its code as "reason".
 func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
-	writeErrorBody(w, code, map[string]any{
-		"error":  reason.Text(r.Context(), params...),
-		"reason": reason.Code(),
-	})
+	writeErrorBody(w, code, phraseRefusal(r.Context(), code, reason, params...).body())
 }
 
-// writeErrJSON writes err as a JSON error response. A phrased error in
-// its chain translates; any other error renders inside frame as its
-// {{detail}}, or as written (an app hook's own wording) when frame is
-// zero. See i18n.ErrorText.
+// writeErrJSON writes err as a JSON error response (errRefusal).
 func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, frame i18n.Phrase) {
-	text, reason := i18n.ErrorText(r.Context(), err, frame)
-	body := map[string]any{"error": text}
-	if reason != "" {
-		body["reason"] = reason
-	}
-	writeErrorBody(w, code, body)
+	writeErrorBody(w, code, errRefusal(r.Context(), code, err, frame).body())
 }
 
 // writeErrorBody adds the envelope every crud error shares to body and

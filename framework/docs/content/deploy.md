@@ -161,7 +161,9 @@ same deadline (their contexts are cancelled when the drain starts).
 If your process owns signal handling itself, set
 `AppConfig.DisableSignalHandling` and call `App.Shutdown` (or
 `App.RunWithSignals`) from your own handler. `Shutdown` is idempotent,
-so double-wiring is harmless.
+so double-wiring is harmless: the teardown runs once, and a later or
+concurrent call waits for it to finish (or for its own context to end)
+before it returns.
 
 ### Serving HTTPS from the app
 

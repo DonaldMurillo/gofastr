@@ -20,6 +20,8 @@ app:
   auth:
     enabled: true
     dev_mode: true
+    # Not the default /auth: the generated forms, Sign out and e2e follow it.
+    base_path: /account
   admin:
     enabled: true
     path: /admin
@@ -272,8 +274,10 @@ entities:
       - name: body
         type: text
 
-  # Uploads, a generated read-only key, a hidden column, a pattern.
+  # Uploads, a generated read-only key, a hidden column, a pattern, and
+  # a table that is not the entity name (its routes and form use it).
   - name: customers
+    table: shop_customers
     crud: true
     fields:
       - name: name

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
@@ -108,6 +109,28 @@ func TestDevWatchIsConcurrencySafe(t *testing.T) {
 	wg.Wait()
 	// The analyses run in goroutines; this asserts Run() itself is safe to
 	// call concurrently, which is the contract the reload loop relies on.
+	// The one that started must finish before the test does: left running,
+	// it reads a TempDir the cleanup removed and prints the failure into
+	// whichever later test has stdout captured.
+	waitWatchIdle(t, w)
+}
+
+// waitWatchIdle waits until w has no analysis in flight.
+func waitWatchIdle(t *testing.T, w *devContractWatch) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		w.mu.Lock()
+		running := w.running
+		w.mu.Unlock()
+		if !running {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the contract analysis never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestDevBaselinePathJoins(t *testing.T) {

@@ -199,15 +199,26 @@ func (j *BulkJobs) run(ctx context.Context, job queue.Job) error {
 	}
 }
 
+// TenantMember reports whether userID still belongs to tenantID, read
+// from the app's own membership state. AuthPrincipal asks it before
+// every chunk of a tenant run; false or an error stops the run.
+type TenantMember func(ctx context.Context, userID, tenantID string) (bool, error)
+
+// AnyTenant is the TenantMember for an app whose users never leave a
+// tenant: it admits every run in the tenant it was confirmed in.
+func AnyTenant(context.Context, string, string) (bool, error) { return true, nil }
+
 // AuthPrincipal builds the PrincipalFunc for battery/auth: it loads the
 // user by id through the manager's UserStore — a user who is gone is an
 // error, so the run stops — installs them as the context's user with
 // their CURRENT roles (as the user and via access.WithRoles, so both the
 // User-reading gates and the permission-reading gates see them), and
-// stamps the run's tenant as given: battery/auth has no tenant
-// membership to check it against. The admin adds Config.Policy when the
-// context has no policy of its own.
-func AuthPrincipal(am *auth.AuthManager) PrincipalFunc {
+// stamps the run's tenant once member confirms the user still belongs
+// to it: battery/auth keeps no tenant membership of its own. A tenant
+// run with a nil member is refused; a run with no tenant never asks.
+// The admin adds Config.Policy when the context has no policy of its
+// own.
+func AuthPrincipal(am *auth.AuthManager, member TenantMember) PrincipalFunc {
 	return func(ctx context.Context, userID, tenantID string) (context.Context, error) {
 		if am == nil || am.UserStore() == nil {
 			return nil, errors.New("admin: AuthPrincipal needs the auth manager's user store")
@@ -219,6 +230,16 @@ func AuthPrincipal(am *auth.AuthManager) PrincipalFunc {
 		c := handler.SetUser(ctx, u)
 		c = access.WithRoles(c, u.GetRoles())
 		if tenantID != "" {
+			if member == nil {
+				return nil, fmt.Errorf("admin: AuthPrincipal has no TenantMember to check user %q in tenant %q", userID, tenantID)
+			}
+			ok, err := member(ctx, userID, tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("admin: check user %q in tenant %q for a bulk job: %w", userID, tenantID, err)
+			}
+			if !ok {
+				return nil, fmt.Errorf("admin: user %q no longer belongs to tenant %q", userID, tenantID)
+			}
 			c = tenant.SetTenantID(c, tenantID)
 		}
 		return c, nil

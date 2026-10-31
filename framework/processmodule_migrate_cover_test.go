@@ -317,10 +317,10 @@ func TestApply_postgresRequiresAdminDSN(t *testing.T) {
 // ---- stampApplied (SQLite: SetMigrationsAppliedAt + BumpGeneration) ----
 
 func TestStampApplied_recordsTimestampAndBumps(t *testing.T) {
-	store, _ := coordStoreWithModule(t, "demo", TrustTrusted)
+	store, desc := coordStoreWithModule(t, "demo", TrustTrusted)
 	stamp := time.UnixMilli(1_700_000_000_000)
 	c, _ := NewMigrationCoordinator(store, store.db, WithCoordinatorClock(func() time.Time { return stamp }))
-	if err := c.stampApplied(context.Background(), "demo"); err != nil {
+	if err := c.stampApplied(context.Background(), "demo", desc.ArtifactSHA256); err != nil {
 		t.Fatalf("stampApplied: %v", err)
 	}
 	got, err := store.GetDesired(context.Background(), "demo")
@@ -338,7 +338,7 @@ func TestStampApplied_recordsTimestampAndBumps(t *testing.T) {
 func TestStampApplied_unknownModuleErrors(t *testing.T) {
 	store := newTestStore(t)
 	c, _ := NewMigrationCoordinator(store, store.db)
-	if err := c.stampApplied(context.Background(), "ghost"); err == nil {
-		t.Error("stampApplied on unknown module must error")
+	if err := c.stampApplied(context.Background(), "ghost", hex256("aa")); !errors.Is(err, ErrNoDesiredRow) {
+		t.Errorf("stampApplied on unknown module = %v, want ErrNoDesiredRow", err)
 	}
 }

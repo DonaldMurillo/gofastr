@@ -19,6 +19,12 @@ import (
 // migrations can proceed again.
 var ErrDirty = errors.New("migrate: database is in a dirty state from a failed migration — reconcile manually and call Force")
 
+// ErrNoDown is returned by Down when a migration it would roll back has
+// no Down SQL. Down refuses before it rolls back anything. Write the
+// migration's Down, or undo its Up by hand and call Force with
+// applied false.
+var ErrNoDown = errors.New("migrate: the migration has no Down SQL, so nothing undoes its Up — write a Down section, or undo the change by hand and call Force")
+
 // ChecksumMismatchError is returned by Up when an already-applied migration's
 // recorded checksum no longer matches the registered migration's Up SQL. That
 // means the migration file was edited after it was applied, a drift the

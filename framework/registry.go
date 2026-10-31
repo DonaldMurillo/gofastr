@@ -109,6 +109,14 @@ func (r *Registry) Register(ent *entity.Entity) error {
 	return nil
 }
 
+// size counts every registered (name, version) pair. Nothing is ever
+// removed, so a larger size means a new registration.
+func (r *Registry) size() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.entities)
+}
+
 // Get retrieves an Entity by name, resolving version ambiguity safely.
 //
 // Resolution order:

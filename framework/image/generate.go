@@ -15,6 +15,9 @@ func NewGradient(width, height int, fromHex, toHex string) (*Image, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("image: NewGradient dimensions must be positive, got %dx%d", width, height)
 	}
+	if !areaWithin(width, height, DefaultMaxPixels) {
+		return nil, fmt.Errorf("%w: NewGradient %dx%d, DefaultMaxPixels %d", ErrTargetTooLarge, width, height, DefaultMaxPixels)
+	}
 	from, err := parseHexColor(fromHex)
 	if err != nil {
 		return nil, err

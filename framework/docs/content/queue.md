@@ -9,7 +9,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 
 | Capability | `MemoryQueue` | `DBQueue` | `RedisQueue` |
 |---|---|---|---|
-| Durable across restart | No | Yes | Yes |
+| Durable across restart | No | Yes | Yes ([a worker that dies mid-claim needs `PopRecorder`](#optional-poprecorder)) |
 | Multiple workers | Yes | Yes | Manual |
 | Priority ordering | Yes (heap) | Yes | No (FIFO list) |
 | Lane reservations | Yes (`WithLaneWorkers`) | Yes (`WithDBLaneWorkers`) | No (instance-per-lane) |
@@ -73,7 +73,11 @@ defer q.Close()
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
 exist. Pass `WithTable("my_jobs")` to use a custom table name. An
 index name longer than Postgres's 63-byte limit ends in a hash of the
-table name, so a long table name still gets each of its indexes.
+table name, so a long table name still gets each of its indexes. The
+durable scheduler's tables and indexes (`<table>_scheduler_schedules`,
+`_occurrences`, `_leases`) follow the same rule on Postgres when the cut
+Postgres would make collides with another name; a cut that collides with
+nothing keeps that name, the one earlier releases created.
 
 ## Quickstart: RedisQueue
 
@@ -367,6 +371,13 @@ processing hash and re-enqueues any job whose `expiresAt` has passed.
 Without `Start`, crashed-worker jobs strand silently until you call
 `Reclaim` manually.
 
+A worker that dies inside `Dequeue`, after the pop and before the
+processing write, leaves no processing entry to expire. With a client that
+implements [`PopRecorder`](#optional-poprecorder), the pop leaves a record
+of the job in `<queue>:popped`, and `Reclaim` puts a record older than
+the visibility timeout back on the main list. Without it, that job is
+lost.
+
 You can also call `Reclaim` directly from your own ticker:
 
 ```go
@@ -438,9 +449,13 @@ so the queue does not carry a second cron parser; it accepts the same
 5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
 in one scheduler.
 
-`Register()` returns an `error` only when a `Cron` spec is invalid;
-`Every` schedules never error, so existing callers that ignore the
-return value are unaffected. `RegisterAt(base)` is the deterministic
+`Register()` returns an `error`, and registers nothing, when the
+payload given to `Job` cannot be encoded as JSON (a `NaN`, a channel),
+or when a `Cron` spec is invalid or has no firing in the next five
+years (`0 0 30 2 *`, February 30, which `DurableScheduler` refuses too).
+A cron schedule whose next firing
+lies past that search stops and logs a warning (February 29 after 2096,
+since 2100 is not a leap year). `RegisterAt(base)` is the deterministic
 variant: it anchors the first run to `base` instead of `time.Now()`,
 which is handy for tests and replayed fixtures.
 
@@ -498,6 +513,10 @@ go func() {
 }()
 ```
 
+A durable `Every` takes one millisecond or more; `Register` refuses a
+shorter interval, and a stored row with one is skipped like a corrupted
+row.
+
 `Start` survives evaluation errors: a corrupted schedule row (a bad
 `next_run`, a half-applied manual repair) is skipped with an ERROR log and
 the remaining due schedules still fire, and a transient database failure is
@@ -541,17 +560,26 @@ if err := durable.Cron("nightly-rollup", "0 2 * * *").
 }
 ```
 
-Across DST shifts the schedule behaves like vixie cron. When clocks go
-back, a wall-clock minute in the repeated hour fires once, at its first
-occurrence: `"0,30 1 * * *"` in New York fires at 01:00 and 01:30 EDT and
-not again at 01:00 or 01:30 EST, however the scheduler's heartbeats split
-the night. When clocks go forward, a minute the jump skips fires once, at
-the transition.
+Across DST shifts the schedule behaves like vixie cron. A fixed-time
+spec, one whose minute and hour fields both name values, fires once per
+wall-clock time. When clocks go back, a minute in the repeated hour fires
+at its first occurrence: `"0,30 1 * * *"` in New York fires at 01:00 and
+01:30 EDT and not again at 01:00 or 01:30 EST, however the scheduler's
+heartbeats split the night. When clocks go forward, a minute the jump
+skips fires once, at the transition. A spec whose minute or hour field
+begins with `*` runs by the new wall clock: `"*/30 * * * *"` fires
+through both 01:00 hours, and `"15 * * * *"` does not fire for the 02:15
+a spring-forward skips.
+
+A spec that never fires (`"0 0 30 2 *"`) is refused at registration. A
+rare one is not: `"0 0 29 2 */7"` (February 29 on a Sunday) next fires in
+2032, and its gap across 2100 is 40 years.
 
 The zone name persists with the schedule (a `tz` column added by the same
 idempotent migration as the options columns). UTC, fixed-offset zones
 (`time.FixedZone`), and `time.Local` store the empty default and evaluate
-in UTC; `time.Local` would resolve to a different zone on every replica.
+in UTC, the first run included; `time.Local` would resolve to a different
+zone on every replica.
 The in-memory `Scheduler` differs here: it has no persistence, so its cron
 specs evaluate against the process clock in the process's local zone.
 Moving a schedule from `Scheduler` to `DurableScheduler.Register()` on a
@@ -578,7 +606,8 @@ When evaluation wakes after several ticks, only the newest due tick is
 enqueued. Older retained ticks are stored as `skipped` occurrences instead of
 causing a catch-up burst. `MaxCatchUpOccurrences` bounds that materialized
 history window and defaults to 1,000: after a longer outage, the scheduler
-fast-forwards the watermark and retains only the newest bounded window. This
+fast-forwards the watermark and retains only the newest bounded window; the
+walk over missed ticks never holds more than that many at once. This
 prevents a stale fixed-interval or cron watermark from allocating unbounded
 memory or creating an unbounded transaction. The enqueued `Job.OccurrenceID`
 is stable for that schedule ID and tick, so handlers and run-history records
@@ -730,6 +759,40 @@ queue a hash-tagged name (`{jobs}`) so its lists and hash share one.
 Return `false` when the entry had changed; the queue counts it in
 `StaleClaimCount()` and pushes nothing. Without it, `RedisQueue` pushes
 and then releases with `HDelIfEqual`, which leaves that window open.
+
+### Optional: `PopRecorder`
+
+```go
+type PopRecorder interface {
+    RPopHSet(ctx, list, hash, field string) (string, error)
+}
+```
+
+`Dequeue` pops a job and writes it to the processing hash in two round
+trips. A worker killed between them (a deploy, an OOM kill) runs no
+recovery write, and the job is on no list. `RPopHSet` pops the tail of
+`list` and stores the value in `hash` under `field` in one step:
+
+```lua
+local v = redis.call('RPOP', KEYS[1])
+if not v then return false end
+redis.call('HSET', KEYS[2], ARGV[1], v)
+return v
+```
+
+The record's field holds the pop time. `Dequeue` deletes the record once
+the job has its next home: the processing hash, the dead-letter list, or
+back on the main list. `Reclaim` handles a record older than the
+visibility timeout: if the processing hash holds the job under the same
+claim, it drops the record, and otherwise it puts the job back on the
+main list. Report an empty list as `queue.ErrRedisEmpty` (go-redis
+returns `redis.Nil` for the script's `false`). Use the same hash-tagged
+queue name on Redis Cluster as for `CompareAndMover`.
+
+Two cases deliver a job twice, which the at-least-once contract allows:
+a record whose delete failed, once its job has finished and left the
+processing hash, and a record that a `Dequeue` slower than the visibility
+timeout still holds.
 
 **`RPop` must report an empty list as `queue.ErrRedisEmpty`.** Drivers
 signal "nothing there" with their own sentinel (go-redis returns

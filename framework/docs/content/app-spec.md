@@ -134,7 +134,8 @@ handler at the same path. MCP tools and the OpenAPI spec follow the prefix
 automatically. Set `api_prefix: ""` to mount entity APIs at the bare
 `/<table>` (the historical behavior); a screen must then not reuse an entity
 path. The generated `entity_list` / `entity_form` / `entity_detail` blocks
-fetch and submit against `<api_prefix>/<entity>` accordingly.
+fetch and submit against `<api_prefix>/<table>` accordingly, where the
+table is the entity's `table:` or, without one, its name in snake_case.
 
 ## YAML subset
 
@@ -816,9 +817,12 @@ partial and keeps the shell).
   **`<home list>/create`** (not `/new`), rendering
   `appUI.Create("<entity>").Base(<home route>)`. It inherits the home
   screen's `layout` + `access` and is not added to `nav`.
-- `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<entity>">`
+- `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<table>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
-  related entity; a number input steps by 1 for `int`, 0.0001 for
+  related entity's route, each option's value its key column, so a
+  target with `primary_key: [currency_code]` offers its codes; a target
+  keyed on more than one column has no single value to offer and its
+  select stays empty; a number input steps by 1 for `int`, 0.0001 for
   `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
@@ -1094,6 +1098,8 @@ The names differ from the raw node kinds `button`, `form`, `select`,
 the node renderer. That renderer draws only node kinds, so validation
 refuses a catalog block nested under a node block (`type: div` holding a
 `custom_form`): put it in a `stack`, `cluster`, `card` or `section`.
+A raw `textarea` takes its text from `props.value` (or `text`, then
+`content`), rendered as the element's content; children are not drawn.
 A `type: link` block renders through `ui.Link`, the styled anchor;
 validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
 
@@ -1167,16 +1173,32 @@ visible to everyone.
 not gate the route. Whether the destination is protected depends entirely on
 what guards the destination: entity `access:` permissions gate the DATA a
 screen renders (a caller without them sees the "Not available" notice in place
-of rows), and the admin battery gates its own console. An app spec screen
-cannot declare a role of its own; `screens: role:` is not a key. A plain
-generated screen sitting at a role-gated href answers 200 to anyone who types
-the URL, with whatever ungated content it holds. Every screen path also appears
-in the route manifest embedded in each page, so the href is discoverable
-regardless of whether its nav link renders.
+of rows), the screen's own `access:` block gates the route, and the admin
+battery gates its own console. A generated screen with no `access:` block
+sitting at a role-gated href answers 200 to anyone who types the URL, with
+whatever ungated content it holds. Every screen path also appears in the route
+manifest embedded in each page, so the href is discoverable regardless of
+whether its nav link renders.
 
 Put anything that must not be reached behind a gate on the destination: give
-the entities it reads an `access:` permission, or mount it under the admin
-battery.
+the screen an `access:` block, give the entities it reads an `access:`
+permission, or mount it under the admin battery.
+
+```yaml
+screens:
+  - name: billing
+    route: /app/billing
+    access:
+      auth: true    # redirect an anonymous visitor to the login page
+      role: admin   # 403 a signed-in user without the role
+```
+
+The generated `authPolicy` composes `auth.SessionPolicy` and
+`auth.RolePolicy`, so an access decider installed with
+`access.DeciderMiddleware` binds the role check the same way it binds every
+other battery/auth role gate (see
+[access control](access-control.md#wiring-it-decidermiddleware)), and a
+scoped API token is refused.
 
 ### Seed data
 
@@ -1268,7 +1290,12 @@ app:
 With `enabled: true` the generated app wires the [auth battery](auth.md):
 an `AuthManager` backed by entity stores over auto-created `auth_users` /
 `auth_sessions` tables, with the core plugin's register/login/logout/me
-endpoints mounted under `base_path`. The generated app also mounts
+endpoints mounted under `base_path`. Everything the generator emits that
+calls those endpoints uses `base_path` too: the `login_form` and
+`signup_form` default actions, the Sign out control, and the generated
+e2e test's login. `base_path` must be an absolute path with no trailing
+slash, such as `/account`; its segments hold letters, digits, `-`, `_`
+and `.`, and none starts with a dot. The generated app also mounts
 `auth.SessionMiddleware` on the router, so the session cookie issued at
 login resolves to a user on every request; this is what makes
 `owner_field` and `access` scoping work for logged-in users on the
@@ -1279,7 +1306,7 @@ The generated app also wires the **auth UX** so the session is reflected
 everywhere, not just enforced:
 
 - **Sign out**: the app sidebar footer and (on marketing pages) the header
-  carry a `ui.SignOut` control that POSTs to `/auth/logout` and returns home.
+  carry a `ui.SignOut` control that POSTs to `<base_path>/logout` and returns home.
 - **Auth-aware marketing header**: a signed-in visitor sees a *Dashboard* link
   + *Sign out* instead of *Sign in*; the header re-renders per request from the
   session (`app.NewContextComponent`).
@@ -1288,7 +1315,10 @@ everywhere, not just enforced:
 
 The bootstrap admin (`app.admin.seed_email` / `seed_password`) is created on a
 fresh database, and the auth battery creates its own `auth_users` /
-`auth_sessions` tables in `Init`; the generated app ships no DDL.
+`auth_sessions` tables in `Init`; the generated app ships no DDL. An
+`Init` error stops the boot: with `dev_mode: false` and `JWT_SECRET`
+unset, the app exits naming the missing key instead of serving its
+screens with no auth routes.
 
 #### Secrets never land in generated source
 
@@ -1372,7 +1402,7 @@ screens:
       - kind: login_form
         text: Sign in            # form heading
         props:
-          action: /auth/login    # default /auth/login
+          action: /auth/login    # default <base_path>/login
           next: /admin           # where to land after login (default /)
           register_href: /signup  # optional link
 ```
@@ -1636,6 +1666,9 @@ The generator rejects:
   `screens[].access.role`, and `app.admin.role` each name one value;
   a list or map there used to decode as the zero value and silently
   drop the gate it was configuring
+- an `app.auth.base_path` that is not an absolute path with no trailing
+  slash (`/auth/`, `auth`, `//host`, `/a//b` and `/..` are refused): the
+  battery mounts its routes at it, and the generated forms post there
 - a `login_form`/`signup_form` `action:` that is not a safe link
   target (it must pass `urlsafe.Anchor`: http(s), relative, or
   fragment schemes only — the form posts its credentials there)
@@ -1755,6 +1788,11 @@ portability rules are built into that template:
   green-by-skip instead of timing out with a misleading "server did not become
   ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
+
+With gated screens and a seeded admin, the test signs in as that admin and
+then requires each gated screen to answer 200. Its client does not follow a
+redirect to the login screen's route, so a sign-in that left no session
+fails with the redirect's 303 instead of passing on the login page.
 
 ## Common mistakes
 

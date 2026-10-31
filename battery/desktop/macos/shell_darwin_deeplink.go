@@ -21,8 +21,8 @@ import (
 // the GetURL event is class 'GURL' and id 'GURL', and the URL travels
 // as the direct object under keyword '----'.
 const (
-	aeGetURLClass = 0x47555254 // 'GURL'
-	aeGetURLID    = 0x47555254 // 'GURL'
+	aeGetURLClass = 0x4755524C // 'GURL'
+	aeGetURLID    = 0x4755524C // 'GURL'
 	aeKeyDirect   = 0x2D2D2D2D // '----'
 )
 

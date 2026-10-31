@@ -491,7 +491,11 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 			Do:     &del,
 		})
 	}
+	// The menu is keyed by its row, as the URL span is: left to the
+	// label hash, two rows with one title would share trigger and panel
+	// ids, and the second trigger would open the first row's panel.
 	return render.Join(urlSpan, ui.Menu(ui.MenuConfig{
+		ID:       "eui-" + listIDSafe(s.key, m.name) + "-actions-" + strconv.Itoa(i),
 		Label:    i18nui.EntityRowActions.Text(ctx, map[string]any{"title": title}),
 		IconOnly: true,
 		Items:    items,

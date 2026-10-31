@@ -2,8 +2,6 @@ package appspec
 
 import (
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // ── appspec.go pure helpers ─────────────────────────────────────────
@@ -14,27 +12,6 @@ func TestAppSpecTitleOrName(t *testing.T) {
 	}
 	if (AppSpecScreen{Name: "N"}).TitleOrName() != "N" {
 		t.Fatal("name fallback")
-	}
-}
-
-func TestAppSpecEntityTableAndDefault(t *testing.T) {
-	if appSpecEntityTable(framework.EntityDeclaration{Table: "/users/"}) != "users" {
-		t.Fatal("explicit table trimmed")
-	}
-	if appSpecEntityTable(framework.EntityDeclaration{Name: "UserProfile"}) != "user_profile" {
-		t.Fatalf("default = %q", appSpecEntityTable(framework.EntityDeclaration{Name: "UserProfile"}))
-	}
-	if appSpecDefaultTableName("already_snake") != "already_snake" {
-		t.Fatal("lowercase passthrough")
-	}
-	// Mixed-case with separators: separators normalize to "_" and the
-	// camel-split inserts another "_" before each uppercase letter.
-	if got := appSpecDefaultTableName("With-Dash And Space"); got != "with__dash__and__space" {
-		t.Fatalf("got %q", got)
-	}
-	// All-lowercase camel path: PascalCase → snake.
-	if got := appSpecDefaultTableName("OrderItem"); got != "order_item" {
-		t.Fatalf("got %q", got)
 	}
 }
 

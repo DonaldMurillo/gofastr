@@ -34,6 +34,7 @@ var (
 
 var (
 	_ func(http.ResponseWriter, *http.Request, WSConfig) (*WebSocketConn, error) = Upgrade
+	_ func(*http.Request, func(*http.Request) bool) error                        = CheckUpgradeRequest
 	_ func(*WebSocketConn, []byte) error                                         = (*WebSocketConn).Write
 	_ func(*WebSocketConn, string) error                                         = (*WebSocketConn).WriteString
 	_ func(*WebSocketConn) ([]byte, error)                                       = (*WebSocketConn).Read

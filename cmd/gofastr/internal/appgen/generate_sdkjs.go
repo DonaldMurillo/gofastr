@@ -306,9 +306,24 @@ func checkDTSTypeNames(spec sdkSpec) error {
 	for _, n := range dtsRuntimeTypes {
 		owner[n] = "the SDK runtime"
 	}
-	for _, ent := range spec.Entities {
-		for _, suffix := range []string{"", "Input", "Patch", "Moves", "Endpoints"} {
-			owner[ent.Struct+suffix] = "entity " + ent.Table
+	// An entity's names are checked too: assigned blind, entity resource
+	// overwrote the runtime's Resource and shipped a second interface of
+	// that name (2026-10-27 G2). Only the names writeJSEntity emits count,
+	// so order_moves beside an order with no moves stays legal.
+	for i, ent := range spec.Entities {
+		suffixes := []string{"", "Input", "Patch"}
+		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
+			suffixes = append(suffixes, "Moves")
+		}
+		if len(sdkEndpoints(spec.Decls[i])) > 0 {
+			suffixes = append(suffixes, "Endpoints")
+		}
+		for _, suffix := range suffixes {
+			name := ent.Struct + suffix
+			if prev, dup := owner[name]; dup {
+				return fmt.Errorf("entity %q: its type %s is already declared by %s in client.d.ts; rename the entity", ent.Table, name, prev)
+			}
+			owner[name] = "entity " + ent.Table
 		}
 	}
 	for _, d := range spec.Decls {
@@ -437,10 +452,23 @@ function encodeParams(params) {
   if (filters) {
     for (const [key, value] of Object.entries(filters)) {
       if (value === undefined || value === null) continue;
-      q.set(key, Array.isArray(value) ? value.join(",") : String(value));
+      q.set(key, Array.isArray(value) ? joinList(key, value) : String(value));
     }
   }
   return q;
+}
+
+// A filter list goes as one comma-joined value, which the server splits
+// on commas, so an element holding a comma would arrive as two values.
+// The top-level lists (sort, fields, include) name fields, where a comma
+// already separates names the way the server reads them.
+function joinList(key, list) {
+  for (const v of list) {
+    if (String(v).includes(",")) {
+      throw new Error("query: a value of " + key + " holds a comma, which the server reads as a separator");
+    }
+  }
+  return list.join(",");
 }
 
 // The server's multipart limits: one file, and the whole request body.
@@ -549,7 +577,9 @@ class Resource {
    * Offset-paged list. params: {page, limit, sort, include, fields, q,
    * trashed, filters}: filter keys are the snake_case column names (see
    * the exported <entity>Fields constants), with _ne/_gt/_gte/_lt/_lte/_like/_in
-   * suffixes for operators.
+   * suffixes for operators. A filter value may be an array (an _in
+   * list); an element holding a comma throws, because the server splits
+   * on commas.
    */
   list(params) {
     return this.client.do("GET", this._path("", params));
@@ -818,7 +848,8 @@ export interface CursorPage<T> {
   data: T[];
   cursor: string;
   hasMore: boolean;
-  total: number;
+  /** Not sent: cursor mode does not count rows. */
+  total?: number;
 }
 
 export interface BatchResult<T> {

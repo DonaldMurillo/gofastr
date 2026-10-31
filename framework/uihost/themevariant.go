@@ -1,7 +1,6 @@
 package uihost
 
 import (
-	"maps"
 	"net/http"
 	"sync"
 
@@ -71,15 +70,12 @@ type themeVariants struct {
 // variant.
 func (ds *UIHost) RegisterThemeVariant(t style.Theme) string {
 	// Deep-copy the reference-typed fields BEFORE hashing or storing. Theme is
-	// passed by value, but DarkColors/DarkCode/Components/Knobs are maps, so a plain
-	// copy shares the caller's backing store: a later caller-side write would
-	// change what we serve without changing the key, and could race a request
-	// reading the same map (a fatal concurrent map read/write, not a
-	// recoverable panic).
-	t.DarkColors = copyStringMap(t.DarkColors)
-	t.DarkCode = copyStringMap(t.DarkCode)
-	t.Knobs = copyStringMap(t.Knobs)
-	t.Components = copyStringMap(t.Components)
+	// passed by value, but DarkColors/DarkCode/Components/Knobs are maps and
+	// Extensions holds token-set pointers, so a plain copy shares the caller's
+	// backing store: a later caller-side write would change what we serve
+	// without changing the key, and could race a request reading the same map
+	// (a fatal concurrent map read/write, not a recoverable panic).
+	t = t.Clone()
 
 	// The key is the immutable cache address of the variant's app.css,
 	// so it fingerprints the bytes handleAppCSS serves for it.
@@ -145,18 +141,6 @@ func (ds *UIHost) ReleaseThemeVariant(key string) {
 	if evictHash != "" {
 		registry.EvictTheme(evictHash)
 	}
-}
-
-// copyStringMap returns an independently-owned copy, or nil for an empty input
-// so an absent dark palette stays absent (Theme treats nil and empty alike, and
-// darkSchemeCSS emits nothing for either).
-func copyStringMap(m map[string]string) map[string]string {
-	if len(m) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(m))
-	maps.Copy(out, m)
-	return out
 }
 
 // requestTheme resolves the theme THIS request renders under: the variant named

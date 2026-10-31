@@ -97,6 +97,28 @@ func TestTreeLazyBranchKeepsThePatternContract(t *testing.T) {
 	}
 }
 
+// An Expanded lazy branch with no children rendered an open, empty group
+// that nothing loads until the reader collapses and re-expands it
+// (2026-10-27 U4). It renders collapsed, so the first toggle loads it.
+func TestTreeLazyExpandedStartsCollapsed(t *testing.T) {
+	h := renderTreeView(TreeProps{ID: "lx", Label: "Lazy", LazySignalPrefix: "tree-lx", Nodes: []TreeNode{
+		{ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor", Expanded: true},
+	}})
+	if !strings.Contains(h, `aria-expanded="false"`) || strings.Contains(h, `aria-expanded="true"`) {
+		t.Errorf("lazy branch with no children should start collapsed:\n%s", h)
+	}
+	if !strings.Contains(h, `hidden="" role="group"`) {
+		t.Errorf("its group should start hidden:\n%s", h)
+	}
+	// With Children present, Expanded still opens the branch.
+	h = renderTreeView(TreeProps{ID: "lx2", Label: "Lazy", LazySignalPrefix: "x", Nodes: []TreeNode{
+		{ID: "n", Label: "n", LazyPath: "/x", Expanded: true, Children: []TreeNode{{ID: "c", Label: "c"}}},
+	}})
+	if !strings.Contains(h, `aria-expanded="true"`) || strings.Contains(h, `hidden="" role="group"`) {
+		t.Errorf("a branch with Children should honor Expanded:\n%s", h)
+	}
+}
+
 func TestTreeDropsDangerousHrefs(t *testing.T) {
 	for _, href := range []string{
 		"javascript:alert(1)",

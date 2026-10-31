@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -171,10 +172,12 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 	return nil
 }
 
-// ModelMismatchError is returned when a persisted snapshot was produced
-// by a different embedder than the one configured on the store. Mixing
+// ModelMismatchError is returned when stored vectors (a persisted
+// snapshot or WAL, or a PgVectorStore table's recorded model) were
+// produced by a different embedder than the one configured. Mixing
 // vectors from different models is silently catastrophic for retrieval
-// quality, so the load is refused loudly instead.
+// quality, so the open is refused loudly instead. The Snapshot fields
+// name what is stored.
 type ModelMismatchError struct {
 	SnapshotModel, StoreModel string
 	SnapshotDim, StoreDim     int
@@ -182,7 +185,7 @@ type ModelMismatchError struct {
 
 func (e *ModelMismatchError) Error() string {
 	return fmt.Sprintf(
-		"semantic: snapshot embedded with model=%q dim=%d, store configured with model=%q dim=%d: re-index after model changes",
+		"semantic: stored vectors were embedded with model=%q dim=%d, the index is configured with model=%q dim=%d: re-index after model changes",
 		e.SnapshotModel, e.SnapshotDim, e.StoreModel, e.StoreDim,
 	)
 }
@@ -280,16 +283,6 @@ func (s walSink) sync() error {
 	return s.w.f.Sync()
 }
 
-// Supply ReadByte so gob does not read ahead past a completed record;
-// the file offset then identifies the durable prefix of a torn log.
-type walReplayReader struct{ *os.File }
-
-func (r walReplayReader) ReadByte() (byte, error) {
-	var b [1]byte
-	_, err := io.ReadFull(r.File, b[:])
-	return b[0], err
-}
-
 func openWAL(path string) (*wal, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("semantic: mkdir wal dir: %w", err)
@@ -365,35 +358,8 @@ func (w *wal) replay(apply func(walEntry) error) error {
 	if _, err := w.f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("semantic: wal seek: %w", err)
 	}
-	dec := gob.NewDecoder(walReplayReader{w.f})
-	var lastGood int64
-	for {
-		var e walEntry
-		err := dec.Decode(&e)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			// Use a separate write handle: Windows append handles cannot
-			// call SetEndOfFile, but os.Truncate opens the required handle.
-			if err := os.Truncate(w.path, lastGood); err != nil {
-				return fmt.Errorf("semantic: truncate torn WAL record: %w", err)
-			}
-			if err := w.f.Sync(); err != nil {
-				return err
-			}
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("semantic: wal decode: %w", err)
-		}
-		if err := apply(e); err != nil {
-			return fmt.Errorf("semantic: wal apply: %w", err)
-		}
-		lastGood, err = w.f.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return err
-		}
+	if err := decodeWAL(w.f, apply); err != nil {
+		return err
 	}
 	// Seek to end so further appends go after the replayed entries.
 	if _, err := w.f.Seek(0, io.SeekEnd); err != nil {
@@ -401,6 +367,64 @@ func (w *wal) replay(apply func(walEntry) error) error {
 	}
 	w.enc = gob.NewEncoder(walSink{w})
 	return nil
+}
+
+// decodeWAL applies every whole record of f from its current offset and
+// stops at a record cut short at the end: a crash mid-append, or a
+// writer's append still in flight. The writer's Open never appends after
+// such a tail: it snapshots the replayed state and starts an empty WAL.
+func decodeWAL(f *os.File, apply func(walEntry) error) error {
+	dec := gob.NewDecoder(f)
+	for {
+		var e walEntry
+		err := dec.Decode(&e)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("semantic: wal decode: %w", err)
+		}
+		if err := apply(e); err != nil {
+			return fmt.Errorf("semantic: wal apply: %w", err)
+		}
+	}
+}
+
+// replayReadOnly applies every whole record of the WAL at path, opened
+// for reading only: a writer may be appending to it, so a torn tail is
+// its record in flight and stays. A missing WAL is an empty one.
+func replayReadOnly(path string, apply func(walEntry) error) error {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("semantic: open wal: %w", err)
+	}
+	defer f.Close()
+	return decodeWAL(f, apply)
+}
+
+// lockIndexDir takes the writer's exclusive lock on dir, creating it,
+// and returns the lock file, whose Close releases it. Another holder is
+// ErrIndexLocked.
+func lockIndexDir(dir string) (*os.File, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("semantic: mkdir index dir: %w", err)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("semantic: open index lock: %w", err)
+	}
+	held, err := filelock.TryLock(f)
+	if err == nil && !held {
+		err = ErrIndexLocked
+	}
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 // truncate empties the WAL. Call after a successful snapshot so the

@@ -532,7 +532,8 @@ func TestRouterEmptySegmentShapes(t *testing.T) {
 
 // TestRouterUnregisteredMethodGets405 pins that a request whose method is
 // not registered never dispatches the handler, and that the Allow header
-// advertises EXACTLY the registered methods. Property: the router must not
+// advertises EXACTLY the methods that dispatch: the registered ones, plus
+// the HEAD net/http serves on a GET pattern. Property: the router must not
 // synthesize per-method access — no implicit OPTIONS handling (which would
 // bypass per-method route gates), no extra verbs in Allow (which would
 // enumerate a disabled surface). Authorization is per-method; every method
@@ -564,8 +565,8 @@ func TestRouterUnregisteredMethodGets405(t *testing.T) {
 			t.Errorf("SECURITY: [router] %s /thing/{id} -> %d (GET handler ran %d times), want 405 with no dispatch. "+
 				"Attack: an unregistered method reaching a handler bypasses that method's route gate.", m, w.Code, getCalls)
 		}
-		if allow := w.Header().Get("Allow"); allow != "GET, PUT" {
-			t.Errorf("[router] %s Allow = %q, want exactly \"GET, PUT\" (no synthesized verbs)", m, allow)
+		if allow := w.Header().Get("Allow"); allow != "GET, HEAD, PUT" {
+			t.Errorf("[router] %s Allow = %q, want exactly \"GET, HEAD, PUT\" (no synthesized verbs)", m, allow)
 		}
 	}
 }

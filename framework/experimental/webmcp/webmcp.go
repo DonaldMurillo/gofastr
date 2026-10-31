@@ -49,6 +49,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -463,7 +464,7 @@ func manifestHandler(body []byte) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Cache-Control", "no-cache")
 		h.Set("ETag", etag)
-		if r.Header.Get("If-None-Match") == etag {
+		if corestatic.IfNoneMatch(r, etag) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}

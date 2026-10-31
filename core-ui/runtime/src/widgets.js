@@ -400,7 +400,10 @@
 
     // Widget-scoped click + submit.
     w.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-cui-rpc]');
+      // A signal mutation wins over data-cui-rpc on the same click, as on
+      // the document bridge; the document signal delegate applies it.
+      const sig = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
+      const btn = sig ? null : e.target.closest('[data-cui-rpc]');
       if (btn && w.contains(btn) && btn.tagName !== 'FORM') {
         e.preventDefault();
         try {

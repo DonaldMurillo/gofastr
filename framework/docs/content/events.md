@@ -60,6 +60,17 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   rationale.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
+- One caller holds at most 16 streams on an entity
+  (`CrudHandler.EventStreamSeats`, settable via `WithEventStreamSeats`;
+  a negative value lifts the cap). The caller is the owner id on an
+  owner-scoped entity, else the signed-in user, else the tenant; every
+  anonymous stream shares one bucket. Past the cap the default answers
+  429 with `Retry-After`. `WithEventStreamSeatOverflow(stream.SeatOverflowEvictOldest)`
+  closes that caller's oldest stream instead and seats the new one. An
+  evicted stream's handler returns even when it is parked in a write to a
+  client that stopped reading: eviction sets a past write deadline on its
+  response, so the cap bounds handlers and connections without a server
+  `WriteTimeout`.
 - The stream re-validates its caller for its whole life, not just at
   connect. On every delivery and on a 30-second ticker
   (`CrudHandler.EventStreamReauth`, settable via
@@ -85,7 +96,24 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 
 When the entity is multi-tenant, the SSE stream filters events to the
 tenant ID extracted from the request context. Other tenants' events
-never reach the subscriber.
+never reach the subscriber. Each re-check compares the refreshed
+principal's tenant with the one the stream connected under, and closes
+the stream when they differ. The tenant changes on a re-check only when
+the middleware that set it re-resolves it: `tenant.ResolveMiddleware`
+does, so a member removed from a tenant, or moved to another, loses the
+feed at the next check. A middleware that calls `SetTenantID` once keeps
+the connect-time tenant for the life of the stream.
+
+## Read scope
+
+An entity with `Exposure.ReadScope` filters each event against the
+declared predicates in Go, since the feed has no query to narrow. Values
+compare by the column's type, as List and Get bind them: a Bool scope
+written `"1"`, `"t"` or `"true"` is the same value, as are `"+5"` and
+`"5"` on an Int, `"1.50"` and `"1.5000"` on a Decimal, and two spellings
+of one Timestamp instant. A record that lacks a scoped column, or holds
+NULL in one, is withheld, so a delete (its payload is the key alone) does
+not reach a restricted caller.
 
 ## Payload shape
 
@@ -119,11 +147,17 @@ defer unsubscribe()
 ```
 
 `app.Events()` is a method that returns the in-process `*EventBus`,
-the same bus the SSE stream subscribes to.
+the same bus the SSE stream subscribes to. Calling `unsubscribe`
+removes the handler and the bus keeps no reference to it, so a closure
+that captured a request context or buffered events can be collected.
 
 In-process subscribers are not subject to the 32-event SSE buffer.
 `EmitAsync` runs each subscriber on its own goroutine, so a slow or
-blocked handler does not hold back the others. The subscriber's context
+blocked handler does not hold back the others. That goroutine is new for
+every event, so two events emitted one after the other can reach the same
+subscriber in either order, or both at once. A subscriber that needs
+order reads it from the data (a timestamp or version column), not from
+arrival. The subscriber's context
 keeps the emitter's values (the user, the tenant, the request id) but not
 its cancel, because CRUD emits on the request context and the handler
 has usually returned by the time a subscriber runs. Each run is bounded
@@ -472,5 +506,7 @@ handler)` + `ob.StartRelay(ctx)`.
   the delivery mid-run. The current claimant's outcome decides the row.
   A relay that has less lease left than one handler run plus its settle
   hands the rest of its batch back unstarted, attempts refunded; the
-  first delivery of a batch always runs.
+  first delivery of a batch always runs. A graceful shutdown mid-batch
+  (the relay's context cancelled) hands back the unstarted rest the same
+  way; only a relay that dies outright leaves them leased.
   There is no double-processing beyond the at-least-once caveat.

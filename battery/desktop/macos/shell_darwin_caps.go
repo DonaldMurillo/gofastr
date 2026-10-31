@@ -24,7 +24,11 @@ import (
 // ("public.utf8-plain-text").
 const nsPasteboardTypeString = "public.utf8-plain-text"
 
-// modalTimeout bounds a permission alert nobody answers.
+// modalTimeout bounds a modal nobody answers: the permission alert and
+// the open, save and folder panels. Every runModal runs under it
+// (TestModalsWaitForThePerson); the default main-thread deadline is ten
+// seconds, which gave up on a panel the user was still using. The
+// bridge's callBudget sits above it.
 const modalTimeout = 10 * time.Minute
 
 // Prompt shows the OS permission alert: "<Capability>.<Method> wants
@@ -174,7 +178,7 @@ func (s *darwinShell) OpenFile(ctx context.Context, opts desktop.OpenOptions) ([
 		return nil, desktop.ErrCancelled
 	}
 	var paths []string
-	if err := s.onMain(func() {
+	if err := s.onMainWithTimeout(modalTimeout, func() {
 		panel := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSOpenPanel"), objc.Sel("alloc"))), objc.Sel("init")))
 		objc.Send(panel, objc.Sel("setCanChooseFiles:"), 1)
 		objc.Send(panel, objc.Sel("setCanChooseDirectories:"), 0)
@@ -210,7 +214,7 @@ func (s *darwinShell) SaveFile(ctx context.Context, opts desktop.SaveOptions) (s
 	}
 	var path string
 	ok := false
-	if err := s.onMain(func() {
+	if err := s.onMainWithTimeout(modalTimeout, func() {
 		panel := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSSavePanel"), objc.Sel("alloc"))), objc.Sel("init")))
 		if opts.DefaultName != "" {
 			objc.Send(panel, objc.Sel("setNameFieldStringValue:"), uintptr(objc.NSString(opts.DefaultName)))
@@ -238,7 +242,7 @@ func (s *darwinShell) OpenFolder(ctx context.Context) (string, error) {
 	}
 	var path string
 	ok := false
-	if err := s.onMain(func() {
+	if err := s.onMainWithTimeout(modalTimeout, func() {
 		panel := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSOpenPanel"), objc.Sel("alloc"))), objc.Sel("init")))
 		objc.Send(panel, objc.Sel("setCanChooseFiles:"), 0)
 		objc.Send(panel, objc.Sel("setCanChooseDirectories:"), 1)

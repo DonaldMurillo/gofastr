@@ -21,6 +21,13 @@ func canRead(ctx context.Context, ch *crud.CrudHandler) bool {
 	return ch != nil && ch.CanReadScoped(ctx)
 }
 
+// canReadRelated is canRead for an entity reached through a relation:
+// it also refuses a target with CRUD off and a token without
+// "<table>:read", as ?include= does.
+func canReadRelated(ctx context.Context, ch *crud.CrudHandler) bool {
+	return ch != nil && ch.CanReadRelatedScoped(ctx)
+}
+
 // canReadRecord is canRead for one record: a resource-aware Decider may
 // allow the list and refuse one row.
 func canReadRecord(ctx context.Context, ch *crud.CrudHandler, id string) bool {

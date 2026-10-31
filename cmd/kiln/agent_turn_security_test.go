@@ -54,8 +54,8 @@ import (
 // and its turnCancel slot.
 // Fix direction: arm cmd.WaitDelay (the pinned bound for this shape) and
 // put the child in its own process group via the package's existing
-// childProcessGroup() (the serve twin at agent.go:62 already does) so
-// Cancel reaches descendants; bound the captured stdout with a capped
+// childProcessGroup() so Cancel reaches descendants (killGroup, pinned
+// by agent_group_test.go); bound the captured stdout with a capped
 // buffer while there (maxExtensionStdout twin).
 
 func TestKilnAgentTurnPipeWedge(t *testing.T) {

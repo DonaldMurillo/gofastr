@@ -243,12 +243,14 @@ func runPolicyPhase(ctx context.Context, screen *Screen, path string, chain []La
 // A static pattern is its own URL, so it answers what PagePolicy answers
 // for it, and a resolver failure there withholds (Block). A dynamic
 // pattern names no params: its screen chain runs as ResolvePolicy runs
-// it, but its region guards decide per URL and cannot run without one,
-// so a dynamic screen with any region guard on its chain answers Block.
-// A guard that redirects some visitor away from some URL would
-// otherwise leave that page's title and content in a pattern-level
-// document; over-withholding a public page's metadata is the safe
-// failure.
+// it, but its region guards and its required (eager) resolvers decide
+// per URL and cannot run without one, so a dynamic screen with any
+// region guard on its chain, or any Requires on its groups, answers
+// Block. A guard that redirects some visitor away from some URL, or a
+// Requires resolver that answers ErrNotFound for a row the caller may
+// not see, would otherwise leave that page's title and content in a
+// pattern-level document and run its server actions for that caller;
+// over-withholding a public page's metadata is the safe failure.
 func (a *App) PatternPolicy(ctx context.Context, screen *Screen) Decision {
 	if screen == nil {
 		return Decision{Kind: DecisionBlock}
@@ -264,6 +266,9 @@ func (a *App) PatternPolicy(ctx context.Context, screen *Screen) Decision {
 	d := ResolvePolicy(ctx, screen)
 	if d.Kind != DecisionAllow {
 		return d
+	}
+	if len(eagerDeclsFor(screen)) > 0 {
+		return Decision{Kind: DecisionBlock}
 	}
 	if len(guardRegions(screen, a.Router.layoutChainFor(screen))) > 0 {
 		return Decision{Kind: DecisionBlock}

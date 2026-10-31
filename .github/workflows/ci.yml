@@ -749,8 +749,12 @@ jobs:
         env:
           PKG: ${{ matrix.pkg }}
           TAGS: ${{ matrix.buildtags }}
+        # The assignment keeps the selector's exit status, so the step's
+        # bash -e fails on a selector error; inside the [ ] test it read
+        # as "nothing affected" and skipped the suite.
         run: |
-          if [ -n "$(go run ./cmd/affected -tags "$TAGS" -match "$PKG")" ]; then
+          matched=$(go run ./cmd/affected -tags "$TAGS" -match "$PKG")
+          if [ -n "$matched" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

@@ -8,7 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -107,6 +111,37 @@ type CompareAndMover interface {
 	MoveIfEqual(ctx context.Context, key, field, expect, list, value string) (bool, error)
 }
 
+// PopRecorder is the optional capability a RedisClient implements when it
+// can pop the tail of a list and record the popped value in a hash in one
+// atomic step. Dequeue takes a job off the main list and writes it to the
+// processing hash in separate round trips, and a worker that dies between
+// them (a deploy, an OOM kill) leaves the job on neither: Reclaim cannot
+// see it, and it is lost. With PopRecorder the pop itself leaves a record
+// of the job in the queue's pop hash ("<queue>:popped") under a field
+// holding the pop time. Dequeue deletes the record once the job has its
+// next home (the processing hash, the dead-letter list, or back on the
+// main list), and Reclaim puts a record older than the visibility timeout
+// back on the main list.
+//
+// Implement it with a Lua script — go-redis:
+//
+//	local v = redis.call('RPOP', KEYS[1])
+//	if not v then return false end
+//	redis.call('HSET', KEYS[2], ARGV[1], v)
+//	return v
+//
+// list is the list to pop, hash and field where the record goes. An empty
+// list MUST be reported as ErrRedisEmpty, as for RPop (go-redis returns
+// redis.Nil for the script's false). On Redis Cluster give the queue a
+// hash-tagged name, as for [CompareAndMover].
+//
+// A client that does not implement it still works: Dequeue pops with RPop,
+// and a worker that dies between the pop and the processing write loses
+// the job.
+type PopRecorder interface {
+	RPopHSet(ctx context.Context, list, hash, field string) (string, error)
+}
+
 // ErrRedisEmpty is the sentinel a RedisClient implementation returns (or
 // wraps) when a read finds nothing: RPop on an empty list, HGet on a missing
 // hash or field. It is how RedisQueue distinguishes a genuinely missing
@@ -130,6 +165,9 @@ type RedisQueue struct {
 	// delayedQueue holds jobs enqueued with a future ScheduledAt until
 	// Dequeue promotes them onto the main list.
 	delayedQueue string
+	// poppedQueue is the hash a [PopRecorder] pop records each entry in
+	// until the entry has its next home.
+	poppedQueue string
 
 	// visibilityTimeout is read by Dequeue and written by SetVisibilityTimeout
 	// from independent goroutines, so it is stored as nanoseconds in an
@@ -167,6 +205,7 @@ func NewRedisQueue(client RedisClient, queueName string) *RedisQueue {
 		processingQueue: queueName + ":processing",
 		deadLetterQueue: queueName + ":dead",
 		delayedQueue:    queueName + ":delayed",
+		poppedQueue:     queueName + ":popped",
 		now:             time.Now,
 	}
 	q.visibilityTimeout.Store(int64(30 * time.Second))
@@ -227,13 +266,12 @@ var redisRecoveryTimeout = 5 * time.Second
 // If types are specified, only jobs matching one of those types are returned;
 // non-matching jobs are pushed back onto the list.
 //
-// Crash-safety contract for the pop→processing transition: a job is RPop'd off
+// Crash-safety contract for the pop→processing transition: a job is popped off
 // the main list before it is recorded in the processing hash. If that recording
 // fails, the popped payload is pushed back onto the main list so the job is
-// re-delivered later instead of being permanently lost in the gap. (An atomic
-// RPOPLPUSH-style move would close the window entirely, but the RedisClient
-// interface exposes no single-round-trip move primitive, error propagation
-// that leaves the job on the queue is the safe option within this interface.)
+// re-delivered later instead of being permanently lost in the gap. A worker
+// that dies in the gap runs no such push; with [PopRecorder] the pop's record
+// survives it and Reclaim re-delivers the job, and without it the job is lost.
 //
 // Attempts are bumped at claim, matching DBQueue: a worker that crashes before
 // Ack/Nack has still consumed a delivery, so a poison message cannot redeliver
@@ -272,7 +310,11 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	// deadline, could hold a worker for maxSkipDrain deadlines against a
 	// dead backend. LPush of several values inserts them in argument order,
 	// the same list order as pushing them one at a time.
-	requeueSkipped := func(skipped []string) error {
+	//
+	// A skipped job's pop record goes only once the job is back on the main
+	// list: until then the record is its one durable trace.
+	var skipped, skippedRecs []string
+	requeueSkipped := func() error {
 		if len(skipped) == 0 {
 			return nil
 		}
@@ -283,23 +325,27 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		if err := recoveryPush(q.queueName, values...); err != nil {
 			return fmt.Errorf("restore skipped jobs: %w", err)
 		}
+		q.settle(ctx, skippedRecs...)
 		return nil
 	}
 
-	var skipped []string
 	for {
 		// Bound the type-miss drain: without a server-side filter a rare-type
 		// request could otherwise RPop the entire list into process memory
 		// (OOM). When the bound is hit, re-enqueue what we drained and report
 		// no job, the caller retries.
 		if len(skipped) >= maxSkipDrain {
-			if rerr := requeueSkipped(skipped); rerr != nil {
+			if rerr := requeueSkipped(); rerr != nil {
 				return Job{}, rerr
 			}
 			return Job{}, ErrNoJob
 		}
 
-		data, err := q.client.RPop(ctx, q.queueName)
+		// The pop's token names its record, and it becomes the claim token
+		// if this entry is the one claimed: Reclaim tells a record whose
+		// claim reached the processing hash by it.
+		token := redisRandomID()
+		data, rec, err := q.pop(ctx, token)
 		if err != nil {
 			// Distinguish a genuinely empty queue (sentinel) from a real
 			// backend failure. Masking a backend error as "empty" would make
@@ -309,7 +355,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// A restore failure outranks "empty": reporting ErrNoJob here
 			// would tell the caller the queue is idle while a valid job
 			// sits in no list at all.
-			if rerr := requeueSkipped(skipped); rerr != nil {
+			if rerr := requeueSkipped(); rerr != nil {
 				return Job{}, rerr
 			}
 			if isEmpty {
@@ -330,9 +376,13 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 				resultErr = errors.Join(resultErr, fmt.Errorf("quarantine malformed job: %w", qerr))
 				if restoreErr := recoveryPush(q.queueName, data); restoreErr != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore malformed job: %w", restoreErr))
+				} else {
+					q.settle(ctx, rec)
 				}
+			} else {
+				q.settle(ctx, rec)
 			}
-			rerr := requeueSkipped(skipped)
+			rerr := requeueSkipped()
 			if rerr != nil {
 				resultErr = errors.Join(resultErr, rerr)
 			}
@@ -343,6 +393,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		if len(typeSet) > 0 {
 			if _, ok := typeSet[job.Type]; !ok {
 				skipped = append(skipped, data)
+				skippedRecs = append(skippedRecs, rec)
 				continue
 			}
 		}
@@ -366,19 +417,22 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
 				if restoreErr := recoveryPush(q.queueName, dlqData); restoreErr != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
+				} else {
+					q.settle(ctx, rec)
 				}
-				rerr := requeueSkipped(skipped)
+				rerr := requeueSkipped()
 				if rerr != nil {
 					resultErr = errors.Join(resultErr, rerr)
 				}
 				return Job{}, resultErr
 			}
+			q.settle(ctx, rec)
 			continue
 		}
-		// Mint a fresh claim token: it identifies THIS claim, so a stale
-		// worker whose visibility timeout expired (and whose job was
-		// re-claimed by someone else) cannot Ack/Nack the newer claim.
-		job.ClaimToken = redisRandomID()
+		// A fresh claim token identifies THIS claim, so a stale worker whose
+		// visibility timeout expired (and whose job was re-claimed by
+		// someone else) cannot Ack/Nack the newer claim.
+		job.ClaimToken = token
 		bumped, _ := json.Marshal(job)
 
 		// Track in processing queue for visibility timeout. The job was
@@ -398,23 +452,60 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			resultErr := fmt.Errorf("dequeue: track in processing: %w", err)
 			if restoreErr := recoveryPush(q.queueName, string(bumped)); restoreErr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
+			} else {
+				q.settle(ctx, rec)
 			}
-			rerr := requeueSkipped(skipped)
+			rerr := requeueSkipped()
 			if rerr != nil {
 				resultErr = errors.Join(resultErr, rerr)
 			}
 			return Job{}, resultErr
 		}
+		q.settle(ctx, rec)
 
 		// Re-enqueue skipped jobs. The claimed job is already recorded in
 		// the processing hash, so it survives; a skipped job that failed to
 		// restore does not, and the caller has to hear about it.
-		if rerr := requeueSkipped(skipped); rerr != nil {
+		if rerr := requeueSkipped(); rerr != nil {
 			return job, rerr
 		}
 
 		return job, nil
 	}
+}
+
+// pop takes the tail of the main list. With [PopRecorder] the same step
+// records the entry in the pop hash under a field holding the pop time and
+// token, and pop returns that field; the caller settles it once the entry
+// has its next home. Without it, rec is empty.
+func (q *RedisQueue) pop(ctx context.Context, token string) (data, rec string, err error) {
+	pr, ok := q.client.(PopRecorder)
+	if !ok {
+		data, err = q.client.RPop(ctx, q.queueName)
+		return data, "", err
+	}
+	rec = strconv.FormatInt(q.now().UnixNano(), 10) + ":" + token
+	data, err = pr.RPopHSet(ctx, q.queueName, q.poppedQueue, rec)
+	if err != nil {
+		return "", "", err
+	}
+	return data, rec, nil
+}
+
+// settle deletes the pop records of entries that have their next home, on
+// a detached, bounded context like recoveryPush. A record a failed delete
+// leaves behind costs no job: Reclaim drops it when the processing hash
+// holds its claim, and otherwise puts its entry back on the main list once
+// it is older than the visibility timeout, a duplicate the at-least-once
+// contract allows. So the error is not returned.
+func (q *RedisQueue) settle(ctx context.Context, recs ...string) {
+	recs = slices.DeleteFunc(slices.Clone(recs), func(r string) bool { return r == "" })
+	if len(recs) == 0 {
+		return
+	}
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
+	defer cancel()
+	_ = q.client.HDel(rctx, q.poppedQueue, recs...)
 }
 
 // recoveryPush is the LPush that gives an entry already taken off one list
@@ -521,33 +612,39 @@ func (q *RedisQueue) currentClaim(ctx context.Context, jobID string) (current Jo
 // for why an unconditional HDel here loses jobs: the claim can change
 // between the completion's token check and its delete.
 func (q *RedisQueue) releaseClaim(ctx context.Context, jobID, expect string) error {
+	stale, err := q.releaseField(ctx, q.processingQueue, jobID, expect)
+	if stale {
+		// The entry changed under us: another worker re-claimed the job.
+		// Its record was left alone; count the stale completion.
+		q.staleClaims.Add(1)
+	}
+	return err
+}
+
+// releaseField deletes field from hash while it still holds expect. stale
+// reports that it held something else and was left alone.
+func (q *RedisQueue) releaseField(ctx context.Context, hash, field, expect string) (stale bool, err error) {
 	if cas, ok := q.client.(CompareAndDeleter); ok {
-		deleted, err := cas.HDelIfEqual(ctx, q.processingQueue, jobID, expect)
+		deleted, err := cas.HDelIfEqual(ctx, hash, field, expect)
 		if err != nil {
-			return err
+			return false, err
 		}
-		if !deleted {
-			// The entry changed under us: another worker re-claimed the
-			// job. Leave its record alone and count the stale completion.
-			q.staleClaims.Add(1)
-		}
-		return nil
+		return !deleted, nil
 	}
 	// No atomic capability: re-read as late as possible and skip the delete
-	// if the claim already moved on. This narrows the window to the final
+	// if the field already moved on. This narrows the window to the final
 	// round trip; it does not close it.
-	cur, err := q.client.HGet(ctx, q.processingQueue, jobID)
+	cur, err := q.client.HGet(ctx, hash, field)
 	if err != nil {
 		if errors.Is(err, ErrRedisEmpty) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	if cur != expect {
-		q.staleClaims.Add(1)
-		return nil
+		return true, nil
 	}
-	return q.client.HDel(ctx, q.processingQueue, jobID)
+	return false, q.client.HDel(ctx, hash, field)
 }
 
 // moveClaim pushes value onto list and retires the processing entry for
@@ -560,20 +657,29 @@ func (q *RedisQueue) releaseClaim(ctx context.Context, jobID, expect string) err
 // fallback's push failed. A fallback release error comes back with moved
 // true, since the job already has its next home.
 func (q *RedisQueue) moveClaim(ctx context.Context, jobID, expect, list, value string) (moved bool, err error) {
+	moved, stale, err := q.moveField(ctx, q.processingQueue, jobID, expect, list, value)
+	if stale {
+		q.staleClaims.Add(1)
+	}
+	return moved, err
+}
+
+// moveField pushes value onto list and deletes field from hash, only while
+// the field still holds expect; moveClaim's move for any hash. stale
+// reports that the field held something else.
+func (q *RedisQueue) moveField(ctx context.Context, hash, field, expect, list, value string) (moved, stale bool, err error) {
 	if mover, ok := q.client.(CompareAndMover); ok {
-		moved, err := mover.MoveIfEqual(ctx, q.processingQueue, jobID, expect, list, value)
+		moved, err := mover.MoveIfEqual(ctx, hash, field, expect, list, value)
 		if err != nil {
-			return false, fmt.Errorf("move to %s: %w", list, err)
+			return false, false, fmt.Errorf("move to %s: %w", list, err)
 		}
-		if !moved {
-			q.staleClaims.Add(1)
-		}
-		return moved, nil
+		return moved, !moved, nil
 	}
 	if err := q.client.LPush(ctx, list, value); err != nil {
-		return false, fmt.Errorf("push to %s: %w", list, err)
+		return false, false, fmt.Errorf("push to %s: %w", list, err)
 	}
-	return true, q.releaseClaim(ctx, jobID, expect)
+	stale, err = q.releaseField(ctx, hash, field, expect)
+	return true, stale, err
 }
 
 // ownsClaim reports whether the completion being presented (job) matches the
@@ -667,15 +773,22 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 // Reclaim scans the processing set for in-flight jobs whose visibility
 // timeout has passed (the worker that claimed them crashed before Ack/Nack),
 // re-enqueues them onto the main list, and removes the stale processing
-// entry. Returns the number of jobs re-delivered. Call it periodically (e.g.
-// from a background ticker) to make in-flight Redis work crash-safe.
+// entry. It first puts back the jobs a worker died holding inside Dequeue
+// (see [PopRecorder]). Returns the number of jobs re-delivered. Call it
+// periodically (e.g. from a background ticker) to make in-flight Redis work
+// crash-safe.
 func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
+	// Pops first: a processing entry re-delivered here, then seen as a pop
+	// record with no claim, would be put back twice.
+	reclaimed, err := q.reclaimPops(ctx)
+	if err != nil {
+		return reclaimed, err
+	}
 	entries, err := q.client.HGetAll(ctx, q.processingQueue)
 	if err != nil {
-		return 0, fmt.Errorf("reclaim: scan processing: %w", err)
+		return reclaimed, fmt.Errorf("reclaim: scan processing: %w", err)
 	}
 	now := q.now().UnixNano()
-	reclaimed := 0
 	for jobID, raw := range entries {
 		var entry processingEntry
 		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
@@ -715,6 +828,59 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 			continue // the claim moved on since the scan (counted as stale)
 		}
 		reclaimed++
+	}
+	return reclaimed, nil
+}
+
+// reclaimPops puts back on the main list the entries of pop records older
+// than the visibility timeout: jobs a worker took off the main list and
+// died holding before they had their next home. A younger record may
+// belong to a Dequeue still running and is left alone. A record whose job
+// the processing hash holds under the pop's token is a claim that landed;
+// only the record goes, and the processing entry is Reclaim's to judge.
+func (q *RedisQueue) reclaimPops(ctx context.Context) (int, error) {
+	recs, err := q.client.HGetAll(ctx, q.poppedQueue)
+	if err != nil {
+		return 0, fmt.Errorf("reclaim: scan pops: %w", err)
+	}
+	cutoff := q.now().Add(-time.Duration(q.visibilityTimeout.Load())).UnixNano()
+	reclaimed := 0
+	// Field order is pop order (the field starts with the pop time), so the
+	// oldest goes back first.
+	for _, field := range slices.Sorted(maps.Keys(recs)) {
+		raw := recs[field]
+		at, token, _ := strings.Cut(field, ":")
+		// A field that does not parse holds no time to wait for; its entry
+		// goes back rather than sit in the hash for good.
+		if popped, err := strconv.ParseInt(at, 10, 64); err == nil && popped > cutoff {
+			continue
+		}
+		var job Job
+		if json.Unmarshal([]byte(raw), &job) == nil {
+			cur, _, found, err := q.currentClaim(ctx, job.ID)
+			if err != nil {
+				// Unknown whether the claim landed, so the record stays for
+				// the next pass. Returning would also skip the processing
+				// scan below, which quarantines a corrupt entry; an outage
+				// fails that scan's own read.
+				continue
+			}
+			if found && subtle.ConstantTimeCompare([]byte(cur.ClaimToken), []byte(token)) == 1 {
+				if _, err := q.releaseField(ctx, q.poppedQueue, field, raw); err != nil {
+					return reclaimed, fmt.Errorf("reclaim: drop pop record: %w", err)
+				}
+				continue
+			}
+		}
+		// An entry that does not decode goes back as-is, and Dequeue
+		// dead-letters it like any malformed job.
+		moved, _, err := q.moveField(ctx, q.poppedQueue, field, raw, q.queueName, raw)
+		if err != nil && !moved {
+			return reclaimed, fmt.Errorf("reclaim: put back a popped job: %w", err)
+		}
+		if moved {
+			reclaimed++
+		}
 	}
 	return reclaimed, nil
 }

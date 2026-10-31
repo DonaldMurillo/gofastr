@@ -151,7 +151,7 @@
   // fanout lands.
   document.addEventListener('click', function (e) {
     const tab = e.target && e.target.closest && e.target.closest('[data-hui-tabs] [role="tab"]');
-    if (!tab) return;
+    if (!tab || tab.getAttribute('aria-disabled') === 'true') return;
     const wrapper = tab.closest('[data-hui-tabs]');
     if (!wrapper) return;
     for (const t of own(wrapper, '[role="tab"]')) {

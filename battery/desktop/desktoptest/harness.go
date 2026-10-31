@@ -753,8 +753,36 @@ const (
 	navigateMarker = "window.__gofastr.navigate("
 )
 
+// originGatePrefix opens the guard the battery wraps every page script
+// in, so it runs only on the app's own origin:
+// if (location.origin === "<origin>") { <script> }.
+const originGatePrefix = "if (location.origin === "
+
+// stripOriginGate returns the script inside the origin guard, or js
+// unchanged when it carries none.
+func stripOriginGate(js string) string {
+	rest, ok := strings.CutPrefix(js, originGatePrefix)
+	if !ok {
+		return js
+	}
+	_, n, ok := jsonString(rest)
+	if !ok {
+		return js
+	}
+	rest, ok = strings.CutPrefix(rest[n:], ") { ")
+	if !ok {
+		return js
+	}
+	body, ok := strings.CutSuffix(rest, " }")
+	if !ok {
+		return js
+	}
+	return body
+}
+
 // ParseEvent recognizes the script Battery.Emit evaluates and returns
-// the event it carries.
+// the event it carries. It finds the dispatch call anywhere in the
+// script, so the origin guard around it needs no stripping.
 func ParseEvent(js string) (Event, bool) {
 	i := strings.Index(js, dispatchMarker)
 	if i < 0 {
@@ -778,8 +806,9 @@ func ParseEvent(js string) (Event, bool) {
 }
 
 // ParseNavigate recognizes the script a menu Navigate item evaluates
-// and returns its path.
+// and returns its path. The origin guard around it is ignored.
 func ParseNavigate(js string) (string, bool) {
+	js = stripOriginGate(js)
 	if !strings.HasPrefix(js, navigateMarker) {
 		return "", false
 	}

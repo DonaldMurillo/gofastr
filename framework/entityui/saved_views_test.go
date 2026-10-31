@@ -277,6 +277,40 @@ func TestSavedViewBadColumnShowsCallout(t *testing.T) {
 	}
 }
 
+// Saved views belong to the entity, so one saved on a wider list can
+// open on a narrower one. It shows the columns this list offers, and
+// never one the list left out.
+func TestSavedViewColumnsStayInOfferedSet(t *testing.T) {
+	x, store := savedUI(t)
+	saved, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{
+		Entity: "orders", Name: "Wide", Columns: []string{"status", "memo", "name"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := listHTML(t, x.ui.List("orders").Columns("name", "status").SavedViews(), x.userCtx("/orders", "?saved="+saved.ID, "u1"))
+	if colOrder(html, "Memo") >= 0 {
+		t.Errorf("the saved view showed Memo, a column this list does not offer:\n%s", html)
+	}
+	if colOrder(html, "Status", "Name") < 0 {
+		t.Errorf("the saved view's offered columns did not apply in its order:\n%s", html)
+	}
+	if strings.Contains(html, "This view no longer applies") {
+		t.Errorf("a view saved on a wider list was dropped instead of narrowed:\n%s", html)
+	}
+	// None of its columns offered here: the list's own stand.
+	memoOnly, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{
+		Entity: "orders", Name: "Memo only", Columns: []string{"memo"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html = listHTML(t, x.ui.List("orders").Columns("name", "status").SavedViews(), x.userCtx("/orders", "?saved="+memoOnly.ID, "u1"))
+	if colOrder(html, "Name", "Status") < 0 || colOrder(html, "Memo") >= 0 {
+		t.Errorf("a view with no offered column did not leave the list's own:\n%s", html)
+	}
+}
+
 func TestSavedViewsNoopWithoutStore(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"orders": ordersConfig()},

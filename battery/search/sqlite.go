@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -21,7 +20,7 @@ import (
 // Only Document.Text is tokenised; id, type, and fields are UNINDEXED FTS5
 // columns stored alongside the index for fast reconstruction and
 // Query.FieldEquals filtering. FieldEquals is evaluated via
-// json_extract on the stored fields JSON, mirroring the string-only
+// json_each over the stored fields JSON, mirroring the string-only
 // containment contract the Postgres backend encodes as JSONB @>.
 //
 // Prefix matching is built in: the final FTS5 query term is suffixed with
@@ -59,12 +58,6 @@ type SQLiteFTSConfig struct {
 	// "search_documents".
 	Table string
 }
-
-// fieldKeyRe bounds a FieldEquals key before it is interpolated into a
-// json_extract JSON path. Only ASCII letters, digits, and underscore
-// survive, no quotes, dots, semicolons, or anything that could break out
-// of the JSON path. The value itself is always parameterised.
-var fieldKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 // fts5MissingSubstr is the substring of the SQLite error when the driver was
 // compiled without FTS5 support (mattn/go-sqlite3 without -tags sqlite_fts5).
@@ -266,7 +259,7 @@ func (s *SQLiteFTS) ensurePrefixSchema(ctx context.Context) error {
 // rows.
 func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 	// Fields are stored as a JSON text object. An empty/nil field map is
-	// stored as "{}" (never SQL NULL) so json_extract behaves predictably
+	// stored as "{}" (never SQL NULL) so json_each behaves predictably
 	// and FieldEquals never matches a missing field.
 	var fieldsArg any
 	if len(doc.Fields) == 0 {
@@ -342,8 +335,8 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure
-	// punctuation) matches nothing, the same split Memory gets from
-	// normalizeTerms + its score==0 skip.
+	// punctuation) matches nothing, the same split Memory makes on
+	// queryTerms.
 	if len(strings.Fields(q.Text)) == 0 {
 		return s.searchAll(ctx, q)
 	}
@@ -366,10 +359,7 @@ func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
 	}
 	var where strings.Builder
 	where.WriteString("TRUE")
-	args, err := s.appendFilters(&where, args, q)
-	if err != nil {
-		return nil, err
-	}
+	args = s.appendFilters(&where, args, q)
 
 	offset := max(q.Offset, 0)
 	var paging strings.Builder
@@ -409,16 +399,12 @@ ORDER BY h.score DESC, m.id ASC%[4]s`,
 
 // searchAll is the empty-query path: every document (score 0) that passes
 // the Type/FieldEquals filters, ordered by id for a stable page walk,
-// the same result Memory produces when normalizeTerms yields no terms.
+// the same documents Memory returns for empty text.
 func (s *SQLiteFTS) searchAll(ctx context.Context, q Query) ([]Result, error) {
 	args := []any{}
 	var where strings.Builder
 	where.WriteString("TRUE")
-	extra, err := s.appendFilters(&where, args, q)
-	if err != nil {
-		return nil, err
-	}
-	args = extra
+	args = s.appendFilters(&where, args, q)
 
 	offset := max(q.Offset, 0)
 	var paging strings.Builder
@@ -448,10 +434,10 @@ ORDER BY id ASC%s`,
 }
 
 // appendFilters adds Type and FieldEquals predicates to where and appends
-// their parameters to args, returning the extended slice. Each FieldEquals
-// key is validated against fieldKeyRe BEFORE its JSON path is interpolated;
-// the lookup value is always parameterised.
-func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) ([]any, error) {
+// their parameters to args, returning the extended slice. A FieldEquals
+// key and its value are both bound parameters, so any key Memory and
+// Postgres match matches here, and none reaches the SQL text.
+func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) []any {
 	if q.Type != "" {
 		args = append(args, q.Type)
 		where.WriteString(" AND type = ?")
@@ -460,22 +446,20 @@ func (s *SQLiteFTS) appendFilters(where *strings.Builder, args []any, q Query) (
 		// Sort keys for deterministic SQL regardless of map iteration order.
 		keys := make([]string, 0, len(q.FieldEquals))
 		for k := range q.FieldEquals {
-			if !fieldKeyRe.MatchString(k) {
-				return nil, fmt.Errorf("search: invalid FieldEquals key %q (must match ^[A-Za-z0-9_]+$)", k)
-			}
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			// json_extract returns an array or object as its JSON text, so
-			// the type check is what keeps tenant=["acme"] from equalling
-			// the filter value `["acme"]`: only a JSON string matches.
-			path := `'$."` + k + `"'`
-			fmt.Fprintf(where, " AND json_type(fields, %s) = 'text' AND json_extract(fields, %s) = ?", path, path)
-			args = append(args, q.FieldEquals[k])
+			// json_each walks the top-level members, so the key is compared
+			// as a value, never spelled into a JSON path. json_each gives an
+			// array or object its JSON text, so the type check is what keeps
+			// tenant=["acme"] from equalling the filter value `["acme"]`:
+			// only a JSON string matches.
+			where.WriteString(" AND EXISTS (SELECT 1 FROM json_each(fields) WHERE key = ? AND type = 'text' AND value = ?)")
+			args = append(args, k, q.FieldEquals[k])
 		}
 	}
-	return args, nil
+	return args
 }
 
 // buildFts5Query turns a raw query string into an FTS5 MATCH operand. It is

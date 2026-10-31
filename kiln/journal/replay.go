@@ -283,6 +283,16 @@ func applyWorldEdit(s *Session, e Entry) error {
 			}
 		}
 		w.Seeds = kept
+		// Its hooks go too, for the same reason: the generator refuses a
+		// hook naming an absent entity, so a frozen world kept one it
+		// could never build (2026-10-27 K22).
+		keptHooks := make([]*world.Hook, 0, len(w.Hooks))
+		for _, h := range w.Hooks {
+			if h == nil || h.Entity != p.Name {
+				keptHooks = append(keptHooks, h)
+			}
+		}
+		w.Hooks = keptHooks
 		return nil
 
 	case OpAddField:
@@ -406,6 +416,12 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if p.Prev != nil && !s.replaying && cur.Version != p.Prev.Version {
 			return &PageConflictError{Path: p.Path, Want: p.Prev.Version, Have: cur.Version}
 		}
+		// A page deleted and added again restarts at version 1, so a
+		// patch read from the old page matched the new one and replaced
+		// it (2026-10-27 K20). Its generation tells them apart.
+		if p.Prev != nil && !s.replaying && cur.Gen != p.Prev.Gen {
+			return &PageConflictError{Path: p.Path, Want: p.Prev.Version, Have: cur.Version, Replaced: true}
+		}
 		w.Pages[p.Path] = p.New
 		return nil
 
@@ -528,11 +544,17 @@ type PageConflictError struct {
 	Path string
 	Want int
 	Have int
+	// Replaced reports a page deleted and added again after the patch
+	// read it: the versions may match, the page does not.
+	Replaced bool
 }
 
 func (e *PageConflictError) Error() string {
 	if e.Have < 0 {
 		return fmt.Sprintf("update_page_element: page %q was deleted after version %d was read", e.Path, e.Want)
+	}
+	if e.Replaced {
+		return fmt.Sprintf("update_page_element: page %q was deleted and added again after version %d was read", e.Path, e.Want)
 	}
 	return fmt.Sprintf("update_page_element: page %q is at version %d, the patch was built from version %d", e.Path, e.Have, e.Want)
 }

@@ -256,23 +256,6 @@ func TestUICompositionRecipeGalleryProofsResolve(t *testing.T) {
 		}
 	}
 }
-func TestSearchEmptyTerm(t *testing.T) {
-	hits, _ := Search("")
-	if len(hits) != 0 {
-		t.Errorf("empty term should return no hits, got %d", len(hits))
-	}
-}
-
-// TestSearchRejectsShortTerm pins the DoS-mitigation: queries shorter
-// than 3 chars match noise (e.g. "a", "of") and would return thousands
-// of hits across the corpus. The function should return zero hits for
-// short terms without scanning the corpus.
-func TestSearchRejectsShortTerm(t *testing.T) {
-	hits, _ := Search("a")
-	if len(hits) != 0 {
-		t.Errorf("short term should return zero hits to bound the response, got %d", len(hits))
-	}
-}
 
 // TestSearchWithLimit pins the operator-facing cap: when a caller
 // explicitly asks for at most N hits, the function returns no more

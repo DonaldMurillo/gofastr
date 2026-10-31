@@ -63,11 +63,17 @@ func Respond(w http.ResponseWriter, r *http.Request, out any) {
 		return
 	}
 
-	// Default: JSON
+	// Default: JSON, encoded before the status goes out: a value JSON
+	// cannot encode (NaN, a channel) is a 500, not an empty 200.
+	body, err := json.Marshal(out)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(out)
+	_, _ = w.Write(append(body, '\n'))
 }
 
 // HTML is a response type that writes text/html.

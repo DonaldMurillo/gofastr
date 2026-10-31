@@ -45,7 +45,9 @@
 // The claim takes a lease (the claimed_until column) at the delivery
 // grain. A Relay that dies mid-batch holds only its claimed deliveries
 // until the lease expires; after expiry another Relay, or the same
-// process after a restart, reclaims and re-delivers them. Every settle
+// process after a restart, reclaims and re-delivers them. A graceful
+// shutdown mid-batch hands the unstarted rest back with its attempts
+// refunded instead, so a never-run delivery spends no budget. Every settle
 // matches on the claimed_until its own claim wrote, so a Relay whose lease
 // expired and was re-claimed settles nothing and cannot clear the newer
 // claim's lease.

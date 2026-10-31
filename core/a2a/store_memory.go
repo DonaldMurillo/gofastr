@@ -97,6 +97,10 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	return nil
 }
 
+// FiltersByScope implements ScopeFilter: ListTasks filters by
+// ListQuery.Scoped in its query.
+func (m *MemoryStore) FiltersByScope() {}
+
 func (m *MemoryStore) ListTasks(_ context.Context, owner string, q ListQuery) (recs []*TaskRecord, total int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -135,6 +139,9 @@ func (m *MemoryStore) ListTasks(_ context.Context, owner string, q ListQuery) (r
 // with nil treated as the zero instant.
 func matchesQuery(rec *TaskRecord, q ListQuery) bool {
 	if q.ContextID != "" && rec.Task.ContextID != q.ContextID {
+		return false
+	}
+	if q.Scoped && rec.Scope != q.Scope {
 		return false
 	}
 	if q.Status != "" && rec.Task.Status.State != q.Status {

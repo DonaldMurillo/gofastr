@@ -17,6 +17,15 @@ func (f *Shell) FireDeepLink(rawURL string) {
 	}
 }
 
+// AllowsNavigation reports the battery's answer when a window's page
+// starts a main-frame navigation to rawURL, the question every native
+// shell asks before the navigation begins (WindowConfig.AllowNavigation).
+// No policy installed reads as allowed, as it does in a shell.
+func (h *Harness) AllowsNavigation(rawURL string) bool {
+	allow := h.config().AllowNavigation
+	return allow == nil || allow(rawURL)
+}
+
 // OpenURL is the OS opening a deep link while the app runs: the page's
 // answer arrives through the recorded evals (navigate) and events
 // (deep_link), the same observables the menus use.

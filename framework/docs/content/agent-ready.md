@@ -335,8 +335,9 @@ authenticated agent whose request passes the policy sees the full docs.
 The pattern-level surfaces (the index, the `/llm.md` beside a route
 pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
 path runs its full policy phase, region guards and resolvers included,
-and a dynamic pattern under a layout that carries any region guard is
-withheld, because a guard decides per URL. The per-URL doc of such a
+and a dynamic pattern under a layout that carries any region guard, or
+in a group that `Requires` a resolver, is withheld, because a guard or
+a required resolver decides per URL. The per-URL doc of such a
 page still runs its guards and serves.
 
 ### Rendered values cannot inject markdown structure
@@ -476,7 +477,9 @@ behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
 and ungated over MCP. Declare something stricter with
 `Endpoint.MCPGate`, or opt out with `Endpoint.Public: true` for an
 endpoint that really is anonymous. `Public` opens the HTTP route too,
-which otherwise answers 401 to a caller with no user:
+which otherwise answers 401 to a caller with no user. An API token
+reaches a twin only with `<table>:read` (GET, HEAD) or `<table>:write`
+(any other method) among its scopes, whichever gate decides it:
 
 ```go
 entity.Endpoint{

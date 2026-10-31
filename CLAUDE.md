@@ -153,8 +153,9 @@ expose them to agents connected to a live app.**
   `origin/main` (staged, unstaged, untracked and deleted files; a file
   under testdata or an embedded asset marks its owning package) and
   prints the closure, or runs the command after `--` with it appended.
-  Changing go.mod, go.sum or cmd/affected widens to everything, as does
-  a base ref that cannot be resolved: the tool degrades to the full run,
+  Changing go.mod, go.sum, cmd/affected or the coverage-floor table
+  (scripts/coverage-floors.sh) widens to everything, as does a base ref
+  that cannot be resolved: the tool degrades to the full run,
   never to a skipped one. A test that reads files outside its package
   (a repo walk, a doc, another package's source) declares them with
   `//gofastr:test-reads <pattern>` in the test file, or the selection
@@ -201,8 +202,10 @@ expose them to agents connected to a live app.**
   Sprintf an ungated name into an identifier slot of emitted code — Go
   declarations, SQL DDL, CSS string slots, route paths; toCamelCase
   transforms but does not validate), `asciifold` (never key a registry
-  lookup on `strings.ToLower`/`ToUpper` — Unicode folding maps
-  homoglyphs onto ASCII, ſ → S; refuse non-ASCII first), `laxcoerce` (a
+  lookup on `strings.ToLower`/`ToUpper`, nor compare two folds with
+  `==` — Unicode folding maps homoglyphs onto ASCII, ſ → S, K → k;
+  fold with `internal/asciicase.Lower` or refuse non-ASCII first),
+  `laxcoerce` (a
   failed type assertion on a `map[string]any` entry is not absence —
   split presence from type, or return an error), `rootwrite` (writes
   under a root contained by `filepath.Join` + prefix only, with no
@@ -499,8 +502,10 @@ expose them to agents connected to a live app.**
   is judged by its body, never its name), `emitident` (a `strings.*`
   result is a transform, gated only when its inputs are),
   `unboundedbody` (the cap must sit on the read request's own path),
-  and `unboundedresp` (only a rebind of `resp.Body` caps it). The
-  contracts rule `GOFASTR1415 erasecover`
+  `unboundedresp` (only a rebind of `resp.Body` caps it), and
+  `recovercallback` (a local read through a package-local accessor of
+  a callback field or `atomic.Pointer` slot is the host's callback).
+  The contracts rule `GOFASTR1415 erasecover`
   fires on DDL for a user-keyed table that no `datexport.DataEraser`
   and `DataExporter` cover. The runtime JS lint
   `core-ui/check.LintNumberFill` fires on `{{n}}` filled with

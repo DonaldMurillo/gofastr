@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // First-paint inlining. A live page cannot paint until it holds the
@@ -78,7 +79,7 @@ func newInlineBlock(body string) (inlineBlock, bool) {
 	if strings.IndexByte(body, '\r') >= 0 {
 		body = strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\r", "\n")
 	}
-	low := asciiLower(body)
+	low := asciicase.Lower(body)
 	if strings.Contains(low, "</style") || strings.Contains(low, "</script") || strings.Contains(body, "<!--") {
 		return inlineBlock{}, false
 	}
@@ -107,7 +108,7 @@ func newStyleBlock(css string) (inlineBlock, bool) {
 // tokens, so a match inside a comment or a string counts as well; that
 // only keeps a link.
 func cssHasRelativeRef(css string) bool {
-	low := asciiLower(css)
+	low := asciicase.Lower(css)
 	if strings.Contains(low, "image-set(") {
 		return true
 	}
@@ -156,16 +157,6 @@ func relativeTarget(s string) bool {
 		}
 	}
 	return true
-}
-
-func asciiLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if 'A' <= c && c <= 'Z' {
-			b[i] = c + 'a' - 'A'
-		}
-	}
-	return string(b)
 }
 
 type countWriter int
@@ -467,7 +458,7 @@ func patchPolicy(policy string, styles, scripts []string) (string, bool) {
 
 func hasSource(srcs []string, match func(string) bool) bool {
 	for _, s := range srcs {
-		if match(asciiLower(s)) {
+		if match(asciicase.Lower(s)) {
 			return true
 		}
 	}

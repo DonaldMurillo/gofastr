@@ -6,12 +6,17 @@ import (
 	stdhtml "html"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
 // ─── Sitemap ───────────────────────────────────────────────────────
@@ -87,8 +92,66 @@ func WithRobots(cfg RobotsConfig) Option {
 // ─── Internals ─────────────────────────────────────────────────────
 
 func (ds *UIHost) handleSitemap(w http.ResponseWriter, r *http.Request) {
-	doc, ok := ds.SitemapXML("")
+	files, ok := ds.liveSitemap()
+	doc := ""
+	if ok {
+		doc = files[0].Body
+	}
 	serveSeoDoc(w, r, "application/xml; charset=utf-8", reasonSitemapNotConfigured, doc, ok)
+}
+
+// handleSitemapPart serves one part a sitemap index names
+// (/sitemap/1.xml). A path that names no part falls through to the
+// catch-all, so a page or static file there is still reached.
+func (ds *UIHost) handleSitemapPart(w http.ResponseWriter, r *http.Request) {
+	files, _ := ds.liveSitemap()
+	want := "/sitemap/" + r.PathValue("part")
+	for _, f := range files {
+		if f.Path == want {
+			serveSeoDoc(w, r, "application/xml; charset=utf-8", reasonSitemapNotConfigured, f.Body, true)
+			return
+		}
+	}
+	ds.serveOrRender(w, r)
+}
+
+// sitemapTTL is how long the live sitemap keeps one render. Building it
+// runs every dynamic route's StaticPaths and the page policy for every
+// path, which an anonymous GET must not trigger each time.
+const sitemapTTL = time.Minute
+
+// sitemapMemo is the live sitemap's last render. group makes the
+// requests that find it stale share one render.
+type sitemapMemo struct {
+	group singleflight.Group
+	mu    sync.Mutex
+	at    time.Time
+	files []SitemapFile
+}
+
+// liveSitemap is SitemapFiles for the live handlers, kept for sitemapTTL.
+// Under `gofastr dev` every request renders afresh, so a page added
+// during development shows at once.
+func (ds *UIHost) liveSitemap() ([]SitemapFile, bool) {
+	if dev.Enabled() {
+		return ds.SitemapFiles("", nil)
+	}
+	m := &ds.sitemapMemo
+	m.mu.Lock()
+	files, at := m.files, m.at
+	m.mu.Unlock()
+	if time.Since(at) < sitemapTTL {
+		return files, files != nil
+	}
+	v, _, _ := m.group.Do("", func() (any, error) {
+		files, _ := ds.SitemapFiles("", nil)
+		m.mu.Lock()
+		m.files, m.at = files, time.Now()
+		m.mu.Unlock()
+		return files, nil
+	})
+	files = v.([]SitemapFile)
+	return files, files != nil
 }
 
 // serveSeoDoc is the shared handler body behind handleSitemap and
@@ -102,33 +165,112 @@ func serveSeoDoc(w http.ResponseWriter, r *http.Request, contentType string, not
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
+	//gofastr:allow(nostore) sitemap and robots bodies are built from context.Background with no request or principal, so every caller gets the same bytes; the principal handleSitemapPart can reach is serveOrRender's, on the miss path, which writes its own response.
 	w.Write([]byte(doc))
 }
 
-// SitemapXML builds the sitemap document WithSitemap configured. It is
-// the single source for both the live /sitemap.xml handler and the
-// static exporter (framework/static), which writes the same bytes to
-// disk. basePath is the URL subpath a static deploy is mounted under
-// (e.g. "/gofastr" for a GitHub Pages project site) and is inserted
-// between the configured BaseURL and each route path; pass "" for the
-// live server or an apex deploy. ok is false when WithSitemap was not
-// configured.
+// sitemapMaxURLs and sitemapMaxBytes are the sitemaps.org limits for
+// one file: 50,000 URLs and 50 MiB uncompressed. A search engine
+// rejects a file past either whole, so a longer sitemap is split into
+// parts a sitemap index names.
+const (
+	sitemapMaxURLs  = 50000
+	sitemapMaxBytes = 50 << 20
+)
+
+const (
+	sitemapXMLHead     = `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
+	sitemapURLSetClose = "</urlset>\n"
+)
+
+// SitemapFile is one file of the sitemap WithSitemap configured. Path is
+// its root-relative URL path: "/sitemap.xml" first, then, past the
+// protocol's per-file limits, the parts "/sitemap/1.xml",
+// "/sitemap/2.xml", … that /sitemap.xml indexes.
+type SitemapFile struct {
+	Path string
+	Body string
+}
+
+// SitemapXML is the /sitemap.xml document WithSitemap configured: the
+// URL set, or the sitemap index once the URLs pass one file's limits
+// (see SitemapFiles). basePath is the URL subpath a static deploy is
+// mounted under (e.g. "/gofastr" for a GitHub Pages project site) and is
+// inserted between the configured BaseURL and each route path; pass ""
+// for the live server or an apex deploy. ok is false when WithSitemap
+// was not configured.
 func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
-	if ds.sitemapConfig == nil || ds.App == nil {
+	files, ok := ds.SitemapFiles(basePath, nil)
+	if !ok {
 		return "", false
+	}
+	return files[0].Body, true
+}
+
+// SitemapFiles builds every file of the sitemap: the single source for
+// the live /sitemap.xml and /sitemap/<n>.xml handlers and the static
+// exporter (framework/static), which writes the same files to disk.
+// basePath is as for SitemapXML. keep, when not nil, is asked about each
+// page by its routing path, locale prefix included (/es/about), and a
+// page it refuses is left out, as an entry and as another entry's
+// hreflang alternate; the exporter passes the pages it wrote. ok is
+// false when WithSitemap was not configured.
+func (ds *UIHost) SitemapFiles(basePath string, keep func(page string) bool) ([]SitemapFile, bool) {
+	if ds.sitemapConfig == nil || ds.App == nil {
+		return nil, false
 	}
 	cfg := ds.sitemapConfig
 	base := joinBaseURL(cfg.BaseURL, basePath)
 	lastmod := cfg.LastMod.UTC().Format("2006-01-02")
-
-	var b strings.Builder
-	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	open := `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n"
 	if ds.pathLocales != nil {
-		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n")
-	} else {
-		b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+		open = `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">` + "\n"
 	}
+	entries := ds.sitemapEntries(base, lastmod, keep)
+	return splitSitemap(base, lastmod, open, entries, sitemapMaxURLs, sitemapMaxBytes), true
+}
 
+// splitSitemap packs entries into one URL set, or, when they pass
+// maxURLs or maxBytes, into parts no larger, behind an index naming
+// each part's URL under base.
+func splitSitemap(base, lastmod, open string, entries []string, maxURLs, maxBytes int) []SitemapFile {
+	frame := len(sitemapXMLHead) + len(open) + len(sitemapURLSetClose)
+	var parts [][]string
+	var cur []string
+	size := frame
+	for _, e := range entries {
+		if len(cur) > 0 && (len(cur) == maxURLs || size+len(e) > maxBytes) {
+			parts = append(parts, cur)
+			cur, size = nil, frame
+		}
+		cur = append(cur, e)
+		size += len(e)
+	}
+	urlset := func(es []string) string {
+		return sitemapXMLHead + open + strings.Join(es, "") + sitemapURLSetClose
+	}
+	if len(parts) == 0 {
+		return []SitemapFile{{Path: "/sitemap.xml", Body: urlset(cur)}}
+	}
+	parts = append(parts, cur)
+	files := make([]SitemapFile, 1, len(parts)+1)
+	var idx strings.Builder
+	idx.WriteString(sitemapXMLHead)
+	idx.WriteString(`<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	for i, part := range parts {
+		p := "/sitemap/" + strconv.Itoa(i+1) + ".xml"
+		fmt.Fprintf(&idx, "  <sitemap>\n    <loc>%s</loc>\n    <lastmod>%s</lastmod>\n  </sitemap>\n", stdhtml.EscapeString(base+p), lastmod)
+		files = append(files, SitemapFile{Path: p, Body: urlset(part)})
+	}
+	idx.WriteString("</sitemapindex>\n")
+	files[0] = SitemapFile{Path: "/sitemap.xml", Body: idx.String()}
+	return files
+}
+
+// sitemapEntries is one <url> element per listed page, in route order.
+func (ds *UIHost) sitemapEntries(base, lastmod string, keep func(page string) bool) []string {
+	cfg := ds.sitemapConfig
+	var out []string
 	for _, route := range ds.App.Routes() {
 		if route.RedirectTo != "" {
 			continue // redirects have no page to list
@@ -156,10 +298,18 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 				// in, each naming every such alternate, the way the
 				// protocol's xhtml:link extension asks.
 				links := ds.readableLocaleLinks(base, p, listed)
+				if keep != nil {
+					// x-default is no locale's tag, so Path leaves it
+					// the unprefixed page.
+					links = slices.DeleteFunc(links, func(l HreflangLink) bool {
+						return !keep(set.Path(l.Lang, p))
+					})
+				}
 				for _, l := range links {
 					if l.Lang == "x-default" {
 						continue
 					}
+					var b strings.Builder
 					b.WriteString("  <url>\n")
 					fmt.Fprintf(&b, "    <loc>%s</loc>\n", stdhtml.EscapeString(l.URL))
 					fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
@@ -168,23 +318,23 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 							stdhtml.EscapeString(alt.Lang), stdhtml.EscapeString(urlsafe.CleanAnchor(alt.URL)))
 					}
 					b.WriteString("  </url>\n")
+					out = append(out, b.String())
 				}
 			}
 			continue
 		}
 		for _, p := range expandRouteForSitemap(context.Background(), ds.App, route.Path) {
+			if keep != nil && !keep(p) {
+				continue
+			}
 			if !ds.sitemapPublic(context.Background(), p) {
 				continue
 			}
-			b.WriteString("  <url>\n")
-			fmt.Fprintf(&b, "    <loc>%s%s</loc>\n", base, stdhtml.EscapeString(app.EscapeRoutePath(p)))
-			fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
-			b.WriteString("  </url>\n")
+			out = append(out, fmt.Sprintf("  <url>\n    <loc>%s%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
+				base, stdhtml.EscapeString(app.EscapeRoutePath(p)), lastmod))
 		}
 	}
-
-	b.WriteString(`</urlset>` + "\n")
-	return b.String(), true
+	return out
 }
 
 // joinBaseURL inserts a static deploy's basePath after baseURL, unless

@@ -99,6 +99,15 @@
 // test fires. The release runs on its own goroutine with no recover,
 // which is exactly the cron probe.
 //
+// Slot accessors: a local assigned from a package-local function whose
+// body returns a non-cancel-named field or dereferences a pointer (the
+// `*p` of an atomic.Pointer[func(...)] Load) holds the host's callback
+// just as a local copied from the field does. island.Manager's
+// heartbeat read its OnPresenceChange hook through presenceCallback()
+// and called it bare on the heartbeat goroutine (2026-10-27 bug bash
+// R9); the rule saw only a named function call. An accessor that
+// returns a closure it built, or a method value, stays quiet.
+//
 // Postures it deliberately stays silent on, because they are not this
 // bug: http.Handler-shaped callbacks — a value whose type is
 // http.HandlerFunc or whose signature is func(http.ResponseWriter,
@@ -199,14 +208,29 @@ type graph struct {
 	nodes   []*node // declared functions/methods
 	all     []*node // every node, literals included
 	byObj   map[types.Object]*node
+	decls   map[types.Object]*ast.FuncDecl // every package-local declaration, for slotAccessor
 	seeds   []*node
 	hot     map[*node]bool
 }
 
 func buildGraph(pass *analysis.Pass) *graph {
-	g := &graph{pass: pass, byObj: map[types.Object]*node{}, modPath: *moduleFlag}
+	g := &graph{pass: pass, byObj: map[types.Object]*node{}, decls: map[types.Object]*ast.FuncDecl{}, modPath: *moduleFlag}
 	if g.modPath == "" && pass.Module != nil {
 		g.modPath = pass.Module.Path
+	}
+	// Declarations first: a node's derived locals may come from an
+	// accessor declared later in the package.
+	for _, f := range pass.Files {
+		if pathflow.IsTestFile(pass, f) {
+			continue
+		}
+		for _, d := range f.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
+				if obj := pass.TypesInfo.Defs[fn.Name]; obj != nil {
+					g.decls[obj] = fn
+				}
+			}
+		}
 	}
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
@@ -685,7 +709,7 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					// A func result of a host call: `release` out of
 					// Acquire. Multi-value assigns map every func-typed
 					// left side to the one call on the right.
-					if _, ok := g.callbackCallee(call, n); ok {
+					if _, ok := g.callbackCallee(call, n); ok || g.slotAccessor(call) {
 						for _, lhs := range x.Lhs {
 							if id, ok := lhs.(*ast.Ident); ok {
 								if obj := pass.TypesInfo.Defs[id]; obj != nil && isCallbackType(obj.Type()) {
@@ -700,6 +724,45 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 		return true
 	})
 	return out
+}
+
+// slotAccessor reports whether call reaches a package-local accessor of
+// a host-installed callback slot: a function whose body returns a field
+// (not a cancel-named one) or dereferences a pointer, the way an
+// atomic.Pointer[func(...)] slot is read. A local assigned from one holds
+// the host's callback exactly as a local copied from the field does:
+// island.Manager's heartbeat read its OnPresenceChange hook through
+// presenceCallback() and called it bare (2026-10-27 bug bash R9). The
+// caller marks only callback-typed locals, so the result type needs no
+// check here. An accessor that builds and returns its own closure returns
+// neither shape and stays quiet, and a return inside a nested literal
+// answers for that literal, not the accessor.
+func (g *graph) slotAccessor(call *ast.CallExpr) bool {
+	fn := g.decls[g.callTarget(call.Fun)]
+	if fn == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn.Body, func(x ast.Node) bool {
+		if _, ok := x.(*ast.FuncLit); ok || found {
+			return false
+		}
+		ret, ok := x.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, res := range ret.Results {
+			switch r := ast.Unparen(res).(type) {
+			case *ast.SelectorExpr:
+				s, ok := g.pass.TypesInfo.Selections[r]
+				found = found || ok && s.Kind() == types.FieldVal && !isCancelNamed(s.Obj().Name())
+			case *ast.StarExpr:
+				found = true
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // derivedIfaceVars records locals one hop from an interface slot the
