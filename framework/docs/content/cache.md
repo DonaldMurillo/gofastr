@@ -249,6 +249,8 @@ entry appears in the generated `AGENTS.md` output from
   headers before suspecting the middleware.
 - **Hand-rolling get-miss-then-set under concurrency.** N concurrent
   misses run the loader N times (thundering herd). `cache.GetOrSet`
-  collapses concurrent misses per key via singleflight so the loader
+  collapses concurrent misses per key into one shared fill so the loader
   runs exactly once, and a loader error propagates without being
-  cached.
+  cached. Each caller waits under its own context: one whose deadline
+  passes returns `ctx.Err()` while the fill runs on for the others, and
+  the loader's context is cancelled once no caller is left waiting.

@@ -712,6 +712,12 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 			if err != nil {
 				continue
 			}
+			// A NULL never equals anything in SQL, so `col = NULL` would
+			// match no row; IS NULL is the comparison that finds it.
+			if match[col] == nil {
+				where = append(where, query.QuoteFolded(safeCol)+" IS NULL")
+				continue
+			}
 			where = append(where, fmt.Sprintf("%s = $%d",
 				query.QuoteFolded(safeCol), len(args)+1))
 			args = append(args, match[col])
@@ -730,9 +736,11 @@ func landed(base *sql.DB, eventType, table string, pk []string, id []any, match 
 }
 
 // comparableColumns maps the scalar values an emitted record carries onto
-// their database columns, skipping the primary key, NULLs, and anything not
+// their database columns, skipping the primary key and anything not
 // directly comparable in SQL (nested objects, arrays, byte slices). It is
-// what lets an UPDATE be distinguished from its own rollback.
+// what lets an UPDATE be distinguished from its own rollback. A NULL is
+// kept as nil and matched with IS NULL: skipped, an edit that only set a
+// column to NULL was confirmed on its key alone, rollback or not.
 func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 	m, ok := record.(map[string]any)
 	if !ok {
@@ -748,10 +756,12 @@ func (ch *CrudHandler) comparableColumns(record any) map[string]any {
 		// camel key misses a mixed-case column or a WireName, and a column
 		// left out is a value the confirm query no longer checks.
 		col := ch.wireKeyColumn(key)
-		if ch.isKeyCol(col) || !known[col] || v == nil {
+		if ch.isKeyCol(col) || !known[col] {
 			continue
 		}
 		switch v.(type) {
+		case nil:
+			out[col] = nil
 		case string, bool,
 			int, int8, int16, int32, int64,
 			uint, uint8, uint16, uint32, uint64,

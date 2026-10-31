@@ -46,7 +46,9 @@ model changes, and every route, battery, and plugin the web app has is
 available. The one difference is who owns the process: `d.Run(app)`
 replaces `app.Start(addr)`. `Run` starts the app on a loopback port,
 opens the native window on a one-shot boot URL, and blocks until the
-window closes, then drains the app.
+window closes, then drains the app. If the server stops while the window
+is open (a listener failure, a `Shutdown` from elsewhere), `Run` closes
+the window and returns.
 
 ## The shape of a `main.go`
 

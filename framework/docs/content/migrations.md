@@ -976,7 +976,7 @@ import "github.com/DonaldMurillo/gofastr/core/migrate"
 
 m := migrate.New(db,
     migrate.WithDialect(migrate.DialectPostgres),
-    migrate.WithTableName("_migrations"),
+    migrate.WithTableName("_migrations"), // or "aux._migrations": a schema, or on SQLite an ATTACHed database
 )
 m.Register(migrate.Migration{
     Version: 1,

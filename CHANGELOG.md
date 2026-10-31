@@ -196,6 +196,30 @@ few lines, and link the PR or the docs page for the rest.
   navigation removed every `[data-cui-tick-elapsed]` node, the interval
   kept querying the document five times a second. It clears itself, and
   the next ticker the scan finds starts it again.
+- **A widget poll never stops on a stale or partial snapshot.** The
+  `/state` handler read the signals and asked `Builder.PollTerminal`
+  afterwards, so a job that finished in between stopped the poll on a
+  value still saying "running". It asks first now, and sends no
+  `X-Gofastr-Poll-Stop` on a response missing a signal whose read or
+  JSON encoding failed.
+- **`cache.GetOrSet` callers leave at their own deadline.** A stalled
+  loader held every caller of the key past its deadline, after the
+  timeout middleware had already answered. Each caller now returns
+  `ctx.Err()` at its deadline while the fill runs on for the others,
+  and the loader's context is cancelled once no caller waits. A loader
+  panic comes back as an error instead of a re-panic.
+- **A rolled-back update that only set a column to NULL publishes no
+  event.** The ambient-transaction confirm query skipped NULL values, so
+  such an update was confirmed on its key alone. NULLs are matched with
+  `IS NULL`.
+- **`migrate` group mode works with a tracking table in an ATTACHed
+  SQLite database.** A name like `aux._migrations` made the column and
+  key probes miss the table and the key upgrade build an invalid temp
+  name, so every `Up` failed once a group was registered.
+- **The desktop window closes when the app server stops under it.** A
+  listener failure or a `Shutdown` from elsewhere after the window
+  opened left it on a dead app until the user closed it. `Run` now quits
+  the window and returns.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

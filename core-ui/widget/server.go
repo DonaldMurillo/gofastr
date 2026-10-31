@@ -452,16 +452,25 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	// Inf, a channel) failed the whole encode after the headers went, and
 	// /state served an empty 200. It is omitted and logged, as a signal
 	// whose Read fails is omitted.
+	//
+	// Terminal is decided BEFORE the signals are read: a job that finished
+	// between the read and a later PollTerminal call stopped the poll on a
+	// snapshot still saying "running". Asked first, a true answer means
+	// every value read after it is at least as new as the finish.
+	terminal := s.def.PollTerminal != nil && s.def.PollTerminal()
 	out := map[string]json.RawMessage{}
+	partial := false
 	for name, src := range s.def.Signals {
 		v, err := src.Read()
 		if err != nil {
+			partial = true
 			continue
 		}
 		b, err := json.Marshal(v)
 		if err != nil {
 			slog.Default().Error("widget: signal value has no JSON form; omitting it",
 				"widget", s.def.Name, "signal", name, "err", err)
+			partial = true
 			continue
 		}
 		out[name] = b
@@ -477,8 +486,10 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	// and it reports a terminal state, signal the runtime to end the
 	// cadence after applying this (final) snapshot. Opt-in: a widget
 	// without PollTerminal never emits it, so the historical "poll for-
-	// ever" behavior is unchanged for widgets that don't opt in.
-	if s.def.PollTerminal != nil && s.def.PollTerminal() {
+	// ever" behavior is unchanged for widgets that don't opt in. A
+	// snapshot missing a signal is never the final one: the runtime would
+	// stop for good without that value, so the next poll tries again.
+	if terminal && !partial {
 		w.Header().Set("X-Gofastr-Poll-Stop", "1")
 	}
 	_ = json.NewEncoder(w).Encode(out)
