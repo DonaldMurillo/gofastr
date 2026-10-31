@@ -895,8 +895,8 @@ func oneShotDeadline(w http.ResponseWriter, r *http.Request) {
 	_ = rc.Flush()
 }
 
-// callerDriven ranges over its own channel parameter (handler.SSEStream):
-// the channel's owner one frame up owns the stream.
+// callerDriven ranges over its own channel parameter: the channel's
+// owner one frame up owns the stream.
 func callerDriven(w http.ResponseWriter, events <-chan string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	for ev := range events {

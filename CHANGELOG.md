@@ -369,6 +369,32 @@ few lines, and link the PR or the docs page for the rest.
 - **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
   string.** `"use":[]` or `"alg":false` read as absent, so the key
   passed both restriction checks.
+- **Strict JSON decoding folds nested keys the way the decoder does.**
+  The nested-key check folded with `strings.ToLower`, which keeps `ſ`
+  (U+017F) apart from `s`, while `encoding/json` binds `ſource` to the
+  `source` field, so `{"source":"a","ſource":"b"}` passed and decoded
+  as `"b"`. The new `handler.FoldJSONKey` matches `bytes.EqualFold`;
+  `UnmarshalStrict` and every `CheckObjectKeys`/`CheckTopLevelKeys`
+  caller in the repo (MCP, A2A, ACP, module protocol, cursors, crud
+  numbers, the harness) use it.
+- **A 2FA re-enrolment no longer takes a pending verify's write.** A
+  disable plus re-enrol between `/2fa/verify`'s read and its update
+  re-created the row at version 0 with the same empty codes and flags,
+  so the swap marked the new pending enrolment verified with the old
+  secret. `EntityTwoFAStore` starts a new row at a random version.
+- **`ui.StatStrip` no longer marks its cells `data-cui-internal`.** A
+  cell holds the caller's content, so an owned style sheet could not
+  reach what the app placed there.
+- **Kiln's semantic context fences each chunk with a run longer than
+  any backtick run in it.** A chunk holding its own ```` ``` ```` line
+  closed the fixed fence and left the rest as bare system-prompt text.
+- **BREAKING: `handler.SSEStream` is removed.** It ranged over its
+  channel with no request context and ignored write errors, so a quiet
+  channel kept the handler parked after the client left, and it took no
+  stream seat. Nothing in the repo called it. Server push goes through
+  the one `/__gofastr/sse` bus, or `core/stream`'s `SSEBroker`, which
+  admits through the seat policy and bounds each write. `handler.SSE`, the one-event
+  response, stays and now reports a failed write.
 - **CRUD log lines percent-encode control bytes.** A driver error
   quotes the request's value back (Postgres names the invalid `uuid` it
   was handed), so `GET /legacy/%1B%5B2J%0AFORGED` forged a log line

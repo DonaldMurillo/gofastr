@@ -221,7 +221,7 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDescriptor, error) {
 	// The result blob is third-party server bytes: refuse ambiguity at
 	// every depth (the readLoop envelope rule) before the descriptors
 	// register as tools, keeping the MCP tolerance for unknown fields.
-	if err := handler.CheckObjectKeys(resp, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(resp, handler.FoldJSONKey); err != nil {
 		return nil, err
 	}
 	//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above already refused duplicate and case-folded keys at every depth; this Unmarshal only decodes a vetted body
@@ -338,7 +338,7 @@ func (c *Client) readLoop() {
 		// The line is dropped; the pending call surfaces the dead peer
 		// through its context or failPending. The walk keeps the MCP
 		// tolerance for unknown fields; the decode decodes vetted bytes.
-		if err := handler.CheckObjectKeys(scanner.Bytes(), strings.ToLower); err != nil {
+		if err := handler.CheckObjectKeys(scanner.Bytes(), handler.FoldJSONKey); err != nil {
 			continue
 		}
 		//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above already refused duplicate and case-folded keys at every depth; this Unmarshal only decodes a vetted line

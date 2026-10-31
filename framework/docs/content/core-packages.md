@@ -39,7 +39,12 @@ frame, a buffered body; pass `handler.UseNumber()` to keep numbers in
 digits), and `CheckTopLevelKeys(data, fold)` when the
 caller normalises keys itself. Struct destinations refuse duplicate,
 case-folded, and unknown top-level keys; map destinations refuse
-duplicate and case-folded ones. Stdlib `encoding/json` keeps the last
+duplicate and case-folded ones. Nested objects get the same check at
+every depth (`CheckObjectKeys`), folded with `FoldJSONKey`, the
+decoder's own rule: `ſource` (U+017F) and the Kelvin sign fold onto
+ASCII exactly as `encoding/json` matches them to a field, which
+`strings.ToLower` does not. Pass `FoldJSONKey` when you call either
+check yourself ahead of a decode into a struct. Stdlib `encoding/json` keeps the last
 duplicate and matches tags case-insensitively, so the same body can
 mean two things to two readers; refusing it is the only resolution that
 privileges neither. Cap the size first (`http.MaxBytesReader`). The

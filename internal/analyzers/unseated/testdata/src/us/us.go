@@ -202,8 +202,7 @@ func oneShotSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 // callerDrivenPump ranges over its own channel parameter: the channel
-// owner one frame up owns the admission decision (the
-// handler.SSEStream posture).
+// owner one frame up owns the admission decision.
 func callerDrivenPump(w http.ResponseWriter, events <-chan string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)

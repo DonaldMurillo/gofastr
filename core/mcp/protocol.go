@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
@@ -70,7 +69,7 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 	// uri was armed. One check at the dispatch chokepoint covers every
 	// method that decodes params.
 	if len(req.Params) > 0 {
-		if err := handler.CheckObjectKeys(req.Params, strings.ToLower); err != nil {
+		if err := handler.CheckObjectKeys(req.Params, handler.FoldJSONKey); err != nil {
 			return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
 		}
 	}

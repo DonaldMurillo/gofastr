@@ -176,7 +176,7 @@ func roundsInteger(f float64) bool {
 // gate; a float64 decode is NOT used because it is the precision loss
 // this function exists to prevent.
 func decodeStrictUseNumber(data []byte) (map[string]any, error) {
-	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return nil, err
 	}
 	//gofastr:allow(GOFASTR1407) CheckObjectKeys already verified key uniqueness and casing (see doc comment); this decode only preserves integer precision via UseNumber.

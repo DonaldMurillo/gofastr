@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -673,7 +672,7 @@ func readLines(ctx context.Context, in io.Reader) (<-chan []byte, <-chan error) 
 // answer with the request's id and the invalid-params code; see the
 // comment at the Serve call site.
 func decodeEnvelope(line []byte, frame *wireRequest) error {
-	if err := handler.CheckTopLevelKeys(line, strings.ToLower); err != nil {
+	if err := handler.CheckTopLevelKeys(line, handler.FoldJSONKey); err != nil {
 		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(line))
@@ -718,7 +717,7 @@ func validRequestEnvelope(frame wireRequest) bool {
 // unknown fields stay tolerated because the protocol reserves the right
 // to add them.
 func decodeParams(raw json.RawMessage, v any) error {
-	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(raw, handler.FoldJSONKey); err != nil {
 		return err
 	}
 	return json.Unmarshal(raw, v)

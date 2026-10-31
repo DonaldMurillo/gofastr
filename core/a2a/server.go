@@ -583,7 +583,7 @@ func decodeParams(raw json.RawMessage, v any) *Error {
 	// duplicate or case-folded key pair resolves by parser accident).
 	// Unknown fields stay tolerated: the protocol reserves the right to
 	// add them.
-	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(raw, handler.FoldJSONKey); err != nil {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}
 	if err := jsonexact.Unmarshal(raw, v); err != nil {

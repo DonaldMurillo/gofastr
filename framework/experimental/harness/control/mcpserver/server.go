@@ -140,7 +140,7 @@ type rpcError struct {
 // TestParamsDuplicateKeysRefused); the value decode itself stays
 // plain stdlib.
 func unmarshalMCPObject(data []byte, dst any) error {
-	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return err
 	}
 	return json.Unmarshal(data, dst)

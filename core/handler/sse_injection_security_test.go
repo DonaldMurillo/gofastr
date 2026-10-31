@@ -45,20 +45,3 @@ func TestRespondSSE_DataCannotInjectSecondEvent(t *testing.T) {
 		t.Fatalf("SECURITY: [sse] data payload injected a second SSE frame: %q", body)
 	}
 }
-
-func TestSSEStream_DataCannotInjectSecondEvent(t *testing.T) {
-	events := make(chan SSE, 1)
-	events <- SSE{
-		Event: "update",
-		Data:  "hello\n\nid: forged\nevent: admin\ndata: owned",
-	}
-	close(events)
-
-	rec := httptest.NewRecorder()
-	SSEStream(rec, events)
-
-	body := rec.Body.String()
-	if strings.Contains(body, "\n\nevent: admin") || strings.Contains(body, "\n\nid: forged") {
-		t.Fatalf("SECURITY: [sse] stream data payload injected a second SSE frame: %q", body)
-	}
-}

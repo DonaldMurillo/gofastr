@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -145,7 +144,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	// case-folded keys resolves last-wins under stdlib json, so the
 	// harness would register model ids a first-read intermediary parsed
 	// differently (the SSE chunk rule; unknown fields stay tolerated).
-	if err := handler.CheckObjectKeys(rawModels, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(rawModels, handler.FoldJSONKey); err != nil {
 		return nil, fmt.Errorf("openrouter /models: parse: %w", err)
 	}
 	if err := json.Unmarshal(rawModels, &parsed); err != nil {

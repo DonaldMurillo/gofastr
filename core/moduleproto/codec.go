@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -173,7 +172,7 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 	// as ErrInvalidFrame, the terminal frame-level sentinel, under the
 	// same no-ambiguity rule handler.DecodeStrict documents (no key may
 	// repeat; no two keys may fold to one name).
-	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidFrame, err.Error())
 	}
 	// Decode into a copy of the bytes: json.Unmarshal will allocate for any

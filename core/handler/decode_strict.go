@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // DecodeStrict reads one JSON value from r into dst with the same
@@ -73,8 +75,10 @@ func UnmarshalStrict(data []byte, dst any, opts ...StrictOption) error {
 	}
 	// Every nesting level: a duplicate or case-folded key pair inside a
 	// nested object reads two ways just like one at the top (the a2a
-	// params object was the surface that showed it).
-	if err := CheckObjectKeys(data, strings.ToLower); err != nil {
+	// params object was the surface that showed it). The fold is the
+	// decoder's own: strings.ToLower kept ſource apart from source while
+	// encoding/json bound both to one field.
+	if err := CheckObjectKeys(data, FoldJSONKey); err != nil {
 		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -95,6 +99,36 @@ func UnmarshalStrict(data []byte, dst any, opts ...StrictOption) error {
 		return Fail(400, ReasonJSONMultipleValues)
 	}
 	return nil
+}
+
+// FoldJSONKey folds an object key the way encoding/json matches it to a
+// struct field: an ASCII letter by case, any other rune to the smallest
+// member of its Unicode fold set, so ſ (U+017F) lands on S and the
+// Kelvin sign on K. Two keys fold equal exactly when bytes.EqualFold
+// says so. Pass it as the fold to CheckObjectKeys or CheckTopLevelKeys
+// ahead of a decode into a struct; strings.ToLower misses ſ.
+func FoldJSONKey(key string) string {
+	var b strings.Builder
+	b.Grow(len(key))
+	for _, r := range key {
+		if r < utf8.RuneSelf {
+			if 'a' <= r && r <= 'z' {
+				r -= 'a' - 'A'
+			}
+			b.WriteByte(byte(r))
+			continue
+		}
+		for {
+			next := unicode.SimpleFold(r)
+			if next <= r {
+				r = next
+				break
+			}
+			r = next
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // CheckTopLevelKeys walks the top level of a JSON object and refuses
