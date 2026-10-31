@@ -671,8 +671,8 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 		}
 	}
 
-	sortParams := q["sort"]
-	if len(sortParams) == 0 {
+	sortValues := q["sort"]
+	if len(sortValues) == 0 {
 		return nil, nil
 	}
 
@@ -681,8 +681,21 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 	// occurrence, letting a single small request inflate the generated
 	// SQL and pollute the statement cache. Fail closed rather than
 	// silently truncate, mirroring the unknown-field policy above.
-	if len(sortParams) > maxSortFields {
-		return nil, i18n.NewError(reasonTooManySorts, map[string]any{"count": len(sortParams), "max": maxSortFields})
+	//
+	// A value names one field or several, comma-separated
+	// (?sort=title,-created_at): the generated CLI's --sort and the
+	// module broker's sort arrays send that form. The bound counts
+	// fields, before splitting, so commas carry no clause past it.
+	n := 0
+	for _, v := range sortValues {
+		n += strings.Count(v, ",") + 1
+	}
+	if n > maxSortFields {
+		return nil, i18n.NewError(reasonTooManySorts, map[string]any{"count": n, "max": maxSortFields})
+	}
+	sortParams := make([]string, 0, n)
+	for _, v := range sortValues {
+		sortParams = append(sortParams, strings.Split(v, ",")...)
 	}
 
 	var sorts []ParsedSort

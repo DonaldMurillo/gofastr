@@ -3,9 +3,12 @@ package crud
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -267,7 +270,12 @@ func (ch *CrudHandler) readScopeAllowsRecord(record any) bool {
 	if !ok {
 		return false
 	}
+	types := map[string]schema.FieldType{}
+	for _, f := range ch.Entity.GetFields() {
+		types[f.Name] = f.Type
+	}
 	for _, p := range rs.Filter {
+		ft := types[p.Field]
 		v, found := row[p.Field]
 		if !found {
 			// The payload carries wire keys, which differ from column names
@@ -286,26 +294,27 @@ func (ch *CrudHandler) readScopeAllowsRecord(record any) bool {
 		if v == nil {
 			return false
 		}
-		// fmt.Sprint on both sides, matching the owner filter above it: the
-		// same value arrives as int64 locally and float64 after the fanout
-		// bridge's JSON round trip, and a typed comparison would drop every
-		// cross-replica event.
-		got := fmt.Sprint(v)
+		// Both sides go through scopeText, so the declared value compares
+		// as the SQL side binds it and the record's as it was stored.
+		got := scopeText(ft, v)
+		in := func() bool {
+			return slices.ContainsFunc(p.Values, func(s string) bool { return scopeText(ft, s) == got })
+		}
 		switch p.Op {
 		case "", "eq":
-			if got != p.Value {
+			if got != scopeText(ft, p.Value) {
 				return false
 			}
 		case "neq":
-			if got == p.Value {
+			if got == scopeText(ft, p.Value) {
 				return false
 			}
 		case "in":
-			if !slices.Contains(p.Values, got) {
+			if !in() {
 				return false
 			}
 		case "not_in":
-			if slices.Contains(p.Values, got) {
+			if in() {
 				return false
 			}
 		default:
@@ -313,4 +322,63 @@ func (ch *CrudHandler) readScopeAllowsRecord(record any) bool {
 		}
 	}
 	return true
+}
+
+// scopeText spells v the one way the read-scope matcher compares it for a
+// column of type ft (2026-10-27 D2). The SQL side binds a scope value
+// typed (filter.CoerceValue: "1", "t" and "true" are all true; "+5" and
+// "05" are 5; a Timestamp in any accepted layout is one instant), so a
+// string on either side goes through the same coercion, and the
+// record's value is rendered the way the coerced one is. A value the
+// coercion refuses stays as sent. Text, not a typed value, because the
+// record's numbers arrive as int64 locally and as float64 after the
+// fanout bridge's JSON round trip; fmt.Sprint reads both the same.
+func scopeText(ft schema.FieldType, v any) string {
+	if ft == schema.Decimal {
+		// DECIMAL(19,4) compares numerically on both dialects, while
+		// Postgres hands the value back as "1.5000" and SQLite as a
+		// float64 1.5: the exact rational is the one spelling. It carries
+		// a prefix no raw value can match, or a scope written "3/2", which
+		// the coercion refuses and so stays as sent, would equal 1.5.
+		if r, ok := decimalRat(v); ok {
+			return "\x00" + r.RatString()
+		}
+	}
+	if s, ok := v.(string); ok {
+		v = filter.TypedBind(ft, s)
+	}
+	switch x := v.(type) {
+	case time.Time:
+		if ft == schema.Timestamp {
+			return schema.FormatTimestamp(x)
+		}
+	case int64:
+		if ft == schema.Bool {
+			return strconv.FormatBool(x != 0)
+		}
+	case float64:
+		if ft == schema.Bool {
+			return strconv.FormatBool(x != 0)
+		}
+	}
+	return fmt.Sprint(v)
+}
+
+// decimalRat reads a Decimal value as a rational. A float64 goes through
+// its shortest text first, so the REAL 1.1 SQLite returns is 11/10, as
+// the scope's "1.1" is, not the binary fraction nearest it.
+func decimalRat(v any) (*big.Rat, bool) {
+	switch x := v.(type) {
+	case string:
+		if _, err := filter.CoerceValue("", schema.Decimal, x); err != nil {
+			return nil, false
+		}
+		return new(big.Rat).SetString(x)
+	case float64:
+		// NaN and ±Inf format as text SetString refuses.
+		return new(big.Rat).SetString(strconv.FormatFloat(x, 'g', -1, 64))
+	case int64:
+		return new(big.Rat).SetInt64(x), true
+	}
+	return nil, false
 }

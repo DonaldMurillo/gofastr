@@ -152,9 +152,10 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 	}
 
 	// The id is the input's alone: the label's for and the buttons'
-	// data-hui-number-input-for name it, and the module resolves it
-	// with getElementById, which answers the first element carrying
-	// it. A group that carried it too was that first element.
+	// data-hui-number-input-for name it. The browser resolves the
+	// label's for page-wide, to the first element carrying the id, and
+	// a group that carried it too was that first element. The module
+	// looks only among the buttons' row siblings.
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name", "step",
 		"value", "min", "max", "disabled", "required", "aria-invalid", "aria-describedby"),
 		Attrs(map[string]string{

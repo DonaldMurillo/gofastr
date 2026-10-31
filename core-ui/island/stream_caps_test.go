@@ -19,12 +19,12 @@ import (
 func TestStreamCapRejectsPerSessionOverflow(t *testing.T) {
 	mgr := NewManager(WithStreamCaps(2, 0)) // perSession=2, global unlimited
 
-	_, c1, _ := mgr.ConnectSession("sess")
+	_, c1, _ := mgr.ConnectSession("sess", "")
 	defer c1()
-	_, c2, _ := mgr.ConnectSession("sess")
+	_, c2, _ := mgr.ConnectSession("sess", "")
 	defer c2()
 
-	ch3, _, err := mgr.ConnectSession("sess")
+	ch3, _, err := mgr.ConnectSession("sess", "")
 	if err == nil {
 		t.Fatalf("expected per-session stream cap to refuse the 3rd stream")
 	}
@@ -48,12 +48,12 @@ func TestStreamCapRejectsPerSessionOverflow(t *testing.T) {
 func TestStreamCapRejectsGlobalOverflow(t *testing.T) {
 	mgr := NewManager(WithStreamCaps(0, 2)) // perSession unlimited, global=2
 
-	_, c1, _ := mgr.ConnectSession("a")
+	_, c1, _ := mgr.ConnectSession("a", "")
 	defer c1()
-	_, c2, _ := mgr.ConnectSession("b")
+	_, c2, _ := mgr.ConnectSession("b", "")
 	defer c2()
 
-	ch3, _, err := mgr.ConnectSession("c")
+	ch3, _, err := mgr.ConnectSession("c", "")
 	if err == nil {
 		t.Fatalf("expected global stream cap to refuse the 3rd stream")
 	}
@@ -70,13 +70,13 @@ func TestStreamCapRejectsGlobalOverflow(t *testing.T) {
 func TestStreamCapCancelReleasesSlot(t *testing.T) {
 	mgr := NewManager(WithStreamCaps(1, 0))
 
-	_, c1, _ := mgr.ConnectSession("sess")
-	if _, _, err := mgr.ConnectSession("sess"); err == nil {
+	_, c1, _ := mgr.ConnectSession("sess", "")
+	if _, _, err := mgr.ConnectSession("sess", ""); err == nil {
 		t.Fatal("expected 2nd stream to be refused while the 1st is held")
 	}
 	c1() // release
 
-	ch, c2, err := mgr.ConnectSession("sess")
+	ch, c2, err := mgr.ConnectSession("sess", "")
 	if err != nil {
 		t.Fatalf("expected a fresh stream after release, got %v", err)
 	}
@@ -92,7 +92,7 @@ func TestSSEStreamCapReturnsClearStatus(t *testing.T) {
 	mgr := NewManager(WithStreamCaps(1, 0))
 
 	// Occupy the single per-session slot directly (a live SSE connection).
-	_, occ, _ := mgr.ConnectSession("sess")
+	_, occ, _ := mgr.ConnectSession("sess", "")
 	defer occ()
 
 	rec := httptest.NewRecorder()

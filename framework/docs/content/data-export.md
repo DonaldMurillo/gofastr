@@ -41,6 +41,26 @@ paged by primary-key keyset) and import writes raw (parameterized `INSERT`
 preserving every column value verbatim). No hooks, no validation, no
 auto-generation. The data was already valid when it was written.
 
+Export streams. Each page is written to its `.ndjson` file, and hashed on
+the way, before the next page is read, so `WithExportPageSize` (1000 rows
+by default) bounds how many rows an export holds at once. A table with no
+key is read in one statement and still reaches the file row by row.
+Import reads each file whole before it writes, because it validates the
+entire archive first.
+
+Timestamps keep the spelling a filter or cursor matches. SQLite compares a
+time column as text, so the export reads a column declared `DATE`,
+`DATETIME` or `TIMESTAMP` as the row stores it, and a battery's
+`2024-01-03 10:00:00+00:00` restores byte for byte. Postgres hands the
+export an instant, which leaves in the layout crud writes a `Timestamp`
+in (`2024-01-03T10:00:05.120000Z`), or `2024-01-03` for a `DATE`. On
+import, an RFC 3339 value in a column an entity declares `Timestamp` is
+rewritten in that layout, and a midnight-UTC one in a `Date` column as
+`YYYY-MM-DD`. Archives written before v0.96.0 hold trimmed spellings
+(`...05.12Z`, `...T00:00:00Z` for a date), which a SQLite filter bound in
+the canonical layout missed. A battery table's values, and a value of
+any other shape, restore as the archive holds them.
+
 ## Battery tables (outside the registry)
 
 Batteries own physical tables the entity registry doesn't know about
@@ -98,8 +118,10 @@ a schema-qualified name (`app.widgets`) is looked up in its own schema.
 Entities and exporters whose tables differ only in case are one source,
 named after the entity that sorts first.
 
-A user table that is ALSO a registry entity is already covered by the registry
-walk; the framework dedups by table name, so it is never exported twice.
+A user table that is ALSO a registry entity is exported once, as the entity.
+An exporter's columns that the entity does not declare join that source
+(compared case-insensitively), so auth's `name` column on an entity user
+table is exported and restored with the rest of the row.
 
 ## Archive layout
 
@@ -332,6 +354,8 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    |---|---|---|
    | `auth_api_tokens` | `owner_id` where `owner_kind = 'user'` | delete |
    | `oauth_tokens` | `user_id` | delete |
+   | the per-account login limiter's `SQLRateLimitStore` (both tables) | `rl_key`, the limiter scope plus `account:` plus the email (`IdentityEmail`) | delete |
+   | `gofastr_embed_nonces` (`embed.SQLBurnStore`) | `subject` (the grant's subject) | anonymize: `grant_token` overwritten, the row kept as the nonce's tombstone |
    | `admin_saved_views` | `owner` | delete |
    | `a2a_tasks`, `a2a_push_configs` | `owner` | delete |
    | `feature_flags` | the user's id in the `users` allow list | remove member |

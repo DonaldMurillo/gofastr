@@ -180,6 +180,16 @@ func (ch *CrudHandler) enforcedStates() *entity.StatesConfig {
 	return st
 }
 
+// writesStateDefault reports whether a create writes f's Default although
+// f is ReadOnly or Hidden: f is the state field, whose Default Define
+// fills from Initial when it has none. The field loops leave every other
+// such column to the table's DDL default, and a table created before the
+// state field had a Default has none, so the row would start at NULL.
+func (ch *CrudHandler) writesStateDefault(f schema.Field) bool {
+	st := ch.Entity.Config.States
+	return st != nil && f.Name == st.Field
+}
+
 // stateOverrideColumn reports whether col is a guarded column ctx's state
 // override releases, so the field loops write it even when the schema
 // marks it ReadOnly or Hidden.
@@ -472,6 +482,7 @@ func dateOf(v any) (string, bool) {
 //
 // It works on an Advisory entity too, where the moves stay as calls.
 func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	st := ch.Entity.Config.States
 	if st == nil {
 		return nil, ErrNoStates
@@ -541,6 +552,9 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	// is a no-op; the conditional UPDATE already serializes there.
 	lock := "UPDATE " + query.QuoteFolded(ch.Entity.GetTable()) + " SET " + query.QuoteFolded(st.Field) + " = " + query.QuoteFolded(st.Field) + " WHERE 1 = 0"
 	if _, err := ch.conn(ctx).ExecContext(ctx, lock); err != nil {
+		return nil, err
+	}
+	if err := ch.stampRow(ctx, id); err != nil {
 		return nil, err
 	}
 	cols := ch.visibleFields()
@@ -685,8 +699,8 @@ func nonNil(s []string) []string {
 func (ch *CrudHandler) Transition() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONContentType(r); err != nil {
-			writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+		if err := enforceJSONOnly(r); err != nil {
+			writeContentTypeError(w, r, err)
 			return
 		}
 		if !ch.requireScope(w, r, opUpdate) {

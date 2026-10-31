@@ -33,9 +33,9 @@ func (b *Battery) windowCapability() Capability {
 				Description: "Returns the current window title.",
 				Output:      json.RawMessage(`{"type":"object","properties":{"title":{"type":"string"}}}`),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
-					w, ok := b.Window()
-					if !ok {
-						return nil, &Error{Code: CodeUnsupported, Message: "window is not open yet"}
+					w, werr := b.callerWindow(ctx)
+					if werr != nil {
+						return nil, werr
 					}
 					return windowTitleOutput{Title: w.Title()}, nil
 				},
@@ -57,9 +57,9 @@ func (b *Battery) windowCapability() Capability {
 					if len(req.Title) > 512 {
 						return nil, &Error{Code: CodeInvalidInput, Message: "title must be at most 512 characters"}
 					}
-					w, ok := b.Window()
-					if !ok {
-						return nil, &Error{Code: CodeUnsupported, Message: "window is not open yet"}
+					w, werr := b.callerWindow(ctx)
+					if werr != nil {
+						return nil, werr
 					}
 					if err := w.SetTitle(req.Title); err != nil {
 						return nil, err
@@ -120,9 +120,9 @@ func (b *Battery) windowCapability() Capability {
 				Description: "Captures the rendered page as a base64 PNG.",
 				Output:      json.RawMessage(`{"type":"object","properties":{"png":{"type":"string"}}}`),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
-					w, ok := b.Window()
-					if !ok {
-						return nil, &Error{Code: CodeUnsupported, Message: "window is not open yet"}
+					w, werr := b.callerWindow(ctx)
+					if werr != nil {
+						return nil, werr
 					}
 					png, err := w.Snapshot(ctx)
 					if err != nil {
@@ -133,6 +133,21 @@ func (b *Battery) windowCapability() Capability {
 			},
 		},
 	}
+}
+
+// callerWindow resolves the window the request came from
+// (callerWindowID). The main window not open yet is unsupported, the
+// way it always answered; a secondary window that has closed is
+// not_found and never falls back to the main window.
+func (b *Battery) callerWindow(ctx context.Context) (Window, *Error) {
+	id := callerWindowID(ctx)
+	if w, ok := b.windowByID(id); ok {
+		return w, nil
+	}
+	if id == MainWindowID {
+		return nil, &Error{Code: CodeUnsupported, Message: "window is not open yet"}
+	}
+	return nil, &Error{Code: CodeNotFound, Message: "the calling window is not open"}
 }
 
 type windowTitleOutput struct {

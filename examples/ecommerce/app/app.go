@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=8d058d42ee8f11fb
+//gofastr:generated generator=app kind=scaffold version=dev sum=169a4f7e088340ff
 
 package main
 
@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 
@@ -138,7 +139,9 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr = auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
-		authMgr.Init(fwApp)
+		if err := authMgr.Init(fwApp); err != nil {
+			log.Fatal(err)
+		}
 		auth.SetDefaultLoginErrorPath("/login")
 		// Bootstrap the admin account after auto-migration. The hook runs
 		// before the server accepts traffic and returns errors to Start,

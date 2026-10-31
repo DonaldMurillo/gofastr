@@ -101,9 +101,21 @@ func evalString(t *testing.T, ctx context.Context, expr string) string {
 // waitUntil polls expr (a boolean JavaScript expression) until true.
 func waitUntil(t *testing.T, ctx context.Context, expr string) {
 	t.Helper()
-	if err := chromedp.Run(ctx, chromedp.Poll(expr, nil,
-		chromedp.WithPollingTimeout(20*time.Second))); err != nil {
-		t.Fatalf("wait: %s: %v", expr, err)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		err := chromedp.Run(ctx, chromedp.Poll(expr, nil,
+			chromedp.WithPollingTimeout(time.Until(deadline))))
+		// Right after a full navigation chromedp can still hold the old
+		// document's execution context, and the evaluate fails with
+		// "Cannot find context" under load; poll again in the new one.
+		if err != nil && strings.Contains(err.Error(), "Cannot find context") && time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("wait: %s: %v", expr, err)
+		}
+		return
 	}
 }
 

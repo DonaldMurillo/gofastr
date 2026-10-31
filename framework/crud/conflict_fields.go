@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -89,15 +90,14 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 	return &constraintFieldsError{err: err, fields: fields}
 }
 
-// writeConflict answers a constraint refusal: 409 with the generic
-// message, plus the named fields when the error carries them.
-func writeConflict(w http.ResponseWriter, r *http.Request, err error, reason i18n.Phrase) {
+// conflictRefusal is a constraint refusal: 409 with the generic message,
+// plus the named fields when the error carries them.
+func conflictRefusal(ctx context.Context, err error, reason i18n.Phrase) refusal {
 	cf, ok := errors.AsType[*constraintFieldsError](err)
 	if !ok {
-		writeJSONError(w, r, http.StatusConflict, reason)
-		return
+		return phraseRefusal(ctx, http.StatusConflict, reason)
 	}
-	writeFieldsError(w, r, http.StatusConflict, schema.Violation{Reason: reason}, cf.fields, nil)
+	return fieldsRefusal(ctx, http.StatusConflict, schema.Violation{Reason: reason}, cf.fields, nil)
 }
 
 // sentKeys snapshots a request body's keys before the write runs.

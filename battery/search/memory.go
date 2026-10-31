@@ -45,11 +45,15 @@ func (m *Memory) Delete(ctx context.Context, id string) error {
 
 // maxQueryTerms bounds how many distinct terms a single query may contribute
 // to scoring. Without a cap, an attacker-controlled query string of many
-// whitespace-separated tokens forces O(terms x corpus x doclen) substring
-// scans per request. Distinct terms beyond this cap add negligible selectivity.
+// tokens forces O(terms x corpus x doclen) word scans per request. Distinct
+// terms beyond this cap add negligible selectivity.
 const maxQueryTerms = 64
 
-// Search returns documents whose text or string fields contain all query terms.
+// Search returns documents whose text or string fields hold every query
+// term as a word, the last term as the start of a word: the terms and
+// the words split the way the SQL backends split them (queryTerms), with
+// no stemming. Empty text matches every document; text whose terms all
+// sanitize away (pure punctuation) matches none.
 func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -57,7 +61,10 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	terms := normalizeTerms(query.Text)
+	terms := queryTerms(query.Text)
+	if len(terms) == 0 && len(strings.Fields(query.Text)) > 0 {
+		return nil, nil
+	}
 	var results []Result
 	for _, doc := range m.docs {
 		if err := ctx.Err(); err != nil {
@@ -69,8 +76,7 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 		if !matchesFields(doc.Fields, query.FieldEquals) {
 			continue
 		}
-		haystack := strings.ToLower(doc.Text + " " + fieldsText(doc.Fields))
-		score := scoreTerms(haystack, terms)
+		score := scoreTerms(docWords(doc.Text+" "+fieldsText(doc.Fields)), terms)
 		if score == 0 && len(terms) > 0 {
 			continue
 		}
@@ -106,36 +112,39 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	return page, nil
 }
 
-// normalizeTerms lowercases, splits, dedups, and caps the query into a bounded
-// set of distinct terms so per-query work cannot be amplified by an
-// attacker-controlled query string.
-func normalizeTerms(text string) []string {
-	fields := strings.Fields(strings.ToLower(text))
-	if len(fields) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(fields))
-	terms := make([]string, 0, len(fields))
-	for _, f := range fields {
-		if _, ok := seen[f]; ok {
-			continue
-		}
-		seen[f] = struct{}{}
-		terms = append(terms, f)
-		if len(terms) >= maxQueryTerms {
-			break
+// docWords splits text into the words queryTerms reads from a query, in
+// order with repeats. A word joined by - or _ also yields its parts, as
+// the SQL backends' tokenizers index them, so foo matches foo-bar.
+func docWords(text string) []string {
+	var words []string
+	for _, part := range strings.FieldsFunc(text, func(r rune) bool { return !termRune(r) }) {
+		w := sanitizeTsTerm(part)
+		words = append(words, w)
+		if strings.ContainsAny(w, "-_") {
+			for _, sub := range strings.FieldsFunc(w, func(r rune) bool { return r == '-' || r == '_' }) {
+				words = append(words, sub)
+			}
 		}
 	}
-	return terms
+	return words
 }
 
-func scoreTerms(haystack string, terms []string) float64 {
+// scoreTerms counts, per term, the words it matches: the whole word, or
+// for the last term any word it starts. A term matching no word scores
+// the document 0.
+func scoreTerms(words, terms []string) float64 {
 	if len(terms) == 0 {
 		return 1
 	}
 	var score float64
-	for _, term := range terms {
-		count := strings.Count(haystack, term)
+	for i, term := range terms {
+		last := i == len(terms)-1
+		count := 0
+		for _, w := range words {
+			if w == term || (last && strings.HasPrefix(w, term)) {
+				count++
+			}
+		}
 		if count == 0 {
 			return 0
 		}

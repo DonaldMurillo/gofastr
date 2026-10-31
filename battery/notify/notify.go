@@ -13,7 +13,7 @@
 // Wiring:
 //
 //	tmpl := notify.NewMapTemplater()
-//	tmpl.Set("order.shipped", "email", notify.Template{
+//	tmpl.Set("order.shipped", "log", notify.Template{
 //	    Subject:  "Your order has shipped",
 //	    TextBody: "Hi {{name}}, your order #{{id}} is on its way.",
 //	})

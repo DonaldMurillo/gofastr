@@ -50,6 +50,17 @@ retrying queue to own a time-of-day job end to end; use the in-process
 tick after a restart is acceptable. See
 [the queue docs](queue.md) → "Scheduler".
 
+A `cron.Schedule` answers these questions about a spec:
+
+| Method | Returns |
+|---|---|
+| `Next(t)` | The first firing strictly after `t`, minute-aligned, in `t`'s location. The zero `Time` when the spec never fires. The search covers `cron.HorizonYears` (401) years, one full Gregorian cycle, so a rare spec such as `"0 0 29 2 */7"` (February 29 on a Sunday, up to 40 years apart) still has an answer. |
+| `Matches(t)` | Whether the spec fires in the minute holding `t`. |
+| `MatchesDay(t)` | Whether `t`'s date passes the month and day fields, whatever the minute and hour say. |
+| `SkipDay(t)` | The next minute a forward walk from `t` must test: 21:00 local of the same date when `MatchesDay(t)` is false and that is later than `t`, else `t` plus a minute. |
+| `Satisfiable()` | Whether the spec ever fires. `"0 0 30 2 *"` does not. |
+| `FixedTime()` | Whether neither the minute nor the hour field begins with `*`. The durable queue scheduler gives such a spec vixie cron's once-only handling across a DST change. |
+
 ## Quickstart
 
 <!-- gofastr:compile

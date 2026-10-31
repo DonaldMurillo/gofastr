@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // The pure menu planning pass: WindowConfig.Menu (plus the standard
@@ -107,23 +108,11 @@ func splitMenuKey(key string) []string {
 	start := 0
 	for i := 0; i <= len(key); i++ {
 		if i == len(key) || key[i] == '+' {
-			parts = append(parts, lowerASCII(key[start:i]))
+			parts = append(parts, asciicase.Lower(key[start:i]))
 			start = i + 1
 		}
 	}
 	return parts
-}
-
-// lowerASCII lower-cases A-Z only (accelerators are validated to ASCII
-// letters and digits).
-func lowerASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
 }
 
 // editMenuRows are the standard text-editing commands every WebView

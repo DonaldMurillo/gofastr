@@ -7,9 +7,10 @@ import (
 )
 
 // Sentinel errors. These describe protocol-fatal or call-local conditions.
-// Terminal protocol faults (over-cap, unsolicited response, malformed frame)
-// tear down the Peer; the supervisor maps them to a restart-vs-Failed
-// classification (design §8).
+// A terminal protocol fault (over-cap, unsolicited response, malformed frame,
+// stalled transport) ends the Peer. The process-module supervisor kills the
+// child on one and counts the exit as a crash, so the module restarts and
+// repeated faults open its restart circuit (design §8).
 var (
 	// ErrClosed is returned by a Peer method after [Peer.Close] or once the
 	// read loop has exited for any reason.
@@ -38,6 +39,12 @@ var (
 	// supervisor counts it as a crash rather than an integrity fault. An
 	// RPC error reply is an answer and does not carry it.
 	ErrHandshakeUnanswered = errors.New("moduleproto: handshake unanswered")
+
+	// ErrStalled is the terminal fault a Peer records when the
+	// counterparty stops reading what it is sent: more served responses
+	// wait to be written than the serve cap ([WithMaxServeInflight])
+	// allows. The Peer serves nothing more after it.
+	ErrStalled = errors.New("moduleproto: transport stalled: the counterparty stopped reading")
 )
 
 // Standard JSON-RPC 2.0 error codes (the -32xxx reserved band), plus

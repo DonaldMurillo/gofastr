@@ -54,8 +54,11 @@ func Fetch(ctx context.Context, client *http.Client, raw string, max int64) ([]b
 	if err != nil {
 		return nil, fmt.Errorf("%w: building the request failed", ErrFetch)
 	}
-	resp, err := client.Do(req)
+	resp, err := redirectChecked(client).Do(req)
 	if err != nil {
+		if errors.Is(err, ErrBadURL) {
+			return nil, ErrBadURL
+		}
 		return nil, fmt.Errorf("%w: %v", ErrFetch, ctxErrDetail(err))
 	}
 	defer resp.Body.Close()
@@ -70,6 +73,28 @@ func Fetch(ctx context.Context, client *http.Client, raw string, max int64) ([]b
 		return nil, ErrTooLarge
 	}
 	return body, nil
+}
+
+// redirectChecked returns a copy of client that holds every redirect
+// target to AllowedURL, so an https feed cannot send the download to
+// plain http. A CheckRedirect the caller set still runs after it;
+// otherwise Go's default limit of ten redirects applies.
+func redirectChecked(client *http.Client) *http.Client {
+	c := *client
+	prev := client.CheckRedirect
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if !AllowedURL(req.URL.String()) {
+			return ErrBadURL
+		}
+		if prev != nil {
+			return prev(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &c
 }
 
 // ctxErrDetail reduces a transport error to a fixed, url-free detail.

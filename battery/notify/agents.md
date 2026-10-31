@@ -30,8 +30,13 @@ _ = n.Send(ctx, notify.Notification{
 })
 ```
 
-**Shape (prod, email):**
+**Shape (prod, email):** every channel needs its own template, so the
+email channel gets one beside the log template above.
 ```go
+tmpl.Set("password.reset", "email", notify.Template{
+    Subject:  "Reset your password",
+    TextBody: "Open {{url}} within 15 minutes.",
+})
 emailCh := notify.NewEmailChannel(emailSender, "noreply@example.com")
 n := notify.New(notify.WithTemplater(tmpl), notify.WithChannel(emailCh))
 ```

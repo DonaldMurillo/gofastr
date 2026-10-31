@@ -98,9 +98,14 @@
 
   function removeChip(chip) {
     const root = chip.closest('[data-hui-tag-input]');
-    const v = chip.textContent.replace('×', '').trim();
     // The hidden input this chip rode with is inside it; removing the
-    // list item removes the value from the form.
+    // list item removes the value from the form. The sentence names
+    // that value: the chip's text also holds the × glyph, and a tag
+    // can hold one too.
+    // Both chip builders put one in every chip; the guard keeps a
+    // hand-drawn chip without one removable rather than throwing.
+    const hidden = chip.querySelector('input[type="hidden"]');
+    const v = hidden ? hidden.value : '';
     const status = statusOf(root);
     if (status) say(status, (status.getAttribute('data-hui-tag-input-removed') || '').replaceAll('{{name}}', () => v));
     chip.remove();

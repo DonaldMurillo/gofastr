@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,13 +34,98 @@ func bootBlog(t *testing.T) *framework.App {
 	registerEntities(app)
 	app.Router().Get("/posts/published", postsByStatus(app, "published"))
 	searchIndex := search.NewMemory()
+	syncSearch(app, searchIndex)
 	app.Router().Get("/posts/search", searchPosts(searchIndex))
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	seed(db)
-	seedSearch(searchIndex)
+	if err := indexPosts(context.Background(), app, searchIndex); err != nil {
+		t.Fatalf("index posts: %v", err)
+	}
 	return app
+}
+
+// searchHits answers whether GET /posts/search?q= lists post id.
+func searchHits(t *testing.T, app *framework.App, q, id string) bool {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/posts/search?q="+q, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search %q = %d, want 200", q, rec.Code)
+	}
+	return strings.Contains(rec.Body.String(), `"`+id+`"`)
+}
+
+// The index follows the posts table: a soft-deleted post stopped
+// answering nothing, since the seed indexed it once and no write ever
+// reached the index. A delete removes it, a restore and an edit
+// re-index it, and a rebuild from the table leaves the trash out.
+func TestBlogSearchFollowsWrites(t *testing.T) {
+	app := bootBlog(t)
+	posts, err := app.CrudHandler("posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !searchHits(t, app, "first", "p1") {
+		t.Error("search missed a word of the post's body")
+	}
+	ctx := framework.WithServerWrites(context.Background())
+	if err := posts.DeleteOne(ctx, "p1"); err != nil {
+		t.Fatal(err)
+	}
+	if searchHits(t, app, "hello", "p1") {
+		t.Error("search found the deleted post")
+	}
+	fresh := search.NewMemory()
+	if err := indexPosts(context.Background(), app, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := fresh.Search(context.Background(), search.Query{Text: "hello", Type: "posts"}); len(res) != 0 {
+		t.Errorf("a rebuild indexed the deleted post: %v", res)
+	}
+	if err := posts.RestoreOne(ctx, "p1"); err != nil {
+		t.Fatal(err)
+	}
+	if !searchHits(t, app, "hello", "p1") {
+		t.Error("search missed the restored post")
+	}
+	if _, err := posts.UpdateOne(ctx, "p2", map[string]any{"title": "Zephyr"}); err != nil {
+		t.Fatal(err)
+	}
+	if !searchHits(t, app, "zephyr", "p2") || searchHits(t, app, "gofastr", "p2") {
+		t.Error("search kept the old title after the edit")
+	}
+	created, err := posts.CreateOne(ctx, map[string]any{"title": "Quokka", "status": "published"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := created["id"].(string); id == "" || !searchHits(t, app, "quokka", id) {
+		t.Errorf("search missed the created post %v", created["id"])
+	}
+}
+
+// A write whose transaction rolls back never reaches the index: the
+// hooks queue the index change behind the commit.
+func TestBlogSearchSkipsRolledBackWrite(t *testing.T) {
+	app := bootBlog(t)
+	posts, err := app.CrudHandler("posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	err = app.InTx(framework.WithServerWrites(context.Background()), func(ctx context.Context, _ *sql.Tx) error {
+		if err := posts.DeleteOne(ctx, "p1"); err != nil {
+			return err
+		}
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("InTx = %v, want boom", err)
+	}
+	if !searchHits(t, app, "hello", "p1") {
+		t.Error("a rolled-back delete removed the post from search")
+	}
 }
 
 func TestBlogBoots(t *testing.T) {

@@ -37,8 +37,8 @@ import (
 // configured stores actually use (resolveExportTables, beside
 // resolveEraseTables). A host on its own store implementations registers
 // its tables itself. A user table that is ALSO a registry entity is
-// already covered by the registry walk; collectSources dedups by table so
-// it is never exported twice.
+// exported once, as the entity, and the columns the entity does not
+// declare (name) join it from this exporter.
 
 func init() { registerCanonicalExporters() }
 

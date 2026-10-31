@@ -2,8 +2,10 @@ package framework
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/featureflag"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // Flags returns the app's feature-flag evaluator, creating one on
@@ -14,8 +16,11 @@ import (
 // silent race where some goroutines still hold a reference to the
 // previous evaluator.
 //
-// The evaluator is also installed as featureflag.Default() so package-
-// level featureflag.Bool(ctx, "...") calls work from anywhere in the app.
+// The default middleware puts the evaluator on every request context
+// (FlagContextMiddleware), so featureflag.Bool(r.Context(), "...") reads
+// this App's flags even with several Apps in one process. It is also
+// installed as featureflag.Default() for contexts that never passed
+// through a request (a job, a cron run); there the last App wired wins.
 func (a *App) Flags() *featureflag.Evaluator {
 	a.flagMu.Lock()
 	defer a.flagMu.Unlock()
@@ -60,4 +65,24 @@ func (a *App) SetFlagStore(s featureflag.Store) *App {
 // and uniform rollout are consulted.
 func (a *App) IsEnabled(ctx context.Context, key string) bool {
 	return a.Flags().Bool(ctx, key)
+}
+
+// FlagContextMiddleware returns middleware that puts the App's flag
+// evaluator on every request context (featureflag.WithEvaluator), so
+// featureflag.Bool(r.Context(), ...) reads this App's store rather than
+// the process-wide default another App may have installed. An App with
+// no evaluator yet attaches nil, which reads every flag as off, as its
+// empty lazy store would.
+//
+// The App installs this as part of the default middleware chain. It's
+// exposed for apps that opt out (WithoutDefaultMiddleware).
+func (a *App) FlagContextMiddleware() router.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a.flagMu.Lock()
+			e := a.flagEval
+			a.flagMu.Unlock()
+			next.ServeHTTP(w, r.WithContext(featureflag.WithEvaluator(r.Context(), e)))
+		})
+	}
 }

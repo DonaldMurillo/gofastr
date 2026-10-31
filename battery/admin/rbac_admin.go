@@ -469,8 +469,9 @@ type grantChange struct {
 	grant bool
 }
 
-// applyGrants checks every change against the caller's own permissions
-// before writing any, then grants and revokes through the GrantStore,
+// applyGrants checks every change against the caller's own permissions,
+// and every grant against GrantStore.CheckGrant, before writing any, then
+// grants and revokes through the GrantStore,
 // auditing each. A refusal is audited with the permission that stopped
 // it and answered; it reports whether the caller should answer success.
 func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page string, changes []grantChange) bool {
@@ -484,22 +485,41 @@ func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page strin
 		}
 	}
 	for _, c := range changes {
+		if c.grant && !b.grantAccepted(w, r, page, c, b.cfg.GrantStore.CheckGrant(ctx, c.role, c.perm)) {
+			return false
+		}
+	}
+	for _, c := range changes {
 		call := b.cfg.GrantStore.Revoke
 		if c.grant {
 			call = b.cfg.GrantStore.Grant
 		}
-		if err := call(ctx, c.role, c.perm); err != nil {
-			if _, unknown := errors.AsType[*access.UnknownCapabilityError](err); unknown {
-				b.refuse(w, r, page, http.StatusBadRequest, "unknown-capability")
-				return false
-			}
-			b.logger().Error("admin: "+c.op(), "role", textsafe.ScrubControlBytes(c.role), "permission", textsafe.ScrubControlBytes(string(c.perm)), "error", textsafe.ScrubControlBytes(err.Error()))
-			b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+		if !b.grantAccepted(w, r, page, c, call(ctx, c.role, c.perm)) {
 			return false
 		}
 		b.appendAudit(ctx, "access", c.op(), c.role, actor, map[string]any{"permission": string(c.perm)})
 	}
 	return true
+}
+
+// grantAccepted answers a grant or revoke error, as a refusal the page
+// names when the caller asked for something the store refuses, and
+// reports whether there was none.
+func (b *Battery) grantAccepted(w http.ResponseWriter, r *http.Request, page string, c grantChange, err error) bool {
+	if err == nil {
+		return true
+	}
+	if _, unknown := errors.AsType[*access.UnknownCapabilityError](err); unknown {
+		b.refuse(w, r, page, http.StatusBadRequest, "unknown-capability")
+		return false
+	}
+	if errors.Is(err, access.ErrRevokedByWildcard) {
+		b.refuse(w, r, page, http.StatusConflict, "revoked-by-wildcard")
+		return false
+	}
+	b.logger().Error("admin: "+c.op(), "role", textsafe.ScrubControlBytes(c.role), "permission", textsafe.ScrubControlBytes(string(c.perm)), "error", textsafe.ScrubControlBytes(err.Error()))
+	b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+	return false
 }
 
 func (c grantChange) op() string {
@@ -642,9 +662,16 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 }
 
 // callerHoldsPermission reports whether the caller's own roles grant
-// perm or Wildcard. With no policy nothing can be proven held, so it
+// perm or Wildcard. A Decider's deny of perm wins first, as it does on
+// every other gate; as with the admin gate, its allow admits nothing
+// the policy does not. With no policy nothing can be proven held, so it
 // refuses.
 func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
+	if d := access.GetDecider(ctx); d != nil {
+		if d(ctx, access.GetRoles(ctx), perm, access.Ref{}) == access.DecisionDeny {
+			return false
+		}
+	}
 	if b.cfg.Policy == nil {
 		return false
 	}

@@ -29,13 +29,41 @@ func eventStreamSeatsFor(n int) int {
 }
 
 // streamSeat is one admitted EventStream connection, held from connect until
-// the handler returns. done is closed exactly once, by whichever registry
-// path removes the seat from the principal's FIFO (an EvictOldest admission
-// or the stream's own departure through release), and the handler's select
-// loop treats it as a disconnect.
+// the handler returns. done is closed once, by an EvictOldest admission, and
+// the handler's select loop treats it as a disconnect.
 type streamSeat struct {
 	principal string
 	done      chan struct{}
+
+	// cut ends a write the handler is parked in (a past write deadline on
+	// the response). Closing done only reaches a handler waiting in its
+	// select; one parked inside a write to a client that stopped reading
+	// never looks at done, and with no server WriteTimeout (the usual SSE
+	// setting) it stayed resident after eviction gave its seat away, so the
+	// per-principal cap stopped bounding handlers. cutMu and returned keep
+	// cut from running once the handler has returned: the response then
+	// belongs to net/http, and a keep-alive connection may already carry
+	// the next request. core/stream's SSE broker carries the same three.
+	cutMu    sync.Mutex
+	cut      func()
+	returned bool
+}
+
+// interruptWrite unblocks a write the evicted handler may be parked in.
+// Called after the eviction released the registry lock, never under it.
+func (s *streamSeat) interruptWrite() {
+	s.cutMu.Lock()
+	defer s.cutMu.Unlock()
+	if !s.returned && s.cut != nil {
+		s.cut()
+	}
+}
+
+// markReturned retires cut: the handler is done with the response.
+func (s *streamSeat) markReturned() {
+	s.cutMu.Lock()
+	s.returned = true
+	s.cutMu.Unlock()
 }
 
 // SeatDone implements stream.SeatMember so the shared
@@ -67,23 +95,42 @@ func (r *streamSeatRegistry) spliceSeatLocked(seat *streamSeat) {
 }
 
 // admit seats one stream for principal under the handler's cap and overflow
-// policy, returning the seat. The bool is false when the principal is at the
-// cap and the policy is Refuse; the caller answers 429 with Retry-After
-// (EventSource backs off) and holds nothing. Under EvictOldest the
-// principal's oldest seat is closed and removed in the same critical
-// section, and the new stream is seated. The body is the shared
-// stream.AdmitSeat, which this registry formerly duplicated.
-func (r *streamSeatRegistry) admit(principal string, cap int, overflow stream.SeatOverflowPolicy) (*streamSeat, bool) {
+// policy, returning the seat; cut is the new stream's write interrupt. The
+// bool is false when the principal is at the cap and the policy is Refuse;
+// the caller answers 429 with Retry-After (EventSource backs off) and holds
+// nothing. Under EvictOldest the principal's oldest seat is closed and
+// removed in the same critical section, the new stream is seated, and the
+// evicted stream's parked write is cut once the lock is released. The body
+// is the shared stream.AdmitSeat, which this registry formerly duplicated.
+func (r *streamSeatRegistry) admit(principal string, cap int, overflow stream.SeatOverflowPolicy, cut func()) (*streamSeat, bool) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return stream.AdmitSeat(r.order, principal, eventStreamSeatsFor(cap), overflow,
-		func(p string) *streamSeat { return &streamSeat{principal: p, done: make(chan struct{})} })
+	var oldest *streamSeat
+	if q := r.order[principal]; len(q) > 0 {
+		oldest = q[0]
+	}
+	seat, ok := stream.AdmitSeat(r.order, principal, eventStreamSeatsFor(cap), overflow,
+		func(p string) *streamSeat { return &streamSeat{principal: p, done: make(chan struct{}), cut: cut} })
+	r.mu.Unlock()
+	// AdmitSeat evicts only the FIFO head and closes its done channel; a
+	// release never closes it, so a closed head is the seat just evicted. A
+	// refused admission closes nothing.
+	if oldest != nil {
+		select {
+		case <-oldest.done:
+			oldest.interruptWrite()
+		default:
+		}
+	}
+	return seat, ok
 }
 
 // release departs a seat: voluntary disconnect, write error, or a re-auth
 // refusal closing the stream. Splicing is idempotent, so releasing a seat an
-// EvictOldest admission already removed is a no-op.
+// EvictOldest admission already removed is a no-op. It retires the seat's
+// cut first: the handler is returning, and an eviction racing it must not
+// set a deadline on a response net/http is about to reuse.
 func (r *streamSeatRegistry) release(seat *streamSeat) {
+	seat.markReturned()
 	r.mu.Lock()
 	r.spliceSeatLocked(seat)
 	r.mu.Unlock()

@@ -459,6 +459,14 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	// Taken before the body is read, as token creation does: a
+	// registration held open across a reset stored its key after the
+	// reset's purge and kept a second lasting credential.
+	snap, err := p.mgr.snapshotCredential(r.Context(), sess.UserID)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+		return
+	}
 	var body struct {
 		Name              string `json:"name"`
 		ID                string `json:"id"`
@@ -522,6 +530,21 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
+		return
+	}
+	// The hash catches a reset or change; the session catches an account
+	// claim, which may leave a passwordless hash where it was.
+	if _, err := p.mgr.SessionStore().Get(r.Context(), sess.Token); err != nil || snap.moved(r.Context(), p.mgr) {
+		undo, cancel := undoContext(r.Context())
+		_, err := p.store.DeletePasskey(undo, sess.UserID, cred.ID)
+		cancel()
+		if err != nil {
+			slog.Error("auth: removing a passkey registered across a credential change failed",
+				"user_hash", hashedIdentifier(sess.UserID), "err", err)
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
+			return
+		}
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 		return
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -665,7 +688,10 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// it revokes sessions, so a key still here means any revoke is still
 	// to come and reaches this session, and a key gone drops it.
 	if _, err := p.store.GetPasskey(r.Context(), cred.ID); err != nil {
-		if delErr := p.mgr.SessionStore().Delete(r.Context(), sess.Token); delErr != nil {
+		undo, cancel := undoContext(r.Context())
+		delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
+		cancel()
+		if delErr != nil {
 			slog.Warn("auth: dropping a session minted under a removed passkey failed",
 				"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
 		}

@@ -139,7 +139,7 @@ func (s *SQLInboundStore) AddEnvelope(ctx context.Context, e InboundEnvelope) er
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, s.insert(), e.ID, e.Source, e.DedupeKey,
-		headers, e.Payload, e.Status, e.Attempts, e.LastError, e.ReceivedAt, e.UpdatedAt, e.Owner)
+		headers, e.Payload, e.Status, e.Attempts, e.LastError, e.ReceivedAt.UTC(), e.UpdatedAt.UTC(), e.Owner)
 	return err
 }
 
@@ -173,7 +173,7 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 		return err
 	}
 	q := s.update()
-	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt, e.ID}
+	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt.UTC(), e.ID}
 	if e.Status != InboundStatusProcessed {
 		// Fence, mirroring the outbound UpdateDelivery fence: a late
 		// settle must not overwrite a terminal row
@@ -207,9 +207,9 @@ func (s *SQLInboundStore) RegisterDedupeKey(ctx context.Context, id, key string)
 // the queue's lease expiry can re-run the same envelope's job while a
 // slow first handler is still running, and two absolute snapshot writes
 // would under-count the invocations the attempts column exists to bound.
-// A missing id matches no row and is a no-op (the caller loaded the
-// envelope just before this).
-func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) error {
+// It reports false when no row matched: a missing id, or an envelope
+// already processed, so ProcessInbound does not run the handler again.
+func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) (bool, error) {
 	q := fmt.Sprintf(
 		"UPDATE %s SET status = %s, attempts = attempts + 1, last_error = '', updated_at = %s WHERE id = %s",
 		s.table, s.placeholder(1), s.placeholder(2), s.placeholder(3))
@@ -218,11 +218,15 @@ func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string)
 	// stale runner marking an already-settled envelope processing would
 	// regress the row AND consume an attempt against it. Non-terminal
 	// rows (received, processing, and failed: a failed attempt's queue
-	// retry lands here) match; a missing id is still a no-op.
+	// retry lands here) match; a missing id matches nothing.
 	q += " AND status <> " + s.placeholder(4)
 	args = append(args, InboundStatusProcessed)
-	_, err := s.db.ExecContext(ctx, q, args...)
-	return err
+	res, err := s.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // ListEnvelopes returns envelopes filtered by status (empty = all),

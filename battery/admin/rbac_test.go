@@ -261,6 +261,35 @@ func TestGrantStrictTypoIsRefused(t *testing.T) {
 	}
 }
 
+// A grant inside a wildcard revocation is a refusal the page names, not
+// a server failure (2026-10-27 D22).
+func TestGrantUnderWildcardRevokeIsRefused(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	r.policy.Register("teams:read", "teams:write")
+	if err := r.store.Revoke(context.Background(), "editor", "teams:*"); err != nil {
+		t.Fatal(err)
+	}
+	rr := rpc(r.as(theAdmin), "/admin/rbac/_grant", map[string]any{"role": "editor", "permission": "teams:read"})
+	if rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), "wildcard revocation") {
+		t.Fatalf("grant under teams:* revoke = %d %s", rr.Code, rr.Body.String())
+	}
+	if canAs(r.policy, "editor", "teams:read") {
+		t.Fatal("the refused grant reached the live policy")
+	}
+	// A grid save holding the same grant is refused whole: the revoke
+	// shown before it is not applied either.
+	vals := url.Values{"role": {"editor"}, "permission": {"posts:read", "teams:read"}, "grant": {"0:1"}}
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_permissions", vals)); got != "revoked-by-wildcard" {
+		t.Fatalf("grid save result = %q", got)
+	}
+	if !canAs(r.policy, "editor", "posts:read") {
+		t.Fatal("the refused grid save applied its revoke")
+	}
+	if ops := r.auditOps("access"); len(ops) != 0 {
+		t.Fatalf("the refused save audited %v", ops)
+	}
+}
+
 // A caller may grant or revoke only a permission its own roles hold, and
 // a refusal is audited with the permission it asked for.
 func TestGrantRevokeRequireCallerTier(t *testing.T) {

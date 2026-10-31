@@ -42,10 +42,10 @@ func TestOwnedJoinRecord(t *testing.T) {
 		jar, _ := cookiejar.New(nil)
 		c := &http.Client{Jar: jar, Timeout: 10 * time.Second}
 		creds := url.Values{"email": {email}, "password": {"roster-pw-123"}}
-		if _, err := c.PostForm(base+"/auth/register", creds); err != nil {
+		if _, err := c.PostForm(base+"/account/register", creds); err != nil {
 			t.Fatalf("register %s: %v", email, err)
 		}
-		if _, err := c.PostForm(base+"/auth/login", creds); err != nil {
+		if _, err := c.PostForm(base+"/account/login", creds); err != nil {
 			t.Fatalf("login %s: %v", email, err)
 		}
 		return c
@@ -85,6 +85,28 @@ func TestOwnedJoinRecord(t *testing.T) {
 	if code, out := e2eDo(t, bob, "GET", base+"/es"+record, ""); code != http.StatusNotFound || strings.Contains(out, "B-probe") || !strings.Contains(out, ` + "`" + `aria-label="Not found"` + "`" + `) {
 		i := strings.Index(out, "<main")
 		t.Errorf("another user opens the record page: %d, want 404: %.1500s", code, out[max(i, 0):])
+	}
+	// The app's auth mounts at base_path /account. The Sign out form the
+	// page renders posts to its logout route and ends the session. The
+	// page is Spanish, so the action carries /es, which the router strips.
+	form := page[max(strings.Index(page, ` + "`" + `data-cui-comp="ui-sign-out"` + "`" + `), 0):]
+	at := strings.Index(form, ` + "`" + `action="` + "`" + `)
+	if !strings.Contains(page, ` + "`" + `data-cui-comp="ui-sign-out"` + "`" + `) || at < 0 {
+		t.Fatal("the record page renders no Sign out form")
+	}
+	action := form[at+len(` + "`" + `action="` + "`" + `):]
+	action = action[:strings.IndexByte(action, '"')]
+	if action != "/es/account/logout" {
+		t.Errorf("Sign out posts to %q, want /es/account/logout", action)
+	}
+	if code, _ := e2eDo(t, ann, "GET", base+"/account/me", ""); code != http.StatusOK {
+		t.Fatalf("GET /account/me signed in = %d, want 200", code)
+	}
+	if _, err := ann.PostForm(base+action, url.Values{"next": {"/"}}); err != nil {
+		t.Fatalf("sign out: %v", err)
+	}
+	if code, _ := e2eDo(t, ann, "GET", base+"/account/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("GET /account/me after Sign out = %d, want 401", code)
 	}
 }
 `

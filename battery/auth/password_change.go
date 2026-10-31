@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -142,7 +144,18 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonHashFailed)
 			return
 		}
-		if err := setter.SetPassword(ctx, sess.UserID, newHash); err != nil {
+		if err := swapPassword(ctx, store, setter, sess.UserID, user.GetEmail(), hash, newHash); err != nil {
+			if errors.Is(err, errPasswordMoved) {
+				// A reset or another change landed while the new hash was
+				// being computed. The password just checked is no longer
+				// the account's, so the change fails like a wrong one.
+				c.mgr.emitSecurity(ctx, SecurityEvent{
+					Kind: "password.change_failed", UserID: sess.UserID, Remote: remoteHost(r),
+					Meta: map[string]string{"reason": "credential_changed"},
+				})
+				writeAuthFieldError(w, r, reasonCurrentPasswordIncorrect, "current_password", schema.Violation{Reason: reasonCurrentMismatch})
+				return
+			}
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSetPasswordFailed)
 			return
 		}
@@ -218,6 +231,37 @@ func (m *AuthManager) twoFactorEnabled(ctx context.Context, userID string) (bool
 		}
 	}
 	return false, nil
+}
+
+// errPasswordMoved reports that the hash a password change verified is no
+// longer the stored one.
+var errPasswordMoved = errors.New("auth: the password changed during the request")
+
+// swapPassword writes newHash only while oldHash, the hash the change
+// verified, is still stored. Written unconditionally, a reset that landed
+// during the bcrypt round was overwritten by the stale request's password.
+// A PasswordSwapper store does it in one statement; any other store is
+// re-read just before the write, which narrows the window to the gap
+// between the two calls.
+func swapPassword(ctx context.Context, store UserStore, setter PasswordSetter, userID, email, oldHash, newHash string) error {
+	if sw, ok := store.(PasswordSwapper); ok {
+		swapped, err := sw.SwapPassword(ctx, userID, oldHash, newHash)
+		if err != nil {
+			return err
+		}
+		if !swapped {
+			return errPasswordMoved
+		}
+		return nil
+	}
+	_, current, err := store.FindByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if subtle.ConstantTimeCompare([]byte(current), []byte(oldHash)) != 1 {
+		return errPasswordMoved
+	}
+	return setter.SetPassword(ctx, userID, newHash)
 }
 
 // revokeUserSessions deletes every session of the user and records it.

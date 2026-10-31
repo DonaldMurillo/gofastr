@@ -166,3 +166,62 @@ func TestTickReleasesClaimsItCannotRun(t *testing.T) {
 		}
 	})
 }
+
+// cancelOnPostRT answers 200 and cancels the tick's context on its first
+// POST: a shutdown landing while the batch is mid-way.
+type cancelOnPostRT struct {
+	cancel context.CancelFunc
+	byID   map[string]int
+}
+
+func (rt *cancelOnPostRT) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.byID[req.Header.Get("X-GoFastr-Delivery-ID")]++
+	rt.cancel()
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
+}
+
+// A shutdown mid-batch returned with the rest of the batch claimed and
+// its attempt spent, so with MaxAttempts 1 the next claim dead-lettered
+// deliveries that were never sent. The tick now hands them back with the
+// attempt refunded, and the next tick sends each once.
+func TestShutdownTickRefundsUnstarted(t *testing.T) {
+	eachLeasedStore(t, func(t *testing.T, store LeasedStore) {
+		tickCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		rt := &cancelOnPostRT{cancel: cancel, byID: map[string]int{}}
+		mgr := New(store, Options{
+			MaxAttempts:          1,
+			LeasePeriod:          time.Minute,
+			PollInterval:         time.Hour,
+			AllowPrivateNetworks: true,
+			HTTPClient:           &http.Client{Timeout: 10 * time.Second, Transport: rt},
+		})
+		ctx := context.Background()
+		if _, err := mgr.Subscribe(ctx, Subscriber{
+			ID: "sub1", URL: "https://receiver.example/hook", Secret: "s", Events: []string{"*"},
+		}); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		const n = 4
+		for range n {
+			if _, err := mgr.Publish(ctx, "evt", []byte(`{}`)); err != nil {
+				t.Fatalf("publish: %v", err)
+			}
+		}
+		mgr.tick(tickCtx)
+		if len(rt.byID) != 1 {
+			t.Fatalf("the cancelled tick POSTed %d deliveries, want 1", len(rt.byID))
+		}
+		mgr.tick(ctx)
+		all, err := store.ListDeliveries(ctx, "", 10)
+		if err != nil || len(all) != n {
+			t.Fatalf("list: %v (n=%d)", err, len(all))
+		}
+		for _, d := range all {
+			if rt.byID[d.ID] != 1 || d.Status != StatusSuccess || d.Attempts != 1 {
+				t.Errorf("delivery %s: POSTed %d times, status %q, attempts %d; want one send, success, 1 attempt",
+					d.ID, rt.byID[d.ID], d.Status, d.Attempts)
+			}
+		}
+	})
+}

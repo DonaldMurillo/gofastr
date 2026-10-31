@@ -246,7 +246,7 @@ func TestSQLiteFieldEqualsStringOnly(t *testing.T) {
 	}
 }
 
-// TestSQLiteFieldEqualsSkipsJSONText: json_extract hands an array or object
+// TestSQLiteFieldEqualsSkipsJSONText: json_each hands an array or object
 // back as its JSON text, so without a type check a stored
 // tenant=["acme"] equals the filter value `["acme"]`. Memory and Postgres
 // refuse it; so must SQLite, with and without query text.

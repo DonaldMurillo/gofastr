@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Severity grades a Diagnostic.
@@ -57,6 +58,11 @@ const (
 	// RuleTokenCustomProperty is GOFASTR1820: an owned sheet declaring
 	// a custom property whose name is a theme token.
 	RuleTokenCustomProperty = "GOFASTR1820"
+	// RuleStatementAtRule is GOFASTR1825: @import, @charset or
+	// @namespace, which count only at the top of a stylesheet. An owned
+	// sheet compiles after the kit's rules, a scoped one inside its
+	// @scope, so the browser drops them.
+	RuleStatementAtRule = "GOFASTR1825"
 	// RuleClassTwice: a class used as both base and variant in one file
 	// (model error).
 	RuleClassTwice = "class-base-and-variant"
@@ -361,6 +367,15 @@ func (c *checker) walk(r *Rule, inRM, inKF bool) {
 	switch {
 	case r.At && r.Name == "media":
 		c.checkMediaWidths(r)
+	case r.At && !r.Block && r.Name != "layer":
+		c.report(Diagnostic{
+			Rule:     RuleStatementAtRule,
+			Severity: SeverityError,
+			Line:     r.Pos.Line,
+			Col:      r.Pos.Col,
+			Message: fmt.Sprintf("@%s is dropped: it counts only at the top of a stylesheet, and an owned sheet "+
+				"compiles after the kit's rules; load fonts through the theme (style.FontFaceCSS)", r.Name),
+		})
 	case !r.At && !inKF:
 		c.checkSelector(r)
 	}
@@ -704,7 +719,9 @@ func (c *checker) checkVarRefs(d *Decl) {
 		afterComma := false
 		for j := i + 2; j < len(val) && depth > 0; j++ {
 			switch val[j].Type {
-			case TokenOpenParen:
+			case TokenFunction, TokenOpenParen:
+				// A nested function ("var(", "clamp(") is one token whose
+				// ")" arrives as a close-paren, like "(".
 				depth++
 			case TokenCloseParen:
 				depth--
@@ -827,9 +844,10 @@ var reLengthOrTime = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|ms|s)$`)
 // length or time. rem is compared to px at the browser's 16px root
 // default, and s to ms, so `1rem` is the right fallback for a `16px`
 // token and `.5s` for a `500ms` one. Anything the regex does not parse
-// is compared as a case-folded string.
+// is compared as an ASCII case-folded string, the way CSS matches
+// keywords and units.
 func sameScaleValue(a, b string) bool {
-	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	a, b = asciicase.Lower(strings.TrimSpace(a)), asciicase.Lower(strings.TrimSpace(b))
 	if a == b {
 		return true
 	}

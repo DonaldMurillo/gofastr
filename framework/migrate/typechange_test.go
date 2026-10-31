@@ -100,6 +100,35 @@ func TestDiffEntityFromLive_RenameColumn(t *testing.T) {
 	}
 }
 
+// Several renames come out in a fixed order, sorted by the old name, so
+// a generated migration is the same file on every run (2026-10-27 M5).
+func TestRenamesInSortedOrder(t *testing.T) {
+	ent := rawEnt("widgets", "widgets", []schema.Field{
+		{Name: "id", Type: schema.String},
+		{Name: "a2", Type: schema.String},
+		{Name: "b2", Type: schema.String},
+		{Name: "c2", Type: schema.String},
+		{Name: "d2", Type: schema.String},
+	}, nil, "id")
+	ent.Config.Renames = map[string]string{"d1": "d2", "b1": "b2", "a1": "a2", "c1": "c2"}
+	live := map[string]string{"id": "TEXT", "a1": "TEXT", "b1": "TEXT", "c1": "TEXT", "d1": "TEXT"}
+	for range 20 {
+		changes, err := diffEntityFromLive(ent, nil, DialectSQLite, live)
+		if err != nil {
+			t.Fatalf("diff: %v", err)
+		}
+		var olds []string
+		for _, c := range changes {
+			if _, rest, ok := strings.Cut(c.SQL, "RENAME COLUMN "); ok {
+				olds = append(olds, strings.Fields(rest)[0])
+			}
+		}
+		if strings.Join(olds, ",") != "a1,b1,c1,d1" {
+			t.Fatalf("rename order = %v, want a1,b1,c1,d1", olds)
+		}
+	}
+}
+
 // TestAdditiveChanges_ExcludesRename pins boot's additive-only contract: the
 // boot convergence path (addMissingColumns/additiveChanges) must NOT apply a
 // RENAME even though a rename is non-destructive. A rename leaking through

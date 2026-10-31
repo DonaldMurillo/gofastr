@@ -250,6 +250,44 @@ The `Host` pin closes DNS rebinding from a browser tab; the cookie
 closes every other local process. Neither value is ever logged. An app
 that never calls `Run` never arms the gate.
 
+## Where a window may navigate
+
+A window's main frame stays on the app's own origin. Each shell asks
+the battery before a main-frame navigation commits, and the battery
+allows only `http://<the loopback address Run bound>` and the
+`about:blank` page a web view starts on. Anything else is cancelled:
+an external link, `location.href = "https://…"`, a redirect to another
+host, a `data:` URL. The page stays where it was and the shell logs a
+warning naming the refused host (`desktop.NavigationHost`, which drops
+the path and query so an OAuth code in the URL is never logged).
+Iframes are not checked; the page's own CSP decides what it frames.
+
+A foreign page in the app's window looks like the app to the user, and
+native events are evaluated into whatever the window shows, so the
+default is to refuse. An app that wants the old behaviour (an in-window
+OAuth flow, say) sets `Config.DangerouslyAllowForeignNavigation: true`.
+There is no "open in the system browser" hand-off yet: a refused link
+does nothing.
+
+How each shell enforces it:
+
+| Shell | Hook | When it runs |
+|-------|------|--------------|
+| macOS | `WKNavigationDelegate` `decidePolicyForNavigationAction` | Before the request, main frame only |
+| Windows | `ICoreWebView2::add_NavigationStarting` | Before the request and on each redirect; WebView2 raises it for the main frame only |
+| Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | After the response arrives, before the page commits. WebKitGTK's navigation action has no main-frame flag, so a refused request still reaches the other host; nothing it returns renders |
+
+A custom `Shell` gets the policy as `WindowConfig.AllowNavigation` and
+must call it, on the UI thread, before a main-frame navigation commits;
+a shell that ignores the field lets every navigation through.
+
+A test checks the policy without a shell: `desktoptest.Harness`'s
+`AllowsNavigation(url)` runs the battery's check with the harness's
+bound address (`battery/desktop/navigation_policy_security_test.go`).
+The macOS e2e (`phaseForeignNavigation`) and the Linux graphical test
+(`TestNativeGTKWebKit`) drive a real web view at a second origin. The
+Windows hook has no test runner yet.
+
 ## Capabilities
 
 The page reaches native surfaces through ONE chokepoint,
@@ -265,11 +303,17 @@ cannot cross into the native layer; responses `{ok:true,result}` or
 `unsupported`, `invalid_input`, `cancelled`, `not_found`,
 `internal`).
 
+A call can wait on a person (a file picker, a permission alert), so the
+call route runs on its own 11-minute budget instead of the app's
+`RequestTimeout` and `HTTPServerTimeouts.WriteTimeout` (30 s and 60 s
+by default). The macOS shell bounds each alert and panel at 10 minutes.
+A plugin method that can hang should bound itself on its context.
+
 The core capabilities:
 
 | Capability | Methods | Permission |
 |---|---|---|
-| `window` | `title`, `setTitle`, `snapshot` | none (the page lives in that window) |
+| `window` | `title`, `setTitle`, `snapshot` | none (the page lives in that window; each method acts on the calling window, and a closed one answers `not_found`) |
 | `windows` | `open`, `openSettings`, `focus`, `close`, `list` | none (a page may only open the app's own screens; `close` refuses `"main"`) |
 | `dialogs` | `openFile`, `saveFile`, `openFolder` | none (the user mediates every dialog; returned paths join the `fs` allow-list) |
 | `clipboard` | `readText`, `writeText` | `clipboard:read`, `clipboard:write` |
@@ -280,9 +324,14 @@ The core capabilities:
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants): the cleaned absolute path
-AND its symlink resolution must both be on the list, so a symlink
-already in place when the request arrives cannot widen access. It is
+(`Battery.AllowPath` for in-process grants). The path must arrive in
+the exact cleaned absolute form the dialog returned: `a/link/../x` or
+`a//x` is refused even when it cleans to a grant, because the OS opens
+the raw string and walks `link/..` through the link. Its live symlink
+resolution must be on the list too, and for a file that does not exist
+yet that means its deepest existing parent's, so a symlink already in
+place when the request arrives, or a missing parent replaced by one
+after the grant, cannot widen access. It is
 not open-then-verify: a local process running as the same user could
 still win the race between the resolution and the open, but such a
 process can read the file directly anyway, so the bridge is not a
@@ -383,7 +432,10 @@ func (systemInfoPlugin) Init(app *framework.App) error {
 The method then appears in `/__gofastr/desktop/manifest.json`, in the
 generated `bridge.js`, and in the `.d.ts`, with no host change.
 Registration is open until `Run` freezes the registry; a duplicate
-name is refused naming the first registration site. Bump
+name is refused naming the first registration site. The names
+`available`, `call`, `on`, `off` and `manifest` are refused too:
+`bridge.js` assigns each capability onto `NS.desktop`, where the
+runtime already keeps those members. Bump
 `Capability.Version` when you remove a method or change an input
 shape.
 
@@ -970,6 +1022,16 @@ Both deliver with the same `_dispatch` eval shape: the name and the
 payload's JSON travel as quoted strings and the page parses the payload
 with `JSON.parse`, never an object literal.
 
+Every script the battery sends a page (events, posted messages, menu
+and deep-link navigations) is wrapped in
+`if (location.origin === "<app origin>") { ... }`, and the page checks
+it when the script runs. A window that has followed an external link
+to another site gets nothing: a page there that defines
+`window.__gofastr.desktop._dispatch` or `window.__gofastr.navigate`
+would otherwise receive every event, message and deep link, an OAuth
+callback's code included. A script sent before `Run` binds its port
+runs on no page.
+
 ### Pages message each other through the bridge
 
 Three methods on the `windows` capability, all ungated (only the app's
@@ -1081,10 +1143,13 @@ path space, keeps the query, and drops the fragment:
 | `gofastr-notes://notes/123?q=1` | `/notes/123?q=1` |
 | `gofastr-notes://notes/123#sec` | `/notes/123` |
 | `gofastr-notes://` | `/` |
+| `gofastr-notes://notes/a%3Fb` | `/notes/a%3Fb` (the path stays escaped, so `%3F` and `%23` never start a query or fragment) |
 
 The result must pass the same grammar a menu `Navigate` path passes
 (leading `/`, no scheme, no control characters, no `.` or `..`
-segments); a link that cannot pass is dropped with a Warn. These are
+segments, percent-encoded ones such as `%2e%2e` included); a link
+that cannot pass is dropped with a Warn. A link that reaches an app with
+no `DeepLink` config is dropped with a Warn as well. These are
 also dropped, each with a Warn and a scrubbed copy in the log: links on
 any other scheme (the match folds case, so `NOTES://` is the app's
 scheme), links carrying userinfo (`gofastr-notes://user:pass@host/`), and
@@ -1118,6 +1183,10 @@ A link that arrives while the window is up:
    client-side call a menu Navigate item makes (no reload).
 3. Emits `deep_link` to every open window's page listeners with
    `{url, path}`: the raw link and the path it became.
+
+Both scripts run only while the window shows the app's own origin
+(the guard in "Native events reach every window" above); a window on
+another site is skipped.
 
 ```js
 __gofastr.desktop.on('deep_link', ({ url, path }) => { ... })
@@ -1357,7 +1426,10 @@ manifest bytes, base64-encoded in the `.sig` file.
   shape as the top level; `UpdateConfig.Channel` selects
   `channels[channel]` when present, and the top level otherwise.
 - URLs in the feed are https. Plain http is accepted only for
-  127.0.0.1 so tests can serve a feed locally.
+  127.0.0.1 so tests can serve a feed locally. Every redirect target
+  is held to the same rule: when an https URL redirects to plain http
+  elsewhere, the fetch fails before the target is asked, and the Warn
+  in the log names the scheme rule.
 
 ### Configuring the app
 

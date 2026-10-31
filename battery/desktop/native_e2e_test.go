@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -254,6 +255,8 @@ func runNativePhase(h *desktoptest.NativeHarness) bool {
 		{"RemembersWindowFrames", phaseWindowState},
 		{"ChromeContractOnTheOS", phaseWindowChrome},
 		{"SnapshotDecodesAtWindowScale", phaseSnapshot},
+		{"SnapshotAfterCancelIsFresh", phaseSnapshotAfterCancel},
+		{"ForeignNavigationIsCancelled", phaseForeignNavigation},
 		{"ShellScenario", phaseShellScenario},
 	}
 	for _, step := range steps {
@@ -923,10 +926,83 @@ func phaseSnapshot(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	t.Fatalf("snapshot %dx%d does not match the viewport %dx%d points at any integer scale", b.Dx(), b.Dy(), vp.W, vp.H)
 }
 
+// phaseSnapshotAfterCancel: a snapshot the caller gave up on still
+// completes later, and every completion lands on the one result channel
+// the shell shares. The next snapshot then returned that stale image,
+// and its own stayed queued for the one after, so each one ran a
+// capture behind (2026-10-27 L17). The page is red for the abandoned
+// capture and blue for the next two.
+func phaseSnapshotAfterCancel(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	paint := func(color string) {
+		h.Eval(t, `let el = document.getElementById('l17-cover');`+
+			` if (!el) { el = document.createElement('div'); el.id = 'l17-cover';`+
+			` el.style.cssText = 'position:fixed;inset:0;z-index:2147483647'; document.body.appendChild(el); }`+
+			` el.style.background = '`+color+`';`+
+			` await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));`+
+			` return true`)
+	}
+	w, ok := h.Battery.Window()
+	if !ok {
+		t.Fatalf("no main window")
+	}
+	paint("rgb(255, 0, 0)")
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	// The capture is issued before Snapshot waits, so a capture that
+	// lands before the wait starts makes both arms ready and select may
+	// take the image. That call abandoned nothing; ask again.
+	abandoned := false
+	for try := 0; try < 5 && !abandoned; try++ {
+		_, err := w.Snapshot(cancelled)
+		switch {
+		case errors.Is(err, desktop.ErrCancelled):
+			abandoned = true
+		case err != nil:
+			t.Fatalf("snapshot with a cancelled context: %v", err)
+		}
+	}
+	if !abandoned {
+		t.Fatalf("five snapshots with a cancelled context all returned an image; none was abandoned")
+	}
+	paint("rgb(0, 0, 255)")
+	for i := 1; i <= 2; i++ {
+		img := h.Snapshot(t)
+		b := img.Bounds()
+		r, _, bl, _ := img.At(b.Min.X+b.Dx()/2, b.Min.Y+b.Dy()/2).RGBA()
+		if bl <= r {
+			t.Fatalf("snapshot %d after the cancelled one shows red (r=%d b=%d): the cancelled capture answered it", i, r>>8, bl>>8)
+		}
+	}
+	h.Eval(t, `document.getElementById('l17-cover').remove(); return true`)
+}
+
 // phaseMainWindowHoldsPage pins the fact a web-view snapshot cannot:
 // the WKWebView is the main window's content view, so the page is on
 // screen. A refactor once dropped setContentView: for the main window
 // and every app opened blank while every snapshot test passed.
+// phaseForeignNavigation: the page sends the window to another origin
+// (a second loopback server, so nothing leaves the machine) and the
+// shell's navigation policy cancels it: the window stays on the app
+// (2026-10-27 L15). The boot navigation every other phase stands on is
+// the allowed half.
+func phaseForeignNavigation(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<!doctype html><title>foreign</title>"))
+	}))
+	defer foreign.Close()
+	var appOrigin string
+	h.EvalInto(t, "return location.origin", &appOrigin)
+	target, _ := json.Marshal(foreign.URL + "/")
+	h.Eval(t, "location.href = "+string(target)+"; return true;")
+	time.Sleep(1500 * time.Millisecond)
+	var origin, title string
+	h.EvalInto(t, "return location.origin", &origin)
+	h.EvalInto(t, "return document.title", &title)
+	if origin != appOrigin || title == "foreign" {
+		t.Fatalf("after a foreign navigation the window shows %s (%q), want the app at %s", origin, title, appOrigin)
+	}
+}
+
 func phaseMainWindowHoldsPage(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	st, err := h.WindowState("main")
 	if err != nil {

@@ -10,6 +10,7 @@ package headless
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 
@@ -221,5 +222,45 @@ func TestE2E_TabsVacateRestoreOnShowRoundTrip(t *testing.T) {
 		`document.querySelectorAll('#vac-panel-1 #vac-p2').length`, &n))
 	if n != 1 {
 		t.Fatalf("the restored panel carries %d copies of its content after the round trip, want 1", n)
+	}
+}
+
+// A Disabled tab cannot be chosen with the mouse either. The arrows
+// already skipped it, but a click wrote the signal and moved the
+// selection, showing its panel (2026-10-27 bug bash U39).
+func TestE2E_TabsDisabledTabIgnoresClicks(t *testing.T) {
+	strip := Tabs(TabsProps{Name: "dis", StateAttrs: true, Tabs: []Tab{
+		{Label: "General", Panel: render.Text("General panel")},
+		{Label: "Locked", Panel: render.Text("Locked panel"), Disabled: true},
+	}}, nil)
+	b := startBehaviorServer(t, string(strip))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, tabsLoaded) {
+		t.Fatal("the strip marker never loaded headless-tabs")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#dis-tab-1`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	// A click is synchronous; give any late handler a beat to act.
+	if err := chromedp.Run(ctx, chromedp.Sleep(200*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Selected string `json:"selected"`
+		Signal   string `json:"signal"`
+		Hash     string `json:"hash"`
+	}
+	var raw string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
+		selected: document.querySelector('[data-hui-tabs] [aria-selected="true"]').textContent,
+		signal: String(window.__gofastr.getSignal('dis')),
+		hash: location.hash})`, &raw)); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Selected != "General" || got.Signal == "1" || got.Hash != "" {
+		t.Fatalf("a click on the disabled tab acted: %+v", got)
 	}
 }

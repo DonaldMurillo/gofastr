@@ -2,7 +2,11 @@
 
 package objc
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
+)
 
 // The arm64 block literal: 32 bytes of isa/flags/reserved/invoke/
 // descriptor, followed by captured state for non-global blocks. Global
@@ -34,6 +38,18 @@ var blockDescriptorGlobal = blockDescriptor{size: blockSize}
 // allocated and never moved, at a stable address) for the process
 // lifetime. C code holds these pointers indefinitely.
 var blocks []*blockLiteral
+
+// CallBlock invokes a block that takes one word-sized argument, such as
+// WebKit's decisionHandler. Every block literal, global or on the heap,
+// starts with the five words above, so invoke is at the same offset in
+// a block the system built.
+func CallBlock(block, arg uintptr) {
+	if block == 0 {
+		return
+	}
+	lit := (*blockLiteral)(cptr(block))
+	ffi.Call(lit.invoke, []uintptr{block, arg}, nil)
+}
 
 // NewBlock builds a global block literal whose invoke is a ffi
 // trampoline. fn is the trampoline address from ffi.NewCallback; the

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,23 @@ func TestGenerationCellUsesLocaleDigits(t *testing.T) {
 	got := string(moduleGenerationCell(ar, framework.ProcessModuleInfo{DesiredGeneration: 3, ObservedGeneration: 3}))
 	if !strings.Contains(got, "٣ / ٣") {
 		t.Errorf("ar-EG generation = %q, want ٣ / ٣", got)
+	}
+}
+
+// The attention panel skipped an empty view only when its count read
+// "0", so under ar-EG (٠) every empty watch drew an empty preview
+// instead of the all-clear line (2026-10-27 A35).
+func TestAttentionClearUnderArabicDigits(t *testing.T) {
+	x := ordersEnv(t, Config{Entities: []string{"orders"}, Attention: []Watch{{Entity: "orders", View: "late", Columns: []string{"ref"}}}})
+	if _, err := x.db.Exec(`UPDATE orders SET status = 'paid'`); err != nil {
+		t.Fatal(err)
+	}
+	h := x.as(theAdmin)
+	ar := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(i18n.WithContext(r.Context(), i18n.Locale{Tag: "ar-EG"})))
+	})
+	if dash := get(ar, "/admin").Body.String(); strings.Contains(dash, `href="/admin/entities/orders?view=late"`) {
+		t.Errorf("an empty watch drew its preview under ar-EG:\n%s", dash)
 	}
 }
 

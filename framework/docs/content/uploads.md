@@ -5,6 +5,14 @@ or `File` fields. Uploads are streamed through the configured
 `upload.Storage` backend; only the resulting URL is stored on the
 record.
 
+A browser sends `multipart/form-data` from another site with no CORS
+preflight and the user's cookies, so a multipart create or update must
+also pass the cross-site form guard (`handler.IsCrossSiteRequest`): a
+request whose `Sec-Fetch-Site` or `Origin` names another site, a sibling
+subdomain included, answers 403. The `_batch` routes and state
+transitions take `application/json` only and answer 415 to anything
+else.
+
 ## Wire it up
 
 ```go
@@ -45,7 +53,10 @@ The framework:
    temp files). The two limits are different things: the first caps the
    wire body, the second is only the in-RAM spill threshold.
 2. Coerces non-file values to the schema field's Go type
-   (`Int` → `int64`, `Bool` → `bool`, etc.). A form key repeated across
+   (`Int` → `int64`, `Bool` → `bool`, etc.). A blank value is "not
+   provided", as an empty string is on the JSON path, for a `Bool` too:
+   an update stores NULL, a create applies the field's default, and a
+   required field left blank answers `400`. A form key repeated across
    parts is refused with `400` — the JSON body path refuses duplicate
    keys for the same reason: a proxy inspecting one of the two parts
    would see a payload the server never executes. The one carve-out: a
@@ -149,6 +160,32 @@ own row, erase their account, and delete the other user's file.
 
 `TypedQuery.UpdateAll` writes one value onto many rows, so "already on the
 row" cannot apply there; it needs `WithUploadedKeys` or `WithServerWrites`.
+
+## When stored objects are deleted
+
+A row's objects (the key in each `Image`/`File` field and the renditions its
+`<field>_variants` column lists) are deleted from the handler's `Storage`
+when the row lets them go:
+
+- a hard delete (`DELETE /{entity}/{id}`, batch delete, `DeleteOne`,
+  `TypedQuery.DeleteAll`) or a purge of a soft-deleted row deletes them all;
+- an update or upsert that replaces or clears a file deletes the old key and
+  its renditions.
+
+The delete runs after the write's transaction commits; a rollback keeps the
+objects. A failed delete is logged, not returned, since the row change has
+already committed. The objects stay when:
+
+- another row of the same table still names the key, live or soft-deleted
+  (one default image a seed set on many rows, say);
+- the value is an absolute `http(s)` URL, an external link;
+- the delete is a soft delete, so a restore gets the file back;
+- the write runs on a transaction with no commit queue (a bare `db.WithTx`),
+  where nothing reports the commit. `App.InTx` has one.
+
+A key that host code copied into a different entity's table is not checked:
+deleting the first row deletes the object the second still names.
+`TypedQuery.UpdateAll` does not delete what it replaces.
 
 ## Field-name casing
 
@@ -270,7 +307,7 @@ BlurHash-versus-LQIP trade-off.
 
 | Field            | Effect                                                      |
 |------------------|-------------------------------------------------------------|
-| `Variants`       | Renditions to produce and store. `Suffix` (or width) distinguishes each key. |
+| `Variants`       | Renditions to produce and store. `Suffix` (or width) plus the format's extension names each file; `New` refuses two that name the same one. |
 | `BlurHashX/Y`    | BlurHash component counts, 1..9. Both zero = no hash; setting only one is an error. 4×3 landscape, 3×4 portrait. |
 | `Placeholder`    | Also store an LQIP data URL. Usually redundant next to a BlurHash; ~28 bytes versus a few hundred, and both render identically. |
 | `RejectAnimated` | Fail the upload on a multi-frame source instead of silently keeping frame one. Worth setting on avatars. |

@@ -42,6 +42,17 @@ type OAuthEnrichedLinker interface {
 	LinkOAuthEnriched(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error
 }
 
+// OAuthProfileRefresher is the optional UserStore extension that updates
+// the profile of an existing (provider, providerID) link to userID and
+// never creates one. A returning OAuth sign-in refreshes the profile
+// through it. It must not insert: an account claim can remove the link
+// between the sign-in's lookup and its refresh, and an upsert there puts
+// back the binding the claim removed. A store without it keeps the
+// profile from link time.
+type OAuthProfileRefresher interface {
+	RefreshOAuthProfile(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error
+}
+
 // AccountLister is the optional UserStore extension that returns the
 // linked OAuth accounts for a user. Required by AccountsPlugin.
 type AccountLister interface {

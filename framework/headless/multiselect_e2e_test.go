@@ -145,3 +145,41 @@ func TestE2E_MultiSelectSubmitsAsAPlainForm(t *testing.T) {
 		t.Fatalf("the checkbox group submitted langs=%v, want [go cpp] (the pre-checked plus the newly checked)", got)
 	}
 }
+
+// Two multiselects for one field (a quick filter and an advanced form)
+// default their ids to the name, so their option ids match. Removing a
+// chip on the second unchecks the second's option; it used to resolve
+// the id page-wide and uncheck the first's, while the second still
+// submitted the value (2026-10-27 bug bash U38).
+func TestE2E_MultiSelectChipRemovesItsOwnOption(t *testing.T) {
+	field := func() string {
+		return string(MultiSelect(MultiSelectProps{
+			Name: "langs", Label: "Pick languages",
+			Options: []MultiSelectOption{
+				{Value: "go", Label: "Go", Selected: true},
+				{Value: "cpp", Label: "C++", Selected: true},
+			},
+		}, nil))
+	}
+	b := startBehaviorServer(t, `<form id="f1">`+field()+`</form><form id="f2">`+field()+`</form>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, multiSelectLoaded) {
+		t.Fatal("the multiselect marker never loaded headless-multiselect")
+	}
+	if !pollTrue(ctx, `document.querySelectorAll('#f2 [data-hui-multiselect-remove]').length === 2`) {
+		t.Fatal("the second multiselect never drew its two chips")
+	}
+	// The C++ chip, the second option's.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelectorAll('#f2 [data-hui-multiselect-remove]')[1].click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	const state = `[...document.querySelectorAll('input[type=checkbox]')].map((c) => (c.checked ? '1' : '0')).join('')`
+	// f1's Go and C++, then f2's: only f2's C++ comes off.
+	if !pollTrue(ctx, state+` === '1110'`) {
+		var got string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(state, &got))
+		t.Fatalf("the second form's C++ chip did not uncheck its own option: checked = %s, want 1110", got)
+	}
+}

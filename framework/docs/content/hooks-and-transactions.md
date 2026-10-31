@@ -84,14 +84,18 @@ app.HookRegistry("posts").RegisterHook(framework.BeforeGet,
 ```
 
 `AfterList` and `AfterGet` see the fetched rows on the payload and
-may mutate them in place; handy for redaction:
+may mutate them in place; handy for redaction. The rows are keyed by
+the response's wire names, the handler's `JSONCase` (camelCase by
+default) or a field's `WireName`, not by column names: the
+`password_hash` column is `"passwordHash"` here, and deleting
+`"password_hash"` finds no key and ships the value.
 
 ```go
 app.HookRegistry("users").RegisterHook(framework.AfterList,
     func(ctx context.Context, data any) error {
         p := data.(*hook.ListPayload)
         for _, row := range p.Results {
-            delete(row, "password_hash")
+            delete(row, "passwordHash")
         }
         return nil
     })
@@ -294,6 +298,15 @@ The deferred rollback matters: a panic between `Begin` and `Commit`
 otherwise keeps the pooled connection and any row locks until the
 finalizer. It is the same shape `App.InTx` uses internally.
 
+A handler whose `DB` is your `*sql.Tx` itself (a copy with
+`ch.DB = tx`, the context carrying no transaction) also runs each
+operation under a savepoint, so one that fails, a batch included,
+leaves none of its writes on your transaction. Its events, though, go
+out as soon as the operation succeeds, before your `Commit` and even if
+you roll back: nothing tells the handler how your transaction ends.
+Carry the transaction on the context with `db.WithTxQueue` when events
+must wait for the commit.
+
 ### Handling validation errors
 
 When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call
@@ -324,7 +337,9 @@ In a `_batch` request, every item shares one transaction:
 - All `Before*` and `After*` hooks fire per item, in input order.
 - The first per-item hook error rolls back the entire batch.
 - Lifecycle events emit only on a successful commit, never on
-  rollback, in input order.
+  rollback, one per item in input order. Delivery is asynchronous
+  ([events](events.md)): each subscriber runs on its own goroutine per
+  event, so a subscriber can receive the items in any order.
 
 ## Hook-skip matrix
 
@@ -341,7 +356,7 @@ paths that skip hooks entirely; by design, not accident:
 | Cursor list (`?cursor=`) | none: AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
 | Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
 | `_events` payloads | none: AfterGet fires at delivery | Redacting per subscriber keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass through untouched; a hook error omits the record rather than publishing it raw. |
-| Create/update/patch responses | none; AfterGet fires over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. |
+| Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the commit the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a caller allowed to write a row it may not read gets nothing a GET would 404. This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
 | `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
 
@@ -454,7 +469,7 @@ framework.OnBeforeList(app, "posts",
 framework.OnAfterList(app, "posts",
     func(ctx context.Context, p *hook.ListPayload) error {
         for _, row := range p.Results {
-            delete(row, "internal_notes")
+            delete(row, "internalNotes") // the internal_notes column
         }
         return nil
     })
@@ -475,7 +490,7 @@ framework.OnBeforeGet(app, "posts",
 // Redact a field on a single-row response.
 framework.OnAfterGet(app, "posts",
     func(ctx context.Context, p *hook.GetPayload) error {
-        delete(p.Result, "internal_notes")
+        delete(p.Result, "internalNotes")
         return nil
     })
 ```

@@ -22,14 +22,16 @@ func TestRouterMetadataSkill(t *testing.T) {
 }
 
 // TestRouterMetadataUnknownSkill pins that an unknown id errors naming
-// the known ids.
+// only the id asked for. The error listed every registered id until
+// 2026-10-27 bug bash P24: the list included skills a gate withholds from
+// the caller.
 func TestRouterMetadataUnknownSkill(t *testing.T) {
 	msg := &Message{Metadata: map[string]any{"skill": "zzz"}}
 	_, err := DefaultRouter(context.Background(), msg, routerSkills())
 	if err == nil {
 		t.Fatal("unknown metadata skill must error")
 	}
-	want := `no skill named "zzz"; available: echo, other`
+	want := `no skill named "zzz"`
 	if err.Error() != want {
 		t.Fatalf("err = %q, want %q", err.Error(), want)
 	}
@@ -64,7 +66,7 @@ func TestRouterDataPartUnknownSkill(t *testing.T) {
 	if err == nil {
 		t.Fatal("unknown data-part skill must error")
 	}
-	if want := `no skill named "zzz"; available: echo, other`; err.Error() != want {
+	if want := `no skill named "zzz"`; err.Error() != want {
 		t.Fatalf("err = %q, want %q", err.Error(), want)
 	}
 }
@@ -78,13 +80,14 @@ func TestRouterSingleSkill(t *testing.T) {
 	}
 }
 
-// TestRouterMissNamesSkills pins rule 4's exact message.
-func TestRouterMissNamesSkills(t *testing.T) {
+// TestRouterMissListsNoSkills pins rule 4's exact message, which lists
+// no skill ids (see TestRouterMetadataUnknownSkill).
+func TestRouterMissListsNoSkills(t *testing.T) {
 	_, err := DefaultRouter(context.Background(), &Message{Parts: []Part{TextPart("hi")}}, routerSkills())
 	if err == nil {
 		t.Fatal("ambiguous message must error")
 	}
-	want := "no skill named; available: echo, other"
+	want := "the message names no skill"
 	if err.Error() != want {
 		t.Fatalf("err = %q, want %q", err.Error(), want)
 	}

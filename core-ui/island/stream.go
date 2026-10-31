@@ -3,12 +3,15 @@ package island
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // ssePayload is the JSON payload sent as SSE data for island updates.
@@ -77,7 +80,7 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	// first guarantees the buffered stream exists before the client can
 	// observe the connection as ready. This was a timing-dependent CI flake
 	// in TestServeSSE (5s timeout) on loaded runners.
-	ch, cancel, err := m.ConnectSession(sessionID)
+	ch, cancel, err := m.ConnectSession(sessionID, m.ClientKey(r, identity))
 	if err != nil {
 		// Reject-not-evict: a stream over the cap is refused with a clear
 		// status and the streams already held are left alone. 429 is the
@@ -88,6 +91,9 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 		// error response, not a superfluous WriteHeader.
 		w.Header().Set("Retry-After", "1")
 		i18n.HTTPErrorFor(w, r, http.StatusTooManyRequests, err)
+		if err == ErrPeerStreamLimit {
+			m.hintUntrustedProxy(r)
+		}
 		return
 	}
 	// cancel is deferred IMMEDIATELY: PresenceJoin fires the app-supplied
@@ -212,11 +218,53 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
-// ConnectSession establishes one SSE subscriber on the session's stream,
-// returning this connection's private update channel, its cancel, and an
-// error when the concurrent-stream caps refuse the connect (see
-// WithStreamCaps). A refused connect returns a nil channel and a no-op
-// cancel; the caller (ServeSSEWithPresence) surfaces a clear HTTP status.
-func (m *Manager) ConnectSession(sessionID string) (<-chan IslandUpdate, func(), error) {
-	return m.subscribeImpl(sessionID)
+// ConnectSession establishes one SSE subscriber on the session's stream for
+// the client peer (its ClientKey), returning this connection's private update
+// channel, its cancel, and an error when the concurrent-stream caps refuse the
+// connect (see WithStreamCaps and WithPeerStreamCap). A refused connect returns
+// a nil channel and a no-op cancel; the caller (ServeSSEWithPresence) surfaces
+// a clear HTTP status. An empty peer is counted by no per-client cap.
+func (m *Manager) ConnectSession(sessionID, peer string) (<-chan IslandUpdate, func(), error) {
+	return m.subscribeImpl(sessionID, peer)
+}
+
+// hintUntrustedProxy warns once when the per-client cap refuses an anonymous
+// stream from a private or loopback peer while no proxy is trusted: that is
+// the shape of a reverse proxy nobody listed, where every visitor counts as
+// the proxy's one address and shares one budget.
+func (m *Manager) hintUntrustedProxy(r *http.Request) {
+	ip := clientip.ParseHop(r.RemoteAddr)
+	if !m.proxies.Empty() || ip == nil || !(ip.IsLoopback() || ip.IsPrivate()) {
+		return
+	}
+	m.proxyHint.Do(func() {
+		slog.Default().Warn("island: the per-client SSE stream cap refused a stream from a private address; behind a reverse proxy, list it with uihost.WithTrustedProxies or every visitor shares its budget",
+			"peer", ip.String(), "cap", m.caps.perPeer)
+	})
+}
+
+// ClientKey is the client a stream request counts under for the per-client
+// cap: the signed-in user when identity names one, otherwise the caller's
+// address. The address is the TCP peer, or the X-Forwarded-For hop a
+// WithTrustedProxies proxy vouches for when the peer is one of them. An IPv6
+// address counts by its /64, which one host commonly owns whole, so rotating
+// source addresses inside it buys no fresh budget.
+func (m *Manager) ClientKey(r *http.Request, identity PresenceIdentity) string {
+	if identity.UserID != "" {
+		return "user:" + identity.UserID
+	}
+	ip := clientip.ParseHop(r.RemoteAddr)
+	if ip != nil && m.proxies.Contains(ip) {
+		if fwd, ok := clientip.Forwarded(r.Header, m.proxies); ok {
+			ip = fwd
+		}
+	}
+	switch {
+	case ip == nil:
+		return "peer:" + r.RemoteAddr
+	case ip.To4() != nil:
+		return "ip:" + ip.String() // a v4-mapped v6 address prints as v4
+	default:
+		return "ip:" + ip.Mask(net.CIDRMask(64, 128)).String()
+	}
 }

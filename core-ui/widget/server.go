@@ -289,8 +289,8 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 			"backdrop":       d.Backdrop,
 			"closeOnEscape":  d.CloseOnEscape,
 			"closeOnClick":   d.CloseOnClickOutside,
-			"stylePath":      d.StylePath,
-			"chromePath":     chromePathFor(d),
+			"stylePath":      d.StyleURL(),
+			"chromePath":     d.ChromeURL(),
 			"deepLinkKey":    d.DeepLinkKey,
 			"deepLinkValue":  d.DeepLinkValue,
 			"deepLinkParams": d.DeepLinkParams,
@@ -302,7 +302,7 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 		// widget without signals never carries pollMs even if PollMS
 		// was set, the runtime would have nothing to fetch.
 		if len(d.Signals) > 0 {
-			cfg["statePath"] = d.StatePath
+			cfg["statePath"] = d.StateURL()
 			if d.PollMS > 0 {
 				cfg["pollMs"] = d.PollMS
 			}
@@ -448,13 +448,23 @@ func safeExtraCSS(def Definition) (css string) {
 // The bootstrap fetches this on first mount; runtime polling (when
 // the widget declared Builder.Poll) keeps things fresh after that.
 func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
-	out := map[string]any{}
+	// Each signal encodes on its own: one value with no JSON form (NaN,
+	// Inf, a channel) failed the whole encode after the headers went, and
+	// /state served an empty 200. It is omitted and logged, as a signal
+	// whose Read fails is omitted.
+	out := map[string]json.RawMessage{}
 	for name, src := range s.def.Signals {
 		v, err := src.Read()
 		if err != nil {
 			continue
 		}
-		out[name] = v
+		b, err := json.Marshal(v)
+		if err != nil {
+			slog.Default().Error("widget: signal value has no JSON form; omitting it",
+				"widget", s.def.Name, "signal", name, "err", err)
+			continue
+		}
+		out[name] = b
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// no-store: this IS the freshness source the poll re-fetches. A

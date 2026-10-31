@@ -79,6 +79,9 @@ func printSemanticHelp() {
   GOFASTR_URL=...     If set, query/stats hit the running server's
                       /semantic/* endpoints instead of opening a local
                       index. index/watch/clear are always local.
+  GOFASTR_SEMANTIC_TOKEN=...  Bearer token for a server whose mount
+                      sets WithAuthToken. Sent only to GOFASTR_URL;
+                      a redirect is refused.
   SEMANTIC_BACKEND=ollama  Use the Ollama HTTP embedder instead of the
                       built-in stub. Set OLLAMA_URL and OLLAMA_MODEL
                       to override defaults (localhost:11434 +
@@ -121,11 +124,16 @@ func localSnapshotDir() string {
 //
 //   - OLLAMA_URL    (default http://localhost:11434)
 //   - OLLAMA_MODEL  (default nomic-embed-text)
-func openLocalIndex() (semantic.Index, error) {
+//
+// readOnly opens beside a running `semantic watch` (query, stats): the
+// watcher holds the directory's writer lock, and a second writer
+// snapshotted and truncated the WAL the watcher was appending to.
+func openLocalIndex(readOnly bool) (semantic.Index, error) {
 	idx, err := semantic.Open(semantic.Options{
 		Embedder: chooseEmbedder(),
 		Keyword:  semantic.NewMemoryKeyword(),
 		Path:     localSnapshotDir(),
+		ReadOnly: readOnly,
 	})
 	return idx, err
 }
@@ -151,7 +159,7 @@ func embedIndex(paths []string, watch bool) {
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
-	idx, err := openLocalIndex()
+	idx, err := openLocalIndex(false)
 	if err != nil {
 		cli.Fail("open index: %v", err)
 		cli.OsExit(1)
@@ -243,7 +251,7 @@ func embedQuery(args []string) {
 		return
 	}
 
-	idx, err := openLocalIndex()
+	idx, err := openLocalIndex(true)
 	if err != nil {
 		cli.Fail("open index: %v", err)
 		cli.OsExit(1)
@@ -273,7 +281,7 @@ func embedStats() {
 		fmt.Println(string(body))
 		return
 	}
-	idx, err := openLocalIndex()
+	idx, err := openLocalIndex(true)
 	if err != nil {
 		cli.Fail("open index: %v", err)
 		cli.OsExit(1)
@@ -296,7 +304,24 @@ func embedClear() {
 // remoteHTTPClient bounds every remote semantic call: a GOFASTR_URL peer
 // that accepts the connection but never responds fails the call within
 // the deadline instead of hanging the CLI (the bootProbeClient shape).
-var remoteHTTPClient = &http.Client{Timeout: 2 * time.Second}
+// It refuses redirects: a call carries GOFASTR_SEMANTIC_TOKEN, which goes
+// to the server GOFASTR_URL names and nowhere a redirect points.
+var remoteHTTPClient = &http.Client{
+	Timeout: 2 * time.Second,
+	CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("refusing redirect to %s: GOFASTR_URL must name the server itself", req.URL.Redacted())
+	},
+}
+
+// remoteDo sends req with the mount's bearer token when
+// GOFASTR_SEMANTIC_TOKEN is set (the token the server passed to
+// WithAuthToken).
+func remoteDo(req *http.Request) (*http.Response, error) {
+	if tok := os.Getenv("GOFASTR_SEMANTIC_TOKEN"); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	return remoteHTTPClient.Do(req)
+}
 
 // remoteMaxBodyBytes caps the bytes buffered from a remote semantic peer
 // (repo convention, 1 MiB like the generated clients): a peer that
@@ -309,7 +334,12 @@ func remoteQuery(base string, q semantic.Query) ([]semantic.Hit, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := remoteHTTPClient.Post(strings.TrimRight(base, "/")+"/semantic/query", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/semantic/query", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := remoteDo(req)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +363,11 @@ func remoteQuery(base string, q semantic.Query) ([]semantic.Hit, error) {
 }
 
 func remoteGet(url string) ([]byte, error) {
-	resp, err := remoteHTTPClient.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := remoteDo(req)
 	if err != nil {
 		return nil, err
 	}

@@ -3,11 +3,14 @@ package embed
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -228,21 +231,77 @@ func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStor
 	}
 	s := &SQLBurnStore{db: database, table: c.table}
 	tsType := "DATETIME"
-	if migrate.DetectDialect(database) == migrate.DialectPostgres {
+	pg := migrate.DetectDialect(database) == migrate.DialectPostgres
+	if pg {
 		tsType = "TIMESTAMP"
 		if err := query.RefuseCaseKeptTables(context.Background(), database, s.table); err != nil {
 			return nil, fmt.Errorf("embed: %w", err)
 		}
 	}
 	stmt := fmt.Sprintf(
+		//gofastr:allow(GOFASTR1415) the eraser below blanks the grant by subject; export leaves these rows out on purpose, since a restored row is a live grant
 		`CREATE TABLE IF NOT EXISTS %s (`+
-			`nonce_id TEXT PRIMARY KEY, grant_token TEXT NOT NULL, expires_at %s NOT NULL)`,
+			`nonce_id TEXT PRIMARY KEY, grant_token TEXT NOT NULL, expires_at %s NOT NULL, `+
+			`subject TEXT NOT NULL DEFAULT '')`,
 		query.QuoteFolded(s.table), tsType,
 	)
 	if _, err := s.db.ExecContext(context.Background(), stmt); err != nil {
 		return nil, fmt.Errorf("embed: create burn table: %w", err)
 	}
+	if err := s.addSubjectColumn(pg); err != nil {
+		return nil, fmt.Errorf("embed: add burn subject column: %w", err)
+	}
+	// The grant a row keeps names its subject, the user the frame acts as.
+	// An erasure blanks the grant (and, as for every anonymizing eraser,
+	// the subject it matched) and keeps the row: it is the nonce's
+	// tombstone, and deleting it would make the nonce spendable again.
+	// Burn answers a blanked row as spent.
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("embed_nonces", s.table), Source: "embed", Table: s.table,
+		Column: "subject", Mode: datexport.EraseAnonymize,
+		ScrubColumns: []string{"grant_token"}, Tombstone: erasedGrant,
+	})
 	return s, nil
+}
+
+// erasedGrant is what an erasure writes over a burn row's grant.
+const erasedGrant = "[erased]"
+
+// addSubjectColumn adds the subject column to a table an older build
+// created without it. Postgres says ADD COLUMN IF NOT EXISTS; SQLite has
+// no such clause, so its duplicate-column error is the column already
+// there. An older row keeps an empty subject until Prune removes it.
+func (s *SQLBurnStore) addSubjectColumn(pg bool) error {
+	clause := "ADD COLUMN"
+	if pg {
+		clause = "ADD COLUMN IF NOT EXISTS"
+	}
+	stmt := fmt.Sprintf(`ALTER TABLE %s %s subject TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table), clause)
+	_, err := s.db.ExecContext(context.Background(), stmt)
+	if err != nil && !pg && strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
+// grantSubject reads the subject from a grant this package minted, for
+// the burn row's subject column. The grant is not verified here: it
+// only scopes an erasure, and a value that does not decode is stored
+// as no subject.
+func grantSubject(grant string) string {
+	payload, _, ok := strings.Cut(strings.TrimPrefix(grant, GrantPrefix), ".")
+	if !ok {
+		return ""
+	}
+	raw, err := b64.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+	var c grantClaims
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return ""
+	}
+	return c.Subject
 }
 
 // Burn implements BurnStore.
@@ -254,9 +313,9 @@ func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStor
 // expires is the retention deadline, not the grant's expiry. See BurnStore.
 func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires time.Time) (string, bool, error) {
 	ins := fmt.Sprintf(
-		`INSERT INTO %s (nonce_id, grant_token, expires_at) VALUES ($1, $2, $3) ON CONFLICT (nonce_id) DO NOTHING`,
+		`INSERT INTO %s (nonce_id, grant_token, expires_at, subject) VALUES ($1, $2, $3, $4) ON CONFLICT (nonce_id) DO NOTHING`,
 		query.QuoteFolded(s.table))
-	res, err := s.db.ExecContext(ctx, ins, nonceID, grant, expires.UTC())
+	res, err := s.db.ExecContext(ctx, ins, nonceID, grant, expires.UTC(), grantSubject(grant))
 	if err != nil {
 		return "", false, fmt.Errorf("embed: burn nonce: %w", err)
 	}
@@ -299,7 +358,7 @@ func (s *SQLBurnStore) Burn(ctx context.Context, nonceID, grant string, expires 
 	case err != nil:
 		return "", false, fmt.Errorf("embed: read burned nonce: %w", err)
 	}
-	if time.Now().Before(storedExp) {
+	if stored != erasedGrant && time.Now().Before(storedExp) {
 		return stored, true, nil
 	}
 	return "", true, nil

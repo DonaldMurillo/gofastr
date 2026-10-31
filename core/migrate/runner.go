@@ -275,6 +275,15 @@ func dirtyError(rec MigrationRecord, ga bool) error {
 	return fmt.Errorf("migration %d (%s): %w", rec.Version, rec.Name, ErrDirty)
 }
 
+// noDownError names a migration Down refuses to roll back, the way
+// dirtyError names a dirty one.
+func noDownError(mig Migration, ga bool) error {
+	if ga {
+		return fmt.Errorf("migration %d (%s) in group %q: %w", mig.Version, mig.Name, groupDisplayName(mig.Group), ErrNoDown)
+	}
+	return fmt.Errorf("migration %d (%s): %w", mig.Version, mig.Name, ErrNoDown)
+}
+
 // checkIntegrity refuses to proceed when the tracking state is unsafe:
 //   - any migration is dirty (a no-transaction migration failed mid-apply), or
 //   - an already-applied migration's recorded checksum no longer matches the
@@ -639,6 +648,15 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 	lookup := make(map[migKey]Migration, len(m.migrations))
 	for _, mig := range m.migrations {
 		lookup[migKey{Group: mig.Group, Version: mig.Version}] = mig
+	}
+
+	// Refuse before rolling anything back. A migration with no Down would
+	// run the empty string, succeed and lose its tracking row while its
+	// schema change stayed, so the next Up would run it again.
+	for i := 0; i < n; i++ {
+		if mig, ok := lookup[keys[i]]; ok && strings.TrimSpace(mig.Down) == "" {
+			return noDownError(mig, tableGa)
+		}
 	}
 
 	for i := 0; i < n; i++ {

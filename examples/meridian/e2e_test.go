@@ -95,9 +95,16 @@ func TestE2E(t *testing.T) {
 		t.Errorf("robots.txt does not keep crawlers out of /es/app:\n%s", body)
 	}
 
-	// Sign in, then every gated screen renders.
+	// Sign in, then every gated screen renders. A redirect to a login
+	// page is returned, not followed: with no session the login page's
+	// 200 passed for each screen (2026-10-27 G14).
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar}
+	client := &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+		if req.URL.Path == "/login" {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}}
 	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {adminPass}}); err != nil {
 		t.Fatalf("login: %v", err)
 	}

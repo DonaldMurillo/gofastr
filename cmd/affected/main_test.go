@@ -323,7 +323,9 @@ func writeFiles(t *testing.T, root string, files map[string]string) {
 func TestModuleFilesWidenToEverything(t *testing.T) {
 	root := newRepo(t)
 	all := []string{"a", "b", "c", "d", "e", "f"}
-	for _, f := range []string{"go.mod", "go.sum", "cmd/affected/main.go"} {
+	// The coverage-floor table lives in its script and owns no package, so
+	// without the trigger a PR that only edits a floor checked none.
+	for _, f := range []string{"go.mod", "go.sum", "cmd/affected/main.go", "scripts/coverage-floors.sh"} {
 		t.Run(f, func(t *testing.T) {
 			var errb bytes.Buffer
 			want(t, run(t, options{root: root, files: []string{f}, stderr: &errb}), all...)
@@ -708,5 +710,32 @@ func TestEmptySelectionSkipsTheCommand(t *testing.T) {
 	}
 	if !strings.HasPrefix(stderr.String(), "affected: no packages affected") {
 		t.Fatalf("stderr %q does not start with the line CI's replay gate greps", stderr.String())
+	}
+}
+
+// A package whose last file the change deleted is in no current package's
+// directory, so nothing owned the change and nothing that still imported
+// the package was selected (2026-10-27 I17). d's external test imports c;
+// b imports a, and e's test imports b.
+func TestDeletedPackageSelectsItsImporters(t *testing.T) {
+	root := newRepo(t)
+	for _, f := range []string{"a/a.go", "c/c.go"} {
+		if err := os.Remove(filepath.Join(root, filepath.FromSlash(f))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"test-only importer", []string{"c/c.go"}, []string{"d"}},
+		{"build importer and its test importer", []string{"a/a.go"}, []string{"b", "e"}},
+		{"beside an ordinary change", []string{"c/c.go", "f/f.go"}, []string{"d", "f"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want(t, run(t, options{root: root, files: tc.files}), tc.want...)
+		})
 	}
 }

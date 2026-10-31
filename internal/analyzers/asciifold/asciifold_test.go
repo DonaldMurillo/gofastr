@@ -9,5 +9,5 @@ import (
 )
 
 func TestASCIIFold(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), asciifold.Analyzer, "af", "afalt")
+	analysistest.Run(t, analysistest.TestData(), asciifold.Analyzer, "af", "afalt", "afcmp")
 }

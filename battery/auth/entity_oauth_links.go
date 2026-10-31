@@ -134,6 +134,19 @@ func (s *EntityUserStore) linkOAuth(ctx context.Context, userID, provider, provi
 	return err
 }
 
+// RefreshOAuthProfile updates the profile columns of the link binding
+// (provider, providerID) to userID. A link that is gone, or bound to a
+// different user, is left as it is: the statement is an UPDATE, never an
+// insert. Implements OAuthProfileRefresher.
+func (s *EntityUserStore) RefreshOAuthProfile(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error {
+	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		"UPDATE %s SET email = $1, name = $2, avatar_url = $3 "+
+			"WHERE provider = $4 AND provider_id = $5 AND user_id = $6",
+		query.QuoteFolded(s.oauthLinksTable()),
+	), nullable(profile.Email), nullable(profile.Name), nullable(profile.AvatarURL), provider, providerID, userID)
+	return err
+}
+
 // ListAccounts returns every OAuth identity linked to userID, ordered
 // deterministically by provider so the /auth/accounts UI is stable across
 // calls. Implements AccountLister.

@@ -15,22 +15,22 @@ slots into the default chain between `RequestID` and
 stmt: _ = app
 import "github.com/DonaldMurillo/gofastr/framework"
 import "github.com/DonaldMurillo/gofastr/core/middleware"
-import "net/http"
-import "github.com/DonaldMurillo/gofastr/battery/auth"
 -->
 ```go
-app := framework.NewApp(framework.WithIdempotency(middleware.IdempotencyConfig{
-    Principal: func(r *http.Request) string {
-        // Extract the authenticated subject: user-id, tenant-id, or both.
-        if u, ok := auth.SessionFrom(r.Context()); ok {
-            return u.GetID()
-        }
-        return ""
-    },
-}))
+app := framework.NewApp(framework.WithIdempotency(middleware.IdempotencyConfig{}))
 ```
 
-For full control, mount it manually:
+That spot in the chain runs before any auth middleware the app adds
+with `app.Use`, so no user or session is in the request context yet.
+The default `Principal` keys on the request's credential instead (a
+hash of its `Authorization`, `X-API-Key` and `Cookie` headers), and a
+request with none shares one `"anon"` namespace. A `Principal` you pass
+here sees the same bare request: `auth.SessionFrom` and
+`handler.GetUser` find no user, so a lookup that returns `""` for that
+case caches nothing.
+
+To key on the user, mount it yourself with `app.Use` after the
+middleware that resolves the user:
 
 ```go
 import "github.com/DonaldMurillo/gofastr/core/middleware"
@@ -93,6 +93,10 @@ entirely: it degrades to a pass-through that logs a warning and never
 caches, so there is no shared namespace and no cross-request leak. The
 cost is that you lose duplicate-suppression until you wire one. Set it
 to enable caching.
+
+A request your `Principal` returns `""` for is served the same way,
+uncached. Return a constant such as `"anon"` when callers with no
+subject should share one namespace on purpose.
 
 ### Headers stripped from replays
 

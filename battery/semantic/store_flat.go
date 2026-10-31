@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"maps"
 	"math"
 	"math/big"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/deepcopy"
 )
 
 // FlatStore is the default in-memory [Store]: a slice of chunks scored
@@ -355,10 +356,14 @@ var errEmptyStore = errors.New("semantic: store snapshot has no chunks")
 
 var _ = errEmptyStore
 
-// cloneChunk isolates vectors and the top-level metadata map at the store boundary.
+// cloneChunk isolates vectors and metadata at the store boundary. The
+// metadata copy is deep: a nested map or slice shared with the caller or
+// a hit let either rewrite what the store filters and snapshots on.
 func cloneChunk(c Chunk) Chunk {
 	c.Vec = slices.Clone(c.Vec)
-	c.Metadata = maps.Clone(c.Metadata)
+	if c.Metadata != nil {
+		c.Metadata = deepcopy.Map(c.Metadata)
+	}
 	return c
 }
 

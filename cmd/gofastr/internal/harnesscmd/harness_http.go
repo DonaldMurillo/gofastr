@@ -44,10 +44,6 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	enc := auth.NewEncoder(secret)
 	revs := auth.NewRevocationList()
 
-	// Make sure the catalog exposes the running session so REST
-	// callers can query it via /v1/sessions/<id>.
-	h.Catalog.RegisterEngine(h.Mux.EngineFor(sess))
-
 	// Token is generated FIRST, before the listener opens: it depends
 	// on nothing net.Listen produces, and encoding it after Listen
 	// meant an encode failure returned with the socket still open —
@@ -69,12 +65,16 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	// Bind: the Host/Origin guards below must be pinned to the
 	// authority we actually got, which for the default "127.0.0.1:0"
 	// is only known after Listen picks the ephemeral port.
-	ln, lerr := net.Listen("tcp", bindAddr)
+	ln, lerr := listenLoopback(bindAddr)
 	if lerr != nil {
-		return "", "", nil, fmt.Errorf("listen %s: %w", bindAddr, lerr)
+		return "", "", nil, lerr
 	}
 	addr := ln.Addr().String()
 	hosts, origins := loopback.LoopbackGuards(addr)
+
+	// Make sure the catalog exposes the running session so REST
+	// callers can query it via /v1/sessions/<id>.
+	h.Catalog.RegisterEngine(h.Mux.EngineFor(sess))
 
 	restSrv := &rest.Server{
 		Mux:          h.Mux,
@@ -124,6 +124,25 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 		_ = srv.Shutdown(ctx)
 	}
 	return url, token, shutdown, nil
+}
+
+// listenLoopback binds bindAddr and refuses any address that is not
+// loopback. The chat page at / embeds a 24 h human-class token for
+// whoever loads it, and the Host guard stops DNS rebinding, not a peer
+// that reaches the port directly and sends Host: localhost. So a LAN
+// address, a wildcard (0.0.0.0, ::, :PORT) or a name that resolves off
+// loopback is refused. The check reads the address the kernel bound,
+// not the spelling the caller passed.
+func listenLoopback(bindAddr string) (net.Listener, error) {
+	ln, err := net.Listen("tcp", bindAddr)
+	if err != nil {
+		return nil, fmt.Errorf("listen %s: %w", bindAddr, err)
+	}
+	if tcp, ok := ln.Addr().(*net.TCPAddr); !ok || !tcp.IP.IsLoopback() {
+		_ = ln.Close()
+		return nil, fmt.Errorf("listen %s: not a loopback address; the harness web page hands a session token to anyone who loads it, so -listen takes 127.0.0.1:PORT, [::1]:PORT or localhost:PORT", bindAddr)
+	}
+	return ln, nil
 }
 
 // DeriveListenerSecret returns 32 bytes derived from the machine key

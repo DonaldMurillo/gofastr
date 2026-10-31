@@ -29,14 +29,14 @@ func TestSessionCheckConcurrentReadWrite(t *testing.T) {
 		go func() { defer wg.Done(); _ = SessionCheck() }()
 		go func() {
 			defer wg.Done()
-			h := gateSession(gateAnySession, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+			h := gateSession(gateAnySession, &Definition{Name: "race"}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 			h.ServeHTTP(httptest.NewRecorder(), req)
 		}()
 		go func() { defer wg.Done(); SetAuthenticatedCheck(authed) }()
 		go func() { defer wg.Done(); _ = AuthenticatedCheck() }()
 		go func() {
 			defer wg.Done()
-			h := gateSession(gateAuthenticated, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+			h := gateSession(gateAuthenticated, &Definition{Name: "race"}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 			h.ServeHTTP(httptest.NewRecorder(), req)
 		}()
 	}

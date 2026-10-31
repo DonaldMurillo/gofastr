@@ -96,7 +96,8 @@ var (
 // each request. When set, the fingerprint is namespaced by the result
 // so two principals using the SAME Idempotency-Key value never see
 // each other's cached responses, closing a cross-tenant replay leak.
-// Default: empty principal (no namespacing); apps SHOULD wire one.
+// Without one, or for a request it returns "" for, nothing is cached;
+// return a constant such as "anon" to share one namespace on purpose.
 // FailOpen flips behaviour on store error: true falls through to the
 // handler (availability-first), false returns 503 to the client
 // (correctness-first). Default false; a broken store no longer
@@ -247,10 +248,17 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			if cfg.Principal != nil {
 				principal = cfg.Principal(r)
 			}
+			// No subject means no namespace to keep this caller's entry
+			// apart from another's: every such caller would share one,
+			// and a colliding key replays one user's response to the
+			// next. Serve it uncached, the same as no Principal at all.
+			if principal == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
 			fp := requestFingerprint(r, body, principal)
-			// Namespace the storage key by principal too; that defends
-			// even when the Principal function returns empty for some
-			// callers, by binding the key shard to "principal:key". The
+			// Namespace the storage key by principal too, binding the
+			// key shard to "principal:key". The
 			// byte-length prefix keeps the shard injective over
 			// (principal, key) pairs: with a bare "\x00" separator,
 			// ("a\x00b", "c") and ("a", "b\x00c") both collapse to

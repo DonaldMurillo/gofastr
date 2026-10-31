@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,8 +182,15 @@ func TestBuildKeepsUserSuppliedRobotsAndSitemap(t *testing.T) {
 	)
 
 	out := t.TempDir()
-	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+	res, err := (&Builder{Host: host, OutDir: out}).Build(context.Background())
+	if err != nil {
 		t.Fatalf("Build: %v", err)
+	}
+	// The generated file is not written under the user's either.
+	for _, p := range []string{"/robots.txt", "/sitemap.xml"} {
+		if n := slices.Index(res.Assets, p); n < 0 || slices.Contains(res.Assets[n+1:], p) {
+			t.Errorf("assets list %s other than once: %v", p, res.Assets)
+		}
 	}
 
 	rb, _ := os.ReadFile(filepath.Join(out, "robots.txt"))
@@ -318,11 +326,11 @@ func (f *flipScreen) StaticPaths(context.Context) []map[string]string {
 	return []map[string]string{{"slug": "alpha"}, {"slug": "beta"}}
 }
 
-// TestSitemapPairsEntriesByPage: StaticPaths that change order between
-// the sitemap's two renders must not pair one page's entry with another
-// page's verdict. A redirected /products/beta used to keep its entry
-// while the exported /products/alpha lost its own.
-func TestSitemapPairsEntriesByPage(t *testing.T) {
+// TestSitemapKeysEntriesByPage: StaticPaths that change order between
+// calls must not hand one page's entry another page's verdict. A
+// redirected /products/beta used to keep its entry while the exported
+// /products/alpha lost its own.
+func TestSitemapKeysEntriesByPage(t *testing.T) {
 	a := coreapp.NewApp("SitemapFlip")
 	a.Register("/", &homeScreen{}, nil)
 	calls := 0
@@ -333,7 +341,51 @@ func TestSitemapPairsEntriesByPage(t *testing.T) {
 	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if sm := readOut(t, out, "sitemap.xml"); !strings.Contains(sm, "https://example.com/products/alpha") {
+	sm := readOut(t, out, "sitemap.xml")
+	if !strings.Contains(sm, "https://example.com/products/alpha") {
 		t.Errorf("sitemap dropped the exported /products/alpha:\n%s", sm)
+	}
+	if strings.Contains(sm, "https://example.com/products/beta") {
+		t.Errorf("sitemap lists the redirected /products/beta:\n%s", sm)
+	}
+}
+
+// growScreen lists a second page on every even call, the way a row
+// inserted between two reads would.
+type growScreen struct {
+	productScreen
+	calls *int
+}
+
+func (g *growScreen) StaticPaths(context.Context) []map[string]string {
+	*g.calls++
+	if *g.calls%2 == 0 {
+		return []map[string]string{{"slug": "alpha"}, {"slug": "gamma"}}
+	}
+	return []map[string]string{{"slug": "alpha"}}
+}
+
+// When the sitemap's renders disagreed, the export logged a warning and
+// kept the whole document: the ExcludeRoutes /admin page and a /gamma
+// the export never wrote were both listed. Only written pages are now.
+func TestSitemapDropsUnwrittenPages(t *testing.T) {
+	a := coreapp.NewApp("SitemapGrow")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/admin", &homeScreen{}, nil)
+	calls := 0
+	a.Register("/products/:slug", &growScreen{calls: &calls}, nil)
+	host := uihost.New(a, uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, ExcludeRoutes: []string{"/admin"}}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	sm := readOut(t, out, "sitemap.xml")
+	if !strings.Contains(sm, "https://example.com/products/alpha") {
+		t.Errorf("sitemap dropped the exported /products/alpha:\n%s", sm)
+	}
+	for _, gone := range []string{"/admin", "/products/gamma"} {
+		if strings.Contains(sm, "https://example.com"+gone) {
+			t.Errorf("sitemap lists %s, which the export never wrote:\n%s", gone, sm)
+		}
 	}
 }

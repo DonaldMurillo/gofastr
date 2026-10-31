@@ -86,3 +86,44 @@ func checkPivot(t *testing.T, got *Entity, err error, want string, wantErr bool)
 		t.Fatalf("PivotEntity = %v, want version %q", got, want)
 	}
 }
+
+// A Through spelled with a schema the join entity's Table leaves off (or
+// the other way round) may name that entity's table under the connection's
+// search_path, and PivotEntity matched by string, so it found no pivot and
+// every read skipped the join entity's owner, tenant, soft-delete and read
+// gates while the loader still joined the table (2026-10-27 D9). The pair
+// is refused; two different schemas are two tables and stay distinct.
+func TestPivotEntityRefusesSchemaSpellingMismatch(t *testing.T) {
+	members := &Entity{Config: EntityConfig{Name: "memberships", Table: "memberships"}}
+	qualified := &Entity{Config: EntityConfig{Name: "memberships", Table: "public.memberships"}}
+	for name, tc := range map[string]struct {
+		reg   pivotReg
+		table string
+		want  string // name of the pivot picked; "-" for none, "!" for an error
+	}{
+		"qualified through":        {pivotReg{members}, "public.memberships", "!"},
+		"qualified table":          {pivotReg{qualified}, "memberships", "!"},
+		"qualified through, case":  {pivotReg{members}, "public.Memberships", "!"},
+		"same qualified spelling":  {pivotReg{qualified}, "PUBLIC.memberships", "memberships"},
+		"same bare spelling":       {pivotReg{members}, "Memberships", "memberships"},
+		"other schema":             {pivotReg{qualified}, "audit.memberships", "-"},
+		"other table, same schema": {pivotReg{qualified}, "public.roles", "-"},
+		"bare other table":         {pivotReg{members}, "public.roles", "-"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := PivotEntity(tc.reg, nil, tc.table)
+			switch {
+			case tc.want == "!":
+				if err == nil || !strings.Contains(err.Error(), "spell") {
+					t.Fatalf("PivotEntity = %v, %v; want the spelling refusal", got, err)
+				}
+			case err != nil:
+				t.Fatal(err)
+			case tc.want == "-" && got != nil:
+				t.Fatalf("PivotEntity = %q, want none", got.GetName())
+			case tc.want != "-" && (got == nil || got.GetName() != tc.want):
+				t.Fatalf("PivotEntity = %v, want %q", got, tc.want)
+			}
+		})
+	}
+}

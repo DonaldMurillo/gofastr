@@ -113,6 +113,39 @@ func TestOpenRedirect_SanitiseErr(t *testing.T) {
 	}
 }
 
+// The Referer's query is dropped, and an escaped ? or # in its path
+// stays escaped: the decoded path turned /login%3Fnext=/admin into
+// /login?next=/admin, a query the error redirect then extended.
+func TestSafeRefererKeepsPathEscapes(t *testing.T) {
+	for _, ref := range []string{
+		"https://app.example.com/login%3Fnext=/admin?drop=1",
+		"/login%3Fnext=/admin?drop=1",
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+		req.Header.Set("Referer", ref)
+		req.Host = "app.example.com"
+		if got := safeReferer(req); got != "/login%3Fnext=/admin" {
+			t.Errorf("safeReferer(%q) = %q, want /login%%3Fnext=/admin", ref, got)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	req.Header.Set("Referer", "https://app.example.com/a%23b")
+	req.Host = "app.example.com"
+	if got := safeReferer(req); got != "/a%23b" {
+		t.Errorf("safeReferer kept %q, want /a%%23b", got)
+	}
+	// Escaped is not a way around the protocol-relative refusal: the
+	// check reads the decoded path as well.
+	for _, ref := range []string{"https://app.example.com/%2Fevil.com", "/%2Fevil.com", "/%5Cevil.com"} {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+		req.Header.Set("Referer", ref)
+		req.Host = "app.example.com"
+		if got := safeReferer(req); got != "" {
+			t.Errorf("SECURITY: safeReferer(%q) = %q, want refused", ref, got)
+		}
+	}
+}
+
 // TestOpenRedirect_SafeRefererRejectsCrossOrigin verifies that
 // safeReferer rejects cross-origin Referer headers.
 func TestOpenRedirect_SafeRefererRejectsCrossOrigin(t *testing.T) {

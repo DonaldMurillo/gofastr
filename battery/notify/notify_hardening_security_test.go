@@ -190,6 +190,26 @@ func TestEmailChannel_RejectsReservedContentTypeHeaderOverride(t *testing.T) {
 	}
 }
 
+// The email sender writes the transfer encoding of each body part, so
+// a rendered copy is refused with the other structure headers.
+func TestEmailChannel_RejectsTransferEncodingOverride(t *testing.T) {
+	t.Parallel()
+	sender := &captureSender{}
+	ch := notify.NewEmailChannel(sender, "from@example.com")
+	err := ch.Send(context.Background(), notify.Notification{
+		To: notify.Recipient{Email: "alice@example.com"},
+	}, notify.Rendered{
+		Subject:  "hi",
+		TextBody: "body",
+		Extra: map[string]any{
+			"headers": map[string]string{"Content-Transfer-Encoding": "base64"},
+		},
+	})
+	if !errors.Is(err, notify.ErrUnsafeHeader) {
+		t.Fatalf("Content-Transfer-Encoding override: %v, want ErrUnsafeHeader", err)
+	}
+}
+
 func TestEmailChannel_RejectsRenderedFromOverride(t *testing.T) {
 	t.Parallel()
 	sender := &captureSender{}

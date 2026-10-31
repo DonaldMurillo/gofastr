@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/a2a"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -155,6 +156,7 @@ func (a *App) mountA2A() error {
 		Skills:         a.a2aSkills(),
 		Store:          store,
 		Owner:          a2aOwnerPrincipal,
+		Scopes:         a2aCallerScopes,
 		ExtendedCard:   cfg.ExtendedCard,
 		Push:           a2a.PushOptions{AllowPrivate: cfg.AllowPrivatePush},
 		Logger:         a.Logger(),
@@ -187,6 +189,22 @@ func a2aOwnerPrincipal(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("%v", id), true
+}
+
+// a2aCallerScopes reports the scopes an API token or embed grant narrowed
+// the A2A caller to (access.HeldScopes). The server records them on each
+// task, so a narrower credential of the same user cannot read what a
+// session or a broader token ran.
+func a2aCallerScopes(r *http.Request) ([]string, bool) {
+	held, ok := access.HeldScopes(r.Context())
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, len(held))
+	for i, p := range held {
+		out[i] = string(p)
+	}
+	return out, true
 }
 
 // entityActions are the CRUD tool actions crud.RegisterEntityMCPTools

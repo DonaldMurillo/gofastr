@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"maps"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -77,9 +80,19 @@ func (c SMTPConfig) Validate() error {
 	return nil
 }
 
-// addr returns the host:port address string.
+// hostname is Host without the brackets an IPv6 literal may be written
+// in: the dial address adds its own, and a TLS ServerName never has them.
+func (c SMTPConfig) hostname() string {
+	if strings.HasPrefix(c.Host, "[") && strings.HasSuffix(c.Host, "]") {
+		return c.Host[1 : len(c.Host)-1]
+	}
+	return c.Host
+}
+
+// addr returns the host:port address string. "%s:%d" made "::1:587" for
+// an IPv6 host, which the dialer refuses.
 func (c SMTPConfig) addr() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return net.JoinHostPort(c.hostname(), strconv.Itoa(c.Port))
 }
 
 // Send implements the Sender interface using SMTP.
@@ -153,14 +166,14 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	_ = conn.SetDeadline(deadline)
 
 	if s.config.UseTLS {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: s.config.Host})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: s.config.hostname()})
 		if err := tlsConn.HandshakeContext(dialCtx); err != nil {
 			_ = conn.Close()
 			return fmt.Errorf("%w: tls handshake failed: %v", ErrSendFailed, err)
 		}
 		conn = tlsConn
 	}
-	client, err := smtp.NewClient(conn, s.config.Host)
+	client, err := smtp.NewClient(conn, s.config.hostname())
 	if err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("%w: smtp client creation failed: %v", ErrSendFailed, err)
@@ -173,7 +186,7 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	// continue over cleartext unless AllowCleartext was explicitly set.
 	if !s.config.UseTLS {
 		if ok, _ := client.Extension("STARTTLS"); ok {
-			tlsConfig := &tls.Config{ServerName: s.config.Host}
+			tlsConfig := &tls.Config{ServerName: s.config.hostname()}
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return fmt.Errorf("%w: starttls failed: %v", ErrSendFailed, err)
 			}
@@ -184,15 +197,16 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 
 	// Authenticate if credentials are provided.
 	if s.config.Username != "" && s.config.Password != "" {
-		if ok, _ := client.Extension("AUTH"); ok {
-			// Try CRAM-MD5 first, then fall back to PLAIN.
-			auth := smtp.CRAMMD5Auth(s.config.Username, s.config.Password)
+		if ok, offered := client.Extension("AUTH"); ok {
+			// One attempt with a mechanism the relay advertised: when the
+			// relay refuses a mechanism, net/smtp aborts and sends QUIT, so
+			// a second try on this client writes to a closed connection.
+			auth, err := s.pickAuth(offered)
+			if err != nil {
+				return err
+			}
 			if err := client.Auth(auth); err != nil {
-				// Fall back to PLAIN auth.
-				auth = smtp.PlainAuth("", s.config.Username, s.config.Password, s.config.Host)
-				if err := client.Auth(auth); err != nil {
-					return fmt.Errorf("%w: auth failed: %v", ErrSendFailed, err)
-				}
+				return fmt.Errorf("%w: auth failed: %v", ErrSendFailed, err)
 			}
 		}
 	}
@@ -265,6 +279,13 @@ func buildMessage(email Email) ([]byte, error) {
 			return nil, err
 		}
 	}
+	// The MIME structure headers are written below; a caller's copy
+	// would give the message two that disagree.
+	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version"} {
+		if hasHeader(email.Headers, name) {
+			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it", ErrSendFailed, name)
+		}
+	}
 	for _, att := range email.Attachments {
 		if err := assertNoHeaderInjection("Attachment.Filename", att.Filename); err != nil {
 			return nil, err
@@ -280,12 +301,26 @@ func buildMessage(email Email) ([]byte, error) {
 	// no C0/DEL byte can reach a header line even if a future code
 	// path skips assertNoHeaderInjection (defense in depth; the assert
 	// is the fail-closed gate, the scrub is the wire guarantee).
-	buf.WriteString("From: " + scrubHeaderValue(email.From) + "\r\n")
-	buf.WriteString("To: " + scrubHeaderValue(strings.Join(email.To, ", ")) + "\r\n")
+	buf.WriteString("From: " + scrubHeaderValue(encodeAddrHeader(email.From)) + "\r\n")
+	buf.WriteString("To: " + scrubHeaderValue(encodeAddrHeader(strings.Join(email.To, ", "))) + "\r\n")
 	if len(email.CC) > 0 {
-		buf.WriteString("Cc: " + scrubHeaderValue(strings.Join(email.CC, ", ")) + "\r\n")
+		buf.WriteString("Cc: " + scrubHeaderValue(encodeAddrHeader(strings.Join(email.CC, ", "))) + "\r\n")
 	}
-	buf.WriteString("Subject: " + scrubHeaderValue(email.Subject) + "\r\n")
+	buf.WriteString("Subject: " + scrubHeaderValue(encodeTextHeader(email.Subject)) + "\r\n")
+
+	// Date and Message-ID (RFC 5322 3.6.1, 3.6.4). A submission relay
+	// adds both, but direct delivery, threading and dedupe need them
+	// from the sender. A value the caller sets in Headers replaces ours.
+	if !hasHeader(email.Headers, "Date") {
+		buf.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")
+	}
+	if !hasHeader(email.Headers, "Message-ID") {
+		id, err := newMessageID(email.From)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSendFailed, err)
+		}
+		buf.WriteString("Message-ID: " + scrubHeaderValue(id) + "\r\n")
+	}
 
 	// Custom headers, sorted so the wire message is byte-stable per send.
 	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
@@ -300,6 +335,8 @@ func buildMessage(email Email) ([]byte, error) {
 	// both renderings, one after the other.
 	hasAttachments := len(email.Attachments) > 0
 	hasTextAndHTML := email.TextBody != "" && email.HTMLBody != ""
+	// The bodies go out quoted-printable, as they are checked below.
+	email.TextBody, email.HTMLBody = qpBody(email.TextBody), qpBody(email.HTMLBody)
 
 	if hasAttachments || hasTextAndHTML {
 		// Use a cryptographically random boundary per container so body
@@ -363,11 +400,10 @@ func buildMessage(email Email) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%w: invalid attachment content-type: %v", ErrSendFailed, err)
 			}
-			name := quoteParamValue(att.Filename)
 			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: " + scrubHeaderValue(baseCT) + "; name=" + name + "\r\n")
+			buf.WriteString("Content-Type: " + scrubHeaderValue(baseCT) + "; " + scrubHeaderValue(encodeParam("name", att.Filename)) + "\r\n")
 			buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-			buf.WriteString("Content-Disposition: attachment; filename=" + name + "\r\n")
+			buf.WriteString("Content-Disposition: attachment; " + scrubHeaderValue(encodeParam("filename", att.Filename)) + "\r\n")
 			buf.WriteString("\r\n")
 			buf.WriteString(encodeBase64(att.Content))
 			buf.WriteString("\r\n")
@@ -376,12 +412,13 @@ func buildMessage(email Email) ([]byte, error) {
 		buf.WriteString("--" + boundary + "--\r\n")
 	} else {
 		// Simple single-part message.
+		buf.WriteString("MIME-Version: 1.0\r\n")
 		if email.HTMLBody != "" {
-			buf.WriteString("MIME-Version: 1.0\r\n")
 			buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
 		} else {
 			buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 		}
+		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		if email.TextBody != "" {
 			buf.WriteString(email.TextBody)
@@ -396,16 +433,18 @@ func buildMessage(email Email) ([]byte, error) {
 // writeBodyEntity writes the message body as one complete MIME entity
 // (its Content-Type header, the blank line, then the content): a
 // multipart/alternative of text then HTML when both are set, otherwise
-// the single text/plain or text/html part. mint returns the
-// alternative container's checked boundary.
+// the single text/plain or text/html part. The bodies arrive encoded by
+// qpBody. mint returns the alternative container's checked boundary.
 func writeBodyEntity(buf *strings.Builder, email Email, mint func() (string, error)) error {
 	textPart := func() {
 		buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		buf.WriteString(email.TextBody + "\r\n")
 	}
 	htmlPart := func() {
 		buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
+		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		buf.WriteString(email.HTMLBody + "\r\n")
 	}
@@ -430,6 +469,20 @@ func writeBodyEntity(buf *strings.Builder, email Email, mint func() (string, err
 	return nil
 }
 
+// qpBody encodes a text body quoted-printable (RFC 2045 §6.7): CR, LF
+// and CRLF line endings all become CRLF, no line passes 76 octets, and
+// non-ASCII bytes are escaped. Sent as written, a Unix-saved template
+// put bare LFs under CRLF headers (RFC 5321 §2.3.8) and a minified
+// one-line HTML body passed the 998-octet line limit.
+func qpBody(s string) string {
+	var b strings.Builder
+	w := quotedprintable.NewWriter(&b)
+	// A strings.Builder never fails a write, so neither does w.
+	_, _ = w.Write([]byte(s))
+	_ = w.Close()
+	return b.String()
+}
+
 // encodeBase64 wraps base64-encoded content at 76 characters per line.
 func encodeBase64(data []byte) string {
 	return b64Encode(data)
@@ -452,6 +505,41 @@ func randomBoundary() (string, error) {
 	return "gofastr-boundary-" + hex.EncodeToString(b[:]), nil
 }
 
+// hasHeader reports whether headers sets name, folding ASCII case the
+// way header names compare. A key with a non-ASCII byte never matches,
+// so a homoglyph cannot stand in for the name.
+func hasHeader(headers map[string]string, name string) bool {
+	for k := range headers {
+		if isASCII(k) && strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// reMessageIDDomain is a plain host name: dot-separated labels of
+// letters, digits and inner hyphens.
+var reMessageIDDomain = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$`)
+
+// newMessageID mints "<32 hex digits@domain>" from crypto/rand. The
+// domain is the first From address's when it is a plain host name, and
+// localhost otherwise.
+func newMessageID(from string) (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("message id generation failed: %w", err)
+	}
+	domain := "localhost"
+	if addrs, err := mail.ParseAddressList(from); err == nil && len(addrs) > 0 {
+		if at := strings.LastIndexByte(addrs[0].Address, '@'); at >= 0 {
+			if d := addrs[0].Address[at+1:]; len(d) <= 253 && reMessageIDDomain.MatchString(d) {
+				domain = d
+			}
+		}
+	}
+	return "<" + hex.EncodeToString(b[:]) + "@" + domain + ">", nil
+}
+
 // bodyContainsBoundary reports whether any line of body equals the
 // boundary delimiter (`--boundary`) or the closing delimiter
 // (`--boundary--`), which would let the body inject or terminate a MIME
@@ -460,8 +548,9 @@ func randomBoundary() (string, error) {
 func bodyContainsBoundary(body, boundary string) bool {
 	delim := "--" + boundary
 	for line := range strings.SplitSeq(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		line = strings.TrimRight(line, "\r")
-		if line == delim || line == delim+"--" {
+		// A line that starts with the delimiter ends the part even with
+		// more after it in some parsers, and RFC 2046 §5.1.1 bars it.
+		if strings.HasPrefix(line, delim) {
 			return true
 		}
 	}
@@ -514,6 +603,77 @@ func quoteParamValue(s string) string {
 		b.WriteByte(c)
 	}
 	b.WriteByte('"')
+	return b.String()
+}
+
+// isASCII reports whether s needs no header encoding.
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// encodeTextHeader renders an unstructured header value (Subject) for
+// the wire: scrubbed, then, when any byte is not ASCII, written as RFC
+// 2047 encoded words. A server that did not offer SMTPUTF8 must not see
+// raw UTF-8 in a header, and an encoded word is valid where it did. The
+// encoder leaves printable ASCII as it is, and the scrub leaves nothing
+// else that is ASCII, so an ASCII value keeps its bytes.
+func encodeTextHeader(s string) string {
+	return mime.QEncoding.Encode("utf-8", scrubHeaderValue(s))
+}
+
+// encodeAddrHeader renders an address-list header (From, To, Cc). A
+// non-ASCII value is parsed and re-rendered by net/mail, which writes a
+// display name as encoded words; an encoded word is not allowed inside
+// an addr-spec, so a non-ASCII mailbox stays as written and needs a
+// server that offers SMTPUTF8. A value that does not parse, or an ASCII
+// one, keeps its scrubbed bytes.
+func encodeAddrHeader(s string) string {
+	s = scrubHeaderValue(s)
+	if isASCII(s) {
+		return s
+	}
+	addrs, err := mail.ParseAddressList(s)
+	if err != nil {
+		return s
+	}
+	out := make([]string, len(addrs))
+	for i, a := range addrs {
+		out[i] = a.String()
+	}
+	return strings.Join(out, ", ")
+}
+
+// encodeParam renders one MIME parameter. An ASCII value is the quoted
+// string quoteParamValue writes; any other value is an RFC 2231
+// extended value (key*= then the utf-8 charset and its empty language
+// tag), in which every byte outside the attribute-char set is
+// percent-encoded, so no quote, semicolon or control byte can end the
+// parameter. The strip quoteParamValue
+// applies (C0, DEL, C1, the invisible set) runs first.
+func encodeParam(key, v string) string {
+	if isASCII(v) {
+		return key + "=" + quoteParamValue(v)
+	}
+	var raw []byte
+	for _, r := range textsafe.StripInvisible(v) {
+		if r >= 0x20 && r != 0x7f && !textsafe.IsC1(r) {
+			raw = utf8.AppendRune(raw, r)
+		}
+	}
+	var b strings.Builder
+	b.WriteString(key + "*=utf-8''")
+	for _, c := range raw {
+		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("!#$&+-.^_`|~", c) >= 0 {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
 	return b.String()
 }
 
@@ -609,9 +769,32 @@ func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
 	}
 	specs := make([]string, 0, len(addrs))
 	for _, a := range addrs {
-		specs = append(specs, a.Address)
+		spec, err := envelopeSpec(a.Address)
+		if err != nil {
+			return nil, fmt.Errorf("%s %q: %v", field, raw, err)
+		}
+		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// envelopeSpec turns a parsed address back into SMTP mailbox syntax.
+// net/mail returns the local part unquoted, so "john doe"@example.com
+// would reach the wire as john doe@example.com; Address.String quotes it
+// again. A local part holding <, > or @ is refused even quoted: a relay
+// that ends the path at the first > reads "a@evil.test> ORCPT=x"@company.test
+// as a recipient at evil.test, and no real mailbox needs those bytes.
+// net/mail accepts only an IP inside a domain literal, so the domain
+// cannot carry them.
+func envelopeSpec(addr string) (string, error) {
+	// net/mail never returns an address without an @; the max keeps a
+	// future caller's bare string from panicking.
+	local := addr[:max(strings.LastIndexByte(addr, '@'), 0)]
+	if strings.ContainsAny(local, "<>@") {
+		return "", fmt.Errorf("local part %q holds <, > or @: refusing envelope address", local)
+	}
+	s := (&mail.Address{Address: addr}).String()
+	return s[1 : len(s)-1], nil
 }
 
 // envelopeRecipients builds the RCPT TO list from To + CC + BCC. The

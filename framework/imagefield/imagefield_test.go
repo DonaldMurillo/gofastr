@@ -223,6 +223,10 @@ func TestNewRejectsBadConfig(t *testing.T) {
 		{"blurhash out of range", imagefield.Config{BlurHashX: 10, BlurHashY: 10}},
 		{"variant without width", imagefield.Config{Variants: []fwimage.Variant{{Format: fwimage.FormatJPEG}}}},
 		{"variant without format", imagefield.Config{Variants: []fwimage.Variant{{Width: 100}}}},
+		{"variants with one name", imagefield.Config{Variants: []fwimage.Variant{
+			{Width: 100, Suffix: "sm", Format: fwimage.FormatJPEG},
+			{Width: 200, Suffix: "sm", Format: fwimage.FormatJPEG},
+		}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

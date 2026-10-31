@@ -331,19 +331,31 @@ func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HT
 
 // topLevelTerms are the filter's top-level AND terms as display text.
 // A lone leaf is its own single term; an OR group is one term (it can
-// only be removed whole).
+// only be removed whole), at the top or among the AND terms. Each term
+// is text the kept terms join back with " and " (termText), so removing
+// one never regroups the rest.
 func topLevelTerms(p *filter.Predicate) []string {
 	if p == nil {
 		return nil
 	}
-	if len(p.Children) == 0 {
+	if len(p.Children) == 0 || p.Or {
 		return []string{predicateText(p)}
 	}
 	out := make([]string, 0, len(p.Children))
 	for i := range p.Children {
-		out = append(out, predicateText(&p.Children[i]))
+		out = append(out, termText(&p.Children[i]))
 	}
 	return out
+}
+
+// termText is predicateText for a term that sits beside others: a group
+// in parentheses, since the DSL binds and tighter than or and a bare
+// "a or b" joined to "c" would read as a or (b and c).
+func termText(p *filter.Predicate) string {
+	if len(p.Children) > 0 {
+		return "(" + predicateText(p) + ")"
+	}
+	return predicateText(p)
 }
 
 // predicateText renders one term back as DSL text, the same spelling
@@ -356,7 +368,7 @@ func predicateText(p *filter.Predicate) string {
 	if len(p.Children) > 0 {
 		parts := make([]string, 0, len(p.Children))
 		for i := range p.Children {
-			parts = append(parts, predicateText(&p.Children[i]))
+			parts = append(parts, termText(&p.Children[i]))
 		}
 		joiner := " and "
 		if p.Or {

@@ -339,6 +339,24 @@ func (m *mockRedis) RPop(_ context.Context, key string) (string, error) {
 	return val, nil
 }
 
+// RPopHSet implements [PopRecorder] under the single mutex, the atomicity
+// the Lua script gives on a real server.
+func (m *mockRedis) RPopHSet(_ context.Context, list, hash, field string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l := m.lists[list]
+	if len(l) == 0 {
+		return "", ErrRedisEmpty
+	}
+	val := l[len(l)-1]
+	m.lists[list] = l[:len(l)-1]
+	if m.hashes[hash] == nil {
+		m.hashes[hash] = make(map[string]string)
+	}
+	m.hashes[hash][field] = val
+	return val, nil
+}
+
 func (m *mockRedis) HSet(_ context.Context, key string, values ...any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

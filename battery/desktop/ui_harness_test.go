@@ -35,6 +35,12 @@ func (s uiScreen) Render() render.HTML {
 // a fresh desktoptest.Shell, cfg.ID to a fixed test id.
 func uiApp(t *testing.T, cfg desktop.Config) (*framework.App, *desktop.Battery) {
 	t.Helper()
+	return uiAppWith(t, cfg, framework.AppConfig{Name: "uiharness"})
+}
+
+// uiAppWith is uiApp with the App's own config.
+func uiAppWith(t *testing.T, cfg desktop.Config, appCfg framework.AppConfig) (*framework.App, *desktop.Battery) {
+	t.Helper()
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	site := appui.NewApp("UIHarness")
 	layout := containerLayout("app")
@@ -43,7 +49,7 @@ func uiApp(t *testing.T, cfg desktop.Config) (*framework.App, *desktop.Battery) 
 	site.Register("/two", uiScreen{"Screen two"}, layout)
 	site.Register("/settings", uiScreen{"Settings screen"}, layout)
 
-	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "uiharness"}))
+	app := framework.NewApp(framework.WithConfig(appCfg))
 	app.Mount(uihost.New(site))
 	if cfg.ID == "" {
 		cfg.ID = "ui.harness.test"

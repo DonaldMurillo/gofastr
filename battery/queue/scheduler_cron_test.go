@@ -88,3 +88,78 @@ func TestSchedulerEveryStillWorks(t *testing.T) {
 		t.Fatalf("interval job: got %d enqueues, want 1", got)
 	}
 }
+
+// A spec no date matches (February 30) is refused at registration: Next
+// returns the zero time for it, and a zero NextRun is due on every tick.
+func TestCronThatNeverFiresIsRefused(t *testing.T) {
+	rq := &recordQueue{}
+	sched := NewScheduler(rq)
+	if err := sched.Cron("0 0 30 2 *").Job("never", nil).Register(); err == nil {
+		t.Fatal("Register accepted a spec that never fires")
+	}
+	sched.dispatchDue(context.Background(), time.Now())
+	if got := rq.count(); got != 0 {
+		t.Fatalf("got %d enqueues, want 0", got)
+	}
+}
+
+// The durable builder refuses it too, before it writes a row.
+func TestDurableCronNeverFiringRefused(t *testing.T) {
+	db := openDurableSchedulerDB(t)
+	q := newDurableTestQueue(t, db)
+	scheduler, err := NewDurableScheduler(q, DurableSchedulerConfig{OwnerID: "never"})
+	if err != nil {
+		t.Fatalf("NewDurableScheduler: %v", err)
+	}
+	err = scheduler.Cron("never", "0 0 30 2 *").Job("email", nil).
+		RegisterAt(time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("RegisterAt accepted a spec that never fires")
+	}
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM " + q.schedulerSchedulesTable()).Scan(&count); err != nil {
+		t.Fatalf("count schedules: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("persisted %d schedules", count)
+	}
+}
+
+// A schedule whose next firing is more than five years out keeps it
+// (S33). 2100 is not a leap year, so after 2096-02-29 the next February 29
+// is in 2104; Next's five-year search used to return zero, and the
+// schedule stopped.
+func TestCronLongGapKeepsNextRun(t *testing.T) {
+	rq := &recordQueue{}
+	sched := NewScheduler(rq)
+	base := time.Date(2096, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := sched.Cron("0 0 29 2 *").Job("leap", nil).RegisterAt(base); err != nil {
+		t.Fatalf("RegisterAt: %v", err)
+	}
+	fire := time.Date(2096, 2, 29, 0, 0, 0, 0, time.UTC)
+	sched.dispatchDue(context.Background(), fire)
+	sched.dispatchDue(context.Background(), fire.Add(time.Minute))
+	if got := rq.count(); got != 1 {
+		t.Fatalf("got %d enqueues, want 1", got)
+	}
+	sched.mu.Lock()
+	next := sched.schedules[0].NextRun
+	sched.mu.Unlock()
+	if want := time.Date(2104, 2, 29, 0, 0, 0, 0, time.UTC); !next.Equal(want) {
+		t.Fatalf("NextRun = %s, want %s", next, want)
+	}
+}
+
+// The stop is for cron schedules only: an interval schedule whose NextRun
+// is the zero time still fires.
+func TestIntervalAtZeroTimeStillFires(t *testing.T) {
+	rq := &recordQueue{}
+	sched := NewScheduler(rq)
+	if err := sched.Every(0).Job("tick", nil).RegisterAt(time.Time{}); err != nil {
+		t.Fatalf("RegisterAt: %v", err)
+	}
+	sched.dispatchDue(context.Background(), time.Now())
+	if got := rq.count(); got != 1 {
+		t.Fatalf("got %d enqueues, want 1", got)
+	}
+}

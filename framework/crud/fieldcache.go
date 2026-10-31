@@ -209,7 +209,10 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 			s.visible = append(s.visible, f.Name)
 		}
 	}
-	s.visibleJSONs = convertedKeys(s.visible, ch.convertKeyRaw)
+	// Wire keys, WireName included: List serves this list for a full-width
+	// select, so it must name each column the way convertKey does. The
+	// snapshot is not published yet, so read the map built above.
+	s.visibleJSONs = convertedKeys(s.visible, func(col string) string { return s.wireKeyOf[col] })
 	s.sig = ch.fieldCacheSignature()
 	return s
 }

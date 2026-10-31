@@ -91,28 +91,29 @@ func (m *MemoryInboundStore) RegisterDedupeKey(_ context.Context, id, key string
 
 // MarkEnvelopeProcessing transitions an envelope to "processing" and
 // consumes one attempt under the store's lock — the memory twin of
-// SQLInboundStore's `attempts = attempts + 1` processing UPDATE. A missing
-// id is a no-op (the caller loaded the envelope just before this).
-func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string) error {
+// SQLInboundStore's `attempts = attempts + 1` processing UPDATE. It
+// reports false, writing nothing, for a missing id or a processed
+// envelope, so ProcessInbound does not run the handler again.
+func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e, ok := m.envelopes[id]
 	if !ok {
-		return nil
+		return false, nil
 	}
 	// Terminal fence, the memory twin of SQLInboundStore's predicate in
 	// MarkEnvelopeProcessing: a stale runner marking an already-settled
 	// envelope processing would regress the row and consume an attempt
 	// against it.
 	if isTerminalInboundStatus(e.Status) {
-		return nil
+		return false, nil
 	}
 	e.Status = InboundStatusProcessing
 	e.Attempts++
 	e.LastError = ""
 	e.UpdatedAt = time.Now().UTC()
 	m.envelopes[id] = e
-	return nil
+	return true, nil
 }
 
 // ListEnvelopes returns envelopes filtered by status (empty = all),

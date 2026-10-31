@@ -11,9 +11,11 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -222,17 +224,30 @@ func TestNativeGTKWebKit(t *testing.T) {
 		fmt.Fprint(w, `<!doctype html><html><head><title>GoFastr Linux</title><style>body{font:24px sans-serif;background:#16223a;color:white;padding:48px}button{padding:16px}</style></head><body><h1>GoFastr Linux native</h1><p>GTK 3 · WebKitGTK · CGO_ENABLED=0</p><button id="test" onclick="this.textContent='Clicked'">Native WebView works</button></body></html>`)
 	}))
 	defer server.Close()
+	// A second origin: its page posts to the parent when it renders, so an
+	// iframe of it proves subframes still load while the main frame may not
+	// leave the app's origin.
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><title>Foreign</title><script>parent.postMessage("framed", "*")</script>`)
+	}))
+	defer foreign.Close()
+	appHost := strings.TrimPrefix(server.URL, "http://")
+	allow := func(raw string) bool {
+		u, err := url.Parse(raw)
+		return raw == "about:blank" || err == nil && u.Host == appHost
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	s := New().(*linuxShell)
 	result := make(chan error, 1)
-	err := s.Run(ctx, desktop.WindowConfig{Title: "GoFastr Linux Native Test", Width: 840, Height: 600}, func(window desktop.Window) {
+	err := s.Run(ctx, desktop.WindowConfig{Title: "GoFastr Linux Native Test", Width: 840, Height: 600, AllowNavigation: allow}, func(window desktop.Window) {
 		if err := window.Navigate(server.URL); err != nil {
 			result <- err
 			s.Quit()
 			return
 		}
-		go func() { defer s.Quit(); result <- exerciseNative(ctx, s, window, server.URL) }()
+		go func() { defer s.Quit(); result <- exerciseNative(ctx, s, window, server.URL, foreign.URL) }()
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +262,7 @@ func TestNativeGTKWebKit(t *testing.T) {
 	}
 }
 
-func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin string) error {
+func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin, foreign string) error {
 	evaluator := w.(desktop.PageEvaluator)
 	awaitPage := func(e desktop.PageEvaluator, id string) error {
 		deadline := time.Now().Add(20 * time.Second)
@@ -277,6 +292,9 @@ func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin
 	}
 	if err = json.Unmarshal(out, &value); err != nil || value.Answer != 42 || value.OS != "linux" {
 		return fmt.Errorf("async eval: %s (%v)", out, err)
+	}
+	if err = exerciseForeignNavigation(ctx, evaluator, origin, foreign); err != nil {
+		return err
 	}
 	if _, err := evaluator.EvalAsync(ctx, `throw new Error("expected native failure")`); err == nil {
 		return errors.New("JavaScript exception was ignored")
@@ -367,4 +385,28 @@ func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin
 		}
 	}
 	return w.Close()
+}
+
+// exerciseForeignNavigation frames the other origin, which must render,
+// then points the main frame at it, which must not leave the app.
+func exerciseForeignNavigation(ctx context.Context, e desktop.PageEvaluator, origin, foreign string) error {
+	framed, err := e.EvalAsync(ctx, `return await new Promise(done => {
+		addEventListener("message", m => m.data === "framed" && done(true));
+		setTimeout(() => done(false), 10000);
+		const f = document.createElement("iframe");
+		f.src = `+strconv.Quote(foreign+"/frame")+`;
+		document.body.append(f);
+	})`)
+	if err != nil || string(framed) != "true" {
+		return fmt.Errorf("foreign iframe did not render: %s (%v)", framed, err)
+	}
+	if _, err = e.EvalAsync(ctx, `location.href = `+strconv.Quote(foreign+"/page")+`; return true`); err != nil {
+		return err
+	}
+	time.Sleep(1500 * time.Millisecond)
+	at, err := e.EvalAsync(ctx, `return location.origin + "|" + document.title`)
+	if err != nil || string(at) != strconv.Quote(origin+"|GoFastr Linux") {
+		return fmt.Errorf("main frame left the app origin: %s (%v)", at, err)
+	}
+	return nil
 }

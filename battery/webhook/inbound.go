@@ -94,8 +94,9 @@ type InboundStore interface {
 type envelopeProcessingClaimer interface {
 	// MarkEnvelopeProcessing transitions the envelope to "processing",
 	// increments its attempts counter store-side, and clears LastError.
-	// A missing id is a no-op.
-	MarkEnvelopeProcessing(ctx context.Context, id string) error
+	// It reports false, writing nothing, for a missing id or an envelope
+	// already processed.
+	MarkEnvelopeProcessing(ctx context.Context, id string) (bool, error)
 }
 
 // dedupeKeyRegistrar is the optional InboundStore capability IngestHandler
@@ -414,6 +415,12 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		if env == nil {
 			return fmt.Errorf("webhook: envelope %q not found", p.EnvelopeID)
 		}
+		// A redelivered job (a crash before the queue's ack, or its lease
+		// expiry under a slow first runner) for an envelope another run
+		// already settled is acked without running the handler again.
+		if env.Status == InboundStatusProcessed {
+			return nil
+		}
 
 		// Transition to processing and record the attempt before invoking
 		// the business handler, so a crash mid-handler leaves the envelope
@@ -429,8 +436,13 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		env.LastError = ""
 		env.UpdatedAt = time.Now().UTC()
 		if claimer, ok := store.(envelopeProcessingClaimer); ok {
-			if err := claimer.MarkEnvelopeProcessing(ctx, env.ID); err != nil {
+			admitted, err := claimer.MarkEnvelopeProcessing(ctx, env.ID)
+			if err != nil {
 				return fmt.Errorf("webhook: mark envelope processing: %w", err)
+			}
+			// Settled (or deleted) after the load above.
+			if !admitted {
+				return nil
 			}
 		} else {
 			env.Attempts++

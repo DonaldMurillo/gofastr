@@ -98,12 +98,20 @@ func (s *Server) Start() (string, error) {
 	return "http://" + ln.Addr().String(), nil
 }
 
-// Stop terminates the server.
+// Stop terminates the server. It waits for in-flight requests until ctx
+// ends, then closes the connections left: Shutdown never closes an active
+// connection, and an /events stream with a reading browser never finishes,
+// so its handler, seat and bus subscription would outlive Stop
+// (2026-10-27 H26). It returns ctx's error when it had to close any.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.srv == nil {
 		return nil
 	}
-	return s.srv.Shutdown(ctx)
+	err := s.srv.Shutdown(ctx)
+	if err != nil {
+		_ = s.srv.Close()
+	}
+	return err
 }
 
 // ---------- handlers ----------

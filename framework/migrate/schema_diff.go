@@ -51,6 +51,9 @@ type SchemaChange struct {
 	// one with foreign keys off, and GeneratePlan refuses one that a
 	// row-mutating ON DELETE action references.
 	sqliteRebuildOf string
+	// rebuiltTable is that entity's table as declared, so the apply
+	// can read the triggers its DROP TABLE takes.
+	rebuiltTable string
 
 	// deferredFKs are the declared foreign keys this Postgres key change
 	// detaches and cannot re-add yet, because their child table gains the
@@ -267,6 +270,9 @@ func execChanges(ctx context.Context, tx *sql.Tx, changes []SchemaChange) (int, 
 // lost its rows and a SET NULL child lost its link. The set runs in one
 // transaction on a connection with foreign keys off, and is rolled back if
 // PRAGMA foreign_key_check finds a dangling reference before commit.
+//
+// Each change runs through execRebuild, which puts back the triggers the
+// DROP takes.
 func applySQLiteRebuild(ctx context.Context, db *sql.DB, changes []SchemaChange) (int, error) {
 	applied := 0
 	err := withSQLiteRebuildConn(ctx, db, func(conn *sql.Conn) error {
@@ -282,9 +288,11 @@ func applySQLiteRebuild(ctx context.Context, db *sql.DB, changes []SchemaChange)
 		if err != nil {
 			return fmt.Errorf("verify foreign keys before the rebuild: %w", err)
 		}
-		if i, err := execChanges(ctx, tx, changes); err != nil {
-			applied = i
-			return err
+		for i, c := range changes {
+			if err := execRebuild(ctx, tx, c); err != nil {
+				applied = i
+				return fmt.Errorf("apply %q: %w", c.Summary, err)
+			}
 		}
 		after, err := foreignKeyViolations(ctx, tx)
 		if err != nil {
@@ -361,7 +369,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	renameSources := map[string]bool{}    // old column names consumed by a rename
 	renameOldByNew := map[string]string{} // new (lower) → old (lower), so the type-change loop can compare a renamed column's declared type against its live (old-name) type
 	renameNewByOld := map[string]string{} // old (lower) → new, so the live key reads by the names the renames give it
-	for oldName, newName := range ent.Config.Renames {
+	// Sorted by the old name: map order would give the same plan a
+	// different statement order on every run.
+	for _, oldName := range slices.Sorted(maps.Keys(ent.Config.Renames)) {
+		newName := ent.Config.Renames[oldName]
 		oldLow := strings.ToLower(oldName)
 		newLow := strings.ToLower(newName)
 		if _, oldLive := liveLower[oldLow]; !oldLive {
@@ -431,9 +442,9 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		// the way Postgres names the inline constraint. Its Down runs before
 		// the column's, which SQLite needs to drop an indexed column.
 		if f.Unique {
-			uqName, err := query.SafeIdent(tableBase(ent.GetTable()) + "_" + f.Name + "_key")
+			uqName, err := uniqueIndexName(ent, f.Name)
 			if err != nil {
-				return nil, fmt.Errorf("invalid unique index name for %q: %w", f.Name, err)
+				return nil, err
 			}
 			changes = append(changes, SchemaChange{
 				Summary: fmt.Sprintf("%s: unique index %s", ent.GetName(), uqName),
@@ -470,6 +481,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	// must run last: it recreates the table from the entity, so it has to
 	// see the post-rename/post-add/post-drop column set).
 	var sqliteRetypes []retypeCol
+	defaultOwned := map[string]bool{}
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
 			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
@@ -496,6 +508,9 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if dialect == DialectSQLite {
 			sqliteRetypes = append(sqliteRetypes, retypeCol{name: f.Name, liveType: liveType, declaredType: declaredType})
 			continue
+		}
+		if isTextType(liveType) && isIntegerType(declaredType) {
+			defaultOwned[nameLow] = true // the USING form sets the declared default
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
@@ -608,11 +623,46 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		fkDiffer = differ && dialect == DialectSQLite
 	}
 
+	// Unique set or cleared on an existing column, when the snapshot
+	// knows the table's unique columns (see unique.go). A SQLite clear
+	// rebuilds the table below. An add that precedes a rebuild is spent
+	// work, since the DROP takes its index and the new CREATE writes the
+	// UNIQUE inline, but it leaves the same table.
+	var uniqueCleared []string
+	if env != nil && env.uniques != nil {
+		if prevUnique, ok := lookupKeyCase(env.uniques, ent.GetTable()); ok {
+			adds, drops, cleared, err := uniqueFlipChanges(ent, dialect, qtable, liveLower, renameOldByNew, prevUnique)
+			if err != nil {
+				return nil, err
+			}
+			uniqueCleared = cleared
+			changes = append(changes, drops...)
+			changes = append(changes, adds...)
+		}
+	}
+	uniqueRebuild := len(uniqueCleared) > 0 && dialect == DialectSQLite
+
+	// NOT NULL or DEFAULT changed on an existing column, when the
+	// snapshot recorded the table's CREATE TABLE (see
+	// column_constraint.go). A SQLite change rebuilds the table below.
+	var constraintChanged []string
+	if env != nil && env.tableDDL != nil {
+		if prevDDL := lookupStringCase(env.tableDDL, ent.GetTable()); prevDDL != "" {
+			alters, changed, err := constraintChanges(ent, dialect, qtable, prevDDL, renameOldByNew, defaultOwned)
+			if err != nil {
+				return nil, err
+			}
+			constraintChanged = changed
+			changes = append(changes, alters...)
+		}
+	}
+	constraintRebuild := len(constraintChanged) > 0 && dialect == DialectSQLite
+
 	// The SQLite retype rebuild goes LAST: it recreates the table from the
 	// entity, so it must see the column set the renames/adds/drops above
 	// already converged. One change per table, no matter how many columns
 	// retyped — the rebuild converges every declared type at once.
-	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer {
+	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer || uniqueRebuild || constraintRebuild {
 		var parts []string
 		for _, r := range sqliteRetypes {
 			parts = append(parts, fmt.Sprintf("%s type %s → %s", r.name, r.liveType, r.declaredType))
@@ -629,6 +679,12 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		if fkDiffer {
 			summary = strings.TrimPrefix(summary+"; change foreign keys to the declared relations", "; ")
+		}
+		if uniqueRebuild {
+			summary = strings.TrimPrefix(summary+"; drop unique on "+strings.Join(uniqueCleared, ", "), "; ")
+		}
+		if constraintRebuild {
+			summary = strings.TrimPrefix(summary+"; change NOT NULL or default on "+strings.Join(constraintChanged, ", "), "; ")
 		}
 		// The ADD changes above run first, so by the time the rebuild runs
 		// the old table holds the columns they add, filled from their
@@ -892,8 +948,62 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 		SQL:             b.String(),
 		Destructive:     true,
 		sqliteRebuildOf: ent.GetName(),
+		rebuiltTable:    ent.GetTable(),
 		irreversible:    true,
 	}, nil
+}
+
+// execRebuild runs c and, when c rebuilds a SQLite table, puts back the
+// table's own triggers, which its DROP TABLE takes. A generated file and
+// boot put declared routines back by running them, but a trigger written
+// by hand is no routine, and the live apply has no routines at all. The
+// triggers are read just before c runs, not before its change set, so
+// what an earlier RENAME COLUMN in the set rewrote in their bodies stays.
+func execRebuild(ctx context.Context, exec execQueryer, c SchemaChange) error {
+	var triggers []string
+	if c.rebuiltTable != "" {
+		var err error
+		if triggers, err = sqliteTableTriggers(ctx, exec, c.rebuiltTable); err != nil {
+			return fmt.Errorf("read the table's triggers: %w", err)
+		}
+	}
+	if _, err := exec.ExecContext(ctx, c.SQL); err != nil {
+		return err
+	}
+	for _, ddl := range triggers {
+		if _, err := exec.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("recreate a trigger the rebuild dropped: %w", err)
+		}
+	}
+	return nil
+}
+
+// sqliteTableTriggers returns the CREATE TRIGGER statement of each trigger
+// on table, in its schema, as sqlite_master records it, oldest first.
+// table must already be validated.
+func sqliteTableTriggers(ctx context.Context, q queryer, table string) ([]string, error) {
+	schema, base := splitTable(table)
+	// SQLite resolves table names without case, so a trigger written
+	// ON Widgets is on widgets; sqlite_master compares exactly unless told.
+	// SQLite fires a table's triggers for one event newest first, so they
+	// are recreated in the order they were created (rowid order).
+	rows, err := q.QueryContext(ctx, "SELECT sql FROM "+sqliteMaster(table)+
+		" WHERE type = 'trigger' AND tbl_name = ? COLLATE NOCASE ORDER BY rowid", base)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var ddl string
+		if err := rows.Scan(&ddl); err != nil {
+			return nil, err
+		}
+		// sqlite_master records the DDL without its schema, and an
+		// unqualified CREATE TRIGGER lands in main.
+		out = append(out, inSchema(ddl, schema))
+	}
+	return out, rows.Err()
 }
 
 // sqliteRebuildTable names the replacement table a SQLite rebuild fills.
@@ -1073,10 +1183,11 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if f.Unique {
 			col += " UNIQUE"
 		}
-		if (f.Required && f.AutoGenerate == schema.AutoNone) || (inKey && len(keys) > 1) {
+		c := declaredConstraint(f, keys, dialect)
+		if c.notNull {
 			col += " NOT NULL"
 		}
-		col += ColumnDefaultClause(f, dialect)
+		col += c.dflt
 		columns = append(columns, col)
 	}
 	if len(keys) > 1 {

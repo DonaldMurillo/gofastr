@@ -143,30 +143,31 @@ const (
 
 // Rendering rules.
 const (
-	RuleBespokeCSS          = "GOFASTR1801"
-	RuleHardNavigation      = "GOFASTR1802"
-	RuleBespokeEventSource  = "GOFASTR1803"
-	RuleInlineStyle         = "GOFASTR1804"
-	RuleInlineScript        = "GOFASTR1805"
-	RuleUnknownThemeToken   = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
-	RuleHardcodedTokenValue = "GOFASTR1807"
-	RuleFallbackDrift       = "GOFASTR1808"
-	RuleOwnerlessStylesheet = "GOFASTR1809"
-	RuleKitClassSelector    = "GOFASTR1810"
-	RuleImportant           = "GOFASTR1811"
-	RuleRawMediaWidth       = "GOFASTR1812"
-	RuleAnimationNoReduced  = "GOFASTR1813"
-	RuleStaleStyleSource    = "GOFASTR1814"
-	RuleUpstreamCandidate   = "GOFASTR1815"
-	RuleDuplicateStyleName  = "GOFASTR1816"
-	RuleKitRootStyle        = "GOFASTR1817"
-	RuleOwnedHandleLeak     = "GOFASTR1818"
-	RuleAppSheetSelector    = "GOFASTR1819"
-	RuleTokenCustomProperty = "GOFASTR1820"
-	RuleDuplicateTokenValue = "GOFASTR1821"
-	RuleRepeatedLiteral     = "GOFASTR1822"
-	RuleBareThemeLiteral    = "GOFASTR1823"
-	RulePhysicalSide        = "GOFASTR1824"
+	RuleBespokeCSS           = "GOFASTR1801"
+	RuleHardNavigation       = "GOFASTR1802"
+	RuleBespokeEventSource   = "GOFASTR1803"
+	RuleInlineStyle          = "GOFASTR1804"
+	RuleInlineScript         = "GOFASTR1805"
+	RuleUnknownThemeToken    = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
+	RuleHardcodedTokenValue  = "GOFASTR1807"
+	RuleFallbackDrift        = "GOFASTR1808"
+	RuleOwnerlessStylesheet  = "GOFASTR1809"
+	RuleKitClassSelector     = "GOFASTR1810"
+	RuleImportant            = "GOFASTR1811"
+	RuleRawMediaWidth        = "GOFASTR1812"
+	RuleAnimationNoReduced   = "GOFASTR1813"
+	RuleStaleStyleSource     = "GOFASTR1814"
+	RuleUpstreamCandidate    = "GOFASTR1815"
+	RuleDuplicateStyleName   = "GOFASTR1816"
+	RuleKitRootStyle         = "GOFASTR1817"
+	RuleOwnedHandleLeak      = "GOFASTR1818"
+	RuleAppSheetSelector     = "GOFASTR1819"
+	RuleTokenCustomProperty  = "GOFASTR1820"
+	RuleDuplicateTokenValue  = "GOFASTR1821"
+	RuleRepeatedLiteral      = "GOFASTR1822"
+	RuleBareThemeLiteral     = "GOFASTR1823"
+	RulePhysicalSide         = "GOFASTR1824"
+	RuleOwnedStatementAtRule = "GOFASTR1825"
 )
 
 // Permission rules.
@@ -1231,6 +1232,19 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  ":scope { --color-primary: #0F766E; }",
 			Good: ":scope { --board-accent: var(--color-primary); }",
+		}},
+	}, {
+		ID: RuleOwnedStatementAtRule, Slug: "rendering/owned-statement-at-rule",
+		Title: "Owned style holds a statement at-rule", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A *.style.css holds a statement at-rule other than @layer: @import, @charset, @namespace.",
+		Why: "These at-rules count only at the top of a stylesheet, before every other rule. An owned sheet " +
+			"compiles into app.css after the kit's rules, and a scoped one inside its @scope block, so the browser " +
+			"ignores them: the font or sheet an @import names never loads, and nothing on the page says so.",
+		Fix: "Load web fonts through the theme (style.FontFaceCSS) and write the rules you meant to import in the owned sheet itself.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "@import url(fonts.css);\n.lane { order: 1; }",
+			Good: ".lane { order: 1; }",
 		}},
 	}, {
 		ID: RuleDuplicateTokenValue, Slug: "rendering/duplicate-token-value",

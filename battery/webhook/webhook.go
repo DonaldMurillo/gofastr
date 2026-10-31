@@ -601,6 +601,13 @@ func (m *Manager) tick(ctx context.Context) {
 	}
 	for i, d := range due {
 		if ctx.Err() != nil {
+			// Shutdown mid-batch: the rest were claimed, their attempt
+			// spent, and never sent. Hand them back refunded, as a lease
+			// too short to start them does; with MaxAttempts 1 the next
+			// claim dead-lettered them unsent.
+			if r, ok := m.store.(claimReleaser); ok {
+				m.releaseClaims(ctx, r, due[i:])
+			}
 			return
 		}
 		// The whole batch shares one lease, and the attempts run one

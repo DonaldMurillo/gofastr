@@ -11,10 +11,16 @@ which query parameters you send.
 
 | Mode    | Query parameters         | Response shape   |
 |---------|--------------------------|------------------|
-| Offset  | `?page=2&limit=20`       | `OffsetPage`     |
+| Offset  | `?page=2&limit=20`       | `ListResponse`   |
 | Cursor  | `?cursor=<opaque>&limit=20` | `CursorPage`  |
 
 If both are sent, `cursor` wins.
+
+`ListResponse` always carries `data`, `total`, `page`, `perPage` and
+`totalPages`; `CursorPage` always carries `data`, `cursor` and
+`hasMore`. The OpenAPI document describes the list route's 200 as
+`oneOf` the two and marks those keys `required`, so a body matches
+exactly one of them.
 
 ## Opting in
 

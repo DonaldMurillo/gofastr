@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Validate decodes, type-checks, and bounds-checks a ui.node.v1 JSON tree.
@@ -308,6 +310,9 @@ func rejectDuplicateKeys(data []byte) error {
 }
 
 // walkDupCheck descends into one JSON value (object, array, or scalar).
+// It recurses once per nesting level before decodeNode's MaxDepth runs;
+// json.Decoder.Token bounds that at 10000 on Go 1.27, which go.mod
+// requires (TestDupWalkDepthBound).
 func walkDupCheck(dec *json.Decoder) error {
 	t, err := dec.Token()
 	if err != nil {
@@ -353,7 +358,12 @@ func walkObjectDupCheck(dec *json.Decoder) error {
 		if !ok {
 			return errors.New("uinodev1: decode: object key is not a string")
 		}
-		norm := foldASCIIKey(key)
+		// ASCII folding only: a Unicode fold (strings.ToLower) maps
+		// homoglyphs onto ASCII (ſ → s) and would refuse keys Go's json
+		// decoder treats as distinct; ASCII folding is exactly the
+		// collision stdlib's case-insensitive struct-tag matching can
+		// produce.
+		norm := asciicase.Lower(key)
 		if prev, dup := seen[norm]; dup {
 			if prev == key {
 				return errDupKey(key)
@@ -369,18 +379,4 @@ func walkObjectDupCheck(dec *json.Decoder) error {
 		return err
 	}
 	return nil
-}
-
-// foldASCIIKey lowercases ASCII letters only. Unicode case folding
-// (strings.ToLower) maps homoglyphs onto ASCII (ſ → s), which would refuse
-// keys Go's json decoder treats as distinct; ASCII folding is exactly the
-// collision stdlib's case-insensitive struct-tag matching can produce.
-func foldASCIIKey(k string) string {
-	b := []byte(k)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
 }

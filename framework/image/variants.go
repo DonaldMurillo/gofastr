@@ -134,6 +134,9 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 	if s.RejectAnimated && src.frames > 1 {
 		return VariantResult{}, ErrAnimatedSource
 	}
+	if err := s.checkUpFront(src); err != nil {
+		return VariantResult{}, err
+	}
 
 	baseName := s.BaseName
 	if baseName == "" {
@@ -155,13 +158,8 @@ func (s VariantSet) Process(src *Image) (VariantResult, error) {
 		}
 
 		// Width-only resize already preserves aspect; an extra FitInside
-		// pass would re-quantise the height and lose a pixel. Without
-		// AllowUpscale, clamp the target width to the source width.
-		targetW := v.Width
-		if !s.AllowUpscale && targetW > bounds.Dx() {
-			targetW = bounds.Dx()
-		}
-		scaled := src.Resize(targetW, 0)
+		// pass would re-quantise the height and lose a pixel.
+		scaled := src.Resize(s.targetWidth(v, bounds.Dx()), 0)
 		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
@@ -295,6 +293,9 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 	if s.RejectAnimated && src.frames > 1 {
 		return StreamResult{}, ErrAnimatedSource
 	}
+	if err := s.checkUpFront(src); err != nil {
+		return StreamResult{}, err
+	}
 
 	baseName := s.BaseName
 	if baseName == "" {
@@ -315,11 +316,7 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		if v.Format == FormatUnknown {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Format must be set", i)
 		}
-		targetW := v.Width
-		if !s.AllowUpscale && targetW > bounds.Dx() {
-			targetW = bounds.Dx()
-		}
-		scaled := src.Resize(targetW, 0)
+		scaled := src.Resize(s.targetWidth(v, bounds.Dx()), 0)
 		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
@@ -371,6 +368,48 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		result.BlurHash = hash
 	}
 	return result, nil
+}
+
+// targetWidth is v's resize width: without AllowUpscale it is clamped
+// to the source width.
+func (s VariantSet) targetWidth(v Variant, srcW int) int {
+	if !s.AllowUpscale && v.Width > srcW {
+		return srcW
+	}
+	return v.Width
+}
+
+// checkUpFront refuses colliding names and resize targets past the
+// source's MaxPixels before any variant is encoded, so ProcessTo never
+// hands its sink part of a set it then refuses.
+func (s VariantSet) checkUpFront(src *Image) error {
+	if err := CheckVariantNames(s.Variants); err != nil {
+		return err
+	}
+	w := src.Bounds().Dx()
+	for i, v := range s.Variants {
+		if err := src.checkResize(s.targetWidth(v, w), 0); err != nil {
+			return fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// CheckVariantNames reports two variants whose file names would be the
+// same (the same Suffix, or a Suffix equal to another's width, with the
+// same Format), which would overwrite each other in storage. Process and
+// ProcessTo call it; a caller that holds a variant list from
+// configuration can call it at startup.
+func CheckVariantNames(vs []Variant) error {
+	seen := make(map[string]int, len(vs))
+	for i, v := range vs {
+		name := variantName("", v)
+		if j, dup := seen[name]; dup {
+			return fmt.Errorf("image: VariantSet.Variants[%d] and Variants[%d] both name %q", j, i, "<base>"+name)
+		}
+		seen[name] = i
+	}
+	return nil
 }
 
 // variantName composes a storage-friendly file name for a variant. If

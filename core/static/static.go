@@ -525,6 +525,15 @@ func hasDotDotSegment(p string) bool {
 // already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
 // or VCS metadata (.git) and must not be served by a public static
 // handler.
+// Refuses reports whether the handler refuses p, a slash-separated path
+// below the served root: one with a dot segment (.env, .git/config) or a
+// well-known server config file (web.config). Code that serves or
+// publishes a file tree by another route calls it to refuse the same
+// paths.
+func Refuses(p string) bool {
+	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p)
+}
+
 func hasDotfileSegment(p string) bool {
 	for _, component := range strings.Split(p, "/") {
 		if component == "" || component == "." || component == ".." {

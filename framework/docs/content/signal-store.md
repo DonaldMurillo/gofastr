@@ -70,7 +70,9 @@ id="gofastr-signals-page">` listing the page's page-scoped signal names
 (omitted when there are none). A navigation that swaps in a whole
 document, and Back or Forward to the first page loaded, reset those
 names to that document's seed and leave globals alone, so going back to
-page A shows A's values rather than the ones page B left behind.
+page A shows A's values rather than the ones page B left behind. Back or
+Forward to any cached page, on a layout with outlets too, restores the
+values that page arrived with.
 
 ## Computed (derived) values
 
@@ -92,6 +94,14 @@ the JS reducer registered under its name. Register reducers as real functions,
 > Reducers must load **after** `runtime.js`: the runtime assigns the
 > `window.__gofastr` namespace wholesale on boot, which would wipe a
 > `_reducers` map set before it.
+
+Computed slices may read other computed slices, but not in a circle.
+`Computed` panics when a declaration closes a cycle (`a` reads `b`, `b`
+reads `a`, or a slice listing itself) and names the path:
+`store: computed "c.b" has a dependency cycle: c.b -> c.a -> c.b`. The
+runtime also never re-runs a node inside its own recompute, so a cycle in
+hand-written `data-cui-computed-deps` stops when it comes back round to a
+node still recomputing, instead of recursing until the stack overflows.
 
 ## Retrofitted components
 

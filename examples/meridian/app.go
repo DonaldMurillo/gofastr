@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"log"
-	"net/url"
 	"os"
 	"slices"
 
@@ -67,27 +66,20 @@ func appBaseCSS() string {
 	return ""
 }
 
-// authPolicy gates a screen: redirect anonymous GETs to the login
+// authPolicy gates a screen: redirect an anonymous visitor to the login
 // page (with ?next=) and 403 a signed-in user missing the required role.
+// The role check is auth.RolePolicy, so an access Decider binds it.
 func authPolicy(loginPath, role string) app.Policy {
+	signedIn := auth.SessionPolicy(auth.WithRedirect(loginPath))
+	if role == "" {
+		return signedIn
+	}
+	hasRole := auth.RolePolicy(auth.Roles(role))
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
-		u, ok := handler.GetUser(ctx)
-		if !ok || u == nil {
-			next := "/"
-			if r := app.RequestFromContext(ctx); r != nil {
-				next = r.URL.Path
-			}
-			return decide.Redirect(loginPath + "?next=" + url.QueryEscape(next))
+		if d := signedIn.Decide(ctx); d.Kind != app.DecisionAllow {
+			return d
 		}
-		if role != "" {
-			if rh, ok := u.(interface{ GetRoles() []string }); ok {
-				if slices.Contains(rh.GetRoles(), role) {
-					return decide.Allow()
-				}
-			}
-			return decide.Block(403)
-		}
-		return decide.Allow()
+		return hasRole.Decide(ctx)
 	})
 }
 
@@ -397,7 +389,9 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			log.Fatalf("service account store: %v", err)
 		}
 		authMgr.Use(auth.NewTokensPlugin(apiTokens))
-		authMgr.Init(fwApp)
+		if err := authMgr.Init(fwApp); err != nil {
+			log.Fatal(err)
+		}
 		auth.SetDefaultLoginErrorPath("/login")
 		// Bootstrap admin account so the back-office is reachable on a
 		// fresh database. Created only when absent (idempotent). The

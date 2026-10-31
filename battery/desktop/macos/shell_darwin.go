@@ -326,6 +326,9 @@ type darwinShell struct {
 	// the native driver matches (nameMenuItem).
 	menuNames      map[objc.ID]menuName
 	onWindowClosed func(id string)
+	// allowNavigation decides every main-frame navigation
+	// (decidePolicyForNavigationAction:), on the main thread.
+	allowNavigation func(url string) bool
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.
 	onWindowFrame func(id string, f desktop.Frame)
@@ -476,6 +479,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.onSettings = cfg.OnSettings
 	s.textCtx = textCtx
 	s.onWindowClosed = cfg.OnWindowClosed
+	s.allowNavigation = cfg.AllowNavigation
 	s.onWindowFrame = cfg.OnWindowFrame
 	s.onWindowFocus = cfg.OnWindowFocus
 	s.onWindowBlur = cfg.OnWindowBlur
@@ -982,11 +986,21 @@ func (s *darwinShell) drainAsync(deadline time.Time) {
 	}
 }
 
-// Snapshot captures this window's rendered page as PNG bytes.
+// Snapshot captures this window's rendered page as PNG bytes. A
+// capture the caller gives up on (ctx done, or the timeout) still
+// completes later, on the result channel every window's capture shares,
+// so the lock passes to drainSnap, which takes that completion before
+// the next capture can start: otherwise the next one returns the stale
+// image, and every one after it runs a capture behind.
 func (w *darwinWindow) Snapshot(ctx context.Context) ([]byte, error) {
 	s := w.shell
 	s.snapMu.Lock()
-	defer s.snapMu.Unlock()
+	held := true
+	defer func() {
+		if held {
+			s.snapMu.Unlock()
+		}
+	}()
 	_, wv := w.ids()
 	if wv == 0 || s.snapBlock == 0 {
 		return nil, errWindowClosed()
@@ -1001,6 +1015,7 @@ func (w *darwinWindow) Snapshot(ctx context.Context) ([]byte, error) {
 	}); err != nil {
 		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
+	var err error
 	select {
 	case out := <-s.snapRes:
 		if out.errText != "" {
@@ -1009,9 +1024,25 @@ func (w *darwinWindow) Snapshot(ctx context.Context) ([]byte, error) {
 		}
 		return out.png, nil
 	case <-ctx.Done():
-		return nil, desktop.ErrCancelled
+		err = desktop.ErrCancelled
 	case <-time.After(snapTimeout):
-		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "snapshot timed out"}
+		err = &desktop.Error{Code: desktop.CodeInternal, Message: "snapshot timed out"}
+	}
+	held = false
+	go s.drainSnap()
+	return nil, err
+}
+
+// drainSnap takes the completion of a capture whose caller already
+// returned, then releases snapMu, which the caller handed it. No other
+// capture is in flight while the lock is held, so the next completion
+// is that one, whichever window it came from. A capture that never
+// completes holds the lock one more snapTimeout at most.
+func (s *darwinShell) drainSnap() {
+	defer s.snapMu.Unlock()
+	select {
+	case <-s.snapRes:
+	case <-time.After(snapTimeout):
 	}
 }
 

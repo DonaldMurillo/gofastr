@@ -577,6 +577,29 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
 		}
+		// An account claim that removed the link after it was resolved
+		// above revoked sessions before this one existed. Resolve the link
+		// again now the session is stored: a claim unlinks before it
+		// revokes, so a link still naming this user means any revoke is
+		// still to come and reaches this session, and a link gone drops it.
+		if !p.linkStillNames(r.Context(), userStore, info, user.GetID()) {
+			undo, cancel := undoContext(r.Context())
+			delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
+			cancel()
+			if delErr != nil {
+				slog.Warn("auth: dropping a session minted under a removed OAuth link failed",
+					"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
+			}
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "oauth.refused",
+				UserID: user.GetID(),
+				Email:  info.Email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"provider": providerName, "reason": "link_removed"},
+			})
+			writeAuthError(w, r, http.StatusUnauthorized, reasonOauthLinkRemoved)
+			return
+		}
 		// Set the session cookie through the one mint helper:
 		// SameSite=Strict, the password-login mint's posture. The state
 		// cookie keeps its own Lax (it must ride the provider's
@@ -624,29 +647,39 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	if !ok || userID == "" || !p.stateUnspent(nonce) {
 		return false
 	}
+	target, ok := sameOriginTarget(r)
+	if !ok {
+		return false
+	}
+	writeSameSiteHop(w, r, target, oauthHopTitle)
+	return true
+}
+
+// sameOriginTarget is r's own path and query, for a hop page to load
+// again from this origin. It reports false for a path that would leave
+// the origin.
+func sameOriginTarget(r *http.Request) (string, bool) {
 	path := r.URL.EscapedPath()
 	// A scheme-relative "//host" would leave this origin. A backslash
 	// needs no check: EscapedPath writes it as %5C.
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return false
+		return "", false
 	}
-	target := path
 	if r.URL.RawQuery != "" {
-		target += "?" + r.URL.RawQuery
+		path += "?" + r.URL.RawQuery
 	}
-	writeSameSiteHop(w, r, target)
-	return true
+	return path, true
 }
 
 // writeSameSiteHop writes the hop page: a meta refresh to target, plus a
 // link for a browser that does not follow it. It ships no CSS and no
 // script, like the magic-link fallback page, and its words are phrases in
-// the caller's locale. target is a same-origin path built by sameSiteHop.
-func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string) {
+// the caller's locale. target is a same-origin path from sameOriginTarget.
+func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string, heading i18n.Phrase) {
 	ctx := r.Context()
 	lang := i18n.DocLang(ctx)
 	href := html.EscapeString(urlsafe.CleanAnchor(target))
-	title := html.EscapeString(oauthHopTitle.Text(ctx))
+	title := html.EscapeString(heading.Text(ctx))
 	body := `<!doctype html>
 <html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
 <head>
@@ -664,7 +697,8 @@ func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string) {
 </body>
 </html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The URL carries the authorization code and the state.
+	// The URL carries a token: an authorization code and state, or a
+	// verification token.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
@@ -741,7 +775,15 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 	// Step 1: existing (provider, provider_id) link → login.
 	if found, err := linker.FindByOAuth(ctx, info.Provider, info.ID); err == nil {
 		// Best-effort profile refresh; a failure here does not block login.
-		_ = linkOAuthPreferEnriched(ctx, store, linker, found.GetID(), info)
+		// UPDATE-only: an account claim may have removed the link since
+		// the lookup, and re-linking here would undo it.
+		if refresher, ok := store.(OAuthProfileRefresher); ok {
+			_ = refresher.RefreshOAuthProfile(ctx, found.GetID(), info.Provider, info.ID, OAuthAccountProfile{
+				Email:     info.Email,
+				Name:      info.Name,
+				AvatarURL: info.AvatarURL,
+			})
+		}
 		// The linked IdP vouches for the account's own address: record
 		// it, so an account from before email_verified regains the
 		// step-2b auto-link. The address must match exactly (both sides
@@ -893,6 +935,18 @@ func (p *OAuth2Plugin) authoritativeOAuthOwner(ctx context.Context, linker OAuth
 		return nil, fmt.Errorf("%w: link absent immediately after write", errOAuthLookupFailed)
 	}
 	return owner, nil
+}
+
+// linkStillNames reports whether the (provider, providerID) link resolves
+// to userID. A failed lookup reads as no: the session it guards is dropped
+// and the user signs in again.
+func (p *OAuth2Plugin) linkStillNames(ctx context.Context, store UserStore, info *OAuth2UserInfo, userID string) bool {
+	linker, ok := store.(OAuthLinker)
+	if !ok {
+		return false
+	}
+	u, err := linker.FindByOAuth(ctx, info.Provider, info.ID)
+	return err == nil && u != nil && u.GetID() == userID
 }
 
 // linkOAuthPreferEnriched persists the (provider, providerID) bind plus

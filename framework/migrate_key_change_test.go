@@ -534,3 +534,22 @@ func TestJoinEntityMissingLinkColumn(t *testing.T) {
 		t.Fatalf("AutoMigrate = %v, want the missing link column refused", err)
 	}
 }
+
+// A Through spelled main.enrollments may be the enrollments join entity's
+// table, so it is refused at boot instead of read past the join entity's
+// gates (2026-10-27 D9).
+func TestJoinEntityThroughSchemaSpelling(t *testing.T) {
+	ents := schoolEntities(nil)
+	ents[0].Config.Relations[1] = entity.ManyToMany("courses", "course", "main.enrollments", "student_id", "course_id")
+	reg := NewRegistry()
+	for _, e := range ents {
+		if err := reg.Register(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db := openTestDB(t, DialectSQLite)
+	err := AutoMigrate(db, reg)
+	if err == nil || !strings.Contains(err.Error(), "spell them the same") {
+		t.Fatalf("AutoMigrate = %v, want the schema spelling refused", err)
+	}
+}

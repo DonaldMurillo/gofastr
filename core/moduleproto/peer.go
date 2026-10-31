@@ -104,7 +104,14 @@ type Peer struct {
 	abandonedFIFO []uint64
 	inflight      int
 	serveInflight int
-	handlers      map[string]Handler
+	// respPending counts served responses whose write has not reached the
+	// codec: the handler returned and released its serve slot, and the
+	// write waits behind another one. dispatch bounds it by
+	// maxServeInflight too. A response leaves the count when its write
+	// takes the codec, before the counterparty can read it, so every
+	// counted response is a call the counterparty still has open.
+	respPending int
+	handlers    map[string]Handler
 	// cancels maps an inbound-request id to every handler currently serving
 	// it. A counterparty is free to reuse ids; nothing on the wire forbids
 	// it, so this cannot be a 1:1 map: keyed by id alone, a second request
@@ -151,6 +158,13 @@ func WithMaxInflight(n int) PeerOption {
 // (there is no response frame to write and no caller to hang).
 // [MethodCancel] is exempt: its built-in handler does no I/O, so it runs on
 // the read loop and a flood can never starve cancellation.
+//
+// The cap also bounds served responses still waiting on their write. A
+// counterparty that stops reading leaves them parked; once n are parked
+// and another is ready, the Peer records [ErrStalled] as its terminal
+// fault and serves nothing more. A counterparty that keeps no more than n
+// requests open, as the descriptor's inflight limit requires, never
+// reaches it.
 func WithMaxServeInflight(n int) PeerOption {
 	return func(p *Peer) {
 		if n > 0 {
@@ -244,18 +258,19 @@ func (p *Peer) setFatal(err error) {
 		close(p.fatalCh)
 		// Mark closed so the read loop's next error is treated as graceful
 		// and so new Call/Notify return ErrClosed. The Peer does NOT own
-		// its transport; the supervisor closes the transport in response
-		// to FatalDone() firing, which in turn lets the blocked read loop
-		// exit and close p.done.
+		// its transport. The process-module supervisor kills the child
+		// when FatalDone fires, which ends the transport, lets a blocked
+		// read loop exit, and closes p.done.
 		p.closed.Store(true)
 	}
 }
 
 // FatalDone returns a channel closed when the first terminal protocol fault is
-// observed. The supervisor observes FatalDone, calls FatalError to retrieve
-// the cause, then tears down the transport (which lets the read loop exit and
-// Done fire). In-flight Calls also select on FatalDone and return the fatal
-// error promptly without waiting for transport teardown.
+// observed. The owner of the transport watches it and tears the transport
+// down, which lets the read loop exit and Done fire; the process-module
+// supervisor does this by killing the child. In-flight Calls also select on
+// FatalDone and return the fatal error promptly without waiting for
+// transport teardown.
 func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 
 // Call originates a request with the given method and params, waits for the
@@ -273,7 +288,11 @@ func (p *Peer) FatalDone() <-chan struct{} { return p.fatalCh }
 //     paired response is dropped instead of faulting the peer (see
 //     [Peer.deliverResponse]). Call does NOT automatically emit
 //     module.cancel; that is supervisor policy, one [Peer.Notify] away
-//     naming the id [Peer.CallWithID] reports.
+//     naming the id [Peer.CallWithID] reports. This holds while the
+//     request frame is still being written to a counterparty that stopped
+//     reading: the write carries on in the background and keeps the
+//     Call's inflight slot until it returns, so such writes never exceed
+//     the cap.
 //   - inflight cap reached: returns [ErrInflightCap] without writing anything.
 //   - Peer closed (or read loop exited): returns [ErrClosed] (or the terminal
 //     [Peer.FatalError] if one was observed).
@@ -332,6 +351,9 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 		onID(id)
 	}
 
+	// writing is the pending request write, nil once it returned.
+	var writing chan error
+
 	// Cleanup on all return paths.
 	defer func() {
 		p.mu.Lock()
@@ -344,8 +366,21 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 			delete(p.pending, id)
 			p.noteAbandonedLocked(id)
 		}
-		p.inflight--
+		if writing == nil {
+			p.inflight--
+		}
 		p.mu.Unlock()
+		if writing != nil {
+			// An abandoned write keeps the inflight slot until it returns,
+			// so writes parked on a counterparty that stopped reading stay
+			// bounded by the cap.
+			go func(w <-chan error) {
+				<-w
+				p.mu.Lock()
+				p.inflight--
+				p.mu.Unlock()
+			}(writing)
+		}
 	}()
 
 	paramsRaw, err := marshalParams(params)
@@ -359,29 +394,60 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 		Method:  method,
 		Params:  paramsRaw,
 	}
-	if err := p.codec.WriteFrame(frame); err != nil {
+	// The codec write has no deadline and blocks while the counterparty
+	// is not reading, so it runs in its own goroutine: ctx, Close and a
+	// fault end the Call while the write is still pending. A Call whose
+	// ctx already ended sends nothing, and frees its slot at once.
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	wrote := make(chan error, 1)
+	writing = wrote
+	go func() { wrote <- p.codec.WriteFrame(frame) }()
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-p.closeCh:
-		return nil, ErrClosed
-	case <-p.fatalCh:
-		return nil, p.FatalError()
-	case <-p.done:
-		// Read loop exited. Surface the terminal error if any, else ErrClosed.
-		if ferr := p.FatalError(); ferr != nil {
-			return nil, ferr
+	// answer holds a response that arrived before the write reported back
+	// (the counterparty read the frame while Write was still returning).
+	// The Call returns it once the write has, so the slot is already free
+	// when the caller's next Call starts.
+	var answer *Frame
+	for {
+		select {
+		case err := <-writing:
+			writing = nil // a nil channel never fires again
+			if answer != nil {
+				return answerResult(answer)
+			}
+			if err != nil {
+				return nil, err
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-p.closeCh:
+			return nil, ErrClosed
+		case <-p.fatalCh:
+			return nil, p.FatalError()
+		case <-p.done:
+			// Read loop exited. Surface the terminal error if any, else ErrClosed.
+			if ferr := p.FatalError(); ferr != nil {
+				return nil, ferr
+			}
+			return nil, ErrClosed
+		case f := <-ch:
+			if writing != nil {
+				answer = f
+				continue
+			}
+			return answerResult(f)
 		}
-		return nil, ErrClosed
-	case f := <-ch:
-		if f.Error != nil {
-			return nil, f.Error
-		}
-		return f.Result, nil
 	}
+}
+
+// answerResult is a Call's return for the paired response f.
+func answerResult(f *Frame) (json.RawMessage, error) {
+	if f.Error != nil {
+		return nil, f.Error
+	}
+	return f.Result, nil
 }
 
 // Notify sends a notification (no id, no response expected) with the given
@@ -504,6 +570,14 @@ func (p *Peer) readLoop() {
 // dispatch routes an inbound Frame to the request/notification/response branch.
 // This is where the per-direction correlation invariant lives.
 func (p *Peer) dispatch(f *Frame) {
+	// A faulted peer serves nothing more: its calls already failed, and a
+	// handler run now would only add a response the stalled or desynced
+	// transport cannot carry.
+	select {
+	case <-p.fatalCh:
+		return
+	default:
+	}
 	switch {
 	case f.Method != "" && f.ID != nil:
 		// Inbound REQUEST. Dispatch to a handler in its own goroutine so a
@@ -543,12 +617,30 @@ func (p *Peer) dispatch(f *Frame) {
 			// even though the counterparty stayed within the agreed
 			// concurrency. Freeing at handler completion makes exactly N
 			// concurrent callers succeed with no spurious CodeInflightCap.
+			//
+			// A response still waiting on its write is bounded separately.
+			// A counterparty that stops reading what it is sent but keeps
+			// sending paced requests would otherwise park one goroutine per
+			// request on the codec write. Every unwritten response is a call
+			// the counterparty still has open, and so is this one, so a full
+			// count here means it has more open than the serve cap. The
+			// supervisor sets both caps from the module descriptor, which a
+			// conforming child honors; one that exceeds it while not reading
+			// has stalled the transport.
 			resp := p.buildResponse(f)
 			p.mu.Lock()
 			p.serveInflight--
+			stalled := resp != nil && p.respPending >= p.maxServeInflight
+			if resp != nil && !stalled {
+				p.respPending++
+			}
 			p.mu.Unlock()
+			if stalled {
+				p.setFatal(fmt.Errorf("%w: %d responses unwritten", ErrStalled, p.maxServeInflight))
+				return
+			}
 			if resp != nil {
-				_ = p.writeFrame(resp)
+				p.writeServed(resp)
 			}
 		}()
 	case f.Method != "" && f.ID == nil:
@@ -750,6 +842,24 @@ func (p *Peer) deliverResponse(f *Frame) {
 	// ch is buffered (cap 1) so this never blocks even if the Call goroutine
 	// has not yet entered its select.
 	ch <- f
+}
+
+// writeServed writes a served response counted in respPending and takes
+// it out of the count the moment the write holds the codec. Counting it
+// until the write returned let the counterparty read the response, free
+// its slot and send its next call first, so a counterparty at the cap
+// read as one over it and faulted the peer. A write that fails before
+// it holds the codec leaves the response counted; the failure is
+// terminal, and dispatch serves nothing once the peer has faulted.
+func (p *Peer) writeServed(resp *Frame) {
+	err := p.codec.writeFrame(resp, func() {
+		p.mu.Lock()
+		p.respPending--
+		p.mu.Unlock()
+	})
+	if err != nil {
+		p.setFatal(err)
+	}
 }
 
 func (p *Peer) writeFrame(f *Frame) error {
