@@ -20,14 +20,62 @@ import (
 )
 
 func TestDesktopRunFlagParsing(t *testing.T) {
-	f := parseDesktopRunFlags([]string{"--dir", "/tmp/proj", "--pkg=./cmd/app", "--watch"})
+	f := runFlags(t, []string{"--dir", "/tmp/proj", "--pkg=./cmd/app", "--watch"})
 	if f.dir != "/tmp/proj" || f.pkg != "./cmd/app" || !f.watch {
 		t.Fatalf("flags = %+v", f)
 	}
-	def := parseDesktopRunFlags(nil)
+	def := runFlags(t, nil)
 	if def.dir != "." || def.pkg != "." || def.watch {
 		t.Fatalf("defaults = %+v", def)
 	}
+}
+
+// A flag missing its value took the next flag as one, an unknown flag
+// was dropped, and every verb kept its defaults (2026-10-27 bug bash G6).
+func TestDesktopFlagsRefuseTypos(t *testing.T) {
+	for _, args := range [][]string{{"--dir", "--watch"}, {"--wach"}, {"proj"}} {
+		if _, err := parseDesktopRunFlags(args); err == nil {
+			t.Errorf("run %q accepted", args)
+		}
+	}
+	for _, args := range [][]string{{"--id", "--no-sign"}, {"--id=a.b", "--sing=x"}, {"--notarize=false"}} {
+		if _, err := parseDesktopBuildFlags(args); err == nil {
+			t.Errorf("build %q accepted", args)
+		}
+	}
+	if _, err := parseDesktopTypesFlags([]string{"--out", "--pkg", "x"}); err == nil {
+		t.Error("types --out --pkg accepted")
+	}
+	if f := buildFlags(t, []string{"--format="}); !f.formatSet {
+		t.Error("an empty --format= no longer counts as set")
+	}
+}
+
+func runFlags(t *testing.T, args []string) desktopRunFlags {
+	t.Helper()
+	f, err := parseDesktopRunFlags(args)
+	if err != nil {
+		t.Fatalf("parseDesktopRunFlags(%q): %v", args, err)
+	}
+	return f
+}
+
+func buildFlags(t *testing.T, args []string) desktopBuildFlags {
+	t.Helper()
+	f, err := parseDesktopBuildFlags(args)
+	if err != nil {
+		t.Fatalf("parseDesktopBuildFlags(%q): %v", args, err)
+	}
+	return f
+}
+
+func typesFlags(t *testing.T, args []string) desktopTypesFlags {
+	t.Helper()
+	f, err := parseDesktopTypesFlags(args)
+	if err != nil {
+		t.Fatalf("parseDesktopTypesFlags(%q): %v", args, err)
+	}
+	return f
 }
 
 func TestDesktopBuildIDValidation(t *testing.T) {
@@ -319,7 +367,7 @@ func TestBuildWindowsICOEmitsFourPNGFrames(t *testing.T) {
 }
 
 func TestDesktopBuildDefaultsNameFromID(t *testing.T) {
-	f := parseDesktopBuildFlags([]string{"--id=dev.gofastr.desktop-notes"})
+	f := buildFlags(t, []string{"--id=dev.gofastr.desktop-notes"})
 	if f.name != "" {
 		t.Fatalf("explicit name default = %q, want empty (derived later)", f.name)
 	}
@@ -329,30 +377,30 @@ func TestDesktopBuildDefaultsNameFromID(t *testing.T) {
 }
 
 func TestDesktopTypesFlagParsing(t *testing.T) {
-	f := parseDesktopTypesFlags([]string{"--pkg", "./examples/desktop-notes", "--out=/tmp/x.d.ts"})
+	f := typesFlags(t, []string{"--pkg", "./examples/desktop-notes", "--out=/tmp/x.d.ts"})
 	if f.pkg != "./examples/desktop-notes" || f.out != "/tmp/x.d.ts" {
 		t.Fatalf("flags = %+v", f)
 	}
-	def := parseDesktopTypesFlags(nil)
+	def := typesFlags(t, nil)
 	if def.pkg != "." || def.out != "desktop.d.ts" {
 		t.Fatalf("defaults = %+v", def)
 	}
 }
 
 func TestDesktopBuildSignFlagParsing(t *testing.T) {
-	f := parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--sign=Developer ID Application: Example"})
+	f := buildFlags(t, []string{"--id=dev.gofastr.x", "--sign=Developer ID Application: Example"})
 	if f.sign != "Developer ID Application: Example" || f.noSign {
 		t.Fatalf("sign flags = %+v", f)
 	}
-	f = parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--sign", "adhoc-test"})
+	f = buildFlags(t, []string{"--id=dev.gofastr.x", "--sign", "adhoc-test"})
 	if f.sign != "adhoc-test" {
 		t.Fatalf("space-separated --sign = %q", f.sign)
 	}
-	f = parseDesktopBuildFlags([]string{"--id=dev.gofastr.x", "--no-sign"})
+	f = buildFlags(t, []string{"--id=dev.gofastr.x", "--no-sign"})
 	if !f.noSign || f.sign != "" {
 		t.Fatalf("no-sign flags = %+v", f)
 	}
-	f = parseDesktopBuildFlags([]string{"--id=dev.gofastr.x"})
+	f = buildFlags(t, []string{"--id=dev.gofastr.x"})
 	if f.noSign || f.sign != "" {
 		t.Fatalf("defaults = %+v (want ad-hoc default, decided later)", f)
 	}

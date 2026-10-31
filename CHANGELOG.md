@@ -316,6 +316,24 @@ few lines, and link the PR or the docs page for the rest.
 - **A hover or visible prefetch keeps the link's query.** It fetched the
   bare path, so the click on `/detail?page=2` missed the entry and
   fetched again.
+- **`gofastr dev`, `desktop run|build|types` and `new` refuse an unknown
+  flag.** A typo kept the defaults, and a flag with no value took the
+  next flag as one: `--addr --no-a11y` set the address to `--no-a11y`
+  and kept the a11y gate on. `new handler --method POST` (the space form
+  its usage shows) scaffolded GET. `dev` refuses `--addr` with `-p`.
+- **`gofastr migrate` refuses a flag its subcommand does not read.**
+  `migrate down --db-ur=<url>` or `--db-url <url>` rolled back the
+  database `DATABASE_URL` names.
+- **CLI rewrites of existing files are atomic.** `init . --force`,
+  `init`'s `.gitignore`, `AGENTS.md` and `CLAUDE.md` merges, `agents
+  sync`, `theme init --force`, `pack -o` and the unmount/remount import
+  rewire truncated each file and wrote it in place, so a crash or a full
+  disk left it empty or half written. Each now writes a temporary file
+  beside it and renames it over, keeping the file's mode, writing
+  through a symlink, and refusing a read-only file as before. An emptied
+  `.agents/` detail file used to block the next sync as hand-written.
+  The `worldreadable` vet check reads the new `atomicfile.Rewrite` as
+  it reads `os.WriteFile`, so the switch hid no mode from it.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

@@ -3034,8 +3034,9 @@ func RunPack(args []string) {
 	// CREATED. Overwriting an existing 0644 file keeps 0644, and this
 	// output carries the jwt_secret, seed password, and credentialed DSN
 	// recovered from .env -- so a second `pack -o` over an earlier run's
-	// file published all three. Open, chmod the handle, then write, the
-	// same order the generated .env uses.
+	// file published all three. The mode is set on a temporary file
+	// before the write, and the file is renamed over the old one, the
+	// same way the generated .env is written.
 	if err := writeSecretFile(out, yml); err != nil {
 		cli.Fail("pack: write %s: %v", out, err)
 		cli.OsExit(1)
@@ -3044,10 +3045,9 @@ func RunPack(args []string) {
 	cli.Success("Packed %s → %s (%d entities, %d screens)", dir, out, len(bp.Entities), len(bp.Screens))
 }
 
-// writeSecretFile writes content at owner-only permissions, tightening a
-// pre-existing file's mode before any content lands. It is the pack-side
-// spelling of internal/fileperm.WriteOwnerOnly (open, chmod the handle,
-// write): the one canonical owner-only write.
+// writeSecretFile replaces path with content at owner-only permissions
+// (fileperm.ReplaceOwnerOnly): the mode is set before any content lands,
+// and a crash mid-write leaves the previous file, never a truncated one.
 func writeSecretFile(path, content string) error {
-	return fileperm.WriteOwnerOnly(path, []byte(content))
+	return fileperm.ReplaceOwnerOnly(path, []byte(content))
 }
