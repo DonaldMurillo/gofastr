@@ -21,7 +21,7 @@ done
 
 # dunstctl count arrived in 1.6; the fixture's width/height/origin settings
 # require 1.7. Reject older or unidentifiable installations before any suites.
-dunst_pattern='^Dunst[[:space:]]+-[[:space:]]+.*notification-daemon[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([^0-9.]|$)'
+dunst_pattern='^Dunst[[:space:]]+-[[:space:]]+.*notification-daemon[[:space:]]+v?([0-9]+)\.([0-9]+)\.([0-9]+)([^0-9.]|$)'
 if ! dunst_info=$(dunst --version 2>/dev/null) || [[ ! $dunst_info =~ $dunst_pattern ]]; then
   echo "Linux desktop tests require dunst >= 1.7.0; cannot determine the installed version." >&2
   exit 1

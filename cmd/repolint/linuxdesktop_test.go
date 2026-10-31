@@ -18,7 +18,7 @@ func TestLinuxDesktopRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail"} {
+	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail", "dunst-v-minimum", "dunst-v-current", "dunst-v-old", "dunst-v-malformed"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			writeTestFile(t, dir, "scripts/test-linux-desktop.sh", string(src))
@@ -92,6 +92,10 @@ exec "$@"
 case "$MODE" in
   dunst-minimum) echo 'Dunst - notification-daemon 1.7.0' ;;
   dunst-future) echo 'Dunst - notification-daemon 2.0.0' ;;
+  dunst-v-minimum) echo 'Dunst - A customizable and lightweight notification-daemon v1.7.0' ;;
+  dunst-v-current) echo 'Dunst - A customizable and lightweight notification-daemon v1.12.2-3-gabc123' ;;
+  dunst-v-old) echo 'Dunst - A customizable and lightweight notification-daemon v1.6.1' ;;
+  dunst-v-malformed) echo 'Dunst - A customizable and lightweight notification-daemon vv1.7.0' ;;
   dunst-1.5) echo 'Dunst - notification-daemon 1.5.0' ;;
   dunst-1.6) echo 'Dunst - notification-daemon 1.6.1' ;;
   dunst-malformed) echo 'unrecognized version' ;;
@@ -135,7 +139,7 @@ esac
 				cmd.Env = append(cmd.Env, "WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=0")
 			}
 			out, err := cmd.CombinedOutput()
-			if mode == "pass" || mode == "safe-zero" || mode == "dunst-minimum" || mode == "dunst-current" || mode == "dunst-future" {
+			if mode == "pass" || mode == "safe-zero" || mode == "dunst-minimum" || mode == "dunst-current" || mode == "dunst-future" || mode == "dunst-v-minimum" || mode == "dunst-v-current" {
 				if err != nil {
 					t.Fatalf("runner: %v\n%s", err, out)
 				}
@@ -159,13 +163,17 @@ esac
 				t.Fatalf("%s unexpectedly passed:\n%s", mode, out)
 			}
 
-			if mode == "dunst-1.5" || mode == "dunst-1.6" || mode == "dunst-malformed" || mode == "dunst-unrelated-version" || mode == "dunst-version-fail" {
+			if mode == "dunst-1.5" || mode == "dunst-1.6" || mode == "dunst-malformed" || mode == "dunst-unrelated-version" || mode == "dunst-version-fail" || mode == "dunst-v-old" || mode == "dunst-v-malformed" {
 				if !strings.Contains(string(out), "require dunst >= 1.7.0") {
 					t.Errorf("missing version prerequisite: %s", out)
 				}
 				if _, err := os.Stat(trace); !os.IsNotExist(err) {
 					t.Error("unsupported dunst ran a native suite")
 				}
+			}
+
+			if mode == "dunst-v-old" && !strings.Contains(string(out), "found 1.6.1") {
+				t.Errorf("tagged old version was not checked against the minimum: %s", out)
 			}
 
 			if mode == "unsafe-sandbox" || mode == "empty-sandbox" {
