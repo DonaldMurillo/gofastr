@@ -1861,6 +1861,7 @@ provider, err := auth.NewOIDCProvider(auth.OIDCConfig{
     ProviderName: "keycloak", // Name() and OAuth2UserInfo.Provider
     // Scopes defaults to ["openid","email","profile"]; set to override.
     // JWKSCacheTTL defaults to 1h.
+    // TokenAuthMethod: "" follows discovery (see below).
 })
 
 oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
@@ -1889,6 +1890,18 @@ following one would re-send the token exchange's POST body —
 `client_secret` and code — verbatim to the redirect target (Go's client
 preserves method and body on 307/308). Mirrors the redirects-off posture
 of A2A push delivery and webhook egress.
+
+The code exchange authenticates the client one of two ways.
+`auth.OIDCAuthClientSecretPost` sends `client_id` and `client_secret` in
+the form body; `auth.OIDCAuthClientSecretBasic` sends them in an HTTP
+Basic `Authorization` header, each form-encoded first (RFC 6749 §2.3.1).
+With `TokenAuthMethod` empty, the discovery document's
+`token_endpoint_auth_methods_supported` decides: the body form when the
+list is absent or names `client_secret_post`, Basic when it names
+`client_secret_basic` and not post. A list naming neither fails the
+exchange before the secret is sent. Set `TokenAuthMethod` when a
+provider's document is wrong about what its endpoint accepts; any other
+value fails `NewOIDCProvider`.
 
 **What gets verified** before `ExchangeCode` returns:
 

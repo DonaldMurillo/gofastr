@@ -369,6 +369,31 @@ few lines, and link the PR or the docs page for the rest.
 - **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
   string.** `"use":[]` or `"alg":false` read as absent, so the key
   passed both restriction checks.
+- **The relay aborts an upstream response that runs past
+  `MaxBodyBytes`.** The cap ended the body with a clean EOF, so a chunked
+  response arrived as a whole 200 that was cut short, and `CacheOK` could
+  keep it. It is now a read error, which aborts the stream.
+- **`mcp.Server.ServeStdio` returns when its context ends on silent
+  input.** It checked the context only between lines, so `kiln mcp` with
+  an idle client ignored SIGTERM until the supervisor's SIGKILL. Kiln's
+  stdio modes now exit 0 on the signal.
+- **`App.Shutdown` cancels A2A runs and waits for them.** A run is
+  detached from its request, so nothing stopped it: Shutdown returned
+  while skills ran, and they died with the process. The new
+  `a2a.Server.Shutdown(ctx)` refuses new runs, cancels the live ones and
+  waits for each to store its final state.
+- **Kiln refuses a symlinked adapter work directory.** A co-user could
+  plant `/tmp/kiln-<adapter>` as a link to a directory this user owns;
+  the chmod followed it, tightened that directory to 0700 and ran the
+  turn inside it.
+- **OIDC follows the provider's token endpoint auth method.** The secret
+  always went in the form body, so a provider accepting only
+  `client_secret_basic` could not log anyone in. A provider whose
+  discovery lists Basic and not post now gets an `Authorization` header;
+  `OIDCConfig.TokenAuthMethod` overrides discovery.
+- **The admin audits a profile-name change and reserves `/account` and
+  `/shortcuts`.** The name change wrote no audit row, and an app `Page` at
+  either path silently replaced the built-in screen; boot now fails.
 - **Strict JSON decoding folds nested keys the way the decoder does.**
   The nested-key check folded with `strings.ToLower`, which keeps `ſ`
   (U+017F) apart from `s`, while `encoding/json` binds `ſource` to the

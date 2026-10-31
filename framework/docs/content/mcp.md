@@ -599,9 +599,11 @@ What a client sees at the edges:
   refuses outright gets a 403 and holds no stream, instead of holding
   one open silently for its whole life.
 - `ServeStdio(ctx, in, out)` reads line-delimited JSON-RPC from `in` and writes
-  responses to `out`, blocking until EOF. A cancelled context is seen
-  between lines, so to stop a session waiting on silent input, close
-  `in` as well. The
+  responses to `out` until EOF, and returns `ctx.Err()` once the context
+  ends, silent input included. The read runs on its own goroutine, which
+  stays in `in.Read` until a line, EOF or an error arrives; a process
+  exiting on the signal loses nothing, and a caller that goes on using
+  `in` closes it. The
   envelope is decoded with the same strict top-level-key rule as the HTTP
   transports: a line repeating a key or spelling one in two cases is
   refused as invalid JSON, never resolved last-key-wins. The recover

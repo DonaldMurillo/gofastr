@@ -508,3 +508,7 @@ notes:
     find:
       uses:
         - gofastr/core/handler.SSEStream
+  - change: "BREAKING - an admin.Page at /account or /shortcuts fails boot"
+    breaking: true
+    guidance: "An app page at either path silently replaced the built-in account settings or shortcut sheet. Move the page to another path; the boot error names it."
+    nodetect: "the path is a runtime string in admin.Config.Pages; the boot error names it"

@@ -3271,9 +3271,19 @@ func (a *App) shutdown(ctx context.Context) error {
 	a.appCancel = nil
 	srv := a.server
 	a.server = nil
+	a2aSrv := a.a2a
 	a.serverMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	// A2A runs are detached from their requests, so nothing else stops
+	// them. Cancel and wait for them before the HTTP drain, which a
+	// blocking send would otherwise hold, and before the batteries close
+	// the store a run's final state goes to.
+	if a2aSrv != nil {
+		if err := a2aSrv.Shutdown(ctx); err != nil {
+			firstErr = fmt.Errorf("stopping a2a runs: %w", err)
+		}
 	}
 	if srv != nil {
 		// A connection that never sent a request would hold the drain

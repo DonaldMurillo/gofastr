@@ -389,10 +389,16 @@ func stripAbsoluteLinkTargets(h http.Header) {
 	}
 }
 
-// cappedBody stops a response body at a byte budget. It reports io.EOF
-// rather than an error: the client has already received a 200 and its
-// headers by the time this runs, so the truncation cannot be signalled as
-// a status. Truncated-but-terminated beats streaming forever.
+// errUpstreamTooLarge ends a response whose upstream body ran past the
+// route's budget.
+var errUpstreamTooLarge = errors.New("relay: upstream response exceeds MaxBodyBytes")
+
+// cappedBody stops a response body at a byte budget. The client already
+// has the status and headers by then, so the cut cannot be a status; it
+// is a read error instead, which makes ReverseProxy abort the stream.
+// An io.EOF here ended a chunked response cleanly, and the client (or a
+// cache, under CacheOK) took the cut-off body for the whole one. A body
+// that ends exactly at the budget is whole and ends with io.EOF.
 type cappedBody struct {
 	io.ReadCloser
 	remaining int64
@@ -400,7 +406,16 @@ type cappedBody struct {
 
 func (c *cappedBody) Read(p []byte) (int, error) {
 	if c.remaining <= 0 {
-		return 0, io.EOF
+		var probe [1]byte
+		for {
+			n, err := c.ReadCloser.Read(probe[:])
+			switch {
+			case n > 0:
+				return 0, errUpstreamTooLarge
+			case err != nil:
+				return 0, err
+			}
+		}
 	}
 	if int64(len(p)) > c.remaining {
 		p = p[:c.remaining]

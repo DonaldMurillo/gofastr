@@ -197,6 +197,12 @@ type Server struct {
 	mu          sync.Mutex
 	runs        map[string]*run
 	runsByOwner map[string]int
+	// closing is set by Shutdown under mu: no run is claimed after it.
+	closing bool
+	// life ends every run when Shutdown cancels it. A run is detached
+	// from its request (see startRun), so nothing else reaches it.
+	life     context.Context
+	stopLife context.CancelFunc
 }
 
 // run tracks one in-process task run: the context CancelTask reaches,
@@ -216,6 +222,10 @@ type run struct {
 	cancelDone chan struct{}
 	bus        *taskBus
 	done       chan struct{}
+	// released closes when the run leaves the registry, the signal
+	// Shutdown waits on: a claim refused later releases without ever
+	// closing done.
+	released chan struct{}
 	// pausedAt is the version of this run's latest write once its
 	// handler paused the task (RequireInput/RequireAuth), zero before.
 	// A stored version past it was written by a run elsewhere that
@@ -295,7 +305,10 @@ func NewServer(cfg Config) (*Server, error) {
 	if defPage > maxPage {
 		return nil, fmt.Errorf("a2a: Config.DefaultPageSize %d exceeds MaxPageSize %d", defPage, maxPage)
 	}
+	life, stopLife := context.WithCancel(context.Background())
 	return &Server{
+		life:                      life,
+		stopLife:                  stopLife,
 		skills:                    slices.Clone(cfg.Skills),
 		byID:                      byID,
 		store:                     store,
@@ -656,6 +669,7 @@ const (
 	runClaimed runClaimResult = iota
 	runClaimTaskAlreadyActive
 	runClaimOwnerAtLimit
+	runClaimShuttingDown
 )
 
 // claimRun registers a placeholder run for taskID and owner. Claiming
@@ -665,6 +679,9 @@ const (
 func (s *Server) claimRun(taskID, owner string) (*run, runClaimResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closing {
+		return nil, runClaimShuttingDown
+	}
 	if _, exists := s.runs[taskID]; exists {
 		return nil, runClaimTaskAlreadyActive
 	}
@@ -678,6 +695,7 @@ func (s *Server) claimRun(taskID, owner string) (*run, runClaimResult) {
 		cancelDone: make(chan struct{}),
 		bus:        newTaskBus(s.log),
 		done:       make(chan struct{}),
+		released:   make(chan struct{}),
 	}
 	s.runs[taskID] = rn
 	s.runsByOwner[owner]++
@@ -695,6 +713,7 @@ func (s *Server) releaseRun(rn *run) {
 	defer s.mu.Unlock()
 	if s.runs[rn.id] == rn {
 		delete(s.runs, rn.id)
+		close(rn.released)
 		if s.runsByOwner[rn.owner] <= 1 {
 			delete(s.runsByOwner, rn.owner)
 		} else {
@@ -724,6 +743,30 @@ func (s *Server) setRunCancel(rn *run, cancel context.CancelFunc) (halted bool) 
 	return rn.halted.Load()
 }
 
+// Shutdown stops claiming runs, cancels every live run's context, and
+// waits until each has been released (a started run releases after its
+// final state is stored and published) or ctx ends. A handler that ignores its context holds Shutdown only until
+// ctx's deadline. The HTTP handler keeps answering reads; a send or
+// resume after Shutdown is refused.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	s.closing = true
+	released := make([]chan struct{}, 0, len(s.runs))
+	for _, rn := range s.runs {
+		released = append(released, rn.released)
+	}
+	s.mu.Unlock()
+	s.stopLife()
+	for _, r := range released {
+		select {
+		case <-r:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
 // wakeRun cancels a run's context. The cancel func is read under the
 // lock setRunCancel writes it under.
 func (s *Server) wakeRun(rn *run) {
@@ -736,7 +779,8 @@ func (s *Server) wakeRun(rn *run) {
 // startRun launches the handler goroutine for a claimed run. The run
 // context is cut from the request's CANCELLATION but not from the
 // request itself: returnImmediately and stream disconnects must not
-// abort work the client was told is running. TaskTimeout bounds it.
+// abort work the client was told is running. TaskTimeout bounds it, and
+// Shutdown ends it.
 //
 // A CancelTask can land between the claim and this call (a streaming
 // client knows the id once the snapshot is sent): it halts the run and
@@ -748,6 +792,7 @@ func (s *Server) wakeRun(rn *run) {
 // the store, and finishRun releases it.
 func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), s.timeout)
+	stopLife := context.AfterFunc(s.life, cancel)
 	runCtx = WithRequest(runCtx, r)
 	haltedBeforeStart := s.setRunCancel(rn, cancel)
 	if haltedBeforeStart {
@@ -760,6 +805,7 @@ func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 	}
 	go func() {
 		defer func() {
+			stopLife()
 			cancel()
 			s.finishRun(rn)
 		}()
@@ -1025,6 +1071,9 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		if result == runClaimOwnerAtLimit {
 			return nil, nil, nil, ErrUnsupportedOperation("maximum concurrent task runs reached")
 		}
+		if result == runClaimShuttingDown {
+			return nil, nil, nil, ErrUnsupportedOperation("server is shutting down")
+		}
 		if result != runClaimed {
 			// A freshly minted UUID cannot collide; treat as unrecoverable.
 			return nil, nil, nil, Errorf(CodeInternalError, "internal error")
@@ -1107,6 +1156,9 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	}
 	if claimResult == runClaimOwnerAtLimit {
 		return nil, nil, nil, ErrUnsupportedOperation("maximum concurrent task runs reached")
+	}
+	if claimResult == runClaimShuttingDown {
+		return nil, nil, nil, ErrUnsupportedOperation("server is shutting down")
 	}
 	if cfg := pushConfigOf(p); cfg != nil {
 		cfg.TaskID = taskID

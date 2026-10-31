@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -285,9 +286,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeStdio reads JSON-RPC requests from in line-by-line and writes
-// responses to out. It blocks until in returns EOF; ctx is checked
-// between lines, so a caller stopping a session on silent input closes
-// in as well.
+// responses to out. It returns at EOF, or with ctx's error once ctx
+// ends, silent input included: the line read runs on its own goroutine,
+// which stays parked in in.Read until in yields a line or closes. A
+// process that exits on the signal loses nothing to it; a caller that
+// goes on using in closes it.
 func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) error {
 	// A line may be as long as an HTTP body (maxMCPBodyBytes); the
 	// scanner's 64 KiB default ended the session on any larger tool
@@ -308,14 +311,36 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		})
 	}
 
-	for scanner.Scan() {
+	// The scan sends a copy of each line, so it can read ahead while the
+	// loop answers one. stop releases it when the loop returns first.
+	lines := make(chan []byte)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			select {
+			case lines <- bytes.Clone(scanner.Bytes()):
+			case <-stop:
+				return
+			}
+		}
+	}()
+
+	for {
+		var line []byte
+		var open bool
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
+		case line, open = <-lines:
 		}
-
-		line := scanner.Bytes()
+		if !open {
+			break
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if len(line) == 0 {
 			continue
 		}
@@ -347,6 +372,7 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		encoder.Encode(resp)
 	}
 
+	// lines closed: the scan has finished, so its error is settled.
 	err := scanner.Err()
 	if errors.Is(err, bufio.ErrTooLong) {
 		// The scanner cannot resume past the oversized line.

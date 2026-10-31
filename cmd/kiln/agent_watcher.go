@@ -292,10 +292,17 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 			logger.Printf("agent: adapter %q work dir %s: %v", adapter.Name, adapter.Dir, err)
 			return
 		}
+		// The name must be a real directory. chmod follows a symlink,
+		// so a co-user's link to a directory this user owns (a
+		// ~/public_html) passed the ownership check below, tightened
+		// that directory to 0700, and the turn ran inside it.
+		if fi, err := os.Lstat(adapter.Dir); err != nil || !fi.IsDir() {
+			logger.Printf("agent: adapter %q work dir %s is not a directory (a symlink is refused); refusing to run in it", adapter.Name, adapter.Dir)
+			return
+		}
 		if err := os.Chmod(adapter.Dir, 0o700); err != nil {
 			// Fail closed: chmod only succeeds for the owner, so a
-			// co-user's pre-created dir (or a symlink to a target we
-			// do not own) is refused, not adopted.
+			// co-user's pre-created dir is refused, not adopted.
 			logger.Printf("agent: adapter %q work dir %s is not owned by this user (chmod 0700: %v); refusing to run in it", adapter.Name, adapter.Dir, err)
 			return
 		}

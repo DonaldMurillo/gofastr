@@ -72,6 +72,10 @@ want at startup, not a runtime surprise.
   no declared prefix get `404`.
 - **Bodies** are capped per route at `MaxBodyBytes` (default 8 MiB),
   covering both declared `Content-Length` and chunked bodies → `413`.
+  The same budget bounds the upstream's response. Its status and headers
+  are already sent when the cap is reached, so the relay aborts the
+  stream: the client sees a broken response, never a clean one cut
+  short. A response of exactly the budget arrives whole.
 - **Caching**: `CacheOK: false` (default) forces
   `Cache-Control: no-store` on every response. `CacheOK: true` passes
   upstream cache headers through, for immutable versioned assets.
