@@ -1046,7 +1046,7 @@
           return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
         }
         if (!(await cssWait(myEpoch, snap.primary.html, snap.fills, null, load))) return;
-        const envTitle = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+        const envTitle = NS._title(resp);
         document.title = envTitle;
         announceRoute(envTitle);
         if (parts) parts.pending = true;
@@ -1067,7 +1067,7 @@
       let title, body;
       let swapKey = (partial && swapKeyOf(resp)) || '';
       if (partial) {
-        title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+        title = NS._title(resp);
         body = html;
       } else {
         const pdoc = new DOMParser().parseFromString(html, 'text/html');
@@ -1204,12 +1204,12 @@
         };
       }
     }
+    // Re-insert so key order is record order (paths start with "/", never
+    // integer keys); eviction drops the least recently recorded.
+    delete _anchors[path];
     _anchors[path] = rec;
     const ids = Object.keys(_anchors);
-    if (ids.length > 50) {
-      ids.sort();
-      for (const id2 of ids.slice(0, ids.length - 50)) delete _anchors[id2];
-    }
+    for (const id2 of ids.slice(0, ids.length - 50)) delete _anchors[id2];
     try { sessionStorage.setItem(ANCHOR_KEY, JSON.stringify(_anchors)); } catch (_) {}
   };
 

@@ -283,6 +283,14 @@
       console.warn('[gofastr] refused cross-origin fetch:', u);
       return false;
     },
+    /* The screen title a response names. uihost percent-encodes the
+       header and omits it for an untitled screen; document.title is
+       never encoded, so only the header is decoded (a "50% Off" title
+       threw out of navigation). */
+    _title(r) {
+      const t = r.headers.get('X-Gofastr-Title');
+      try { return t ? decodeURIComponent(t) : document.title; } catch (_) { return t; }
+    },
 
     /** Reject dangerous schemes when a signal value is about to be
         written into a URL-bearing HTML attribute (href / src / action
@@ -1761,7 +1769,7 @@
       // stays as it came.
       try { swapKey = decodeURIComponent(swapKey); } catch (_) {}
       if (partial) {
-        title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+        title = window.__gofastr._title(resp);
         body = html;
       } else {
         const pdoc = new DOMParser().parseFromString(html, 'text/html');

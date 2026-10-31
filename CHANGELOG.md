@@ -300,6 +300,22 @@ few lines, and link the PR or the docs page for the rest.
   every second.** The backoff reset on every open, so a 4503 "not now"
   close came back after one second forever. `attempts` now resets only
   after a socket stays open 10 seconds.
+- **A `%` in the page title no longer breaks client navigation.** A
+  screen with no title sends no `X-Gofastr-Title`, and the runtime
+  decoded `document.title` in its place; an app named "50% Off Co."
+  threw on every such navigation and showed the connection error. Only
+  the header is decoded now. The `decodeuriraw` lint fires on a header
+  or `document.title` decoded outside `try`.
+- **Escape leaves a popover open under a modal that refuses Escape.**
+  The key fell through to the popover stack and closed a popover beneath
+  the scrim. A popover opened after the modal still closes.
+- **Back keeps the scroll anchor of a page visited recently.** The
+  50-page anchor store evicted paths in alphabetical order, so a busy
+  `/orders` lost its anchor to a page seen once. It evicts the least
+  recently recorded now.
+- **A hover or visible prefetch keeps the link's query.** It fetched the
+  bare path, so the click on `/detail?page=2` missed the entry and
+  fetched again.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

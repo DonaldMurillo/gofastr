@@ -28,6 +28,9 @@
 // core can still read them.
 (() => {
   'use strict';
+  // Open order across the modal and popover stacks: widgetfocus.js lets
+  // Escape close a popover only when it opened above the top modal.
+  let openSeq = 0;
   const _wEv = (t, d) => {
     const { root, name } = d;
     root.id ||= name;
@@ -261,6 +264,7 @@
       // leaving sticky elements pinned. Scroll position is preserved.
       NS.doc.lockScroll('widget:' + cfg.name);
       NS._modalStack.push(cfg.name);
+      reg.seq = ++openSeq;
       Promise.resolve().then(() => {
         // Prefer an explicit [autofocus] element if the slot author
         // marked one, that's how ui.ConfirmAction opts into focusing
@@ -446,6 +450,7 @@
       reg.closeOnEscape = !!cfg.closeOnEscape;
       reg.closeOnClickOutside = !!cfg.closeOnClick;
       (NS._popoverStack ||= []).push(cfg.name);
+      reg.seq = ++openSeq;
       if (cfg.closeOnClick) {
         const oh = (e) => {
           if (w.contains(e.target)) return;
