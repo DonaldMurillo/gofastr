@@ -2344,9 +2344,18 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_NOTIFICATIONS=1 GDK_BACKEND=x
   go test ./battery/desktop/linux -run '^TestNativeNotificationGraphical$' -count=1 -timeout=90s -v
 ```
 
-For a headless Linux worker with GTK/WebKitGTK, `libnotify`, `dunst` (including
-`dunstctl`), `xdotool`, `dbus` (including `dbus-daemon`), `xvfb` and `xauth` installed, the repository's runner
-executes all nine automated tests in separate invocations:
+For a headless Linux worker with GTK/WebKitGTK, `libnotify`, **dunst 1.7.0 or newer**
+(including its matching `dunstctl`), `xdotool`, `dbus` (including `dbus-daemon`),
+`xvfb` and `xauth` installed, use the repository's runner below.
+
+The notification fixture needs `dunstctl count` (added in 1.6) and the
+`width`/`height`/`origin` geometry options (added in 1.7). The runner checks the
+daemon version before running any suites and refuses older or unrecognized
+versions. Ubuntu 22.04's stock dunst 1.5 package is insufficient for this test;
+use a worker with dunst 1.7 or newer. This test dependency does not raise the
+application shell's GTK/WebKitGTK runtime minimum.
+
+Run all nine automated tests in separate invocations:
 
 ```sh
 ./scripts/test-linux-desktop.sh

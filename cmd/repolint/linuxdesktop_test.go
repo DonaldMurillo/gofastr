@@ -18,7 +18,7 @@ func TestLinuxDesktopRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail"} {
+	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			writeTestFile(t, dir, "scripts/test-linux-desktop.sh", string(src))
@@ -87,9 +87,21 @@ exec "$@"
 `,
 				"xauth":       "#!/usr/bin/env bash\nexit 0\n",
 				"dbus-daemon": "#!/usr/bin/env bash\nexit 0\n",
-				"dunst":       "#!/usr/bin/env bash\nexit 0\n",
-				"dunstctl":    "#!/usr/bin/env bash\nexit 0\n",
-				"xdotool":     "#!/usr/bin/env bash\nexit 0\n",
+				"dunst": `#!/usr/bin/env bash
+[[ $1 = --version ]] || exit 1
+case "$MODE" in
+  dunst-minimum) echo 'Dunst - notification-daemon 1.7.0' ;;
+  dunst-future) echo 'Dunst - notification-daemon 2.0.0' ;;
+  dunst-1.5) echo 'Dunst - notification-daemon 1.5.0' ;;
+  dunst-1.6) echo 'Dunst - notification-daemon 1.6.1' ;;
+  dunst-malformed) echo 'unrecognized version' ;;
+  dunst-unrelated-version) echo 'unknown build (libglib 2.80.0)' ;;
+  dunst-version-fail) exit 1 ;;
+  *) echo 'Dunst - notification-daemon 1.12.2 (2025-03-05)' ;;
+esac
+`,
+				"dunstctl": "#!/usr/bin/env bash\nexit 0\n",
+				"xdotool":  "#!/usr/bin/env bash\nexit 0\n",
 			}
 			for name, body := range stubs {
 				path := filepath.Join("bin", name)
@@ -123,7 +135,7 @@ exec "$@"
 				cmd.Env = append(cmd.Env, "WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=0")
 			}
 			out, err := cmd.CombinedOutput()
-			if mode == "pass" || mode == "safe-zero" {
+			if mode == "pass" || mode == "safe-zero" || mode == "dunst-minimum" || mode == "dunst-current" || mode == "dunst-future" {
 				if err != nil {
 					t.Fatalf("runner: %v\n%s", err, out)
 				}
@@ -146,6 +158,16 @@ exec "$@"
 			} else if err == nil {
 				t.Fatalf("%s unexpectedly passed:\n%s", mode, out)
 			}
+
+			if mode == "dunst-1.5" || mode == "dunst-1.6" || mode == "dunst-malformed" || mode == "dunst-unrelated-version" || mode == "dunst-version-fail" {
+				if !strings.Contains(string(out), "require dunst >= 1.7.0") {
+					t.Errorf("missing version prerequisite: %s", out)
+				}
+				if _, err := os.Stat(trace); !os.IsNotExist(err) {
+					t.Error("unsupported dunst ran a native suite")
+				}
+			}
+
 			if mode == "unsafe-sandbox" || mode == "empty-sandbox" {
 				if !strings.Contains(string(out), "sandbox disabled") {
 					t.Errorf("missing refusal: %s", out)
