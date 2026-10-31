@@ -22,9 +22,10 @@ func MetricsCollector(q Browsable, lane string) func(io.Writer) {
 			return
 		}
 		// Missing status keys default to 0, a fresh queue has nothing
-		// pending or dead-lettered yet.
+		// pending or dead-lettered yet. Every backend files a job that
+		// spent its attempts under "failed".
 		pending := stats["pending"]
-		dead := stats["dead"]
+		dead := stats["failed"]
 
 		fmt.Fprintf(w, "# HELP queue_depth Jobs waiting to be processed.\n")
 		fmt.Fprintf(w, "# TYPE queue_depth gauge\n")

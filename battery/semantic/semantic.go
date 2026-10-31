@@ -158,6 +158,15 @@ type Index interface {
 	Close() error
 }
 
+// ErrIndexLocked is returned by [Open] when another open index, in this
+// process or another, is writing Options.Path. Close that one, or open
+// with Options.ReadOnly to read beside it.
+var ErrIndexLocked = errors.New("semantic: another process has this index open for writing")
+
+// ErrReadOnly is returned by Add, Remove and Snapshot on an index opened
+// with Options.ReadOnly.
+var ErrReadOnly = errors.New("semantic: index is open read-only")
+
 // Options configures [Open].
 type Options struct {
 	// Embedder produces vectors. Required.
@@ -189,6 +198,17 @@ type Options struct {
 	// no-op. When set, [Open] loads any existing snapshot, replays the
 	// WAL on top, and persists subsequent writes through the WAL.
 	Path string
+	// ReadOnly opens Path for reading beside a process that writes it,
+	// such as `gofastr semantic query` while `semantic watch` runs. It
+	// loads the snapshot and every whole WAL record, takes no lock,
+	// and never snapshots, truncates or creates anything; Add, Remove
+	// and Snapshot return [ErrReadOnly]. It requires Path.
+	//
+	// Without it an Open with Path takes an exclusive lock on the
+	// directory (a "lock" file in it), held until Close, and a second
+	// writer gets [ErrIndexLocked]: each writer snapshots and truncates
+	// the WAL the other appends to.
+	ReadOnly bool
 	// SnapshotEvery is the number of mutating ops after which the index
 	// automatically flushes a full snapshot and truncates the WAL. 0
 	// means the default, 1000; -1 snapshots after every op (mostly for
@@ -202,6 +222,9 @@ type Options struct {
 func Open(opts Options) (Index, error) {
 	if opts.Embedder == nil {
 		return nil, errors.New("semantic: Options.Embedder is required")
+	}
+	if opts.ReadOnly && opts.Path == "" {
+		return nil, errors.New("semantic: Options.ReadOnly needs Options.Path: an in-memory index has nothing to read")
 	}
 	if opts.Chunker == nil {
 		opts.Chunker = NewFixedWindow(512, 64)
@@ -223,6 +246,27 @@ func Open(opts Options) (Index, error) {
 			return nil, fmt.Errorf("semantic: Options.Keyword is set but Store %T cannot list chunks: it must implement ChunkIDsForDoc(docID)/ChunkByID(id) for hybrid search", opts.Store)
 		}
 	}
+	// A MemoryKeyword holds the writes of this process only. Over a store
+	// every replica writes, another replica's documents would never reach
+	// this one's keyword leg, and hybrid results would differ by replica.
+	if _, local := opts.Keyword.(*MemoryKeyword); local {
+		if _, shared := opts.Store.(sharedStore); shared {
+			return nil, fmt.Errorf("semantic: Options.Keyword is a MemoryKeyword, which holds one process's writes, but Store %T is shared by every replica: use the store's own keyword index (PgVectorStore.Keyword()) or a shared search backend (WrapSearchBackend)", opts.Store)
+		}
+	}
+	if pk, ok := opts.Keyword.(pgKeyword); ok && opts.Store != Store(pk.s) {
+		return nil, errors.New("semantic: Options.Keyword is the keyword index of another store than Options.Store; its hits would not hydrate")
+	}
+	// A durable store records the model its vectors came from; vectors of
+	// another model of the same dimension would rank as one space.
+	if mb, ok := opts.Store.(modelBinder); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), bindTimeout)
+		err := mb.bindModel(ctx, opts.Embedder.Name())
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if opts.SnapshotEvery == 0 {
 		opts.SnapshotEvery = 1000
 	}
@@ -233,6 +277,7 @@ func Open(opts Options) (Index, error) {
 		keyword:       opts.Keyword,
 		reranker:      opts.Reranker,
 		path:          opts.Path,
+		readOnly:      opts.ReadOnly,
 		snapshotEvery: opts.SnapshotEvery,
 	}
 	err := idx.loadAndReplay()
@@ -242,6 +287,9 @@ func Open(opts Options) (Index, error) {
 	if err != nil {
 		if idx.wal != nil {
 			_ = idx.wal.close()
+		}
+		if idx.lock != nil {
+			_ = idx.lock.Close()
 		}
 		return nil, err
 	}

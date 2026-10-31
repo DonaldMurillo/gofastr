@@ -157,6 +157,8 @@
     const handle = {
       frame: frame,
       destroy() {
+        // A torn-down embed reports nothing more, its watchdog included.
+        clearTimeout(watchdog);
         window.removeEventListener('message', onMessage);
         frame.remove();
         delete target.__gofastrEmbed;

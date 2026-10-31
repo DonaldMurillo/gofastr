@@ -54,12 +54,6 @@ var (
 	inlineCodeRE = regexp.MustCompile("`[^`]*`")
 )
 
-// fenceMarker reports whether a line opens or closes a fenced code block.
-func fenceMarker(line string) bool {
-	t := strings.TrimSpace(line)
-	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
-}
-
 // isExternal reports whether a link target is absolute or off-repo and so
 // outside this gate (http(s)://, mailto:, or a site-root-absolute "/...").
 func isExternal(target string) bool {

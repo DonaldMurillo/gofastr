@@ -138,6 +138,14 @@ type Config struct {
 	// (the monitor was unplugged) is dropped and the window centers.
 	RememberWindows bool
 
+	// DangerouslyAllowForeignNavigation lets a window's page navigate in
+	// place to another origin. By default each shell cancels a
+	// main-frame navigation off the app's own origin, so an external
+	// link does nothing: a foreign page in the app's window looks like
+	// the app to the user, and every native event is evaluated into
+	// that window. Native events stay gated by origin either way.
+	DangerouslyAllowForeignNavigation bool
+
 	// Preferences declares the app's settings screen: typed values
 	// (bool, int, string, choice) stored in the app state under
 	// "settings", read through (*Battery).Preferences, and rendered by
@@ -870,7 +878,7 @@ func (b *Battery) Emit(name string, payload any) error {
 	js := dispatchJS(name, data)
 	var firstErr error
 	for _, w := range ws {
-		if err := w.Eval(js); err != nil {
+		if err := w.Eval(b.inAppJS(js)); err != nil {
 			b.logger.Warn("desktop: emitting an event to a window failed",
 				"window", w.ID(), "error", err.Error())
 			if firstErr == nil {
@@ -1033,14 +1041,15 @@ func (b *Battery) Run(app *framework.App) error {
 				b.logger.Error("desktop: opening the settings window failed", "error", err)
 			}
 		},
-		OnWindowClosed: b.handleWindowClosed,
-		OnDeepLink:     b.handleDeepLink,
-		Frame:          b.rememberedFrame(MainWindowID),
-		OnWindowFrame:  b.onWindowFrame(),
-		SidebarWidth:   b.cfg.SidebarWidth,
-		OnWindowFocus:  b.emitWindowFocus,
-		OnWindowBlur:   b.emitWindowBlur,
-		OnAppearance:   b.emitAppearance,
+		OnWindowClosed:  b.handleWindowClosed,
+		AllowNavigation: b.allowNavigation,
+		OnDeepLink:      b.handleDeepLink,
+		Frame:           b.rememberedFrame(MainWindowID),
+		OnWindowFrame:   b.onWindowFrame(),
+		SidebarWidth:    b.cfg.SidebarWidth,
+		OnWindowFocus:   b.emitWindowFocus,
+		OnWindowBlur:    b.emitWindowBlur,
+		OnAppearance:    b.emitAppearance,
 	}, func(w Window) {
 		b.windowMu.Lock()
 		b.window = w

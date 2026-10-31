@@ -43,3 +43,25 @@ func TestRedispatchKeepsCallerPeer(t *testing.T) {
 		t.Errorf("X-Other = %q, want only credential and peer headers copied", v)
 	}
 }
+
+// The re-dispatched request names the host the MCP caller reached. It
+// carried httptest's example.com, so host middleware (a tenant or site
+// picked from the host, a custom-domain router) served every generated
+// tool as some other site (2026-10-27 bug bash P15).
+func TestRedispatchKeepsCallerHost(t *testing.T) {
+	var got *http.Request
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r
+		w.WriteHeader(http.StatusNoContent)
+	})
+	orig := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	orig.Host = "acme.app.test"
+	ctx := mcp.WithRequest(context.Background(), orig)
+
+	if _, err := runToolRequest(ctx, router, http.MethodGet, "/api/notes", nil); err != nil {
+		t.Fatalf("runToolRequest: %v", err)
+	}
+	if got.Host != orig.Host {
+		t.Errorf("Host = %q, want the caller's %q", got.Host, orig.Host)
+	}
+}

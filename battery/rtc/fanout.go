@@ -159,8 +159,8 @@ func (s *Signaler) clearFanoutLocked() {
 }
 
 // stopFanout is the graceful detach behind Close and the SetFanout
-// cancel: publish empty rosters synchronously, then unsubscribe, stop
-// the publish queue, and stop the heartbeat. rooms is the room map to
+// cancel: stop the heartbeat and the publish queue, publish empty
+// rosters synchronously, then unsubscribe. rooms is the room map to
 // announce empty; nil means the live one. Close passes the snapshot it
 // took before emptying the live map, or nothing would be announced.
 func (s *Signaler) stopFanout(rooms map[string]*room) {
@@ -186,17 +186,21 @@ func (s *Signaler) stopFanout(rooms map[string]*room) {
 	s.clearFanoutLocked()
 	s.mu.Unlock()
 
-	// Synchronous, not through the queue: the queue's stop would race
-	// these last messages. Lossy lane: a timeout falls back to TTL.
+	// The empty rosters go last: wait out the heartbeat, then stop the
+	// queue, which waits for its publish in flight. A roster that landed
+	// after them restored this replica's peers on the others until the
+	// TTL.
+	s.beatWG.Wait()
+	if stopQ != nil {
+		stopQ()
+	}
+	// Synchronous, not through the queue: the queue is stopped. Lossy
+	// lane: a timeout falls back to TTL.
 	publishEmptyRosters(f, nodeID, names)
 
 	if cancel != nil {
 		cancel()
 	}
-	if stopQ != nil {
-		stopQ()
-	}
-	s.beatWG.Wait()
 }
 
 // publishEmptyRosters tells every peer this replica's rooms are empty

@@ -75,6 +75,7 @@ var (
 
 	reasonCascadeKeyFixed = i18n.Define("validation.cascade_key_not_writable", "links through {{column}}, which this write cannot set")
 	reasonNotObject       = i18n.Define("validation.not_object", "must be an object")
+	reasonKeysFold        = i18n.Define("validation.keys_fold", "keys {{first}} and {{second}} both name the field {{column}}")
 	reasonNotArray        = i18n.Define("validation.not_array", "must be an array")
 	reasonNotObjectOrID   = i18n.Define("validation.not_object_or_id", "must be an object or ID")
 	reasonBeyondPrecision = i18n.Define("validation.beyond_precision", "number is beyond exact float64 precision; send the integer as a JSON integer literal or a string")

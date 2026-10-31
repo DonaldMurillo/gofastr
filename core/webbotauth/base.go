@@ -62,7 +62,11 @@ func newRequestCtx(r *http.Request) *requestCtx {
 		}
 	}
 	authority := normalizeAuthority(r.Host, scheme)
-	path := r.URL.Path
+	// RFC 9421 section 2.2.6: the path before any percent-encoded octet
+	// is decoded. URL.Path is the decoded form, which reads /a%2Fb as
+	// /a/b; EscapedPath keeps RawPath, the octets as sent, and a client
+	// request sends EscapedPath on the wire.
+	path := r.URL.EscapedPath()
 	query := r.URL.RawQuery
 	reqTarget := path
 	if query != "" {
@@ -88,18 +92,16 @@ func normalizeAuthority(host, scheme string) string {
 		return ""
 	}
 	h, port, err := splitAuthority(host)
-	defaultPort := (scheme == "https" && port == "443") || (scheme == "http" && port == "80")
-	switch {
-	case err != nil || port == "":
+	if err != nil || port == "" {
 		return strings.ToLower(host)
-	case defaultPort:
-		return strings.ToLower(h)
-	default:
-		if strings.Contains(h, ":") { // bare IPv6 literal
-			h = "[" + h + "]"
-		}
-		return strings.ToLower(h) + ":" + port
 	}
+	if strings.Contains(h, ":") { // bare IPv6 literal, with or without the default port
+		h = "[" + h + "]"
+	}
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		return strings.ToLower(h)
+	}
+	return strings.ToLower(h) + ":" + port
 }
 
 // splitAuthority splits host:port, tolerating bracketed IPv6 literals.

@@ -184,3 +184,29 @@ func TestE2E_CounterNumbersFollowLang(t *testing.T) {
 		t.Fatal("a non-number in number mode did not render as text")
 	}
 }
+
+// Two forms on one page each carry a "replicas" field, so both inputs
+// default their id to the name. The second field's + steps the second
+// input; it used to resolve the id page-wide and step the first
+// (2026-10-27 bug bash U37).
+func TestE2E_ControlsStepperStepsItsOwnInput(t *testing.T) {
+	field := func() string {
+		return string(NumberInput(NumberInputProps{Name: "replicas", Label: "Replicas", Value: "2"}, nil))
+	}
+	b := startBehaviorServer(t, `<form id="f1">`+field()+`</form><form id="f2">`+field()+`</form>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
+		t.Fatal("the stepper marker never loaded headless-controls")
+	}
+	click := `document.querySelector('#f2 [data-hui-number-input-increment]').click()`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(click, nil)); err != nil {
+		t.Fatal(err)
+	}
+	const stepped = `document.querySelector('#f2 input[name=replicas]').value === '3' &&
+		document.querySelector('#f1 input[name=replicas]').value === '2'`
+	if !pollTrue(ctx, stepped) {
+		var got string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('#f1 input[name=replicas]').value + '/' + document.querySelector('#f2 input[name=replicas]').value`, &got))
+		t.Fatalf("the second form's + did not step its own input (f1/f2 = %s)", got)
+	}
+}

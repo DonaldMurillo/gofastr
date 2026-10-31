@@ -234,7 +234,7 @@ func TestArtifactDownloadHeaders(t *testing.T) {
 
 	// ETag revalidation → 304.
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/docs/api/sdk/go.zip", nil)
-	req.Header.Set("If-None-Match", `"aa11"`)
+	req.Header.Set("If-None-Match", `"stale", "aa11"`)
 	resp304, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

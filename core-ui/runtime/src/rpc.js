@@ -420,6 +420,11 @@
       // A save inside an intercept layer returns to the layer (or the
       // page under the stack) it names instead of leaving the stack.
       if (dest && !stale() && !NS._interceptReturn?.(dest, node)) {
+        // A mutation leaves the page it ran on stale: after a delete,
+        // Back replayed the deleted record from the screen cache.
+        // Evict it before leaving; selectors carry no locale prefix
+        // (the kernel's _unlocalize strips it).
+        if (method !== 'GET') NS.invalidate?.(NS._unlocalize(location.pathname) + location.search);
         try { NS.navigate(dest, { force: true }); }
         catch (_) {}
       }

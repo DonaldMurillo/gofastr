@@ -29,7 +29,7 @@ func (f *fakeBrowsable) Stats(_ context.Context) (JobStats, error) {
 // TestQueueMetricsCollector emits queue_depth and queue_dead_letter_total from
 // a Browsable's Stats snapshot, labelled with the queue lane.
 func TestQueueMetricsCollector(t *testing.T) {
-	fake := &fakeBrowsable{stats: JobStats{"pending": 3, "dead": 1}}
+	fake := &fakeBrowsable{stats: JobStats{"pending": 3, "failed": 1}}
 
 	var buf bytes.Buffer
 	MetricsCollector(fake, "ingest")(&buf)

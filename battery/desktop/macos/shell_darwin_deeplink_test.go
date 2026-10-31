@@ -5,9 +5,12 @@ package macos
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
+	"unsafe"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
@@ -53,17 +56,15 @@ func deepLinkIMPCheck() bool {
 	got := make(chan string, 1)
 	installDeepLinkHandler(bridge, func(raw string) { got <- raw })
 
-	// Registration read-back, guarded: the introspection selectors
-	// are not part of the pinned surface, so a manager that lacks them
-	// skips this assertion instead of crashing on an unknown selector.
-	mgr := objc.ID(objc.Send(objc.Class("NSAppleEventManager"), objc.Sel("sharedAppleEventManager")))
-	if objc.SendBool(mgr, objc.Sel("respondsToSelector:"), objc.Sel("eventHandlerForEventClass:andEventID:")) {
-		handler := objc.Send(mgr, objc.Sel("eventHandlerForEventClass:andEventID:"),
-			uintptr(aeGetURLClass), uintptr(aeGetURLID))
-		if objc.ID(handler) != bridge {
-			fail("registered GetURL handler = %#x, want the bridge %#x", handler, uintptr(bridge))
-			return false
-		}
+	// Registration read-back through the Apple Event Manager's own
+	// table (NSAppleEventManager installs through it), keyed by the
+	// codes LaunchServices sends, spelled out: the constants once read
+	// 'GURT' and every other step here still passed. An earlier
+	// read-back asked NSAppleEventManager eventHandlerForEventClass:,
+	// which it does not answer, so it never ran.
+	if err := getURLHandlerInstalled(); err != nil {
+		fail("%v", err)
+		return false
 	}
 
 	// The event: direct object carries the URL string; the target of a
@@ -92,4 +93,30 @@ func deepLinkIMPCheck() bool {
 		fail("OnDeepLink never received the URL")
 		return false
 	}
+}
+
+// getURLHandlerInstalled asks AEGetEventHandler (CoreServices) whether a
+// handler is installed for 'GURL'/'GURL'. errAEHandlerNotFound (-1717)
+// means LaunchServices' URLs would reach nothing.
+func getURLHandlerInstalled() error {
+	cs, err := objc.DlopenGlobal("/System/Library/Frameworks/CoreServices.framework/CoreServices")
+	if err != nil {
+		return fmt.Errorf("dlopen CoreServices: %v", err)
+	}
+	sym, err := objc.Dlsym(cs, "AEGetEventHandler")
+	if err != nil {
+		return err
+	}
+	// OSErr AEGetEventHandler(AEEventClass, AEEventID,
+	//     AEEventHandlerUPP *handler, SRefCon *refcon, Boolean isSys)
+	out := new([2]uintptr)
+	r1, _, _ := ffi.Call(sym, []uintptr{
+		uintptr(fourCC("GURL")), uintptr(fourCC("GURL")),
+		uintptr(unsafe.Pointer(&out[0])), uintptr(unsafe.Pointer(&out[1])), 0,
+	}, nil)
+	runtime.KeepAlive(out)
+	if code := int16(r1); code != 0 {
+		return fmt.Errorf("no handler installed for the GetURL event 'GURL'/'GURL' (OSErr %d)", code)
+	}
+	return nil
 }

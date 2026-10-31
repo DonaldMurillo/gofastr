@@ -64,6 +64,15 @@ if [ ! -f "$BASELINE_FILE" ]; then
   exit 1
 fi
 baseline=$(cat "$BASELINE_FILE")
+# -gt errors on a non-number, and an error inside `if` reads as false, so
+# a bad baseline would fall through to the success line below.
+case "$baseline" in
+  '' | *[!0-9]*)
+    echo "dupl: $BASELINE_FILE holds \"$baseline\", not a clone-group count" >&2
+    echo "run scripts/dupl.sh --rebaseline and commit the file it writes" >&2
+    exit 1
+    ;;
+esac
 
 if [ "$count" -gt "$baseline" ]; then
   echo "FAIL: dupl clone groups grew: $count > baseline $baseline" >&2

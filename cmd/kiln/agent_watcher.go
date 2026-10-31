@@ -262,15 +262,19 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), "KILN_URL="+kilnURL)
 	c.Stderr = os.Stderr // surface diagnostic output to the kiln operator
-	// The child runs in its own process group (the serve twin's
-	// childProcessGroup) and Wait is bounded: an adapter that
+	// The child runs in its own process group (childProcessGroup) and
+	// Wait is bounded: an adapter that
 	// backgrounds a pipe-holding descendant (sleep, tail -f, a server)
 	// leaves the inherited stdout pipe open after the direct child
 	// exits, and an unbounded Output drain would park this turn forever
 	// — cancellation would have nothing left to kill, the superseded
 	// note would never journal, and the goroutine leaks. WaitDelay is
-	// the bound for exactly this shape.
+	// the bound for exactly this shape. Cancel kills the whole group,
+	// not just the direct child, and the group is killed again once the
+	// turn ends: a shell the adapter backgrounded would otherwise keep
+	// calling Kiln after a cancel, a supersede, or a normal exit.
 	c.SysProcAttr = childProcessGroup()
+	c.Cancel = func() error { return killGroup(c.Process) }
 	c.WaitDelay = agentTurnWaitDelay
 	stdout := &cappedBuffer{limit: maxAgentStdout}
 	c.Stdout = stdout
@@ -308,6 +312,9 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 		defer os.RemoveAll(turnDir)
 	}
 	err := c.Run()
+	if c.Process != nil {
+		_ = killGroup(c.Process)
+	}
 	resp := strings.TrimSpace(string(stdout.Bytes()))
 
 	// Cancellation path: this turn was superseded. Render the right

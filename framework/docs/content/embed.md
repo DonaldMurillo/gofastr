@@ -66,9 +66,22 @@ reportsRoutes.Use(embeds.RequireScope("reports:read"))
 A grant reaches its surface's own route subtree (the path of the screen it
 carries) and the browser-runtime endpoints uihost mounts under `/__gofastr`:
 the runtime scripts and stylesheets, `/__gofastr/action`, `/__gofastr/sse`,
-the widget routes (`/__gofastr/widgets`, `/__gofastr/widget/*`), the
-`comp`, `runtime`, `compute`, `pwa` and `icons` asset trees, and the embed
-endpoints themselves. That is a fixed list, not the whole `/__gofastr`
+the widget catalog and action scripts (`/__gofastr/widgets`,
+`/__gofastr/widget/*`), the `comp`, `runtime`, `compute`, `pwa` and
+`icons` asset trees, and the embed endpoints themselves. A widget's own
+style, state and chrome routes (`/core-ui/widget/<name>/style.css`,
+`/state`, `/chrome`) pass only for a widget offered on the surface's
+page (its `Routes` match the surface path, or it has none); a widget
+scoped elsewhere answers 403, whatever session gate it carries.
+framework/uihost installs that check through `(*embed.Host).SetWidgetReach`;
+a `Host` used without uihost and without the call refuses every widget
+route. A
+widget's RPC paths are app routes and need a `Reach` entry, as do a
+widget's `StylePath` or `StatePath` moved off the default and a widget
+mounted on a prefixed router group. Behind that entry a `RequireSession`
+widget's state, chrome and RPC routes take the grant by the same rule:
+the widget must be offered on the surface's page. A
+`RequireAuthenticated` widget refuses a grant on every route. That is a fixed list, not the whole `/__gofastr`
 subtree: batteries mount there too (`battery/rtc` at `/__gofastr/rtc`, the
 desktop bridge at `/__gofastr/desktop`), and a grant reaches none of them.
 **Everything else answers 403** until the surface says otherwise:
@@ -226,7 +239,10 @@ a unique constraint, so "already used" is decided by the database rather than by
 a read followed by a write that two replicas could both win.
 
 The exchange is POST-only and idempotent within the grant's lifetime: a repeat
-returns the same grant. A browser has several ways to fire it twice: the
+returns the same grant. That holds after the nonce itself expires: a frame
+reloaded later re-sends the same nonce and gets the stored grant back while it
+lives. An expired nonce never mints a grant, so one that was never exchanged
+answers expired. A browser has several ways to fire it twice: the
 customer's page prefetches the iframe, a dev double-mounts the loader, a user
 refreshes, and without idempotency the feature surfaces as "the embed randomly
 doesn't load". The POST body is decoded under strict top-level key rules: a
@@ -248,6 +264,13 @@ Use `NewSQLBurnStore` for anything beyond a single long-lived process.
 `NewMemoryBurnStore` keeps its burns in a map: two replicas each keep their own,
 so one nonce is spendable once per replica, and a restart forgets every burn,
 so a nonce still inside its TTL becomes spendable again.
+
+A `SQLBurnStore` row keeps the grant it issued, so a replayed exchange
+returns the same grant, and the grant's subject in a `subject` column.
+`App.EraseUserData` overwrites both for the erased user and keeps the row,
+which still marks the nonce spent; a replay of it is refused. Opening the
+store adds the column to a table an older build created. `App.ExportData`
+leaves the table out, since a restored row would be a live grant.
 
 ## Origins
 
@@ -474,6 +497,12 @@ GoFastrEmbed.mount({
 Same code path as the `data-*` form. The loader mounts once per target element,
 so a double-mount does not create a second frame.
 
+`mount` returns a handle, or `null` when `origin`, `surface`, `token` or the
+target is missing: `handle.frame` is the iframe, and
+`handle.destroy()` removes it and stops listening. A single-page host calls
+`destroy()` when it unmounts the view. After it, `onError` is never called for
+that embed, the 20-second no-load report included.
+
 ## Destructive actions
 
 The allowlist makes a compromised customer, not the open internet, the
@@ -520,9 +549,11 @@ boundary. Hand them this much along with the snippet:
   </script>
   ```
 
-  `onError` fires for a refused handshake, an expired credential, and the
-  20-second no-load watchdog. It is the only signal that crosses the origin
-  boundary into their monitoring.
+  `onError` fires for a refused handshake, an expired credential, the
+  20-second no-load watchdog, and a link or form the panel refuses to follow
+  (`link-navigation-blocked`, `form-navigation-blocked`). A
+  `target="_blank"` link opens its tab and reports nothing. It is the only
+  signal that crosses the origin boundary into their monitoring.
 - **The token is per page load, not per site.** If they cache the page that
   carries it, every visitor served that cached copy arrives as the same
   identity for as long as the nonce lives.

@@ -620,6 +620,16 @@
     // supersede rule (NS._navLive). A writable slot, not a closure,
     // because the module's navigator owns its own navigations.
     _navEpoch: 0,
+    // The path the DOM showed when the pending navigations began, or
+    // null while none is pending. A navigation started while another
+    // still loads keeps it, so a failure rolls back to the page still
+    // shown, never to a superseded destination that never rendered.
+    // Both navigators set it at entry and the live one clears it.
+    _navBase: null,
+    // Set once core's navigator has swapped the DOM. The envelope
+    // module keys the page it finds on the served URL, which is only
+    // right while no navigation has applied before it loaded.
+    _navShown: false,
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
     // _toastTimers, _toastSeq) lives in the registered behaviour module
@@ -908,9 +918,9 @@
 
   // Client signal mutations are core behavior. Keep this delegated listener
   // outside RPC so tabs, counters, and toggles work before any network module
-  // loads. Widget roots retain their own event ownership.
+  // loads. It serves widget roots too: their scoped listener handles only RPC
+  // and close, and leaves a node carrying a signal mutation to this one.
   document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-cui-widget]')) return;
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
     e.preventDefault();
@@ -1176,6 +1186,7 @@
   // first page of a visit, or a fetched document, restores page state
   // the way a partial does. A host that names no keys restores none.
   // (A whole document never carries a partial island of its own.)
+  // The envelope module reads it too.
   const docSeed = (source) => {
     const flat = _json(source.getElementById('gofastr-signals')?.textContent);
     const names = _json(source.getElementById('gofastr-signals-page')?.textContent);
@@ -1187,6 +1198,7 @@
     // "</script>" must not end it.
     return '<script type="application/json" id="gofastr-signals-partial">' + JSON.stringify({ p }).replace(/</g, '\\u003c') + '</script>';
   };
+  window.__gofastr._docSeed = docSeed;
 
   // Cache the initial page so back-navigation to it works instantly.
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
@@ -1468,6 +1480,7 @@
   // back/forward can never leak its position into a later click's
   // finishNav.
   const finishNav = (path, prevPath, cached, root, ps) => {
+    window.__gofastr._navShown = true;
     applyDocShell(root);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
@@ -1483,8 +1496,9 @@
   // A navigation answer that arrives as HTML — 200 or NOT — can be
   // applied through the same swap paths a 200 takes (an error page
   // shows inside the shell instead of toasting). Anything else cannot,
-  // and its fetch throws so the toast names the status.
-  const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
+  // and its fetch throws so the toast names the status, a 200 too:
+  // its text has no <main>, so it would swap in a blank screen.
+  const htmlOnly = (r) => { if (!(r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html')) throw new Error(`HTTP ${r.status}`); };
 
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
       from names the origin route when the caller already moved the URL,
@@ -1560,6 +1574,7 @@
     // pick-edge rule to THIS navigation's epoch before any await.
     window.__gofastr._navHooks.transition?.take(myEpoch);
     const prevPath = from || currentPath;
+    if (window.__gofastr._navBase === null) window.__gofastr._navBase = prevPath;
     currentPath = path;
     // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
@@ -1579,13 +1594,28 @@
       // A cached entry is replayable iff the layer it renders below is
       // live in the DOM right now ('' = both pages are layout-less).
       if (cached) {
-        const slot = cached.layer
-          ? findSlot(cached.layer)
+        let { html, layer } = cached;
+        // An entry keyed above this move's deepest shared layer (the boot
+        // entry sits at <main>'s slot) replays only that layer's cell, with
+        // the entry's page head and seed: replayed whole, it rebuilt the
+        // kept layer's DOM. The envelope module re-captures on leave.
+        const sd = sharedDepth(layouts), deep = sd && domChainKeys()[sd - 1];
+        if (deep && layer !== deep) {
+          const t = document.createElement('template');
+          t.innerHTML = html;
+          const cell = t.content.querySelector(`[data-cui-layout-slot="${CSS.escape(deep)}"]`);
+          if (cell) {
+            html = [...t.content.children].filter((e) => e.matches('template[data-cui-page-head],#gofastr-signals-partial')).map((e) => e.outerHTML).join('') + cell.innerHTML;
+            layer = deep;
+          }
+        }
+        const slot = layer
+          ? findSlot(layer)
           : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
         if (slot) {
           await _swapCommit(myEpoch, prevPath, path, () => {
-            finishNav(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
-          }, cached, cached.html, cached.title);
+            finishNav(path, prevPath, true, swapAtSlot(slot, html), ps);
+          }, cached, html, cached.title);
           return;
         }
       }
@@ -1623,7 +1653,6 @@
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (!_navLive(myEpoch)) return;
-        if (!fr.ok && !respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
@@ -1631,6 +1660,8 @@
         // bar must carry a redirect-added query (e.g. ?next=/admin).
         const to = _followed(fr, path);
         if (to === null) return;
+        // After the redirect: a Document answer is bodiless.
+        htmlOnly(fr);
         const dest = to || path;
         if (to) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
@@ -1682,7 +1713,6 @@
       // A session change is an identity change: one identity's pages
       // must never replay for another.
       if (rs) window.__gofastr.invalidate('*');
-      if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
 
       // Evict server-named stale screens BEFORE chasing a redirect, so
@@ -1716,6 +1746,8 @@
         return loadPage(redirectTo, { bypassCache, from: prevPath, restore: ps });
       }
 
+      // After the redirect legs: their 200s carry no body.
+      htmlOnly(resp);
       const html = await resp.text();
       if (!_navLive(myEpoch)) return;
 
@@ -1755,19 +1787,26 @@
       if (!_navLive(myEpoch)) return;
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
-      // pushState'd by the click handler so revert it.
+      // pushState'd by the click handler so revert it, to the page the
+      // DOM still shows: prevPath names a superseded navigation's
+      // destination when this one started while that one loaded.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
         ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
         : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
-      _pushPub(prevPath || location.pathname, { replace: true });
-      currentPath = prevPath;
+      const base = window.__gofastr._navBase;
+      _pushPub(base || location.pathname, { replace: true });
+      currentPath = base;
     } finally {
       // A stale navigation leaves a newer one's dedup entry alone.
       if (_pendingNav.get(path) === myEpoch) _pendingNav.delete(path);
-      // Only the latest nav owns the aria-busy flag; a superseded nav
-      // that bailed early must leave it for the in-flight one to clear.
-      if (_navLive(myEpoch)) doc.removeHtmlAttr('aria-busy');
+      // Only the latest nav owns the aria-busy flag and the base; a
+      // superseded nav that bailed early must leave both for the
+      // in-flight one.
+      if (_navLive(myEpoch)) {
+        doc.removeHtmlAttr('aria-busy');
+        window.__gofastr._navBase = null;
+      }
     }
   };
 

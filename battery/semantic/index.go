@@ -40,10 +40,18 @@ type index struct {
 
 	path          string
 	snapshotEvery int
+	// readOnly is Options.ReadOnly: no lock, WAL or snapshot writes.
+	readOnly bool
+	// lock is the writer's lock file on path (see lockIndexDir), closed
+	// by Close.
+	lock *os.File
 
 	mu           sync.Mutex
 	wal          *wal
 	opsSinceSnap int
+	// halfApplied is the logged replace whose apply last failed part-way,
+	// nil once every logged write has applied whole.
+	halfApplied *pendingReplace
 
 	// dim caches the store's vector dimension once it is known, so Add
 	// never calls Store.Stats (a full-table COUNT on pgvector, under its
@@ -71,10 +79,20 @@ func (i *index) loadAndReplay() error {
 	snapPath := filepath.Join(i.path, "store.snap")
 	walPath := filepath.Join(i.path, "store.wal")
 
+	if !i.readOnly {
+		lock, err := lockIndexDir(i.path)
+		if err != nil {
+			return err
+		}
+		i.lock = lock
+	}
 	if s, ok := i.store.(snapshotter); ok {
 		if err := s.LoadSnapshot(snapPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("semantic: load snapshot: %w", err)
 		}
+	}
+	if i.readOnly {
+		return replayReadOnly(walPath, i.replayEntryLocked)
 	}
 
 	w, err := openWAL(walPath)
@@ -82,35 +100,7 @@ func (i *index) loadAndReplay() error {
 		return err
 	}
 	i.wal = w
-	ctx := context.Background()
-	// Open is single-threaded, so replay applies through the *Locked
-	// helpers without taking i.mu. Add and remove records are what WALs
-	// written before the replace record hold.
-	if err := w.replay(func(e walEntry) error {
-		var docIDs []string
-		chunks := e.Chunks
-		switch e.Op {
-		case walOpAdd:
-		case walOpRemove:
-			docIDs, chunks = []string{e.DocID}, nil
-		case walOpReplace:
-			docIDs = e.DocIDs
-		default:
-			return fmt.Errorf("unknown wal op %q", e.Op)
-		}
-		if len(chunks) > 0 && e.Model != "" && e.Model != i.embedder.Name() {
-			return &ModelMismatchError{SnapshotModel: e.Model, SnapshotDim: len(chunks[0].Vec), StoreModel: i.embedder.Name(), StoreDim: i.embedder.Dim()}
-		}
-		for _, id := range docIDs {
-			if err := i.applyRemoveLocked(ctx, id); err != nil {
-				return err
-			}
-		}
-		if len(chunks) > 0 {
-			return i.applyAddLocked(ctx, chunks)
-		}
-		return nil
-	}); err != nil {
+	if err := w.replay(i.replayEntryLocked); err != nil {
 		return err
 	}
 	// A fresh gob encoder must not append a second type table to the old
@@ -125,6 +115,28 @@ func (i *index) loadAndReplay() error {
 	return nil
 }
 
+// replayEntryLocked applies one WAL record. Open is single-threaded, so
+// replay applies through the *Locked helpers without taking i.mu. Add
+// and remove records are what WALs written before the replace record
+// hold.
+func (i *index) replayEntryLocked(e walEntry) error {
+	var docIDs []string
+	chunks := e.Chunks
+	switch e.Op {
+	case walOpAdd:
+	case walOpRemove:
+		docIDs, chunks = []string{e.DocID}, nil
+	case walOpReplace:
+		docIDs = e.DocIDs
+	default:
+		return fmt.Errorf("unknown wal op %q", e.Op)
+	}
+	if len(chunks) > 0 && e.Model != "" && e.Model != i.embedder.Name() {
+		return &ModelMismatchError{SnapshotModel: e.Model, SnapshotDim: len(chunks[0].Vec), StoreModel: i.embedder.Name(), StoreDim: i.embedder.Dim()}
+	}
+	return i.applyLoggedLocked(context.Background(), docIDs, chunks)
+}
+
 // rebuildKeyword fills the keyword backend from every chunk the store
 // already holds: one loaded from a snapshot (which carries no keyword
 // state), or one a durable store such as PgVectorStore kept across a
@@ -132,6 +144,11 @@ func (i *index) loadAndReplay() error {
 // keyword != nil guarantees the store is a chunkLister (Open fails closed).
 func (i *index) rebuildKeyword() error {
 	if i.keyword == nil {
+		return nil
+	}
+	// The store's own keyword index reads the store; there is nothing
+	// to fill, and reading every row would load the table into memory.
+	if _, ok := i.keyword.(pgKeyword); ok {
 		return nil
 	}
 	ctx := context.Background()
@@ -184,6 +201,13 @@ func (i *index) docSources(ctx context.Context) (map[string]string, error) {
 		out[c.DocID] = c.Source
 	}
 	return out, nil
+}
+
+// sharedStore is a store other processes write to as well
+// (PgVectorStore). A keyword index held in one process's memory cannot
+// follow their writes, so Open refuses MemoryKeyword over one.
+type sharedStore interface {
+	sharedAcrossProcesses()
 }
 
 // chunkEnumerator is a store whose full read can fail (PgVectorStore).
@@ -305,7 +329,8 @@ func (i *index) Remove(ctx context.Context, docIDs ...string) error {
 // interleave as remove-A, remove-B, add-A, add-B and keep both versions.
 // A cancel is honored only before the first remove: once one has
 // applied, stopping would lose the document, so the rest runs to
-// completion.
+// completion. A store's own transactional replace honors it until it
+// commits, since its rollback keeps the old version.
 func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (err error) {
 	// walEncodable runs metadata values' own GobEncode methods, host
 	// code like the store and keyword backend below.
@@ -314,6 +339,9 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 			err = fmt.Errorf("semantic: replace panicked: %v", v)
 		}
 	}()
+	if i.readOnly {
+		return ErrReadOnly
+	}
 	// Check that the WAL can encode the chunks before logging them: a
 	// failed gob Encode (metadata holding a type gob cannot carry) is
 	// sticky on the encoder and would refuse every later record.
@@ -327,12 +355,14 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	ctx = context.WithoutCancel(ctx)
 	// A store that replaces documents in one transaction of its own
 	// (PgVectorStore) does so: removing and adding as separate steps loses
 	// the old version when the add fails, and i.mu does not reach a second
 	// replica sharing the store. Such a store never has a WAL (Path needs
-	// a snapshotter, which it is not); the WAL path keeps the steps.
+	// a snapshotter, which it is not); the WAL path keeps the steps. Its
+	// transaction gets the caller's context: a cancel rolls the whole
+	// replace back, where a context without one kept the caller waiting
+	// on another replica's document lock while it held i.mu.
 	if r, ok := i.store.(docReplacer); ok && i.wal == nil {
 		if err := i.applyReplaceLocked(ctx, r, docIDs, chunks); err != nil {
 			return err
@@ -342,7 +372,13 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 		}
 		return nil
 	}
+	var logged *pendingReplace
 	if i.wal != nil {
+		// An earlier write that failed part-way applies first, so it can
+		// never land over a newer version of its documents.
+		if err := i.finishHalfAppliedLocked(); err != nil {
+			return err
+		}
 		// A failed append stopped the WAL. The store holds exactly the
 		// acknowledged writes (a write whose append failed was never
 		// applied), so a snapshot of it is a clean cut and restarts the
@@ -359,20 +395,19 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 		if err := i.wal.append(e); err != nil {
 			return err
 		}
+		logged = &pendingReplace{docIDs: docIDs, chunks: chunks}
+		for _, id := range docIDs {
+			logged.priorKeyword = append(logged.priorKeyword, i.collectChunkIDs(id)...)
+		}
 	}
 	// Past this point the replace is logged: store and keyword index
-	// apply it (ctx no longer cancels), and a panic or error mid-apply
-	// is healed by replay on restart.
-	for _, id := range docIDs {
-		if err := i.applyRemoveLocked(ctx, id); err != nil {
-			return err
-		}
+	// apply it (ctx no longer cancels). A panic or error mid-apply leaves
+	// it half-applied until finishHalfAppliedLocked applies it again.
+	i.halfApplied = logged
+	if err := i.applyLoggedLocked(context.WithoutCancel(ctx), docIDs, chunks); err != nil {
+		return err
 	}
-	if len(chunks) > 0 {
-		if err := i.applyAddLocked(ctx, chunks); err != nil {
-			return err
-		}
-	}
+	i.halfApplied = nil
 	// Snapshot only between whole replaces, never between a remove and
 	// its add.
 	if i.dueSnapshotLocked() {
@@ -381,11 +416,60 @@ func (i *index) replace(ctx context.Context, docIDs []string, chunks []Chunk) (e
 	return nil
 }
 
+// applyLoggedLocked applies a logged replace: every prior chunk of docIDs
+// out, then chunks in. Applying one again is harmless, since its removes
+// also take out whatever part of chunks an earlier attempt stored. The
+// caller MUST hold i.mu.
+func (i *index) applyLoggedLocked(ctx context.Context, docIDs []string, chunks []Chunk) error {
+	for _, id := range docIDs {
+		if err := i.applyRemoveLocked(ctx, id); err != nil {
+			return err
+		}
+	}
+	if len(chunks) > 0 {
+		return i.applyAddLocked(ctx, chunks)
+	}
+	return nil
+}
+
+// pendingReplace is a logged replace not yet applied whole: its documents,
+// its new chunks, and the keyword IDs of the chunks it replaces, which
+// the store no longer lists once its remove applied.
+type pendingReplace struct {
+	docIDs       []string
+	chunks       []Chunk
+	priorKeyword []string
+}
+
+// finishHalfAppliedLocked applies again the logged replace whose apply
+// failed part-way (a keyword delete refused after the store removed the
+// old chunks). A snapshot taken over it would write the store without
+// the document and truncate the record that restores it, so while it
+// still fails no snapshot is taken and the WAL keeps it for replay. The
+// caller MUST hold i.mu.
+func (i *index) finishHalfAppliedLocked() error {
+	p := i.halfApplied
+	if p == nil {
+		return nil
+	}
+	ctx := context.Background()
+	err := i.keywordRemoveDoc(ctx, "", p.priorKeyword)
+	if err == nil {
+		err = i.applyLoggedLocked(ctx, p.docIDs, p.chunks)
+	}
+	if err != nil {
+		return fmt.Errorf("semantic: an earlier write is half-applied; the WAL keeps it for replay: %w", err)
+	}
+	i.halfApplied = nil
+	return nil
+}
+
 // docReplacer is a store that removes documents and stores their new
 // chunks in one atomic step, serialized per document across every process
-// sharing the store.
+// sharing the store. model is the embedder that produced chunks; a store
+// that records its model refuses chunks of another.
 type docReplacer interface {
-	replaceDocs(ctx context.Context, docIDs []string, chunks []Chunk) error
+	replaceDocs(ctx context.Context, model string, docIDs []string, chunks []Chunk) error
 }
 
 // applyReplaceLocked replaces docIDs with chunks through the store's own
@@ -403,9 +487,12 @@ func (i *index) applyReplaceLocked(ctx context.Context, r docReplacer, docIDs []
 	for _, id := range docIDs {
 		prior = append(prior, i.collectChunkIDs(id)...)
 	}
-	if err := r.replaceDocs(ctx, docIDs, chunks); err != nil {
+	if err := r.replaceDocs(ctx, i.embedder.Name(), docIDs, chunks); err != nil {
 		return err
 	}
+	// The store has committed; the keyword backend follows it whatever
+	// the caller does now.
+	ctx = context.WithoutCancel(ctx)
 	if err := i.keywordRemoveDoc(ctx, "", prior); err != nil {
 		return err
 	}
@@ -545,6 +632,9 @@ func (i *index) snapshotLocked() error {
 	if !ok {
 		return nil
 	}
+	if err := i.finishHalfAppliedLocked(); err != nil {
+		return err
+	}
 	snapPath := filepath.Join(i.path, "store.snap")
 	if err := s.Snapshot(snapPath); err != nil {
 		return err
@@ -562,6 +652,9 @@ func (i *index) snapshotLocked() error {
 // concurrent mutations (Add/Remove) so the on-disk snapshot and the surviving
 // WAL together represent one consistent cut of the index.
 func (i *index) Snapshot() error {
+	if i.readOnly {
+		return ErrReadOnly
+	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return i.snapshotLocked()
@@ -782,7 +875,7 @@ func (i *index) Close() error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	var errs []error
-	if i.path != "" {
+	if i.path != "" && !i.readOnly {
 		if err := i.snapshotLocked(); err != nil {
 			errs = append(errs, err)
 		}
@@ -800,6 +893,14 @@ func (i *index) Close() error {
 		if err := c.Close(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	// Released last, once the snapshot and WAL are closed, so the next
+	// writer opens what this one left.
+	if i.lock != nil {
+		if err := i.lock.Close(); err != nil {
+			errs = append(errs, err)
+		}
+		i.lock = nil
 	}
 	return errors.Join(errs...)
 }

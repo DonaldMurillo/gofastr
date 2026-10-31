@@ -95,7 +95,7 @@ func TestRecordedReadsSelectTheirReader(t *testing.T) {
 			owners := ownerDirs(root, []string{f}, all)
 			key := strings.Join(slices.Sorted(maps.Keys(owners)), "\n")
 			if closures[key] == nil {
-				closures[key] = closure(all, owners)
+				closures[key] = closure(all, owners, nil)
 			}
 			if closures[key][p.ImportPath] {
 				continue

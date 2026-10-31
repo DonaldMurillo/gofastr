@@ -14,6 +14,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Incremental migration generation
@@ -41,9 +43,14 @@ type SchemaSnapshot struct {
 	// PrimaryKeys holds each entity table's key columns in key order, so a
 	// later generation can see a key change. A snapshot written before it
 	// existed has none, and the first generation after records them.
-	PrimaryKeys map[string][]string   `json:"primary_keys,omitempty"`
-	Views       map[string]RoutineDef `json:"views,omitempty"`
-	Routines    map[string]RoutineDef `json:"routines,omitempty"`
+	PrimaryKeys map[string][]string `json:"primary_keys,omitempty"`
+	// UniqueColumns holds each entity table's field-level Unique columns
+	// (an empty list for a table with none), so a later generation can
+	// see Unique set or cleared on a column that already exists. A table
+	// missing from it is unknown, and its unique columns are not compared.
+	UniqueColumns map[string][]string   `json:"unique_columns,omitempty"`
+	Views         map[string]RoutineDef `json:"views,omitempty"`
+	Routines      map[string]RoutineDef `json:"routines,omitempty"`
 }
 
 // RoutineDef is the snapshot record for a routine: its Up and Down bodies, so
@@ -78,6 +85,10 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				snap.PrimaryKeys = map[string][]string{}
 			}
 			snap.PrimaryKeys[ent.GetTable()] = ent.KeyColumns()
+			if snap.UniqueColumns == nil {
+				snap.UniqueColumns = map[string][]string{}
+			}
+			snap.UniqueColumns[ent.GetTable()] = uniqueColumns(ent)
 			// Capture the exact CREATE TABLE so a future drop is faithfully
 			// reversible. Skip silently if the entity can't render (it would
 			// have failed the diff anyway).
@@ -156,9 +167,13 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 // snapshot) and returns the forward (up) and inverse (down) DDL for the delta,
 // plus the new snapshot to persist. up is empty when there is nothing to do.
 //
-// Covered changes: create table, add column, drop column, and drop table (when
-// an entity is removed). Type changes are out of scope, same limitation as
-// DiffSchema.
+// Covered changes: create and drop table (an entity removed); add, drop and
+// rename column; a column type change (in place on Postgres, a table rebuild
+// on SQLite); a primary-key change; declared and belongs_to indexes; a
+// field's Unique set or cleared; and a column's NOT NULL or DEFAULT
+// changed (ALTER COLUMN on Postgres, a table rebuild on SQLite). Foreign
+// keys are not compared: the snapshot
+// records no constraint names.
 func GenerateMigration(reg entity.Registry, prev SchemaSnapshot, dialect Dialect) (up, down string, next SchemaSnapshot, err error) {
 	return GeneratePlan(Plan{Registry: reg}, prev, dialect)
 }
@@ -178,14 +193,17 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			return "", "", SchemaSnapshot{}, err
 		}
 	}
+	prev = respellTables(prev, declaredTableNames(all), dialect)
 
 	// Views and routines: new and changed ones are created after the tables
 	// (they select from them), and removed ones are dropped BEFORE any table
-	// change, since Postgres refuses to drop a table or column a view still
-	// reads. Views keep their DependsOn order, and routines the plan's
-	// order, which is the order boot applies them in; removals drop
-	// routines, then views, the reverse of creation. The Down runs the
-	// changes backwards, so it unwinds the same way.
+	// change, since both engines refuse to drop a table or column a view
+	// still reads. A changed view is dropped before the table changes too,
+	// since its old body may read what they drop (viewChanges). Views keep
+	// their DependsOn order, and routines the plan's order, which is the
+	// order boot applies them in; removals drop routines, then views, the
+	// reverse of creation. The Down runs the changes backwards, so it
+	// unwinds the same way.
 	viewRoutines := make([]Routine, 0, len(plan.Views))
 	for _, v := range topoSortViews(plan.Views) {
 		viewRoutines = append(viewRoutines, v.routine(dialect))
@@ -193,19 +211,24 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Boot skips a routine scoped to another dialect, so a migration
 	// generated for this one must not carry it either.
 	routines, _ := partitionRoutinesByDialect(plan.Routines, dialect)
-	viewUpserts, viewDrops := routineChanges(viewRoutines, prev.Views)
-	if dialect == DialectPostgres {
-		viewUpserts = pgViewUpserts(topoSortViews(plan.Views), prev.Views)
+	_, viewDrops, err := routineChanges(viewRoutines, prev.Views)
+	if err != nil {
+		return "", "", SchemaSnapshot{}, err
 	}
-	routineUpserts, routineDrops := routineChanges(routines, prev.Routines)
+	viewRedrops, viewUpserts := viewChanges(topoSortViews(plan.Views), prev.Views, dialect)
+	routineUpserts, routineDrops, err := routineChanges(routines, prev.Routines)
+	if err != nil {
+		return "", "", SchemaSnapshot{}, err
+	}
 
 	changes := append(routineDrops, viewDrops...)
+	changes = append(changes, viewRedrops...)
 	// The snapshot's column sets let a Postgres key change detach the
 	// foreign keys onto its table; it records no constraint names, so
 	// foreign keys themselves are not compared (fks stays nil). The keys a
 	// key change re-adds only after their child's own changes run after
 	// every table's.
-	env := &fkDiffEnv{tables: prev.Tables}
+	env := &fkDiffEnv{tables: prev.Tables, uniques: snapshotUniques(prev), tableDDL: prev.TableDDL}
 	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue // views / external tables generate no table DDL
@@ -279,14 +302,10 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		changes = append(changes, pivotChanges...)
 	}
 
+	// Keyed by tableKey, so no spelling of a declared table is dropped.
 	declaredTables := map[string]bool{}
-	for _, ent := range all {
-		declaredTables[strings.ToLower(ent.GetTable())] = true
-		for _, rel := range ent.Config.Relations {
-			if rel.Type == entity.RelManyToMany && rel.Through != "" {
-				declaredTables[strings.ToLower(rel.Through)] = true
-			}
-		}
+	for _, t := range declaredTableNames(all) {
+		declaredTables[tableKey(dialect, t)] = true
 	}
 
 	// SQLite names a foreign key's referenced columns, so a rebuild that
@@ -308,10 +327,10 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			ent := all[c.sqliteRebuildOf]
 			oldKey, _ := lookupKeyCase(prev.PrimaryKeys, ent.GetTable())
 			renames := renamesApplied(ent, lookupTableCols(prev.Tables, ent.GetTable()))
-			refs := recordedReferencesOnto(prev.TableDDL, ent.GetTable())
+			refs := recordedReferencesOnto(dialect, prev.TableDDL, ent.GetTable())
 			var stranded []string
 			for _, t := range slices.Sorted(maps.Keys(refs)) {
-				if rebuilt[strings.ToLower(t)] || !declaredTables[strings.ToLower(t)] {
+				if rebuilt[strings.ToLower(t)] || !declaredTables[tableKey(dialect, t)] {
 					continue
 				}
 				for _, cols := range refs[t] {
@@ -349,14 +368,14 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		}
 		ent := all[c.sqliteRebuildOf]
 		refs := mutatingFKReferrers(ent, all)
-		for _, t := range snapshotMutatingReferrers(prev, ent.GetTable()) {
-			if declaredTables[strings.ToLower(t)] && !slices.ContainsFunc(refs, func(r string) bool { return strings.EqualFold(r, t) }) {
+		for _, t := range snapshotMutatingReferrers(dialect, prev, ent.GetTable()) {
+			if declaredTables[tableKey(dialect, t)] && !slices.ContainsFunc(refs, func(r string) bool { return strings.EqualFold(r, t) }) {
 				refs = append(refs, t)
 			}
 		}
 		if len(refs) > 0 {
 			sort.Strings(refs)
-			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite column type change: rebuilding the table drops it, "+
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite table rebuild: it drops the table, "+
 				"and the ON DELETE CASCADE / SET NULL foreign keys in %s would delete or unlink their rows; "+
 				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
 				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
@@ -367,11 +386,11 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
 	dropped := make([]string, 0)
 	for table := range prev.Tables {
-		if !declaredTables[strings.ToLower(table)] {
+		if !declaredTables[tableKey(dialect, table)] {
 			dropped = append(dropped, table)
 		}
 	}
-	dropped = sortDroppedTables(dropped, prev.TableDDL)
+	dropped = sortDroppedTables(dialect, dropped, prev.TableDDL)
 	for _, table := range dropped {
 		qtable, qerr := query.SafeIdent(table)
 		if qerr != nil {
@@ -422,7 +441,8 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			changes[i].SQL = strings.Replace(c.SQL, rename,
 				"PRAGMA legacy_alter_table=ON;\n"+rename+";\nPRAGMA legacy_alter_table=OFF", 1)
 		}
-		routineUpserts, _ = routineChanges(routines, nil)
+		// No previous definitions, so no removals and no error.
+		routineUpserts, _, _ = routineChanges(routines, nil)
 	}
 
 	changes = append(changes, viewUpserts...)
@@ -476,63 +496,43 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	return up, down, next, nil
 }
 
-// pgViewUpserts is routineChanges for Postgres views, in dependency order.
-// Only a plain view replaces itself in place. A changed materialized view,
-// or a view changing kind, drops the existing object first, and Postgres
-// refuses that while another view reads it: the declared views that read
-// it are dropped before it, deepest first, and created again after it.
-// A view changing kind is dropped with its old kind's statement, since
-// DROP MATERIALIZED VIEW refuses a plain view and CREATE OR REPLACE VIEW a
-// materialized one. Every dropped view's Down recreates the old one, and
-// every recreated view's Down drops it, so the rollback runs the same
-// steps backwards.
-func pgViewUpserts(ordered []View, prev map[string]RoutineDef) []SchemaChange {
+// viewChanges diffs the declared views, in dependency order, against the
+// snapshot. A new view is created after the table changes. A changed one
+// is dropped BEFORE them and created again after: its old body may read a
+// column the same migration drops, and both engines refuse that while the
+// view exists (Postgres also refuses a CREATE OR REPLACE that drops or
+// renames a view column). Every declared view that reads a changed one
+// goes with it, dropped deepest first, since Postgres refuses to drop a
+// view another still reads. A drop runs the snapshot's own Down, the old
+// kind's statement, so a view changing kind drops cleanly. Each drop's
+// Down recreates the old view and each creation's Down drops the new one,
+// so the rollback runs the same steps backwards. Every snapshot has
+// recorded a view's Down since views were added, so the drop always has
+// one.
+func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect) (drops, creates []SchemaChange) {
 	dependents := viewDependents(ordered)
-	recreated := map[string]bool{}
+	redo := map[string]bool{}
 	for _, v := range ordered {
-		p, ok := prev[v.Name]
-		up, down := v.render(DialectPostgres)
-		if ok && p.Up != up && (v.Materialized || p.Down != down) {
-			recreated[v.Name] = true
+		up, _ := v.render(dialect)
+		if p, ok := prev[v.Name]; ok && p.Up != up {
+			redo[v.Name] = true
+			for _, d := range dependents[v.Name] {
+				redo[d.Name] = true
+			}
 		}
 	}
-	dropped := map[string]bool{}
-	var out []SchemaChange
-	for _, v := range ordered {
-		up, down := v.render(DialectPostgres)
-		p, existed := prev[v.Name]
-		switch {
-		case dropped[v.Name]:
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("view %s: recreate", v.Name), SQL: up, Down: down})
-		case recreated[v.Name]:
-			for _, d := range slices.Backward(dependents[v.Name]) {
-				if dropped[d.Name] {
-					continue
-				}
-				dropped[d.Name] = true
-				dp, ok := prev[d.Name]
-				if !ok {
-					continue // new in this plan: nothing to drop
-				}
-				out = append(out, SchemaChange{
-					Summary: fmt.Sprintf("view %s: drop, it reads %s", d.Name, v.Name),
-					SQL:     dp.Down,
-					Down:    dp.Up,
-				})
-			}
-			sql, undo := up, p.Up
-			if p.Down != down {
-				sql = p.Down + ";\n" + up
-				undo = down + ";\n" + p.Up
-			}
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("view %s: replace", v.Name), SQL: sql, Down: undo})
-		case !existed:
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("routine %s: create", v.Name), SQL: up, Down: down})
-		case p.Up != up:
-			out = append(out, SchemaChange{Summary: fmt.Sprintf("routine %s: replace", v.Name), SQL: up, Down: p.Up})
+	for _, v := range slices.Backward(ordered) {
+		if p, ok := prev[v.Name]; ok && redo[v.Name] {
+			drops = append(drops, SchemaChange{Summary: fmt.Sprintf("view %s: drop to recreate", v.Name), SQL: p.Down, Down: p.Up})
 		}
 	}
-	return out
+	for _, v := range ordered {
+		up, down := v.render(dialect)
+		if _, existed := prev[v.Name]; !existed || redo[v.Name] {
+			creates = append(creates, SchemaChange{Summary: fmt.Sprintf("view %s: create", v.Name), SQL: up, Down: down})
+		}
+	}
+	return drops, creates
 }
 
 // routineChanges diffs current routines against the snapshot. New or changed
@@ -542,7 +542,7 @@ func pgViewUpserts(ordered []View, prev map[string]RoutineDef) []SchemaChange {
 // Down is its own Down. Removed routines come back separately, name-sorted,
 // so the caller can drop them before the tables they read: each is dropped
 // via the snapshot's stored Down, with its recreation as the inverse.
-func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange) {
+func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange, err error) {
 	seen := map[string]bool{}
 	byName := map[string]Routine{}
 	for _, r := range current {
@@ -569,6 +569,14 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 				SQL:     r.Up,
 				Down:    prevDef.Up, // restore the previous definition
 			})
+		case strings.TrimSpace(prevDef.Down) == "" && strings.TrimSpace(r.Down) != "":
+			// The snapshot recorded no Down, so a later removal could not
+			// be generated. Re-running the idempotent Up records the Down
+			// it now declares; rolling this back changes nothing.
+			upserts = append(upserts, SchemaChange{
+				Summary: fmt.Sprintf("routine %s: record Down", name),
+				SQL:     r.Up,
+			})
 		}
 	}
 
@@ -580,22 +588,16 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 	}
 	sort.Strings(removed)
 	for _, name := range removed {
-		// A Routine's Down is optional (see routine.go), so a routine
-		// removed without one used to emit an EMPTY statement here. The
-		// generated migration then contained nothing but ";": the drop
-		// silently did nothing while the snapshot advanced to record the
-		// routine as gone, and a rollback would CREATE OR REPLACE it
-		// back. Surface it as a change the author must resolve instead
-		// of writing a no-op that looks applied.
+		// A Routine's Down is optional (see routine.go), so the snapshot
+		// may hold no drop for a removed routine. Writing the removal
+		// anyway made a migration of nothing but ";" while the snapshot
+		// advanced to record the routine as gone, and the routine stayed
+		// in the database. Refuse, and say how to record the drop.
 		drop := strings.TrimSpace(prev[name].Down)
 		if drop == "" {
-			removals = append(removals, SchemaChange{
-				Summary: fmt.Sprintf("routine %s: drop SKIPPED: the routine declares no Down; "+
-					"add one (e.g. DROP FUNCTION ...) so the removal actually runs", name),
-				SQL:  "",
-				Down: prev[name].Up,
-			})
-			continue
+			return nil, nil, fmt.Errorf("routine %q was removed, but the snapshot records no Down for it, "+
+				"so its drop cannot be generated: declare it again with the same Up and a Down "+
+				"(e.g. DROP FUNCTION ...), generate to record the Down, then remove it", name)
 		}
 		removals = append(removals, SchemaChange{
 			Summary: fmt.Sprintf("routine %s: drop", name),
@@ -603,7 +605,7 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 			Down:    prev[name].Up, // recreate on rollback
 		})
 	}
-	return upserts, removals
+	return upserts, removals, nil
 }
 
 // recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set,
@@ -796,11 +798,11 @@ func ddlWithoutLiterals(ddl string) string {
 // snapshotMutatingReferrers names the tables whose CREATE TABLE in the
 // snapshot holds a CASCADE or SET NULL foreign key onto table, sorted. A
 // snapshot written before TableDDL existed records none.
-func snapshotMutatingReferrers(prev SchemaSnapshot, table string) []string {
+func snapshotMutatingReferrers(dialect Dialect, prev SchemaSnapshot, table string) []string {
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(prev.TableDDL)) {
 		for _, m := range reMutatingFK.FindAllStringSubmatch(ddlWithoutLiterals(prev.TableDDL[name]), -1) {
-			if strings.EqualFold(m[1], table) {
+			if refersTo(dialect, name, m[1], table) {
 				out = append(out, name)
 				break
 			}
@@ -814,27 +816,25 @@ func snapshotMutatingReferrers(prev SchemaSnapshot, table string) []string {
 // they reference. Because formatPlan reverses the changes slice for Down migrations
 // (via slices.Backward), this ordering simultaneously guarantees that Down migrations
 // recreate referenced/parent tables BEFORE the child tables that reference them.
-func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
+func sortDroppedTables(dialect Dialect, tables []string, tableDDL map[string]string) []string {
 	if len(tables) <= 1 {
 		return tables
-	}
-	droppedSet := make(map[string]bool, len(tables))
-	for _, t := range tables {
-		droppedSet[strings.ToLower(t)] = true
 	}
 
 	// dep[A] = list of tables that A references (A must be dropped before B)
 	dep := make(map[string][]string, len(tables))
 	inDegree := make(map[string]int, len(tables))
+	// Keys fold ASCII only, as Postgres folds an unquoted identifier:
+	// strings.ToLower would give look-alike names one key and lose a table.
 	canon := make(map[string]string, len(tables)) // lower -> original casing
 	for _, t := range tables {
-		low := strings.ToLower(t)
+		low := asciicase.Lower(t)
 		canon[low] = t
 		inDegree[low] = 0
 	}
 
 	for _, t := range tables {
-		low := strings.ToLower(t)
+		low := asciicase.Lower(t)
 		ddl := lookupStringCase(tableDDL, t)
 		if ddl == "" {
 			continue
@@ -842,9 +842,12 @@ func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
 		matches := reFKReferences.FindAllStringSubmatch(ddlWithoutLiterals(ddl), -1)
 		seenRef := make(map[string]bool)
 		for _, m := range matches {
-			if len(m) > 1 {
-				target := strings.ToLower(m[1])
-				if target != low && droppedSet[target] && !seenRef[target] {
+			if len(m) < 2 {
+				continue
+			}
+			for _, u := range tables {
+				target := asciicase.Lower(u)
+				if target != low && !seenRef[target] && refersTo(dialect, t, m[1], u) {
 					seenRef[target] = true
 					dep[low] = append(dep[low], target)
 					inDegree[target]++
@@ -883,7 +886,7 @@ func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
 		// In case of cycles or unvisited nodes, append remaining deterministically.
 		var remaining []string
 		for _, t := range tables {
-			if !visited[strings.ToLower(t)] {
+			if !visited[asciicase.Lower(t)] {
 				remaining = append(remaining, t)
 			}
 		}

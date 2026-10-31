@@ -383,7 +383,7 @@ func TestMountServesScriptAndManifest(t *testing.T) {
 		t.Fatal("manifest has no ETag")
 	}
 	req := httptest.NewRequest(http.MethodGet, ManifestRoute, nil)
-	req.Header.Set("If-None-Match", etag)
+	req.Header.Set("If-None-Match", `"stale", `+etag)
 	rec = httptest.NewRecorder()
 	rt.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotModified {

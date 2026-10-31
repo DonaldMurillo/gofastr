@@ -120,7 +120,10 @@ engine itself knows about *clients*, never about transports.
     cannot self-approve a permission for a turn it originated:
     `AnswerPermission` from the same `Client.ID()` that originated
     the turn is rejected. By default, at least one `human` ack is
-    required; `--auto-approve` bypasses, honestly named.
+    required; `--auto-approve` bypasses, honestly named. A REST
+    request has no connection to attach, so it dispatches as its
+    token: the token's `identity_class`, and one `Client.ID()` for
+    every request made with that token.
 12. **Every byte from outside the trust boundary is untrusted
     content.** AGENTS.md, SKILL.md, MCP-server-supplied tool
     descriptions and resource bodies, fetched web pages, tool
@@ -248,9 +251,9 @@ audited against this matrix.
 | Transport | Auth | Identity class | Extra policy |
 |---|---|---|---|
 | `inproc` | trust boundary = process | `human` | None |
-| `rest` over Unix socket | filesystem perms `0600` + capability token | `human` (override allowed) | Host/Origin checks; `X-Harness-Token` header |
-| `rest` / `ws` over TCP loopback | capability token + Host/Origin checks | `human` | Custom header (anti-DNS-rebinding) |
-| `rest` / `ws` over LAN | capability token + TLS | `human` | Token must be bound to specific session IDs |
+| `rest` over Unix socket | filesystem perms `0600` + capability token | the token's `identity_class` | Host/Origin checks; `X-Harness-Token` header |
+| `rest` / `ws` over TCP loopback | capability token + Host/Origin checks | the token's `identity_class` | Custom header (anti-DNS-rebinding) |
+| `rest` / `ws` over LAN | capability token + TLS | the token's `identity_class` | Token must be bound to specific session IDs |
 | `mcp` stdio | capability token via **env var** + parent-process attestation | `agent` | Tool exposed as `harness.run_agent_with_shell_access` (honest name) |
 | `mcp` streamable HTTP | capability token in `Authorization` header | `agent` | Same as TCP transport rules |
 
@@ -522,7 +525,9 @@ it "150 lines of pure orchestration" was overstated. The honest list:
    policy in the loop. Yield conditions, all explicit:
    - The stream ended with no tool calls (model produced a final
      answer).
-   - `CancelTurn` arrived.
+   - `CancelTurn` arrived. It ends the running turn with reason
+     `cancelled` and nothing else: the next `SendInput` starts a
+     fresh turn, and a `CancelTurn` sent while idle does nothing.
    - A middleware returned a terminal error.
    - A `Yield` content block appeared in the response (explicit
      end-turn signal from a provider that supports it).
@@ -646,7 +651,17 @@ Read, Glob, Ls (anywhere under the repo)
 ```
 
 Never prompts for these. `--strict-permissions` disables the
-preset for users who want every call gated.
+preset for users who want every call gated. `git branch` counts
+only when it lists: listing flags alone (`-a`, `-r`, `-v`, `-vv`,
+`--show-current`), and patterns only behind `--list`.
+
+The preset and argv-glob rules match a Bash call's argv summary,
+which spells the call as the shell command it amounts to: a `cwd`
+becomes `cd <dir> && ` in front and an `env` map becomes
+`env K=V …` (keys sorted). A listed command carrying either one
+(`GIT_EXTERNAL_DIFF`, `PATH`, or a directory whose `.git/config`
+names a program) is prompted, and a rule written for the bare
+command does not match it.
 
 Session-scoped allows persist for the `EngineRun` only; they
 never carry across sessions or persist to disk. The user can
@@ -1066,6 +1081,14 @@ Bidirectional. Frames are tagged JSON:
 
 Reconnect resumes from a `lastEventId` query param.
 
+The upgrade must be a well-formed RFC 6455 handshake (GET, a
+`Connection: Upgrade` token, version 13, a 16-byte key), or it answers
+400. A command may arrive in fragments: a text frame without FIN, then
+continuation frames, with pings between them. A continuation with no
+message open, a text frame inside one, a fragmented control frame, a
+control frame over 125 bytes, or a message over 16 MiB closes the
+socket.
+
 ### MCP server API
 
 The harness exposes its own engine as an MCP server so any
@@ -1243,10 +1266,13 @@ it never sees how clients are wired.
     `X-Harness-Token` (not `Authorization`) so browsers must
     preflight; the preflight fails closed for unauthorized
     origins.
-- **`--listen 0.0.0.0:PORT`**: bind LAN. Capability token + TLS
-  required; harness refuses to start without `--auth-token-file`
-  and `--tls-cert`/`--tls-key`. Token must be bound to specific
-  `sessions: [...]` in its claim set.
+- **A non-loopback `--listen`** (a LAN address, a wildcard such as
+  `0.0.0.0:PORT` or `:PORT`, or a name that resolves off loopback) is
+  refused at startup. The chat page at `/` embeds a 24 h human-class
+  token for whoever loads it, and the `Host` check stops DNS
+  rebinding, not a peer that reaches the port and sends
+  `Host: localhost`. The check reads the address the listener bound,
+  not the spelling passed. There is no LAN mode.
 - **`--no-listen`**: in-process clients only (engine speaks only
   through `inproc`). Useful for tests or pure-CLI use.
 - **`gofastr harness mcp`** (v0.2): launches a one-shot stdio MCP

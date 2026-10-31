@@ -513,7 +513,7 @@ const rtcPageScript = wsConsoleTap + `
     R.room = __gofastr.connectRoom('ws://' + location.host + '/ws?peer=' + encodeURIComponent(peer) + fwd, {
       channels: chans,
       onPhase: (p) => { R.phases.push(p); },
-      onSnapshot: (s) => { R.selfId = s.self && s.self.id; R.snapshotPeers = Array.from(s.peers.keys()); },
+      onSnapshot: (s) => { R.selfId = s.self && s.self.id; R.snapStatus = s.self && s.self.status; R.snapshotPeers = Array.from(s.peers.keys()); },
       onPeer: (p) => { R.joined.push({ id: p.id, polite: !!p.polite }); },
       onPeerLeave: (p) => { R.leaves.push(p.id); },
       onPeerState: (p, st) => { R.states.push(p.id + ':' + st); },

@@ -289,6 +289,11 @@ type Endpoint struct {
 	// When unset, the twin defaults to requiring an authenticated caller
 	// (framework.MCPRequireUser). Set Public to opt out of that default;
 	// set this to something stricter, e.g. auth.MCPRole("editor").
+	//
+	// Whatever decides the twin, a scope-restricted caller (an API token)
+	// must also hold "<table>:read" for a GET or HEAD endpoint and
+	// "<table>:write" for any other method, the scope auth.RequireAPIScopes
+	// asks of the HTTP route.
 	MCPGate func(ctx context.Context) error `json:"-"`
 
 	// Public opts both front doors out of the default authenticated-caller
@@ -866,6 +871,7 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 	// populates.
 	c.Display = copyDisplayConfig(c.Display)
 	c.States = copyStatesConfig(c.States)
+	c.Fields = c.States.withStateDefault(c.Fields)
 	return c
 }
 

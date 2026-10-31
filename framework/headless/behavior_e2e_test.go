@@ -1898,3 +1898,93 @@ func TestE2E_ExpiredTableSortDoesNotRestoreFocus(t *testing.T) {
 		t.Fatalf("an expired sort moved focus or status: status=%q nameFocused=%v", state.Status, state.NameFocused)
 	}
 }
+
+// A signal swap that brings in a toast hands the module only the
+// swapped node. The arm pass built its set of present rows from that
+// node and cancelled every timer outside it, so a toast already in the
+// stack never dismissed (2026-10-27 bug bash U35).
+func TestE2E_SwappedToastKeepsStackTimers(t *testing.T) {
+	stack := ToastStack(ToastStackProps{Label: "Notifications", Toasts: []render.HTML{
+		Toast(ToastProps{ID: "toast-a", Title: "Saved", TTLMS: 2500}, nil),
+	}}, nil)
+	arrived := Toast(ToastProps{ID: "toast-b", Title: "Synced", TTLMS: 60000}, nil)
+	b := startBehaviorServer(t,
+		string(stack)+
+			`<div id="isle" data-cui-signal="probe" data-cui-signal-mode="html"><p>before</p></div>`+
+			`<a id="swapper" href="?s=1" data-cui-rpc="/__hui/swap" data-cui-rpc-method="GET" data-cui-rpc-signal="probe">Swap</a>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/swap", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(arrived))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	const armed = `!!(window.__gofastr && window.__gofastr._toastTimers && window.__gofastr._toastTimers.size === 1)`
+	if !pollTrue(ctx, armed) {
+		t.Fatal("the stack's toast never armed its timer")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#swapper`, chromedp.ByID)); err != nil {
+		t.Fatalf("clicking the swap anchor: %v", err)
+	}
+	const swappedWhileAlive = `!!document.querySelector('#isle #toast-b[data-hui-toast-id]') &&
+		!!document.getElementById('toast-a') && !document.getElementById('toast-a').hasAttribute('data-hui-toast-leaving')`
+	if !pollTrue(ctx, swappedWhileAlive) {
+		t.Fatal("the swapped toast was never armed while the stack's toast was still showing")
+	}
+	const dismissed = `!document.getElementById('toast-a') || document.getElementById('toast-a').hasAttribute('data-hui-toast-leaving')`
+	if !pollTrue(ctx, dismissed) {
+		t.Fatal("the stack's toast outlived its 2.5 s lifetime: the swap's arm pass cancelled its timer")
+	}
+}
+
+// A swap that replaces a stack row with a new node under the same id
+// must arm the new node: the record kept for the row that left would
+// otherwise read as "already armed" and the new toast never dismisses.
+func TestE2E_ReswappedToastArmsAfresh(t *testing.T) {
+	var swaps atomic.Int32
+	// The stack's own long-lived row is the marker that loads the module.
+	stack := ToastStack(ToastStackProps{Label: "Notifications", Toasts: []render.HTML{
+		Toast(ToastProps{ID: "toast-a", Title: "Saved", TTLMS: 60000}, nil),
+	}}, nil)
+	b := startBehaviorServer(t,
+		string(stack)+
+			`<div id="isle" data-cui-signal="probe" data-cui-signal-mode="html"><p>before</p></div>`+
+			`<a id="swapper" href="?s=1" data-cui-rpc="/__hui/swap" data-cui-rpc-method="GET" data-cui-rpc-signal="probe">Swap</a>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/swap", func(w http.ResponseWriter, r *http.Request) {
+				ttl, title := 60000, "First"
+				if swaps.Add(1) > 1 {
+					ttl, title = 1500, "Second"
+				}
+				// The module stamps a server row's registry id onto it, so
+				// HTML serialized from the live page carries that id: both
+				// responses name the same one.
+				row := string(Toast(ToastProps{ID: "toast-b", Title: title, TTLMS: ttl}, nil))
+				row = strings.Replace(row, "<div ", `<div data-hui-toast-id="s-kept" `, 1)
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, row)
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!(window.__gofastr && window.__gofastr._toastTimers && window.__gofastr._toastTimers.size === 1)`) {
+		t.Fatal("the stack's toast never armed its timer")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#swapper`, chromedp.ByID)); err != nil {
+		t.Fatalf("first swap: %v", err)
+	}
+	const armedB = `window.__gofastr._toastTimers.has('s-kept')`
+	if !pollTrue(ctx, armedB) {
+		t.Fatal("the first swapped toast never armed")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#swapper`, chromedp.ByID)); err != nil {
+		t.Fatalf("second swap: %v", err)
+	}
+	const second = `!!document.getElementById('toast-b') && document.getElementById('toast-b').textContent.includes('Second')`
+	if !pollTrue(ctx, second) {
+		t.Fatal("the second swap never landed")
+	}
+	const gone = `!document.getElementById('toast-b') || document.getElementById('toast-b').hasAttribute('data-hui-toast-leaving')`
+	if !pollTrue(ctx, gone) {
+		t.Fatal("the replacement toast outlived its 1.5 s lifetime: the departed row's record kept it from arming")
+	}
+}

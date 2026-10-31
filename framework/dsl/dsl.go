@@ -355,12 +355,21 @@ func parseDSLFilters(args string) ([]DSLFilter, error) {
 	return filters, nil
 }
 
+// dslFilterOps are the where() operators. At one position the first
+// that matches wins, so >= and <= are tried before > and <.
+var dslFilterOps = []string{" contains ", " in ", ">=", "<=", "!=", "=", ">", "<"}
+
+// parseDSLFilter splits one where() term at its leftmost operator. The
+// field comes first, so an operator inside the value is never the split:
+// title="Drive in Cinema" compares with =, not in.
 func parseDSLFilter(input string) (DSLFilter, error) {
-	ops := []string{" contains ", " in ", ">=", "<=", "!=", "=", ">", "<"}
-	for _, op := range ops {
-		if before, after, ok := strings.Cut(input, op); ok {
-			field := strings.TrimSpace(before)
-			value := strings.TrimSpace(after)
+	for i := range len(input) {
+		for _, op := range dslFilterOps {
+			if !strings.HasPrefix(input[i:], op) {
+				continue
+			}
+			field := strings.TrimSpace(input[:i])
+			value := strings.TrimSpace(input[i+len(op):])
 			if field == "" || value == "" {
 				return DSLFilter{}, i18n.NewError(reasonInvalidFilter, map[string]any{"input": strconv.Quote(input)})
 			}

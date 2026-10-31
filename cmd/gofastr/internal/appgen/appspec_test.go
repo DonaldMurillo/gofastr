@@ -126,6 +126,21 @@ func TestAppSpecAuthMountsSessionMW(t *testing.T) {
 	}
 }
 
+// AuthManager.Init refuses, among others, a production config with no
+// JWT key before it mounts a route. The generated app dropped the error
+// and served its screens with no /auth/login.
+func TestAuthInitErrorFailsBoot(t *testing.T) {
+	bp := appspec.AppSpec{
+		App: appspec.AppSpecApp{Name: "Demo", Module: "example.com/demo", Auth: appspec.AppSpecAuth{Enabled: true}},
+	}
+	got := RenderAppSpecApp(bp)
+	clitest.AssertContains(t, got, "\t\tif err := authMgr.Init(fwApp); err != nil {\n\t\t\tlog.Fatal(err)\n\t\t}\n")
+	clitest.AssertContains(t, got, "\t\"log\"\n")
+	if strings.Contains(got, "\t\tauthMgr.Init(fwApp)\n") {
+		t.Errorf("authMgr.Init's error is dropped:\n%s", got)
+	}
+}
+
 func TestAuthDevModeFalseHonored(t *testing.T) {
 	bp, err := covT_decode(t, "app:\n  name: D\n  auth:\n    enabled: true\n    dev_mode: false\n")
 	if err != nil {

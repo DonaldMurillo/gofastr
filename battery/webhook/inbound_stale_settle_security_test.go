@@ -59,7 +59,7 @@ func TestInboundRedStaleSettleFenced(t *testing.T) {
 			// envelope and marks processing; the queue's lease expiry re-runs
 			// the job under it (runner B), so two processing transitions land.
 			for range 2 {
-				if err := tc.store.(envelopeProcessingClaimer).MarkEnvelopeProcessing(ctx, env.ID); err != nil {
+				if _, err := tc.store.(envelopeProcessingClaimer).MarkEnvelopeProcessing(ctx, env.ID); err != nil {
 					t.Fatalf("setup broken: mark processing: %v", err)
 				}
 			}
@@ -110,7 +110,7 @@ func TestInboundRedStaleSettleFenced(t *testing.T) {
 			if err := tc.store.AddEnvelope(ctx, ctl); err != nil {
 				t.Fatalf("setup broken: seed control envelope: %v", err)
 			}
-			if err := tc.store.(envelopeProcessingClaimer).MarkEnvelopeProcessing(ctx, ctl.ID); err != nil {
+			if _, err := tc.store.(envelopeProcessingClaimer).MarkEnvelopeProcessing(ctx, ctl.ID); err != nil {
 				t.Fatalf("setup broken: control mark processing: %v", err)
 			}
 			ctlNow, err := tc.store.GetEnvelope(ctx, ctl.ID)

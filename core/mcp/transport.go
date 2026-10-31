@@ -104,15 +104,16 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 		resp := newErrorResponse(nil, ErrParse, "invalid JSON")
 		return false, &resp
 	}
-	//gofastr:allow(floatnum) the reply's id is rebuilt from the raw "id" bytes below; req.ID's float64 is never echoed
-	if err := handler.UnmarshalStrict(raw, req); err != nil {
+	// UseNumber keeps a numeric id as the literal the client sent: a
+	// float64 rounds one above 2^53 and cannot hold one past its range.
+	if err := handler.UnmarshalStrict(raw, req, handler.UseNumber()); err != nil {
 		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
 		return false, &resp
 	}
 	var env struct {
 		ID json.RawMessage `json:"id"`
 	}
-	//gofastr:allow(GOFASTR1407) raw already passed handler.UnmarshalStrict above, so both decodes read the one "id" key; this pass only reads its presence and digits
+	//gofastr:allow(GOFASTR1407) raw already passed handler.UnmarshalStrict above, so both decodes read the one "id" key; this pass only reads whether it is present
 	if err := json.Unmarshal(raw, &env); err != nil {
 		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
 		return false, &resp
@@ -126,9 +127,6 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 			return false, &resp
 		}
 		return true, nil
-	}
-	if _, isNum := req.ID.(float64); isNum {
-		req.ID = json.Number(env.ID)
 	}
 	return false, nil
 }
@@ -542,9 +540,12 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// answering for a session since revoked or a token since
 			// expired. A caller a fresh request would no longer carry
 			// has the stream closed, as framework/crud's event stream
-			// does.
+			// does. So does one the re-check placed in another tenant
+			// (tenant.ResolveMiddleware re-resolves it): the stream was
+			// admitted for the connect-time tenant, and a gate that
+			// does not read the tenant would keep delivering its URIs.
 			live, held := handler.RecheckPrincipal(sub.ctx)
-			if !held {
+			if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
 				return
 			}
 			if !s.subscriberMayReceive(live, n) {

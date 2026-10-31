@@ -36,7 +36,11 @@ func IsForgeableRequest(r *http.Request) bool {
 // folds sibling subdomains, so a page on evil.example.com (or on a
 // sibling port of a localhost tool) is same-site while its Origin names
 // a different origin, and a SameSite cookie still attaches. It falls
-// through to the Origin-host comparison, as does any unknown value.
+// through to the Origin-host comparison, as does any unknown value, and
+// under "same-site" an absent, opaque or unparseable Origin is
+// cross-site: a same-origin page says "same-origin", so only a sibling
+// (one sending Referrer-Policy: no-referrer, which makes Origin "null")
+// reaches that arm.
 // Two copies of this guard (battery/setup, kiln/chat) trusted
 // "same-site" and were driven to an attacker-owned admin account and an
 // approved destructive plan by the 2026-09-06 probes; the copies are
@@ -54,13 +58,16 @@ func IsCrossSiteRequest(r *http.Request) bool {
 	case "same-origin", "none":
 		return false
 	}
+	// Under "same-site" the Origin must prove same-origin: a sibling page
+	// sending Referrer-Policy: no-referrer sends Origin: null.
+	sameSite := r.Header.Get("Sec-Fetch-Site") == "same-site"
 	o := r.Header.Get("Origin")
 	if o == "" || o == "null" {
-		return false
+		return sameSite
 	}
 	u, err := url.Parse(o)
 	if err != nil || u.Host == "" {
-		return false
+		return sameSite
 	}
 	return !strings.EqualFold(u.Host, r.Host)
 }

@@ -89,9 +89,10 @@ import (
 // Known blind spots: keyed stores that are not SQL tables (the Redis
 // queue's sorted sets, the semantic file store's snapshot and WAL), a
 // table whose user identity hides inside an opaque key (battery/auth's
-// rl_key = "account:" + email, S30) or a signed token column
-// (framework/embed's grant_token, S31), and coverage registered from a
-// different package than the one creating the table.
+// rl_key = "<scope>|account:" + email, S30, which erase.go now reaches
+// by IdentityEmail and a ValuePrefix) or a signed token column, and
+// coverage registered from a different package than the one creating
+// the table.
 func ruleEraseCover(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diagnostic {
 	if !eraseCoverScope(rel) {
 		return nil

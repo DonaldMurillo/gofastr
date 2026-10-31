@@ -238,7 +238,7 @@ func (c *MigrationCoordinator) Apply(ctx context.Context, desc ProcessModuleDesc
 	}
 	if len(plan.Steps) == 0 {
 		// No migrations: still stamp applied-at so the module may proceed.
-		return c.stampApplied(ctx, desc.Name)
+		return c.stampApplied(ctx, desc.Name, desc.ArtifactSHA256)
 	}
 	switch c.dialect {
 	case migrate.DialectSQLite:
@@ -257,7 +257,7 @@ func (c *MigrationCoordinator) Apply(ctx context.Context, desc ProcessModuleDesc
 	default:
 		return fmt.Errorf("processmodule: unknown dialect %q", c.dialect)
 	}
-	return c.stampApplied(ctx, desc.Name)
+	return c.stampApplied(ctx, desc.Name, desc.ArtifactSHA256)
 }
 
 // applyPostgres provisions the per-module schema+role, opens a role DB,
@@ -322,13 +322,31 @@ func (c *MigrationCoordinator) applyWithMigrator(ctx context.Context, db *sql.DB
 	return nil
 }
 
+// artifactStamper is the store capability stampApplied prefers: it
+// stamps MigrationsAppliedAt only while the row still names the artifact
+// the migrations were applied for. [SQLProcessModuleStore] has it.
+type artifactStamper interface {
+	setMigrationsAppliedFor(ctx context.Context, module, artifactSHA256 string, at time.Time) (bool, error)
+}
+
 // stampApplied records MigrationsAppliedAt and advances the store
 // generation so the supervisor re-reconciles and lets the module spawn
 // (design §7: "on success advance generation + set MigrationsAppliedAt,
-// THEN spawn to Ready").
-func (c *MigrationCoordinator) stampApplied(ctx context.Context, module string) error {
+// THEN spawn to Ready"). A replica that boots another artifact clears
+// the stamp (InstallOrUpdate); when that lands while Apply ran, the
+// stamp is refused, so this artifact's approval never covers the other's
+// migrations.
+func (c *MigrationCoordinator) stampApplied(ctx context.Context, module, artifactSHA256 string) error {
 	now := c.now()
-	if err := c.store.SetMigrationsAppliedAt(ctx, module, &now); err != nil {
+	if st, ok := c.store.(artifactStamper); ok {
+		stamped, err := st.setMigrationsAppliedFor(ctx, module, artifactSHA256, now)
+		if err != nil {
+			return fmt.Errorf("set migrations_applied_at: %w", err)
+		}
+		if !stamped {
+			return fmt.Errorf("processmodule: %s: the desired artifact is no longer %s; run the coordinator for the artifact the row names", module, artifactSHA256)
+		}
+	} else if err := c.store.SetMigrationsAppliedAt(ctx, module, &now); err != nil {
 		return fmt.Errorf("set migrations_applied_at: %w", err)
 	}
 	if _, err := c.store.BumpGeneration(ctx, module); err != nil {
@@ -465,6 +483,7 @@ func sanitizeIdent(s string) string {
 // against the same host/db the admin DSN points at. adminDSN must be
 // URL-form (postgres://...). The role's search_path/statement_timeout are
 // set by provisioning (ALTER ROLE ... SET), so the DSN needs no options.
+// Of the admin DSN's query it keeps only roleDSNParams.
 func moduleRoleDSN(adminDSN, role, password string) (string, error) {
 	u, err := url.Parse(adminDSN)
 	if err != nil {
@@ -474,7 +493,30 @@ func moduleRoleDSN(adminDSN, role, password string) (string, error) {
 		return "", fmt.Errorf("admin DSN must be URL-form (postgres://...), got %q", adminDSN)
 	}
 	u.User = url.UserPassword(role, password)
+	q := u.Query()
+	for k := range q {
+		if !roleDSNParams[k] {
+			q.Del(k)
+		}
+	}
+	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+// roleDSNParams are the admin DSN query keys the module-role DSN keeps:
+// where the server is and how to reach it. The rest go. user, password,
+// passfile and service name a login, and lib/pq sorts its key=value
+// pairs, so the admin's can outrank the role's userinfo. lib/pq also
+// sends any key it does not know as a startup setting, so options,
+// search_path or role would override what provisioning set on the role.
+var roleDSNParams = map[string]bool{
+	"host": true, "hostaddr": true, "port": true, "dbname": true,
+	"sslmode": true, "sslrootcert": true, "sslcert": true, "sslkey": true,
+	"sslinline": true, "sslsni": true, "sslnegotiation": true,
+	"ssl_min_protocol_version": true, "ssl_max_protocol_version": true,
+	"connect_timeout": true, "target_session_attrs": true, "load_balance_hosts": true,
+	"application_name": true, "fallback_application_name": true,
+	"krbsrvname": true, "krbspn": true,
 }
 
 // shortHash trims a hex digest to 12 chars for log/error lines.

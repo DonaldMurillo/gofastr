@@ -31,6 +31,10 @@ type CorePlugin struct {
 	registerLimit     *RateLimiter
 }
 
+// loginAccountScope is the per-account login limiter's Scope when the
+// host sets none. The erasure matches its keys by it (erase.go).
+const loginAccountScope = "login_account"
+
 // NewCorePlugin creates the core auth plugin.
 func NewCorePlugin() *CorePlugin {
 	return &CorePlugin{}
@@ -56,7 +60,7 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 		c.loginLimit = newScopedRateLimiter(ipCfg, "login_ip")
 	}
 	if cfg.LoginRateLimitPerAccount != nil {
-		c.loginLimitAccount = newScopedRateLimiter(*cfg.LoginRateLimitPerAccount, "login_account")
+		c.loginLimitAccount = newScopedRateLimiter(*cfg.LoginRateLimitPerAccount, loginAccountScope)
 	}
 	if cfg.RegisterRateLimit != nil {
 		c.registerLimit = newScopedRateLimiter(*cfg.RegisterRateLimit, "register")

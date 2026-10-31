@@ -209,3 +209,18 @@ func TestInProcessM2MRunsPivotHooks(t *testing.T) {
 		t.Fatalf("CountAll members.id=u2 = %d, %v; want 0", n, err)
 	}
 }
+
+// A Through spelled main.memberships names the memberships join entity's
+// table on SQLite, and the string match found no pivot, so ?include= and
+// ?rel.field= joined the table with none of its gates and served the link
+// its BeforeList hides (2026-10-27 D9). Both refuse now.
+func TestQualifiedThroughStillGatesPivot(t *testing.T) {
+	groups, _ := pivotHookWorld(t, setupDB(t), pivotTeamHooks())
+	groups.Entity.Config.Relations[0].Through = "main.memberships"
+	for _, target := range []string{"/groups?include=members", "/groups?members.id=u2"} {
+		code, body := listBody(t, groups, target)
+		if code == http.StatusOK || strings.Contains(body, "OTHER-TEAM-MEMBER") {
+			t.Errorf("%s = %d %s, want a refusal", target, code, body)
+		}
+	}
+}

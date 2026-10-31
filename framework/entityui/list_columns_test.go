@@ -120,6 +120,25 @@ func TestColsParamHiddenColumnRefused(t *testing.T) {
 	}
 }
 
+// ?cols= picks among the columns the list offers. A list built with
+// Columns("name", "status") rendered ?cols=name,memo with Memo, a field
+// the list left out and its menu never offers.
+func TestColsParamStaysInOfferedSet(t *testing.T) {
+	x := columnsUI(t)
+	list := func() *ListBuilder { return x.ui.List("orders").Columns("name", "status").ColumnsMenu() }
+	html := listHTML(t, list(), x.ctx("/orders", "?cols=name,memo"))
+	if colOrder(html, "Memo") >= 0 {
+		t.Errorf("?cols= showed Memo, a column the list does not offer:\n%s", html)
+	}
+	if colOrder(html, "Name", "Status") < 0 {
+		t.Errorf("a refused cols param changed the columns instead of being ignored:\n%s", html)
+	}
+	html = listHTML(t, list(), x.ctx("/orders", "?cols=status,name"))
+	if colOrder(html, "Status", "Name") < 0 {
+		t.Errorf("an offered cols param did not apply:\n%s", html)
+	}
+}
+
 func TestColumnsMenuRendersControls(t *testing.T) {
 	x := columnsUI(t)
 	b := x.ui.List("orders").ColumnsMenu()

@@ -164,7 +164,9 @@
   }
 
   NS.desktop = {
-    available,
+    // A boolean, read on each access: a function here would pass every
+    // `if (desktop.available)` guard in a plain browser.
+    get available() { return available(); },
     // The id of the window this page lives in ("main" when the marker
     // carries none).
     windowID: windowID(),

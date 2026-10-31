@@ -117,6 +117,10 @@ type roomPeer struct {
 	// seat is this socket's entry in its principal's seat FIFO
 	// (seats.go); nil only for peers constructed outside Serve.
 	seat *socketSeat
+	// req and recheck are what Signaler.peerHeld re-checks the socket's
+	// principal with; req is nil only for peers constructed outside Serve.
+	req     *http.Request
+	recheck func(*http.Request) bool
 }
 
 // roomSource adapts the Signaler to stream.SnapshotSource for one
@@ -364,6 +368,8 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 		},
 		conn:    conn,
 		limiter: newFrameLimiter(s.cfg.MaxFramesPerSecond),
+		req:     r,
+		recheck: recheck,
 	}
 
 	var oldConn *stream.WebSocketConn

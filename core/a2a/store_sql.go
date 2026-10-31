@@ -79,7 +79,7 @@ func NewSQLStore(db *sql.DB, opts ...SQLStoreOption) (*SQLStore, error) {
 func (s *SQLStore) registerData() {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("a2a_tasks", s.taskTable), Source: "a2a", Table: s.taskTable, PrimaryKey: "id",
-		Columns: []string{"id", "owner", "context_id", "skill_id", "state", "status_ts", "version", "task_json", "created_at", "updated_at"},
+		Columns: []string{"id", "owner", "context_id", "skill_id", "scope", "state", "status_ts", "version", "task_json", "created_at", "updated_at"},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: datexport.ScopedName("a2a_tasks", s.taskTable), Source: "a2a", Table: s.taskTable,
@@ -140,6 +140,21 @@ func (w *where) sql() string {
 	return strings.Join(w.claus, " AND ")
 }
 
+// addScopeColumn upgrades a task table an earlier release created
+// without the scope column. Its rows read as made by an unscoped caller,
+// so a scoped token no longer sees the tasks it ran before the upgrade.
+func (s *SQLStore) addScopeColumn() error {
+	if s.dialect == dialectPostgres {
+		_, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.taskTable)))
+		return err
+	}
+	_, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN scope TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.taskTable)))
+	if err != nil && strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
 func (s *SQLStore) ensureTables() error {
 	tsType := "DATETIME"
 	if s.dialect == dialectPostgres {
@@ -153,6 +168,7 @@ func (s *SQLStore) ensureTables() error {
 		owner      TEXT NOT NULL,
 		context_id TEXT NOT NULL DEFAULT '',
 		skill_id   TEXT NOT NULL DEFAULT '',
+		scope      TEXT NOT NULL DEFAULT '',
 		state      TEXT NOT NULL,
 		status_ts  %s NOT NULL,
 		version    BIGINT NOT NULL DEFAULT 0,
@@ -161,6 +177,9 @@ func (s *SQLStore) ensureTables() error {
 		updated_at %s NOT NULL
 	)`, query.QuoteFolded(s.taskTable), tsType, tsType, tsType)
 	if _, err := s.db.Exec(tasks); err != nil {
+		return err
+	}
+	if err := s.addScopeColumn(); err != nil {
 		return err
 	}
 	push := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -206,12 +225,12 @@ func (s *SQLStore) CreateTask(ctx context.Context, rec *TaskRecord) error {
 		return fmt.Errorf("a2a: marshal task: %w", err)
 	}
 	stmt := fmt.Sprintf(
-		`INSERT INTO %s (id, owner, context_id, skill_id, state, status_ts, version, task_json, created_at, updated_at)
-		 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)`,
+		`INSERT INTO %s (id, owner, context_id, skill_id, scope, state, status_ts, version, task_json, created_at, updated_at)
+		 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)`,
 		query.QuoteFolded(s.taskTable),
-		s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5), s.ph(6), s.ph(7), s.ph(8), s.ph(9), s.ph(10))
+		s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5), s.ph(6), s.ph(7), s.ph(8), s.ph(9), s.ph(10), s.ph(11))
 	_, err = s.db.ExecContext(ctx, stmt,
-		rec.Task.ID, rec.Owner, rec.Task.ContextID, rec.SkillID,
+		rec.Task.ID, rec.Owner, rec.Task.ContextID, rec.SkillID, rec.Scope,
 		string(rec.Task.Status.State), statusTsOf(rec.Task), rec.Version,
 		string(taskJSON), rec.CreatedAt, rec.UpdatedAt)
 	if err != nil && isDuplicateRowErr(err) {
@@ -220,13 +239,13 @@ func (s *SQLStore) CreateTask(ctx context.Context, rec *TaskRecord) error {
 	return err
 }
 
-const taskCols = "task_json, skill_id, version, created_at, updated_at"
+const taskCols = "task_json, skill_id, scope, version, created_at, updated_at"
 
 func scanTask(row interface{ Scan(dest ...any) error }, owner string) (*TaskRecord, error) {
-	var taskJSON, skillID string
+	var taskJSON, skillID, scope string
 	var version int64
 	var createdAt, updatedAt time.Time
-	if err := row.Scan(&taskJSON, &skillID, &version, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&taskJSON, &skillID, &scope, &version, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -240,6 +259,7 @@ func scanTask(row interface{ Scan(dest ...any) error }, owner string) (*TaskReco
 		Task:      task,
 		Owner:     owner,
 		SkillID:   skillID,
+		Scope:     scope,
 		Version:   version,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
@@ -301,6 +321,10 @@ func (s *SQLStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
 	return nil
 }
 
+// FiltersByScope implements ScopeFilter: ListTasks filters by
+// ListQuery.Scoped in its query.
+func (s *SQLStore) FiltersByScope() {}
+
 func (s *SQLStore) ListTasks(ctx context.Context, owner string, q ListQuery) ([]*TaskRecord, int, error) {
 	w := s.where("owner = %s", owner)
 	if q.ContextID != "" {
@@ -308,6 +332,9 @@ func (s *SQLStore) ListTasks(ctx context.Context, owner string, q ListQuery) ([]
 	}
 	if q.Status != "" {
 		w.and("state = %s", q.Status)
+	}
+	if q.Scoped {
+		w.and("scope = %s", q.Scope)
 	}
 	if !q.After.IsZero() {
 		w.and("status_ts > %s", q.After)

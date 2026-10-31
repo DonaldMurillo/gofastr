@@ -38,10 +38,23 @@
   };
   const _showLoading = (e) => {
     if (!e.el.isConnected) return;
-    e.park = document.createElement('div');
-    e.park.hidden = true;
-    document.body.appendChild(e.park);
-    while (e.el.firstChild) e.park.appendChild(e.el.firstChild);
+    // A superseded navigation's entry can still show on this region (its
+    // fetch has not settled). Its park holds the region's original nodes
+    // and the region holds only its clone, so take the park over rather
+    // than parking the clone.
+    const prev = _liveLoading.find((p) => p.el === e.el && p.shown);
+    if (prev) {
+      e.park = prev.park;
+      prev.park = null;
+      prev.shown = false;
+      _liveLoading.splice(_liveLoading.indexOf(prev), 1);
+      e.el.replaceChildren();
+    } else {
+      e.park = document.createElement('div');
+      e.park.hidden = true;
+      document.body.appendChild(e.park);
+      while (e.el.firstChild) e.park.appendChild(e.el.firstChild);
+    }
     e.el.appendChild(e.tpl.content.cloneNode(true));
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(e.el);
     e.el.setAttribute('data-cui-loadstate', 'shown');
@@ -204,31 +217,28 @@
             await Promise.all(shows.filter((e) => e.shown).map(_exitLoading));
           }
         },
-        // The apply sweep: entries a superseded navigation left
-        // behind settle (their navigation will never finish); this
-        // navigation's own entries settle only when the apply
-        // REPLACED their region — the rest wait for finish, which
-        // restores them.
+        // The apply sweep: a shown entry settles when the apply
+        // REPLACED its region and restores otherwise. A region the
+        // apply left alone still holds a clone, this navigation's or a
+        // superseded one's (a part's too), and settling would drop the
+        // original nodes with the park.
         sweep() {
           for (const e of _liveLoading.slice()) {
-            if (e.st === st && !st.applied.has(e.el)) continue;
-            _settleLoading(e);
+            if (st.applied.has(e.el)) _settleLoading(e);
+            else _restoreLoading(e);
           }
         },
-        // A navigation that owns the epoch RESTORES (failure, abort);
-        // a superseded one only settles — the newer navigation owns
-        // the regions now, and re-parking is its business. On success
-        // a shown entry settles when the apply replaced its region
-        // and restores otherwise (a marked region the answer never
-        // filled keeps its parked nodes).
-        finish(owns) {
-          for (const e of shows) {
-            if (owns && !st.applied.has(e.el)) _restoreLoading(e);
-            else _settleLoading(e);
-          }
+        // Every entry still shown restores: failure, abort, and a
+        // superseded navigation, whose region still holds its clone
+        // (dropping the park would lose the original nodes; the newer
+        // navigation parks them again when its After timer fires, or
+        // has already taken the park over in show). An entry on a
+        // region the apply replaced was settled by the sweep, which
+        // every commit runs right after recording what it applied.
+        finish() {
+          for (const e of shows) _restoreLoading(e);
         },
       };
-      for (const e of shows) e.st = st;
       return st;
     },
   };

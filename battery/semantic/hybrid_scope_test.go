@@ -40,7 +40,12 @@ func TestHybridKeywordScopesBeforeCut(t *testing.T) {
 	}
 	for name, mk := range stores {
 		t.Run(name, func(t *testing.T) {
-			idx, err := Open(Options{Embedder: pickEmbedder{}, Store: mk(t), Keyword: NewMemoryKeyword()})
+			store := mk(t)
+			var kw KeywordBackend = NewMemoryKeyword()
+			if pg, ok := store.(*PgVectorStore); ok {
+				kw = pg.Keyword()
+			}
+			idx, err := Open(Options{Embedder: pickEmbedder{}, Store: store, Keyword: kw})
 			if err != nil {
 				t.Fatal(err)
 			}

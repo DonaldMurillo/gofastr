@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 )
 
 // MountOption customizes one Mount call.
@@ -175,7 +176,7 @@ func privateTextHandler(contentType, body, etag string) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("ETag", etag)
 		h.Set("Cache-Control", "private, no-store")
-		if r.Header.Get("If-None-Match") == etag {
+		if corestatic.IfNoneMatch(r, etag) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}

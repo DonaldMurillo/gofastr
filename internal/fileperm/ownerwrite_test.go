@@ -99,3 +99,44 @@ func TestFillOwnerOnlyReportsHandleFailures(t *testing.T) {
 		t.Fatal("write on a read-only handle must fail")
 	}
 }
+
+func TestCreateOwnerOnlyTightensAndTruncates(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "stream")
+	if err := os.WriteFile(p, []byte("old secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := CreateOwnerOnly(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 || st.Size() != 0 {
+		t.Fatalf("handle mode %o size %d before any write, want 600 and 0", st.Mode().Perm(), st.Size())
+	}
+	if _, err := f.WriteString("new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(p); string(got) != "new" {
+		t.Fatalf("content = %q, want new", got)
+	}
+	if _, err := CreateOwnerOnly(filepath.Join(t.TempDir(), "missing-dir", "x")); err == nil {
+		t.Fatal("CreateOwnerOnly into a missing directory must fail")
+	}
+}
+
+func TestRestrictedHandleReportsChmodFailure(t *testing.T) {
+	closed, err := os.Create(filepath.Join(t.TempDir(), "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.Close()
+	if f, err := restrictedHandle(closed); err == nil || f != nil {
+		t.Fatalf("restrictedHandle on a closed handle = %v, %v; want nil and an error", f, err)
+	}
+}

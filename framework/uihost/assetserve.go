@@ -3,6 +3,8 @@ package uihost
 import (
 	"net/http"
 	"strconv"
+
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 )
 
 // serveVersionedText is the one policy for every text asset under
@@ -39,7 +41,7 @@ func serveVersionedText(w http.ResponseWriter, r *http.Request, contentType, bod
 		h.Set("Cache-Control", "no-cache")
 	}
 
-	if etag != "" && r.Header.Get("If-None-Match") == etag {
+	if etag != "" && corestatic.IfNoneMatch(r, etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}

@@ -85,6 +85,7 @@ func indexTerms(word string) []string {
 	if len(parts) > 1 {
 		for _, p := range parts {
 			p = strings.ToLower(p)
+			//gofastr:allow(asciifold) dedup of one word's own parts against its whole; nothing is looked up, and search folds the query the same way
 			if utf8.RuneCountInString(p) >= minTermRunes && p != lower {
 				out = append(out, p)
 			}

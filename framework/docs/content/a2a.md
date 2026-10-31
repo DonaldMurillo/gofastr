@@ -50,7 +50,9 @@ The one thing an integrator must know: **a skill is invoked by name,
 never inferred from prose.** The router reads `message.metadata.skill`,
 then the first data part carrying a `"skill"` key, then (only when
 exactly one skill is registered) that skill — and anything else is
-rejected with a message naming the available skill ids. There is no
+rejected. The rejection names the skill asked for and lists no others:
+the exchange serves entity skills the public card leaves out, so the
+card is where a client finds the skills it can call. There is no
 model call, no intent classification, no fallback guess on the server
 side. A client that sends "please list my invoices" as text gets a
 rejected task; a client that sends
@@ -178,6 +180,24 @@ Every task is owned by the principal that created it. Reads, resumes,
 cancels, and push configs are scoped to that owner in the store; another
 owner's task id is indistinguishable from an unknown one
 (`-32001` task not found), so ids do not enumerate across users.
+
+A task also records the scopes of the credential that created it. A
+caller whose API token or embed grant narrows it (`access.HeldScopes`)
+sees only the tasks made under the same scope set, in any order; to it,
+a task its owner's session or a broader token ran is `-32001` too, and
+`ListTasks` leaves it out of the page and `totalSize`. A session sees
+every task of its owner. `WithA2A` wires this; a server built by hand
+passes `a2a.Config.Scopes`. A custom `a2a.Store` keeps
+`TaskRecord.Scope`. One that filters `ListTasks` by `ListQuery.Scoped`
+in its query declares the optional `a2a.ScopeFilter` interface (both
+built-in stores do); without it, the server lists a scoped caller by
+walking every task of the owner and counting the caller's alone, so the
+page, `totalSize` and `nextPageToken` never count another tier's tasks.
+The server also drops another tier's task from a declaring store's page,
+so a store that declares it wrongly hands out no task, though its
+`totalSize` is then its own. The SQL store adds
+the `scope` column to an older table on open, and its rows read as a
+session's.
 
 The SQL task store registers its task and push-config tables with
 `App.ExportData` and `App.EraseUserData`, keyed on the owner column, so

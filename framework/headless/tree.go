@@ -52,7 +52,9 @@ type TreeNode struct {
 	// bound to the signal the response swaps in. Children wins when
 	// both are set — the children are already there.
 	LazyPath string
-	// Expanded forces the branch open on first paint.
+	// Expanded forces the branch open on first paint. A lazy branch
+	// (LazyPath with no Children) ignores it and starts collapsed: its
+	// children load on the first toggle.
 	Expanded bool
 	// Selected sets aria-selected="true" on the treeitem.
 	Selected bool
@@ -141,6 +143,11 @@ func treeNeedsSignals(nodes []TreeNode) bool {
 // themselves, since a root's mark already covers them.
 func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, firstFocusable, mark bool) render.HTML {
 	isBranch := len(n.Children) > 0 || n.LazyPath != ""
+	lazy := n.LazyPath != "" && len(n.Children) == 0
+	// A lazy branch loads on its first toggle, so it starts collapsed:
+	// rendered open, its group would sit empty until the reader closed
+	// and reopened it.
+	expanded := n.Expanded && !lazy
 
 	itemAttrs := Attrs(map[string]string{
 		"id":            n.ID,
@@ -155,7 +162,7 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 		itemAttrs["tabindex"] = "-1"
 	}
 	if isBranch {
-		itemAttrs["aria-expanded"] = strconv.FormatBool(n.Expanded)
+		itemAttrs["aria-expanded"] = strconv.FormatBool(expanded)
 	}
 	if n.Selected {
 		itemAttrs["aria-selected"] = "true"
@@ -173,7 +180,7 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 		// the tab order; the module returns focus to the row.
 		toggleAttrs["aria-hidden"] = "true"
 		toggleAttrs["tabindex"] = "-1"
-		if n.LazyPath != "" && len(n.Children) == 0 {
+		if lazy {
 			// Lazy: clicking the toggle fires the kernel's rpc
 			// primitive; the response populates the child group
 			// through the signal swap.
@@ -196,10 +203,10 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 	body := []render.HTML{b.El("div", PartTreeRow, nil, row...)}
 	if isBranch {
 		groupAttrs := Attrs(map[string]string{"role": "group"})
-		if !n.Expanded {
+		if !expanded {
 			Mark(groupAttrs, "hidden")
 		}
-		if n.LazyPath != "" && len(n.Children) == 0 {
+		if lazy {
 			groupAttrs["data-cui-signal"] = signalPrefix + "-" + n.ID
 			groupAttrs["data-cui-signal-mode"] = "html"
 		}

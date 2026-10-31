@@ -10,6 +10,11 @@ import (
 const (
 	defaultMaxCatchUpOccurrences = 1000
 	maxCronCatchUpSearchMinutes  = 5 * 366 * 24 * 60
+	// minDurableInterval is the shortest Every a durable schedule takes.
+	// Postgres keeps microseconds, so ticks closer than that collapse to
+	// one scheduled_tick and the occurrence insert breaks the tick's
+	// unique constraint; a millisecond keeps every tick distinct.
+	minDurableInterval = time.Millisecond
 )
 
 func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time.Time, time.Time, error) {
@@ -22,8 +27,11 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 		return nil, time.Time{}, fmt.Errorf("queue: schedule %q has invalid catch-up limit %d", schedule.id, limit)
 	}
 	if schedule.cronSpec == "" {
-		if schedule.interval <= 0 {
-			return nil, time.Time{}, fmt.Errorf("queue: schedule %q did not advance", schedule.id)
+		// A zero interval never advances, and a sub-millisecond one stored
+		// before registration refused it wedges the pass: skipping the one
+		// schedule keeps the pass going for the rest.
+		if schedule.interval < minDurableInterval {
+			return nil, time.Time{}, fmt.Errorf("queue: schedule %q interval %s is below the %s floor", schedule.id, schedule.interval, minDurableInterval)
 		}
 		elapsed := now.Sub(cursor)
 		total := int64(elapsed/schedule.interval) + 1
@@ -45,10 +53,10 @@ func boundedDueTicks(schedule durableSchedule, now time.Time, limit int) ([]time
 	// each minute rendered in the schedule's registration location. Cron
 	// field matching is location-sensitive (the spec "0 2 * * *" means 02:00
 	// in the schedule's registration location, not 02:00 UTC). DST transition
-	// semantics (vixie/cronie parity) are implemented by firesInRange: a
-	// wall-clock match in a fall-back repeated hour fires only at its earlier
-	// absolute instant, and a skipped wall-clock minute inside a spring-
-	// forward gap fires once at the transition instant. The absolute instant
+	// semantics (vixie/cronie parity) are implemented by firesInRange: for a
+	// fixed-time spec, a wall-clock match in a fall-back repeated hour fires
+	// only at its earlier absolute instant, and a skipped wall-clock minute
+	// inside a spring-forward gap fires once at the transition instant. The absolute instant
 	// is what we store. See durable_scheduler_dst.go.
 	ticks, err := firesInRange(parsed, loc, cursor, now, limit)
 	if err != nil {

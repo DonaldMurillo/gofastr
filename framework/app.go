@@ -285,8 +285,8 @@ type App struct {
 
 	// processModules supervises out-of-process third-party modules
 	// (issue #37, wave 2a). Lazily constructed by RegisterProcessModule;
-	// nil when the app has no process modules. StartLoops + PrependDrainer
-	// are wired in [App.Start].
+	// nil when the app has no process modules. [App.Start] starts its
+	// loops and [App.Shutdown] drains it.
 	processModules *ProcessModuleSupervisor
 
 	// moduleTools is the MCP tool registry shared across every process
@@ -296,14 +296,13 @@ type App struct {
 	// disabled module's tools are omitted from tools/list.
 	moduleTools *ModuleToolRegistry
 
-	// processDrainRegistered guards the supervisor's PrependDrainer call
-	// so repeated Start paths (canonical + setup-interactive) don't
-	// double-register. Read/written under no lock. runStartHooks is
-	// single-threaded through Start.
-	processDrainRegistered bool
-
 	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
 	server   *http.Server
+	// shutdownDone is set by the first Shutdown and closed when its
+	// teardown returns; every later call waits on it instead of tearing
+	// down again. Guarded by shutdownMu.
+	shutdownMu   sync.Mutex
+	shutdownDone chan struct{}
 	// newConns holds connections the server accepted that have not sent
 	// a request yet (net/http's StateNew): a browser's speculative
 	// preconnect, a Transport's spare dial. Server.Shutdown spares such a
@@ -1303,6 +1302,11 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	if a != nil && a.DB != nil {
 		chain = append(chain, a.DBContextMiddleware())
 	}
+	// The App's flag evaluator, so featureflag.Bool on a request context
+	// reads this App's flags and not the process default.
+	if a != nil {
+		chain = append(chain, a.FlagContextMiddleware())
+	}
 	if a != nil && a.tracing {
 		chain = append(chain, middleware.Tracing())
 	}
@@ -1579,21 +1583,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		crudHandler = crud.NewCrudHandler(e, a.DB)
-		crudHandler.JSONCase = a.JSONCasing()
-		crudHandler.Hooks = a.HookRegistry(name)
-		crudHandler.ChildHooks = a.lookupHookRegistry
-		crudHandler.Storage = a.Storage
-		crudHandler.ImageDeriver = a.imageDeriver
-		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
-		crudHandler.StripUploadMetadata = a.stripUploadMetadata
-		crudHandler.Events = a.Events()
-		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
-		// in the EventOutbox interface and silently swallow every event.
-		if a.outbox != nil {
-			crudHandler.Outbox = a.outbox
-		}
-		crudHandler.Registry = a.Registry
+		crudHandler = a.wireCrudHandler(e)
 		// The MCP tools re-dispatch through the router: that is what makes
 		// them inherit auth, owner and tenant scoping rather than
 		// re-implementing it, so they must address the path the routes are
@@ -1663,7 +1653,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2207,21 +2197,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		crudHandler = crud.NewCrudHandler(e, a.DB)
-		crudHandler.JSONCase = a.JSONCasing()
-		crudHandler.Hooks = a.HookRegistry(name)
-		crudHandler.ChildHooks = a.lookupHookRegistry
-		crudHandler.Storage = a.Storage
-		crudHandler.ImageDeriver = a.imageDeriver
-		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
-		crudHandler.StripUploadMetadata = a.stripUploadMetadata
-		crudHandler.Events = a.Events()
-		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
-		// in the EventOutbox interface and silently swallow every event.
-		if a.outbox != nil {
-			crudHandler.Outbox = a.outbox
-		}
-		crudHandler.Registry = a.Registry
+		crudHandler = a.wireCrudHandler(e)
 		// MCP tools dispatch in-process against a.router, where these routes are
 		// mounted under the API prefix, tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
@@ -2263,20 +2239,33 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app.CrudHandler: %w", err)
 	}
+	return a.wireCrudHandler(ent), nil
+}
+
+// wireCrudHandler is the one constructor behind every entity's CRUD handler:
+// the mounted routes (App.Entity, App.GroupEntity), CrudHandler and
+// CrudHandlerForEntity. Each used to copy the field list, and
+// CrudHandlerForEntity's copy dropped ChildHooks, the image pipeline and the
+// metadata strip, so the entityui back office saved images with no renditions
+// and cascaded without child hooks. Callers set BasePath for their own mount.
+func (a *App) wireCrudHandler(ent *entity.Entity) *crud.CrudHandler {
+	name := ent.GetName()
 	ch := crud.NewCrudHandler(ent, a.DB)
 	ch.JSONCase = a.JSONCasing()
 	ch.Hooks = a.HookRegistry(name)
+	ch.ChildHooks = a.lookupHookRegistry
 	ch.Storage = a.Storage
 	ch.ImageDeriver = a.imageDeriver
 	ch.FieldImageDerivers = a.fieldImageDerivers[name]
 	ch.StripUploadMetadata = a.stripUploadMetadata
 	ch.Events = a.Events()
+	// Guarded assignment: a bare `= a.outbox` would wrap a typed nil in the
+	// EventOutbox interface and silently swallow every event.
 	if a.outbox != nil {
 		ch.Outbox = a.outbox
 	}
 	ch.Registry = a.Registry
-	ch.ChildHooks = a.lookupHookRegistry
-	return ch, nil
+	return ch
 }
 
 // CrudHandlerForEntity is CrudHandler that takes the entity directly instead
@@ -2302,15 +2291,7 @@ func (a *App) CrudHandlerForEntity(ent *entity.Entity) (*crud.CrudHandler, error
 	if registered != ent {
 		return nil, fmt.Errorf("app.CrudHandlerForEntity: entity %q at version %q is not the registered instance", ent.Config.Name, ent.Version)
 	}
-	ch := crud.NewCrudHandler(ent, a.DB)
-	ch.JSONCase = a.JSONCasing()
-	ch.Hooks = a.HookRegistry(ent.GetName())
-	ch.Storage = a.Storage
-	ch.Events = a.Events()
-	if a.outbox != nil {
-		ch.Outbox = a.outbox
-	}
-	ch.Registry = a.Registry
+	ch := a.wireCrudHandler(ent)
 	// BasePath is where the entity's routes are actually mounted. mcpBase() is
 	// BasePath + "/" + table, so leaving it empty addresses "/posts" while a
 	// versioned entity's routes live at "/api/v1/posts". An unversioned entity
@@ -2673,7 +2654,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2711,15 +2692,36 @@ func endpointRoute(ep entity.Endpoint) http.Handler {
 // straight onto the MCP server and sees none of it. So the twin defaults to
 // requiring an authenticated caller, and an endpoint that really is
 // anonymous says so with Public.
-func endpointMCPOptions(ep entity.Endpoint) []mcp.ToolOption {
+//
+// A scope-restricted caller (an API token, access.WithHeldScopes) must also
+// hold "<table>:<verb>", GET and HEAD reading and every other method
+// writing: the scope auth.RequireAPIScopes demands of the REST route. This
+// holds under MCPGate and Public too, as RequireAPIScopes holds on a Public
+// route, since scopes only narrow what a credential may reach.
+func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption {
+	var gate func(context.Context) error
 	switch {
 	case ep.MCPGate != nil:
-		return []mcp.ToolOption{mcp.WithToolGate(ep.MCPGate)}
-	case ep.Public:
-		return nil
-	default:
-		return []mcp.ToolOption{mcp.WithToolGate(MCPRequireUser())}
+		gate = ep.MCPGate
+	case !ep.Public:
+		gate = MCPRequireUser()
 	}
+	verb := "write"
+	if m := strings.ToUpper(strings.TrimSpace(ep.Method)); m == http.MethodGet || m == http.MethodHead {
+		verb = "read"
+	}
+	scope := access.Permission(ent.GetTable() + ":" + verb)
+	return []mcp.ToolOption{mcp.WithToolGate(func(ctx context.Context) error {
+		if gate != nil {
+			if err := gate(ctx); err != nil {
+				return err
+			}
+		}
+		if !access.ScopeAllows(ctx, scope) {
+			return errScopeNotHeld
+		}
+		return nil
+	})}
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to
@@ -3037,18 +3039,10 @@ func (a *App) runStartHooks() error {
 
 	// Start the process-module supervisor's per-module loops (issue #37).
 	// Each registered module's supervise goroutine launches here, after
-	// InitPlugins has loaded module state. The supervisor's drain drainer
-	// is registered via PrependDrainer so children drain FIRST, before
-	// the DB/queue batteries they may need for in-flight reverse calls
-	// (design §8). Idempotent via processDrainRegistered.
+	// InitPlugins has loaded module state. Shutdown drains the children
+	// before batteries stop. StartLoops is idempotent.
 	if a.processModules != nil {
 		a.processModules.StartLoops()
-		if !a.processDrainRegistered {
-			a.processDrainRegistered = true
-			if err := a.lc.PrependDrainer(a.processModules); err != nil {
-				a.Logger().Warn("process module drain drainer not registered", "error", err)
-			}
-		}
 	}
 
 	// Then app-level start hooks (cron, queues, custom)
@@ -3161,10 +3155,38 @@ func (a *App) closeNewConns() {
 // battery in reverse dependency order, then runs each OnStop hook in
 // reverse registration order. Matches net/http.Server.Shutdown's
 // signature (takes a deadline ctx) but does the FULL lifecycle teardown.
-// Safe to call multiple times. Subsequent calls are no-ops.
+// Safe to call multiple times: the teardown runs once, and a later or
+// concurrent call waits for it to finish, then returns nil, or returns
+// ctx's error if its own ctx ends first.
 //
 // Call this from your signal handler.
 func (a *App) Shutdown(ctx context.Context) error {
+	// A second call used to find the server already detached and go
+	// straight to stopping batteries: sequentially every OnStop ran
+	// twice, and concurrently (a signal handler plus a deferred Shutdown)
+	// batteries closed under requests the first call was still draining
+	// (2026-10-27 S3). Later callers wait on ctx as well as the teardown,
+	// so a Shutdown called from inside the teardown is bounded by its own
+	// deadline rather than deadlocked.
+	a.shutdownMu.Lock()
+	if done := a.shutdownDone; done != nil {
+		a.shutdownMu.Unlock()
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	done := make(chan struct{})
+	a.shutdownDone = done
+	a.shutdownMu.Unlock()
+	defer close(done)
+	return a.shutdown(ctx)
+}
+
+// shutdown is Shutdown's teardown, run once.
+func (a *App) shutdown(ctx context.Context) error {
 	// Snapshot the cancel func and detach the server under the same lock
 	// that Start/runStartHooks use to assign them. Invoke cancel OUTSIDE
 	// the lock so a cancel-triggered teardown can't re-enter and deadlock.
@@ -3192,6 +3214,13 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
+	// Process-module children drain next, while the batteries their
+	// in-flight reverse calls reach are still running (design §8). The
+	// drain closes the supervisor, so no loop restarts a drained child.
+	if a.processModules != nil {
+		_ = a.processModules.Drain(ctx)
+	}
+
 	// Stop batteries in reverse dependency order (dependents first)
 	if err := a.Batteries.StopAll(ctx); err != nil && firstErr == nil {
 		firstErr = fmt.Errorf("stopping batteries: %w", err)
@@ -3204,6 +3233,34 @@ func (a *App) Shutdown(ctx context.Context) error {
 		firstErr = fmt.Errorf("running stop hooks: %w", err)
 	}
 	return firstErr
+}
+
+// migrateAndSeed auto-migrates every registered entity, view and routine,
+// unless the deployment opted into explicit migrations only
+// (WithoutAutoMigrate), then runs entity seeds. Seeds run either way: they
+// are idempotent data writes, not schema, and a seeded entity whose table
+// is missing fails Start here rather than serving against an unmigrated
+// schema. No DB, nothing to do.
+func (a *App) migrateAndSeed() error {
+	if a.DB == nil {
+		return nil
+	}
+	if !a.noAutoMigrate {
+		if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, a.MigrationPlan()); err != nil {
+			return fmt.Errorf("auto-migrate: %w", err)
+		}
+	}
+	if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
+		return fmt.Errorf("run seeds: %w", err)
+	}
+	return nil
+}
+
+// schemaSize counts the schema declarations Start migrates: entities and
+// tables (every registered version), views and routines. All three only
+// grow, so a change means something new to migrate.
+func (a *App) schemaSize() int {
+	return a.Registry.size() + len(a.migrationViews) + len(a.migrationRoutines)
 }
 
 // runSeedHooksSerialized runs the App.WithSeed hooks, serializing them across
@@ -3360,21 +3417,8 @@ func (a *App) Start(addr string) error {
 		return err
 	}
 
-	// Auto-migrate all registered entities, unless the deployment opted
-	// into explicit migrations only (WithoutAutoMigrate). Seeds run
-	// either way: they are idempotent data writes, not schema, and a
-	// seeded entity whose table is missing fails Start here rather than
-	// serving against an unmigrated schema.
-	if a.DB != nil {
-		if !a.noAutoMigrate {
-			plan := migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
-			if err := migrate.AutoMigratePlanContext(a.appCtx, a.DB, plan); err != nil {
-				return abort(fmt.Errorf("auto-migrate: %w", err))
-			}
-		}
-		if err := migrate.RunSeeds(a.appCtx, a.DB, a.Registry); err != nil {
-			return abort(fmt.Errorf("run seeds: %w", err))
-		}
+	if err := a.migrateAndSeed(); err != nil {
+		return abort(err)
 	}
 	// App-level seed hooks (App.WithSeed). Run after auto-migration + the
 	// per-entity RunSeeds phase so every table exists, and before plugins
@@ -3392,8 +3436,18 @@ func (a *App) Start(addr string) error {
 	// Initialize plugins and batteries (routes, middleware, tools, hooks).
 	// Must happen after auto-migrate (so entity tables exist) but before
 	// start hooks (so batteries can reference their routes).
+	schemaBefore := a.schemaSize()
 	if err := a.InitPlugins(); err != nil {
 		return abort(fmt.Errorf("init plugins: %w", err))
+	}
+	// An entity, view or routine declared from a battery's or module's
+	// Init (the pattern modules.md documents) missed the pass above, so
+	// migrate and seed again. Both are idempotent: what the first pass
+	// covered diffs to nothing and its seeds are in the ledger.
+	if a.schemaSize() != schemaBefore {
+		if err := a.migrateAndSeed(); err != nil {
+			return abort(fmt.Errorf("after init plugins: %w", err))
+		}
 	}
 	// `gofastr export` runs the app with GOFASTR_EXPORT set: export
 	// every page now (migrations and seeds have run, so data-backed

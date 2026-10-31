@@ -135,6 +135,12 @@ func TestOwnedTokenCustomProperty(t *testing.T) {
 		":scope { --board-accent: var(--color-primary); }\n")
 }
 
+func TestOwnedStatementAtRule(t *testing.T) {
+	fireAndQuiet(t, contracts.RuleOwnedStatementAtRule, "board",
+		"@import url(fonts.css);\n.a { order: 1; }\n", 1, 1,
+		".a { order: 1; }\n")
+}
+
 // testdata trees hold parser fixtures; the owned-style checks skip
 // them, like 1814.
 func TestOwnedChecksSkipTestdata(t *testing.T) {

@@ -612,6 +612,16 @@
     // supersede rule (NS._navLive). A writable slot, not a closure,
     // because the module's navigator owns its own navigations.
     _navEpoch: 0,
+    // The path the DOM showed when the pending navigations began, or
+    // null while none is pending. A navigation started while another
+    // still loads keeps it, so a failure rolls back to the page still
+    // shown, never to a superseded destination that never rendered.
+    // Both navigators set it at entry and the live one clears it.
+    _navBase: null,
+    // Set once core's navigator has swapped the DOM. The envelope
+    // module keys the page it finds on the served URL, which is only
+    // right while no navigation has applied before it loaded.
+    _navShown: false,
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
     // _toastTimers, _toastSeq) lives in the registered behaviour module

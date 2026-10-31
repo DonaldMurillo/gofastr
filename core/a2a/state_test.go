@@ -320,7 +320,8 @@ func TestHandlerPanicFails(t *testing.T) {
 }
 
 // TestRoutingMissRejected pins the router-miss shape: a REJECTED task
-// (not a JSON-RPC error) whose status message names the skills.
+// (not a JSON-RPC error) whose status message says no skill was named,
+// without listing the registered ones.
 func TestRoutingMissRejected(t *testing.T) {
 	h := newHarness(t, func(c *Config) {
 		c.Skills = append(c.Skills, Skill{ID: "other", Name: "Other", Handler: func(context.Context, TaskContext) error { return nil }})
@@ -344,7 +345,7 @@ func TestRoutingMissRejected(t *testing.T) {
 	if task == nil || task.Status.State != TaskStateRejected {
 		t.Fatalf("task = %+v, want REJECTED", task)
 	}
-	if msg := statusText(task); msg != "no skill named; available: echo, other" {
+	if msg := statusText(task); msg != "the message names no skill" {
 		t.Fatalf("message = %q", msg)
 	}
 }

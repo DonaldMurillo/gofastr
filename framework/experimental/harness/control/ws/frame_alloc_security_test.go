@@ -49,7 +49,7 @@ func TestFrameAllocRedTracksDeliveredBytes(t *testing.T) {
 	runtime.ReadMemStats(&m0)
 	go func() {
 		defer close(done)
-		_, _, _ = conn.readFrame()
+		_, _, _, _ = conn.readFrame(wsMessageLimit)
 	}()
 
 	// Wait until the blocking read (the one after the header was fully

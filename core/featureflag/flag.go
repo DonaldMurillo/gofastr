@@ -260,9 +260,9 @@ var (
 	defaultEval *Evaluator
 )
 
-// SetDefault installs the process-wide evaluator used by the package-
-// level helpers (Bool). Pass nil to disable and have Bool return false
-// for every call.
+// SetDefault installs the process-wide evaluator the package-level
+// helpers (Bool) use on a context that carries none (see WithEvaluator).
+// Pass nil to disable and have Bool return false for every such call.
 func SetDefault(e *Evaluator) {
 	defaultMu.Lock()
 	defaultEval = e
@@ -276,9 +276,35 @@ func Default() *Evaluator {
 	return defaultEval
 }
 
-// Bool is a convenience wrapper around Default().Bool.
+// Bool is a convenience wrapper around EvaluatorFrom(ctx).Bool.
 func Bool(ctx context.Context, key string) bool {
-	return Default().Bool(ctx, key)
+	return EvaluatorFrom(ctx).Bool(ctx, key)
+}
+
+type evaluatorCtxKey struct{}
+
+// ctxEvaluator wraps the attached evaluator so a nil one still reads as
+// attached.
+type ctxEvaluator struct{ e *Evaluator }
+
+// WithEvaluator attaches e to ctx ahead of the process default, so Bool
+// on ctx reads e. An App attaches its own evaluator to every request,
+// which keeps two Apps in one process from reading each other's flags
+// through Default. A nil e still counts: Bool on ctx then reports false
+// instead of falling back to Default.
+func WithEvaluator(ctx context.Context, e *Evaluator) context.Context {
+	return context.WithValue(ctx, evaluatorCtxKey{}, ctxEvaluator{e})
+}
+
+// EvaluatorFrom returns the evaluator WithEvaluator attached to ctx, or
+// Default() when ctx carries none.
+func EvaluatorFrom(ctx context.Context) *Evaluator {
+	if ctx != nil {
+		if v, ok := ctx.Value(evaluatorCtxKey{}).(ctxEvaluator); ok {
+			return v.e
+		}
+	}
+	return Default()
 }
 
 // ----- context plumbing -----------------------------------------------------

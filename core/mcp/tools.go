@@ -92,7 +92,12 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 	// Normalize the handler's return into MCP content. A plain value keeps
 	// the legacy JSON-marshaled text shape; a mcp.ToolResult / mcp.ImageResult /
 	// mcp.Content / []mcp.Content emits rich blocks + structuredContent.
-	return newSuccessResponse(req.ID, normalizeToolResult(result))
+	out, err := normalizeToolResult(result)
+	if err != nil {
+		// The encode error names Go types and values; it stays here.
+		return newErrorResponse(req.ID, ErrInternalError, "internal tool error")
+	}
+	return newSuccessResponse(req.ID, out)
 }
 
 // normalizeArgNumbers walks a UseNumber-decoded arguments tree and

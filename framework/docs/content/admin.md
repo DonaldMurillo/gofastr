@@ -450,12 +450,16 @@ import "github.com/DonaldMurillo/gofastr/battery/auth"
 import "github.com/DonaldMurillo/gofastr/battery/queue"
 import "github.com/DonaldMurillo/gofastr/framework"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
+import "context"
 var app = framework.NewApp(framework.WithDB(db))
 var authManager *auth.AuthManager
+var memberships interface {
+	Has(ctx context.Context, userID, tenantID string) (bool, error)
+}
 -->
 ```go
 q, _ := queue.NewDBQueue(db)
-jobs, _ := admin.NewBulkJobs(q, admin.AuthPrincipal(authManager))
+jobs, _ := admin.NewBulkJobs(q, admin.AuthPrincipal(authManager, memberships.Has))
 
 app.RegisterBattery(admin.New(admin.Config{
     UI:       app.EntityUI(entityui.Extensions{Jobs: jobs}),
@@ -477,12 +481,15 @@ request context before every chunk: the user and their current roles,
 read fresh, and the run's tenant. The tenant is the one the selection
 was confirmed in and stays fixed for the run, because the snapshot's
 records belong to it. An error stops the run, so a creator who is gone
-runs nothing. `admin.AuthPrincipal(am)` builds one from `battery/auth`,
-loading the user and their current roles through the manager's user
-store; it has no notion of tenant membership and stamps the run's
-tenant as given. An app that does track membership writes its own
-`PrincipalFunc` and returns an error when the user no longer belongs
-to the tenant it is handed. The admin then puts `Config.Policy` on a context that has no
+runs nothing. `admin.AuthPrincipal(am, member)` builds one from
+`battery/auth`, loading the user and their current roles through the
+manager's user store. `battery/auth` keeps no tenant membership, so
+before every chunk of a tenant run it asks `member`
+(`admin.TenantMember`, a func of the user and tenant ids) whether the
+creator still belongs to the tenant, and stops the run on false or an
+error. With a nil `member` a tenant run is refused; a run with no tenant
+never asks. `admin.AnyTenant` admits every run, for an app whose users
+never leave a tenant. The admin then puts `Config.Policy` on a context that has no
 policy and runs its own gate again: a creator it admits runs elevated,
 as the admin's bulk route does; one whose admin role was revoked runs
 as a plain caller, so the writes pass only that user's own permissions.
@@ -549,9 +556,15 @@ the policy grants nothing, or does not know, is checked by name
 (`auth.RequireRole`), so only a caller holding it or the wildcard
 assigns or removes it. An unknown account is a 400. A refusal is a 403
 with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
-row, so a narrower admin tier cannot mint a role above its own. A grid save is checked whole
+row, so a narrower admin tier cannot mint a role above its own. An
+`access.Decider` on the request is asked about each permission first: its
+`DecisionDeny` refuses the change even when the policy grants it, and its
+`DecisionAllow` admits nothing the policy does not. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
-it is applied.
+it is applied. A grant inside a wildcard revocation (the role's
+`teams:*` was revoked, and the save grants `teams:read`) is refused that
+way with a 409 (`GrantStore.CheckGrant`, see
+[access control](access-control.md)).
 
 ### Process modules
 
@@ -562,8 +575,8 @@ flags. Its levers (enable, disable, bump generation, revoke a grant,
 which takes that one grant away and keeps the rest) post
 to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
-caller's roles in `Config.Policy`; without it, or without a policy, the
-page is read-only. Each lever writes an audit row (`module_enable`, ...), and
+caller's roles in `Config.Policy` and not denied by an `access.Decider`;
+without it, or without a policy, the page is read-only. Each lever writes an audit row (`module_enable`, ...), and
 a refused one a `*_refused` row. A failed lever answers a generic
 notice and logs the error.
 

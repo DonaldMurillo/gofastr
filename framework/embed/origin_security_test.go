@@ -14,6 +14,8 @@ func TestOriginFamiliesNeverCrossMatch(t *testing.T) {
 	// Entries that must be REFUSED wherever an origin is accepted.
 	badEntries := []string{
 		"https://bücher.example",   // unicode IDN: the browser sends punycode, this can never match
+		"https://İ.example",        // U+0130: a Unicode fold made it i.example, an origin nobody listed
+		"https://K.example",        // KELVIN SIGN: a Unicode fold made it k.example
 		"https://acme.com.",        // trailing-dot FQDN splits one origin into two
 		"https://.acme.com",        // leading dot reads as a wildcard-ish name
 		"https://acme..com",        // empty label

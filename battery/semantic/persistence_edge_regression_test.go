@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -263,11 +264,7 @@ func TestRepeatedCrashReplayDoesNotDuplicateGobTypes(t *testing.T) {
 		if err := idx.Add(context.Background(), Document{ID: strings.Repeat("x", i+1), Text: "content"}); err != nil {
 			t.Fatal(err)
 		}
-		internal := idx.(*index)
-		if err := internal.wal.close(); err != nil {
-			t.Fatal(err)
-		}
-		internal.wal = nil // simulate crash without creating a closing snapshot
+		crash(idx) // no closing snapshot
 	}
 }
 
@@ -303,9 +300,7 @@ func TestWALReplayRemovesKeywordEntries(t *testing.T) {
 	if err := idx.Remove(context.Background(), "doc"); err != nil {
 		t.Fatal(err)
 	}
-	internal := idx.(*index)
-	_ = internal.wal.close()
-	internal.wal = nil
+	crash(idx)
 	keyword := NewMemoryKeyword()
 	reopened, err := Open(Options{Embedder: NewStubEmbedder(2), Keyword: keyword, Path: dir})
 	if err != nil {
@@ -347,6 +342,55 @@ func TestWALReplayRecoversTornLastRecord(t *testing.T) {
 	defer idx.Close()
 	if idx.Stats().Docs != 1 {
 		t.Fatalf("durable prefix lost: %+v", idx.Stats())
+	}
+}
+
+// Nothing is appended after a torn tail: Open snapshots the replayed
+// state and starts an empty WAL, so a record written after the torn
+// bytes, which the next replay would read as their payload, never lands.
+func TestWALAppendAfterTornTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.wal")
+	w, err := openWAL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.append(walEntry{Op: walOpAdd, Chunks: []Chunk{{ID: "one", DocID: "one", Text: "first", Vec: []float32{1, 0}}}}); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := w.f.Stat()
+	if err := w.append(walEntry{Op: walOpAdd, Chunks: []Chunk{{ID: "two", DocID: "two", Text: strings.Repeat("x", 100), Vec: []float32{1, 0}}}}); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := w.f.Stat()
+	_ = w.close()
+	if err := os.Truncate(path, first.Size()+(second.Size()-first.Size())/2); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := Open(Options{Embedder: NewStubEmbedder(2), Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Add(context.Background(), Document{ID: "three", Text: "third"}); err != nil {
+		t.Fatal(err)
+	}
+	crash(idx)
+	idx, err = Open(Options{Embedder: NewStubEmbedder(2), Path: dir})
+	if err != nil {
+		t.Fatalf("append after a torn tail broke replay: %v", err)
+	}
+	defer idx.Close()
+	hits, err := idx.Query(context.Background(), Query{Text: "third", K: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docs []string
+	for _, h := range hits {
+		docs = append(docs, h.Chunk.DocID)
+	}
+	slices.Sort(docs)
+	if !slices.Equal(docs, []string{"one", "three"}) {
+		t.Fatalf("docs after replay = %v, want [one three]", docs)
 	}
 }
 

@@ -173,15 +173,29 @@ A screen whose policy
 renders an alternative (a login prompt) stays listed. Exclude other
 admin/internal prefixes with `ExcludePaths`.
 
+One sitemap file holds at most 50,000 URLs and 50 MiB, the
+sitemaps.org limits; a search engine rejects a larger file whole. Past
+either, `/sitemap.xml` is a sitemap index naming `/sitemap/1.xml`,
+`/sitemap/2.xml`, and so on, each a URL set within the limits.
+`SitemapXML(basePath)` returns the `/sitemap.xml` body, and
+`SitemapFiles(basePath, keep)` returns every file with its path; a
+non-nil `keep` is asked about each page by its routing path, locale
+prefix included, and a page it refuses leaves the sitemap as an entry
+and as an alternate. The live server keeps one render for a minute,
+so the policy and `StaticPaths` runs are not repeated on every GET; a
+page added or gated in that minute shows on the next render. Under
+`gofastr dev` every request renders afresh.
+
 `WithRobots` serves `/robots.txt` and derives the `Sitemap:` line from
 the sitemap's `BaseURL` when `SitemapURL` is unset. With
 `WithAgentReady`, AI crawler user-agents get explicit allow/deny groups
 and a `Content-Signal` directive; see [Agent-ready](/docs/agent-ready).
 
 Both endpoints are **also written as files by static export**
-(`app --export`, `ExportStatic`): same bytes as the live handlers, with
-`--export-base` folded into every `<loc>` and the derived `Sitemap:`
-URL. A `BaseURL` that already ends in the base path
+(`app --export`, `ExportStatic`): built by the live handlers' code,
+listing only the pages the export wrote (and the index's parts as
+`sitemap/<n>.xml` files), with `--export-base` folded into every
+`<loc>` and the derived `Sitemap:` URL. A `BaseURL` that already ends in the base path
 (`https://user.github.io/docs` beside `--export-base /docs`) gets it
 once, not twice. See [Static-site export](/docs/static-export).
 

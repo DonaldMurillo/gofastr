@@ -378,7 +378,7 @@ func (s *DocPageScreen) StaticPaths(ctx context.Context) []map[string]string {
 
 func (s *DocPageScreen) Render() render.HTML {
 	if body, err := docs.Get(s.Entry.Slug); err == nil {
-		return ui.Markdown(ui.MarkdownConfig{Source: string(body)})
+		return render.HTML(siteDocLinks(string(ui.Markdown(ui.MarkdownConfig{Source: string(body)}))))
 	}
 	return html.Paragraph(html.TextConfig{},
 		render.Text("This doc isn't available yet. Browse the embedded docs with "),

@@ -647,29 +647,39 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	if !ok || userID == "" || !p.stateUnspent(nonce) {
 		return false
 	}
+	target, ok := sameOriginTarget(r)
+	if !ok {
+		return false
+	}
+	writeSameSiteHop(w, r, target, oauthHopTitle)
+	return true
+}
+
+// sameOriginTarget is r's own path and query, for a hop page to load
+// again from this origin. It reports false for a path that would leave
+// the origin.
+func sameOriginTarget(r *http.Request) (string, bool) {
 	path := r.URL.EscapedPath()
 	// A scheme-relative "//host" would leave this origin. A backslash
 	// needs no check: EscapedPath writes it as %5C.
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return false
+		return "", false
 	}
-	target := path
 	if r.URL.RawQuery != "" {
-		target += "?" + r.URL.RawQuery
+		path += "?" + r.URL.RawQuery
 	}
-	writeSameSiteHop(w, r, target)
-	return true
+	return path, true
 }
 
 // writeSameSiteHop writes the hop page: a meta refresh to target, plus a
 // link for a browser that does not follow it. It ships no CSS and no
 // script, like the magic-link fallback page, and its words are phrases in
-// the caller's locale. target is a same-origin path built by sameSiteHop.
-func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string) {
+// the caller's locale. target is a same-origin path from sameOriginTarget.
+func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string, heading i18n.Phrase) {
 	ctx := r.Context()
 	lang := i18n.DocLang(ctx)
 	href := html.EscapeString(urlsafe.CleanAnchor(target))
-	title := html.EscapeString(oauthHopTitle.Text(ctx))
+	title := html.EscapeString(heading.Text(ctx))
 	body := `<!doctype html>
 <html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
 <head>
@@ -687,7 +697,8 @@ func writeSameSiteHop(w http.ResponseWriter, r *http.Request, target string) {
 </body>
 </html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The URL carries the authorization code and the state.
+	// The URL carries a token: an authorization code and state, or a
+	// verification token.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)

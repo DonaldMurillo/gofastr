@@ -252,6 +252,7 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	expectNoLiveColumns(m3)
 	expectSQLiteMigrateLease(m3)
 	m3.ExpectBegin()
+	expectNoLiveColumns(m3) // the re-read under the lock
 	m3.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m3.ExpectCommit()
 	expectSQLiteMigrateLeaseRelease(m3)
@@ -267,6 +268,7 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	expectNoLiveColumns(m4)
 	expectSQLiteMigrateLease(m4)
 	m4.ExpectBegin()
+	expectNoLiveColumns(m4) // the re-read under the lock
 	m4.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m4.ExpectExec("CREATE INDEX").WillReturnError(errors.New("idx fail"))
 	m4.ExpectRollback()

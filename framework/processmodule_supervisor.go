@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // ProcessState is the supervisor's per-module state (design §8). The state
@@ -363,36 +364,12 @@ func NewProcessModuleSupervisor(cfg SupervisorConfig) (*ProcessModuleSupervisor,
 // Closed reports whether Close has been called.
 func (s *ProcessModuleSupervisor) Closed() bool { return s.closed.Load() }
 
-// Close stops every supervise loop, drains every child with a short
-// deadline, and waits for the loops to exit. Idempotent. It does NOT close
-// the store (the store is shared across the app and closed elsewhere).
+// Close stops every supervise loop, waits for the loops to exit, and kills
+// every child still running. Idempotent, and a no-op after [Drain], which
+// closes the supervisor itself. It does NOT close the store (the store is
+// shared across the app and closed elsewhere).
 func (s *ProcessModuleSupervisor) Close(ctx context.Context) error {
-	if !s.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	close(s.closeCh)
-
-	// Stop the supervise loops. Each slot's drain runs as part of its own
-	// supervise exit path.
-	s.mu.Lock()
-	slots := make([]*moduleSlot, 0, len(s.slots))
-	for _, sl := range s.slots {
-		slots = append(slots, sl)
-	}
-	s.mu.Unlock()
-	for _, sl := range slots {
-		close(sl.done)
-	}
-	// Wait for loops to exit (they each take one final reconcile pass).
-	waitCh := make(chan struct{})
-	go func() {
-		s.wg.Wait()
-		close(waitCh)
-	}()
-	select {
-	case <-waitCh:
-	case <-ctx.Done():
-	}
+	slots := s.stopLoops(ctx)
 	// Best-effort kill any child that survived.
 	for _, sl := range slots {
 		sl.mu.Lock()
@@ -404,17 +381,46 @@ func (s *ProcessModuleSupervisor) Close(ctx context.Context) error {
 	return nil
 }
 
-// Drain is the lifecycle.Drainer entry point. It drains every child
-// concurrently (design §8: a single shared 30s budget across the app, so a
-// per-child 30s drain applied serially to N children would blow the budget).
-// Each child gets min(DrainPerModule, remaining shared budget).
-func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
+// stopLoops closes the supervisor, stops every supervise and heartbeat
+// loop, and waits for them to exit or ctx to end. A spawn still in flight
+// sees the closed supervisor and kills its child (spawnOnce). It returns
+// the slots, or nil when the supervisor was already closed.
+func (s *ProcessModuleSupervisor) stopLoops(ctx context.Context) []*moduleSlot {
+	if !s.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	close(s.closeCh)
 	s.mu.Lock()
 	slots := make([]*moduleSlot, 0, len(s.slots))
 	for _, sl := range s.slots {
 		slots = append(slots, sl)
 	}
 	s.mu.Unlock()
+	for _, sl := range slots {
+		close(sl.done)
+	}
+	waitCh := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(waitCh)
+	}()
+	select {
+	case <-waitCh:
+	case <-ctx.Done():
+	}
+	return slots
+}
+
+// Drain is the shutdown entry point: App.Shutdown calls it after the HTTP
+// drain and before batteries stop (design §8), so a child's in-flight
+// reverse calls still reach them. It closes the supervisor first, so no
+// loop restarts a drained child, then drains every child concurrently
+// (a single shared budget across the app, so a per-child drain applied
+// serially to N children would blow it). Each child gets
+// min(DrainPerModule, remaining shared budget). A second call, or a call
+// after [Close], does nothing.
+func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
+	slots := s.stopLoops(ctx)
 
 	deadline, ok := ctx.Deadline()
 	remaining := s.cfg.DrainPerModule
@@ -439,8 +445,9 @@ func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
 }
 
 // drainOneForShutdown performs the §4.6 teardown for one child during
-// shutdown: send module.drain, close stdin (EOF), wait the remaining
-// budget, then Kill + Wait. It is best-effort and never panics.
+// shutdown: send module.drain, close stdin (EOF), and Kill + Wait once
+// the budget, counted from the drain call, runs out. It is best-effort
+// and never panics.
 func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -454,21 +461,74 @@ func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget tim
 	if child == nil {
 		return
 	}
-	// Best-effort module.drain notification (child may be mid-crash).
-	if peer != nil {
-		drainCtx, cancel := context.WithTimeout(context.Background(), minDur(budget, 2*time.Second))
-		_, _ = peer.Call(drainCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
-			Reason:     "shutdown",
-			DeadlineMs: int(budget.Milliseconds()),
-		})
-		cancel()
-	}
-	_ = child.CloseStdin()
+	// The peer stays open: the child's in-flight reverse calls still
+	// reach the queue and the DB until it exits.
+	s.drainChild(sl.name, child, peer, budget, "shutdown", false)
+	// drainChild returns once the child has exited. Settle the slot here,
+	// as transitionDrain does, rather than leave it to the exit watcher:
+	// App.Shutdown stops the batteries next, and the watcher may not have
+	// run yet. The watcher then finds no child and leaves the slot alone.
+	// The supervisor is closed, so no replacement can be in the slot: a
+	// spawn that finishes now kills its own child (spawnOnce).
+	sl.mu.Lock()
+	sl.child = nil
+	sl.peer = nil
+	sl.codec = nil
+	sl.lastExit = exitLabel(nil, true)
+	sl.mu.Unlock()
+}
+
+// drainChild is the §4.6 teardown both drains share: module.drain, EOF on
+// stdin, and Kill + Wait once budget, counted from the drain call, runs
+// out. closePeer closes the peer once the drain call is done, which
+// cancels the child's in-flight reverse calls.
+//
+// The budget runs from the drain call, not from CloseStdin: the
+// module.drain frame write cannot be abandoned, and a child that stopped
+// reading stdin holds it on a full pipe. Only the kill, which takes the
+// pipe's reader away, fails that write. The drain call gets at most half
+// the budget, so a child that never answers it still has the rest to
+// exit at EOF.
+func (s *ProcessModuleSupervisor) drainChild(name string, child RunningChild, peer *moduleproto.Peer, budget time.Duration, reason string, closePeer bool) {
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- child.Wait() }()
+	deadline := time.NewTimer(budget)
+	defer deadline.Stop()
+	if peer != nil {
+		// Best-effort module.drain notification (child may be mid-crash).
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			defer func() {
+				if r := recover(); r != nil {
+					s.logf("processmodule: drain %s panic: %v\n%s", name, textsafe.Recovered(r), debug.Stack())
+				}
+			}()
+			drainCtx, cancel := context.WithTimeout(context.Background(), minDur(budget/2, 2*time.Second))
+			defer cancel()
+			_, _ = peer.Call(drainCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
+				Reason:     reason,
+				DeadlineMs: int(budget.Milliseconds()),
+			})
+		}()
+		select {
+		case <-drained:
+		case <-deadline.C:
+			_ = child.Kill()
+			<-waitCh
+			if closePeer {
+				_ = peer.Close()
+			}
+			return
+		}
+		if closePeer {
+			_ = peer.Close()
+		}
+	}
+	_ = child.CloseStdin()
 	select {
 	case <-waitCh:
-	case <-time.After(budget):
+	case <-deadline.C:
 		_ = child.Kill()
 		<-waitCh
 	}
@@ -934,9 +994,31 @@ func (sl *moduleSlot) reconcile() {
 		// in InstalledDisabled so the proxy returns 503 and module tools
 		// return retryable-unavailable until the operator runs the
 		// coordinator, which stamps MigrationsAppliedAt and (via a
-		// generation bump) re-arms reconcile. setState no-ops when already
-		// InstalledDisabled, so this does not spam the periodic poll.
-		if state != StateInstalledDisabled {
+		// generation bump) re-arms reconcile. A running child is drained
+		// first: the stamp clears under a Ready module when another
+		// replica boots a new artifact, and the child must not keep
+		// serving against the schema it no longer matches. setState
+		// no-ops when already InstalledDisabled, so this does not spam
+		// the periodic poll.
+		if state == StateReady || state == StateStarting ||
+			state == StateHandshaking || state == StateCrashed ||
+			state == StateBackoff {
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+		} else if state != StateInstalledDisabled {
+			sl.setState(StateInstalledDisabled)
+		}
+	case desired.Enabled && otherArtifact(sl.desc, desired):
+		// Another replica registered a different artifact: the row's
+		// generation and grants are that executable's, and this replica's
+		// descriptor names the old one. Drain and hold, as for pending
+		// migrations, until this replica's own deploy registers the
+		// artifact the row names. The log fires on the transition only.
+		if state == StateReady || state == StateStarting ||
+			state == StateHandshaking || state == StateCrashed ||
+			state == StateBackoff {
+			sl.sup.logf("processmodule: %s row names artifact %s, this replica runs %s: holding", sl.name, shortHash(desired.ArtifactSHA256), shortHash(sl.desc.ArtifactSHA256))
+			sl.transitionDrain(StateDrainingDisable, desired.DesiredGeneration)
+		} else if state != StateInstalledDisabled {
 			sl.setState(StateInstalledDisabled)
 		}
 	case desired.Enabled && (state == StateInstalledDisabled || state == StateAbsent):
@@ -963,7 +1045,13 @@ func (sl *moduleSlot) reconcile() {
 		// Backoff elapsed: try again.
 		sl.spawnAsync(desired)
 	case desired.Enabled && state == StateFailed:
-		// Terminal; do nothing until generation bump.
+		// Terminal until the generation advances, the operator's recovery
+		// lever (design §8): the bump re-arms the slot with a fresh spawn,
+		// which verifies the artifact and handshake digests again, so an
+		// unfixed integrity fault lands back in Failed.
+		if genAdvanced {
+			sl.spawnAsync(desired)
+		}
 	case desired.Enabled && state == StateReady:
 		// Healthy; nothing to do.
 	default:
@@ -1083,26 +1171,8 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64) {
 		sl.finishDrain(drainState, gen)
 		return
 	}
-	budget := sl.sup.cfg.DrainPerModule
 	// Notify the child; it may finish in-flight work and exit cleanly.
-	if peer != nil {
-		dCtx, cancel := context.WithTimeout(context.Background(), minDur(budget, 2*time.Second))
-		_, _ = peer.Call(dCtx, moduleproto.MethodDrain, moduleproto.DrainParams{
-			Reason:     drainReason(drainState),
-			DeadlineMs: int(budget.Milliseconds()),
-		})
-		cancel()
-		_ = peer.Close()
-	}
-	_ = child.CloseStdin()
-	waitCh := make(chan error, 1)
-	go func() { waitCh <- child.Wait() }()
-	select {
-	case <-waitCh:
-	case <-time.After(budget):
-		_ = child.Kill()
-		<-waitCh
-	}
+	sl.sup.drainChild(sl.name, child, peer, sl.sup.cfg.DrainPerModule, drainReason(drainState), true)
 	sl.mu.Lock()
 	sl.child = nil
 	sl.peer = nil
@@ -1137,7 +1207,9 @@ func (sl *moduleSlot) finishDrain(drainState ProcessState, gen uint64) {
 		if desired.DesiredGeneration < gen {
 			desired.DesiredGeneration = gen
 		}
-		if desired.Enabled {
+		// The stamp may have cleared while the old child drained (a new
+		// artifact's migrations are pending): hold, as reconcile does.
+		if desired.Enabled && !migrationsPending(sl.desc, desired) && !otherArtifact(sl.desc, desired) {
 			sl.spawnAsync(desired)
 		} else {
 			sl.setState(StateInstalledDisabled)
@@ -1207,8 +1279,10 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	}
 	// State → Handshaking under lock.
 	sl.mu.Lock()
-	if sl.state == StateFailed || sl.state == StateDrainingDisable {
-		// State changed under us (operator disabled, integrity fault).
+	if sl.state == StateFailed || sl.state == StateDrainingDisable || sl.sup.closed.Load() {
+		// State changed under us (operator disabled, integrity fault), or
+		// the supervisor closed: its kill pass reads sl.child after
+		// setting closed, so a child installed now would outlive it.
 		sl.mu.Unlock()
 		_ = child.Kill()
 		_ = child.Wait()
@@ -1302,6 +1376,7 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	sl.mu.Unlock()
 
 	go sl.watchExit(child, instanceID)
+	go sl.watchFault(hostPeer, child, instanceID)
 	return nil
 }
 
@@ -1325,7 +1400,10 @@ func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
 	// drain, not a crash: charging the circuit for it let a few
 	// store outages wedge a healthy module in Crashed.
 	leaseDrain := sl.leaseFailing
-	expected := sl.state == StateDrainingDisable ||
+	// A closed supervisor drained or killed the child itself: shutdown,
+	// not a crash.
+	expected := sup.closed.Load() ||
+		sl.state == StateDrainingDisable ||
 		sl.state == StateDrainingUpgrade ||
 		sl.state == StateInstalledDisabled ||
 		sl.state == StateFailed ||
@@ -1358,6 +1436,34 @@ func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
 	case sl.wake <- struct{}{}:
 	default:
 	}
+}
+
+// watchFault kills child once its peer records a terminal protocol fault
+// (a malformed or unsolicited frame, a stalled transport). A faulted peer
+// refuses every call while the child keeps running, so without this the
+// module stayed Ready and failing until something else killed it. The
+// kill hands the exit to watchExit, which records the crash and lets the
+// supervise loop restart the module. The watcher ends without a kill when
+// the read loop ends cleanly, and skips a child the slot no longer holds:
+// that child was already reaped, and its process group id may name
+// another process by now.
+func (sl *moduleSlot) watchFault(peer *moduleproto.Peer, child RunningChild, instanceID string) {
+	select {
+	case <-peer.FatalDone():
+	case <-peer.Done():
+		if peer.FatalError() == nil {
+			return
+		}
+	}
+	sl.mu.Lock()
+	current := sl.child != nil && sl.instanceID == instanceID
+	sl.mu.Unlock()
+	if !current {
+		return
+	}
+	reason := textsafe.Truncate(textsafe.ScrubControlBytes(peer.FatalError().Error()), 200)
+	sl.sup.logf("processmodule: %s peer fault, killing the child: %s", sl.name, reason)
+	_ = child.Kill()
 }
 
 // verifyToolSurface fetches module.tool.list and requires byte-equality
@@ -1483,6 +1589,14 @@ func (sl *moduleSlot) registerToolsSafely(name string, tools []moduleproto.Tool)
 // never pending.
 func migrationsPending(desc ProcessModuleDescriptor, desired DesiredState) bool {
 	return desc.MigrationGroup != "" && desired.MigrationsAppliedAt == nil
+}
+
+// otherArtifact reports whether the store's row names a different
+// executable than this replica's descriptor: another replica booted a
+// newer (or older) build and moved the row. Digests are hex, compared
+// without regard to case; an empty row digest names nothing.
+func otherArtifact(desc ProcessModuleDescriptor, desired DesiredState) bool {
+	return desired.ArtifactSHA256 != "" && asciicase.Lower(desired.ArtifactSHA256) != asciicase.Lower(desc.ArtifactSHA256)
 }
 
 // handleCrashed charges the restart circuit and transitions to Backoff (or

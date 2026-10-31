@@ -67,6 +67,9 @@
   // source lookup and SPA teardown — a WeakMap is not iterable.
   const states = new WeakMap();
   const live = [];
+  // Mount marker → its instance state (null when no adapter claimed it),
+  // so a rescan after a swap never mounts a marker twice.
+  const mounted = new WeakMap();
   let reqCounter = 0;
 
   // Registered adapters: plugin name → registration.
@@ -615,6 +618,8 @@
     const i = live.indexOf(st);
     if (i !== -1) live.splice(i, 1);
     states["delete"](st.frame);
+    // Forget the marker so the same element mounts again if it returns.
+    mounted["delete"](st.marker);
     // Reject any pending requests so no promise leaks unresolved forever,
     // then clear the map — callers get E_TEARDOWN, not a hang.
     for (const id in st.pending) {
@@ -641,17 +646,52 @@
     });
   }
 
-  function onNavigate() {
+  // A navigation or island swap replaces part of the page without a
+  // reload. Tear down only the instances whose marker left the DOM (a
+  // plugin in a retained layout region keeps running), then mount the
+  // markers the new content brought.
+  function sweep() {
     const snap = live.slice(); // snapshot before mutating during iteration
-    for (let i = 0; i < snap.length; i++) teardownInstance(snap[i]);
+    for (let i = 0; i < snap.length; i++) {
+      if (!snap[i].marker.isConnected) teardownInstance(snap[i]);
+    }
+  }
+
+  function scan(root) {
+    // A node added and removed again within one batch is not mounted:
+    // nothing would ever sweep an instance whose marker never connected.
+    if ((root.nodeType !== 1 && root.nodeType !== 9) || !root.isConnected) return;
+    if (root.nodeType === 1 && root.hasAttribute("data-fui-plugin")) mountMarker(root);
+    const markers = root.querySelectorAll("[data-fui-plugin]");
+    for (let i = 0; i < markers.length; i++) mountMarker(markers[i]);
+  }
+
+  function onNavigate() {
+    sweep();
+    scan(document);
+  }
+
+  function observeMarkers() {
+    if (typeof MutationObserver !== "function") return;
+    new MutationObserver(function (records) {
+      // The callback runs after the whole batch landed, so one sweep
+      // sees every removal in it.
+      sweep();
+      for (let r = 0; r < records.length; r++) {
+        const added = records[r].addedNodes;
+        for (let i = 0; i < added.length; i++) scan(added[i]);
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   // --- Boot -----------------------------------------------------------------
 
   function mountMarker(marker) {
+    if (mounted.has(marker)) return;
     const name = marker.getAttribute("data-fui-plugin");
     const adapter = adapters[name];
     if (!adapter) {
+      mounted.set(marker, null);
       if (typeof console !== "undefined" && console.warn) {
         console.warn("[pluginhost] no adapter registered for plugin '" + name + "'; mount skipped");
       }
@@ -665,6 +705,7 @@
     // without a fallback, so the frame stays visible-while-loading.
     showFallback(st);
     states.set(frame, st);
+    mounted.set(marker, st);
     live.push(st);
     observeTheme(st);
   }
@@ -673,7 +714,11 @@
     const markers = document.querySelectorAll("[data-fui-plugin]");
     for (let i = 0; i < markers.length; i++) mountMarker(markers[i]);
     window.addEventListener("message", onMessage);
+    // Both paths sweep and scan: the observer catches island swaps and
+    // navigation swaps as they land, and gofastr:navigate rescans the
+    // document after a navigation where no observer exists.
     window.addEventListener("gofastr:navigate", onNavigate);
+    observeMarkers();
     // Host-interaction relay (additive protocol event `hostPointerdown`, no
     // params): a pointerdown on the HOST page reaches the frame as neither a
     // pointer event nor — on iOS WebKit — a window blur, so a plugin's open

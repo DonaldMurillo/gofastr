@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // DerivedVariant is one stored rendition of an uploaded image, a single
@@ -265,19 +266,9 @@ func isRasterDataURL(s string) bool {
 			break
 		}
 	}
-	switch lowerASCII(meta) {
+	switch asciicase.Lower(meta) {
 	case "jpeg", "png", "gif", "webp", "avif":
 		return true
 	}
 	return false
-}
-
-func lowerASCII(s string) string {
-	b := []byte(s)
-	for i := range b {
-		if b[i] >= 'A' && b[i] <= 'Z' {
-			b[i] += 'a' - 'A'
-		}
-	}
-	return string(b)
 }

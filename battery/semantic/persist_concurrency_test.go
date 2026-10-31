@@ -86,10 +86,7 @@ func TestSnapshotVsConcurrentAddKeepsWrite(t *testing.T) {
 	// Simulate a crash before Close can take a masking snapshot: close the WAL
 	// without flushing, exactly like a hard crash. Reopen must then rely on the
 	// snapshot + WAL replay alone.
-	if internal, ok := idx.(*index); ok && internal.wal != nil {
-		_ = internal.wal.close()
-		internal.wal = nil
-	}
+	crash(idx)
 
 	// Reopen and assert the in-flight write survived.
 	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir, SnapshotEvery: 0})

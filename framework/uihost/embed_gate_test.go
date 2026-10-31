@@ -98,38 +98,58 @@ func TestGrantSatisfiesTheWidgetSessionCheck(t *testing.T) {
 	only := func(path string) []widget.RouteMatcher {
 		return []widget.RouteMatcher{func(p string) bool { return p == path }}
 	}
+	ran := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	scratch := router.New()
-	widget.Mount(scratch, &widget.Definition{Name: "r3gate-mine", Routes: only("/reports")})
-	widget.Mount(scratch, &widget.Definition{Name: "r3gate-theirs", Routes: only("/admin")})
+	widget.Mount(scratch, &widget.Definition{Name: "r3gate-mine", Routes: only("/reports"), RequireSession: true,
+		RPCs: []widget.RPCEndpoint{{Method: http.MethodPost, Path: "/api/r3gate/mine", Handler: ran}}})
+	widget.Mount(scratch, &widget.Definition{Name: "r3gate-theirs", Routes: only("/admin"), RequireSession: true,
+		RPCs: []widget.RPCEndpoint{{Method: http.MethodPost, Path: "/api/r3gate/theirs", Handler: ran}}})
 
 	f := newEmbedFixture(t)
 	// grantFor serves a request, which lazily mounts the standalone router and
 	// installs the predicate.
 	grant := f.grantFor(t, "reports")
 
+	serve := func(method, path string, withGrant bool) int {
+		req := httptest.NewRequest(method, path, nil)
+		if withGrant {
+			req.Header.Set("X-Gofastr-Embed", grant)
+		}
+		rec := httptest.NewRecorder()
+		scratch.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := serve(http.MethodGet, "/core-ui/widget/r3gate-mine/chrome", true); got != http.StatusOK {
+		t.Errorf("a RequireSession widget on the grant's OWN surface refused the frame's "+
+			"only credential (%d) — dead DOM one hop past the catalog", got)
+	}
+	// An RPC path names no widget, so a gate that read the widget from the
+	// URL refused the grant here (2026-10-27 U32).
+	if got := serve(http.MethodPost, "/api/r3gate/mine", true); got != http.StatusOK {
+		t.Errorf("the RPC of a RequireSession widget on the grant's own surface refused the grant: %d", got)
+	}
+	for _, p := range []struct{ method, path string }{
+		{http.MethodGet, "/core-ui/widget/r3gate-theirs/chrome"},
+		{http.MethodPost, "/api/r3gate/theirs"},
+	} {
+		if got := serve(p.method, p.path, true); got != http.StatusForbidden {
+			t.Errorf("a grant for /reports reached %s %s of a widget scoped to /admin: %d; filtering "+
+				"the catalog does not stop a direct request to a predictable URL", p.method, p.path, got)
+		}
+	}
+	if got := serve(http.MethodPost, "/api/r3gate/mine", false); got != http.StatusForbidden {
+		t.Errorf("the gate admitted a request carrying no credential at all: %d", got)
+	}
+	// A request no widget gate handed over names no widget, whatever its URL.
 	check := widget.SessionCheck()
 	if check == nil {
 		t.Fatal("no session predicate installed")
 	}
-	withGrant := func(name string) *http.Request {
-		req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/"+name+"/chrome", nil)
-		req.Header.Set("X-Gofastr-Embed", grant)
-		return req
-	}
-
-	if !check(withGrant("r3gate-mine")) {
-		t.Error("a RequireSession widget on the grant's OWN surface refuses the frame's " +
-			"only credential — dead DOM one hop past the catalog")
-	}
-	if check(withGrant("r3gate-theirs")) {
-		t.Error("a grant for /reports opened a widget scoped to /admin; filtering the " +
-			"catalog does not stop a direct request to a predictable URL")
-	}
-	if check(withGrant("r3gate-does-not-exist")) {
-		t.Error("the predicate accepted an unregistered widget name")
-	}
-	if check(httptest.NewRequest(http.MethodGet, "/core-ui/widget/r3gate-mine/chrome", nil)) {
-		t.Error("the predicate accepts a request carrying no credential at all")
+	req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/r3gate-mine/chrome", nil)
+	req.Header.Set("X-Gofastr-Embed", grant)
+	if check(req) {
+		t.Error("the predicate took the widget from the URL of a request no gate handed it")
 	}
 }
 
@@ -446,7 +466,7 @@ func TestRefusedGrantNeverFallsBackOnWidgetRoutes(t *testing.T) {
 		return []widget.RouteMatcher{func(p string) bool { return p == path }}
 	}
 	scratch := router.New()
-	widget.Mount(scratch, &widget.Definition{Name: "r4fall-admin", Routes: only("/admin")})
+	widget.Mount(scratch, &widget.Definition{Name: "r4fall-admin", Routes: only("/admin"), RequireSession: true})
 
 	f := newEmbedFixture(t)
 	sess := f.host.CreateSession()
@@ -461,11 +481,23 @@ func TestRefusedGrantNeverFallsBackOnWidgetRoutes(t *testing.T) {
 			rec.Code, rec.Body.String())
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/r4fall-admin/chrome", nil)
-	withDeadGrantAndCookie(req)
-	if check := widget.SessionCheck(); check != nil && check(req) {
-		t.Error("the widget gate admitted a refused grant on the strength of a session cookie, " +
-			"skipping the per-surface scoping entirely")
+	chrome := func(mutate func(*http.Request)) int {
+		req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/r4fall-admin/chrome", nil)
+		mutate(req)
+		rec := httptest.NewRecorder()
+		scratch.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	// The cookie alone passes, so the refusal below is the grant's doing.
+	if got := chrome(func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: sessionCookieSecureName, Value: sess.Token})
+		r.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: sess.Token})
+	}); got != http.StatusOK {
+		t.Fatalf("the widget gate refused a valid session cookie: %d", got)
+	}
+	if got := chrome(withDeadGrantAndCookie); got != http.StatusForbidden {
+		t.Errorf("the widget gate admitted a refused grant on the strength of a session cookie "+
+			"(%d), skipping the per-surface scoping entirely", got)
 	}
 }
 

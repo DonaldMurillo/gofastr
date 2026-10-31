@@ -36,9 +36,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Config configures the SDK docs site.
@@ -202,8 +204,8 @@ func (s *site) includedEntities() []*entity.Entity {
 
 func nameMatches(e *entity.Entity, names []string) bool {
 	for _, n := range names {
-		n = strings.ToLower(strings.TrimSpace(n))
-		if n == strings.ToLower(e.Config.Name) || n == strings.ToLower(e.Config.Table) {
+		n = asciicase.Lower(strings.TrimSpace(n))
+		if n == asciicase.Lower(e.Config.Name) || n == asciicase.Lower(e.Config.Table) {
 			return true
 		}
 	}
@@ -229,10 +231,13 @@ func (s *site) lookup(segment string) (*entity.Entity, bool) {
 // only the first (the old behavior) left the other versions' schemas
 // undocumented and unreachable from any reference URL.
 func (s *site) lookupAll(segment string) []*entity.Entity {
-	segment = strings.ToLower(segment)
+	// ASCII-only fold: strings.ToLower maps look-alikes onto ASCII (the
+	// KELVIN SIGN lowers to k), which made every such spelling a live
+	// duplicate URL of an entity page.
+	segment = asciicase.Lower(segment)
 	var out []*entity.Entity
 	for _, e := range s.includedEntities() {
-		if segment == strings.ToLower(e.Config.Table) || segment == strings.ToLower(e.Config.Name) {
+		if segment == asciicase.Lower(e.Config.Table) || segment == asciicase.Lower(e.Config.Name) {
 			out = append(out, e)
 		}
 	}
@@ -358,7 +363,7 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			if a, ok := m.Artifacts[key]; ok && a.SHA256 != "" {
 				etag := `"` + a.SHA256 + `"`
 				w.Header().Set("ETag", etag)
-				if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, etag) {
+				if corestatic.IfNoneMatch(r, etag) {
 					w.WriteHeader(http.StatusNotModified)
 					return
 				}

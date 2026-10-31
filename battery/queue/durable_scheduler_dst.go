@@ -2,6 +2,7 @@ package queue
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/cron"
@@ -26,6 +27,11 @@ import (
 //     first absolute minute after the skip). Detected by an absolute-minute
 //     step that advances the wall clock by more than one minute; each
 //     skipped wall minute is tested against the cron fields.
+//
+// Both rules apply to fixed-time specs only, those whose minute and hour
+// fields name values rather than begin with "*" (cron.Schedule.FixedTime).
+// Vixie cron runs every other job by the new wall clock, so "*/5 * * * *"
+// fires straight through the repeated hour and not at a transition.
 //
 // These rules implement what queue.md's "including across DST shifts" claim
 // promises. All logic lives here (no framework/cron change) because the
@@ -57,6 +63,13 @@ func fallBackRepeat(t time.Time) bool {
 // spring-forward gap whose skipped window holds a match, and in either case
 // not a fall-back repeat.
 func fires(parsed cron.Schedule, loc *time.Location, prevWall, t time.Time) bool {
+	// Vixie cron keeps its once-only DST handling for fixed-time jobs. A
+	// job with a wildcard minute or hour ("*/5 * * * *", "15 * * * *")
+	// runs by the new wall clock: through the repeated hour, and not at the
+	// transition for minutes the jump skipped.
+	if !parsed.FixedTime() {
+		return parsed.Matches(t)
+	}
 	if !parsed.Matches(t) && !skippedMatchInGap(parsed, loc, prevWall, t) {
 		return false
 	}
@@ -64,22 +77,29 @@ func fires(parsed cron.Schedule, loc *time.Location, prevWall, t time.Time) bool
 }
 
 // nextFire returns the earliest cron firing strictly after `after` (evaluated
-// in `loc`), with vixie DST semantics. Returns the zero Time if no match
-// exists within the cron search horizon.
+// in `loc`), with vixie DST semantics. Returns the zero Time for a spec that
+// never fires.
 //
 // The walk is forward in absolute minutes starting one minute after `after`.
 // A minute inside a spring-forward gap's skipped window lands on the
 // transition rather than on the next ordinary match (which could be a day
 // later for a daily spec).
 func nextFire(parsed cron.Schedule, loc *time.Location, after time.Time) time.Time {
+	if !parsed.Satisfiable() {
+		return time.Time{}
+	}
 	t := after.UTC().Truncate(time.Minute).Add(time.Minute).In(loc)
 	prevWall := t.Add(-time.Minute).In(loc)
-	for range maxCronCatchUpSearchMinutes {
+	// A date the day fields refuse holds no direct match and no gap whose
+	// skipped minutes match, so the walk jumps through it (SkipDay), which
+	// lets the search span a whole calendar cycle: leap days that are
+	// Sundays recur up to 40 years apart.
+	for end := t.AddDate(cron.HorizonYears, 0, 0); t.Before(end); {
 		if fires(parsed, loc, prevWall, t) {
 			return t.UTC()
 		}
 		prevWall = t
-		t = t.Add(time.Minute).In(loc)
+		t = parsed.SkipDay(t).In(loc)
 	}
 	return time.Time{}
 }
@@ -111,23 +131,38 @@ func firesInRange(parsed cron.Schedule, loc *time.Location, cursor, now time.Tim
 	if floor := end.Add(-time.Duration(maxCronCatchUpSearchMinutes-1) * time.Minute); start.Before(floor) {
 		start = floor
 	}
-	var all []time.Time
+	// Retain the newest `limit` ticks (matches the original backwards-walk
+	// memory-bounded retention so audit history keeps the most recent rows).
+	// The walk keeps them in a ring of `limit` slots, so an every-minute
+	// spec over the whole search bound never holds every missed minute.
+	var ring []time.Time
+	seen := 0
 	t := start
 	prevWall := t.Add(-time.Minute).In(loc)
 	for scanned := 0; scanned < maxCronCatchUpSearchMinutes && !t.After(end); scanned++ {
 		if fires(parsed, loc, prevWall, t) {
-			all = append(all, t.UTC())
+			if len(ring) < limit {
+				ring = append(ring, t.UTC())
+			} else {
+				ring[seen%limit] = t.UTC()
+			}
+			seen++
 		}
 		prevWall = t
 		t = t.Add(time.Minute).In(loc)
 	}
-
-	// Retain the newest `limit` ticks (matches the original backwards-walk
-	// memory-bounded retention so audit history keeps the most recent rows).
-	if len(all) > limit {
-		all = all[len(all)-limit:]
+	// At seen == limit the ring never wrapped (head is 0), so either
+	// branch returns the same ticks.
+	if seen <= limit {
+		return slices.Clip(ring), nil
 	}
-	return all, nil
+	// The ring is full and wrapped: the oldest kept tick sits at the next
+	// write position.
+	head := seen % limit
+	out := make([]time.Time, limit)
+	copy(out, ring[head:])
+	copy(out[limit-head:], ring[:head])
+	return out, nil
 }
 
 // skippedMatchInGap reports whether the absolute-minute step from `a` to `b`

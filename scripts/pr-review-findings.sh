@@ -34,23 +34,31 @@ gh api --paginate "repos/$REPO/issues/$PR/comments" --jq \
 echo
 echo "== thread resolution =="
 owner="${REPO%%/*}"; name="${REPO##*/}"
-unresolved=$(gh api graphql -f query='
-  query($owner: String!, $name: String!, $pr: Int!) {
+# --paginate walks every page of threads (it needs $endCursor and
+# pageInfo), and --jq runs once per page, so each open thread prints one
+# line (newlines in its body flattened) and the count is taken over all
+# of them. A failed call fails the script: the gate never passes blind.
+unresolved=$(gh api graphql --paginate -f query='
+  query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $pr) {
-        reviewThreads(first: 100) {
+        reviewThreads(first: 100, after: $endCursor) {
+          pageInfo { hasNextPage endCursor }
           nodes { isResolved comments(first: 1) { nodes { path line body author { login } } } }
         }
       }
     }
   }' -F owner="$owner" -F name="$name" -F pr="$PR" --jq \
-  '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] |
-   (length | tostring) + " unresolved", (.[] | "  ! \(.comments.nodes[0].author.login) \(.comments.nodes[0].path):\(.comments.nodes[0].line // "?"): \(.comments.nodes[0].body | .[0:120])")')
-printf '%s\n' "$unresolved"
+  '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .comments.nodes[0] as $c |
+   "  ! \($c.author.login) \($c.path):\($c.line // "?"): \(($c.body // "") | gsub("[\r\n]+"; " ") | .[0:120])"')
+count=$(printf '%s\n' "$unresolved" | grep -c '^  ! ' || true)
+echo "$count unresolved"
+if [ -n "$unresolved" ]; then
+  printf '%s\n' "$unresolved"
+fi
 
 if [ "$GATE" = "--gate" ]; then
-  count=$(printf '%s\n' "$unresolved" | head -1 | cut -d' ' -f1)
-  if [ "${count:-0}" != "0" ]; then
+  if [ "$count" != "0" ]; then
     echo
     echo "GATE: $count unresolved review thread(s); resolve or reply before merging."
     exit 1

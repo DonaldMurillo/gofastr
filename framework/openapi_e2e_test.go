@@ -123,21 +123,22 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 
 	props := getNestedMap(postsSchema, "properties")
 
-	// Check each field type mapping
+	// Check each field type mapping. An optional field also takes null:
+	// the route stores one, so a read returns it.
 	typeChecks := []struct {
 		field   string
-		typeVal string
+		typeVal any
 		format  string
 		extra   map[string]any
 	}{
 		{"id", "string", "uuid", nil},
 		{"title", "string", "", map[string]any{"maxLength": float64(200)}},
-		{"body", "string", "textarea", nil},
-		{"views", "integer", "", nil},
-		{"rating", "number", "", nil},
-		{"featured", "boolean", "", nil},
-		{"publishedAt", "string", "date-time", nil},
-		{"authorId", "string", "uuid", map[string]any{"x-relation": "users"}},
+		{"body", []string{"string", "null"}, "textarea", nil},
+		{"views", []string{"integer", "null"}, "", nil},
+		{"rating", []string{"number", "null"}, "", nil},
+		{"featured", []string{"boolean", "null"}, "", nil},
+		{"publishedAt", []string{"string", "null"}, "date-time", nil},
+		{"authorId", []string{"string", "null"}, "uuid", map[string]any{"x-relation": "users"}},
 	}
 
 	for _, tc := range typeChecks {
@@ -155,16 +156,9 @@ func TestE2E_OpenAPI_EntitySchemaTypes(t *testing.T) {
 		}
 	}
 
-	// Verify status has enum values
+	// Verify status has enum values; optional, so null is one of them.
 	statusProp := getNestedMap(props, "status")
-	enumVals, _ := statusProp["enum"].([]any)
-	enumStrs := make([]string, len(enumVals))
-	for i, v := range enumVals {
-		enumStrs[i] = v.(string)
-	}
-	if len(enumStrs) != 2 || enumStrs[0] != "draft" || enumStrs[1] != "published" {
-		t.Errorf("status.enum = %v, want [draft published]", enumStrs)
-	}
+	assertEqual(t, "status.enum", []any{"draft", "published", nil}, statusProp["enum"])
 
 	// Verify required fields
 	requiredRaw, _ := postsSchema["required"].([]any)
@@ -591,21 +585,23 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 		}
 	}
 
-	// Spot-check specific types
+	// Spot-check specific types. Every field here but the generated id
+	// is optional, so it also takes null.
+	opt := func(typ string) []string { return []string{typ, "null"} }
 	checks := map[string]struct {
-		typeVal string
+		typeVal any
 		format  string
 	}{
 		"id":         {"string", "uuid"},
-		"content":    {"string", "textarea"},
-		"count":      {"integer", ""},
-		"score":      {"number", ""},
-		"price":      {"string", "decimal"},
-		"active":     {"boolean", ""},
-		"createdAt":  {"string", "date-time"},
-		"birthDate":  {"string", "date"},
-		"avatar":     {"string", "uri"},
-		"attachment": {"string", "binary"},
+		"content":    {opt("string"), "textarea"},
+		"count":      {opt("integer"), ""},
+		"score":      {opt("number"), ""},
+		"price":      {opt("string"), "decimal"},
+		"active":     {opt("boolean"), ""},
+		"createdAt":  {opt("string"), "date-time"},
+		"birthDate":  {opt("string"), "date"},
+		"avatar":     {opt("string"), "uri"},
+		"attachment": {opt("string"), "binary"},
 	}
 
 	for field, want := range checks {
@@ -618,13 +614,13 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 
 	// Relation: single → string with format uuid
 	authorProp := getNestedMap(props, "authorId")
-	assertEqual(t, "authorId type", "string", authorProp["type"])
+	assertEqual(t, "authorId type", opt("string"), authorProp["type"])
 	assertEqual(t, "authorId format", "uuid", authorProp["format"])
 	assertEqual(t, "authorId x-relation", "users", authorProp["x-relation"])
 
 	// Relation: many → array
 	tagsProp := getNestedMap(props, "tagIds")
-	assertEqual(t, "tagIds type", "array", tagsProp["type"])
+	assertEqual(t, "tagIds type", opt("array"), tagsProp["type"])
 	tagsItems := getNestedMap(tagsProp, "items")
 	assertEqual(t, "tagIds items type", "string", tagsItems["type"])
 	assertEqual(t, "tagIds items format", "uuid", tagsItems["format"])

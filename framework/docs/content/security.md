@@ -241,10 +241,17 @@ deployments where the browser is not involved.
 will autogenerate one if omitted, but that key rotates every process
 restart, and the auditable signing seam moves into the binary
 instead of into your secret store. Source it from your config /
-secret manager the same way you'd source `SessionSecret`. With
-`SecretKey` set AND `CookieSecure=true`, the cookie also gets the
-`__Host-` prefix in production, blocking subdomain cookie-injection
-attacks.
+secret manager the same way you'd source `SessionSecret`.
+
+On a secure request (`CookieSecure`, TLS, or `X-Forwarded-Proto:
+https`) the cookie is named `__Host-` plus `CookieName`, so the example
+above sets `__Host-fui_csrf`. The browser refuses a `__Host-` cookie
+from a sibling subdomain. That matters because the token is not tied
+to a session: a sibling such as `evil.example.com` could otherwise fetch
+a valid token, plant it as a `Domain=example.com` cookie, and post it
+with the victim's credentials. `NoHostPrefix: true` keeps the name as
+given; `CSRF` refuses a `CookiePath` other than `/` without it, since a
+`__Host-` cookie must have `Path=/`.
 
 On the next safe-method request (GET / HEAD / OPTIONS) the middleware
 **self-heals** stale or tampered cookies: it verifies any incoming
@@ -270,6 +277,20 @@ tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
 runtime forwards as `X-CSRF-Token`) is masked too.
 `middleware.TokenFromContext` stays raw: never render it.
 
+### Re-dispatched writes
+
+An entity's MCP write tools (and the A2A skills built on them) send the
+call through the router again as an internal request carrying the
+caller's cookies, so the same middleware decides it. With `CSRF` on
+that route the internal request needs the token as well. `CSRF`
+records the token an unsafe request passed with, and
+`middleware.VerifiedCSRFSubmission(ctx)` returns it with the header
+name it was checked under. The entity tools present it on the internal
+request, whose own check compares it with the cookie again, so nothing
+is exempted. A request the check skipped (a bearer token, an embed
+endpoint) has no token to present. The token is the raw cookie value:
+never render it.
+
 ## Cross-site form guard (Fetch Metadata)
 
 ```go
@@ -282,7 +303,11 @@ if handler.IsCrossSiteRequest(r) {
 a cross-site form post: `Sec-Fetch-Site: cross-site` decides when the
 browser sends Fetch Metadata, and an Origin-header host compare
 against the request's own host is the fallback for clients (older
-browsers, tests, native apps) that send neither. `IsForgeableRequest`
+browsers, tests, native apps) that send neither. `Sec-Fetch-Site:
+same-site` also goes to the host compare, since a sibling subdomain is
+same-site, and there an absent or `null` Origin is refused: a page on
+the same origin says `same-origin`, so only a sibling sending
+`Referrer-Policy: no-referrer` arrives that way. `IsForgeableRequest`
 answers whether the request's content type is one a plain HTML form
 can produce, for guards that only need to worry form-shaped posts.
 `IsCrossSiteRequestStrict` is for surfaces only ever called by
@@ -363,9 +388,17 @@ middlewares in different `middleware.Chain` calls.
 
 The in-memory bucket store caps its resident entry count at `MaxKeys`
 (default 100_000, the `framework/ratelimit` convention): an IPv6 peer
-rotates source addresses without limit, and the 5-minute idle reap never
-catches a flood of fresh keys, so past the cap the store evicts
-idle-first (oldest `lastSeen` first) down to a low-water mark.
+rotates source addresses without limit, and the reap only drops buckets
+that have refilled to capacity, which a flood's fresh keys have not. Past
+the cap the store sheds down to a low-water mark, nearest-to-full first:
+a flood's buckets have each spent one token, so they go before a key
+that spent more of its budget. A bucket that still owes tokens is never
+reaped for being quiet, only shed past the cap. At `Capacity: 1` a
+flood's single token is its whole budget too, so a flood of `MaxKeys`
+new keys can shed an exhausted key (the one nearest refill goes first)
+and hand it a fresh token early. A limit that must hold through a flood
+of that size raises `MaxKeys`, or uses `framework/ratelimit` with a
+shared `Store` (see `gofastr docs rate-limit`).
 
 On every response that passes through it (both allowed and 429) the
 middleware also emits the IETF-draft budget headers so well-behaved API
@@ -473,6 +506,8 @@ in the gateway / docs pipeline.
 - `CSRF(CSRFConfig)`: double-submit cookie pattern.
 - `MaskCSRFToken(token)`: per-render masked form of a CSRF token for
   page bodies.
+- `VerifiedCSRFSubmission(ctx)`: the header name and raw token an
+  unsafe request passed CSRF with, for a server-side re-dispatch.
 - `Compress()`: gzip for text responses (see [Compression](#compression)).
 - `RateLimit(RateLimitConfig)`: token-bucket per key.
 - `Timeout(d)`: per-request deadline; cancels context on expiry.
@@ -658,7 +693,14 @@ The gate mirrors the read side's exemptions exactly: a caller holding
 `tenant.AllowCrossTenant`, or a `crud.WithServerWrites` context (a
 host-driven write: jobs, imports, admin tooling) writes the reference
 unchanged. A NULL or absent FK, an unscoped target, or a target the
-registry does not know is skipped. The same reasoning a
+registry does not know is skipped. So is an update that sends the
+reference the row already holds, every column of it, read under the
+same tenant and owner scopes as the UPDATE: an edit form re-sends a
+target the caller may no longer read (an archived customer), and keeping
+it crosses no boundary. A reference that changes in any column, or one
+that leaves a stored NULL, is checked. Creates, upserts and
+`TypedQuery.UpdateAll` read no stored row and check every reference
+they name. The same reasoning a
 `BeforeCreate`/`BeforeUpdate` hook was told to do in earlier versions
 ([hooks and transactions](hooks-and-transactions.md)) is framework
 behaviour for BelongsTo now; a hook is only needed for has-many

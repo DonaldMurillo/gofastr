@@ -4,13 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/search"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
@@ -56,6 +59,7 @@ func main() {
 	// GET /posts/published, filter published posts
 	app.Router().Get("/posts/published", postsByStatus(app, "published"))
 	searchIndex := search.NewMemory()
+	syncSearch(app, searchIndex)
 	app.Router().Get("/posts/search", searchPosts(searchIndex))
 
 	// --- Seed ---
@@ -65,7 +69,9 @@ func main() {
 		log.Fatal(err)
 	}
 	seed(db)
-	seedSearch(searchIndex)
+	if err := indexPosts(context.Background(), app, searchIndex); err != nil {
+		log.Fatal(err)
+	}
 
 	// --- Start (auto-migrates, auto-routes CRUD, auto-serves OpenAPI + Swagger) ---
 
@@ -183,9 +189,80 @@ func seed(db *sql.DB) {
 	db.Exec(`INSERT OR IGNORE INTO comments (id, body, post_id, author_id) VALUES ('c2', 'Interesting', 'p2', 'u2')`)
 }
 
-func seedSearch(index search.Backend) {
-	ctx := context.Background()
-	_ = index.Index(ctx, search.Document{ID: "p1", Type: "posts", Text: "Hello World My first post", Fields: map[string]any{"status": "published"}})
-	_ = index.Index(ctx, search.Document{ID: "p2", Type: "posts", Text: "GoFastr Framework Building the future", Fields: map[string]any{"status": "published"}})
-	_ = index.Index(ctx, search.Document{ID: "p3", Type: "posts", Text: "Draft Work in progress", Fields: map[string]any{"status": "draft"}})
+// indexPosts fills index from the posts table. ListAll leaves
+// soft-deleted rows out, so a post deleted before a restart stays out
+// of search after it.
+func indexPosts(ctx context.Context, app *framework.App, index search.Backend) error {
+	posts, err := app.CrudHandler("posts")
+	if err != nil {
+		return err
+	}
+	rows, err := posts.ListAll(ctx, framework.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("index posts: %w", err)
+	}
+	for _, row := range rows {
+		if err := index.Index(ctx, postDocument(row)); err != nil {
+			return fmt.Errorf("index posts: %w", err)
+		}
+	}
+	return nil
+}
+
+// syncSearch keeps index on the posts table: a create, an edit or a
+// restore re-indexes the row, a delete (soft or purge) removes it. The
+// change waits for the write's commit, so a write that rolls back
+// never reaches the index.
+func syncSearch(app *framework.App, index search.Backend) {
+	put := func(ctx context.Context, data any) error {
+		row, ok := data.(map[string]any)
+		if !ok {
+			return fmt.Errorf("blog: posts hook got %T, want a row", data)
+		}
+		doc := postDocument(row)
+		afterCommit(ctx, func(ctx context.Context) error { return index.Index(ctx, doc) })
+		return nil
+	}
+	hooks := app.HookRegistry("posts")
+	hooks.RegisterHook(framework.AfterCreate, put)
+	hooks.RegisterHook(framework.AfterUpdate, put)
+	hooks.RegisterHook(framework.AfterDelete, func(ctx context.Context, data any) error {
+		id, ok := data.(string)
+		if !ok {
+			return fmt.Errorf("blog: posts delete hook got %T, want an id", data)
+		}
+		afterCommit(ctx, func(ctx context.Context) error { return index.Delete(ctx, id) })
+		return nil
+	})
+}
+
+// afterCommit runs fn once the hook's transaction commits, on a context
+// the request's end does not cancel. Outside a framework transaction it
+// runs fn now.
+func afterCommit(ctx context.Context, fn func(context.Context) error) {
+	ctx = context.WithoutCancel(ctx)
+	run := func() {
+		if err := fn(ctx); err != nil {
+			log.Printf("blog: search index: %v", err)
+		}
+	}
+	if q, ok := db.CommitQueueFromContext(ctx); ok {
+		q.Add(run)
+		return
+	}
+	run()
+}
+
+// postDocument is a posts row as a search document: title and body are
+// the text, and status rides along for searchPosts' published filter.
+func postDocument(row map[string]any) search.Document {
+	title, _ := row["title"].(string)
+	body, _ := row["body"].(string)
+	status, _ := row["status"].(string)
+	return search.Document{
+		ID:     fmt.Sprint(row["id"]),
+		Type:   "posts",
+		Text:   strings.TrimSpace(title + " " + body),
+		Fields: map[string]any{"status": status},
+	}
 }

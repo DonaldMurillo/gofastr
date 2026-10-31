@@ -23,6 +23,9 @@ func (i *Image) Placeholder(opts ...PlaceholderOptions) (string, error) {
 			o.Quality = opts[0].Quality
 		}
 	}
+	if err := i.checkResize(o.Width, 0, WithFit(FitInside)); err != nil {
+		return "", err
+	}
 	return i.Resize(o.Width, 0, WithFit(FitInside)).
 		JPEG(JPEGOptions{Quality: o.Quality}).
 		DataURL()

@@ -102,6 +102,7 @@ func AuditOperationFor(ctx context.Context, entity, id string) string {
 // that is visible but not soft-deleted answers ErrNotSoftDeleted. An
 // entity without Scope.SoftDelete answers ErrNoSoftDelete before any SQL.
 func (ch *CrudHandler) RestoreOne(ctx context.Context, id string) error {
+	ctx = withEventStamps(ctx)
 	if !ch.Entity.Config.Scope.SoftDelete {
 		return ErrNoSoftDelete
 	}
@@ -141,6 +142,7 @@ func (ch *CrudHandler) RestoreOne(ctx context.Context, id string) error {
 // entity.deleted event fires. Owner and tenant scoping answer visibility
 // exactly as RestoreOne's. In-process only; no HTTP route mounts it.
 func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
+	ctx = withEventStamps(ctx)
 	if !ch.Entity.Config.Scope.SoftDelete {
 		return ErrNoSoftDelete
 	}
@@ -223,6 +225,9 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 		}
 	}
 
+	if err := ch.stampRow(ctx, id); err != nil {
+		return nil, err
+	}
 	kc, ka := ch.keyWhere(id)
 	ub := query.Update(ch.Entity.GetTable()).
 		Set("deleted_at", nil).
@@ -273,6 +278,9 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 	}
 	ctx = WithAuditPreImage(ctx, pre)
 	ctx = withAuditOperation(ctx, ch.Entity.GetName(), id, "purge")
+	if err := ch.stampRow(ctx, id); err != nil {
+		return err
+	}
 
 	if ch.Hooks != nil {
 		if err := runHooks(ch.Hooks, ctx, hook.BeforeDelete, id); err != nil {
@@ -280,6 +288,13 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 		}
 	}
 
+	// The trashed row's stored objects go with it once the purge commits
+	// (media_cleanup.go).
+	idKey, _ := ch.idVals(id)
+	objs, err := ch.objectsBefore(ctx, r, id, idKey, nil, true)
+	if err != nil {
+		return fmt.Errorf("purge: %w", err)
+	}
 	kc, ka := ch.keyWhere(id)
 	db := query.Delete(ch.Entity.GetTable()).
 		Where(kc, ka...)
@@ -296,6 +311,9 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 	}
 	if affected == 0 {
 		return errNotFound
+	}
+	if err := ch.releaseObjects(ctx, r, id, idKey, objs, true); err != nil {
+		return fmt.Errorf("purge: %w", err)
 	}
 
 	if ch.Hooks != nil {

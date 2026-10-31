@@ -384,17 +384,24 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	res := InstallResult{Outcome: InstallUnchanged}
 	var upd string
 	var args []any
+	// A new artifact brings its own migrations: the previous artifact's
+	// approval does not cover them, so the migration coordinator must run
+	// again before the module may reach Ready.
+	unstamp := ""
+	if prev.ArtifactSHA256 != d.ArtifactSHA256 {
+		unstamp = ", migrations_applied_at = NULL"
+	}
 	switch {
 	case !sameGrantSet(prev.EffectiveGrants, d.EffectiveGrants):
 		res.Outcome = InstallGrantsChanged
 		res.PreviousGrants = prev.EffectiveGrants
-		upd = fmt.Sprintf(`UPDATE %s SET effective_grants = %s, artifact_sha256 = %s, enabled = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
-			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3), place(s.dialect, 4))
+		upd = fmt.Sprintf(`UPDATE %s SET effective_grants = %s, artifact_sha256 = %s, enabled = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
+			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3), unstamp, place(s.dialect, 4))
 		args = []any{string(grantsJSON), d.ArtifactSHA256, boolToInt(false), d.Module}
 	case prev.ArtifactSHA256 != d.ArtifactSHA256:
 		res.Outcome = InstallArtifactChanged
-		upd = fmt.Sprintf(`UPDATE %s SET artifact_sha256 = %s, desired_generation = desired_generation + 1 WHERE module = %s`,
-			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
+		upd = fmt.Sprintf(`UPDATE %s SET artifact_sha256 = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
+			query.QuoteFolded(desiredTable), place(s.dialect, 1), unstamp, place(s.dialect, 2))
 		args = []any{d.ArtifactSHA256, d.Module}
 	}
 	if upd != "" {
@@ -597,6 +604,29 @@ func (s *SQLProcessModuleStore) SetMigrationsAppliedAt(ctx context.Context, modu
 		return fmt.Errorf("processmodule: SetMigrationsAppliedAt %q: %w", module, err)
 	}
 	return AssertRow(res, module)
+}
+
+// setMigrationsAppliedFor stamps the migrations-applied timestamp only
+// while the row still names artifactSHA256, in one UPDATE. It reports
+// false when the row names another artifact.
+func (s *SQLProcessModuleStore) setMigrationsAppliedFor(ctx context.Context, module, artifactSHA256 string, at time.Time) (bool, error) {
+	q := fmt.Sprintf(`UPDATE %s SET migrations_applied_at = %s WHERE module = %s AND artifact_sha256 = %s`,
+		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3))
+	res, err := s.db.ExecContext(ctx, q, timeToMillis(&at), module, artifactSHA256)
+	if err != nil {
+		return false, fmt.Errorf("processmodule: SetMigrationsAppliedAt %q: %w", module, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("processmodule: SetMigrationsAppliedAt %q: %w", module, err)
+	}
+	if n == 1 {
+		return true, nil
+	}
+	if _, err := s.GetDesired(ctx, module); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // RecordHeartbeat upserts a replica heartbeat row.

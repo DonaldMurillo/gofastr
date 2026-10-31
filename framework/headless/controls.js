@@ -73,9 +73,13 @@
   // reports the change as a real input event so every pipeline that
   // watches the control sees it. The declared bounds are the server's;
   // contradictory props are refused at render, never repaired here.
+  // The input is the button's sibling in the control's own row. The id
+  // defaults to the field's name, so two forms with one field share
+  // it, and a page-wide getElementById answers the first form's input.
   function step(btn, dir) {
     const id = btn.getAttribute('data-hui-number-input-for');
-    const input = id && document.getElementById(id);
+    const row = btn.parentElement;
+    const input = id && row && [...row.children].find((el) => el.id === id);
     if (!input || input.disabled) return;
     const stepAttr = parseFloat(input.getAttribute('step') || '1');
     const delta = (Number.isFinite(stepAttr) && stepAttr > 0 ? stepAttr : 1) * dir;

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // IslandUpdate represents an update to push to a client.
@@ -43,15 +44,21 @@ type streamEntry struct {
 // "unlimited"; the defaults are applied by NewManager.
 type streamCaps struct {
 	perSession int // max streams sharing one session id (one per tab/connection)
+	perPeer    int // max streams one client holds across all its sessions (see ClientKey)
 	global     int // max streams across all sessions on this replica
 }
 
 // Default concurrent-SSE-stream ceilings. perSession is generous for real
 // multi-tab use but small enough that a runaway client can't pin dozens of
 // goroutines to one session; global protects one replica's RAM. Override per
-// manager via WithStreamCaps.
+// manager via WithStreamCaps. perPeer stops one client from minting sessions
+// until it holds the whole global budget: a session costs one same-origin
+// POST, so the per-session cap alone let 256 sessions of 16 streams take
+// every slot. It is a sixteenth of the global cap; override it with
+// WithPeerStreamCap.
 const (
 	DefaultStreamsPerSession = 16
+	DefaultStreamsPerPeer    = 256
 	DefaultGlobalStreams     = 4096
 )
 
@@ -75,6 +82,11 @@ var ErrSessionStreamLimit = errors.New("island: per-session SSE stream limit rea
 // of concurrent SSE streams. The connect is refused, not evicted.
 var ErrGlobalStreamLimit = errors.New("island: global SSE stream limit reached")
 
+// ErrPeerStreamLimit is returned when one client (see ClientKey) already holds
+// its per-client cap of concurrent SSE streams across its sessions. The connect
+// is refused, not evicted.
+var ErrPeerStreamLimit = errors.New("island: per-client SSE stream limit reached")
+
 // ManagerOption configures a Manager at construction (NewManager).
 type ManagerOption func(*Manager)
 
@@ -86,6 +98,28 @@ func WithStreamCaps(perSession, global int) ManagerOption {
 	return func(m *Manager) {
 		m.caps.perSession = perSession
 		m.caps.global = global
+	}
+}
+
+// WithPeerStreamCap overrides the per-client stream ceiling
+// (DefaultStreamsPerPeer): how many streams one client may hold open across
+// every session it has minted. A client is a signed-in user, or an anonymous
+// caller's address (see ClientKey). 0 or a negative value means unlimited.
+func WithPeerStreamCap(n int) ManagerOption {
+	return func(m *Manager) {
+		m.caps.perPeer = n
+	}
+}
+
+// WithTrustedProxies names the reverse proxies (IPs or CIDRs) whose
+// X-Forwarded-For an anonymous stream's client address is read from. A
+// request from any other peer counts under its own TCP address, and a
+// header it sends is ignored. Behind a proxy that is not listed, every
+// anonymous visitor counts as the proxy's one address and shares one
+// per-client budget. Entries that are neither an IP nor a CIDR are dropped.
+func WithTrustedProxies(entries ...string) ManagerOption {
+	return func(m *Manager) {
+		m.proxies = clientip.ParseProxies(entries)
 	}
 }
 
@@ -134,6 +168,12 @@ type Manager struct {
 	// than a map walk on every connect.
 	caps       streamCaps
 	globalSubs int
+	// peerSubs counts each client's live streams (guarded by mu) for the
+	// per-client cap; a client's entry is deleted with its last stream.
+	// proxies is WithTrustedProxies, read-only after NewManager.
+	peerSubs  map[string]int
+	proxies   clientip.Proxies
+	proxyHint sync.Once // hintUntrustedProxy logs once per manager
 
 	// sseHeartbeat/sseStreamBound tune the SSE stream loop in
 	// ServeSSEWithPresence (see stream.go). sseHeartbeat is the period
@@ -272,9 +312,11 @@ func (m *Manager) topicAuthorizer() func(context.Context, string) bool {
 // the defaults already bound one replica, so most callers pass nothing.
 func NewManager(opts ...ManagerOption) *Manager {
 	m := &Manager{
-		streams: make(map[string]*streamEntry),
+		streams:  make(map[string]*streamEntry),
+		peerSubs: make(map[string]int),
 		caps: streamCaps{
 			perSession: DefaultStreamsPerSession,
+			perPeer:    DefaultStreamsPerPeer,
 			global:     DefaultGlobalStreams,
 		},
 		sseHeartbeat:   DefaultSSEHeartbeat,
@@ -313,7 +355,7 @@ func NewManager(opts ...ManagerOption) *Manager {
 // connect was refused. Callers that need the refusal reason use
 // ConnectSession, whose error the SSE path surfaces as a 429.
 func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
-	ch, cancel, err := m.subscribeImpl(sessionID)
+	ch, cancel, err := m.subscribeImpl(sessionID, "")
 	if err != nil {
 		refused := make(chan IslandUpdate)
 		close(refused)
@@ -322,19 +364,26 @@ func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
 	return ch, cancel
 }
 
-// subscribeImpl is the single cap-enforcing chokepoint. It checks BOTH ceilings
+// subscribeImpl is the single cap-enforcing chokepoint. It checks every ceiling
 // AND adds the subscriber atomically under mu, so two concurrent connects cannot
-// both pass a ceiling and then both land. A refused connect returns a nil channel,
-// a no-op cancel, and a sentinel error (ErrSessionStreamLimit / ErrGlobalStreamLimit);
+// both pass a ceiling and then both land. peer is the client's ClientKey; "" is
+// the server's own subscription, which is never added to peerSubs and so no
+// per-client cap counts. A refused
+// connect returns a nil channel, a no-op cancel, and a sentinel error
+// (ErrSessionStreamLimit / ErrPeerStreamLimit / ErrGlobalStreamLimit);
 // existing streams are untouched (reject-not-evict). The global counter is maintained
 // here and in the returned cancel so it stays consistent regardless of which entry
 // point (Subscribe, ConnectSession) produced the subscription.
-func (m *Manager) subscribeImpl(sessionID string) (<-chan IslandUpdate, func(), error) {
+func (m *Manager) subscribeImpl(sessionID, peer string) (<-chan IslandUpdate, func(), error) {
 	m.mu.Lock()
 	entry, ok := m.streams[sessionID]
 	if m.caps.perSession > 0 && ok && len(entry.subs) >= m.caps.perSession {
 		m.mu.Unlock()
 		return nil, func() {}, ErrSessionStreamLimit
+	}
+	if m.caps.perPeer > 0 && m.peerSubs[peer] >= m.caps.perPeer {
+		m.mu.Unlock()
+		return nil, func() {}, ErrPeerStreamLimit
 	}
 	if m.caps.global > 0 && m.globalSubs >= m.caps.global {
 		m.mu.Unlock()
@@ -349,6 +398,9 @@ func (m *Manager) subscribeImpl(sessionID string) (<-chan IslandUpdate, func(), 
 	ch := make(chan IslandUpdate, 64)
 	entry.subs[id] = ch
 	m.globalSubs++
+	if peer != "" {
+		m.peerSubs[peer]++
+	}
 	m.mu.Unlock()
 
 	var once sync.Once
@@ -360,6 +412,11 @@ func (m *Manager) subscribeImpl(sessionID string) (<-chan IslandUpdate, func(), 
 				if _, sub := e.subs[id]; sub {
 					delete(e.subs, id)
 					m.globalSubs--
+					if peer != "" {
+						if m.peerSubs[peer]--; m.peerSubs[peer] <= 0 {
+							delete(m.peerSubs, peer)
+						}
+					}
 				}
 				if len(e.subs) == 0 {
 					delete(m.streams, sessionID)
@@ -558,22 +615,27 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			// Graceful leave: tell peers to drop this replica now (TTL is
-			// only the crash fallback). No-op if the heartbeat was halted.
-			m.gracefulLeaveLocalTopics(f)
-			// Stop the heartbeat goroutine.
+			// Silence every roster publisher first: joins (presenceSend
+			// cleared), the heartbeat, and the queue's publish in flight,
+			// which presenceStopQueue waits out. A roster that landed after
+			// the goodbye restored this replica's members on peers until
+			// their TTL.
 			m.mu.Lock()
 			done := m.presenceDone
+			m.presenceSend = nil
 			m.mu.Unlock()
 			if done != nil {
 				close(done)
 			}
 			m.presenceWG.Wait()
-			// Detach both lanes' subscriptions + publish queues.
+			presenceStopQueue()
+			// Graceful leave: tell peers to drop this replica now (TTL is
+			// only the crash fallback). No-op if the heartbeat was halted.
+			m.gracefulLeaveLocalTopics(f)
+			// Detach both lanes' subscriptions and the island queue.
 			islandCancel()
 			presenceCancel()
 			islandStopQueue()
-			presenceStopQueue()
 			// Clear all fanout + presence state. The remote members go
 			// with it, so local viewers of a topic that held any are
 			// told, as they are for a TTL expiry.
@@ -595,11 +657,7 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 			}
 			cb := m.presenceCallback()
 			m.mu.Unlock()
-			if cb != nil {
-				for _, topic := range changed {
-					cb(topic)
-				}
-			}
+			firePresenceChange(cb, changed)
 		})
 	}, nil
 }

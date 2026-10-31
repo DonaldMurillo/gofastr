@@ -146,10 +146,11 @@ func fsError(err error) *Error {
 
 // AllowPath puts p on the fs allow-list: p must be absolute; the list
 // stores filepath.Clean(p) AND, when the path exists, its
-// filepath.EvalSymlinks resolution. A later request is accepted only
-// when its cleaned form AND its live symlink resolution are both on
-// the list, so a symlink ALREADY IN PLACE when the request arrives
-// cannot widen access (the rootwrite posture).
+// filepath.EvalSymlinks resolution (for a missing path, its deepest
+// existing ancestor's, with the tail appended). A later request is
+// accepted only when the path as sent is that clean form AND its live
+// symlink resolution is on the list too, so a symlink ALREADY IN PLACE
+// when the request arrives cannot widen access (the rootwrite posture).
 //
 // It is deliberately not open-then-verify, and the limit of that is
 // worth stating: pathAllowed resolves and the handler then opens, so a
@@ -203,21 +204,29 @@ func resolveExistingAncestor(p string) string {
 	return filepath.Join(r, filepath.Base(p))
 }
 
-// pathAllowed reports whether p may be touched: its cleaned absolute
-// form must be on the list, and, when p currently resolves through
-// symlinks, that resolution must be on the list too.
+// pathAllowed reports whether p may be touched: p itself, byte for byte,
+// must be on the list, and so must its live symlink resolution. A
+// missing leaf resolves through its deepest existing ancestor, the form
+// AllowPath stored for it.
+//
+// The lookup takes p as sent, never its cleaned form. Every stored key is
+// clean, so any other spelling of a grant misses: the handlers open the
+// raw string, and the kernel walks "link/.." through the link before it
+// steps up, so a path that only cleans to a grant names another file.
+// Resolving a missing leaf through its ancestors is what catches a
+// parent swapped for a symlink after the grant.
 func (b *Battery) pathAllowed(p string) bool {
 	if !filepath.IsAbs(p) {
 		return false
 	}
-	clean := filepath.Clean(p)
 	b.allowMu.Lock()
-	_, cleanOK := b.allowPaths[clean]
+	_, cleanOK := b.allowPaths[p]
 	b.allowMu.Unlock()
 	if !cleanOK {
 		return false
 	}
-	if resolved, err := filepath.EvalSymlinks(p); err == nil && resolved != clean {
+	// An unresolvable path comes back "", which is never on the list.
+	if resolved := resolveExistingAncestor(p); resolved != p {
 		b.allowMu.Lock()
 		_, resolvedOK := b.allowPaths[resolved]
 		b.allowMu.Unlock()

@@ -28,7 +28,10 @@ type cachedResponse struct {
 // The middleware is conservative and refuses to cache responses that
 // carry user-specific data or that the origin marks as uncacheable:
 //
-//   - Requests other than GET are passed through untouched.
+//   - Requests other than GET are passed through untouched. After an
+//     unsafe one (any method but GET, HEAD, OPTIONS and TRACE) runs,
+//     the stored GET of its URL is evicted on every locale (RFC 9111
+//     §4.4), whatever the status.
 //   - Requests carrying a Range header are passed through untouched and
 //     never cached: the key does not encode the Range, so a partial
 //     (206) body must not be allowed to collide with the full variant.
@@ -69,9 +72,18 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only cache GET requests.
+			// Only cache GET requests. An unsafe method invalidates the
+			// stored GET of its target URI (RFC 9111 §4.4) once the
+			// handler ran: after a DELETE or PUT the anonymous GET kept
+			// answering HIT with the old body until the TTL.
 			if r.Method != http.MethodGet {
 				next.ServeHTTP(w, r)
+				if !safeMethod(r.Method) {
+					for _, k := range getKeys(r) {
+						//gofastr:allow(discardmutator) the handler already answered; a failed eviction leaves the entry to its TTL, as before this eviction existed
+						_ = cache.Delete(context.Background(), k)
+					}
+				}
 				return
 			}
 
@@ -108,17 +120,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				return
 			}
 
-			// Include the request authority (Host) in the key so distinct
-			// virtual hosts / tenants sharing one Cache do not collide on the
-			// same method+path+query. The path is the escaped one: /a%2Fb
-			// (one segment) and /a/b (two) are different pages.
-			baseKey := r.Method + ":" + r.Host + ":" + r.URL.EscapedPath() + "?" + r.URL.RawQuery
-			// Under locale prefixes the router strips /es before any
-			// middleware runs, so /es/pricing and /pricing arrive as the
-			// same URL: the locale the path named keeps them apart.
-			if _, tag, ok := i18n.PathLocale(r.Context()); ok {
-				baseKey += "#" + tag
-			}
+			baseKey := getKey(r)
 
 			// Try to fetch from cache only if we're allowed to serve a
 			// stored variant for this request.
@@ -190,6 +192,50 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			w.Write(rec.body.Bytes())
 		})
 	}
+}
+
+// getKey is the key r's GET is stored under. It includes the request
+// authority (Host) so distinct virtual hosts / tenants sharing one Cache
+// do not collide on the same path+query. The path is the escaped one:
+// /a%2Fb (one segment) and /a/b (two) are different pages. Under locale
+// prefixes the router strips /es before any middleware runs, so
+// /es/pricing and /pricing arrive as the same URL: the locale the path
+// named keeps them apart.
+func getKey(r *http.Request) string {
+	k := keyPrefix(r)
+	if _, tag, ok := i18n.PathLocale(r.Context()); ok {
+		k += "#" + tag
+	}
+	return k
+}
+
+func keyPrefix(r *http.Request) string {
+	return http.MethodGet + ":" + r.Host + ":" + r.URL.EscapedPath() + "?" + r.URL.RawQuery
+}
+
+// getKeys lists every key a GET of r's target URI can be stored under:
+// one per locale of the path's locale set, since a change to the
+// resource changes every locale's page of it.
+func getKeys(r *http.Request) []string {
+	set, _, ok := i18n.PathLocale(r.Context())
+	if !ok {
+		return []string{keyPrefix(r)}
+	}
+	keys := []string{keyPrefix(r) + "#" + set.Default}
+	for _, tag := range set.Prefixed {
+		keys = append(keys, keyPrefix(r)+"#"+tag)
+	}
+	return keys
+}
+
+// safeMethod reports whether method is safe in RFC 9110 §9.2.1's sense:
+// it changes nothing, so it leaves stored responses alone.
+func safeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	return false
 }
 
 // writeCached writes a previously cached response to the client.

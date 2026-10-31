@@ -309,15 +309,19 @@ type NavItem struct {
 // IfMatch so an agent can verify the page hasn't shifted under it
 // between fetch and patch.
 type Page struct {
-	Path        string     `json:"path"`
-	Name        string     `json:"name,omitempty"`
-	Title       string     `json:"title,omitempty"`
-	Description string     `json:"description,omitempty"`
-	Type        string     `json:"type,omitempty"` // "page" | "drawer" | "sheet" | "dialog"
-	Version     int        `json:"version,omitempty"`
-	Layout      *Layout    `json:"layout,omitempty"`
-	Access      PageAccess `json:"access"`
-	Tree        Node       `json:"tree"`
+	Path        string `json:"path"`
+	Name        string `json:"name,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type,omitempty"` // "page" | "drawer" | "sheet" | "dialog"
+	Version     int    `json:"version,omitempty"`
+	// Gen is minted by add_page and kept by every patch. A page deleted
+	// and added again restarts at version 1, so the version alone cannot
+	// tell a patch read from the old page that the page was replaced.
+	Gen    string     `json:"gen,omitempty"`
+	Layout *Layout    `json:"layout,omitempty"`
+	Access PageAccess `json:"access"`
+	Tree   Node       `json:"tree"`
 }
 
 type PageAccess struct {

@@ -73,6 +73,9 @@ func RunMigrate(args []string) {
 // recording a baseline without running its Up SQL). With --not-applied the
 // version is removed from the tracking table so it becomes pending again.
 func runMigrateForce(args []string) {
+	// Exactly one version, parsed whole. Sscanf read "1x" as 1, and with
+	// two versions the last one won, so a typo marked a migration applied
+	// without running its SQL.
 	applied := true
 	var version uint64
 	haveVersion := false
@@ -83,9 +86,13 @@ func runMigrateForce(args []string) {
 		case strings.HasPrefix(a, "--"):
 			// flag consumed elsewhere (e.g. --db-url): skip
 		default:
-			if _, err := fmt.Sscanf(a, "%d", &version); err == nil {
-				haveVersion = true
+			v, err := strconv.ParseUint(a, 10, 64)
+			if err != nil || haveVersion {
+				cli.Fail("migrate force takes exactly one migration version, got %q", a)
+				cli.OsExit(1)
+				return
 			}
+			version, haveVersion = v, true
 		}
 	}
 	if !haveVersion {

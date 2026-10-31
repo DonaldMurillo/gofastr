@@ -111,6 +111,9 @@ func New(cfg Config) (*Deriver, error) {
 			return nil, fmt.Errorf("imagefield: Variants[%d].Format must be set", i)
 		}
 	}
+	if err := fwimage.CheckVariantNames(cfg.Variants); err != nil {
+		return nil, fmt.Errorf("imagefield: %w", err)
+	}
 	return &Deriver{
 		set: fwimage.VariantSet{
 			Variants:       cfg.Variants,

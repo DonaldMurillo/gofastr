@@ -263,6 +263,10 @@ var (
 	errDeciderDenied = errors.New("this tool call was refused by the access decider for the caller's roles")
 )
 
+// errScopeNotHeld refuses a scope-restricted caller (an API token) whose
+// scopes do not name the resource and verb a tool acts on.
+var errScopeNotHeld = errors.New("this tool needs a scope the caller's credential does not hold")
+
 // errEmbedNotAllowed is deliberately distinct from errAuthRequired: the caller
 // IS authenticated, just not with a credential that may drive tools.
 var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded surface: " +

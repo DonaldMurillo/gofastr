@@ -233,6 +233,11 @@ own `go` directive and be built/tested independently of the root module.
 - **Making print an island or SPA route.** Print is a separate resource;
   link to it with `PrintLink` / `target="_blank"`, not a `data-cui-rpc`
   island or a `location.href` swap.
+- **Mounting print at the root.** `PathPrefix: "/"` (or a prefix with
+  no leading slash) fails the mount. The battery reserves its prefix
+  from embed grants, because every request under it can start headless
+  Chrome, and a root mount would leave its routes outside that
+  reservation.
 - **`print.Public` on per-user data.** Leaves invoices/receipts
   world-readable. Keep `RequireAuth` or use `RequireOwner`.
 - **Expecting interactivity or host chrome.** Print pages are deliberately

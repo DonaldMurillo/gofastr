@@ -18,6 +18,7 @@ package permission
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -352,9 +353,39 @@ func bashQuietAllow(cmd string) bool {
 		}
 		// Word-boundary prefix: the allow-listed token must be
 		// followed by a space, never by more identifier characters.
-		if strings.HasPrefix(cmd, trimmed+" ") {
+		if rest, ok := strings.CutPrefix(cmd, trimmed+" "); ok {
+			if trimmed == "git branch" {
+				return gitBranchLists(rest)
+			}
 			return true
 		}
 	}
 	return false
+}
+
+// gitBranchListing are the git branch flags that only list. Anything
+// else is a write (-D, -m, -f, --set-upstream-to) or an editor
+// (--edit-description), and a bare name creates a branch.
+var gitBranchListing = map[string]bool{
+	"-a": true, "--all": true, "-r": true, "--remotes": true,
+	"-v": true, "-vv": true, "--verbose": true, "--show-current": true,
+	"-l": true, "--list": true, "--no-color": true,
+}
+
+// gitBranchLists reports whether args (what follows "git branch ") only
+// list branches: every flag a listing flag, and a positional argument
+// only with --list, where it is a pattern rather than a new branch.
+func gitBranchLists(args string) bool {
+	fields := strings.Fields(args)
+	list := slices.Contains(fields, "--list") || slices.Contains(fields, "-l")
+	for _, f := range fields {
+		if strings.HasPrefix(f, "-") {
+			if !gitBranchListing[f] {
+				return false
+			}
+		} else if !list {
+			return false
+		}
+	}
+	return true
 }
