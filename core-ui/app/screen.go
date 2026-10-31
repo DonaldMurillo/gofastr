@@ -181,6 +181,9 @@ type Screen struct {
 	// parent ScreenGroup policies (outermost→innermost). The first
 	// non-Allow Decision wins. Use WithPolicy to add; PolicyChain to read.
 	policies []Policy
+	// notFoundOutcome identifies the synthetic 404 page. A missing layout
+	// outlet must not replace its path-aware body with a pathless fallback.
+	notFoundOutcome bool
 
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool

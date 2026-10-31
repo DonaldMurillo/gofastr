@@ -221,6 +221,18 @@ Useful options:
   differently: 500 plus a logged error line, because a broken screen
   is a server bug. The 404 screen only runs for paths no route owns,
   and those must stay 404s, not become incidents.)
+  A custom screen may implement `uihost.NotFoundTitler`, whose
+  `NotFoundTitle(ctx context.Context, path string) string` returns its
+  request-specific title. The context carries the reader's locale; the
+  path is empty for a missing outlet. Keep the shared screen stateless.
+  An empty result falls back to `app.ScreenTitler.ScreenTitle(ctx)`,
+  then the framework's generic not-found title. A panicking title provider
+  also uses the generic title. Full pages, navigation partials and the
+  bare page an app without a default layout serves all carry this title
+  through the normal escaping and app-name suffix rules, rather than
+  borrowing the failed route's title.
+  An unmatched route retains its request path even if the root layout has
+  a `FallbackNotFound` outlet; it is already rendering the not-found page.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.

@@ -560,7 +560,9 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // article wrap, the default layout chain).
 func notFoundScreenFor(ctx context.Context, comp component.Component) *Screen {
 	RefuseRetiredScreenMethods("not-found body", comp)
-	return NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
+	screen := NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
+	screen.notFoundOutcome = true
+	return screen
 }
 
 // RenderNotFoundPageResult renders comp as the not-found page for an
@@ -585,6 +587,9 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
 		return res, err
+	}
+	if res.Title == "" {
+		res.Title = target.Title
 	}
 	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
 		return res, nil
@@ -811,7 +816,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 			// answers 404 (RenderResult.NotFoundOutlet). Only a clean
 			// decline decides this; a contained fill failure returned
 			// above and left the page alone.
-			if fills != nil && fills.notFoundOutlet {
+			if fills != nil && fills.notFoundOutlet && !screen.notFoundOutcome {
 				nfScreen := notFoundScreenFor(ctx, a.notFoundBody())
 				nfComp := newComponentInstance(nfScreen.Component)
 				if err := a.injectComponent(nfComp, path); err != nil {
@@ -1122,7 +1127,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	// answers the partial 404-shaped (writePartialResult reads
 	// NotFoundOutlet). The client applies the envelope and never caches
 	// a 404 answer.
-	if fills != nil && fills.notFoundOutlet {
+	if fills != nil && fills.notFoundOutlet && !target.notFoundOutcome {
 		nfScreen := notFoundScreenFor(ctx, a.notFoundBody())
 		nfComp := newComponentInstance(nfScreen.Component)
 		if err := a.injectComponent(nfComp, path); err != nil {
