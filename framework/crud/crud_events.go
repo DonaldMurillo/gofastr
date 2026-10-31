@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"net/http"
 	"slices"
@@ -531,7 +530,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 	}
 	payload := &hook.GetPayload{Request: r, ID: id, Result: clone}
 	if err := runHooks(ch.Hooks, hookCtx(hctx), hook.AfterGet, payload); err != nil {
-		log.Printf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
+		logf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
 		payload.Result = nil
 	}
 
@@ -641,7 +640,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 	// the caller can remove the probe entirely by switching to
 	// db.WithTxQueue and draining after Commit.
 	probeWarnOnce.Do(func() {
-		log.Printf("crud: a CRUD write joined a caller-owned transaction (db.WithTx with no commit queue); " +
+		logf("crud: a CRUD write joined a caller-owned transaction (db.WithTx with no commit queue); " +
 			"its lifecycle event is confirmed by polling the live *sql.Tx, which can race the owner's statements — " +
 			"prefer db.WithTxQueue + RunAfterCommit (see hooks-and-transactions docs)")
 	})
@@ -663,7 +662,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 				break
 			}
 			if time.Now().After(deadline) {
-				log.Printf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
+				logf("crud: dropping %s for %s/%v: ambient transaction still open after %s",
 					eventType, table, fmt.Sprint(id...), ambientTxProbeTimeout)
 				return
 			}
@@ -672,7 +671,7 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 
 		committed, err := landed(base, eventType, table, pk, id, match)
 		if err != nil {
-			log.Printf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
+			logf("crud: dropping %s for %s/%v: cannot confirm the ambient transaction committed: %v",
 				eventType, table, fmt.Sprint(id...), err)
 			return
 		}

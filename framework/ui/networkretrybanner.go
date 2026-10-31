@@ -2,10 +2,12 @@ package ui
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -71,6 +73,11 @@ type NetworkRetryBannerConfig struct {
 func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	if cfg.HealthEndpoint == "" {
 		panic("ui: NetworkRetryBanner requires HealthEndpoint")
+	}
+	// The endpoint becomes the retry link's href, so it meets the same
+	// URL policy as every other kit anchor.
+	if urlsafe.CleanAnchor(cfg.HealthEndpoint) == "" {
+		panic(fmt.Sprintf("ui: NetworkRetryBanner HealthEndpoint %q is not a safe link: use a relative path or an http(s) URL", cfg.HealthEndpoint))
 	}
 	title := cfg.Title
 	if title == "" {

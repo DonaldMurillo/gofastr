@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"net/http"
 	"net/url"
@@ -719,7 +718,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		countSQL, countArgs := countQb.Build()
 		if err := ch.conn(ctx).QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
-			log.Printf("crud: list count failed: %v", err)
+			logf("crud: list count failed: %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
@@ -756,7 +755,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		dataSQL, dataArgs := qb.Build()
 		rows, err := ch.conn(ctx).QueryContext(ctx, dataSQL, dataArgs...)
 		if err != nil {
-			log.Printf("crud: list query failed: %v", err)
+			logf("crud: list query failed: %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
@@ -778,7 +777,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			results, err = scanRowsWithKeysForEntity(rows, cols, keys, ch.snapshotFields())
 		}
 		if err != nil {
-			log.Printf("crud: list scan failed: %v", err)
+			logf("crud: list scan failed: %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
@@ -795,7 +794,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if ch.Hooks != nil {
 			listPayload.Results = results
 			if err := runHooks(ch.Hooks, ctx, hook.AfterList, listPayload); err != nil {
-				log.Printf("crud: after-list hook failed: %v", err)
+				logf("crud: after-list hook failed: %v", err)
 				writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
@@ -969,7 +968,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 				writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 				return
 			}
-			log.Printf("crud: get query failed: %v", err)
+			logf("crud: get query failed: %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
@@ -982,7 +981,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		if ch.Hooks != nil {
 			getPayload.Result = result
 			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {
-				log.Printf("crud: after-get hook failed: %v", err)
+				logf("crud: after-get hook failed: %v", err)
 				writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
@@ -1080,7 +1079,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			var hookErr error
 			resp, hookErr = ch.runResponseHooks(r, result)
 			if hookErr != nil {
-				log.Printf("crud: after-get hook failed on create response, returning id only: %v", hookErr)
+				logf("crud: after-get hook failed on create response, returning id only: %v", hookErr)
 				resp = ch.identityOnly(result)
 			}
 		}
@@ -1168,7 +1167,7 @@ func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, resu
 		var hookErr error
 		resp, hookErr = ch.runResponseHooks(r, result)
 		if hookErr != nil {
-			log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
+			logf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
 			resp = ch.identityOnly(result)
 		}
 	}
@@ -1386,7 +1385,7 @@ func crudRefusal(ctx context.Context, err error) refusal {
 	// schema and backend. The full message is logged on the server
 	// side; the client sees a generic "internal server error" with
 	// the original error remaining matchable via errors.Is in tests.
-	log.Printf("crud: internal error: %v", err)
+	logf("crud: internal error: %v", err)
 	return phraseRefusal(ctx, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 

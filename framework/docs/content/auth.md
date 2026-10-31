@@ -138,7 +138,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
-| `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
+| `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
 | `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
@@ -225,13 +225,13 @@ The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
 provided in this package implement every relevant interface; if you
 start from `EntityUserStore` you get the full feature matrix.
 
-Both built-in session stores fail closed on a negative TTL:
+A zero `AuthConfig.SessionTTL` means seven days. A negative one is a
+sign or unit error, and `AuthManager.Init` refuses it, so the app does
+not boot with a session lifetime nobody chose. The stores refuse one
+too when a caller passes it to `MintSession` directly:
 `EntitySessionStore.Create` rejects `ttl <= 0`, and
 `MemorySessionStore.Create` rejects `ttl < 0` while keeping `ttl == 0`
-as its documented one-week default. A sign or unit error in
-`SessionTTL` therefore breaks login loudly instead of minting a
-session — on the memory store it used to silently substitute the
-7-day default, the exact inversion of the caller's intent.
+as its one-week default.
 
 The default stores are **in-memory**: fine for dev and tests, a trap
 in production: sessions vanish on restart and never resolve on a

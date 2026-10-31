@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -251,7 +250,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		})
 
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			log.Printf("crud: batch tx failed: %v", txErr)
+			logf("crud: batch tx failed: %v", txErr)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
@@ -287,7 +286,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 				if hookErr != nil {
 					// Degrade this item to its id, the batch is committed, and
 					// a 500 would lose the ids of rows already in the table.
-					log.Printf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
+					logf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
 					body = ch.identityOnly(res.Data)
 				}
 				results[i].Data = body
@@ -387,7 +386,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		})
 
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			log.Printf("crud: batch tx failed: %v", txErr)
+			logf("crud: batch tx failed: %v", txErr)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
@@ -423,7 +422,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				if hookErr != nil {
 					// Degrade this item to its id, the batch is committed, and
 					// a 500 would lose the ids of rows already in the table.
-					log.Printf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
+					logf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
 					body = ch.identityOnly(res.Data)
 				}
 				results[i].Data = body
@@ -492,7 +491,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		})
 
 		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			log.Printf("crud: batch tx failed: %v", txErr)
+			logf("crud: batch tx failed: %v", txErr)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}

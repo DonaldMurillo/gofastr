@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -561,7 +560,7 @@ func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, e
 		writeErrJSON(w, r, http.StatusBadRequest, refused.err, i18n.Phrase{})
 		return
 	}
-	log.Printf("crud: %s include failed: %v", surface, err)
+	logf("crud: %s include failed: %v", surface, err)
 	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 

@@ -497,3 +497,7 @@ notes:
     find:
       uses:
         - gofastr/framework/ui.SparklineConfig.Color
+  - change: "BREAKING - auth.TwoFAConfig.Digits is removed; TOTP codes are six digits and the enrolment URL carries TwoFAConfig.Period"
+    breaking: true
+    guidance: "Digits was never read, and the enrolment URL always said period=30, so a Period other than 30 refused every code. Delete Digits from the config. A Period you set now reaches the authenticator app."
+    nodetect: "a config that sets Digits fails to compile and the error names the field"

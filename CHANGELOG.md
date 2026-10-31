@@ -355,6 +355,25 @@ few lines, and link the PR or the docs page for the rest.
 - **The queue's admin job list reads a NULL payload as none**, as the
   dequeue path does. One such row (restore tooling, an external write)
   failed the whole list.
+- **`AuthManager.Init` refuses a negative `SessionTTL`.** It used to
+  become the 7-day default, against auth.md; zero still means seven
+  days.
+- **BREAKING: `TwoFAConfig.Digits` is removed, and the enrolment URL
+  carries `TwoFAConfig.Period`.** The URL always said `period=30` while
+  verification used the configured period, so with `Period: 60` every
+  code was refused. `Digits` was never read: codes are six digits.
+  Delete the field from your config.
+- **`ui.NetworkRetryBanner` refuses an unsafe `HealthEndpoint`.** It
+  went into the retry link's `href` with no URL policy; a value
+  `urlsafe.CleanAnchor` refuses now panics, as an empty one does.
+- **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
+  string.** `"use":[]` or `"alg":false` read as absent, so the key
+  passed both restriction checks.
+- **CRUD log lines percent-encode control bytes.** A driver error
+  quotes the request's value back (Postgres names the invalid `uuid` it
+  was handed), so `GET /legacy/%1B%5B2J%0AFORGED` forged a log line
+  through `CrudHandler.Get`. Every log line in `framework/crud` is
+  scrubbed now.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

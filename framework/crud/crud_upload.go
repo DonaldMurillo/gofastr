@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -20,7 +19,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -587,7 +585,7 @@ func writeBodyError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	if _, ok := errors.AsType[*storageSaveError](err); ok {
-		log.Printf("crud: upload save failed: %s", textsafe.ScrubControlBytes(err.Error()))
+		logf("crud: upload save failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
@@ -656,7 +654,7 @@ func (ch *CrudHandler) deleteSavedUploads(ctx context.Context, keys []string) {
 	defer cancel()
 	for _, key := range keys {
 		if err := ch.Storage.Delete(ctx, key); err != nil {
-			log.Printf("crud: compensating delete of orphaned upload %q failed: %v", key, err)
+			logf("crud: compensating delete of orphaned upload %q failed: %v", key, err)
 		}
 	}
 }

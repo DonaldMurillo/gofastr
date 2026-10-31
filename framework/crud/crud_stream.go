@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -96,7 +95,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	countSQL, countArgs := countQb.Build()
 	var total int
 	if err := ch.conn(ctx).QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
-		log.Printf("crud: stream count failed: %v", err)
+		logf("crud: stream count failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
@@ -130,7 +129,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	dataSQL, dataArgs := qb.Build()
 	rows, err := ch.conn(ctx).QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
-		log.Printf("crud: stream query failed: %v", err)
+		logf("crud: stream query failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
@@ -153,7 +152,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		if err != nil {
 			// The status is already sent. Closing the envelope would pass a
 			// truncated list off as complete; left open, it fails to parse.
-			log.Printf("crud: stream scan failed: %v", err)
+			logf("crud: stream scan failed: %v", err)
 			return
 		}
 		ch.decodeReadFields(row)
@@ -176,7 +175,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// A cancelled or failed cursor ends rows.Next early: leave the
 	// envelope open, as on a scan error above.
 	if err := rows.Err(); err != nil {
-		log.Printf("crud: stream rows failed: %v", err)
+		logf("crud: stream rows failed: %v", err)
 		return
 	}
 	// Guard the division: ServeStreamingList is an exported in-process
