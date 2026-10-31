@@ -306,7 +306,10 @@ never share role state. Concurrent
 misses for one user share one lookup. `Resolve` returns defensive copies;
 call `Invalidate(userID)` (every tenant of that user) after changing one user's role inputs or
 `InvalidateAll()` after a global role-policy change. A zero or negative TTL
-keeps same-key single-flight behavior but does not retain results.
+keeps same-key single-flight behavior but does not retain results: the
+calls waiting on a lookup share its result, and the next call looks up
+again. A lookup invalidated while it runs shares nothing, so its waiters
+look up again.
 
 The map is bounded, not just expired-on-read: a later `Resolve` sweeps
 entries whose TTL has lapsed at most once per TTL, and once 100,000

@@ -33,27 +33,29 @@ const MaxBatchSize = 100
 // upstream check keyed on the exact name. And an unrecognised key is silently
 // dropped rather than refused. The envelope is a fixed, one-field shape; there
 // is nothing to gain by being lenient about it.
-func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) ([]byte, error) {
+func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			return nil, errBodyTooLarge
+			return errBodyTooLarge
 		}
 		if strings.Contains(err.Error(), "request body too large") {
-			return nil, errBodyTooLarge
+			return errBodyTooLarge
 		}
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	if err := checkEnvelopeKeys(raw, allowed); err != nil {
-		return nil, err
+		return err
 	}
 	// handler.UnmarshalStrict keeps the same refusal posture on the decode
 	// itself (exact-tag match, duplicates and unknown keys refused), so
-	// the vetted body needs no analyzer marker.
-	if err := handler.UnmarshalStrict(raw, v); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+	// the vetted body needs no analyzer marker. UseNumber keeps every item
+	// number as its text: a float64 decode rounded an integer past 2^53 and
+	// refused a JSON field's 1e400, which a single write stores.
+	if err := handler.UnmarshalStrict(raw, v, handler.UseNumber()); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
-	return raw, nil
+	return nil
 }
 
 // checkEnvelopeKeys walks the top-level object's keys without decoding its
@@ -192,9 +194,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchCreateRequest
-		//gofastr:allow(floatnum) redecodeUseNumber re-reads req.Items exactly below; the envelope holds nothing else
-		raw, err := decodeBatchEnvelope(r, &req, "items")
-		if err != nil {
+		if err := decodeBatchEnvelope(r, &req, "items"); err != nil {
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
@@ -202,14 +202,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
-		// The strict decode above is the gate; this second UseNumber
-		// pass replaces the float64 items with exact int64/float64
-		// spellings so an integer literal above 2^53 survives to the
-		// INSERT (the struct decode would have rounded it).
-		if err := redecodeUseNumber(raw, &req.Items); err != nil {
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
-			return
-		}
+		normalizeItemNumbers(req.Items)
 		if len(req.Items) == 0 {
 			writeJSONError(w, r, http.StatusBadRequest, reasonItemsEmpty)
 			return
@@ -322,9 +315,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchUpdateRequest
-		//gofastr:allow(floatnum) redecodeUseNumber re-reads req.Items exactly below; the envelope holds nothing else
-		raw, err := decodeBatchEnvelope(r, &req, "items")
-		if err != nil {
+		if err := decodeBatchEnvelope(r, &req, "items"); err != nil {
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
@@ -332,10 +323,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
 			return
 		}
-		if err := redecodeUseNumber(raw, &req.Items); err != nil {
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
-			return
-		}
+		normalizeItemNumbers(req.Items)
 		if len(req.Items) == 0 {
 			writeJSONError(w, r, http.StatusBadRequest, reasonItemsEmpty)
 			return
@@ -457,7 +445,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		}
 		limitJSONBody(w, r)
 		var req batchDeleteRequest
-		if _, err := decodeBatchEnvelope(r, &req, "ids"); err != nil {
+		if err := decodeBatchEnvelope(r, &req, "ids"); err != nil {
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return

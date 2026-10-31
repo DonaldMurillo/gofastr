@@ -369,6 +369,17 @@ few lines, and link the PR or the docs page for the rest.
 - **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
   string.** `"use":[]` or `"alg":false` read as absent, so the key
   passed both restriction checks.
+- **A Bool field refuses a number that only rounds to 0 or 1, and stores
+  a text default as the boolean.** `1.0000000000000001` was stored as
+  true and `1e-400` as false. A `Default: "true"` was bound as text, which
+  `?field=true` never matched on SQLite.
+- **A batch write keeps a JSON field's numbers the way a single write
+  does.** The `_batch` envelope decoded item numbers as float64, so a
+  `json` field's `1e400` failed the whole batch as invalid JSON.
+- **`access.CachedResolver` at a zero TTL shares one lookup with its
+  waiters.** The result expired as it landed, so each waiting call ran
+  its own lookup in turn, in place of the single flight `WithTTL`
+  documents.
 - **The relay aborts an upstream response that runs past
   `MaxBodyBytes`.** The cap ended the body with a clean EOF, so a chunked
   response arrived as a whole 200 that was cut short, and `CacheOK` could

@@ -72,7 +72,10 @@ type fieldCacheData struct {
 	// timestampColumns holds the schema.Timestamp fields by column: the
 	// write path stores their values in the layout the cursor carries.
 	timestampColumns map[string]struct{}
-	sig              uint64
+	// boolColumns holds the schema.Bool fields by column: the write path
+	// binds a declared default's "true" as the boolean, as a body's.
+	boolColumns map[string]struct{}
+	sig         uint64
 }
 
 // fieldCache is the shared holder. The handler stores a POINTER to it, so
@@ -159,6 +162,7 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		dateColumns:     map[string]struct{}{},
 
 		timestampColumns: map[string]struct{}{},
+		boolColumns:      map[string]struct{}{},
 	}
 	if ch.Entity == nil {
 		s.sig = ch.fieldCacheSignature()
@@ -204,6 +208,9 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		}
 		if f.Type == schema.Timestamp {
 			s.timestampColumns[f.Name] = struct{}{}
+		}
+		if f.Type == schema.Bool {
+			s.boolColumns[f.Name] = struct{}{}
 		}
 		if !f.Hidden {
 			s.visible = append(s.visible, f.Name)

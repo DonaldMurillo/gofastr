@@ -49,6 +49,11 @@ type cachedRoleEntry struct {
 	roles     []string
 	expiresAt time.Time
 	ready     chan struct{}
+	// shared is set on an in-flight entry, with roles, before ready
+	// closes, when its result is the one the cache took. Its waiters
+	// return those roles even if the entry has already expired (a zero
+	// TTL), rather than each running a lookup of its own in turn.
+	shared bool
 }
 
 // CachedResolverOption configures a CachedResolver.
@@ -96,9 +101,11 @@ func (r *CachedResolver) Resolve(ctx context.Context) []string {
 		entry := r.entries[key]
 		if entry != nil {
 			if entry.ready != nil {
-				ready := entry.ready
 				r.mu.Unlock()
-				<-ready
+				<-entry.ready
+				if entry.shared {
+					return cloneRoles(entry.roles)
+				}
 				continue
 			}
 			if time.Now().Before(entry.expiresAt) {
@@ -151,6 +158,8 @@ func (r *CachedResolver) resolveFlight(ctx context.Context, key resolverKey, fli
 			roles:     roles,
 			expiresAt: time.Now().Add(r.ttl),
 		}
+		// An invalidated flight shares nothing: its waiters resolve again.
+		flight.roles, flight.shared = roles, true
 	}
 	close(flight.ready)
 	r.mu.Unlock()

@@ -422,6 +422,10 @@ declaration is not JSON:
   number on insert.
 - `timestamp` and `date` written as a `time.Time`.
 
+A `bool` default written as text (`Default: "true"`, or `"false"`, `"1"`,
+`"0"`) is stored as the boolean, as the same text in a body is, so a
+`?field=true` filter finds the defaulted rows on SQLite too.
+
 A default on an `auto_generate` field is not validated, because the create path
 never writes it: the generated value takes that slot. It still becomes the
 column's DDL `DEFAULT`.
@@ -628,7 +632,9 @@ computed) is its exact binary value.
 
 An `int` field takes a JSON number only when its text is a whole number:
 `3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though
-it rounds to the float `1`. A `date` field reads back as `YYYY-MM-DD` on
+it rounds to the float `1`. A `bool` field takes a number the same way,
+only when its text is exactly 0 or 1: `1.0` and `10e-1` pass,
+`1.0000000000000001` and `1e-400` are refused. A `date` field reads back as `YYYY-MM-DD` on
 every read path and in hooks; a typed read into a `time.Time` field
 still decodes it as midnight UTC. An in-process write (`CreateOne`,
 `UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
@@ -638,7 +644,7 @@ date. A `json` field reads back as the JSON
 text it holds, so a document that is the string `"123"` stays a string.
 
 A JSON number past the float64 range (`1e400`) is stored as written in a
-`json` field. Any other column answers a validation 400 naming the
+`json` field, by a single write and a `_batch` item alike. Any other column answers a validation 400 naming the
 field, `not_finite` (or `not_integer` on an `int`), not `invalid_json`.
 
 A `relation` field with a `to` target (e.g. a field named `author_id`, type
