@@ -113,3 +113,33 @@ func TestSafeTableName(t *testing.T) {
 		t.Error("ReservedIdent must match whole words case-insensitively")
 	}
 }
+
+func TestSQLiteTimeFixes(t *testing.T) {
+	at := time.Date(2026, 7, 20, 23, 59, 59, 0, time.UTC)
+	canonical := at.Format(time.RFC3339Nano)
+	legacy := at.Format("2006-01-02 15:04:05")
+	fixes, err := SQLiteTimeFixes(time.RFC3339Nano, []StoredTime{
+		{Col: "a", Raw: nil},
+		{Col: "b", Raw: canonical},
+		{Col: "c", Raw: legacy},
+		{Col: "d", Raw: []byte(legacy)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []TimeFix{{Col: "c", Read: legacy, At: at}, {Col: "d", Read: legacy, At: at}}
+	if len(fixes) != len(want) {
+		t.Fatalf("fixes = %v, want %v", fixes, want)
+	}
+	for i := range want {
+		if fixes[i].Col != want[i].Col || fixes[i].Read != want[i].Read || !fixes[i].At.Equal(want[i].At) {
+			t.Fatalf("fix %d = %+v, want %+v", i, fixes[i], want[i])
+		}
+	}
+	if _, err := SQLiteTimeFixes(time.RFC3339Nano, []StoredTime{{Col: "e", Raw: int64(5)}}); err == nil {
+		t.Fatal("a non-text value was accepted")
+	}
+	if _, err := SQLiteTimeFixes(time.RFC3339Nano, []StoredTime{{Col: "f", Raw: "not a time"}}); err == nil {
+		t.Fatal("an unparseable value was accepted")
+	}
+}

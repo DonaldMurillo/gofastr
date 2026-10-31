@@ -62,6 +62,9 @@ func main() {
 }
 
 // run wires the codec + peer, serves until EOF, and returns the exit code.
+// A peer fault ends the run too: a faulted peer serves nothing more while
+// its read loop keeps draining stdin, so a child that stayed up would leave
+// every host call to its deadline. Exiting lets the supervisor restart it.
 func run() int {
 	codec, err := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
 	if err != nil {
@@ -76,8 +79,15 @@ func run() int {
 	}
 
 	peer.Start()
-	<-peer.Done()
-	return 0
+	select {
+	case <-peer.Done():
+		if peer.FatalError() == nil {
+			return 0
+		}
+	case <-peer.FatalDone():
+	}
+	fmt.Fprintln(os.Stderr, "demo: peer fault:", peer.FatalError())
+	return 1
 }
 
 // cfg reads the misbehave knobs once at startup.
@@ -180,7 +190,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		case "hello":
 			return moduleproto.HTTPResponseResult{
 				Status:  200,
-				Headers: map[string]string{"X-Module": "demo"},
+				Headers: map[string]string{"Cache-Control": "no-cache"},
 				Body: moduleproto.HTTPResponseBody{
 					Kind:  moduleproto.BodyKindUINodeV1,
 					Value: screenTree(),
@@ -192,7 +202,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 			// bytes the child would have rendered.
 			return moduleproto.HTTPResponseResult{
 				Status:  200,
-				Headers: map[string]string{"X-Module": "demo"},
+				Headers: map[string]string{"Cache-Control": "no-cache"},
 				Body: moduleproto.HTTPResponseBody{
 					Kind:  moduleproto.BodyKindJSON,
 					Value: screenTree(),

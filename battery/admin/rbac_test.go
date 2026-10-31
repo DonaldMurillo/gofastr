@@ -261,6 +261,35 @@ func TestGrantStrictTypoIsRefused(t *testing.T) {
 	}
 }
 
+// A grant inside a wildcard revocation is a refusal the page names, not
+// a server failure (2026-10-27 D22).
+func TestGrantUnderWildcardRevokeIsRefused(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	r.policy.Register("teams:read", "teams:write")
+	if err := r.store.Revoke(context.Background(), "editor", "teams:*"); err != nil {
+		t.Fatal(err)
+	}
+	rr := rpc(r.as(theAdmin), "/admin/rbac/_grant", map[string]any{"role": "editor", "permission": "teams:read"})
+	if rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), "wildcard revocation") {
+		t.Fatalf("grant under teams:* revoke = %d %s", rr.Code, rr.Body.String())
+	}
+	if canAs(r.policy, "editor", "teams:read") {
+		t.Fatal("the refused grant reached the live policy")
+	}
+	// A grid save holding the same grant is refused whole: the revoke
+	// shown before it is not applied either.
+	vals := url.Values{"role": {"editor"}, "permission": {"posts:read", "teams:read"}, "grant": {"0:1"}}
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_permissions", vals)); got != "revoked-by-wildcard" {
+		t.Fatalf("grid save result = %q", got)
+	}
+	if !canAs(r.policy, "editor", "posts:read") {
+		t.Fatal("the refused grid save applied its revoke")
+	}
+	if ops := r.auditOps("access"); len(ops) != 0 {
+		t.Fatalf("the refused save audited %v", ops)
+	}
+}
+
 // A caller may grant or revoke only a permission its own roles hold, and
 // a refusal is audited with the permission it asked for.
 func TestGrantRevokeRequireCallerTier(t *testing.T) {
@@ -353,25 +382,101 @@ func TestAssignSetsRoles(t *testing.T) {
 	}
 }
 
+// The submitted id is a key, used exactly: " u1 " names a different
+// account from "u1" (2026-10-27 A42).
+func TestAssignKeepsPaddedUserID(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	id := r.editor.GetID()
+	before := r.rolesOf(id)
+	post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"user_id": {" " + id + " "}, "roles": {"support"}})
+	if got := r.rolesOf(id); !slices.Equal(got, before) {
+		t.Fatalf("roles of %q changed from %v to %v by a padded id", id, before, got)
+	}
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"user_id": {"  "}, "roles": {"editor"}})); got != "bad-input" {
+		t.Fatalf("blank user_id result = %q", got)
+	}
+}
+
 // A caller may assign only roles its tier covers: a sub-admin cannot
 // write the top role onto any account, its own included.
 func TestAssignRequiresCallerTier(t *testing.T) {
 	r := newRBACEnv(t, Config{AdminRole: "support"})
 	support := roleUser{id: "sup-1", roles: []string{"support"}}
-	id := r.editor.GetID()
-	if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": "support"}); rr.Code != http.StatusNoContent {
+	fresh, err := r.mgr.UserStore().CreateUser(context.Background(), "fresh@example.com", "$2a$10$hash", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := fresh.GetID()
+	// A new account holds the default "user" role, which it keeps.
+	if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": "user,support"}); rr.Code != http.StatusNoContent {
 		t.Fatalf("a held role = %d", rr.Code)
 	}
-	for _, roles := range []any{"support,admin", []any{"support", "editor"}} {
+	for _, roles := range []any{"user,support,admin", []any{"user", "support", "editor"}} {
 		if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": roles}); rr.Code != http.StatusForbidden {
 			t.Errorf("SECURITY: support assigned %v: %d", roles, rr.Code)
 		}
 	}
-	if got := r.rolesOf(id); !slices.Equal(got, []string{"support"}) {
-		t.Fatalf("SECURITY: roles = %v, want [support]", got)
+	if got := r.rolesOf(id); !slices.Equal(got, []string{"user", "support"}) {
+		t.Fatalf("SECURITY: roles = %v, want [user support]", got)
 	}
 	if ops := r.auditOps("access"); !slices.Equal(ops, []string{"assign-roles", "assign-roles-refused", "assign-roles-refused"}) {
 		t.Fatalf("audit ops = %v", ops)
+	}
+}
+
+// wildSupport passes a support-role gate and holds the wildcard.
+var wildSupport = roleUser{id: "top-1", roles: []string{"support", "admin"}}
+
+// A lower tier cannot take away a role it could not grant: stripping the
+// editor's role, or demoting the top admin to its own tier, is refused
+// and changes nothing (2026-10-27 A4).
+func TestAssignRefusesStrippingHigherRoles(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	support := roleUser{id: "sup-1", roles: []string{"support"}}
+	top, _, err := r.mgr.UserStore().FindByEmail(context.Background(), "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		id, roles string
+		want      []string
+	}{{r.editor.GetID(), "", []string{"editor"}}, {top.GetID(), "support", []string{"admin"}}} {
+		if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": c.id, "roles": c.roles}); rr.Code != http.StatusForbidden {
+			t.Errorf("SECURITY: support set %s to %q: %d", c.id, c.roles, rr.Code)
+		}
+		if got := r.rolesOf(c.id); !slices.Equal(got, c.want) {
+			t.Errorf("SECURITY: roles of %s = %v, want %v", c.id, got, c.want)
+		}
+	}
+	if rr := rpc(r.as(wildSupport), "/admin/rbac/_assign", map[string]any{"user_id": r.editor.GetID(), "roles": ""}); rr.Code != http.StatusNoContent {
+		t.Errorf("the top admin clearing the editor's roles = %d", rr.Code)
+	}
+	if rr := rpc(r.as(wildSupport), "/admin/rbac/_assign", map[string]any{"user_id": "nobody", "roles": "support"}); rr.Code != http.StatusBadRequest {
+		t.Errorf("an unknown account = %d, want 400", rr.Code)
+	}
+}
+
+// A role the policy grants nothing, or does not know, is checked by name
+// (auth.RequireRole), so only a caller holding it or the wildcard may
+// assign it (2026-10-27 A21).
+func TestAssignRefusesPermissionlessRole(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	support := roleUser{id: "sup-1", roles: []string{"support"}}
+	_ = r.policy.Grant("auditor")
+	fresh, err := r.mgr.UserStore().CreateUser(context.Background(), "fresh@example.com", "$2a$10$hash", []string{"support"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"billing-admin", "auditor"} {
+		if rr := rpc(r.as(support), "/admin/rbac/_assign", map[string]any{"user_id": fresh.GetID(), "roles": "support," + role}); rr.Code != http.StatusForbidden {
+			t.Errorf("SECURITY: support assigned %q: %d", role, rr.Code)
+		}
+	}
+	if got := r.rolesOf(fresh.GetID()); !slices.Equal(got, []string{"support"}) {
+		t.Errorf("SECURITY: roles = %v, want [support]", got)
+	}
+	if rr := rpc(r.as(wildSupport), "/admin/rbac/_assign", map[string]any{"user_id": fresh.GetID(), "roles": "support,billing-admin"}); rr.Code != http.StatusNoContent {
+		t.Errorf("the wildcard admin assigning a by-name role = %d", rr.Code)
 	}
 }
 

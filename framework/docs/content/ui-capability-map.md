@@ -107,7 +107,11 @@ not measure browser hydration or promise that lossy delivery became durable.
 ## Search vocabulary
 
 `gofastr docs --grep` is substring search over the same embedded corpus exposed
-by the framework docs MCP tools. Useful ecosystem terms for this guide include:
+by the framework docs MCP tools. A term needs at least three characters (a
+shorter one exits with an error), and the command prints up to 50 hits, the
+most relevant topics first, saying so when there were more. A `#` line inside
+a code block is code, not a heading. Useful ecosystem terms for this guide
+include:
 
 ```text
 reactive state

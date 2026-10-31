@@ -87,6 +87,11 @@ func TestCoerceFormValue(t *testing.T) {
 	if got := coerceFormValue(ent, "b", "maybe"); got != "maybe" {
 		t.Errorf("bool fallthrough = %v", got)
 	}
+	// A blank Bool stays "", which dropEmptyFormValues reads as not
+	// provided (2026-10-27 D19).
+	if got := coerceFormValue(ent, "b", ""); got != "" {
+		t.Errorf("blank bool coerce = %v, want \"\"", got)
+	}
 	// Int with bad value → raw string.
 	if got := coerceFormValue(ent, "n", "abc"); got != "abc" {
 		t.Errorf("int bad = %v", got)

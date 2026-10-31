@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
@@ -117,6 +118,7 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("ensure tables: %w", err)
 	}
+	registerDeliveries(s.delTable)
 	return s, nil
 }
 
@@ -148,7 +150,8 @@ func (s *SQLStore) ensureTables() error {
 			last_error      TEXT NOT NULL,
 			next_attempt_at %s,
 			created_at      %s NOT NULL,
-			updated_at      %s NOT NULL
+			updated_at      %s NOT NULL,
+			owner           TEXT NOT NULL DEFAULT ''
 		)`, s.delTable, blob, ts, ts, ts),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (status, next_attempt_at)",
 			query.IndexOn(s.dialect == "sqlite", s.delTable+"_due_idx", s.delTable)),
@@ -158,7 +161,91 @@ func (s *SQLStore) ensureTables() error {
 			return err
 		}
 	}
+	if err := addOwnerColumn(s.db, s.dialect, s.delTable); err != nil {
+		return err
+	}
+	if s.dialect == "postgres" {
+		return nil
+	}
+	return s.utcDueTimes()
+}
+
+// utcDueTimes rewrites in UTC the due times an earlier release stored in
+// the writer's zone. SQLite keeps a timestamp as text with its offset and
+// the claim compares that text, so a pending row written ten hours east of
+// UTC read as due ten hours late. Only a pending row's due time is read by
+// the claim. Each rewrite is fenced on the text it read, so a claim
+// another process made in between keeps its lease.
+func (s *SQLStore) utcDueTimes() error {
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT id, next_attempt_at, CAST(next_attempt_at AS TEXT) FROM %s
+		WHERE status = ? AND next_attempt_at IS NOT NULL AND CAST(next_attempt_at AS TEXT) NOT LIKE '%%+00:00'`,
+		s.delTable), string(StatusPending))
+	if err != nil {
+		return err
+	}
+	type zoned struct {
+		id, text string
+		at       time.Time
+	}
+	var todo []zoned
+	for rows.Next() {
+		var z zoned
+		if err := rows.Scan(&z.id, &z.at, &z.text); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, off := z.at.Zone(); off != 0 {
+			todo = append(todo, z)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, z := range todo {
+		if err := s.rewriteDueTime(z.id, z.text, z.at); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// rewriteDueTime stores at in UTC as the row's due time, only while the
+// row still holds the text read.
+func (s *SQLStore) rewriteDueTime(id, read string, at time.Time) error {
+	_, err := s.db.Exec(fmt.Sprintf(`UPDATE %s SET next_attempt_at = ? WHERE id = ? AND next_attempt_at = ?`,
+		s.delTable), at.UTC(), id, read)
+	return err
+}
+
+// addOwnerColumn upgrades a table an earlier release created without
+// the owner column; its rows name nobody.
+func addOwnerColumn(db *sql.DB, dialect, table string) error {
+	if dialect == "postgres" {
+		_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, table))
+		return err
+	}
+	_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN owner TEXT NOT NULL DEFAULT ''`, table))
+	if err != nil && strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
+// registerDeliveries declares the delivery table to App.ExportData and
+// App.EraseUserData under its configured name. Erasure deletes the
+// erased user's deliveries (Delivery.Owner), pending ones included: a
+// payload carrying their data is not sent after they are erased.
+func registerDeliveries(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, PrimaryKey: "id",
+		Columns: []string{"id", "subscriber_id", "event", "payload", "attempts", "status",
+			"last_error", "next_attempt_at", "created_at", "updated_at", "owner"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("webhook_deliveries", table), Source: "webhook", Table: table, Column: "owner",
+		Mode: datexport.EraseDelete,
+	})
 }
 
 // ----- subscribers ----------------------------------------------------------
@@ -239,11 +326,11 @@ func (s *SQLStore) DeleteSubscriber(ctx context.Context, id string) error {
 func (s *SQLStore) AddDelivery(ctx context.Context, d Delivery) error {
 	var nextAt any
 	if !d.NextAttemptAt.IsZero() {
-		nextAt = d.NextAttemptAt
+		nextAt = d.NextAttemptAt.UTC()
 	}
 	_, err := s.db.ExecContext(ctx, s.deliveryInsert(),
 		d.ID, d.SubscriberID, d.Event, d.Payload, d.Attempts,
-		string(d.Status), d.LastError, nextAt, d.CreatedAt, d.UpdatedAt,
+		string(d.Status), d.LastError, nextAt, d.CreatedAt.UTC(), d.UpdatedAt.UTC(), d.Owner,
 	)
 	return err
 }
@@ -261,10 +348,10 @@ func (s *SQLStore) AddDelivery(ctx context.Context, d Delivery) error {
 func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 	var nextAt any
 	if !d.NextAttemptAt.IsZero() {
-		nextAt = d.NextAttemptAt
+		nextAt = d.NextAttemptAt.UTC()
 	}
 	q := s.deliveryUpdate(d.unclaimedAttempt)
-	args := []any{string(d.Status), d.LastError, nextAt, d.UpdatedAt, d.ID}
+	args := []any{string(d.Status), d.LastError, nextAt, d.UpdatedAt.UTC(), d.ID}
 	if fence := settleFence(d.Status); len(fence) > 0 {
 		// Fence (settleFence): a worker that overran its lease had the
 		// row re-claimed under it, and its late write must not re-queue
@@ -295,7 +382,7 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 
 func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s`, s.delTable)
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s`, s.delTable)
 	var args []any
 	if subscriberID != "" {
 		q += " WHERE subscriber_id = " + s.placeholder(1)
@@ -317,7 +404,7 @@ func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limi
 // (StatusDead) deliveries, newest-first.
 func (s *SQLStore) ListDeadDeliveries(ctx context.Context, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
 		WHERE status = %s ORDER BY created_at DESC`, s.delTable, s.placeholder(1))
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
@@ -345,14 +432,14 @@ func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
 
 func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
 	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
 		WHERE status = %s AND next_attempt_at <= %s
 		ORDER BY next_attempt_at ASC`,
 		s.delTable, s.placeholder(1), s.placeholder(2))
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
-	rows, err := s.db.QueryContext(ctx, q, string(StatusPending), now)
+	rows, err := s.db.QueryContext(ctx, q, string(StatusPending), now.UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +468,10 @@ func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit 
 	if limit <= 0 {
 		limit = 32
 	}
+	// SQLite keeps a timestamp as text with its offset and compares the
+	// text, so every bind is UTC (see utcDueTimes); the lease written here
+	// is also the value the settle and release fences match.
+	now = now.UTC()
 	if s.dialect == "postgres" {
 		return s.claimPostgres(ctx, now, limit, leasePeriod)
 	}
@@ -411,7 +502,7 @@ func (s *SQLStore) releaseClaim(ctx context.Context, d Delivery, now time.Time) 
 		next_attempt_at = %s, updated_at = %s, attempts = attempts - 1
 		WHERE id = %s AND next_attempt_at = %s`,
 		s.delTable, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4)),
-		now, now, d.ID, d.claimedUntil)
+		now.UTC(), now.UTC(), d.ID, d.claimedUntil)
 	return err
 }
 
@@ -422,7 +513,7 @@ func (s *SQLStore) releaseClaim(ctx context.Context, d Delivery, now time.Time) 
 // SQLStore.ReapTerminalBefore and SQLInboundStore.ReapTerminalBefore,
 // which differed only in table and terminal status.
 func reapTerminalSQL(ctx context.Context, db *sql.DB, stmt, status string, cutoff time.Time) (int64, error) {
-	res, err := db.ExecContext(ctx, stmt, status, cutoff)
+	res, err := db.ExecContext(ctx, stmt, status, cutoff.UTC())
 	if err != nil {
 		return 0, err
 	}
@@ -449,7 +540,7 @@ func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, 
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING id, subscriber_id, event, payload, attempts, status,
-			last_error, next_attempt_at, created_at, updated_at`,
+			last_error, next_attempt_at, created_at, updated_at, owner`,
 		s.delTable, s.delTable, limit)
 	rows, err := s.db.QueryContext(ctx, q, now.Add(leasePeriod), string(StatusPending), now)
 	if err != nil {
@@ -494,7 +585,7 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	}
 
 	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at FROM %s
+		last_error, next_attempt_at, created_at, updated_at, owner FROM %s
 		WHERE status = ? AND next_attempt_at <= ?
 		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
 	rows, err := conn.QueryContext(ctx, selQ, string(StatusPending), now)
@@ -576,7 +667,7 @@ func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
 		var status, lastErr string
 		var nextAt sql.NullTime
 		if err := rows.Scan(&d.ID, &d.SubscriberID, &d.Event, &d.Payload, &d.Attempts,
-			&status, &lastErr, &nextAt, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			&status, &lastErr, &nextAt, &d.CreatedAt, &d.UpdatedAt, &d.Owner); err != nil {
 			return nil, err
 		}
 		d.Status = DeliveryStatus(status)
@@ -615,12 +706,12 @@ func (s *SQLStore) subUpsert() string {
 func (s *SQLStore) deliveryInsert() string {
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(`INSERT INTO %s
-			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, s.delTable)
+			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, s.delTable)
 	}
 	return fmt.Sprintf(`INSERT INTO %s
-		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`, s.delTable)
+		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, s.delTable)
 }
 
 func (s *SQLStore) deliveryUpdate(unclaimed bool) string {

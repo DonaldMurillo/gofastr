@@ -127,7 +127,11 @@ interactive.PaneKey(
 Opening through a keyed trigger writes `?pane=secondary:4021`; closing
 strips it; Back and Forward move between those states. Back does not
 just re-show the column: it re-clicks the matching trigger, so the RPC
-runs again and the pane comes back **filled**.
+runs again and the pane comes back **filled**. A refresh or a shared
+link does the same after hydration. The match is the key and the pane,
+so one record's id can key both its view (`secondary`) and its edit
+(`tertiary`) trigger; a key no trigger on the page carries opens the
+pane empty.
 
 This is not a route. The pane is still in-page state; the query
 parameter records it so refresh, share, and Back reproduce what is on
@@ -136,7 +140,7 @@ real route when the detail deserves its own page and its own title.
 
 **Render the first paint yourself.** The runtime can only act after
 hydration, so a shared link that the server renders closed shows a
-closed pane and then pops it open. Read the parameter with
+closed pane and then pops it open and fills it. Read the parameter with
 `ui.PaneDeepLink` and build the page from it:
 
 ```go

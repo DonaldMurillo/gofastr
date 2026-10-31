@@ -17,34 +17,13 @@ func RunTest(args []string) {
 	}
 	fmt.Printf("\n  %s\n\n", cli.Bold("Running tests..."))
 
-	// Build the go test command
-	testArgs := []string{"test", "./...", "-v"}
-
-	// Additional flags
-	extraTestArgs := []string{}
-	runPattern := ""
-	for _, a := range args {
-		switch {
-		case strings.HasPrefix(a, "--run="):
-			runPattern = strings.TrimPrefix(a, "--run=")
-		case strings.HasPrefix(a, "--bench="):
-			extraTestArgs = append(extraTestArgs, "-bench="+strings.TrimPrefix(a, "--bench="))
-		case a == "--race":
-			extraTestArgs = append(extraTestArgs, "-race")
-		case a == "--cover":
-			extraTestArgs = append(extraTestArgs, "-cover")
-		case a == "--short":
-			extraTestArgs = append(extraTestArgs, "-short")
-		case strings.HasPrefix(a, "--timeout="):
-			extraTestArgs = append(extraTestArgs, "-timeout="+strings.TrimPrefix(a, "--timeout="))
-		}
+	testArgs, err := goTestArgs(args)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.Info("Run 'gofastr test --help' for the flags it takes")
+		cli.OsExit(1)
+		return
 	}
-
-	if runPattern != "" {
-		extraTestArgs = append(extraTestArgs, "-run", runPattern)
-	}
-
-	testArgs = append(testArgs, extraTestArgs...)
 
 	cmd := exec.Command("go", testArgs...)
 	cmd.Stdout = nil // We'll pipe and colorize
@@ -120,4 +99,41 @@ func colorizeTestLine(line string, passed, failed *int) string {
 	default:
 		return "  " + line
 	}
+}
+
+// goTestArgs maps gofastr test's arguments onto go test's. A flag takes
+// its value as --flag=v or --flag v; any other argument starting with a
+// dash is refused, and the rest are package patterns (./... when none).
+func goTestArgs(args []string) ([]string, error) {
+	valued := map[string]string{"--run": "-run", "--bench": "-bench", "--timeout": "-timeout"}
+	bare := map[string]string{"--race": "-race", "--cover": "-cover", "--short": "-short"}
+	var flags, pkgs []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			pkgs = append(pkgs, a)
+			continue
+		}
+		if f, ok := bare[a]; ok {
+			flags = append(flags, f)
+			continue
+		}
+		name, value, hasValue := strings.Cut(a, "=")
+		f, ok := valued[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown flag %s", name)
+		}
+		if !hasValue {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return nil, fmt.Errorf("%s needs a value (write %s=<value> for one that starts with a dash)", name, name)
+			}
+			i++
+			value = args[i]
+		}
+		flags = append(flags, f, value)
+	}
+	if len(pkgs) == 0 {
+		pkgs = []string{"./..."}
+	}
+	return append(append(append([]string{"test"}, pkgs...), "-v"), flags...), nil
 }

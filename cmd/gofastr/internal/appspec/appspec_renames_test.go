@@ -95,6 +95,32 @@ func TestRenamesTargetMustBeDeclared(t *testing.T) {
 	}
 }
 
+// Several bad renames are reported sorted by the old name, so the same
+// spec gives the same error text on every run (2026-10-27 M5).
+func TestRenameErrorsInSortedOrder(t *testing.T) {
+	for range 10 {
+		_, err := loadBPWithEntity(t, `  - name: posts
+    table: posts
+    renames:
+      dd: nope_d
+      bb: nope_b
+      aa: nope_a
+      cc: nope_c
+    fields:
+      - name: title
+        type: string
+`)
+		if err == nil {
+			t.Fatal("expected the undeclared rename targets to be rejected")
+		}
+		msg := err.Error()
+		a, b, c, d := strings.Index(msg, "nope_a"), strings.Index(msg, "nope_b"), strings.Index(msg, "nope_c"), strings.Index(msg, "nope_d")
+		if a < 0 || !(a < b && b < c && c < d) {
+			t.Fatalf("rename errors out of order: %v", err)
+		}
+	}
+}
+
 // TestAuthFooterHrefRejectedAtValidate: ui.Link degrades an unsafe footer href
 // to a dead link at render time, which is safe but silent. The author gets a
 // broken link instead of an error. Every sibling problem in validateAppSpec

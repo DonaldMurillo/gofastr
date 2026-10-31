@@ -113,8 +113,8 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 // unique column index. A relation in a mixed index keeps its value,
 // since the other fields alone make the copy distinct (an invoice
 // copied under the same customer needs only a new number); an index
-// of relations alone blanks them all. A composite primary key counts as
-// one more unique index.
+// of relations alone blanks them all. The primary key counts as one
+// more unique index (a server-owned one never prefills anyway).
 func uniqueBlank(m *meta) map[string]bool {
 	out := map[string]bool{}
 	for _, f := range m.fields {
@@ -123,7 +123,7 @@ func uniqueBlank(m *meta) map[string]bool {
 		}
 	}
 	var sets [][]string
-	if len(m.keys) > 1 {
+	if len(m.keys) > 0 {
 		sets = append(sets, m.keys)
 	}
 	for _, ix := range m.e.Config.Indices {
@@ -528,7 +528,7 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 	// controller to watch.
 	if sw := fb.m.hint(f.Name).ShowWhen; sw != "" {
 		cond, err := parseShowWhen(fb.m, sw)
-		if err == nil && cond.field == fb.m.states.Field {
+		if err == nil && fb.m.states != nil && cond.field == fb.m.states.Field {
 			current := ""
 			if fb.row != nil {
 				current = cell(fb.m.rowValue(fb.row, fb.m.states.Field))
@@ -1122,12 +1122,24 @@ func intInputValue(s string) int {
 	return n
 }
 
-// intBound narrows a float bound to the int NumberInput takes.
+// intBound narrows a float bound to the int NumberInput takes, clamped
+// to the integers a browser number input holds exactly (±2^53). A bare
+// int(*b) past the int range is implementation-defined, which put a
+// huge Max below Min and refused every value the API accepts.
 func intBound(b *float64) int {
-	if b == nil {
+	if b == nil || math.IsNaN(*b) {
 		return 0
 	}
-	return int(*b)
+	const limit = 1 << 53
+	v := math.Max(-limit, math.Min(math.Trunc(*b), limit))
+	// A 32-bit int holds less than 2^53.
+	if v >= math.MaxInt {
+		return math.MaxInt
+	}
+	if v <= math.MinInt {
+		return math.MinInt
+	}
+	return int(v)
 }
 
 func dateInputValue(s string) string {

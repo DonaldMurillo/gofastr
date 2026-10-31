@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -40,6 +41,23 @@ type EntityUserStore struct {
 	table    string
 	fieldMap UserFieldMap
 	dialect  storeDialect
+	// hidesDeleted is set by EnsureSchema when the table carries the
+	// soft-delete column: the users entity has Scope.SoftDelete, and CRUD
+	// delete only stamps it. Lookups then skip a trashed row.
+	hidesDeleted atomic.Bool
+}
+
+// softDeleteColumn is the column CRUD's soft delete stamps. Its name is
+// fixed by framework/crud, not configurable per entity.
+const softDeleteColumn = "deleted_at"
+
+// liveRows is the predicate that keeps a soft-deleted account out of a
+// lookup, or "" when the table has no soft-delete column.
+func (s *EntityUserStore) liveRows() string {
+	if !s.hidesDeleted.Load() {
+		return ""
+	}
+	return query.QuoteFolded(softDeleteColumn) + " IS NULL"
 }
 
 // UserFieldMap maps logical auth fields to actual DB column names.
@@ -150,6 +168,14 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.PasswordSet, s.fieldMap.EmailVerified); err != nil {
 		return err
 	}
+	// AutoMigrate ran before the plugins, so a soft-deleting users entity
+	// has added its column by now. A trashed account resolved anyway: it
+	// signed in, and its sessions, tokens and JWTs kept working.
+	hides, err := tableHasColumn(ctx, s.db, s.dialect.of(s.db), s.table, softDeleteColumn)
+	if err != nil {
+		return err
+	}
+	s.hidesDeleted.Store(hides)
 	// The OAuth link table backs OAuthLinker / AccountLister / AccountUnlinker
 	// for this store. Creating it here (rather than in OAuth2Plugin.Init) means
 	// the schema is right even for hosts that never turn OAuth on, and that a
@@ -293,6 +319,20 @@ func pgFindTable(ctx context.Context, db *sql.DB, schema, name string) (string, 
 	return found, err == nil, err
 }
 
+// tableHasColumn reports whether table has column, read from the catalog
+// once at boot.
+func tableHasColumn(ctx context.Context, db *sql.DB, d migrate.Dialect, table, column string) (bool, error) {
+	if d != migrate.DialectPostgres {
+		return sqliteTableHasColumn(ctx, db, table, column)
+	}
+	schema, name := foldedTableRef(table)
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = COALESCE(NULLIF($1, ''), current_schema()) AND table_name = $2 AND column_name = $3`,
+		schema, name, column).Scan(&n)
+	return n > 0, err
+}
+
 // ensurePostgresBoolColumns upgrades legacy INTEGER boolean columns owned by
 // the auth battery. The conversion is lossless for the old 0/1 representation
 // and keeps existing deployments compatible with native Go bool bindings.
@@ -368,6 +408,9 @@ func (s *EntityUserStore) qByID(stmt string) string {
 // row matches; any other error is returned verbatim.
 func (s *EntityUserStore) FindByEmail(ctx context.Context, email string) (User, string, error) {
 	q := s.q("SELECT %s, %s, %s, %s FROM %s WHERE %s = $1")
+	if live := s.liveRows(); live != "" {
+		q += " AND " + live
+	}
 	var id, emailOut, hash, rolesStr string
 	err := s.db.QueryRowContext(ctx, q, email).Scan(&id, &emailOut, &hash, &rolesStr)
 	if err == sql.ErrNoRows {
@@ -387,6 +430,9 @@ func (s *EntityUserStore) FindByEmail(ctx context.Context, email string) (User, 
 // when no row matches; any other error is returned verbatim.
 func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error) {
 	q := s.qByID("SELECT %s, %s, %s FROM %s WHERE %s = $1")
+	if live := s.liveRows(); live != "" {
+		q += " AND " + live
+	}
 	var idOut, email, rolesStr string
 	err := s.db.QueryRowContext(ctx, q, id).Scan(&idOut, &email, &rolesStr)
 	if err == sql.ErrNoRows {
@@ -411,12 +457,17 @@ func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error)
 // The caller (AuthManager.ListUsers) clamps opts, so Limit>=1 and
 // Offset>=0 hold here.
 func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) ([]User, int, error) {
+	where := ""
+	if live := s.liveRows(); live != "" {
+		where = " WHERE " + live
+	}
 	listQ := fmt.Sprintf(
-		"SELECT %s, %s, %s FROM %s ORDER BY %s LIMIT $1 OFFSET $2",
+		"SELECT %s, %s, %s FROM %s%s ORDER BY %s LIMIT $1 OFFSET $2",
 		query.QuoteFolded(s.fieldMap.ID),
 		query.QuoteFolded(s.fieldMap.Email),
 		query.QuoteFolded(s.fieldMap.Roles),
 		query.QuoteFolded(s.table),
+		where,
 		query.QuoteFolded(s.fieldMap.Email),
 	)
 	rows, err := s.db.QueryContext(ctx, listQ, opts.Limit, opts.Offset)
@@ -442,7 +493,7 @@ func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) 
 	}
 
 	var total int
-	countQ := fmt.Sprintf("SELECT COUNT(*) FROM %s", query.QuoteFolded(s.table))
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM %s%s", query.QuoteFolded(s.table), where)
 	if err := s.db.QueryRowContext(ctx, countQ).Scan(&total); err != nil {
 		return nil, 0, err
 	}
@@ -515,6 +566,29 @@ func (s *EntityUserStore) SetPassword(ctx context.Context, userID, hashedPasswor
 		return ErrUserNotFound
 	}
 	return nil
+}
+
+// SwapPassword sets the hash only while the stored one is still oldHash.
+// Implements PasswordSwapper. False means no row matched: the hash moved,
+// or the user is gone.
+func (s *EntityUserStore) SwapPassword(ctx context.Context, userID, oldHash, newHash string) (bool, error) {
+	q := fmt.Sprintf(
+		"UPDATE %s SET %s = $1, %s = TRUE WHERE %s = $2 AND %s = $3",
+		query.QuoteFolded(s.table),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(s.fieldMap.ID),
+		query.QuoteFolded(s.fieldMap.PasswordHash),
+	)
+	res, err := s.db.ExecContext(ctx, q, newHash, userID, oldHash)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // HasPassword reports whether the user has a real password set vs the

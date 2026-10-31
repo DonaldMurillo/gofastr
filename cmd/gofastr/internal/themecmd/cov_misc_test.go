@@ -1,6 +1,7 @@
 package themecmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,5 +72,41 @@ func TestRunThemeInitBadFlagExits(t *testing.T) {
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)
+	}
+}
+
+// `theme init --force` truncated the theme in place; it is renamed over
+// whole.
+func TestThemeInitForceReplacesWhole(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "theme.go")
+	if err := os.WriteFile(dest, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := heldTheme(t, dest)
+	clitest.CovT_capStdout(t, func() { RunTheme([]string{"init", "--out=" + dest, "--force"}) })
+	if got := old(); got != "old" {
+		t.Fatalf("the old handle reads %q: rewritten in place", got)
+	}
+	if got, _ := os.ReadFile(dest); !strings.Contains(string(got), "package") {
+		t.Fatalf("theme not written: %q", got)
+	}
+}
+
+// heldTheme opens path and returns a reader of what that handle sees: a
+// file renamed over path leaves it reading the old content, one
+// truncated in place leaves it reading the new.
+func heldTheme(t *testing.T, path string) func() string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return func() string {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
 	}
 }

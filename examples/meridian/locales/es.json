@@ -562,6 +562,7 @@
       "replayedSome": "Trabajos fallidos en cola de nuevo, salvo los que tienen una clave única que ya usa un trabajo más reciente.",
       "revoke": "Revocar",
       "revokeConfirm": "¿Revocar esta capacidad de {{module}}? Su generación sube y el proceso hijo se reinicia.",
+      "revokedByWildcard": "Una revocación con comodín cubre ese permiso. Concede el comodín y luego revoca lo que el rol no deba tener.",
       "roles": "Roles",
       "rolesSaved": "Roles guardados.",
       "rolesSub": "Qué puede hacer cada rol.",

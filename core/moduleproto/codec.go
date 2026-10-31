@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -98,6 +97,13 @@ func (c *Codec) MaxFrameBytes() int { return c.max }
 // On over-cap the frame is NOT written and [*OvercapError] is returned; the
 // caller (the Peer) treats this as a terminal protocol fault.
 func (c *Codec) WriteFrame(f *Frame) error {
+	return c.writeFrame(f, nil)
+}
+
+// writeFrame is WriteFrame with a hook. A non-nil locked runs once this
+// write holds the codec, before any byte of it reaches the counterparty,
+// or not at all when the frame never gets that far.
+func (c *Codec) writeFrame(f *Frame, locked func()) error {
 	if f == nil {
 		return fmt.Errorf("%w: nil frame", ErrInvalidFrame)
 	}
@@ -110,6 +116,9 @@ func (c *Codec) WriteFrame(f *Frame) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if locked != nil {
+		locked()
+	}
 	// Append newline into a single Write so a peer never observes a partial
 	// frame. bytes concat allocates, but stdio JSON frames are small and
 	// bounded by max_frame_bytes; the allocation is the cost of atomicity.
@@ -163,7 +172,7 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 	// as ErrInvalidFrame, the terminal frame-level sentinel, under the
 	// same no-ambiguity rule handler.DecodeStrict documents (no key may
 	// repeat; no two keys may fold to one name).
-	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidFrame, err.Error())
 	}
 	// Decode into a copy of the bytes: json.Unmarshal will allocate for any

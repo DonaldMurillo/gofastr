@@ -59,9 +59,9 @@ func TestSetLevelHiddenFromUnauthenticatedList(t *testing.T) {
 		t.Error("SECURITY: [disclosure] log_recent listed to an anonymous caller")
 	}
 
-	// The surface is not blanked for everyone: an authenticated caller
-	// still sees the read tools.
-	authed := app.MCP.HandleRequest(handler.SetUser(context.Background(), "operator"), mcp.Request{
+	// The surface is not blanked for everyone: an admin still sees the
+	// read tools.
+	authed := app.MCP.HandleRequest(handler.SetUser(context.Background(), roleUser{roles: []string{"admin"}}), mcp.Request{
 		JSONRPC: "2.0", ID: 2, Method: "tools/list",
 	})
 	authedBlob, _ := json.Marshal(authed.Result)
@@ -129,7 +129,8 @@ func newLogMCPApp(t *testing.T) (*framework.App, *Plugin) {
 // and like log_set_level they register straight onto the MCP server, so no
 // route middleware ever runs for them. The framework's default posture for
 // directly-registered tools is the authenticated-caller gate
-// (framework.MCPRequireUser, the same refusal setLevelGate wires); the three
+// (framework.MCPRequireUser; setLevelGate now wires MCPRequireRole("admin")
+// on top of it, TestLogToolsRequireAdmin); the three
 // read tools carry none, so anyone who can POST /mcp reads the log stream.
 // If this is RED, the minimal fix is mcp.WithToolGate(framework.MCPRequireUser())
 // on all three registrations in registerMCPTools — and the collateral
@@ -171,8 +172,8 @@ func TestLogReadToolsRefuseAnonCaller(t *testing.T) {
 		}
 	}
 
-	// The gate must not over-lock: a signed-in caller still reads the log.
-	authCtx := handler.SetUser(context.Background(), "admin")
+	// The gate must not over-lock: a signed-in admin still reads the log.
+	authCtx := handler.SetUser(context.Background(), roleUser{roles: []string{"admin"}})
 	okResp := app.MCP.HandleRequest(authCtx, mcp.Request{
 		JSONRPC: "2.0", ID: 3, Method: "tools/call",
 		Params: json.RawMessage(`{"name":"log_recent","arguments":{}}`),

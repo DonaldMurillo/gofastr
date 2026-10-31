@@ -77,7 +77,20 @@ func TestLeaseDrainChargesNoCrash(t *testing.T) {
 	// lease is failing was drained, not crashed. The store stays broken
 	// for well under LeaseTTL, so reconcile neither clears the flag nor
 	// runs the drain itself.
+	//
+	// The flag is set only once a reconcile has failed on the broken
+	// store: one loop runs them, so none that read the store before it
+	// broke is still in flight. Such a reconcile found the flag set
+	// here, read it as the lease recovering and cleared it, and the kill
+	// below then counted as a crash.
+	fails := store.fails.Load()
 	store.broken.Store(true)
+	for wait := time.Now().Add(5 * time.Second); store.fails.Load() == fails; {
+		if time.Now().After(wait) {
+			t.Fatal("no reconcile read the broken store")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	sl := sup.Slot(d.Name)
 	sl.mu.Lock()
 	sl.leaseFailing = true
@@ -117,9 +130,12 @@ func TestLeaseDrainChargesNoCrash(t *testing.T) {
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
-		if info.RestartCount != 0 {
-			t.Fatalf("outage %d: a lease drain charged the restart circuit (RestartCount=%d, state %s, last exit %q)",
-				outage, info.RestartCount, info.State, info.LastExit)
+		// Against the count before this outage: a spawn whose handshake
+		// timed out under load charges the circuit honestly, before any
+		// outage began.
+		if info.RestartCount != before.RestartCount {
+			t.Fatalf("outage %d: a lease drain charged the restart circuit (RestartCount %d → %d, state %s, last exit %q)",
+				outage, before.RestartCount, info.RestartCount, info.State, info.LastExit)
 		}
 		if info.State != StateReady {
 			t.Fatalf("outage %d: module did not recover to Ready, state %s", outage, info.State)

@@ -53,7 +53,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
@@ -129,6 +131,7 @@ type UIHost struct {
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
+	trustedProxies      []string                             // WithTrustedProxies: the island stream cap reads X-Forwarded-For from these peers
 	noInlineFirstPaint  bool                                 // WithNoInlineFirstPaint: head CSS and the color-scheme bootstrap always ship as links
 	firstPaint          firstPaintCache                      // blocks a live page carries inline in its head (firstpaint.go)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
@@ -137,6 +140,7 @@ type UIHost struct {
 	pageLoading         component.Component                  // WithPageLoading: rendered once into every full page, shown while a navigation is in flight (replaces the default progress strip)
 	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	sitemapMemo         sitemapMemo                          // the live sitemap's last render (liveSitemap)
 	pathLocales         *i18n.PathLocales                    // SetPathLocales: the app routes by locale prefix
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
@@ -470,9 +474,9 @@ func WithLangFunc(fn func(path string) string) Option {
 // request misses every registered screen, static file, and configured
 // favicon, the host renders this component through the active layout,
 // so the 404 page sees the same nav/footer chrome every other page
-// gets. The component's Render() result is wrapped in the default
-// layout; pages without their own layout end up with the framework's
-// bare <main>.
+// gets. The component renders as any component does (RenderNotFound
+// first, then RenderCtx, then Render) inside the default layout; an app
+// with no root layout gets it in the framework's bare <main>.
 func WithNotFoundScreen(c component.Component) Option {
 	app.RefuseRetiredScreenMethods("not-found screen", c)
 	return func(ds *UIHost) {
@@ -526,6 +530,16 @@ func WithPageLoading(c component.Component) Option {
 // e2e pattern (60 spec files in the metacollector port alone).
 func WithNoLiveChannel() Option {
 	return func(ds *UIHost) { ds.noLiveChannel = true }
+}
+
+// WithTrustedProxies names the reverse proxies (IPs or CIDRs) in front of
+// the host, so the island stream cap counts an anonymous visitor under the
+// X-Forwarded-For address the proxy saw instead of the proxy's own. Without
+// it, behind a proxy, every anonymous visitor shares the proxy address's
+// budget of island.DefaultStreamsPerPeer streams. A header from a peer not
+// in the list is ignored. See island.WithTrustedProxies.
+func WithTrustedProxies(entries ...string) Option {
+	return func(ds *UIHost) { ds.trustedProxies = append(ds.trustedProxies, entries...) }
 }
 
 func WithFavicon(href string) Option {
@@ -1063,7 +1077,6 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 func New(application *app.App, opts ...Option) *UIHost {
 	ds := &UIHost{
 		App:            application,
-		Islands:        island.NewManager(),
 		sessionKey:     selfMintedSessionKey(),
 		actionJS:       make(map[string]string),
 		actionHash:     make(map[string]string),
@@ -1074,6 +1087,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 	for _, opt := range opts {
 		opt(ds)
 	}
+	ds.Islands = island.NewManager(island.WithTrustedProxies(ds.trustedProxies...))
 	// WithAppIcon ↔ WithPWA reconciliation happens after ALL options so
 	// their relative order doesn't matter.
 	// The app's 404-outlet outcome body (FallbackNotFound renders the
@@ -2219,6 +2233,9 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	if ds.headHTML != "" {
 		headParts = append(headParts, stripInlineScripts(ds.headHTML))
 	}
+	if ds.pwaConfig != nil {
+		headParts = append(headParts, pwaManifestLink(ctx))
+	}
 	for _, tag := range ds.headTags {
 		headParts = append(headParts, tag)
 	}
@@ -2506,21 +2523,48 @@ type NotFoundRenderer interface {
 	RenderNotFound(path string) render.HTML
 }
 
+// NotFoundTitler supplies the title for a custom 404 screen. The context
+// and path belong to the current render. An empty path identifies an outlet
+// fallback. Returning an empty title falls back to app.ScreenTitler, then
+// the framework's default not-found title.
+type NotFoundTitler interface {
+	NotFoundTitle(ctx context.Context, path string) string
+}
+
 // notFoundBodyScreen adapts the host's configured 404 screen
 // ([WithNotFoundScreen]) to the app render pipeline's component slot:
-// RenderNotFound(path) when the screen implements it, else Render. A
-// panicking screen stays contained — the pipeline renders the adapter
-// under component.SafeRenderCtx, the guard this path used to hand-roll.
+// RenderNotFound(path) when the screen implements it, else RenderCtx or
+// Render, the way any component renders. A panicking screen stays
+// contained — the pipeline renders the adapter under
+// component.SafeRenderCtx, the guard this path used to hand-roll.
 type notFoundBodyScreen struct {
 	path string
 	comp component.Component
 }
 
 func (s *notFoundBodyScreen) Render() render.HTML {
+	return s.RenderCtx(context.Background())
+}
+
+// RenderCtx hands the request context to a screen written as
+// component.ContextOnly + RenderCtx, whose Render answers "".
+func (s *notFoundBodyScreen) RenderCtx(ctx context.Context) render.HTML {
 	if nf, ok := s.comp.(NotFoundRenderer); ok {
 		return nf.RenderNotFound(s.path)
 	}
-	return s.comp.Render()
+	return component.RenderComponentCtx(ctx, s.comp)
+}
+
+func (s *notFoundBodyScreen) ScreenTitle(ctx context.Context) string {
+	if nf, ok := s.comp.(NotFoundTitler); ok {
+		if title := nf.NotFoundTitle(ctx, s.path); title != "" {
+			return title
+		}
+	}
+	if titled, ok := s.comp.(app.ScreenTitler); ok {
+		return titled.ScreenTitle(ctx)
+	}
+	return ""
 }
 
 // defaultNotFoundScreen is the framework's built-in 404 body, the same
@@ -2643,12 +2687,48 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		appName = ds.App.Name
 	}
 	ctx := r.Context()
-	writeMinimalPage(w, ds.LangFor(ctx, path), pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName}),
+	title := pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName})
+	// With no root layout the configured screen still renders, in the
+	// bare <main>; a screen that panics gets the built-in body.
+	if ds.notFoundScreen != nil {
+		screen := ds.notFoundBodyComponent(path)
+		if body, err := component.SafeRenderCtx(ctx, screen); err == nil {
+			if name := safeNotFoundTitle(ctx, screen, path); name != "" {
+				// Same convention as the page pipeline: "<page> — <app>".
+				title = name
+				if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
+					title += suffix
+				}
+			}
+			writeMinimalPage(w, ds.LangFor(ctx, path), textsafe.StripInvisible(title), body)
+			return
+		}
+	}
+	writeMinimalPage(w, ds.LangFor(ctx, path), title,
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
 			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),
 		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
 	)
+}
+
+// safeNotFoundTitle asks a configured 404 screen for its title. A title
+// provider that panics names nothing, and the page keeps the default
+// title, as the layout pipeline's title lookup does.
+func safeNotFoundTitle(ctx context.Context, screen component.Component, path string) (title string) {
+	t, ok := screen.(app.ScreenTitler)
+	if !ok {
+		return ""
+	}
+	defer func() {
+		if err := recover(); err != nil {
+			title = ""
+			slog.Error("uihost: not-found screen title panicked",
+				"path", textsafe.ScrubControlBytes(path),
+				"panic", textsafe.Recovered(err))
+		}
+	}()
+	return t.ScreenTitle(ctx)
 }
 
 // writeMinimalPage writes the bare error document a host with no root
@@ -3161,7 +3241,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		}
 	}
 	// Same invisible-character posture as the full page's <title> element:
-	// nav.js writes decodeURIComponent(header) straight into document.title,
+	// the runtime writes the decoded header straight into document.title,
 	// so the header is the tab title. Strip before the suffix is appended.
 	title = textsafe.StripInvisible(title)
 	if title != "" {
@@ -3383,22 +3463,6 @@ func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (s
 		return "", false
 	}
 	return id, true
-}
-
-// widgetNameFromPath pulls the widget name out of /core-ui/widget/<name>/<leaf>.
-// Returns "" for anything that is not that shape, so a caller cannot smuggle a
-// traversal or an empty name past a lookup.
-func widgetNameFromPath(p string) string {
-	const prefix = "/core-ui/widget/"
-	if !strings.HasPrefix(p, prefix) {
-		return ""
-	}
-	rest := strings.TrimPrefix(p, prefix)
-	name, _, ok := strings.Cut(rest, "/")
-	if !ok || name == "" || strings.Contains(name, ".") {
-		return ""
-	}
-	return name
 }
 
 // requireSessionOrEmbedGrant gates a /__gofastr/* endpoint that an embedded
@@ -3637,7 +3701,8 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// outlet guard that sends the visitor to /login keeps them off the
 	// page as surely as the screen chain does. With no page of this screen
 	// named, PatternPolicy decides, and a dynamic screen carrying a region
-	// guard refuses, since the guard has no URL to judge.
+	// guard or a Requires resolver refuses, since neither has a URL to
+	// judge.
 	ds.mu.RLock()
 	screen := ds.actionScreens[componentID]
 	ds.mu.RUnlock()
@@ -3874,11 +3939,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 			// hides names from a caller who does not need them. Reducing the
 			// grant to a boolean here let anyone with devtools on a legitimate
 			// customer page read the state of a widget scoped to /admin.
-			name := widgetNameFromPath(req.URL.Path)
-			if name == "" {
-				return false
-			}
-			def, found := widget.Lookup(name)
+			//
+			// The widget comes from the gate that is asking, not the URL: a
+			// name parsed from /core-ui/widget/<name>/ left every RPC (and
+			// every custom or group-prefixed path) with no widget, so a
+			// grant was refused on routes Reach admits.
+			def, found := widget.GatedWidget(req)
 			if !found {
 				return false
 			}
@@ -3911,8 +3977,17 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// vouched. Grant-bearing requests are refused outright rather than
 	// falling through to an ambient cookie, mirroring the catalog and
 	// any-session rules above.
+	//
+	// A scoped API token is refused for the same reason, as
+	// battery/auth's RequireSession refuses it: its owner is the user,
+	// but a leaked token must not escape its scopes through a gate that
+	// asks only whether someone signed in. Held scopes mark both a
+	// token and a resolved grant.
 	widget.SetAuthenticatedCheck(func(req *http.Request) bool {
 		if req.Header.Get(embedGrantHeader) != "" {
+			return false
+		}
+		if _, scoped := access.HeldScopes(req.Context()); scoped {
 			return false
 		}
 		u, ok := handler.GetUser(req.Context())
@@ -3941,6 +4016,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// expose either endpoint.
 	if ds.sitemapConfig != nil {
 		r.Get("/sitemap.xml", http.HandlerFunc(ds.handleSitemap))
+		r.Get("/sitemap/{part}", http.HandlerFunc(ds.handleSitemapPart))
 	}
 	if ds.robotsConfig != nil {
 		r.Get("/robots.txt", http.HandlerFunc(ds.handleRobots))
@@ -4138,6 +4214,15 @@ func staticRel(urlPath string) string {
 	return strings.TrimPrefix(path.Clean("/"+urlPath), "/")
 }
 
+// staticServable reports whether rel, a slash path below the static
+// directory or FS, may be served: not one core/static refuses (a dot
+// segment such as .env or .git/config, or a server config file), except
+// that a leading .well-known/ is the public namespace RFC 8615 reserves,
+// so the files under it are served unless they are dotfiles themselves.
+func staticServable(rel string) bool {
+	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
+}
+
 // resolvesStaticOrScreen reports whether serveOrRender would produce
 // content for this request's path rather than a 404: a static file
 // (filesystem or embedded FS), a registered screen, or the favicon
@@ -4153,7 +4238,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" {
+			if rel := staticRel(path); rel != "" && staticServable(rel) {
 				if info, err := root.Stat(filepath.FromSlash(rel)); err == nil && !info.IsDir() {
 					return true
 				}
@@ -4161,7 +4246,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" {
+			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					f.Close()
@@ -4300,7 +4385,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" {
+			if rel := staticRel(path); rel != "" && staticServable(rel) {
 				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
 					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
 						devStaticNoStore(w)
@@ -4314,7 +4399,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" {
+			if cleanPath != "" && staticServable(cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					devStaticNoStore(w)

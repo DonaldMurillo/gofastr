@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -173,4 +174,23 @@ func attrsAsMap(attrs []attribute.KeyValue) map[string]any {
 		out[string(kv.Key)] = kv.Value.AsInterface()
 	}
 	return out
+}
+
+// The span context went onto the response headers after the handler ran,
+// by which time a handler that wrote had already sent them, so the client
+// never saw it (2026-10-27 P42).
+func TestTracing_ResponseCarriesTraceparent(t *testing.T) {
+	withRecordingTracer(t)
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(prevProp) })
+	rt := router.New()
+	rt.Use(middleware.Tracing())
+	rt.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
+
+	w := httptest.NewRecorder()
+	rt.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if got := w.Result().Header.Get("traceparent"); got == "" {
+		t.Fatal("the response the client got carries no traceparent")
+	}
 }

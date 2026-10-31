@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 

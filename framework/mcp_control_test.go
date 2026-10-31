@@ -18,8 +18,8 @@ import (
 // separately from WithMCPIntrospection so read-only introspection can
 // ship to surfaces where mutation must stay off.
 //
-// The explicit opt-in gates its tools on an authenticated caller
-// (TestControlToolsGatedInProduction), so these calls carry a user on
+// The explicit opt-in gates its tools on an admin
+// (TestControlToolsGatedInProduction), so these calls carry one on
 // the context, as a real /mcp request would, via the session
 // middleware on that route.
 func TestMCPControlTogglesModules(t *testing.T) {
@@ -205,8 +205,9 @@ func TestIntrospectionAloneRegistersNoControlTools(t *testing.T) {
 	}
 }
 
-// mcpCallerCtx is a context carrying an authenticated caller, matching
-// what the session middleware puts on a real /mcp request.
+// mcpCallerCtx is a context carrying an authenticated admin, matching
+// what the session middleware puts on a real /mcp request; the control
+// tools need the admin role (TestControlToolsRequireAdmin).
 func mcpCallerCtx() context.Context {
-	return handler.SetUser(context.Background(), struct{ ID string }{ID: "mcp-caller"})
+	return handler.SetUser(context.Background(), debugRoleUser{roles: []string{"admin"}})
 }

@@ -1,6 +1,7 @@
 package packcmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -117,5 +118,40 @@ func TestPackDetectsKeywordDSNSecret(t *testing.T) {
 		if gen := dsnredact.HasSecret(tc.dsn); gen && !got {
 			t.Errorf("%s: dsnredact.HasSecret(%q) = true but secretsInAppSpec = false — pack's do-NOT-commit warning silently disappears for a DSN class the generator itself hides", tc.name, tc.dsn)
 		}
+	}
+}
+
+// `pack -o` over an earlier output truncated it in place; it is renamed
+// over whole, owner-only.
+func TestPackOutputReplacesWhole(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gofastr.yml")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := heldPack(t, path)
+	if err := writeSecretFile(path, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if got := old(); got != "old" {
+		t.Fatalf("the old handle reads %q: rewritten in place", got)
+	}
+}
+
+// heldPack opens path and returns a reader of what that handle sees: a
+// file renamed over path leaves it reading the old content, one
+// truncated in place leaves it reading the new.
+func heldPack(t *testing.T, path string) func() string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return func() string {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
 	}
 }

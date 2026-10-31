@@ -206,9 +206,6 @@ framework/
 │                    filters, typed query, MCP tool generator,
 │                    JSONCase config, owner/tenant scoping, in-tx helper.
 │                    The biggest pkg.
-├── datexport/       Process-wide registry of data-bearing tables that live
-│                    outside the entity registry (battery raw DDL), so
-│                    App.ExportData / ImportData / EraseUserData reach them.
 ├── db/              Executor + tx context primitives shared across
 │                    crud, slowquery, and the framework root tx wrapper
 ├── dev/             Dev-mode-only helpers (livereload, debug surfaces)
@@ -395,7 +392,7 @@ L2  entity                                   (imports core/ +
                                               internal/casing only)
 L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
     pagination, filter, owner, agentsinv,    internal imports at all)
-    axecov, datexport, fanout, i18nui,
+    axecov, fanout, i18nui,
     image, lifecycle, ratelimit, semcov,
     docs, dev, routegroup, headless, localrun
     dsl, tenant, softdelete, migrate, sdk    (each imports entity)
@@ -490,7 +487,7 @@ either require an API redesign or create an unbreakable import cycle.
 | `processmodule*.go` | Process-isolated third-party modules (#37). The supervisor, store, runner, sandbox, broker, and proxy are bound to `*App` (spawn under the app's lifecycle drainer, re-dispatch reverse calls through the app router, enforce the app's `RolePolicy`). `RegisterProcessModule` is the single `(a *App)` entry. See the process-module section below. |
 | `role.go` | `Role` (all / serve / worker) + `WithRole` + `resolveRole`. The role decides at boot which responsibilities the binary assumes; `App.Start` consults it to skip worker-scoped consumers (cron, queues, the outbox relay) or the HTTP surface, so it is read directly by the spine. An unknown role fails loudly in `NewApp`. |
 | `setup.go` | `SetupRunner` interface + `WithSetup` first-run setup. framework defines the interface rather than importing `battery/setup` to avoid a layering cycle; `App.Start` owns the lifecycle (incomplete → wizard or headless run → atomic swap to the real handler). |
-| `export_data.go`, `erase_data.go` | `(a *App) ExportData` / `ImportData` / `EraseUserData`: data portability and right-to-be-forgotten. Both walk the App's entity registry plus the `datexport` registry, and all raw table access funnels through the SafeIdent-guarded path here, so they need the App's DB handle and migrate dialect. |
+| `export_data.go`, `erase_data.go` | `(a *App) ExportData` / `ImportData` / `EraseUserData`: data portability and right-to-be-forgotten. Both walk the App's entity registry plus the `core/datexport` registry, and all raw table access funnels through the SafeIdent-guarded path here, so they need the App's DB handle and migrate dialect. |
 | `wellknown.go`, `agent_extras.go`, `authmd.go`, `oauth_resource.go` | The agent-readiness discovery endpoints (`/.well-known/api-catalog`, the MCP server card, Web Bot Auth JWKS, UCP/ACP docs, `/auth.md`, RFC 9728 protected-resource metadata). Each auto-serves when its precondition holds: entities registered, WithMCP mounted, or a host opt-in config, all of which is App state. |
 | `mcp_manifest.go` | `/.well-known/mcp.json` (is-agentic mcp-server check): one document carrying both the flat endpoint/transport shape and the nested `mcpServers` map. Mounted with the server card under the same `WithMCP` gate; reuses wellknown.go's base/Vary/JSON helpers, so it needs nothing but App state. |
 | `api_miss.go` | RFC 9457 `application/problem+json` for `/api/*`-prefixed misses: wraps the router's NotFound fall-through (`router.WrapNotFound`, installed from `App.Start` after every mount) so an unmatched API path never lands on the UI host's HTML 404. The guarded prefix resolves from `AppConfig.APIPrefix` (default `/api`), which is App state. |

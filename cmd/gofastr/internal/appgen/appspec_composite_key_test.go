@@ -124,7 +124,7 @@ func TestEditSavesToRecord(t *testing.T) {
 	e2eWaitReady(t, base)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 10 * time.Second}
-	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@example.com"}, "password": {"roster-pw-123"}}); err != nil {
+	if _, err := client.PostForm(base+"/account/login", url.Values{"email": {"admin@example.com"}, "password": {"roster-pw-123"}}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
 	if code, body := e2eDo(t, client, "POST", base+"/api/{entity}", ` + "`" + `{"student_id": "ann lee", "course_id": "c 1", "grade": "B"}` + "`" + `); code != http.StatusCreated {

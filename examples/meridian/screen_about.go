@@ -40,7 +40,7 @@ func (s *AboutScreen) RenderCtx(ctx context.Context) render.HTML {
 	// tag-primitive root; the stack inside owns the rhythm.
 	return html.Div(html.DivConfig{}, ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
 		ui.PageHeader(ui.PageHeaderConfig{Title: aboutScreenTextWeThinkBillingShould.Text(ctx)}),
-		ui.Markdown(ui.MarkdownConfig{Source: aboutScreenTextMeridianIsADemonstration.Text(ctx), Measure: true}),
+		ui.Markdown(ui.MarkdownConfig{Ctx: ctx, Source: aboutScreenTextMeridianIsADemonstration.Text(ctx), Measure: true}),
 	))
 }
 

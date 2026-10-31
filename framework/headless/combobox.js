@@ -73,7 +73,7 @@
       say(lb, (status && status.getAttribute('data-hui-combobox-no-results')) || '');
       return;
     }
-    say(lb, fmt.replaceAll('{{n}}', () => String(n)));
+    say(lb, fmt.replaceAll('{{n}}', () => NS.formatNumber(n)));
   }
 
   function closeListbox(input, lb) {

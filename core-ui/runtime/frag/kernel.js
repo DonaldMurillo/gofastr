@@ -211,6 +211,15 @@
     const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
   };
+  // formatNumber writes n the way the page's language (<html lang>)
+  // writes numbers, as the server's i18n.Number did for the same text:
+  // a count the runtime fills into a phrase reads "1.234" on /es/, not
+  // "1234". It reads lang on every call, so a client navigation that
+  // changes the language changes the digits; a tag Intl refuses falls
+  // back to the browser's own locale.
+  const formatNumber = (n) => {
+    try { return n.toLocaleString(document.documentElement.lang || undefined); } catch (_) { return n.toLocaleString(); }
+  };
   const closestAttr = (el, attr) => {
     const node = el.closest(`[${CSS.escape(attr)}]`);
     return node?.getAttribute(attr) ?? null;
@@ -249,6 +258,7 @@
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
     say,
+    formatNumber,
     _lp,
     _unlocalize,
     _localeOf,
@@ -264,6 +274,14 @@
       if (this._sameOrigin(u)) return true;
       console.warn('[gofastr] refused cross-origin fetch:', u);
       return false;
+    },
+    /* The screen title a response names. uihost percent-encodes the
+       header and omits it for an untitled screen; document.title is
+       never encoded, so only the header is decoded (a "50% Off" title
+       threw out of navigation). */
+    _title(r) {
+      const t = r.headers.get('X-Gofastr-Title');
+      try { return t ? decodeURIComponent(t) : document.title; } catch (_) { return t; }
     },
 
     /** Reject dangerous schemes when a signal value is about to be
@@ -602,6 +620,16 @@
     // supersede rule (NS._navLive). A writable slot, not a closure,
     // because the module's navigator owns its own navigations.
     _navEpoch: 0,
+    // The path the DOM showed when the pending navigations began, or
+    // null while none is pending. A navigation started while another
+    // still loads keeps it, so a failure rolls back to the page still
+    // shown, never to a superseded destination that never rendered.
+    // Both navigators set it at entry and the live one clears it.
+    _navBase: null,
+    // Set once core's navigator has swapped the DOM. The envelope
+    // module keys the page it finds on the served URL, which is only
+    // right while no navigation has applied before it loaded.
+    _navShown: false,
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
     // _toastTimers, _toastSeq) lives in the registered behaviour module

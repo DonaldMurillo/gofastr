@@ -484,11 +484,22 @@ func (b *Battery) askPolicy(name string, ask func() bool) (ok bool) {
 	return ask()
 }
 
+// AdminScope is the API-token scope that reaches the admin. A request an
+// API token authenticated passes the gate only when the token holds it
+// ("admin:*" and "*:*" cover it): a token carries its owner's roles,
+// and one an admin minted for another surface must not open the back
+// office. Sessions and JWTs carry no token scopes and are unaffected.
+const AdminScope = "admin:access"
+
 // authorized reports whether the request may use the admin. The embed
-// refusal and a Decider's deny run before everything else and cannot be
-// lifted by Authorize; a Decider can veto the admin, never admit it.
+// refusal, a token without AdminScope and a Decider's deny run before
+// everything else and cannot be lifted by Authorize; a Decider can veto
+// the admin, never admit it.
 func (b *Battery) authorized(ctx context.Context) bool {
 	if _, embedded := embed.GrantFromContext(ctx); embedded {
+		return false
+	}
+	if held, tokenAuthed := auth.TokenScopes(ctx); tokenAuthed && !auth.ScopeMatch(held, AdminScope) {
 		return false
 	}
 	if d := access.GetDecider(ctx); d != nil {
@@ -683,30 +694,31 @@ type result struct {
 }
 
 var results = map[string]result{
-	"done":               {i18nui.AdminDone, true},
-	"replayed":           {i18nui.AdminReplayed, true},
-	"replayed-all":       {i18nui.AdminReplayedAll, true},
-	"replayed-some":      {i18nui.AdminReplayedSome, true},
-	"granted":            {i18nui.AdminGranted, true},
-	"permissions-saved":  {i18nui.AdminPermissionsSaved, true},
-	"roles-saved":        {i18nui.AdminRolesSaved, true},
-	"name-saved":         {i18nui.AdminNameSaved, true},
-	"module-enabled":     {i18nui.AdminModuleEnabled, true},
-	"module-disabled":    {i18nui.AdminModuleDisabled, true},
-	"module-bumped":      {i18nui.AdminModuleBumped, true},
-	"module-revoked":     {i18nui.AdminModuleRevoked, true},
-	"refused":            {i18nui.AdminRefused, false},
-	"failed":             {i18nui.AdminFailed, false},
-	"bad-input":          {i18nui.AdminBadInput, false},
-	"grant-refused":      {i18nui.AdminGrantRefused, false},
-	"assign-refused":     {i18nui.AdminAssignRefused, false},
-	"name-refused":       {i18nui.AdminNameRefused, false},
-	"unknown-capability": {i18nui.AdminUnknownCapability, false},
-	"module-failed":      {i18nui.AdminModuleFailed, false},
-	"module-refused":     {i18nui.AdminModuleRefused, false},
-	"queue-load-failed":  {i18nui.AdminQueueLoadFailed, false},
-	"replay-unsupported": {i18nui.AdminFailed, false},
-	"replay-duplicate":   {i18nui.AdminReplayDuplicate, false},
+	"done":                {i18nui.AdminDone, true},
+	"replayed":            {i18nui.AdminReplayed, true},
+	"replayed-all":        {i18nui.AdminReplayedAll, true},
+	"replayed-some":       {i18nui.AdminReplayedSome, true},
+	"granted":             {i18nui.AdminGranted, true},
+	"permissions-saved":   {i18nui.AdminPermissionsSaved, true},
+	"roles-saved":         {i18nui.AdminRolesSaved, true},
+	"name-saved":          {i18nui.AdminNameSaved, true},
+	"module-enabled":      {i18nui.AdminModuleEnabled, true},
+	"module-disabled":     {i18nui.AdminModuleDisabled, true},
+	"module-bumped":       {i18nui.AdminModuleBumped, true},
+	"module-revoked":      {i18nui.AdminModuleRevoked, true},
+	"refused":             {i18nui.AdminRefused, false},
+	"failed":              {i18nui.AdminFailed, false},
+	"bad-input":           {i18nui.AdminBadInput, false},
+	"grant-refused":       {i18nui.AdminGrantRefused, false},
+	"assign-refused":      {i18nui.AdminAssignRefused, false},
+	"name-refused":        {i18nui.AdminNameRefused, false},
+	"unknown-capability":  {i18nui.AdminUnknownCapability, false},
+	"revoked-by-wildcard": {i18nui.AdminRevokedByWildcard, false},
+	"module-failed":       {i18nui.AdminModuleFailed, false},
+	"module-refused":      {i18nui.AdminModuleRefused, false},
+	"queue-load-failed":   {i18nui.AdminQueueLoadFailed, false},
+	"replay-unsupported":  {i18nui.AdminFailed, false},
+	"replay-duplicate":    {i18nui.AdminReplayDuplicate, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;

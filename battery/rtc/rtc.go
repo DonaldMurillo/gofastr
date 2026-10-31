@@ -217,7 +217,10 @@ type Signaler struct {
 
 	// Test knobs: production runs on the defaults (see fanout.go).
 	heartbeatEvery time.Duration
-	remoteTTL      time.Duration
+	// recheckEvery paces the idle re-check of a joined socket's
+	// principal (default peerRecheckEvery).
+	recheckEvery time.Duration
+	remoteTTL    time.Duration
 	// turnRefreshEvery is the credential push interval (default half
 	// the TURN TTL); refreshDone stops the loop, refreshWG joins it.
 	turnRefreshEvery time.Duration
@@ -300,6 +303,7 @@ func New(cfg Config) *Signaler {
 		seatOrder:      make(map[string][]*socketSeat),
 		remote:         make(map[string]map[string]*remoteEntry),
 		heartbeatEvery: rtcHeartbeat,
+		recheckEvery:   peerRecheckEvery,
 		remoteTTL:      rtcRemoteTTL,
 	}
 }
@@ -465,7 +469,13 @@ func (s *Signaler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, r, http.StatusForbidden, i18n.Phrase{}, nil)
 		return
 	}
-	s.Serve(w, r, join)
+	// The socket outlives this answer. Re-ask on the refreshed request:
+	// a peer Authorize would now refuse, or would place in another room or
+	// role or under another user, is closed (see serve).
+	s.serve(w, r, join, func(fresh *http.Request) bool {
+		again, err := s.cfg.Authorize(fresh)
+		return err == nil && again.Room == join.Room && again.User == join.User && again.Role == join.Role
+	})
 }
 
 // refuse answers a refused join. A plain request gets the HTTP status

@@ -10,6 +10,7 @@ package webbotauth
 // material over labelling is the conservative direction.
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -81,16 +82,33 @@ func parseJWKS(body []byte) (*jwkSet, error) {
 	return set, nil
 }
 
+// jwkString reads an optional string member of a JWK. Absent is "";
+// present and anything but a JSON string (null included) is an error.
+func jwkString(m map[string]json.RawMessage, name string) (string, error) {
+	raw, ok := m[name]
+	if !ok {
+		return "", nil
+	}
+	var s string
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &s) != nil {
+		return "", fmt.Errorf("%s is not a string", name)
+	}
+	return s, nil
+}
+
 // parseJWK parses one JWK. It returns (nil, nil) for key types this
 // verifier does not handle and an error for a key that claims to be
 // OKP/Ed25519 but is malformed.
 func parseJWK(m map[string]json.RawMessage) (*jwk, error) {
-	var kty, crv, x, kid string
+	var kty, crv, x string
 	_ = json.Unmarshal(m["kty"], &kty)
 	_ = json.Unmarshal(m["crv"], &crv)
-	_ = json.Unmarshal(m["kid"], &kid)
 	if kty != "OKP" {
 		return nil, nil
+	}
+	kid, err := jwkString(m, "kid")
+	if err != nil {
+		return nil, err
 	}
 	if crv != "Ed25519" {
 		return nil, fmt.Errorf("unsupported OKP curve %q", crv)
@@ -102,9 +120,16 @@ func parseJWK(m map[string]json.RawMessage) (*jwk, error) {
 	if err != nil || len(raw) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("x is not a 32-byte base64url value")
 	}
-	var use, alg string
-	_ = json.Unmarshal(m["use"], &use)
-	_ = json.Unmarshal(m["alg"], &alg)
+	// A use or alg that is present but not a string is malformed, not
+	// absent: read as "" it passed both restriction checks below.
+	use, err := jwkString(m, "use")
+	if err != nil {
+		return nil, err
+	}
+	alg, err := jwkString(m, "alg")
+	if err != nil {
+		return nil, err
+	}
 	if use != "" && use != "sig" {
 		return nil, nil
 	}

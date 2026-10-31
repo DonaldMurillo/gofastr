@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -95,9 +96,51 @@ func (c devMCPClient) listedTools(t *testing.T) map[string]bool {
 	return names
 }
 
-// startDevMCPApp boots app on bindAddr and returns a client pointed at the
-// bound address, plus a shutdown func.
-func startDevMCPApp(t *testing.T, app *framework.App, bindAddr string) (devMCPClient, func()) {
+// startDevMCPApp boots a fresh app on bindAddr and returns it, a client
+// pointed at the bound port on 127.0.0.1, and a shutdown func. macOS lets a
+// 127.0.0.1:P listener share a port with a 0.0.0.0:P one and win loopback
+// dials, so a parallel test's server could answer for this one ("POST /mcp:
+// status 404"). Each app serves its own nonce, and a port that answers with
+// another's is dropped for a fresh app.
+func startDevMCPApp(t *testing.T, bindAddr string) (*framework.App, devMCPClient, func()) {
+	t.Helper()
+	for attempt := 0; attempt < 5; attempt++ {
+		app := devMCPApp(t)
+		nonce := fmt.Sprintf("devmcp-%d-%p", attempt, app)
+		app.Router().GetFunc("/devmcp-whoami", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(nonce))
+		})
+		client, stop := bootDevMCPApp(t, app, bindAddr)
+		if devMCPWhoami(client.base) == nonce {
+			return app, client, stop
+		}
+		stop()
+	}
+	t.Fatal("every port answered for another server")
+	return nil, devMCPClient{}, nil
+}
+
+// devMCPWhoami reads the nonce the server on base serves, "" on any failure.
+func devMCPWhoami(base string) string {
+	req, err := http.NewRequest(http.MethodGet, base+"/devmcp-whoami", nil)
+	if err != nil {
+		return ""
+	}
+	req.Host = "localhost"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	return string(body)
+}
+
+// bootDevMCPApp starts app on bindAddr and waits until it is ready.
+func bootDevMCPApp(t *testing.T, app *framework.App, bindAddr string) (devMCPClient, func()) {
 	t.Helper()
 	ready := make(chan string, 1)
 	app.OnReady(func(addr string) { ready <- addr })
@@ -161,8 +204,7 @@ func TestDevMCPExposedBindDropsWrites(t *testing.T) {
 
 	// Phase 1 (specificity guard): loopback bind serves the dev-implied
 	// mutating tools. If this fails, the fixture is wrong, not the guard.
-	loopApp := devMCPApp(t)
-	loopClient, loopStop := startDevMCPApp(t, loopApp, "127.0.0.1:0")
+	_, loopClient, loopStop := startDevMCPApp(t, "127.0.0.1:0")
 	defer loopStop()
 	listed := loopClient.listedTools(t)
 	for _, name := range mutating {
@@ -175,8 +217,7 @@ func TestDevMCPExposedBindDropsWrites(t *testing.T) {
 	// withdrawn set is the whole dev-implied mutating/disclosing surface:
 	// the entity writes, battery/log's set_level, the two disclosing log
 	// reads, and the disk-writing contract tool.
-	app := devMCPApp(t)
-	client, stop := startDevMCPApp(t, app, "0.0.0.0:0")
+	app, client, stop := startDevMCPApp(t, "0.0.0.0:0")
 	defer stop()
 
 	withdrawn := append(append([]string{}, mutating...),

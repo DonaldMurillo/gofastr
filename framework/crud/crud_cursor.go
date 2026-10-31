@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"slices"
 	"strconv"
@@ -53,7 +52,8 @@ func (ch *CrudHandler) cursorFields() []string {
 //
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
 // ordered, unique-enough key, so the cursor field(s) control ORDER BY.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere []hook.WhereClause) {
+// cols is the ?fields= projection.
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere []hook.WhereClause) {
 	// Same no-store posture as List: the cursor page is the same per-caller
 	// rows through the keyset arm, and this handler is also reachable via
 	// decodeCursorAny paths that bypass List's stamp.
@@ -71,7 +71,15 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	}
 
 	fields := ch.cursorFields()
-	cols := ch.visibleFields()
+	// A cursor column the projection leaves out is still read, since the
+	// next cursor is built from it, and comes off the rows after.
+	var unprojected []string
+	for _, f := range fields {
+		if !slices.Contains(cols, f) {
+			unprojected = append(unprojected, f)
+		}
+	}
+	cols = append(slices.Clip(cols), unprojected...)
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
@@ -145,7 +153,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	if err != nil {
 		// Redact: raw driver text must not reach the client. Mirrors the
 		// non-cursor List and streaming paths.
-		log.Printf("crud: cursor query failed: %v", err)
+		logf("crud: cursor query failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
@@ -153,7 +161,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 
 	results, err := ch.scanMany(rows, cols)
 	if err != nil {
-		log.Printf("crud: cursor scan failed: %v", err)
+		logf("crud: cursor scan failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
@@ -168,9 +176,15 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		return ch.queryField(f).Type == schema.Date
 	}, limit)
 	if err != nil {
-		log.Printf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
+		logf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
+	}
+	for _, f := range unprojected {
+		k := ch.convertKey(f)
+		for _, row := range page.Data {
+			delete(row, k)
+		}
 	}
 
 	// Includes run on the page after the cursor is taken: including a
@@ -201,7 +215,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		// behave differently the moment a client appended ?cursor=.
 		payload := &hook.ListPayload{Request: r, Where: extraWhere, Results: page.Data}
 		if err := runHooks(ch.Hooks, ctx, hook.AfterList, payload); err != nil {
-			log.Printf("crud: after-list hook failed (cursor): %v", err)
+			logf("crud: after-list hook failed (cursor): %v", err)
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}

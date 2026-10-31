@@ -1,10 +1,13 @@
 package initcmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/settings"
 )
 
 // Property: the scaffolded .env is never readable by anyone but its owner.
@@ -59,5 +62,62 @@ func TestEnvFileIsOwnerOnly(t *testing.T) {
 				t.Errorf("content = %q, want the new content with no stale remnant", body)
 			}
 		})
+	}
+}
+
+// `init . --force` truncated .env and the scaffold files in place: a
+// crash or a full disk mid-write left them empty. Each is renamed over
+// whole, and a refreshed file keeps its mode.
+func TestInitRewritesReplaceWhole(t *testing.T) {
+	dir := t.TempDir()
+	env := filepath.Join(dir, ".env")
+	gi := filepath.Join(dir, "main.go")
+	for _, p := range []string{env, gi} {
+		if err := os.WriteFile(p, []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldEnv, oldMain := heldInit(t, env), heldInit(t, gi)
+	if err := writeEnvFile(env, "NEW=1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeScaffoldFile(gi, []byte("package main\n")); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := oldEnv(), oldMain(); a != "old" || b != "old" {
+		t.Fatalf("old handles read .env %q, main.go %q: rewritten in place", a, b)
+	}
+	cfg := filepath.Join(dir, settings.FileName)
+	if err := os.WriteFile(cfg, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldCfg := heldInit(t, cfg)
+	writeSettingsFile(dir, "sqlite")
+	if got := oldCfg(); got != "old" {
+		t.Fatalf("old handle reads %s %q: rewritten in place", settings.FileName, got)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, _ := os.Stat(gi); fi.Mode().Perm() != 0o600 {
+			t.Fatalf("main.go mode %v, want its 0600 kept", fi.Mode().Perm())
+		}
+	}
+}
+
+// heldInit opens path and returns a reader of what that handle sees: a
+// file renamed over path leaves it reading the old content, one
+// truncated in place leaves it reading the new.
+func heldInit(t *testing.T, path string) func() string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return func() string {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
 	}
 }

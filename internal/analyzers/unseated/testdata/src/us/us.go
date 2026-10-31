@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 )
 
 // events is the package's fan-out source: a channel the parked loops
@@ -27,6 +28,23 @@ func openSSE(w http.ResponseWriter, r *http.Request) {
 		case ev := <-events():
 			fmt.Fprintf(w, "data: %s\n\n", ev)
 		}
+	}
+}
+
+// openPolled checks for the caller leaving through a select with a
+// default and ticks on a timer. It never blocks on input, but a polling
+// loop holds the stream open just the same.
+func openPolled(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream") // want `long-lived stream opened here`
+	w.WriteHeader(http.StatusOK)
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+		}
+		fmt.Fprintf(w, "data: tick\n\n")
+		time.Sleep(time.Second)
 	}
 }
 
@@ -184,8 +202,7 @@ func oneShotSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 // callerDrivenPump ranges over its own channel parameter: the channel
-// owner one frame up owns the admission decision (the
-// handler.SSEStream posture).
+// owner one frame up owns the admission decision.
 func callerDrivenPump(w http.ResponseWriter, events <-chan string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)

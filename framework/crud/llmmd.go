@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
@@ -604,7 +605,10 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount fu
 // filter cannot drift from the read path. A caller who would receive 401/403
 // on an entity's rows is hidden from its index entry too. The baseline
 // session gate (requireAuthenticated) is enforced once at the handler entry,
-// so it is not re-checked here.
+// so it is not re-checked here. A scoped token also needs "<table>:read",
+// which auth.RequireAPIScopes demands on the List route itself: a token
+// holding llm.md:read and customers:read was shown every entity that
+// declares no read permission.
 func canListEntity(ctx context.Context, ent *entity.Entity) bool {
 	ch := &CrudHandler{Entity: ent}
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -613,7 +617,7 @@ func canListEntity(ctx context.Context, ent *entity.Entity) bool {
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return false
 	}
-	return ch.CanRead(ctx)
+	return access.ScopeAllows(ctx, access.Permission(ent.GetTable()+":read")) && ch.CanRead(ctx)
 }
 
 // sanitizeDefault renders a safe summary of a field's default value.

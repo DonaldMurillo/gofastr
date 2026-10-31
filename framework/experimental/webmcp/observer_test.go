@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -258,5 +259,23 @@ func TestBridgeDebugLiteralIsOptIn(t *testing.T) {
 	rec = get(t, rt2, url2)
 	if !strings.Contains(rec.Body.String(), "const debug = true;") {
 		t.Fatal("WithBridgeDebug did not enable the debug literal")
+	}
+}
+
+// deadlineBase is a recorder with the net/http writer's deadline surface.
+type deadlineBase struct {
+	*httptest.ResponseRecorder
+	set bool
+}
+
+func (d *deadlineBase) SetWriteDeadline(time.Time) error { d.set = true; return nil }
+
+// The wrapper hid the connection from http.ResponseController, so a
+// streaming handler behind it could not set a write deadline (2026-10-27
+// bug bash, wrapwriter).
+func TestStatusRecorderReachesDeadline(t *testing.T) {
+	base := &deadlineBase{ResponseRecorder: httptest.NewRecorder()}
+	if err := http.NewResponseController(&statusRecorder{ResponseWriter: base}).SetWriteDeadline(time.Now().Add(time.Second)); err != nil || !base.set {
+		t.Fatalf("SetWriteDeadline through the wrapper: %v (reached %v)", err, base.set)
 	}
 }

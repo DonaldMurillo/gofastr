@@ -290,6 +290,12 @@ is the curl tour, covering eager loading, cursor paging, atomic batch, SSE,
 uploads, and sparse updates. Hooks run inside the write's transaction
 ([hooks-and-transactions](framework/docs/content/hooks-and-transactions.md)).
 
+Experimental desktop apps use the OS WebView with `CGO_ENABLED=0`. On Linux,
+`gofastr desktop build --format=tar.gz` creates a bundle; the separate
+`desktop install --bundle=<extracted-directory>` and `desktop uninstall --id=<app.id>`
+commands manage a per-user installation without changing saved default handlers
+or removing app data. See the [desktop reference](framework/docs/content/desktop.md).
+
 ## The design bets
 
 - **Two layers.** A small `core/` of stdlib-first primitives sits under an opinionated `framework/`. Use the framework for the common path; drop to core and write plain `net/http` when it's in your way. (The one external touchpoint is `core/middleware/tracing.go`, which pulls in OpenTelemetry; the rest of `core/` is stdlib-only.)
@@ -298,7 +304,7 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 - **Security scopes live in the declaration, fail-closed.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (403), `multi_tenant` scopes by tenant, and `gofastr validate` flags PII-shaped fields (email, phone, address, …) exposed without any of them. The MCP tools respect the same scopes as the REST routes.
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main`. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
 - **Batteries are separate packages.** Auth, cache, email, queue, search, storage sit behind narrow interfaces; swap any one without forking.
-- **The framework checks whether you're still using it well.** `gofastr verify` runs the 80 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
+- **The framework checks whether you're still using it well.** `gofastr verify` runs the 82 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
 - **The app generator scaffolds the whole app when you want a head start.** One `gofastr.yml` generates the screens and the API in one pass; then it's plain Go you own and edit, and the running app never needs the app spec again ([app spec tutorial](framework/docs/content/tutorial-app-spec.md)).
 
 ## The repo in 60 seconds

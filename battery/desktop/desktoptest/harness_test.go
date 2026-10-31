@@ -197,6 +197,28 @@ func TestEventsAndNavigationsParse(t *testing.T) {
 	if p, ok := desktoptest.ParseNavigate(`window.__gofastr.navigate("/a?b=1")`); !ok || p != "/a?b=1" {
 		t.Fatalf("ParseNavigate = %q, %v", p, ok)
 	}
+
+	// The battery wraps every page script in an origin guard; the
+	// parsers read through it, and through nothing that only looks like
+	// one.
+	const gate = `if (location.origin === "http://127.0.0.1:9") { `
+	if p, ok := desktoptest.ParseNavigate(gate + `window.__gofastr.navigate("/g") }`); !ok || p != "/g" {
+		t.Fatalf("ParseNavigate(gated) = %q, %v", p, ok)
+	}
+	if ev, ok := desktoptest.ParseEvent(gate + `window.__gofastr && window.__gofastr.desktop && ` +
+		`window.__gofastr.desktop._dispatch("saved", JSON.parse("{}")) }`); !ok || ev.Name != "saved" {
+		t.Fatalf("ParseEvent(gated) = %+v, %v", ev, ok)
+	}
+	for _, js := range []string{
+		gate + `window.__gofastr.navigate("/g")`,
+		`if (location.origin === http) { window.__gofastr.navigate("/g") }`,
+		`if (location.origin === ) { window.__gofastr.navigate("/g") }`,
+		`if (location.origin === "x") {window.__gofastr.navigate("/g") }`,
+	} {
+		if _, ok := desktoptest.ParseNavigate(js); ok {
+			t.Errorf("ParseNavigate accepted %q", js)
+		}
+	}
 }
 
 func TestCloseMainWindowHonoursTray(t *testing.T) {

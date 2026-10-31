@@ -148,6 +148,31 @@ func TestMinMaxMixedNumericTypes(t *testing.T) {
 	}
 }
 
+// Past 2^53 two integers can share a float64, so a fold that compared
+// through float64 kept the wrong one: min(2^53, 2^53+1) returned the
+// larger (2026-10-27 K4).
+func TestMinMaxCompareIntsExactly(t *testing.T) {
+	scope := expr.MapScope{"a": int64(1 << 53), "b": int64(1<<53 + 1)}
+	for src, want := range map[string]int64{
+		"min(a, b)": 1 << 53,
+		"min(b, a)": 1 << 53,
+		"max(a, b)": 1<<53 + 1,
+		"max(b, a)": 1<<53 + 1,
+	} {
+		v, err := expr.Compile(src)
+		if err != nil {
+			t.Fatalf("%q: %v", src, err)
+		}
+		got, err := v.Eval(scope, nil)
+		if err != nil {
+			t.Fatalf("%q: %v", src, err)
+		}
+		if got != any(want) {
+			t.Errorf("%q = %v (%T), want %d", src, got, got, want)
+		}
+	}
+}
+
 // Property: every DefaultEnv builtin is a total function — any argument
 // shape the parser can produce yields a value or an error, never a panic.
 //

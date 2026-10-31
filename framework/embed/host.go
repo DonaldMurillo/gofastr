@@ -196,6 +196,11 @@ type Host struct {
 	// app actually mounted. Per-host rather than package-global so one app's
 	// mount cannot change another's validation, which matters most in tests.
 	reserved []string
+
+	// widgetOnSurface reports whether the widget named name is offered on a
+	// surface rendering surfacePath. Nil refuses every widget path. See
+	// SetWidgetReach.
+	widgetOnSurface func(name, surfacePath string) bool
 }
 
 // ResolvedSurface is a declared Surface with its origins normalized once at
@@ -351,6 +356,17 @@ func (h *Host) SetKeys(nonceKey, grantKey []byte) {
 	h.grantKey = grantKey
 }
 
+// SetWidgetReach installs the check that lets a grant reach a widget's
+// style, state and chrome routes (/core-ui/widget/<name>/style.css, /state,
+// /chrome): onSurface reports whether the widget named name is offered on
+// the page at surfacePath. framework/uihost installs it at construction,
+// from the widget registry. Without it every widget path is outside every
+// surface's reach. A widget's RPC paths are the app's own routes and need
+// a Reach entry like any other.
+func (h *Host) SetWidgetReach(onSurface func(name, surfacePath string) bool) {
+	h.widgetOnSurface = onSurface
+}
+
 // SetPreviousKeys installs retired nonce and grant keys accepted for
 // VERIFICATION only, so an app-secret rotation does not invalidate every
 // outstanding handshake nonce and frame grant the instant the new secret
@@ -393,6 +409,25 @@ func verifyWithRotation[T any](current []byte, prev [][]byte, token string, now 
 	}
 	var zero T
 	return zero, err
+}
+
+// replayExpired answers the exchange of a nonce past its expiry: the
+// grant the nonce's first exchange stored, while that grant lives, and
+// ErrExpired otherwise. It mints nothing. A Burn whose retention deadline
+// has already passed hands back only a stored live grant (the BurnStore
+// contract); for a nonce never exchanged it leaves a dead tombstone whose
+// grant is empty. The stored grant is verified again, so neither "" nor
+// a dead grant from a store that broke the contract is ever returned.
+func (h *Host) replayExpired(ctx context.Context, n Nonce, now time.Time) (ExchangeResult, error) {
+	issued, _, err := h.store.Burn(ctx, n.ID, "", now)
+	if err != nil {
+		return ExchangeResult{}, err
+	}
+	g, err := h.verifyGrant(issued, now)
+	if err != nil {
+		return ExchangeResult{}, ErrExpired
+	}
+	return ExchangeResult{Grant: issued, Expires: g.Expires, Replay: true, Surface: n.Surface}, nil
 }
 
 // Ready reports whether the host has signing keys. A host without keys cannot
@@ -558,8 +593,20 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 	}
 	now := time.Now()
 	n, err := h.verifyNonce(nonceToken, now)
+	// A frame reloaded after the nonce's lifetime re-sends the same nonce,
+	// and the exchange is idempotent within the grant's lifetime, not the
+	// nonce's. So a nonce whose only fault is its age (it verifies when
+	// the expiry is ignored: VerifyNonce compares the expiry against the
+	// zero time, which precedes every one) goes on through every check
+	// below and may look up the grant its first exchange stored. It never
+	// mints one.
+	expired := false
 	if err != nil {
-		return ExchangeResult{}, err
+		aged, agedErr := h.verifyNonce(nonceToken, time.Time{})
+		if agedErr != nil {
+			return ExchangeResult{}, err
+		}
+		n, expired = aged, true
 	}
 	s, ok := h.surfaces[n.Surface]
 	if !ok {
@@ -587,6 +634,9 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 	reported, err := NormalizeOrigin(framedOrigin)
 	if err != nil || reported != n.Origin {
 		return ExchangeResult{}, fmt.Errorf("embed: nonce was minted for %q but the frame reports %q", n.Origin, framedOrigin)
+	}
+	if expired {
+		return h.replayExpired(ctx, n, now)
 	}
 
 	// The token encodes its expiry in whole seconds, so report the same value

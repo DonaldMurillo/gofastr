@@ -17,6 +17,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
+	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
@@ -201,7 +203,11 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			// above, and it was never advertised, so a well-formed call
 			// never sends one.
 			if v, ok := params[mcpFieldKey(field)]; ok {
-				values[mcpFieldKey(field)] = toolParamValues(v)
+				vs, err := toolFilterValues(mcpFieldKey(field), field, false, v)
+				if err != nil {
+					return nil, err
+				}
+				values[mcpFieldKey(field)] = vs
 			}
 			for _, s := range filter.FilterSuffixes {
 				if !filter.OpSuitsType(s.Op, field.Type) {
@@ -209,7 +215,11 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				}
 				key := mcpFieldKey(field) + s.Suffix
 				if v, ok := params[key]; ok {
-					values[key] = toolParamValues(v)
+					vs, err := toolFilterValues(key, field, s.Op == filter.OpIn, v)
+					if err != nil {
+						return nil, err
+					}
+					values[key] = vs
 				}
 			}
 		}
@@ -249,6 +259,62 @@ func toolParamValues(v any) []string {
 		return out
 	}
 	return []string{toolParamString(v)}
+}
+
+// toolFilterValues renders one filter parameter of the list tool for the
+// re-dispatch query, in the shape the list route reads it.
+//
+// A JSON field compares against JSON text, so its value is sent encoded:
+// {"payload":[1,2]} filters on the array [1,2], not on its first element,
+// and an object on itself, not on fmt.Sprint's map[x:1]. An _in key's
+// array is the list. An empty one is refused: in no values matches no
+// row, and leaving the key out would list every row. An element holding
+// a comma is refused too, because the route splits _in values on commas
+// and would read "Doe, Jane" as two values; a JSON field's _in value is
+// refused for the same reason. Any other key takes one value, and a
+// list or an object for it is refused rather than cut to its first
+// element.
+func toolFilterValues(key string, field schema.Field, in bool, v any) ([]string, error) {
+	one := func(e any) (string, error) {
+		if field.Type == schema.JSON {
+			b, err := json.Marshal(e)
+			if err != nil {
+				return "", fmt.Errorf("param %q: %w", key, err)
+			}
+			return string(b), nil
+		}
+		switch e.(type) {
+		case []any, map[string]any:
+			return "", fmt.Errorf("param %q takes one value, not a list or an object", key)
+		}
+		return toolParamString(e), nil
+	}
+	arr, isArr := v.([]any)
+	if !in || !isArr {
+		s, err := one(v)
+		if err != nil {
+			return nil, err
+		}
+		if in && field.Type == schema.JSON && strings.Contains(s, ",") {
+			return nil, fmt.Errorf("param %q: the value holds a comma, which the list route reads as a separator", key)
+		}
+		return []string{s}, nil
+	}
+	if len(arr) == 0 {
+		return nil, fmt.Errorf("param %q: an empty list matches no rows; send at least one value", key)
+	}
+	out := make([]string, 0, len(arr))
+	for i, e := range arr {
+		s, err := one(e)
+		if err != nil {
+			return nil, err
+		}
+		if strings.Contains(s, ",") {
+			return nil, fmt.Errorf("param %q: element %d holds a comma, which the list route reads as a separator", key, i)
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 // toolParamString renders one scalar tool parameter for a query-string
@@ -400,11 +466,15 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	// rate-limit bucket. The headers count only where the original's did,
 	// because the lookup trusts them only when RemoteAddr is a trusted
 	// proxy, and RemoteAddr is the original's.
-	// Nothing beyond these rides along: the re-dispatch re-presents the
-	// caller's credentials and address, never other headers the original
-	// carried.
+	// Nothing beyond these and the verified CSRF token below rides along:
+	// the re-dispatch re-presents the caller's credentials and address,
+	// never other headers the original carried.
 	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
 		req.RemoteAddr = orig.RemoteAddr
+		// The host the caller reached, not httptest's example.com: host
+		// middleware (a site or tenant picked from the host, a host
+		// allowlist) must see the request the caller made.
+		req.Host = orig.Host
 		// Two lists: the credential headers must match credentialFingerprint
 		// and the broker's (TestCredentialCanonsAgree); the proxy headers
 		// are address, not credential.
@@ -416,6 +486,14 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 				}
 				req.Header.Add(name, v)
 			}
+		}
+		// The CSRF token the caller's request passed the check with,
+		// under the header that check reads: the write carries the CSRF
+		// cookie in Cookie above and would get a 403 without it. It is
+		// presented, not exempted; the check compares it with the cookie
+		// again. A request no check passed has none.
+		if name, token, ok := middleware.VerifiedCSRFSubmission(orig.Context()); ok {
+			req.Header.Set(name, token)
 		}
 	}
 	rec := httptest.NewRecorder()
@@ -545,9 +623,10 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 			}
 			if s.Op == filter.OpIn {
 				// A JSON array is the natural spelling an MCP client
-				// sends, and toolParamValues expands it into the
-				// repeated query entries the route parses.
-				ps = map[string]any{"type": "array", "items": mcpFieldSchema(field)}
+				// sends, and toolFilterValues expands it into the
+				// repeated query entries the route parses. An empty
+				// one is refused there, so the schema says so too.
+				ps = map[string]any{"type": "array", "items": mcpFieldSchema(field), "minItems": 1}
 			}
 			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, mcpOperatorLabel(s.Op))
 			props[mcpFieldKey(field)+s.Suffix] = ps
@@ -645,8 +724,11 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 		}
 		if field.Required && field.Default == nil && !serverStamped[field.Name] {
 			required = append(required, key)
-		} else if !field.Required {
-			nullableToolSchema(fs)
+		} else if !field.Required && key != stateKey {
+			// The route takes null for an optional field. The state field
+			// reaches here only on a create, which must start it at an
+			// initial value.
+			coreoa.Nullable(fs)
 		}
 		props[key] = fs
 	}
@@ -660,21 +742,6 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 // mcpFieldKey returns the parameter name a field is exposed under in MCP
 // tool schemas: WireName when set (the version-specific alias), else the
 // raw DB column Name. The CRUD filter parser accepts both forms.
-// nullableToolSchema lets fs accept null as well, the way the route
-// takes null for an optional field.
-func nullableToolSchema(fs map[string]any) {
-	if t, ok := fs["type"].(string); ok {
-		fs["type"] = []any{t, "null"}
-	}
-	if values, ok := fs["enum"].([]string); ok {
-		enum := make([]any, 0, len(values)+1)
-		for _, v := range values {
-			enum = append(enum, v)
-		}
-		fs["enum"] = append(enum, nil)
-	}
-}
-
 func mcpFieldKey(field schema.Field) string {
 	if field.WireName != "" {
 		return field.WireName

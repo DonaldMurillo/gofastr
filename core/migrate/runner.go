@@ -82,6 +82,28 @@ type connish interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
+// sqliteTableParts splits the tracking table name at its last dot into the
+// schema and the bare table, the two halves SQLite's pragma functions and
+// RENAME TO take apart. schema is "" for a bare name. qtable has already
+// validated the whole name, so each half is a safe identifier.
+func (m *Migrator) sqliteTableParts() (schema, table string) {
+	if i := strings.LastIndexByte(m.tableName, '.'); i >= 0 {
+		return m.tableName[:i], m.tableName[i+1:]
+	}
+	return "", m.tableName
+}
+
+// sqliteTableInfo returns the pragma_table_info call for the tracking table
+// and its args. A qualified name passes its schema as the second argument:
+// the whole name as one argument, quoted or not, names no table.
+func (m *Migrator) sqliteTableInfo() (string, []any) {
+	schema, table := m.sqliteTableParts()
+	if schema == "" {
+		return "pragma_table_info(?)", []any{table}
+	}
+	return "pragma_table_info(?, ?)", []any{table, schema}
+}
+
 // qtable validates the tracking table name once and returns it quoted. Every
 // public entry point calls this up front and threads the result into the
 // helpers, so the table name is checked exactly once per operation (no
@@ -225,9 +247,9 @@ func (m *Migrator) hasGroupColumn(ctx context.Context, x connish, tbl string) (b
 			return false, fmt.Errorf("migrate: detect group_name column: %w", err)
 		}
 	} else {
-		baseName := strings.Trim(tbl, `"`)
-		q := "SELECT COUNT(*) FROM pragma_table_info(" + m.placeholder(1) + ") WHERE name = 'group_name'"
-		if err := x.QueryRowContext(ctx, q, baseName).Scan(&n); err != nil {
+		info, args := m.sqliteTableInfo()
+		q := "SELECT COUNT(*) FROM " + info + " WHERE name = 'group_name'"
+		if err := x.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 			return false, fmt.Errorf("migrate: detect group_name column: %w", err)
 		}
 	}
@@ -273,6 +295,15 @@ func dirtyError(rec MigrationRecord, ga bool) error {
 		return fmt.Errorf("migration %d (%s) in group %q: %w", rec.Version, rec.Name, groupDisplayName(rec.Group), ErrDirty)
 	}
 	return fmt.Errorf("migration %d (%s): %w", rec.Version, rec.Name, ErrDirty)
+}
+
+// noDownError names a migration Down refuses to roll back, the way
+// dirtyError names a dirty one.
+func noDownError(mig Migration, ga bool) error {
+	if ga {
+		return fmt.Errorf("migration %d (%s) in group %q: %w", mig.Version, mig.Name, groupDisplayName(mig.Group), ErrNoDown)
+	}
+	return fmt.Errorf("migration %d (%s): %w", mig.Version, mig.Name, ErrNoDown)
 }
 
 // checkIntegrity refuses to proceed when the tracking state is unsafe:
@@ -639,6 +670,15 @@ func (m *Migrator) down(ctx context.Context, x connish, tbl string, n int, ga bo
 	lookup := make(map[migKey]Migration, len(m.migrations))
 	for _, mig := range m.migrations {
 		lookup[migKey{Group: mig.Group, Version: mig.Version}] = mig
+	}
+
+	// Refuse before rolling anything back. A migration with no Down would
+	// run the empty string, succeed and lose its tracking row while its
+	// schema change stayed, so the next Up would run it again.
+	for i := 0; i < n; i++ {
+		if mig, ok := lookup[keys[i]]; ok && strings.TrimSpace(mig.Down) == "" {
+			return noDownError(mig, tableGa)
+		}
 	}
 
 	for i := 0; i < n; i++ {

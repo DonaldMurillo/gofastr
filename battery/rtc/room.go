@@ -117,6 +117,10 @@ type roomPeer struct {
 	// seat is this socket's entry in its principal's seat FIFO
 	// (seats.go); nil only for peers constructed outside Serve.
 	seat *socketSeat
+	// req and recheck are what Signaler.peerHeld re-checks the socket's
+	// principal with; req is nil only for peers constructed outside Serve.
+	req     *http.Request
+	recheck func(*http.Request) bool
 }
 
 // roomSource adapts the Signaler to stream.SnapshotSource for one
@@ -291,7 +295,19 @@ func mintPeerID() (string, bool) {
 // (400 bad Join, 409 room full, 503 closed) is an HTTP status for a
 // plain request and, for an upgrade request, an accepted handshake
 // closed with code 4000+status (see refuse).
+//
+// The socket re-establishes its principal (handler.RecheckPrincipal) before
+// acting on each inbound frame and on an idle ticker, and closes when that
+// fails: a session revoked after the join stops signaling and stops
+// receiving.
 func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
+	s.serve(w, r, join, nil)
+}
+
+// serve is Serve with an extra re-check run on the refreshed request after
+// the principal holds. ServeHTTP passes one that re-runs Authorize; a nil
+// recheck checks the principal alone.
+func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, recheck func(*http.Request) bool) {
 	if err := validJoin(join); err != nil {
 		s.logger.Warn("rtc: join refused", "reason", "bad_join")
 		s.refuse(w, r, http.StatusBadRequest, reasonInvalidJoin, nil)
@@ -352,6 +368,8 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 		},
 		conn:    conn,
 		limiter: newFrameLimiter(s.cfg.MaxFramesPerSecond),
+		req:     r,
+		recheck: recheck,
 	}
 
 	var oldConn *stream.WebSocketConn
@@ -428,6 +446,11 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	s.mu.Unlock()
 	s.logger.Debug("rtc: join", "room", roomLog, "peer", peerLog, "role", roleLog)
 
+	held := func() bool { return s.peerHeld(r, recheck) }
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go s.watchPeer(conn, held, stopWatch)
+
 	for {
 		data, rerr := conn.Read()
 		if rerr != nil {
@@ -436,6 +459,11 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 		if !p.limiter.allow(time.Now()) {
 			s.logger.Warn("rtc: peer closed", "reason", "frame_rate")
 			conn.Close()
+			return
+		}
+		if !held() {
+			s.logger.Warn("rtc: peer closed", "reason", "unauthorized")
+			_ = conn.CloseWithStatus(4000+http.StatusUnauthorized, "session ended")
 			return
 		}
 		var in inboundMsg
@@ -453,6 +481,42 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 			s.handleSignal(join.Room, p, in)
 		case evStatus:
 			s.handleStatus(join.Room, p, in)
+		}
+	}
+}
+
+// peerHeld reports whether r's principal still holds and, when recheck is
+// set, whether it still passes on the refreshed request. A panicking host
+// callback counts as a refusal: the socket closes, the process does not.
+func (s *Signaler) peerHeld(r *http.Request, recheck func(*http.Request) bool) (held bool) {
+	defer func() {
+		if recover() != nil {
+			held = false
+		}
+	}()
+	fresh, ok := handler.RecheckPrincipal(r.Context())
+	if !ok {
+		return false
+	}
+	return recheck == nil || recheck(r.WithContext(fresh))
+}
+
+// watchPeer re-checks an idle socket on a ticker, so a revoked peer that
+// sends nothing is closed too; the close ends the read loop, which leaves
+// the room. It stops when the read loop does.
+func (s *Signaler) watchPeer(conn *stream.WebSocketConn, held func() bool, stop <-chan struct{}) {
+	t := time.NewTicker(s.recheckEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			if !held() {
+				s.logger.Warn("rtc: peer closed", "reason", "unauthorized")
+				_ = conn.CloseWithStatus(4000+http.StatusUnauthorized, "session ended")
+				return
+			}
 		}
 	}
 }

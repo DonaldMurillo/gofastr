@@ -48,6 +48,15 @@ leave). Set a stable per-tab `PeerID` only when you can mint one the
 client cannot forge, and a reconnect becomes a rejoin that keeps its
 connected peer connections.
 
+**A joined socket keeps checking its principal.** Before acting on each
+inbound frame, on an idle ticker (30 seconds), and before each TURN
+refresh, the socket re-establishes its principal
+(`handler.RecheckPrincipal`) and, under `ServeHTTP`, runs `Authorize`
+again on the refreshed request. A refusal, or an `Authorize` that now
+names another room, closes the socket with code 4401, so a signed-out or
+revoked user stops signaling, stops receiving room events and gets no
+fresh TURN credential.
+
 **Refusals reach the browser.** An error from `Authorize`, a bad
 `Join`, a full room, or a closed signaler keeps its HTTP status for a
 plain request (curl, a Go peer). A WebSocket upgrade request is
@@ -84,7 +93,9 @@ named recipient only. The server never decodes SDP or candidates.
 
 **Sockets are bounded.** Inbound frames are rate-limited
 (`MaxFramesPerSecond`, default 128, token bucket); over the limit the
-socket closes. Outbound, a peer whose send buffer overflows
+socket closes. Ping and Pong frames never reach that limit, since the
+transport answers them; `WS.MaxControlFramesPerSecond` (default 32)
+caps them and closes with 1008. Outbound, a peer whose send buffer overflows
 (`WS.SendBuffer`, default 128 frames) is closed rather than starved:
 signals are not in the snapshot, so a dropped answer could never be
 recovered, while a closed socket reconnects, re-hydrates, and the far
@@ -334,10 +345,16 @@ With `framework.WithFanout` attached (wired automatically by
 the same lossy self-healing model presence uses: each replica
 broadcasts its full local roster per room on every join and leave and
 on a 15 s heartbeat, and mirrors a status change as one event (the
-heartbeat is the backstop for a mirror a replica missed); receivers
+heartbeat is the backstop for a mirror a replica missed, and a beat
+that carries a changed status announces it); receivers
 keep a TTL'd (45 s) per-(replica, room) table capped at 512 replicas
-per room. A beat naming more than `MaxPeers` members is dropped whole,
-and a beat cannot restate a peer this replica holds (local wins on the
+per room. A status reaches local peers only from the replica whose
+copy of the peer is newest, so one from a replica the peer has left is
+dropped. A beat naming more than `MaxPeers` members is dropped whole.
+Two replicas can each admit a join before their beats meet, so a beat
+can bring the merged room past `MaxPeers`; every replica then ranks the
+merged room by join order and closes its own peers past the cap with
+`4409` room full, so the latest seats lose. A beat cannot restate a peer this replica holds (local wins on the
 join mirror as on the leave mirror). A join mirror for a peer this
 replica holds displaces the local socket only when the mirror is newer
 than that socket (every lane message carries the sender's clock): one
@@ -370,8 +387,9 @@ timer, whether the last peer left or migrated to another replica; what
 other replicas hold for that name stays under the remote TTL. Signals
 addressed to a peer on another replica are published on the fanout and
 delivered by the owning replica. A crashed replica's peers vanish from
-rosters within the TTL; `Close` publishes empty rosters first so a
-rolling restart converges promptly. Without a fanout, nothing runs and
+rosters within the TTL. `Close` stops the heartbeat, waits for a
+roster already being published, then publishes empty rosters as the
+replica's last messages, so a rolling restart converges promptly. Without a fanout, nothing runs and
 behaviour is byte-for-byte the single-replica result.
 
 ## Deployment

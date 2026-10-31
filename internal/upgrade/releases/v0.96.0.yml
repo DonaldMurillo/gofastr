@@ -198,3 +198,331 @@ notes:
     breaking: true
     guidance: "A lowercase table name needs nothing. For a name like Jobs or app.Jobs, the first boot refuses to start and prints the statements to run, such as ALTER TABLE \"Jobs\" RENAME TO \"jobs\" (plus ALTER TABLE ... SET SCHEMA for a dotted name). Run them, then restart. Raw SQL a host writes against such a table uses the lowercase name."
     nodetect: "table names are configuration values, often read from env; the old table is found at boot, which prints the rename"
+  - change: "BREAKING - framework/datexport moved to core/datexport"
+    breaking: true
+    hits: edit
+    guidance: "Import github.com/DonaldMurillo/gofastr/core/datexport instead of framework/datexport; every name in the package is unchanged. The move lets core stores (A2A, feature flags, idempotency) register their own tables, since core never imports framework."
+    find:
+      imports:
+        - gofastr/framework/datexport
+  - change: "BREAKING for custom CRUD event outboxes - crud.EventOutbox declares AppendFor(ctx, ex, owner, eventType, data) in place of Append, so a staged event names its record's owner and an erasure of that user nulls its payload"
+    breaking: true
+    hits: edit
+    guidance: "The bundled outbox implements AppendFor already, so apps that pass outbox.New to crud need nothing. A custom EventOutbox renames Append to AppendFor and takes the owner id as its third argument; store it so App.EraseUserData can find the row."
+    find:
+      uses:
+        - gofastr/framework/crud.EventOutbox
+        - gofastr/framework/crud.EventOutbox.Append
+  - change: "BREAKING for outboxes built WithoutEnsureTable - the outbox table needs an owner column, owner TEXT NOT NULL DEFAULT ''"
+    breaking: true
+    hits: review
+    guidance: "An outbox that creates its own table adds the column on boot. A host that manages the table itself runs ALTER TABLE <table> ADD COLUMN owner TEXT NOT NULL DEFAULT '' before deploying, or every insert fails."
+    find:
+      uses:
+        - gofastr/framework/outbox.WithoutEnsureTable
+  - change: "Store tables gain an owner or principal column for user data erasure: idempotency keys (principal), search documents, pgvector chunks, outbound webhook deliveries and inbound webhook envelopes (owner)"
+    breaking: false
+    guidance: "Each store adds its column on boot, so nothing needs running. Rows written before the upgrade name nobody and are not erased with a user; set Document.Owner, use PublishFor and IngestConfig.Owner from now on."
+    nodetect: "the columns are added at boot by the stores themselves; nothing in an app's source spells the change"
+  - change: "BREAKING - entityui RecordBuilder.Steps takes the ListBuilder the drawer opens from, Steps(list), so previous and next walk that list's key, View and Where pins"
+    breaking: true
+    hits: edit
+    guidance: "Steps() rebuilt a bare list, so a keyed list read the wrong params and a View or Where pin was dropped: the drawer stepped onto records the list did not show. Pass the same ListBuilder the list screen renders, for example a func that builds it, called from both the list screen and Steps(list())."
+    find:
+      uses:
+        - gofastr/framework/entityui.RecordBuilder.Steps
+  - change: "BREAKING for process modules - the proxy copies only Cache-Control, Content-Language, ETag, Expires, Last-Modified and Retry-After from a module.http response, adds its Vary to the host's, always sets the body kind's Content-Type with nosniff, and answers 503 for a status outside 200-599"
+    breaking: true
+    hits: review
+    guidance: "A module answers on the host origin, so a header it set (Set-Cookie, a Content-Security-Policy, CORS, Location, a text/html Content-Type) used to override the host's. A module that relied on another header drops it; send markup as a ui.node.v1 body, which the host validates and renders, and set cookies from the host."
+    find:
+      uses:
+        - gofastr/core/moduleproto.HTTPResponseResult
+  - change: "BREAKING - the admin's Jobs, User roles, Roles and Modules pages and their posts answer 403 to a caller whose request carries a tenant, and its nav and dashboard leave them out"
+    breaking: true
+    hits: review
+    guidance: "Queue jobs, accounts, role grants and process modules have no tenant, so a tenant's admin reached every tenant's. Run these from a request with no tenant (tenant.GetTenantID empty), the platform operator's; tenant admins keep the entity, audit and dashboard pages."
+    find:
+      uses:
+        - gofastr/battery/admin.New
+  - change: "BREAKING - ProcessModuleSupervisor.RevokeGrants removes the grants it names and keeps the rest instead of replacing the set with them, and refuses an empty list; ProcessModuleStore gains RemoveEffectiveGrants"
+    breaking: true
+    hits: review
+    guidance: "A call that passed the narrowed set now passes the grants to take away: RevokeGrants(ctx, name, []access.Permission{\"invoices:write\"}). A call passing nil or an empty list to revoke everything now errors; name every grant. A custom ProcessModuleStore implements RemoveEffectiveGrants as a compare-and-swap on the generation, like SQLProcessModuleStore."
+    find:
+      uses:
+        - gofastr/framework.ProcessModuleSupervisor.RevokeGrants
+  - change: "BREAKING - the WithMCPControl tools need a caller holding the admin role; framework.WithMCPControlGate replaces the gate"
+    breaking: true
+    hits: review
+    guidance: "app_module_enable and app_module_disable ran for any signed-in caller. Grant the operators who drive them the admin role, or pass framework.WithMCPControlGate(framework.MCPRequireRole(\"ops\")) with the role they hold. The gofastr dev loop's implied tools stay ungated."
+    find:
+      uses:
+        - gofastr/framework.WithMCPControl
+  - change: "BREAKING - battery/log's MCP tools need a caller holding the admin role; log.Config.MCPGate replaces the gate"
+    breaking: true
+    hits: review
+    guidance: "log_recent, log_filter, log_metrics and log_set_level ran for any signed-in caller. Grant the operators who read them the admin role, or set Config.MCPGate to framework.MCPRequireRole with the role they hold. The gofastr dev loop's implied tools stay ungated."
+    find:
+      uses:
+        - gofastr/battery/log.Config.EnableMCP
+  - change: "BREAKING - auth.RoleGateCapability moved to access.RoleGateCapability"
+    breaking: true
+    hits: edit
+    guidance: "The framework's MCP gates and /.debug now consult the Decider on the same capability, so the constant lives in framework/access. Replace auth.RoleGateCapability with access.RoleGateCapability; the value, auth:role-gate, is unchanged."
+    find:
+      uses:
+        - gofastr/battery/auth.RoleGateCapability
+  - change: "BREAKING - an API-token request reaches battery/admin only when the token holds admin.AdminScope (admin:access; admin:* and *:* cover it)"
+    breaking: true
+    hits: review
+    guidance: "A token carried its owner's admin role into the back office whatever its scopes. A script that drives the admin with a token mints one with the admin:access scope; sessions and JWTs change nothing."
+    find:
+      uses:
+        - gofastr/battery/admin.New
+  - change: "The OAuth state cookie is __Host-gofastr_oauth_state when SessionSecure is on"
+    breaking: true
+    guidance: "A sibling subdomain could plant the plain gofastr_oauth_state cookie and pass the callback's browser binding. DevMode keeps the plain name. A test that synthesises a production-mode callback sends the __Host- name; anything that reads or strips the cookie by name (a proxy rule, a cookie-consent list) uses it too."
+    nodetect: the cookie is planted and checked by the framework; a name in a proxy rule or test has no Go shape
+  - change: "A returning OAuth sign-in refreshes its link's profile only through OAuthProfileRefresher; a custom user store with only OAuthEnrichedLinker keeps the profile from link time"
+    breaking: false
+    guidance: "The refresh used LinkOAuthEnriched, an upsert that put back a link an account claim had just removed. Implement RefreshOAuthProfile(ctx, userID, provider, providerID, profile) as an UPDATE of the link's profile columns, matching all three keys, to keep profiles current. EntityUserStore does already."
+    nodetect: "a custom store implements the method on its own type; no framework name appears at the site"
+  - change: "A generated app's authPolicy checks a screen's role through auth.RolePolicy, so an access decider binds it and a scoped API token is refused"
+    breaking: false
+    guidance: "The generated function read the user's roles itself and never asked the decider installed by access.DeciderMiddleware. An app generated before this release keeps that function in its app.go: replace authPolicy with the one gofastr new now writes, which composes auth.SessionPolicy(auth.WithRedirect(loginPath)) and auth.RolePolicy(auth.Roles(role))."
+    nodetect: "the old authPolicy is the app's own function in its app.go; no framework name appears at the role check"
+  - change: "An A2A task records the scopes of the credential that created it, and a scoped API token or embed grant sees only the tasks made under the same scopes"
+    breaking: false
+    guidance: "A narrow token of a user read the tasks that user's session ran. A custom a2a.Store persists TaskRecord.Scope. One that filters ListTasks by ListQuery.Scoped/Scope declares a2a.ScopeFilter (a FiltersByScope() method); without it the server walks the owner's tasks for every scoped list, so the page and totalSize count only the caller's tier. Tasks stored before the upgrade read as a session's, so a token no longer sees the tasks it ran earlier."
+    find:
+      uses:
+        - gofastr/core/a2a.NewServer
+  - change: "BREAKING - CRUD _batch and transition routes answer 415 to a body that is not application/json, and a multipart create or update from a cross-site sender answers 403"
+    breaking: true
+    guidance: "A browser sends multipart/form-data cross-site with no preflight, so a page on a sibling subdomain could write as the signed-in user. The runtime and the generated SDKs already send JSON. A client that posted _batch or a transition as a form switches to a JSON body; a same-site multipart upload is unaffected."
+    nodetect: "the content type is chosen by clients at request time, not in the app's source"
+  - change: "Entity UI relation labels, facets, headings and pickers read a related entity only when ?include= could: never one with Exposure.CRUD false, and never one a scoped token lacks <table>:read for"
+    breaking: false
+    guidance: "A posts screen whose author_id points at a users entity with CRUD off (auth.UserEntityConfig) now draws an em dash for the author and offers no picker rows. To show those names, expose the related entity's read routes, or draw the column with the app's own component under a check the app owns."
+    nodetect: "the related entity's exposure is configuration read at runtime; a screen that shows its labels has no distinct spelling"
+  - change: "A CRUD write's response runs the entity's BeforeGet hooks and answers with the row's id when their clauses exclude it"
+    breaking: false
+    guidance: "Create, update, _batch create and update, and transition responses now run the BeforeGet chain GET runs, after the commit, with the written row's id and the write's request. A BeforeGet hook that assumed a GET (reading the method, or recording a view) runs on those writes too; a hook error hides the row from the response but keeps the write."
+    find:
+      uses:
+        - gofastr/framework.OnBeforeGet
+  - change: "A list without ?fields= serves each field under its WireName, as GET /{id} and ?fields= already did; since v0.85.0 it served the column name in the JSON case"
+    breaking: false
+    guidance: "A client that read an aliased field from a list by its column name reads the WireName instead, the key every other read serves. An AfterList hook that redacts by the WireName now finds the field on the list."
+    find:
+      uses:
+        - gofastr/core/schema.Field.WireName
+  - change: "BREAKING - boot and every read refuse a many_to_many whose Through and its join entity's Table differ only in naming a schema (public.memberships against memberships)"
+    breaking: true
+    hits: review
+    guidance: "Reads found no join entity for the mismatched spelling and skipped its owner, tenant, soft-delete and read gates. Spell Through exactly as the join entity's Table spells it; a Through that no entity owns, or that names the same schema, is unaffected."
+    find:
+      uses:
+        - gofastr/framework/entity.ManyToMany
+        - gofastr/framework.ManyToMany
+      text:
+        - glob: "**/*.json"
+          match: '"through":\s*"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_]'
+  - change: "BREAKING - a has_one or has_many cascade_write create answers 400 validation.cascade_key_not_writable when the child's foreign key is ReadOnly, Hidden, its tenant column, or not declared"
+    breaking: true
+    hits: review
+    guidance: "Those children were stored with no parent while the response showed them attached. Declare the child's foreign key as a plain field, or create the children through their own route."
+    find:
+      uses:
+        - gofastr/framework/entity.Relation.WithCascadeWrite
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^\s+cascade_write:\s*true'
+  - change: "TypedQuery.UpdateAll names columns as CreateOne and UpdateOne do, and returns \"no fields to update\" for a body that sets no writable field"
+    breaking: false
+    guidance: "A MarshalEntity key such as line2 now writes its line_2 column instead of being dropped. A call whose body named no writable column used to restamp updated_at alone and report the rows it matched; it now errors, so a caller that bumped updated_at that way passes updated_at itself. Two keys naming one column (line2 and line_2) are refused."
+    find:
+      uses:
+        - gofastr/framework/crud.TypedQuery.UpdateAll
+  - change: "An export archive spells a Postgres timestamp in schema.TimestampLayout and a DATE as YYYY-MM-DD, keeps a SQLite time column's stored text, and an import rewrites a declared Timestamp or Date column in those layouts"
+    breaking: false
+    guidance: "A tool that reads archives itself sees 2024-01-03T10:00:05.120000Z where it saw 2024-01-03T10:00:05.12Z, a bare date where it saw 2024-01-03T00:00:00Z, and a SQLite battery column as the database stored it. A SQLite database already restored from an older archive keeps the trimmed spellings; restore once more on this version (export, then import into an empty database) to rewrite its declared Timestamp and Date columns."
+    find:
+      uses:
+        - gofastr/framework.App.ExportData
+        - gofastr/framework.App.ImportData
+  - change: "BREAKING - a blank Bool value in a multipart create or update is \"not provided\", as on the JSON path: an update stores NULL, a create applies the default, and a required Bool sent blank answers 400"
+    breaking: true
+    guidance: "A multipart client that sent an empty value meaning false stored false and now stores NULL or the default, or gets a 400 for a required field. Send false (or 0, no, off) for false."
+    nodetect: "the values come from clients' multipart bodies at request time, not from the app's source"
+  - change: "BREAKING - GrantStore.Grant returns access.ErrRevokedByWildcard, and writes nothing, for a permission a wildcard revocation it does not lift still covers (Revoke(\"teams:*\") then Grant(\"teams:read\")); a grant of the wildcard itself now lifts its tombstone"
+    breaking: true
+    hits: review
+    guidance: "That grant used to succeed on the calling replica while peers and restarts kept denying it. Grant the wildcard, then revoke what the role should not hold. GrantStore.CheckGrant reports the same error without writing."
+    find:
+      uses:
+        - gofastr/framework/access.GrantStore.Grant
+  - change: "BREAKING for generated SDKs - gofastr sdk refuses an entity whose client.d.ts type name is already declared: by the runtime (Resource, Client, CursorPage, ListResponse, ListParams, CursorParams, BatchResult, BatchResponse, ApiError) or by another entity (order_input beside order's OrderInput)"
+    breaking: true
+    hits: review
+    guidance: "The second declaration used to ship beside the first: a tsc error, or two interfaces TypeScript merged into one. Rename the entity; the error names the type and its owner."
+    find:
+      fields:
+        - field: gofastr/framework/entity.EntityDeclaration.Name
+          value: '^(resource|client|cursor_page|list_response|list_params|cursor_params|batch_result|batch_response|api_error|Resource|Client|CursorPage|ListResponse|ListParams|CursorParams|BatchResult|BatchResponse|ApiError)$'
+  - change: "A cascade_write child whose keys name one column twice (bodyText and body_text) answers 400 validation.keys_fold, and an in-process nested child reads the keys MarshalEntity derives"
+    breaking: false
+    guidance: "One of the two keys used to win by map order. Send each child field once, under its wire key."
+    nodetect: "the keys come from request bodies at request time, not from the app's source"
+  - change: "BREAKING - middleware.CSRFConfig.HostPrefixWhenSecure is removed: the __Host- prefix on a caller-supplied CookieName is the default on every secure request"
+    breaking: true
+    hits: edit
+    guidance: "Delete HostPrefixWhenSecure: true; the prefix is the default now. NoHostPrefix: true opts out."
+    find:
+      fields:
+        - field: gofastr/core/middleware.CSRFConfig.HostPrefixWhenSecure
+  - change: "BREAKING - a caller-supplied CSRF CookieName (and auth.WithCSRFCookieName) gets the __Host- prefix on every secure request, and CSRF panics on a CookiePath other than / unless NoHostPrefix is set"
+    breaking: true
+    hits: review
+    guidance: "A custom name that stayed plain on HTTPS becomes __Host-<name>: a browser holding the old cookie gets the new one on its next GET, and a form loaded before the deploy is refused once. Code that reads the cookie by name reads __Host-<name> on HTTPS. Set NoHostPrefix: true only for a CookiePath other than /, and accept that a sibling subdomain can then plant a token."
+    find:
+      fields:
+        - field: gofastr/core/middleware.CSRFConfig.CookieName
+        - field: gofastr/core/middleware.CSRFConfig.CookiePath
+      uses:
+        - gofastr/battery/auth.WithCSRFCookieName
+  - change: "BREAKING - MemoryInboundStore.MarkEnvelopeProcessing and SQLInboundStore.MarkEnvelopeProcessing return (bool, error): false means no envelope was marked, because it is missing or already processed"
+    breaking: true
+    hits: edit
+    guidance: "ProcessInbound is the only caller the framework has, and it now skips the handler on false. A direct caller takes the extra result: if _, err := store.MarkEnvelopeProcessing(ctx, id); err != nil. A store of your own that wraps one of these keeps the same signature for ProcessInbound to find the claim."
+    find:
+      shapes:
+        - symbol: gofastr/battery/webhook.MemoryInboundStore.MarkEnvelopeProcessing
+          type: '^func\(\w+ context\.Context, id string\) error$'
+        - symbol: gofastr/battery/webhook.SQLInboundStore.MarkEnvelopeProcessing
+          type: '^func\(\w+ context\.Context, id string\) error$'
+  - change: "BREAKING for process modules with a migration group - an artifact upgrade clears MigrationsAppliedAt, so the module holds in InstalledDisabled until the migration coordinator runs for the new artifact"
+    breaking: true
+    hits: review
+    guidance: "The previous artifact's approval used to carry over, so a new version reached Ready without its DDL. After deploying a new module artifact, run App.NewModuleMigrationCoordinator and Apply with the new descriptor and its migrations. Apply refuses to stamp when the row has moved to another artifact; run it for the artifact the row names."
+    find:
+      uses:
+        - gofastr/framework.App.NewModuleMigrationCoordinator
+        - gofastr/framework.NewMigrationCoordinator
+  - change: "BREAKING - boot creates the <table>_<column>_key unique index for a Unique field whose column existed before it was made Unique, and fails when the column already repeats a value"
+    breaking: true
+    guidance: "Such a column used to accept duplicates, since only CREATE TABLE and ADD COLUMN wrote uniqueness. Before deploying, check each field made Unique after its column existed for repeated values (SELECT col, count(*) FROM t GROUP BY col HAVING count(*) > 1) and resolve them, or clear Unique."
+    nodetect: "the failure depends on the rows in the database, not on the app's source"
+  - change: "BREAKING for app specs - app.auth.base_path must be an absolute path with no trailing slash whose segments hold letters, digits, -, _ and ., none starting with a dot; gofastr generate refuses /auth/, auth, //host, /a//b and /.."
+    breaking: true
+    hits: edit
+    guidance: "Write the path the battery should mount at, such as /account, then regenerate: the generated login and signup forms, Sign out and e2e test now post under base_path."
+    find:
+      config:
+        - key: app.auth.base_path
+          value: '(/$|^[^/]|//|/\.|[^A-Za-z0-9._/-])'
+  - change: "BREAKING for gofastr harness - --listen refuses an address that is not loopback (a LAN IP, 0.0.0.0, :PORT, or a name that resolves off loopback)"
+    breaking: true
+    guidance: "The chat page at / hands its 24 h session token to anyone who loads it, so the harness binds 127.0.0.1:PORT, [::1]:PORT or localhost:PORT. To reach it from another machine, forward the port over SSH (ssh -L PORT:127.0.0.1:PORT host)."
+    nodetect: "the address is a command-line argument; nothing in an app's source spells it"
+  - change: "BREAKING for battery/semantic on pgvector - Open refuses Options.Keyword: semantic.NewMemoryKeyword() with a PgVectorStore; pass store.Keyword(), which searches the table with Postgres full-text search"
+    breaking: true
+    hits: edit
+    guidance: "A MemoryKeyword held only the writes of the process that made it, so a document written through one replica never reached another's keyword leg and hybrid results differed by replica until a restart. Replace Keyword: semantic.NewMemoryKeyword() with Keyword: store.Keyword() where Store is the PgVectorStore. For a large table, CREATE INDEX ON <table> USING gin (to_tsvector('simple', text)). FlatStore apps change nothing."
+    find:
+      uses:
+        - gofastr/battery/semantic.NewPgVector
+  - change: "BREAKING for battery/semantic on pgvector - Open records each table's embedding model in semantic_models (created by EnsureSchema) and returns *ModelMismatchError for another model while the table holds rows"
+    breaking: true
+    hits: review
+    guidance: "Call store.EnsureSchema(ctx) before semantic.Open, as the docs show; Open without it now fails. A table filled before this release takes the model that opens it first. To change models, empty the chunk table, open with the new embedder, and re-add the documents."
+    find:
+      uses:
+        - gofastr/battery/semantic.NewPgVector
+  - change: "BREAKING - uihost.UIHost.PWAManifestJSON takes a context.Context first, so the manifest's start_url follows the locale prefix the context carries"
+    breaking: true
+    hits: edit
+    guidance: "Pass the request context, or context.Background() for the default locale: ds.PWAManifestJSON(r.Context(), basePath). The UI host and the static export call it themselves, so apps that never call it change nothing."
+    find:
+      uses:
+        - gofastr/framework/uihost.UIHost.PWAManifestJSON
+  - change: "BREAKING - widget.Mount panics on an RPC method other than GET, POST, PUT, PATCH, DELETE or empty, where it registered any other value as POST; PATCH now registers as PATCH"
+    breaking: true
+    hits: review
+    guidance: "Spell the method in upper case (\"post\" used to work by falling through to POST and now panics at startup). An RPC declared PATCH that a client reached with POST now answers 405; send PATCH."
+    find:
+      uses:
+        - gofastr/core-ui/widget.Builder.RPC
+        - gofastr/core-ui/widget.RPCEndpoint
+  - change: "BREAKING - GOFASTR1825 refuses @import, @charset and @namespace in a *.style.css, so gofastr gen styles stops on a sheet that holds one"
+    breaking: true
+    guidance: "The browser already ignored these at-rules: they count only at the top of a stylesheet, and an owned sheet compiles after the kit's rules. Delete the line. Load a web font with style.FontFaceCSS through the theme, and write the rules an @import named in the sheet itself."
+    nodetect: "the css matcher has no at-rule form; gofastr gen styles and gofastr verify report GOFASTR1825 at the line"
+  - change: "BREAKING - __gofastr.desktop.available is a boolean getter, as the generated d.ts says, instead of the checking function"
+    breaking: true
+    hits: edit
+    guidance: "A function is truthy, so if (desktop.available) passed in a plain browser and the page went on to call the bridge. Read it as a property: desktop.available() now throws a TypeError."
+    find:
+      text:
+        - glob: "**/*.js"
+          match: 'desktop\.available\s*\('
+  - change: "BREAKING - admin.AuthPrincipal takes a TenantMember second, and a bulk job with a tenant runs only while it reports the creator still belongs to that tenant"
+    breaking: true
+    hits: edit
+    guidance: "AuthPrincipal stamped the confirm-time tenant unchecked, so a queued bulk delete or update kept writing tenant A's rows after its creator left A. Pass your membership lookup, func(ctx, userID, tenantID string) (bool, error). An app with no tenants can pass nil, and one whose users never leave a tenant passes admin.AnyTenant."
+    find:
+      uses:
+        - gofastr/battery/admin.AuthPrincipal
+  - change: "BREAKING - the print battery's RegisterRoutes (and Init) fails on a PathPrefix of / or one with no leading slash"
+    breaking: true
+    guidance: "PathPrefix / mounted every print route at the root, outside the embed reservation that keeps grants off the headless-Chrome PDF route. Name a path below the root, such as /print (the default when PathPrefix is empty)."
+    nodetect: "the prefix is a runtime string; the mount error names it at startup"
+  - change: "BREAKING - a desktop window refuses a main-frame navigation off the app's loopback origin, so an external link does nothing"
+    breaking: true
+    guidance: "A foreign page in the app's window looked like the app. Keep flows on the app's own pages, or set desktop.Config.DangerouslyAllowForeignNavigation to let a window leave (an in-window OAuth sign-in, say). A custom Shell must call WindowConfig.AllowNavigation before a main-frame navigation commits."
+    nodetect: "the refused navigation is a runtime URL; the shell logs the refused host"
+  - change: "BREAKING - island streams carry a per-client cap (256 by default) and Manager.ConnectSession takes the client key as a second argument"
+    breaking: true
+    hits: edit
+    guidance: "One client minting sessions could hold every stream slot. Pass m.ClientKey(r, identity) to ConnectSession, or \"\" for a server-side subscription the per-client cap should not count. Behind a reverse proxy, list it with uihost.WithTrustedProxies, or every anonymous visitor shares the proxy address's 256 streams."
+    find:
+      shapes:
+        - symbol: gofastr/core-ui/island.Manager.ConnectSession
+          type: '^func\(sessionID string\) \(<-chan island\.IslandUpdate, func\(\), error\)$'
+  - change: "BREAKING - freeze.FreezeAndGenerate takes a context.Context first and runs the generator under it"
+    breaking: true
+    hits: edit
+    guidance: "A generator that exited while a child it started still held the output pipe hung the call. Pass the request or command context: freeze.FreezeAndGenerate(ctx, w, dir, out). Output is collected for at most two seconds after the generator exits."
+    find:
+      uses:
+        - gofastr/kiln/freeze.FreezeAndGenerate
+  - change: "BREAKING - ui.SparklineConfig.Color is a ui.SparklineColor (success, warning, danger, info or empty) and panics on any other value; it took any string and drew the default for all but those four"
+    breaking: true
+    hits: review
+    guidance: "A raw CSS color never reached the line: the value became a class the CSS does not style. Use a SparklineColor constant, or leave Color empty for the primary color; a string variable needs ui.SparklineColor(v). A new color is a theme token."
+    find:
+      uses:
+        - gofastr/framework/ui.SparklineConfig.Color
+  - change: "BREAKING - auth.TwoFAConfig.Digits is removed; TOTP codes are six digits and the enrolment URL carries TwoFAConfig.Period"
+    breaking: true
+    hits: edit
+    guidance: "Digits was never read, and the enrolment URL always said period=30, so a Period other than 30 refused every code. Delete Digits from the config. A Period you set now reaches the authenticator app."
+    find:
+      fields:
+        - field: gofastr/battery/auth.TwoFAConfig.Digits
+  - change: "BREAKING - handler.SSEStream is removed"
+    breaking: true
+    hits: edit
+    guidance: "It never saw a client disconnect and took no stream seat. Push through the app's /__gofastr/sse bus, or stream through core/stream's SSEBroker, which admits through the seat policy and bounds each write."
+    find:
+      uses:
+        - gofastr/core/handler.SSEStream
+  - change: "BREAKING - auth.PasskeyStore.AddPasskey takes the per-user cap and refuses past it with auth.ErrPasskeyLimit"
+    breaking: true
+    guidance: "The plugin counted a user's passkeys and then stored, so two registrations racing for the last slot both stored. A custom PasskeyStore adds the maxPerUser parameter and counts and inserts as one atomic step; a direct caller passes the cap it wants."
+    nodetect: "a custom store or a direct call fails to compile and the error names AddPasskey"
+  - change: "BREAKING - an admin.Page at /account or /shortcuts fails boot"
+    breaking: true
+    guidance: "An app page at either path silently replaced the built-in account settings or shortcut sheet. Move the page to another path; the boot error names it."
+    nodetect: "the path is a runtime string in admin.Config.Pages; the boot error names it"

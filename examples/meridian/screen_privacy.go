@@ -29,7 +29,7 @@ func (s *PrivacyScreen) ScreenDescription(ctx context.Context) string { return "
 func (s *PrivacyScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *PrivacyScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{}, ui.Markdown(ui.MarkdownConfig{Source: privacyScreenTextPrivacyPolicyMeridianIs.Text(ctx), Measure: true}))
+	return html.Div(html.DivConfig{}, ui.Markdown(ui.MarkdownConfig{Ctx: ctx, Source: privacyScreenTextPrivacyPolicyMeridianIs.Text(ctx), Measure: true}))
 }
 
 // mountPrivacyScreen mounts the privacy screen with site.

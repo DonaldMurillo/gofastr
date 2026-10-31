@@ -1,6 +1,10 @@
 package fileperm
 
-import "os"
+import (
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
+)
 
 // WriteOwnerOnly writes data to path as an owner-only (0600) file, on
 // CREATE and on OVERWRITE alike.
@@ -21,6 +25,15 @@ func WriteOwnerOnly(path string, data []byte) error {
 	return fillOwnerOnly(f, data)
 }
 
+// ReplaceOwnerOnly is WriteOwnerOnly for a file a crash must not leave
+// empty or half-written (a .env, a packed spec): the owner-only
+// temporary file beside path is synced and renamed over it
+// (atomicfile.WriteFile), so the old content stays until the new is
+// whole.
+func ReplaceOwnerOnly(path string, data []byte) error {
+	return atomicfile.WriteFile(path, data, RestrictOpenFile)
+}
+
 // fillOwnerOnly tightens the open handle to 0600, writes data, and
 // closes it. Split from WriteOwnerOnly so the chmod and write failure
 // arms are reachable from a test through a handle in the wrong state,
@@ -35,6 +48,28 @@ func fillOwnerOnly(f *os.File, data []byte) error {
 		return err
 	}
 	return f.Close()
+}
+
+// CreateOwnerOnly is WriteOwnerOnly for a write too large to hold in
+// memory first: it opens path for writing as an owner-only (0600) file,
+// truncating one that exists, and tightens the open handle before the
+// caller writes a byte. The caller closes it.
+func CreateOwnerOnly(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return restrictedHandle(f)
+}
+
+// restrictedHandle is CreateOwnerOnly's handle half, split out for the
+// same reason as fillOwnerOnly.
+func restrictedHandle(f *os.File) (*os.File, error) {
+	if err := RestrictOpenFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 // SeedOwnerOnly creates path as an empty owner-only (0600) file if it

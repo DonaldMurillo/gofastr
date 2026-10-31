@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
@@ -31,8 +33,14 @@ import (
 //	    headers        TEXT,              -- JSON, http.Header shape
 //	    body           BLOB,
 //	    expires_at     TIMESTAMP/TIMESTAMPTZ NOT NULL,
-//	    created_at     TIMESTAMP/TIMESTAMPTZ NOT NULL
+//	    created_at     TIMESTAMP/TIMESTAMPTZ NOT NULL,
+//	    principal      TEXT NOT NULL DEFAULT ''
 //	)
+//
+// principal is the IdempotencyConfig.Principal value the response was
+// cached for. App.EraseUserData deletes the rows whose principal is the
+// erased user id, and App.ExportData dumps the table under its
+// configured name.
 type SQLIdempotencyStore struct {
 	db            *sql.DB
 	table         string
@@ -101,7 +109,24 @@ func NewSQLIdempotencyStore(db *sql.DB, opts ...SQLIdempotencyOption) (*SQLIdemp
 	if err := s.ensureTable(); err != nil {
 		return nil, fmt.Errorf("ensure table: %w", err)
 	}
+	s.registerData()
 	return s, nil
+}
+
+// registerData declares the table to App.ExportData and
+// App.EraseUserData under its configured name. Erasure matches the
+// principal column, so it reaches a cached response when the
+// Principal function returns the user id; a tenant-keyed principal is
+// left to the tenant's own lifecycle and to the TTL.
+func (s *SQLIdempotencyStore) registerData() {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("idempotency_keys", s.table), Source: "idempotency", Table: s.table, PrimaryKey: "key",
+		Columns: []string{"key", "fingerprint", "status", "headers", "body", "expires_at", "created_at", "principal"},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("idempotency_keys", s.table), Source: "idempotency", Table: s.table, Column: "principal",
+		Mode: datexport.EraseDelete,
+	})
 }
 
 func (s *SQLIdempotencyStore) ensureTable() error {
@@ -116,10 +141,14 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 		headers     TEXT,
 		body        BLOB,
 		expires_at  %s NOT NULL,
-		created_at  %s NOT NULL
+		created_at  %s NOT NULL,
+		principal   TEXT NOT NULL DEFAULT ''
 	)`, s.table, tsType, tsType)
 	if _, err := s.db.Exec(stmt); err != nil {
 		return err
+	}
+	if err := s.addPrincipalColumn(); err != nil {
+		return fmt.Errorf("idempotency: add principal column: %w", err)
 	}
 	if _, err := s.db.Exec(fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s (expires_at)",
@@ -155,7 +184,7 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	// 1) Try to claim the row atomically. If another writer beat us to
 	//    it, RowsAffected==0 and we fall through to a read.
 	res, err := s.db.ExecContext(ctx, s.upsertClaimStmt(),
-		key, fingerprint, now.Add(s.inFlightTTL), now,
+		key, fingerprint, now.Add(s.inFlightTTL), now, idemPrincipal(key),
 	)
 	if err != nil {
 		return nil, false, err
@@ -195,7 +224,7 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 			return nil, false, fmt.Errorf("idempotency: delete expired claim: %w", deleteErr)
 		}
 		res, err = s.db.ExecContext(ctx, s.upsertClaimStmt(),
-			key, fingerprint, now.Add(s.inFlightTTL), now,
+			key, fingerprint, now.Add(s.inFlightTTL), now, idemPrincipal(key),
 		)
 		if err != nil {
 			return nil, false, err
@@ -254,6 +283,21 @@ func (s *SQLIdempotencyStore) Finish(ctx context.Context, key, fingerprint strin
 	return err
 }
 
+// addPrincipalColumn upgrades a table an earlier release created
+// without the principal column. Rows cached before it read as nobody's
+// and age out under the TTL.
+func (s *SQLIdempotencyStore) addPrincipalColumn() error {
+	if s.dialect == "postgres" {
+		_, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS principal TEXT NOT NULL DEFAULT ''`, s.table))
+		return err
+	}
+	_, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN principal TEXT NOT NULL DEFAULT ''`, s.table))
+	if err != nil && strings.Contains(err.Error(), "duplicate column") {
+		return nil
+	}
+	return err
+}
+
 func (s *SQLIdempotencyStore) upsertClaimStmt() string {
 	// INSERT ON CONFLICT DO NOTHING: lets concurrent claims race
 	// without one of them surfacing a PK-violation error. Returns
@@ -261,12 +305,12 @@ func (s *SQLIdempotencyStore) upsertClaimStmt() string {
 	// the winner's state.
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(
-			"INSERT INTO %s (key, fingerprint, expires_at, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT (key) DO NOTHING",
+			"INSERT INTO %s (key, fingerprint, expires_at, created_at, principal) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (key) DO NOTHING",
 			s.table,
 		)
 	}
 	return fmt.Sprintf(
-		"INSERT INTO %s (key, fingerprint, expires_at, created_at) VALUES (?,?,?,?) ON CONFLICT(key) DO NOTHING",
+		"INSERT INTO %s (key, fingerprint, expires_at, created_at, principal) VALUES (?,?,?,?,?) ON CONFLICT(key) DO NOTHING",
 		s.table,
 	)
 }

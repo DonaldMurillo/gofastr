@@ -2,7 +2,7 @@ package middleware
 
 // Property, found by the 2026-09-05 adversarial red-probe round 4
 // (family F19, fixed the same round with the maxKeys cap +
-// evictIdleLocked): the number of resident rate-limit buckets must be
+// evictLocked): the number of resident rate-limit buckets must be
 // bounded by an absolute cap, not by how many distinct keys an
 // anonymous client can mint — the framework's own convention
 // (framework/ratelimit maxKeys = 100_000, the idempotency store's

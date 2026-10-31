@@ -135,6 +135,16 @@ component it returns, gets the caller's context with the elevation
 removed (`crud.WithoutElevation`); and every lifecycle hook an admin
 write or read fires runs without it.
 
+**Platform pages.** Queue jobs, auth accounts, role grants and process
+modules carry no tenant, so the Jobs page, both RBAC pages, the Modules
+page and every post under them (replay, grant, assign, enable, disable,
+bump, revoke) answer 403 to a caller whose request carries a tenant
+(`tenant.GetTenantID`), before they read or change anything. The
+sidebar, the command palette, the dashboard's jobs figure and the
+attention panel's failed jobs leave them out for that caller. Only a
+caller with no tenant, the platform operator, reaches them; the audit
+page, which does scope by tenant, stays open to both.
+
 ### App pages, cards, links and commands
 
 <!-- gofastr:compile
@@ -180,8 +190,9 @@ translating.
 
 - A **Page** draws in the shell under `<PathPrefix><Path>` with a crumb
   and a palette entry. Its path may not take one of the admin's own
-  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/emails`,
-  `/entities`, `/api`, or anything under `/_`); boot fails if it does. `Access`
+  (`/`, `/search`, `/shortcuts`, `/account`, `/queue`, `/audit`, `/rbac`,
+  `/modules`, `/emails`, `/entities`, `/api`, or anything under `/_`);
+  boot fails if it does. `Access`
   refuses with 403, hides the nav entry and the palette entry, and Build
   never runs for a refused caller. An `Access` that panics refuses too,
   for that page alone; the rest of the admin draws. (A panicking
@@ -265,8 +276,9 @@ never elevated.
   the caller holds. When the store implements `auth.NameStore` the name
   is a form posting to `POST <PathPrefix>/account/_name`, which names
   the caller only (a `user_id` in the body is not read) and refuses what
-  `auth.CleanName` refuses. The account menu and its avatar's initials
-  use that name, falling back to the email.
+  `auth.CleanName` refuses. A saved name is audited as `account` /
+  `set-name` with the cleaned name. The account menu and its avatar's
+  initials use that name, falling back to the email.
 - **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
   the browser like the toolbar's toggle.
 - **Password** (only with `Config.Auth`): current, new and confirm
@@ -359,7 +371,12 @@ a link to that screen; a deleted or purged one, unlinked, by the title
 in the row's stored copy, the way the audit page names it, else by the
 singular name alone. A delete row names what was deleted even after a
 restore brings the record back. An edit's line lists what it changed
-under it, as the audit page's Changes column does. A bulk run's summary
+under it, as the audit page's Changes column does. On an entity with an
+`OwnerField`, both pages name a record and list its values only when
+the caller could read it: its stored copy names the caller as owner,
+the live record reads under the caller's owner scope, or the request
+allows cross-owner reads (`owner.AllowCrossOwner`). Another owner's
+record shows by its id alone, with no title and no changes. A bulk run's summary
 row reads "**ada** deleted 2 payments in bulk": a delete or a restore by
 its own verb, a set or a move as an update, counting the records it went
 through on; an app's own bulk action, and a run that went through on
@@ -435,12 +452,16 @@ import "github.com/DonaldMurillo/gofastr/battery/auth"
 import "github.com/DonaldMurillo/gofastr/battery/queue"
 import "github.com/DonaldMurillo/gofastr/framework"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
+import "context"
 var app = framework.NewApp(framework.WithDB(db))
 var authManager *auth.AuthManager
+var memberships interface {
+	Has(ctx context.Context, userID, tenantID string) (bool, error)
+}
 -->
 ```go
 q, _ := queue.NewDBQueue(db)
-jobs, _ := admin.NewBulkJobs(q, admin.AuthPrincipal(authManager))
+jobs, _ := admin.NewBulkJobs(q, admin.AuthPrincipal(authManager, memberships.Has))
 
 app.RegisterBattery(admin.New(admin.Config{
     UI:       app.EntityUI(entityui.Extensions{Jobs: jobs}),
@@ -462,12 +483,15 @@ request context before every chunk: the user and their current roles,
 read fresh, and the run's tenant. The tenant is the one the selection
 was confirmed in and stays fixed for the run, because the snapshot's
 records belong to it. An error stops the run, so a creator who is gone
-runs nothing. `admin.AuthPrincipal(am)` builds one from `battery/auth`,
-loading the user and their current roles through the manager's user
-store; it has no notion of tenant membership and stamps the run's
-tenant as given. An app that does track membership writes its own
-`PrincipalFunc` and returns an error when the user no longer belongs
-to the tenant it is handed. The admin then puts `Config.Policy` on a context that has no
+runs nothing. `admin.AuthPrincipal(am, member)` builds one from
+`battery/auth`, loading the user and their current roles through the
+manager's user store. `battery/auth` keeps no tenant membership, so
+before every chunk of a tenant run it asks `member`
+(`admin.TenantMember`, a func of the user and tenant ids) whether the
+creator still belongs to the tenant, and stops the run on false or an
+error. With a nil `member` a tenant run is refused; a run with no tenant
+never asks. `admin.AnyTenant` admits every run, for an app whose users
+never leave a tenant. The admin then puts `Config.Policy` on a context that has no
 policy and runs its own gate again: a creator it admits runs elevated,
 as the admin's bulk route does; one whose admin role was revoked runs
 as a plain caller, so the writes pass only that user's own permissions.
@@ -527,22 +551,34 @@ Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`), one per permission a save grants or revokes. A
 caller may grant or revoke only a permission its own roles hold (or the
 wildcard), and assign only roles it holds or whose permissions its own
-roles imply; a refusal is a 403 with a `grant-refused`,
-`revoke-refused` or `assign-roles-refused` row, so a narrower admin
-tier cannot mint a role above its own. A grid save is checked whole
+roles imply. The assign check covers every role that changes: the roles
+added and the roles the new set takes away, so a tier cannot strip a
+role it could not grant; a role the account keeps is no change. A role
+the policy grants nothing, or does not know, is checked by name
+(`auth.RequireRole`), so only a caller holding it or the wildcard
+assigns or removes it. An unknown account is a 400. A refusal is a 403
+with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
+row, so a narrower admin tier cannot mint a role above its own. An
+`access.Decider` on the request is asked about each permission first: its
+`DecisionDeny` refuses the change even when the policy grants it, and its
+`DecisionAllow` admits nothing the policy does not. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
-it is applied.
+it is applied. A grant inside a wildcard revocation (the role's
+`teams:*` was revoked, and the save grants `teams:read`) is refused that
+way with a 409 (`GrantStore.CheckGrant`, see
+[access control](access-control.md)).
 
 ### Process modules
 
 With `Config.ProcessModules` set to `app.ProcessModules()` (see
 [process-modules](process-modules.md)), `/admin/modules` lists each
 module's state, restart count, and the circuit-open and lease-failing
-flags. Its levers (enable, disable, bump generation, revoke a grant) post
+flags. Its levers (enable, disable, bump generation, revoke a grant,
+which takes that one grant away and keeps the rest) post
 to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
-caller's roles in `Config.Policy`; without it, or without a policy, the
-page is read-only. Each lever writes an audit row (`module_enable`, ...), and
+caller's roles in `Config.Policy` and not denied by an `access.Decider`;
+without it, or without a policy, the page is read-only. Each lever writes an audit row (`module_enable`, ...), and
 a refused one a `*_refused` row. A failed lever answers a generic
 notice and logs the error.
 
@@ -594,10 +630,15 @@ The gate admits an authenticated user whose `GetRoles()` holds
 `Config.AdminRole` (default `"admin"`); `battery/auth`'s `User` does.
 `Config.Authorize` replaces the role check with your own predicate; one
 that panics refuses, as `false` does, and the log names the callback and
-the panic's type. Two refusals run before either:
+the panic's type. Three refusals run before either:
 
 - an `embed` grant on the request (an embedded surface never reaches the
   back office);
+- an API token without `admin.AdminScope` (`"admin:access"`; `"admin:*"`
+  and `"*:*"` cover it). A token carries its owner's roles, so one an
+  admin minted with `customers:read` for a reporting job would otherwise
+  open the whole back office. Sessions and JWTs carry no token scopes and
+  are unaffected;
 - an `access.Decider` on the request returning `DecisionDeny`.
 
 A signed-out caller gets `401`, a signed-in caller without the role

@@ -50,7 +50,7 @@ func (o *Outbox) probeBindLayout(ctx context.Context) string {
 }
 
 // timeText reads a time column as its stored text. The idempotency skip in
-// legacyTimeSets compares stored text against canonical text, so the column
+// legacyTimeFixes compares stored text against canonical text, so the column
 // must not arrive pre-parsed: modernc.org/sqlite hands back a time.Time for
 // a DATETIME column, which fails the string type assertion and makes every
 // row look like it needs rewriting on every relay start. Casting keeps the
@@ -101,22 +101,16 @@ func (o *Outbox) normalizeParentTimes(ctx context.Context, layout string) error 
 		return err
 	}
 	for _, r := range collected {
-		sets, args, err := legacyTimeSets(layout, []timeCol{
-			{"created_at", r.created},
-			{"dispatched_at", r.dispatched},
-			{"next_attempt_at", r.next},
-			{"claimed_until", r.claimed},
+		fixes, err := query.SQLiteTimeFixes(layout, []query.StoredTime{
+			{Col: "created_at", Raw: r.created},
+			{Col: "dispatched_at", Raw: r.dispatched},
+			{Col: "next_attempt_at", Raw: r.next},
+			{Col: "claimed_until", Raw: r.claimed},
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("outbox: %w", err)
 		}
-		if len(sets) == 0 {
-			continue
-		}
-		args = append(args, r.id)
-		q := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$%d`,
-			o.qt(), strings.Join(sets, ", "), len(args))
-		if _, err := o.db.ExecContext(ctx, q, args...); err != nil {
+		if err := o.applyTimeFixes(ctx, o.qt(), []string{"id"}, []any{r.id}, fixes); err != nil {
 			return err
 		}
 	}
@@ -158,61 +152,44 @@ func (o *Outbox) normalizeDeliveryTimes(ctx context.Context, layout string) erro
 		return err
 	}
 	for _, r := range collected {
-		sets, args, err := legacyTimeSets(layout, []timeCol{
-			{"created_at", r.created},
-			{"next_attempt_at", r.next},
-			{"claimed_until", r.claimed},
-			{"dispatched_at", r.dispatched},
+		fixes, err := query.SQLiteTimeFixes(layout, []query.StoredTime{
+			{Col: "created_at", Raw: r.created},
+			{Col: "next_attempt_at", Raw: r.next},
+			{Col: "claimed_until", Raw: r.claimed},
+			{Col: "dispatched_at", Raw: r.dispatched},
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("outbox: %w", err)
 		}
-		if len(sets) == 0 {
-			continue
-		}
-		args = append(args, r.rowID, r.consumer)
-		q := fmt.Sprintf(`UPDATE %s SET %s WHERE row_id=$%d AND consumer=$%d`,
-			o.qd(), strings.Join(sets, ", "), len(args)-1, len(args))
-		if _, err := o.db.ExecContext(ctx, q, args...); err != nil {
+		if err := o.applyTimeFixes(ctx, o.qd(), []string{"row_id", "consumer"}, []any{r.rowID, r.consumer}, fixes); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-type timeCol struct {
-	col string
-	raw any
-}
-
-// legacyTimeSets builds SET-clause fragments and bind args for the time
-// columns whose stored value isn't already in the canonical layout for the
-// connected driver (see probeBindLayout). NULL columns produce no fragment
-// (left untouched). Canonical values parse and reformat to the same string
-// → skipped, which makes the whole pass idempotent on either driver.
-// Unparseable values return an error: a value query.ParseDBTime can't
-// handle is data corruption, and silently keeping it would leave the bug in
-// place. The bound value is normalized to UTC and bound as time.Time, so
-// the driver writes exactly what its own predicate binds compare against.
-func legacyTimeSets(layout string, cols []timeCol) ([]string, []any, error) {
-	var sets []string
-	var args []any
-	for _, c := range cols {
-		if c.raw == nil {
-			continue
-		}
-		parsed, err := query.ParseDBTime(c.raw)
-		if err != nil {
-			return nil, nil, fmt.Errorf("outbox: decode legacy %s: %w", c.col, err)
-		}
-		canonical := parsed.UTC().Format(layout)
-		if s, ok := c.raw.(string); ok && s == canonical {
-			continue
-		}
-		sets = append(sets, fmt.Sprintf("%s=$%d", c.col, len(args)+1))
-		args = append(args, parsed.UTC())
+// applyTimeFixes writes one row's fixes, a statement per column, each
+// guarded on the text the column held when it was read. The read and the
+// writes are not one transaction, and a relay that claimed the delivery
+// in between wrote its fresh claimed_until in the driver's own layout: an
+// unguarded write put the stale lease back, and another relay could claim
+// the delivery at once (2026-10-27 B10). One column per statement, so a
+// column the relay rewrote does not hold back the others.
+func (o *Outbox) applyTimeFixes(ctx context.Context, table string, keyCols []string, key []any, fixes []query.TimeFix) error {
+	where := make([]string, len(keyCols))
+	for i, col := range keyCols {
+		where[i] = fmt.Sprintf("%s=$%d", col, i+2)
 	}
-	return sets, args, nil
+	guard := len(keyCols) + 2
+	for _, f := range fixes {
+		q := fmt.Sprintf(`UPDATE %s SET %s=$1 WHERE %s AND CAST(%s AS TEXT)=$%d`,
+			table, f.Col, strings.Join(where, " AND "), f.Col, guard)
+		args := append(append([]any{f.At}, key...), f.Read)
+		if _, err := o.db.ExecContext(ctx, q, args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // tableExists reports whether the bare-named table is queryable. The probe is

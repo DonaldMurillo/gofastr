@@ -3,9 +3,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -128,6 +130,68 @@ func TestHTTPGETStreamReturns(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Error("never received keepalive")
+	}
+}
+
+// deadlineWriter forwards to the real response and keeps every write
+// deadline armed on it.
+type deadlineWriter struct {
+	http.ResponseWriter
+	mu        *sync.Mutex
+	deadlines *[]time.Time
+}
+
+func (d deadlineWriter) Flush() { d.ResponseWriter.(http.Flusher).Flush() }
+
+func (d deadlineWriter) SetWriteDeadline(t time.Time) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	*d.deadlines = append(*d.deadlines, t)
+	return nil
+}
+
+// Each keep-alive clears its write deadline once flushed. On HTTP/2 the
+// deadline is a stream timer that resets the stream when it fires, write
+// pending or not, so one left armed killed the GET stream in the idle
+// gap before the next ping.
+func TestHTTPGETClearsWriteDeadline(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	h, bearer := newAuthedHandler(t, s)
+	prev := keepaliveTicker
+	keepaliveTicker = func() *time.Ticker { return time.NewTicker(10 * time.Millisecond) }
+	defer func() { keepaliveTicker = prev }()
+
+	var mu sync.Mutex
+	var deadlines []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(deadlineWriter{ResponseWriter: w, mu: &mu, deadlines: &deadlines}, r)
+	}))
+
+	req := authedReq(t, http.MethodGet, srv.URL+"/mcp", bearer, "", "")
+	req.Header.Set("Mcp-Session-Id", "deadline-test")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, len(": ping\n\n"))
+	for range 3 {
+		if _, err := io.ReadFull(resp.Body, buf); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp.Body.Close()
+	srv.Close() // waits for the handler to return
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(deadlines) < 6 {
+		t.Fatalf("write deadlines %v, want a bounded deadline then a clear per ping", deadlines)
+	}
+	for i, d := range deadlines {
+		// A trailing armed deadline is the write that found the client gone.
+		if (i%2 == 0) == d.IsZero() {
+			t.Fatalf("write deadlines %v, want each bounded deadline cleared after its ping", deadlines)
+		}
 	}
 }
 

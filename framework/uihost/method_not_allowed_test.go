@@ -74,8 +74,8 @@ func TestPost405RendersStyledPage(t *testing.T) {
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d body=%q", w.Code, w.Body.String())
 	}
-	if allow := w.Header().Get("Allow"); allow != "GET" {
-		t.Fatalf("expected Allow: GET, got %q", allow)
+	if allow := w.Header().Get("Allow"); allow != "GET, HEAD" {
+		t.Fatalf("expected Allow: GET, HEAD, got %q", allow)
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "<html") {

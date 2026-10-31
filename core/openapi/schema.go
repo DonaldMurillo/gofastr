@@ -16,10 +16,14 @@ func FieldToSchema(field schema.Field) map[string]any {
 	case schema.String:
 		prop["type"] = "string"
 		if field.Min != nil {
-			prop["minLength"] = int(math.Ceil(*field.Min))
+			if n, ok := schema.LengthBound(*field.Min, math.Ceil); ok {
+				prop["minLength"] = n
+			}
 		}
 		if field.Max != nil {
-			prop["maxLength"] = int(*field.Max)
+			if n, ok := schema.LengthBound(*field.Max, math.Floor); ok {
+				prop["maxLength"] = n
+			}
 		}
 		if field.Pattern != "" {
 			prop["pattern"] = field.Pattern
@@ -29,10 +33,14 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["type"] = "string"
 		prop["format"] = "textarea"
 		if field.Min != nil {
-			prop["minLength"] = int(math.Ceil(*field.Min))
+			if n, ok := schema.LengthBound(*field.Min, math.Ceil); ok {
+				prop["minLength"] = n
+			}
 		}
 		if field.Max != nil {
-			prop["maxLength"] = int(*field.Max)
+			if n, ok := schema.LengthBound(*field.Max, math.Floor); ok {
+				prop["maxLength"] = n
+			}
 		}
 
 		if field.Pattern != "" {
@@ -121,6 +129,23 @@ func FieldToSchema(field schema.Field) map[string]any {
 	}
 
 	return prop
+}
+
+// Nullable widens prop to accept null as well: a type T becomes
+// [T, "null"] (OpenAPI 3.1), and an enum gains null, which it must
+// list for a null to pass. A prop with no type, such as a JSON
+// field's, accepts null already.
+func Nullable(prop map[string]any) {
+	if t, ok := prop["type"].(string); ok {
+		prop["type"] = []any{t, "null"}
+	}
+	if values, ok := prop["enum"].([]string); ok {
+		enum := make([]any, 0, len(values)+1)
+		for _, v := range values {
+			enum = append(enum, v)
+		}
+		prop["enum"] = append(enum, nil)
+	}
 }
 
 // FieldsToSchema converts a slice of Fields into a JSON Schema object

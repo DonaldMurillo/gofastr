@@ -19,6 +19,7 @@ package store
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -72,7 +73,10 @@ func Computed[T any](s *Store, name, reducer string, deps ...string) *Slice[T] {
 	}
 	validateName(full)
 	validateName(reducer)
-	registerComputed(full)
+	for _, dep := range deps {
+		validateDep(dep)
+	}
+	registerComputed(full, deps)
 	var zero T
 	return &Slice[T]{name: full, scope: ScopePage, def: zero, comp: &computedCfg{reducer: reducer, deps: deps}}
 }
@@ -83,7 +87,8 @@ type decl struct {
 	name     string
 	scope    Scope
 	def      any
-	computed bool // derived client-side; excluded from the seed
+	computed bool     // derived client-side; excluded from the seed
+	deps     []string // a computed slice's dependencies
 }
 
 var (
@@ -116,7 +121,7 @@ func register(name string, scope Scope, def any) {
 	declRegistry[name] = &decl{name: name, scope: scope, def: def}
 }
 
-func registerComputed(name string) {
+func registerComputed(name string, deps []string) {
 	regMu.Lock()
 	defer regMu.Unlock()
 	if d, ok := declRegistry[name]; ok {
@@ -125,7 +130,42 @@ func registerComputed(name string) {
 		}
 		return
 	}
-	declRegistry[name] = &decl{name: name, scope: ScopePage, def: nil, computed: true}
+	declRegistry[name] = &decl{name: name, scope: ScopePage, def: nil, computed: true, deps: slices.Clone(deps)}
+	// The runtime recomputes a slice on every dependency write and then
+	// writes it, so a cycle would ping-pong until the stack overflowed.
+	if path := computedCycle(name); path != nil {
+		delete(declRegistry, name)
+		panic(fmt.Sprintf("store: computed %q has a dependency cycle: %s", name, strings.Join(path, " -> ")))
+	}
+}
+
+// computedCycle returns a dependency path from start back to itself
+// through computed slices, or nil. regMu is held.
+func computedCycle(start string) []string {
+	var path []string
+	seen := map[string]bool{}
+	var walk func(n string) bool
+	walk = func(n string) bool {
+		// seen only bounds the walk on a diamond: every slice declared
+		// before this one is acyclic, so the walk ends without it.
+		d, ok := declRegistry[n]
+		if !ok || !d.computed || seen[n] {
+			return false
+		}
+		seen[n] = true
+		for _, dep := range d.deps {
+			path = append(path, dep)
+			if dep == start || walk(dep) {
+				return true
+			}
+			path = path[:len(path)-1]
+		}
+		return false
+	}
+	if walk(start) {
+		return append([]string{start}, path...)
+	}
+	return nil
 }
 
 func setScope(name string, scope Scope) {
@@ -168,6 +208,18 @@ func validateName(name string) {
 		panic(fmt.Sprintf("store: slice name %q is reserved — the runtime kernel refuses every client write to __proto__/constructor/prototype, so the slice would be a dead binding", name))
 	}
 	validateNameChars(name)
+}
+
+// validateDep holds a computed slice's dependency to the slice-name
+// rules, except that a route.* signal is readable: the deps ride
+// comma-joined in data-cui-computed-deps, so a comma would split one
+// name into two.
+func validateDep(name string) {
+	if strings.HasPrefix(name, "route.") {
+		validateNameChars(name)
+		return
+	}
+	validateName(name)
 }
 
 // validateNameChars is the charset half of validateName, shared with

@@ -14,6 +14,7 @@ var (
 // The words on the page that finishes linking a sign-in provider.
 var (
 	oauthHopTitle    = i18n.Define("auth.oauth_hop_title", "Finishing the link")
+	verifyHopTitle   = i18n.Define("auth.verify_hop_title", "Verifying your email")
 	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
 )
 
@@ -80,6 +81,7 @@ var (
 	reasonNotAuthenticated               = i18n.Define("auth.not_authenticated", "not authenticated")
 	reasonOauthNotConfigured             = i18n.Define("auth.oauth_not_configured", "OAuth login is not configured on this server")
 	reasonOauthWrongBrowser              = i18n.Define("auth.oauth_wrong_browser", "oauth flow was not started in this browser")
+	reasonOauthLinkRemoved               = i18n.Define("auth.oauth_link_removed", "this provider was unlinked from the account during sign-in")
 	reasonPasskeyAlreadyRegistered       = i18n.Define("auth.passkey_already_registered", "passkey already registered")
 	reasonPasskeyConflict                = i18n.Define("auth.passkey_conflict", "passkey used concurrently; retry")
 	reasonPasskeyDeleteFailed            = i18n.Define("auth.passkey_delete_failed", "passkey delete failed")
@@ -149,6 +151,7 @@ var (
 	// gets: which check failed is in the audit trail, not the response.
 	reasonPasskeySignIn              = i18n.Define("auth.passkey_sign_in", "passkey sign-in failed")
 	reasonResetIncomplete            = i18n.Define("auth.reset_incomplete", "password updated, but securing the account failed: request another reset link")
+	reasonChangeIncomplete           = i18n.Define("auth.change_incomplete", "password updated, but signing out your other sessions failed: change it again")
 	reasonTwoFactorStateLookupFailed = i18n.Define("auth.two_factor_state_lookup_failed", "two-factor state lookup failed")
 	reasonUnknownOauthProvider       = i18n.Define("auth.unknown_oauth_provider", "unknown oauth provider")
 	reasonUnlinkFailed               = i18n.Define("auth.unlink_failed", "unlink failed")

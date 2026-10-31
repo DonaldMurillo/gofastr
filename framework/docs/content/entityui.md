@@ -50,6 +50,13 @@ An entity with a composite `PrimaryKey` links its records as one segment
 per key column, `/enrollments/{student_id}/{course_id}`; register that
 screen and pass `entity.JoinKey` of the params as the id.
 
+A key the caller assigns draws as an input on the create form, read-only
+on the record's form after that, and blank on a Duplicate: each column
+of a composite key, and a one-column key that is `Required` with no
+`AutoGenerate` (a plan keyed on its `code`). Any other one-column key
+belongs to the server and stays off the forms; an optional key may be
+filled by a hook, which a blank input would defeat.
+
 Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;
@@ -157,10 +164,13 @@ keeps the UI unchanged; without a callback the default stays
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
   `ui.DrawerBar` (close, its path, copy link, open as page) and its menu drops Copy
-  link. With `Steps()`, a drawer over the record's own list (the
+  link. With `Steps(list)`, a drawer over the record's own list (the
   builder's `Base`) adds previous and next record to the bar, in the
-  order the list shows its rows under the query it was opened from:
-  view, saved view, search, filter, facets and sort, read as the caller.
+  order `list` shows its rows under the query it was opened from: the
+  list's key, `View` and `Where` pins, and the view, saved view,
+  search, filter, facets and sort its query names, read as the caller.
+  Pass the same `ListBuilder` the list screen renders, or the steps
+  walk rows the list does not show; a list of another entity draws none.
   The query arrives from the client, so it is parsed the way the list
   parses its own URL, and a sort the list refuses (a masked field's) is
   refused here too. A record past the first `EveryMatchCap` rows, or
@@ -354,7 +364,7 @@ page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
 `NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
-`Duplicate()`, `Steps()`, `Panel()` and `Prefill(values)`.
+`Duplicate()`, `Steps(list)`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 
@@ -523,7 +533,13 @@ JSON API applies live in the builders themselves:
 - Every read of a DIFFERENT entity — relation cell labels (one IN read
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
-  that entity's own gate first.
+  that entity's own gate first. A label, facet or picker also needs what
+  `?include=` needs (`CanReadRelatedScoped`): the related entity's CRUD
+  routes on (`Exposure.CRUD` not false), and a scope-restricted request
+  (an API token or embed grant) holding `<table>:read`. So a posts
+  screen shows no author names when the users entity has CRUD off, as
+  `auth.UserEntityConfig()` declares. A related row a resource-aware
+  Decider refuses by id is left out of labels, facets and the picker.
 - A relation the caller may not read renders muted (an em dash), never
   the related record's name and never the raw foreign key. A refused
   relation facet draws no options, so the facet is absent. A refused
@@ -558,7 +574,9 @@ The record's tabs are the same shape (`?tab=related`). Writes — save,
 delete, a state move — are form RPCs (`data-cui-rpc`) to the entity's
 REST routes whose answer re-fetches the page
 (`data-cui-rpc-navigate`), carrying a toast and, on a refusal, the
-runtime's error toast. The edit form's inputs prefill from the unhooked
+runtime's error toast. The runtime drops the page the write ran on from
+its screen cache before it navigates, so Back after a delete fetches
+the record again instead of replaying it. The edit form's inputs prefill from the unhooked
 read so they round-trip; read-only values show what an `AfterGet`
 redaction shows.
 
@@ -572,7 +590,10 @@ the one Apply/Reset pair, with a badge counting the filters set) and
 the Columns menu at the row's end. Saved views are tabs beside the
 declared views, and the "Save view" dropdown sits at the tab row's
 end. Active filters show as chips under the toolbar, each linking to
-the list without it, plus a "Clear all".
+the list without it, plus a "Clear all". A `?filter=` makes one chip
+per top-level `and` term; an `or` group is one chip, written in
+parentheses beside the others, so removing a chip leaves the remaining
+terms meaning what they meant.
 
 <!-- gofastr:compile
 import "context"
@@ -620,13 +641,21 @@ _ = list.RenderCtx(ctx)
   chips use, so both stay in sync; text that fails to parse, or names a
   Hidden, `NoQuery` or unknown field, keeps the filter-did-not-apply
   warning and lists without it — never an error page, never SQL.
+  Above the box, filter rows (field, operator, value) hold each plain
+  top-level term of the filter; the box keeps the rest: an `or` group,
+  an `in` list, or a value a row would change (empty, padded with
+  spaces, or over 200 characters). A row trims its value and is
+  dropped when the value is empty. On Apply the rows join with `and`,
+  and the box's text joins them in parentheses, so the `and` binds the
+  whole box however its `or` is spelled.
 - **The columns menu** (`.ColumnsMenu()`) is a menu of checkbox rows,
   one per available field, each a link that toggles that field in the
   `cols` param and keeps the filter and the sort, plus a Reset row that
   drops it. The title row is checked and disabled. A `cols` param
   typed by hand still sets the order. Every
-  `cols` name must be a visible, non-omitted field; an unknown,
-  Hidden, omitted or duplicate name makes the whole param ignored —
+  `cols` name must be one of the list's resolved columns (the menu's
+  rows); an unknown, Hidden, omitted or duplicate name, or a field the
+  list left out of `Columns(...)`, makes the whole param ignored —
   the list's resolved columns stand. The title column carries the
   record link, so it may not be hidden: a `cols` that leaves it out
   gets it back, first. Columns change what a row shows, not which rows
@@ -679,7 +708,10 @@ _ = list.RenderCtx(ctx)
   follows.
 
 A saved view's own columns apply even when the columns menu is off:
-they are the saved-view feature's state, not the menu's.
+they are the saved-view feature's state, not the menu's. Views belong
+to the entity, so one saved on a wider list can open on a narrower
+one: it shows the columns that list offers, in the view's order, and
+the list's own columns when it offers none of them.
 
 ## API tab and status override
 
@@ -802,7 +834,8 @@ and so does an entity with no REST write routes.
   query, and a pin is not in it. Repeated `_id=<id>` parameters replace
   the query with those rows (at most `InRequestCap`, repeats counted),
   still through the scoped handler, so a row the caller may not read
-  drops out. The floating bulk bar's **Copy CSV** uses it: it fetches
+  drops out, and so does a row the Decider refuses by id, as
+  `GET <api>/<entity>/<id>` would. The floating bulk bar's **Copy CSV** uses it: it fetches
   the checked rows' ids and writes the CSV to the clipboard. It shows
   where Export does.
 

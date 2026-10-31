@@ -121,7 +121,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 		return nil, "", true
 	}
 	om, err := u.meta(other.GetName())
-	if err != nil || !canRead(ctx, om.ch) {
+	if err != nil || !canReadRelated(ctx, om.ch) {
 		return nil, "", true
 	}
 	q = strings.TrimSpace(q)

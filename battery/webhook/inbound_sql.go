@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
@@ -76,6 +77,7 @@ func NewSQLInboundStore(db *sql.DB, opts ...InboundSQLOption) (*SQLInboundStore,
 	if err := s.ensureTable(); err != nil {
 		return nil, fmt.Errorf("ensure inbound table: %w", err)
 	}
+	s.registerData()
 	return s, nil
 }
 
@@ -96,7 +98,8 @@ func (s *SQLInboundStore) ensureTable() error {
 			attempts    INTEGER NOT NULL DEFAULT 0,
 			last_error  TEXT NOT NULL DEFAULT '',
 			received_at %s NOT NULL,
-			updated_at  %s NOT NULL
+			updated_at  %s NOT NULL,
+			owner       TEXT NOT NULL DEFAULT ''
 		)`, s.table, blob, ts, ts),
 		// Lookup indexes, no unique constraint (see type doc).
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (source, dedupe_key)",
@@ -109,7 +112,22 @@ func (s *SQLInboundStore) ensureTable() error {
 			return err
 		}
 	}
-	return nil
+	return addOwnerColumn(s.db, s.dialect, s.table)
+}
+
+// registerData declares the envelope table to App.ExportData and
+// App.EraseUserData under its configured name. Erasure deletes the
+// envelopes IngestConfig.Owner mapped to the erased user; an envelope
+// it mapped to nobody waits for ReapTerminalBefore.
+func (s *SQLInboundStore) registerData() {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("webhook_inbound", s.table), Source: "webhook", Table: s.table, PrimaryKey: "id",
+		Columns: strings.Split(strings.ReplaceAll(inboundColumns, " ", ""), ","),
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: datexport.ScopedName("webhook_inbound", s.table), Source: "webhook", Table: s.table, Column: "owner",
+		Mode: datexport.EraseDelete,
+	})
 }
 
 // ----- store methods --------------------------------------------------------
@@ -121,7 +139,7 @@ func (s *SQLInboundStore) AddEnvelope(ctx context.Context, e InboundEnvelope) er
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, s.insert(), e.ID, e.Source, e.DedupeKey,
-		headers, e.Payload, e.Status, e.Attempts, e.LastError, e.ReceivedAt, e.UpdatedAt)
+		headers, e.Payload, e.Status, e.Attempts, e.LastError, e.ReceivedAt.UTC(), e.UpdatedAt.UTC(), e.Owner)
 	return err
 }
 
@@ -131,7 +149,7 @@ func (s *SQLInboundStore) GetEnvelope(ctx context.Context, id string) (*InboundE
 	var headers string
 	err := s.db.QueryRowContext(ctx, s.selectOne(), id).
 		Scan(&e.ID, &e.Source, &e.DedupeKey, &headers, &e.Payload, &e.Status,
-			&e.Attempts, &e.LastError, &e.ReceivedAt, &e.UpdatedAt)
+			&e.Attempts, &e.LastError, &e.ReceivedAt, &e.UpdatedAt, &e.Owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -155,7 +173,7 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 		return err
 	}
 	q := s.update()
-	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt, e.ID}
+	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt.UTC(), e.ID}
 	if e.Status != InboundStatusProcessed {
 		// Fence, mirroring the outbound UpdateDelivery fence: a late
 		// settle must not overwrite a terminal row
@@ -189,9 +207,9 @@ func (s *SQLInboundStore) RegisterDedupeKey(ctx context.Context, id, key string)
 // the queue's lease expiry can re-run the same envelope's job while a
 // slow first handler is still running, and two absolute snapshot writes
 // would under-count the invocations the attempts column exists to bound.
-// A missing id matches no row and is a no-op (the caller loaded the
-// envelope just before this).
-func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) error {
+// It reports false when no row matched: a missing id, or an envelope
+// already processed, so ProcessInbound does not run the handler again.
+func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) (bool, error) {
 	q := fmt.Sprintf(
 		"UPDATE %s SET status = %s, attempts = attempts + 1, last_error = '', updated_at = %s WHERE id = %s",
 		s.table, s.placeholder(1), s.placeholder(2), s.placeholder(3))
@@ -200,18 +218,22 @@ func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string)
 	// stale runner marking an already-settled envelope processing would
 	// regress the row AND consume an attempt against it. Non-terminal
 	// rows (received, processing, and failed: a failed attempt's queue
-	// retry lands here) match; a missing id is still a no-op.
+	// retry lands here) match; a missing id matches nothing.
 	q += " AND status <> " + s.placeholder(4)
 	args = append(args, InboundStatusProcessed)
-	_, err := s.db.ExecContext(ctx, q, args...)
-	return err
+	res, err := s.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // ListEnvelopes returns envelopes filtered by status (empty = all),
 // newest-received first, capped at limit (0 = no cap).
 func (s *SQLInboundStore) ListEnvelopes(ctx context.Context, status string, limit int) ([]InboundEnvelope, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "SELECT id, source, dedupe_key, headers, payload, status, attempts, last_error, received_at, updated_at FROM %s", s.table)
+	fmt.Fprintf(&b, "SELECT %s FROM %s", inboundColumns, s.table)
 	var args []any
 	n := 1
 	if status != "" {
@@ -235,7 +257,7 @@ func (s *SQLInboundStore) ListEnvelopes(ctx context.Context, status string, limi
 		var e InboundEnvelope
 		var headers string
 		if err := rows.Scan(&e.ID, &e.Source, &e.DedupeKey, &headers, &e.Payload,
-			&e.Status, &e.Attempts, &e.LastError, &e.ReceivedAt, &e.UpdatedAt); err != nil {
+			&e.Status, &e.Attempts, &e.LastError, &e.ReceivedAt, &e.UpdatedAt, &e.Owner); err != nil {
 			return nil, err
 		}
 		e.Headers = decodeHeaders(headers)
@@ -287,11 +309,11 @@ func (s *SQLInboundStore) ReapTerminalBefore(ctx context.Context, cutoff time.Ti
 
 // columns lists the persisted column order, shared by insert/select so the
 // two never drift out of sync.
-const inboundColumns = "id, source, dedupe_key, headers, payload, status, attempts, last_error, received_at, updated_at"
+const inboundColumns = "id, source, dedupe_key, headers, payload, status, attempts, last_error, received_at, updated_at, owner"
 
 func (s *SQLInboundStore) insert() string {
-	ph := make([]string, 10)
-	for i := 1; i <= 10; i++ {
+	ph := make([]string, 11)
+	for i := 1; i <= 11; i++ {
 		ph[i-1] = s.placeholder(i)
 	}
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", s.table, inboundColumns, strings.Join(ph, ", "))

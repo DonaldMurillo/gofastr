@@ -5,6 +5,8 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"maps"
+	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -36,6 +38,12 @@ func validICEURLs(urls []string) bool {
 		}
 		scheme := strings.ToLower(u.Scheme)
 		if !iceSchemes[scheme] {
+			return false
+		}
+		// The "//" form parses its userinfo and path apart from Host, and
+		// either form parses a fragment apart from the endpoint, where the
+		// checks below would never see them.
+		if u.User != nil || u.Path != "" || strings.Contains(raw, "#") {
 			return false
 		}
 		endpoint := u.Opaque
@@ -82,9 +90,20 @@ func validEndpointPort(endpoint string) bool {
 		endpoint = endpoint[closeIdx+1:]
 	} else if i := strings.LastIndexByte(endpoint, ':'); i >= 0 {
 		host, endpoint = endpoint[:i], endpoint[i:]
+	} else {
+		endpoint = "" // a bare hostname: no port component
 	}
 	if host == "" {
 		return false
+	}
+	if strings.HasPrefix(host, "[") {
+		// Brackets hold an IPv6 literal and nothing else.
+		a, err := netip.ParseAddr(host[1 : len(host)-1])
+		if err != nil || !a.Is6() || a.Zone() != "" {
+			return false
+		}
+	} else if !validHostname(host) {
+		return false // a path, query or other junk riding on the host
 	}
 	if endpoint == "" {
 		return true // no port component
@@ -99,6 +118,22 @@ func validEndpointPort(endpoint string) bool {
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
 		return false
+	}
+	return true
+}
+
+// validHostname reports whether host is a DNS name or IPv4 literal:
+// letters, digits, dots, hyphens and underscores only. Anything else
+// (a slash, query, space) is not part of an RFC 7064/7065 host.
+func validHostname(host string) bool {
+	for i := 0; i < len(host); i++ {
+		c := host[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case c == '.', c == '-', c == '_':
+		default:
+			return false
+		}
 	}
 	return true
 }
@@ -134,6 +169,32 @@ func (t TURN) Credentials(peerID string, now time.Time) ICEServer {
 	}
 }
 
+// closeRevokedPeers re-checks every joined socket and closes the ones
+// whose principal no longer holds, before a TURN refresh mints each a
+// credential: the idle re-check runs on its own ticker, and a refresh
+// landing between a revocation and that tick would otherwise hand the
+// revoked peer a fresh credential. The checks run outside s.mu (a
+// principal check may read a store); a closed socket's write fails, so
+// the refresh published after it never reaches the peer.
+func (s *Signaler) closeRevokedPeers() {
+	s.mu.Lock()
+	var peers []*roomPeer
+	for _, rm := range s.rooms {
+		for _, p := range rm.peers {
+			if p.req != nil {
+				peers = append(peers, p)
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, p := range peers {
+		if !s.peerHeld(p.req, p.recheck) {
+			s.logger.Warn("rtc: peer closed", "reason", "unauthorized")
+			_ = p.conn.CloseWithStatus(4000+http.StatusUnauthorized, "session ended")
+		}
+	}
+}
+
 // turnRefreshLoop pushes the iceServers event to every populated room
 // each half TTL (or the test knob), so a peer connection that outlives
 // its credential holds a fresh one before an ICE restart needs it:
@@ -154,6 +215,7 @@ func (s *Signaler) turnRefreshLoop(done chan struct{}) {
 			return
 		case <-time.After(every):
 		}
+		s.closeRevokedPeers()
 		s.mu.Lock()
 		if s.closed {
 			s.mu.Unlock()

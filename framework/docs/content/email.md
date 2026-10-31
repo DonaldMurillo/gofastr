@@ -42,7 +42,9 @@ err := sender.Send(ctx, email.Email{
 |               |                  | message is `multipart/alternative` (text first,    |
 |               |                  | HTML last), so a client shows one of them.         |
 | `Attachments` | `[]Attachment`   | Optional.                                          |
-| `Headers`     | `map[string]string` | Optional custom headers.                       |
+| `Headers`     | `map[string]string` | Optional custom headers. `Content-Type`,       |
+|               |                  | `Content-Transfer-Encoding` and `MIME-Version`   |
+|               |                  | are refused: the sender writes them.             |
 
 `Attachment` carries `Filename`, `Content` (`[]byte`), and `ContentType`.
 A message with attachments is `multipart/mixed`: the body comes first
@@ -58,7 +60,10 @@ one base64 part per attachment.
 | `Host`           | `string`         | Required.                                                      |
 | `Port`           | `int`            | Required.                                                      |
 | `Username`       | `string`         | Optional (a cleartext relay may leave it empty).               |
-| `Password`       | `string`         | Optional.                                                      |
+| `Password`       | `string`         | Optional. With both set, `Send` logs in with one mechanism the |
+|                  |                  | relay advertises: CRAM-MD5, else PLAIN, else LOGIN. PLAIN and  |
+|                  |                  | LOGIN run only over TLS or to localhost. A relay offering none |
+|                  |                  | of the three fails with an error naming what it offers.        |
 | `UseTLS`         | `bool`           | Implicit TLS (e.g. port 465). False (default) attempts         |
 |                  |                  | STARTTLS on the cleartext connection.                          |
 | `AllowCleartext` | `bool`           | Send unencrypted when neither implicit TLS nor STARTTLS is     |
@@ -80,6 +85,28 @@ nested alternative included) are cryptographically random and checked
 against the body, so template output cannot inject or terminate a MIME
 part.
 
+Header text that is not ASCII goes out encoded, so a relay that does not
+offer SMTPUTF8 accepts it: a `Subject` such as `¡Confirma tu correo!`
+and a display name in `From`, `To` or `Cc` (`José Pérez <jose@example.com>`)
+are written as RFC 2047 encoded words, and an attachment filename as an
+RFC 2231 `name*=` / `filename*=` parameter. ASCII values keep their
+bytes. A mailbox address that is not ASCII (`josé@example.com`) cannot be
+encoded and is sent as written; it needs a relay that offers SMTPUTF8,
+which `Send` requests when the relay advertises it. Custom `Headers`
+values are written as given.
+
+Both bodies go out quoted-printable (RFC 2045): CR, LF and CRLF line
+endings all become CRLF, no line passes 76 octets, and non-ASCII text is
+escaped, so a template saved with Unix line endings or a minified
+one-line HTML body reaches the recipient intact. The boundary check reads
+the encoded body, and refuses any line that starts with a delimiter.
+
+Every message carries a `Date` and a `Message-ID` of the form
+`<32 hex digits@domain>`, random per message. The domain is the
+first `From` address's when it is a plain host name, and `localhost`
+otherwise. A `Date` or `Message-ID` key in `Headers` (any ASCII
+case) replaces the stamped one, so a message never carries two.
+
 `Send` succeeds once the relay answers `250` to the message: the mail is
 queued. A failed `QUIT` after that (the relay drops the connection or
 stalls) is ignored, so a retrying queue does not deliver the message
@@ -92,6 +119,10 @@ recipient). A display-name form like `"Bob <bob@x>"` or a comma-joined
 entry is expanded the same way the header side reads it, so the envelope
 recipient set can never diverge from the parsed header set; entries that
 fail to parse, parse to zero addresses, or carry control bytes are refused.
+A local part that needs quoting keeps its quotes on the wire
+(`"john doe"@example.com`), and one holding `<`, `>` or `@` is refused,
+quoted or not: a relay that ends the path at the first `>` would read a
+different recipient out of it.
 `Send` also never writes into the caller's slices — the recipient list is
 an explicit-length copy, so a reused `To` backing array cannot observe a
 BCC address.
@@ -113,7 +144,9 @@ sending it. Before logging, it redacts URL query strings carrying
 with their secrets stripped, so a dev log never captures a live
 credential. The redaction is exported as `email.RedactBody`, so sibling
 dev-log surfaces (notify's `LoggerChannel`) scrub the same shapes
-instead of forging their own patterns.
+instead of forging their own patterns. Every printed value is scrubbed of control, C1 and bidi characters
+(bodies keep their newlines and tabs), so an escape sequence in a
+template or an attachment name never reaches the terminal.
 
 ## Templates
 

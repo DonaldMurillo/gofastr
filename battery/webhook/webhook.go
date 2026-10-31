@@ -130,6 +130,10 @@ type Delivery struct {
 	NextAttemptAt time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// Owner is the user id PublishFor queued the delivery for, or empty.
+	// App.EraseUserData deletes an erased user's deliveries from a
+	// SQLStore, sent or not.
+	Owner string
 
 	// claimedUntil is the lease the claim that produced this value wrote
 	// (zero when no shipped store claimed it). The shipped stores fence a
@@ -452,8 +456,17 @@ func (m *Manager) Subscribers(ctx context.Context) ([]Subscriber, error) {
 	return m.store.ListSubscribers(ctx)
 }
 
-// Publish fans the event out to every active matching subscriber.
+// Publish fans the event out to every active matching subscriber. The
+// deliveries name no user; use PublishFor when the payload carries one
+// user's data.
 func (m *Manager) Publish(ctx context.Context, event string, payload []byte) (int, error) {
+	return m.PublishFor(ctx, "", event, payload)
+}
+
+// PublishFor is Publish for a payload that belongs to one user: each
+// delivery records owner, so erasing that user deletes the deliveries
+// with their copy of the data.
+func (m *Manager) PublishFor(ctx context.Context, owner, event string, payload []byte) (int, error) {
 	if err := validateEventName(event); err != nil {
 		return 0, err
 	}
@@ -486,6 +499,7 @@ func (m *Manager) Publish(ctx context.Context, event string, payload []byte) (in
 			NextAttemptAt: now,
 			CreatedAt:     now,
 			UpdatedAt:     now,
+			Owner:         owner,
 		}
 		if err := m.store.AddDelivery(ctx, d); err != nil {
 			return queued, err
@@ -587,6 +601,13 @@ func (m *Manager) tick(ctx context.Context) {
 	}
 	for i, d := range due {
 		if ctx.Err() != nil {
+			// Shutdown mid-batch: the rest were claimed, their attempt
+			// spent, and never sent. Hand them back refunded, as a lease
+			// too short to start them does; with MaxAttempts 1 the next
+			// claim dead-lettered them unsent.
+			if r, ok := m.store.(claimReleaser); ok {
+				m.releaseClaims(ctx, r, due[i:])
+			}
 			return
 		}
 		// The whole batch shares one lease, and the attempts run one
@@ -617,8 +638,14 @@ type claimReleaser interface {
 
 // leaseTooShort reports whether d's claim has less lease left than one
 // attempt may take: the HTTP client's timeout, capped at half the lease
-// (also the bar for a client with no timeout).
+// (also the bar for a client with no timeout). A claim with no lease
+// recorded is never too short.
 func (m *Manager) leaseTooShort(d Delivery) bool {
+	if d.claimedUntil.IsZero() {
+		// No lease known: a host store that claims rows itself never set
+		// one, and refusing every such claim would deliver nothing.
+		return false
+	}
 	need := m.opts.LeasePeriod / 2
 	if t := m.opts.HTTPClient.Timeout; t > 0 {
 		need = min(t, need)
@@ -636,8 +663,10 @@ func (m *Manager) releaseClaims(ctx context.Context, r claimReleaser, ds []Deliv
 		}
 	}()
 	now := m.nowFn()
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	defer cancel()
 	for _, d := range ds {
-		if err := r.releaseClaim(context.WithoutCancel(ctx), d, now); err != nil {
+		if err := r.releaseClaim(settleCtx, d, now); err != nil {
 			m.logf("webhook: delivery %s: release unstarted claim failed (it is re-claimed when the lease expires): %v", d.ID, err)
 		}
 	}
@@ -790,7 +819,8 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 //
 // A background context is used deliberately: a worker cancellation is the
 // reason the attempt is winding down, not a reason to lose the terminal
-// state write.
+// state write. The write is bounded by settleTimeout, so a store blocked
+// on a dead database cannot hold the worker past Stop.
 func (m *Manager) saveDelivery(d Delivery) {
 	// The recover net mirrors tick/attempt: UpdateDelivery is
 	// host-supplied store code on the worker loop. A panic here loses
@@ -802,10 +832,16 @@ func (m *Manager) saveDelivery(d Delivery) {
 			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %v", d.ID, d.Status, v)
 		}
 	}()
-	if err := m.store.UpdateDelivery(context.Background(), d); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)
+	defer cancel()
+	if err := m.store.UpdateDelivery(ctx, d); err != nil {
 		m.logf("webhook: delivery %s: persist %s state failed (row may be stale → duplicate delivery): %v", d.ID, d.Status, err)
 	}
 }
+
+// settleTimeout bounds a delivery's state write and a claim release
+// after the worker detaches them from its own context.
+const settleTimeout = 10 * time.Second
 
 // schedule sets NextAttemptAt or marks the delivery dead when the
 // attempt budget is exhausted.

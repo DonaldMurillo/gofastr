@@ -347,7 +347,7 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 		// differently. Refusing the ambiguity terminates the stream
 		// through the same KindError path a parse error takes; unknown
 		// fields stay tolerated (providers add their own).
-		if err := handler.CheckObjectKeys([]byte(payload), strings.ToLower); err != nil {
+		if err := handler.CheckObjectKeys([]byte(payload), handler.FoldJSONKey); err != nil {
 			if !send(provider.StreamEvent{Kind: provider.KindError, Err: fmt.Errorf("parse chunk: %w", err)}) {
 				return
 			}

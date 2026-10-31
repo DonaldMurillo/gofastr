@@ -235,6 +235,10 @@ The response is routed to a signal by the trigger's
 `data-cui-rpc-signal` attribute, not by the registration; name the
 target signal there.
 
+The method is `GET`, `POST`, `PUT`, `PATCH` or `DELETE`, spelled in
+upper case; `""` means `POST`. `Mount` panics on any other value,
+before it registers a route, rather than registering it as `POST`.
+
 Slot HTML wires it via `data-cui-rpc`:
 
 ```html
@@ -423,7 +427,24 @@ and that close → reopen cycle fires `fui:widget-close` followed by
 | `<RPC method> <RPC.Path>` | Each registered RPC handler |
 
 Default paths are filled in on `def` if unset, so the caller can read
-them after `Mount` returns. Mounting is idempotent on `def.Name`. The
+them after `Mount` returns. Mount each widget once per router: a second
+`Mount` of the same name registers the same routes, and the router
+panics on the conflict. When a battery already mounts a widget, the app
+uses it rather than mounting it again.
+
+Every route sits under the prefix of the router group `Mount` is given.
+A widget mounted on `root.Group("/v2")` serves its styles at
+`/v2/core-ui/widget/<name>/style.css`, and the `/__gofastr/widgets`
+catalog publishes that URL. `StylePath` and `StatePath` keep the value
+you declared; `def.StyleURL()`, `def.StateURL()` and `def.ChromeURL()`
+return the served URLs, and `gofastr static` writes the widget's files at
+those URLs. RPC paths are registered under the prefix too, so markup that
+triggers an RPC names the full URL. Embedded screens
+(`framework/embed`) recognise widget routes by the unprefixed
+`/core-ui/widget/<name>/` path and refuse the prefixed ones, so mount a
+widget an embedded screen opens on an unprefixed router.
+
+The
 process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
 come from `widget.MountRuntime(r)`, once per host, not per widget.
 
@@ -440,11 +461,17 @@ tighten it, both installed by the host:
   when the app's session middleware (`battery/auth`
   `SessionMiddleware`/`RequireAuth`, wired app-wide with `fwApp.Use`)
   loaded a user onto the request context; the anonymous session a page
-  load mints never does. This is the level for signals "not safe to
-  expose anonymously".
+  load mints never does. An embed grant and a scoped API token never
+  satisfy it, though `TokenMiddleware` loads the token's owner as the
+  user. This is the level for signals "not safe to expose anonymously".
 
 Both fail closed when the host installed no predicate, and both gate the
-RPC routes too. SSR-inlined chrome honors the same verdict
+RPC routes too. The predicate a host installs (`widget.SetSessionCheck`,
+`widget.SetAuthenticatedCheck`) learns which widget is asking from
+`widget.GatedWidget(r)`, the definition whose route or `GateSatisfied`
+call is being decided, never from the URL; `framework/uihost` uses it to
+admit an embed grant only for widgets offered on the grant's surface.
+SSR-inlined chrome honors the same verdict
 (`widget.GateSatisfied`), so a gated widget's chrome is not baked into a
 page its endpoints would refuse. See
 [Security](security.md) → "Widget signal exposure".

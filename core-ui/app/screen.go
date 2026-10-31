@@ -121,7 +121,9 @@ type ScreenComponentID interface {
 }
 
 // ScreenActions is an optional interface for screens that declare server actions.
-// If implemented, the host auto-compiles actions when the screen is registered.
+// The host compiles them at Mount, and again at App.Start for a screen a
+// plugin registered after Mount; a screen registered once the app is
+// serving is not compiled, and its data-action clicks answer 404.
 // The Actions method uses component.On() to register handlers, same as InteractiveComponent.
 type ScreenActions interface {
 	Actions()
@@ -179,6 +181,9 @@ type Screen struct {
 	// parent ScreenGroup policies (outermost→innermost). The first
 	// non-Allow Decision wins. Use WithPolicy to add; PolicyChain to read.
 	policies []Policy
+	// notFoundOutcome identifies the synthetic 404 page. A missing layout
+	// outlet must not replace its path-aware body with a pathless fallback.
+	notFoundOutcome bool
 
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool

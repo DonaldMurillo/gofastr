@@ -169,75 +169,127 @@ func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string
 // its key values match, passes "".
 func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id string, key []any) func() (map[string]bool, error) {
 	return func() (map[string]bool, error) {
-		var cols []string
-		variant := map[string]bool{}
-		for _, f := range ch.snapshotFields() {
-			if f.Type != schema.Image && f.Type != schema.File {
-				continue
-			}
-			cols = append(cols, f.Name)
-			if vc := ch.variantsColumn(f.Name); vc != "" {
-				cols = append(cols, vc)
-				variant[vc] = true
-			}
-		}
-		if len(cols) == 0 || len(key) == 0 {
-			return nil, nil
-		}
-		for _, v := range key {
-			if v == nil || fmt.Sprint(v) == "" {
-				return nil, nil
-			}
-		}
-		sel := cols
-		if id != "" {
-			sel = ch.keyedCols(cols)
-		}
-		kc, ka := ch.keyCond(key)
-		qb := query.Select(sel...).
-			From(ch.Entity.GetTable()).
-			Where(kc, ka...)
-		ch.ApplyTenantScope(qb, r)
-		applyOwnerScope(ch, qb, r, false)
-		if ch.Entity.Config.Scope.SoftDelete {
-			qb.Where("deleted_at IS NULL")
-		}
-		sqlStr, args := qb.Build()
-		vals := make([]sql.NullString, len(sel))
-		dest := make([]any, len(sel))
-		for i := range vals {
-			dest[i] = &vals[i]
-		}
-		err := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(dest...)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read current file columns: %w", err)
-		}
-		if id != "" {
-			row := make(map[string]any, len(sel))
-			for i, c := range sel {
-				row[ch.convertKey(c)] = vals[i].String
-			}
-			if !ch.ownRow(id, row, cols) {
-				return nil, nil
-			}
+		objs, err := ch.rowObjects(ctx, r, id, key, false)
+		if err != nil || objs == nil {
+			return nil, err
 		}
 		keys := map[string]bool{}
-		for i, c := range cols {
-			if !vals[i].Valid || vals[i].String == "" {
-				continue
-			}
-			if !variant[c] {
-				keys[vals[i].String] = true
-				continue
-			}
-			refs, _ := file.VariantStorageRefs([]byte(vals[i].String))
-			for _, ref := range refs {
+		for _, o := range objs {
+			keys[o.key] = true
+			for _, ref := range o.renditions {
 				keys[ref] = true
 			}
 		}
 		return keys, nil
 	}
+}
+
+// storedObject is a file column's storage key on one row, with the
+// renditions its variants column lists. The renditions belong to the
+// key: they are derived from it and copied wherever it is.
+type storedObject struct {
+	key        string
+	renditions []string
+}
+
+// mediaFields lists the entity's Image/File columns, each paired with its
+// variants column ("" when it has none).
+func (ch *CrudHandler) mediaFields() [][2]string {
+	var out [][2]string
+	for _, f := range ch.snapshotFields() {
+		if f.Type == schema.Image || f.Type == schema.File {
+			out = append(out, [2]string{f.Name, ch.variantsColumn(f.Name)})
+		}
+	}
+	return out
+}
+
+// rowObjects reads the stored objects on the row currentMediaKeys
+// describes, under the same scope. trashed reads the soft-deleted row
+// (a purge) instead of the live one. A row that is not there, or that a
+// key mismatch disowns, has none.
+func (ch *CrudHandler) rowObjects(ctx context.Context, r *http.Request, id string, key []any, trashed bool) ([]storedObject, error) {
+	fields := ch.mediaFields()
+	cols := mediaColumns(fields)
+	if len(cols) == 0 || len(key) == 0 {
+		return nil, nil
+	}
+	for _, v := range key {
+		if v == nil || fmt.Sprint(v) == "" {
+			return nil, nil
+		}
+	}
+	sel := cols
+	if id != "" {
+		sel = ch.keyedCols(cols)
+	}
+	kc, ka := ch.keyCond(key)
+	qb := query.Select(sel...).
+		From(ch.Entity.GetTable()).
+		Where(kc, ka...)
+	ch.ApplyTenantScope(qb, r)
+	applyOwnerScope(ch, qb, r, false)
+	if ch.Entity.Config.Scope.SoftDelete {
+		if trashed {
+			qb.Where("deleted_at IS NOT NULL")
+		} else {
+			qb.Where("deleted_at IS NULL")
+		}
+	}
+	sqlStr, args := qb.Build()
+	vals := make([]sql.NullString, len(sel))
+	dest := make([]any, len(sel))
+	for i := range vals {
+		dest[i] = &vals[i]
+	}
+	err := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(dest...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read current file columns: %w", err)
+	}
+	got := make(map[string]string, len(sel))
+	for i, c := range sel {
+		got[c] = vals[i].String
+	}
+	if id != "" {
+		row := make(map[string]any, len(sel))
+		for c, v := range got {
+			row[ch.convertKey(c)] = v
+		}
+		if !ch.ownRow(id, row, cols) {
+			return nil, nil
+		}
+	}
+	return appendObjects([]storedObject{}, fields, got), nil
+}
+
+// mediaColumns lists the file and variants columns of fields.
+func mediaColumns(fields [][2]string) []string {
+	var cols []string
+	for _, mf := range fields {
+		cols = append(cols, mf[0])
+		if mf[1] != "" {
+			cols = append(cols, mf[1])
+		}
+	}
+	return cols
+}
+
+// appendObjects adds the objects one row's file columns hold, read into
+// got by column name.
+func appendObjects(objs []storedObject, fields [][2]string, got map[string]string) []storedObject {
+	for _, mf := range fields {
+		o := storedObject{key: got[mf[0]]}
+		if mf[1] != "" {
+			// A column that does not parse is not a rendition list; the
+			// erasure path reads it with the same function.
+			o.renditions, _ = file.VariantStorageRefs([]byte(got[mf[1]]))
+		}
+		if o.key != "" || len(o.renditions) > 0 {
+			objs = append(objs, o)
+		}
+	}
+	return objs
 }

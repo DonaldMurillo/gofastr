@@ -153,8 +153,9 @@ expose them to agents connected to a live app.**
   `origin/main` (staged, unstaged, untracked and deleted files; a file
   under testdata or an embedded asset marks its owning package) and
   prints the closure, or runs the command after `--` with it appended.
-  Changing go.mod, go.sum or cmd/affected widens to everything, as does
-  a base ref that cannot be resolved: the tool degrades to the full run,
+  Changing go.mod, go.sum, cmd/affected or the coverage-floor table
+  (scripts/coverage-floors.sh) widens to everything, as does a base ref
+  that cannot be resolved: the tool degrades to the full run,
   never to a skipped one. A test that reads files outside its package
   (a repo walk, a doc, another package's source) declares them with
   `//gofastr:test-reads <pattern>` in the test file, or the selection
@@ -201,8 +202,10 @@ expose them to agents connected to a live app.**
   Sprintf an ungated name into an identifier slot of emitted code — Go
   declarations, SQL DDL, CSS string slots, route paths; toCamelCase
   transforms but does not validate), `asciifold` (never key a registry
-  lookup on `strings.ToLower`/`ToUpper` — Unicode folding maps
-  homoglyphs onto ASCII, ſ → S; refuse non-ASCII first), `laxcoerce` (a
+  lookup on `strings.ToLower`/`ToUpper`, nor compare two folds with
+  `==` — Unicode folding maps homoglyphs onto ASCII, ſ → S, K → k;
+  fold with `internal/asciicase.Lower` or refuse non-ASCII first),
+  `laxcoerce` (a
   failed type assertion on a `map[string]any` entry is not absence —
   split presence from type, or return an error), `rootwrite` (writes
   under a root contained by `filepath.Join` + prefix only, with no
@@ -396,8 +399,10 @@ expose them to agents connected to a live app.**
   family in core-ui/check grew to ten: `decodeuriraw`
   (decodeURIComponent of a data-cui-* value outside every try —
   decodeURIComponent('%E0%A4') throws URIError out of the delegated
-  handler; wrap it, or route through a same-file safeDecode helper)
-  and `protokey` (a bracket write keyed by a data-cui-* value with
+  handler; wrap it, or route through a same-file safeDecode helper;
+  since 2026-10-31 it also fires on a response header or
+  `document.title` read in the argument, the title fallback that threw
+  on a "50% Off" app name) and `protokey` (a bracket write keyed by a data-cui-* value with
   no reserved-key guard — reject __proto__/constructor/prototype
   first, or key the store by Map). Two gates landed with them: the
   docs corpus gate runs the contracts security rules (GOFASTR1404
@@ -465,6 +470,52 @@ expose them to agents connected to a live app.**
   configured table calls `query.RefuseCaseKeptTables` first on Postgres,
   so a table an older build made with its case kept stops the boot with
   the rename instead of being shadowed by an empty one).
+  The 2026-10-27 bug bash added seven vet analyzers. `keytrim`
+  (`strings.TrimSpace` on an id/tenant/actor value that is then kept:
+  " x " and "x" name different rows). `tightenshared` (`os.MkdirAll`
+  then an owner-only `os.Chmod`/`fileperm.Restrict` of a directory the
+  caller named: it rewrites a directory somebody else owns; `os.Stat`
+  first and tighten only what this call created). `settlectx` (an
+  ack/settle/record write on the same cancellable context the work just
+  ran under: a shutdown or timeout drops the outcome; settle on
+  `context.WithoutCancel`). `resolvedial` (an SSRF guard that resolves
+  and checks a host, then lets the transport resolve it again to dial:
+  check at dial time, `netguard`'s Control hook). `wrapwriter` (a
+  ResponseWriter wrapper with no `Unwrap`, which hides Flush/Hijack/
+  deadlines from `http.ResponseController`, and a header change after
+  the next handler ran). Two arms ship from the `unseated` package:
+  `unrechecked` (a long-lived stream for a resolved principal whose
+  delivery loop never re-checks it, or whose connect-time authz or
+  tenant decision never re-runs) and `nowritedeadline` (a client write
+  in a stream's park loop with no write deadline on the path, and a
+  `ResponseController` deadline a parked stream arms and never clears:
+  on HTTP/2 it resets the stream when it fires, write pending or not). Widened
+  in the same round: `worldreadable` (an owner-only `os.OpenFile`
+  without `O_EXCL` "fixed" by `fileperm.Restrict`, which does not
+  change a file's mode off Windows; tighten the handle with
+  `fileperm.RestrictOpenFile`), `mapwriter` (a map range appended to a
+  local slice that reaches `strings.Join` or an output loop unsorted),
+  `rawtext`'s `ctxless` (a kit function no context reaches calls a
+  component that reads its config's Ctx), `intwrap` (`int(*f)` of a
+  float bound with no upper bound), `nowaitdelay` (through a
+  `cmd = wrap(cmd)` hop), `credfetch` (a configured header map counts
+  as a credential, and `CheckRedirect: nil` is no guard), `rootwrite`
+  and `rootread` (a same-package write helper is a sink, and a guard
+  is judged by its body, never its name), `emitident` (a `strings.*`
+  result is a transform, gated only when its inputs are),
+  `unboundedbody` (the cap must sit on the read request's own path),
+  `unboundedresp` (only a rebind of `resp.Body` caps it), and
+  `recovercallback` (a local read through a package-local accessor of
+  a callback field or `atomic.Pointer` slot is the host's callback).
+  The contracts rule `GOFASTR1415 erasecover`
+  fires on DDL for a user-keyed table that no `datexport.DataEraser`
+  and `DataExporter` cover. The runtime JS lint
+  `core-ui/check.LintNumberFill` fires on `{{n}}` filled with
+  `String(n)` instead of `NS.formatNumber` (the kernel's
+  `toLocaleString` on `<html lang>`), and its repo test fails on a
+  violation. Matcher bugs with no code shape (audit key spellings, email
+  body and header redaction, chart NaN) were red probes and are now
+  permanent `*_security_test.go` / `_test.go` tests.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

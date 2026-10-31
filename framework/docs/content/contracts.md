@@ -131,6 +131,7 @@ code.
 | `GOFASTR1820` | error | any owned sheet declaring a custom property named like a theme token (`--color-primary`) |
 | `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #18181B` where `--color-primary` is `#18181B` |
 | `GOFASTR1822` | warn | the same literal written in two or more owned sheets of one program for the same token type; declare it once as a token |
+| `GOFASTR1825` | error | a statement at-rule other than `@layer` (`@import`, `@charset`, `@namespace`): it counts only at the top of a stylesheet, and an owned sheet compiles after the kit's rules, so the browser drops it. Load fonts with `style.FontFaceCSS` |
 
 `GOFASTR1823` (error) guards the kit itself, the design-system trees
 (`core-ui/`, `framework/ui/`, `framework/uihost/`, `battery/` and the
@@ -426,7 +427,9 @@ A handler can sit at 100% line coverage because a unit test called the
 function directly, while no request has ever reached it through the
 router. `framework/semcov` records what a test run genuinely exercised
 into `.gofastr/semantic-coverage.json`, and the `testing` rules diff that
-against the discovered surface.
+against the discovered surface. Every test binary merges into the same
+file under an OS lock on `.gofastr/semantic-coverage.lock`, so packages
+that finish together keep each other's records.
 
 The manifest sits under the project root unless
 `GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` is set, in

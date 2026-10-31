@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,15 +105,16 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 		resp := newErrorResponse(nil, ErrParse, "invalid JSON")
 		return false, &resp
 	}
-	//gofastr:allow(floatnum) the reply's id is rebuilt from the raw "id" bytes below; req.ID's float64 is never echoed
-	if err := handler.UnmarshalStrict(raw, req); err != nil {
+	// UseNumber keeps a numeric id as the literal the client sent: a
+	// float64 rounds one above 2^53 and cannot hold one past its range.
+	if err := handler.UnmarshalStrict(raw, req, handler.UseNumber()); err != nil {
 		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
 		return false, &resp
 	}
 	var env struct {
 		ID json.RawMessage `json:"id"`
 	}
-	//gofastr:allow(GOFASTR1407) raw already passed handler.UnmarshalStrict above, so both decodes read the one "id" key; this pass only reads its presence and digits
+	//gofastr:allow(GOFASTR1407) raw already passed handler.UnmarshalStrict above, so both decodes read the one "id" key; this pass only reads whether it is present
 	if err := json.Unmarshal(raw, &env); err != nil {
 		resp := newErrorResponse(nil, ErrInvalidRequest, "invalid request: "+err.Error())
 		return false, &resp
@@ -126,9 +128,6 @@ func decodeEnvelope(raw []byte, req *Request) (notification bool, errResp *Respo
 			return false, &resp
 		}
 		return true, nil
-	}
-	if _, isNum := req.ID.(float64); isNum {
-		req.ID = json.Number(env.ID)
 	}
 	return false, nil
 }
@@ -287,9 +286,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeStdio reads JSON-RPC requests from in line-by-line and writes
-// responses to out. It blocks until in returns EOF; ctx is checked
-// between lines, so a caller stopping a session on silent input closes
-// in as well.
+// responses to out. It returns at EOF, or with ctx's error once ctx
+// ends, silent input included: the line read runs on its own goroutine,
+// which stays parked in in.Read until in yields a line or closes. A
+// process that exits on the signal loses nothing to it; a caller that
+// goes on using in closes it.
 func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) error {
 	// A line may be as long as an HTTP body (maxMCPBodyBytes); the
 	// scanner's 64 KiB default ended the session on any larger tool
@@ -310,14 +311,36 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		})
 	}
 
-	for scanner.Scan() {
+	// The scan sends a copy of each line, so it can read ahead while the
+	// loop answers one. stop releases it when the loop returns first.
+	lines := make(chan []byte)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			select {
+			case lines <- bytes.Clone(scanner.Bytes()):
+			case <-stop:
+				return
+			}
+		}
+	}()
+
+	for {
+		var line []byte
+		var open bool
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
+		case line, open = <-lines:
 		}
-
-		line := scanner.Bytes()
+		if !open {
+			break
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if len(line) == 0 {
 			continue
 		}
@@ -349,6 +372,7 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		encoder.Encode(resp)
 	}
 
+	// lines closed: the scan has finished, so its error is settled.
 	err := scanner.Err()
 	if errors.Is(err, bufio.ErrTooLong) {
 		// The scanner cannot resume past the oversized line.
@@ -505,6 +529,11 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// never fatal.
 			return false
 		}
+		// Clear the deadline once the event is flushed: on HTTP/2 it is
+		// a stream timer that resets the stream when it fires, write
+		// pending or not, so one left armed kills a stream idle between
+		// notifications.
+		_ = rc.SetWriteDeadline(time.Time{})
 		return true
 	}
 
@@ -537,9 +566,12 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 			// answering for a session since revoked or a token since
 			// expired. A caller a fresh request would no longer carry
 			// has the stream closed, as framework/crud's event stream
-			// does.
+			// does. So does one the re-check placed in another tenant
+			// (tenant.ResolveMiddleware re-resolves it): the stream was
+			// admitted for the connect-time tenant, and a gate that
+			// does not read the tenant would keep delivering its URIs.
 			live, held := handler.RecheckPrincipal(sub.ctx)
-			if !held {
+			if !held || handler.GetTenantID(live) != handler.GetTenantID(sub.ctx) {
 				return
 			}
 			if !s.subscriberMayReceive(live, n) {

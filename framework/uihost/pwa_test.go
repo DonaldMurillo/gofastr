@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -687,7 +688,7 @@ func TestPWAGeneratorsNilSafeWithoutOption(t *testing.T) {
 	if got := ds.PWAOfflineHTML(); got != "" {
 		t.Errorf("PWAOfflineHTML without WithPWA should return empty, got %q", got)
 	}
-	if _, err := ds.PWAManifestJSON(""); err == nil {
+	if _, err := ds.PWAManifestJSON(context.Background(), ""); err == nil {
 		t.Errorf("PWAManifestJSON without WithPWA should error")
 	}
 	if _, err := ds.PWAServiceWorkerJS(""); err == nil {

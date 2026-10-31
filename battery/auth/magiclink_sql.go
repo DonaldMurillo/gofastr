@@ -64,6 +64,7 @@ func (s *SQLMagicLinkTokenStore) ensureTable(ctx context.Context) error {
 		return err
 	}
 	q := fmt.Sprintf(
+		//gofastr:allow(GOFASTR1415) erase.go erases these rows; export.go leaves them out on purpose, since a restored row is a live login or reset link
 		`CREATE TABLE IF NOT EXISTS %s (token TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at BIGINT NOT NULL)`,
 		query.QuoteFolded(s.table),
 	)

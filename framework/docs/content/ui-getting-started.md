@@ -231,9 +231,9 @@ a convenience for the ctx-aware pattern.
 Every entity you register automatically claims its own URL space for
 REST CRUD: an entity named `foods` mounts `GET/POST /foods`, `GET/PUT/PATCH/DELETE
 /foods/:id`, plus `/foods/llm.md`. If you also register a screen at `/foods`,
-the two routes collide and the app panics at startup (currently the panic
-surfaces as a duplicate `/<entity>/llm.md` registration; friendlier
-diagnostics are on the roadmap).
+the two routes collide and registration fails with a message naming the
+entity, the screen route it collides with, and the ways out: a different
+page path, a renamed table, or `framework.WithAPIPrefix`.
 
 The cleanest convention is to give screens their own noun space, even when
 the screen *describes* an entity:
@@ -677,14 +677,17 @@ follow whichever root is emitted.
 Two documented exceptions forward more than the contract's default.
 `FormConfig` forwards raw: its ExtraAttrs may override the form's own
 attributes, which the app generator's `data-entity-form` +
-RPC-wiring pattern relies on. `ButtonConfig` and `LinkConfig` are
-*wiring carriers*: they drop their owned keys like any component but
-keep `data-cui-*` — except `data-cui-comp`, the style-scope marker,
-which drops case-insensitively — because attaching
-`interactive.Action.Attrs()` to a
-button's ExtraAttrs is the documented way to wire a click RPC (the
-resource UI and the admin battery both do it), and an ActionRef link
-ships an href fallback plus a `data-cui-rpc` upgrade the same way.
+RPC-wiring pattern relies on. `LinkConfig` is a *wiring carrier*: it
+drops its owned keys like any component but keeps `data-cui-*` — except
+`data-cui-comp`, the style-scope marker, which drops case-insensitively
+— so an ActionRef link ships an href fallback plus a `data-cui-rpc`
+upgrade. `ButtonConfig` admits only the typed Action vocabulary: the
+`data-cui-*` keys `interactive.Action.Attrs()`, `OpenOnClick` and
+friends produce, listed under **button** in
+[UI components index](ui-new-components.md). Attaching those to a button's
+ExtraAttrs is the documented way to wire a click RPC (the resource UI
+and the admin battery both do it); any other `data-cui-*` key,
+`data-cui-comp` included, panics at render naming the key.
 
 Component authors: sanitize with `html.SafeExtraAttrs(cfg.ExtraAttrs,
 protected...)` before forwarding — or `html.SafeCarrierAttrs` for a

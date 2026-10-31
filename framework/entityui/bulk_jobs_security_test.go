@@ -315,3 +315,27 @@ func TestBulkFinishedJobsArePruned(t *testing.T) {
 		t.Fatal("PruneBulkJobs dropped a queued job")
 	}
 }
+
+// A shutdown that lands as a chunk finishes must not drop the chunk's
+// outcomes: Settle ran on the job's own context, failed once it was
+// cancelled, and the records ran again on the retry (2026-10-27 bug
+// bash, settlectx).
+func TestBulkSettleSurvivesCancel(t *testing.T) {
+	r := newRemindJob(t)
+	id := r.queue(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.mb.onSettle = func(string) { cancel() } // shutdown as the chunk ends
+	_ = r.x.ui.RunBulkJob(ctx, id)
+	r.mb.onSettle = nil
+	if err := r.x.ui.RunBulkJob(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for rid, n := range r.calls {
+		if n > 1 {
+			t.Fatalf("record %s ran %d times: the chunk's outcomes were dropped at the cancel", rid, n)
+		}
+	}
+}

@@ -19,6 +19,8 @@ serializes `O`. It also owns the `*Error` shape and the context
 accessors (`SetUser`, `GetUser`, `SetTenant`, `SetRequestID`) the
 middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
+`Respond` encodes `O` before it writes the status, so a value JSON cannot
+encode (a NaN, a channel) answers the generic 500, never an empty 200.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON
@@ -37,7 +39,12 @@ frame, a buffered body; pass `handler.UseNumber()` to keep numbers in
 digits), and `CheckTopLevelKeys(data, fold)` when the
 caller normalises keys itself. Struct destinations refuse duplicate,
 case-folded, and unknown top-level keys; map destinations refuse
-duplicate and case-folded ones. Stdlib `encoding/json` keeps the last
+duplicate and case-folded ones. Nested objects get the same check at
+every depth (`CheckObjectKeys`), folded with `FoldJSONKey`, the
+decoder's own rule: `ſource` (U+017F) and the Kelvin sign fold onto
+ASCII exactly as `encoding/json` matches them to a field, which
+`strings.ToLower` does not. Pass `FoldJSONKey` when you call either
+check yourself ahead of a decode into a struct. Stdlib `encoding/json` keeps the last
 duplicate and matches tags case-insensitively, so the same body can
 mean two things to two readers; refusing it is the only resolution that
 privileges neither. Cap the size first (`http.MaxBytesReader`). The
@@ -123,7 +130,18 @@ once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
 from the moment the Ping is written, so a long data write that delays
 the Ping does not eat into the peer's time to answer. An app that never
 calls `Read` is push-only: once the buffer fills, further inbound data
-is dropped so pings and the Close handshake still flow.
+is dropped so pings and the Close handshake still flow. The pump answers
+a Ping itself, so an app limiting its own frames never counts them:
+`MaxControlFramesPerSecond` (default 32, burst twice that; negative
+disables) caps the Pings and Pongs a client sends, and past it the
+connection closes with 1008.
+
+`Upgrade` refuses a handshake RFC 6455 does not accept before it
+hijacks: a method other than GET, no `Connection: Upgrade` token, a
+version other than 13, or a key that is not base64 of 16 bytes. A
+transport that hijacks the connection itself runs the same check,
+`stream.CheckUpgradeRequest(r, originOK)`, before writing its 101;
+`originOK` decides the Origin as `WSConfig.CheckOrigin` does.
 
 `battery/rtc`, the WebRTC signaling package, is the
 packaged StateChannel consumer for rooms of peers (see
@@ -174,7 +192,13 @@ public spec gets a public browse page). A `Spec` may carry a
 `RequestView` — a per-request spec builder the auth-gated `Handler`
 consults, so the document can drop what THIS caller may not read; the
 framework's entity spec uses it to hide entities with no read grant,
-and `PublicHandler` (the full-disclosure opt-in) ignores it. Mostly
+and `PublicHandler` (the full-disclosure opt-in) ignores it.
+`Nullable` widens a property to take `null` as well: its type `T`
+becomes `[T, "null"]` and its enum gains `null`. The framework's entity
+schemas apply it to every optional field (not `Required`, not
+generated, not a key column), since the route stores the `null` a write
+sends and reads return it; a custom endpoint's `InputSchema` and
+`OutputSchema` stay as declared. Mostly
 indirect: the framework generates the
 spec from your routes and entities. Reach for it directly to add custom
 operations or mount the docs endpoint. Start at `core/openapi/spec.go`:
@@ -269,8 +293,12 @@ are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
 uses it for its own assets too. `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
-`404.html`; `gofastr docs serve` uses it). Start at
-`core/static/static.go`: `Handler`.
+`404.html`; `gofastr docs serve` uses it). For a handler that serves
+its own bytes, `Refuses(path)` reports whether the handler would refuse
+a path for a dot segment or a config file name (the UI host's static
+dir and the static export use it), and `IfNoneMatch(r, etag)` checks
+an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
+comparison. Start at `core/static/static.go`: `Handler`.
 
 ## App plumbing
 

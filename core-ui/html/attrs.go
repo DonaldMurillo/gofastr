@@ -2,6 +2,7 @@ package html
 
 import (
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -24,10 +25,12 @@ func MergeAttrs(attrsList ...Attrs) Attrs {
 }
 
 // Classes converts a map of class names to booleans into an Attrs containing
-// a single "class" attribute. Only classes with a true value are included.
+// a single "class" attribute. Only classes with a true value are included,
+// in sorted order so the attribute is the same bytes on every render.
 func Classes(classes map[string]bool) Attrs {
 	var active []string
-	for cls, include := range classes {
+	for _, cls := range slices.Sorted(maps.Keys(classes)) {
+		include := classes[cls]
 		if include {
 			active = append(active, cls)
 		}

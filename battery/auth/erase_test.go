@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -380,7 +380,7 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	}
 	if err := passkeys.AddPasskey(ctx, PasskeyCredential{
 		ID: []byte("cred-1"), UserID: userID, PublicKey: []byte{1}, Algorithm: coseAlgES256, CreatedAt: time.Now(),
-	}); err != nil {
+	}, 20); err != nil {
 		t.Fatalf("AddPasskey: %v", err)
 	}
 

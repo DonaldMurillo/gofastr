@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
@@ -476,6 +477,15 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	sse.Flush()
 
 	ctxDone := r.Context().Done()
+	// The caller was established once, at connect. Re-establish it on every
+	// heartbeat and before every delivery, so a session revoked or a token
+	// expired after connect closes the stream instead of receiving until the
+	// client disconnects (handler.RecheckPrincipal; with no check installed
+	// it always holds).
+	held := func() bool {
+		_, ok := handler.RecheckPrincipal(r.Context())
+		return ok
+	}
 
 	var hbCh <-chan time.Time
 	if b.heartbeatInterval > 0 {
@@ -491,6 +501,9 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		case <-sub.done:
 			return
 		case <-hbCh:
+			if !held() {
+				return
+			}
 			if err := sse.WriteComment("heartbeat"); err != nil {
 				return
 			}
@@ -500,6 +513,9 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 			}
 			if sub.filter != "" && evt.Name != sub.filter {
 				continue
+			}
+			if !held() {
+				return
 			}
 			if evt.ID != "" {
 				sse.SetID(evt.ID)

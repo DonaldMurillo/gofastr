@@ -137,6 +137,11 @@ gofastr generate app gofastr.yml
 The blog uses `battery/search` with the in-memory backend for `/posts/search`.
 Drafts are indexed too, so the public route filters with
 `FieldEquals: {"status": "published"}`.
+The index follows the posts table: `indexPosts` builds it from the live
+rows at start (soft-deleted posts stay out), and `syncSearch` registers
+`AfterCreate`, `AfterUpdate` and `AfterDelete` hooks that re-index or
+remove a post once its write commits. A restore fires `AfterUpdate`, so
+the post comes back. A write that rolls back never reaches the index.
 Production apps can swap this interface for a Postgres full-text, Meilisearch,
 or Elasticsearch backend.
 

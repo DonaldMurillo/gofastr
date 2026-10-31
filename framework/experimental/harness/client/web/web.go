@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -97,12 +98,20 @@ func (s *Server) Start() (string, error) {
 	return "http://" + ln.Addr().String(), nil
 }
 
-// Stop terminates the server.
+// Stop terminates the server. It waits for in-flight requests until ctx
+// ends, then closes the connections left: Shutdown never closes an active
+// connection, and an /events stream with a reading browser never finishes,
+// so its handler, seat and bus subscription would outlive Stop
+// (2026-10-27 H26). It returns ctx's error when it had to close any.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.srv == nil {
 		return nil
 	}
-	return s.srv.Shutdown(ctx)
+	err := s.srv.Shutdown(ctx)
+	if err != nil {
+		_ = s.srv.Close()
+	}
+	return err
 }
 
 // ---------- handlers ----------
@@ -152,6 +161,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering if proxied
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+	// SSEWriter arms a fresh write deadline on every event, so a
+	// client that stops reading cannot park this handler for good.
+	sse := stream.NewSSEWriter(w)
 	for {
 		select {
 		case <-ctx.Done():
@@ -167,8 +179,10 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", env.ID, env.Kind, body)
-			flusher.Flush()
+			sse.SetID(strconv.FormatUint(env.ID, 10))
+			if err := sse.WriteEvent(env.Kind, string(body)); err != nil {
+				return
+			}
 		}
 	}
 }

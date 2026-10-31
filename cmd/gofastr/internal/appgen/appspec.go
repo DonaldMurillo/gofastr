@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/scanner"
@@ -25,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 )
 
@@ -502,6 +504,31 @@ func redactDSN(dsn string) string {
 	return dsnredact.Redact(dsn)
 }
 
+// appSpecAuthPolicyFunc is the generated authPolicy. It composes
+// battery/auth's policies rather than reading the user's roles itself: a
+// hand-written role loop never asked an access Decider, so a host's
+// DeciderMiddleware deny did not bind generated role-gated screens.
+func appSpecAuthPolicyFunc() string {
+	return `// authPolicy gates a screen: redirect an anonymous visitor to the login
+// page (with ?next=) and 403 a signed-in user missing the required role.
+// The role check is auth.RolePolicy, so an access Decider binds it.
+func authPolicy(loginPath, role string) app.Policy {
+	signedIn := auth.SessionPolicy(auth.WithRedirect(loginPath))
+	if role == "" {
+		return signedIn
+	}
+	hasRole := auth.RolePolicy(auth.Roles(role))
+	return app.PolicyFunc(func(ctx context.Context) app.Decision {
+		if d := signedIn.Decide(ctx); d.Kind != app.DecisionAllow {
+			return d
+		}
+		return hasRole.Decide(ctx)
+	})
+}
+
+`
+}
+
 // appSpecE2EScreenRoutes splits the app spec's STATIC screen routes (those
 // without a `{param}`) into public (anonymous-renderable) and gated (auth) sets.
 // Dynamic routes are exercised by the CRUD lifecycle, which has a real id.
@@ -524,7 +551,7 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 // create→read→update→delete lifecycle.
 type appSpecCRUDTarget struct {
 	entity      string
-	apiPath     string   // /api/<entity>
+	apiPath     string   // /api/<table>
 	newRoute    string   // /app/<entity>/create
 	detailBase  string   // /app/<entity>  (detail = detailBase + "/" + id), "" if no detail screen
 	createJSON  string   // a valid create payload
@@ -568,7 +595,7 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
 		t := appSpecCRUDTarget{
-			entity: e, apiPath: apiBase + "/" + e,
+			entity: e, apiPath: appSpecEntityAPIPath(apiBase, decl),
 			newRoute:    strings.TrimRight(createOf[e], "/") + "/create",
 			createJSON:  createJSON,
 			updateJSON:  updateJSON,
@@ -712,10 +739,7 @@ func renderAppSpecAxeTest(bp appspec.AppSpec) string {
 		}
 	}
 	login := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
-	authBase := strings.TrimRight(bp.App.Auth.BasePath, "/")
-	if authBase == "" {
-		authBase = "/auth"
-	}
+	authBase := appSpecAuthBase(bp)
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
 
@@ -1156,10 +1180,18 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	}
 
 	if needsAuthClient {
-		b.WriteString("\n\t// Sign in, then every gated screen renders.\n")
+		// The client stops at a redirect to a login page: with no session
+		// each gated screen bounced there, the client followed, and the
+		// login page's 200 passed for the screen (2026-10-27 G14).
+		b.WriteString("\n\t// Sign in, then every gated screen renders. A redirect to a login\n")
+		b.WriteString("\t// page is returned, not followed: it means the session did not take.\n")
 		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
-		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second}\n")
-		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+\"/auth/login\", url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", adminEmail))
+		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, _ []*http.Request) error {\n")
+		// authPolicy sends an anonymous caller to the login screen's route.
+		b.WriteString(fmt.Sprintf("\t\tif req.URL.Path == %q { return http.ErrUseLastResponse }\n", appSpecLoginRoute(bp)))
+		b.WriteString("\t\treturn nil\n")
+		b.WriteString("\t}}\n")
+		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+%q, url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", appSpecAuthBase(bp)+"/login", adminEmail))
 		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
 		b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
 		b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 200\", p, code)\n")
@@ -2869,7 +2901,7 @@ func screenActions(screen appspec.AppSpecScreen, entityMap map[string]framework.
 				if appSpecFormHasRelation(block, entityMap) {
 					actions = append(actions, appspec.AppSpecAction{
 						Name:     appSpecEntityFormActionName(screen, block, blockPath),
-						ClientJS: appSpecEntityFormClientJS(block, apiBase),
+						ClientJS: appSpecEntityFormClientJS(block, entityMap, apiBase),
 					})
 				}
 			}
@@ -3168,7 +3200,7 @@ func renderAppSpecCatalogBlock(bp appspec.AppSpec, screen appspec.AppSpecScreen,
 	case "divider":
 		return "ui.Divider(ui.DividerConfig{})", true
 	case "markdown":
-		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Source: %s, Measure: true})", tx(block.Text)), true
+		return fmt.Sprintf("ui.Markdown(ui.MarkdownConfig{Ctx: ctx, Source: %s, Measure: true})", tx(block.Text)), true
 	case "pricing":
 		plans, _ := block.Props["plans"].([]any)
 		cards := make([]string, 0, len(plans))
@@ -3475,7 +3507,7 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = "/auth/register"
+		action = appSpecAuthBase(bp) + "/register"
 	}
 	next := propStr("next")
 	if next == "" {
@@ -3489,12 +3521,12 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 }
 
 // renderAppSpecLoginFormExpr emits the login form. props: action (default
-// /auth/login), next (post-login redirect, default /), register_href (optional).
+// <auth base>/login), next (post-login redirect, default /), register_href (optional).
 func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = "/auth/login"
+		action = appSpecAuthBase(bp) + "/login"
 	}
 	next := propStr("next")
 	if next == "" {
@@ -3535,6 +3567,35 @@ func appSpecAPIBase(apiPrefix string) string {
 	return "/" + p
 }
 
+// appSpecAuthBase is where the auth battery mounts its routes:
+// app.auth.base_path, else the battery's default /auth. Validation keeps
+// base_path an absolute path with no trailing slash, so base + "/login"
+// is the battery's login route.
+func appSpecAuthBase(bp appspec.AppSpec) string {
+	if bp.App.Auth.BasePath != "" {
+		return bp.App.Auth.BasePath
+	}
+	return "/auth"
+}
+
+// appSpecSignOutExpr is the sign-out control, posting to the battery's
+// logout route. ui.SignOut defaults to /auth/logout, so only another
+// base names an Action.
+func appSpecSignOutExpr(bp appspec.AppSpec) string {
+	if base := appSpecAuthBase(bp); base != "/auth" {
+		return fmt.Sprintf("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\", Action: %q})", base+"/logout")
+	}
+	return `ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"})`
+}
+
+// appSpecEntityAPIPath is where App.Entity mounts decl's CRUD routes:
+// apiBase plus the table, which is the declared Table or the name in
+// snake_case. Define spells the default, so the path is the framework's
+// and not a copy of its rule.
+func appSpecEntityAPIPath(apiBase string, decl framework.EntityDeclaration) string {
+	return apiBase + "/" + entity.Define(decl.Name, entity.EntityConfig{Table: decl.Table}).GetTable()
+}
+
 // appSpecFormInputType maps an entity field type to an <input type=…>.
 func appSpecFormInputType(fieldType string) string {
 	switch fieldType {
@@ -3567,7 +3628,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	if title == "" {
 		title = "New " + appspec.ToDisplayName(entity)
 	}
-	rpcPath := apiBase + "/" + entity
+	rpcPath := appSpecEntityAPIPath(apiBase, decl)
 	// The form carries entity-form markers (data-entity-form/mode, plus
 	// data-action-mount when relation selects need populating) alongside
 	// the RPC wiring. Build the RPC attrs via the typed interactive layer
@@ -3679,32 +3740,61 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 }
 
 // appSpecEntityFormClientJS populates the form's relation <select>s on
-// mount by fetching each related entity's collection.
-func appSpecEntityFormClientJS(block appspec.AppSpecBlock, apiBase string) string {
-	entity := strings.Trim(block.Entity, "/")
+// mount by fetching each related entity's collection. targets maps a
+// related entity to its route and the wire name of its key, the column a
+// relation stores: a target keyed on currency_code is read as
+// row.currencyCode, and one on its own table is fetched there. A target
+// with a multi-column key has no single value a relation can hold, so it
+// gets no entry and its select stays empty.
+func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+	name := strings.Trim(block.Entity, "/")
+	type relTarget struct {
+		Key  string `json:"key"`
+		Path string `json:"path"`
+	}
+	targets := map[string]relTarget{}
+	for _, f := range entityMap[name].Fields {
+		if f.Type != "relation" || f.To == "" {
+			continue
+		}
+		decl, ok := entityMap[f.To]
+		keys := appspec.AppSpecKeyColNames(decl)
+		if !ok || len(keys) != 1 {
+			continue
+		}
+		targets[f.To] = relTarget{Key: appspec.ToCamelJSON(keys[0]), Path: appSpecEntityAPIPath(apiBase, decl)}
+	}
+	// json.Marshal sorts map keys, so the emitted literal is stable.
+	targetsJSON, err := json.Marshal(targets)
+	if err != nil {
+		targetsJSON = []byte("{}")
+	}
+	//gofastr:allow(emitident) block.Entity is checked against the entities map in appspec validation
 	return fmt.Sprintf(`(async () => {
-  const apiBase = %q;
+  const targets = %s;
   const form = document.querySelector('[data-entity-form="%s"]');
   if (!form) return;
   const labelFor = (row) => String(row.name ?? row.title ?? row.label ?? row.email ?? row.code ?? row.id ?? '');
   for (const sel of form.querySelectorAll('select[data-rel-entity]')) {
-    const target = sel.getAttribute('data-rel-entity');
-    if (!target || sel.dataset.relLoaded) continue;
+    const rel = sel.getAttribute('data-rel-entity');
+    const t = rel && Object.hasOwn(targets, rel) ? targets[rel] : null;
+    if (!t || sel.dataset.relLoaded) continue;
     try {
-      const res = await fetch(apiBase + '/' + target + '?limit=100', { headers: { 'Accept': 'application/json' } });
+      const res = await fetch(t.path + '?limit=100', { headers: { 'Accept': 'application/json' } });
       if (!res.ok) continue;
       const payload = await res.json();
       const rows = Array.isArray(payload.data) ? payload.data : [];
       for (const row of rows) {
+        if (row[t.key] == null) continue;
         const opt = document.createElement('option');
-        opt.value = row.id;
+        opt.value = row[t.key];
         opt.textContent = labelFor(row);
         sel.appendChild(opt);
       }
       sel.dataset.relLoaded = '1';
     } catch (_) {}
   }
-})();`, apiBase, entity)
+})();`, targetsJSON, name)
 }
 
 func appSpecEntityFormActionName(screen appspec.AppSpecScreen, block appspec.AppSpecBlock, path []int) string {
@@ -3978,10 +4068,9 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if adminSeed {
 		sb.WriteString("\t\"fmt\"\n")
 	}
-	if hasAccess {
-		sb.WriteString("\t\"net/url\"\n")
-	}
 	if bp.App.Auth.Enabled {
+		// An auth Init error stops the boot.
+		sb.WriteString("\t\"log\"\n")
 		// JWT_SECRET + ADMIN_SEED_PASSWORD are read from the environment.
 		sb.WriteString("\t\"os\"\n")
 	}
@@ -3991,7 +4080,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
-	if hasAccess || guestRedirect {
+	if guestRedirect {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app/decide\"\n")
 	}
 	if hasShell {
@@ -4030,7 +4119,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
-	if hasAccess || rbac || roleNav || authHeader || guestRedirect || authSidebar {
+	if rbac || roleNav || authHeader || guestRedirect || authSidebar {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if needUI {
@@ -4043,7 +4132,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if rbac {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/access\"\n")
 	}
-	if bp.App.Auth.Enabled {
+	if bp.App.Auth.Enabled || hasAccess {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/auth\"\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
@@ -4061,25 +4150,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	sb.WriteString(")\n\n")
 	sb.WriteString(appSpecBaseCSSFunc())
 	if hasAccess {
-		sb.WriteString("// authPolicy gates a screen: redirect anonymous GETs to the login\n")
-		sb.WriteString("// page (with ?next=) and 403 a signed-in user missing the required role.\n")
-		sb.WriteString("func authPolicy(loginPath, role string) app.Policy {\n")
-		sb.WriteString("\treturn app.PolicyFunc(func(ctx context.Context) app.Decision {\n")
-		sb.WriteString("\t\tu, ok := handler.GetUser(ctx)\n")
-		sb.WriteString("\t\tif !ok || u == nil {\n")
-		sb.WriteString("\t\t\tnext := \"/\"\n")
-		sb.WriteString("\t\t\tif r := app.RequestFromContext(ctx); r != nil { next = r.URL.Path }\n")
-		sb.WriteString("\t\t\treturn decide.Redirect(loginPath + \"?next=\" + url.QueryEscape(next))\n")
-		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t\tif role != \"\" {\n")
-		sb.WriteString("\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
-		sb.WriteString("\t\t\t\tfor _, r := range rh.GetRoles() { if r == role { return decide.Allow() } }\n")
-		sb.WriteString("\t\t\t}\n")
-		sb.WriteString("\t\t\treturn decide.Block(403)\n")
-		sb.WriteString("\t\t}\n")
-		sb.WriteString("\t\treturn decide.Allow()\n")
-		sb.WriteString("\t})\n")
-		sb.WriteString("}\n\n")
+		sb.WriteString(appSpecAuthPolicyFunc())
 	}
 	if guestRedirect {
 		sb.WriteString("// guestPolicy gates a guest-only screen (login / signup): a\n")
@@ -4125,7 +4196,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: %s, Href: %q})\n", tx("Dashboard"), appHome))
-			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})", themeToggle) + "\n")
+			sb.WriteString("\t\tactions = " + barActions(appSpecSignOutExpr(bp), themeToggle) + "\n")
 			sb.WriteString("\t} else {\n")
 			// appSpecLoginRoute, not a hardcoded "/login": the app-shell
 			// sidebar had the same literal and it pointed at a route six of
@@ -4289,7 +4360,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		case bp.App.Auth.Enabled:
 			sb.WriteString("\tvar authAction render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})\n")
+			sb.WriteString("\t\tauthAction = " + appSpecSignOutExpr(bp) + "\n")
 			// Only offer Sign in when a screen actually hosts the login form.
 			// Six of the seven shipped app specs never route /login, so an
 			// unconditional button would make the app shell's only auth
@@ -4455,7 +4526,10 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		sb.WriteString("\t\tauthMgr.Use(auth.NewCorePlugin())\n")
 		// auth_users / auth_sessions are the auth battery's own tables; it
 		// creates them in Init (EnsureSchema). The generated app ships no DDL.
-		sb.WriteString("\t\tauthMgr.Init(fwApp)\n")
+		// Init refuses a bad config (a production app with no JWT key)
+		// before it mounts a route, so its error stops the boot: dropped,
+		// the app served its screens with no /auth/login.
+		sb.WriteString("\t\tif err := authMgr.Init(fwApp); err != nil {\n\t\t\tlog.Fatal(err)\n\t\t}\n")
 		// Point the auth battery's form-error redirect at the login page, so a
 		// failed form login (wrong password, no Referer) lands back on the login
 		// form with ?error=… instead of rendering the raw JSON error body.
@@ -5007,7 +5081,7 @@ func appSpecPWAOptionLiteral(bp appspec.AppSpec) string {
 		deny = append(deny, "/"+prefix)
 	}
 	if bp.App.Auth.Enabled {
-		if base := strings.TrimRight(bp.App.Auth.BasePath, "/"); base != "" && base != "/auth" {
+		if base := appSpecAuthBase(bp); base != "/auth" {
 			deny = append(deny, base)
 		}
 	}

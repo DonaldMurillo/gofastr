@@ -125,6 +125,14 @@ were mounted or not, and hooks and typed queries work as usual). Setting
 `MCP: true` alongside `CRUD: false` is a registration error, not a silent
 mismatch: MCP CRUD tools dispatch through the routes.
 
+The `<table>_list` tool takes the list route's filters as arguments, one per
+key (`status`, `amount_gte`, `status_in`), and sends them on as the query
+string. An `_in` argument is a JSON array of at least one value, and no
+element may hold a comma, because the route splits `_in` values on commas;
+the tool refuses either rather than drop the filter or split the value. A
+JSON field's argument is any JSON value, compared as JSON: `{"payload": [1,
+2]}` matches the stored array `[1,2]`.
+
 No generated route reaches the rows of a `CRUD: false` entity, including
 routes that belong to OTHER entities. Another entity's `?include=` of a
 relation that targets it, and a `?rel.field=` filter across such a relation,
@@ -179,7 +187,10 @@ optional field takes its declared `Default` on create and clears the
 column to null on update, and a blank required field fails with
 `is required` rather than `must be an integer`. A blank `Image` or
 `File` on update keeps the stored file, since a file input cannot
-carry it back. Empty text stays an
+carry it back. An upsert reads a blank as a create does when no row
+holds the key and as an update does when one does. A blank in a key
+column is never dropped, so an `Int` key part still refuses it. Empty
+text stays an
 empty string, since that is a value a user can mean. A filled number
 input arrives as text too: an `Int` field takes `"42"` and a `Float`
 field takes `"42.5"` as the number each spells, and a `Float` refuses
@@ -209,7 +220,10 @@ if err := app.TryEntity(name, cfg); err != nil {
 
 Registration is atomic with respect to configuration errors: every
 check that can reject a declaration runs before the registry, router,
-or MCP server is touched. A rejected declaration leaves no registry
+or MCP server is touched. That includes a route the mux would refuse
+as overlapping an existing one, such as `GET /{kind}/_events` next to
+the entity's `GET /posts/{id}`, and endpoints that overlap each other or
+the CRUD routes. A rejected declaration leaves no registry
 entry, no route, and no MCP tool, and a corrected retry under the same
 name succeeds, which is the property the authoring loop above depends on.
 
@@ -408,6 +422,10 @@ declaration is not JSON:
   number on insert.
 - `timestamp` and `date` written as a `time.Time`.
 
+A `bool` default written as text (`Default: "true"`, or `"false"`, `"1"`,
+`"0"`) is stored as the boolean, as the same text in a body is, so a
+`?field=true` filter finds the defaulted rows on SQLite too.
+
 A default on an `auto_generate` field is not validated, because the create path
 never writes it: the generated value takes that slot. It still becomes the
 column's DDL `DEFAULT`.
@@ -477,9 +495,11 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. A foreign key this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update) refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
 - **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
 - **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.
+- **The child's link column**: A `has_one` or `has_many` child that is created points at the parent through its own foreign key, so the child must declare that field and its create must write it. A foreign key that is `ReadOnly`, `Hidden`, the child's tenant column, or not declared refuses the nested create with 400 `validation.cascade_key_not_writable` and rolls the parent back, instead of storing a child with no parent.
 - **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated. A link already present is skipped; for a registered pivot entity "present" is read under the pivot's own tenant, owner and soft-delete scope, so a soft-deleted link is not present and re-linking it hits the pivot's key. A link insert that breaks a unique constraint answers **409** and rolls the whole write back, unless the link turns out to exist on a recheck: then another request wrote the same pair at the same moment and the write succeeds.
 - **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
 - **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. Inside a caller's transaction (`App.InTx`, a handler bound to a `*sql.Tx`) they wait until the whole operation succeeds, so a failed cascade announces no child. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
+- **Child keys**: A nested child's keys are read the way its parent's are. Over HTTP that is the child's wire keys; two keys naming one column (`bodyText` and `body_text` on a camel-case handler) answer 400 `validation.keys_fold` on the child's path, as the parent's own keys do. In process (`CreateOne`, a typed repo) the key `MarshalEntity` derives counts too, so a `Line2` field's `line2` writes `line_2`.
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column
@@ -604,9 +624,17 @@ integer, or as a 64-bit float past about 15 significant digits, so
 all 19 digits on Postgres, or store it as an `int` count of the smallest
 unit.
 
+A `decimal` field's `Min` and `Max` are compared in exact decimal
+arithmetic, reading the float bound as its shortest spelling: `0.1` is
+0.1 and `1e30` is 10^30, not their binary expansions. A whole-number
+bound that needs 16 or more significant digits (2^60, spelled in full or
+computed) is its exact binary value.
+
 An `int` field takes a JSON number only when its text is a whole number:
 `3`, `3.0` and `3e2` pass, `1.0000000000000001` is refused even though
-it rounds to the float `1`. A `date` field reads back as `YYYY-MM-DD` on
+it rounds to the float `1`. A `bool` field takes a number the same way,
+only when its text is exactly 0 or 1: `1.0` and `10e-1` pass,
+`1.0000000000000001` and `1e-400` are refused. A `date` field reads back as `YYYY-MM-DD` on
 every read path and in hooks; a typed read into a `time.Time` field
 still decodes it as midnight UTC. An in-process write (`CreateOne`,
 `UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
@@ -616,7 +644,7 @@ date. A `json` field reads back as the JSON
 text it holds, so a document that is the string `"123"` stays a string.
 
 A JSON number past the float64 range (`1e400`) is stored as written in a
-`json` field. Any other column answers a validation 400 naming the
+`json` field, by a single write and a `_batch` item alike. Any other column answers a validation 400 naming the
 field, `not_finite` (or `not_integer` on an `int`), not `invalid_json`.
 
 A `relation` field with a `to` target (e.g. a field named `author_id`, type
@@ -653,6 +681,10 @@ absent FK, an unscoped target, or a target the registry does not
 know is skipped — no registry means no read-side resolver either.
 The FK's existence check (`FOREIGN KEY` on both dialects) still runs
 underneath; the scope gate is what answers "someone else's row".
+A `relation` field with `many: true` gets the same scope gate on the
+id its own column stores, though it has no derived relation and no FK
+constraint. An update that sends back the id the row already stores
+is not checked again, for either kind.
 
 ### Column naming
 
@@ -691,7 +723,10 @@ The owner column is created for you: when no field named like the
 `OwnerField` column is declared, `entity.Define` injects it as a hidden
 string column: AutoMigrate creates it, Create stamps it, and it stays
 out of responses, forms, and the OpenAPI spec. A field you *do* declare
-with that name always wins and is left untouched.
+with that name always wins and is left untouched. A declared owner
+column, like the `MultiTenant` tenant column, still appears in no
+OpenAPI request body, since the server sets both: the create body
+neither lists nor requires them.
 
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
 registers an extractor wires this up: `battery/auth` does so in
@@ -846,7 +881,12 @@ you want for anything a user sees about *their own* data. Two hard rules:
 A write made under `AllowCrossOwner` publishes its `_events` update to
 the row's owner, not the actor: the event's owner and tenant come from
 the record's own columns, so promoting another member's booking reaches
-that member's stream and not yours.
+that member's stream and not yours. A record that does not carry those
+columns (a Hidden owner field, which an update's response leaves out, or
+a delete, whose payload is the key alone) takes them from the stored
+row, read before the write changes it. The same holds for the outbox
+row's owner and for update, delete, batch, transition, restore and
+purge writes alike.
 
 ### Auth entities are NOT auto-private
 
@@ -1111,6 +1151,10 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | `_lte`   | `<=`                                       |
 | `_like`  | case-insensitive literal `contains` (`LOWER(col) LIKE '%value%'`) |
 | `_in`    | `IN (…)`, comma-separated, capped at 1000 |
+
+`sort` names a field, with a `-` prefix for descending. Several fields
+go comma-separated (`sort=status,-created_at`) or as repeated `sort`
+keys, at most 16 in all; an unknown field is a 400.
 
 `_ne` follows `=`'s NULL semantics rather than SQL three-valued intuition:
 a row whose column is NULL matches neither `=` nor `!=`, and no
@@ -1698,7 +1742,11 @@ links nothing. Its `BeforeList` hooks run on `?include=` and nested
 filters too, so a link `GET /enrollments` would not list for the caller
 links nothing either, and a hook that refuses refuses the read. Boot refuses the relation when the entity does not
 declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
-creates no pivot of its own. A `cascade_write` link writes its pivot
+creates no pivot of its own. `Through` matches the entity's `Table`
+ignoring case, and must spell the schema the same way: `public.enrollments`
+against a `Table` of `enrollments` (or the reverse) may be one table under
+the connection's `search_path`, so boot refuses it and so does every read
+through the relation. A `cascade_write` link writes its pivot
 row through that entity's own create: its `access` create permission
 and `CRUD: false` refuse the link, its tenant and owner columns are
 stamped, its hooks run, and its `belongs_to` checks read the row as the
@@ -2139,8 +2187,10 @@ The tools use the same validation and CRUD handler behavior as HTTP routes.
 Their input schemas take what the route takes: a `json` field accepts any
 JSON value (an array as well as an object), a `decimal` field takes its
 text (`"12.34"`) as the route does, an optional field accepts
-`null`, and the owner and tenant columns the server stamps on create are
-never required. Results carry numbers exactly as the route wrote them, so
+`null` (except the state field on a create under enforced
+[States](states.md), which must start at an initial value), and the
+owner and tenant columns the server stamps on create are never
+required. Results carry numbers exactly as the route wrote them, so
 an integer above 2^53 is not rounded, and an `int` argument spelled with
 a point or an exponent past 2^53 (`9007199254740993e0`) is refused as
 the route refuses it, never stored rounded. The route sees the `/mcp` caller's
@@ -2223,7 +2273,11 @@ passes; the browser's CORS preflight already stands in front of it. The
 carries the same default as its own gate: an authenticated caller.
 Declare something stricter for the twin with `MCPGate`, or set
 `Public: true` for an endpoint that really is anonymous; `Public` opens
-both doors:
+both doors. Under any of the three, a caller holding an API token's scopes
+must also hold `<table>:read` for a GET or HEAD endpoint, or
+`<table>:write` for any other method, before the twin runs or shows in
+`tools/list`: the scope `auth.RequireAPIScopes` asks of the HTTP route.
+Sessions are not narrowed.
 
 ```go
 entity.Endpoint{

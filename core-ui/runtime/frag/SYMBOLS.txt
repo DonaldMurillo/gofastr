@@ -137,7 +137,6 @@ boot-embed	8	body
 boot-embed	8	h
 boot-embed	8	html
 boot-embed	8	notice
-boot-embed	8	opened
 boot-embed	8	original
 boot-embed	8	r
 boot-embed	8	r
@@ -164,6 +163,7 @@ kernel	2	collectParams
 kernel	2	currentPath
 kernel	2	doc
 kernel	2	docEl
+kernel	2	formatNumber
 kernel	2	handlers
 kernel	2	own
 kernel	2	registerRoutes
@@ -203,6 +203,7 @@ kernel	6	rIC
 kernel	6	self
 kernel	6	session
 kernel	6	sessionCookie
+kernel	6	t
 kernel	6	text
 kernel	6	trimmed
 kernel	6	v
@@ -212,9 +213,11 @@ kernel	8	key
 kernel	8	n
 kernel	8	parsed
 kernel	8	result
+nav	10	cell
 nav	10	el
 nav	10	slot
 nav	10	sourceRoot
+nav	10	t
 nav	10	u
 nav	12	m
 nav	2	MAX_CACHE_SIZE
@@ -251,6 +254,7 @@ nav	2	domChainKeys
 nav	2	findSlot
 nav	2	finishNav
 nav	2	getCachedScreen
+nav	2	htmlOnly
 nav	2	initialMain
 nav	2	isInternalLink
 nav	2	isKnownRoute
@@ -259,7 +263,6 @@ nav	2	mainEl
 nav	2	mainSlotKey
 nav	2	mergeSeedFromDOM
 nav	2	resolvePath
-nav	2	respIsHTML
 nav	2	routeEntry
 nav	2	routeLayouts
 nav	2	screenCache
@@ -338,6 +341,7 @@ nav	4	v
 nav	4	x
 nav	6	G
 nav	6	av
+nav	6	base
 nav	6	cached
 nav	6	cfg
 nav	6	copy
@@ -373,6 +377,7 @@ nav	8	pdoc
 nav	8	pdoc
 nav	8	pf
 nav	8	root
+nav	8	sd
 nav	8	slot
 nav	8	t
 nav	8	to

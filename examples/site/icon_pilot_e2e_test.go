@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/DonaldMurillo/gofastr/framework/ui/icons"
@@ -101,17 +102,25 @@ func TestIconCatalogBrowser(t *testing.T) {
 					t.Fatalf("submit search and category: %v", err)
 				}
 				if err := chromedp.Run(ctx,
-					chromedp.Poll(`document.querySelectorAll('[data-icon-name]').length === 1 && !!document.querySelector('[data-icon-name="edit"]') && new URLSearchParams(location.search).get('category') === 'actions'`, nil),
+					chromedp.Poll(`document.querySelectorAll('[data-icon-name]').length === 1 && !!document.querySelector('[data-icon-name="edit"]') && new URLSearchParams(location.search).get('category') === 'actions'`, nil, iconWait),
 					chromedp.Evaluate(`(() => { if (window.iconNavigationProbe !== 'same-document') throw new Error('icon search reloaded the page'); })()`, nil),
+				); err != nil {
+					t.Fatalf("search/category result: %v (%s)", err, iconCatalogState(ctx))
+				}
+				if err := chromedp.Run(ctx,
 					chromedp.Reload(), pageReady(),
-					chromedp.Poll(`document.querySelectorAll('[data-icon-name]').length === 1 && document.querySelector('#icon-filters input[name="q"]').value === 'pencil' && document.querySelector('#icon-filters select').value === 'actions'`, nil),
+					chromedp.Poll(`document.querySelectorAll('[data-icon-name]').length === 1 && document.querySelector('#icon-filters input[name="q"]').value === 'pencil' && document.querySelector('#icon-filters select').value === 'actions'`, nil, iconWait),
+				); err != nil {
+					t.Fatalf("search/category after refresh: %v (%s)", err, iconCatalogState(ctx))
+				}
+				if err := chromedp.Run(ctx,
 					// Capture the clipboard argument so the test does not depend on
 					// browser permission prompts or the host's shared clipboard.
 					chromedp.Evaluate(`Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText:async value => {window.iconCopiedValue = value}}})`, nil),
 					chromedp.Click(`[data-icon-name="edit"] button`, chromedp.ByQuery),
-					chromedp.Poll(`window.iconCopiedValue === 'edit' && document.querySelector('[data-icon-name="edit"] [data-hui-copy-state="done"]') !== null`, nil),
+					chromedp.Poll(`window.iconCopiedValue === 'edit' && document.querySelector('[data-icon-name="edit"] [data-hui-copy-state="done"]') !== null`, nil, iconWait),
 				); err != nil {
-					t.Fatalf("search/category result or refresh: %v", err)
+					t.Fatalf("copy icon name: %v (%s)", err, iconCatalogState(ctx))
 				}
 				if err := chromedp.Run(ctx,
 					chromedp.Navigate(base+"/components/icon?q=folder&category=security"), pageReady(),
@@ -126,6 +135,33 @@ func TestIconCatalogBrowser(t *testing.T) {
 			})
 		}
 	}
+}
+
+// iconWait bounds each catalog wait below the tab's 30s budget. chromedp
+// closes the tab when that budget runs out, so a wait that used all of it
+// would leave nothing to read the page with.
+var iconWait = chromedp.WithPollingTimeout(10 * time.Second)
+
+// iconCatalogState reports what the catalog page shows when a wait fails, so
+// a CI timeout names the state it stopped in.
+func iconCatalogState(ctx context.Context) string {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var state string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
+		url: location.href,
+		ready: document.readyState,
+		tiles: document.querySelectorAll('[data-icon-name]').length,
+		edit: !!document.querySelector('[data-icon-name="edit"]'),
+		q: document.querySelector('#icon-filters input[name="q"]')?.value,
+		category: document.querySelector('#icon-filters select')?.value,
+		copied: window.iconCopiedValue ?? null,
+		copyState: document.querySelector('[data-icon-name="edit"] [data-hui-copy-state]')?.getAttribute('data-hui-copy-state') ?? null,
+		probe: window.iconNavigationProbe ?? null,
+	})`, &state)); err != nil {
+		return "page state unavailable: " + err.Error()
+	}
+	return state
 }
 
 // Progressive enhancement retains the native GET fallback when the runtime

@@ -422,9 +422,12 @@ func (b *memBulk) Pending(_ context.Context, id string, limit int) ([]string, er
 	return out, nil
 }
 
-func (b *memBulk) Settle(_ context.Context, id, runner string, outcomes map[string]string) error {
+func (b *memBulk) Settle(ctx context.Context, id, runner string, outcomes map[string]string) error {
 	if b.onSettle != nil {
 		b.onSettle(id)
+	}
+	if err := ctx.Err(); err != nil {
+		return err // a SQL store's write fails on a cancelled context
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()

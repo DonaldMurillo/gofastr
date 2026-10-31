@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,6 +127,7 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 
 // Every defines a durable fixed-interval schedule. id is the stable identity
 // used to preserve its watermark across restarts and replica registration.
+// Register refuses an interval below one millisecond.
 func (s *DurableScheduler) Every(id string, interval time.Duration) *DurableScheduleBuilder {
 	return &DurableScheduleBuilder{scheduler: s, id: id, interval: interval}
 }
@@ -234,6 +236,11 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.payloadErr != nil {
 		return b.payloadErr
 	}
+	// The zone that persists, read back the way every later run reads it:
+	// one tzName cannot store (a fixed offset, Local) evaluates in UTC, so
+	// the first watermark is taken in UTC too, or the catch-up would read
+	// a watermark that is no firing and skip to the next one.
+	tz := tzName(base.Location())
 	var next time.Time
 	if b.cronSpec != "" {
 		sc, err := cron.Parse(b.cronSpec)
@@ -244,10 +251,13 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		// location's next spring-forward will skip lands at the transition
 		// instant (vixie/cronie parity), not silently a day later. See
 		// durable_scheduler_dst.go.
-		next = nextFire(sc, base.Location(), base)
+		next = nextFire(sc, durableSchedule{tz: tz}.location(), base)
+		if next.IsZero() {
+			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
+		}
 	} else {
-		if b.interval <= 0 {
-			return errors.New("queue: durable interval must be positive")
+		if b.interval < minDurableInterval {
+			return fmt.Errorf("queue: durable interval %s is below the %s floor", b.interval, minDurableInterval)
 		}
 		next = base.Add(b.interval)
 	}
@@ -271,7 +281,7 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 				version=%s.version+1`,
 			b.scheduler.queue.schedulerSchedulesTable(),
 			b.scheduler.queue.schedulerSchedulesTable()),
-		b.id, b.jobType, payload, int64(b.interval), b.cronSpec, tzName(base.Location()),
+		b.id, b.jobType, payload, int64(b.interval), b.cronSpec, tz,
 		b.lane, b.priority, b.maxAttempts,
 		next.UTC(), time.Now().UTC(),
 	)
@@ -650,11 +660,63 @@ func (q *DBQueue) schedulerLeaseTable() string {
 }
 
 func (q *DBQueue) schedulerTable(suffix string) string {
-	name, err := query.SafeIdent(q.table + "_" + suffix)
+	name, err := query.SafeIdent(q.schedulerName("_" + suffix))
 	if err != nil {
 		panic(err)
 	}
 	return query.QuoteFolded(name)
+}
+
+// schedulerSuffixes are the relations the durable scheduler creates beside
+// the queue table: three tables and the occurrence table's two indexes.
+// Postgres keeps tables and indexes in one namespace, so they are checked
+// as one set.
+var schedulerSuffixes = []string{
+	"_scheduler_schedules",
+	"_scheduler_occurrences",
+	"_scheduler_leases",
+	"_scheduler_occurrences_schedule_job_idx",
+	"_scheduler_occurrences_created_at_idx",
+}
+
+// schedulerName names one of the scheduler's relations: the queue table's
+// name and suffix. Postgres cuts a name past maxIdentLen, and the cut of a
+// long table name can be the queue table itself or another scheduler
+// relation, which CREATE ... IF NOT EXISTS then skips. A cut that collides
+// with nothing keeps the name Postgres gave it, the one earlier releases
+// created; a colliding one takes indexName's hashed form, which keeps its
+// whole suffix and so differs from every other relation's. A table yields
+// only to the queue table or another table: those never worked. An index
+// yields to anything, so a table whose cut an index shared (the index was
+// skipped) keeps its rows under the name it has. SQLite has no cap and
+// keeps the full name.
+func (q *DBQueue) schedulerName(suffix string) string {
+	name := q.table + suffix
+	if q.dialect != dialectPostgres || len(name) <= maxIdentLen {
+		return name
+	}
+	cut := pgCut(name)
+	// A cut can be the queue table's own name only when that name is at
+	// the cap, and then every scheduler name cuts to it, so the loop below
+	// sees the collision without a separate check.
+	index := strings.HasSuffix(suffix, "_idx")
+	for _, other := range schedulerSuffixes {
+		if other == suffix || pgCut(q.table+other) != cut {
+			continue
+		}
+		if index || !strings.HasSuffix(other, "_idx") {
+			return q.indexName(suffix)
+		}
+	}
+	return cut
+}
+
+// pgCut is the name Postgres keeps of an ASCII identifier.
+func pgCut(name string) string {
+	if len(name) > maxIdentLen {
+		return name[:maxIdentLen]
+	}
+	return name
 }
 
 func (s *DurableScheduler) ensureTables() error {
@@ -663,6 +725,7 @@ func (s *DurableScheduler) ensureTables() error {
 		tsType = "TIMESTAMPTZ"
 	}
 	statements := []string{
+		//gofastr:allow(GOFASTR1415) a schedule is a recurring job the host declares by id (Every/Cron), with no user attribution; the jobs it enqueues land in queue_jobs, which both planes cover
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			id TEXT PRIMARY KEY,
 			job_type TEXT NOT NULL,
@@ -689,6 +752,7 @@ func (s *DurableScheduler) ensureTables() error {
 			enqueued_job_id TEXT NOT NULL DEFAULT '',
 			UNIQUE(schedule_id, scheduled_tick)
 		)`, s.queue.schedulerOccurrencesTable(), tsType, tsType),
+		//gofastr:allow(GOFASTR1415) owner_id is the replica holding the scheduler lease, not a user; the table holds no user data
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			name TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL,

@@ -35,9 +35,12 @@
     if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) return false;
     return pp.every((seg, i) => seg.startsWith(':') || seg === parts[i]);
   };
-  // Routes register unprefixed: /es/pricing matches /pricing.
+  // Routes register unprefixed: /es/pricing matches /pricing. A key
+  // keeps its query (the click takes the entry by path + search); the
+  // route match reads the path alone.
   const routeFor = (path) => {
-    const p = NS._unlocalize?.(path) ?? path;
+    const bare = path.split('?')[0];
+    const p = NS._unlocalize?.(bare) ?? bare;
     return routes().find((r) => r.path && matchRoute(r.path, p));
   };
 
@@ -125,7 +128,7 @@
         if (r.headers.get('X-Gofastr-Partial') !== 'true') return null;
         return r.text().then((html) => ({
           html,
-          title: decodeURIComponent(r.headers.get('X-Gofastr-Title') || document.title),
+          title: NS._title(r),
           layer: r.headers.get('X-Gofastr-Swap') || '',
           // An envelope body parses at apply time (nav owns the
           // parser); the flag tells it which shape it holds.
@@ -153,7 +156,7 @@
 
   const modeFor = (href) => {
     let path;
-    try { path = new URL(href, location.href).pathname; } catch (_) { return ['', '']; }
+    try { const u = new URL(href, location.href); path = u.pathname + u.search; } catch (_) { return ['', '']; }
     const r = routeFor(path);
     return [r && r.preload ? r.preload : '', path];
   };

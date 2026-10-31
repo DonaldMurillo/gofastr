@@ -604,6 +604,10 @@ func (f *frameFriendlyWriter) Flush() {
 	}
 }
 
+// Unwrap lets http.ResponseController reach the connection's deadlines.
+// Flush stops at the method above, which strips the headers first.
+func (f *frameFriendlyWriter) Unwrap() http.ResponseWriter { return f.rw }
+
 // strip removes the frame-blocking headers exactly once, before the first
 // byte goes on the wire. Modifying the header map after WriteHeader is a
 // no-op, so this must run inside the WriteHeader/Write intercept.

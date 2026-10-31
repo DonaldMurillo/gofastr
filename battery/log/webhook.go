@@ -91,6 +91,14 @@ func WebhookSink(url string, opts WebhookOpts) Sink {
 	if client == nil {
 		client = &http.Client{Timeout: opts.Timeout}
 	}
+	// Refuse redirects, on a host-supplied client too: a 307/308 replays
+	// the batch and every configured header (an X-API-Key) to whatever
+	// host it names. The 3xx is then a failed delivery.
+	cp := *client
+	cp.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	client = &cp
 	s := &webhookSink{
 		url:          url,
 		opts:         opts,
@@ -123,6 +131,15 @@ func (s *webhookSink) Write(entry []byte) error {
 	default:
 	}
 	s.mu.Lock()
+	// Again under the lock: a Write that passed the check above while
+	// Close ran would otherwise append behind the final drain, an entry
+	// nobody sends and Dropped never counts.
+	select {
+	case <-s.closed:
+		s.mu.Unlock()
+		return ErrSinkClosed
+	default:
+	}
 	if len(s.queue) >= s.opts.QueueSize {
 		// Drop oldest to make room. Never block. Counter is surfaced
 		// via Dropped() and emitted to stderr on shutdown so silent
@@ -255,7 +272,7 @@ func (s *webhookSink) postOnce(body []byte) error {
 	if resp.StatusCode >= 500 {
 		return retryableError{code: resp.StatusCode}
 	}
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 300 {
 		return fmt.Errorf("log: webhook %d", resp.StatusCode)
 	}
 	return nil

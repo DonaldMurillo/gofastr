@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 )
 
 // FileName is the manifest location relative to the app/test working
@@ -65,11 +67,10 @@ func Record(dir, path, scheme string) error {
 	if err != nil {
 		return fmt.Errorf("axecov: open lock: %w", err)
 	}
-	defer lock.Close()
-	if err := lockFile(lock); err != nil {
+	defer lock.Close() // releases the lock
+	if err := filelock.Lock(lock); err != nil {
 		return fmt.Errorf("axecov: lock manifest: %w", err)
 	}
-	defer unlockFile(lock)
 
 	m, err := readLocked(dir)
 	if err != nil {

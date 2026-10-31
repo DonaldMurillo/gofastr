@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -76,8 +78,12 @@ func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crud
 // scoping, RBAC — the same bundle llm.md's canListEntity assembles
 // in-process). An entity this caller would only ever see 401/403 on is
 // omitted from their spec document entirely; the spec is the disclosure.
+// A scoped token also needs "<table>:read", which auth.RequireAPIScopes
+// demands on the List route: CanReadScoped passes an entity with no read
+// permission without reading held scopes.
 func canReadSpecEntity(ctx context.Context, ent *entity.Entity) bool {
-	return (&crud.CrudHandler{Entity: ent}).CanReadScoped(ctx)
+	return access.ScopeAllows(ctx, access.Permission(ent.GetTable()+":read")) &&
+		(&crud.CrudHandler{Entity: ent}).CanReadScoped(ctx)
 }
 
 // objectSchemaWith wraps a property map in the OpenAPI object envelope
@@ -110,22 +116,32 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
 	}))
 
+	// The list route answers with one of the two envelopes below, as a
+	// oneOf. oneOf needs exactly one match, and both envelopes stay open
+	// to extra keys, so each requires the keys the other never writes:
+	// page/perPage/totalPages, or cursor/hasMore.
+
 	// Offset-mode list envelope
-	s.AddSchema("ListResponse", objectSchemaWith(map[string]any{
+	listResponse := objectSchemaWith(map[string]any{
 		"data":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 		"total":      map[string]any{"type": "integer"},
 		"page":       map[string]any{"type": "integer"},
 		"perPage":    map[string]any{"type": "integer"},
 		"totalPages": map[string]any{"type": "integer"},
-	}))
+	})
+	listResponse["required"] = []string{"data", "total", "page", "perPage", "totalPages"}
+	s.AddSchema("ListResponse", listResponse)
 
-	// Cursor-mode list envelope (returned when ?cursor= is present)
-	s.AddSchema("CursorPage", objectSchemaWith(map[string]any{
+	// Cursor-mode list envelope (returned when ?cursor= is present). The
+	// cursor path never counts rows and omits total, so it is optional.
+	cursorPage := objectSchemaWith(map[string]any{
 		"data":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
 		"cursor":  map[string]any{"type": "string", "description": "Opaque cursor for the next page; empty when there are no more results."},
 		"hasMore": map[string]any{"type": "boolean"},
 		"total":   map[string]any{"type": "integer"},
-	}))
+	})
+	cursorPage["required"] = []string{"data", "cursor", "hasMore"}
+	s.AddSchema("CursorPage", cursorPage)
 
 	// Per-item shape inside a _batch response
 	s.AddSchema("BatchResult", objectSchemaWith(map[string]any{
@@ -226,6 +242,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			wireFields[i] = f
 		}
 		entitySchema := openapi.FieldsToSchema(wireFields)
+		// The route stores a null for an optional field, so reads return
+		// it. A generated value and a key column are never null.
+		wireProps := entitySchema["properties"].(map[string]any)
+		keyCols := ent.KeyColumns()
+		for i, f := range visibleFields {
+			if !f.Required && f.AutoGenerate == schema.AutoNone && !slices.Contains(keyCols, f.Name) {
+				openapi.Nullable(wireProps[wireFields[i].Name].(map[string]any))
+			}
+		}
 		s.AddSchema(schemaName, entitySchema)
 
 		// The router mounts auto-CRUD only when Exposure.CRUD is unset
@@ -284,14 +309,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// route is mounted for every non-system move, Advisory or not.
 		st := ent.Config.States
 		statesGuarded := st != nil && !st.Advisory
-		// An update never sets the owner field or the MultiTenant tenant
-		// column (crud doUpdate skips both), so no update body lists them.
-		var updateSkip []string
+		// The server sets the owner field and the MultiTenant tenant column
+		// on create (InjectOwner, the context tenant) and never on update
+		// (crud doUpdate skips both), so no write body lists them.
+		var scopeSkip []string
 		if owner := ent.Config.Scope.OwnerField; owner != "" {
-			updateSkip = append(updateSkip, owner)
+			scopeSkip = append(scopeSkip, owner)
 		}
 		if ent.Config.Scope.MultiTenant {
-			updateSkip = append(updateSkip, ent.Config.TenantColumn())
+			scopeSkip = append(scopeSkip, ent.Config.TenantColumn())
 		}
 		// apiPrefix first, then any per-entity version group: the router
 		// mounts /api/v2/posts, so the document has to key it that way.
@@ -428,7 +454,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// Create request body excludes auto-generated and read-only
 		// fields; enforced states narrow the state field's enum to the
 		// values a create may set and drop the stamps.
-		createSchema := requestSchema(entitySchema, fields, st, nil, false)
+		createSchema := requestSchema(entitySchema, fields, st, scopeSkip, false)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
@@ -468,7 +494,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		updateOp.Tags = []string{tagName}
 		// An enforced states block removes the state field and the stamps
 		// from the update body: they change only through a move's route.
-		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, updateSkip, true), false)
+		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, scopeSkip, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
 		if statesGuarded {
@@ -488,8 +514,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
 		patchOp.Tags = []string{tagName}
-		patchSchema := requestSchema(entitySchema, fields, st, updateSkip, true)
-		delete(patchSchema, "required")
+		patchSchema := requestSchema(entitySchema, fields, st, scopeSkip, true)
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
@@ -613,8 +638,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		}
 		// An item is sparse like a single PATCH: the key part below is
 		// all it must carry.
-		batchPatch := requestSchema(entitySchema, fields, st, updateSkip, true)
-		delete(batchPatch, "required")
+		batchPatch := requestSchema(entitySchema, fields, st, scopeSkip, true)
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
 				batchPatch,
@@ -734,25 +758,24 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 }
 
 // requestSchema returns the write-request view of the entity schema:
-// excludeFieldsByBehavior, then the update skips, then the states rules.
-// An update drops the fields named in updateSkip (the owner and tenant
-// columns, which an update never sets). With enforced states (declared
+// excludeFieldsByBehavior, then the scope skips, then the states rules.
+// Every write drops the fields named in scopeSkip (the owner and tenant
+// columns, which the server sets). An update requires nothing: PUT and
+// PATCH both run the sparse update (schema.ValidatePartial). With enforced states (declared
 // and not Advisory) a create keeps the state field but narrows its enum
 // to the values a create may set, and drops every stamp; an update drops
 // the state field and the stamps entirely — they change only through a
 // move's own route.
-func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, updateSkip []string, update bool) map[string]any {
+func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, scopeSkip []string, update bool) map[string]any {
 	cp := excludeFieldsByBehavior(specSchema, fields)
 	byName := make(map[string]schema.Field, len(fields))
 	for _, f := range fields {
 		byName[f.Name] = f
 	}
 	drop := map[string]bool{} // wire keys no write may carry
-	if update {
-		for _, name := range updateSkip {
-			if f, ok := byName[name]; ok {
-				drop[wireKeyOf(f)] = true
-			}
+	for _, name := range scopeSkip {
+		if f, ok := byName[name]; ok {
+			drop[wireKeyOf(f)] = true
 		}
 	}
 	stateKey := ""
@@ -783,11 +806,16 @@ func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.
 		if p, ok := props[stateKey].(map[string]any); ok {
 			// Copy before narrowing: the property map is shared with the
 			// response schema, whose enum stays the field's full value set.
+			// A create refuses a null state, so the type drops null too.
 			narrowed := make(map[string]any, len(p))
 			maps.Copy(narrowed, p)
+			narrowed["type"] = openapi.FieldToSchema(byName[st.Field])["type"]
 			narrowed["enum"] = st.InitialValues(fields)
 			props[stateKey] = narrowed
 		}
+	}
+	if update {
+		delete(cp, "required")
 	}
 	if reqs, ok := cp["required"].([]string); ok {
 		kept := make([]string, 0, len(reqs))

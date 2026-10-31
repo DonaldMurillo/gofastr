@@ -32,7 +32,9 @@ each command to the doc that covers it.
   a file it would replace (`main.go`, `screens.go`, `.env`,
   `gofastr.settings.yml`, the onboarding files, and with the sample
   entity `screens_auth.go` and `entities/entities.go`); `--force`
-  overwrites them. An existing `.gitignore` is kept and gains the entries
+  overwrites them, each through a temporary file renamed over the old
+  one, so a crash or a full disk leaves the old file whole and a
+  replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
   it lacks. `init <name> --reinit` or `init . --reinit` refreshes the
   AI-agent onboarding files of an existing project (`--force` overwrites
   your edits); no Go code or git changes. An unknown flag is an error
@@ -49,7 +51,9 @@ each command to the doc that covers it.
   with a letter or digit. Windows device names such as `con`, `nul`,
   `com0` through `com9`, and `lpt0` through `lpt9` are refused on every OS.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
-  one handler or route registration into an existing app.
+  one handler or route registration into an existing app. `--method`,
+  `--path` and `--handler` take `--method=POST` or `--method POST`; an
+  unknown flag is an error.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
   and the per-battery detail files under `.agents/`.
 - `gofastr theme edit`: a local theme configurator with every token as a
@@ -197,8 +201,9 @@ with `go mod tidy` from that project directory.
   for what you changed (after the reload, never blocking it), and the dev
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,
-  `--addr`/`-p` the port; `--no-a11y` skips the accessibility lint on
-  each rebuild. While the app is building, failed to build, or exited,
+  `--addr`/`-p` the port (not both); `--no-a11y` skips the accessibility
+  lint on each rebuild. Each takes its value as `--addr=x` or `--addr x`;
+  an unknown flag, or a flag whose value is missing, is an error. While the app is building, failed to build, or exited,
   the address answers 503 with what happened (the build error
   included) instead of refusing connections.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
@@ -211,7 +216,10 @@ with `go mod tidy` from that project directory.
   package, and `-o`/`--output` names the binary (default `bin/server`).
   `--allow-unverified-embeds` keeps proven embed violations fatal while
   downgrading a surface the analyzer cannot follow ([embed](embed.md)).
-- `gofastr test`: run the project's tests.
+- `gofastr test [flags] [packages]`: run the project's tests (`./...`
+  when no packages are named). Flags: `--run`, `--bench`, `--timeout`
+  (each as `--run=X` or `--run X`), `--race`, `--cover`, `--short`; an
+  unknown flag is an error.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` to search).
 - `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
@@ -539,3 +547,20 @@ does not cover: a runtime browser scan, and the dependency report.
 - **`migrate force` as a routine fix.** It only rewrites the tracking
   table. It's for dirty-state recovery or adopting a baseline. Read
   [migrations](migrations.md) first.
+
+## Desktop applications
+
+- `gofastr desktop build`: build the platform executable or bundle; Linux defaults
+  to plain ELF and supports opt-in `--format=tar.gz` release archives.
+- `gofastr desktop install --bundle=<extracted-directory>`: Linux-only, validate
+  and install a per-user bundle and any embedded URL handler. Does not change
+  saved default-handler preferences or autostart.
+- `gofastr desktop uninstall --id=<reverse.dns>`: Linux-only, remove the unchanged
+  owned installation, preserving application and browser-profile data.
+
+`desktop run`, `build` and `types` take each value as `--id=x` or `--id x`
+and refuse an unknown flag; a value that starts with a dash is written
+`--sign=-x` (a lone `--sign -` is the ad-hoc identity).
+
+See [desktop](desktop.md#the-gofastr-desktop-verbs) for the complete verb table,
+runtime requirements and installation limitations.

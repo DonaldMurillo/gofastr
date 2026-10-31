@@ -30,3 +30,27 @@ func otherRule(b []byte) {
 	var x v
 	_ = json.Unmarshal(b, &x) //gofastr:allow(mapwriter) unrelated marker // want `json.Unmarshal error discarded`
 }
+
+// I20: an inline block marker before code covers its own line only; the
+// next line is not silenced.
+func inlineBlock(b []byte) {
+	var x v
+	/* gofastr:allow(discardeddecode) best-effort render of validated bytes */ _ = json.Unmarshal(b, &x)
+	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
+}
+
+// A block marker on a line of its own covers the next line, like the
+// line-comment form.
+func standaloneBlock(b []byte) {
+	var x v
+	/* gofastr:allow(discardeddecode) best-effort render of validated bytes */
+	_ = json.Unmarshal(b, &x)
+}
+
+// A block marker whose only text after the parenthesis is the closing
+// delimiter has no reason, and silences nothing.
+func bareBlock(b []byte) {
+	var x v
+	/* gofastr:allow(discardeddecode) */
+	_ = json.Unmarshal(b, &x) // want `json.Unmarshal error discarded`
+}

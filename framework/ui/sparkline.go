@@ -29,9 +29,23 @@ const (
 	SparklineArea SparklineShape = "area"
 )
 
+// SparklineColor picks the theme token the line is drawn in. A new
+// color is a theme token, never a raw CSS value set here.
+type SparklineColor string
+
+const (
+	SparklinePrimary SparklineColor = "" // var(--color-primary)
+	SparklineSuccess SparklineColor = "success"
+	SparklineWarning SparklineColor = "warning"
+	SparklineDanger  SparklineColor = "danger"
+	SparklineInfo    SparklineColor = "info"
+)
+
 // SparklineConfig configures a Sparkline.
 type SparklineConfig struct {
-	// Values are the points in order (≥2).
+	// Values are the points in order (≥2 finite). A NaN or Inf value is
+	// a reading that never arrived: the line joins the points either
+	// side of it.
 	Values []float64
 	// Width / Height in CSS pixels. Default 120×32.
 	Width  int
@@ -43,11 +57,9 @@ type SparklineConfig struct {
 	FullWidth bool
 	// Shape picks line or area. Default line.
 	Shape SparklineShape
-	// Color override: defaults to var(--color-primary) via CSS.
-	// Set to "danger" / "success" / "warning" / "info" to use the
-	// matching theme token; any other string is passed through as a
-	// raw CSS color.
-	Color string
+	// Color picks the line's theme token. Default SparklinePrimary;
+	// any value outside the SparklineColor constants panics.
+	Color SparklineColor
 	// LabelledBy is the id of an element naming the chart (e.g. the
 	// StatCard label), used as the SVG's aria-labelledby. Without
 	// it the chart is aria-hidden (decorative).
@@ -69,11 +81,18 @@ type SparklineConfig struct {
 
 // Sparkline renders a tiny inline trend chart.
 func Sparkline(cfg SparklineConfig) render.HTML {
+	switch cfg.Color {
+	case SparklinePrimary, SparklineSuccess, SparklineWarning, SparklineDanger, SparklineInfo:
+	default:
+		panic("ui: Sparkline unknown Color " + strconv.Quote(string(cfg.Color)) +
+			`. Pick one of: "" (primary), success, warning, danger, info`)
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if len(cfg.Values) < 2 {
+	min, max, finiteN := finiteRange(cfg.Values)
+	if finiteN < 2 {
 		// Inline trend with too few points: render a calm "no trend" dash
 		// rather than crashing the host that embeds it. Sanitized extras
 		// first, owned keys on top so they win.
@@ -103,20 +122,6 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		h = 32
 	}
 
-	min, max := cfg.Values[0], cfg.Values[0]
-	for _, v := range cfg.Values {
-		if v < min {
-			min = v
-		}
-		if v > max {
-			max = v
-		}
-	}
-	span := max - min
-	if span == 0 {
-		span = 1
-	}
-
 	// Map to viewBox coords. Leave a 1px margin top + bottom so the
 	// line stroke doesn't get clipped.
 	pad := 1.0
@@ -124,15 +129,23 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	plotH := float64(h) - 2*pad
 	n := len(cfg.Values)
 	pts := make([]string, 0, n)
+	firstX, lastX := -1.0, 0.0
 	for i, v := range cfg.Values {
+		if !finite(v) {
+			continue
+		}
 		x := float64(i) * plotW / float64(n-1)
-		y := pad + plotH - ((v - min) / span * plotH)
+		y := pad + plotH - chartFrac(v, min, max)*plotH
 		pts = append(pts, ftoa(x)+","+ftoa(y))
+		if firstX < 0 {
+			firstX = x
+		}
+		lastX = x
 	}
 
 	cls := "fui-sparkline"
 	if cfg.Color != "" {
-		cls += " fui-sparkline--" + escapeXML(cfg.Color)
+		cls += " fui-sparkline--" + string(cfg.Color)
 	}
 	if cfg.Class != "" {
 		cls += " " + escapeXML(cfg.Class)
@@ -187,8 +200,8 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	for i := 1; i < len(pts); i++ {
 		pathD.WriteString(" L" + pts[i])
 	}
-	areaD := pathD.String() + " L" + ftoa(plotW) + "," + ftoa(float64(h)) +
-		" L0," + ftoa(float64(h)) + " Z"
+	areaD := pathD.String() + " L" + ftoa(lastX) + "," + ftoa(float64(h)) +
+		" L" + ftoa(firstX) + "," + ftoa(float64(h)) + " Z"
 
 	var body string
 	if cfg.Shape == SparklineArea {

@@ -104,6 +104,16 @@
     });
   }
 
+  // keyedTrigger finds the trigger that opens slot for key, the one
+  // whose click wrote ?<param>=<slot>:<key>. One key can label triggers
+  // for both panes (a record's view and its edit), so the pane is part
+  // of the match.
+  function keyedTrigger(host, slot, key) {
+    const k = '[data-hui-pane-key="' + CSS.escape(key) + '"]';
+    const v = '="' + CSS.escape(slot) + '"]';
+    return host.querySelector(k + '[data-hui-pane-open-control' + v + ',' + k + '[data-hui-pane-swap' + v);
+  }
+
   // Bring one host in line with the URL (popstate). The keyed trigger
   // is replayed so the pane's CONTENT comes back too: it carries the
   // open control and the RPC that fills the region, so one click
@@ -122,7 +132,7 @@
         for (const s of SLOTS) if (paneOf(host, s) && !paneOf(host, s).hasAttribute('hidden')) closePane(host, s);
         return;
       }
-      const trigger = key && host.querySelector('[data-hui-pane-key="' + CSS.escape(key) + '"]');
+      const trigger = key && keyedTrigger(host, slot, key);
       if (trigger) trigger.click();
       else openPane(host, slot, '');
       for (const s of SLOTS) if (s !== slot && paneOf(host, s) && !paneOf(host, s).hasAttribute('hidden')) closePane(host, s);
@@ -283,7 +293,12 @@
   NS.swapPane = function (hostId, pane) { const h = findHost(hostId); if (h) swapPane(h, pane, ''); };
 
   // Deep-link strip on load: the URL's parameter opens its pane after
-  // hydration when the server could not pre-render it.
+  // hydration when the server could not pre-render it. The keyed
+  // trigger is replayed, as popstate does, so its RPC fills the pane
+  // after a refresh or from a shared link; a key with no trigger on
+  // this page opens the pane empty. syncing keeps either from writing
+  // history, as in syncFromURL; the trigger opens the pane the URL
+  // names, so pushPane would find the value already there.
   function applyDeepLink(host) {
     const param = host.getAttribute('data-hui-pane-deeplink');
     if (!param) return;
@@ -291,10 +306,18 @@
     if (!v) return;
     const colon = v.indexOf(':');
     const slot = colon === -1 ? v : v.slice(0, colon);
+    const key = colon === -1 ? '' : v.slice(colon + 1);
     if (slot !== 'secondary' && slot !== 'tertiary') return;
     if (!paneOf(host, slot)) return;
     if (openList(host).indexOf(slot) !== -1) return;
-    openPane(host, slot, '');
+    syncing = true;
+    try {
+      const trigger = key && keyedTrigger(host, slot, key);
+      if (trigger) trigger.click();
+      else openPane(host, slot, '');
+    } finally {
+      syncing = false;
+    }
   }
 
   // Back/forward replays pane state for deep-linked hosts; hosts

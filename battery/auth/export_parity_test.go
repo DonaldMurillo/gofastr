@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
 )
 
 // Every table the erase plane reaches is one the export plane dumps, so an
@@ -162,7 +162,7 @@ func exportConfiguredStores(t *testing.T, userTable string) {
 	}
 	if err := passkeys.AddPasskey(ctx, PasskeyCredential{
 		ID: []byte("cred-1"), UserID: id, PublicKey: []byte{1}, Algorithm: coseAlgES256, CreatedAt: time.Now(),
-	}); err != nil {
+	}, 20); err != nil {
 		t.Fatal(err)
 	}
 

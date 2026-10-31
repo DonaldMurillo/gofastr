@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -45,6 +46,10 @@ type CodeTabsConfig struct {
 	// Class), id (ID tags the inner tabset, not the root), and
 	// data-cui-*.
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context the code blocks' accessible
+	// names, line counts and copy controls are said in. When nil,
+	// English applies.
+	Ctx context.Context
 }
 
 // CodeTabs renders the same snippet in several languages behind a tab strip,
@@ -76,6 +81,7 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 				Filename:    s.Filename,
 				ShowCopy:    true,
 				LineNumbers: cfg.LineNumbers,
+				Ctx:         cfg.Ctx,
 			}),
 		})
 	}

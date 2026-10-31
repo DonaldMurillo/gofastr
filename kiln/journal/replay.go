@@ -1,6 +1,8 @@
 package journal
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -162,6 +164,19 @@ func applyWorldEdit(s *Session, e Entry) error {
 		// and a fresh world has no name yet, so requiring a name there
 		// would refuse an edit the live API produces. A derived edit
 		// still may not BLANK a name the world already had.
+		if p.Prev != nil && !s.replaying {
+			have, err := json.Marshal(w.App)
+			if err != nil {
+				return err
+			}
+			want, err := json.Marshal(*p.Prev)
+			if err != nil {
+				return err
+			}
+			if string(have) != string(want) {
+				return ErrAppConfigChanged
+			}
+		}
 		cfg := p.Config
 		switch {
 		case p.Prev == nil:
@@ -283,6 +298,16 @@ func applyWorldEdit(s *Session, e Entry) error {
 			}
 		}
 		w.Seeds = kept
+		// Its hooks go too, for the same reason: the generator refuses a
+		// hook naming an absent entity, so a frozen world kept one it
+		// could never build (2026-10-27 K22).
+		keptHooks := make([]*world.Hook, 0, len(w.Hooks))
+		for _, h := range w.Hooks {
+			if h == nil || h.Entity != p.Name {
+				keptHooks = append(keptHooks, h)
+			}
+		}
+		w.Hooks = keptHooks
 		return nil
 
 	case OpAddField:
@@ -406,6 +431,12 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if p.Prev != nil && !s.replaying && cur.Version != p.Prev.Version {
 			return &PageConflictError{Path: p.Path, Want: p.Prev.Version, Have: cur.Version}
 		}
+		// A page deleted and added again restarts at version 1, so a
+		// patch read from the old page matched the new one and replaced
+		// it (2026-10-27 K20). Its generation tells them apart.
+		if p.Prev != nil && !s.replaying && cur.Gen != p.Prev.Gen {
+			return &PageConflictError{Path: p.Path, Want: p.Prev.Version, Have: cur.Version, Replaced: true}
+		}
 		w.Pages[p.Path] = p.New
 		return nil
 
@@ -520,6 +551,11 @@ func applyWorldEdit(s *Session, e Entry) error {
 	}
 }
 
+// ErrAppConfigChanged refuses a set_app_config entry built from an app
+// config the world no longer holds: another edit landed between the read
+// and the apply, and writing this one would undo it.
+var ErrAppConfigChanged = errors.New("set_app_config: the app config changed after this edit read it")
+
 // PageConflictError is the refusal of an update_page_element entry built
 // against a page version the world no longer holds. Have is -1 when the
 // page has been deleted since. It is typed so the tool layer can answer
@@ -528,11 +564,17 @@ type PageConflictError struct {
 	Path string
 	Want int
 	Have int
+	// Replaced reports a page deleted and added again after the patch
+	// read it: the versions may match, the page does not.
+	Replaced bool
 }
 
 func (e *PageConflictError) Error() string {
 	if e.Have < 0 {
 		return fmt.Sprintf("update_page_element: page %q was deleted after version %d was read", e.Path, e.Want)
+	}
+	if e.Replaced {
+		return fmt.Sprintf("update_page_element: page %q was deleted and added again after version %d was read", e.Path, e.Want)
 	}
 	return fmt.Sprintf("update_page_element: page %q is at version %d, the patch was built from version %d", e.Path, e.Have, e.Want)
 }

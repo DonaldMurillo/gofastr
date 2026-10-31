@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
 // widget.Definition.RequireSession fails closed when no host installed a
@@ -151,6 +152,29 @@ func TestRequireAuthenticatedWidgetRefusesAnonSession(t *testing.T) {
 	if authedPage.Code != http.StatusOK || !strings.Contains(authedPage.Body.String(), "r4-anon-gate chrome") {
 		t.Errorf("authenticated caller: page = %d, want 200 with the widget chrome SSR-inlined (body has marker: %v)",
 			authedPage.Code, strings.Contains(authedPage.Body.String(), "r4-anon-gate chrome"))
+	}
+}
+
+// A scoped API token's owner is not a signed-in viewer: the gate refuses
+// it the way it refuses an embed grant, and as auth.RequireSession does,
+// so a leaked customers:read token cannot read an authenticated widget's
+// signals (U53).
+func TestAuthenticatedCheckRefusesToken(t *testing.T) {
+	widget.SetAuthenticatedCheck(nil)
+	t.Cleanup(func() { widget.SetAuthenticatedCheck(nil) })
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	New(a).Mount(router.New())
+	check := widget.AuthenticatedCheck()
+
+	req := httptest.NewRequest(http.MethodGet, "/core-ui/widget/w/state", nil)
+	req = req.WithContext(handler.SetUser(req.Context(), r4GateUser{}))
+	if !check(req) {
+		t.Fatal("a signed-in caller was refused")
+	}
+	tok := req.WithContext(access.WithHeldScopes(req.Context(), []string{"customers:read"}))
+	if check(tok) {
+		t.Error("a scoped token's owner passed the authenticated gate")
 	}
 }
 

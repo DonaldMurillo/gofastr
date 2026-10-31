@@ -364,7 +364,7 @@ func TestApplyCascadeChildReadHooks_RedactsChildren(t *testing.T) {
 // consumer would receive.
 type dataOutbox struct{ staged []any }
 
-func (o *dataOutbox) Append(_ context.Context, _ DBExecutor, _ string, data any) (string, error) {
+func (o *dataOutbox) AppendFor(_ context.Context, _ DBExecutor, _, _ string, data any) (string, error) {
 	o.staged = append(o.staged, data)
 	return "1", nil
 }

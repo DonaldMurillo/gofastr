@@ -3,7 +3,7 @@ package queue
 import (
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // TestQueueExporterRegistered verifies the queue_jobs table is registered for

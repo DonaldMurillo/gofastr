@@ -115,7 +115,7 @@ func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 	// every depth (the readLoop envelope rule) before the content
 	// blocks execute as tool output, keeping the MCP tolerance for
 	// unknown fields.
-	if err := handler.CheckObjectKeys(result, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(result, handler.FoldJSONKey); err != nil {
 		return &tool.ToolResult{
 			IsError: true,
 			Content: []control.ContentBlock{{Type: "text", Text: fmt.Sprintf("mcp result parse error: %v", err)}},

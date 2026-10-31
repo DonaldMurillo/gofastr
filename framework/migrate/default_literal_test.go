@@ -61,9 +61,11 @@ func TestScalarDefaultsKeepTheirValue(t *testing.T) {
 }
 
 // A snapshot written before the float fix records DEFAULT 0.000000 in
-// its TableDDL. Defaults are not diffed, so regenerating against it must
-// not emit a migration.
-func TestOldFloatDefaultSnapshotNoChange(t *testing.T) {
+// its TableDDL, the default the table it generated really holds.
+// Defaults are diffed now (2026-10-27 bug bash M15), so regenerating
+// against it converges the column on the declared 1e-07; this test used
+// to pin no migration, when defaults were not compared at all.
+func TestOldFloatDefaultSnapshotConverges(t *testing.T) {
 	plan := migrate.Plan{Registry: fkReg{dfltEntity()}}
 	_, _, snap, err := migrate.GeneratePlan(plan, migrate.SchemaSnapshot{}, migrate.DialectSQLite)
 	if err != nil {
@@ -78,7 +80,7 @@ func TestOldFloatDefaultSnapshotNoChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if up != "" {
-		t.Fatalf("an old-format float default produced a migration:\n%s", up)
+	if !strings.Contains(up, "CREATE TABLE dflt__rebuild") || !strings.Contains(up, "tiny REAL DEFAULT 1e-07") {
+		t.Fatalf("an old-format float default did not converge:\n%s", up)
 	}
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -181,7 +182,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if err := writeFile(dst, []byte(html)); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 				return err
 			}
 			b.log("rendered %s -> %s", p, dst)
@@ -250,7 +251,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		if err := b.ensureContained(dst); err != nil {
 			return res, err
 		}
-		if err := writeFile(dst, []byte(html)); err != nil {
+		if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 			return res, err
 		}
 		res.Assets = append(res.Assets, "/404.html")
@@ -282,10 +283,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// SEO surface: sitemap.xml and robots.txt, mirroring the live
 	// WithSitemap/WithRobots handlers so a static deploy keeps the same
-	// crawler contract as the live server. Same bytes as the HTTP
-	// handlers (single source: UIHost.SitemapXML / UIHost.RobotsTXT),
-	// with BasePath folded into <loc> entries and the derived Sitemap:
-	// URL. User-supplied files in the static source win, matching the
+	// crawler contract as the live server. One source with the HTTP
+	// handlers (UIHost.SitemapFiles / UIHost.RobotsTXT), listing only the
+	// pages this build wrote, with BasePath folded into <loc> entries and
+	// the derived Sitemap: URL. User-supplied files in the static source win, matching the
 	// PWA-surface precedence below.
 	if err := b.dumpSEOAssets(&res); err != nil {
 		return res, err
@@ -352,7 +353,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	for _, a := range assets {
 		dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(a.urlPath, "/")))
-		if err := writeFile(dst, b.rewriteJSAsset(a.body)); err != nil {
+		if err := writeUnder(b.OutDir, dst, b.rewriteJSAsset(a.body)); err != nil {
 			return res, err
 		}
 		res.Assets = append(res.Assets, a.urlPath)
@@ -483,7 +484,7 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if err := writeFile(dst, []byte(md)); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(md)); err != nil {
 				return err
 			}
 			res.Assets = append(res.Assets, "/"+filepath.ToSlash(pathToLLMFile(at(p))))
@@ -497,7 +498,7 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 	// exported index metadata-free (no auth at build time).
 	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocs(ctx, exported), b.Host.App)
 	index := at("/llm-pages.md")
-	if err := writeFile(filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
+	if err := writeUnder(b.OutDir, filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
 		return err
 	}
 	res.Assets = append(res.Assets, index)
@@ -635,7 +636,7 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 // writes a `_redirects` rule per redirect (`/old /new 308`, the live
 // status) for Netlify and Cloudflare Pages, the hosts that read the
 // `_headers` file beside it, which then answer with a real redirect. A
-// `_redirects` in the static source is copied over it.
+// `_redirects` in the static source is appended after these rules.
 //
 // A pattern redirect (app.RedirectPattern) matches URLs no file can
 // stand for; it is logged as skipped and its URLs answer 404.html. A
@@ -679,7 +680,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 			if err := b.ensureContained(dst); err != nil {
 				return err
 			}
-			if err := writeFile(dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
 				return err
 			}
 			rendered[rel] = true
@@ -691,12 +692,12 @@ func (b *Builder) writeRedirects(ctx context.Context, pages, rendered map[string
 	if rules.Len() == 0 {
 		// A reused OutDir may hold an earlier build's rules for
 		// redirects the app has since dropped.
-		if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := removeUnder(b.OutDir, dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("static: remove stale _redirects: %w", err)
 		}
 		return nil
 	}
-	if err := writeFile(dst, []byte(rules.String())); err != nil {
+	if err := writeUnder(b.OutDir, dst, []byte(rules.String())); err != nil {
 		return err
 	}
 	rendered["_redirects"] = true
@@ -1059,7 +1060,7 @@ func (b *Builder) slashLinks(res Result) error {
 			return fmt.Errorf("static: slash page links: %w", err)
 		}
 		if out := b.slashPageLinks(string(page), pages); out != string(page) {
-			if err := writeFile(f, []byte(out)); err != nil {
+			if err := writeUnder(b.OutDir, f, []byte(out)); err != nil {
 				return err
 			}
 		}
@@ -1115,6 +1116,16 @@ var baseLocales = regexp.MustCompile(`(<script type="application/json" id="gofas
 // up by.
 var baseRouteGraph = regexp.MustCompile(`(?s)(<script type="application/json" id="gofastr-routes">)(.*?)(</script>)`)
 
+// jsonString is s as the widget catalog encodes it: a quoted JSON string
+// with HTML escaping off (ServeWidgetList's encoder setting).
+func jsonString(s string) string {
+	var sb strings.Builder
+	enc := json.NewEncoder(&sb)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s) // a string always encodes
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
 // dumpWidgetAssets writes the widget catalog JSON and each widget's chrome
 // HTML + CSS as query-free static files. Hidden click-to-open widgets
 // (command palette, section-menu drawers, modals) are not SSR-inlined, so
@@ -1127,13 +1138,19 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 		return nil
 	}
 	// Catalog JSON: canonical shape from ServeWidgetList (no page filter =
-	// every widget). chromePath/stylePath are root-absolute /core-ui/widget/…
-	// values the runtime fetches at open time; prefix them for a subpath deploy.
+	// every widget). Its style, chrome and state URLs are root-absolute
+	// values the runtime fetches at open time; prefix each one for a
+	// subpath deploy. They are matched whole and quoted, so a custom
+	// StylePath outside /core-ui/widget/ is prefixed too.
 	rec := httptest.NewRecorder()
 	widget.ServeWidgetList(rec, httptest.NewRequest(http.MethodGet, "/__gofastr/widgets", nil))
 	cat := rec.Body.String()
 	if b.BasePath != "" {
-		cat = strings.ReplaceAll(cat, `"/core-ui/widget/`, `"`+b.BasePath+`/core-ui/widget/`)
+		for _, d := range defs {
+			for _, u := range []string{d.StyleURL(), d.ChromeURL(), d.StateURL()} {
+				cat = strings.ReplaceAll(cat, jsonString(u), jsonString(b.BasePath+u))
+			}
+		}
 	}
 	if err := b.writeRawAsset("/__gofastr/widgets.json", []byte(cat)); err != nil {
 		return err
@@ -1142,7 +1159,20 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	b.log("wrote %s", "/__gofastr/widgets.json")
 	pages := pageSet(res.Pages)
 	locales, byPrefix := b.Host.PathLocales()
+	// Every file in the export is public. A widget whose live /chrome
+	// endpoint refuses an anonymous caller (RequireSession,
+	// RequireAuthenticated) gets its style sheet, which the live host
+	// serves ungated, and no chrome.
+	anon := httptest.NewRequest(http.MethodGet, "/", nil)
 	for _, d := range defs {
+		if err := b.writeRawAsset(d.StyleURL(), []byte(widget.RenderCSS(d))); err != nil {
+			return err
+		}
+		res.Assets = append(res.Assets, d.StyleURL())
+		if !widget.GateSatisfied(d, anon) {
+			b.log("wrote widget %s (css only: its chrome is gated)", d.Name)
+			continue
+		}
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
 		// them the same way page HTML is rewritten for a subpath deploy,
 		// and slash its page links the way slashLinks does a page's (a
@@ -1153,10 +1183,10 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 			dctx = localeContext(ctx, locales, locales.Default)
 		}
 		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChromeCtx(dctx, d)), pages)
-		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
+		if err := b.writeRawAsset(d.ChromeURL(), []byte(chrome)); err != nil {
 			return err
 		}
-		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/chrome")
+		res.Assets = append(res.Assets, d.ChromeURL())
 		// On a /<tag>/ page the runtime asks for the chrome under the
 		// same prefix, the way the live router serves it.
 		if byPrefix {
@@ -1164,17 +1194,13 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 				rule := urlprefix.Rule{Prefix: "/" + tag, Locales: locales.All(), Keep: b.keepUnprefixed}
 				raw := widget.RenderChromeCtx(localeContext(ctx, locales, tag), d)
 				local := b.slashPageLinks(b.rewriteBaseURLs(string(urlprefix.HTML([]byte(raw), rule))), pages)
-				at := "/" + tag + "/core-ui/widget/" + d.Name + "/chrome"
+				at := "/" + tag + d.ChromeURL()
 				if err := b.writeRawAsset(at, []byte(local)); err != nil {
 					return err
 				}
 				res.Assets = append(res.Assets, at)
 			}
 		}
-		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/style.css", []byte(widget.RenderCSS(d))); err != nil {
-			return err
-		}
-		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/style.css")
 		b.log("wrote widget %s (chrome + css)", d.Name)
 	}
 	return nil
@@ -1246,34 +1272,34 @@ func localeContext(ctx context.Context, locales i18n.PathLocales, tag string) co
 	return i18n.WithPathLocale(i18n.WithContext(ctx, i18n.Locale{Tag: tag}), locales, tag)
 }
 
-// dumpSEOAssets writes sitemap.xml and robots.txt when the host
-// configured WithSitemap/WithRobots. Skips any file the app's static
-// source already provides (the user's copy is copied verbatim later and
-// must win). No-op when neither option is configured.
+// dumpSEOAssets writes sitemap.xml (with the parts it indexes, past one
+// file's limits) and robots.txt when the host configured
+// WithSitemap/WithRobots. Skips any file the app's static source already
+// provides (the user's copy is copied verbatim later and must win); a
+// user-supplied sitemap.xml replaces the generated parts too. No-op when
+// neither option is configured.
 func (b *Builder) dumpSEOAssets(res *Result) error {
-	type seoFile struct {
-		name string
-		body string
-		ok   bool
+	var files []uihost.SitemapFile
+	if sitemaps, ok := b.exportedSitemap(pageSet(res.Pages)); ok {
+		if b.staticSourceHas("sitemap.xml") {
+			b.log("kept user-supplied /sitemap.xml")
+		} else {
+			files = append(files, sitemaps...)
+		}
 	}
-	sitemap, sitemapOK := b.exportedSitemap(pageSet(res.Pages))
-	robots, robotsOK := b.Host.RobotsTXT(b.BasePath)
-	for _, f := range []seoFile{
-		{"sitemap.xml", sitemap, sitemapOK},
-		{"robots.txt", robots, robotsOK},
-	} {
-		if !f.ok {
-			continue
+	if robots, ok := b.Host.RobotsTXT(b.BasePath); ok {
+		if b.staticSourceHas("robots.txt") {
+			b.log("kept user-supplied /robots.txt")
+		} else {
+			files = append(files, uihost.SitemapFile{Path: "/robots.txt", Body: robots})
 		}
-		if b.staticSourceHas(f.name) {
-			b.log("kept user-supplied /%s", f.name)
-			continue
-		}
-		if err := b.writeRawAsset("/"+f.name, []byte(f.body)); err != nil {
+	}
+	for _, f := range files {
+		if err := b.writeRawAsset(f.Path, []byte(f.Body)); err != nil {
 			return err
 		}
-		res.Assets = append(res.Assets, "/"+f.name)
-		b.log("wrote /%s", f.name)
+		res.Assets = append(res.Assets, f.Path)
+		b.log("wrote %s", f.Path)
 	}
 	return nil
 }
@@ -1281,71 +1307,27 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 // sitemapLoc matches one sitemap URL.
 var sitemapLoc = regexp.MustCompile(`<loc>([^<]*)</loc>`)
 
-// sitemapEntry matches one <url> entry with its indent and line end.
-var sitemapEntry = regexp.MustCompile(`(?s)[ \t]*<url>.*?</url>\n?`)
-
-// sitemapProbe is the base path exportedSitemap asks the host to put
-// between the site URL and each page path, so it can read the page
-// path off each entry wherever the site URL is mounted.
-const sitemapProbe = "/__gofastr-sitemap-probe__"
-
-// exportedSitemap is the host's sitemap with only the pages this export
-// wrote: a page it skipped (an excluded route, a 404-outlet route, one
-// that answers a status other than 200, one a redirect takes) has no
-// file on the static host, so a crawler sent there finds 404.html.
-//
-// A <loc> is the site URL, the base path and the page path run
-// together, and the site URL can carry a path of its own, so the page
-// path cannot be cut off it reliably. The host renders the document a
-// second time with sitemapProbe as the base path, entries in the same
-// order: each probe entry's page path is what follows the marker, and
-// the real entry at the same index is kept when that path was
-// exported. Page URLs then take the slash their links carry
-// (slashSitemapLocs).
-func (b *Builder) exportedSitemap(pages map[string]bool) (string, bool) {
-	doc, ok := b.Host.SitemapXML(b.BasePath)
+// exportedSitemap is the host's sitemap files with only the pages this
+// export wrote: a page it skipped (an excluded route, a 404-outlet
+// route, one that answers a status other than 200, one a redirect
+// takes) has no file on the static host, so a crawler sent there finds
+// 404.html. The host asks about each page by the routing path the
+// export wrote it under, so a StaticPaths that answers differently
+// per call can only drop an entry, never list an unwritten page. Page
+// URLs then take the slash their links carry (slashSitemapLocs); a
+// sitemap index names part files, not pages, and is left alone.
+func (b *Builder) exportedSitemap(pages map[string]bool) ([]uihost.SitemapFile, bool) {
+	files, ok := b.Host.SitemapFiles(b.BasePath, func(p string) bool { return pages[p] })
 	if !ok {
-		return "", false
+		return nil, false
 	}
 	escaped := escapedPageSet(pages)
-	probe, _ := b.Host.SitemapXML(sitemapProbe)
-	probeEntries := sitemapEntry.FindAllString(probe, -1)
-	docEntries := sitemapEntry.FindAllString(doc, -1)
-	// Pair by index, and check each pair names one page: the real
-	// entry's URL ends in the page path the probe's follows the marker
-	// with. StaticPaths that differ per call (a count, or an order, as
-	// a map yields) leave no pairing to trust.
-	keep := make([]bool, len(docEntries))
-	paired := len(probeEntries) == len(docEntries)
-	for i := 0; paired && i < len(docEntries); i++ {
-		pm, dm := sitemapLoc.FindStringSubmatch(probeEntries[i]), sitemapLoc.FindStringSubmatch(docEntries[i])
-		if pm == nil || dm == nil {
-			continue
+	for i := range files {
+		if len(files) == 1 || i > 0 {
+			files[i].Body = slashSitemapLocs(files[i].Body, escaped)
 		}
-		_, p, found := strings.Cut(stdhtml.UnescapeString(pm[1]), sitemapProbe)
-		if !found {
-			continue
-		}
-		if !strings.HasSuffix(stdhtml.UnescapeString(dm[1]), p) {
-			paired = false
-			break
-		}
-		keep[i] = escaped[p]
 	}
-	if !paired {
-		slog.Warn("static: sitemap kept whole: its entries changed between two renders, so the pages the export skipped could not be told apart")
-		return slashSitemapLocs(doc, escaped), true
-	}
-	i := 0
-	doc = sitemapEntry.ReplaceAllStringFunc(doc, func(entry string) string {
-		k := keep[i]
-		i++
-		if !k {
-			return ""
-		}
-		return entry
-	})
-	return slashSitemapLocs(doc, escaped), true
+	return files, true
 }
 
 // escapedPageSet is pages keyed by the escaped path a sitemap <loc>
@@ -1420,7 +1402,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	if !b.Host.PWAEnabled() {
 		return nil
 	}
-	manifest, err := b.Host.PWAManifestJSON(b.BasePath)
+	manifest, err := b.Host.PWAManifestJSON(context.Background(), b.BasePath)
 	if err != nil {
 		return fmt.Errorf("static: pwa manifest: %w", err)
 	}
@@ -1464,15 +1446,27 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// no other policy.
 	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
 	offline = applyStaticCSP(offline, b.policy())
-	files := []struct {
+	type pwaFile struct {
 		urlPath string
 		relFile string
 		body    []byte
-	}{
+	}
+	files := []pwaFile{
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
 		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
 		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
+	}
+	// A locale tree's pages link their own manifest, whose start_url
+	// launches into that tree.
+	if locales, byPrefix := b.Host.PathLocales(); byPrefix {
+		for _, tag := range locales.Prefixed {
+			body, err := b.Host.PWAManifestJSON(localeContext(context.Background(), locales, tag), b.BasePath)
+			if err != nil {
+				return fmt.Errorf("static: pwa manifest %s: %w", tag, err)
+			}
+			files = append(files, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
+		}
 	}
 	for _, f := range files {
 		// User-supplied files win: before this surface moved to the end of
@@ -1489,7 +1483,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 		if err := b.ensureContained(dst); err != nil {
 			return err
 		}
-		if err := writeFile(dst, f.body); err != nil {
+		if err := writeUnder(b.OutDir, dst, f.body); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, f.urlPath)
@@ -1585,7 +1579,7 @@ func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
 	if err := b.ensureContained(dst); err != nil {
 		return err
 	}
-	return writeFile(dst, body)
+	return writeUnder(b.OutDir, dst, body)
 }
 
 // rewriteJSAsset bakes b.BasePath into a JS asset's hardcoded /__gofastr/…
@@ -1752,6 +1746,10 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 			}
 			urlPath := path.Join(cleanMount, p)
 			rel := strings.TrimPrefix(urlPath, "/")
+			if !publishable(rel) {
+				b.log("skipped %s (not published)", urlPath)
+				return nil
+			}
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
 			if err := b.ensureContained(dst); err != nil {
 				return err
@@ -1764,7 +1762,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 			if err != nil {
 				return err
 			}
-			if err := writeFile(dst, data); err != nil {
+			if err := writeUnder(b.OutDir, dst, data); err != nil {
 				return err
 			}
 			res.Assets = append(res.Assets, urlPath)
@@ -1779,11 +1777,48 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered map[string]bool) error {
 	return nil
 }
 
-func writeFile(dst string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+// writeUnder writes data to dst, a path under outDir, through an
+// os.Root opened on outDir: every component below outDir is resolved in
+// the kernel, so a symlink planted inside the output tree fails the
+// write instead of redirecting it outside (2026-10-27 I4). The export
+// is public output, so files are 0644 and directories 0755.
+func writeUnder(outDir, dst string, data []byte) error {
+	rel, err := relUnder(outDir, dst)
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0o644)
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+		return err
+	}
+	return root.WriteFile(rel, data, 0o644)
+}
+
+// removeUnder removes dst, a path under outDir, through an os.Root.
+func removeUnder(outDir, dst string) error {
+	rel, err := relUnder(outDir, dst)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Remove(rel)
+}
+
+// relUnder is dst relative to outDir, refused when it leaves outDir.
+func relUnder(outDir, dst string) (string, error) {
+	rel, err := filepath.Rel(outDir, dst)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("static: refusing to write outside OutDir: %q", dst)
+	}
+	return rel, nil
 }
 
 // keepRendered reports whether the static source's file at rel (a slash
@@ -1798,7 +1833,54 @@ func keepRendered(rel string, rendered map[string]bool, log func(string, ...any)
 	return true
 }
 
+// publishable reports whether rel, a slash path in the export, is copied
+// into the public tree: not a path core/static refuses (a dot segment
+// such as .env or .git/config, or a server config file), the same set
+// the UI host refuses to serve. A leading .well-known/ is the public
+// namespace RFC 8615 reserves, and the root .nojekyll is the marker
+// GitHub Pages reads; both are copied.
+func publishable(rel string) bool {
+	if rel == ".nojekyll" {
+		return true
+	}
+	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
+}
+
+// generatedHostRules reports whether rel (a slash path) is a host rule
+// file the build wrote: the root _headers, always, and the root
+// _redirects when the app has redirects. A static source's copy of one is
+// appended to it rather than refused, so the app's rules (Cache-Control,
+// HSTS, legacy redirects) apply and the generated ones, the header-only
+// frame-ancestors guard among them, stay first.
+func generatedHostRules(rel string, rendered map[string]bool) bool {
+	return (rel == "_headers" || rel == "_redirects") && rendered[rel]
+}
+
+// appendHostRules appends the static source's rules to the generated
+// file at rel. Both generated files end in a newline, so the first
+// appended line starts a line of its own.
+func appendHostRules(root *os.Root, rel string, data []byte, log func(string, ...any)) error {
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	log("appended the static source's %s to the generated one", rel)
+	return nil
+}
+
 func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+	root, err := os.OpenRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1810,11 +1892,22 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 		if err != nil {
 			return err
 		}
+		if !publishable(filepath.ToSlash(rel)) {
+			log("skipped %s (not published)", rel)
+			return nil
+		}
+		if generatedHostRules(filepath.ToSlash(rel), rendered) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			return appendHostRules(root, rel, data, log)
+		}
 		if keepRendered(filepath.ToSlash(rel), rendered, log) {
 			return nil
 		}
 		out := filepath.Join(dst, rel)
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return err
 		}
 		in, err := os.Open(path)
@@ -1822,7 +1915,7 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 			return err
 		}
 		defer in.Close()
-		w, err := os.Create(out)
+		w, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 		if err != nil {
 			return err
 		}
@@ -1837,12 +1930,28 @@ func copyDir(src, dst string, rendered map[string]bool, res *Result, log func(st
 }
 
 func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log func(string, ...any)) error {
+	root, err := os.OpenRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	return fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
+		}
+		if !publishable(path) {
+			log("skipped %s (not published)", path)
+			return nil
+		}
+		if generatedHostRules(path, rendered) {
+			data, err := fs.ReadFile(fsys, path)
+			if err != nil {
+				return err
+			}
+			return appendHostRules(root, filepath.FromSlash(path), data, log)
 		}
 		if keepRendered(path, rendered, log) {
 			return nil
@@ -1852,10 +1961,11 @@ func copyFS(fsys fs.FS, dst string, rendered map[string]bool, res *Result, log f
 			return err
 		}
 		out := filepath.Join(dst, path)
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		rel := filepath.FromSlash(path)
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(out, data, 0o644); err != nil {
+		if err := root.WriteFile(rel, data, 0o644); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, "/"+filepath.ToSlash(path))
@@ -1990,5 +2100,5 @@ func writeHeadersFile(outDir, policy string) error {
 		"  Content-Security-Policy: " + policy + "\n" +
 		"  X-Content-Type-Options: nosniff\n" +
 		"  Referrer-Policy: strict-origin-when-cross-origin\n"
-	return writeFile(filepath.Join(outDir, "_headers"), []byte(body))
+	return writeUnder(outDir, filepath.Join(outDir, "_headers"), []byte(body))
 }

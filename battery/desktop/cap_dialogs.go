@@ -3,11 +3,14 @@ package desktop
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 )
 
 // dialogsCapability: the OS file/folder pickers. Ungated on purpose:
 // every dialog is user-mediated (the user picks the path), and every
 // returned path lands on the fs allow-list, which is the actual grant.
+// A dialog answers with the filepath.Clean form it granted, the only
+// spelling fs accepts back.
 func (b *Battery) dialogsCapability() Capability {
 	return Capability{
 		Name:        "dialogs",
@@ -40,10 +43,11 @@ func (b *Battery) dialogsCapability() Capability {
 					if err != nil {
 						return nil, err
 					}
-					for _, p := range paths {
+					for i, p := range paths {
 						if err := b.AllowPath(p); err != nil {
 							return nil, &Error{Code: CodeInvalidInput, Message: "dialog returned an unusable path"}
 						}
+						paths[i] = filepath.Clean(p)
 					}
 					if paths == nil {
 						paths = []string{}
@@ -70,7 +74,7 @@ func (b *Battery) dialogsCapability() Capability {
 					if err := b.AllowPath(path); err != nil {
 						return nil, &Error{Code: CodeInvalidInput, Message: "dialog returned an unusable path"}
 					}
-					return dialogPathOutput{Path: path}, nil
+					return dialogPathOutput{Path: filepath.Clean(path)}, nil
 				},
 			},
 			{
@@ -85,7 +89,7 @@ func (b *Battery) dialogsCapability() Capability {
 					if err := b.AllowPath(path); err != nil {
 						return nil, &Error{Code: CodeInvalidInput, Message: "dialog returned an unusable path"}
 					}
-					return dialogPathOutput{Path: path}, nil
+					return dialogPathOutput{Path: filepath.Clean(path)}, nil
 				},
 			},
 		},

@@ -335,8 +335,9 @@ authenticated agent whose request passes the policy sees the full docs.
 The pattern-level surfaces (the index, the `/llm.md` beside a route
 pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
 path runs its full policy phase, region guards and resolvers included,
-and a dynamic pattern under a layout that carries any region guard is
-withheld, because a guard decides per URL. The per-URL doc of such a
+and a dynamic pattern under a layout that carries any region guard, or
+in a group that `Requires` a resolver, is withheld, because a guard or
+a required resolver decides per URL. The per-URL doc of such a
 page still runs its guards and serves.
 
 ### Rendered values cannot inject markdown structure
@@ -384,13 +385,33 @@ panics with a route conflict. Pick one. Generated apps ship with
 running app (persisted through the module store, dependency-checked). Keep
 it off any `/mcp` reachable by untrusted callers.
 
-When you opt in explicitly, both control tools require an
-**authenticated caller**: they run behind an `mcp.WithToolGate`
-precondition that refuses a request with no identity on its context. Make
+When you opt in explicitly, both control tools require a caller holding
+the **`admin` role**: they run behind `framework.MCPRequireRole("admin")`
+as an `mcp.WithToolGate` precondition, which refuses a request with no
+identity, an embed grant, a caller an access `Decider` denies, and a
+caller without the role. The role is read from the user's
+`GetRoles() []string` (battery/auth's `User` has it) or from the roles
+access middleware put on the context, the same rule `/.debug` uses. Make
 sure the app's session/JWT middleware runs on the `/mcp` route, or every
-call comes back asking for a caller. The gate asks only for an identity,
-because the framework layer cannot know your role vocabulary. Pass
-`auth.MCPRole("admin")` when you want more.
+call comes back asking for a caller. An identity alone was the old gate,
+and on an app with open sign-up it let any account turn a module off for
+everyone. When your operators hold another role, replace the gate:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
+```go
+framework.NewApp(
+    framework.WithMCP(),
+    framework.WithMCPControl(),
+    framework.WithMCPControlGate(framework.MCPRequireRole("ops")),
+)
+```
+
+`framework.MCPRequireUser()` and `MCPRequireRole` both consult the
+`Decider` the way battery/auth's `MCPUser` and `MCPRole` do: the caller's
+roles, `access.RoleGateCapability` and the zero `Ref`, so
+`DecisionDeny` refuses the call.
 
 A gated tool is also **hidden from `tools/list`** for callers who cannot
 invoke it. That matters more than it sounds: `tools/list` used to run with
@@ -456,7 +477,9 @@ behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
 and ungated over MCP. Declare something stricter with
 `Endpoint.MCPGate`, or opt out with `Endpoint.Public: true` for an
 endpoint that really is anonymous. `Public` opens the HTTP route too,
-which otherwise answers 401 to a caller with no user:
+which otherwise answers 401 to a caller with no user. An API token
+reaches a twin only with `<table>:read` (GET, HEAD) or `<table>:write`
+(any other method) among its scopes, whichever gate decides it:
 
 ```go
 entity.Endpoint{

@@ -274,6 +274,10 @@ func (w *metricsResponseWriter) WriteHeader(code int) {
 	if w.wroteHeader {
 		return
 	}
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
+		return
+	}
 	w.status = code
 	w.wroteHeader = true
 	w.ResponseWriter.WriteHeader(code)

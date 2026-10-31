@@ -425,7 +425,7 @@ func exHero() render.HTML {
 // badge is more than 20% off, so the numbers are re-measured instead of
 // remembered.
 var exampleLoC = map[string]int{
-	"blog":                 190,
+	"blog":                 270,
 	"site":                 12000,
 	"api-tour":             160,
 	"semantic-demo":        120,

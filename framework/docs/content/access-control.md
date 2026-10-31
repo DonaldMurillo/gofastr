@@ -73,8 +73,9 @@ generated SDKs and agents see the correct error contract instead of treating
 RBAC-gated routes as public.
 
 The auth-gated spec is also **filtered per request**: an authenticated caller
-who holds no read grant for an entity (failed owner/tenant context, or a
-missing `Access.Read` permission) does not see that entity at all in the
+who holds no read grant for an entity (failed owner/tenant context, a
+missing `Access.Read` permission, or a scoped API token or embed grant
+without `<table>:read`) does not see that entity at all in the
 document — no schema component, no paths — the same read-scope filter
 `/api/llm.md`'s index runs. The schema is the disclosure; a caller who would
 only ever get 401/403 on an entity's rows never learns its name or columns
@@ -305,7 +306,10 @@ never share role state. Concurrent
 misses for one user share one lookup. `Resolve` returns defensive copies;
 call `Invalidate(userID)` (every tenant of that user) after changing one user's role inputs or
 `InvalidateAll()` after a global role-policy change. A zero or negative TTL
-keeps same-key single-flight behavior but does not retain results.
+keeps same-key single-flight behavior but does not retain results: the
+calls waiting on a lookup share its result, and the next call looks up
+again. A lookup invalidated while it runs shares nothing, so its waiters
+look up again.
 
 The map is bounded, not just expired-on-read: a later `Resolve` sweeps
 entries whose TTL has lapsed at most once per TTL, and once 100,000
@@ -445,13 +449,21 @@ specific row, which matters when a resource-aware `Decider` allows the listing
 and denies one record; the collection-level predicate would render a row the
 read-one route refuses.
 
+For rows of an entity reached through another one's relation (a label, a
+facet, a picker), use `CanReadRelatedScoped(ctx)`. It adds the gate
+`?include=` applies: it refuses an entity whose `Exposure.CRUD` is false and a
+scope-restricted request (an API token or embed grant) that does not hold
+`<table>:read`.
+
 `framework/entityui` (the list, record and create screens generated apps
 and the admin draw) calls these for you, so a screen inherits the check:
 `List` runs `CanReadScoped` before any read, `Record` runs
 `CanReadScoped` and `CanReadRecordScoped`, and every read of a DIFFERENT
 entity — relation cell labels, the create form's relation picker, a
 relation facet's options, the Related tab's lists, and the stats and
-charts — passes that entity's own gate first.
+charts — passes that entity's own gate first. Labels, facets and the picker
+use `CanReadRelatedScoped` and leave out a related row the Decider refuses by
+id; a named CSV export drops such a row too.
 
 A relation to an entity the caller may not read renders muted (an em
 dash), never the raw foreign key. A bare id is useless to a reader and
@@ -567,11 +579,24 @@ revoked grant stays revoked on every replica:
   `LoadInto`, which subtracts tombstones from both the captured baseline
   and the installed DB grants (and revokes them from the live policy), so
   a re-seeded code grant does not resurrect the permission.
-- **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes any
-  matching tombstone. It is the ONE way to un-revoke. A tombstoned
-  permission stays revoked even if the code keeps declaring it, until
-  `Grant()` is called. DB intent outlives code declarations, the same
-  precedence the store already gives DB grants over the code baseline.
+- **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes the
+  tombstones `Revoke` writes for the same input: `Grant("teams:*")` lifts
+  the `teams:*` tombstone and the tombstones of everything it expands to.
+  It is the ONE way to un-revoke. A tombstoned permission stays revoked
+  even if the code keeps declaring it, until `Grant()` is called. DB
+  intent outlives code declarations, the same precedence the store
+  already gives DB grants over the code baseline.
+- **A wildcard revocation is lifted whole.** After `Revoke("teams:*")`,
+  `Grant("teams:read")` returns `access.ErrRevokedByWildcard` and writes
+  nothing: every reload expands the `teams:*` tombstone against the
+  registry and would subtract `teams:read` again, so the grant would hold
+  on one replica only. Grant `teams:*`, then revoke what the role should
+  not hold. `GrantStore.CheckGrant(ctx, role, perms...)` returns the
+  error `Grant` would (this one, or a strict-mode
+  `*access.UnknownCapabilityError`) without writing, so a caller applying
+  several changes can refuse them all before writing any. The admin RBAC
+  page answers the refusal as a 409 with that advice. The global `*`
+  tombstone is never expanded, so it refuses nothing.
 - **Tombstone wins on conflict.** If a permission is somehow both granted
   and tombstoned (an inconsistent write), reloads fail closed: the
   tombstone wins.
@@ -692,7 +717,11 @@ The seam binds **every** permission gate, not only resource-scoped ones:
 `access.RequirePermission` consults it too, passing the zero `Ref` (a
 route gate holds no record), so `DecisionDeny` fails the route closed
 with 403 even when the role policy grants the permission. battery/auth's
-role gates route through the same seam.
+role gates route through the same seam, as do the framework's MCP gates
+(`MCPRequireUser`, `MCPRequireRole`) and `/.debug`: each passes the
+caller's roles, `access.RoleGateCapability` (`"auth:role-gate"`) and the
+zero `Ref`, so a resource-aware decider should abstain on that
+capability.
 
 ### Wiring it: DeciderMiddleware
 

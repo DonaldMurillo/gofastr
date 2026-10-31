@@ -24,7 +24,7 @@ err := c.Get(ctx, "42", &got) // deserializes into dest; returns only error
 r.Use(cache.CacheMiddleware(c, 30*time.Second))
 
 // Stampede-safe read-through: the loader runs exactly ONCE even when
-// many goroutines miss "42" at the same time (singleflight-backed).
+// many goroutines miss "42" at the same time (one shared fill per key).
 var u User
 _ = cache.GetOrSet(ctx, c, "42", time.Minute, &u,
     func(ctx context.Context) (any, error) { return loadUser(ctx, 42) })

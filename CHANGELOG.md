@@ -54,8 +54,465 @@ few lines, and link the PR or the docs page for the rest.
   on the pragma. `RefuseCaseKeptTables`
   probes Postgres for a table an older build created with its case kept
   and returns an error holding the `ALTER TABLE ... RENAME` that moves it.
+- **Seven analyzers from the 2026-10-27 bug bash.** `make analyze` and
+  CI's vet step now report:
+  - `keytrim`: `strings.TrimSpace` on an id, tenant or actor value that
+    is then kept, so `" x "` acts on row `x`;
+  - `tightenshared`: `os.MkdirAll` followed by an owner-only chmod of a
+    directory the caller named, which rewrites a directory someone else
+    owns;
+  - `settlectx`: an ack, settle or record write on the cancellable
+    context the work ran under, so a shutdown drops the outcome;
+  - `resolvedial`: an SSRF guard that resolves and checks a host, then
+    lets the transport resolve it again to dial;
+  - `wrapwriter`: a ResponseWriter wrapper with no `Unwrap`, and a
+    header change after the next handler ran;
+  - `unrechecked`: a long-lived stream that never re-checks the
+    principal, authz or tenant it resolved at connect;
+  - `nowritedeadline`: a client write in a stream's park loop with no
+    write deadline, and a `ResponseController` deadline a parked stream
+    arms and never clears.
+
+  `worldreadable`, `mapwriter`, `rawtext`'s `ctxless` arm, `intwrap`,
+  `nowaitdelay`, `credfetch`, `rootwrite`, `rootread`, `emitident`,
+  `unboundedbody` and `unboundedresp` cover more spellings of their
+  shapes. The rules are listed in [CLAUDE.md](CLAUDE.md).
+- **`GOFASTR1415 erasecover`.** `gofastr verify` reports DDL in `core`,
+  `framework` or `battery` for a user-keyed table that no
+  `datexport.DataEraser` and `DataExporter` cover. The catalog holds 81
+  rules.
+- **`core-ui/check.LintNumberFill` and the runtime's
+  `NS.formatNumber`.** A `{{n}}` phrase filled with `String(n)` fails
+  the runtime lint; `NS.formatNumber` formats the number in the page's
+  `<html lang>`, so counters and slider outputs read `1.234` on a German
+  page.
+- **More erasure surface.** `datexport.DataEraser.Where` (a list of
+  `datexport.Equals`) narrows an eraser's match, and
+  `datexport.EraseRemoveMember` takes the erased id out of a JSON-array
+  column and keeps the row. `datexport.ScopedName(base, table)` names a
+  registration after its table, so two stores on two tables both stay
+  registered. Stores tag per-user rows for erasure through
+  `search.Document.Owner`, `semantic.Document.Owner` (copied to
+  `Chunk.Owner`, and to the hybrid keyword copy through
+  `semantic.OwnedKeywordBackend`), `webhook.Manager.PublishFor`,
+  `webhook.IngestConfig.Owner`
+  and `outbox.Outbox.AppendFor`. `webhook.Bridge` queues each CRUD event
+  for the owner it names under the new `event.DataKeyOwnerID`. The
+  battery-plane table in
+  [data export](framework/docs/content/data-export.md) lists every store
+  and how it is erased.
+
 
 ### Fixed
+- **An offset with no limit runs on SQLite.** `query.Build` wrote
+  `OFFSET $n` alone, which SQLite refuses, so `TypedQuery.Offset`
+  without `Limit` failed there and ran on Postgres. An offset alone now
+  carries the largest `LIMIT` both dialects accept.
+- **`kiln agent` starts when ports 8765–8774 are all busy.** The
+  fallback handed serve port 0 while the panel URL said `localhost:0`,
+  so the readiness check timed out and killed a healthy server. The
+  fallback now asks the kernel for a free loopback port and uses it.
+- **BREAKING: `freeze.FreezeAndGenerate` takes a context.** A generator
+  that exited while a child it started still held the output pipe hung
+  the call until that child exited. It now runs under the caller's
+  context and collects output for at most two seconds after the
+  generator exits. Pass the context first:
+  `freeze.FreezeAndGenerate(ctx, w, dir, out)`.
+- **An ICE URL with no port is accepted, and one with a path is
+  refused.** `stun:stun.example.net` and `turn:[2001:db8::1]` were
+  refused, though RFC 7064/7065 make the port optional, while a host
+  carrying `/path` passed. A host is now a DNS name, an IPv4 literal or
+  a bracketed IPv6 literal (brackets around anything else are refused),
+  and a path, userinfo or fragment is refused in the `stun://host` form
+  too.
+- **`gofastr desktop build` on macOS refuses a GOARCH other than arm64.**
+  The build set arm64 whatever `GOARCH` asked for, and an Intel Mac got
+  a bundle reported written that could not launch. The desktop shell is
+  arm64-only, so another `GOARCH` is an error, and an Intel host gets a
+  warning that the bundle will not run there.
+- **Kiln's `min` and `max` compare integers exactly.** Integers were
+  compared as float64, so past 2^53 two neighbours looked equal and
+  `min(9007199254740992, 9007199254740993)` returned the larger.
+- **A span's `error.type` sees through an error with several `%w`
+  verbs.** `fmt.Errorf("begin: %w (attempt %w)", err, ctxErr)` reported
+  `*fmt.wrapErrors`; it now reports the first wrapped error's type.
+- **The cache battery stops `MemoryCache`'s cleanup goroutine.**
+  `OnStop` looked for `io.Closer`, but `MemoryCache.Close` returns
+  nothing, so the goroutine outlived the app.
+- **`gofastr test` runs the packages it is given and refuses unknown
+  flags.** It dropped every argument it did not know and ran `./...`,
+  so `gofastr test ./pkg` or `--run TestFoo` (the space form) ran the
+  whole suite and could exit 0. Package patterns are passed through,
+  `--run`, `--bench` and `--timeout` take their value either way, and
+  another flag is an error.
+- **A language refused with `q=0` stays refused when a longer tag
+  falls back to it.** `Accept-Language: en;q=0, en-GB;q=0.9, fr;q=0.8`
+  served `en`, reached by trimming `en-GB`, ahead of the accepted `fr`.
+- **`store.Computed` validates its dependency names.** A dep holding a
+  comma split into two signals on the client, and an empty or reserved
+  name shipped a binding that never fired. Deps follow the slice-name
+  rules, and `route.*` signals stay readable.
+- **BREAKING: `ui.SparklineConfig.Color` takes a theme preset only.**
+  The doc said a raw CSS color passed through, but every value other
+  than `success`, `warning`, `danger` and `info` drew the default, and
+  a value with a space added classes to the chart. The field is now a
+  `ui.SparklineColor` (`SparklinePrimary`, `SparklineSuccess`,
+  `SparklineWarning`, `SparklineDanger`, `SparklineInfo`): a quoted
+  preset still compiles, a `string` variable needs the conversion, and
+  any other value panics.
+- **desktop-focus completes a session paused at 00:00.** The pause
+  stored no time left and a paused tick never completes, so the timer
+  froze and no break started.
+- **Entities on tables that differ only by case get the column-conflict
+  check.** `Widgets` and `widgets` are one table once AutoMigrate's
+  unquoted DDL folds them, but the registry compared names exactly, so a
+  second entity's wider `String.Max` reused the first one's
+  `VARCHAR(10)`. The names are folded and the conflict panics at
+  registration.
+- **An include that names a relation twice returns each row once.**
+  `?include=comments(status=draft),comments(body=x)` loads both filters
+  into one list, and a comment matching both came back twice, at the top
+  level and one hop down.
+- **The log webhook sink refuses a write that races Close.** A write
+  that passed the closed check while Close ran could append behind the
+  final drain, an entry never sent and never counted in `Dropped()`. It
+  returns `ErrSinkClosed`.
+- **`cmd/mutate` no longer scores a slow build as a caught mutant.** A
+  mutant run past its deadline counted as caught, though with a cold
+  cache the deadline usually went on the build and no test ran. It is
+  caught only when the test binary hit its own `-timeout`, otherwise the
+  run stops with a harness error, and mutant runs get the baseline's
+  five-minute build allowance.
+- **webmcp-remote-assist answers 410 for a command on a session swept
+  mid-command.** The command looked the session up and wrote to it under
+  two separate locks, so a sweep in between dropped it and the caller
+  still got 200.
+- **The character counter and elapsed ticker follow the reader's
+  locale.** `data-cui-charcount-source` wrote `1234 chars` and
+  `data-cui-tick-elapsed` wrote `2.4s` on every locale. Both say their
+  words through the `runtime.charcount`, `runtime.elapsed_ms` and
+  `runtime.elapsed_s` phrases, with the number in the page's language.
+  `core-ui/check.LintRuntimeProse` now also refuses a word glued to a
+  value with `+`, the shape both sites used.
+- **The elapsed ticker stops when no ticker is left.** After a client
+  navigation removed every `[data-cui-tick-elapsed]` node, the interval
+  kept querying the document five times a second. It clears itself, and
+  the next ticker the scan finds starts it again.
+- **A widget poll never stops on a stale or partial snapshot.** The
+  `/state` handler read the signals and asked `Builder.PollTerminal`
+  afterwards, so a job that finished in between stopped the poll on a
+  value still saying "running". It asks first now, and sends no
+  `X-Gofastr-Poll-Stop` on a response missing a signal whose read or
+  JSON encoding failed.
+- **`cache.GetOrSet` callers leave at their own deadline.** A stalled
+  loader held every caller of the key past its deadline, after the
+  timeout middleware had already answered. Each caller now returns
+  `ctx.Err()` at its deadline while the fill runs on for the others,
+  and the loader's context is cancelled once no caller waits. A fill no
+  caller waits for stores nothing, so it cannot overwrite a value a
+  later caller filled, and it never writes the destination of a caller
+  that left. A cache with value receivers fills alone for each caller,
+  who still leaves at the deadline. A loader panic comes back as an
+  error instead of a re-panic.
+- **A rolled-back update that only set a column to NULL publishes no
+  event.** The ambient-transaction confirm query skipped NULL values, so
+  such an update was confirmed on its key alone. NULLs are matched with
+  `IS NULL`.
+- **`migrate` group mode works with a tracking table in an ATTACHed
+  SQLite database.** A name like `aux._migrations` made the column and
+  key probes miss the table and the key upgrade build an invalid temp
+  name, so every `Up` failed once a group was registered.
+- **The desktop window closes when the app server stops under it.** A
+  listener failure or a `Shutdown` from elsewhere after the window
+  opened left it on a dead app until the user closed it. `Run` now quits
+  the window and returns.
+- **The OpenAPI write bodies match what the server reads.** The create
+  body listed the owner and `MultiTenant` tenant columns, required when
+  declared required, though the server stamps both. And the PUT body
+  kept the entity's required list, though PUT runs the same sparse
+  update as PATCH. No write body lists the scope columns now, and
+  neither update body requires a field.
+- **`PgVectorStore` ranks a zero-vector document at score 0.** The query
+  ordered by raw distance, where pgvector's NaN sorts last, so the
+  document ranked below negative matches and a small `topK` dropped it.
+- **A closed `semantic.Index` refuses writes.** `Add` and `Remove` after
+  `Close` returned nil for a change that was gone on reopen; they and
+  `Snapshot` return `semantic.ErrClosed` now. A second `Close` returns
+  nil instead of snapshotting stale state over the next writer's
+  directory.
+- **kiln's Claude Code adapter limits the agent to Bash.** It passed
+  `--allowedTools Bash`, which only skips Bash's permission prompt, next
+  to `--dangerously-skip-permissions`, so the agent kept Read, Write,
+  Edit and the rest. It passes `--tools Bash` now. Bash still reaches
+  the disk: this is no sandbox.
+- **An rtc status change from another replica reaches local peers once,
+  and only from the peer's current replica.** A remote status was applied
+  to whichever replica's copy of the member it named, then dropped if it
+  repeated, so a roster beat that repaired a missed status sent nothing,
+  and a status from a replica the peer had left was announced over the
+  newer one. Status now goes through the merged remote view, as joins
+  and leaves do.
+- **The SQLite legacy-timestamp normalizer keeps a lease taken while it
+  runs.** The queue and outbox rewrote each row's times from a read made
+  before the write, so a `claimed_at` a worker set in between went back
+  to the old value. Each column's write now checks it still holds the
+  text that was read. The queue also stopped rewriting rows that were
+  already in the canonical layout, which it did on every boot.
+- **`TryEntity` refuses routes that overlap an existing route.** Its
+  preflight compared patterns for equality, so `GET /{kind}/_events`
+  next to an entity's `GET /posts/{id}` passed it and the mux panicked
+  after half the routes were registered. The preflight asks the same
+  question the mux does, for the CRUD routes and the declaration's
+  endpoints, before anything is registered.
+- **A local-entity form keeps an untouched timestamp's seconds.** The
+  `datetime-local` control shows minutes, and saving wrote what it
+  showed, so editing any other field cut `14:30:45.123Z` to `14:30`. A
+  control the user did not change saves the stored value.
+- **Semantic coverage keeps every package's records when test binaries
+  finish together.** Each `Flush` read the manifest, merged and renamed
+  over it, so the later of two writers dropped the earlier one's routes.
+  The merge now runs under an OS file lock, as the axe-coverage manifest
+  already did.
+- **A desktop `Quit` on Windows before the main window exists is
+  kept.** A `Quit` after `Run` started but before the window was created
+  had no window to post to and was dropped, so the window opened on an
+  app that had been told to quit. `Run` checks again once the window is
+  up.
+- **A handler that sends 103 Early Hints keeps its real status.**
+  Idempotency, metrics, tracing, timeout, the access log, the cache, the
+  dev live-reload injector and the test-binary render writer each took
+  the 103 as the response, dropped the handler's own status, and the
+  client got 200. The idempotency store also never saved the response,
+  so a retry ran the handler again. Each wrapper now forwards an
+  informational status and waits for the final one; the buffering
+  wrappers (timeout, cache) drop the hint. The WebMCP observer reported
+  such a tool call as status 103, and the dev retired-markup scan read
+  the body kind from the header as it stood at the hint.
+- **Kiln's `set_theme` no longer undoes an app config edit that landed
+  while it ran.** It wrote back the whole config it had read, so a
+  rename in between was lost. A config edit built from a config the
+  world no longer holds now answers `conflict` (the journal returns
+  `journal.ErrAppConfigChanged`); replaying an older log still applies it.
+- **A double click on an RPC span or link sends one request.** Only
+  buttons and inputs were disabled while in flight, and two clicks
+  before the rpc module loaded both dispatched. A trigger that carries
+  no value and no response signal now ignores a click while its request
+  is in flight; forms, controls and signal-targeted triggers still let
+  the newest dispatch win.
+- **A webhook claim with no lease recorded is delivered.** A host store
+  that claims rows itself leaves the lease unset, and the worker read
+  that as expired, so it handed every claim back and sent nothing.
+- **A WebSocket server that accepts and closes at once is not redialed
+  every second.** The backoff reset on every open, so a 4503 "not now"
+  close came back after one second forever. `attempts` now resets only
+  after a socket stays open 10 seconds.
+- **A `%` in the page title no longer breaks client navigation.** A
+  screen with no title sends no `X-Gofastr-Title`, and the runtime
+  decoded `document.title` in its place; an app named "50% Off Co."
+  threw on every such navigation and showed the connection error. Only
+  the header is decoded now. The `decodeuriraw` lint fires on a header
+  or `document.title` decoded outside `try`.
+- **Escape leaves a popover open under a modal that refuses Escape.**
+  The key fell through to the popover stack and closed a popover beneath
+  the scrim. A popover opened after the modal still closes.
+- **Back keeps the scroll anchor of a page visited recently.** The
+  50-page anchor store evicted paths in alphabetical order, so a busy
+  `/orders` lost its anchor to a page seen once. It evicts the least
+  recently recorded now.
+- **A hover or visible prefetch keeps the link's query.** It fetched the
+  bare path, so the click on `/detail?page=2` missed the entry and
+  fetched again.
+- **`gofastr dev`, `desktop run|build|types` and `new` refuse an unknown
+  flag.** A typo kept the defaults, and a flag with no value took the
+  next flag as one: `--addr --no-a11y` set the address to `--no-a11y`
+  and kept the a11y gate on. `new handler --method POST` (the space form
+  its usage shows) scaffolded GET. `dev` refuses `--addr` with `-p`.
+- **`gofastr migrate` refuses a flag its subcommand does not read.**
+  `migrate down --db-ur=<url>` or `--db-url <url>` rolled back the
+  database `DATABASE_URL` names.
+- **CLI rewrites of existing files are atomic.** `init . --force`,
+  `init`'s `.gitignore`, `AGENTS.md` and `CLAUDE.md` merges, `agents
+  sync`, `theme init --force`, `pack -o` and the unmount/remount import
+  rewire truncated each file and wrote it in place, so a crash or a full
+  disk left it empty or half written. Each now writes a temporary file
+  beside it and renames it over, keeping the file's mode, writing
+  through a symlink, and refusing a read-only file as before. An emptied
+  `.agents/` detail file used to block the next sync as hand-written.
+  The `worldreadable` vet check reads the new `atomicfile.Rewrite` as
+  it reads `os.WriteFile`, so the switch hid no mode from it.
+- **An rtc room spanning replicas stays within `MaxPeers`.** Two joins
+  on different replicas could each pass the cap before their roster
+  beats met, leaving a room capped at 1 with two members on both. Each
+  replica now ranks the merged room by join order and closes its own
+  peers past the cap with `4409` room full.
+- **A WebSocket client cannot flood Ping or Pong frames.** The read pump
+  answers each Ping itself, so rtc's `MaxFramesPerSecond` never counted
+  them and a raw client could send them without limit. The new
+  `WSConfig.MaxControlFramesPerSecond` (default 32 a second, burst twice
+  that, negative disables) closes the connection with 1008 past it.
+- **`core/yaml` skips a leading byte order mark and reads `#` after a
+  tab as a comment.** A `gofastr.yml` saved with a BOM reported an
+  unknown key naming an invisible character, and `port: 8080<TAB># note`
+  kept the comment in the value.
+- **`di.Provide` refuses a constructor with parameters, and a second
+  Provide for a type that already has a value.** The first passed and
+  then panicked in reflect on every request that injected it; the second
+  returned nil while the first value went on being served.
+- **The queue's admin job list reads a NULL payload as none**, as the
+  dequeue path does. One such row (restore tooling, an external write)
+  failed the whole list.
+- **`AuthManager.Init` refuses a negative `SessionTTL`.** It used to
+  become the 7-day default, against auth.md; zero still means seven
+  days.
+- **BREAKING: `TwoFAConfig.Digits` is removed, and the enrolment URL
+  carries `TwoFAConfig.Period`.** The URL always said `period=30` while
+  verification used the configured period, so with `Period: 60` every
+  code was refused. `Digits` was never read: codes are six digits.
+  Delete the field from your config.
+- **`ui.NetworkRetryBanner` refuses an unsafe `HealthEndpoint`.** It
+  went into the retry link's `href` with no URL policy; a value
+  `urlsafe.CleanAnchor` refuses now panics, as an empty one does.
+- **Web Bot Auth refuses a key whose `use`, `alg` or `kid` is not a
+  string.** `"use":[]` or `"alg":false` read as absent, so the key
+  passed both restriction checks.
+- **BREAKING: passkey `MaxPerUser` holds when registrations race.**
+  The plugin counted and then stored, so two registrations with one slot
+  left both stored. `PasskeyStore.AddPasskey` now takes the cap and
+  refuses past it with `auth.ErrPasskeyLimit`, counting and inserting as
+  one step; a custom store adds the parameter. On Postgres the step is
+  READ COMMITTED whatever the server default, behind an advisory lock on
+  the table's resolved oid, so two spellings of one table share it.
+- **`kiln acp --agent X` no longer runs the agent on a refused ACP
+  prompt.** The ACP session journals the prompt and answers `refusal`,
+  and the chat watcher picked the journaled message up and ran a turn on
+  it anyway. The watcher now skips messages an ACP session wrote.
+- **A Bool field refuses a number that only rounds to 0 or 1, and stores
+  a text default as the boolean.** `1.0000000000000001` was stored as
+  true and `1e-400` as false. A `Default: "true"` was bound as text, which
+  `?field=true` never matched on SQLite.
+- **A batch write keeps a JSON field's numbers the way a single write
+  does.** The `_batch` envelope decoded item numbers as float64, so a
+  `json` field's `1e400` failed the whole batch as invalid JSON.
+- **`access.CachedResolver` at a zero TTL shares one lookup with its
+  waiters.** The result expired as it landed, so each waiting call ran
+  its own lookup in turn, in place of the single flight `WithTTL`
+  documents.
+- **The relay aborts an upstream response that runs past
+  `MaxBodyBytes`.** The cap ended the body with a clean EOF, so a chunked
+  response arrived as a whole 200 that was cut short, and `CacheOK` could
+  keep it. It is now a read error, which aborts the stream.
+- **`mcp.Server.ServeStdio` returns when its context ends on silent
+  input.** It checked the context only between lines, so `kiln mcp` with
+  an idle client ignored SIGTERM until the supervisor's SIGKILL. Kiln's
+  stdio modes now exit 0 on the signal.
+- **`App.Shutdown` cancels A2A runs and waits for them.** A run is
+  detached from its request, so nothing stopped it: Shutdown returned
+  while skills ran, and they died with the process. The new
+  `a2a.Server.Shutdown(ctx)` refuses new runs, cancels the live ones and
+  waits for each to store its final state.
+- **Kiln refuses a symlinked adapter work directory.** A co-user could
+  plant `/tmp/kiln-<adapter>` as a link to a directory this user owns;
+  the chmod followed it, tightened that directory to 0700 and ran the
+  turn inside it. The directory is opened without following a link and
+  chmodded through the handle, so a name swapped for a link between the
+  check and the chmod is refused too.
+- **OIDC follows the provider's token endpoint auth method.** The secret
+  always went in the form body, so a provider accepting only
+  `client_secret_basic` could not log anyone in. A provider whose
+  discovery lists Basic and not post now gets an `Authorization` header;
+  `OIDCConfig.TokenAuthMethod` overrides discovery.
+- **BREAKING: the admin reserves `/account` and `/shortcuts`, and audits
+  a profile-name change.** An app `Page` at either path silently replaced
+  the built-in screen; boot now fails. The name change wrote no audit row.
+- **Strict JSON decoding folds nested keys the way the decoder does.**
+  The nested-key check folded with `strings.ToLower`, which keeps `ſ`
+  (U+017F) apart from `s`, while `encoding/json` binds `ſource` to the
+  `source` field, so `{"source":"a","ſource":"b"}` passed and decoded
+  as `"b"`. The new `handler.FoldJSONKey` matches `bytes.EqualFold`;
+  `UnmarshalStrict` and every `CheckObjectKeys`/`CheckTopLevelKeys`
+  caller in the repo (MCP, A2A, ACP, module protocol, cursors, crud
+  numbers, the harness) use it.
+- **A 2FA re-enrolment no longer takes a pending verify's write.** A
+  disable plus re-enrol between `/2fa/verify`'s read and its update
+  re-created the row at version 0 with the same empty codes and flags,
+  so the swap marked the new pending enrolment verified with the old
+  secret. `EntityTwoFAStore` starts a new row at a random version.
+- **`ui.StatStrip` no longer marks its cells `data-cui-internal`.** A
+  cell holds the caller's content, so an owned style sheet could not
+  reach what the app placed there.
+- **Kiln's semantic context fences each chunk with a run longer than
+  any backtick run in it.** A chunk holding its own ```` ``` ```` line
+  closed the fixed fence and left the rest as bare system-prompt text.
+- **BREAKING: `handler.SSEStream` is removed.** It ranged over its
+  channel with no request context and ignored write errors, so a quiet
+  channel kept the handler parked after the client left, and it took no
+  stream seat. Nothing in the repo called it. Server push goes through
+  the one `/__gofastr/sse` bus, or `core/stream`'s `SSEBroker`, which
+  admits through the seat policy and bounds each write. `handler.SSE`, the one-event
+  response, stays and now reports a failed write.
+- **CRUD log lines percent-encode control bytes.** A driver error
+  quotes the request's value back (Postgres names the invalid `uuid` it
+  was handed), so `GET /legacy/%1B%5B2J%0AFORGED` forged a log line
+  through `CrudHandler.Get`. Every log line in `framework/crud` is
+  scrubbed now.
+- **The search results count follows the reader's locale.** The status
+  line wrote 1234 as `1234` on every locale; it now reads `1 234` in
+  French, as the chart numbers do.
+- Custom not-found screens retain their context-aware title provider.
+  `uihost.NotFoundTitler` can choose a title from the request path; empty
+  titles use the standard screen title or generic not-found title.
+  Navigation partials carry the effective 404 title instead of retaining
+  the previous page title or borrowing the failed route's title, and an
+  app with no default layout puts it on its bare 404 page.
+  Unmatched routes retain their path when a root layout outlet also has
+  a not-found fallback.
+- **The admin's Needs attention panel reads clear under every locale.**
+  It skipped an empty watched view only when the formatted count was
+  `"0"`, so under `ar-EG` (`٠`) or `fa` (`۰`) each empty view drew an
+  empty preview instead of the all-clear line. It compares the number.
+- **Email verification links opened from webmail work.** A click in
+  Gmail or Outlook on the web is a cross-site navigation, so the browser
+  withheld the `SameSite=Strict` session cookie and `GET
+  /auth/verify-email` always answered 401. That click now gets a page
+  from this origin that opens the link again with the cookie, the hop
+  OAuth linking already uses. See [auth](framework/docs/content/auth.md).
+- **An `EmitAsync` subscriber no longer runs on a cancelled request
+  context.** CRUD emits on the request's context, and the handler
+  returned before the subscriber ran, so the webhook bridge's subscriber
+  query failed with `context canceled` and a committed write lost its
+  webhook. Subscribers and the fanout tap keep the context's values
+  without its cancel, each bounded by the new `event.AsyncHandlerTimeout`
+  (one minute). See [events](framework/docs/content/events.md).
+- **Bulk "Every match" and CSV export on a keyed list stay in its view.**
+  The every-match read rebuilt the list without its key, so it looked
+  for `view` instead of `<key>_view`. On `List(e).Key("inv").View("open")`
+  a delete of every match removed rows outside the open view, and the
+  export held them too.
+- **BREAKING: `RecordBuilder.Steps` takes the list the drawer opens
+  from.** `Steps()` rebuilt a bare list, so a keyed list's params were
+  read under the wrong names and its `View` and `Where` pins were
+  dropped. Previous and next could land on a record the list did not
+  show. Call `Steps(list)` with the same `ListBuilder` the list screen
+  renders; the admin battery does.
+- **BREAKING: CRUD events carry their record's owner into the outbox.**
+  `crud.EventOutbox` declares `AppendFor(ctx, ex, owner, eventType,
+  data)` in place of `Append`, and the outbox table gains an `owner`
+  column, so `App.EraseUserData` sets an erased user's staged event
+  payloads to JSON `null`. A custom `EventOutbox` renames its method and
+  takes the owner. The outbox adds the column on boot; a host that passes
+  `WithoutEnsureTable` adds `owner TEXT NOT NULL DEFAULT ''` itself.
+- **User data erasure reaches every store table.** `App.EraseUserData`
+  and `App.ExportData` missed tables that held one user's data. These
+  stores now register from their constructors: admin saved views, auth
+  OAuth and API tokens (an API token owned by a service account with the
+  same id survives), A2A tasks and push configs, entityui bulk jobs (the
+  creator is anonymized), feature-flag user lists (the id is removed,
+  the flag kept), the SQL idempotency store (a new `principal` column,
+  added on boot), the outbox, outbound webhook deliveries, inbound
+  webhook envelopes, search documents and pgvector chunks. The audit
+  table is now exported too. Fanout spill rows expire on a purge ticker
+  instead of waiting for a later large publish. `FlatStore`'s snapshot
+  and WAL, and Redis queue persistence, are not reached by erasure.
 - **BREAKING: configured store tables fold their case on Postgres.** A
   store that creates its own table quoted a configured name whole, so
   `Jobs` made a table `"Jobs"` that a host's raw SQL on `jobs` never
@@ -398,8 +855,9 @@ few lines, and link the PR or the docs page for the rest.
   (2FA accounts fell back to password-only), OAuth links (OAuth-only
   accounts were locked out), and each user's name and verified flag.
   Exporters now follow the configured stores' tables and cover 2FA
-  enrolments and OAuth links. Magic-link and reset tokens stay out on
-  purpose.
+  enrolments and OAuth links. When the user table is also an app entity,
+  the entity's export carries the columns auth adds to it, so names
+  survive there too. Magic-link and reset tokens stay out on purpose.
 - **Development email logs redact links in HTML bodies.** An HTML
   template writes `&token=` in an `href` as `&amp;token=`, which
   `LogSender` and `RedactBody` did not recognise, so a live reset or
@@ -896,6 +1354,9 @@ few lines, and link the PR or the docs page for the rest.
   `Update` and `RequestPermission` blocked on an output nobody read;
   they return "acp: connection closed", and so does a call that was
   queued behind a stalled write when the connection closed.
+  `RequestPermission` also returns when its `ctx` ends, whether it is
+  queued behind a stalled write or its own request is the write stuck on
+  a client that stopped reading. See [ACP](framework/docs/content/acp.md).
 - **Kiln's ACP `session/load` replays only that session's chat.**
   Loading a session replayed every message in the journal, other
   sessions' prompts included. Messages an ACP turn writes carry
@@ -2062,6 +2523,1772 @@ few lines, and link the PR or the docs page for the rest.
 - **Fields whose names end in an operator suffix filter.** `?opt_in=`
   and `?members.check_in=` were cut into a field `opt` or `check` and
   refused; a suffix now counts only when the name before it is a field.
+- **Long-lived streams end when their caller loses access.** The
+  principal was resolved once at connect, so a revoked session or an
+  expired token kept receiving until the client left. The rtc room
+  socket, the SSE broker, island streams (which also re-run the topic
+  gate), A2A task streams, the CRUD event stream's tenant filter and the
+  harness MCP GET stream now re-check on each delivery or heartbeat and
+  close when the check fails.
+- **Stream writes have a write deadline.** A client that stopped reading
+  parked the handler for the life of the connection on kiln's live SSE,
+  dev livereload, the harness web, REST and WebSocket streams, island
+  streams and the CRUD event stream. Each write now runs under a fresh
+  deadline, cleared once the write is flushed. Kiln's live SSE also cuts
+  an event name at its first CR, LF or NUL, so a name can no longer
+  write its own `data:` line.
+- **32-bit builds compile.** `GOARCH=386` failed on constants past a
+  32-bit int or uint in core/i18n plural operands, core/schema and crud
+  unsigned bounds, the headless counter, the entityui number-input bound
+  and bench-resources. CI now cross-builds linux/386.
+- **HTTP/2 streams survive an idle gap.** `stream.SSEWriter`, A2A task
+  streams, the core/mcp notification stream and the harness MCP GET
+  stream left each write's 10 s deadline armed. On HTTP/2 that deadline
+  is a stream timer that resets the stream when it fires, write pending
+  or not, so a stream quiet for 10 s died before its next heartbeat. The
+  deadline is now cleared after each flush.
+- **Outcomes are recorded after a shutdown starts.** The queue's ack and
+  nack, the inbound webhook envelope's outcome, the migrate seed ledger
+  and entityui bulk chunk results were written on the context the work
+  ran under, so a shutdown landing as the work finished dropped the
+  record and the work ran again. They now settle on a detached, bounded
+  context. The outbound webhook's delivery state write and claim release
+  were detached but unbounded, so a store blocked on a dead database
+  held the worker past `Stop`; they are now bounded too.
+- **The harness web fetch checks the address it connects to.** It
+  checked a separate DNS lookup, so a rebinding host passed as public
+  and was dialed at an internal address. The SSRF check now runs on the
+  connected IP. Webhook and A2A push clients built on a clone of
+  `http.DefaultTransport` now get the same dial-time guard, which used
+  to skip them because the clone carries the environment proxy; the
+  guarded clone drops that proxy, as `netguard.GuardedTransport` does.
+  A transport with a `net.Dialer` of its own keeps it and gets the
+  resolve-and-check guard instead.
+- **Response wrappers expose the connection.** The cache middleware's
+  recorder, the theme editor, the webmcp observer, the idempotency
+  middleware and the timeout middleware gained `Unwrap`, so
+  `http.ResponseController` reaches flush, hijack and deadlines through
+  them. The cache and idempotency middleware no longer store a response
+  that was flushed or hijacked. Tracing sets its response headers before
+  the handler runs, since a later change never reached the client.
+- **Owner-only directories no longer rewrite shared parents.** The log
+  file sink, the desktop data dir, semantic persistence, the harness
+  SQLite store and `App.ExportData`'s directory tightened an existing
+  directory such as `/var/log` to 0700 after `MkdirAll`. Only a
+  directory the call created is tightened now; the export directory is
+  still tightened, and a symlink there is refused. A pre-existing
+  semantic WAL with looser permissions is now made owner-only.
+- **Huge field bounds no longer turn negative.** A String field's `Max`
+  or `Min` past the int range went through `int(...)`, which is
+  implementation-defined, so OpenAPI and JSON Schema published a
+  negative or nonsense `maxLength`. `schema.LengthBound` now clamps it to
+  [0, MaxInt32], and migrate and kiln's migrate write `TEXT` instead of a
+  `VARCHAR(n)` wider than Postgres accepts (10485760). The entityui
+  record form clamps a number field's bounds to ±2^53, where a huge
+  `Max` had landed below `Min` and refused every value.
+- **Ids are used exactly.** The RBAC admin and entityui bulk actions
+  trimmed spaces from ids, so `" u1 "` edited `u1`.
+- **SQLite search works on a table in an attached database.**
+  `SQLiteFTSConfig{Table: "aux.docs"}` created its table but every query
+  failed, because FTS5 read `"aux"."docs" MATCH` as a column. The bare
+  name now sits where FTS5 takes the table, and the boot-time probes
+  read the attached schema's catalog.
+- **`html.Classes` renders in sorted order,** so the `class` attribute is
+  the same bytes on every render.
+- **`ui.CodeTabs` and `ui.Markdown` take a `Ctx`,** so their code blocks'
+  accessible names, line counts and copy controls follow the request's
+  language.
+- **The static builder writes through `os.Root`.** A symlink planted in
+  the output tree failed no check and redirected the write outside it.
+- **The log webhook sink refuses redirects.** A 307 or 308 replayed the
+  batch and every configured header, such as an `X-API-Key`, to whatever
+  host the redirect named.
+- **The harness bash tool's timeout kills the process group.** A
+  backgrounded child holding the output pipe kept the call waiting for
+  its whole life.
+- **The audit scrub catches camelCase and kebab-case keys.** `resetToken`
+  and `reset-token` were stored in the clear while `reset_token` was
+  dropped. Keys now fold to snake case before the sensitive-suffix match.
+- **The email dev log redacts more secrets.** A token, code, key, secret
+  or password query parameter was kept when the keyword sat inside the
+  name (`?auth_token_v2=`), when the `&` was HTML-escaped, or when the
+  URL had no scheme. From, To, CC, Subject and headers are scrubbed of
+  control bytes, and header values are redacted like the body.
+- **Charts skip readings that are NaN or infinite.** `LineChart`,
+  `Sparkline`, `BarChart` and `PieChart` wrote `NaN` into SVG
+  coordinates, or scaled every bar to one infinite value. A non-finite
+  reading is treated as one that never arrived, as `Gauge`, `Heatmap` and
+  `Scatter` already did. `LineChart` labels now sit over the points of
+  the longest series.
+- **`TypedQuery.UpdateAll` writes a field whose column has a digit
+  segment.** `MarshalEntity` spells a `Line2` field `line2`, which
+  `UpdateAll` matched to no column; the `updated_at` restamp then counted
+  as a write, so the call reported the rows it touched having changed
+  only the timestamp. It now names columns as `CreateOne` and `UpdateOne`
+  do, leaves the caller's map alone, and returns "no fields to update"
+  for a body that sets nothing.
+- **A grant refresh that keeps failing waits between tries and lets the
+  app stop.** With the database down, a replica's refresh of a role
+  another replica changed retried at once, forever, and the fanout stop
+  waited on it, so shutdown hung. Each wake now reloads the roles it
+  found once and leaves a failure for the next try 5 seconds later. See
+  [scaling](framework/docs/content/scaling.md).
+- **An update that keeps a `belongs_to` reference saves when the caller
+  can no longer read its target.** Once an invoice's customer was
+  archived out of the caller's read scope, the edit form, which re-sends
+  every field, answered 404 on any change to the invoice until someone
+  re-picked the customer. A reference the update leaves as stored, every
+  column of it, is no longer checked; one that changes in any column
+  still is. See [security](framework/docs/content/security.md).
+- **A SQLite restore keeps timestamps filterable.** The export wrote every
+  time the driver parsed in RFC 3339 with trailing zeros trimmed, so
+  crud's `...05.120000Z` came back `...05.12Z` and a date came back
+  `...T00:00:00Z`. SQLite compares the text, so after a restore an
+  equality filter missed those rows and same-second rows reordered under
+  a cursor. A battery's `DATETIME` changed spelling too. The export now
+  reads a SQLite time column as stored and writes a Postgres instant in
+  the layout crud uses; an import rewrites an older archive's declared
+  `Timestamp` and `Date` columns in it. See
+  [data export](framework/docs/content/data-export.md).
+- **A blank Bool on a multipart form is not false.** The multipart parse
+  read an empty value as false, so saving a record through a form with an
+  upload field wrote false into every unset optional Bool (the entity form
+  draws a stored NULL as a select whose empty choice submits ""), and a
+  required Bool left blank passed. A blank now means "not provided", as on
+  the JSON path: an update stores NULL, a create applies the default, and a
+  required field answers 400. See [uploads](framework/docs/content/uploads.md).
+- **A re-granted wildcard holds on every replica.** `Revoke("teams:*")`
+  tombstones the wildcard and its expansion, and `Grant("teams:*")` lifted
+  only the expansion, so peers and restarts expanded the surviving
+  `teams:*` tombstone and denied what the origin allowed. Grant now lifts
+  the same tombstones Revoke writes. A grant inside a wildcard revocation
+  it does not lift (`Grant("teams:read")` after that revoke) returns
+  `access.ErrRevokedByWildcard` and writes nothing, where it used to hold
+  on the origin until its next reload. `GrantStore.CheckGrant` runs the
+  same checks without writing; the admin RBAC page uses it and answers
+  409. See [access control](framework/docs/content/access-control.md).
+- **A cascade child's keys are named like its parent's.** In process, a
+  nested child built with `MarshalEntity` lost every field whose derived
+  key is not its column (`line2` for `line_2`), since the children were
+  read by the HTTP rule while the parent was not. Over HTTP, two child keys
+  naming one column (`bodyText` and `body_text`) were settled by map order;
+  they now answer 400 `validation.keys_fold`, as the parent's keys and
+  batch items do. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
+- The experimental harness web client's `Server.Stop` closes an open
+  `/events` stream once its context ends. `http.Server.Shutdown` never
+  closes an active connection, so Stop returned at the deadline and left
+  the stream's handler, seat and bus subscription running. Stop still
+  returns the context's error when it had to close connections.
+- A kiln journal append that fails part way (a full disk, a failed
+  fsync) no longer corrupts the journal. The fragment stayed in the
+  file, the next append completed it into a line of invalid JSON, and
+  the next boot refused to replay the session. The failed append's bytes
+  are now cut back off; if that fails too, appends are refused until
+  restart. See [kiln](framework/docs/content/kiln.md).
+- `world_get` with path `_plans` returns a copy of the plans. It
+  returned the session's own map, encoded after the read lock was
+  released, so a concurrent `propose_plan` or `approve_plan` could crash
+  kiln with a concurrent map write.
+- `gofastr migrate force` takes exactly one version, parsed whole.
+  `force 3x` read 3 and marked migration 3 applied without running its
+  SQL, and with two versions the last one won. See
+  [migrations](framework/docs/content/migrations.md).
+- **BREAKING: `gofastr sdk` refuses an entity whose `client.d.ts` type
+  name is already declared.** The name can be taken by the runtime
+  (`Resource`, `Client`, `CursorPage`, and the other runtime types) or
+  by another entity (`order_input` beside `order`'s `OrderInput`). The
+  second declaration used to ship beside the first, so the client failed
+  to compile or TypeScript merged the two interfaces. Rename the entity.
+  See [SDK](framework/docs/content/sdk.md).
+- `App.Shutdown` tears down once. A second call found the server
+  already detached and stopped every battery again; called concurrently
+  (a signal handler plus a deferred Shutdown), it closed batteries under
+  requests the first call was still draining. A later or concurrent call
+  now waits for the first to finish, or for its own context to end. See
+  [deploy](framework/docs/content/deploy.md).
+- `App.Shutdown` no longer restarts the process modules it drains. The
+  supervise loops kept running and read each drained exit as a crash,
+  so they started a new child during or after shutdown. The drain now
+  closes the supervisor first, and runs before batteries stop rather than
+  after, so a child's in-flight reverse calls still reach them. A child
+  still starting when the supervisor closes is killed instead of
+  installed. See
+  [process modules](framework/docs/content/process-modules.md).
+- An entity, view or routine declared from a module's or battery's
+  `Init` is migrated and seeded. Start ran its only migrate-and-seed pass
+  before `Init`, so the table never existed: Start succeeded and the
+  module failed at its first query. Start now migrates and seeds again
+  once `Init` has declared something new. A host binary's `migrate
+  generate` verb calls `app.InitPlugins()` before `app.MigrationPlan()`
+  to include them. See [modules](framework/docs/content/modules.md).
+- A process module that stops reading stdin no longer hangs shutdown,
+  or a disable or upgrade drain. The drain wrote `module.drain` before
+  it closed stdin or started the kill timer, and that write blocked on a
+  full pipe whatever its context said; a stuck runtime drain kept the
+  module in Draining for good. The budget now runs from the drain call
+  and the kill ends the write. The call waits at most half the budget
+  for an answer, so a child that never answers still has time to exit
+  at EOF. `moduleproto.Peer.Call` also returns once its context ends,
+  the peer closes or the peer faults, even while its request write is
+  blocked; the write keeps the call's inflight slot until it returns.
+  See
+  [process modules](framework/docs/content/process-modules.md).
+- A process module whose host peer faulted now restarts. A malformed,
+  over-cap or unsolicited frame left the child running in `Ready` while
+  every call to it failed, because nothing watched the peer's fault. The
+  supervisor now kills the child on a fault and counts it as a crash, so
+  the module backs off, restarts, and opens its circuit if it keeps
+  faulting. See
+  [process modules](framework/docs/content/process-modules.md).
+- **Signal controls work inside a modal, drawer or popover.** The
+  runtime's signal delegate skipped widget roots, and the widget's own
+  listener handles only `data-cui-rpc` and close, so
+  `data-cui-signal-set`, `-inc` and `-toggle` did nothing there:
+  `ui.Tabs` in a drawer never switched and a `headless.Button` with a
+  signal action was dead. On a node that also carries `data-cui-rpc`,
+  the signal mutation wins inside a widget as it does outside one. See
+  [reactivity](framework/docs/content/reactivity.md).
+- **A superseded navigation no longer destroys a loading region's
+  original content.** When a second click replaced a navigation whose
+  `data-cui-loading` content was showing, the first navigation dropped
+  the hidden nodes it had parked, so a second navigation that then failed
+  or was aborted left the region on the skeleton, and its input values,
+  listeners and island state were gone. The newer navigation now takes
+  the parked nodes over, and a region no apply replaced gets them back.
+  See [layouts](framework/docs/content/layouts.md).
+- **A second click no longer clears the first click's busy marks off
+  the regions both navigations change.** The superseded navigation's
+  cleanup removed `aria-busy` from every region it had marked, so the
+  outlets and slot the winner had marked read as idle while its request
+  was still in flight. Each mark now records the navigation that set it,
+  and only that navigation clears it.
+- **A state field with no `Default` starts at its first `Initial` value.**
+  A create or upsert that left the state out stored NULL, a state no move
+  starts from, so the record could never move, and a Required state field
+  failed every entityui and admin create, since the form never sends the
+  state. Define now sets the field's `Default` to that value. See
+  [states](framework/docs/content/states.md).
+- **An in-process include filter is read as written.** `TypedQuery.Include`,
+  `GetOne` and `ListAll` pasted the include names into a URL unescaped, so a
+  filter value with a space (`comments(body=hello world)`) panicked, a `+`
+  matched a space and a `#` cut the rest of the filter off.
+- **A redelivered inbound webhook job for a processed envelope does not
+  run the handler again.** A crash before the queue's ack, or a lease
+  expiry under a slow first run, redelivered the job, and `ProcessInbound`
+  called the business function a second time. BREAKING:
+  `MarkEnvelopeProcessing` on both bundled inbound stores returns
+  `(bool, error)`, false when it marked nothing. See
+  [webhooks](framework/docs/content/webhooks.md).
+- **A DI constructor can resolve the services it needs.** The container
+  held its lock while a constructor ran, so a factory that called
+  `Resolve` or `Inject` blocked every container call for good. A
+  constructor now runs outside the lock, still once per type: a second
+  caller waits for the first and shares its value, and a constructor
+  that panics releases the waiters with an error. A constructor that
+  needs its own type still waits on itself.
+- **The documented notify wiring sends without an error.** The examples
+  in the notifications guide, the package doc and the agent recipe set a
+  template for one channel while registering another, so every `Send`
+  returned `no template for ("order.shipped", "log")`, after the email
+  had already gone out. Each now sets a template per channel, and the
+  guide says a `Send` error can follow other channels' delivery. See
+  [notifications](framework/docs/content/notifications.md).
+- **A static export keeps the app's `_headers` and `_redirects`.** The
+  build refused a static-dir (or static FS) `_headers`, and a
+  `_redirects` when the app had redirects, as if each were a rendered
+  page, so the app's caching headers and legacy redirects never reached
+  the host. The app's file is now appended after the generated rules,
+  which stay first. A `Builder.ExtraDirs` copy is still refused. See
+  [static export](framework/docs/content/static-export.md).
+- **BREAKING: a process module's artifact upgrade waits for its own
+  migrations.** The upgrade kept the previous artifact's
+  `MigrationsAppliedAt`, so a new version that added tables reached Ready
+  against the old schema. A new artifact digest now clears the stamp;
+  the supervisor drains the module and holds it in `InstalledDisabled`
+  until the migration coordinator runs for the new artifact, and `Apply`
+  refuses to stamp a row that has moved to another artifact. Run the
+  coordinator as part of every module deploy. See
+  [process modules](framework/docs/content/process-modules.md).
+- **A panicking presence hook no longer ends the process.** The
+  heartbeat's expiry sweep called the `SetOnPresenceChange` callback
+  with no recover, so an app hook that panicked on a departed remote
+  roster crashed the replica. The remote-roster merge and the fanout
+  `stop` called it bare too, so one panic skipped the topics after it.
+  Every path now recovers and logs per topic, as the local join and
+  leave paths already did. `recovercallback` now follows a callback
+  read through a package-local accessor, the spelling that hid the
+  heartbeat site. See [presence](framework/docs/content/presence.md).
+- **`ExportData` streams each table instead of holding it in memory.**
+  The export collected every page of a table into one slice, then built
+  the whole `.ndjson` file in a buffer before writing it, so
+  `WithExportPageSize` bounded nothing and a large table could exhaust
+  memory. Each page now reaches the file, hashed on the way, before the
+  next is read. The archive format is unchanged. See
+  [data export](framework/docs/content/data-export.md).
+- **Back and Forward through a layout with outlets restore the page's
+  own signals.** The envelope navigator seeded its cache entries with
+  the `route.*` keys alone, so Back to the first page kept the quantity
+  the page you left had set, a page re-captured on leave lost the seed
+  its own answer carried, and a fetched whole document (a cross-chain
+  swap or a static host's answer) applied its route keys at most.
+  It now reads the `#gofastr-signals-page` names as the plain navigator
+  does, and a re-captured page keeps the seed it arrived with. Globals
+  keep the value the user gave them. See
+  [signal store](framework/docs/content/signal-store.md).
+- **A navigation answered 200 with a body that is not HTML no longer
+  blanks the page.** The navigators refused a non-HTML body only on an
+  error status, so a 200 `text/markdown` or JSON answer swapped an
+  empty `<main>` in, or left the address bar on the link. Any answer
+  not typed `text/html` now toasts naming its status, the URL goes back
+  and the page stays, an untyped 200 included. On the site, the docs
+  pages' links to sibling pages (`a2a.md` → `/docs/a2a`) and to repo
+  files (`../../../battery/admin/` → the GitHub source) are rewritten,
+  so they no longer land on the raw-markdown route or a 404. See
+  [core-ui/ARCHITECTURE.md](core-ui/ARCHITECTURE.md).
+- **Back to a visit's first page keeps a shared nested layout.** On a
+  page with no outlets, `/group/a` → `/group/b` → Back replayed the
+  first page's cache entry, keyed at `<main>`, over the group layout:
+  its DOM was rebuilt and lost its listeners and typed input. The
+  replay now applies only the entry's cell for the deepest layer both
+  pages share, with the entry's page metadata and page signals. See
+  [core-ui/ARCHITECTURE.md](core-ui/ARCHITECTURE.md).
+- **Email headers that are not ASCII are encoded.** The SMTP sender
+  wrote a localized `Subject` (`¡Confirma tu correo!`), a display name
+  in `From`, `To` or `Cc`, and an attachment filename as raw UTF-8,
+  which a relay without SMTPUTF8 may reject or mangle. They now go out
+  as RFC 2047 encoded words and RFC 2231 `name*=` / `filename*=`
+  parameters; ASCII values keep their bytes. See
+  [email](framework/docs/content/email.md).
+- **`Unique` set or cleared on an existing column reaches the schema.**
+  Only `CREATE TABLE` and `ADD COLUMN` wrote a field's uniqueness, so a
+  column made `Unique` later kept accepting duplicates, and clearing it
+  left the constraint. Boot now creates `<table>_<column>_key` when no
+  single-column unique index covers the column; rows that already repeat
+  a value fail the boot with an error naming the column. `migrate
+  generate` records each table's unique columns in the snapshot
+  (`unique_columns`) and creates or drops the index; on SQLite a clear
+  rebuilds the table. See
+  [migrations](framework/docs/content/migrations.md).
+- **`scripts/pr-review-findings.sh --gate` reads every review thread.**
+  Its GraphQL query fetched the first 100 threads with no cursor, so an
+  open thread past them passed the gate. It now pages through all of
+  them and counts one line per open thread.
+- **Writing a table's default schema into `Table` no longer drops it.**
+  After `widgets` became `main.widgets` (SQLite) or `public.widgets`
+  (Postgres), `migrate generate` read the table as new and the recorded
+  one as removed, and wrote a `CREATE TABLE IF NOT EXISTS` (a no-op)
+  followed by `DROP TABLE widgets`, which took the rows. The two
+  spellings are now one table, and the change generates nothing. See
+  [migrations](framework/docs/content/migrations.md).
+- **`migrate generate` finds the children of a schema-qualified SQLite
+  table.** A SQLite foreign key names its parent without a schema, and
+  generate compared that bare name with the parent's qualified `Table`,
+  so it saw no child. Dropping `main.ap` and its child together dropped
+  the parent first, and the migration failed with `FOREIGN KEY
+  constraint failed` while the child held rows. The rebuild guards that
+  read the same references missed them too, and a bare reference in
+  `aux.b` was read as one onto `main.a`. A bare parent now resolves into
+  the child's schema.
+- **A generated app stops when auth fails to start.** The app generator
+  emitted `authMgr.Init(fwApp)` and dropped its error, so a production
+  app with `JWT_SECRET` unset served its screens with no `/auth/login`.
+  The generated `app.go` now exits with Init's error. Regenerate, or
+  wrap the call yourself in an app you own. See
+  [app specs](framework/docs/content/app-spec.md).
+- **A generated `entity_form` posts to the entity's table and offers its
+  related records by key.** The form submitted to `<api_prefix>/<entity>`
+  while the routes mount at the table, so an entity with `table:` set
+  answered 404, and the generated e2e test called the same wrong path.
+  A relation select fetched its target by entity name and gave each
+  option the row's `id`; a target with `primary_key: [currency_code]`
+  has no `id`, so every option posted `undefined`. The select now reads
+  the target's key column from its table's route. Regenerate to pick it
+  up. See [app specs](framework/docs/content/app-spec.md).
+- **A generated app's Sign out, login and signup forms follow
+  `app.auth.base_path`.** The battery mounted its routes at `base_path`,
+  but the generated Sign out button posted to `/auth/logout`, so signing
+  out failed and the session stayed. The `login_form` and `signup_form`
+  defaults and the generated e2e test's login named `/auth` too. They now
+  post under `base_path`. BREAKING for app specs: `base_path` must be an
+  absolute path with no trailing slash, such as `/account`, and
+  `gofastr generate` refuses `/auth/`, `auth`, `//host`, `/a//b` and
+  `/..`. See [app specs](framework/docs/content/app-spec.md).
+- **A strict OpenAPI validator accepts list responses.** The list
+  route's 200 is `oneOf` `ListResponse` and `CursorPage`, which had no
+  required keys, so every list body matched both and `oneOf` refused it.
+  `ListResponse` now requires `data`, `total`, `page`, `perPage` and
+  `totalPages`, and `CursorPage` requires `data`, `cursor` and
+  `hasMore`. The generated `client.d.ts` typed `CursorPage.total` as
+  always present; cursor mode never sends it, so it is optional now. With
+  `strictNullChecks`, code that read it as a number now gets a type
+  error instead of `undefined` at run time.
+  See [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **The OpenAPI spec lets an optional field be `null`.** The route takes
+  `null` for an optional field and stores it, so reads return it, but
+  the spec typed the field `string` (or `integer`, and so on), and a
+  strict validator refused the write and every read of the row after
+  it. An optional field's type is now `[T, "null"]` and its enum lists
+  `null`; a required field, a generated value and a key column stay
+  non-null. The create schema's state field under enforced states stays
+  non-null, as the route refuses a null state there; the MCP create
+  tool offered one and no longer does. `gofastr generate cli
+  --from-openapi` reads a `[T, "null"]` type as `T`; it made such a
+  field a string flag. See [core packages](framework/docs/content/core-packages.md).
+- **`migrate down` refuses a migration that has no Down.** It ran the
+  empty Down, which succeeds, and deleted the tracking row, so the
+  version read as pending while its Up's changes stayed and the next
+  `up` ran it again. `Down` now returns `ErrNoDown` naming the version
+  before it rolls back anything. See [migrations](framework/docs/content/migrations.md).
+- **A SQLite table rebuild keeps the table's triggers.**
+  `ApplySchemaDiffWithOptions` rebuilds a SQLite table for a retype or a
+  key change, and boot does for a key change. The `DROP TABLE` took the
+  table's triggers with it: the live apply put none back, and boot put
+  back only the declared routines, so an audit trigger stopped firing
+  with no error. Both now recreate the table's triggers right after the
+  rebuild, in the order they were made, with any column rename earlier
+  in the change set kept in their bodies. See
+  [migrations](framework/docs/content/migrations.md).
+- **A refreshed or shared pane link opens the pane with its content.**
+  Back and Forward re-clicked the keyed trigger, so its RPC filled the
+  pane, but a page load only opened the pane on its generic content. A
+  load now replays the trigger the same way, without a history entry.
+  Both match the trigger by key and pane: one key could label a
+  record's view and its edit trigger, and the first one in the page
+  opened. See [pane host](framework/docs/content/pane-host.md).
+- **A cancelled harness turn no longer cancels every turn after it.**
+  `CancelTurn` cancelled the engine's root context, which every turn
+  starts from, so after one cancel (even one sent while idle) each new
+  turn began already cancelled. It now ends the running turn alone. A
+  turn cancelled mid-stream or while connecting ends with reason
+  `cancelled`, not `error`. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **A harness session export holds every event.** The export read the
+  log in one `EventsSince` call, which the SQLite store caps at 10,000
+  rows, so a longer session exported a bundle missing its tail with no
+  error. It now pages through the log until a page comes back empty.
+- **A heavy-JS plugin mounts after a client-side navigation.** The
+  plugin host broker scanned for `data-fui-plugin` markers only at boot
+  and tore down every instance on `gofastr:navigate`, so a page reached
+  by navigation or an island swap showed the fallback forever, and a
+  plugin in a retained layout region was destroyed. The broker now
+  mounts markers as they arrive and tears down only the instances whose
+  marker left the DOM.
+- **A `ShowWhen` field draws on an entity with no States.** The record
+  form compared the condition's field with the States field before
+  checking the entity had States, so any `ShowWhen` on such an entity
+  panicked and the create and edit forms showed "Couldn't load this
+  section".
+- **A create form sets a required key the caller assigns.** entityui
+  and the admin treated every one-column primary key as server-owned and
+  left it off the create form, so an entity keyed on a required `code`
+  with no generator failed validation on every create. A `Required`
+  one-column key with no `AutoGenerate` now draws as an input on create,
+  read-only after, and blank on a Duplicate, the way a composite key's
+  columns do. See [entityui](framework/docs/content/entityui.md).
+- **Removing a filter chip keeps the other terms' meaning.** The list
+  rebuilt the filter from the kept chips without parentheses, so
+  removing `active = true` from `(status = "open" or status = "paid")
+  and amount > 100 and active = true` left `status = "open" or
+  status = "paid" and amount > 100`, which matches every open row, and
+  "Every match" bulk actions acted on that wider set. A top-level `or`
+  also split into chips that were rejoined with `and`. Groups now keep
+  their parentheses in chips, in the query box and in nested terms,
+  and an `or` filter is one chip.
+- **Widgets open and poll on embedded screens.** The embed middleware
+  listed `/__gofastr/widget` as a runtime path, but widgets serve their
+  style, state and chrome from `/core-ui/widget/<name>/`, so it answered
+  403 to every one of them before the widget's own gate ran. Those three
+  routes now pass for a widget offered on the grant's surface page and
+  stay refused for a widget scoped elsewhere, whatever session gate it
+  carries. New `(*embed.Host).SetWidgetReach` takes the check;
+  framework/uihost installs it from the widget registry.
+- **A custom 404 screen built on `component.ContextOnly` renders its
+  body.** The `WithNotFoundScreen` adapter called `Render`, which
+  `ContextOnly` answers with "", so the page body was empty; it now
+  dispatches `RenderNotFound`, then `RenderCtx`, then `Render`. An app
+  with no root layout ignored the configured screen and served the
+  built-in body; it now renders the screen in the bare `<main>`, falling
+  back to the built-in body when the screen panics.
+- **macOS deep links reach the app.** The darwin shell registered its
+  GetURL handler for the Apple Event code `'GURT'` instead of `'GURL'`,
+  so a URL on the app's scheme opened from a browser or `open` never
+  reached `Config.DeepLink`.
+- **The `window` capability acts on the calling window.** `title`,
+  `setTitle` and `snapshot` always used the main window, so a Settings
+  page that mirrors `document.title` through `setTitle` renamed the main
+  window, and a secondary window's `snapshot` returned the main window's
+  pixels. A call from a window that has closed now answers `not_found`.
+- **A file picker keeps the user's choice however long they take.**
+  The macOS open, save and folder panels gave up after 10 seconds while
+  still on screen, and on every platform the app's 30-second request
+  timeout and 60-second write timeout cut a bridge call short, so a
+  path picked after that was never granted or never reached the page.
+  The call route now has an 11-minute budget, and the macOS panels wait
+  10 minutes like the permission alert.
+- **BREAKING: pgvector replicas share one keyword leg.** `Open` filled a
+  `MemoryKeyword` from the table once, so a document written through one
+  replica never reached another replica's hybrid keyword leg until that
+  replica restarted. `PgVectorStore.Keyword()` answers the keyword leg
+  with Postgres full-text search over the same table, and `Open` refuses
+  `MemoryKeyword` with a `PgVectorStore`. Replace
+  `Keyword: semantic.NewMemoryKeyword()` with `Keyword: store.Keyword()`;
+  [semantic-search.md](framework/docs/content/semantic-search.md) has the
+  matching rules and the GIN index for a large table.
+- **BREAKING: a pgvector table refuses a second embedding model.** A
+  pgvector column fixes the dimension only, so an index opened with a new
+  model of the same dimension ranked old and new vectors as one space;
+  the file-backed store already refused that. `EnsureSchema` now creates
+  `semantic_models`, `Open` records the table's model and dimension and
+  returns `*ModelMismatchError` for another while the table holds rows,
+  and each write checks the record in its own transaction. An emptied
+  table takes the new model. `Open` before `EnsureSchema` fails with an
+  error naming it.
+- **`webhook.Bridge` queues one delivery per event across replicas.** With
+  a fanout attached, every replica re-emits the events of the others, and
+  each replica's bridge queued its own delivery under a fresh id, so an
+  endpoint behind N replicas received N copies of each change. The bridge
+  now skips events that arrived from another replica (`event.IsRemote`);
+  the emitting replica queues them into the shared store.
+- **SMTP login works against relays without CRAM-MD5.** `SMTPSender`
+  tried CRAM-MD5 first and fell back to PLAIN on the same connection, but
+  `net/smtp` closes the connection when a relay refuses a mechanism, so
+  relays offering only PLAIN and LOGIN (SES, Gmail) never authenticated
+  and every send failed. The sender now picks one advertised mechanism
+  (CRAM-MD5, then PLAIN, then LOGIN, which Office 365 offers alone) and
+  makes one attempt. LOGIN runs only over TLS or to localhost, as PLAIN
+  does.
+- **A node-tree `textarea` shows its value.** `core-ui/noderender` built
+  the element with no content and passed `value` through as an attribute,
+  which a textarea ignores, so an edit form drawn from a node tree (Kiln,
+  an app spec's raw `textarea` block) showed an empty box and saving it
+  blanked the field. `value` (or `text`, then `content`) is now the
+  element's text.
+- **`kiln agent` exits cleanly when its serve fails to start.** A serve that
+  died before answering (an unopenable journal, a bad flag) made the launcher
+  sit until the 10-second readiness poll ran out and then abort with Go's
+  "all goroutines are asleep - deadlock!" and a goroutine dump. It now prints
+  the serve's error and exits 1 at once.
+- **A Kiln seed row without an id gets one.** `add_seed` inserted only the
+  row's own keys, so a row with no `id` stored a NULL primary key (SQLite
+  allows NULL in a `TEXT PRIMARY KEY`) and the row could not be fetched,
+  edited, deleted or referenced; `created_at` and `updated_at` stayed NULL
+  too. Seeds now fill an omitted or null UUID id and timestamps the way a
+  CRUD create does, and keep any value the row gives.
+- **Kiln's `reset_session` and `undo` drop tables linked by foreign keys.**
+  The rebuild dropped tables in name order with foreign keys on, so a parent
+  table with linked rows (`authors` under `books`) refused the drop; the
+  failure was logged, the reset answered OK, and re-adding the entities
+  served the old rows. The drops now run with foreign keys off on one
+  connection that is set back before it returns to the pool, and a rebuild
+  that still fails is reported by `reset_session`, `undo` and boot.
+- **Kiln's ACP agent remembers earlier prompts in a session.** Each prompt
+  sent the provider only its own text, so a follow-up such as "now add a
+  title field" reached a model that had never seen the request before it.
+  A session now keeps its conversation, tool calls and results included,
+  and runs one prompt at a time even when a second connection loads it. A
+  tool call that a cancelled prompt never ran gets a `cancelled` result,
+  so the next request never carries a call without its result.
+- **Kiln's `delete_field` and `update_entity` change the live table.**
+  Kiln migrated additively, so a deleted required field kept its
+  `NOT NULL` column and every later create failed. A dropped field's
+  column now leaves the table. A field that is made optional or no longer
+  unique, or a column SQLite cannot drop in place, rebuilds the table
+  with its rows. Rows the rebuilt table refuses refuse the edit and
+  leave the table as it was.
+- **A Redis worker that dies inside `Dequeue` no longer loses the job,
+  with a client that implements the new `queue.PopRecorder`.** `Dequeue`
+  popped the job and wrote the processing entry in two round trips, and a
+  worker killed between them left the job on no list. `RPopHSet` (a
+  four-line Lua script, in [queue](framework/docs/content/queue.md#optional-poprecorder))
+  records the job as it pops it, and `Reclaim` puts back a record older
+  than the visibility timeout. A client without it behaves as before.
+- **A cron schedule that never fires no longer enqueues on every tick.**
+  For a spec like `0 0 30 2 *` (February 30), the next run was the zero
+  time, which is always due. `Register` on both schedulers now refuses a
+  spec with no firing in the next five years, and an in-memory schedule
+  whose next firing lies past that search stops and logs a warning.
+- **An event-bus unsubscribe releases the handler, and cron catch-up holds
+  only the ticks it keeps.** Cancelling a `Subscribe` left the handler in
+  the slice's backing array and kept an emptied event type in the map, so
+  a long-lived bus kept every cancelled SSE closure alive. A durable cron
+  schedule waking after an outage collected every missed tick before
+  trimming to `MaxCatchUpOccurrences`; it now keeps a ring of that size.
+- **Sent email carries `Date` and `Message-ID`, and the dev log scrubs
+  every line.** `SMTPSender` wrote neither header, which direct delivery,
+  threading and dedupe need. Each message now gets a `Date` and a random
+  `Message-ID` on the sender's domain; a `Headers` entry of either name
+  replaces it. `LogSender` printed bodies and attachment names raw, so an
+  escape sequence in a template reached the terminal.
+- **Removing a routine with no `Down` is refused instead of writing an
+  empty migration.** `GeneratePlan` wrote a migration of only `;` and
+  advanced the snapshot, while the routine stayed in the database. It
+  now returns an error naming the routine. Declaring it again with a
+  `Down` and generating records the drop, and the removal then carries
+  it.
+- **A view on a SQLite table no longer fails boot's key-change rebuild.**
+  The rebuild's final `RENAME` re-parsed every view and failed with
+  `error in view …: no such table`. Boot now runs it under
+  `PRAGMA legacy_alter_table`, as the live apply and generated files do,
+  and turns the pragma back off afterwards.
+- **Declared renames run in order of the old name.** Map order picked
+  the order of the `RENAME COLUMN` statements and of an app spec's rename
+  errors, so the same declaration could generate a different migration or
+  error text on each run.
+- **Two versions booting at once no longer leave a table without the
+  newer one's columns.** Auto-migrate reads the live schema before it
+  takes the migrate lock. When both boots saw a table missing and the
+  older version created it first, the newer boot's `CREATE TABLE IF NOT
+  EXISTS` did nothing and its new columns never landed. A table read as
+  missing is now read again under the lock and converged like any
+  existing table.
+- **A response JSON cannot encode is an error, not an empty success.**
+  `handler.Respond` wrote `200` and then dropped the encode error, so a
+  NaN or a channel in a handler's result answered an empty 200. It now
+  encodes first and answers the generic 500. An MCP tool whose result,
+  or whose `structuredContent`, cannot be encoded gets the "internal tool
+  error" reply instead of a successful call with empty text.
+- **MCP echoes a numeric id past float64's range.** An id such as `1e400`
+  failed the strict decode before the id was rebuilt from its literal, so
+  the client got an invalid-request reply with a null id. The envelope now
+  decodes numbers as their literal from the start.
+- **A 405 `Allow` header names `HEAD` on a GET route.** The mux answers
+  HEAD on every GET pattern, but `Allow` listed GET alone. A gated GET
+  drops its HEAD with it.
+- **Two image variants that name the same file are refused.** Variants
+  with the same `Suffix` (or a `Suffix` equal to another's width) and the
+  same `Format` saved over each other while the variants column listed
+  both, so a srcset served the wrong bytes. `VariantSet.Process`,
+  `ProcessTo` and `imagefield.New` now return an error naming both
+  indices, and `image.CheckVariantNames` runs the same check.
+- **A resize target past `MaxPixels` is an error, not a runtime panic.**
+  `Resize`, `Placeholder` and `NewGradient` allocated whatever size they
+  were asked for, and the aspect arithmetic could overflow. A target
+  whose area exceeds the image's `MaxPixels` (`DefaultMaxPixels` for
+  `FromImage`) now returns `image.ErrTargetTooLarge` from
+  `VariantSet.Process`, `ProcessTo`, `Placeholder` and `NewGradient`.
+  `Resize` panics with an error wrapping it. An image decoded with a
+  small `MaxPixels` can no longer be upscaled past that cap.
+- **A lazy `Tree` branch set `Expanded` starts collapsed.** It rendered
+  an open, empty group that nothing loaded until the reader closed and
+  reopened it. With no `Children`, `Expanded` is now ignored, so the
+  first toggle opens the group and loads it.
+- **An app installed from a locale page launches in that locale.** Every
+  page linked one `/manifest.webmanifest` whose `start_url` had no
+  locale prefix, so a reader who installed from `/es/` landed on `/`. A
+  locale page now links `/es/manifest.webmanifest`, whose `start_url`
+  carries the prefix; `id` and `scope` are unchanged, so it is still one
+  app. The worker precaches each locale's manifest and the static export
+  writes one per locale tree. BREAKING: `UIHost.PWAManifestJSON` takes a
+  `context.Context` first.
+- **A computed-signal cycle no longer freezes the page.** With `a`
+  reading `b` and `b` reading `a`, every write ping-ponged until the
+  stack overflowed, re-running each reducer over a thousand times.
+  `store.Computed` now panics on a declaration that closes a cycle and
+  names the path, and the runtime never re-runs a node inside its own
+  recompute, which stops a cycle written by hand in the attributes.
+- **SMTP bodies go out quoted-printable.** The text and HTML bodies were
+  written as given, so a template saved with Unix line endings put bare
+  LFs under CRLF headers and a minified one-line HTML body passed SMTP's
+  998-octet line limit. Each body part now carries
+  `Content-Transfer-Encoding: quoted-printable`, with every line ending
+  made CRLF, and a single-part message declares `MIME-Version`. The
+  boundary check reads the encoded body and refuses a line that starts
+  with a delimiter. `Email.Headers` can no longer set `Content-Type`,
+  `Content-Transfer-Encoding` or `MIME-Version` (the send fails with
+  `ErrSendFailed`), and notify's `Extra["headers"]` refuses
+  `Content-Transfer-Encoding` as it already refused the other two.
+- **The batch docs no longer promise event delivery in input order.**
+  A `_batch` emits its lifecycle events in input order, but `EmitAsync`
+  starts every subscriber on a new goroutine per event, so a subscriber
+  can receive them in any order. `hooks-and-transactions.md`, `events.md`
+  and the `BatchCreateMany` doc comment now say so.
+- **A generated `e2e_test.go` fails when sign-in leaves no session.** It
+  signed in as the seeded admin and then accepted any 200 from each gated
+  screen, following redirects, so with no session the login page passed
+  for every screen. The signed-in client now stops at a redirect to the
+  login screen's route and the screen check reports the 303. Meridian's
+  own e2e test had the same gap and gets the same client.
+- **A widget RPC declared `PATCH` is registered as `PATCH`.** BREAKING.
+  `widget.Mount` had no `PATCH` case and registered every method it did
+  not know as `POST`, so the runtime's `PATCH` got 405 and a `POST`
+  reached the handler. `Mount` now registers `PATCH`, and panics before
+  registering any route on a method other than `GET`, `POST`, `PUT`,
+  `PATCH`, `DELETE` or `""` (which still means `POST`), lower-case
+  spellings included.
+- **A widget mounted on a router group publishes the URLs it is served
+  at.** The `/__gofastr/widgets` catalog listed the declared style,
+  state and chrome paths without the group prefix, so a widget mounted
+  on `root.Group("/v2")` was fetched at URLs with no route. The catalog
+  now publishes the prefixed URLs, which `Definition.StyleURL`,
+  `StateURL` and `ChromeURL` also return. `gofastr static` writes each
+  widget's files at those URLs, and prefixes them for a base path
+  whatever they are, a custom `StylePath` outside `/core-ui/widget/`
+  included.
+- **An embed grant reaches a `RequireSession` widget's RPCs on its own
+  surface.** The session check uihost installs read the widget's name out
+  of a `/core-ui/widget/<name>/` URL. An RPC path (or a custom or
+  group-prefixed state path) names no widget, so a grant was refused there
+  even with the path in the surface's `Reach`. Each widget gate now hands
+  the check its own definition, which `widget.GatedWidget(r)` returns, and
+  the grant passes when that widget is offered on the grant's surface, the
+  rule its state and chrome already followed.
+- **`cmd/affected` selects what still imports a package the change
+  deleted.** A package whose last file was deleted is no longer in the
+  `go list` set, so nothing owned the change and a test still importing
+  the package was not selected. Each changed file's directory now counts
+  by its import path, which the remaining importers still list.
+- **A failed navigation goes back to the page still shown.** Starting a
+  navigation while another was loading, then having the second one
+  fail, left the address bar and the router on the first one's
+  destination, a page that never rendered. Both navigators now roll
+  back to the page the DOM shows.
+- **Back to the first page of a visit shows that page.** When the first
+  page had no outlet and a later navigation brought one in, the module
+  that caches outlet pages loaded one navigation late and filed the page
+  then on screen under the first page's URL, so Back to the first page
+  replayed the wrong one. It now caches nothing until its own first
+  navigation answers.
+- **A macOS window snapshot after a cancelled one shows the page now.**
+  A snapshot whose context was cancelled, or that timed out, still
+  finished later, and the next snapshot of any window returned that
+  stale image. Every snapshot after it then ran one capture behind. The
+  next snapshot now waits for the abandoned capture to finish and
+  discards it.
+- **Replicas naming one pgvector table two ways share its document
+  locks.** The per-document replace lock hashed the configured table
+  name, so a replica set to `embed_chunks` and one set to
+  `public.embed_chunks` took different locks, and two replaces of one
+  document could keep chunks of both versions. The lock now hashes the
+  table's OID, resolved in each replace's transaction.
+- **A generated migration that changes a view and drops a column the old
+  view reads applies.** `migrate generate` replaced a changed view only
+  after the table changes, so the column drop ran while the old view
+  still read it, and both Postgres and SQLite refused it. A changed view
+  and the declared views that read it are now dropped before the table
+  changes and created again after them. On Postgres a changed view is no
+  longer replaced in place: grants on it go with the drop, and a view
+  outside the plan that reads it makes the drop fail.
+- **A toast swapped in by an island no longer stops the stack's other
+  toasts from closing.** The arm pass ran on the swapped region alone and
+  cancelled the timer of every toast outside it, so the stack's toasts
+  stayed up for good. A timer is now dropped only when its row has left
+  the page, and a row that replaces one under the same id arms its own
+  timer.
+- **Two list rows with the same title open their own row menus.** A row
+  menu's id was a hash of its label ("Actions for {{title}}") and items,
+  so two rows titled alike shared trigger and panel ids, and the second
+  row's trigger opened the first row's menu. Each row menu is now keyed
+  by its row, the way its copy-link span already was.
+- **A number field's − and + step their own input when another field on
+  the page shares its name.** The input's id defaults to the field name,
+  and the buttons found it with a page-wide `getElementById`, so the
+  second of two forms with a "replicas" field stepped the first form's
+  input. The buttons now look for the input in their own row.
+- **A multiselect chip's × unchecks its own option when another
+  multiselect on the page is for the same field.** Option ids derive from
+  the field name by default, and the × found its checkbox page-wide, so
+  removing a chip in an advanced filter form unchecked the quick filter's
+  option while the form still submitted the value. The × now looks inside
+  its own multiselect.
+- **A disabled tab can no longer be chosen with the mouse.**
+  `headless.Tab{Disabled: true}` kept the tab out of the arrow keys but
+  still wrote its signal and moved the selection on a click, showing its
+  panel. A disabled tab now renders without its signal write or its href,
+  and the tabs module ignores clicks on it.
+- **Removing a tag that holds "×" announces the tag as written.** The tag
+  input read the removed chip's text and stripped the first "×", which
+  was the tag's own, so "3×5" was announced as "35× removed". The
+  announcement now reads the chip's hidden value. The submitted value
+  was always right.
+- **An embed's new-tab link no longer reports an error.** A
+  `target="_blank"` link inside an embed opened its tab, then also
+  showed "This panel cannot open links." and sent
+  `link-navigation-blocked` to the customer's `onError`. The frame
+  read `window.open`'s null return as a refused popup, but with
+  `noopener` it is always null. The link now opens its tab and
+  reports nothing.
+- **A destroyed embed no longer reports that it never loaded.** The
+  loader's 20-second no-load watchdog outlived `handle.destroy()`, so
+  a single-page host that unmounted an embed before it loaded got
+  `onError({code: 'no-ready'})` and a console warning for a frame it
+  had already removed. `destroy()` now stops the watchdog.
+  `embed.md` documents the handle `mount` returns.
+- **`?sort=` takes a comma-separated list.** `sort=title,-created_at`
+  sorts by both fields. The generated CLI's `--sort` and process-module
+  sort arrays already sent that form, and every such request got a 400
+  naming `title,-created_at` as an unknown field. The 16-field limit
+  counts the fields across every `sort` value.
+- **The MCP list tool sends each filter in the shape the route reads.**
+  A JSON field's argument was sent as its first array element
+  (`{"payload": [1, 2]}` filtered on `1`) or as Go's `map[x:1]` for an
+  object; it is now sent as JSON. An empty `_in` array dropped the
+  filter and listed every row; it is now refused. An `_in` element
+  holding a comma (`["Doe, Jane"]`) was split by the route into `Doe`
+  and ` Jane`; it is now refused. The tool schema gives `_in` arrays
+  `minItems: 1`.
+- **The generated JS client refuses a filter list element holding a
+  comma.** It joined a filter array with commas, so
+  `title_in: ["Doe, Jane"]` reached the server as `Doe` and ` Jane`.
+  The client now throws before sending such a list.
+- **The entityui filter rows keep the query box's meaning on Apply.**
+  The box was put in parentheses beside the rows only when it held
+  ` or ` with spaces, so a row `status != "open"` and the box
+  `name = "zeta"or(name = "alpha")` listed the open alpha order. The
+  box is now always grouped beside rows. A term whose value a row
+  would trim or drop (`name = ""`, `name = " x "`, a value over 200
+  characters) now stays in the box instead of becoming a row, so
+  applying the page unchanged keeps the filter.
+- **A `where()` value holding an operator word parses.** The fluent
+  DSL searched each operator across the whole term, ` in ` and
+  ` contains ` first, so `title="Drive in Cinema"` split inside the
+  quotes and was refused. A term now splits at its leftmost operator.
+- **SQLite search accepts every `FieldEquals` key the other backends
+  match.** `SQLiteFTS` refused any key outside `^[A-Za-z0-9_]+$`, so a
+  `tenant-id` scope that worked on Memory and Postgres errored on every
+  SQLite search. The key is now a bound parameter matched through
+  `json_each`, like the value.
+- **Memory search matches whole words, like the SQL backends.** It
+  split the query on whitespace and counted substrings, so `error`
+  found `xerror` and `foo,bar` missed "foo bar"; an app built on the
+  Memory default gained and lost matches on Postgres or SQLite. It now
+  splits words the way they do and matches the last term as a prefix.
+  It still does not stem.
+- **The site search page says when a query is too long.** A `q` over
+  256 bytes was dropped and the page drew the empty state, as if
+  nothing had been typed, while the query endpoint answered 414 for the
+  same text. The page now shows a "query too long" notice.
+- **A batch item reports the refusal the single write sends.** An item
+  refused for a state change it may not make, a unique or foreign-key
+  conflict, a NOT NULL field, a transition, a reentrant move or a
+  missing tenant came back as `internal server error`, while
+  `POST`/`PATCH` on one row said what was wrong. Both now share one
+  error classifier, so the item's `error`, `reason`, `fields` and
+  `field_reasons` match the single write's body.
+- **A failed batch on a handler bound to a `*sql.Tx` undoes its own
+  writes.** With `ch.DB` set to a caller's transaction, a batch ran its
+  items straight on it, so the items before the one that failed stayed
+  written for a caller that handled the error and committed. Each
+  operation now runs under a savepoint there, as it does inside
+  `App.InTx`. Such a handler still publishes its events before the
+  caller commits; `hooks-and-transactions.md` says so and points at
+  `db.WithTxQueue`.
+- **MCP write tools work behind CSRF.** With CSRF on every route, a
+  cookie-authenticated `_create`, `_update`, `_delete` or transition
+  tool always got a 403: the `/mcp` request passed the check, and the
+  internal request the tool re-dispatched carried the CSRF cookie but
+  not the token. `CSRF` now records the token a request passed with
+  (`middleware.VerifiedCSRFSubmission`), and the tool presents it under
+  the configured header, where the inner check compares it with the
+  cookie again.
+- **SQLite webhook leases and due times compare in UTC.** SQLite stores
+  a timestamp as text with its offset, and the claim compared that
+  text. When two workers' clocks carried different zones, or a lease
+  spanned a DST change, a live lease read as expired and the same
+  delivery went out twice, or a due retry waited out the offset. The
+  webhook SQL stores now bind every timestamp in UTC, and opening a
+  `SQLStore` on SQLite rewrites the due times of pending rows an
+  earlier release stored in the writer's zone.
+- **The read-hook redaction examples delete wire keys.** The
+  `AfterList` and `AfterGet` examples in the hooks guide deleted
+  `"password_hash"` and `"internal_notes"`, but read-hook rows are keyed
+  by wire names, camelCase by default, so the delete found nothing and
+  the value shipped. The examples now delete `"passwordHash"` and
+  `"internalNotes"`, and the guide says which keys the rows carry. A
+  hook copied from the old examples needs the same change.
+- **GOFASTR1808 reads a function fallback as one argument.** The
+  fallback scan counted `(` but not a nested function token, so the
+  inner commas of `var(--spacing-lg, var(--spacing-md, 8px))` or
+  `clamp(4px, 2vw, 8px)` split the fallback, and the check reported
+  drift against the last piece and `gofastr gen styles` refused to
+  write the sheet. A fallback that is a function is not judged.
+- **BREAKING: owned sheets refuse statement at-rules (GOFASTR1825).**
+  `@import`, `@charset` and `@namespace` in a `*.style.css` compiled
+  into app.css after the kit's rules, where the browser ignores them,
+  and no check said so. GOFASTR1825 now reports them and
+  `gofastr gen styles` stops on the sheet. Delete the line; load a web
+  font with `style.FontFaceCSS`. `@layer` statements are allowed. The
+  contract catalog holds 82 rules.
+- **Registering a theme copies its extensions.**
+  `style.RegisterThemeOverride` and `uihost.RegisterThemeVariant`
+  copied the theme's four maps but kept the caller's `Extensions`
+  token sets, so writing one after registering changed the served CSS
+  under the hash already issued for it. `AllThemeOverrides` handed out
+  the same shared sets. All three now store or return a copy from the
+  new `Theme.Clone`, which copies the maps and every extension.
+- **Docs search says when it cut the list, refuses a short term, and
+  skips code comments as headings.** `gofastr docs --grep` printed
+  its 50-hit cap as the match total; it now prints "More than 50
+  matches" when there were more. A term under three characters
+  returned zero hits as success, from the CLI and from
+  `framework_docs_search`, so "too short" read as "not found";
+  `docs.Search` and `docs.SearchWithLimit` now return
+  `docs.ErrSearchTermTooShort`, the CLI exits 1 and the MCP tool
+  answers a tool error. A `#` line inside a fenced code block (a shell
+  or YAML comment) was taken as a heading, named as the heading of the
+  hits after it and counted toward heading relevance; it is now an
+  ordinary line, and a topic's title skips fences too.
+- **rtc recovers from a failed `ws` module load and keeps its own
+  status across a reconnect.** The module cached the first
+  `loadModule('ws')` promise, so one transient load failure left every
+  later `connectRoom` on the page at `closed:error` until a full page
+  load; it now asks the loader each time, and the loader already drops
+  a failed load. After a signalling reconnect `room.self.status` was
+  empty while peers saw the resent document; the module puts it back
+  on the new `self` before `onSnapshot` runs.
+- **BREAKING: `__gofastr.desktop.available` is a boolean.** It was the
+  checking function itself, so `if (desktop.available)` passed in a
+  plain browser and the page went on to call the bridge. It is now a
+  getter that reads the host marker, as the generated d.ts and the
+  desktop docs already said. `desktop.available()` now throws a
+  TypeError: read it as a property.
+- **Test-selection gates fail instead of passing quietly.** CI's
+  browser-suite scope step tested `[ -n "$(go run ./cmd/affected …)" ]`,
+  which drops the selector's exit status, so a selector error skipped
+  the suite with a notice; it assigns the output first now, and
+  `cmd/repolint`'s new `selector-status-discarded` rule refuses the old
+  spelling in workflows and build scripts. An edit to the coverage-floor
+  table in `scripts/coverage-floors.sh` widens `cmd/affected` to every
+  package, where it used to check no floor at all. `scripts/dupl.sh`
+  refuses a baseline that is not one non-negative integer; `-gt` errored
+  on it inside `if` and the gate printed its success line.
+- **A graceful shutdown mid-batch no longer spends the outbox's attempt
+  budget on deliveries that never ran.** The claim counts an attempt on
+  every row of a batch; on shutdown the relay left the unstarted rest
+  leased, and once the lease ran out the budget sweep could dead-letter
+  them (with `WithMaxAttempts(1)`, after one shutdown). The relay now
+  hands them back with the attempt refunded, as it already did when its
+  lease ran short.
+- **`email.SMTPConfig` takes an IPv6 host.** `Host: "::1"` dialled
+  `::1:587`, which Go's dialer refuses; the address is built with
+  `net.JoinHostPort`. A host written in brackets (`[::1]`) reaches the
+  TLS server name and the PLAIN/LOGIN host check without them.
+- **A durable cron schedule registered in a fixed-offset zone no longer
+  skips its first run.** A zone the `tz` column cannot store
+  (`time.FixedZone`, `time.Local`) evaluates in UTC, but the first
+  watermark came from the registration zone, so `0 2 * * *` registered at
+  03:00 -05:00 waited for 07:00 UTC, which is no firing in UTC, and the
+  catch-up moved the first run to the next day. The first watermark is
+  now taken in the zone that persists.
+- **A long Postgres queue table name gets scheduler tables of its own.**
+  `<table>_scheduler_schedules` and its siblings were cut at Postgres's
+  63-byte limit; from a 52-byte table name the three tables shared one
+  name (from 63 bytes, the queue table's), and from 40 bytes an
+  occurrence index was skipped as an existing name. A
+  name whose cut collides now ends in a hash of the table name, as the
+  queue's own indexes do; a cut that collides with nothing keeps the
+  name earlier releases created.
+- **`queue_dead_letter_total` counts dead-lettered jobs.** The collector
+  read a `dead` status no backend writes; every backend files a job that
+  spent its attempts under `failed`, so the metric stayed 0.
+- **`Scheduler`'s `Job` keeps a payload's encoding error.** A payload
+  `json.Marshal` refuses (a `NaN`, a channel) registered fine and every
+  run received `null`; `Register` now returns the error and registers
+  nothing, as `DurableScheduler`'s builder already did.
+- **`If-None-Match` lists revalidate everywhere.** The UI host's
+  `/__gofastr/*` assets and the webmcp script, manifest and
+  instructions compared the header to the ETag as one string, so a
+  client sending a list or a `W/` tag got the whole body again, and
+  the SDK download matched a substring and ignored `*`. They now share
+  the new `static.IfNoneMatch`, the RFC 9110 comparison `core/static`
+  already used.
+- **A sitemap past 50,000 URLs becomes a sitemap index.** `SitemapXML`
+  wrote every page into one URL set, which a search engine rejects
+  whole past 50,000 URLs or 50 MiB. Past either limit `/sitemap.xml`
+  now names parts at `/sitemap/1.xml`, `/sitemap/2.xml`, …, and the
+  static export writes them as `sitemap/<n>.xml`. The new
+  `UIHost.SitemapFiles` returns every file. The live server also kept
+  no render, so each anonymous GET ran every `StaticPaths` and the
+  page policy for every path; it now keeps one render for a minute
+  (none under `gofastr dev`).
+- **The static export's sitemap lists only pages it wrote.** It
+  rendered the sitemap twice and paired the entries to find skipped
+  pages; when a `StaticPaths` answered in a different order or count
+  the second time, it warned and kept the whole document, so
+  `ExcludeRoutes` pages, redirected paths and pages it never wrote were
+  listed. `SitemapFiles` now takes a `keep` filter the export fills
+  from the pages it wrote, asked about each page by its routing path,
+  and a hreflang alternate naming a skipped page goes as well.
+- **The HTTP cache middleware evicts a URL's stored `GET` after an
+  unsafe request to it.** Every method but `GET` passed straight
+  through, so after a `DELETE` or `PUT` the anonymous `GET` of the same
+  URL answered `HIT` with the old body until the TTL, while the docs
+  called the middleware RFC 9111-compliant (§4.4 requires the
+  invalidation). Any method but `GET`, `HEAD`, `OPTIONS` and `TRACE`
+  now evicts that URL's entry on every locale once its handler ran.
+  Lists that showed the record are not evicted.
+- **Back after an entityui delete fetches the record page again.** The
+  delete navigated away with `data-cui-rpc-navigate`, which refreshes
+  only the destination, so Back replayed the deleted record from the
+  runtime's screen cache. A successful RPC whose method is not `GET`
+  now evicts the page it ran on before it navigates.
+- **The blog example's search drops deleted posts.** `/posts/search`
+  answered from an index the seed filled once with fixed documents, so
+  a soft-deleted post stayed searchable, and came back after a restart.
+  The index is now built from the live rows at start and kept by
+  `AfterCreate`, `AfterUpdate` and `AfterDelete` hooks that run once
+  the write commits.
+- **Web bot auth keeps an IPv6 literal's brackets in `@authority`
+  when it drops a default port.** `Host: [2001:db8::1]:443` produced
+  `2001:db8::1`, so a signature over the compliant `[2001:db8::1]`
+  never verified. Brackets were restored only when a non-default port
+  stayed.
+- **The auth form-error redirect keeps an escaped `?` or `#` in the
+  Referer's path escaped.** It returned the decoded path, so a Referer
+  of `/login%3Fnext=/admin` came back as `/login?next=/admin`, a query
+  the redirect then extended with `&error=…`, though the Referer's
+  query is meant to be dropped. The redirect now uses the escaped path;
+  the protocol-relative refusal still reads it decoded.
+- **A webhook worker stopped mid-batch hands back the deliveries it
+  had not started, attempt refunded.** On a `LeasedStore` they stayed
+  claimed with an attempt spent until the lease ran out, so a restart
+  waited out the lease, and a delivery at `MaxAttempts` 1 was
+  dead-lettered without a send.
+- **A replica's presence and rtc goodbye is its last message on the
+  fanout.** Island presence `stop` and the rtc `Signaler`'s detach
+  published the empty roster before stopping the heartbeat and the
+  publish queue, and the queue's stop did not wait for a publish in
+  flight, so an older roster could land after the goodbye and restore
+  the departed members on every peer until the TTL.
+  `fanout.PublishQueue`'s `stop` now waits for the publish in flight
+  (at most the 5-second publish deadline on a stalled backend) and
+  starts none after it returns; both callers stop the heartbeat and
+  the queue before the goodbye.
+- **A keyset list page honours and validates `?fields=`.** With
+  `?cursor=` present the list returned every visible column and
+  answered 200 to an unknown field the offset list refuses with 400. A
+  cursor column the projection leaves out is still read to build the
+  next cursor and is dropped from the rows.
+- **An entityui list's `cols` param and saved-view columns stay within
+  the columns the list offers.** A list built with `Columns("name")`
+  rendered `?cols=internal_notes` because the check only asked for a
+  visible field. A `cols` param naming a column the list does not
+  offer is now ignored whole, and a saved view opened on a narrower
+  list shows only the columns that list offers. The offered set is
+  the menu's: `Columns(...)`, else `Display.Columns`, else the default,
+  which leaves out system fields such as `created_at`, JSON fields and
+  `Where`-pinned ones, so a typed `?cols=` naming one of those no
+  longer shows it.
+- **A user erasure deletes the per-account login limiter's rows.**
+  With `LoginRateLimitPerAccount` on a `SQLRateLimitStore`, the attempt
+  and block rows are keyed by the limiter's scope, `account:` and the
+  email, and `EraseUserData` left them until the window sweep.
+  `AuthManager.Init` now registers both tables by email
+  (`IdentityEmail`), following the limiter's `Scope`; other limiters'
+  rows on the same store stay.
+- **A user erasure overwrites the embed grants `SQLBurnStore` keeps
+  for that user.** A burn row keeps the grant it issued, and the
+  grant's claims name the subject, so `EraseUserData` left a signed
+  credential naming the erased user until `Prune`. The row now records
+  the subject in a `subject` column (added on open to a table an older
+  build created; its existing rows keep an empty subject until they
+  are pruned), and the erasure overwrites the grant and the subject
+  while keeping the row, so the nonce stays spent and its replay is
+  refused.
+- **A replica on an old build no longer runs it under a newer
+  artifact's generation.** When one replica registers a new artifact,
+  the row's digest moves and the generation bumps with the module still
+  enabled. A replica whose descriptor still named the old executable
+  respawned it after the upgrade drain. It now drains its child and
+  holds the module in `InstalledDisabled` (routes answer 503) until its
+  own deploy registers the matching artifact.
+- **A generation bump re-arms a `Failed` process module.** The docs
+  name the bump as the way out of `Failed`, but the supervisor reset
+  the restart circuit and left the slot `Failed`. `BumpGeneration`, a
+  grant revoke or an artifact change now respawns it, and the new
+  child goes through the same digest checks.
+- **`migrate generate` carries `required` and `default` changes on an
+  existing column.** The snapshot diff compared column types only, so
+  a field made optional kept its `NOT NULL` and a changed default
+  never reached the table. Generate now compares each column with the
+  `CREATE TABLE` the snapshot recorded: Postgres gets `SET`/`DROP NOT
+  NULL` and `SET`/`DROP DEFAULT` with their inverses as the `Down`;
+  SQLite rebuilds the table, under the same refusal as any rebuild
+  when a `CASCADE` or `SET NULL` foreign key references it. A snapshot
+  holding a default in an older rendering (`0.000000` for `1e-07`)
+  converges on the declared one. Boot does not compare either.
+- **`gofastr semantic query` and `stats` no longer truncate a running
+  `watch`'s WAL.** Both opened the same directory as a second writer,
+  and `Close` snapshotted and truncated the log the watcher was still
+  appending to. An index opened with `Options.Path` now takes an
+  exclusive lock on the directory (a `lock` file) until `Close`, and a
+  second writer, in this process or another, gets `ErrIndexLocked`.
+  The new `Options.ReadOnly` loads the snapshot and every whole WAL
+  record without a lock and writes nothing (`Add`, `Remove` and
+  `Snapshot` return `ErrReadOnly`); `query` and `stats` open that way.
+- **A semantic write that failed after its WAL record no longer loses
+  the document at the next snapshot.** A keyword delete refused
+  mid-replace left the store without the document, and the next
+  snapshot wrote that store and truncated the record that would have
+  restored it. The record now applies again before the next write and
+  before any snapshot; while it still fails, writes, `Snapshot` and
+  `Close` return the error and the WAL keeps it for replay.
+- **The remote `gofastr semantic query` and `stats` send a token.**
+  With `GOFASTR_URL` set they sent no `Authorization` header, so a
+  mount with `WithAuthToken` answered 401. Set
+  `GOFASTR_SEMANTIC_TOKEN`; it is sent as a bearer token to the
+  `GOFASTR_URL` server only, and a redirect is refused.
+- **A cancelled semantic write on `PgVectorStore` stops waiting.** The
+  replace dropped cancellation before its transaction, so a caller
+  that gave up kept waiting on another replica's document lock while
+  every other write on the replica queued behind it. The transaction
+  gets the caller's context; a cancel rolls it back.
+- **The semantic watcher retries a failed removal.** It forgot a
+  deleted file before `Remove` returned, so a failed removal left the
+  document in the index for good.
+- **`FlatStore` deep-copies chunk metadata.** A nested map or slice
+  was shared with the caller and with returned hits, so writing into
+  either changed what the store filters and snapshots on.
+- **A whole-number `decimal` bound written as a short decimal is that
+  decimal.** `Min: 1e30` was read as its binary expansion,
+  1000000000000000019884624838656, so `"1e30"` failed its own minimum.
+  A bound of up to 15 significant digits is now read as written; a
+  whole-number bound that needs more (2^60) keeps its exact binary
+  value.
+- **An upsert accepts a blank optional field as create and update do.**
+  `{"id":"k1","qty":""}` with an optional `Int` answered 422 "must be an
+  integer" on upsert and succeeded on create. A blank non-text value now
+  reads
+  as not provided when the upsert inserts, and clears the column when
+  it updates an existing row; a blank `Image` or `File` keeps the stored
+  file, and a blank in a key column is never dropped (an `Int` key part
+  still refuses it).
+- **A screen a plugin registers in `Init` gets its server actions.**
+  The UI host compiled actions only at `Mount`, which runs before
+  `App.Start` calls plugin `Init`, so a screen registered there
+  rendered its `data-action` buttons and every click answered 404.
+  `ValidateBoot` now compiles them after every `Init`, and the
+  action-id collision and embed server-action refusals cover those
+  screens too, so a late screen that trips either stops the boot.
+- **A widget's `/state` omits a signal with no JSON form.** A
+  `SignalSource` returning NaN or Inf failed the whole encode after
+  the headers went, so `/state` answered an empty 200 and every
+  signal kept its server-rendered value. Each signal now encodes on
+  its own; one that fails is logged and left out, as a signal whose
+  `Read` fails already was.
+- **`widget.Mount` no longer claims to be idempotent.** A second
+  `Mount` of one widget on one router registers its routes again and
+  the router panics on the conflict; the doc now says to mount a
+  widget once per router.
+- **A cron spec rarer than five years has a next firing.**
+  `cron.Schedule.Next` searched five years of minutes, so
+  `"0 0 29 2 */7"` (February 29 on a Sunday, next in 2032) read as
+  never firing, and both queue schedulers refused it. `Next` now skips
+  the dates the day fields refuse and searches 401 years, one full
+  Gregorian cycle; a spec that names no date (`"0 0 30 2 *"`) is
+  answered from its fields at once. The schedule gains `MatchesDay`,
+  `SkipDay`, `Satisfiable`, `FixedTime` and `cron.HorizonYears`, and
+  the refusal reads "never fires".
+- **A wildcard durable cron runs through a DST change, as vixie cron
+  does.** Every spec skipped the repeated hour when clocks went back,
+  so `"*/5 * * * *"` in New York stopped from 01:00 to 01:59 EST. The
+  once-only rules now apply to fixed-time specs alone, those whose
+  minute and hour fields both name values. A spec whose minute or hour
+  begins with `*` fires through both copies of the repeated hour, and
+  no longer fires at a spring-forward transition for a minute the jump
+  skipped.
+- **A durable `Every` below one millisecond is refused.** Ticks closer
+  than a microsecond collapse to one Postgres timestamp, and the
+  occurrence insert broke the tick's unique constraint, which ended
+  every scheduler pass before the schedules after it. `Register`
+  refuses the interval, and a stored row with one is logged and
+  skipped while the rest fire.
+- **The harness websocket assembles fragmented messages.** It ignored
+  the FIN bit, so a client library that split a command ran the first
+  half as a command of its own and closed on the continuation. A text
+  frame without FIN now opens a message that continuation frames
+  extend, with control frames allowed between them. A stray
+  continuation, a text frame inside a message, a fragmented control
+  frame, a control frame over 125 bytes, or a message over 16 MiB
+  closes the socket.
+- **`featureflag.Bool` on a request context reads that request's App.**
+  `Flags` and `SetFlagStore` install the App's evaluator as the
+  process-wide default, so with two Apps in one process a handler in
+  the first read the second's store. The default middleware now puts
+  each App's evaluator on the request context
+  (`featureflag.WithEvaluator`, read back with `EvaluatorFrom`), and
+  `Bool` prefers it to `Default()`. An app without the default chain
+  adds `App.FlagContextMiddleware()`.
+- **Kiln's `delete_entity` removes the entity's hooks.** It dropped
+  the entity and its seeds and kept its hooks, so a frozen world named
+  a hook on an entity it no longer had, and the app spec generator
+  refused the spec. The hooks now go in the same edit, and `undo`
+  brings them back.
+- **A Kiln seed row can set a `json` field to an object or array.**
+  `add_seed` bound the decoded value as-is, database/sql refused the
+  map or slice, and the seed failed with an internal error where a CRUD
+  create of the same row succeeds. The value is now stored as its JSON
+  text, as CRUD stores it, and reads back as the value seeded.
+- **A Kiln page patch read before a delete and re-add no longer
+  replaces the new page.** A re-added page restarts at version 1, so a
+  patch read from the old page matched it and swapped the old tree in.
+  Each `add_page` now gives the page a `gen`, and a patch built from
+  another one answers `kind: "conflict"`.
+- **Kiln's freeze gives every unnamed page its own screen name.** A
+  page without a name took one from its path and the root was `home`,
+  so `/` and `/home` both froze to `home` and the generator refused
+  the spec. A derived name that a named page or an earlier path holds
+  now gains a suffix (`home_2`).
+- **An embed frame reloaded after the nonce's minute gets its grant
+  back.** The loader re-sends the same nonce on every `ready`, and the
+  exchange checked the nonce's expiry before the burn store, so a
+  reload after the first minute of a 15-minute grant answered 401. A
+  nonce whose only fault is its age now passes every other check and
+  looks up the grant its first exchange stored, while that grant
+  lives. It never mints one: a nonce that was never exchanged still
+  answers expired.
+
+### Security
+- **Deleting a record, or replacing its file, deletes the stored
+  object.** A hard delete, a purge, `TypedQuery.DeleteAll`, and an update
+  or upsert that replaced an `Image`/`File` value left the old object
+  (and its renditions) in storage, still served at `/uploads/<key>` to
+  anyone holding the link. They are now deleted after the write commits,
+  unless another row of the table still names the key; a soft delete
+  keeps them for a restore. See
+  [uploads](framework/docs/content/uploads.md#when-stored-objects-are-deleted).
+- **CRUD multipart writes refuse a cross-site sender; `_batch` and
+  transitions take JSON only.** The write gate took
+  `multipart/form-data` as a JSON stand-in, and a browser sends that type
+  cross-site with no preflight, so a page on a sibling subdomain could
+  create records, run `_batch` (which reads the body as JSON whatever the
+  label) and fire transitions as the signed-in user. A multipart create
+  or update now passes `handler.IsCrossSiteRequest` or answers 403, and
+  `_batch` and transitions answer 415 to anything but
+  `application/json`. See [uploads](framework/docs/content/uploads.md).
+- **The admin's permission checks ask the Decider.** The
+  `modules:manage` levers and the grant and revoke checks read the
+  caller's permissions from `Config.Policy` alone, so an
+  `access.Decider` that denied an admin one of them was never asked. Its
+  deny now refuses; its allow still admits nothing the policy does not.
+  See [admin](framework/docs/content/admin.md#process-modules).
+- **The cross-site guard refuses a same-site request with a `null`
+  Origin.** `handler.IsCrossSiteRequest` took `Sec-Fetch-Site:
+  same-site` plus an absent or `null` Origin as safe, and a page on a
+  sibling subdomain sending `Referrer-Policy: no-referrer` posts exactly
+  that, so it passed every guard built on it: auth's form guards
+  (login CSRF included), the admin and entity UI restore, purge and
+  views posts, and Kiln's reset. A same-site request now needs an Origin
+  naming the request's own host. See
+  [security](framework/docs/content/security.md).
+- **A cross-owner update or delete reaches the row owner's `_events`
+  stream, not the writer's.** With the owner column Hidden (the default
+  for an injected `OwnerField`), an update's record left it out, and a
+  delete's payload is the key alone, so the event and its outbox row
+  took the owner and tenant from the writer's context: Alice's
+  `AllowCrossOwner` edit of Bob's row went to Alice's stream, Bob's
+  missed it, and the outbox named Alice for erasure. The write now
+  reads the row's owner and tenant before changing it, on update,
+  delete, batch, transition, restore and purge. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
+- **The `_events` read-scope filter compares values by column type.**
+  It compared text, while List and Get bind the scope value typed, so a
+  `neq` scope written `"1"` on a Bool column delivered every `true` row
+  the list hides, and a Decimal `neq "1.50"` delivered Postgres's
+  `"1.5000"`. Bool, Int, Float, Decimal and Timestamp values now compare
+  as the SQL side reads them. See [events](framework/docs/content/events.md#read-scope).
+- **A write's response runs the `BeforeGet` scope GET applies.** An app
+  that scopes reads with a `BeforeGet` hook and grants writes more
+  widely handed the writer every column of a row GET answers 404 for: a
+  no-op `PATCH` of another team's row read it. Create, update, `_batch`
+  create and update, and transition responses now run the chain after
+  the commit and answer with the row's id when its clauses exclude the
+  row or the hook errors; the write itself stands. A `BeforeGet` hook
+  therefore also runs on those writes. See
+  [hooks](framework/docs/content/hooks-and-transactions.md).
+- **An entity endpoint's MCP twin asks for the API token scope its
+  route does.** `auth.RequireAPIScopes` holds the HTTP route to
+  `<table>:<verb>`, but the `MCPHandler` twin is registered straight on
+  the MCP server, so an editor's `customers:read` token called a `posts`
+  endpoint twin its route refused. The twin now needs `<table>:read`
+  (GET, HEAD) or `<table>:write` (any other method) from a token caller
+  before it runs or shows in `tools/list`, under `MCPGate` and `Public`
+  too; sessions are not narrowed. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
+- **`tenant.ResolveMiddleware` re-resolves the tenant on a held
+  stream.** The CRUD event stream closed when a re-check placed the
+  caller in another tenant, but a host middleware that called
+  `SetTenantID` once replayed the connect-time tenant on every re-check,
+  so a member removed from a tenant kept its create, update and delete
+  feed until disconnect. `tenant.ResolveMiddleware(resolve)` sets the
+  tenant from a server-side lookup and runs it again on each
+  `handler.RecheckPrincipal`, so the stream closes at the next check.
+  See [multi-tenant](framework/docs/content/multi-tenant.md).
+- **A TURN refresh re-checks each RTC peer before minting its
+  credential.** A joined socket re-checks its principal on every frame
+  and every 30 seconds when idle, but a TURN refresh landing in that
+  window still sent a revoked peer a fresh credential. The refresh now
+  re-checks every peer first and closes the ones that no longer hold.
+  See [rtc](framework/docs/content/rtc.md).
+- **`App.CrudHandlerForEntity` is wired like `App.CrudHandler`.** It
+  left out child hooks, the image pipeline and
+  `WithStripUploadMetadata`, so the entity UI and `/admin/entities`,
+  which build their handlers through it, cascaded writes past child hooks, saved
+  images with no renditions and kept their EXIF metadata, GPS included.
+  Both now build through one constructor.
+- **A nested include runs its rows' read hooks when a `WireName` is in
+  the way.** The child read hooks looked up every level's rows with the
+  root entity's wire keys, while each level's rows sit under the key its
+  parent entity's wire map gives the relation. A `WireName` on either
+  entity, for a field sharing the nested relation's name, hid the rows
+  from the lookup, and `?include=author.card` served the cards' stored
+  values past their `AfterList` and `AfterGet` masks.
+- **A list serves every field under its `WireName`.** Since v0.85.0 a
+  list that selected every visible column took a cached key list built
+  without `WireName`, so `GET /cards` served `card_number` where
+  `GET /cards/{id}` and `?fields=` served `pan`. An `AfterList` hook
+  deleting the documented key removed nothing and the value shipped, an
+  aliased JSON column went out as a string, and a field renamed with an
+  API version's `Rename` kept its old name on the list.
+- **A schema-qualified `Through` no longer skips its join entity's
+  gates.** The join entity was found by an exact table-name match, so
+  `Through: "public.memberships"` against a `Table` of `memberships`
+  found none, and includes and nested filters joined the table with no
+  owner, tenant, soft-delete or read predicate on the links. Boot and
+  every read now refuse a `Through` and a join entity's `Table` that
+  differ only in naming a schema; spell them the same. See
+  [entity declarations](framework/docs/content/entity-declarations.md).
+- **A `has_one` or `has_many` cascade create refuses a child link it
+  cannot write.** The child's create skips a `ReadOnly` or `Hidden`
+  field, or one it does not declare, so a post created with nested notes
+  whose `post_id` was hidden stored the notes with no parent while the
+  response showed them attached. The nested create now answers 400
+  `validation.cascade_key_not_writable` and rolls the parent back, as
+  the `belongs_to` arm already did.
+- **A cascade write's response masks grandchildren.** The body ran the
+  read hooks of the children it nested but not of the rows nested under
+  them, so a field the grandchild's entity masks in `AfterList` or
+  `AfterGet` came back raw from a `POST` or `PATCH` that wrote two
+  levels. Every written level now runs its own entity's read hooks. See
+  [hooks and transactions](framework/docs/content/hooks-and-transactions.md).
+- **An evicted `_events` stream leaves at once.** Under
+  `SeatOverflowEvictOldest` an evicted stream parked in a write to a
+  client that stopped reading held its handler until the 10-second write
+  deadline fired, so a caller reconnecting in a loop kept more handlers
+  than its seat cap. Eviction now cuts the parked write with a past
+  deadline, as the SSE broker does. See [events](framework/docs/content/events.md).
+- **Entity UI screens read a related entity only where `?include=`
+  could.** The relation picker, relation labels, facets and headings
+  checked the related entity's session, owner, tenant and RBAC gates but
+  not its exposure, so any posts writer could list every user's id and
+  name through `_pick?field=author_id` while users had CRUD off, and a
+  `posts:write` token read them without `users:read`. They now go
+  through the new `crud.CanReadRelatedScoped`, which also refuses an
+  entity with `Exposure.CRUD` false and a token without `<table>:read`.
+  Labels, facets and a named CSV export (`_export.csv?_id=`) also leave
+  out a row a resource-aware Decider refuses by id. See
+  [entity UI](framework/docs/content/entityui.md#the-read-gates).
+- **A narrow API token no longer reads the A2A tasks a stronger credential
+  ran.** Tasks were keyed by the owner id alone, so a `customers:read`
+  token listed its user's session tasks with their artifacts, and could
+  resume, cancel and subscribe to them. A task records its creator's
+  scopes (`TaskRecord.Scope`), and a scoped caller reaches only the tasks
+  made under the same scopes. `WithA2A` wires it; a hand-built server sets
+  `a2a.Config.Scopes`. The SQL store adds a `scope` column on open. A
+  custom store that filters `ListTasks` by `ListQuery.Scoped` declares
+  `a2a.ScopeFilter`; one that does not is walked, so a scoped list's
+  `totalSize` and page token count only the caller's tasks. See
+  [A2A](framework/docs/content/a2a.md#auth-and-owner-scoping).
+- **An access decider binds a generated screen's role gate.** The
+  `authPolicy` the app spec writes into `app.go` read the user's roles
+  itself, so an `access.DeciderMiddleware` deny never reached a screen with
+  `access: { role: ... }`, and a scoped API token passed on its owner's
+  roles. It composes `auth.SessionPolicy` and `auth.RolePolicy` now; an app
+  generated earlier replaces the function by hand. Meridian carries the
+  same function. See [app spec](framework/docs/content/app-spec.md).
+- **A session-scoped harness token lists only its own sessions.**
+  `GET /v1/sessions` (live and `?past=true`), the MCP
+  `harness.list_sessions` tool and the `harness/v1://sessions` resource
+  listed every session, past ones with the first 80 bytes of their
+  first prompt. Each now keeps the sessions the token's claims allow.
+  See [harness architecture](framework/docs/content/harness-architecture.md#rest-api).
+- **An OAuth sign-in no longer survives an account claim that overtakes
+  it.** A returning sign-in refreshed its link's profile with an
+  upsert, so a claim that removed the link between the lookup and the
+  refresh had the squatter's link put back, and the session minted
+  afterwards outlived the claim's purge. The refresh is UPDATE-only
+  through the new `OAuthProfileRefresher` (implemented by
+  `EntityUserStore`; a custom store without it keeps the link-time
+  profile), and the callback resolves the link again after minting and
+  answers 401 when it no longer names the account. See
+  [auth](framework/docs/content/auth.md#proving-the-mailbox-claims-an-unverified-account).
+- **An API token or passkey created across a reset no longer survives
+  it.** `POST /auth/tokens` and `POST /auth/passkey/register` read the
+  caller before the body, and a reset revokes tokens and passkeys once.
+  A request held open with its body withheld until the reset finished
+  stored a lasting credential after that purge. Both now read the
+  password hash before the body and, when it moved or the request's
+  session is gone, undo what they stored and answer 401. The undo runs
+  detached from the request, so a client that hangs up after the insert
+  cannot cancel it. See [auth](framework/docs/content/auth.md).
+- **A stale password change no longer overwrites a completed reset.** A
+  change verified the current password, computed the new hash, then wrote
+  it keyed on the user id alone, so a reset that landed in between was
+  replaced by the stale request's password and the change handed out a
+  fresh session. The write now needs the verified hash to still be stored
+  (new optional `PasswordSwapper`, implemented by `EntityUserStore`), and
+  a change that loses answers 422 like a wrong current password. See
+  [auth](framework/docs/content/auth.md).
+- **OIDC no longer borrows `email_verified` for a different address.** An
+  id_token with an email but no `email_verified` took the flag from
+  userinfo even when userinfo named another address, so the id_token's
+  email came out verified and the callback could auto-link that
+  address's account. The userinfo flag now counts only when its email is
+  the one kept. See [auth](framework/docs/content/auth.md).
+- **A password reset overtaking a passkey sign-in leaves no session, and
+  a failed session purge is no longer reported as success.** A passkey
+  sign-in that recorded its use just before a reset minted its session
+  afterwards, for a key the reset had removed. It now re-reads the key
+  after minting, and the reset removes passkeys before it revokes
+  sessions. A reset or password change whose session purge failed
+  answered `{"updated": true}` while the old sessions kept working; the
+  reset answers 500 `auth.reset_incomplete` and the change 500
+  `auth.change_incomplete`. See [auth](framework/docs/content/auth.md).
+- **A sibling subdomain can no longer plant the OAuth state cookie.** The
+  browser-binding cookie was `gofastr_oauth_state` even over Secure, so a
+  page on another subdomain could set it for the parent domain with its own
+  flow's state and sign a victim into the attacker's account at the
+  callback. With `SessionSecure` on it is now `__Host-gofastr_oauth_state`;
+  DevMode keeps the plain name. A flow started before the upgrade and
+  finished after it fails once and is retried. See
+  [auth](framework/docs/content/auth.md).
+- **A soft-deleted user no longer signs in.** With `Scope.SoftDelete` on
+  the users entity, `EntityUserStore` looked accounts up by id or email
+  alone, so a trashed account kept its password login and every session,
+  API token and JWT. The store now skips a row with `deleted_at` set, and
+  `GET /auth/me` answers 401 for a session whose account is gone. See
+  [auth](framework/docs/content/auth.md).
+- **BREAKING: the MCP control tools and the log MCP tools need the
+  `admin` role.** `app_module_enable`/`app_module_disable`
+  (`WithMCPControl`) and battery/log's `log_*` tools asked only for a
+  signed-in caller, so on an app with open sign-up any account could turn
+  a module off for everyone or read every caller's paths and IPs. They now
+  run behind the new `framework.MCPRequireRole("admin")`;
+  `framework.WithMCPControlGate` and `log.Config.MCPGate` replace it.
+  `MCPRequireUser`, `MCPRequireRole` and `/.debug` now honour an access
+  `Decider`'s deny. `auth.RoleGateCapability` moved to
+  `access.RoleGateCapability`. See
+  [agent-ready](framework/docs/content/agent-ready.md) and
+  [log](framework/docs/content/log.md).
+- **The bodyless 2FA routes refuse a cross-site POST.** `/2fa/disable`,
+  `/2fa/backup-codes` and `/2fa/enroll` read no body, so another site's
+  hidden form could submit them with a stepped-up session cookie and turn
+  the user's second factor off or burn their backup codes. They now run
+  the cross-site guard login and logout use. See
+  [auth](framework/docs/content/auth.md).
+- **BREAKING: an API token reaches the admin only with `admin.AdminScope`.**
+  The gate read the token's owner and its roles, never the token's
+  scopes, so a `customers:read` token an admin minted could read the
+  audit log and toggle process modules. A token now needs
+  `"admin:access"` (or `"admin:*"` or `"*:*"`); sessions are unaffected.
+  See [admin](framework/docs/content/admin.md).
+- **BREAKING: the admin's platform pages refuse a tenant-scoped caller.**
+  Queue jobs, auth accounts, role grants and process modules carry no
+  tenant, so a tenant's admin could list, replay, grant, assign roles to
+  and toggle modules for every tenant. The Jobs, User roles, Roles and
+  Modules pages and their posts now answer 403 to a caller with a tenant,
+  and the sidebar, palette and dashboard leave them out. See
+  [admin](framework/docs/content/admin.md).
+- **The admin's audit page and activity respect owner scope.** On an
+  entity with an `OwnerField`, they named another owner's record from
+  its stored copy and listed its old and new values, though the record
+  screen refuses it. Such a record now shows by its id alone. See
+  [admin](framework/docs/content/admin.md).
+- **A lower admin tier can no longer strip or self-assign roles above
+  it.** User roles checked only the roles a save sent, so a support-tier
+  admin could clear a superadmin's roles, and a role the policy grants
+  nothing (one checked by name with `auth.RequireRole`) passed the tier
+  check for anyone. The check now covers every role a save adds or takes
+  away, and a permissionless role needs the caller to hold it or the
+  wildcard. See [admin](framework/docs/content/admin.md).
+- **BREAKING: `RevokeGrants` removes the grants it names.** It replaced
+  the module's grant set with them, so the admin's Revoke on
+  `invoices:write` left a read-and-write module write-only. It now keeps
+  the rest, refuses an empty list (which used to revoke everything), and
+  writes through the new `ProcessModuleStore.RemoveEffectiveGrants`, a
+  compare-and-swap so concurrent revokes both stick. See
+  [process modules](framework/docs/content/process-modules.md).
+- **The relay keeps the app's headers and the vendor's hints apart.**
+  It forwarded `X-Gofastr-Embed`, the embed grant an embed frame sends
+  on every fetch, to the vendor; every `X-Gofastr-*` header is now
+  stripped inbound. An upstream `103 Early Hints` is no longer
+  forwarded, so its unfiltered `Link` preload stays out of the browser,
+  and the security headers the app set before the relay ran survive
+  it (ReverseProxy cleared them). `Service-Worker-Allowed` is stripped
+  outbound, so vendor script cannot scope a worker over the whole app.
+  See [relay](framework/docs/content/relay.md).
+- **BREAKING: a process module's response headers are allow-listed.**
+  The proxy copied every header the child sent, so an untrusted module
+  could label a `text` body `text/html` and run script on the host
+  origin, set host cookies, or replace the host's Content-Security-Policy.
+  Only cache and language headers cross now, `Vary` adds to the host's,
+  `Content-Type` is always the body kind's with `nosniff`, and a status
+  outside 200–599 answers 503 instead of panicking. See
+  [process modules](framework/docs/content/process-modules.md).
+- **`golang.org/x/net` is v0.62.0.** v0.59.0 carries an advisory in
+  `html.Parse`, which `battery/sitesearch` calls to extract page text.
+  The bump brings the other `golang.org/x` modules to their current
+  releases, in the root module and in `battery/print/chromepdf`.
+- **`middleware.RateLimit` keeps an exhausted key denied.** Its idle
+  reap and its `MaxKeys` shed both read the refill clock, which a denied
+  request does not move, so any traffic from other keys dropped a key
+  that had spent a `1`-per-hour budget and its next request got a full
+  bucket. An hourly login limit became a five-minute one. The reap now
+  drops only buckets that have refilled to capacity, and the shed goes
+  nearest-to-full first. See
+  [security](framework/docs/content/security.md).
+- **A process module that stops reading cannot pile up host goroutines.**
+  A served reverse call released its serve slot when the handler
+  returned and then waited on the write, so a child that sent paced
+  calls and never read stdin parked one host goroutine per call with no
+  bound. At most `Limits.Inflight` answers now wait behind a blocked
+  write; the next one faults the peer with `moduleproto.ErrStalled`, and
+  a faulted peer starts no handler for a frame it reads after the fault.
+  An answer leaves the count when its write starts, before the child can
+  read it, so a child with `Limits.Inflight` calls open is never taken
+  for one that stopped reading. See
+  [process modules](framework/docs/content/process-modules.md).
+- **BREAKING: a custom CSRF cookie name gets the `__Host-` prefix on
+  HTTPS.** `middleware.CSRF` prefixed only its default name unless the
+  host set `HostPrefixWhenSecure`, so the documented production config
+  (`CookieName: "fui_csrf"`) sent a plain cookie. The token is not tied
+  to a session, so a sibling subdomain could fetch one, plant it as a
+  `Domain` cookie and post it with the victim's credentials.
+  `HostPrefixWhenSecure` is removed: every name, `auth.WithCSRFCookieName`
+  included, becomes `__Host-<name>` on a secure request, and
+  `NoHostPrefix` opts out. `CSRF` panics on a `CookiePath` other than
+  `/` unless `NoHostPrefix` is set, since the browser drops a `__Host-`
+  cookie with any other path. See
+  [security](framework/docs/content/security.md).
+- **A quoted local part cannot rewrite the SMTP envelope.** The SMTP
+  sender wrote `net/mail`'s unquoted local part into `RCPT TO:<…>`, so
+  `"attacker@evil.test> ORCPT=rfc822;x"@company.test` closed the path
+  early: a DSN-capable relay reads `attacker@evil.test` as the recipient
+  and the rest as an `ORCPT` parameter. The envelope
+  now quotes a local part that needs it, and refuses one holding `<`, `>`
+  or `@`. See [email](framework/docs/content/email.md).
+- **An idempotency `Principal` that returns `""` caches nothing.** Every
+  such request shared one namespace, so a second caller who sent the
+  same key and body got the first caller's stored response. The
+  documented `WithIdempotency` example returned `""` for every request,
+  since its `auth.SessionFrom` lookup runs before the app's auth; the
+  example now keeps the default, which keys on the request's
+  credential. Return a constant such as `"anon"` to share a namespace on
+  purpose. See [idempotency](framework/docs/content/idempotency.md).
+- **A generated MCP tool runs against the host the caller reached.** The
+  tool re-dispatched its CRUD request with `httptest`'s `example.com` as
+  `Host`, so host middleware (a site or tenant chosen by host, a host
+  allowlist) served it as some other site. See
+  [mcp](framework/docs/content/mcp.md).
+- **Web Bot Auth signs the path as sent.** `@path`, `@request-target`
+  and `@target-uri` read the percent-decoded path, so a signature over
+  `/a/b` also verified on `/a%2Fb`, a different route, and a bot that
+  signed `/docs/a%20b` as RFC 9421 says failed to verify. They now carry
+  the path before decoding. See
+  [Web Bot Auth](framework/docs/content/web-bot-auth.md).
+- **A harness REST call runs as its token's identity class.** The REST
+  transport stamped every request `human` with a fresh client id, so an
+  `agent` token could answer a permission prompt that needs a human.
+  It now dispatches as the verified token: its `identity_class`, and
+  one client id for every request made with it, so a turn's originator
+  names the token that started it. WebSocket already used the token's
+  class. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **Harness quiet mode prompts for a Bash call that sets `env` or
+  `cwd`.** Quiet mode and argv-glob rules matched the command string
+  alone, so `{"cmd":"git diff","env":{"GIT_EXTERNAL_DIFF":"sh -c …"}}`
+  ran its program with no prompt. A Bash call's argv summary now spells
+  the `cwd` and `env` in front of the command, which no quiet-listed
+  prefix or bare-command rule matches. `git branch` is quiet only when
+  it lists, so `git branch -D main` prompts. See
+  [harness architecture](framework/docs/content/harness-architecture.md).
+- **BREAKING: `gofastr harness --listen` binds loopback only.** The
+  chat page at `/` embeds a 24 h human-class token and takes no auth,
+  and its `Host` check does not stop a direct peer, so
+  `--listen 0.0.0.0:PORT` or a LAN address handed the token to anyone
+  on the network who sent `Host: localhost`. A bind whose address is
+  not loopback now fails at startup; forward the port over SSH to reach
+  it from another machine. The docs described a LAN mode gated on TLS
+  and `--auth-token-file`; neither flag existed, and that text is gone.
+- **A server action on a dynamic screen runs its `Requires` resolvers.**
+  An action POST that named no page, or a page of another screen, was
+  judged by `(*App).PatternPolicy`, which ran the screen chain and the
+  region-guard check but skipped the eager resolvers. A screen like
+  `/projects/:id` whose access comes from a `Requires(project)` resolver
+  refusing with `ErrNotFound` ran its actions for any caller holding a
+  self-minted session. `PatternPolicy` now answers Block for a dynamic
+  pattern that requires a resolver, as it does for one under a region
+  guard, so such an action must name a page of its screen, and the
+  llm.md index and pattern doc withhold that screen's metadata.
+- **A static export leaves out gated widgets' chrome.** The export wrote
+  every registered widget's chrome HTML to
+  `/core-ui/widget/<name>/chrome`, including widgets with
+  `RequireSession` or `RequireAuthenticated` whose live endpoint refuses
+  an anonymous caller, so their slot HTML was public on the static host.
+  Such a widget now gets its style sheet (ungated live too) and no chrome
+  file.
+- **`fs.writeText` stays inside its grant.** The fs allow-list checked a
+  path's cleaned form, then resolved the raw path and passed whenever
+  that resolution failed, which it always does for a file that does not
+  exist yet. A save target spelled `dir/link/../name`, which cleans to
+  the grant while the OS follows the link, or one whose missing parent
+  became a symlink after the grant, was written outside the granted
+  directory. A path must now arrive in the exact clean form the dialog
+  returned (the dialogs return that form), and a missing file resolves
+  through its deepest existing parent.
+- **Desktop events and deep links reach only the app's own pages.** The
+  battery evaluated every event, posted window message, menu navigation
+  and deep-link navigation in whatever page a window showed. A window
+  that had followed an external link to another site handed that site
+  each of them, an OAuth callback's code included, once the page
+  defined `window.__gofastr.desktop._dispatch` or
+  `window.__gofastr.navigate`. Each script now runs inside
+  `if (location.origin === "<app origin>") { ... }`, checked in the
+  page when the script runs.
+- **Cancelling a Kiln agent turn kills what the adapter started.** The turn
+  ran in its own process group, but cancelling it killed only the adapter's
+  own pid, so a shell it had backgrounded kept running and could keep
+  calling Kiln's tools and changing the world. Cancel, supersede and the end
+  of a turn now kill the whole group on Unix.
+- **The desktop updater holds redirects to its https rule, and deep links
+  keep their escaped path.** A feed, signature or archive URL that
+  redirects to plain http off 127.0.0.1 now fails before the target is
+  asked. The default deep-link mapping keeps the path escaped, so
+  `%3F` and `%23` no longer start a query or fragment, and the navigate
+  grammar refuses percent-encoded dot segments (`%2e%2e`) for every
+  caller. A deep link that reaches an app with no `DeepLink` config is
+  dropped instead of panicking, and a capability named `available`,
+  `call`, `on`, `off` or `manifest` is refused at `Register`, since the
+  bridge would overwrite the runtime's own `NS.desktop` member.
+- **An A2A unknown-skill refusal lists no skill ids.** A message naming
+  a skill the server does not have, or naming none with several
+  registered, was rejected with `available:` and every registered id,
+  entity skills the MCP gate withholds from the caller included. The
+  refusal now names only the skill asked for (`no skill named "x"`), or
+  says `the message names no skill`; the agent card lists the callable
+  skills.
+- **Name and extension comparisons fold ASCII only.** Go's
+  `strings.ToLower` maps U+212A KELVIN SIGN onto `k` and U+0130 onto
+  `i`, and several comparisons folded both sides with it. A reference
+  URL such as `/docs/api/entities/%E2%84%AAiosk` served the `kiosk`
+  page, and a `sdkdocs.Config.Entities` name matched the same way.
+  `upload.ValidateExt` let `photo.gİf` through an allow list of
+  `gif`. A migration dropping two tables whose names folded alike left
+  one of them out of the drop plan. The generated
+  CLI's entity selection and the GOFASTR1808 fallback comparison
+  folded the same way. All of them now fold A–Z only, and an
+  upper-case ASCII spelling still matches.
+- **An MCP notification stream closes when its caller changes tenant.**
+  The stream re-checked the caller before each delivery and ran the
+  gates on the result, but a gate that does not read the tenant kept
+  sending the connect-time tenant's resource URIs and `list_changed`
+  notices to a member removed from it. The stream now closes when the
+  re-check (`tenant.ResolveMiddleware` installs one) returns another
+  tenant, as a tenant-scoped CRUD event stream already did.
+- **BREAKING: `admin.AuthPrincipal(am, member)` checks that a bulk
+  job's creator still belongs to its tenant.** The principal re-read the
+  creator's roles before every chunk but stamped the confirm-time tenant
+  unchecked, so a queued bulk delete or update kept writing tenant A's
+  rows after its creator left A. It now asks `member`
+  (`admin.TenantMember`) first and stops the run on false or an error.
+  A tenant run with a nil `member` is refused; `admin.AnyTenant` admits
+  every run, for an app whose users never leave a tenant.
+- **The UI host and the static export no longer publish dotfiles.**
+  `uihost.WithStaticDir` and `SetStaticFS` served every file under
+  them, `.env`, `.git/config` and `web.config` included, and the
+  static export copied the same files, and every `Builder.ExtraDirs`
+  file, into the public tree. Both now refuse what `core/static`
+  refuses: a path with a dot segment, or a server config file name
+  (`web.config`, `global.asax` and their kin, any case). A refused
+  request falls through to page rendering, and the export logs each
+  file it skips. Files under a leading `.well-known/` stay public
+  (RFC 8615) unless they are dotfiles themselves, and the export keeps
+  a root `.nojekyll`. An export that needs another dotfile, such as an
+  Apache `.htaccess`, copies it into the output after the build. The
+  new `static.Refuses` exposes the check.
+- **An embed origin with a Unicode host is refused instead of folded
+  onto an ASCII one.** `NormalizeOrigin` lowercased the host with
+  `strings.ToLower` before the check that refuses non-ASCII bytes, and
+  Go folds U+0130 to `i` and the Kelvin sign to `k`, so an allowlist
+  entry `https://İ.example` was accepted as `https://i.example`. The
+  fold is ASCII-only now, and such an entry fails at boot like any
+  other Unicode host.
+- **A CONNECT request no longer confirms a disabled module's
+  methodless or CONNECT route.** For CONNECT, net/http names the
+  trailing-slash redirect by its bare path, which matched no gate key,
+  so `CONNECT /admin/panel` answered 307 to `/admin/panel/` where every
+  other request gets a 404. The router now gates that redirect on the
+  route's methodless and CONNECT keys. Routes registered with
+  `Get`/`Post` and the other method helpers were not affected.
+- **A module's migrations run under the module role alone.** The
+  coordinator built the role's DSN from the admin DSN with the role's
+  login in place, and kept the rest of the query. lib/pq sorts its
+  key=value pairs, so an admin `user` or `password` in the query could
+  outrank the role's login, and any key it does not know, such as
+  `options` or `search_path`, went to the server as a startup setting
+  that overrode the role's. The role DSN now keeps only the keys that
+  say where the server is and how to reach it (`host`, `port`,
+  `dbname`, the `ssl*` settings and a few more, listed in
+  process-modules.md) and drops the rest.
+- **The signed-in `/openapi.json` and `/api/llm.md` follow a scoped
+  token's scopes.** A token holding `customers:read` got the schema and
+  paths of every entity that declares no read permission, while
+  `RequireAPIScopes` refused the reads. Both now keep only the entities
+  whose `<table>:read` scope the token or embed grant holds. Sessions
+  are unaffected.
+- **A `RequireAuthenticated` widget refuses a scoped API token.**
+  `TokenMiddleware` loads the token's owner as the user, which satisfied
+  the gate, so a leaked token read the widget's state, chrome and RPC
+  whatever its scopes. The gate now refuses a token as it refuses an
+  embed grant, and as `auth.RequireSession` does.
+- **A `many: true` relation field's id follows the target's scopes on
+  write.** Define derives no relation for a Many field, so the
+  belongs-to scope check never read its column, and a create or
+  update stored another owner's id there. The id is now checked as a
+  belongs-to's is: a target the caller cannot read answers 404, and an
+  update that keeps the stored id passes.
+- **The harness websocket refuses a malformed handshake.** `/v1/ws`
+  answered 101 to any request with an Upgrade header and a non-empty
+  key, POST included: the upgrade-desync shape `core/stream` already
+  refused, where a proxy that does not see an upgrade waits for an
+  ordinary response and reads the frames as one. It now answers 400
+  unless the request is GET with a `Connection: Upgrade` token,
+  version 13 and a 16-byte key.
+  `core/stream` exports the check as `CheckUpgradeRequest`, which
+  `Upgrade` runs too.
+- **BREAKING: the print battery refuses a root `PathPrefix`.** `"/"` trimmed to
+  `""`, so the routes mounted at the root while the embed reservation
+  still named `/print`, and the embed gate did not refuse a grant on
+  the PDF route, which starts headless Chrome. `RegisterRoutes` (and
+  so `Init`) now fails on a prefix that is not a path below the root,
+  `"/"` or one with no leading slash, so the reservation always names
+  what is mounted.
+- **BREAKING: a desktop window stays on the app's origin.** The
+  runtime let an external link navigate the window in place, and no
+  shell had a navigation policy, so a foreign page ran in the app's
+  window and looked like the app. Each shell now asks the battery
+  before a main-frame navigation commits (macOS
+  `decidePolicyForNavigationAction`, Windows `NavigationStarting`,
+  Linux the main-frame response in `decide-policy`), and the battery
+  allows only its loopback origin and `about:blank`. An external link
+  does nothing. `Config.DangerouslyAllowForeignNavigation` restores the
+  old behaviour, for an in-window OAuth flow say. A custom `Shell`
+  enforces the new `WindowConfig.AllowNavigation`;
+  `desktoptest.Harness.AllowsNavigation` checks it in a test. On Linux
+  the refused request still reaches the other host; nothing it returns
+  renders. The Windows hook has no test runner yet.
+- **BREAKING: one client can no longer hold every island stream.** A
+  session costs one same-origin POST and the caps counted streams per
+  session and per replica, so 256 minted sessions of 16 streams took all
+  4096 default slots and every other visitor's stream answered 429. A
+  per-client cap now counts the signed-in user, or an anonymous caller's
+  address (IPv6 by /64), across its sessions: 256 by default,
+  `island.WithPeerStreamCap` to change it. Behind a reverse proxy, list
+  it with `uihost.WithTrustedProxies` (`island.WithTrustedProxies`), or
+  every anonymous visitor shares the proxy address's 256 streams; the
+  first such refusal logs a warning. `Manager.ConnectSession` takes the
+  client key as a second argument (`Manager.ClientKey`; `""` for a
+  server-side subscription).
 
 ## [0.95.0] - 2026-10-26
 

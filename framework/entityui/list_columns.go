@@ -60,10 +60,17 @@ func (s *listState) validColsNames(names []string) bool {
 // applyColsParam settles the shown columns from the cols param: an
 // explicit param in the URL wins over a saved view's columns, and a
 // refused value is ignored wholesale — the default resolution stands.
+// Every name must be a column this list offers, the columns menu's
+// set: a typed cols value cannot show a field the list left out.
 func (s *listState) applyColsParam() {
 	names := s.parseColsNames()
 	if len(names) == 0 || !s.validColsNames(names) {
 		return
+	}
+	for _, name := range names {
+		if !slices.Contains(s.available, name) {
+			return
+		}
 	}
 	s.setColumns(names)
 }

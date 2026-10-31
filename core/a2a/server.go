@@ -66,6 +66,13 @@ type Config struct {
 	// Owner resolves the caller for every request. ok=false → HTTP 401
 	// and CodeUnauthenticated. Nil is a NewServer error.
 	Owner func(r *http.Request) (owner string, ok bool)
+	// Scopes reports the scopes the caller's credential is narrowed to
+	// (an API token's or an embed grant's) and true, or false for a
+	// caller no scope narrows. A task records its creator's scopes, and a
+	// scoped caller reads, resumes, cancels and configures only the tasks
+	// made under the same scopes, so a narrow token of the owner cannot
+	// read what a stronger credential ran. Nil: every caller is unscoped.
+	Scopes func(r *http.Request) (scopes []string, scoped bool)
 	// ExtendedCard, when set, serves GetExtendedAgentCard. Nil → the
 	// method answers CodeExtendedAgentCardNotConfigured and
 	// Capabilities().ExtendedAgentCard is false.
@@ -148,6 +155,7 @@ type Server struct {
 	store    Store
 	router   Router
 	owner    func(*http.Request) (string, bool)
+	scopes   func(*http.Request) ([]string, bool)
 	extended func(context.Context, string) (map[string]any, error)
 	push     *pusher
 	log      *slog.Logger
@@ -189,6 +197,12 @@ type Server struct {
 	mu          sync.Mutex
 	runs        map[string]*run
 	runsByOwner map[string]int
+	// closing is set by Shutdown under mu: no run is claimed after it.
+	closing bool
+	// life ends every run when Shutdown cancels it. A run is detached
+	// from its request (see startRun), so nothing else reaches it.
+	life     context.Context
+	stopLife context.CancelFunc
 }
 
 // run tracks one in-process task run: the context CancelTask reaches,
@@ -208,6 +222,10 @@ type run struct {
 	cancelDone chan struct{}
 	bus        *taskBus
 	done       chan struct{}
+	// released closes when the run leaves the registry, the signal
+	// Shutdown waits on: a claim refused later releases without ever
+	// closing done.
+	released chan struct{}
 	// pausedAt is the version of this run's latest write once its
 	// handler paused the task (RequireInput/RequireAuth), zero before.
 	// A stored version past it was written by a run elsewhere that
@@ -287,12 +305,16 @@ func NewServer(cfg Config) (*Server, error) {
 	if defPage > maxPage {
 		return nil, fmt.Errorf("a2a: Config.DefaultPageSize %d exceeds MaxPageSize %d", defPage, maxPage)
 	}
+	life, stopLife := context.WithCancel(context.Background())
 	return &Server{
+		life:                      life,
+		stopLife:                  stopLife,
 		skills:                    slices.Clone(cfg.Skills),
 		byID:                      byID,
 		store:                     store,
 		router:                    router,
 		owner:                     cfg.Owner,
+		scopes:                    cfg.Scopes,
 		extended:                  cfg.ExtendedCard,
 		push:                      newPusher(cfg.Push, log),
 		log:                       log,
@@ -444,21 +466,21 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, req *rpcReques
 	case MethodSendStreamingMessage:
 		s.handleSend(w, r, req, owner, true)
 	case MethodGetTask:
-		s.handleGetTask(w, req, owner)
+		s.handleGetTask(w, req, owner, s.callerScope(r))
 	case MethodListTasks:
-		s.handleListTasks(w, req, owner)
+		s.handleListTasks(w, req, owner, s.callerScope(r))
 	case MethodCancelTask:
-		s.handleCancelTask(w, req, owner)
+		s.handleCancelTask(w, req, owner, s.callerScope(r))
 	case MethodSubscribeToTask:
 		s.handleSubscribe(w, r, req, owner)
 	case MethodCreateTaskPushNotificationConfig:
-		s.handleCreatePushConfig(w, req, owner)
+		s.handleCreatePushConfig(w, req, owner, s.callerScope(r))
 	case MethodGetTaskPushNotificationConfig:
-		s.handleGetPushConfig(w, req, owner)
+		s.handleGetPushConfig(w, req, owner, s.callerScope(r))
 	case MethodListTaskPushNotificationConfigs:
-		s.handleListPushConfigs(w, req, owner)
+		s.handleListPushConfigs(w, req, owner, s.callerScope(r))
 	case MethodDeleteTaskPushNotificationConfig:
-		s.handleDeletePushConfig(w, req, owner)
+		s.handleDeletePushConfig(w, req, owner, s.callerScope(r))
 	case MethodGetExtendedAgentCard:
 		s.handleExtendedCard(w, req, owner)
 	default:
@@ -574,7 +596,7 @@ func decodeParams(raw json.RawMessage, v any) *Error {
 	// duplicate or case-folded key pair resolves by parser accident).
 	// Unknown fields stay tolerated: the protocol reserves the right to
 	// add them.
-	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(raw, handler.FoldJSONKey); err != nil {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}
 	if err := jsonexact.Unmarshal(raw, v); err != nil {
@@ -647,6 +669,7 @@ const (
 	runClaimed runClaimResult = iota
 	runClaimTaskAlreadyActive
 	runClaimOwnerAtLimit
+	runClaimShuttingDown
 )
 
 // claimRun registers a placeholder run for taskID and owner. Claiming
@@ -656,6 +679,9 @@ const (
 func (s *Server) claimRun(taskID, owner string) (*run, runClaimResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closing {
+		return nil, runClaimShuttingDown
+	}
 	if _, exists := s.runs[taskID]; exists {
 		return nil, runClaimTaskAlreadyActive
 	}
@@ -669,6 +695,7 @@ func (s *Server) claimRun(taskID, owner string) (*run, runClaimResult) {
 		cancelDone: make(chan struct{}),
 		bus:        newTaskBus(s.log),
 		done:       make(chan struct{}),
+		released:   make(chan struct{}),
 	}
 	s.runs[taskID] = rn
 	s.runsByOwner[owner]++
@@ -686,6 +713,7 @@ func (s *Server) releaseRun(rn *run) {
 	defer s.mu.Unlock()
 	if s.runs[rn.id] == rn {
 		delete(s.runs, rn.id)
+		close(rn.released)
 		if s.runsByOwner[rn.owner] <= 1 {
 			delete(s.runsByOwner, rn.owner)
 		} else {
@@ -715,6 +743,30 @@ func (s *Server) setRunCancel(rn *run, cancel context.CancelFunc) (halted bool) 
 	return rn.halted.Load()
 }
 
+// Shutdown stops claiming runs, cancels every live run's context, and
+// waits until each has been released (a started run releases after its
+// final state is stored and published) or ctx ends. A handler that ignores its context holds Shutdown only until
+// ctx's deadline. The HTTP handler keeps answering reads; a send or
+// resume after Shutdown is refused.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	s.closing = true
+	released := make([]chan struct{}, 0, len(s.runs))
+	for _, rn := range s.runs {
+		released = append(released, rn.released)
+	}
+	s.mu.Unlock()
+	s.stopLife()
+	for _, r := range released {
+		select {
+		case <-r:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
 // wakeRun cancels a run's context. The cancel func is read under the
 // lock setRunCancel writes it under.
 func (s *Server) wakeRun(rn *run) {
@@ -727,7 +779,8 @@ func (s *Server) wakeRun(rn *run) {
 // startRun launches the handler goroutine for a claimed run. The run
 // context is cut from the request's CANCELLATION but not from the
 // request itself: returnImmediately and stream disconnects must not
-// abort work the client was told is running. TaskTimeout bounds it.
+// abort work the client was told is running. TaskTimeout bounds it, and
+// Shutdown ends it.
 //
 // A CancelTask can land between the claim and this call (a streaming
 // client knows the id once the snapshot is sent): it halts the run and
@@ -739,6 +792,7 @@ func (s *Server) wakeRun(rn *run) {
 // the store, and finishRun releases it.
 func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), s.timeout)
+	stopLife := context.AfterFunc(s.life, cancel)
 	runCtx = WithRequest(runCtx, r)
 	haltedBeforeStart := s.setRunCancel(rn, cancel)
 	if haltedBeforeStart {
@@ -751,6 +805,7 @@ func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 	}
 	go func() {
 		defer func() {
+			stopLife()
 			cancel()
 			s.finishRun(rn)
 		}()
@@ -988,7 +1043,7 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		if sk, ok := s.byID[skillID]; ok {
 			h = sk.Handler
 		} else {
-			rerr = fmt.Errorf("no skill named %q; available: %s", skillID, strings.Join(s.skillIDs(), ", "))
+			rerr = fmt.Errorf("no skill named %q", skillID)
 		}
 	}
 
@@ -1005,6 +1060,7 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		Task:      task,
 		Owner:     owner,
 		SkillID:   skillID,
+		Scope:     s.callerScope(r).key,
 		CreatedAt: s.now(),
 		UpdatedAt: s.now(),
 	}
@@ -1014,6 +1070,9 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		rn, result = s.claimRun(taskID, owner)
 		if result == runClaimOwnerAtLimit {
 			return nil, nil, nil, ErrUnsupportedOperation("maximum concurrent task runs reached")
+		}
+		if result == runClaimShuttingDown {
+			return nil, nil, nil, ErrUnsupportedOperation("server is shutting down")
 		}
 		if result != runClaimed {
 			// A freshly minted UUID cannot collide; treat as unrecoverable.
@@ -1069,7 +1128,7 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 		msg.MessageID = s.newID()
 	}
 	taskID := msg.TaskID
-	rec, err := s.store.GetTask(r.Context(), owner, taskID)
+	rec, err := s.getTask(r.Context(), owner, s.callerScope(r), taskID)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil, nil, ErrTaskNotFound(taskID)
 	}
@@ -1098,6 +1157,9 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	if claimResult == runClaimOwnerAtLimit {
 		return nil, nil, nil, ErrUnsupportedOperation("maximum concurrent task runs reached")
 	}
+	if claimResult == runClaimShuttingDown {
+		return nil, nil, nil, ErrUnsupportedOperation("server is shutting down")
+	}
 	if cfg := pushConfigOf(p); cfg != nil {
 		cfg.TaskID = taskID
 		if aerr := s.storePushConfig(r.Context(), owner, cfg); aerr != nil {
@@ -1119,7 +1181,7 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	sk, ok := s.byID[rec.SkillID]
 	if !ok || sk.Handler == nil {
 		// The skill this task was routed to is no longer registered.
-		if err := t.Reject(TextPart(fmt.Sprintf("no skill named %q; available: %s", rec.SkillID, strings.Join(s.skillIDs(), ", ")))); err != nil {
+		if err := t.Reject(TextPart(fmt.Sprintf("no skill named %q", rec.SkillID))); err != nil {
 			s.log.Error("a2a: reject resume without skill", "taskId", taskID, "err", err)
 		}
 		s.finishRun(rn)
@@ -1247,14 +1309,6 @@ func (s *Server) trimPushConfigs(ctx context.Context, owner, taskID string) {
 	}
 }
 
-func (s *Server) skillIDs() []string {
-	ids := make([]string, len(s.skills))
-	for i, sk := range s.skills {
-		ids[i] = sk.ID
-	}
-	return ids
-}
-
 // snapshot returns a deep copy of the run's current task.
 func (t *taskRun) snapshot() *Task {
 	return t.Task()
@@ -1343,7 +1397,16 @@ func (st *sseStream) write(field string, payload []byte) error {
 	_ = st.rc.SetWriteDeadline(time.Now().Add(sseWriteDeadline))
 	mcp.StreamSSE(st.w, "", string(payload))
 	st.fl.Flush()
+	st.clearDeadline()
 	return st.w.err
+}
+
+// clearDeadline drops the write deadline once a write is flushed. On
+// HTTP/2 the deadline is a stream timer that resets the stream when it
+// fires, write pending or not, so one left armed would kill the stream
+// in the idle gap before the next keep-alive.
+func (st *sseStream) clearDeadline() {
+	_ = st.rc.SetWriteDeadline(time.Time{})
 }
 
 func (st *sseStream) keepAlive() error {
@@ -1357,6 +1420,7 @@ func (st *sseStream) keepAlive() error {
 		return err
 	}
 	st.fl.Flush()
+	st.clearDeadline()
 	return st.w.err
 }
 
@@ -1413,7 +1477,7 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 		return // routing reject: the snapshot is already terminal
 	}
 	s.startRun(r, t, rn, h)
-	seen, unsettled := s.forwardEvents(st, rn, ch, r.Context(), seat, 0)
+	seen, unsettled := s.forwardEvents(st, rn, ch, r, owner, seat, 0)
 	if !unsettled {
 		return
 	}
@@ -1424,7 +1488,7 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 	// announcing it again. Follow the store from what was sent, as
 	// SubscribeToTask does, so the stream ends on the settled state.
 	snap.Version = max(seen, snap.Version)
-	s.pollEvents(st, owner, snap, r.Context(), seat)
+	s.pollEvents(st, r, owner, snap, seat)
 }
 
 // forwardEvents relays bus events to the stream until the task settles,
@@ -1435,7 +1499,8 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 // unsettled reports a run that ended with the stream still open: its
 // handler returned without a final event, so the task moved on without
 // it (another replica resumed it). seen is the last version sent.
-func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx context.Context, seat *streamSeat, floor int64) (seen int64, unsettled bool) {
+func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, r *http.Request, owner string, seat *streamSeat, floor int64) (seen int64, unsettled bool) {
+	ctx := r.Context()
 	keepAlive := time.NewTicker(s.keepAlive)
 	defer keepAlive.Stop()
 	seen = floor
@@ -1443,6 +1508,9 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx con
 	relay := func(be busEvent) bool {
 		if be.version <= floor {
 			return false
+		}
+		if !s.callerHeld(r, owner) {
+			return true
 		}
 		if err := st.send(be.ev); err != nil {
 			return true
@@ -1480,6 +1548,9 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx con
 				}
 			}
 		case <-keepAlive.C:
+			if !s.callerHeld(r, owner) {
+				return
+			}
 			if err := st.keepAlive(); err != nil {
 				return
 			}
@@ -1487,9 +1558,32 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan busEvent, ctx con
 	}
 }
 
+// callerHeld reports whether a fresh request with r's credentials would
+// still resolve to owner. A stream resolves its caller once, at connect,
+// and then outlives that answer: re-establish the principal
+// (handler.RecheckPrincipal) and re-run Owner on the refreshed context, so a
+// revoked session or a deleted user ends the stream at the next event or
+// keep-alive instead of when the client leaves.
+//
+// A panicking Owner counts as a refusal: the stream ends, the process
+// does not.
+func (s *Server) callerHeld(r *http.Request, owner string) (held bool) {
+	defer func() {
+		if recover() != nil {
+			held = false
+		}
+	}()
+	fresh, ok := handler.RecheckPrincipal(r.Context())
+	if !ok {
+		return false
+	}
+	got, ok := s.owner(r.WithContext(fresh))
+	return ok && got == owner
+}
+
 // ---- GetTask / ListTasks / CancelTask / SubscribeToTask ---------------
 
-func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p GetTaskRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1499,7 +1593,7 @@ func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner str
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
-	rec, err := s.store.GetTask(context.Background(), owner, p.ID)
+	rec, err := s.getTask(context.Background(), owner, sc, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
 		return
@@ -1513,7 +1607,7 @@ func (s *Server) handleGetTask(w http.ResponseWriter, req *rpcRequest, owner str
 	s.writeResult(w, req.ID, task, nil)
 }
 
-func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p ListTasksRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1537,8 +1631,21 @@ func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner s
 	if p.StatusTimestampAfter != nil {
 		after = p.StatusTimestampAfter.Time
 	}
-	q := ListQuery{ContextID: p.ContextID, Status: p.Status, After: after, Limit: size, Offset: offset}
-	recs, total, err := s.store.ListTasks(context.Background(), owner, q)
+	q := ListQuery{ContextID: p.ContextID, Status: p.Status, After: after,
+		Scoped: sc.scoped, Scope: sc.key, Limit: size, Offset: offset}
+	var recs []*TaskRecord
+	var total, advance int
+	var err error
+	if _, filters := s.store.(ScopeFilter); sc.scoped && !filters {
+		recs, total, err = s.walkScopedTasks(owner, q, sc)
+		advance = len(recs)
+	} else {
+		recs, total, err = s.store.ListTasks(context.Background(), owner, q)
+		advance = len(recs)
+		// A store that claims ScopeFilter and still returns another
+		// tier's task must not hand it to a scoped caller.
+		recs = slices.DeleteFunc(recs, func(rec *TaskRecord) bool { return !sc.sees(rec) })
+	}
 	if err != nil {
 		s.internalErr(w, req.ID, "list tasks", err)
 		return
@@ -1554,13 +1661,50 @@ func (s *Server) handleListTasks(w http.ResponseWriter, req *rpcRequest, owner s
 		tasks = append(tasks, task)
 	}
 	resp := ListTasksResponse{Tasks: tasks, PageSize: size, TotalSize: total}
-	if offset+len(recs) < total {
-		resp.NextPageToken = encodePageToken(offset + len(recs))
+	if offset+advance < total {
+		resp.NextPageToken = encodePageToken(offset + advance)
 	}
 	s.writeResult(w, req.ID, resp, nil)
 }
 
-func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner string) {
+// walkScopedTasks lists a scoped caller through a Store that does not
+// declare ScopeFilter. Such a store's page and total may count other
+// tiers' tasks, so a narrow token would read how many tasks a stronger
+// credential ran, and a page of dropped rows would hand back its own
+// offset. The walk reads every task of the owner that matches q's other
+// filters and counts the caller's alone: q.Offset and q.Limit index the
+// caller's tasks, and total is how many there are.
+func (s *Server) walkScopedTasks(owner string, q ListQuery, sc taskScope) ([]*TaskRecord, int, error) {
+	offset, size := q.Offset, q.Limit
+	q.Limit = max(size, walkScopedBatch)
+	var page []*TaskRecord
+	seen, read := 0, 0
+	for {
+		q.Offset = read
+		recs, total, err := s.store.ListTasks(context.Background(), owner, q)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, rec := range recs {
+			if !sc.sees(rec) {
+				continue
+			}
+			if seen >= offset && len(page) < size {
+				page = append(page, rec)
+			}
+			seen++
+		}
+		read += len(recs)
+		if len(recs) == 0 || read >= total {
+			return page, seen, nil
+		}
+	}
+}
+
+// walkScopedBatch is the store page walkScopedTasks reads per call.
+const walkScopedBatch = 200
+
+func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p CancelTaskRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1597,7 +1741,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 	}()
 	for range attempts {
 		ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
-		rec, err := s.store.GetTask(ctx, owner, p.ID)
+		rec, err := s.getTask(ctx, owner, sc, p.ID)
 		cancel()
 		if errors.Is(err, ErrNotFound) {
 			s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
@@ -1694,6 +1838,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		ch  chan busEvent
 		rec *TaskRecord
 		err error
+		sc  = s.callerScope(r)
 	)
 	for try := 0; ; try++ {
 		if rn = s.runFor(p.ID); rn != nil {
@@ -1701,7 +1846,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		}
 		// The request context bounds the read: a hung store must not pin
 		// this handler after the client has gone.
-		rec, err = s.store.GetTask(r.Context(), owner, p.ID)
+		rec, err = s.getTask(r.Context(), owner, sc, p.ID)
 		if err != nil || s.runFor(p.ID) == rn {
 			break
 		}
@@ -1763,7 +1908,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		return
 	}
 	if rn != nil {
-		seen, unsettled := s.forwardEvents(st, rn, ch, r.Context(), seat, rec.Version)
+		seen, unsettled := s.forwardEvents(st, rn, ch, r, owner, seat, rec.Version)
 		if !unsettled {
 			return
 		}
@@ -1780,15 +1925,15 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	// between polls are coalesced into the next snapshot — a replica
 	// boundary is exactly where per-event fidelity would require a
 	// shared bus, which a SQL store cannot give.
-	s.pollEvents(st, owner, rec, r.Context(), seat)
+	s.pollEvents(st, r, owner, rec, seat)
 }
 
 // pollEvents serves the polling fallback. Its store reads run under the
 // request context, cut further when the seat is evicted, so a hung
 // store read ends with the stream instead of pinning the seat after
 // the client has gone.
-func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx context.Context, seat *streamSeat) {
-	ctx, cancel := context.WithCancel(ctx)
+func (s *Server) pollEvents(st *sseStream, r *http.Request, owner string, rec *TaskRecord, seat *streamSeat) {
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
 		select {
@@ -1811,6 +1956,9 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 		case <-ctx.Done():
 			return
 		case <-keepAlive.C:
+			if !s.callerHeld(r, owner) {
+				return
+			}
 			if err := st.keepAlive(); err != nil {
 				return
 			}
@@ -1838,6 +1986,9 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 				continue
 			}
 			last = cur.Version
+			if !s.callerHeld(r, owner) {
+				return
+			}
 			snap := cloneTask(cur.Task)
 			if err := st.send(StreamResponse{Task: &snap}); err != nil {
 				return
@@ -1859,6 +2010,60 @@ var errStorePanicked = errors.New("a2a: store GetTask panicked")
 // long-lived goroutine with no per-request net, so a panicking
 // implementation must become an error this stream ends on — never an
 // unrecovered panic that takes down the process.
+// taskScope is the credential tier a caller holds: unscoped, or the
+// canonical key of the scopes its credential is narrowed to.
+type taskScope struct {
+	scoped bool
+	key    string
+}
+
+// sees reports whether a caller of this tier may reach rec: an unscoped
+// caller reaches every task of its owner, a scoped one only the tasks
+// made under the same scopes.
+func (sc taskScope) sees(rec *TaskRecord) bool {
+	return !sc.scoped || rec.Scope == sc.key
+}
+
+// ScopeKey is the canonical TaskRecord.Scope of a scoped credential: its
+// scopes sorted and deduplicated, as a JSON array. It is never "", the
+// unscoped key, even for an empty scope set.
+func ScopeKey(scopes []string) string {
+	sorted := slices.Compact(slices.Sorted(slices.Values(scopes)))
+	if sorted == nil {
+		sorted = []string{}
+	}
+	b, err := json.Marshal(sorted)
+	if err != nil {
+		// A []string always marshals; refuse every task rather than none.
+		return "[\"\"]"
+	}
+	return string(b)
+}
+
+func (s *Server) callerScope(r *http.Request) taskScope {
+	if s.scopes == nil {
+		return taskScope{}
+	}
+	scopes, scoped := s.scopes(r)
+	if !scoped {
+		return taskScope{}
+	}
+	return taskScope{scoped: true, key: ScopeKey(scopes)}
+}
+
+// getTask is Store.GetTask for a caller of tier sc: a task made under
+// scopes the caller does not hold reads as absent.
+func (s *Server) getTask(ctx context.Context, owner string, sc taskScope, id string) (*TaskRecord, error) {
+	rec, err := s.store.GetTask(ctx, owner, id)
+	if err != nil {
+		return nil, err
+	}
+	if !sc.sees(rec) {
+		return nil, ErrNotFound
+	}
+	return rec, nil
+}
+
 func (s *Server) pollGetTask(ctx context.Context, owner, taskID string) (rec *TaskRecord, err error) {
 	defer func() {
 		if recover() != nil {
@@ -1871,7 +2076,7 @@ func (s *Server) pollGetTask(ctx context.Context, owner, taskID string) (rec *Ta
 
 // ---- push config methods ----------------------------------------------
 
-func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var cfg PushNotificationConfig
 	if aerr := decodeParams(req.Params, &cfg); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
@@ -1889,7 +2094,7 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, 
 		s.writeResult(w, req.ID, nil, Errorf(CodePushNotificationNotSupported, "push notifications are disabled"))
 		return
 	}
-	if _, err := s.store.GetTask(context.Background(), owner, cfg.TaskID); err != nil {
+	if _, err := s.getTask(context.Background(), owner, sc, cfg.TaskID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			s.writeResult(w, req.ID, nil, ErrTaskNotFound(cfg.TaskID))
 			return
@@ -1908,10 +2113,11 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, 
 	s.writeResult(w, req.ID, cfg, nil)
 }
 
-// requireOwnedTask answers ErrTaskNotFound when the task is absent or
-// another owner's; the push-config handlers all need exactly that.
-func (s *Server) requireOwnedTask(w http.ResponseWriter, req *rpcRequest, owner, taskID string) bool {
-	_, err := s.store.GetTask(context.Background(), owner, taskID)
+// requireOwnedTask answers ErrTaskNotFound when the task is absent,
+// another owner's, or made under scopes the caller does not hold; the
+// push-config handlers all need exactly that.
+func (s *Server) requireOwnedTask(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope, taskID string) bool {
+	_, err := s.getTask(context.Background(), owner, sc, taskID)
 	if err == nil {
 		return true
 	}
@@ -1923,13 +2129,13 @@ func (s *Server) requireOwnedTask(w http.ResponseWriter, req *rpcRequest, owner,
 	return false
 }
 
-func (s *Server) handleGetPushConfig(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleGetPushConfig(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p GetTaskPushNotificationConfigRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	if !s.requireOwnedTask(w, req, owner, p.TaskID) {
+	if !s.requireOwnedTask(w, req, owner, sc, p.TaskID) {
 		return
 	}
 	rec, err := s.store.GetPushConfig(context.Background(), owner, p.TaskID, p.ID)
@@ -1946,13 +2152,13 @@ func (s *Server) handleGetPushConfig(w http.ResponseWriter, req *rpcRequest, own
 	s.writeResult(w, req.ID, rec.Config, nil)
 }
 
-func (s *Server) handleListPushConfigs(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleListPushConfigs(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p ListTaskPushNotificationConfigsRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	if !s.requireOwnedTask(w, req, owner, p.TaskID) {
+	if !s.requireOwnedTask(w, req, owner, sc, p.TaskID) {
 		return
 	}
 	offset := 0
@@ -1989,13 +2195,13 @@ func (s *Server) handleListPushConfigs(w http.ResponseWriter, req *rpcRequest, o
 	s.writeResult(w, req.ID, resp, nil)
 }
 
-func (s *Server) handleDeletePushConfig(w http.ResponseWriter, req *rpcRequest, owner string) {
+func (s *Server) handleDeletePushConfig(w http.ResponseWriter, req *rpcRequest, owner string, sc taskScope) {
 	var p DeleteTaskPushNotificationConfigRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
-	if !s.requireOwnedTask(w, req, owner, p.TaskID) {
+	if !s.requireOwnedTask(w, req, owner, sc, p.TaskID) {
 		return
 	}
 	err := s.store.DeletePushConfig(context.Background(), owner, p.TaskID, p.ID)
@@ -2043,24 +2249,20 @@ func (s *Server) handleExtendedCard(w http.ResponseWriter, req *rpcRequest, owne
 //  2. else the first data part whose Data is a JSON object with a
 //     string "skill" key;
 //  3. else the only registered skill, when exactly one is;
-//  4. else an error naming the available ids.
+//  4. else an error.
 //
-// A skill id that is not registered is an error at step 1 and 2 alike —
-// the router names what exists rather than guessing.
+// A skill id that is not registered is an error at step 1 and 2 alike,
+// rather than a guess. No error lists the registered ids: they include
+// skills a gate withholds from this caller, and the agent card already
+// lists the ones it publishes.
 func DefaultRouter(_ context.Context, msg *Message, skills []Skill) (string, error) {
-	available := make([]string, len(skills))
-	for i, sk := range skills {
-		available[i] = sk.ID
-	}
-	names := strings.Join(available, ", ")
-
 	if msg != nil && msg.Metadata != nil {
 		if v, ok := msg.Metadata["skill"]; ok {
 			if name, isStr := v.(string); isStr && name != "" {
 				if skillKnown(skills, name) {
 					return name, nil
 				}
-				return "", fmt.Errorf("no skill named %q; available: %s", name, names)
+				return "", fmt.Errorf("no skill named %q", name)
 			}
 		}
 	}
@@ -2078,14 +2280,14 @@ func DefaultRouter(_ context.Context, msg *Message, skills []Skill) (string, err
 				if skillKnown(skills, name) {
 					return name, nil
 				}
-				return "", fmt.Errorf("no skill named %q; available: %s", name, names)
+				return "", fmt.Errorf("no skill named %q", name)
 			}
 		}
 	}
 	if len(skills) == 1 {
 		return skills[0].ID, nil
 	}
-	return "", fmt.Errorf("no skill named; available: %s", names)
+	return "", errors.New("the message names no skill")
 }
 
 func skillKnown(skills []Skill, id string) bool {

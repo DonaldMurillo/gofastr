@@ -47,6 +47,10 @@ func runAgent(args []string) int {
 	}
 
 	port := pickPort(8765)
+	if port == 0 {
+		fmt.Fprintf(os.Stderr, "[kiln] no free loopback port for serve\n")
+		return 1
+	}
 	journal := filepath.Join(cwd, ".kiln.session.jsonl")
 
 	// Loopback bind: the spawned serve is only ever reached via
@@ -60,24 +64,11 @@ func runAgent(args []string) int {
 		fmt.Fprintf(os.Stderr, "[kiln] start serve: %v\n", err)
 		return 1
 	}
-	// serveDone closes when the serve child exits; readiness races it so
-	// a serve that dies before binding (bad flag, missing journal perms)
-	// fails the run immediately instead of waiting out the 10s poll, and
-	// the deferred cleanup re-uses the one Wait.
-	serveDone := make(chan error, 1)
-	go func() { serveDone <- serve.Wait() }()
-	defer func() {
-		if serve.Process == nil {
-			return
-		}
-		_ = serve.Process.Signal(syscall.SIGTERM)
-		select {
-		case <-serveDone:
-		case <-time.After(3 * time.Second):
-			_ = serve.Process.Kill()
-			<-serveDone
-		}
-	}()
+	// Readiness races the serve's exit so a serve that dies before
+	// binding (bad flag, missing journal perms) fails the run immediately
+	// instead of waiting out the 10s poll.
+	proc := watchServe(serve)
+	defer proc.stop(3 * time.Second)
 
 	kilnURL := fmt.Sprintf("http://localhost:%d", port)
 	ready := make(chan error, 1)
@@ -88,7 +79,7 @@ func runAgent(args []string) int {
 			fmt.Fprintf(os.Stderr, "[kiln] serve never came up: %v\n", err)
 			return 1
 		}
-	case <-serveDone:
+	case <-proc.exited:
 		fmt.Fprintf(os.Stderr, "[kiln] serve exited before becoming ready\n")
 		return 1
 	}
@@ -125,15 +116,55 @@ func runAgent(args []string) int {
 	return 0
 }
 
-// pickPort returns desired if it's free, otherwise scans up by 1s.
-// Falls back to 0 (kernel-assigned) if nothing in [desired, desired+10] works.
+// serveProc is a started serve child whose one Wait runs in its own
+// goroutine. exited is closed, not sent on, so the readiness race and
+// the cleanup can both wait for the exit: a value sent once was taken by
+// the race, and the cleanup then blocked on it forever.
+type serveProc struct {
+	cmd    *exec.Cmd
+	exited chan struct{}
+}
+
+func watchServe(cmd *exec.Cmd) *serveProc {
+	p := &serveProc{cmd: cmd, exited: make(chan struct{})}
+	go func() {
+		_ = cmd.Wait()
+		close(p.exited)
+	}()
+	return p
+}
+
+// stop sends SIGTERM, kills the child if it is still running after
+// grace, and returns once it has exited. A child that already exited
+// returns at once: exited is closed.
+func (p *serveProc) stop(grace time.Duration) {
+	_ = p.cmd.Process.Signal(syscall.SIGTERM)
+	select {
+	case <-p.exited:
+	case <-time.After(grace):
+		_ = p.cmd.Process.Kill()
+		<-p.exited
+	}
+}
+
+// pickPort returns desired if it's free, otherwise scans up by 1s. When
+// nothing in [desired, desired+10) is free it asks the kernel for a free
+// loopback port and returns that number: the caller builds kilnURL from
+// it, so a bare 0 would name a port serve never binds. It returns 0 only
+// when the kernel has none to give.
 func pickPort(desired int) int {
 	for p := desired; p < desired+10; p++ {
 		if portFree(p) {
 			return p
 		}
 	}
-	return 0
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0
+	}
+	p := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return p
 }
 
 // portFree reports whether TCP port p has no listener. The probe is a

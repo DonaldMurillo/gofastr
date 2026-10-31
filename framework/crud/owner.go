@@ -108,6 +108,17 @@ func (ch *CrudHandler) CanReadRecordScoped(ctx context.Context, id string) bool 
 	return ch.canScopedRecord(ctx, opRead, id)
 }
 
+// CanReadRelatedScoped is CanReadScoped for an entity reached through
+// another one's relation: a label, a facet or a picker that reads this
+// entity's rows from a screen of the entity that points at it. It also
+// refuses an entity whose CRUD routes are off and a scope-restricted request
+// without "<table>:read", the gate ?include= applies (relationReachable). A
+// picker on posts.author_id listed every user's name and id to any posts
+// writer while users had CRUD off and an include of the same rows was refused.
+func (ch *CrudHandler) CanReadRelatedScoped(ctx context.Context) bool {
+	return ch.relationReachable(ctx, "read") && ch.CanReadScoped(ctx)
+}
+
 // canCascadeWrite reports whether a cascade write from a parent may create or
 // update this entity's record. It is the context-only twin of requireScope,
 // for a write that reaches this entity without passing its own route: owner,

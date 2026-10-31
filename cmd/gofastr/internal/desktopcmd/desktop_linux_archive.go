@@ -229,8 +229,17 @@ and a notification daemon. Install runtime packages using your distribution;
 no C compiler or development headers are needed for the GoFastr shell.
 
 The .desktop.in file is an INERT TEMPLATE, not a usable desktop entry.
-It contains @BUNDLE_ROOT@ placeholders. No installer or template renderer
-is provided. A packager must render an absolute installed path using the
+It contains @BUNDLE_ROOT@ placeholders. For current-user installation, run
+'gofastr desktop install --bundle=<extracted-directory>'. The CLI validates
+this fixed inventory, ELF architecture, image and checksums, then writes its
+own real desktop entry and a ~/.local/bin/<app-id> launcher. It never executes
+bundle scripts during installation. Trust the publisher separately: checksums
+are not signatures. Install refuses existing destinations; remove an unchanged
+installation with 'gofastr desktop uninstall --id=<app-id>' before replacing it.
+Uninstall preserves application data and refuses changed or unlisted files.
+The install commands do not set default URL handlers or enable autostart.
+
+For a different packaging system, render absolute installed paths using the
 Desktop Entry Specification's string escaping AND Exec argument quoting
 (two separate escaping layers, including literal percent as %% in Exec).
 Do not substitute paths with a naive sed command. Exec executable paths

@@ -156,7 +156,12 @@ Useful options:
   Reads are contained by an `os.Root` over the directory: a symlinked
   file or subdirectory pointing outside it is refused (the request
   falls through to page rendering) rather than served. Symlinks that
-  stay inside the directory keep working.
+  stay inside the directory keep working. A path with a dot segment
+  (`/.env`, `/.git/config`, `/assets/.htpasswd`) or a server config
+  file name (`web.config`, `global.asax` and their kin, any case) is
+  never served, the set `core/static` refuses; it falls through to
+  page rendering. Files under a leading `/.well-known/` are served
+  unless they are dotfiles themselves.
 - `uihost.SetStaticFS(fsys)`: serve static files from an `fs.FS`
   instead of a directory (the embed route). A value that came from
   `os.DirFS(dir)` is re-rooted through `os.OpenRoot(dir).FS()` at
@@ -166,7 +171,8 @@ Useful options:
   served. `embed.FS` values pass through unchanged. A custom `fs.FS`
   you write yourself must not follow symlinks out of its tree —
   `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
-  cannot carry symlinks at all.
+  cannot carry symlinks at all. The dotfile and config-file refusal
+  applies here too.
 - `host.AssetURL("/logo.svg")`: the URL of a static file with its
   content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
   page links a file from the static directory or static FS. A request
@@ -188,6 +194,11 @@ Useful options:
   page, so the runtime never opens the shared SSE bus. For hosts (or
   test rigs waiting on network-idle) that want zero held connections;
   polling (`data-cui-poll`) and islands still work.
+- `uihost.WithTrustedProxies("10.0.0.0/8", …)`: the reverse proxies
+  (IPs or CIDRs) whose `X-Forwarded-For` hop the island stream's
+  per-client cap reads. Without it, behind a proxy, every anonymous
+  visitor counts as the proxy's address and shares its 256 streams. See
+  `gofastr docs reactivity`.
 - `uihost.WithNoInlineFirstPaint()`: keep the color-scheme bootstrap,
   the component bundle and app.css as links on every page. By default a
   first-load page whose head fits 16 KiB compressed carries them inline,
@@ -210,6 +221,18 @@ Useful options:
   differently: 500 plus a logged error line, because a broken screen
   is a server bug. The 404 screen only runs for paths no route owns,
   and those must stay 404s, not become incidents.)
+  A custom screen may implement `uihost.NotFoundTitler`, whose
+  `NotFoundTitle(ctx context.Context, path string) string` returns its
+  request-specific title. The context carries the reader's locale; the
+  path is empty for a missing outlet. Keep the shared screen stateless.
+  An empty result falls back to `app.ScreenTitler.ScreenTitle(ctx)`,
+  then the framework's generic not-found title. A panicking title provider
+  also uses the generic title. Full pages, navigation partials and the
+  bare page an app without a default layout serves all carry this title
+  through the normal escaping and app-name suffix rules, rather than
+  borrowing the failed route's title.
+  An unmatched route retains its request path even if the root layout has
+  a `FallbackNotFound` outlet; it is already rendering the not-found page.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.

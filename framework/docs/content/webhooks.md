@@ -28,6 +28,9 @@ defer mgr.Stop(ctx)
 `Stop(ctx)` cancels any in-flight HTTP attempt via the worker's context
 and waits for the worker goroutine to drain. Pass a tight context if
 shutdown speed matters more than letting a hung receiver complete.
+On a `LeasedStore`, the deliveries of the claimed batch that had not
+started go back with their attempt refunded, so the next process
+sends them at once instead of after the lease.
 
 Register a subscriber and publish:
 
@@ -43,6 +46,16 @@ queued, err := mgr.Publish(ctx, "orders.created", []byte(`{"id":42}`))
 
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.
+
+When the payload carries one user's data, publish with `PublishFor`:
+
+```go
+queued, err := mgr.PublishFor(ctx, userID, "orders.created", payload)
+```
+
+Each delivery records `Owner`, and the `SQLStore` registers a data
+eraser, so `App.EraseUserData` deletes that user's deliveries, sent or
+not. `Publish` is `PublishFor` with no owner.
 
 Event names (and the glob patterns `Subscribe` accepts) are validated:
 empty names are refused, and so is any character from the unsafe
@@ -304,6 +317,15 @@ rejected by both bundled stores — a negative lease can only be a sign
 or unit error, and folding it onto the default would hand the caller a
 longer lease than they asked for.
 
+SQLite stores a timestamp as text with its offset and compares the
+text, so the SQL stores bind every timestamp in UTC whatever zone the
+caller's clock carries. Workers in different zones, or a lease that
+spans a DST change, then read each other's leases and due times
+correctly. Opening a `SQLStore` on SQLite rewrites in UTC the due
+times of pending rows an earlier release stored in the writer's zone.
+A replica still running that earlier release keeps writing its own
+zone until it is upgraded.
+
 ## Secret encryption at rest
 
 The SQL store can encrypt `webhook_subscribers.secret` so a DB
@@ -342,9 +364,20 @@ cancel := webhook.Bridge(app.Events(), mgr, "orders.**") // custom list
 ```
 
 The bridge subscribes one handler per event type, marshals
-`event.Event.Data` to JSON, and calls `Manager.Publish`. The returned
+`event.Event.Data` to JSON, and calls `Manager.PublishFor` with the owner
+the event names under `event.DataKeyOwnerID` (CRUD events on an entity
+with an owner field carry it), so erasing that user deletes the deliveries
+that copied their row. The owner is read before `WithBridgeRedactor` runs,
+so a redactor that drops it from the payload keeps the tag. The returned
 `cancel` detaches every subscription at once; call it before
 `Manager.Stop` so no Emit lands after the worker exits.
+
+With several replicas on one fanout (`framework.WithFanout`), the bridge queues
+an event only on the replica that emitted it and skips the copies other
+replicas receive (`event.IsRemote`). Every replica that emits events must
+run the bridge, and the replicas must share one `Store`: with a store per
+replica, an event emitted on one never reaches subscribers recorded only in
+another's.
 
 ## Inbound ingestion
 
@@ -390,6 +423,14 @@ q.RegisterHandler("webhook.inbound", webhook.ProcessInbound(store, func(ctx cont
 `IngestConfig.Queue` is optional. Leave it nil to persist-and-forget
 (the envelope is still acked 202); set it to fan processing off the
 request path.
+
+`IngestConfig.Owner` maps a verified event to the local user it
+concerns, for example by looking a provider account id up in the app's
+own table. The envelope stores the result in `InboundEnvelope.Owner`,
+and `SQLInboundStore` registers a data eraser, so `App.EraseUserData`
+deletes that user's payloads. Nil, or an empty return, names nobody.
+The handler runs only after the signature checks out. The 202 ack sets
+`Cache-Control: no-store`.
 
 ### Request flow
 
@@ -466,6 +507,13 @@ queue's own retry/backoff can reschedule it. `failed` is not final: the
 retry marks the envelope `processing` again, consumes an attempt, and
 records its own error. Only `processed` is fenced, so a stale runner's
 late failure cannot overwrite a success.
+
+A job for an envelope already `processed` (redelivered after a crash
+before the queue's ack, or after a lease expiry) is acked without
+calling your function. The store-side claim reports whether it marked
+the envelope, so one that settled or was deleted between the load and
+the claim is skipped too. Two runs that overlap while the envelope is
+still `processing` both call your function, so keep it idempotent.
 
 ### Stores
 

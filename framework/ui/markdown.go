@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	stdhtml "html"
 	"maps"
 	"strings"
@@ -37,6 +38,10 @@ type MarkdownConfig struct {
 	// root <div>. Keys the component owns are dropped: class and id
 	// (use Class / ID) and data-cui-*.
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context the code blocks' accessible
+	// names, line counts and copy controls are said in. When nil,
+	// English applies.
+	Ctx context.Context
 }
 
 // Markdown renders the given Markdown source as themed HTML.
@@ -59,7 +64,7 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
-	body := enrichCodeBlocks(scrollTables(string(markdown.RenderHTML(cfg.Source))))
+	body := enrichCodeBlocks(cfg.Ctx, scrollTables(string(markdown.RenderHTML(cfg.Source))))
 	return markdownStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
 }
 
@@ -79,7 +84,7 @@ func scrollTables(body string) string {
 // component the rest of the framework uses for code. The fenced body arrives
 // HTML-escaped (core/markdown escapes it), so `</code></pre>` is an
 // unambiguous terminator; we un-escape back to source, tokenize, and re-emit.
-func enrichCodeBlocks(body string) string {
+func enrichCodeBlocks(ctx context.Context, body string) string {
 	const openPre = `<pre tabindex="0"><code`
 	const closer = `</code></pre>`
 	var out strings.Builder
@@ -127,6 +132,7 @@ func enrichCodeBlocks(body string) string {
 			Wrap:           meta.wrap,
 			ShowCopy:       true,
 			ExtraAttrs:     extra,
+			Ctx:            ctx,
 		})
 		out.WriteString(string(block))
 		i = idx + len(openPre) + gt + 1 + end + len(closer)

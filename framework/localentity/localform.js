@@ -60,7 +60,7 @@
   const msg = (msgs, k, n) => {
     const own = msgs && Object.prototype.hasOwnProperty.call(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
     const s = own || DEFAULTS[k]();
-    return s.split('{{n}}').join(n === undefined ? '' : String(n));
+    return s.split('{{n}}').join(n === undefined ? '' : NS.formatNumber(n));
   };
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
   const pad = (n) => String(n).padStart(2, '0');
@@ -81,6 +81,18 @@
     const t = m && day(m[1]) ? Date.parse(raw) : NaN;
     return Number.isFinite(t) ? new Date(t).toISOString() : null;
   };
+  // shown holds what fill wrote into a datetime-local control, the record
+  // it came from, and the stored value behind it. The control shows
+  // minutes, so an edit that leaves it untouched saves the stored value,
+  // seconds and milliseconds included (2026-10-27 H7).
+  const shown = new WeakMap();
+  const kept = (form, name, raw) => {
+    const ctl = live(form, name)[0];
+    const s = ctl && shown.get(ctl);
+    const wrap = form.closest(FORM);
+    return s && raw === s.value && wrap && wrap.getAttribute(P + 'editing') === s.id ? stamp(s.stored) : null;
+  };
+
   // live is a field's controls the browser will submit: a disabled
   // control (or one in a disabled fieldset) is not in FormData, so it
   // must not read as an emptied field.
@@ -114,7 +126,7 @@
     }
     if (f.t === 'enum' && !(f.values || []).includes(raw)) return { error: msg(msgs, 'choice') };
     if (f.t === 'date' || f.t === 'timestamp') {
-      const v = f.t === 'date' ? day(raw) : stamp(raw);
+      const v = f.t === 'date' ? day(raw) : kept(form, f.name, raw) || stamp(raw);
       return v === null ? { error: msg(msgs, 'date') } : { value: v };
     }
     // Lengths count code points, as core/schema counts runes: an emoji
@@ -224,11 +236,13 @@
       if (!ctl) continue;
       const list = ctl.tagName ? [ctl] : Array.from(ctl);
       for (const c of list) {
+        shown.delete(c);
         if (c.type === 'checkbox') c.checked = value === true;
         else if (c.type === 'datetime-local' && Number.isFinite(Date.parse(text(value)))) {
           const d = new Date(text(value));
           c.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
             'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+          shown.set(c, { value: c.value, id: text(rec.id), stored: text(value) });
         }
         else if (c.type === 'radio') c.checked = c.value === text(value);
         else if (c.type !== 'hidden' || list.length === 1) c.value = text(value);

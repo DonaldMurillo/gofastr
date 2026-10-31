@@ -241,7 +241,8 @@ func (q *DBQueue) ensureTable() error {
 	if q.dialect == dialectPostgres {
 		tsType = "TIMESTAMPTZ"
 		if err := query.RefuseCaseKeptTables(context.Background(), q.db, q.table,
-			q.table+"_scheduler_schedules", q.table+"_scheduler_occurrences", q.table+"_scheduler_leases"); err != nil {
+			q.schedulerName("_scheduler_schedules"), q.schedulerName("_scheduler_occurrences"),
+			q.schedulerName("_scheduler_leases")); err != nil {
 			return fmt.Errorf("queue: %w", err)
 		}
 	}
@@ -953,7 +954,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	var out []Job
 	for rows.Next() {
 		var j Job
-		var payload string
+		var payload sql.NullString // the DDL allows NULL, as scanJob reads it
 		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
@@ -974,7 +975,9 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 				return nil, fmt.Errorf("queue: decode job %q updated_at: %w", j.ID, err)
 			}
 		}
-		j.Payload = []byte(payload)
+		if payload.Valid {
+			j.Payload = []byte(payload.String)
+		}
 		out = append(out, j)
 	}
 	return out, rows.Err()
@@ -1217,15 +1220,29 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 					"max_attempts", job.MaxAttempts,
 					"err", err)
 			}
-			if err := q.fail(ctx, job, err); err != nil {
+			settleCtx, cancel := settleContext(ctx)
+			if err := q.fail(settleCtx, job, err); err != nil {
 				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", err)
 			}
+			cancel()
 			continue
 		}
-		if err := q.Ack(ctx, job); err != nil {
+		settleCtx, cancel := settleContext(ctx)
+		if err := q.Ack(settleCtx, job); err != nil {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
+		cancel()
 	}
+}
+
+// settleTimeout bounds one ack or nack write after a handler returns.
+const settleTimeout = 10 * time.Second
+
+// settleContext detaches ctx from the worker's cancellation and bounds it:
+// a shutdown that lands as a handler finishes must not drop the outcome,
+// or the finished job runs again once its lease expires.
+func settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 }
 
 // runHandler invokes a job handler, converting a panic into an error so a

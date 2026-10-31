@@ -1,6 +1,7 @@
 package di
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -9,12 +10,29 @@ import (
 // Container is a simple dependency injection container.
 // It supports registering constructors or values and resolving them
 // by type. Constructor functions are called once and cached as singletons.
+//
+// A constructor runs outside the container's lock, so it may Resolve or
+// Inject the services it needs. A constructor that needs its own type,
+// directly or through another constructor, waits on itself forever.
 type Container struct {
-	mu         sync.RWMutex
-	providers  map[reflect.Type]any  // type → constructor or value
-	singletons map[reflect.Type]any  // type → resolved singleton
-	resolved   map[reflect.Type]bool // type → whether it's been resolved
+	mu         sync.Mutex
+	providers  map[reflect.Type]any    // type → constructor or value
+	singletons map[reflect.Type]any    // type → resolved singleton
+	resolved   map[reflect.Type]bool   // type → whether it's been resolved
+	building   map[reflect.Type]*build // type → constructor call in flight
 }
+
+// build is one in-flight constructor call. Callers that find it wait on
+// done and share its outcome.
+type build struct {
+	done chan struct{}
+	val  any
+	err  error
+}
+
+// errNilSingleton marks a constructor that returned a nil interface;
+// Resolve and Inject each word it for their caller.
+var errNilSingleton = errors.New("di: nil interface singleton")
 
 // NewContainer creates a new DI container.
 func NewContainer() *Container {
@@ -22,7 +40,72 @@ func NewContainer() *Container {
 		providers:  make(map[reflect.Type]any),
 		singletons: make(map[reflect.Type]any),
 		resolved:   make(map[reflect.Type]bool),
+		building:   make(map[reflect.Type]*build),
 	}
+}
+
+// singleton returns the value for t and whether a provider exists. A
+// constructor is called at most once at a time, never under c.mu; a
+// second caller for a type still building waits for the first and
+// shares its result. A failed or panicking call caches nothing, so the
+// next caller tries again.
+func (c *Container) singleton(t reflect.Type) (any, bool, error) {
+	c.mu.Lock()
+	if c.resolved[t] {
+		// Never a nil interface: one is reported below, not cached.
+		v := c.singletons[t]
+		c.mu.Unlock()
+		return v, true, nil
+	}
+	provider, ok := c.providers[t]
+	if !ok {
+		c.mu.Unlock()
+		return nil, false, nil
+	}
+	if b := c.building[t]; b != nil {
+		c.mu.Unlock()
+		<-b.done
+		return b.val, true, b.err
+	}
+	b := &build{done: make(chan struct{})}
+	c.building[t] = b
+	c.mu.Unlock()
+
+	settled := false
+	defer func() {
+		if settled {
+			return
+		}
+		// The constructor panicked: release the waiters before the panic
+		// continues up this caller's stack.
+		b.err = fmt.Errorf("di: constructor for %v panicked", t)
+		c.mu.Lock()
+		delete(c.building, t)
+		c.mu.Unlock()
+		close(b.done)
+	}()
+	result := provider
+	if pv := reflect.ValueOf(provider); pv.Kind() == reflect.Func {
+		result = pv.Call(nil)[0].Interface()
+	}
+	settled = true
+
+	// A nil interface is reported, not cached, so a corrected Provide
+	// stays usable.
+	var err error
+	if !reflect.ValueOf(result).IsValid() {
+		err = errNilSingleton
+	}
+	c.mu.Lock()
+	delete(c.building, t)
+	if err == nil {
+		c.singletons[t] = result
+		c.resolved[t] = true
+	}
+	c.mu.Unlock()
+	b.val, b.err = result, err
+	close(b.done)
+	return result, true, err
 }
 
 // Provide registers a constructor or value. The constructor can be:
@@ -44,68 +127,61 @@ func (c *Container) Provide(constructor any) error {
 			return fmt.Errorf("di: constructor must return exactly one value, got %d", ft.NumOut())
 		}
 		outType := ft.Out(0)
+		// Resolution calls the constructor with no arguments: one that
+		// takes any would pass here and panic in reflect on every request
+		// that injects it. A dependency is resolved inside the constructor.
+		if ft.NumIn() != 0 {
+			return fmt.Errorf("di: constructor for %v must take no parameters, got %d; resolve dependencies inside it", outType, ft.NumIn())
+		}
+		if err := c.refuseResolvedLocked(outType); err != nil {
+			return err
+		}
 		c.providers[outType] = constructor
 		return nil
 	}
 
 	// Direct value: store as both provider and pre-resolved singleton.
 	outType := v.Type()
+	if err := c.refuseResolvedLocked(outType); err != nil {
+		return err
+	}
 	c.providers[outType] = constructor
 	c.singletons[outType] = constructor
 	c.resolved[outType] = true
 	return nil
 }
 
+// refuseResolvedLocked refuses a Provide for a type that already has a
+// value, from a resolved constructor or a value provided directly.
+// Resolve serves the cached value, so a later provider was ignored while
+// Provide returned nil. Caller holds c.mu.
+func (c *Container) refuseResolvedLocked(t reflect.Type) error {
+	if c.resolved[t] {
+		return fmt.Errorf("di: %v already has a value; Provide each type once, before its first use", t)
+	}
+	return nil
+}
+
 // Resolve retrieves a value by type. The target must be a pointer.
 // It uses the registered constructor to create the value (singleton pattern).
 func (c *Container) Resolve(target any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Pointer || tv.IsNil() {
 		return fmt.Errorf("di: target must be a non-nil pointer")
 	}
-
 	targetType := tv.Elem().Type()
-
-	// Check if already resolved.
-	if c.resolved[targetType] {
-		val := reflect.ValueOf(c.singletons[targetType])
-		tv.Elem().Set(val)
-		return nil
-	}
-
-	// Look up provider.
-	provider, ok := c.providers[targetType]
-	if !ok {
+	v, ok, err := c.singleton(targetType)
+	switch {
+	case !ok:
 		return fmt.Errorf("di: no provider registered for %v", targetType)
+	case errors.Is(err, errNilSingleton):
+		// reflect.ValueOf(nil) is an invalid Value and Set panics on it;
+		// a typed nil pointer is fine.
+		return fmt.Errorf("di: provider for %v returned a nil interface, cannot resolve it", targetType)
+	case err != nil:
+		return err
 	}
-
-	pv := reflect.ValueOf(provider)
-
-	var result any
-	if pv.Kind() == reflect.Func {
-		// Call the constructor function.
-		out := pv.Call(nil)
-		result = out[0].Interface()
-	} else {
-		// Direct value.
-		result = provider
-	}
-
-	// A provider returning a nil interface yields an untyped nil any:
-	// reflect.ValueOf(nil) is an invalid Value and Set panics on it. Report
-	// the wiring error BEFORE the singleton/resolved writes so a corrected
-	// Provide stays usable (a typed nil pointer is fine — Set accepts it).
-	sv := reflect.ValueOf(result)
-	if !sv.IsValid() {
-		return fmt.Errorf("di: provider for %v returned a nil interface, cannot resolve %v", pv.Type(), targetType)
-	}
-
-	c.singletons[targetType] = result
-	c.resolved[targetType] = true
-	tv.Elem().Set(sv)
+	tv.Elem().Set(reflect.ValueOf(v))
 	return nil
 }
 
@@ -144,15 +220,9 @@ func injectTagCount(t reflect.Type, active map[reflect.Type]bool) int {
 // struct are filled too; a nil embedded pointer whose struct holds
 // inject tags is allocated first.
 //
-// Lazy first-time resolution of a func-provider writes the shared
-// singletons/resolved maps, so the whole method takes the full write
-// lock (c.mu.Lock), mirroring Resolve. Using an RLock here would let
-// two concurrent cold-start injections of the same type write the same
-// map simultaneously, an unrecoverable "concurrent map writes" crash.
+// Each field resolves the way Resolve does, so its constructor runs
+// outside the container's lock and may itself Resolve or Inject.
 func (c *Container) Inject(target any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Pointer || tv.IsNil() {
 		return fmt.Errorf("di: target must be a non-nil pointer to a struct")
@@ -167,7 +237,6 @@ func (c *Container) Inject(target any) error {
 
 // injectStruct fills the inject-tagged fields of the struct value ev,
 // descending into embedded structs not already on the path (active).
-// The caller holds c.mu.
 func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool) error {
 	et := ev.Type()
 	active[et] = true
@@ -191,36 +260,18 @@ func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool)
 		if !ev.Field(i).CanSet() {
 			return fmt.Errorf("di: injected field %s of type %v is not settable — inject-tagged fields must be exported", field.Name, fieldType)
 		}
-		if c.resolved[fieldType] {
-			cached := reflect.ValueOf(c.singletons[fieldType])
-			if !cached.IsValid() {
-				return fmt.Errorf("di: cached singleton for injected field %s of type %v is a nil interface, cannot inject", field.Name, fieldType)
-			}
-			ev.Field(i).Set(cached)
-		} else if provider, ok := c.providers[fieldType]; ok {
-			pv := reflect.ValueOf(provider)
-			var result any
-			if pv.Kind() == reflect.Func {
-				out := pv.Call(nil)
-				result = out[0].Interface()
-			} else {
-				result = provider
-			}
-			// Same nil-interface guard as Resolve: an invalid ValueOf(result)
-			// panics in Set, and the singleton/resolved writes below it would
-			// poison the cache for a corrected provider. Inject runs before
-			// the render pipeline's recover, so a wiring error must be an
-			// error, never a panic.
-			sv := reflect.ValueOf(result)
-			if !sv.IsValid() {
-				return fmt.Errorf("di: provider for injected field %s of type %v returned a nil interface, cannot inject", field.Name, fieldType)
-			}
-			c.singletons[fieldType] = result
-			c.resolved[fieldType] = true
-			ev.Field(i).Set(sv)
-		} else {
+		v, ok, err := c.singleton(fieldType)
+		switch {
+		case !ok:
 			return fmt.Errorf("di: no provider registered for injected field %s of type %v", field.Name, fieldType)
+		case errors.Is(err, errNilSingleton):
+			// Inject runs before the render pipeline's recover, so a
+			// wiring error must be an error, never a Set panic.
+			return fmt.Errorf("di: provider for injected field %s of type %v returned a nil interface, cannot inject", field.Name, fieldType)
+		case err != nil:
+			return err
 		}
+		ev.Field(i).Set(reflect.ValueOf(v))
 	}
 	return nil
 }

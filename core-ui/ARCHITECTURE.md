@@ -71,6 +71,17 @@ not already end with that exact suffix. Full pages, not-found outlet
 outcomes, recovery screens, and partial-navigation title headers follow
 the same rule.
 
+Custom not-found screens can implement
+`uihost.NotFoundTitler.NotFoundTitle(context.Context, string)` to choose
+the title for the current request path, without storing that path on the
+shared screen. An empty path identifies a missing-outlet outcome. Empty
+custom titles fall back to `app.ScreenTitler.ScreenTitle(ctx)`, then the
+generic not-found title. Full loads and partial navigation use the same
+effective title; a failed route's registered title cannot replace it.
+An unmatched route keeps its request path even when the root layout has
+a `FallbackNotFound` outlet. The empty-path outcome applies only when a
+registered route cannot fill its required outlet.
+
 ---
 
 ## The five scenarios
@@ -218,23 +229,23 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 
 | Attribute | Purpose |
 |---|---|
-| `data-cui-rpc="<path>"` | Click on the element (or submit of a `<form data-cui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-cui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, and the error node's id added to its `aria-describedby` beside any hint already there; the retry that removes a live node drops only that id) and places a `role="alert"` paragraph by the headless hooks, never by a kit class: it fills a reserved `[data-hui-field-error]` node inside the `[data-hui-field]` group (`FormFieldConfig.ReserveError`) or appends a live one, and after a bare `[data-hui-choice]` label it inserts the paragraph as the next sibling; when no field matched, the `error` text is toasted (module or fallback). The form's next answer, refused or successful, first clears every error the form shows, the messages the server rendered with the page included: `aria-invalid` goes, live nodes are removed and every other error node empties back to reserved. In the JSON body a repeated name becomes an array (checkbox group, multi-select) with one exception, the HTML checkbox idiom: a hidden input followed by a checkbox of the same name (hidden `false`, checkbox `true`) serializes as one scalar, the last value, so a bool field submits `"true"` or `"false"` and never `["false","true"]`. |
+| `data-cui-rpc="<path>"` | Click on the element (or submit of a `<form data-cui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-cui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, and the error node's id added to its `aria-describedby` beside any hint already there; the retry that removes a live node drops only that id) and places a `role="alert"` paragraph by the headless hooks, never by a kit class: it fills a reserved `[data-hui-field-error]` node inside the `[data-hui-field]` group (`FormFieldConfig.ReserveError`) or appends a live one, and after a bare `[data-hui-choice]` label it inserts the paragraph as the next sibling; when no field matched, the `error` text is toasted (module or fallback). The form's next answer, refused or successful, first clears every error the form shows, the messages the server rendered with the page included: `aria-invalid` goes, live nodes are removed and every other error node empties back to reserved. In the JSON body a repeated name becomes an array (checkbox group, multi-select) with one exception, the HTML checkbox idiom: a hidden input followed by a checkbox of the same name (hidden `false`, checkbox `true`) serializes as one scalar, the last value, so a bool field submits `"true"` or `"false"` and never `["false","true"]`. A trigger that carries no value and no `data-cui-rpc-signal` (a button, span or link outside a form, holding no named control) ignores a click while its request is in flight, so a double click sends one request even before the rpc module has loaded; a form, a control or a signal-targeted trigger supersedes instead, the newest dispatch winning. |
 | `data-cui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-cui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-cui-rpc-close` | Containing widget closes on 2xx |
 | `data-cui-rpc-reset` | Containing form resets on 2xx |
 | `data-cui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
-| `data-cui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page: the RPC mutated server state, so the destination must be fetched fresh |
+| `data-cui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page: the RPC mutated server state, so the destination must be fetched fresh. When the RPC method is not `GET`, the page it ran on is evicted (its exact URL, or every query variant when it has no query, on every locale) from the screen cache first, so Back after a delete fetches the record again instead of replaying it |
 | `data-cui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
 | `data-cui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
 | `data-cui-signal-mode="text\|number\|html\|attr"` | How to apply the signal value (default `text`). `number` is `text` to the kernel; the marker loads the `headless-numbers` module, which rewrites a numeric value the way the page's `<html lang>` writes numbers (`Intl.NumberFormat`) in a microtask after each write, matching the server's `i18n.Number` text. The core runtime carries no bytes for it. `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-cui-signal-attr`. |
 | `data-cui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
 | `data-cui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
 | `data-cui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
-| `data-cui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. |
+| `data-cui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. The three signal mutations work inside a widget root too (the document delegate applies them; the widget's scoped listener leaves them alone), and on a node that also carries `data-cui-rpc` the mutation wins and no request is sent, inside a widget or out. |
 | `data-cui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-cui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-cui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
 | `data-cui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-cui-signal`. CSP-safe: the reducer is a real function the host registers (no `eval`). |
-| `data-cui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-cui-computed` node recomputes from. |
+| `data-cui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-cui-computed` node recomputes from. A node never recomputes inside its own recompute, so a dependency cycle stops after one pass; `store.Computed` refuses one at declaration. |
 | `data-cui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
 | `data-cui-open="<widget-name>"` | Click opens a registered widget surface |
 | `data-cui-ctx="<opaque>"` | On a `data-cui-open` trigger: per-trigger context for the opened widget's chrome (#321). The runtime forwards it as `?ctx=` on the chrome fetch and keys the client chrome cache by `(name, ctx)` (LRU, capped at 32 entries, cleared on SPA navigation). Opaque to the framework — never parsed. `serveChrome` is the validation boundary: it bounds a URL-carried `ctx` at 256 bytes and rejects invalid UTF-8 and control runes before rendering. The slot reads the accepted value with `widget.ChromeContext(ctx)`, which only reads, decides what it means, and MUST authorise the entity it names against the request context. `WithChromeContext` takes an unrestricted string: an in-process caller is trusted, the URL is not. Use for per-entity dialogs: `data-cui-open="layout-remove" data-cui-ctx="inv-42"`. |
@@ -310,7 +321,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-activelink` | On an `<a>` link, inside a `<nav>` landmark or not: hands the link's current-state to the `activelink` module without changing how it matches (exact, as above, unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
-| `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format ({label} substituted), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
+| `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format ({label} substituted), unchecks the checkbox a × names inside that ×'s own multiselect (option ids derive from the instance id, which defaults to the field name, so two multiselects for one field share them), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
 | `data-cui-dropdown` | On a dropdown trigger button. The `dropdown` runtime module toggles `aria-expanded` and shows/hides the paired panel on click. Outside-click and SPA navigation close all dropdowns without moving focus. Escape defers to the modal stack, then closes only the focused (or topmost) dropdown layer; when focus was inside its panel, focus returns to that dropdown's trigger. Opening one dropdown still closes the others by default. |
 | `data-cui-dropdown-wrap` | On the wrapper around a `data-cui-dropdown` trigger + `data-cui-dropdown-panel`. Scopes open/close to one dropdown instance; the runtime sets/clears `data-cui-dropdown-open` on it to track state. |
 | `data-cui-dropdown-panel` | On the floating panel sibling of a `data-cui-dropdown` trigger. The runtime toggles its `hidden` attribute as the dropdown opens/closes. |
@@ -342,7 +353,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-screen-group="<prefix>"` | On the `.cui-screen-group` wrapper div around each group layer. Since the layout-chain rewrite the swap logic no longer keys on it (chains carry group identity in `data-cui-layout-key`); the runtime still reads it in one place, locating the outermost shell element for a cross-chain shell replacement, and it remains the CSS/introspection contract for group boundaries. The prefix matches the group's URL prefix (trailing slash). |
 | `data-hui-pane="primary\|secondary\|tertiary"` | Emitted by `PaneHost` (headless.PaneHost) on each of its three slot children. The runtime addresses a pane by this value when opening/closing it; CSS keys the open-state grid columns and the overlay-drawer chrome off the combination of the root's open modifier classes and this slot marker. |
 | `data-hui-pane-mode="overlay"` | Written by the registered `headless-panehost` module onto the host when `matchMedia('(max-width: 768px)')` matches AND a pane is open. CSS flips the open pane to a fixed overlay drawer (backdrop scrim via `::before`, right edge, full height) and the module applies a focus trap + scroll lock + ESC/backdrop-to-close. Cleared when the viewport widens or the pane closes. |
-| `data-hui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set: opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` replays the state by re-clicking the matching `[data-hui-pane-key]`. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink`. Without that a shared link paints the pane closed and opens it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
+| `data-hui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set: opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` and a page load replay the state by re-clicking the matching trigger: the `[data-hui-pane-key]` that opens or swaps to the named pane (one key may label a trigger for each pane). A key no trigger on the page carries opens the pane empty. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink`. Without that a shared link paints the pane closed and opens and fills it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
 | `data-cui-intercept-overlay` | Written by the demand-loaded `intercept` module on the container it appends to `<body>` for an intercepted route. Holds the screen render the server returned as an overlay variant; the scrim and docking come from `app.InterceptOverlayCSS()`, which the host injects only when some route declares an intercept. The container's children are the LAYERS of an open stack, deepest first. Removed when the last layer closes. |
 | `data-cui-intercept-as="drawer\|sheet"` | On each layer (a child of the overlay container): which presentation the SERVER chose for it, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys each layer's docking edge off it, so one stack can hold a sheet over a drawer. The client never picks its own chrome: a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
 | `data-cui-intercept-close` | On a button inside intercepted overlay content: click closes the TOP layer (through `history.back()`'s path, so the button, ESC, and the backdrop all resolve to the same history move and the page underneath is never refetched). A layer whose form carries `data-hui-leave-guard` and unsaved edits asks first. |
@@ -389,7 +400,10 @@ input/change/submit). `data-action-mount="<name>"` fires the named action
 *once on hydration* (and again after each SPA nav), the hook a server-rendered
 island uses to populate itself on load, since the other triggers are
 user-event-driven. Any `data-param-*` on the element flows into the handler's
-`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`.
+`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`. The host
+compiles a screen's actions at `Mount` and again in `ValidateBoot`, which
+`App.Start` calls after every plugin `Init`, so a screen a plugin registers
+there gets them; a screen registered while the app serves does not.
 
 **Response headers the runtime understands:**
 
@@ -399,7 +413,7 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
 | `X-Gofastr-Swap: <layer key>` | Names the layout layer the partial body renders BELOW (see `data-cui-layout-key`). The runtime swaps the matching `data-cui-layout-slot` cell and records the key on the cache entry so a replay swaps the same cell. Emitted when the navigation request carried `X-Gofastr-From` and the two routes share an addressable chain prefix; a key the DOM doesn't have (deploy skew) makes the runtime recover with a full-page load. Absent → the body is bare screen content for the whole `<main>`. |
 | `X-Gofastr-Envelope: 2` | Set when the partial body is a fills envelope: the seed island, then the primary `<template data-cui-fill>` (addressed by the bare swap key, no hash), then one hashed template per kept-layer fill. Emitted only when the request carried `X-Gofastr-Fills: 2` and the render produced fills; otherwise today's body. |
-| `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
+| `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) An untitled screen sends no header and keeps the current `document.title` verbatim: only the header is decoded, and a header that fails to decode is used as sent. |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 | `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
 
@@ -430,7 +444,16 @@ the DOM does not show the named page (a superseded navigation's origin
 mismatch), so a mid-flight drop cannot poison the dropped destination's
 entry; the route seed a replay restores comes from the tracked live route
 state, not the first-paint head island (which is stale after the first
-SPA navigation).
+SPA navigation). That leave capture is the envelope module's. A module
+that loads only after the plain navigator has swapped the DOM cannot tell
+which page the DOM shows, so it takes no boot capture and keys nothing
+until its own first navigation answers OK. The plain
+navigator, which runs until a page with an outlet or area loads that
+module, narrows the
+replay instead: an entry keyed above the navigation's deepest shared
+layer applies only that layer's cell of the entry, with the entry's
+page-head carrier and seed island, so Back from `/group/b` to the
+visit's first page `/group/a` keeps the group layout's DOM.
 
 When a navigation response is a **full HTML document** — a static host
 that serves whole pages and ignores the request headers — the runtime
@@ -653,15 +676,16 @@ pane. `PaneHost` does not fetch.
 
 URL round-tripping is opt-in per host: set `PaneHostConfig.DeepLinkParam`
 and label each trigger with `interactive.PaneKey`. Opening writes
-`?<param>=<pane>:<key>`, closing strips it, and Back replays the state by
-re-clicking the matching trigger, so the RPC that fills the pane runs
-again and the content comes back with it, not just the open column. This
+`?<param>=<pane>:<key>`, closing strips it, and Back, a refresh and a
+shared link replay the state by re-clicking the trigger with that key
+for that pane, so the RPC that fills the pane runs again and the content
+comes back with it, not just the open column. This
 does not make a pane a route: the parameter records in-page state so
 refresh and share reproduce it, which is the same thing widget deep
 links do for modals. Because the server owns first paint, read the
 parameter with `ui.PaneDeepLink` and set `SecondaryOpen`/`TertiaryOpen`
 plus the pane's content from it; skip that and a shared link paints the
-pane closed, then pops it open after hydration.
+pane closed, then opens and fills it after hydration.
 
 ### Intercepting routes (`app.InterceptFrom`)
 
@@ -811,7 +835,10 @@ client-side with no per-consumer round-trip.
   puts it in the boot cache entry and in any fetched document it swaps
   in, so Back to the first page of a visit and a cross-chain or
   full-answer navigation restore page state as a partial does. A host
-  that sends no list restores none.
+  that sends no list restores none. The envelope navigator follows the
+  same rule, and a page it re-captures on leave keeps the seed it
+  arrived with, so a cached Back or Forward on either navigator
+  restores the values that page arrived with.
 - **Computed.** `store.Computed` derives a value client-side from dependency
   slices via a host-registered JS reducer (CSP-safe, no `eval`). Register
   reducers on `window.__gofastr._reducers` from a script loaded **after**
@@ -843,7 +870,8 @@ The kernel's `say(key, english, params)`, exported as
 argument on a miss, and fills `{{name}}` placeholders from `params`.
 Fragments call `say(...)`; modules and behaviours call `NS.say(...)`.
 Never write prose straight into a toast, `textContent`, `aria-label` or
-`title`: `core-ui/check.LintRuntimeProse` refuses it, and
+`title`, nor a unit glued to a value (`ms + 'ms'`):
+`core-ui/check.LintRuntimeProse` refuses it, and
 `TestRuntimeSayCallsMatchPhrases` holds every `say('key', 'English'`
 call to a registered phrase with the same English. A client-side
 navigation keeps the block it booted with, so a reader who switches
@@ -1079,7 +1107,10 @@ credentials. `refused` is a server that accepted the handshake only to
 close with a code in 4400–4499 (4000 + a 4xx status, kept on
 `status.refused`); it is not retried, because a browser cannot read
 the status of a failed handshake and a refusal is not a blip. A
-4500–4599 close (4000 + a 5xx) is `error` and retried.
+4500–4599 close (4000 + a 5xx) is `error` and retried. Retries back
+off from 1 s, doubling to a 30 s cap; `attempts` returns to 0 only
+after a socket has stayed open 10 s, so a server that accepts and
+closes at once is not redialed every second.
 
 A new generation invalidates only generation-bound work; which state
 survives a reconnect is the application's decision. WebSocket recovery
@@ -1264,7 +1295,10 @@ the rest of this document:
   `<script defer src="/__gofastr/pwa/register.js">` on the script rail:
   no inline JS, same CSP posture as `runtime.js`. Routes mounted:
   `/manifest.webmanifest`, `/service-worker.js` (root-scoped),
-  `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.
+  `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`. With locale
+  prefixes, a locale page links its own manifest (`/es/manifest.webmanifest`)
+  whose `start_url` carries the prefix; `id` and `scope` stay the same,
+  so every locale installs one app.
 - **The service worker never interferes with the runtime's rails.**
   Its fetch handler has a baked deny list (`/__gofastr/sse`,
   `/__gofastr/session`, `/__gofastr/action`,
@@ -1610,9 +1644,14 @@ On the client, a non-OK response whose Content-Type is `text/html`
 flows through the same apply paths a 200 takes (envelope, partial,
 whole document via the doc-envelope reader, then the `<main>` swap):
 the URL stays the target so Back works, the title comes from the
-response, and the entry is never cached. A non-HTML error body cannot
-be applied and toasts naming the status (`Could not load /x (HTTP
-404)`); only a failed fetch keeps the "check your connection" wording.
+response, and the entry is never cached. A body that is not
+`text/html` cannot be applied, whatever its status: a 200 included
+(a raw-markdown or JSON route the client router intercepted), it
+toasts naming the status (`Could not load /x (HTTP 404)`), the URL
+goes back to the page still shown and the page stays. A navigation
+started while another was loading rolls back past that one too: its
+destination never rendered. Only a failed fetch keeps the "check
+your connection" wording.
 Never a `location.href` fallback. A static export ships the same page
 as `404.html` at the root (see `framework/docs/content/static-export.md`).
 
@@ -2373,8 +2412,10 @@ position chrome, slot composition, RPC endpoints). Widgets that
 host styled components benefit from the same on-demand loader: the
 mounted chrome HTML is scanned in `mountWidget` and any new
 `data-cui-comp` triggers a load. Widget chrome CSS itself still
-serves from `/core-ui/widget/<name>/style.css` for backwards
-compatibility; future work may collapse the two paths.
+serves from the widget's `StylePath` (default
+`/core-ui/widget/<name>/style.css`) under the prefix of the router
+group `Mount` was given, the URL the widget catalog publishes; future
+work may collapse the two paths.
 
 Both registries coexist safely: they share the
 `data-cui-style="<name>"` link dedup key on the client, so a widget
@@ -2535,7 +2576,7 @@ your need:
 | Edit/show entity detail | `preset.Modal` with `DeepLink("modal", "<name>").DeepLinkParam("id")` | URL stays consistent across refresh/share/back. Buttons opening it carry `data-cui-deeplink="id=<row-id>"`. |
 | Confirm + act in one shot | `framework/ui.ConfirmAction` | Returns a trigger button + hidden `preset.Modal` alertdialog. Eliminates per-button confirm boilerplate. |
 | Secondary nav / filters | `preset.Drawer` | Edge-anchored, backdrop'd. Same deep-link wiring as modals. |
-| Click-triggered help / share / inline expander | `preset.Popover` | Anchored floating surface, no backdrop dim, no focus trap. Escape and click-outside dismiss. |
+| Click-triggered help / share / inline expander | `preset.Popover` | Anchored floating surface, no backdrop dim, no focus trap. Escape and click-outside dismiss. While a modal that refuses Escape is open, Escape closes only a popover opened after that modal; one opened before it stays open under the scrim. |
 | Floating panel (non-modal, persistent) | `preset.FloatingPanel` | Bottom-right mounted panel. No backdrop, no focus trap. Use for chat widgets, debug panels, AI assistants. |
 | Mobile-friendly bottom sheet | `preset.BottomSheet` | Bottom-mounted dialog with backdrop, Esc + click-outside close. Use for mobile action sheets, filter panels. |
 | Background events ("Saved", "Build failed") | `preset.ToastStack` + `framework/ui.ToastBus` | Server pushes via SSE; the runtime stacks + auto-dismisses with hover-pause. No URL state. |

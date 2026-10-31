@@ -218,6 +218,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 					return Summary{}, runDir, fmt.Errorf("fingerprint candidate %s: %w", blindID, fingerprintErr)
 				}
 				mapping := CandidateMapping{BlindID: blindID, VariantID: variant.ID, ScenarioID: scenario.ID, Repetition: rep, Workspace: workspace, ResultDir: resultDir, BuilderFingerprint: fingerprint, BuilderProvenance: builderProvenance, FrameworkRoot: variant.FrameworkRoot, FrameworkFingerprint: tool.fingerprint, HistoricalOnlyReason: variant.HistoricalOnlyReason}
+				//gofastr:allow(rootwrite) the eval run tree is operator-owned and the IDs come from the suite file
 				candidate := executeCandidate(ctx, suite, opts, tool.bin, variant, scenario, rep, mapping, blindDir, string(rubricBytes), builderEnv, judgeEnv, mobileJudgeEnv)
 				candidate.ProtocolFingerprint = protocolFingerprint
 				candidate.HolisticJudgeProvenance = holisticJudgeProvenance

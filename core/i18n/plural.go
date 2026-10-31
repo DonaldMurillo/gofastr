@@ -256,11 +256,16 @@ func finiteDecimal(f float64, bits int) string {
 	return strconv.FormatFloat(f, 'f', -1, bits)
 }
 
-// maxOperandDigits caps each operand's digits so it fits an int. CLDR
-// rules read an integer's last six digits at most (i % 1000000), so a
-// longer run keeps its last 17 digits and adds 10^18: every modulus a
-// rule takes is unchanged, and the value never equals a small number.
-const maxOperandDigits = 18
+// maxOperandDigits caps each operand's digits so it fits an int: 18 on a
+// 64-bit int, 9 on a 32-bit one. CLDR rules read an integer's last six
+// digits at most (i % 1000000), so a longer run keeps its last
+// maxOperandDigits-1 digits and adds operandOverflow
+// (10^maxOperandDigits): every modulus a rule takes is unchanged, and
+// the value never equals a small number.
+const (
+	maxOperandDigits = 9 + 9*(strconv.IntSize/64)
+	operandOverflow  = 1_000_000_000 * (1 + 999_999_999*(strconv.IntSize/64))
+)
 
 // decimalOperands reads a plain decimal ("-12", "1.50") into operands.
 // The sign is dropped: plural rules read the absolute value.
@@ -291,7 +296,7 @@ func allDigits(s string) bool {
 
 // digitsInt reads a run of digits as an int. Leading zeros are no
 // digits of the value; a run longer than maxOperandDigits reads as
-// 10^18 plus its last 17 digits.
+// operandOverflow plus its last maxOperandDigits-1 digits.
 func digitsInt(s string) int {
 	s = strings.TrimLeft(s, "0")
 	if s == "" {
@@ -302,5 +307,5 @@ func digitsInt(s string) int {
 		return n
 	}
 	n, _ := strconv.Atoi(s[len(s)-(maxOperandDigits-1):])
-	return 1_000_000_000_000_000_000 + n
+	return operandOverflow + n
 }

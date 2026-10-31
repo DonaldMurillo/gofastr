@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -561,7 +560,7 @@ func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, e
 		writeErrJSON(w, r, http.StatusBadRequest, refused.err, i18n.Phrase{})
 		return
 	}
-	log.Printf("crud: %s include failed: %v", surface, err)
+	logf("crud: %s include failed: %v", surface, err)
 	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 
@@ -642,6 +641,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		// hop away.
 		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
+	dedupeRepeatedRelations(nodes, loaded)
 
 	if err := ch.recurseIncludeChildren(ctx, nodes, loaded, budget); err != nil {
 		return err
@@ -709,6 +709,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		}
 		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
+	dedupeRepeatedRelations(children, loaded)
 	if err := ch.recurseIncludeChildren(ctx, children, loaded, budget); err != nil {
 		return err
 	}
@@ -726,6 +727,50 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		}
 	}
 	return nil
+}
+
+// dedupeRepeatedRelations keeps each child row once per parent for a
+// relation the include names more than once. Each mention loads with its
+// own filters and appends to the same slot, so a row matching two of them
+// arrived twice. Rows are told apart by the target's key, still in raw DB
+// casing here; a row with no readable key is kept.
+func dedupeRepeatedRelations(nodes []*IncludeNode, loaded map[string]map[string]any) {
+	mentions := make(map[string]int, len(nodes))
+	for _, node := range nodes {
+		mentions[node.Relation.Name]++
+	}
+	done := make(map[string]bool, len(nodes))
+	for _, node := range nodes {
+		name := node.Relation.Name
+		if mentions[name] < 2 || done[name] || node.Target == nil {
+			continue
+		}
+		done[name] = true
+		key := node.Target.KeyColumns()
+		for _, bucket := range loaded {
+			// A HasOne or BelongsTo slot holds one row, which the second
+			// load replaced rather than appended to: only a list repeats.
+			var children []map[string]any
+			switch v := bucket[name].(type) {
+			case []map[string]any:
+				children = v
+			default:
+				continue
+			}
+			seen := make(map[string]bool, len(children))
+			kept := make([]map[string]any, 0, len(children))
+			for _, child := range children {
+				if id, ok := rawRowKey(child, key); ok {
+					if seen[id] {
+						continue
+					}
+					seen[id] = true
+				}
+				kept = append(kept, child)
+			}
+			bucket[name] = kept
+		}
+	}
 }
 
 // recurseIncludeChildren walks the include nodes that carry children of

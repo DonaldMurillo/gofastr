@@ -35,7 +35,8 @@ There are no optional interfaces: no `HasRoutes`, `HasMiddleware`,
 `HasHooks`, `HasTools`. The router resolves its middleware chain
 late-bound per request, so middleware added from `Init` wraps routes
 registered earlier (e.g. by `Mount`). There is no ordering footgun to
-dodge.
+dodge. A screen registered from `Init` gets its server actions
+compiled at `Start`, after every `Init` has run.
 
 Directly registered MCP tools do NOT pass through route middleware;
 the handler runs as-is for any caller who can reach `/mcp`. To
@@ -282,6 +283,7 @@ dereference. Prefer these over `Get(...)` + a manual assert.
   concurrent Use+ServeHTTP, but middleware added there only wraps
   requests that arrive AFTER the Use returns, which is operationally
   surprising. Stay in `Init` for chain composition.
-- **Naming a plugin with whitespace / control chars / very long
-  strings**. `RegisterPlugin` rejects these with a clear error; pick
+- **Naming a plugin with an empty or whitespace-only name, control
+  chars, or a very long string**. `RegisterPlugin` rejects these with a
+  clear error (interior spaces are accepted); pick
   a stable, human-readable name (`"auth"`, `"telemetry"`, `"log"`).

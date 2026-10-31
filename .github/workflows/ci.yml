@@ -223,7 +223,7 @@ jobs:
       - name: Install Linux desktop runtime and virtual display
         # Runtime libraries only: the shell must still build with CGO=0,
         # without GTK headers or a C wrapper. Keep WebKit's sandbox enabled.
-        run: sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth
+        run: sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth dunst xdotool
 
       - name: Install the gofastr binary
         # cmd/gofastr e2e tests (migrate diff/generate, app spec) skip
@@ -247,17 +247,20 @@ jobs:
       - name: repo-lint
         run: make repo-lint
 
-      - name: Cross-compile smoke (windows, darwin)
+      - name: Cross-compile smoke (windows, darwin, linux/386)
         # The runner is ubuntu-only, so windows-tagged files never compile
         # in any gate without this. Compile-only, no tests run. CGO_ENABLED
         # is forced off: the job-level "1" would make the cross-build
         # compile runtime/cgo with the host gcc, which cannot target the
-        # other OSes.
+        # other OSes. linux/386 catches a constant past a 32-bit int or
+        # uint (an untyped 1<<53 bound, a uint compared to MaxInt64); test
+        # files hold 64-bit constants on purpose and are not built.
         env:
           CGO_ENABLED: "0"
         run: |
           GOOS=windows go build ./...
           GOOS=darwin go build ./...
+          GOOS=linux GOARCH=386 go build ./...
 
       - name: Linux desktop (CGO-free runtime and CLI)
         # The normal job uses runtime/cgo. Exercise the assembly runtime
@@ -273,7 +276,7 @@ jobs:
           go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
 
       - name: Linux desktop graphical tests (CGO-free GTK and WebKit)
-        timeout-minutes: 10
+        timeout-minutes: 20
         # Separate processes for every GTK lifetime and the bus-only check.
         # Fail closed: an opt-in skip must never satisfy this blocking gate.
         run: ./scripts/test-linux-desktop.sh
@@ -746,8 +749,12 @@ jobs:
         env:
           PKG: ${{ matrix.pkg }}
           TAGS: ${{ matrix.buildtags }}
+        # The assignment keeps the selector's exit status, so the step's
+        # bash -e fails on a selector error; inside the [ ] test it read
+        # as "nothing affected" and skipped the suite.
         run: |
-          if [ -n "$(go run ./cmd/affected -tags "$TAGS" -match "$PKG")" ]; then
+          matched=$(go run ./cmd/affected -tags "$TAGS" -match "$PKG")
+          if [ -n "$matched" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

@@ -1,8 +1,10 @@
 package cache
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -26,7 +28,10 @@ type cachedResponse struct {
 // The middleware is conservative and refuses to cache responses that
 // carry user-specific data or that the origin marks as uncacheable:
 //
-//   - Requests other than GET are passed through untouched.
+//   - Requests other than GET are passed through untouched. After an
+//     unsafe one (any method but GET, HEAD, OPTIONS and TRACE) runs,
+//     the stored GET of its URL is evicted on every locale (RFC 9111
+//     §4.4), whatever the status.
 //   - Requests carrying a Range header are passed through untouched and
 //     never cached: the key does not encode the Range, so a partial
 //     (206) body must not be allowed to collide with the full variant.
@@ -67,9 +72,18 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only cache GET requests.
+			// Only cache GET requests. An unsafe method invalidates the
+			// stored GET of its target URI (RFC 9111 §4.4) once the
+			// handler ran: after a DELETE or PUT the anonymous GET kept
+			// answering HIT with the old body until the TTL.
 			if r.Method != http.MethodGet {
 				next.ServeHTTP(w, r)
+				if !safeMethod(r.Method) {
+					for _, k := range getKeys(r) {
+						//gofastr:allow(discardmutator) the handler already answered; a failed eviction leaves the entry to its TTL, as before this eviction existed
+						_ = cache.Delete(context.Background(), k)
+					}
+				}
 				return
 			}
 
@@ -106,17 +120,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				return
 			}
 
-			// Include the request authority (Host) in the key so distinct
-			// virtual hosts / tenants sharing one Cache do not collide on the
-			// same method+path+query. The path is the escaped one: /a%2Fb
-			// (one segment) and /a/b (two) are different pages.
-			baseKey := r.Method + ":" + r.Host + ":" + r.URL.EscapedPath() + "?" + r.URL.RawQuery
-			// Under locale prefixes the router strips /es before any
-			// middleware runs, so /es/pricing and /pricing arrive as the
-			// same URL: the locale the path named keeps them apart.
-			if _, tag, ok := i18n.PathLocale(r.Context()); ok {
-				baseKey += "#" + tag
-			}
+			baseKey := getKey(r)
 
 			// Try to fetch from cache only if we're allowed to serve a
 			// stored variant for this request.
@@ -146,8 +150,8 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			}
 			next.ServeHTTP(rec, r)
 
-			// Overflowed the cap: the response was already streamed to the
-			// client and is too big to cache. Nothing to store or replay.
+			// Overflowed the cap, flushed or hijacked: the response was
+			// already streamed to the client. Nothing to store or replay.
 			if rec.overflow {
 				return
 			}
@@ -173,10 +177,14 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 				_ = cache.Set(context.Background(), baseKey, stored, ttl)
 			}
 
-			// Replay the captured response to the client.
+			// Replay the captured response to the client. Nothing has
+			// reached w yet: a response that did (overflow, a flush, a
+			// hijack) returned above.
+			//gofastr:allow(wrapwriter) the recorder buffered the whole response; w is unwritten until here
 			w.Header().Set("X-Cache", "MISS")
 			for k, vals := range rec.header {
 				for _, v := range vals {
+					//gofastr:allow(wrapwriter) the recorder buffered the whole response; w is unwritten until here
 					w.Header().Add(k, v)
 				}
 			}
@@ -184,6 +192,50 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			w.Write(rec.body.Bytes())
 		})
 	}
+}
+
+// getKey is the key r's GET is stored under. It includes the request
+// authority (Host) so distinct virtual hosts / tenants sharing one Cache
+// do not collide on the same path+query. The path is the escaped one:
+// /a%2Fb (one segment) and /a/b (two) are different pages. Under locale
+// prefixes the router strips /es before any middleware runs, so
+// /es/pricing and /pricing arrive as the same URL: the locale the path
+// named keeps them apart.
+func getKey(r *http.Request) string {
+	k := keyPrefix(r)
+	if _, tag, ok := i18n.PathLocale(r.Context()); ok {
+		k += "#" + tag
+	}
+	return k
+}
+
+func keyPrefix(r *http.Request) string {
+	return http.MethodGet + ":" + r.Host + ":" + r.URL.EscapedPath() + "?" + r.URL.RawQuery
+}
+
+// getKeys lists every key a GET of r's target URI can be stored under:
+// one per locale of the path's locale set, since a change to the
+// resource changes every locale's page of it.
+func getKeys(r *http.Request) []string {
+	set, _, ok := i18n.PathLocale(r.Context())
+	if !ok {
+		return []string{keyPrefix(r)}
+	}
+	keys := []string{keyPrefix(r) + "#" + set.Default}
+	for _, tag := range set.Prefixed {
+		keys = append(keys, keyPrefix(r)+"#"+tag)
+	}
+	return keys
+}
+
+// safeMethod reports whether method is safe in RFC 9110 §9.2.1's sense:
+// it changes nothing, so it leaves stored responses alone.
+func safeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	return false
 }
 
 // writeCached writes a previously cached response to the client.
@@ -400,6 +452,12 @@ func (r *responseRecorder) Header() http.Header {
 }
 
 func (r *responseRecorder) WriteHeader(code int) {
+	// An informational status (103 Early Hints) is advisory and precedes
+	// the final one, which a buffered response has not sent yet: drop it
+	// rather than record it as the response.
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		return
+	}
 	if !r.wrote {
 		r.statusCode = code
 		r.wrote = true
@@ -415,22 +473,52 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 	}
 	if r.maxBytes > 0 && r.body.Len()+len(b) > r.maxBytes {
 		// Over the cap, give up on caching this response and switch to
-		// streaming. Flush headers + already-buffered bytes to the client,
-		// then write this chunk and everything after straight through.
-		r.overflow = true
-		dst := r.w.Header()
-		for k, vals := range r.header {
-			for _, v := range vals {
-				dst.Add(k, v)
-			}
-		}
-		dst.Set("X-Cache", "MISS")
-		r.w.WriteHeader(r.statusCode)
-		if r.body.Len() > 0 {
-			_, _ = r.w.Write(r.body.Bytes())
-		}
-		r.body.Reset() // release the buffered memory
+		// streaming, then write this chunk and everything after straight
+		// through.
+		r.streamThrough()
 		return r.w.Write(b)
 	}
 	return r.body.Write(b)
 }
+
+// streamThrough gives up on caching: it sends the headers and the bytes
+// buffered so far to the client and passes every later write through.
+func (r *responseRecorder) streamThrough() {
+	if r.overflow {
+		return
+	}
+	r.overflow = true
+	dst := r.w.Header()
+	for k, vals := range r.header {
+		for _, v := range vals {
+			dst.Add(k, v)
+		}
+	}
+	dst.Set("X-Cache", "MISS")
+	r.w.WriteHeader(r.statusCode)
+	if r.body.Len() > 0 {
+		_, _ = r.w.Write(r.body.Bytes())
+	}
+	r.body.Reset() // release the buffered memory
+}
+
+// FlushError is a streaming response's signal that its bytes must reach
+// the client now, so the response streams through and is not cached.
+func (r *responseRecorder) FlushError() error {
+	r.streamThrough()
+	return http.NewResponseController(r.w).Flush()
+}
+
+// Flush is FlushError for handlers that assert http.Flusher.
+func (r *responseRecorder) Flush() { _ = r.FlushError() }
+
+// Hijack hands the connection to the handler (a websocket upgrade); the
+// response is the handler's from then on, and nothing is cached.
+func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	r.overflow = true
+	return http.NewResponseController(r.w).Hijack()
+}
+
+// Unwrap lets http.ResponseController reach the client writer's
+// deadlines; Flush and Hijack stop at the methods above.
+func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.w }

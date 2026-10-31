@@ -87,10 +87,10 @@ var (
 // every token under the override class, the browser's cascade
 // handles the actual delta vs the canonical :root.
 //
-// The theme is deep-cloned BEFORE it is stored, and the hash is
-// computed from that clone on first use, never here. Theme travels by
-// value, but its maps (DarkColors, DarkCode, Components, Knobs) are
-// references: without the clone a caller-side write after registration
+// The theme is deep-cloned (Theme.Clone) BEFORE it is stored, and the
+// hash is computed from that clone on first use, never here. Theme
+// travels by value, but its maps (DarkColors, DarkCode, Components,
+// Knobs) and its Extensions token sets are references: without the clone a caller-side write after registration
 // would change what every page serves while the hash — computed once,
 // from the bytes as they were — kept naming the old content, and the
 // write could race a request reading the same map. And without the
@@ -99,11 +99,7 @@ var (
 // before framework/ui registers it (see ThemeRef). The hash, when it
 // is computed, is ThemeHash, the one canonical content address.
 func RegisterThemeOverride(t Theme) ThemeRef {
-	t.DarkColors = copyStringMap(t.DarkColors)
-	t.DarkCode = copyStringMap(t.DarkCode)
-	t.Components = copyStringMap(t.Components)
-	t.Knobs = copyStringMap(t.Knobs)
-	rec := &themeOverrideRecord{theme: t}
+	rec := &themeOverrideRecord{theme: t.Clone()}
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
 	themeOverrides = append(themeOverrides, rec)
@@ -111,7 +107,7 @@ func RegisterThemeOverride(t Theme) ThemeRef {
 }
 
 // AllThemeOverrides returns a snapshot of every registered theme,
-// keyed by hash, with the nested maps deep-copied: a caller mutating a
+// keyed by hash, each one a Clone: a caller mutating a
 // returned theme changes nothing the process serves. Used by the
 // uihost to emit `.cui-theme-<hash>` blocks in app.css.
 //
@@ -129,12 +125,7 @@ func AllThemeOverrides() map[string]Theme {
 		if _, dup := out[h]; dup {
 			continue
 		}
-		t := rec.theme
-		t.DarkColors = copyStringMap(t.DarkColors)
-		t.DarkCode = copyStringMap(t.DarkCode)
-		t.Components = copyStringMap(t.Components)
-		t.Knobs = copyStringMap(t.Knobs)
-		out[h] = t
+		out[h] = rec.theme.Clone()
 	}
 	return out
 }

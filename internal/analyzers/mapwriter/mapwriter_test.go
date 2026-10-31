@@ -9,5 +9,5 @@ import (
 )
 
 func TestMapWriter(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), mapwriter.Analyzer, "a")
+	analysistest.Run(t, analysistest.TestData(), mapwriter.Analyzer, "a", "joined")
 }

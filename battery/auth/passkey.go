@@ -93,12 +93,19 @@ var (
 	ErrPasskeyNotFound = errors.New("auth: passkey not found")
 	// ErrPasskeyExists is returned when a passkey id is already registered.
 	ErrPasskeyExists = errors.New("auth: passkey already registered")
+	// ErrPasskeyLimit is returned when the user already holds the most
+	// passkeys AddPasskey was told to allow.
+	ErrPasskeyLimit = errors.New("auth: passkey limit reached")
 )
 
 // PasskeyStore persists passkeys. Implementations must make AddPasskey
 // refuse a duplicate id and RecordPasskeyUse a compare-and-swap.
 type PasskeyStore interface {
-	AddPasskey(ctx context.Context, c PasskeyCredential) error
+	// AddPasskey stores c, refusing a duplicate id with ErrPasskeyExists
+	// and, when the user already holds maxPerUser passkeys or more,
+	// ErrPasskeyLimit. The count and the insert are one atomic step: two
+	// registrations racing for the last slot store one passkey, not two.
+	AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) error
 	GetPasskey(ctx context.Context, id []byte) (PasskeyCredential, error)
 	ListPasskeys(ctx context.Context, userID string) ([]PasskeyCredential, error)
 	// RecordPasskeyUse moves the sign count from old to next and stamps
@@ -131,11 +138,20 @@ func clonePasskey(c PasskeyCredential) PasskeyCredential {
 }
 
 // AddPasskey implements PasskeyStore.
-func (m *MemoryPasskeyStore) AddPasskey(_ context.Context, c PasskeyCredential) error {
+func (m *MemoryPasskeyStore) AddPasskey(_ context.Context, c PasskeyCredential, maxPerUser int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.creds[string(c.ID)]; ok {
 		return ErrPasskeyExists
+	}
+	held := 0
+	for _, have := range m.creds {
+		if have.UserID == c.UserID {
+			held++
+		}
+	}
+	if held >= maxPerUser {
+		return ErrPasskeyLimit
 	}
 	m.creds[string(c.ID)] = clonePasskey(c)
 	return nil
@@ -459,6 +475,14 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	// Taken before the body is read, as token creation does: a
+	// registration held open across a reset stored its key after the
+	// reset's purge and kept a second lasting credential.
+	snap, err := p.mgr.snapshotCredential(r.Context(), sess.UserID)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
+		return
+	}
 	var body struct {
 		Name              string `json:"name"`
 		ID                string `json:"id"`
@@ -499,29 +523,41 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		p.refuse(w, r, sess.UserID, "register", "credential_mismatch", errors.New("credential id does not match the attestation"))
 		return
 	}
-	// The options call checked the cap, but challenges collected while
-	// under it would each register past it; count again before storing.
-	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)
-	if err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
-		return
-	}
-	if len(existing) >= p.config.MaxPerUser {
-		writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
-		return
-	}
 	now := time.Now().UTC()
 	cred := PasskeyCredential{
 		ID: res.credID, UserID: sess.UserID, PublicKey: res.publicKey, Algorithm: res.alg,
 		SignCount: res.signCount, Name: name, BackupEligible: res.backupEligible, BackedUp: res.backedUp,
 		CreatedAt: now,
 	}
-	if err := p.store.AddPasskey(r.Context(), cred); err != nil {
+	// The options call checked the cap, but challenges collected while
+	// under it would each register past it, so the store counts again as
+	// it inserts: a count here and then a store let two registrations
+	// racing for the last slot both through.
+	if err := p.store.AddPasskey(r.Context(), cred, p.config.MaxPerUser); err != nil {
 		if errors.Is(err, ErrPasskeyExists) {
 			writeAuthError(w, r, http.StatusConflict, reasonPasskeyAlreadyRegistered)
 			return
 		}
+		if errors.Is(err, ErrPasskeyLimit) {
+			writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
+			return
+		}
 		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
+		return
+	}
+	// The hash catches a reset or change; the session catches an account
+	// claim, which may leave a passwordless hash where it was.
+	if _, err := p.mgr.SessionStore().Get(r.Context(), sess.Token); err != nil || snap.moved(r.Context(), p.mgr) {
+		undo, cancel := undoContext(r.Context())
+		_, err := p.store.DeletePasskey(undo, sess.UserID, cred.ID)
+		cancel()
+		if err != nil {
+			slog.Error("auth: removing a passkey registered across a credential change failed",
+				"user_hash", hashedIdentifier(sess.UserID), "err", err)
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
+			return
+		}
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidSession)
 		return
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -657,6 +693,26 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
+		return
+	}
+	// A reset that finished after the use above was recorded revoked
+	// sessions before this one existed and purged the passkey. Re-read
+	// the key now the session is stored: the reset purges passkeys before
+	// it revokes sessions, so a key still here means any revoke is still
+	// to come and reaches this session, and a key gone drops it.
+	if _, err := p.store.GetPasskey(r.Context(), cred.ID); err != nil {
+		undo, cancel := undoContext(r.Context())
+		delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
+		cancel()
+		if delErr != nil {
+			slog.Warn("auth: dropping a session minted under a removed passkey failed",
+				"user_hash", hashedIdentifier(user.GetID()), "err", delErr)
+		}
+		if errors.Is(err, ErrPasskeyNotFound) {
+			p.refuse(w, r, cred.UserID, "login", "passkey_removed", errors.New("the passkey was removed during sign-in"))
+			return
+		}
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 		return
 	}
 	kind := "login.succeeded"

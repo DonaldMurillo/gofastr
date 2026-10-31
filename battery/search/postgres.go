@@ -115,6 +115,7 @@ func NewPostgres(db *sql.DB, cfg PostgresConfig) (*PostgresSearch, error) {
 		order = append(order, k)
 	}
 	sort.Strings(order)
+	registerOwnerEraser(safe)
 	return &PostgresSearch{
 		db:                 db,
 		table:              safe,
@@ -187,16 +188,23 @@ func (p *PostgresSearch) EnsureSchema(ctx context.Context) error {
 	if err := query.RefuseCaseKeptTables(ctx, p.db, p.table); err != nil {
 		return fmt.Errorf("search: %w", err)
 	}
+	//gofastr:allow(GOFASTR1415) a search index is derived from records the entity graph already exports, and a restore re-indexes them; registerOwnerEraser covers erasure by Document.Owner
 	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id     TEXT PRIMARY KEY,
 		type   TEXT NOT NULL,
 		text   TEXT NOT NULL,
 		fields JSONB,
 		tsv    TSVECTOR NOT NULL,
-		tsv_prefix TSVECTOR
+		tsv_prefix TSVECTOR,
+		owner  TEXT NOT NULL DEFAULT ''
 	)`, p.quotedTable)
 	if _, err := p.db.ExecContext(ctx, createTable); err != nil {
 		return fmt.Errorf("search: create table: %w", err)
+	}
+	// A table an earlier release created has no owner column.
+	if _, err := p.db.ExecContext(ctx, fmt.Sprintf(
+		`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, p.quotedTable)); err != nil {
+		return fmt.Errorf("search: add owner column: %w", err)
 	}
 	if err := p.ensurePrefixColumn(ctx); err != nil {
 		return err
@@ -391,8 +399,9 @@ func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
 		fieldsArg = b
 	}
 
-	// Argument layout: $1=id $2=type $3=text $4=fields(JSONB) $5=language.
-	args := []any{doc.ID, doc.Type, doc.Text, fieldsArg, p.language}
+	// Argument layout: $1=id $2=type $3=text $4=fields(JSONB) $5=language
+	// $6=owner.
+	args := []any{doc.ID, doc.Type, doc.Text, fieldsArg, p.language, doc.Owner}
 	const textIdx, langIdx = 3, 5
 
 	// Text body is always weight 'A'. Each present weighted string field
@@ -421,12 +430,13 @@ func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
 
 	// The target is aliased so a table named excluded does not collide
 	// with the EXCLUDED pseudo-row.
-	stmt := fmt.Sprintf(`INSERT INTO %s AS t (id, type, text, fields, tsv)
-VALUES ($1, $2, $3, $4, %s)
+	stmt := fmt.Sprintf(`INSERT INTO %s AS t (id, type, text, fields, owner, tsv)
+VALUES ($1, $2, $3, $4, $6, %s)
 ON CONFLICT (id) DO UPDATE SET
 	type   = EXCLUDED.type,
 	text   = EXCLUDED.text,
 	fields = EXCLUDED.fields,
+	owner  = EXCLUDED.owner,
 	tsv    = EXCLUDED.tsv`,
 		p.quotedTable, tsv.String())
 	if _, err := p.db.ExecContext(ctx, stmt, args...); err != nil {
@@ -450,8 +460,8 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure
-	// punctuation) matches nothing, the same split Memory gets from
-	// normalizeTerms + its score==0 skip.
+	// punctuation) matches nothing, the same split Memory makes on
+	// queryTerms.
 	if len(strings.Fields(q.Text)) == 0 {
 		return p.searchAll(ctx, q)
 	}
@@ -510,7 +520,7 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 		fmt.Fprintf(&paging, " OFFSET $%d", len(args))
 	}
 
-	stmt := fmt.Sprintf(`SELECT id, type, text, fields,
+	stmt := fmt.Sprintf(`SELECT id, type, text, fields, owner,
 	ts_rank(tsv, q) + COALESCE(ts_rank(tsv_prefix, qp), 0) AS score
 FROM %s %s
 WHERE %s
@@ -526,7 +536,7 @@ ORDER BY score DESC, id ASC%s`,
 
 // searchAll is the empty-query path: every document (score 0) that passes
 // the Type/FieldEquals filters, ordered by id for a stable page walk,
-// the same result Memory produces when normalizeTerms yields no terms.
+// the same documents Memory returns for empty text.
 func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, error) {
 	args := []any{}
 	var where strings.Builder
@@ -556,7 +566,7 @@ func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, erro
 		fmt.Fprintf(&paging, " OFFSET $%d", len(args))
 	}
 
-	stmt := fmt.Sprintf(`SELECT id, type, text, fields, 0::float8 AS score
+	stmt := fmt.Sprintf(`SELECT id, type, text, fields, owner, 0::float8 AS score
 FROM %s
 WHERE %s
 ORDER BY id ASC%s`,
@@ -576,14 +586,14 @@ func scanSearchRows(rows *sql.Rows) ([]Result, error) {
 	var results []Result
 	for rows.Next() {
 		var (
-			id, docType, text string
-			fieldsBytes       []byte
-			score             float64
+			id, docType, text, owner string
+			fieldsBytes              []byte
+			score                    float64
 		)
-		if err := rows.Scan(&id, &docType, &text, &fieldsBytes, &score); err != nil {
+		if err := rows.Scan(&id, &docType, &text, &fieldsBytes, &owner, &score); err != nil {
 			return nil, fmt.Errorf("search: scan: %w", err)
 		}
-		doc := Document{ID: id, Type: docType, Text: text}
+		doc := Document{ID: id, Type: docType, Text: text, Owner: owner}
 		if len(fieldsBytes) > 0 {
 			var fields map[string]any
 			if err := jsonexact.Unmarshal(fieldsBytes, &fields); err != nil {

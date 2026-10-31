@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,11 +31,10 @@ type TwoFAConfig struct {
 	// Issuer is the name shown in authenticator apps. Defaults to "GoFastr".
 	Issuer string
 
-	// Period is the TOTP time-step period in seconds. Defaults to 30.
+	// Period is the TOTP time-step period in seconds. Defaults to 30. The
+	// enrolment URL carries it to the authenticator app. Codes are always
+	// six digits.
 	Period uint
-
-	// Digits is the number of digits in generated TOTP codes. Defaults to 6.
-	Digits uint
 
 	// Skew is the number of time-steps allowed before/after the current step.
 	// Defaults to 1 (allows ±1 period window).
@@ -70,9 +70,6 @@ func (c *TwoFAConfig) defaults() {
 	}
 	if c.Period == 0 {
 		c.Period = 30
-	}
-	if c.Digits == 0 {
-		c.Digits = 6
 	}
 	if c.Skew == 0 {
 		c.Skew = 1
@@ -464,6 +461,9 @@ func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) 
 // Generates a new TOTP secret for the authenticated user and returns the
 // otpauth:// URL (for QR code apps) along with the plaintext secret.
 func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	userID, ok := p.requireStepUpUser(w, r)
 	if !ok {
 		return
@@ -511,7 +511,7 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 			email = user.GetEmail()
 		}
 	}
-	otpauthURL := buildOTPAuthURL(p.config.Issuer, email, secret)
+	otpauthURL := buildOTPAuthURL(p.config.Issuer, email, secret, p.config.Period)
 
 	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
@@ -837,6 +837,9 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 // POST {basePath}/2fa/disable
 // Disables 2FA for the authenticated user.
 func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	userID, ok := p.requireStepUpUser(w, r)
 	if !ok {
 		return
@@ -870,6 +873,9 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 // POST {basePath}/2fa/backup-codes
 // Generates a fresh set of backup codes, invalidating any previous ones.
 func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	userID, ok := p.requireStepUpUser(w, r)
 	if !ok {
 		return
@@ -1033,7 +1039,9 @@ func ValidateTOTPStep(secret, code string, period, skew uint) (uint64, bool) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 // buildOTPAuthURL constructs an otpauth://totp/ URL for authenticator apps.
-func buildOTPAuthURL(issuer, accountName, secret string) string {
+// period must be the one verification uses, or the app shows codes for
+// the wrong step.
+func buildOTPAuthURL(issuer, accountName, secret string, period uint) string {
 	u := url.URL{
 		Scheme: "otpauth",
 		Host:   "totp",
@@ -1044,7 +1052,7 @@ func buildOTPAuthURL(issuer, accountName, secret string) string {
 	q.Set("issuer", issuer)
 	q.Set("algorithm", "SHA1")
 	q.Set("digits", "6")
-	q.Set("period", "30")
+	q.Set("period", strconv.FormatUint(uint64(period), 10))
 	u.RawQuery = q.Encode()
 	return u.String()
 }

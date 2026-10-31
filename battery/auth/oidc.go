@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,17 @@ type OIDCClaimsMapping struct {
 	EmailVerifiedClaim string
 }
 
+// Token endpoint client authentication methods for
+// OIDCConfig.TokenAuthMethod (OpenID Connect Core §9).
+const (
+	// OIDCAuthClientSecretPost sends client_id and client_secret in the
+	// token request's form body.
+	OIDCAuthClientSecretPost = "client_secret_post"
+	// OIDCAuthClientSecretBasic sends them in an HTTP Basic
+	// Authorization header, each form-encoded first (RFC 6749 §2.3.1).
+	OIDCAuthClientSecretBasic = "client_secret_basic"
+)
+
 // OIDCConfig configures an OIDCProvider.
 type OIDCConfig struct {
 	// Issuer is the IdP issuer identifier, e.g.
@@ -72,6 +84,13 @@ type OIDCConfig struct {
 	// JWKSCacheTTL is how long a fetched JWKS is trusted before refresh.
 	// Defaults to 1h.
 	JWKSCacheTTL time.Duration
+	// TokenAuthMethod is how the code exchange authenticates the client:
+	// OIDCAuthClientSecretPost or OIDCAuthClientSecretBasic. Empty follows
+	// discovery's token_endpoint_auth_methods_supported: the form body
+	// when the list is absent or names client_secret_post, Basic when it
+	// names client_secret_basic and not post. A list naming neither fails
+	// the exchange before the secret is sent.
+	TokenAuthMethod string
 }
 
 // OIDCProvider implements OAuth2Provider for a generic OIDC IdP.
@@ -113,6 +132,11 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 	}
 	if cfg.RedirectURL == "" {
 		return nil, errors.New("oidc: RedirectURL is required")
+	}
+	switch cfg.TokenAuthMethod {
+	case "", OIDCAuthClientSecretPost, OIDCAuthClientSecretBasic:
+	default:
+		return nil, fmt.Errorf("oidc: TokenAuthMethod %q is not %s or %s", cfg.TokenAuthMethod, OIDCAuthClientSecretPost, OIDCAuthClientSecretBasic)
 	}
 	u, err := url.Parse(cfg.Issuer)
 	if err != nil || u.Scheme == "" || u.Host == "" {
@@ -192,6 +216,10 @@ type oidcDiscovery struct {
 	TokenEndpoint         string `json:"token_endpoint"`
 	JWKSURI               string `json:"jwks_uri"`
 	UserinfoEndpoint      string `json:"userinfo_endpoint"`
+	// TokenAuthMethods is token_endpoint_auth_methods_supported. Absent,
+	// the spec's default is client_secret_basic, but the body form is
+	// kept for it (tokenAuthMethod).
+	TokenAuthMethods []string `json:"token_endpoint_auth_methods_supported"`
 }
 
 // discoveryURL joins the well-known path to the issuer using exactly one slash,
@@ -359,6 +387,25 @@ func (p *OIDCProvider) AuthURL(state string) string {
 	return u.String()
 }
 
+// tokenAuthMethod picks how the code exchange authenticates the client.
+// A discovery document with no list keeps the body form every release
+// before this one sent, though the spec's default is Basic: a provider
+// that worked keeps working. Basic is chosen only for a provider that
+// lists it and not post.
+func (p *OIDCProvider) tokenAuthMethod(d *oidcDiscovery) (string, error) {
+	if m := p.cfg.TokenAuthMethod; m != "" {
+		return m, nil
+	}
+	if len(d.TokenAuthMethods) == 0 || slices.Contains(d.TokenAuthMethods, OIDCAuthClientSecretPost) {
+		return OIDCAuthClientSecretPost, nil
+	}
+	if slices.Contains(d.TokenAuthMethods, OIDCAuthClientSecretBasic) {
+		return OIDCAuthClientSecretBasic, nil
+	}
+	return "", fmt.Errorf("oidc: token_endpoint_auth_methods_supported %q names neither %s nor %s",
+		d.TokenAuthMethods, OIDCAuthClientSecretPost, OIDCAuthClientSecretBasic)
+}
+
 // ExchangeCode trades the authorization code for tokens at the token endpoint,
 // then fully verifies the id_token BEFORE returning. Verified claims are cached
 // by access token so FetchUserInfo can map them without re-fetching.
@@ -367,16 +414,25 @@ func (p *OIDCProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2To
 	if err != nil {
 		return nil, err
 	}
+	method, err := p.tokenAuthMethod(d)
+	if err != nil {
+		return nil, err
+	}
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
 	data.Set("redirect_uri", p.cfg.RedirectURL)
-	data.Set("client_id", p.cfg.ClientID)
-	data.Set("client_secret", p.cfg.ClientSecret)
+	if method == OIDCAuthClientSecretPost {
+		data.Set("client_id", p.cfg.ClientID)
+		data.Set("client_secret", p.cfg.ClientSecret)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		d.TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
+	}
+	if method == OIDCAuthClientSecretBasic {
+		req.SetBasicAuth(url.QueryEscape(p.cfg.ClientID), url.QueryEscape(p.cfg.ClientSecret))
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
@@ -489,8 +545,11 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 				}
 				// A signature-bound id_token email_verified ALWAYS wins, never
 				// overwrite a signed `false` with an unsigned userinfo `true`.
-				// Consult userinfo only when the id_token did NOT carry the claim.
-				if !verifiedPresent {
+				// Consult userinfo only when the id_token did NOT carry the claim,
+				// and only for the address kept: a userinfo flag describing
+				// another address marked the id_token's email verified, and
+				// the callback auto-linked that address's account.
+				if !verifiedPresent && claimString(ui, p.cfg.Claims.EmailClaim) == email {
 					emailVerified, _ = parseEmailVerifiedClaim(ui, p.cfg.Claims.EmailVerifiedClaim)
 				}
 			}

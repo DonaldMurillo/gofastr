@@ -21,6 +21,7 @@ import (
 var (
 	libGLib    = &library{soname: "libglib-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
 	libGObject = &library{soname: "libgobject-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
+	libGIO     = &library{soname: "libgio-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
 	libGdk     = &library{soname: "libgdk-3.so.0", packages: "libgtk-3-0 (Debian/Ubuntu), gtk3 (Fedora)"}
 	libGtk     = &library{soname: "libgtk-3.so.0", packages: "libgtk-3-0 (Debian/Ubuntu), gtk3 (Fedora)"}
 	libWebKit  = &library{soname: "libwebkit2gtk-4.1.so.0", packages: "libwebkit2gtk-4.1-0 (Debian/Ubuntu), webkit2gtk4.1 (Fedora)"}
@@ -33,7 +34,7 @@ var (
 
 // libraries is the load order. GLib and GObject come first so the
 // symbols WebKitGTK resolves lazily are already global in the process.
-var libraries = []*library{libGLib, libGObject, libGdk, libGtk, libWebKit, libJSC, libCairo, libPixbuf, libNotify}
+var libraries = []*library{libGLib, libGObject, libGIO, libGdk, libGtk, libWebKit, libJSC, libCairo, libPixbuf, libNotify}
 
 // installLine is the one instruction a user can act on. Everything else
 // in the list above arrives as a dependency of these two.
@@ -73,6 +74,7 @@ type Symbols struct {
 	GtkFileFilterSetName                     uintptr // gtk_file_filter_set_name
 	GtkFileFilterAddPattern                  uintptr // gtk_file_filter_add_pattern
 	GSListFree                               uintptr // g_slist_free
+	GListFreeFull                            uintptr // g_list_free_full
 	GMainContextIteration                    uintptr // g_main_context_iteration
 	GSourceRemove                            uintptr // g_source_remove
 	GtkWindowPresent                         uintptr // gtk_window_present
@@ -103,6 +105,18 @@ type Symbols struct {
 	JscValueToJSON                           uintptr // jsc_value_to_json
 	CairoSurfaceDestroy                      uintptr // cairo_surface_destroy
 	CairoSurfaceWriteToPNGStream             uintptr // cairo_surface_write_to_png_stream
+
+	// Persistent browser profiles (WebKitGTK2.40+).
+	WebkitWebsiteDataManagerNew               uintptr // webkit_website_data_manager_new
+	WebkitWebContextNewWithDataManager        uintptr // webkit_web_context_new_with_website_data_manager
+	WebkitDataManagerGetCookieManager         uintptr // webkit_website_data_manager_get_cookie_manager
+	WebkitCookieManagerSetPersistentStorage   uintptr // webkit_cookie_manager_set_persistent_storage
+	WebkitDataManagerSetPersistentCredentials uintptr // webkit_website_data_manager_set_persistent_credential_storage_enabled
+	WebkitDataManagerClear                    uintptr // webkit_website_data_manager_clear
+	WebkitDataManagerClearFinish              uintptr // webkit_website_data_manager_clear_finish
+	GCancellableNew                           uintptr // g_cancellable_new
+	GCancellableCancel                        uintptr // g_cancellable_cancel
+
 	// GLib.
 	GFree       uintptr // g_free
 	GIdleAdd    uintptr // g_idle_add — the mainThread hop
@@ -166,6 +180,12 @@ type Symbols struct {
 	WebkitSettingsSetEnableDeveloperExtras uintptr // webkit_settings_set_enable_developer_extras
 	WebkitJavascriptResultGetJSValue       uintptr // webkit_javascript_result_get_js_value
 
+	// WebKitGTK navigation policy (2.40+, the same floor as evaluate_javascript).
+	WebkitPolicyDecisionIgnore                          uintptr // webkit_policy_decision_ignore
+	WebkitResponsePolicyDecisionGetResponse             uintptr // webkit_response_policy_decision_get_response
+	WebkitResponsePolicyDecisionIsMainFrameMainResource uintptr // webkit_response_policy_decision_is_main_frame_main_resource
+	WebkitURIResponseGetURI                             uintptr // webkit_uri_response_get_uri
+
 	// JavaScriptCore (the JSCValue side of an evaluate result).
 	JscValueIsString uintptr // jsc_value_is_string
 	JscValueToString uintptr // jsc_value_to_string
@@ -174,6 +194,7 @@ type Symbols struct {
 	// bytes; libnotify carries notifications.
 	GdkPixbufSaveToBufferv uintptr // gdk_pixbuf_save_to_bufferv
 	NotifyInit             uintptr // notify_init
+	NotifyGetServerCaps    uintptr // notify_get_server_caps
 	NotifyNotificationNew  uintptr // notify_notification_new
 	NotifyNotificationShow uintptr // notify_notification_show
 }
@@ -195,6 +216,16 @@ type symbol struct {
 // moves.
 func table() []symbol {
 	return []symbol{
+		{&Sym.WebkitWebsiteDataManagerNew, libWebKit, "webkit_website_data_manager_new"},
+		{&Sym.WebkitWebContextNewWithDataManager, libWebKit, "webkit_web_context_new_with_website_data_manager"},
+		{&Sym.WebkitDataManagerGetCookieManager, libWebKit, "webkit_website_data_manager_get_cookie_manager"},
+		{&Sym.WebkitCookieManagerSetPersistentStorage, libWebKit, "webkit_cookie_manager_set_persistent_storage"},
+		{&Sym.WebkitDataManagerSetPersistentCredentials, libWebKit, "webkit_website_data_manager_set_persistent_credential_storage_enabled"},
+		{&Sym.WebkitDataManagerClear, libWebKit, "webkit_website_data_manager_clear"},
+		{&Sym.WebkitDataManagerClearFinish, libWebKit, "webkit_website_data_manager_clear_finish"},
+		{&Sym.GCancellableNew, libGIO, "g_cancellable_new"},
+		{&Sym.GCancellableCancel, libGIO, "g_cancellable_cancel"},
+
 		{&Sym.GtkMainLevel, libGtk, "gtk_main_level"},
 		{&Sym.GtkDialogResponse, libGtk, "gtk_dialog_response"},
 		{&Sym.GtkClipboardRequestText, libGtk, "gtk_clipboard_request_text"},
@@ -214,6 +245,7 @@ func table() []symbol {
 		{&Sym.GtkFileFilterSetName, libGtk, "gtk_file_filter_set_name"},
 		{&Sym.GtkFileFilterAddPattern, libGtk, "gtk_file_filter_add_pattern"},
 		{&Sym.GSListFree, libGLib, "g_slist_free"},
+		{&Sym.GListFreeFull, libGLib, "g_list_free_full"},
 		{&Sym.GMainContextIteration, libGLib, "g_main_context_iteration"},
 		{&Sym.GSourceRemove, libGLib, "g_source_remove"},
 		{&Sym.GtkWindowPresent, libGtk, "gtk_window_present"},
@@ -299,12 +331,17 @@ func table() []symbol {
 		{&Sym.WebkitUserScriptNew, libWebKit, "webkit_user_script_new"},
 		{&Sym.WebkitSettingsSetEnableDeveloperExtras, libWebKit, "webkit_settings_set_enable_developer_extras"},
 		{&Sym.WebkitJavascriptResultGetJSValue, libWebKit, "webkit_javascript_result_get_js_value"},
+		{&Sym.WebkitPolicyDecisionIgnore, libWebKit, "webkit_policy_decision_ignore"},
+		{&Sym.WebkitResponsePolicyDecisionGetResponse, libWebKit, "webkit_response_policy_decision_get_response"},
+		{&Sym.WebkitResponsePolicyDecisionIsMainFrameMainResource, libWebKit, "webkit_response_policy_decision_is_main_frame_main_resource"},
+		{&Sym.WebkitURIResponseGetURI, libWebKit, "webkit_uri_response_get_uri"},
 
 		{&Sym.JscValueIsString, libJSC, "jsc_value_is_string"},
 		{&Sym.JscValueToString, libJSC, "jsc_value_to_string"},
 
 		{&Sym.GdkPixbufSaveToBufferv, libPixbuf, "gdk_pixbuf_save_to_bufferv"},
 		{&Sym.NotifyInit, libNotify, "notify_init"},
+		{&Sym.NotifyGetServerCaps, libNotify, "notify_get_server_caps"},
 		{&Sym.NotifyNotificationNew, libNotify, "notify_notification_new"},
 		{&Sym.NotifyNotificationShow, libNotify, "notify_notification_show"},
 	}

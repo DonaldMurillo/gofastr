@@ -169,7 +169,7 @@ type statusRecorder struct {
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
-	if s.status == 0 {
+	if s.status == 0 && !(code >= 100 && code < 200 && code != http.StatusSwitchingProtocols) {
 		s.status = code
 	}
 	s.ResponseWriter.WriteHeader(code)
@@ -187,6 +187,9 @@ func (s *statusRecorder) Flush() {
 		f.Flush()
 	}
 }
+
+// Unwrap lets http.ResponseController reach the connection's deadlines.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := s.ResponseWriter.(http.Hijacker); ok {

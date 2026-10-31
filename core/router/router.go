@@ -731,7 +731,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		//
 		// So: gate the redirect on its target route's key, and when it
 		// survives, run it through the chain like any other response.
-		if r.gateAllows(pattern) {
+		//
+		// For CONNECT, net/http returns the bare target path, not the
+		// route's pattern. The route it completes to is methodless
+		// (" /tree/") or a CONNECT route ("CONNECT /tree/"); gate both.
+		allowed := r.gateAllows(pattern)
+		if !strings.ContainsAny(pattern, " \t") {
+			allowed = r.gateAllows(" "+pattern) && r.gateAllows(req.Method+" "+pattern)
+		}
+		if allowed {
 			r.wrap(h).ServeHTTP(w, req)
 			return
 		}
@@ -900,6 +908,12 @@ func (r *Router) probe() (*http.ServeMux, []string) {
 			defer func() { _ = recover() }()
 			probeMux.Handle(key, probeRoute(key))
 		}()
+	}
+	// ServeMux answers HEAD on a GET pattern, so HEAD is probed too: it
+	// resolves to the GET route and shares its gate, and on a path with no
+	// GET it resolves to nothing and is not listed.
+	if !seen[http.MethodHead] {
+		methods = append(methods, http.MethodHead)
 	}
 	sort.Strings(methods)
 

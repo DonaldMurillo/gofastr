@@ -78,9 +78,9 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 		e, _ := b.exposedNamed(w.Entity)
 		v, _ := watchedView(e, w.View)
 		cctx, cancel := context.WithTimeout(ctx, countDeadline)
-		n, ok := b.ui.Count(cctx, w.Entity, v.Where)
+		n, ok := b.ui.CountInt(cctx, w.Entity, v.Where)
 		cancel()
-		if !ok || n == "0" {
+		if !ok || n == 0 {
 			continue
 		}
 		rows := w.Rows
@@ -96,7 +96,7 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 			View(w.View).Columns(w.Columns...).Top(rows).Embedded().Flush().NoCreate().Heading(heading, 3).
 			Actions(headerLink(i18nui.AdminViewAll.Text(ctx), href)).RenderCtx(ctx))
 	}
-	if b.cfg.Queue != nil {
+	if b.cfg.Queue != nil && platformCaller(ctx) {
 		if jobs := b.failedJobs(ctx); jobs != "" {
 			lists = append(lists, jobs)
 		}

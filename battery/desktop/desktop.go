@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
@@ -102,6 +103,15 @@ type Config struct {
 	// DataDir overrides DataDir(ID). Must be absolute when set.
 	DataDir string
 
+	// PersistentProfile opts into a private, AppID-scoped browser profile on
+	// Linux. The default remains ephemeral. Other shells must explicitly
+	// support this option or Run returns ErrUnsupported before app startup.
+	// The profile remembers its first loopback port, retaining the origin for
+	// cookies and website storage; a busy port is an error, never a fallback.
+	// Exit the process before reopening this profile. See the desktop reference
+	// for storage/reset semantics and the limits of native write acknowledgement.
+	PersistentProfile bool
+
 	// Shell is the native layer. nil selects NewUnsupportedShell() on
 	// every platform: the darwin default moved to battery/desktop/native
 	// with the platform split, so a host that wants the real shell
@@ -119,9 +129,9 @@ type Config struct {
 	// panics on a bad one.
 	Settings *WindowSpec
 
-	// Tray, when set, puts the app in the OS menu bar. macOS only for
-	// now: on a host without a tray, Run logs a Warn and the config is
-	// ignored.
+	// Tray, when set, requests an OS status item. Linux requires a live
+	// StatusNotifierItem host; without one the window stays accessible and
+	// closes normally. Hosts without a tray report an actionable warning.
 	Tray *Tray
 
 	// DeepLink, when set, makes the app answer URLs on its own scheme
@@ -137,6 +147,14 @@ type Config struct {
 	// of "/". A remembered frame that no longer intersects any screen
 	// (the monitor was unplugged) is dropped and the window centers.
 	RememberWindows bool
+
+	// DangerouslyAllowForeignNavigation lets a window's page navigate in
+	// place to another origin. By default each shell cancels a
+	// main-frame navigation off the app's own origin, so an external
+	// link does nothing: a foreign page in the app's window looks like
+	// the app to the user, and every native event is evaluated into
+	// that window. Native events stay gated by origin either way.
+	DangerouslyAllowForeignNavigation bool
 
 	// Preferences declares the app's settings screen: typed values
 	// (bool, int, string, choice) stored in the app state under
@@ -870,7 +888,7 @@ func (b *Battery) Emit(name string, payload any) error {
 	js := dispatchJS(name, data)
 	var firstErr error
 	for _, w := range ws {
-		if err := w.Eval(js); err != nil {
+		if err := w.Eval(b.inAppJS(js)); err != nil {
 			b.logger.Warn("desktop: emitting an event to a window failed",
 				"window", w.ID(), "error", err.Error())
 			if firstErr == nil {
@@ -963,6 +981,14 @@ func (b *Battery) Run(app *framework.App) error {
 		}
 	}
 
+	listenAddr, profile, err := b.prepareProfile()
+	if err != nil {
+		return err
+	}
+	if profile != nil {
+		defer profile.ReleaseProfile()
+	}
+
 	// Arm the boot gate BEFORE the listener opens (see gateMiddleware):
 	// from the moment the port answers, every request needs the session
 	// cookie. An app that never calls Run keeps the gate unarmed and its
@@ -979,7 +1005,7 @@ func (b *Battery) Run(app *framework.App) error {
 		os.Setenv("GOFASTR_ISOLATION", "off")
 	}
 	startErr := make(chan error, 1)
-	go func() { startErr <- app.Start("127.0.0.1:0") }()
+	go func() { startErr <- app.Start(listenAddr) }()
 
 	var addr string
 	select {
@@ -1000,6 +1026,13 @@ func (b *Battery) Run(app *framework.App) error {
 		b.shutdownApp()
 		return fmt.Errorf("desktop: app bound a non-loopback address %q; the desktop host requires 127.0.0.1", addr)
 	}
+	if profile != nil {
+		if err := profile.CommitProfile(addr); err != nil {
+			b.shell.Quit()
+			b.shutdownApp()
+			return fmt.Errorf("desktop: persist browser origin: %w", err)
+		}
+	}
 	b.setHostPin(addr)
 	b.reg.freeze()
 	b.windowMu.Lock()
@@ -1018,29 +1051,54 @@ func (b *Battery) Run(app *framework.App) error {
 	if b.cfg.RememberWindows {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
+	// app.Start returns when the server stops. Read only before the
+	// window opened and after it closed, a server that stopped in between
+	// (a listener failure, a Shutdown from elsewhere) left the window up
+	// on a dead app. The watcher quits the window on a stop Run did not
+	// start, and hands the result to the drain below.
+	var closing atomic.Bool
+	startDone := make(chan error, 1)
+	go func() {
+		err := <-startErr
+		startDone <- err
+		if closing.Load() {
+			return
+		}
+		// Quit is the host shell's, on a bare goroutine: a panic in it
+		// must not end the process.
+		defer func() {
+			if v := recover(); v != nil {
+				b.logger.Error("desktop: quitting the window panicked", "panic", textsafe.Recovered(v))
+			}
+		}()
+		b.logger.Error("desktop: the app server stopped while the window was open; closing it", "error", err)
+		b.shell.Quit()
+	}()
 	shellErr := b.shell.Run(ctx, WindowConfig{
-		AppID:    b.cfg.ID,
-		Title:    b.windowTitle(),
-		Width:    b.windowWidth(),
-		Height:   b.windowHeight(),
-		Style:    b.cfg.Style,
-		Menu:     b.runMenu,
-		Tray:     b.tray,
-		Settings: b.cfg.Settings,
-		OnMenu:   b.dispatchMenu,
+		AppID:      b.cfg.ID,
+		Title:      b.windowTitle(),
+		Width:      b.windowWidth(),
+		Height:     b.windowHeight(),
+		Style:      b.cfg.Style,
+		Menu:       b.runMenu,
+		Tray:       b.tray,
+		Settings:   b.cfg.Settings,
+		OnMenu:     b.dispatchMenu,
+		OnTrayMenu: b.dispatchTrayMenu,
 		OnSettings: func(ctx context.Context) {
 			if _, err := b.OpenSettings(ctx); err != nil {
 				b.logger.Error("desktop: opening the settings window failed", "error", err)
 			}
 		},
-		OnWindowClosed: b.handleWindowClosed,
-		OnDeepLink:     b.handleDeepLink,
-		Frame:          b.rememberedFrame(MainWindowID),
-		OnWindowFrame:  b.onWindowFrame(),
-		SidebarWidth:   b.cfg.SidebarWidth,
-		OnWindowFocus:  b.emitWindowFocus,
-		OnWindowBlur:   b.emitWindowBlur,
-		OnAppearance:   b.emitAppearance,
+		OnWindowClosed:  b.handleWindowClosed,
+		AllowNavigation: b.allowNavigation,
+		OnDeepLink:      b.handleDeepLink,
+		Frame:           b.rememberedFrame(MainWindowID),
+		OnWindowFrame:   b.onWindowFrame(),
+		SidebarWidth:    b.cfg.SidebarWidth,
+		OnWindowFocus:   b.emitWindowFocus,
+		OnWindowBlur:    b.emitWindowBlur,
+		OnAppearance:    b.emitAppearance,
 	}, func(w Window) {
 		b.windowMu.Lock()
 		b.window = w
@@ -1075,9 +1133,10 @@ func (b *Battery) Run(app *framework.App) error {
 	}
 
 	// Drain the app: Start returns once Shutdown completes.
+	closing.Store(true)
 	shutdownErr := b.shutdownApp()
 	select {
-	case err := <-startErr:
+	case err := <-startDone:
 		if shellErr != nil {
 			return shellErr
 		}

@@ -33,6 +33,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/multiplex"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/resources"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/internal/ulid"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/session"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/builtins"
 )
@@ -202,20 +204,30 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
 		return
 	}
+	// A token bound to some sessions lists only those: a past session
+	// carries the start of its first prompt.
+	claims, ok := claimsFrom(r)
+	if !ok {
+		writeError(w, http.StatusForbidden, "Forbidden", "no token claims")
+		return
+	}
 	// ?past=true returns historical sessions from the on-disk log
 	// (useful for the sidebar to show prior conversations); default
 	// returns just the active in-memory sessions.
 	if r.URL.Query().Get("past") == "true" && s.SessionStore != nil {
-		past, err := s.SessionStore.ListPastSessions(r.Context(), 50)
+		// The scope goes to the store so it applies before the cap.
+		past, err := s.SessionStore.ListPastSessions(r.Context(), 50, claims.Sessions)
 		if err != nil {
 			log.Printf("rest: store: %v", err)
 			writeError(w, http.StatusInternalServerError, "StoreError", "store operation failed")
 			return
 		}
-		writeJSON(w, http.StatusOK, past)
+		writeJSON(w, http.StatusOK, slices.DeleteFunc(past, func(p session.PastSession) bool {
+			return !claims.AllowsSession(p.SessionID)
+		}))
 		return
 	}
-	writeJSON(w, http.StatusOK, s.Catalog.ListSessions())
+	writeJSON(w, http.StatusOK, resources.SessionsAllowed(s.Catalog.ListSessions(), claims))
 }
 
 // handleSessionItem handles /v1/sessions/{id}/<verb>.
@@ -327,11 +339,13 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		return
 	}
 
-	// Synthesize an ephemeral Client for the dispatch. For v0.1 the
-	// REST transport's Client is HTTP-shaped, request-scoped, no
-	// persistent ID. In v0.2 we'll persist a per-token attach so
-	// originator IDs are stable across HTTP requests.
-	c := &restClient{id: ids.NewClientID(), class: control.IdentityHuman}
+	// Synthesize a request-scoped Client for the dispatch, as the
+	// verified token: its identity class decides what the mux lets it
+	// do (only a human answers a permission prompt), and its JTI names
+	// one client across requests, so a turn's originator is the token
+	// that started it.
+	claims, _ := claimsFrom(r)
+	c := &restClient{id: tokenClientID(claims.JTI), class: claims.IdentityClass}
 	if err := s.Mux.Dispatch(r.Context(), c, cmd); err != nil {
 		writeError(w, http.StatusConflict, classifyMuxError(err), err.Error())
 		return
@@ -395,6 +409,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
+	// SSEWriter arms a fresh write deadline on every event, so a
+	// client that stops reading cannot park this handler for good.
+	sse := stream.NewSSEWriter(w)
 	// Re-verify the token for the life of the stream. handle() verified
 	// it once at request time, but the loop below holds the stream open
 	// long after; Revoke(jti) must reach an open stream, not just fresh
@@ -426,8 +443,10 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", env.ID, env.Kind, body)
-			flusher.Flush()
+			sse.SetID(strconv.FormatUint(env.ID, 10))
+			if err := sse.WriteEvent(env.Kind, string(body)); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -479,6 +498,17 @@ func classifyMuxError(err error) string {
 		return control.ReasonTurnInProgress
 	}
 	return control.ReasonInvalidCommand
+}
+
+// tokenClientID is the client a token's requests dispatch as: the
+// token's ULID under the client prefix. The verifier requires only a
+// non-empty JTI, so one without the tok_ shape keeps the whole JTI
+// under the prefix: still one client per token.
+func tokenClientID(jti ids.JTI) ids.ClientID {
+	if _, u, err := ulid.SplitPrefixed(string(jti)); err == nil {
+		return ids.ClientID(ids.PrefixClient + "_" + u.String())
+	}
+	return ids.ClientID(ids.PrefixClient + "_" + string(jti))
 }
 
 // restClient is the per-HTTP-request synthesized Client. For v0.1

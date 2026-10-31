@@ -20,11 +20,11 @@ func passkeyStoreContract(t *testing.T, s PasskeyStore) {
 	b := PasskeyCredential{ID: []byte{4, 5}, UserID: "u1", PublicKey: []byte{8}, Algorithm: coseAlgEdDSA, CreatedAt: at.Add(time.Second)}
 	c := PasskeyCredential{ID: []byte{6}, UserID: "u2", PublicKey: []byte{7}, Algorithm: coseAlgRS256, CreatedAt: at}
 	for _, p := range []PasskeyCredential{a, b, c} {
-		if err := s.AddPasskey(ctx, p); err != nil {
+		if err := s.AddPasskey(ctx, p, 20); err != nil {
 			t.Fatalf("add %x: %v", p.ID, err)
 		}
 	}
-	if err := s.AddPasskey(ctx, PasskeyCredential{ID: a.ID, UserID: "u2", PublicKey: []byte{1}, CreatedAt: at}); !errors.Is(err, ErrPasskeyExists) {
+	if err := s.AddPasskey(ctx, PasskeyCredential{ID: a.ID, UserID: "u2", PublicKey: []byte{1}, CreatedAt: at}, 20); !errors.Is(err, ErrPasskeyExists) {
 		t.Fatalf("duplicate id: %v", err)
 	}
 	got, err := s.GetPasskey(ctx, a.ID)

@@ -438,3 +438,46 @@ func TestDI_FmtStringer(t *testing.T) {
 type stringer string
 
 func (s stringer) String() string { return string(s) }
+
+// A constructor is called with no arguments, so one that takes any is
+// refused at Provide: it used to pass and then panic in reflect on every
+// request that injected it, before the render pipeline's recover.
+func TestDI_ProvideRefusesParameters(t *testing.T) {
+	c := NewContainer()
+	err := c.Provide(func(prefix string) *Logger { return &Logger{Prefix: prefix} })
+	if err == nil || !strings.Contains(err.Error(), "no parameters") {
+		t.Fatalf("Provide(func(string) *Logger) = %v, want a no-parameters refusal", err)
+	}
+	var l *Logger
+	if err := c.Resolve(&l); err == nil {
+		t.Fatal("a refused constructor was registered")
+	}
+}
+
+// A type already resolved keeps the value it handed out, so a second
+// Provide for it is refused rather than ignored: the first value used to
+// serve forever while the second Provide returned nil.
+func TestDI_ProvideAfterResolveRefused(t *testing.T) {
+	c := NewContainer()
+	if err := c.Provide(func() *Logger { return &Logger{Prefix: "first"} }); err != nil {
+		t.Fatal(err)
+	}
+	// Before any resolve, a second Provide replaces the first.
+	if err := c.Provide(func() *Logger { return &Logger{Prefix: "second"} }); err != nil {
+		t.Fatalf("re-Provide before resolve: %v", err)
+	}
+	var l *Logger
+	if err := c.Resolve(&l); err != nil || l.Prefix != "second" {
+		t.Fatalf("Resolve = %+v, %v; want second", l, err)
+	}
+	if err := c.Provide(func() *Logger { return &Logger{Prefix: "third"} }); err == nil || !strings.Contains(err.Error(), "already has a value") {
+		t.Fatalf("Provide after resolve = %v, want an already-has-a-value refusal", err)
+	}
+	if err := c.Provide(&Logger{Prefix: "value"}); err == nil {
+		t.Fatal("a value Provide after resolve was accepted")
+	}
+	var again *Logger
+	if err := c.Resolve(&again); err != nil || again != l {
+		t.Fatalf("Resolve after refusals = %+v, %v; want the first instance", again, err)
+	}
+}

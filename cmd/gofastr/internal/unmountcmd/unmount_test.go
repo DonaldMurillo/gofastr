@@ -2,9 +2,11 @@ package unmountcmd
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -535,6 +537,9 @@ func TestRemountDeletedCopy(t *testing.T) {
 // The count a failed rewire returns covers the file that failed: a write
 // can fail after its truncate, so the undo must restore that file too.
 func TestApplyImportRewireCountsFailedFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits")
+	}
 	dir := t.TempDir()
 	clitest.WriteTestFile(t, filepath.Join(dir, "a.go"), "package a\n")
 	clitest.WriteTestFile(t, filepath.Join(dir, "b.go"), "package a\n")
@@ -547,7 +552,7 @@ func TestApplyImportRewireCountsFailedFile(t *testing.T) {
 	}
 	n, err := applyImportRewire(dir, plan, false)
 	if err == nil {
-		t.Skip("read-only file was written (running as root?)")
+		t.Fatal("a read-only file was replaced")
 	}
 	if n != 2 {
 		t.Errorf("n = %d, want 2: the undo would skip the failed file", n)
@@ -603,5 +608,58 @@ func TestRemountRefusesMissingUpstream(t *testing.T) {
 	out, code := runUnmountCmd(t, RunRemount, "core/gone")
 	if code != 1 || !strings.Contains(out, "gofastr v0.93.0 has no package "+project.GofastrModule+"/core/gone") {
 		t.Fatalf("exit %d\n%s", code, out)
+	}
+}
+
+// The rewire truncated each source file in place, so a crash mid-plan
+// left it empty with the undo never run; each is renamed over whole.
+func TestApplyImportRewireReplacesWhole(t *testing.T) {
+	dir := t.TempDir()
+	clitest.WriteTestFile(t, filepath.Join(dir, "a.go"), "package a\n")
+	old := heldRewire(t, filepath.Join(dir, "a.go"))
+	plan := []importRewire{{name: "a.go", mode: 0o644, old: "package a\n", new: "package a // new\n"}}
+	if _, err := applyImportRewire(dir, plan, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := old(); got != "package a\n" {
+		t.Fatalf("the old handle reads %q: rewritten in place", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "a.go")); string(got) != "package a // new\n" {
+		t.Fatalf("a.go = %q", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("left %d entries, want a.go alone", len(entries))
+	}
+	// A rename that fails (here over a non-empty directory) takes its
+	// temporary file with it.
+	if err := os.MkdirAll(filepath.Join(dir, "d.go"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	clitest.WriteTestFile(t, filepath.Join(dir, "d.go", "x"), "")
+	plan = []importRewire{{name: "d.go", mode: 0o644, new: "package a\n"}}
+	if _, err := applyImportRewire(dir, plan, false); err == nil {
+		t.Fatal("rename over a directory succeeded")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
+		t.Fatalf("left %d entries, want a.go and d.go: the temporary file stayed", len(entries))
+	}
+}
+
+// heldRewire opens path and returns a reader of what that handle sees: a
+// file renamed over path leaves it reading the old content, one
+// truncated in place leaves it reading the new.
+func heldRewire(t *testing.T, path string) func() string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return func() string {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
 	}
 }

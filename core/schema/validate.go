@@ -396,8 +396,9 @@ func toInt64(v any) (int64, bool) {
 		// 64 bits wide, and converting an out-of-int64-range value
 		// wraps negative — uint(MaxUint64) read as -1 slips past any
 		// Max-only bound. The two unsigned spellings of one number
-		// must agree.
-		if n > math.MaxInt64 {
+		// must agree. The comparison runs in uint64 so a 32-bit
+		// build, whose uint cannot hold MaxInt64, compiles.
+		if uint64(n) > math.MaxInt64 {
 			return 0, false
 		}
 		return int64(n), true
@@ -472,14 +473,35 @@ func toFloat64(v any) (float64, bool) {
 }
 
 // Decimal bounds use their shortest decimal spelling, matching configuration
-// and JSON, rather than the binary floating-point approximation.
+// and JSON, rather than the binary floating-point approximation. A float64
+// keeps every decimal of up to 15 significant digits as written, so a bound
+// whose shortest spelling fits is that spelling: Min 1e30 is 1e30, not
+// 1000000000000000019884624838656. An integral bound that needs 16 or more
+// digits (2^60, spelled in full or computed) was not written as a short
+// decimal, and its exact binary value is the bound.
 func decimalBound(v float64) *big.Rat {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return nil
 	}
-	if math.Trunc(v) == v {
+	short := strconv.FormatFloat(v, 'e', -1, 64)
+	if math.Trunc(v) == v && significantDigits(short) > 15 {
 		return new(big.Rat).SetFloat64(v)
 	}
-	n, _ := new(big.Rat).SetString(strconv.FormatFloat(v, 'g', -1, 64))
+	n, _ := new(big.Rat).SetString(short)
+	return n
+}
+
+// significantDigits counts the mantissa digits of a FormatFloat 'e'
+// spelling.
+func significantDigits(e string) int {
+	n := 0
+	for _, c := range e {
+		if c == 'e' {
+			break
+		}
+		if c >= '0' && c <= '9' {
+			n++
+		}
+	}
 	return n
 }

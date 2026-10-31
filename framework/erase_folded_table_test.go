@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // The auth stores create a configured "Members" as the folded members, as

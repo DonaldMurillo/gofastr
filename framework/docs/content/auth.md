@@ -110,7 +110,12 @@ On success the user's other sessions are revoked (`session.revoked`,
 `reason=password_change`), their outstanding reset links are spent
 (`reset_tokens.purged`), every magic link mailed to them is spent
 (`magiclink_tokens.purged`), and `password.changed` is emitted. A failed
-magic-link purge is logged and the change still stands. The caller
+magic-link purge is logged and the change still stands. A failed session
+purge answers 500 `auth.change_incomplete`: the new password is set, but
+the other sessions may still work, so change it again. A reset or
+another change that lands while the new hash is computed wins: the
+change answers 422 on `current_password`, as for a wrong one
+(`password.change_failed`, `reason=credential_changed`). The caller
 gets a fresh session cookie that keeps the second factor the old
 session had passed; the response is `{"updated": true}`. API tokens
 stay: the user minted them on purpose and revokes them under
@@ -133,10 +138,10 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
-| `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
+| `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
-| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the magic-link, token or passkey store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the passkey, session, magic-link or token store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
@@ -199,6 +204,7 @@ safe-but-reduced path.
 |---|---|---|
 | `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production. The legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
+| `OAuthProfileRefresher` | `OAuth2Plugin` | Update the profile of an existing link on a returning sign-in, never inserting one. `EntityUserStore` implements it. Without it the profile stays as it was at link time. |
 | `OAuthUserCreator` | `OAuth2Plugin`, `MagicLinkPlugin` | Record at creation time that the user has no password. Lets `PasswordChecker.HasPassword` return false correctly. |
 | `OAuthTokenRefresher` | `RefreshOAuthToken` / `ValidOAuthToken` | Exchange a stored refresh token for a fresh access token. Implemented by `GoogleProvider` and `GitHubProvider`. See "OAuth token store + refresh". |
 | `AccountLister` | `AccountsPlugin` | Power `GET /auth/accounts`. Required. |
@@ -208,6 +214,7 @@ safe-but-reduced path.
 | `EmailVerifiedChecker` | `MagicLinkPlugin`, `OAuth2Plugin`, `PasswordResetPlugin` | Report whether the address was proven. Magic link refuses an existing account (500) on a store without it, because it cannot tell an owner from a squatter. OAuth treats its absence as unverified and never auto-links. Reset skips the claim. |
 | `PasswordClearer` | `MagicLinkPlugin` | Remove a squatter's password during a claim (placeholder hash, `password_set = false`). Without it the claim falls back to `PasswordSetter` with the placeholder hash. |
 | `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
+| `PasswordSwapper` | `POST /auth/password` | Write the new hash only while the stored one is still the hash the change verified, in one statement. `EntityUserStore` implements it. Without it the change re-reads the hash just before writing, which leaves a short window a reset can land in. |
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
 | `AtomicUnlinker` | `AccountsPlugin` | Decide and apply the last-credential guard in ONE store operation, so the refuse-the-last invariant holds when two unlinks race (two concurrent DELETEs of a two-method OAuth-only account cannot both win). `EntityUserStore` implements it (FOR UPDATE transaction on Postgres, single conditional DELETE on SQLite); stores without it keep the check-then-act fallback, which holds per request but not across concurrent ones. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
@@ -218,13 +225,13 @@ The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
 provided in this package implement every relevant interface; if you
 start from `EntityUserStore` you get the full feature matrix.
 
-Both built-in session stores fail closed on a negative TTL:
+A zero `AuthConfig.SessionTTL` means seven days. A negative one is a
+sign or unit error, and `AuthManager.Init` refuses it, so the app does
+not boot with a session lifetime nobody chose. The stores refuse one
+too when a caller passes it to `MintSession` directly:
 `EntitySessionStore.Create` rejects `ttl <= 0`, and
 `MemorySessionStore.Create` rejects `ttl < 0` while keeping `ttl == 0`
-as its documented one-week default. A sign or unit error in
-`SessionTTL` therefore breaks login loudly instead of minting a
-session — on the memory store it used to silently substitute the
-7-day default, the exact inversion of the caller's intent.
+as its one-week default.
 
 The default stores are **in-memory**: fine for dev and tests, a trap
 in production: sessions vanish on restart and never resolve on a
@@ -582,7 +589,7 @@ Self-service token management for logged-in users:
 
 | Endpoint | Effect |
 |---|---|
-| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. |
+| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. A reset or password change that lands while the request is open (its body still unread), or one that already ended the request's session, wins: the new token is revoked and the request answers 401. The revoke runs detached from the request, so a client that hangs up cannot stop it. |
 | `GET {base}/tokens` | List the caller's tokens (prefix only, never the plaintext or hash). |
 | `DELETE {base}/tokens/{id}` | Revoke one of the caller's tokens. A foreign id is a 404 (owner-scoped). |
 
@@ -721,6 +728,16 @@ mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 exported for hosts that want to assemble their own config, but the
 `*EntityConfig()` helpers are the safe default.
 
+**A soft-deleted account is signed out.** With `Scope.SoftDelete` on the
+users entity, a delete only stamps `deleted_at`. `EntityUserStore` finds
+that column when `AuthManager.Init` runs `EnsureSchema` (AutoMigrate has
+added it by then) and from then on `FindByID`, `FindByEmail` and
+`ListUsers` skip a trashed row: the password no longer signs in, and the
+account's sessions, API tokens and JWTs resolve to no user, so
+`GET /auth/me` answers 401. Restoring the row brings the account back.
+A column added by a migration after boot takes effect at the next
+restart.
+
 ## Durable store schema and PostgreSQL first boot
 
 `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore` create
@@ -802,7 +819,11 @@ against the table names the CONFIGURED stores actually use (the
 `NewEntityUserStore(db, "users")` + `NewEntitySessionStore(db,
 "sessions")` gets its `users` row, `sessions` rows, resolved
 `IdentityEmail`, and magic-link tokens erased — not just the canonical
-`auth_*` spellings the package registers at import time.
+`auth_*` spellings the package registers at import time. When
+`LoginRateLimitPerAccount` uses a `SQLRateLimitStore`, the erasure also
+deletes that limiter's attempt and block rows for the user's email
+(the key is its `Scope`, `login_account` by default, then
+`|account:` and the email); other limiters' rows on the same store stay.
 
 ## Email identity is canonical (invisible-stripped + NFC-normalized + trimmed + lowercased)
 
@@ -928,7 +949,8 @@ skipped: they don't ride on cookies and aren't subject to CSRF.
 
 The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
 HTTPS, including behind a TLS-terminating proxy that sets
-`X-Forwarded-Proto: https` (the app itself sees plain HTTP there).
+`X-Forwarded-Proto: https` (the app itself sees plain HTTP there). A
+name set with `WithCSRFCookieName` gets the prefix too.
 
 **Login/register/logout carry their own cross-site guard.** Those
 endpoints can't rely on the CSRF cookie: a login CSRF needs no
@@ -946,6 +968,12 @@ cross-site JSON POST is preflighted, and these routes answer no preflight,
 so a cross-origin SPA reaching them through configured CORS depends on the
 exemption. Requests with no `Origin` (curl, native apps) pass. This is on
 by default; no configuration required.
+
+The same guard covers the other bodyless POSTs a signed-in user's cookie
+can carry: `/2fa/disable`, `/2fa/backup-codes` and `/2fa/enroll` refuse a
+cross-site request, so a hidden form on another site cannot turn off a
+user's second factor or replace their backup codes. `/2fa/verify` and
+`/2fa/challenge` read a JSON body and answer 415 to anything else.
 
 ## Browser-backend (BFF) posture
 
@@ -1275,6 +1303,13 @@ Other knobs: `RPName` (shown by the browser, default `RPID`),
 `RateLimit` (default 30 requests a minute per client, then a 5-minute
 block).
 
+`MaxPerUser` holds when registrations race: the plugin passes it to
+`PasskeyStore.AddPasskey(ctx, cred, maxPerUser)`, which counts the
+user's passkeys and inserts as one step and answers `auth.ErrPasskeyLimit`
+past it. The SQL store does both in one transaction, behind an advisory
+lock on the user on Postgres; a custom store must make the pair atomic
+the same way.
+
 ### Routes
 
 | Route | Who | What |
@@ -1371,8 +1406,12 @@ lands on a pending session and the browser goes to `TwoFactorURL` to
 finish at `/auth/2fa/challenge`, like a password login. A completed
 password reset removes every passkey on the account along with its
 sessions and API tokens: a passkey added from a stolen session would
-otherwise sign in again. A password change keeps them, as it keeps API
-tokens. Claiming an unverified account (see
+otherwise sign in again. The passkeys go before the sessions, and a
+passkey sign-in re-reads its key after minting and drops the session if
+the key is gone, so a sign-in a reset overtakes ends with no session. A
+registration that a reset, change or claim overtakes removes the key it
+stored and answers 401. A
+password change keeps them, as it keeps API tokens. Claiming an unverified account (see
 [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account))
 removes its passkeys, since the squatter may have added one, and the
 `account.claimed` event counts them in `passkeys_removed`.
@@ -1460,9 +1499,10 @@ session. In order:
 1. every OAuth link is removed;
 2. the password is cleared (magic link only; a reset keeps the new
    one);
-3. every API token issued through `TokensPlugin` is revoked;
-4. every session is deleted;
-5. the account is marked verified and `account.claimed` is emitted.
+3. every passkey is removed;
+4. every API token issued through `TokensPlugin` is revoked;
+5. every session is deleted;
+6. the account is marked verified and `account.claimed` is emitted.
 
 The account is marked verified last, so a failure anywhere leaves it
 unverified, the request answers 500, and the next proof runs the whole
@@ -1470,6 +1510,13 @@ claim again. A store missing an extension the claim needs is an error,
 never a skipped step. An enrolled second factor survives the claim: the
 mailbox is one factor, and stripping 2FA here would let a mailbox alone
 remove it from every account that predates `email_verified`.
+
+An OAuth sign-in already under way when the claim lands does not keep
+the account. Its profile refresh is an UPDATE, so it cannot put back a
+link the claim removed, and once its session is stored it resolves the
+link again. A link that is gone or names another account drops the
+session: the callback answers 401 `auth.oauth_link_removed` and emits
+`oauth.refused` with `reason=link_removed`.
 
 A verified account is never claimed: a magic link signs its owner in
 and leaves the password and other sessions alone.
@@ -1568,9 +1615,18 @@ it is how someone recognises the link was not meant for them.
 
 Starting an OAuth flow (`GET /auth/oauth/{provider}` or
 `.../{provider}/link`) plants a short-lived `HttpOnly`, `SameSite=Lax`
-`gofastr_oauth_state` cookie holding the same signed state token that
-goes into the redirect URL. The callback requires the two to match and
-clears the cookie either way.
+cookie holding the same signed state token that goes into the redirect
+URL. The callback requires the two to match and clears the cookie
+either way.
+
+With `SessionSecure` on (the production default) the cookie is
+`__Host-gofastr_oauth_state`, and the callback reads that name alone. A
+sibling subdomain can set a cookie for the parent domain, so a plain name
+let `evil.example.com` plant its own state for the victim's callback and
+sign the victim into the attacker's account. A browser accepts a
+`__Host-` cookie only from the host itself, `Secure`, with `Path=/`.
+DevMode over plain HTTP uses `gofastr_oauth_state`, since a browser
+refuses a `__Host-` cookie without `Secure`.
 
 Without it the state token, unforgeable and single-use though it is,
 binds the callback to nothing about the caller: an attacker could start
@@ -1627,7 +1683,7 @@ downgrading.
 `resolveOAuthUser` runs this decision table on every callback:
 
 1. **Existing link.** `FindByOAuth(provider, providerID)` hit → log in
-   as the linked user. Profile refresh via `LinkOAuthEnriched` is
+   as the linked user. Profile refresh via `RefreshOAuthProfile` is
    best-effort and does not block login. When the IdP asserts
    `email_verified` for exactly the account's address, the account is
    marked verified (best-effort).
@@ -1673,8 +1729,10 @@ strictly:
 - **OIDC**: parsed from the id_token's `email_verified` claim (or the
    configured `OIDCClaimsMapping.EmailVerifiedClaim`). Accepts a JSON
    bool or the string `"true"` (some IdPs emit the value as a string).
-   Defaults to `false` when absent: a missing assertion is never a
-   verified email.
+   When the id_token lacks the claim, the userinfo response's flag is
+   used only if its email is exactly the one kept; a flag about another
+   address does not verify this one. Defaults to `false` when absent: a
+   missing assertion is never a verified email.
 - **Google**: from the `email_verified` (modern) or `verified_email`
    (legacy) userinfo field.
 - **GitHub**: `true` only when the email came back from
@@ -1810,6 +1868,7 @@ provider, err := auth.NewOIDCProvider(auth.OIDCConfig{
     ProviderName: "keycloak", // Name() and OAuth2UserInfo.Provider
     // Scopes defaults to ["openid","email","profile"]; set to override.
     // JWKSCacheTTL defaults to 1h.
+    // TokenAuthMethod: "" follows discovery (see below).
 })
 
 oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
@@ -1838,6 +1897,18 @@ following one would re-send the token exchange's POST body —
 `client_secret` and code — verbatim to the redirect target (Go's client
 preserves method and body on 307/308). Mirrors the redirects-off posture
 of A2A push delivery and webhook egress.
+
+The code exchange authenticates the client one of two ways.
+`auth.OIDCAuthClientSecretPost` sends `client_id` and `client_secret` in
+the form body; `auth.OIDCAuthClientSecretBasic` sends them in an HTTP
+Basic `Authorization` header, each form-encoded first (RFC 6749 §2.3.1).
+With `TokenAuthMethod` empty, the discovery document's
+`token_endpoint_auth_methods_supported` decides: the body form when the
+list is absent or names `client_secret_post`, Basic when it names
+`client_secret_basic` and not post. A list naming neither fails the
+exchange before the secret is sent. Set `TokenAuthMethod` when a
+provider's document is wrong about what its endpoint accepts; any other
+value fails `NewOIDCProvider`.
 
 **What gets verified** before `ExchangeCode` returns:
 

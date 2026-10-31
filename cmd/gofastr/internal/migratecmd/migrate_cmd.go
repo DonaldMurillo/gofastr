@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,12 @@ func RunMigrate(args []string) {
 	if len(args) > 0 {
 		subcmd = args[0]
 		rest = args[1:]
+	}
+
+	if err := migrateFlagsError(subcmd, rest); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
 	}
 
 	switch subcmd {
@@ -64,6 +71,47 @@ func RunMigrate(args []string) {
 	}
 }
 
+// migrateFlags names the flags each subcommand reads: valued ones take
+// --name=<value>, bare ones nothing. The readers match by prefix and
+// skip the rest, so a typo was dropped in silence: --db-ur=<url> ran
+// against DATABASE_URL, and --db-url <url> (the space form) did too.
+var migrateFlags = map[string]struct{ valued, bare []string }{
+	"up":       {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--create-db"}},
+	"down":     {[]string{"--db-url", "--db", "--driver", "--group"}, nil},
+	"status":   {[]string{"--db-url", "--db", "--driver", "--group"}, nil},
+	"force":    {[]string{"--db-url", "--db", "--driver", "--group"}, []string{"--not-applied"}},
+	"repair":   {[]string{"--db-url", "--db", "--driver", "--from"}, []string{"--apply"}},
+	"generate": {[]string{"--db", "--driver", "--from", "--group", "--migrations", "--snapshot"}, nil},
+}
+
+// migrateFlagsError refuses a flag the subcommand does not read, a valued
+// flag written without =<value>, and a bare flag given one.
+func migrateFlagsError(subcmd string, args []string) error {
+	known, ok := migrateFlags[subcmd]
+	if !ok {
+		return nil
+	}
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
+		name, _, hasValue := strings.Cut(a, "=")
+		switch {
+		case slices.Contains(known.valued, name):
+			if !hasValue {
+				return fmt.Errorf("migrate %s: write %s=<value>", subcmd, name)
+			}
+		case slices.Contains(known.bare, name):
+			if hasValue {
+				return fmt.Errorf("migrate %s: %s takes no value", subcmd, name)
+			}
+		default:
+			return fmt.Errorf("migrate %s: unknown flag %s", subcmd, name)
+		}
+	}
+	return nil
+}
+
 // runMigrateForce reconciles the tracking table by hand: the recovery path out
 // of a dirty state and the baseline path for adopting an existing database.
 //
@@ -73,6 +121,9 @@ func RunMigrate(args []string) {
 // recording a baseline without running its Up SQL). With --not-applied the
 // version is removed from the tracking table so it becomes pending again.
 func runMigrateForce(args []string) {
+	// Exactly one version, parsed whole. Sscanf read "1x" as 1, and with
+	// two versions the last one won, so a typo marked a migration applied
+	// without running its SQL.
 	applied := true
 	var version uint64
 	haveVersion := false
@@ -83,9 +134,13 @@ func runMigrateForce(args []string) {
 		case strings.HasPrefix(a, "--"):
 			// flag consumed elsewhere (e.g. --db-url): skip
 		default:
-			if _, err := fmt.Sscanf(a, "%d", &version); err == nil {
-				haveVersion = true
+			v, err := strconv.ParseUint(a, 10, 64)
+			if err != nil || haveVersion {
+				cli.Fail("migrate force takes exactly one migration version, got %q", a)
+				cli.OsExit(1)
+				return
 			}
+			version, haveVersion = v, true
 		}
 	}
 	if !haveVersion {

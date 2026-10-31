@@ -69,7 +69,7 @@ The pipeline is opt-in: a default `Query{Text: "x"}` runs pure vector retrieval.
 
 When `Options.Path` is set, every mutation appends to `<path>/store.wal` and reads back on `Open`. Every `Options.SnapshotEvery` mutations (default 1000) or on `Index.Snapshot()`, the full state is written atomically to `<path>/store.snap` and the WAL is truncated.
 
-The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on load returns `*ModelMismatchError` and refuses to load. Mixing vectors from different models silently destroys retrieval quality.
+The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on load returns `*ModelMismatchError` and refuses to load. Mixing vectors from different models silently destroys retrieval quality. `PgVectorStore` records the same pair per table and refuses a mismatch at `Open` and on every write.
 
 ## Watcher
 

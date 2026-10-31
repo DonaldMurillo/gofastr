@@ -22,19 +22,10 @@
 
   const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  // formatNumber writes n the way the page's language (<html lang>)
-  // writes numbers, so a value this module writes reads like the
-  // server's i18n.Number text it replaces: "٥٠" stays "٥٠" on an
-  // Egyptian Arabic page. Rebuilt when a client navigation changes lang.
-  let lang, nf;
-  function formatNumber(n) {
-    const l = document.documentElement.lang;
-    if (!nf || l !== lang) {
-      lang = l;
-      try { nf = new Intl.NumberFormat(l || undefined); } catch (_) { nf = new Intl.NumberFormat(); }
-    }
-    return nf.format(n);
-  }
+  // formatNumber is the kernel's: a value this module writes reads like
+  // the server's i18n.Number text it replaces ("٥٠" stays "٥٠" on an
+  // Egyptian Arabic page).
+  const formatNumber = (n) => NS.formatNumber(n);
 
   // valueText is an input's value written the page's way.
   function valueText(input) {
@@ -82,9 +73,13 @@
   // reports the change as a real input event so every pipeline that
   // watches the control sees it. The declared bounds are the server's;
   // contradictory props are refused at render, never repaired here.
+  // The input is the button's sibling in the control's own row. The id
+  // defaults to the field's name, so two forms with one field share
+  // it, and a page-wide getElementById answers the first form's input.
   function step(btn, dir) {
     const id = btn.getAttribute('data-hui-number-input-for');
-    const input = id && document.getElementById(id);
+    const row = btn.parentElement;
+    const input = id && row && [...row.children].find((el) => el.id === id);
     if (!input || input.disabled) return;
     const stepAttr = parseFloat(input.getAttribute('step') || '1');
     const delta = (Number.isFinite(stepAttr) && stepAttr > 0 ? stepAttr : 1) * dir;

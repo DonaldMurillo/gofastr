@@ -637,8 +637,11 @@ const (
 	// a GET (no method, PUT, PATCH) and replaying a JSON form's GET adds 19.
 	// Back/Forward comparing every value of a repeated query key adds 28;
 	// a whole document's page-scoped seed riding its swap and the boot
-	// cache entry adds 114.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114
+	// cache entry adds 114. The kernel's formatNumber, which every {{n}}
+	// fill in the runtime and its modules goes through, adds 40. The plain
+	// navigator narrowing a replay keyed above the deepest shared layer to
+	// that layer's cell adds 118.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1065,7 +1068,38 @@ const (
 	// every document swap, measure 17670 at level 1. Both run in the
 	// navigator's popstate and swap paths, before any demand module
 	// could. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 17672
+	// The kernel's formatNumber, which every {{n}} fill in core and in the
+	// demand modules calls synchronously (a toast, an aria-label, a live
+	// count), measures 17704 at level 1. Eight modules share it, so it
+	// cannot carve into one of them. The padded fixture reaches 17706, so
+	// the line is 17705: the bracket [real 17704, fixture 17706], verified
+	// by running TestCoreBudgetRejectsCliffOverflow.
+	// 2026-10-29: the navigators refuse a 200 answer that is not HTML,
+	// after their redirect legs, through one throwing helper. Core
+	// measures 15289/17688, SMALLER on both, and the padded fixture
+	// reaches 17698, short of 17705 (the bracket had gone vacuous). As
+	// in #577 the line moves DOWN to 17697: the bracket [real 17688,
+	// fixture 17698], verified by running TestCoreBudgetRejectsCliffOverflow.
+	// The plain navigator narrowing a replay keyed above the deepest
+	// shared layer to that layer's cell (Back to a visit's first page
+	// under a shared nested layout) measures 17816 at level 1. It runs on
+	// the replay path before any demand module could, so it does not
+	// carve. Two bytes of clearance, cliff fixture re-run.
+	// A failed navigation rolling back to the page the DOM still shows
+	// (the shared _navBase both navigators set at entry, read in their
+	// failure arm and clear when the live one ends) measures 17855 at
+	// level 1. It is core's own navigator's failure path, so it does not
+	// carve. Two bytes of clearance, cliff fixture re-run.
+	// Core's navigator marking that it swapped the DOM (_navShown, read
+	// by an envelope module that loads one navigation late) measures
+	// 17862 at level 1. The flag is set on core's own swap path, so it
+	// does not carve. Two bytes of clearance, cliff fixture re-run.
+	// The page title decoding only the header (_title: an untitled
+	// screen keeps document.title verbatim, a "50% Off" title no longer
+	// throws out of navigation) measures 17918 at level 1. Core's
+	// navigator reads it on every partial swap, so it does not carve.
+	// Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 17920
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1133,6 +1167,16 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestFullDocNavAppliesPageSignals (docSeed).
 		"popstate compares every value of a query key":              28,
 		"whole-document page seed on boot entry and document swaps": 114,
+		// Measured 15254 → 15294 (2026-10-28): TestLintNumberFill_Repo.
+		"kernel formatNumber for {{n}} fills (toLocaleString on <html lang>)": 40, // (l1: 34)
+		// Measured 15289 → 15407 (2026-10-29): TestPlainBackKeepsSharedNestedLayout.
+		"plain replay narrows to the deepest shared layer's cell": 118, // (l1: 128)
+		// Measured 15407 → 15444 (2026-10-29): TestFailedNavRollsBackToTheShownPage.
+		"a failed navigation rolls back to the page still shown (_navBase)": 37,
+		// Measured 15444 → 15460 (2026-10-29): TestLateEnvelopeKeepsTheBootPage.
+		"the envelope keys no boot capture once core's navigator ran (_navShown)": 16, // (l1: 7)
+		// Measured 15460 → 15490 (2026-10-31): TestNavKeepsPercentTitle.
+		"page title decodes only the header, never document.title (_title)": 30, // (l1: 56)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1307,7 +1351,23 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// uihost percent-encodes for a layer key holding non-ASCII or %
 		// (2026-10-26, TestSwapKeyDecodesNonASCII drives the plain
 		// navigator's twin in core).
-		"envelope": 7878,
+		// 7901 measured (7899 + 2) after each busy mark records the
+		// navigation that set it, so a superseded navigation's finally
+		// leaves the winner's marks alone (2026-10-27 bug bash R3,
+		// TestSupersededNavKeepsRegionBusy).
+		// 8004 measured (8002 + 2) after its cache entries carry the
+		// page's #gofastr-signals-page seed and a leave capture keeps
+		// the entry's own (2026-10-29 bug bash R30,
+		// TestEnvelopeReplayRestoresPageSignals).
+		// 8023 measured (8021 + 2) after a failed navigation rolls back
+		// to the page the DOM still shows, not a superseded one's
+		// destination (2026-10-29 bug bash R31,
+		// TestFailedNavRollsBackToTheShownPage).
+		// 8034 measured (8032 + 2) after a module that loads once core's
+		// navigator has swapped the DOM keys no capture on the served
+		// URL (2026-10-29 bug bash R29,
+		// TestLateEnvelopeKeepsTheBootPage).
+		"envelope": 8034,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1332,7 +1392,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// AbortController per mount and a stale mount's dismiss is spent,
 		// so a reopened SSR widget sends one RPC per click and a second
 		// close re-hides it (2026-10-26, TestHydratedWidgetReopenWiresOnce).
-		"widgets": 3212,
+		// 3247 measured (3245 + 2): its click listener leaves a node
+		// carrying a signal mutation to the document signal delegate,
+		// which now serves widget roots, so a signal-and-rpc node sends
+		// nothing, as outside a widget (2026-10-27 bug bash R1,
+		// TestSignalControlsWorkInWidget).
+		// 3261 measured (3259 + 2): Escape closes a popover only when it
+		// opened above the top modal, so a modal that refuses Escape keeps
+		// the popover under it open (2026-10-31 bug bash R14,
+		// TestEscapeSparesPopoverUnderModal). The open sequence lives here.
+		"widgets": 3261,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1384,7 +1453,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// reads a marked region's data-cui-area beside its outlet and
 		// slot attributes, so an area's loading template is found by
 		// its "~" address like an outlet's "#".
-		"loading": 1368,
+		// 1384 measured (1382 + 2): a superseded navigation keeps the
+		// park holding a region's original nodes. A newer navigation's
+		// show takes it over, and finish and the apply sweep restore it
+		// on a region the winning apply did not replace (2026-10-27 bug
+		// bash R2, TestSupersededNavKeepsPark,
+		// TestSweepRestoresUnfilledRegion).
+		"loading": 1384,
 		// parts 1997 measured after the session-reset retry
 		// (2026-09-27, spike/layout-showcase): a `session` 409 waits
 		// for the page commit (whose Set-Cookie stores the re-minted
@@ -1474,7 +1549,18 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3602 measured (3600 + 2) after a data-cui-rpc form's body
 		// carries the pressed submit button (2026-10-27,
 		// TestRPCFormSendsClickedSubmitter).
-		"rpc": 3602,
+		// 3633 measured (3631 + 2) after a successful non-GET RPC evicts
+		// the page it ran on before its navigate (2026-10-30,
+		// TestUnsafeRPCEvictsItsPage): Back after an entityui delete
+		// replayed the deleted record. The eviction has to sit here,
+		// beside the navigate only this module runs.
+		// 3698 measured (3696 + 2) after a trigger with no value and no
+		// response signal ignores a click while its request is in flight
+		// (2026-10-31, TestBusyRPCTriggerSendsOnce,
+		// TestControlRPCSendsEveryChange): two clicks on a span during the
+		// cold module load both POSTed. The guard reads dispatch state only
+		// this module holds.
+		"rpc": 3698,
 	}
 	const coreOverride = 0
 

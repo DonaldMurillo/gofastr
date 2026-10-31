@@ -223,7 +223,7 @@ func TestInboundAttemptsCountEveryPass(t *testing.T) {
 			// Two runners both loaded the envelope, then both transition
 			// it to processing (the queue-lease overrun shape).
 			for range 2 {
-				if err := tc.store.(envelopeProcessingClaimer).MarkEnvelopeProcessing(ctx, env.ID); err != nil {
+				if _, err := tc.store.(envelopeProcessingClaimer).MarkEnvelopeProcessing(ctx, env.ID); err != nil {
 					t.Fatalf("mark processing: %v", err)
 				}
 			}

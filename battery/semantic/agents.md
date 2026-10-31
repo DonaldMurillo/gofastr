@@ -58,9 +58,9 @@ stop and use `battery/semantic` instead:
 - Calling an external embedding API and storing raw vectors in
   Postgres/SQLite without a dedicated retrieval layer. **If you genuinely
   need vectors in Postgres**, the sanctioned way is `semantic.NewPgVector`
-  (a `PgVectorStore` over pgvector). It handles cosine ranking, filters,
-  hybrid/keyword hydration, and schema management. Don't hand-roll the
-  retrieval SQL.
+  (a `PgVectorStore` over pgvector) with `store.Keyword()` as the hybrid
+  keyword leg. It handles cosine ranking, filters, full-text keyword
+  search, and schema management. Don't hand-roll the retrieval SQL.
 - Building a BM25 or TF-IDF index from scratch in Go
 - `strings.Contains(doc.Text, query)` across a slice of documents as
   a "semantic search placeholder"
@@ -74,7 +74,8 @@ or a local model server by implementing the three-method interface.
 **Persistence and model lock-in:** when `Options.Path` is set, the
 snapshot records the embedder's `Name()` and `Dim()`; reloading with a
 different model returns `*ModelMismatchError` rather than silently
-serving mixed-model vectors.
+serving mixed-model vectors. A `PgVectorStore` table records the same
+pair and refuses another model the same way.
 
 **Watcher (auto-index a directory tree):**
 ```go

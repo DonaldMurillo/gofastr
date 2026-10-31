@@ -327,12 +327,15 @@
   // through core's swapAtSlot so seed merge + CSS + focus all run),
   // then the fills, then the detached seed island merged through the
   // shared partial path.
-  const applyEnvelope = (slot, primaryHtml, resolved, seedEl) => {
-    swapAtSlot(slot, primaryHtml);
-    applyFillTargets(resolved);
+  const applySeedEl = (seedEl) => {
     if (seedEl) {
       try { applyPartialSeed(JSON.parse(seedEl.textContent || 'null')); } catch (_) { /* malformed island */ }
     }
+  };
+  const applyEnvelope = (slot, primaryHtml, resolved, seedEl) => {
+    swapAtSlot(slot, primaryHtml);
+    applyFillTargets(resolved);
+    applySeedEl(seedEl);
     return slot;
   };
 
@@ -366,16 +369,16 @@
 
   // P7-B (spike/layout-client): a first paint carries no partial seed
   // island, but its HEAD seed holds the route.* values (SeedFor seeds
-  // every referenced name). Synthesize a partial-shaped, route-only
-  // seed from it so a Back replay of the boot entry rewrites route
-  // state like every other replay (page-scoped keys only — globals
-  // keep their first-seen rule).
+  // every referenced name). A partial-shaped seed synthesized from it
+  // lets a Back replay of the boot entry rewrite page state like every
+  // other replay (page-scoped keys only — globals keep their
+  // first-seen rule).
   // routeSeedFrom folds a parsed FLAT head seed (the #gofastr-signals
   // island) into a partial-shaped {p} carrying only the route.* keys:
   // the flat island mixes scopes (globals beside page-scoped values),
   // and feeding a global through the page arm would clobber a value
-  // the user mutated. P7-C: shared by the boot capture (live head) and
-  // the cross-chain full-document swap (fetched document's head).
+  // the user mutated. pageSeedIsland (below) adds the keys the host names
+  // page-scoped; the route fold alone tracks _routeSeedP.
   const routeSeedFrom = (flat) => {
     const p = {};
     for (const k in flat) {
@@ -391,6 +394,23 @@
     if (!el) return null;
     try { return routeSeedFrom(JSON.parse(el.textContent || '{}')); } catch (_) { return null; }
   };
+  // islandIn finds the partial seed island in markup, parsed in an
+  // inert template: nothing in it runs or loads.
+  const islandIn = (html) => {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    return t.content.querySelector('script#gofastr-signals-partial');
+  };
+  // pageSeedIsland is a whole document's page-scoped seed island: the
+  // keys #gofastr-signals-page names (core's docSeed, the plain
+  // navigator's rule), so a replay or a swapped document restores the
+  // page's own values, not only its route. The host names every
+  // non-global key of the seed, route.* included; globals stay out. A
+  // document with no list gets the route fold alone.
+  const pageSeedIsland = (d) => islandIn(NS._docSeed(d || document)) || routeSeedIsland(routeSeedFromHead(d));
+  // seedOf is the seed a cache entry replays: its seed field, else the
+  // island a plain partial's bytes carry inline.
+  const seedOf = (entry) => entry && (entry.seed || islandIn(entry.html));
   // _routeSeedP tracks the route.* values a cache replay must restore.
   // The head island is a FIRST-PAINT artifact — after any SPA
   // navigation the store has moved and the head has not, so reading it
@@ -419,8 +439,8 @@
   // is a fill applied through the same resolveFillTargets /
   // applyEnvelope path a served envelope takes (P8-B: re-applied every
   // navigation, no hashes). The seed rides along too: the document's
-  // partial island when it carries one, else its route keys folded
-  // from the head island (the P7-C route-only scoping rule). Returns
+  // partial island when it carries one, else its page-scoped keys
+  // folded from the head island (pageSeedIsland). Returns
   // null on any miss (no shared layer, no matching slot); the caller
   // falls back to the plain whole-main swap it always had.
   const readDocEnvelope = (pdoc) => {
@@ -434,7 +454,7 @@
     if (!slot || !docSlot) return null;
     // captureLiveFills' walk, on the fetched document: everything the
     // chain keeps above the boundary travels as a fill.
-    const seed = pdoc.querySelector('script#gofastr-signals-partial') || routeSeedIsland(routeSeedFromHead(pdoc));
+    const seed = pdoc.querySelector('script#gofastr-signals-partial') || pageSeedIsland(pdoc);
     return {
       swapKey, slot, html: NS._docCarrier(pdoc) + docSlot.innerHTML, fills: captureLiveFills(docSlot, pdoc), seed,
       title: pdoc.querySelector('title')?.textContent || document.title,
@@ -633,12 +653,16 @@
   // declines per request) leaves it STALE on purpose: the capture then
   // misses, so a 404 page is never cached by any path and Back
   // refetches a fresh verdict (DESIGN "404 outlet" / apply step 13).
-  // What the DOM actually shows. The module only ever loads before
-  // its first navigation applies (the hand-off runs it, or the parts
-  // module's deferred walk loads it at boot), so the DOM shows the
-  // SERVED page — read off the performance navigation entry, which a
-  // click's pushState cannot rewrite the way it rewrites location.
-  let _liveDomPath = (() => {
+  // What the DOM actually shows. The module usually loads before any
+  // navigation applies (the hand-off runs it, or the parts module's
+  // deferred walk loads it at boot), so the DOM shows the SERVED page
+  // — read off the performance navigation entry, which a click's
+  // pushState cannot rewrite the way it rewrites location. A plain
+  // navigation to a page that brought an outlet in loads it one
+  // navigation late: core's navigator has swapped the DOM (an error
+  // page included), so the page shown is unknown here and null keys
+  // no capture until this navigator's first OK answer.
+  let _liveDomPath = NS._navShown ? null : (() => {
     try {
       const n = performance.getEntriesByType('navigation')[0];
       if (n && n.name) { const u = new URL(n.name); return u.pathname + u.search; }
@@ -650,6 +674,8 @@
     finishNav(path, prevPath, cached, root, ps);
   };
   const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
+  // core's rule (nav.js): an HTML answer applies, any status; any other
+  // answer, a 200 included, throws so the toast names it.
   const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
   const routeLayouts = (path) => {
     const m = routeInfo(path);
@@ -703,6 +729,7 @@
     recordScroll(_liveDomPath);
     const parts = P ? P.begin(path, myEpoch) : null;
     const prevPath = from || NS.currentPath;
+    if (NS._navBase === null) NS._navBase = prevPath;
 
     NS._setCurrentPath(path);
     // Consume the popstate's restore target into this navigation.
@@ -732,6 +759,7 @@
         for (let i = 0; i < busyDepth; i++) {
           if (addr.startsWith(keys[i] + '#') || addr.startsWith(keys[i] + '~')) {
             el.setAttribute('aria-busy', 'true');
+            el._cuiBusy = myEpoch;
             marks.push(el);
             break;
           }
@@ -739,7 +767,7 @@
       }
       const busySlot = findSlot(keys[busyDepth - 1]);
       if (busySlot) {
-        busySlot.setAttribute('aria-busy', 'true'); marks.push(busySlot);
+        busySlot.setAttribute('aria-busy', 'true'); busySlot._cuiBusy = myEpoch; marks.push(busySlot);
         // P13-B: refresh the LEAVING page's cache entry keyed at THIS
         // navigation's swap layer, before anything touches the DOM.
         // An entry captured shallower replays by replacing every layer
@@ -749,12 +777,15 @@
         // addresses the leaving page deferred and what landed.
         // (A page whose own answer was NOT OK keeps _liveDomPath
         // stale, so this condition misses and it is never captured.)
+        // The seed carries forward from the page's own entry: the
+        // live DOM has merged its island away, and the snapshot's
+        // fallback is the route keys alone.
         if (prevPath && prevPath !== path && _liveDomPath === prevPath) {
           const prevEntry = getCachedScreen(prevPath);
           const lsnap = captureEnvelopeSnapshot(busySlot);
           const ps0 = P && P.leaveSnap(prevEntry);
           cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
-            lsnap.fills, lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
+            lsnap.fills, seedOf(prevEntry) || lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
         }
         // The loading module starts loading at evaluation; the first
         // navigation may beat its script. The marks paint now (the
@@ -829,6 +860,9 @@
           swapCommit(myEpoch, prevPath, path, () => {
             _applied(slot);
             const root = swapAtSlot(slot, cached.html);
+            // A leave capture with no fills lands here; its seed is
+            // a field, not part of the bytes.
+            applySeedEl(cached.seed);
             if (load) load.sweep();
             _done(path, prevPath, true, root, ps);
           }, cached);
@@ -888,13 +922,15 @@
         if (P && parts) P.kill(parts);
         const fr = await fetch(path);
         if (!NS._navLive(myEpoch)) return;
-        if (!fr.ok && !respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         NS._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
         if (!NS._navLive(myEpoch)) return;
         // A followed redirect into another document loads it (nav.js).
         const to = NS._followed(fr, path);
         if (to === null) return;
+        // Checked after the redirect: an X-Gofastr-Document answer is
+        // bodiless and untyped. Any other non-HTML answer throws.
+        if (!respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         const dest = to || path;
         if (to) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
         if (!(await cssWait(myEpoch, pdoc.body))) return;
@@ -913,25 +949,20 @@
           // never recaptured on leave.
           (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
           const el = swapShell(sourceRoot);
-          // The fetched head's route keys fold through the same atomic
-          // merge (route-only for the scoping reason on routeFold;
-          // non-route page-scoped signals keep their correct SSR
-          // stamps — pre-existing behavior, recorded). swapShell's
-          // merge finds no PARTIAL island in a full document, and the
-          // live head still carries the ORIGIN's seed — without this,
-          // the store's route.* stays one chain behind the DOM after
-          // every cross-chain swap.
-          const hEl = pdoc.querySelector('script#gofastr-signals');
-          if (hEl) {
-            try {
-              const rsd = routeSeedFrom(JSON.parse(hEl.textContent || '{}'));
-              if (rsd) applyPartialSeed(rsd);
-            } catch (_) { /* a malformed head island changes nothing */ }
-          }
+          // The fetched head's page-scoped keys (pageSeedIsland: route.*
+          // plus the names #gofastr-signals-page lists; globals keep
+          // their first-seen rule) fold through the same atomic merge.
+          // swapShell's merge finds no PARTIAL island in a full
+          // document, and the live head still carries the ORIGIN's
+          // seed — without this, the store stays one page behind the
+          // DOM after every cross-chain swap. A malformed head island
+          // folds to nothing.
+          const dsd = pageSeedIsland(pdoc);
+          applySeedEl(dsd);
           if (fr.ok) {
             const fsnap = captureEnvelopeSnapshot(_mainEl());
             cacheScreen(dest, nm ? nm.innerHTML : '', t,
-              nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '', fsnap.fills, fsnap.seed);
+              nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '', fsnap.fills, dsd || fsnap.seed);
           }
           _done(dest, prevPath, false, el || _mainEl(), ps, !fr.ok);
         }, null);
@@ -963,7 +994,6 @@
       // A session change is an identity change: one identity's pages
       // must never replay for another.
       if (rs) NS.invalidate('*');
-      if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
       NS._inval(resp);
       // A followed 3xx takes the same leg as the header (nav.js).
@@ -985,6 +1015,9 @@
         if (P && parts) P.kill(parts);
         return retry(redirectTo, { bypassCache, from: prevPath, restore: ps });
       }
+      // The redirect legs above read no body: a 200 X-Gofastr-Location
+      // or -Document answer carries none and no Content-Type.
+      if (!respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       // Every response body is read with text(): Chrome keeps no body
       // for a fetch() read through a stream reader and reports the
       // request as net::ERR_ABORTED in DevTools even when the page
@@ -1013,7 +1046,7 @@
           return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
         }
         if (!(await cssWait(myEpoch, snap.primary.html, snap.fills, null, load))) return;
-        const envTitle = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+        const envTitle = NS._title(resp);
         document.title = envTitle;
         announceRoute(envTitle);
         if (parts) parts.pending = true;
@@ -1034,7 +1067,7 @@
       let title, body;
       let swapKey = (partial && swapKeyOf(resp)) || '';
       if (partial) {
-        title = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+        title = NS._title(resp);
         body = html;
       } else {
         const pdoc = new DOMParser().parseFromString(html, 'text/html');
@@ -1063,7 +1096,7 @@
         }
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
-        body = NS._docCarrier(pdoc) + (nm?.innerHTML ?? '');
+        body = NS._docCarrier(pdoc) + NS._docSeed(pdoc) + (nm?.innerHTML ?? '');
         swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? _mainEl() : null);
@@ -1104,25 +1137,30 @@
       if (!NS._navLive(myEpoch)) return;
       // Hard rule 4, no location.href fallback. Surface a toast and
       // stay on the current page; the URL has already been pushState'd
-      // by the click handler so revert it.
+      // by the click handler so revert it, to the page the DOM still
+      // shows (NS._navBase), not a superseded navigation's destination.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
         ? NS.say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
         : NS.say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
-      NS._pushURL(prevPath || location.pathname, { replace: true });
-      NS._setCurrentPath(prevPath);
+      const base = NS._navBase;
+      NS._pushURL(base || location.pathname, { replace: true });
+      NS._setCurrentPath(base);
     } finally {
       // A stale navigation leaves a newer one's dedup entry alone.
       if (_pend.get(path) === myEpoch) _pend.delete(path);
-      // P9-A: a navigation that owns the epoch RESTORES (failure,
-      // abort); a superseded one only settles — the newer navigation
-      // owns the regions now.
-      if (load) load.finish(NS._navLive(myEpoch));
+      // P9-A: a shown region this navigation did not replace gets its
+      // parked nodes back, superseded or not (loading.js finish).
+      if (load) load.finish();
       // A navigation that neither committed nor has a commit pending
       // discards its parts: the buffer dies and the regions restore.
       if (P) P.finish(parts);
-      for (const el of marks) el.removeAttribute('aria-busy');
-      if (NS._navLive(myEpoch)) NS.doc.removeHtmlAttr('aria-busy');
+      // A newer navigation that marked the same region owns its mark.
+      for (const el of marks) if (el._cuiBusy === myEpoch) el.removeAttribute('aria-busy');
+      if (NS._navLive(myEpoch)) {
+        NS.doc.removeHtmlAttr('aria-busy');
+        NS._navBase = null;
+      }
     }
   };
 
@@ -1166,12 +1204,12 @@
         };
       }
     }
+    // Re-insert so key order is record order (paths start with "/", never
+    // integer keys); eviction drops the least recently recorded.
+    delete _anchors[path];
     _anchors[path] = rec;
     const ids = Object.keys(_anchors);
-    if (ids.length > 50) {
-      ids.sort();
-      for (const id2 of ids.slice(0, ids.length - 50)) delete _anchors[id2];
-    }
+    for (const id2 of ids.slice(0, ids.length - 50)) delete _anchors[id2];
     try { sessionStorage.setItem(ANCHOR_KEY, JSON.stringify(_anchors)); } catch (_) {}
   };
 
@@ -1260,18 +1298,22 @@
   const _loadingReady = document.querySelector('template[data-cui-loading]')
     ? NS.loadModule('loading').catch(() => null) : null;
 
-  // The module loads before any of its navigations applies, so the DOM
-  // shows the served page: capture its entry WITH fills (so a Back to
+  // Unless core's navigator ran first (_liveDomPath null, and then the
+  // check below only keeps a dead null-keyed entry out of the cache's
+  // slots: no lookup ever names null), the DOM shows the served page:
+  // capture its entry WITH fills (so a Back to
   // it replays them) and record its scroll anchors, both keyed under
   // the served path — currentPath may already name a hand-off's pushed
   // destination, and keying under it would replay the served page's
-  // bytes as the destination (TestHandoffDoubleClickCacheClean).
+  // bytes as the destination (TestHandoffDoubleClickCacheClean). The
+  // live head is the served page's too, so its page-scoped seed rides
+  // the entry.
   {
     const m = document.querySelector('[role="main"]') ?? document.querySelector('main');
-    if (m) {
+    if (m && _liveDomPath) {
       const snap = captureEnvelopeSnapshot(m);
       cacheScreen(_liveDomPath, captureHTML(m), document.title,
-        m.getAttribute('data-cui-layout-slot') || '', snap.fills, snap.seed);
+        m.getAttribute('data-cui-layout-slot') || '', snap.fills, pageSeedIsland() || snap.seed);
     }
     recordScroll(_liveDomPath);
   }

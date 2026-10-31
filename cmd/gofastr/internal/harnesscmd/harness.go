@@ -49,7 +49,7 @@ func RunHarness(args []string) {
 	profilePath := fs.String("profile", "", "explicit profile TOML path")
 	web := fs.Bool("web", false, "force-enable the web sidecar (default: on for interactive sessions)")
 	noWeb := fs.Bool("no-web", false, "disable the web sidecar")
-	listen := fs.String("listen", "", "bind control-plane TCP listener (host:port)")
+	listen := fs.String("listen", "", "bind control-plane TCP listener on a loopback host:port")
 	noListen := fs.Bool("no-listen", false, "disable Unix socket; in-process only")
 	allowProjectHooks := fs.Bool("allow-project-hooks", false, "enable hooks defined in the project repo")
 	autoApprove := fs.Bool("auto-approve", false, "bypass human-ack permission requirement")

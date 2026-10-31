@@ -63,6 +63,11 @@ type WebSocketConn struct {
 	awaitingPong atomic.Bool
 	pingSentAt   atomic.Int64
 
+	// ctrlTokens and ctrlLast are the MaxControlFramesPerSecond bucket.
+	// Only the read pump touches them.
+	ctrlTokens float64
+	ctrlLast   time.Time
+
 	// peerClosed is closed by readFrame the first time it parses a Close
 	// frame from the peer. Close() waits on this (or CloseTimeout) so the
 	// closing handshake is signal-driven: no parallel byte-scan, no
@@ -155,6 +160,14 @@ type WSConfig struct {
 	// Set negative to disable the pong timeout check.
 	PongTimeout time.Duration
 
+	// MaxControlFramesPerSecond caps the Ping and Pong frames a client
+	// sends, as a token bucket with a burst of twice the rate. The read
+	// pump answers a Ping itself, so an application's own frame limit
+	// never counts them; past the cap the connection is closed with
+	// 1008 (policy violation). 0 means default 32. Set negative to
+	// disable.
+	MaxControlFramesPerSecond int
+
 	// CloseTimeout caps how long Close() waits for the peer's reciprocal
 	// Close frame after sending our own. 0 means default 1s.
 	CloseTimeout time.Duration
@@ -177,9 +190,12 @@ type WSConfig struct {
 	OnClose func()
 }
 
-// Upgrade upgrades an HTTP connection to a simple WebSocket.
-// Performs the HTTP upgrade handshake and returns a managed connection.
-func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketConn, error) {
+// CheckUpgradeRequest reports why r is not a WebSocket opening
+// handshake RFC 6455 §4.2.1 accepts, or nil. originOK decides the Origin
+// the way WSConfig.CheckOrigin does: nil means same-origin. Upgrade runs
+// it before the hijack, and a transport that hijacks the connection
+// itself runs it before writing its 101.
+func CheckUpgradeRequest(r *http.Request, originOK func(*http.Request) bool) error {
 	// Validate the handshake per RFC 6455 §4.2.1.
 	//
 	// Accepting a looser definition of "upgrade" than an intermediary
@@ -192,34 +208,44 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	// echoed verbatim. So every condition below must be checked before
 	// the 101 is written.
 	if r.Method != http.MethodGet {
-		return nil, errors.New("stream: websocket upgrade must be GET")
+		return errors.New("stream: websocket upgrade must be GET")
 	}
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		return nil, errors.New("stream: not a websocket upgrade request")
+		return errors.New("stream: not a websocket upgrade request")
 	}
 
 	// Origin check: block CSWSH by default. Caller may opt in to
-	// cross-origin via cfg.CheckOrigin. Runs before the remaining
+	// cross-origin via originOK. Runs before the remaining
 	// shape checks so a cross-origin attempt reports the security
 	// reason rather than whichever header it also happened to omit.
-	if !checkOrigin(r, cfg.CheckOrigin) {
-		return nil, errors.New("stream: cross-origin websocket upgrade rejected (set WSConfig.CheckOrigin to allow)")
+	if !checkOrigin(r, originOK) {
+		return errors.New("stream: cross-origin websocket upgrade rejected (set WSConfig.CheckOrigin to allow)")
 	}
 	if !headerHasToken(r.Header.Get("Connection"), "upgrade") {
-		return nil, errors.New("stream: missing Connection: Upgrade")
+		return errors.New("stream: missing Connection: Upgrade")
 	}
 	if v := r.Header.Get("Sec-WebSocket-Version"); v != "13" {
-		return nil, fmt.Errorf("stream: unsupported websocket version %q (want 13)", v)
+		return fmt.Errorf("stream: unsupported websocket version %q (want 13)", v)
 	}
 
 	key := r.Header.Get("Sec-WebSocket-Key")
 	if key == "" {
-		return nil, errors.New("stream: missing Sec-WebSocket-Key")
+		return errors.New("stream: missing Sec-WebSocket-Key")
 	}
 	// §4.2.1: the key is base64 of exactly 16 random bytes.
 	if kb, err := base64.StdEncoding.DecodeString(key); err != nil || len(kb) != 16 {
-		return nil, errors.New("stream: malformed Sec-WebSocket-Key")
+		return errors.New("stream: malformed Sec-WebSocket-Key")
 	}
+	return nil
+}
+
+// Upgrade upgrades an HTTP connection to a simple WebSocket.
+// Performs the HTTP upgrade handshake and returns a managed connection.
+func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketConn, error) {
+	if err := CheckUpgradeRequest(r, cfg.CheckOrigin); err != nil {
+		return nil, err
+	}
+	key := r.Header.Get("Sec-WebSocket-Key")
 
 	// Compute accept key (SHA-1 of key + magic GUID)
 	acceptKey := computeAcceptKey(key)
@@ -292,6 +318,9 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	}
 	if cfg.CloseTimeout == 0 {
 		cfg.CloseTimeout = 1 * time.Second
+	}
+	if cfg.MaxControlFramesPerSecond == 0 {
+		cfg.MaxControlFramesPerSecond = defaultControlFramesPerSecond
 	}
 	if cfg.WriteTimeout == 0 {
 		cfg.WriteTimeout = 10 * time.Second
@@ -574,6 +603,16 @@ func (c *WebSocketConn) CloseWithStatus(code uint16, reason string) error {
 		codeErr = fmt.Errorf("stream: close code %d is reserved or out of range", code)
 		code = 1002
 	}
+	c.setOwnClose(code, reason)
+	if err := c.Close(); err != nil {
+		return err
+	}
+	return codeErr
+}
+
+// setOwnClose records the status code and reason Close sends, the
+// reason kept to printable ASCII within the frame's limit.
+func (c *WebSocketConn) setOwnClose(code uint16, reason string) {
 	buf := make([]byte, 2, 2+len(reason))
 	binary.BigEndian.PutUint16(buf, code)
 	for i := 0; i < len(reason) && len(buf) < 125; i++ {
@@ -582,10 +621,26 @@ func (c *WebSocketConn) CloseWithStatus(code uint16, reason string) error {
 		}
 	}
 	c.ownClosePayload.Store(&buf)
-	if err := c.Close(); err != nil {
-		return err
+}
+
+// allowControl spends one MaxControlFramesPerSecond token. A conn built
+// without Upgrade (zero rate) and the negative opt-out are unlimited.
+func (c *WebSocketConn) allowControl(now time.Time) bool {
+	rate := float64(c.config.MaxControlFramesPerSecond)
+	if rate <= 0 {
+		return true
 	}
-	return codeErr
+	if c.ctrlLast.IsZero() {
+		c.ctrlTokens = 2 * rate
+	} else if elapsed := now.Sub(c.ctrlLast).Seconds(); elapsed > 0 {
+		c.ctrlTokens = min(2*rate, c.ctrlTokens+elapsed*rate)
+	}
+	c.ctrlLast = now
+	if c.ctrlTokens < 1 {
+		return false
+	}
+	c.ctrlTokens--
+	return true
 }
 
 // awaitPeerClose waits for the read pump to signal that it parsed the
@@ -840,6 +895,11 @@ func (c *WebSocketConn) handoffStallLimit() time.Duration {
 	return c.config.ReadIdleTimeout + pong
 }
 
+// defaultControlFramesPerSecond is MaxControlFramesPerSecond's
+// default. A browser sends a Pong per keepalive Ping and no Ping of its
+// own, so honest traffic sits far below it.
+const defaultControlFramesPerSecond = 32
+
 // WebSocket frame opcodes
 const (
 	wsopcodeContinuation = 0x0
@@ -1064,6 +1124,11 @@ func (c *WebSocketConn) readFrame() (*wsFrame, error) {
 
 		// Any successful frame counts as activity for the keepalive clock.
 		c.lastReadActivity.Store(time.Now().UnixNano())
+
+		if (opcode == wsopcodePing || opcode == wsopcodePong) && !c.allowControl(time.Now()) {
+			c.setOwnClose(1008, "control frame rate")
+			return nil, errors.New("stream: control frame rate exceeded")
+		}
 
 		// Handle control frames inline (no recursion)
 		switch opcode {

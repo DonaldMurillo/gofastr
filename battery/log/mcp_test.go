@@ -102,14 +102,18 @@ func TestMCPMutationGated(t *testing.T) {
 
 // TestMCPRecentReturnsRingEntries pins that log_recent reads the ring
 // buffer and returns entries chronologically.
-// mcpTestCaller returns a context carrying an authenticated caller. The
-// log MCP tools are gated on one: they hand out every caller's request
-// paths, remote IPs, and request IDs, so an anonymous /mcp client must
-// not reach them. The anonymous-refusal path is pinned by
-// mcp_gate_security_test.go.
+// mcpTestCaller returns a context carrying an authenticated admin. The
+// log MCP tools are gated on the admin role: they hand out every caller's
+// request paths, remote IPs, and request IDs. The anonymous and member
+// refusals are pinned by mcp_gate_security_test.go and
+// mcp_role_gate_security_test.go.
 func mcpTestCaller() context.Context {
-	return handler.SetUser(context.Background(), "test-operator")
+	return handler.SetUser(context.Background(), adminCaller{})
 }
+
+type adminCaller struct{}
+
+func (adminCaller) GetRoles() []string { return []string{"admin"} }
 
 func TestMCPRecentReturnsRingEntries(t *testing.T) {
 	app := newMCPApp(t)
@@ -175,9 +179,9 @@ func TestMCPSetLevelMutatesThreshold(t *testing.T) {
 	app.Logger().Debug("invisible-at-info")
 
 	// Switch to DEBUG via the tool. log_set_level mutates the running app,
-	// so it runs behind an authenticated-caller gate, the tool call carries
-	// the identity the route middleware would have resolved.
-	ctx := handler.SetUser(context.Background(), "u1")
+	// so it runs behind an admin gate, the tool call carries the identity
+	// the route middleware would have resolved.
+	ctx := mcpTestCaller()
 	result, err := app.MCP.CallTool(ctx, "log_set_level", map[string]any{"level": "DEBUG"})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)

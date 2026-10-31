@@ -5,6 +5,7 @@ package eifix
 import (
 	"fmt"
 	"go/token"
+	"strconv"
 	"strings"
 )
 
@@ -135,9 +136,56 @@ func receiverVerb(name string) string {
 	return fmt.Sprintf("func (%s) Name() string { return \"plugin\" }", name)
 }
 
-// stringsResult: strconv/strings results are silent by design.
-func stringsResult(name string) string {
+// strconvResult: a strconv result is numeric or Go-quoted text, never a
+// bare payload. Quiet.
+func strconvResult(n int) string {
+	return fmt.Sprintf("var v%s = 1\n", strconv.Itoa(n))
+}
+
+// stringsOfConstant: a strings transform of a constant carries no
+// caller input (bug bash 2026-10-27 I10 kept this quiet while making
+// a transform of a caller's name fire). Quiet.
+func stringsOfConstant() string {
+	return fmt.Sprintf("var %s = 1\n", strings.ToUpper("total"))
+}
+
+// stringsOfGated: a transform of an identifier-checked local stays
+// gated: the check ran on what the transform reads. Quiet.
+func stringsOfGated(name string) string {
+	if !isGoIdentifier(name) {
+		return ""
+	}
 	return fmt.Sprintf("var %s = 1\n", strings.ToUpper(name))
+}
+
+// stringsMapSanitizer: strings.Map with a mapper named for its
+// treatment is a sanitizer. Quiet.
+func stringsMapSanitizer(name string) string {
+	return fmt.Sprintf("var %s = 1\n", strings.Map(sanitizeRune, name))
+}
+
+func sanitizeRune(r rune) rune {
+	if r == '_' || r >= 'a' && r <= 'z' {
+		return r
+	}
+	return '_'
+}
+
+// stringsRepeatCount: the count argument carries no name; the repeated
+// text is a constant. Quiet.
+func stringsRepeatCount(n int) string {
+	return fmt.Sprintf("var %s = 1\n", strings.Repeat("x", n))
+}
+
+// stringsOfQuoted: a transform of a quoting gate's output. Quiet.
+func stringsOfQuoted(table string) string {
+	return fmt.Sprintf("CREATE TABLE %s (id INTEGER)", strings.TrimSpace(QuoteIdent(table)))
+}
+
+// quoteDoubled: the PowerShell single-quote escape, doubling ' inside a
+// '%s' literal (evals process_test.go). An escaper, not a transform. Quiet.
+func quoteDoubled(path string) string {
+	return fmt.Sprintf("[IO.File]::WriteAllText('%s', 1)", strings.ReplaceAll(path, "'", "''"))
 }
 
 // argSlotVerb: a verb in ordinary argument position of the emitted call.

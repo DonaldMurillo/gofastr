@@ -62,3 +62,54 @@ func TestCreateDBChecksArgsFirst(t *testing.T) {
 		t.Fatal("up --create-db created the database before refusing")
 	}
 }
+
+// The flag readers match by prefix and skipped the rest: `migrate down
+// --db-ur=<url>` rolled back DATABASE_URL's database, and so did the
+// space form --db-url <url>. A flag the subcommand does not read is
+// refused before anything opens.
+func TestMigrateRefusesUnknownFlag(t *testing.T) {
+	dir := covT_migrationsDir(t)
+	path := filepath.Join(dir, "x.db")
+	clitest.CovT_capStdout(t, func() { runMigrateUp([]string{"--db-url=" + path}) })
+	t.Setenv("DATABASE_URL", path)
+	for _, args := range [][]string{
+		{"down", "--db-ur=" + path},
+		{"down", "--db-url", path},
+		{"down", "--group"},
+		{"up", "--create-db=yes"},
+		{"force", "1", "--not-aplied"},
+		{"generate", "x", "--db-url=" + path},
+	} {
+		code := clitest.CovT_capExit(t, func() {
+			clitest.CovT_capStdout(t, func() { RunMigrate(args) })
+		})
+		if code != 1 {
+			t.Errorf("migrate %q exited %d, want 1", args, code)
+		}
+	}
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'posts'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("a refused flag still rolled back the posts migration")
+	}
+	if err := migrateFlagsError("up", []string{"--db-url=x", "--db=sqlite", "--group=a", "--create-db"}); err != nil {
+		t.Errorf("up refused its own flags: %v", err)
+	}
+	if err := migrateFlagsError("down", []string{"2", "--driver=sqlite3", "--group=a"}); err != nil {
+		t.Errorf("down refused its own flags: %v", err)
+	}
+	if err := migrateFlagsError("repair", []string{"--from=a.yml", "--apply", "--db-url=x"}); err != nil {
+		t.Errorf("repair refused its own flags: %v", err)
+	}
+	// generate diffs a snapshot and opens no database.
+	if err := migrateFlagsError("generate", []string{"x", "--from=a.yml", "--db-url=x"}); err == nil {
+		t.Error("generate accepted --db-url")
+	}
+}

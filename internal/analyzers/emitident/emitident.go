@@ -27,7 +27,9 @@
 // A slot's argument is gated when it is, resolves to, or is built only
 // from: a call whose name says identifier/quote/slug/sanitize/safe/escape
 // (query.QuoteIdent, SlugifyWidgetID, quotedSlotSanitized, url.PathEscape,
-// sqlType...), a strconv/strings result, a constant, a local that an
+// sqlType...), a strconv result, a quote-character ReplaceAll, a strings transform (TrimSpace,
+// ToLower, ReplaceAll, Join, Map) whose every text argument is itself
+// gated, a constant, a local that an
 // isXIdent/token.IsIdentifier check in the same function guards —
 // guarding means the emit site is inside the check's success arm or
 // after a failure arm that diverges (return/panic/os.Exit, or a
@@ -72,7 +74,17 @@
 //     human-readable renderings (diagnostics, TUI bullets, doc text
 //     listing "tool(args)"), never emitted code, so the declaration
 //     spellings (func/type/var/%s :=) carry the Go side alone.
-//   - strconv/strings results, constants, and %v/%d-style verbs.
+//   - strconv results, constants, and %v/%d-style verbs; a strings
+//     transform of gated text (strings.ToUpper of a constant or of an
+//     identifier-checked local), and a strings.Map whose mapper is
+//     named for its treatment (sanitizeRune). Bug bash 2026-10-27 I10
+//     took the blanket strings credit away: resolveArg returned gated
+//     for every strings result, so Sprintf("var %s = 1",
+//     strings.TrimSpace(name)) stayed quiet and the eifix
+//     stringsResult fixture pinned the hole. A transform passes its
+//     input through; only a check or a quote gates it. A ReplaceAll /
+//     Replace of a quote character or backslash is that quote (the
+//     PowerShell quote doubling in evals process_test.go): an escaper.
 //   - concatenation into SQL (`"SELECT ..." + x`): GOFASTR1401 owns that
 //     shape; this rule only sees the Sprintf family, so the two cannot
 //     double-report.
@@ -1096,8 +1108,38 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 				return true, fields
 			}
 		}
-		if strings.HasPrefix(q, "strconv.") || strings.HasPrefix(q, "strings.") {
-			return true, fields // silent on strconv/strings results
+		if strings.HasPrefix(q, "strconv.") {
+			return true, fields // numeric or Go-quoted text: no bare payload
+		}
+		if strings.HasPrefix(q, "strings.") {
+			// I10: a strings result is a TRANSFORM of its arguments
+			// (TrimSpace, ToLower, ReplaceAll, Join): gated only when
+			// every string-shaped argument is. A func-typed argument
+			// (strings.Map's mapper) gates the call when its name says
+			// it sanitizes; otherwise it is skipped, and the mapped
+			// string decides. A ReplaceAll of a quote character is an
+			// escaper, not a transform (quoteEscape).
+			if quoteEscape(pass, q, e) {
+				return true, fields
+			}
+			allGated := true
+			for _, a := range e.Args {
+				if isFuncTyped(pass, a) {
+					if n := astx.CalleeName(a); n != "" && gateNameRe.MatchString(n) {
+						return true, fields
+					}
+					continue
+				}
+				if !isStringShaped(pass, a) {
+					continue
+				}
+				g, sub := resolveArg(pass, a, bound, helperDecls, guarded, memo, paramGate, depth+1)
+				collect(sub)
+				if !g && (len(sub) == 0 || !allInMemo(sub, memo)) {
+					allGated = false
+				}
+			}
+			return allGated, fields
 		}
 		if fn, ok := astx.CalleeFunc(pass, e.Fun); ok {
 			if decl, ok := helperDecls[fn]; ok && decl.Body != nil {
@@ -1157,6 +1199,50 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 	return false, fields
 }
 
+// isFuncTyped reports whether e's type is a function (strings.Map's
+// mapper, strings.FieldsFunc's predicate).
+func isFuncTyped(pass *analysis.Pass, e ast.Expr) bool {
+	t := pass.TypesInfo.TypeOf(e)
+	if t == nil {
+		return false
+	}
+	_, ok := t.Underlying().(*types.Signature)
+	return ok
+}
+
+// quoteEscape reports whether call is strings.ReplaceAll / Replace of a
+// single quote character or backslash: the escape that keeps a value
+// inside a quoted slot (PowerShell's '%s' doubles '). It is an escaper,
+// not a transform. The replaced character is not checked against the
+// slot's own delimiter, so escaping " for a '%s' slot is credited too:
+// a miss, never a false positive.
+func quoteEscape(pass *analysis.Pass, q string, call *ast.CallExpr) bool {
+	if (q != "strings.ReplaceAll" && q != "strings.Replace") || len(call.Args) < 2 {
+		return false
+	}
+	old, ok := astx.StringConstant(pass, call.Args[1])
+	return ok && (old == "'" || old == `"` || old == "`" || old == `\`)
+}
+
+// isStringShaped reports whether e carries text a strings function can
+// pass through: a string, a []string, a rune or a byte slice. Counts,
+// indexes and the like (strings.Repeat's n) carry no name.
+func isStringShaped(pass *analysis.Pass, e ast.Expr) bool {
+	t := pass.TypesInfo.TypeOf(e)
+	if t == nil {
+		return true
+	}
+	switch u := t.Underlying().(type) {
+	case *types.Basic:
+		return u.Info()&types.IsString != 0 || u.Kind() == types.Int32 || u.Kind() == types.UntypedRune
+	case *types.Slice:
+		if b, ok := u.Elem().Underlying().(*types.Basic); ok {
+			return b.Info()&types.IsString != 0 || b.Kind() == types.Byte
+		}
+	}
+	return false
+}
+
 // numericOnlyVerbs reports whether a constant format's verbs are all
 // numeric (%d and friends): no string argument can shape the output.
 func numericOnlyVerbs(f string) bool {
@@ -1183,9 +1269,10 @@ func numericOnlyVerbs(f string) bool {
 // helperReturnsGated reports whether every return expression of a local
 // helper is itself gated. The returns are resolved against the HELPER'S
 // own local bindings, not the caller's: a helper whose source local is
-// bound to a strings result (appSpecEndpointHandlerName's
-// strings.TrimSpace(endpoint.Handler)) is gated even though the caller
-// has never heard of that local.
+// bound to a gated derivation is gated even though the caller has never
+// heard of that local. A strings transform there is gated only when its
+// own argument is: a helper returning strings.TrimSpace(x.Name) needs
+// x.Name validated (the field memo), not the trim.
 func helperReturnsGated(pass *analysis.Pass, decl *ast.FuncDecl, bound map[types.Object]ast.Expr, helperDecls map[*types.Func]*ast.FuncDecl, guarded map[types.Object]bool, memo map[string]bool, paramGate map[*types.Var]bool, depth int) bool {
 	hb := bodyBindings(pass, decl)
 	gated := true

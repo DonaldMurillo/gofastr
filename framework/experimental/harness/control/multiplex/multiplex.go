@@ -49,6 +49,12 @@ type engineState struct {
 	turnBusy       atomic.Bool
 	turnOriginator atomic.Value // ids.ClientID
 
+	// turnCancel ends the turn that set it and nothing else, so a
+	// CancelTurn with no turn running reaches only a finished turn's
+	// context instead of one every later turn inherits.
+	turnMu     sync.Mutex
+	turnCancel context.CancelCauseFunc
+
 	// Permission arbitration: pending permission calls awaiting answers.
 	pendingMu    sync.Mutex
 	pendingPerms map[ids.CallID]*pendingPermission
@@ -190,6 +196,15 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	// reacting to TurnEnded from racing into the slot. The deferred
 	// fallback below catches the case where RunTurn returns without
 	// going through publishTurnEnd (shouldn't happen but defends).
+	// The turn runs on its own context under the engine's CancelTree,
+	// NOT the caller's ctx: that may be a short-lived HTTP request
+	// context that would cancel the turn the instant the POST handler
+	// returns. CancelTurn cancels this context alone; cancelling the
+	// tree itself would end every later turn too.
+	turnCtx, cancelTurn := context.WithCancelCause(st.engine.Tree.Context())
+	st.turnMu.Lock()
+	st.turnCancel = cancelTurn
+	st.turnMu.Unlock()
 	var released atomic.Bool
 	release := func() {
 		if released.CompareAndSwap(false, true) {
@@ -198,14 +213,9 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 		}
 	}
 	st.engine.OnTurnEnd = release
-	// Use the engine's CancelTree as the parent context for the
-	// turn. NOT the caller's ctx. The caller's ctx may be a
-	// short-lived HTTP request context that would cancel the turn
-	// the instant the POST handler returns. Engine.Tree honors
-	// CancelTurn properly.
-	turnCtx := st.engine.Tree.Context()
 	go func() {
-		defer release() // fallback if OnTurnEnd never fired
+		defer cancelTurn(nil) // free the context once RunTurn returns
+		defer release()       // fallback if OnTurnEnd never fired
 		_ = st.engine.RunTurn(turnCtx, c.ID(), cmd.Content)
 	}()
 	return nil
@@ -216,9 +226,11 @@ func (m *Mux) handleCancel(ctx context.Context, c control.Client, cmd control.Ca
 	if !ok {
 		return ErrUnknownSession
 	}
-	// Use the engine's CancelTree (per § Lifecycle/cancellation).
-	if st.engine.Tree != nil {
-		st.engine.Tree.Cancel(context.Canceled)
+	st.turnMu.Lock()
+	cancel := st.turnCancel
+	st.turnMu.Unlock()
+	if cancel != nil {
+		cancel(context.Canceled)
 	}
 	return nil
 }

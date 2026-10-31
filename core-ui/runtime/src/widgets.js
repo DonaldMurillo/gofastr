@@ -28,6 +28,9 @@
 // core can still read them.
 (() => {
   'use strict';
+  // Open order across the modal and popover stacks: widgetfocus.js lets
+  // Escape close a popover only when it opened above the top modal.
+  let openSeq = 0;
   const _wEv = (t, d) => {
     const { root, name } = d;
     root.id ||= name;
@@ -261,6 +264,7 @@
       // leaving sticky elements pinned. Scroll position is preserved.
       NS.doc.lockScroll('widget:' + cfg.name);
       NS._modalStack.push(cfg.name);
+      reg.seq = ++openSeq;
       Promise.resolve().then(() => {
         // Prefer an explicit [autofocus] element if the slot author
         // marked one, that's how ui.ConfirmAction opts into focusing
@@ -400,7 +404,10 @@
 
     // Widget-scoped click + submit.
     w.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-cui-rpc]');
+      // A signal mutation wins over data-cui-rpc on the same click, as on
+      // the document bridge; the document signal delegate applies it.
+      const sig = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
+      const btn = sig ? null : e.target.closest('[data-cui-rpc]');
       if (btn && w.contains(btn) && btn.tagName !== 'FORM') {
         e.preventDefault();
         try {
@@ -443,6 +450,7 @@
       reg.closeOnEscape = !!cfg.closeOnEscape;
       reg.closeOnClickOutside = !!cfg.closeOnClick;
       (NS._popoverStack ||= []).push(cfg.name);
+      reg.seq = ++openSeq;
       if (cfg.closeOnClick) {
         const oh = (e) => {
           if (w.contains(e.target)) return;

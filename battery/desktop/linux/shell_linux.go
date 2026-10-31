@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/gtk"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const mainTimeout = 15 * time.Second
@@ -95,6 +97,39 @@ var focusCallback = ffi.NewCallback(func(a *ffi.Args) uintptr {
 	return 0
 })
 
+// decidePolicyCallback is a web view's "decide-policy" handler. A
+// navigation action carries no main-frame flag in WebKitGTK, so the
+// check runs on the response: a refused main-frame document is ignored
+// before it commits. The request has reached the other host by then,
+// but nothing it returns renders in the window. Subframes load as on
+// the other shells. A panic refuses.
+var decidePolicyCallback = ffi.NewCallback(func(a *ffi.Args) (handled uintptr) {
+	decision := a.Int[1]
+	defer func() {
+		if v := recover(); v != nil {
+			slog.Default().Error("desktop/linux: navigation policy panicked", "panic", textsafe.Recovered(v))
+			call(gtk.Sym.WebkitPolicyDecisionIgnore, decision)
+			handled = 1
+		}
+	}()
+	if a.Int[2] != 2 /* WEBKIT_POLICY_DECISION_TYPE_RESPONSE */ ||
+		call(gtk.Sym.WebkitResponsePolicyDecisionIsMainFrameMainResource, decision)&0xff == 0 {
+		return 0
+	}
+	s := toolkitOwner.Load()
+	if s == nil || s.cfg.AllowNavigation == nil {
+		return 0
+	}
+	response := call(gtk.Sym.WebkitResponsePolicyDecisionGetResponse, decision)
+	raw := capsGoString(call(gtk.Sym.WebkitURIResponseGetURI, response))
+	if s.cfg.AllowNavigation(raw) {
+		return 0
+	}
+	slog.Default().Warn("desktop/linux: refused a navigation off the app's origin", "host", desktop.NavigationHost(raw))
+	call(gtk.Sym.WebkitPolicyDecisionIgnore, decision)
+	return 1
+})
+
 type linuxShell struct {
 	desktop.Shell // intentionally unsupported optional surfaces
 	mu            sync.RWMutex
@@ -108,6 +143,7 @@ type linuxShell struct {
 	windows       map[string]*linuxWindow
 	webContext    uintptr
 	activation    *activationBroker
+	profile       *browserProfile
 	inLoop        bool // UI thread only
 	capGate       chan struct{}
 	promptQueue   []desktop.Decision
@@ -140,6 +176,7 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	s.mu.Unlock()
 	defer close(s.done)
 	defer s.ReleaseLaunch()
+	defer s.ReleaseProfile()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -166,13 +203,11 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if call(gtk.Sym.GtkInitCheck, 0, 0) == 0 {
 		return errors.New("desktop/linux: GTK cannot open a display; run in an X11 or Wayland desktop session")
 	}
-	if cfg.Tray != nil {
-		return &desktop.Error{Code: desktop.CodeUnsupported, Message: "Linux tray icons are not implemented"}
+	webContext, err := s.createWebContext(ctx)
+	if err != nil {
+		return err
 	}
-	s.webContext = call(gtk.Sym.WebkitWebContextNewEphemeral)
-	if s.webContext == 0 {
-		return errors.New("desktop/linux: create WebKit context")
-	}
+	s.webContext = webContext
 	defer call(gtk.Sym.GObjectUnref, s.webContext)
 	s.running.Store(true)
 	defer func() {
@@ -195,6 +230,11 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	if err != nil {
 		return err
 	}
+	if err := startLinuxTray(w); err != nil {
+		slog.Default().Warn("desktop/linux: tray unavailable; keeping normal window close behavior", "error", err)
+	}
+	// Remove native endpoints before destroying their window or web context.
+	defer stopLinuxTray(s)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -292,8 +332,8 @@ func (s *linuxShell) Quit() {
 	call(gtk.Sym.GIdleAdd, quitCallback, 0)
 }
 
-func (s *linuxShell) SetTrayTitle(string) error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "Linux tray icons are not implemented"}
+func (s *linuxShell) SetTrayTitle(title string) error {
+	return setLinuxTrayTitle(s, title)
 }
 
 func (s *linuxShell) OpenWindow(id string, spec desktop.WindowSpec, url string) (desktop.Window, error) {
@@ -395,6 +435,7 @@ func (s *linuxShell) createWindow(id string, spec desktop.WindowSpec) (*linuxWin
 	connect(handle, "configure-event", configureCallback, 0)
 	connect(handle, "focus-in-event", focusCallback, 0)
 	connect(handle, "focus-out-event", focusCallback, 1)
+	connect(webview, "decide-policy", decidePolicyCallback, 0)
 	call(gtk.Sym.GtkWidgetShowAll, handle)
 	return w, nil
 }

@@ -551,6 +551,11 @@ func normalizeStatFilters(bp *AppSpec) {
 // a column name or an enum-ish value.
 var statFilterWord = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+// authBasePathRE matches an app.auth.base_path: one or more "/segment"
+// with no trailing slash. A segment cannot start with a dot, so "." and
+// ".." never reach a mount.
+var authBasePathRE = regexp.MustCompile(`^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$`)
+
 // statFilterDSL converts `column=value` to `column = "value"` when the
 // filter is exactly that shape: one "=", no spaces, no quotes, bare
 // words on both sides. Anything else is DSL already and returns
@@ -2418,6 +2423,13 @@ func ValidateAppSpec(bp AppSpec) error {
 	if bp.App.Auth.Enabled && !bp.App.Auth.DevMode && bp.App.Auth.JWTSecret == "" {
 		errs.add(fmt.Errorf("app spec: app.auth has dev_mode: false but no jwt_secret: the generated app would refuse to boot (production auth requires a signing key); set jwt_secret from your secret store, or set dev_mode: true for local development"))
 	}
+	// The battery mounts its routes at base_path + "/login" and the
+	// generated forms, sign-out button and e2e test post there. A trailing
+	// slash mounts "//login", a missing leading one a relative path, and
+	// "//host" would be a protocol-relative form action.
+	if p := bp.App.Auth.BasePath; p != "" && !authBasePathRE.MatchString(p) {
+		errs.add(fmt.Errorf("app spec: app.auth.base_path %q must be an absolute path such as /account: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash", p))
+	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
 	// generator can't emit it, and ApplyTenantScope is fail-closed, so a
@@ -2585,7 +2597,8 @@ func ValidateAppSpec(bp AppSpec) error {
 		for _, field := range decl.Fields {
 			declaredFields[field.Name] = true
 		}
-		for old, next := range decl.Renames {
+		for _, old := range slices.Sorted(maps.Keys(decl.Renames)) {
+			next := decl.Renames[old]
 			if _, err := query.SafeIdent(old); err != nil {
 				errs.add(fmt.Errorf("app spec: entity %q rename key %q is not a safe column name: %w", decl.Name, old, err))
 			}
@@ -3196,29 +3209,6 @@ func seedValueInFinalForm(f schema.Field, value any) bool {
 		// rejection of a working app spec.
 		return false
 	}
-}
-
-func appSpecEntityTable(decl framework.EntityDeclaration) string {
-	if decl.Table != "" {
-		return strings.Trim(decl.Table, "/")
-	}
-	return appSpecDefaultTableName(decl.Name)
-}
-
-func appSpecDefaultTableName(name string) string {
-	name = strings.ReplaceAll(name, "-", "_")
-	name = strings.ReplaceAll(name, " ", "_")
-	if strings.ToLower(name) == name {
-		return name
-	}
-	var b strings.Builder
-	for i, r := range name {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('_')
-		}
-		b.WriteRune(r)
-	}
-	return strings.ToLower(b.String())
 }
 
 func validateAppSpecBlock(screenName string, entities map[string]framework.EntityDeclaration, block AppSpecBlock) error {

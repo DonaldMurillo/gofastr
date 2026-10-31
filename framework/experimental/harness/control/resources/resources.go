@@ -10,10 +10,12 @@ package resources
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sort"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
@@ -128,6 +130,11 @@ func (c *Catalog) ListSessions() []SessionInfo {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].SessionID < out[j].SessionID })
 	return out
+}
+
+// SessionsAllowed keeps the sessions the claims may attach to.
+func SessionsAllowed(list []SessionInfo, claims auth.Claims) []SessionInfo {
+	return slices.DeleteFunc(list, func(si SessionInfo) bool { return !claims.AllowsSession(si.SessionID) })
 }
 
 // ListProviders returns the provider catalog with model details.

@@ -108,7 +108,10 @@ func main() {
   up to 256 frames or 16 MiB; past that a request is refused with an
   internal error. A `session/cancel` still reaches a running turn at
   once. Input EOF cancels the waiting handler's `ctx` and drops the
-  frames held behind it.
+  frames held behind it. The call returns when `ctx` ends or the
+  connection closes even while its request is still being written to a
+  client that stopped reading output; that write finishes, or breaks the
+  stream, on its own, so the next frame never lands inside it.
 - Honor `ctx`: it is cancelled when the client sends `session/cancel` and
   when `Serve` returns (input EOF or the caller's ctx ending), and the
   server can only answer the client once `Prompt` returns.
@@ -144,13 +147,22 @@ answered `session/prompt: internal error`; its text stays on the server.
   attached (`kiln/acp.WithProvider`), streaming text and tool calls as
   `session/update` frames — tool invocations surface as `tool_call` /
   `tool_call_update`, replacing the pre-v0.x bespoke `tools/call` method;
+- keeps each session's conversation with the provider across prompts: a
+  prompt's request carries the session's earlier prompts, replies, tool
+  calls and results. A tool call that a cancelled prompt never ran is
+  answered with a failed result of kind `cancelled`, so no call is left
+  without a result. A session runs one prompt at a time, also when a
+  second connection loads it; a prompt cancelled while it waits answers
+  `cancelled` and is not journaled;
 - gates `approve_plan` on `session/request_permission`: the model may
   propose plans freely, but only the user at the client can approve one,
   and a rejection is fed back to the model as a `needs_plan` result;
 - without a provider, refuses prompts loudly (one message chunk plus
   stop reason `refusal`) — the `kiln` CLI attaches no model today; drive
   Kiln's tools through `kiln mcp` or the HTTP panel, or embed
-  `kiln/acp` with a provider.
+  `kiln/acp` with a provider. `kiln acp --agent X` still runs the panel's
+  agent on panel messages, never on an ACP session's: the refused prompt
+  stays refused.
 
 Kiln sessions are process-lifetime: `session/load` replays a session minted
 by the current process (from the journal's chat) and reports any other ID

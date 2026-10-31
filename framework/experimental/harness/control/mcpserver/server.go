@@ -140,7 +140,7 @@ type rpcError struct {
 // TestParamsDuplicateKeysRefused); the value decode itself stays
 // plain stdlib.
 func unmarshalMCPObject(data []byte, dst any) error {
-	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return err
 	}
 	return json.Unmarshal(data, dst)
@@ -267,7 +267,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req rpcRequest) {
 	switch params.Name {
 	case "harness.list_sessions":
 		s.write(rpcResponse{ID: req.ID, Result: map[string]any{
-			"content": []any{textContent(jsonString(s.Catalog.ListSessions()))},
+			"content": []any{textContent(jsonString(s.listSessions()))},
 		}})
 	case "harness.run_agent_with_shell_access":
 		s.runAgentWithShellAccess(ctx, req.ID, params.Arguments)
@@ -405,6 +405,15 @@ func (s *Server) dispatchCommand(ctx context.Context, reqID json.RawMessage, arg
 	}})
 }
 
+// listSessions lists the live sessions the connection's token may
+// attach to; a nil Claims (stdio) lists them all.
+func (s *Server) listSessions() []resources.SessionInfo {
+	if s.Claims == nil {
+		return s.Catalog.ListSessions()
+	}
+	return resources.SessionsAllowed(s.Catalog.ListSessions(), *s.Claims)
+}
+
 // authorize applies the connection's token scope to one command. A nil
 // Claims means the transport carries no token (stdio), where the process
 // boundary is the check.
@@ -530,7 +539,7 @@ func (s *Server) handleResourcesRead(req rpcRequest) {
 	var body any
 	switch params.URI {
 	case "harness/v1://sessions":
-		body = s.Catalog.ListSessions()
+		body = s.listSessions()
 	case "harness/v1://providers":
 		body = s.Catalog.ListProviders(context.Background())
 	case "harness/v1://tools":

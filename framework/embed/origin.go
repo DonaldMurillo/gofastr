@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // NormalizeOrigin reduces an origin string to its canonical scheme://host[:port]
@@ -51,7 +53,10 @@ func NormalizeOrigin(raw string) (string, error) {
 		return "", fmt.Errorf("embed: origin %q must be an absolute http(s) origin", raw)
 	}
 
-	host := strings.ToLower(u.Hostname())
+	// ASCII-only fold: strings.ToLower maps U+0130 to "i" and the
+	// Kelvin sign to "k", so "https://İ.example" passed validOriginHost
+	// (which refuses every non-ASCII byte) as "https://i.example".
+	host := asciicase.Lower(u.Hostname())
 	if host == "" {
 		return "", fmt.Errorf("embed: origin %q has no host", raw)
 	}

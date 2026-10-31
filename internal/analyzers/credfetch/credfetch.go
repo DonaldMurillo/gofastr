@@ -31,9 +31,19 @@
 //     client_secret, password, passwd, secret, token, code, api_key,
 //     refresh_token, or access_token;
 //   - an Authorization, Proxy-Authorization, or X-API-Key header set on
-//     the request, its name a literal or a constant (the --from-openapi
-//     CLI client names it through const tokenHeader, and a literal-only
-//     read let that client ship with no CheckRedirect);
+//     the request (Header.Set, Header.Add, or an index write), its name
+//     a literal or a constant (the --from-openapi CLI client names it
+//     through const tokenHeader, and a literal-only read let that client
+//     ship with no CheckRedirect);
+//   - a configured header map copied onto the request: a Set/Add/index
+//     write on req.Header keyed by the range key of a map whose own name
+//     says headers (opts.Headers, extraHeaders). Bug bash 2026-10-27 I5:
+//     battery/log/webhook.go:92 builds &http.Client{Timeout: ...} with
+//     no CheckRedirect and postOnce (:233-252) copies every opts.Headers
+//     entry — the X-API-Key a log receiver wants — onto a POST whose
+//     bytes.NewReader body a 307/308 replays. Go strips only
+//     Authorization/Cookie-class headers on a cross-host redirect, and
+//     the constant-only header read never saw a range key;
 //   - a URL read from a field or parameter named tokenURL or
 //     tokenEndpoint.
 //
@@ -51,7 +61,14 @@
 //   - any client whose CheckRedirect is provably SET: a composite
 //     literal key, an assignment to the local's (or its address-taken
 //     copy's) CheckRedirect field — the oidcNoRedirect and webfetch
-//     shapes — or a package function whose return carries one;
+//     shapes — or a package function whose return carries one. A key or
+//     assignment whose value is nil is NOT set (I14: credfetch.go read
+//     `CheckRedirect: nil` as a guard, but a nil policy is Go's default,
+//     which follows up to ten redirects);
+//   - a header map ranged from an *http.Request or *http.Response (a
+//     proxy's pass-through of a message it did not configure), and a
+//     ranged map whose name does not say headers (tags, labels): the
+//     rule does not guess that one carries a credential;
 //   - clients the analyzer cannot prove either way: a parameter, a
 //     field with no provable assignment in this package (the generated
 //     SDK clients' HTTP field), http.DefaultClient, the sugar helpers
@@ -260,8 +277,8 @@ func (c *pkgCtx) collectFuncReturns(fd *ast.FuncDecl) {
 	checked := map[string]bool{}
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		if a, ok := n.(*ast.AssignStmt); ok {
-			for _, lhs := range a.Lhs {
-				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "CheckRedirect" {
+			for i, lhs := range a.Lhs {
+				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "CheckRedirect" && !c.nilRHS(a, i) {
 					if id, ok := sel.X.(*ast.Ident); ok {
 						checked[id.Name] = true
 					}
@@ -329,7 +346,9 @@ func (c *pkgCtx) classify(e ast.Expr, fn *ast.FuncDecl, checkedLocal map[string]
 		}
 		for _, elt := range v.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "CheckRedirect" {
+				// A nil value follows redirects exactly like an absent
+				// key (I14): only a real policy func is a guard.
+				if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "CheckRedirect" && !c.isNil(kv.Value) {
 					return verdict{stateGuarded, v}
 				}
 			}
@@ -375,8 +394,8 @@ func (c *pkgCtx) checkFunc(fd *ast.FuncDecl, reported map[token.Pos]bool) {
 	}
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		if a, ok := n.(*ast.AssignStmt); ok {
-			for _, lhs := range a.Lhs {
-				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "CheckRedirect" {
+			for i, lhs := range a.Lhs {
+				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "CheckRedirect" && !c.nilRHS(a, i) {
 					if id, ok := sel.X.(*ast.Ident); ok {
 						f.checked[id.Name] = true
 					}
@@ -474,36 +493,132 @@ func (f *fnCtx) credential(req ast.Expr) string {
 	return ""
 }
 
-// headerCredential scans the function for <req>.Header.Set(k, v) with a
-// credential header name.
+// headerCredential scans the function for a header write on <req>:
+// Header.Set / Header.Add with a credential header name, or the
+// configured-header-map copy — a Set/Add/index write on <req>.Header
+// whose key is the range key of a header map the caller configured
+// (I5: battery/log webhook postOnce ranges over opts.Headers). A
+// configured map is where an X-API-Key lives, and its names are not
+// constants the rule can read.
 func (f *fnCtx) headerCredential(req *types.Var) string {
 	found := ""
+	onReqHeader := func(x ast.Expr) bool {
+		inner, ok := ast.Unparen(x).(*ast.SelectorExpr)
+		if !ok || inner.Sel.Name != "Header" {
+			return false
+		}
+		id, ok := inner.X.(*ast.Ident)
+		if !ok {
+			return false
+		}
+		o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var)
+		return ok && o == req
+	}
+	judgeKey := func(k ast.Expr) {
+		if key, ok := stringArg(f.c.pass.TypesInfo, k); ok {
+			if headerCred[strings.ToLower(key)] {
+				found = fmt.Sprintf("%s header", key)
+			}
+			return
+		}
+		if m := f.configuredHeaderMap(k); m != "" {
+			found = "configured header map " + m
+		}
+	}
 	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
 		if found != "" {
 			return false
 		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) != 2 {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Set" {
-			return true
-		}
-		inner, ok := sel.X.(*ast.SelectorExpr)
-		if !ok || inner.Sel.Name != "Header" {
-			return true
-		}
-		if id, ok := inner.X.(*ast.Ident); ok {
-			if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && o == req {
-				if key, ok := stringArg(f.c.pass.TypesInfo, call.Args[0]); ok && headerCred[strings.ToLower(key)] {
-					found = fmt.Sprintf("%s header", key)
+		switch v := n.(type) {
+		case *ast.CallExpr:
+			if len(v.Args) != 2 {
+				return true
+			}
+			sel, ok := v.Fun.(*ast.SelectorExpr)
+			if !ok || (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") || !onReqHeader(sel.X) {
+				return true
+			}
+			judgeKey(v.Args[0])
+		case *ast.AssignStmt:
+			for _, lhs := range v.Lhs {
+				if ix, ok := ast.Unparen(lhs).(*ast.IndexExpr); ok && onReqHeader(ix.X) {
+					judgeKey(ix.Index)
 				}
 			}
 		}
 		return true
 	})
 	return found
+}
+
+// configuredHeaderMap names the header map a key expression is ranged
+// from: the key must be the KEY of a range statement in this function
+// over a map whose own name (parameter, local, or field) says headers.
+// The headers of an *http.Request or *http.Response being ranged (a
+// proxy's pass-through) are not configuration and stay quiet.
+func (f *fnCtx) configuredHeaderMap(key ast.Expr) string {
+	id, ok := ast.Unparen(key).(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	obj := f.c.pass.TypesInfo.ObjectOf(id)
+	if obj == nil {
+		return ""
+	}
+	out := ""
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if out != "" {
+			return false
+		}
+		rs, ok := n.(*ast.RangeStmt)
+		if !ok || rs.Key == nil {
+			return true
+		}
+		kid, ok := rs.Key.(*ast.Ident)
+		if !ok || f.c.pass.TypesInfo.ObjectOf(kid) != obj {
+			return true
+		}
+		t := f.c.pass.TypesInfo.TypeOf(rs.X)
+		if t == nil {
+			return true
+		}
+		if _, ok := t.Underlying().(*types.Map); !ok {
+			return true
+		}
+		var name string
+		switch x := ast.Unparen(rs.X).(type) {
+		case *ast.Ident:
+			name = x.Name
+		case *ast.SelectorExpr:
+			if isHTTPMessage(f.c.pass.TypesInfo.TypeOf(x.X)) {
+				return true
+			}
+			name = x.Sel.Name
+		default:
+			return true
+		}
+		if strings.Contains(strings.ToLower(name), "header") {
+			out = exprPath(rs.X)
+		}
+		return true
+	})
+	return out
+}
+
+// isHTTPMessage reports whether t is net/http.Request or Response, or a
+// pointer to one.
+func isHTTPMessage(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok || named.Obj().Pkg() == nil || named.Obj().Pkg().Path() != "net/http" {
+		return false
+	}
+	return named.Obj().Name() == "Request" || named.Obj().Name() == "Response"
 }
 
 // urlName reports when the request URL comes from a token-endpoint
@@ -613,6 +728,21 @@ func unwrapEncode(e ast.Expr) *ast.CallExpr {
 		return call
 	}
 	return nil
+}
+
+// isNil reports whether e is the untyped nil: a CheckRedirect set to
+// nil is Go's default policy, which follows up to ten redirects.
+func (c *pkgCtx) isNil(e ast.Expr) bool {
+	tv, ok := c.pass.TypesInfo.Types[ast.Unparen(e)]
+	return ok && tv.IsNil()
+}
+
+// nilRHS reports whether the i-th left side of a is assigned nil.
+func (c *pkgCtx) nilRHS(a *ast.AssignStmt, i int) bool {
+	if len(a.Lhs) != len(a.Rhs) || i >= len(a.Rhs) {
+		return false
+	}
+	return c.isNil(a.Rhs[i])
 }
 
 // isClientExpr reports whether e's type is *http.Client.

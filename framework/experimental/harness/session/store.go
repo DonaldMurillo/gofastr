@@ -7,6 +7,8 @@
 // disk.
 package session
 
+//gofastr:allow-file(GOFASTR1415) the harness event log is the operator's own SQLite file, never the app database App.EraseUserData and App.ExportData open
+
 import (
 	"context"
 	"encoding/json"
@@ -41,8 +43,10 @@ type Store interface {
 
 	// ListPastSessions returns a summary row per distinct session in
 	// the event log, ordered newest-last-seen first. limit ≤ 0 means
-	// unbounded.
-	ListPastSessions(ctx context.Context, limit int) ([]PastSession, error)
+	// unbounded. A non-empty only keeps just those sessions, and it
+	// applies before the limit: a token bound to an old session still
+	// finds it behind newer ones.
+	ListPastSessions(ctx context.Context, limit int, only []ids.SessionID) ([]PastSession, error)
 
 	// RecordToolIntent writes a tool_call_intents row before the
 	// tool spawns. For mutating tools, the implementation MUST fsync

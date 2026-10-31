@@ -252,6 +252,13 @@ type fkDiffEnv struct {
 	tables     map[string]map[string]string
 	keyChanged map[string][]string
 	deferred   []SchemaChange
+	// uniques is the snapshot's unique columns per table (snapshotUniques);
+	// nil (the live diff) or a missing table skips the comparison.
+	uniques map[string][]string
+	// tableDDL is the snapshot's CREATE TABLE per table, which the NOT
+	// NULL and DEFAULT diff reads; nil (the live diff) or a missing
+	// table skips it.
+	tableDDL map[string]string
 }
 
 // renamesApplied maps each column a rename hint renames (lower case) to its
@@ -476,14 +483,14 @@ var reFKReferenceCols = regexp.MustCompile(`(?i)\bREFERENCES\s+"?([a-zA-Z0-9_]+(
 // recordedReferencesOnto lists, per table, the column lists of the foreign
 // keys onto table that the snapshot's recorded CREATE TABLEs hold: the keys
 // a generated migration runs against. An empty list references the key.
-func recordedReferencesOnto(tableDDL map[string]string, table string) map[string][][]string {
+func recordedReferencesOnto(dialect Dialect, tableDDL map[string]string, table string) map[string][][]string {
 	out := map[string][][]string{}
 	for _, name := range slices.Sorted(maps.Keys(tableDDL)) {
 		if strings.EqualFold(name, table) {
 			continue
 		}
 		for _, m := range reFKReferenceCols.FindAllStringSubmatch(ddlWithoutLiterals(tableDDL[name]), -1) {
-			if !strings.EqualFold(m[1], table) {
+			if !refersTo(dialect, name, m[1], table) {
 				continue
 			}
 			var cols []string

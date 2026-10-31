@@ -259,8 +259,8 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 	}
 	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actions...)
 	var prev, next string
-	if b.steps && inDrawer(ctx) {
-		prev, next = b.ui.neighbours(ctx, m, base, b.id)
+	if b.steps != nil && inDrawer(ctx) {
+		prev, next = b.ui.neighbours(ctx, m, b.steps, base, b.id)
 	}
 	return render.Join(drawerBar(ctx, prev, next), ui.PageHeader(cfg))
 }

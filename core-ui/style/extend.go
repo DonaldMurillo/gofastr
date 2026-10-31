@@ -66,6 +66,18 @@ func (t Theme) Extend(tokens ...any) Theme {
 	return out
 }
 
+// Clone returns a copy of t that shares no mutable memory with it: the
+// DarkColors, DarkCode, Components and Knobs maps and every Extensions
+// token set are copied, so a write to either theme never reaches the
+// other. Code that stores a theme it was handed (a registered override or
+// variant, keyed by a hash of its content) clones it first. An extension
+// entry with nothing to copy, such as nil, is kept as it is.
+func (t Theme) Clone() Theme {
+	out := t
+	deepenCopy(reflect.ValueOf(&out).Elem(), map[uintptr]reflect.Value{})
+	return out
+}
+
 // DarkTokens is a token set that carries dark-scheme values for its own
 // colours, keyed by colour name ("brand-glow" for --color-brand-glow).
 // The typed Go `gofastr gen styles` writes from a <name>.tokens.css

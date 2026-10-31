@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 )
 
 // The control channel. A Unix socket (AF_UNIX on Windows too) inside
@@ -90,7 +91,10 @@ func lockInstance(dir string) (release func(), err error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: open instance lock: %w", err)
 	}
-	held, err := tryLock(f)
+	// Off Unix and Windows there is no OS lock: the control socket's
+	// liveness check is the only single-instance guard there, and the
+	// control channel refuses every peer anyway (peercred_other.go).
+	held, err := filelock.TryLock(f)
 	if err != nil {
 		f.Close()
 		return nil, fmt.Errorf("service: take instance lock: %w", err)

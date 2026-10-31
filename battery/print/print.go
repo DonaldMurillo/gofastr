@@ -81,7 +81,9 @@ func allDigits(s string) bool {
 // Config configures the print battery.
 type Config struct {
 	// PathPrefix is the URL prefix for all print documents.
-	// Defaults to "/print". A trailing slash is trimmed.
+	// Defaults to "/print". A trailing slash is trimmed. It must name a
+	// path below the root: "/" or a prefix with no leading slash fails
+	// the mount, since the embed reservation covers this prefix only.
 	PathPrefix string
 
 	// DefaultPage is the page setup inherited by documents that don't
@@ -225,9 +227,6 @@ func (b *Battery) Name() string { return "print" }
 // page must never reach it, an unbounded amplification primitive behind a
 // credential anyone with devtools can read. See framework.EmbedReserving.
 func (b *Battery) ReservedEmbedPrefixes() []string {
-	if b.cfg.PathPrefix == "" {
-		return []string{"/print"}
-	}
 	return []string{b.cfg.PathPrefix}
 }
 
@@ -247,6 +246,13 @@ func (b *Battery) RegisterRoutes(r *router.Router) error {
 	// underlying ServeMux if both happen. Use exactly one in practice.
 	if b.mounted {
 		return nil
+	}
+	// The prefix is what ReservedEmbedPrefixes names, so it must be a
+	// path below the root: "/" trims to "" and would mount the routes at
+	// the root, outside any reservation, and "print" reads as a host
+	// pattern to the mux.
+	if !strings.HasPrefix(b.cfg.PathPrefix, "/") {
+		return fmt.Errorf("print: PathPrefix must be a path below the root, such as /print (got %q after trimming trailing slashes)", b.cfg.PathPrefix)
 	}
 	hdr := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{ContentSecurityPolicy: printCSP})
 

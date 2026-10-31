@@ -77,7 +77,7 @@ type Link struct {
 // reservedPagePath reports a path the admin draws itself, or the prefix
 // of one of its routes, which an app page may not take.
 func reservedPagePath(p string) bool {
-	for _, own := range []string{"/search", "/queue", "/audit", "/rbac", "/modules", "/emails", "/entities", "/api"} {
+	for _, own := range []string{"/search", "/shortcuts", "/account", "/queue", "/audit", "/rbac", "/modules", "/emails", "/entities", "/api"} {
 		if p == own || strings.HasPrefix(p, own+"/") {
 			return true
 		}

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
@@ -35,21 +34,26 @@ func (q *DBQueue) normalizeLegacyTimestamps(ctx context.Context) error {
 	if q.dialect != dialectSQLite {
 		return nil
 	}
-	if err := q.normalizeTimesFor(ctx, q.qt(), "id", "created_at", "scheduled_at", "claimed_at"); err != nil {
+	layout := query.ProbeSQLiteBindLayout(ctx, q.db)
+	if err := q.normalizeTimesFor(ctx, layout, q.qt(), "id", "created_at", "scheduled_at", "claimed_at"); err != nil {
 		return err
 	}
-	if err := q.normalizeTimesFor(ctx, q.schedulerSchedulesTable(), "id", "next_run", "updated_at"); err != nil {
+	if err := q.normalizeTimesFor(ctx, layout, q.schedulerSchedulesTable(), "id", "next_run", "updated_at"); err != nil {
 		return err
 	}
-	if err := q.normalizeTimesFor(ctx, q.schedulerOccurrencesTable(), "occurrence_id", "scheduled_tick", "created_at"); err != nil {
+	if err := q.normalizeTimesFor(ctx, layout, q.schedulerOccurrencesTable(), "occurrence_id", "scheduled_tick", "created_at"); err != nil {
 		return err
 	}
-	return q.normalizeTimesFor(ctx, q.schedulerLeaseTable(), "name", "expires_at", "heartbeat_at")
+	return q.normalizeTimesFor(ctx, layout, q.schedulerLeaseTable(), "name", "expires_at", "heartbeat_at")
 }
 
 // normalizeTimesFor canonicalizes the named time columns of one single-key
-// table: table is the already-quoted table name, keyCol the column the
-// UPDATE keys on, and timeCols the time columns to rewrite. NULL values are
+// table: layout is the text the driver binds a time.Time as, table the
+// already-quoted table name, keyCol the column the UPDATE keys on, and
+// timeCols the time columns to rewrite. The columns are read as stored
+// text: the driver hands a DATETIME column back as a time.Time, which
+// never equals the canonical text, so every row was rewritten on every
+// boot. NULL values are
 // preserved (no SET fragment; claimed_at and the lease columns are
 // nullable). Reads are fully drained before any UPDATE: the queue is
 // typically opened with SetMaxOpenConns(1) and an UPDATE issued while the
@@ -58,13 +62,15 @@ func (q *DBQueue) normalizeLegacyTimestamps(ctx context.Context) error {
 // It collapses the four former per-table copies (normalizeQueueJobsTimes,
 // normalizeSchedulesTimes, normalizeOccurrencesTimes, normalizeLeaseTimes),
 // which differed only in table, key, and column names.
-func (q *DBQueue) normalizeTimesFor(ctx context.Context, table, keyCol string, timeCols ...string) error {
+func (q *DBQueue) normalizeTimesFor(ctx context.Context, layout, table, keyCol string, timeCols ...string) error {
 	if !q.queueTableExists(ctx, table) {
 		return nil
 	}
 	selectCols := make([]string, 0, len(timeCols)+1)
 	selectCols = append(selectCols, keyCol)
-	selectCols = append(selectCols, timeCols...)
+	for _, col := range timeCols {
+		selectCols = append(selectCols, fmt.Sprintf("CAST(%s AS TEXT)", col))
+	}
 	rows, err := q.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT %s FROM %s`, strings.Join(selectCols, ", "), table))
 	if err != nil {
@@ -96,61 +102,37 @@ func (q *DBQueue) normalizeTimesFor(ctx context.Context, table, keyCol string, t
 		return err
 	}
 	for _, r := range collected {
-		cols := make([]queueTimeCol, len(timeCols))
+		cols := make([]query.StoredTime, len(timeCols))
 		for i, name := range timeCols {
-			cols[i] = queueTimeCol{name, r.vals[i]}
+			cols[i] = query.StoredTime{Col: name, Raw: r.vals[i]}
 		}
-		sets, args, err := queueTimeSets(cols)
+		fixes, err := query.SQLiteTimeFixes(layout, cols)
 		if err != nil {
-			return err
+			return fmt.Errorf("queue: %w", err)
 		}
-		if len(sets) == 0 {
-			continue
-		}
-		args = append(args, r.key)
-		stmt := fmt.Sprintf(`UPDATE %s SET %s WHERE %s=$%d`,
-			table, strings.Join(sets, ", "), keyCol, len(args))
-		if _, err := q.db.ExecContext(ctx, stmt, args...); err != nil {
+		if err := q.applyTimeFixes(ctx, table, keyCol, r.key, fixes); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-type queueTimeCol struct {
-	col string
-	raw any
-}
-
-// queueTimeSets builds SET-clause fragments and bind args for the time
-// columns whose stored value isn't already in canonical RFC3339Nano form.
-// NULL columns produce no fragment (left untouched). Canonical values parse
-// and reformat to the same string → skipped, which makes the whole pass
-// idempotent. Unparseable values return an error: a value query.ParseDBTime
-// can't handle is data corruption, and silently keeping it would leave the
-// bug in place. The bound value is normalized to UTC and bound as time.Time
-// so the driver writes exactly what its own predicate binds compare against
-// (the driver formats time.Time into the stored layout, which is what every
-// claim/lease query then compares to).
-func queueTimeSets(cols []queueTimeCol) ([]string, []any, error) {
-	var sets []string
-	var args []any
-	for _, c := range cols {
-		if c.raw == nil {
-			continue
+// applyTimeFixes writes one row's fixes, a statement per column, each
+// guarded on the text the column held when it was read. The read and the
+// writes are not one transaction, and a worker that claimed the row in
+// between wrote its fresh lease in the driver's own layout: an unguarded
+// write put the stale lease back, and a second worker could claim the job
+// at once (2026-10-27 B10). One column per statement, so a column the
+// worker rewrote does not hold back the others.
+func (q *DBQueue) applyTimeFixes(ctx context.Context, table, keyCol, key string, fixes []query.TimeFix) error {
+	for _, f := range fixes {
+		stmt := fmt.Sprintf(`UPDATE %s SET %s=$1 WHERE %s=$2 AND CAST(%s AS TEXT)=$3`,
+			table, f.Col, keyCol, f.Col)
+		if _, err := q.db.ExecContext(ctx, stmt, f.At, key, f.Read); err != nil {
+			return err
 		}
-		parsed, err := query.ParseDBTime(c.raw)
-		if err != nil {
-			return nil, nil, fmt.Errorf("queue: decode legacy %s: %w", c.col, err)
-		}
-		canonical := parsed.UTC().Format(time.RFC3339Nano)
-		if s, ok := c.raw.(string); ok && s == canonical {
-			continue
-		}
-		sets = append(sets, fmt.Sprintf("%s=$%d", c.col, len(args)+1))
-		args = append(args, parsed.UTC())
 	}
-	return sets, args, nil
+	return nil
 }
 
 // queueTableExists reports whether the already-quoted table is queryable.

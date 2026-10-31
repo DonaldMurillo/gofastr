@@ -1,10 +1,28 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
+
+// The status line's count is a number a reader reads, so it follows the
+// request's locale like the chart ticks do (2026-10-27 C14).
+func TestSearchCountFollowsLocale(t *testing.T) {
+	fr := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
+	cfg := searchFixture()
+	cfg.Ctx, cfg.Total = fr, 1234
+	out := string(SearchResults(cfg))
+	if want := i18n.Number(fr, 1234); !strings.Contains(out, want+" ") {
+		t.Errorf("want the count written %q in\n%s", want, out)
+	}
+	if strings.Contains(out, "1234 ") {
+		t.Errorf("count written with no locale grouping:\n%s", out)
+	}
+}
 
 func searchFixture() SearchResultsConfig {
 	return SearchResultsConfig{

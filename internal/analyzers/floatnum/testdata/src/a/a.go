@@ -108,6 +108,32 @@ func strict(b []byte, r io.Reader) {
 	_ = handler.DecodeStrict(r, &m) // want `JSON decoded into map\[string\]any without UseNumber`
 }
 
+var pkgStrictOpts = []handler.StrictOption{handler.UseNumber()}
+
+var pkgPlainOpts = []handler.StrictOption{}
+
+// I3: handler.UseNumber() passed through a variable, a slice spread, an
+// append, or a package-level slice keeps numbers exact too.
+func strictViaVar(b []byte) {
+	var m map[string]any
+	opt := handler.UseNumber()
+	_ = handler.UnmarshalStrict(b, &m, opt)
+	opts := []handler.StrictOption{handler.UseNumber()}
+	_ = handler.UnmarshalStrict(b, &m, opts...)
+	var more []handler.StrictOption
+	more = append(more, handler.UseNumber())
+	_ = handler.UnmarshalStrict(b, &m, more...)
+	_ = handler.UnmarshalStrict(b, &m, pkgStrictOpts...)
+}
+
+// An option variable that never holds UseNumber is still the lossy decode.
+func strictViaOtherVar(b []byte) {
+	var m map[string]any
+	var opt handler.StrictOption
+	_ = handler.UnmarshalStrict(b, &m, opt)             // want `JSON decoded into map\[string\]any without UseNumber`
+	_ = handler.UnmarshalStrict(b, &m, pkgPlainOpts...) // want `JSON decoded into map\[string\]any without UseNumber`
+}
+
 // An exported interface behind its own UnmarshalJSON is that type's call.
 type selfDecoding struct{ V any }
 

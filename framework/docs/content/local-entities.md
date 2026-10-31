@@ -97,7 +97,9 @@ applies only when creating a record; a create from a form with no
 control for a Required field (and no Default) is refused. A `Date` must
 be a real calendar date (`2024-02-31` is refused); a `Timestamp` takes
 RFC 3339 or a `datetime-local` value, read in the visitor's time zone,
-and is stored as RFC 3339 in UTC, the formats core/schema parses. A
+and is stored as RFC 3339 in UTC, the formats core/schema parses. The
+`datetime-local` control shows minutes, so a `Timestamp` control the
+visitor left unchanged saves the stored value, seconds included. A
 second submit while a save is in flight is dropped, so a double click
 saves once.
 

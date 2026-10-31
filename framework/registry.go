@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // entityKey is the registry's primary identity for an entity: its config
@@ -107,6 +108,14 @@ func (r *Registry) Register(ent *entity.Entity) error {
 
 	r.entities[key] = ent
 	return nil
+}
+
+// size counts every registered (name, version) pair. Nothing is ever
+// removed, so a larger size means a new registration.
+func (r *Registry) size() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.entities)
 }
 
 // Get retrieves an Entity by name, resolving version ambiguity safely.
@@ -261,12 +270,14 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 	if newEnt.Config.Unmanaged {
 		return nil
 	}
-	newTable := newEnt.GetTable()
+	// Folded: AutoMigrate writes table names unquoted, so Postgres and
+	// SQLite store "Widgets" and "widgets" as one table.
+	newTable := asciicase.Lower(newEnt.GetTable())
 	for k, existing := range r.entities {
 		if k == newKey {
 			continue // same (name, version), already rejected by the duplicate-key check
 		}
-		if existing.Config.Unmanaged || existing.GetTable() != newTable {
+		if existing.Config.Unmanaged || asciicase.Lower(existing.GetTable()) != newTable {
 			continue
 		}
 		if err := conflictingColumns(existing, newEnt); err != nil {

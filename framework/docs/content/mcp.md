@@ -146,7 +146,9 @@ A non-nil error becomes a JSON-RPC error, but only a deliberate
 server-side and answered with the generic "internal tool error", so
 handler text (filesystem paths, driver messages) never crosses the
 transport. For a failure the caller should see as tool output rather
-than a transport error, return `mcp.ToolResult{IsError: true}`.
+than a transport error, return `mcp.ToolResult{IsError: true}`. A result
+JSON cannot encode (a NaN, a channel), as a plain value or as
+`structuredContent`, is answered with the same "internal tool error".
 
 Options:
 
@@ -456,8 +458,11 @@ caller anything the matching methods would not:
   callers its gate refuses, who cannot see the item in that listing
   either.
 - Both gates are evaluated at delivery time against the identity the
-  stream's GET request presented, not once when the stream opened. A
-  session revoked mid-stream stops receiving immediately.
+  stream's GET request presented, re-checked before each delivery
+  (`handler.RecheckPrincipal`), not once when the stream opened. A
+  session revoked mid-stream has its stream closed at the next
+  notification, and so does a caller the re-check places in another
+  tenant (`tenant.ResolveMiddleware` re-resolves it).
 
 A slow subscriber never blocks the server. Each stream has a bounded
 buffer (16 notifications); a full buffer means the client stopped
@@ -594,9 +599,11 @@ What a client sees at the edges:
   refuses outright gets a 403 and holds no stream, instead of holding
   one open silently for its whole life.
 - `ServeStdio(ctx, in, out)` reads line-delimited JSON-RPC from `in` and writes
-  responses to `out`, blocking until EOF. A cancelled context is seen
-  between lines, so to stop a session waiting on silent input, close
-  `in` as well. The
+  responses to `out` until EOF, and returns `ctx.Err()` once the context
+  ends, silent input included. The read runs on its own goroutine, which
+  stays in `in.Read` until a line, EOF or an error arrives; a process
+  exiting on the signal loses nothing, and a caller that goes on using
+  `in` closes it. The
   envelope is decoded with the same strict top-level-key rule as the HTTP
   transports: a line repeating a key or spelling one in two cases is
   refused as invalid JSON, never resolved last-key-wins. The recover
@@ -620,7 +627,9 @@ foreign Origins for tunnels and split-origin dev clients.
 `WithRequest` stashes the inbound `*http.Request` in the context the
 transports hand to handlers; `RequestFromContext` reads it back. Tool handlers
 that re-dispatch through an HTTP router copy the caller's Cookie /
-Authorization header from it so session middleware re-resolves the same user.
+Authorization header from it so session middleware re-resolves the same user,
+and its `Host`, so host middleware sees the site the caller reached. The
+generated CRUD tools do both.
 `StreamSSE(w, event, data)` is the hardened entry point for streaming a tool
 result as one SSE event.
 

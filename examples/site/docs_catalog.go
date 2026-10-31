@@ -176,7 +176,7 @@ var docIntents = []docIntent{
 	{
 		Num: "05", Slug: "agents", Title: "Working with agents",
 		Lede: "MCP tools, Kiln build mode (experimental), agent permissions, plan-gated destructive ops.",
-		Path: []string{"Agent-readiness", "Contracts", "Kiln overview", "Semantic search", "Agent notes"},
+		Path: []string{"Agent-readiness", "Contracts", "Kiln overview", "Semantic search"},
 		Docs: []docEntry{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
 			{"mcp", "MCP server", "The core/mcp reference: JSON-RPC methods, registering tools, resources, templates, and prompts, per-caller gates, and cursor pagination."},
@@ -378,7 +378,7 @@ func (s *DocPageScreen) StaticPaths(ctx context.Context) []map[string]string {
 
 func (s *DocPageScreen) Render() render.HTML {
 	if body, err := docs.Get(s.Entry.Slug); err == nil {
-		return ui.Markdown(ui.MarkdownConfig{Source: string(body)})
+		return render.HTML(siteDocLinks(string(ui.Markdown(ui.MarkdownConfig{Source: string(body)}))))
 	}
 	return html.Paragraph(html.TextConfig{},
 		render.Text("This doc isn't available yet. Browse the embedded docs with "),

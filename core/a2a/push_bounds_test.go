@@ -123,9 +123,20 @@ func TestPushPlainTransportDialGuarded(t *testing.T) {
 	if _, ok := guardedClient(&http.Client{Transport: proxied}, false).Transport.(*guardedRoundTripper); !ok {
 		t.Error("proxied transport lost the resolve-and-check wrapper")
 	}
-	dialer := &http.Transport{DialContext: (&net.Dialer{}).DialContext}
+	var d net.Dialer
+	dialer := &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return d.DialContext(ctx, network, addr)
+	}}
 	if _, ok := guardedClient(&http.Client{Transport: dialer}, false).Transport.(*guardedRoundTripper); !ok {
 		t.Error("custom-dialer transport lost the resolve-and-check wrapper")
+	}
+
+	// http.DefaultTransport.Clone() carries the environment proxy and a
+	// stock net.Dialer; it used to take the weaker wrapper (2026-10-27
+	// P54) and is dial-guarded now.
+	clone := http.DefaultTransport.(*http.Transport).Clone()
+	if _, ok := guardedClient(&http.Client{Transport: clone}, false).Transport.(*http.Transport); !ok {
+		t.Error("DefaultTransport clone took the resolve-and-check wrapper, want the dial guard")
 	}
 }
 

@@ -150,10 +150,15 @@ err := cache.GetOrSet(ctx, c, "user:42", time.Minute, &u,
 
 `GetOrSet` collapses concurrent misses on the same key so the loader
 runs exactly once and all waiters share the result.  A loader error
-propagates and is never cached. The loader runs under
-`context.WithoutCancel`: the first caller's values (trace, auth) are
-kept but its abort is not, so one caller cancelling their request no
-longer fails the loader for every waiter joined behind it.
+propagates and is never cached. The shared loader keeps the first
+caller's context values (trace, auth) but not its cancellation, so one
+caller cancelling their request does not fail the loader for every
+waiter joined behind it. Each caller still leaves at its own deadline
+with `ctx.Err()`; the loader's context is cancelled when the last
+waiter leaves, and a fill nobody waits for any more stores nothing, so
+it cannot overwrite a value a later caller filled. A cache with value
+receivers has no identity to share a fill by, so each caller fills on
+its own, and still leaves at its deadline.
 
 ## HTTP caching middleware
 
@@ -166,6 +171,14 @@ r.Use(cache.CacheMiddlewareWithLimit(c, 30*time.Second, 2<<20)) // 2 MiB
 The middleware is RFC 9111-compliant by default:
 
 - Only `GET` requests are cached.
+- An unsafe request (`POST`, `PUT`, `PATCH`, `DELETE`, any method but
+  `GET`, `HEAD`, `OPTIONS` and `TRACE`) evicts the stored `GET` of its
+  own URL, path and query, on every locale under `WithLocalePrefixes`,
+  after its handler runs (RFC 9111 §4.4). Only that URL: a `DELETE
+  /items/1` leaves a stored `/items` list in place until its TTL. The
+  eviction runs whatever the status, so a refused request costs at
+  most one origin fetch. A `GET` that started before the change
+  committed can still store the old body, which then lasts its TTL.
 - Requests with `Authorization`, `Cookie`, or `X-Gofastr-Embed` headers bypass
   the cache. The last one is an embeddable surface's grant: it authenticates a
   request exactly as the other two do, and it deliberately travels without
@@ -186,6 +199,10 @@ The middleware is RFC 9111-compliant by default:
   `/pricing` are separate entries.
 - Responses larger than `maxBodyBytes` (default 8 MiB) are streamed
   without caching.
+- A handler that flushes (an SSE stream) or hijacks the connection (a
+  websocket upgrade) gets the client writer from then on, and its
+  response is not stored, so the middleware can sit in front of
+  `/__gofastr/sse` and upgrade routes.
 - The `X-Cache: HIT` / `MISS` header is set on every response.
 
 ## Battery wrapper (lifecycle)
@@ -237,6 +254,8 @@ entry appears in the generated `AGENTS.md` output from
   headers before suspecting the middleware.
 - **Hand-rolling get-miss-then-set under concurrency.** N concurrent
   misses run the loader N times (thundering herd). `cache.GetOrSet`
-  collapses concurrent misses per key via singleflight so the loader
+  collapses concurrent misses per key into one shared fill so the loader
   runs exactly once, and a loader error propagates without being
-  cached.
+  cached. Each caller waits under its own context: one whose deadline
+  passes returns `ctx.Err()` while the fill runs on for the others, and
+  the loader's context is cancelled once no caller is left waiting.

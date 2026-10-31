@@ -106,7 +106,7 @@ type SearchHit struct {
 }
 
 // minSearchTermLen is the shortest search term Search will accept.
-// Below this, the function returns zero hits without scanning the
+// Below this, the function returns an error without scanning the
 // corpus: short terms ("a", "of") match noise and would produce
 // thousands of hits.
 const minSearchTermLen = 3
@@ -115,6 +115,11 @@ const minSearchTermLen = 3
 // supply an explicit limit. Keeps MCP / narrow-context clients safe
 // from oversized responses.
 const defaultSearchHitCap = 50
+
+// ErrSearchTermTooShort is the error Search and SearchWithLimit return
+// for a term under three bytes, the empty term included, so a caller
+// can tell a term too short to search from one that matched nothing.
+var ErrSearchTermTooShort = fmt.Errorf("docs: a search term needs at least %d characters", minSearchTermLen)
 
 // Search returns the matching lines across all topics, up to
 // defaultSearchHitCap hits, ordered by TOPIC RELEVANCE: a topic whose
@@ -161,8 +166,8 @@ func (a topicScore) moreRelevant(b topicScore) bool {
 // defaultSearchHitCap. Every topic is scanned (relevance needs the
 // whole corpus's counts); the ranked result is capped at `limit` hits.
 func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
-	if term == "" || len(term) < minSearchTermLen {
-		return nil, nil
+	if len(term) < minSearchTermLen {
+		return nil, ErrSearchTermTooShort
 	}
 	if limit <= 0 {
 		limit = defaultSearchHitCap
@@ -179,37 +184,7 @@ func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 		if err != nil {
 			continue
 		}
-		score := topicScore{name: t.Name, title: strings.Contains(strings.ToLower(extractTitle(body, t.Name)), needle)}
-		lines := strings.Split(string(body), "\n")
-		var lastHeading string
-		lede := true // lines before the first section heading
-		var hits []SearchHit
-		for i, ln := range lines {
-			if strings.HasPrefix(ln, "#") {
-				if strings.HasPrefix(ln, "##") {
-					lede = false
-				}
-				lastHeading = strings.TrimSpace(strings.TrimLeft(ln, "# "))
-				if strings.Contains(strings.ToLower(lastHeading), needle) {
-					score.headings++
-				}
-				continue
-			}
-			lower := strings.ToLower(ln)
-			if !strings.Contains(lower, needle) {
-				continue
-			}
-			if lede {
-				score.lede++
-			}
-			score.body++
-			hits = append(hits, SearchHit{
-				Topic:   t.Name,
-				Line:    i + 1,
-				Heading: lastHeading,
-				Excerpt: excerptAround(ln, lower, needle, 240),
-			})
-		}
+		score, hits := scanTopic(t.Name, body, needle)
 		if len(hits) > 0 {
 			perTopic[t.Name] = hits
 			scores = append(scores, score)
@@ -239,11 +214,65 @@ func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 	return out, nil
 }
 
-// extractTitle returns the first H1 heading or a humanised fallback.
+// scanTopic scores one topic for needle (already lowercased) and
+// returns its matching lines in order. A heading line is never a hit;
+// a `#` line inside a fenced code block is code (a shell or YAML
+// comment), so it is an ordinary line, not a heading.
+func scanTopic(name string, body []byte, needle string) (topicScore, []SearchHit) {
+	score := topicScore{name: name, title: strings.Contains(strings.ToLower(extractTitle(body, name)), needle)}
+	lines := strings.Split(string(body), "\n")
+	var lastHeading string
+	lede := true // lines before the first section heading
+	var hits []SearchHit
+	inFence := false
+	for i, ln := range lines {
+		if fenceMarker(ln) {
+			inFence = !inFence
+		}
+		if !inFence && strings.HasPrefix(ln, "#") {
+			if strings.HasPrefix(ln, "##") {
+				lede = false
+			}
+			lastHeading = strings.TrimSpace(strings.TrimLeft(ln, "# "))
+			if strings.Contains(strings.ToLower(lastHeading), needle) {
+				score.headings++
+			}
+			continue
+		}
+		lower := strings.ToLower(ln)
+		if !strings.Contains(lower, needle) {
+			continue
+		}
+		if lede {
+			score.lede++
+		}
+		score.body++
+		hits = append(hits, SearchHit{
+			Topic:   name,
+			Line:    i + 1,
+			Heading: lastHeading,
+			Excerpt: excerptAround(ln, lower, needle, 240),
+		})
+	}
+	return score, hits
+}
+
+// fenceMarker reports whether a line opens or closes a fenced code block.
+func fenceMarker(line string) bool {
+	t := strings.TrimSpace(line)
+	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
+}
+
+// extractTitle returns the first H1 heading outside a fenced block, or
+// a humanised fallback.
 func extractTitle(body []byte, fallback string) string {
+	inFence := false
 	for ln := range strings.SplitSeq(string(body), "\n") {
+		if fenceMarker(ln) {
+			inFence = !inFence
+		}
 		ln = strings.TrimSpace(ln)
-		if after, ok := strings.CutPrefix(ln, "# "); ok {
+		if after, ok := strings.CutPrefix(ln, "# "); ok && !inFence {
 			return strings.TrimSpace(after)
 		}
 	}

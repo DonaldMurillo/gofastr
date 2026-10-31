@@ -17,6 +17,16 @@
 // `var lower = strings.ToUpper`), and an EqualFold against an ASCII
 // constant whose branch performs a lookup.
 //
+// It also reports `==` and `!=` whose two operands both fold (each a
+// fold call, or a variable bound to one): a case-insensitive identity
+// check, the lookup-by-scan shape. The 2026-10-27 bug bash found it
+// shipping unflagged in framework/sdkdocs, where the KELVIN SIGN spelling
+// of an entity name served that entity's reference page (W18), and in
+// core/upload ValidateExt's extension allow list. The fix spelling is
+// internal/asciicase.Lower on both sides. A comparison with one side
+// unfolded (`s == strings.ToLower(s)`, a lowercase check) or against a
+// constant is not this shape.
+//
 // The rule is deliberately silent on:
 //   - maps of plain values (string/int/bool): word counts and alias
 //     tables have no entry to impersonate.
@@ -60,7 +70,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "asciifold",
-	Doc:  "forbids registry lookups keyed by strings.ToLower/ToUpper or guarded by EqualFold with an ASCII constant: Unicode case folding maps homoglyphs onto ASCII (ſ → S), so fold ASCII only or refuse non-ASCII keys first",
+	Doc:  "forbids registry lookups keyed by strings.ToLower/ToUpper, comparisons of two folds, or guards by EqualFold with an ASCII constant: Unicode case folding maps homoglyphs onto ASCII (ſ → S), so fold ASCII only or refuse non-ASCII keys first",
 	Run:  run,
 }
 
@@ -125,10 +135,26 @@ func run(pass *analysis.Pass) (any, error) {
 					return true
 				}
 				if inner := foldArg(pass, e.Index, bound, helpers, foldVars, 0); inner != nil {
-					if id, ok := inner.(*ast.Ident); !ok || !pinned[pass.TypesInfo.ObjectOf(id)] {
+					if !pinnedIdent(pass, inner, pinned) {
 						pass.Reportf(e.Pos(), "registry lookup folds Unicode case: ToLower/ToUpper map look-alikes onto ASCII (ſ → S), so a homoglyph resolves a real entry; fold ASCII only or refuse non-ASCII keys first")
 					}
 				}
+			case *ast.BinaryExpr:
+				// Fold-then-compare: both operands fold, so the
+				// comparison is a case-insensitive identity check, and a
+				// look-alike equals the real name it folds onto. A
+				// lookup by scan (range the entries, keep the one whose
+				// folded name equals the folded input) is the same
+				// registry lookup the IndexExpr arm reports.
+				if e.Op != token.EQL && e.Op != token.NEQ {
+					return true
+				}
+				l := foldArg(pass, e.X, bound, helpers, foldVars, 0)
+				r := foldArg(pass, e.Y, bound, helpers, foldVars, 0)
+				if l == nil || r == nil || pinnedIdent(pass, l, pinned) || pinnedIdent(pass, r, pinned) {
+					return true
+				}
+				pass.Reportf(e.Pos(), "folded comparison: both sides go through ToLower/ToUpper, which map look-alikes onto ASCII (ſ → S, K → k), so a homoglyph equals a real name; fold with internal/asciicase.Lower or refuse non-ASCII first")
 			case *ast.CallExpr:
 				if qualifiedCallee(pass, e.Fun) != "strings.EqualFold" || len(e.Args) != 2 {
 					return true
@@ -151,6 +177,13 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 	return nil, nil
+}
+
+// pinnedIdent reports whether a fold's argument is a variable an earlier
+// check pinned ASCII.
+func pinnedIdent(pass *analysis.Pass, x ast.Expr, pinned map[types.Object]bool) bool {
+	id, ok := x.(*ast.Ident)
+	return ok && pinned[pass.TypesInfo.ObjectOf(id)]
 }
 
 // mapObj is the object behind a map expression when it has one: the

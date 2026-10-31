@@ -196,20 +196,31 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 		}
 	}
 	// Anything previously known that wasn't seen this scan was deleted.
+	// Its fingerprint is dropped only once Remove succeeds: forgotten
+	// first, a failed Remove was never retried, since the reconcile that
+	// would catch it runs once.
 	w.mu.Lock()
-	var deleted []string
+	var gone, deleted []string
 	for path, fp := range w.known {
 		if _, ok := seen[path]; ok {
 			continue
 		}
+		gone = append(gone, path)
 		deleted = append(deleted, fp.docID)
-		delete(w.known, path)
 	}
 	w.mu.Unlock()
 	if len(deleted) > 0 {
 		if err := w.idx.Remove(ctx, deleted...); err != nil {
 			return fmt.Errorf("semantic: watcher remove: %w", err)
 		}
+		// Dropped even when a concurrent scan re-added the path: Remove
+		// took that document too (its ID is the path's), and the next
+		// scan adds it back.
+		w.mu.Lock()
+		for _, path := range gone {
+			delete(w.known, path)
+		}
+		w.mu.Unlock()
 	}
 	w.mu.Lock()
 	reconciled := w.reconciled

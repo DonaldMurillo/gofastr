@@ -106,12 +106,22 @@ func TestScreenPages(t *testing.T) {
 	}
 }
 
-// A query past the endpoint's limit is dropped, not searched.
+// A query past the endpoint's limit is dropped, not searched, and the
+// page says why. It drew the empty state as if no query had been typed,
+// where the endpoint answers 414 (2026-10-27 bug bash B24).
 func TestScreenDropsLongQuery(t *testing.T) {
 	app, _ := searchSite(t, 0)
 	body := get(t, app.Router(), "/search?q="+strings.Repeat("valid+", 60)).Body.String()
 	if strings.Contains(body, `class="fui-search-results__item"`) {
 		t.Error("a query over 256 bytes was searched")
+	}
+	if !strings.Contains(body, "query too long") {
+		t.Errorf("a query over 256 bytes got no notice:\n%s", body)
+	}
+	// At the limit the query is searched and gets no notice.
+	body = get(t, app.Router(), "/search?q=valid"+strings.Repeat("+", maxQueryBytes-5)).Body.String()
+	if strings.Contains(body, "query too long") || !strings.Contains(body, `href="/docs/forms#validation"`) {
+		t.Errorf("a 256-byte query was refused or not searched:\n%s", body)
 	}
 }
 

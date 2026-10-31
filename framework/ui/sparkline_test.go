@@ -69,6 +69,23 @@ func TestSparklineColorPreset(t *testing.T) {
 	}
 }
 
+// The doc promised a raw CSS color passed through, while the code made
+// it a class the CSS never styles, so "#ff0000" drew the default and
+// "x y" added a class of the caller's choosing (2026-10-27 U12). Color
+// is one of the four theme presets; anything else is refused.
+func TestSparklineRefusesUnknownColor(t *testing.T) {
+	for _, c := range []SparklineColor{"#ff0000", "red", "danger extra", "Danger"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Color %q accepted", c)
+				}
+			}()
+			_ = Sparkline(SparklineConfig{Values: []float64{1, 2}, Color: c})
+		}()
+	}
+}
+
 func TestSparklineExtraAttrsOnEveryRootShape(t *testing.T) {
 	extra := map[string]string{"data-test": "hook"}
 	for name, out := range map[string]string{

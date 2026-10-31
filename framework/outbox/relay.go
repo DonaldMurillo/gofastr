@@ -133,10 +133,18 @@ func (o *Outbox) pump(ctx context.Context) int {
 	if len(deliveries) == 0 {
 		return 0
 	}
+	release := func(rest []claimedDelivery) {
+		settleCtx, cancel := o.settleContext(ctx)
+		o.releaseUnstarted(settleCtx, rest)
+		cancel()
+	}
 	for i, d := range deliveries {
 		if ctx.Err() != nil {
-			// Shutdown mid-batch: claimed deliveries stay leased and are
-			// recovered after the lease expires (at-least-once).
+			// Shutdown mid-batch: the rest goes back unstarted with its
+			// attempts refunded. Left leased, the budget sweep could
+			// dead-letter a delivery that never ran once the lease
+			// expired (the claim counted an attempt on every row).
+			release(deliveries[i:])
 			break
 		}
 		// The batch shares one lease and runs one delivery after another.
@@ -149,9 +157,7 @@ func (o *Outbox) pump(ctx context.Context) int {
 		// first delivery always runs, so a lease shorter than one budget
 		// still makes progress.
 		if i > 0 && o.now().UTC().Add(o.handlerTimeout+o.settleTimeout).After(d.ClaimedUntil) {
-			settleCtx, cancel := o.settleContext(ctx)
-			o.releaseUnstarted(settleCtx, deliveries[i:])
-			cancel()
+			release(deliveries[i:])
 			break
 		}
 		o.processDelivery(ctx, d)

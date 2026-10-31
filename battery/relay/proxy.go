@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +23,13 @@ import (
 // deadline is min(inherited request context, 30s) so an app-level
 // timeout or an impatient client can always cut a stuck upstream off.
 const requestDeadline = 30 * time.Second
+
+// appHeaderPrefix names the app's own request headers (the embed grant,
+// the runtime's navigation markers). stripInbound drops every one: the
+// embed grant is a bearer credential boot-embed.js sends on each
+// same-origin fetch from an embed frame. A test pins embed.GrantHeader
+// inside it.
+const appHeaderPrefix = "X-Gofastr-"
 
 // stripInboundHeaders never reach the upstream. The relay is a public
 // edge: the app's session cookie, bearer tokens, CSRF material, and
@@ -61,6 +70,9 @@ var stripOutboundHeaders = []string{
 	http.CanonicalHeaderKey("Proxy-Authenticate"),
 	http.CanonicalHeaderKey("Refresh"),
 	http.CanonicalHeaderKey("Clear-Site-Data"),
+	// Service-Worker-Allowed widens a worker's scope past its script's
+	// path: vendor script could register one over every app page.
+	http.CanonicalHeaderKey("Service-Worker-Allowed"),
 }
 
 // reverseProxy keeps the concrete type in one place; the handler layer
@@ -177,9 +189,45 @@ func (r *Relay) handler(rt *routeRuntime) http.Handler {
 		defer cancel()
 		req = req.WithContext(ctx)
 
-		rt.proxy.ServeHTTP(w, req)
+		rt.proxy.ServeHTTP(&hostHeaderWriter{ResponseWriter: w, host: w.Header().Clone()}, req)
 	})
 }
+
+// hostHeaderWriter keeps an upstream's informational responses from the
+// browser. ReverseProxy forwards a 1xx (103 Early Hints) with the 1xx's
+// own headers, which never pass modifyResponse, so an absolute Link
+// preload would reach the browser; it then clears the header map,
+// dropping the security headers the host set before dispatch. The
+// writer swallows every 1xx and, on the final status, puts back each
+// host header value the clear removed, ahead of the upstream's, which
+// is the header set a response with no 1xx has.
+type hostHeaderWriter struct {
+	http.ResponseWriter
+	host http.Header
+}
+
+func (w *hostHeaderWriter) WriteHeader(code int) {
+	if code < 200 {
+		return
+	}
+	h := w.ResponseWriter.Header()
+	for _, name := range slices.Sorted(maps.Keys(w.host)) {
+		var missing []string
+		for _, v := range w.host[name] {
+			if !slices.Contains(h[name], v) {
+				missing = append(missing, v)
+			}
+		}
+		if len(missing) > 0 {
+			h[name] = append(missing, h[name]...)
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap lets http.ResponseController reach the client writer's Flush
+// and deadlines.
+func (w *hostHeaderWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // newProxy builds the ReverseProxy for one route. The Rewrite hook (not
 // the deprecated Director) means the outbound request is built from
@@ -218,7 +266,7 @@ func stripInbound(h http.Header) {
 		h.Del(name)
 	}
 	for name := range h {
-		if strings.HasPrefix(name, "X-Forwarded-") {
+		if strings.HasPrefix(name, "X-Forwarded-") || strings.HasPrefix(name, appHeaderPrefix) {
 			h.Del(name)
 		}
 	}
@@ -341,10 +389,16 @@ func stripAbsoluteLinkTargets(h http.Header) {
 	}
 }
 
-// cappedBody stops a response body at a byte budget. It reports io.EOF
-// rather than an error: the client has already received a 200 and its
-// headers by the time this runs, so the truncation cannot be signalled as
-// a status. Truncated-but-terminated beats streaming forever.
+// errUpstreamTooLarge ends a response whose upstream body ran past the
+// route's budget.
+var errUpstreamTooLarge = errors.New("relay: upstream response exceeds MaxBodyBytes")
+
+// cappedBody stops a response body at a byte budget. The client already
+// has the status and headers by then, so the cut cannot be a status; it
+// is a read error instead, which makes ReverseProxy abort the stream.
+// An io.EOF here ended a chunked response cleanly, and the client (or a
+// cache, under CacheOK) took the cut-off body for the whole one. A body
+// that ends exactly at the budget is whole and ends with io.EOF.
 type cappedBody struct {
 	io.ReadCloser
 	remaining int64
@@ -352,7 +406,16 @@ type cappedBody struct {
 
 func (c *cappedBody) Read(p []byte) (int, error) {
 	if c.remaining <= 0 {
-		return 0, io.EOF
+		var probe [1]byte
+		for {
+			n, err := c.ReadCloser.Read(probe[:])
+			switch {
+			case n > 0:
+				return 0, errUpstreamTooLarge
+			case err != nil:
+				return 0, err
+			}
+		}
 	}
 	if int64(len(p)) > c.remaining {
 		p = p[:c.remaining]

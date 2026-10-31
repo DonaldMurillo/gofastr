@@ -26,6 +26,23 @@ const dataDirEnv = "GOFASTR_DESKTOP_DATA_DIR"
 // $XDG_CONFIG_HOME), creating it 0700. id is the reverse-DNS app id.
 // GOFASTR_DESKTOP_DATA_DIR overrides the base directory.
 func DataDir(id string) (string, error) {
+	dir, err := dataDirPath(id)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("desktop: create data dir %s: %w", dir, err)
+	}
+	if err := fileperm.Restrict(dir, true); err != nil {
+		return "", fmt.Errorf("desktop: restrict data dir: %w", err)
+	}
+	return dir, nil
+}
+
+// dataDirPath resolves without touching the filesystem. Persistent browser
+// profiles validate the path before creating it, rather than following a link
+// or changing permissions on a pre-existing directory.
+func dataDirPath(id string) (string, error) {
 	if err := validateAppID(id); err != nil {
 		return "", err
 	}
@@ -39,14 +56,7 @@ func DataDir(id string) (string, error) {
 		}
 		base = v
 	}
-	dir := filepath.Join(base, id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("desktop: create data dir %s: %w", dir, err)
-	}
-	if err := fileperm.Restrict(dir, true); err != nil {
-		return "", fmt.Errorf("desktop: restrict data dir: %w", err)
-	}
-	return dir, nil
+	return filepath.Join(base, id), nil
 }
 
 // appOptionsDataDir resolves the effective data directory for an app
@@ -56,11 +66,8 @@ func appOptionsDataDir(override, id string) (string, error) {
 		if !filepath.IsAbs(override) {
 			return "", fmt.Errorf("desktop: Config.DataDir %q must be absolute", override)
 		}
-		if err := os.MkdirAll(override, 0o700); err != nil {
+		if err := fileperm.MkdirPrivate(override); err != nil {
 			return "", fmt.Errorf("desktop: create data dir %s: %w", override, err)
-		}
-		if err := fileperm.Restrict(override, true); err != nil {
-			return "", fmt.Errorf("desktop: restrict data dir: %w", err)
 		}
 		return override, nil
 	}

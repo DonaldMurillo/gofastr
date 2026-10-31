@@ -163,6 +163,7 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 // Wrap ctx with WithServerWrites to persist them from trusted server
 // code; the owner and tenant columns are never writable from the body.
 func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string]any) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -194,6 +195,7 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 
 // DeleteOne deletes (or soft-deletes) a record by id.
 func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return err
 	}
@@ -451,7 +453,8 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 }
 
 // BatchCreateMany runs CreateOne for each body in a single transaction.
-// Events fire after commit (per item, in input order). Any per-item error
+// Events are emitted after commit, per item in input order; subscribers
+// run asynchronously, so they can arrive in any order. Any per-item error
 // rolls back the whole batch, same semantics as the HTTP _batch endpoint.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
@@ -494,6 +497,7 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 // BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -536,6 +540,7 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 // BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the
 // ids that were successfully removed.
 func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]string, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -718,9 +723,9 @@ func buildIncludeNodesFromNames(ent *entity.Entity, registry entity.Registry, na
 	if len(names) == 0 {
 		return nil, nil
 	}
-	// Synthesize a request whose ?include= we'll re-use parseIncludeTree on.
-	r := httptest.NewRequest(http.MethodGet, "/?include="+joinNonEmpty(names, ","), nil)
-	return parseIncludeTree(r, ent, registry)
+	// The query value as parsed, not a URL: a space, + or # in a filter
+	// must reach the parser as written.
+	return parseIncludeTreeQ(url.Values{"include": {joinNonEmpty(names, ",")}}, ent, registry)
 }
 
 // joinNonEmpty is strings.Join but trims and drops empties.

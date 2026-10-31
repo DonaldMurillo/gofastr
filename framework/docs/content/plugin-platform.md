@@ -300,9 +300,10 @@ One contract, both directions:
   `{code: "E_HANDLER"}`. Silence is not a protocol state.
 - The in-flight map is bounded (64); a saturated sender gets an
   immediate `{code: "E_SATURATED"}` rejection and nothing is posted.
-  The bound is sender-side: inbound dispatch is uncapped, the same
-  trust posture as the event path, so host-side request handlers must
-  stay cheap or debounce, exactly like `onEvent` handlers.
+  The same bound of 64 applies to inbound frame-to-host requests: past
+  it the host answers `{code: "E_SATURATED"}` without running a
+  handler. Host-side request handlers should still stay cheap or
+  debounce, like `onEvent` handlers.
 - Invalid timeouts fall back to the 5s default; a timed-out request
   rejects `{code: "E_TIMEOUT"}` and its late response is dropped by id.
 - Teardown rejects every outstanding request with
@@ -418,6 +419,15 @@ core-ui/ARCHITECTURE.md attribute table and the
 adapter script (registered via `window.__gofastrPluginHost.register`)
 that supplies its `Manifest` and handles its plugin-specific events;
 the generic broker owns everything protocol-level.
+
+The broker follows the page as it changes without a reload. A marker
+that arrives with a client-side navigation or an island swap mounts
+when it lands. An instance whose marker leaves the DOM is torn down:
+its pending requests reject with `E_TEARDOWN`, and since the frame left
+with the marker, it never receives a `teardown` request. A marker that
+stays in place, in a layout region the navigation kept, keeps its
+running frame. Each marker element mounts once, and mounts again if it
+is removed and put back.
 
 ### Progressive enhancement: MountConfig.Fallback
 

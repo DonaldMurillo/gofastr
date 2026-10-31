@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -44,13 +45,33 @@ func requestBodyProps(t *testing.T, op map[string]any) map[string]any {
 	return getMap(t, jsonMedia, "schema")
 }
 
+// propEnum returns a property's string enum values. An optional
+// field's enum also lists null (see propEnumHasNull), which is not a
+// value the field holds.
 func propEnum(v any) []string {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil
 	}
-	enum, _ := m["enum"].([]string)
-	return enum
+	switch enum := m["enum"].(type) {
+	case []string:
+		return enum
+	case []any:
+		var out []string
+		for _, e := range enum {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func propEnumHasNull(v any) bool {
+	m, _ := v.(map[string]any)
+	enum, _ := m["enum"].([]any)
+	return slices.Contains(enum, nil)
 }
 
 // The create body keeps the state field but narrowed to the initial
@@ -62,8 +83,13 @@ func TestStatesNarrowWriteRequestSchemas(t *testing.T) {
 
 	create := getMap(t, paths, "/invoices")
 	createSchema := requestBodyProps(t, getMap(t, create, "post"))
-	if got := propEnum(createSchema["properties"].(map[string]any)["status"]); len(got) != 2 || got[0] != "draft" || got[1] != "open" {
+	createStatus := createSchema["properties"].(map[string]any)["status"]
+	if got := propEnum(createStatus); len(got) != 2 || got[0] != "draft" || got[1] != "open" {
 		t.Errorf("create body status enum = %v, want [draft open]", got)
+	}
+	// A create refuses a null state (it must start at an initial value).
+	if propEnumHasNull(createStatus) || createStatus.(map[string]any)["type"] != "string" {
+		t.Errorf("create body status takes null: %v", createStatus)
 	}
 	if _, has := createSchema["properties"].(map[string]any)["paidOn"]; has {
 		t.Error("create body still offers the paid_on stamp; the move sets it, never a create")

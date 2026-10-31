@@ -70,13 +70,15 @@ func (u *UI) recordTitle(ctx context.Context, m *meta, row map[string]any) strin
 }
 
 // titleMap names title-read rows id → title. A row with no title falls
-// back to its id, the same value a picker would submit.
+// back to its id, the same value a picker would submit. A row the
+// Decider refuses by id is left out: the list read asks only about the
+// collection.
 func (u *UI) titleMap(ctx context.Context, m *meta, rows []map[string]any, hops int) map[string]string {
 	titles := u.rowTitles(ctx, m, rows, hops)
 	labels := make(map[string]string, len(rows))
 	for i, row := range rows {
 		id := m.rowID(row)
-		if id == "" {
+		if id == "" || !canReadRecord(ctx, m.ch, id) {
 			continue
 		}
 		labels[id] = id

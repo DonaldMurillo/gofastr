@@ -143,7 +143,7 @@ func (u *UI) relationTarget(ctx context.Context, m *meta, col string) (*entity.E
 		slog.WarnContext(ctx, "entityui: relation meta", "entity", m.name, "column", col, "target", target.GetName(), "error", err)
 		return nil, nil, false
 	}
-	if !canRead(ctx, tm.ch) {
+	if !canReadRelated(ctx, tm.ch) {
 		return nil, nil, false
 	}
 	return target, tm, true

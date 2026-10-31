@@ -27,6 +27,11 @@ kiln serve --agent auto
 kiln serve --agent "omp -p --model glm-5.2"
 ```
 
+`kiln agent` writes its journal to `.kiln.session.jsonl` in the current
+directory. If the serve it starts exits before answering (a journal it cannot
+open, a bad flag), `kiln agent` prints the serve's error and exits 1 without
+launching OMP.
+
 The `omp` adapter runs OMP in an isolated temporary working directory with
 `--model glm-5.2`, the Bash tool, auto-approval, no session persistence, and
 Kiln's system prompt. Authentication stays with the installed CLI; Kiln does
@@ -80,6 +85,11 @@ Kiln injects `KILN_URL`, installs the current embedded skill, and enforces an
 HTTP boundary for built-in adapters: they must mutate the app by calling
 Kiln's tools, not by editing the repository.
 
+Each turn's adapter runs in its own process group on Unix. Cancelling,
+superseding or switching away from a turn kills the whole group, and so does
+the turn ending: a shell the adapter left in the background does not keep
+calling Kiln. On Windows only the adapter process itself is killed.
+
 ## Tools
 
 Read and configuration:
@@ -92,7 +102,9 @@ Read and configuration:
 - `set_app_config`: current app spec app config; HTTP calls use
   `{"config":{...}}`, a non-empty `config.name` is required, and an
   omitted/empty API prefix resolves to `api`
-- `set_theme`: semantic light theme token overrides
+- `set_theme`: semantic light theme token overrides. Both config tools
+  write the config they read; when another config edit lands in between
+  they answer `kind: "conflict"`, and the call is safe to send again
 - `set_scaffold`: navigation plus owned-Go endpoint, middleware, plugin, and
   helper stubs
 
@@ -100,18 +112,31 @@ Entities and data:
 
 - `add_entity`, `update_entity`, `delete_entity`: an entity whose CRUD
   mount (`/<api_prefix>/<table>`) is an existing page's path is refused
-  with `kind: "conflict"`; `delete_entity` removes the entity's seeds in
-  the same edit, and `undo` brings both back
+  with `kind: "conflict"`; `delete_entity` removes the entity's seeds
+  and hooks in the same edit, and `undo` brings them back
 - `add_field`, `delete_field`: deleting a field, or an `update_entity`
   that leaves one out, removes that column from the entity's seed rows
   and weights in the same edit, drops a row left with no column, and
-  `undo` brings them back
+  `undo` brings them back. The column also leaves the live table. A
+  UNIQUE, key, indexed or foreign-key column, which SQLite's
+  `DROP COLUMN` refuses, and an `update_entity` that makes a field
+  optional or no longer unique, rebuild the table from the declared
+  entity with its rows copied across. Rows the rebuilt table refuses (a
+  NULL in a required column `add_field` could only add as nullable)
+  refuse the edit, and the table stays as it was
 - `add_seed`: rows go into the entity's table, its declared `table` or
   else the framework default (`blogPosts` → `blog_posts`); a seed for an
   entity the world does not hold is refused, and so is a row key that is
   neither a declared field nor `id` (`kind: "validation"`, naming the row
   and the key). A seed for an entity that already has one adds rows; the
-  freeze merges them into one block
+  freeze merges them into one block. A row that leaves out `id` (or sets
+  it to null) gets a generated UUID, and one that leaves out `created_at`
+  or `updated_at` on an entity with timestamps gets the current time, as a
+  CRUD create would. A generated id changes each time Kiln rebuilds the
+  database from the journal (boot, reset, undo), so give an `id` to a row
+  another seed or a saved link refers to. A `json` field's object, array,
+  number or boolean is stored as its JSON text, as a CRUD create stores
+  it; a string is stored as written, so it must be JSON text already
 
 Screens and behavior:
 
@@ -156,12 +181,19 @@ drop every table, re-migrate, and re-apply the world's seeds, and an
 approved `delete_entity` drops the entity's table, so rows from a reset
 or undone world cannot resurrect through the CRUD surface. That includes
 rows written through the CRUD API: after an `undo`, only seed rows
-remain. A seed's
+remain. Tables linked by foreign keys drop together whatever rows link
+them. A rebuild that fails anyway (an unwritable database) fails the
+`undo` or `reset_session` with an internal error, and fails boot,
+instead of serving rows the journal does not hold. A seed's
 rows are inserted in one transaction before its journal entry is
 durable; a seed the database refuses part way (a unique conflict, say)
 lands none of its rows and leaves the rows already in the database,
 CRUD writes included, where they were. A journal whose last line was
-torn by a crash loses exactly that in-flight entry at open.
+torn by a crash loses exactly that in-flight entry at open. An append
+that fails while kiln runs (a full disk, a failed fsync) cuts its bytes
+back off, so the next append starts a clean line; if the cut fails too,
+kiln refuses further appends until it restarts, and the restart heals
+the fragment.
 
 Two dispatch-side postures: an internal failure of a tool (a panic, a
 filesystem error) answers the caller with a generic "internal error"
@@ -271,8 +303,11 @@ Example:
 and an optional `if_match` version. The version is checked again when the
 patch applies, with or without `if_match`: a patch that another edit of the
 same page beat to the apply answers `kind: "conflict"` with a refetch hint,
-so concurrent patches never overwrite each other's edits. Re-read the page
-and send the patch again. A session journal written before this check may
+so concurrent patches never overwrite each other's edits. A page deleted
+and added again also starts at version `1`, so each `add_page` gives the
+page a new `gen`, and a patch read from the earlier page is a conflict
+too, even when the versions match. `if_match` compares only the version.
+Re-read the page and send the patch again. A session journal written before this check may
 hold two patches built from one version; it still loads, and the later
 patch wins.
 
@@ -312,6 +347,11 @@ spec spelling, so delete it and register the route in owned Go after
 generation. The removed pre-v0.1 `entities/*.json`
 format is not emitted.
 
+Each page freezes to one screen. A page without a `name` takes one from
+its path (`/blog/posts` → `blog_posts`, `/` → `home`); when a named page
+or an earlier path already holds that name, it gains a suffix, so `/`
+and `/home` freeze to `home` and `home_2`.
+
 Freeze writes one `seed:` block per entity: several seeds for one entity
 merge into the first one's place, rows in order, counts summed and weights
 joined. Two seeds that weight the same column differently are refused,
@@ -323,8 +363,10 @@ is a nested object, or a props/row key containing a colon, comment marker, or
 brackets. Reshape the data (or drop the row) and re-run; a freeze that
 succeeded is guaranteed to re-parse into the same values.
 
-`FreezeAndGenerate` performs the freeze and invokes
-`gofastr generate app gofastr.yml` when `gofastr` is on `PATH`.
+`FreezeAndGenerate(ctx, world, dir, out)` performs the freeze and invokes
+`gofastr generate app gofastr.yml` when `gofastr` is on `PATH`. The
+generator runs under `ctx`, and its output is collected for at most two
+seconds after it exits.
 
 ## Security boundary
 

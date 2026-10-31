@@ -2,6 +2,7 @@ package widget
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
@@ -61,7 +62,7 @@ func (f SignalFunc) Read() (any, error) { return f() }
 // done client-side via the data-cui-rpc-signal DOM attribute on the trigger,
 // not via this struct.)
 type RPCEndpoint struct {
-	Method  string // "POST" by default
+	Method  string // GET, POST, PUT, PATCH or DELETE; "" means POST, anything else panics at Mount
 	Path    string
 	Handler http.Handler
 }
@@ -116,7 +117,8 @@ type Definition struct {
 	// only when the app's session middleware (battery/auth
 	// SessionMiddleware or RequireAuth) resolved a user onto the request
 	// context, which the anonymous session a page load auto-mints never
-	// does. When no check is installed, a widget that asks for one fails
+	// does, and never for an embed grant or a scoped API token. When no
+	// check is installed, a widget that asks for one fails
 	// closed (the endpoints 403 rather than serving). Setting both
 	// RequireSession and RequireAuthenticated means the stricter level
 	// wins.
@@ -234,7 +236,25 @@ type Definition struct {
 	// it must not branch on per-user data (/state is unauthenticated
 	// unless RequireSession is set).
 	PollTerminal func() bool
+
+	// mountPrefix is the router group prefix Mount registered the routes
+	// under. StylePath and StatePath stay as declared; StyleURL, StateURL
+	// and ChromeURL put the prefix in front.
+	mountPrefix string
 }
+
+// StyleURL returns the URL Mount serves the widget's stylesheet at:
+// StylePath under the prefix of the router group it was mounted on.
+func (d *Definition) StyleURL() string { return d.mountPrefix + d.StylePath }
+
+// StateURL returns the URL Mount serves the widget's signal snapshot at:
+// StatePath under the prefix of the router group it was mounted on.
+func (d *Definition) StateURL() string { return d.mountPrefix + d.StatePath }
+
+// ChromeURL returns the URL Mount serves the widget's chrome HTML at,
+// /core-ui/widget/<name>/chrome under the prefix of the router group it
+// was mounted on.
+func (d *Definition) ChromeURL() string { return d.mountPrefix + chromePathFor(d) }
 
 // registry is the process-global list of mounted widgets. The framework
 // runtime (window.__gofastr) fetches /__gofastr/widgets at startup and
@@ -425,6 +445,10 @@ func (b *Builder) Poll(interval time.Duration) *Builder {
 // it for a polling widget whose freshness job finishes once a terminal
 // state is reached (a job-status pill that hits completed, a batch that
 // finishes); without it the widget polls forever after going terminal.
+// The predicate runs before the signals are read, so the snapshot that
+// stops the poll is never older than the answer, and a snapshot missing
+// a signal whose Read failed never carries the stop. That ordering
+// holds only for a predicate that stays true once it turns true.
 // No-op when the widget does not also call Poll.
 func (b *Builder) PollTerminal(fn func() bool) *Builder {
 	b.def.PollTerminal = fn
@@ -432,7 +456,8 @@ func (b *Builder) PollTerminal(fn func() bool) *Builder {
 }
 
 // RPC registers a server-side handler the widget can invoke from
-// the client. method=="" defaults to "POST".
+// the client. method is GET, POST, PUT, PATCH or DELETE; "" defaults to
+// "POST", and Mount panics on any other.
 func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
 	if method == "" {
 		method = "POST"
@@ -627,9 +652,24 @@ func (d *Definition) gateLevelOf() gateLevel {
 	return gateOff
 }
 
+// gatedWidgetKey carries the widget whose gate is consulting the host
+// predicate, so the predicate never has to work it out from the URL.
+type gatedWidgetKey struct{}
+
+// GatedWidget returns the widget whose session gate is asking the
+// predicate installed with SetSessionCheck or SetAuthenticatedCheck about
+// r: the definition that owns the /state, /chrome or RPC route being
+// served, or the one GateSatisfied was called with. A request the widget
+// package did not hand to a predicate carries none.
+func GatedWidget(r *http.Request) (*Definition, bool) {
+	d, ok := r.Context().Value(gatedWidgetKey{}).(*Definition)
+	return d, ok
+}
+
 // gateSatisfied reports whether the request passes the gate the level
-// names. Fails closed: a level whose host predicate is missing says no.
-func gateSatisfied(level gateLevel, r *http.Request) bool {
+// names, for the widget d. Fails closed: a level whose host predicate is
+// missing says no.
+func gateSatisfied(level gateLevel, d *Definition, r *http.Request) bool {
 	var p *atomic.Pointer[func(*http.Request) bool]
 	switch level {
 	case gateAnySession:
@@ -640,7 +680,10 @@ func gateSatisfied(level gateLevel, r *http.Request) bool {
 		return true
 	}
 	fn := p.Load()
-	return fn != nil && (*fn)(r)
+	if fn == nil {
+		return false
+	}
+	return (*fn)(r.WithContext(context.WithValue(r.Context(), gatedWidgetKey{}, d)))
 }
 
 // GateSatisfied reports whether this request passes def's session gate
@@ -651,18 +694,18 @@ func gateSatisfied(level gateLevel, r *http.Request) bool {
 // /chrome endpoint: a def whose endpoints 403 must not have its chrome
 // baked into the anonymous page.
 func GateSatisfied(def *Definition, r *http.Request) bool {
-	return gateSatisfied(def.gateLevelOf(), r)
+	return gateSatisfied(def.gateLevelOf(), def, r)
 }
 
 // gateSession wraps h so it only runs for callers passing the level's
 // predicate. Fails closed: a widget that asked for a gate but runs in a
 // host that installed no check serves nothing.
-func gateSession(level gateLevel, h http.Handler) http.Handler {
+func gateSession(level gateLevel, d *Definition, h http.Handler) http.Handler {
 	if level == gateOff {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !gateSatisfied(level, r) {
+		if !gateSatisfied(level, d, r) {
 			i18n.HTTPError(w, r, http.StatusForbidden, reasonWidgetNeedsSession)
 			return
 		}
@@ -682,8 +725,17 @@ func gateSession(level gateLevel, h http.Handler) http.Handler {
 //	GET  /core-ui/widget/<name>/chrome   rendered chrome HTML (lazy)
 //	*    <RPC.Path>          for each RPC, the host's handler
 //
+// Each path is under r's group prefix, as every route registered on r is.
+// The catalog publishes the prefixed URLs (StyleURL, StateURL,
+// ChromeURL), so a widget mounted on root.Group("/v2") is fetched at
+// /v2/core-ui/widget/<name>/…. RPC paths are registered under the prefix
+// too; markup that triggers an RPC names the full URL.
+//
 // Default paths are filled in on def if unset so the caller can read
-// them after Mount returns. Mount is idempotent on def.Name.
+// them after Mount returns. Mount a widget once per router: a second
+// Mount of the same name registers the same routes again, and the router
+// panics on the conflict. The catalog keeps the last definition mounted
+// under a name.
 func Mount(r *router.Router, def *Definition) {
 	if def.StylePath == "" {
 		def.StylePath = "/core-ui/widget/" + def.Name + "/style.css"
@@ -692,13 +744,25 @@ func Mount(r *router.Router, def *Definition) {
 		def.StatePath = "/core-ui/widget/" + def.Name + "/state"
 	}
 
+	// An RPC method Mount cannot register fails before any route is: a
+	// PATCH used to fall through to POST, so the runtime's PATCH found no
+	// handler and a POST reached it.
+	for _, rpc := range def.RPCs {
+		switch rpc.Method {
+		case "", "GET", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			panic(fmt.Sprintf("widget: %s RPC %s has method %q; want GET, POST, PUT, PATCH or DELETE (empty means POST)", def.Name, rpc.Path, rpc.Method))
+		}
+	}
+
+	def.mountPrefix = r.Prefix()
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
-	r.Get(def.StatePath, gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveState)))
+	r.Get(def.StatePath, gateSession(def.gateLevelOf(), def, http.HandlerFunc(srv.serveState)))
 	// Chrome endpoint: runtime fetches HTML lazily on first open
 	// instead of receiving it inline in the /widgets catalog. Keeps
 	// the registry small and lets browsers cache by URL.
-	r.Get(chromePathFor(def), gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveChrome)))
+	r.Get(chromePathFor(def), gateSession(def.gateLevelOf(), def, http.HandlerFunc(srv.serveChrome)))
 
 	for _, rpc := range def.RPCs {
 		// Same gate the widget's own /state and chrome endpoints carry.
@@ -707,7 +771,7 @@ func Mount(r *router.Router, def *Definition) {
 		// caller its RPCs in the same process -- and the RPCs are the
 		// mutating half. A gate that covers the read and not the write is
 		// not a gate.
-		h := gateSession(def.gateLevelOf(), rpc.Handler)
+		h := gateSession(def.gateLevelOf(), def, rpc.Handler)
 		switch rpc.Method {
 		case "GET":
 			r.Get(rpc.Path, h)
@@ -715,9 +779,11 @@ func Mount(r *router.Router, def *Definition) {
 			r.Post(rpc.Path, h)
 		case "PUT":
 			r.Put(rpc.Path, h)
+		case "PATCH":
+			r.Patch(rpc.Path, h)
 		case "DELETE":
 			r.Delete(rpc.Path, h)
-		default:
+		default: // "" or POST, the only other methods the check above lets through
 			r.Post(rpc.Path, h)
 		}
 	}

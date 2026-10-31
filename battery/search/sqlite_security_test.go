@@ -43,55 +43,54 @@ func TestSQLiteNilDBRejected(t *testing.T) {
 	}
 }
 
-// TestSQLiteFieldEqualsHostileKeyRejected verifies that hostile FieldEquals
-// keys are rejected BEFORE the json_extract path is interpolated into SQL.
-// The key is the only interpolated part; the lookup value is parameterised.
-func TestSQLiteFieldEqualsHostileKeyRejected(t *testing.T) {
+// TestSQLiteFieldEqualsKeyIsBound: a FieldEquals key is a bound
+// parameter, so SQLite matches every key Memory and Postgres match and
+// no key reaches the SQL text. These keys were refused before: the key
+// was spliced into a json_extract path behind an ^[A-Za-z0-9_]+$ gate,
+// so a tenant-id scope that worked on Memory and Postgres errored on
+// every SQLite search (2026-10-27 bug bash B22). The hostile keys the
+// old gate refused now stay inside the bound key: each matches only the
+// document that holds it, never the plain tenant document beside it, on
+// both the MATCH path and the empty-query (searchAll) path.
+func TestSQLiteFieldEqualsKeyIsBound(t *testing.T) {
 	ctx := context.Background()
-	idx := newSQLiteFTS(t)
-	_ = idx.Index(ctx, Document{
-		ID: "1", Text: "hello world",
-		Fields: map[string]any{"tenant": "acme"},
-	})
-
-	hostile := []string{
+	keys := []string{
+		"tenant-id",
+		"tenant.x",
 		`tenant" OR 1=1 --`,
 		`tenant']; DROP TABLE x;--`,
 		`tenant" --`,
-		`tenant.x`,
-		`tenant AND 1`,
 		`tenant OR '1'='1`,
-		``, // empty key
-		`ten ant`,
-		`ten;ant`,
+		"",
+		"ten ant",
 	}
-	for _, k := range hostile {
-		_, err := idx.Search(ctx, Query{
-			Text:        "hello",
-			FieldEquals: map[string]string{k: "acme"},
-		})
-		if err == nil {
-			t.Fatalf("hostile FieldEquals key %q was accepted", k)
+	for _, k := range keys {
+		sq := newSQLiteFTS(t)
+		mem := NewMemory()
+		for _, b := range []Backend{sq, mem} {
+			for _, d := range []Document{
+				{ID: "keyed", Text: "hello world", Fields: map[string]any{k: "acme"}},
+				{ID: "plain", Text: "hello world", Fields: map[string]any{"tenant": "acme"}},
+			} {
+				if err := b.Index(ctx, d); err != nil {
+					t.Fatalf("index %q: %v", k, err)
+				}
+			}
 		}
-	}
-}
-
-// TestSQLiteFieldEqualsHostileKeyRejectedSearchAll: hostile keys must also be
-// rejected on the empty-query (searchAll) path, where the same
-// json_extract interpolation runs without a MATCH clause.
-func TestSQLiteFieldEqualsHostileKeyRejectedSearchAll(t *testing.T) {
-	ctx := context.Background()
-	idx := newSQLiteFTS(t)
-	_ = idx.Index(ctx, Document{
-		ID: "1", Text: "hello world",
-		Fields: map[string]any{"tenant": "acme"},
-	})
-
-	_, err := idx.Search(ctx, Query{
-		Text:        "", // empty → searchAll path
-		FieldEquals: map[string]string{`tenant" OR 1=1 --`: "acme"},
-	})
-	if err == nil {
-		t.Fatalf("hostile FieldEquals key accepted on searchAll path")
+		for _, text := range []string{"hello", ""} {
+			for _, b := range []Backend{sq, mem} {
+				got, err := b.Search(ctx, Query{Text: text, FieldEquals: map[string]string{k: "acme"}})
+				if err != nil {
+					t.Fatalf("%T key %q text %q: %v", b, k, text, err)
+				}
+				if len(got) != 1 || got[0].Document.ID != "keyed" {
+					t.Errorf("%T key %q text %q: got %v, want only keyed", b, k, text, got)
+				}
+				none, err := b.Search(ctx, Query{Text: text, FieldEquals: map[string]string{k: "other"}})
+				if err != nil || len(none) != 0 {
+					t.Errorf("%T key %q text %q, other value: got %v, %v; want none", b, k, text, none, err)
+				}
+			}
+		}
 	}
 }

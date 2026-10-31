@@ -40,9 +40,15 @@
 //     aftermath WaitDelay would bound (framework/processmodule_probe's
 //     runner builds its child with exec.Command and still sets
 //     WaitDelay, but the rule does not demand it);
-//   - a Cmd reassigned through a wrapper (bash.go's
-//     `cmd = b.SandboxFn(cmd)`): the wrapper owns the cancellation
-//     posture, and the rule cannot see through it;
+//   - a Cmd reassigned from a call that does not take it (a fresh
+//     exec.Command from a helper): a new child the rule does not
+//     follow. A wrapper that takes the Cmd and returns one
+//     (`cmd = b.SandboxFn(cmd)`) is NOT silent: it hands back the
+//     same CommandContext child, and the 2026-10-27 bug bash (H4)
+//     found the harness Bash tool's timeout unable to end
+//     `sleep 3600 & wait` through exactly that hop. The caller sets
+//     WaitDelay on the returned Cmd, or a same-package wrapper sets
+//     it on its parameter (credited as the helper posture);
 //   - WaitDelay set inline, or via the same-package helper hop, before
 //     the start;
 //   - stdout not captured (Stdout nil or an *os.File): no copier
@@ -196,11 +202,18 @@ func checkBody(pass *analysis.Pass, helpers map[types.Object]map[int]bool, body 
 				if !ok {
 					continue
 				}
-				if isCommandContextCall(pass, n.Rhs[i]) {
+				switch {
+				case isCommandContextCall(pass, n.Rhs[i]):
 					events = append(events, cmdEvent{pos: n.Pos(), kind: kindBound, obj: obj})
-				} else {
+				case passesThrough(pass, n.Rhs[i], obj):
+					// cmd = wrap(cmd): the wrapper hands back the same
+					// child (bash.go's SandboxFn, ledger H4), so the
+					// provenance survives. A same-package wrapper that
+					// sets WaitDelay is credited by the helper event
+					// the call itself records.
+				default:
 					// A reassignment from anything else ends the
-					// provenance: bash.go's cmd = SandboxFn(cmd).
+					// provenance.
 					events = append(events, cmdEvent{pos: n.Pos(), kind: kindUnbound, obj: obj})
 				}
 			}
@@ -321,6 +334,22 @@ func stdoutCaptures(pass *analysis.Pass, rhs ast.Expr) bool {
 		return false
 	}
 	return !isOsFile(pass, rhs)
+}
+
+// passesThrough reports whether e is a call returning *exec.Cmd that
+// takes the tracked local obj as an argument: a wrapper that hands the
+// same child back.
+func passesThrough(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
+	if !ok || !isExecCmd(pass, call) {
+		return false
+	}
+	for _, arg := range call.Args {
+		if localOf(pass, arg) == obj {
+			return true
+		}
+	}
+	return false
 }
 
 // localOf: e is an identifier naming a local variable.

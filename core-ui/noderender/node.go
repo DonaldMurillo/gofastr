@@ -367,10 +367,22 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if name == "" {
 			name = "field"
 		}
+		// The value is the element's text, not an attribute (a value=""
+		// attribute is ignored and the box renders empty), spelled as
+		// the text kind spells it. Children are not rendered: a textarea
+		// child would close this element early and turn the children
+		// after it into live markup.
+		content := propString(props, "value")
+		if content == "" {
+			content = propString(props, "text")
+		}
+		if content == "" {
+			content = propString(props, "content")
+		}
 		return html.TextArea(html.TextAreaConfig{
-			Name: name,
-			ID:   propString(props, "id"), Class: propString(props, "class"),
-			ExtraAttrs: extraAttrs(props, "id", "class", "name"),
+			Name: name, Content: content,
+			ID: propString(props, "id"), Class: propString(props, "class"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "name", "value"),
 		})
 	case "fieldset":
 		return html.FieldSet(html.FieldSetConfig{

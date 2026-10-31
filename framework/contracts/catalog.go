@@ -121,6 +121,7 @@ const (
 	RuleURLAttrEscape      = "GOFASTR1412"
 	RuleVarySet            = "GOFASTR1413"
 	RuleDialectDrift       = "GOFASTR1414"
+	RuleEraseCover         = "GOFASTR1415"
 )
 
 // Performance rules.
@@ -142,30 +143,31 @@ const (
 
 // Rendering rules.
 const (
-	RuleBespokeCSS          = "GOFASTR1801"
-	RuleHardNavigation      = "GOFASTR1802"
-	RuleBespokeEventSource  = "GOFASTR1803"
-	RuleInlineStyle         = "GOFASTR1804"
-	RuleInlineScript        = "GOFASTR1805"
-	RuleUnknownThemeToken   = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
-	RuleHardcodedTokenValue = "GOFASTR1807"
-	RuleFallbackDrift       = "GOFASTR1808"
-	RuleOwnerlessStylesheet = "GOFASTR1809"
-	RuleKitClassSelector    = "GOFASTR1810"
-	RuleImportant           = "GOFASTR1811"
-	RuleRawMediaWidth       = "GOFASTR1812"
-	RuleAnimationNoReduced  = "GOFASTR1813"
-	RuleStaleStyleSource    = "GOFASTR1814"
-	RuleUpstreamCandidate   = "GOFASTR1815"
-	RuleDuplicateStyleName  = "GOFASTR1816"
-	RuleKitRootStyle        = "GOFASTR1817"
-	RuleOwnedHandleLeak     = "GOFASTR1818"
-	RuleAppSheetSelector    = "GOFASTR1819"
-	RuleTokenCustomProperty = "GOFASTR1820"
-	RuleDuplicateTokenValue = "GOFASTR1821"
-	RuleRepeatedLiteral     = "GOFASTR1822"
-	RuleBareThemeLiteral    = "GOFASTR1823"
-	RulePhysicalSide        = "GOFASTR1824"
+	RuleBespokeCSS           = "GOFASTR1801"
+	RuleHardNavigation       = "GOFASTR1802"
+	RuleBespokeEventSource   = "GOFASTR1803"
+	RuleInlineStyle          = "GOFASTR1804"
+	RuleInlineScript         = "GOFASTR1805"
+	RuleUnknownThemeToken    = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
+	RuleHardcodedTokenValue  = "GOFASTR1807"
+	RuleFallbackDrift        = "GOFASTR1808"
+	RuleOwnerlessStylesheet  = "GOFASTR1809"
+	RuleKitClassSelector     = "GOFASTR1810"
+	RuleImportant            = "GOFASTR1811"
+	RuleRawMediaWidth        = "GOFASTR1812"
+	RuleAnimationNoReduced   = "GOFASTR1813"
+	RuleStaleStyleSource     = "GOFASTR1814"
+	RuleUpstreamCandidate    = "GOFASTR1815"
+	RuleDuplicateStyleName   = "GOFASTR1816"
+	RuleKitRootStyle         = "GOFASTR1817"
+	RuleOwnedHandleLeak      = "GOFASTR1818"
+	RuleAppSheetSelector     = "GOFASTR1819"
+	RuleTokenCustomProperty  = "GOFASTR1820"
+	RuleDuplicateTokenValue  = "GOFASTR1821"
+	RuleRepeatedLiteral      = "GOFASTR1822"
+	RuleBareThemeLiteral     = "GOFASTR1823"
+	RulePhysicalSide         = "GOFASTR1824"
+	RuleOwnedStatementAtRule = "GOFASTR1825"
 )
 
 // Permission rules.
@@ -798,6 +800,18 @@ func securityRules() []Rule {
 			Good: "func claimPostgres(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= $1 AND next_attempt_at <= $1`, now)\n\treturn err\n}\n\nfunc claimSQLite(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= ? AND next_attempt_at <= ?`, now, now)\n\treturn err\n}",
 		}},
 	}, {
+		ID: RuleEraseCover, Slug: "security/erase-export-coverage",
+		Title:      "A user-data table the erase and export planes never reach",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "A CREATE TABLE in core/, framework/ or battery/ declares a user-identifying column (user_id, owner, actor_id, subject, email, creator, principal, users, …) or a record-payload column (payload, body, snapshot, diff, task_json, config_json, an index document's text/fields/meta), and the same package has no `datexport.DataEraser` or no `datexport.DataExporter` whose Table resolves to that table.",
+		Why:     "App.EraseUserData and App.ExportData reach the entity graph plus the tables registered in core/datexport, and nothing else. The 2026-10-27 bug bash found fourteen stores that create their own table and register neither (S9, S10, S20, S22–S32): battery/auth's OAuth token table keeps a live provider token for an erased user while every other auth table is erased; the outbox, webhook deliveries, search and semantic indexes, A2A tasks, idempotency bodies and fanout spill rows keep full copies of the user's records; the audit log is anonymized but never exported. Outside datexport itself only battery/auth and battery/queue declared anything.",
+		Fix:     "Declare the table to both planes from the package that creates it, the battery/auth erase.go + export.go pattern: a `datexport.DataEraser` keyed by the right identity (Column user_id, IdentityEmail for an email-keyed table, EraseAnonymize for a row that must be retained) and a `datexport.DataExporter`, re-registered against the configured table name when the store is built. When a short TTL or a non-user meaning is the reason not to, say so: `//gofastr:allow(GOFASTR1415) <why>`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "func (s *TokenStore) ensure() error {\n\t_, err := s.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (user_id TEXT NOT NULL, token TEXT NOT NULL)`, s.table))\n\treturn err\n}",
+			Good: "func (s *TokenStore) ensure() error {\n\t_, err := s.db.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (user_id TEXT NOT NULL, token TEXT NOT NULL)`, s.table))\n\tdatexport.RegisterEraser(datexport.DataEraser{Name: \"tokens\", Table: s.table, Column: \"user_id\"})\n\tdatexport.Register(datexport.DataExporter{Name: \"tokens\", Table: s.table, Columns: []string{\"user_id\", \"token\"}})\n\treturn err\n}",
+		}},
+	}, {
 		ID: RuleFoldedKey, Slug: "security/folded-key-save",
 		Title:      "Local-filesystem Save with no folded-key refusal",
 		Capability: CapSecurity, Severity: SeverityError,
@@ -1218,6 +1232,19 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  ":scope { --color-primary: #0F766E; }",
 			Good: ":scope { --board-accent: var(--color-primary); }",
+		}},
+	}, {
+		ID: RuleOwnedStatementAtRule, Slug: "rendering/owned-statement-at-rule",
+		Title: "Owned style holds a statement at-rule", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A *.style.css holds a statement at-rule other than @layer: @import, @charset, @namespace.",
+		Why: "These at-rules count only at the top of a stylesheet, before every other rule. An owned sheet " +
+			"compiles into app.css after the kit's rules, and a scoped one inside its @scope block, so the browser " +
+			"ignores them: the font or sheet an @import names never loads, and nothing on the page says so.",
+		Fix: "Load web fonts through the theme (style.FontFaceCSS) and write the rules you meant to import in the owned sheet itself.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "@import url(fonts.css);\n.lane { order: 1; }",
+			Good: ".lane { order: 1; }",
 		}},
 	}, {
 		ID: RuleDuplicateTokenValue, Slug: "rendering/duplicate-token-value",

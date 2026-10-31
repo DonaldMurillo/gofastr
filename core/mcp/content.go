@@ -107,35 +107,45 @@ type ImageResult struct {
 
 // normalizeToolResult converts whatever a ToolHandler returned into the wire
 // tools/call result. Plain values keep the legacy JSON-marshaled text shape,
-// so existing tools are unaffected.
-func normalizeToolResult(result any) toolsCallResult {
+// so existing tools are unaffected. A value JSON cannot encode (NaN, a
+// channel) is an error: answering it as empty text read as success.
+func normalizeToolResult(result any) (toolsCallResult, error) {
 	switch v := result.(type) {
 	case ToolResult:
 		return richResult(v)
 	case *ToolResult:
 		if v == nil {
-			return toolsCallResult{Content: []Content{TextContent("null")}}
+			return toolsCallResult{Content: []Content{TextContent("null")}}, nil
 		}
 		return richResult(*v)
 	case ImageResult:
-		return toolsCallResult{Content: []Content{ImageContent(v.Data, v.MimeType)}}
+		return toolsCallResult{Content: []Content{ImageContent(v.Data, v.MimeType)}}, nil
 	case Content:
-		return toolsCallResult{Content: []Content{v}}
+		return toolsCallResult{Content: []Content{v}}, nil
 	case []Content:
-		return toolsCallResult{Content: v}
+		return toolsCallResult{Content: v}, nil
 	case string:
-		return toolsCallResult{Content: []Content{TextContent(v)}}
+		return toolsCallResult{Content: []Content{TextContent(v)}}, nil
 	default:
-		b, _ := json.Marshal(v)
-		return toolsCallResult{Content: []Content{TextContent(string(b))}}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return toolsCallResult{}, err
+		}
+		return toolsCallResult{Content: []Content{TextContent(string(b))}}, nil
 	}
 }
 
-func richResult(r ToolResult) toolsCallResult {
+func richResult(r ToolResult) (toolsCallResult, error) {
 	content := r.Content
-	if len(content) == 0 && r.Structured != nil {
-		b, _ := json.Marshal(r.Structured)
-		content = []Content{TextContent(string(b))}
+	if r.Structured != nil {
+		// Encoded even beside text content: it ships as structuredContent.
+		b, err := json.Marshal(r.Structured)
+		if err != nil {
+			return toolsCallResult{}, err
+		}
+		if len(content) == 0 {
+			content = []Content{TextContent(string(b))}
+		}
 	}
-	return toolsCallResult{Content: content, StructuredContent: r.Structured, IsError: r.IsError}
+	return toolsCallResult{Content: content, StructuredContent: r.Structured, IsError: r.IsError}, nil
 }

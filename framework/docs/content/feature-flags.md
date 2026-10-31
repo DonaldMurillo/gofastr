@@ -32,6 +32,17 @@ The first call to `app.Flags()` (or `app.IsEnabled`, or
 `app.SetFlagStore`) lazily wires the evaluator and also installs it as
 `featureflag.Default()` so package-level helpers work from anywhere.
 
+The default middleware also puts the App's evaluator on every request
+context (`featureflag.WithEvaluator`), and `featureflag.Bool` reads the
+context's evaluator before `Default()`. With two Apps in one process,
+`flag.Bool(r.Context(), ...)` in each App's handlers reads that App's
+store, and an App that has not wired flags yet reads every flag as off.
+`Default()` serves only contexts that never passed through a request,
+such as a queue job or a cron run, and there the last App wired wins:
+pass `app.Flags()` to that code instead. An app built with
+`WithoutDefaultMiddleware` adds `app.FlagContextMiddleware()` to its
+own chain.
+
 ## Using a flag
 
 Inside a handler:
@@ -110,6 +121,11 @@ Two stores are bundled:
   override the table name, or `WithSQLDialect("postgres"|"sqlite")` to
   pin the dialect when the runtime probe is unreliable. Also implements
   `MutableStore` and `All(ctx)` for admin tooling.
+
+The SQL store registers its table with `App.ExportData` and
+`App.EraseUserData`. Erasing a user removes their id from every flag's
+`users` list and keeps the flag; the `tenants` list names tenants, not
+users, and is left alone. See [data export](data-export.md).
 
 For Redis or other backends, wrap `featureflag.Store`. Only `Get` is
 required; add `MutableStore` for admin-edit support.

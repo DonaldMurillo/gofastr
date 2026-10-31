@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -119,23 +122,62 @@ func (s *busSink) EmitEvent(e control.Event) {
 // before its registry has any sources registered.
 var ErrDispatcherNotReady = errors.New("engine: dispatcher not ready (empty registry)")
 
+// bashSummary spells a Bash call as the shell command it amounts to:
+// `cd <cwd> && env K=V … <cmd>`, env keys sorted so the summary is
+// deterministic.
+func bashSummary(cmd, cwd string, env map[string]string) string {
+	var b strings.Builder
+	if cwd != "" {
+		b.WriteString("cd " + shellQuote(cwd) + " && ")
+	}
+	if len(env) > 0 {
+		b.WriteString("env ")
+		for _, k := range slices.Sorted(maps.Keys(env)) {
+			b.WriteString(shellQuote(k+"="+env[k]) + " ")
+		}
+	}
+	b.WriteString(cmd)
+	return b.String()
+}
+
+// shellQuote single-quotes s unless every byte is one a shell word
+// keeps as is.
+func shellQuote(s string) string {
+	if strings.Trim(s, shellSafe) == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+const shellSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-./:=@%+,"
+
 // FormatArgvSummary computes a short argv-style summary for a tool
 // call, used by permission middleware to populate the
 // PermissionRequested event and to match argv-glob rules. The form is
 // best-effort and tool-specific:
 //
-//   - For Bash, the leading shell command string.
+//   - For Bash, the shell command, behind the call's cwd and env.
 //   - For Read/Write/Edit/Glob/Ls, "<Tool>:<path>" or "<Tool>:<pattern>".
 //   - Otherwise the bare tool name.
 func FormatArgvSummary(toolName string, args []byte) string {
 	switch toolName {
 	case "Bash":
-		// Best-effort decode of {cmd: "..."}.
+		// The permission engine decides from this summary alone (quiet
+		// mode, argv-glob rules), so it carries everything that changes
+		// what runs: a call's env (GIT_EXTERNAL_DIFF, PATH, LD_PRELOAD)
+		// and cwd (whose .git/config git reads) turn a read-only command
+		// into one that runs anything. They are spelled the way a shell
+		// would run them, so neither an allow-list prefix nor a rule
+		// written for the bare command matches. The fields and types are
+		// the Bash tool's own: input it cannot decode falls back to the
+		// bare tool name, which nothing auto-allows.
 		var bashLike struct {
-			Cmd string `json:"cmd"`
+			Cmd string            `json:"cmd"`
+			Cwd string            `json:"cwd"`
+			Env map[string]string `json:"env"`
 		}
 		if jsonTryUnmarshal(args, &bashLike) && bashLike.Cmd != "" {
-			return bashLike.Cmd
+			return bashSummary(bashLike.Cmd, bashLike.Cwd, bashLike.Env)
 		}
 	case "Read", "Write", "Edit", "Ls":
 		var pathLike struct {

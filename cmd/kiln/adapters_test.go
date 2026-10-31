@@ -143,8 +143,11 @@ func TestCodexAdapterPrependsSkillToPrompt(t *testing.T) {
 // This test pins the three things that have to be true for the agent
 // to behave like a kiln client:
 //
-//   - --allowedTools restricts the agent to Bash (curl is the only
-//     thing it needs; Edit/Write/Read are not even available).
+//   - --tools restricts the agent to Bash (curl is the only thing it
+//     needs; Edit/Write/Read are not even available). --allowedTools
+//     only skips the permission prompt for the tools it names, which
+//     --dangerously-skip-permissions already does for every tool, so
+//     with it alone every tool stayed available (2026-10-27 K9).
 //   - --append-system-prompt installs the kiln contract at the system
 //     level, where it outranks claude's default tool autonomy.
 //   - Dir is set so the agent doesn't see a Go repo as cwd in the
@@ -156,22 +159,22 @@ func TestClaudeCodeAdapterEnforcesKilnContract(t *testing.T) {
 		t.Fatalf("claude argv malformed: %v", argv)
 	}
 
-	var sawAllowedTools, sawAppendSystem bool
+	var sawTools, sawAppendSystem bool
 	var systemPromptValue string
 	for i := 0; i < len(argv)-1; i++ {
 		switch argv[i] {
-		case "--allowedTools":
-			sawAllowedTools = true
+		case "--tools":
+			sawTools = true
 			if argv[i+1] != "Bash" {
-				t.Errorf("--allowedTools = %q, want %q (curl is dispatched via Bash; no other tool is needed)", argv[i+1], "Bash")
+				t.Errorf("--tools = %q, want %q (curl is dispatched via Bash; no other tool is needed)", argv[i+1], "Bash")
 			}
 		case "--append-system-prompt":
 			sawAppendSystem = true
 			systemPromptValue = argv[i+1]
 		}
 	}
-	if !sawAllowedTools {
-		t.Error("claude argv missing --allowedTools — claude can fall back to Read/Edit/Write without it")
+	if !sawTools {
+		t.Error("claude argv missing --tools — claude can fall back to Read/Edit/Write without it")
 	}
 	if !sawAppendSystem {
 		t.Error("claude argv missing --append-system-prompt — without the kiln contract at system level the model treats kiln as advisory")

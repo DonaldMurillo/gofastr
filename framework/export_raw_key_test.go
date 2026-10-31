@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/datexport"
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
 // A raw exporter with no PrimaryKey was paged by a guessed "id". On SQLite

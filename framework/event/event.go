@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +19,13 @@ const (
 	EntityUpdated = "entity.updated"
 	EntityDeleted = "entity.deleted"
 )
+
+// DataKeyOwnerID is the key under which a CRUD lifecycle event's Data map
+// carries the owner id of its record, as a string, when the entity
+// declares an owner field. A consumer that copies the event somewhere
+// durable (the webhook bridge's deliveries) tags the copy with it, so
+// erasing that user reaches the copy.
+const DataKeyOwnerID = "ownerId"
 
 // Event represents something that happened in the system.
 type Event struct {
@@ -161,7 +169,14 @@ func (eb *EventBus) Subscribe(eventType string, handler EventHandler) (cancel fu
 		entries := eb.handlers[eventType]
 		for i, e := range entries {
 			if e.id == id {
-				eb.handlers[eventType] = append(entries[:i], entries[i+1:]...)
+				// slices.Delete clears the vacated tail slot, so the backing
+				// array does not keep the cancelled closure (and whatever it
+				// captured) alive; an emptied type drops its map entry.
+				if entries = slices.Delete(entries, i, i+1); len(entries) == 0 {
+					delete(eb.handlers, eventType)
+				} else {
+					eb.handlers[eventType] = entries
+				}
 				break
 			}
 		}
@@ -245,27 +260,45 @@ func emitStrict(ctx context.Context, h EventHandler, event Event) (err error) {
 	return h(ctx, event)
 }
 
+// AsyncHandlerTimeout bounds each EmitAsync subscriber. The subscriber
+// runs on the caller's context with its cancel removed, so it outlives the
+// request that emitted, and this deadline stops a stuck one.
+const AsyncHandlerTimeout = time.Minute
+
 // EmitAsync publishes an event in a goroutine (fire-and-forget).
 //
 // Each handler runs on its own goroutine inside emitSafe, so a subscriber
 // that blocks holds back no other and a panicking one takes only itself
-// down. Nil entries are skipped defensively.
+// down. Nil entries are skipped defensively. Handlers and the fanout tap
+// get ctx's values without its cancel, each bounded by AsyncHandlerTimeout:
+// the caller has usually returned by the time they run.
 func (eb *EventBus) EmitAsync(ctx context.Context, event Event) {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
 	hs := eb.Snapshot(event.Type)
+	// The caller is usually a request handler, which returns before these
+	// goroutines run, and its cancel failed every subscriber's I/O: the
+	// webhook bridge's subscriber query, so a committed write lost its
+	// webhook. Keep the values, drop the cancel, bound each run.
+	ctx = context.WithoutCancel(ctx)
 	go func() {
 		// The tap runs inside the goroutine so a (best-effort, normally
 		// fast) Publish on the fanout can't add latency to the
 		// fire-and-forget caller. The remote-reemit marker is still
 		// honored, preventing broadcast loops.
-		eb.invokeTap(ctx, event)
+		tctx, cancel := context.WithTimeout(ctx, AsyncHandlerTimeout)
+		eb.invokeTap(tctx, event)
+		cancel()
 		for _, h := range hs {
 			if h == nil {
 				continue
 			}
-			go func() { _ = emitSafe(ctx, h, event) }()
+			go func() {
+				hctx, cancel := context.WithTimeout(ctx, AsyncHandlerTimeout)
+				defer cancel()
+				_ = emitSafe(hctx, h, event)
+			}()
 		}
 	}()
 }

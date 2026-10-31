@@ -148,3 +148,61 @@ func TestBridge_CancelUnsubscribes(t *testing.T) {
 		t.Fatalf("cancel should have detached bridge; got %d hits", hits)
 	}
 }
+
+// A CRUD event names its record's owner (crud stamps it as ownerId), and
+// the bridge queues the delivery for that owner, so erasing the user
+// deletes the delivery that carries a copy of their row (2026-10-28
+// review of the erasure fix: the bridge published every delivery
+// ownerless).
+func TestBridgeRecordsEventOwner(t *testing.T) {
+	store := NewMemoryStore()
+	mgr := New(store, Options{AllowPrivateNetworks: true})
+	sub, err := mgr.Subscribe(context.Background(), Subscriber{URL: "https://example.com/hook", Secret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := event.NewEventBus()
+	defer Bridge(bus, mgr)()
+
+	_ = bus.Emit(context.Background(), event.Event{
+		Type: event.EntityCreated,
+		Data: map[string]any{event.DataKeyOwnerID: "u1", "record": map[string]any{"id": 1}},
+	})
+	_ = bus.Emit(context.Background(), event.Event{Type: event.EntityUpdated, Data: map[string]any{"record": map[string]any{"id": 2}}})
+
+	got := map[string]string{}
+	ds, err := store.ListDeliveries(context.Background(), sub.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range ds {
+		got[d.Event] = d.Owner
+	}
+	if got[event.EntityCreated] != "u1" || got[event.EntityUpdated] != "" || len(got) != 2 {
+		t.Fatalf("delivery owners by event = %v, want created: u1, updated: none", got)
+	}
+}
+
+// A redactor that drops the owner from the payload still leaves the
+// delivery tagged: the owner is read before the redactor runs.
+func TestBridgeOwnerSurvivesRedactor(t *testing.T) {
+	store := NewMemoryStore()
+	mgr := New(store, Options{AllowPrivateNetworks: true})
+	sub, err := mgr.Subscribe(context.Background(), Subscriber{URL: "https://example.com/hook", Secret: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := event.NewEventBus()
+	defer BridgeWithOptions(bus, mgr, nil, WithBridgeRedactor(func(_ string, ev event.Event) event.Event {
+		return event.Event{Type: ev.Type, Data: map[string]any{"redacted": true}}
+	}))()
+	_ = bus.Emit(context.Background(), event.Event{Type: event.EntityCreated, Data: map[string]any{event.DataKeyOwnerID: "u1"}})
+
+	ds, err := store.ListDeliveries(context.Background(), sub.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ds) != 1 || ds[0].Owner != "u1" {
+		t.Fatalf("deliveries %+v, want one owned by u1", ds)
+	}
+}

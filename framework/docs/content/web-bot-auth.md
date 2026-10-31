@@ -86,6 +86,11 @@ key thumbprint); it says a key that URL published signed the covered
 message, nothing more. Authorization, reputation, and rate limits
 remain the origin's policy.
 
+`@path`, `@request-target` and `@target-uri` carry the path as the
+client sent it, before percent-decoding (RFC 9421 section 2.2.6), so a
+signature over `/docs/a%20b` verifies and one over `/a/b` does not
+verify on `/a%2Fb`.
+
 ### The two modes
 
 | Mode | Behaviour |
@@ -150,6 +155,10 @@ hardened and each control is pinned by a test in `core/webbotauth`:
   address actually connected to, which closes DNS-rebinding TOCTOU.
 - **256 KiB body cap** (after content decoding), **5 s wall-clock
   timeout**, **32-key cap** per directory.
+- **Malformed keys fail the directory.** A key that is not OKP/Ed25519
+  is skipped. An Ed25519 key whose `x`, `kid`, `use` or `alg` is
+  present but not a string (`"use":[]`, `"alg":false`, `null`) is
+  refused, never read as an absent field.
 - **Positive and negative caches are separate bounded LRUs.** Junk
   URLs can only churn the negative cache; a real agent's keys are only
   replaced by a successful refetch. Failures are negative-cached

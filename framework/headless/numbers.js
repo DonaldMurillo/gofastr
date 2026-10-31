@@ -19,18 +19,6 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
-  let lang, fmt;
-  // formatNumber writes n for the page's current language; the formatter
-  // is rebuilt when a client navigation changes <html lang>.
-  NS.formatNumber = function (n) {
-    const l = document.documentElement.lang;
-    if (!fmt || l !== lang) {
-      lang = l;
-      try { fmt = new Intl.NumberFormat(l || undefined); } catch (_) { fmt = new Intl.NumberFormat(); }
-    }
-    return fmt.format(n);
-  };
-
   function numeric(v) {
     return v !== undefined && v !== null && v !== '' && typeof v !== 'object' && isFinite(v);
   }

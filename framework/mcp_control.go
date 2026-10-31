@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -34,9 +36,30 @@ import (
 // Code-level changes (screens, entities, handlers) are NOT an MCP
 // concern: that is the `gofastr dev` edit-rebuild-reload loop. MCP
 // control mutates runtime STATE the app already models.
+//
+// Both tools need a caller holding the "admin" role (MCPRequireRole), the
+// default /.debug uses too; WithMCPControlGate replaces it. The dev loop's
+// implied tools stay ungated.
 func WithMCPControl() AppOption {
 	return func(a *App) {
 		a.mcpControl = true
+	}
+}
+
+// WithMCPControlGate replaces the precondition the control tools run
+// behind, MCPRequireRole("admin") by default, for an app whose operators
+// hold another role:
+//
+//	framework.WithMCPControlGate(framework.MCPRequireRole("ops"))
+//
+// The gate replaces the default whole, so it should refuse a caller with
+// no identity itself, as MCPRequireRole and auth.MCPRole do.
+func WithMCPControlGate(gate func(ctx context.Context) error) AppOption {
+	if gate == nil {
+		panic("framework.WithMCPControlGate: nil gate: a nil precondition would silently allow every caller")
+	}
+	return func(a *App) {
+		a.mcpControlGate = gate
 	}
 }
 
@@ -124,7 +147,7 @@ func (a *App) controlToolNames() []string {
 
 func (a *App) registerControlTools() error {
 	tools := a.controlToolSpecs()
-	gate := controlToolGate(a.mcpControlDevImplied)
+	gate := controlToolGate(a.mcpControlDevImplied, a.mcpControlGate)
 	for _, t := range tools {
 		var opts []mcp.ToolOption
 		if gate != nil {
@@ -146,9 +169,8 @@ func (a *App) registerControlTools() error {
 // chain: entity.Endpoint.MCPHandler twins, app.MCP.RegisterTool calls, and
 // battery-registered mutating tools.
 //
-// It asks only for an identity, not a role, because the framework layer
-// cannot know the host's role vocabulary (and cannot import battery/auth).
-// A host wanting more passes auth.MCPRole("admin") instead.
+// It asks for an identity, not a role; MCPRequireRole adds one. A Decider
+// that answers DecisionDeny on access.RoleGateCapability refuses the call.
 //
 // Pair it with [mcp.WithToolGate] rather than [mcp.Gated] so the tool also
 // disappears from tools/list for callers who cannot invoke it, the
@@ -180,8 +202,70 @@ func requireMCPUser(ctx context.Context) error {
 	if _, embedded := fembed.GrantFromContext(ctx); embedded {
 		return errEmbedNotAllowed
 	}
+	// The Decider binds every gate (access.Decider), so an operator's deny
+	// closes the MCP tools as it closes battery/auth's role gates.
+	if deciderDenies(ctx) {
+		return errDeciderDenied
+	}
 	return nil
 }
+
+// MCPRequireRole is MCPRequireUser plus a role: the caller must hold any of
+// roles, read from the user's GetRoles() []string or from the roles access
+// middleware put on the context. It is the default gate of the control
+// tools and battery/log's MCP tools.
+//
+//	app.MCP.RegisterTool("cache_flush", desc, schema, flush,
+//	    mcp.WithToolGate(framework.MCPRequireRole("admin")))
+func MCPRequireRole(roles ...string) func(ctx context.Context) error {
+	if len(roles) == 0 {
+		panic("framework.MCPRequireRole: no roles given: use MCPRequireUser() to require just authentication")
+	}
+	roles = slices.Clone(roles)
+	return func(ctx context.Context) error {
+		if err := requireMCPUser(ctx); err != nil {
+			return err
+		}
+		held := callerRoles(ctx)
+		for _, r := range roles {
+			if slices.Contains(held, r) {
+				return nil
+			}
+		}
+		return errRoleRequired
+	}
+}
+
+// callerRoles is every role the caller holds: the ones access middleware
+// resolved onto the context and the user's own GetRoles().
+func callerRoles(ctx context.Context) []string {
+	roles := slices.Clone(access.GetRoles(ctx))
+	u, _ := handler.GetUser(ctx)
+	if rh, ok := u.(interface{ GetRoles() []string }); ok {
+		for _, r := range rh.GetRoles() {
+			if !slices.Contains(roles, r) {
+				roles = append(roles, r)
+			}
+		}
+	}
+	return roles
+}
+
+// deciderDenies consults the Decider installed in ctx the way a role gate
+// does: the caller's roles, access.RoleGateCapability and the zero Ref.
+func deciderDenies(ctx context.Context) bool {
+	d := access.GetDecider(ctx)
+	return d != nil && d(ctx, callerRoles(ctx), access.RoleGateCapability, access.Ref{}) == access.DecisionDeny
+}
+
+var (
+	errRoleRequired  = errors.New("this tool requires a role the caller does not hold")
+	errDeciderDenied = errors.New("this tool call was refused by the access decider for the caller's roles")
+)
+
+// errScopeNotHeld refuses a scope-restricted caller (an API token) whose
+// scopes do not name the resource and verb a tool acts on.
+var errScopeNotHeld = errors.New("this tool needs a scope the caller's credential does not hold")
 
 // errEmbedNotAllowed is deliberately distinct from errAuthRequired: the caller
 // IS authenticated, just not with a credential that may drive tools.
@@ -198,20 +282,22 @@ var errEmbedNotAllowed = errors.New("this tool is not reachable from an embedded
 // app serves, it made a reachable /mcp a control plane for whoever
 // found it.
 //
-// The gate asks only for an identity, not a role, because the framework
-// layer cannot know the host's role vocabulary (and cannot import
-// battery/auth). A host wanting more wraps its own handlers with
-// mcp.Gated(auth.MCPRole("admin"), …).
+// An identity was not enough: on an app with open sign-up any account
+// could turn a module off for everyone. The gate is override
+// (WithMCPControlGate) when set, else MCPRequireRole("admin").
 //
 // devImplied tools are NOT gated: `gofastr dev` turns them on with no
 // auth configured at all, so a gate would only lock the dev loop out of
 // its own app. Dev exposure is bounded on the other axis instead, the
 // listener must be loopback (guardDevMCPBind).
-func controlToolGate(devImplied bool) func(ctx context.Context) error {
+func controlToolGate(devImplied bool, override func(ctx context.Context) error) func(ctx context.Context) error {
 	if devImplied {
 		return nil
 	}
-	return requireMCPUser
+	if override != nil {
+		return override
+	}
+	return MCPRequireRole("admin")
 }
 
 // routerHasMCPRoute reports whether the host already mounted a POST

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -20,7 +19,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -70,26 +68,69 @@ func isMultipart(r *http.Request) bool {
 	return err == nil && mediaType == "multipart/form-data"
 }
 
+// errCrossSiteForm is returned by enforceJSONContentType for a multipart
+// write another site sent. Callers map it to 403 Forbidden.
+var errCrossSiteForm = errors.New("cross-site form write")
+
 // enforceJSONContentType refuses requests whose Content-Type isn't either
 // application/json or multipart/form-data. Returns errUnsupportedMediaType
 // for text/plain, application/x-www-form-urlencoded, missing, or any other
 // type, these are the "simple-request" content types a browser can send
 // cross-origin without a CORS preflight, so accepting them on JSON-only
 // write endpoints opens a CSRF vector.
+//
+// multipart/form-data is one of those types too: a page on another site,
+// a sibling subdomain included, can POST it with the victim's cookies and
+// no preflight. The record routes take it for file uploads, so a
+// multipart write must also pass the shared cross-site guard
+// (handler.IsCrossSiteRequest), or it gets errCrossSiteForm.
 func enforceJSONContentType(r *http.Request) error {
-	ct := r.Header.Get("Content-Type")
-	if ct == "" {
-		return errUnsupportedMediaType
-	}
-	mediaType, _, err := mime.ParseMediaType(ct)
+	mediaType, err := writeMediaType(r)
 	if err != nil {
-		return errUnsupportedMediaType
+		return err
 	}
 	switch mediaType {
-	case "application/json", "multipart/form-data":
+	case "application/json":
+		return nil
+	case "multipart/form-data":
+		if handler.IsCrossSiteRequest(r) {
+			return errCrossSiteForm
+		}
 		return nil
 	}
 	return errUnsupportedMediaType
+}
+
+// enforceJSONOnly is enforceJSONContentType for the routes that never
+// take a form: _batch and transitions. A browser cannot send
+// application/json cross-site without a preflight.
+func enforceJSONOnly(r *http.Request) error {
+	mediaType, err := writeMediaType(r)
+	if err != nil || mediaType != "application/json" {
+		return errUnsupportedMediaType
+	}
+	return nil
+}
+
+func writeMediaType(r *http.Request) (string, error) {
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		return "", errUnsupportedMediaType
+	}
+	mediaType, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return "", errUnsupportedMediaType
+	}
+	return mediaType, nil
+}
+
+// writeContentTypeError answers a refused write content type.
+func writeContentTypeError(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusUnsupportedMediaType
+	if errors.Is(err, errCrossSiteForm) {
+		status = http.StatusForbidden
+	}
+	writeJSONError(w, r, status, i18n.StatusPhrase(status))
 }
 
 // limitRequestBody wraps r.Body with the http.MaxBytesReader matching the
@@ -119,6 +160,7 @@ func limitJSONBody(w http.ResponseWriter, r *http.Request) {
 // memory, mapping the body-limit error to errBodyTooLarge. Strict key
 // validation needs the raw bytes; the 1 MiB JSON cap bounds the buffer.
 func readBodyBytes(r *http.Request) ([]byte, error) {
+	//gofastr:allow(unboundedbody) every production caller caps the body first (limitRequestBody); decodeJSONBody is test-only
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
@@ -449,10 +491,14 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 				return n
 			}
 		case schema.Bool:
+			// A blank stays "", which dropEmptyFormValues reads as "not
+			// provided", as on the JSON path: a stored NULL drawn as a
+			// select with its empty choice selected saved as false
+			// (2026-10-27 D19).
 			switch strings.ToLower(raw) {
 			case "true", "1", "yes", "on":
 				return true
-			case "false", "0", "no", "off", "":
+			case "false", "0", "no", "off":
 				return false
 			}
 		default:
@@ -539,7 +585,7 @@ func writeBodyError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	if _, ok := errors.AsType[*storageSaveError](err); ok {
-		log.Printf("crud: upload save failed: %s", textsafe.ScrubControlBytes(err.Error()))
+		logf("crud: upload save failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
@@ -608,7 +654,7 @@ func (ch *CrudHandler) deleteSavedUploads(ctx context.Context, keys []string) {
 	defer cancel()
 	for _, key := range keys {
 		if err := ch.Storage.Delete(ctx, key); err != nil {
-			log.Printf("crud: compensating delete of orphaned upload %q failed: %v", key, err)
+			logf("crud: compensating delete of orphaned upload %q failed: %v", key, err)
 		}
 	}
 }

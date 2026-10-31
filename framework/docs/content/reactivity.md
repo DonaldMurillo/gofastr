@@ -24,6 +24,10 @@ Three click-time primitives mutate it:
 | `data-cui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default 1; negative decrements) |
 | `data-cui-signal-toggle="name"` | Flips `name` between `"true"` and `"false"` |
 
+They work anywhere on the page, inside a modal, drawer or popover too. On
+a node that also carries `data-cui-rpc`, the signal mutation wins and no
+request is sent.
+
 Any element with `data-cui-signal="<name>"` re-renders when the value changes.
 For typed, shared, SSR-seeded state, wrap signals with `core-ui/store` (see
 [Signal store](signal-store.md)).
@@ -141,7 +145,10 @@ no further fetches land. The header is opt-in: a handler that forgets
 it keeps polling, so a still-live poll cannot be terminated by
 accident. For `Builder.Poll` widgets, declare the terminal condition
 with `Builder.PollTerminal(func() bool)`; the `/state` handler emits
-the header automatically once the predicate returns true. A poll whose
+the header automatically once the predicate returns true. It asks the
+predicate before it reads the signals, so the stopping snapshot is never
+older than the terminal answer, and it skips the header on a response
+missing a signal whose read failed. A poll whose
 region is swapped out entirely (an island swap that replaces the
 `data-cui-poll` element, or a replacement carrying
 `data-cui-poll="off"`/`"0"`) is not re-wired either, so removing the
@@ -182,10 +189,22 @@ sensibly reflect (sub-second internal dashboards).
   first keepalive write. The connection's read/write
   deadlines are NOT cleared (the reverted 217e8d06 did, which broke
   net/http's close-notify and stranded streams instead). See issue #159.
-- Concurrent streams are capped (default 16 per session, 4096 per replica;
-  configurable via `island.WithStreamCaps`). The policy is reject-not-evict:
-  an over-cap connect gets a `429 Too Many Requests` with `Retry-After`, and
-  existing streams are never dropped to make room.
+- Concurrent streams are capped: 16 per session, 256 per client and
+  4096 per replica by default (`island.WithStreamCaps`,
+  `island.WithPeerStreamCap`). A client is the signed-in user, or an
+  anonymous caller's address (an IPv6 address counts by its /64);
+  `Manager.ClientKey` returns the key a request counts under. The
+  per-client cap exists because a session costs one same-origin POST, so
+  without it one client could mint sessions until it held every slot.
+  Behind a reverse proxy, list it with `uihost.WithTrustedProxies` (or
+  `island.WithTrustedProxies` on a manager you build): the cap then reads
+  the `X-Forwarded-For` hop the proxy saw, walked from the right the way
+  the rate limiter does. Without the list every anonymous visitor counts
+  as the proxy's address and shares its 256 streams; the first refusal
+  from a private or loopback peer with no proxy listed logs a warning
+  saying so. The policy is reject-not-evict: an over-cap connect gets a
+  `429 Too Many Requests` with `Retry-After`, and existing streams are
+  never dropped to make room.
 
 See [Events and SSE](events.md) for the broker contract, [Presence](presence.md)
 for the canonical push case, and [Live dashboards](live-dashboards.md) for the

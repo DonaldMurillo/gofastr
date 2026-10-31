@@ -32,6 +32,8 @@ type line struct {
 }
 
 func Parse(input string) (*Node, error) {
+	// A leading byte order mark is not content (YAML 1.2 section 5.2).
+	input = strings.TrimPrefix(input, "\ufeff")
 	lines, err := lexLines(input)
 	if err != nil {
 		return nil, err
@@ -90,7 +92,8 @@ func stripComment(line string) string {
 			inQuote = r
 			continue
 		}
-		if r == '#' && (i == 0 || line[i-1] == ' ') {
+		// A comment follows whitespace, a tab as much as a space.
+		if r == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
 			return strings.TrimRight(line[:i], " ")
 		}
 	}

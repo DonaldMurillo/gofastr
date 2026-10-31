@@ -58,3 +58,66 @@ func TestComputedNameConflictPanics(t *testing.T) {
 	}()
 	_ = Computed[string](New("x"), "v", "r")
 }
+
+// A cycle between computed slices recursed in the runtime until the
+// stack overflowed, freezing the page (2026-10-27 R7). Declaring one
+// panics, naming the path.
+func TestComputedRefusesCycles(t *testing.T) {
+	refused := map[string]string{"self": "c.a", "pair": "c.b", "three": "c.c"}
+	paths := map[string]string{"self": "c.a -> c.a", "pair": "c.b -> c.a -> c.b", "three": "c.c -> c.a -> c.b -> c.c"}
+	for name, declare := range map[string]func(){
+		"self": func() { _ = Computed[int](New("c"), "a", "r", "c.a") },
+		"pair": func() {
+			_ = Computed[int](New("c"), "a", "r", "c.b")
+			_ = Computed[int](New("c"), "b", "r", "c.a")
+		},
+		"three": func() {
+			_ = Computed[int](New("c"), "a", "r", "c.x", "c.b")
+			_ = Computed[int](New("c"), "b", "r", "c.c")
+			_ = Computed[int](New("c"), "c", "r", "c.a")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resetForTest()
+			defer func() {
+				msg, _ := recover().(string)
+				if !strings.Contains(msg, "cycle: "+paths[name]) {
+					t.Fatalf("panic %q, want the cycle %s", msg, paths[name])
+				}
+				// The refused slice is not left registered.
+				if _, kept := declRegistry[refused[name]]; kept {
+					t.Errorf("%s stayed registered after its cycle was refused", refused[name])
+				}
+			}()
+			declare()
+		})
+	}
+	// A diamond is not a cycle: a and b both read x, c reads both.
+	resetForTest()
+	_ = New("d").Int("x", 0)
+	_ = Computed[int](New("d"), "a", "r", "d.x")
+	_ = Computed[int](New("d"), "b", "r", "d.x")
+	_ = Computed[int](New("d"), "c", "r", "d.a", "d.b")
+	// Re-declaring an acyclic computed with its own deps stays allowed.
+	_ = Computed[int](New("d"), "c", "r", "d.a", "d.b")
+}
+
+// A dependency name was never validated: the runtime splits
+// data-cui-computed-deps on commas, so "a,b" became two signals, and a
+// reserved or empty name shipped a dead binding (2026-10-27 C9). Deps
+// take the slice-name rules; route.* stays readable.
+func TestComputedValidatesDeps(t *testing.T) {
+	for _, dep := range []string{"", "a,b", "a b", "__proto__", "constructor"} {
+		t.Run(dep, func(t *testing.T) {
+			resetForTest()
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("dep %q accepted", dep)
+				}
+			}()
+			_ = Computed[int](New("v"), "x", "r", dep)
+		})
+	}
+	resetForTest()
+	_ = Computed[string](New("v"), "crumbs", "r", "route.path", "route.params.id")
+}

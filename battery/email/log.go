@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // sensitiveHeaderNames lists headers that LogSender refuses to print.
@@ -21,16 +23,18 @@ var sensitiveHeaderNames = map[string]struct{}{
 	"proxy-authorization": {},
 }
 
-// urlWithSecretPattern matches any URL whose query string carries a
-// sensitive parameter (token / code / key / secret / password). The
-// whole URL is redacted because both the path (e.g. /reset-password)
-// and the secret are sensitive together.
+// urlWithSecretPattern matches any link, absolute or relative, whose
+// query string carries a parameter naming a credential: token, code,
+// key, secret or password anywhere in the name, so api_key,
+// client_secret, session_token and resetToken count as well as token.
+// The whole link is redacted because both the path (e.g.
+// /reset-password) and the secret are sensitive together.
 //
 // The separator before the parameter may be an HTML entity: html/template
 // writes '&' inside an href as "&amp;", so ?next=home&token=S reaches the
 // log as ?next=home&amp;token=S. The named and numeric spellings of '&'
 // (&amp; &#38; &#x26;) all count, or an HTML body logged the live token.
-var urlWithSecretPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]*(?:[?&]|&amp;|&#0*38;|&#x0*26;)(?:token|code|key|secret|password|access_token|reset[_-]?token)=[^\s"'<>]*`)
+var urlWithSecretPattern = regexp.MustCompile(`(?i)[^\s"'<>]*(?:[?&]|&amp;|&#0*38;|&#x0*26;)[\w.-]*(?:token|code|key|secret|password)[\w.-]*=[^\s"'<>]*`)
 
 // bearerPattern catches `Bearer <token>` substrings anywhere in the body.
 var bearerPattern = regexp.MustCompile(`(?i)Bearer\s+\S+`)
@@ -46,6 +50,23 @@ func RedactBody(s string) string {
 	s = urlWithSecretPattern.ReplaceAllString(s, "[REDACTED-URL]")
 	s = bearerPattern.ReplaceAllString(s, "Bearer [REDACTED]")
 	return s
+}
+
+// logText scrubs a multi-line body for the dev terminal: it drops every
+// control, C1 and invisible/bidi codepoint (an ESC sequence in a
+// template would otherwise drive the terminal) and keeps newlines and
+// tabs. strings.Map turns invalid UTF-8 into U+FFFD, so a stray 8-bit
+// C1 byte goes too.
+func logText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if textsafe.IsUnsafe(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // LogSender is a development email sender that logs email details
@@ -69,26 +90,28 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 	var sb strings.Builder
 
 	sb.WriteString("========== EMAIL ==========\n")
-	sb.WriteString(fmt.Sprintf("From:    %s\n", email.From))
-	sb.WriteString(fmt.Sprintf("To:      %s\n", strings.Join(email.To, ", ")))
+	// Every caller-derived line passes scrubHeaderValue, the SMTP wire
+	// scrub, so an ESC or C1 byte never reaches the dev terminal.
+	sb.WriteString(fmt.Sprintf("From:    %s\n", scrubHeaderValue(email.From)))
+	sb.WriteString(fmt.Sprintf("To:      %s\n", scrubHeaderValue(strings.Join(email.To, ", "))))
 	if len(email.CC) > 0 {
-		sb.WriteString(fmt.Sprintf("CC:      %s\n", strings.Join(email.CC, ", ")))
+		sb.WriteString(fmt.Sprintf("CC:      %s\n", scrubHeaderValue(strings.Join(email.CC, ", "))))
 	}
 	// BCC is intentionally omitted from dev logs, blind-carbon recipients
 	// must not be observable to anyone reading the log (including the dev
 	// who sent the message). We do not even emit the label, because the
 	// presence of a "BCC:" line in a log is itself an observable signal.
-	sb.WriteString(fmt.Sprintf("Subject: %s\n", email.Subject))
+	sb.WriteString(fmt.Sprintf("Subject: %s\n", scrubHeaderValue(email.Subject)))
 
 	if email.TextBody != "" {
 		sb.WriteString("--- Text Body ---\n")
-		sb.WriteString(RedactBody(email.TextBody))
+		sb.WriteString(logText(RedactBody(email.TextBody)))
 		sb.WriteString("\n")
 	}
 
 	if email.HTMLBody != "" {
 		sb.WriteString("--- HTML Body ---\n")
-		sb.WriteString(RedactBody(email.HTMLBody))
+		sb.WriteString(logText(RedactBody(email.HTMLBody)))
 		sb.WriteString("\n")
 	}
 
@@ -97,7 +120,9 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 			sb.WriteString(fmt.Sprintf("Header:  %s: [REDACTED]\n", "[redacted-header]"))
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("Header:  %s: %s\n", k, email.Headers[k]))
+		// A header value gets the body's redaction too: a reset link in
+		// X-Reset-Link is the same credential as the one in the body.
+		sb.WriteString(fmt.Sprintf("Header:  %s: %s\n", scrubHeaderValue(k), RedactBody(scrubHeaderValue(email.Headers[k]))))
 	}
 
 	if len(email.Attachments) > 0 {
@@ -107,7 +132,7 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 			if ct == "" {
 				ct = "application/octet-stream"
 			}
-			sb.WriteString(fmt.Sprintf("  - %s (%s, %d bytes)\n", att.Filename, ct, len(att.Content)))
+			sb.WriteString(fmt.Sprintf("  - %s (%s, %d bytes)\n", scrubHeaderValue(att.Filename), scrubHeaderValue(ct), len(att.Content)))
 		}
 	}
 
