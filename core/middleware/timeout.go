@@ -103,6 +103,13 @@ func (tw *timeoutWriter) WriteHeader(code int) {
 	if tw.timedOut || tw.returned || tw.wroteHeader {
 		return
 	}
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		// Informational (103 Early Hints): the response is buffered until
+		// the handler returns, so the hint could not arrive early; drop it
+		// rather than record it as the status. Streaming starts only once
+		// the response is committed, after which a 1xx is too late.
+		return
+	}
 	tw.wroteHeader = true
 	tw.code = code
 	if tw.streaming {

@@ -102,7 +102,9 @@ Read and configuration:
 - `set_app_config`: current app spec app config; HTTP calls use
   `{"config":{...}}`, a non-empty `config.name` is required, and an
   omitted/empty API prefix resolves to `api`
-- `set_theme`: semantic light theme token overrides
+- `set_theme`: semantic light theme token overrides. Both config tools
+  write the config they read; when another config edit lands in between
+  they answer `kind: "conflict"`, and the call is safe to send again
 - `set_scaffold`: navigation plus owned-Go endpoint, middleware, plugin, and
   helper stubs
 

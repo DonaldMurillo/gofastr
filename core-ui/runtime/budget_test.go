@@ -1543,7 +1543,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestUnsafeRPCEvictsItsPage): Back after an entityui delete
 		// replayed the deleted record. The eviction has to sit here,
 		// beside the navigate only this module runs.
-		"rpc": 3633,
+		// 3698 measured (3696 + 2) after a trigger with no value and no
+		// response signal ignores a click while its request is in flight
+		// (2026-10-31, TestBusyRPCTriggerSendsOnce,
+		// TestControlRPCSendsEveryChange): two clicks on a span during the
+		// cold module load both POSTed. The guard reads dispatch state only
+		// this module holds.
+		"rpc": 3698,
 	}
 	const coreOverride = 0
 

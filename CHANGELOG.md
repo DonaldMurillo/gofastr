@@ -272,6 +272,34 @@ few lines, and link the PR or the docs page for the rest.
   had no window to post to and was dropped, so the window opened on an
   app that had been told to quit. `Run` checks again once the window is
   up.
+- **A handler that sends 103 Early Hints keeps its real status.**
+  Idempotency, metrics, tracing, timeout, the access log, the cache, the
+  dev live-reload injector and the test-binary render writer each took
+  the 103 as the response, dropped the handler's own status, and the
+  client got 200. The idempotency store also never saved the response,
+  so a retry ran the handler again. Each wrapper now forwards an
+  informational status and waits for the final one; the buffering
+  wrappers (timeout, cache) drop the hint. The WebMCP observer reported
+  such a tool call as status 103, and the dev retired-markup scan read
+  the body kind from the header as it stood at the hint.
+- **Kiln's `set_theme` no longer undoes an app config edit that landed
+  while it ran.** It wrote back the whole config it had read, so a
+  rename in between was lost. A config edit built from a config the
+  world no longer holds now answers `conflict` (the journal returns
+  `journal.ErrAppConfigChanged`); replaying an older log still applies it.
+- **A double click on an RPC span or link sends one request.** Only
+  buttons and inputs were disabled while in flight, and two clicks
+  before the rpc module loaded both dispatched. A trigger that carries
+  no value and no response signal now ignores a click while its request
+  is in flight; forms, controls and signal-targeted triggers still let
+  the newest dispatch win.
+- **A webhook claim with no lease recorded is delivered.** A host store
+  that claims rows itself leaves the lease unset, and the worker read
+  that as expired, so it handed every claim back and sent nothing.
+- **A WebSocket server that accepts and closes at once is not redialed
+  every second.** The backoff reset on every open, so a 4503 "not now"
+  close came back after one second forever. `attempts` now resets only
+  after a socket stays open 10 seconds.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

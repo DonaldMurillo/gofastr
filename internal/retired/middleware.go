@@ -207,6 +207,10 @@ func (w *teeWriter) decide(first []byte) {
 }
 
 func (w *teeWriter) WriteHeader(code int) {
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(code) // informational: the final status decides
+		return
+	}
 	w.decide(nil)
 	w.ResponseWriter.WriteHeader(code)
 }
