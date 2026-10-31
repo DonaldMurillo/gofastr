@@ -104,6 +104,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **An offset with no limit runs on SQLite.** `query.Build` wrote
+  `OFFSET $n` alone, which SQLite refuses, so `TypedQuery.Offset`
+  without `Limit` failed there and ran on Postgres. An offset alone now
+  carries the largest `LIMIT` both dialects accept.
+- **`kiln agent` starts when ports 8765–8774 are all busy.** The
+  fallback handed serve port 0 while the panel URL said `localhost:0`,
+  so the readiness check timed out and killed a healthy server. The
+  fallback now asks the kernel for a free loopback port and uses it.
 - Custom not-found screens retain their context-aware title provider.
   `uihost.NotFoundTitler` can choose a title from the request path; empty
   titles use the standard screen title or generic not-found title.

@@ -47,6 +47,10 @@ func runAgent(args []string) int {
 	}
 
 	port := pickPort(8765)
+	if port == 0 {
+		fmt.Fprintf(os.Stderr, "[kiln] no free loopback port for serve\n")
+		return 1
+	}
 	journal := filepath.Join(cwd, ".kiln.session.jsonl")
 
 	// Loopback bind: the spawned serve is only ever reached via
@@ -143,15 +147,24 @@ func (p *serveProc) stop(grace time.Duration) {
 	}
 }
 
-// pickPort returns desired if it's free, otherwise scans up by 1s.
-// Falls back to 0 (kernel-assigned) if nothing in [desired, desired+10] works.
+// pickPort returns desired if it's free, otherwise scans up by 1s. When
+// nothing in [desired, desired+10) is free it asks the kernel for a free
+// loopback port and returns that number: the caller builds kilnURL from
+// it, so a bare 0 would name a port serve never binds. It returns 0 only
+// when the kernel has none to give.
 func pickPort(desired int) int {
 	for p := desired; p < desired+10; p++ {
 		if portFree(p) {
 			return p
 		}
 	}
-	return 0
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0
+	}
+	p := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return p
 }
 
 // portFree reports whether TCP port p has no listener. The probe is a
