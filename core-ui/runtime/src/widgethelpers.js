@@ -42,16 +42,27 @@
   function startTicker() {
     if (ticking) return;
     ticking = true;
+    let timer = 0;
     const tick = function () {
-      document.querySelectorAll('[data-cui-tick-elapsed]').forEach(function (el) {
+      const nodes = document.querySelectorAll('[data-cui-tick-elapsed]');
+      // A client navigation that removed every ticker stops the interval;
+      // the next scan that finds one starts it again.
+      if (!nodes.length) {
+        clearInterval(timer);
+        ticking = false;
+        return;
+      }
+      nodes.forEach(function (el) {
         const start = parseInt(el.getAttribute('data-cui-tick-elapsed'), 10);
         if (!start) return;
         const ms = Date.now() - start;
-        el.textContent = ms < 1000 ? ms + 'ms' : ms < 10000 ? (ms / 1000).toFixed(1) + 's' : Math.round(ms / 1000) + 's';
+        el.textContent = ms < 1000
+          ? G.say('runtime.elapsed_ms', '{{n}}ms', { n: G.formatNumber(ms) })
+          : G.say('runtime.elapsed_s', '{{n}}s', { n: G.formatNumber(ms < 10000 ? Math.round(ms / 100) / 10 : Math.round(ms / 1000)) });
       });
     };
+    timer = setInterval(tick, 200);
     tick();
-    setInterval(tick, 200);
   }
 
   function wirePersist(el) {
@@ -85,7 +96,7 @@
     let src = null;
     try { src = sel && document.querySelector(sel); } catch (_) { src = null; }
     if (!src) return;
-    const sync = function () { el.textContent = src.value.length + ' chars'; };
+    const sync = function () { el.textContent = G.say('runtime.charcount', '{{n}} chars', { n: G.formatNumber(src.value.length) }); };
     src.addEventListener('input', sync);
     if (src.form) src.form.addEventListener('reset', function () { requestAnimationFrame(sync); });
     sync();

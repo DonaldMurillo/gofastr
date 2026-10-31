@@ -870,7 +870,8 @@ The kernel's `say(key, english, params)`, exported as
 argument on a miss, and fills `{{name}}` placeholders from `params`.
 Fragments call `say(...)`; modules and behaviours call `NS.say(...)`.
 Never write prose straight into a toast, `textContent`, `aria-label` or
-`title`: `core-ui/check.LintRuntimeProse` refuses it, and
+`title`, nor a unit glued to a value (`ms + 'ms'`):
+`core-ui/check.LintRuntimeProse` refuses it, and
 `TestRuntimeSayCallsMatchPhrases` holds every `say('key', 'English'`
 call to a registered phrase with the same English. A client-side
 navigation keeps the block it booted with, so a reader who switches

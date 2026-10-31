@@ -185,6 +185,17 @@ few lines, and link the PR or the docs page for the rest.
   mid-command.** The command looked the session up and wrote to it under
   two separate locks, so a sweep in between dropped it and the caller
   still got 200.
+- **The character counter and elapsed ticker follow the reader's
+  locale.** `data-cui-charcount-source` wrote `1234 chars` and
+  `data-cui-tick-elapsed` wrote `2.4s` on every locale. Both say their
+  words through the `runtime.charcount`, `runtime.elapsed_ms` and
+  `runtime.elapsed_s` phrases, with the number in the page's language.
+  `core-ui/check.LintRuntimeProse` now also refuses a word glued to a
+  value with `+`, the shape both sites used.
+- **The elapsed ticker stops when no ticker is left.** After a client
+  navigation removed every `[data-cui-tick-elapsed]` node, the interval
+  kept querying the document five times a second. It clears itself, and
+  the next ticker the scan finds starts it again.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

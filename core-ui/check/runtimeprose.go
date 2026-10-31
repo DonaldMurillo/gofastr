@@ -40,7 +40,7 @@ func LintRuntimeProse(roots ...string) (*Result, error) {
 		for _, span := range proseSinkSpans(f) {
 			for _, lit := range jsStringLiterals(f.Code[span[0]:span[1]]) {
 				pos := span[0] + lit.pos
-				if !isReaderProse(lit.text) || saysEnglish(f.Code, pos) {
+				if !(isReaderProse(lit.text) || gluedWord(f, span[0], pos, lit.text)) || saysEnglish(f.Code, pos) {
 					continue
 				}
 				line := f.lineOf(pos)
@@ -75,6 +75,7 @@ var (
 	reTwoWords  = regexp.MustCompile(`[A-Za-z]{2,}[,.:;!?)]*(?:\s+\S+)*?\s+\S*[A-Za-z]{2,}`)
 	reCapWord   = regexp.MustCompile(`^[A-Z][a-z]{2,}[.!?:]?$`)
 	reInterp    = regexp.MustCompile(`\$\{[^}]*\}`)
+	reLowerWord = regexp.MustCompile(`[a-z]{2,}`)
 )
 
 // proseSinkSpans returns the byte spans, in f's views, of every
@@ -138,6 +139,52 @@ func isReaderProse(s string) bool {
 		s = reInterp.ReplaceAllString(s, " ")
 	}
 	return reTwoWords.MatchString(s) || reCapWord.MatchString(s)
+}
+
+// gluedWord reports whether the literal opening at pos is an operand of +
+// and holds a word: a unit or noun glued to a value, as in
+// n + ' chars' or ms + 'ms', reads English on every locale though no
+// two-word or capitalised test sees it. Only at the sink's own level: inside
+// a call in the span (getAttribute(P + 'fail')) the literal builds a name,
+// not text.
+func gluedWord(f jsSource, spanStart, pos int, text string) bool {
+	if !reLowerWord.MatchString(text) {
+		return false
+	}
+	depth := 0
+	for _, c := range f.Blank[spanStart:pos] {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+	}
+	if depth > 0 {
+		return false
+	}
+	code := f.Code
+	before := strings.TrimRight(code[:pos], " \t\r\n")
+	if strings.HasSuffix(before, "+") && !strings.HasSuffix(before, "++") {
+		return true
+	}
+	end := literalEnd(code, pos)
+	after := strings.TrimLeft(code[end:], " \t\r\n")
+	return strings.HasPrefix(after, "+") && !strings.HasPrefix(after, "+=") && !strings.HasPrefix(after, "++")
+}
+
+// literalEnd is the index just past the string literal opening at pos.
+func literalEnd(code string, pos int) int {
+	q := code[pos]
+	for j := pos + 1; j < len(code); j++ {
+		switch code[j] {
+		case '\\':
+			j++
+		case q:
+			return j + 1
+		}
+	}
+	return len(code)
 }
 
 // saysEnglish reports whether the literal opening at pos is the English
