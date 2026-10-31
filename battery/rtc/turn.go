@@ -83,9 +83,14 @@ func validEndpointPort(endpoint string) bool {
 		endpoint = endpoint[closeIdx+1:]
 	} else if i := strings.LastIndexByte(endpoint, ':'); i >= 0 {
 		host, endpoint = endpoint[:i], endpoint[i:]
+	} else {
+		endpoint = "" // a bare hostname: no port component
 	}
 	if host == "" {
 		return false
+	}
+	if !strings.HasPrefix(host, "[") && !validHostname(host) {
+		return false // a path, query or other junk riding on the host
 	}
 	if endpoint == "" {
 		return true // no port component
@@ -100,6 +105,22 @@ func validEndpointPort(endpoint string) bool {
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
 		return false
+	}
+	return true
+}
+
+// validHostname reports whether host is a DNS name or IPv4 literal:
+// letters, digits, dots, hyphens and underscores only. Anything else
+// (a slash, query, space) is not part of an RFC 7064/7065 host.
+func validHostname(host string) bool {
+	for i := 0; i < len(host); i++ {
+		c := host[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case c == '.', c == '-', c == '_':
+		default:
+			return false
+		}
 	}
 	return true
 }

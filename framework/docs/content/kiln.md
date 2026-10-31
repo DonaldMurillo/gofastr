@@ -361,8 +361,10 @@ is a nested object, or a props/row key containing a colon, comment marker, or
 brackets. Reshape the data (or drop the row) and re-run; a freeze that
 succeeded is guaranteed to re-parse into the same values.
 
-`FreezeAndGenerate` performs the freeze and invokes
-`gofastr generate app gofastr.yml` when `gofastr` is on `PATH`.
+`FreezeAndGenerate(ctx, world, dir, out)` performs the freeze and invokes
+`gofastr generate app gofastr.yml` when `gofastr` is on `PATH`. The
+generator runs under `ctx`, and its output is collected for at most two
+seconds after it exits.
 
 ## Security boundary
 

@@ -483,3 +483,10 @@ notes:
       shapes:
         - symbol: gofastr/core-ui/island.Manager.ConnectSession
           type: '^func\(sessionID string\) \(<-chan island\.IslandUpdate, func\(\), error\)$'
+  - change: "BREAKING - freeze.FreezeAndGenerate takes a context.Context first and runs the generator under it"
+    breaking: true
+    hits: edit
+    guidance: "A generator that exited while a child it started still held the output pipe hung the call. Pass the request or command context: freeze.FreezeAndGenerate(ctx, w, dir, out). Output is collected for at most two seconds after the generator exits."
+    find:
+      uses:
+        - gofastr/kiln/freeze.FreezeAndGenerate

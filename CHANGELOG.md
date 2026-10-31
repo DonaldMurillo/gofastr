@@ -112,6 +112,25 @@ few lines, and link the PR or the docs page for the rest.
   fallback handed serve port 0 while the panel URL said `localhost:0`,
   so the readiness check timed out and killed a healthy server. The
   fallback now asks the kernel for a free loopback port and uses it.
+- **BREAKING: `freeze.FreezeAndGenerate` takes a context.** A generator
+  that exited while a child it started still held the output pipe hung
+  the call until that child exited. It now runs under the caller's
+  context and collects output for at most two seconds after the
+  generator exits. Pass the context first:
+  `freeze.FreezeAndGenerate(ctx, w, dir, out)`.
+- **An ICE URL with no port is accepted, and one with a path is
+  refused.** `stun:stun.example.net` and `turn:[2001:db8::1]` were
+  refused, though RFC 7064/7065 make the port optional, while a host
+  carrying `/path` passed. A host is now a DNS name, an IPv4 literal or
+  a bracketed IPv6 literal.
+- **`gofastr desktop build` on macOS refuses a GOARCH other than arm64.**
+  The build set arm64 whatever `GOARCH` asked for, and an Intel Mac got
+  a bundle reported written that could not launch. The desktop shell is
+  arm64-only, so another `GOARCH` is an error, and an Intel host gets a
+  warning that the bundle will not run there.
+- **The search results count follows the reader's locale.** The status
+  line wrote 1234 as `1234` on every locale; it now reads `1 234` in
+  French, as the chart numbers do.
 - Custom not-found screens retain their context-aware title provider.
   `uihost.NotFoundTitler` can choose a title from the request path; empty
   titles use the standard screen title or generic not-found title.

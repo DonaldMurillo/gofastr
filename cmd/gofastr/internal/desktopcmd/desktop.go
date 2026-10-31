@@ -468,6 +468,16 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		}
 	}
 
+	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	if archWarn != "" {
+		cli.Warn("%s", archWarn)
+	}
+
 	exe := filepath.Join(macOS, name)
 	cli.Info("Building %s (darwin/arm64, CGO_ENABLED=0)...", f.pkg)
 	buildCmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", exe, f.pkg)
@@ -786,4 +796,19 @@ func runDesktopTypes(args []string) {
 		return
 	}
 	cli.Success("Wrote %s (%d capabilities)", f.out, len(manifest.Capabilities))
+}
+
+// macDesktopArch checks the macOS bundle's architecture. The shell
+// (battery/desktop/macos) is arm64-only, so the bundle is always
+// darwin/arm64: a GOARCH naming anything else is refused, and building
+// on an Intel host returns a warning that the bundle will not launch
+// there. Cross-building for Apple silicon from an Intel Mac stays legal.
+func macDesktopArch(envArch, hostArch string) (warn string, err error) {
+	if envArch != "" && envArch != "arm64" {
+		return "", fmt.Errorf("macOS desktop builds target arm64 only (Apple silicon), not GOARCH=%s", envArch)
+	}
+	if hostArch != "arm64" {
+		return fmt.Sprintf("The bundle targets Apple silicon (arm64) and will not launch on this %s Mac.", hostArch), nil
+	}
+	return "", nil
 }
