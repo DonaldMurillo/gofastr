@@ -161,6 +161,30 @@ few lines, and link the PR or the docs page for the rest.
 - **desktop-focus completes a session paused at 00:00.** The pause
   stored no time left and a paused tick never completes, so the timer
   froze and no break started.
+- **Entities on tables that differ only by case get the column-conflict
+  check.** `Widgets` and `widgets` are one table once AutoMigrate's
+  unquoted DDL folds them, but the registry compared names exactly, so a
+  second entity's wider `String.Max` reused the first one's
+  `VARCHAR(10)`. The names are folded and the conflict panics at
+  registration.
+- **An include that names a relation twice returns each row once.**
+  `?include=comments(status=draft),comments(body=x)` loads both filters
+  into one list, and a comment matching both came back twice, at the top
+  level and one hop down.
+- **The log webhook sink refuses a write that races Close.** A write
+  that passed the closed check while Close ran could append behind the
+  final drain, an entry never sent and never counted in `Dropped()`. It
+  returns `ErrSinkClosed`.
+- **`cmd/mutate` no longer scores a slow build as a caught mutant.** A
+  mutant run past its deadline counted as caught, though with a cold
+  cache the deadline usually went on the build and no test ran. It is
+  caught only when the test binary hit its own `-timeout`, otherwise the
+  run stops with a harness error, and mutant runs get the baseline's
+  five-minute build allowance.
+- **webmcp-remote-assist answers 410 for a command on a session swept
+  mid-command.** The command looked the session up and wrote to it under
+  two separate locks, so a sweep in between dropped it and the caller
+  still got 200.
 - **The search results count follows the reader's locale.** The status
   line wrote 1234 as `1234` on every locale; it now reads `1 234` in
   French, as the chart numbers do.

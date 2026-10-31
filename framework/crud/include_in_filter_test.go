@@ -201,3 +201,142 @@ CREATE TABLE dup_comments (
 		t.Fatalf("DATA: [include-merge] repeating a relation with two filter sets returned an empty relation (AND-merged impossible predicate). Body: %s", body)
 	}
 }
+
+// Two mentions of one relation load twice and both append, so a row that
+// matches both filters came back twice (2026-10-27 D11). The union holds
+// each row once, and a row matching one filter still comes back.
+func TestIncludeRepeatedRelationNoDuplicates(t *testing.T) {
+	ddl := `
+CREATE TABLE twin_posts (
+	id    TEXT PRIMARY KEY,
+	title TEXT
+);
+CREATE TABLE twin_comments (
+	id      TEXT PRIMARY KEY,
+	post_id TEXT NOT NULL,
+	status  TEXT,
+	body    TEXT
+);
+`
+	postCfg := makeEntityConfig("twin_posts", "twin_posts", "",
+		[]schema.Field{{Name: "title", Type: schema.String}},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{
+				entity.HasMany("comments", "twin_comments", "post_id"),
+			}
+		},
+	)
+	commentCfg := makeEntityConfig("twin_comments", "twin_comments", "",
+		[]schema.Field{
+			{Name: "post_id", Type: schema.String, Required: true},
+			{Name: "status", Type: schema.String},
+			{Name: "body", Type: schema.String},
+		},
+	)
+
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	commentEnt := entity.Define(commentCfg.Table, commentCfg)
+	commentEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	reg.add(t, commentEnt)
+	ch.Registry = reg
+
+	seedRows(t, db, "twin_posts", []map[string]any{{"id": "p1", "title": "post"}})
+	seedRows(t, db, "twin_comments", []map[string]any{
+		{"id": "both1", "post_id": "p1", "status": "draft", "body": "x"},
+		{"id": "draft1", "post_id": "p1", "status": "draft", "body": "y"},
+		{"id": "body1", "post_id": "p1", "status": "live", "body": "x"},
+	})
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   "/twin_posts?include=comments(status=draft),comments(body=x)",
+		UserID: "u1",
+	})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list+include returned %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for id, want := range map[string]int{"both1": 1, "draft1": 1, "body1": 1} {
+		if got := strings.Count(body, `"`+id+`"`); got != want {
+			t.Errorf("comment %s appears %d times, want %d. Body: %s", id, got, want, body)
+		}
+	}
+}
+
+// The nested loader dedupes the same way: a repeated relation one hop
+// down (comments.replies twice) holds each reply once.
+func TestIncludeNestedRepeatNoDuplicates(t *testing.T) {
+	ddl := `
+CREATE TABLE nest_posts (
+	id    TEXT PRIMARY KEY,
+	title TEXT
+);
+CREATE TABLE nest_comments (
+	id      TEXT PRIMARY KEY,
+	post_id TEXT NOT NULL
+);
+CREATE TABLE nest_replies (
+	id         TEXT PRIMARY KEY,
+	comment_id TEXT NOT NULL,
+	status     TEXT,
+	body       TEXT
+);
+`
+	postCfg := makeEntityConfig("nest_posts", "nest_posts", "",
+		[]schema.Field{{Name: "title", Type: schema.String}},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{entity.HasMany("comments", "nest_comments", "post_id")}
+		},
+	)
+	commentCfg := makeEntityConfig("nest_comments", "nest_comments", "",
+		[]schema.Field{{Name: "post_id", Type: schema.String, Required: true}},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{entity.HasMany("replies", "nest_replies", "comment_id")}
+		},
+	)
+	replyCfg := makeEntityConfig("nest_replies", "nest_replies", "",
+		[]schema.Field{
+			{Name: "comment_id", Type: schema.String, Required: true},
+			{Name: "status", Type: schema.String},
+			{Name: "body", Type: schema.String},
+		},
+	)
+
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	for _, cfg := range []entity.EntityConfig{commentCfg, replyCfg} {
+		ent := entity.Define(cfg.Table, cfg)
+		ent.SetDB(db)
+		reg.add(t, ent)
+	}
+	ch.Registry = reg
+
+	seedRows(t, db, "nest_posts", []map[string]any{{"id": "p1", "title": "post"}})
+	seedRows(t, db, "nest_comments", []map[string]any{{"id": "c1", "post_id": "p1"}})
+	seedRows(t, db, "nest_replies", []map[string]any{
+		{"id": "both1", "comment_id": "c1", "status": "draft", "body": "x"},
+		{"id": "draft1", "comment_id": "c1", "status": "draft", "body": "y"},
+	})
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   "/nest_posts?include=comments.replies(status=draft),comments.replies(body=x)",
+		UserID: "u1",
+	})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list+include returned %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for id, want := range map[string]int{"both1": 1, "draft1": 1} {
+		if got := strings.Count(body, `"`+id+`"`); got != want {
+			t.Errorf("reply %s appears %d times, want %d. Body: %s", id, got, want, body)
+		}
+	}
+}

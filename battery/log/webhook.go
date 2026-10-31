@@ -131,6 +131,15 @@ func (s *webhookSink) Write(entry []byte) error {
 	default:
 	}
 	s.mu.Lock()
+	// Again under the lock: a Write that passed the check above while
+	// Close ran would otherwise append behind the final drain, an entry
+	// nobody sends and Dropped never counts.
+	select {
+	case <-s.closed:
+		s.mu.Unlock()
+		return ErrSinkClosed
+	default:
+	}
 	if len(s.queue) >= s.opts.QueueSize {
 		// Drop oldest to make room. Never block. Counter is surfaced
 		// via Dropped() and emitted to stderr on shutdown so silent

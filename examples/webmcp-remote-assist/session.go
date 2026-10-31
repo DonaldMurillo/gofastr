@@ -360,11 +360,12 @@ func (a *assistApp) toolEventLog() []string {
 // like from the browser. The page's ws module classifies the close,
 // reconnects, and rehydrates from a fresh snapshot.
 func (a *assistApp) dropRoleSocket(id string, r role) bool {
-	s := a.lookup(id)
+	a.mu.Lock()
+	s := a.lookupLocked(id)
 	if s == nil {
+		a.mu.Unlock()
 		return false
 	}
-	a.mu.Lock()
 	conn := s.conns[r]
 	delete(s.conns, r)
 	a.mu.Unlock()
@@ -382,6 +383,12 @@ func (a *assistApp) dropRoleSocket(id string, r role) bool {
 func (a *assistApp) lookup(id string) *assistSession {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.lookupLocked(id)
+}
+
+// lookupLocked is lookup for a caller that holds mu and writes to the
+// session under the same hold, so a sweep cannot drop it in between.
+func (a *assistApp) lookupLocked(id string) *assistSession {
 	s, ok := a.sessions[id]
 	if !ok {
 		return nil
@@ -555,13 +562,15 @@ func (a *assistApp) applyCommand(cmd assistCommand) (assistSnapshot, int, error)
 	if cmd.Kind == "" || cmd.Session == "" {
 		return assistSnapshot{}, http.StatusBadRequest, errBadRequest{"kind and session are required"}
 	}
-	s := a.lookup(cmd.Session)
-	if s == nil {
-		return assistSnapshot{}, http.StatusGone, errSessionGone{}
-	}
-
+	// One hold for the lookup and the write: a sweep between two holds
+	// dropped the session and the write landed on the orphan, answered 200.
 	var ev assistEvent
 	a.mu.Lock()
+	s := a.lookupLocked(cmd.Session)
+	if s == nil {
+		a.mu.Unlock()
+		return assistSnapshot{}, http.StatusGone, errSessionGone{}
+	}
 	switch cmd.Kind {
 	case cmdInstruction:
 		text := strings.TrimSpace(cmd.Instruction)

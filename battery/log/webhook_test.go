@@ -152,6 +152,30 @@ func TestWebhookWriteAfterClose(t *testing.T) {
 	}
 }
 
+// A Write that passed the closed check before Close, and took the queue
+// lock after it, used to append behind the final drain: the entry was
+// never sent and never counted (2026-10-27 L3). It refuses instead.
+func TestWebhookWriteRacingCloseRefuses(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	s := WebhookSink(srv.URL, WebhookOpts{}).(*webhookSink)
+
+	s.mu.Lock()
+	wrote := make(chan error, 1)
+	go func() { wrote <- s.Write([]byte(`{"a":1}`)) }()
+	time.Sleep(20 * time.Millisecond) // Write is past the closed check, parked on mu
+	s.closeOnce.Do(func() { close(s.closed) })
+	s.mu.Unlock()
+
+	if err := <-wrote; err != ErrSinkClosed {
+		t.Errorf("Write that took the lock after Close = %v, want ErrSinkClosed", err)
+	}
+	_ = s.Close()
+}
+
 // TestWebhookCloseInterruptsRetry pins that a Close mid-retry returns
 // quickly even when the server is wedged, without this, App.Stop would
 // block for up to (Timeout × MaxRetries).
