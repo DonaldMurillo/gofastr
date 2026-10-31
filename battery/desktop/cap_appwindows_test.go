@@ -269,6 +269,9 @@ func TestRunWiresSettingsAndTray(t *testing.T) {
 		return ok
 	})
 	cfg, _ := shell.config()
+	if cfg.OnTrayMenu == nil {
+		t.Fatal("Run did not wire synchronous tray completion")
+	}
 
 	if cfg.AppID != "wiring.example.app" {
 		t.Fatalf("WindowConfig.AppID = %q, want wiring.example.app", cfg.AppID)

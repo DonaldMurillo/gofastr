@@ -112,6 +112,71 @@ macOS), created 0700. Four files live there:
 paths only); tests and CI use it to avoid touching a real profile.
 `Config.DataDir` overrides the whole path per battery.
 
+### Persistent browser profiles on Linux
+
+Set `desktop.Config.PersistentProfile: true` to retain a Linux app's browser
+cookies and website data across launches. This is an opt-in **browser profile**,
+not a cookies-only store. Linux's default stays ephemeral, shared among the
+windows of that running shell. The option is supported by the Linux native
+shell; other shells return `ErrUnsupported` before starting the app rather than
+silently ignoring it. It does not change other platforms' existing defaults.
+
+The profile lives at `<resolved DataDir>/browser-profiles/<Config.ID>/`, never
+under a window title. Even apps that explicitly share a `DataDir` have separate
+browser profiles by ID. The data directory and profile root must be owned by
+the current user with mode `0700`; missing directories are created privately,
+but existing permissions are not changed. Symlinked paths, foreign-owned or
+unsafe writable ancestors, non-regular profile files, hard links, malformed
+origin metadata and invalid cookie databases are refused, not reset. Startup
+inspects a bounded profile tree (100,000 entries, depth32); these checks are not
+a defense against a hostile process running as the same user.
+
+**The origin is stable.** On the first launch, `Run` binds an unused IPv4
+loopback port and records the actual port before opening WebKit. Later launches
+bind exactly that port. This retains the origin needed by `localStorage` and
+IndexedDB instead of silently abandoning them at a new random port. A busy
+port, port-remapping configuration, or invalid origin record stops startup
+before a window opens. Stop the conflicting process or restore the profile;
+there is no automatic port migration. Failed first app startup can retry the
+pending profile. Packaged secondary deep-link launches forward to the primary
+before attempting to lock its profile.
+
+Only non-session cookies with an expiry persist; session cookies are not
+persisted, and expired or deleted cookies are not restored as live cookies.
+Expired rows may remain in the native database until WebKit removes them. Each launch still mints fresh boot-token/session
+credentials, and old credentials cannot authorize the next process. The Host
+pin, same-site checks and permission grants are unchanged. The profile does
+not implement login/logout: application auth determines whether its cookies
+persist and clears them on logout. Turning this option off starts an ephemeral
+browser but does not erase the saved profile, app database or grants.
+
+Two intentional exceptions keep browser persistence from bypassing the native
+boot contract: stored service-worker registrations are cleared and their native
+completion awaited **before any view opens** (a failure/timeout aborts startup),
+and persistent HTTP-auth credential storage is disabled. Applications can use
+workers during a launch, but cannot rely on a worker surviving the next launch.
+
+One process owns a profile at a time. Once WebKit has used it, its exclusive
+lock is retained until process exit, not merely until the GTK loop returns:
+WebKit's network process shuts down asynchronously. Do not delete the lock file
+to force access. Kernel locks release when the owning process exits, including
+a crash; this is not an acknowledgement that every native child has flushed or
+that storage survives a crash. Filesystem write preflight and SQLite cookie
+integrity and known native schema checks catch some startup failures, but
+WebKit's cookie-storage setter
+returns no durable-write acknowledgement; later disk-full/native write errors
+cannot be promised synchronously by `Run`. Other website stores retain WebKit's
+own format and recovery behavior. The cookie preflight accepts the ordered
+9-column legacy and 10-column `moz_cookies` layouts used by libsoup 3; native
+coverage uses WebKitGTK 2.54 / libsoup 3.6.5. An unknown future layout is refused
+without migration or deletion: use a compatible runtime/framework version or
+restore a backup, rather than discarding the database to make startup succeed.
+
+To reset browser data, exit every process using the profile, then move aside or
+remove the **whole AppID profile directory**, not just `origin.json` or the lock.
+The next launch creates a new origin and empty browser data. Keep the separate
+application database, identity and grants unless you also intend to reset those.
+
 ## Single-user mode
 
 A desktop app is one user on one machine: every request the window
@@ -489,8 +554,36 @@ the menu bar after the main window closes; `HideDock` runs the app as
 an accessory (no Dock icon, menu bar only). `d.SetTrayTitle` and
 `__gofastr.desktop.tray.setTitle` change the bar title at runtime.
 
-The tray is macOS-only for now. On a host without a tray surface, Run
-logs a Warn naming the host error and the rest of the app works.
+Linux uses an app-owned local session-bus connection and the
+StatusNotifierItem/DBusMenu protocols. It requires a compatible status host
+(for example, a desktop panel with SNI support); it does not install a host,
+enable desktop extensions, or implement an XEmbed fallback. Title/icon placement
+and whether text is shown are the host's choice. `HideDock` has no Linux effect.
+Linux accepts full-color PNGs up to 1 MiB and 256x256 pixels; an omitted icon gets
+a small built-in fallback. Menus are bounded to 128 entries and eight levels;
+text is valid UTF-8, NUL-free and at most 4096 bytes. Top-level Show and Quit
+recovery actions are always added, even with a custom menu.
+
+`CloseHidesWindow` on Linux hides only after a watcher has registered the item
+and reports a live status host. Without that proof, close behaves normally.
+Host loss/replacement, removal of this item from the watcher's registry, or bus
+disconnection marks the tray unavailable and
+restores a hidden window; a busy GTK thread delays restoration, which is retried
+rather than forgotten. A functioning main loop is still required to show it.
+`Window.Close` follows the close-button behavior, while explicit Quit always
+exits. Linux tray application callbacks run one at a time with at most 16 queued
+actions. Handler contexts retain the normal 30-second deadline, but a handler
+that ignores cancellation can occupy that one worker until it returns, even
+after shutdown; the tray does not wait indefinitely for it or spawn a replacement. Show,
+host-loss recovery and Quit use independent bounded/coalesced paths, so that
+handler does not trap a hidden window. Custom shells can opt into this contract
+with `WindowConfig.OnTrayMenu`: invoke it off the UI thread on a bounded worker;
+it returns only after the handler completes. `OnMenu` preserves the existing
+asynchronous main-menu handler behavior. Broker requests are also bounded;
+overload can reject an action rather than grow memory without limit. No protocol can prove that a
+third-party host actually painted the icon: a visible tray still depends on
+the desktop's host. On a host without a tray surface, Run logs a Warn naming
+the host error and the rest of the app works.
 
 ## Window styles, frameless windows, widgets
 
@@ -1018,7 +1111,8 @@ Prefix it with your product name (`gofastr-notes`).
 
 Build with `--scheme` to declare the packaged app's activation scheme.
 macOS and Windows install or claim an OS handler as described below;
-Linux embeds command-line and session-bus handoff support only:
+Linux builds embed command-line and session-bus handoff support; the separate
+`desktop install` command advertises an OS handler for a tar bundle:
 
 ```sh
 gofastr desktop build --id dev.gofastr.notes --name Notes --scheme gofastr-notes
@@ -1032,8 +1126,9 @@ If the app is already running, the new process forwards the URL to its
 open window. Windows refuses to replace a scheme owned by another
 per-user or machine-wide handler. The embedded scheme supplies a default
 `DeepLinkConfig` on Windows and Linux when the app has none; a custom
-config must use the same scheme. Linux does not register a handler or
-change default associations. Without `--scheme`, these builds do not
+config must use the same scheme. Linux builds do not register a handler;
+`desktop install` advertises it without changing saved default-handler
+preferences. Without `--scheme`, these builds do not
 enable native launch handoff. Development runs (`go run`, `gofastr
 desktop run`) do not register a scheme.
 
@@ -1124,8 +1219,9 @@ activations over an app-owned local D-Bus connection, only when the binary has a
 embedded scheme from `gofastr desktop build --scheme=...`. Both plain ELF and
 tar.gz builds support this opt-in. Pass a URL as one argument to the executable
 or archive's `launch.sh`; setting `Config.DeepLink` alone does not enable native
-launch handoff. No OS handler, desktop association or D-Bus activation service
-is installed. The mapping, queue and event remain host-independent.
+launch handoff. Building alone installs no OS handler or desktop association.
+The separate per-user installer advertises the handler without changing saved
+default-handler preferences. Neither command installs a D-Bus activation service. The mapping, queue and event remain host-independent.
 
 The Linux broker requires `DBUS_SESSION_BUS_ADDRESS` to name an **existing local**
 `unix:path=...` or `unix:abstract=...` session bus. Escaped address fields and an
@@ -2015,6 +2111,8 @@ WKWebView through `desktoptest.NativeMain`.
 | `build ...` on macOS/arm64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.app`: Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |
 | `build ...` on Windows/amd64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.exe` beside `WebView2Loader.dll`. The executable includes file and product version details, a multi-size icon from `--icon` (PNG; generated by default), and no console window. `--scheme` embeds the URL scheme; the app registers it for the current user at startup. The target machine needs the Evergreen WebView2 Runtime. |
 | `build ...` on Linux/amd64 or Linux/arm64 | Writes a plain ELF executable by default. `--format=tar.gz` opts into a release archive with an icon, launcher, desktop-entry template, runtime README and checksum manifest. `--scheme` embeds command-line/session-bus activation, not an OS handler. It does not install the app or bundle system libraries. |
+| `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
+| `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
 | `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. |
 | `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies. |
@@ -2059,8 +2157,9 @@ with a same-named root directory containing:
   Input PNGs are limited to 16 MiB and 4096 pixels per dimension.
 - `dev.example.app.desktop.in`: an **inert template**, not an installable
   desktop entry. Its `@BUNDLE_ROOT@` paths require a packager to render
-  the final absolute installation path. No renderer or installer is
-  provided; do not install or trust the template as-is. Rendering must
+  the final absolute installation path. `desktop install` instead generates
+  its own validated desktop entry; do not install or trust the template as-is.
+  Other packagers must
   apply the Desktop Entry Specification's string escaping and separate
   `Exec` argument quoting/field-code escaping, not naive text replacement.
   In particular, literal `%` in `Exec` becomes `%%`, and executable paths
@@ -2092,7 +2191,59 @@ gofastr desktop build --id=dev.example.app --name=MyApp --scheme=my-app
 This requires an existing local session bus even on the first launch. A second
 launch on the same bus forwards to the primary before starting another app or
 GTK shell. It does not make the scheme clickable in a browser: OS handler
-installation and default-association policy remain outside this artifact builder.
+installation is a separate `desktop install` operation; default-association
+policy remains with the desktop/user.
+
+### Per-user Linux installation
+
+Build a `--format=tar.gz` bundle, extract its whole root directory, then run:
+
+    gofastr desktop install --bundle=/absolute/path/dev.example.app-1.2.3-linux-amd64
+    gofastr desktop uninstall --id=dev.example.app
+
+Install accepts an extracted schema-version-1 GoFastr bundle for the current
+architecture, not an arbitrary directory or a tar filename. It validates the
+fixed inventory, SHA-256/size metadata, ELF platform/entry point and PNG before
+installation, and checks each payload again while copying. Checksums detect
+changes, not publisher identity: install only applications you trust. It does
+not run the supplied launcher or application during installation.
+
+The bundle goes under `$XDG_DATA_HOME/gofastr/apps/<ID>` (default
+`$HOME/.local/share/gofastr/apps/<ID>`), with a real desktop entry at
+`$XDG_DATA_HOME/applications/<ID>.desktop` and an argument-preserving launcher
+at `$HOME/.local/bin/<ID>`. A nondefault XDG_DATA_HOME does not move the bin
+launcher. Empty/relative XDG_DATA_HOME falls back to the default. Add
+`$HOME/.local/bin` to PATH yourself if your desktop does not already include it.
+New directories/executables are owner-only 0700; other installed files are 0600.
+Existing directory permissions are not changed.
+
+Only a bundle carrying `embedded_scheme` gets `MimeType=x-scheme-handler/...`
+and `%u`. Installation advertises an available URL handler and refreshes only
+that applications directory with `update-desktop-database` when available.
+Missing/failing desktop-file-utils produces a warning and an explicit refresh
+command; installed files remain. No default-handler preferences or autostart
+entries are written. A desktop may choose the new handler when no saved default
+exists; choosing between handlers is the desktop/user's policy. The native
+activation path still requires the existing local Unix session bus described
+above. This is not a D-Bus activation service.
+
+The installer generates a real desktop entry; it never trusts or naively
+substitutes the archive's inert `.desktop.in` template. Paths are escaped for
+the desktop-entry and argument layers. Resolved installation paths must be
+absolute UTF-8 and contain neither '=' nor control bytes. Symlinked destination components,
+foreign-owned ancestors, and unsafe writable directories are refused (trusted
+sticky temp roots are permitted for isolated tests). This does not protect
+against another malicious process running as the same UID.
+
+Existing destinations are refused, not overwritten. Quit the app, uninstall
+its unchanged installation, then install a new bundle. Uninstall verifies the
+recorded payload/launcher/desktop-entry contents and ownership/modes, refusing
+changed, missing, or extra files rather than deleting them. It never removes
+application data, cookie/profile data, preferences or unrelated launchers.
+It does not stop already-running instances. This is not an atomic upgrade or
+signed updater; an interrupted operation can require manual inspection.
+
+### Runtime prerequisites
 
 Linux builds require no C compiler or GTK development headers:
 
@@ -2137,9 +2288,33 @@ CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_ACTIVATION=1 dbus-run-session
   -ldflags '-X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=gofastr605test'
 ```
 
+The persistent-profile regression runs fresh writer/reader and isolated/default
+processes. It verifies stable origins, cookies and localStorage, expiry/session
+semantics, rejected stale boot credentials, profile ownership and busy ports.
+It also proves a worker was persisted before checking that the next launch
+cleared it. It requires both opt-ins and an unembedded test binary:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_PROFILE=1 dbus-run-session -- \
+  go test ./battery/desktop/linux -run '^TestNativeProfile$' -count=1 -timeout=240s -v
+```
+
+The tray tests use a disposable private bus and test watcher, never the real
+desktop's watcher. `TestNativeTray` checks protocol/property/menu contracts;
+`TestNativeTrayGraphical` runs separate GTK processes for hide/restore, delayed
+recovery, bus loss, explicit Quit and ordinary no-host/no-bus closing, including
+a real WebKit snapshot. They do **not** prove a panel rendered an icon:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_TRAY=1 \
+  go test ./battery/desktop/linux -run '^TestNativeTray$' -count=1 -timeout=120s -v
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 GOFASTR_LINUX_TRAY=1 \
+  go test ./battery/desktop/linux -run '^TestNativeTrayGraphical$' -count=1 -timeout=180s -v
+```
+
 For a headless Linux worker with GTK/WebKitGTK, `dbus` (including
 `dbus-daemon`), `xvfb` and `xauth` installed, the repository's runner
-executes all four tests in separate processes:
+executes all seven automated tests in separate invocations:
 
 ```sh
 ./scripts/test-linux-desktop.sh
@@ -2148,7 +2323,7 @@ executes all four tests in separate processes:
 The blocking Linux CI job runs this script with `CGO_ENABLED=0`, a private
 session bus per invocation and an authenticated Xvfb for graphical cases.
 Only the activation tests get the test-only embedded scheme; the two original
-smoke tests retain unembedded defaults. Logs and the PNG captures go to
+smoke, profile and tray tests retain unembedded defaults. Logs and PNG captures go to
 `dist/ci/linux-native/`. A skipped or missing test fails the runner. Xvfb
 coverage does not validate Wayland, compositor effects, notification delivery,
 or interactive file selection and overwrite confirmation.
@@ -2188,12 +2363,15 @@ native shell, not the authenticated browser bridge or every desktop's portal.
 
 ## What does not work yet
 
-darwin/amd64 has no native shell yet. Linux does not yet support tray icons,
-OS deep-link registration, transparent/compositor materials, custom title bars
-or native drag regions. A configured Linux tray returns an explicit unsupported
-error rather than silently hiding the app. Linux uses an ephemeral WebKit
-store shared by all windows in the process; cookies are not retained across
-launches. The Linux shell runs once per process. Windows currently
+darwin/amd64 has no native shell yet. Linux does not yet support
+transparent/compositor materials, custom title bars or native drag regions.
+Linux tray icons require a compatible StatusNotifierItem host; no-host operation
+keeps ordinary visible-window and close behavior. Linux defaults to an ephemeral WebKit
+store shared by all windows in the process; `Config.PersistentProfile` opts
+into the private persistent browser profile described above. The explicit Linux
+installer advertises a per-user OS handler but does not choose default handlers,
+install system-wide packages or provide signing/native updates. The Linux shell
+runs once per process. Windows currently
 supports amd64 and needs the Evergreen WebView2 Runtime. Windows builds
 do not include code signing or an installer. The updater is macOS-only.
 macOS notifications need a signed `.app` bundle (ad-hoc is

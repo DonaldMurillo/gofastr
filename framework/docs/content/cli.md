@@ -539,3 +539,16 @@ does not cover: a runtime browser scan, and the dependency report.
 - **`migrate force` as a routine fix.** It only rewrites the tracking
   table. It's for dirty-state recovery or adopting a baseline. Read
   [migrations](migrations.md) first.
+
+## Desktop applications
+
+- `gofastr desktop build`: build the platform executable or bundle; Linux defaults
+  to plain ELF and supports opt-in `--format=tar.gz` release archives.
+- `gofastr desktop install --bundle=<extracted-directory>`: Linux-only, validate
+  and install a per-user bundle and any embedded URL handler. Does not change
+  saved default-handler preferences or autostart.
+- `gofastr desktop uninstall --id=<reverse.dns>`: Linux-only, remove the unchanged
+  owned installation, preserving application and browser-profile data.
+
+See [desktop](desktop.md#the-gofastr-desktop-verbs) for the complete verb table,
+runtime requirements and installation limitations.

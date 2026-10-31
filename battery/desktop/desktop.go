@@ -102,6 +102,15 @@ type Config struct {
 	// DataDir overrides DataDir(ID). Must be absolute when set.
 	DataDir string
 
+	// PersistentProfile opts into a private, AppID-scoped browser profile on
+	// Linux. The default remains ephemeral. Other shells must explicitly
+	// support this option or Run returns ErrUnsupported before app startup.
+	// The profile remembers its first loopback port, retaining the origin for
+	// cookies and website storage; a busy port is an error, never a fallback.
+	// Exit the process before reopening this profile. See the desktop reference
+	// for storage/reset semantics and the limits of native write acknowledgement.
+	PersistentProfile bool
+
 	// Shell is the native layer. nil selects NewUnsupportedShell() on
 	// every platform: the darwin default moved to battery/desktop/native
 	// with the platform split, so a host that wants the real shell
@@ -119,9 +128,9 @@ type Config struct {
 	// panics on a bad one.
 	Settings *WindowSpec
 
-	// Tray, when set, puts the app in the OS menu bar. macOS only for
-	// now: on a host without a tray, Run logs a Warn and the config is
-	// ignored.
+	// Tray, when set, requests an OS status item. Linux requires a live
+	// StatusNotifierItem host; without one the window stays accessible and
+	// closes normally. Hosts without a tray report an actionable warning.
 	Tray *Tray
 
 	// DeepLink, when set, makes the app answer URLs on its own scheme
@@ -971,6 +980,14 @@ func (b *Battery) Run(app *framework.App) error {
 		}
 	}
 
+	listenAddr, profile, err := b.prepareProfile()
+	if err != nil {
+		return err
+	}
+	if profile != nil {
+		defer profile.ReleaseProfile()
+	}
+
 	// Arm the boot gate BEFORE the listener opens (see gateMiddleware):
 	// from the moment the port answers, every request needs the session
 	// cookie. An app that never calls Run keeps the gate unarmed and its
@@ -987,7 +1004,7 @@ func (b *Battery) Run(app *framework.App) error {
 		os.Setenv("GOFASTR_ISOLATION", "off")
 	}
 	startErr := make(chan error, 1)
-	go func() { startErr <- app.Start("127.0.0.1:0") }()
+	go func() { startErr <- app.Start(listenAddr) }()
 
 	var addr string
 	select {
@@ -1008,6 +1025,13 @@ func (b *Battery) Run(app *framework.App) error {
 		b.shutdownApp()
 		return fmt.Errorf("desktop: app bound a non-loopback address %q; the desktop host requires 127.0.0.1", addr)
 	}
+	if profile != nil {
+		if err := profile.CommitProfile(addr); err != nil {
+			b.shell.Quit()
+			b.shutdownApp()
+			return fmt.Errorf("desktop: persist browser origin: %w", err)
+		}
+	}
 	b.setHostPin(addr)
 	b.reg.freeze()
 	b.windowMu.Lock()
@@ -1027,15 +1051,16 @@ func (b *Battery) Run(app *framework.App) error {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
 	shellErr := b.shell.Run(ctx, WindowConfig{
-		AppID:    b.cfg.ID,
-		Title:    b.windowTitle(),
-		Width:    b.windowWidth(),
-		Height:   b.windowHeight(),
-		Style:    b.cfg.Style,
-		Menu:     b.runMenu,
-		Tray:     b.tray,
-		Settings: b.cfg.Settings,
-		OnMenu:   b.dispatchMenu,
+		AppID:      b.cfg.ID,
+		Title:      b.windowTitle(),
+		Width:      b.windowWidth(),
+		Height:     b.windowHeight(),
+		Style:      b.cfg.Style,
+		Menu:       b.runMenu,
+		Tray:       b.tray,
+		Settings:   b.cfg.Settings,
+		OnMenu:     b.dispatchMenu,
+		OnTrayMenu: b.dispatchTrayMenu,
 		OnSettings: func(ctx context.Context) {
 			if _, err := b.OpenSettings(ctx); err != nil {
 				b.logger.Error("desktop: opening the settings window failed", "error", err)

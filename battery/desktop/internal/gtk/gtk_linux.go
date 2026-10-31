@@ -21,6 +21,7 @@ import (
 var (
 	libGLib    = &library{soname: "libglib-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
 	libGObject = &library{soname: "libgobject-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
+	libGIO     = &library{soname: "libgio-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
 	libGdk     = &library{soname: "libgdk-3.so.0", packages: "libgtk-3-0 (Debian/Ubuntu), gtk3 (Fedora)"}
 	libGtk     = &library{soname: "libgtk-3.so.0", packages: "libgtk-3-0 (Debian/Ubuntu), gtk3 (Fedora)"}
 	libWebKit  = &library{soname: "libwebkit2gtk-4.1.so.0", packages: "libwebkit2gtk-4.1-0 (Debian/Ubuntu), webkit2gtk4.1 (Fedora)"}
@@ -33,7 +34,7 @@ var (
 
 // libraries is the load order. GLib and GObject come first so the
 // symbols WebKitGTK resolves lazily are already global in the process.
-var libraries = []*library{libGLib, libGObject, libGdk, libGtk, libWebKit, libJSC, libCairo, libPixbuf, libNotify}
+var libraries = []*library{libGLib, libGObject, libGIO, libGdk, libGtk, libWebKit, libJSC, libCairo, libPixbuf, libNotify}
 
 // installLine is the one instruction a user can act on. Everything else
 // in the list above arrives as a dependency of these two.
@@ -103,6 +104,18 @@ type Symbols struct {
 	JscValueToJSON                           uintptr // jsc_value_to_json
 	CairoSurfaceDestroy                      uintptr // cairo_surface_destroy
 	CairoSurfaceWriteToPNGStream             uintptr // cairo_surface_write_to_png_stream
+
+	// Persistent browser profiles (WebKitGTK2.40+).
+	WebkitWebsiteDataManagerNew               uintptr // webkit_website_data_manager_new
+	WebkitWebContextNewWithDataManager        uintptr // webkit_web_context_new_with_website_data_manager
+	WebkitDataManagerGetCookieManager         uintptr // webkit_website_data_manager_get_cookie_manager
+	WebkitCookieManagerSetPersistentStorage   uintptr // webkit_cookie_manager_set_persistent_storage
+	WebkitDataManagerSetPersistentCredentials uintptr // webkit_website_data_manager_set_persistent_credential_storage_enabled
+	WebkitDataManagerClear                    uintptr // webkit_website_data_manager_clear
+	WebkitDataManagerClearFinish              uintptr // webkit_website_data_manager_clear_finish
+	GCancellableNew                           uintptr // g_cancellable_new
+	GCancellableCancel                        uintptr // g_cancellable_cancel
+
 	// GLib.
 	GFree       uintptr // g_free
 	GIdleAdd    uintptr // g_idle_add — the mainThread hop
@@ -201,6 +214,16 @@ type symbol struct {
 // moves.
 func table() []symbol {
 	return []symbol{
+		{&Sym.WebkitWebsiteDataManagerNew, libWebKit, "webkit_website_data_manager_new"},
+		{&Sym.WebkitWebContextNewWithDataManager, libWebKit, "webkit_web_context_new_with_website_data_manager"},
+		{&Sym.WebkitDataManagerGetCookieManager, libWebKit, "webkit_website_data_manager_get_cookie_manager"},
+		{&Sym.WebkitCookieManagerSetPersistentStorage, libWebKit, "webkit_cookie_manager_set_persistent_storage"},
+		{&Sym.WebkitDataManagerSetPersistentCredentials, libWebKit, "webkit_website_data_manager_set_persistent_credential_storage_enabled"},
+		{&Sym.WebkitDataManagerClear, libWebKit, "webkit_website_data_manager_clear"},
+		{&Sym.WebkitDataManagerClearFinish, libWebKit, "webkit_website_data_manager_clear_finish"},
+		{&Sym.GCancellableNew, libGIO, "g_cancellable_new"},
+		{&Sym.GCancellableCancel, libGIO, "g_cancellable_cancel"},
+
 		{&Sym.GtkMainLevel, libGtk, "gtk_main_level"},
 		{&Sym.GtkDialogResponse, libGtk, "gtk_dialog_response"},
 		{&Sym.GtkClipboardRequestText, libGtk, "gtk_clipboard_request_text"},

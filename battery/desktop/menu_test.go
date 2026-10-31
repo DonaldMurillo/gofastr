@@ -190,3 +190,50 @@ func TestMenuNavigateWithoutWindowLogged(t *testing.T) {
 
 // Guard against unused-import churn in this file.
 var _ = bytes.MinRead
+
+// Tray callbacks must remain in the native worker until the actual app handler
+// completes; a detached goroutine here defeats the native queue bound.
+func TestTrayMenuHandlerCompletionIsSynchronous(t *testing.T) {
+	b, _ := newTestBattery(t)
+	started, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	b.menu = &Menu{Items: []MenuItem{{ID: "blocked", Handler: func(ctx context.Context) error {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Error("tray handler has no deadline")
+		}
+		close(started)
+		<-release
+		return nil
+	}}}}
+	go func() { b.dispatchTrayMenu("blocked"); close(returned) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not start")
+	}
+	select {
+	case <-returned:
+		unblock()
+		t.Fatal("tray dispatch detached its handler")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatch did not finish with handler")
+	}
+}
+
+func TestTrayMenuHandlerPanicIsContained(t *testing.T) {
+	cl := &captureLogger{}
+	b, _ := newTestBattery(t)
+	b.logger = slog.New(cl)
+	b.menu = &Menu{Items: []MenuItem{{ID: "panic-tray", Handler: func(context.Context) error { panic("fixture") }}}}
+	b.dispatchTrayMenu("panic-tray")
+	if !strings.Contains(cl.joined(), "menu handler panicked") {
+		t.Fatal("tray handler panic was not reported")
+	}
+}

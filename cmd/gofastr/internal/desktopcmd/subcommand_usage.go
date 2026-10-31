@@ -5,7 +5,7 @@ import (
 )
 
 func printDesktopUsage() {
-	fmt.Println(`Usage: gofastr desktop run|build|types|keygen|feed [flags]
+	fmt.Println(`Usage: gofastr desktop run|build|install|uninstall|types|keygen|feed [flags]
 
 Build and run a GoFastr app as a desktop application (battery/desktop,
 experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
@@ -61,6 +61,15 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         deep-link scheme; the app registers it for the current user when
         it starts and forwards links to an existing app window. Signing
         and notarization are macOS-only.
+  install --bundle=<extracted-directory> (Linux only)
+        Validates and copies a tar bundle for the current user, installs
+        a menu entry and ~/.local/bin/<id> launcher, and advertises its
+        embedded URL scheme. Never sets default handlers or autostart.
+        Refuses existing destinations; checksums are not signatures.
+  uninstall --id=<reverse.dns> (Linux only)
+        Removes only an unchanged installation and its recorded launcher
+        and menu entry. Preserves app data; refuses modified/unlisted
+        files. Upgrade by uninstalling then installing the new bundle.
   keygen -o=<path>
         Mints the auto-update signing pair: <path> (private, 0600) and
         <path>.pub (the hex public key for desktop.UpdateConfig).
