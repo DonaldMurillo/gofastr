@@ -487,7 +487,7 @@ func (s *linuxShell) Show(ctx context.Context, n desktop.Notification) error {
 	}
 	op := newCapsOperation(s, false, false)
 	if err := s.launchCaps(ctx, op, func() error {
-		if gtk.Sym.NotifyInit == 0 || gtk.Sym.NotifyNotificationNew == 0 || gtk.Sym.NotifyNotificationShow == 0 {
+		if gtk.Sym.NotifyInit == 0 || gtk.Sym.NotifyGetServerCaps == 0 || gtk.Sym.NotifyNotificationNew == 0 || gtk.Sym.NotifyNotificationShow == 0 {
 			return desktop.ErrUnsupported
 		}
 		appName := s.cfg.Title
@@ -504,7 +504,10 @@ func (s *linuxShell) Show(ctx context.Context, n desktop.Notification) error {
 		if n.Subtitle != "" {
 			body = n.Subtitle + "\n" + body
 		}
-		title, content := capsCString(n.Title), capsCString(html.EscapeString(body))
+		// Capabilities belong to the current daemon; do not cache across owner
+		// replacement. Plain-body daemons display entity escapes literally.
+		body = capsNotificationBody(body)
+		title, content := capsCString(n.Title), capsCString(body)
 		notification := capsCall(gtk.Sym.NotifyNotificationNew, uintptr(unsafe.Pointer(&title[0])), uintptr(unsafe.Pointer(&content[0])), 0)
 		runtime.KeepAlive(title)
 		runtime.KeepAlive(content)
@@ -527,6 +530,32 @@ func (s *linuxShell) Show(ctx context.Context, n desktop.Notification) error {
 		return err
 	}
 	return s.waitCaps(ctx, op).err
+}
+
+func capsNotificationBody(body string) string {
+	list := capsCall(gtk.Sym.NotifyGetServerCaps)
+	if list == 0 {
+		return html.EscapeString(body)
+	}
+	defer capsCall(gtk.Sym.GListFreeFull, list, gtk.Sym.GFree)
+	// The list and strings are owned. NULL means either failure or no caps;
+	// only an explicit plain-body capability allows sending unescaped text.
+	type glist struct{ data, next, previous uintptr }
+	plain, markup := false, false
+	for node := list; node != 0; {
+		item := *(*glist)(capsNativePointer(node))
+		switch capsGoString(item.data) {
+		case "body":
+			plain = true
+		case "body-markup":
+			markup = true
+		}
+		node = item.next
+	}
+	if plain && !markup {
+		return body
+	}
+	return html.EscapeString(body)
 }
 
 func capsClipboard() uintptr {

@@ -223,7 +223,7 @@ jobs:
       - name: Install Linux desktop runtime and virtual display
         # Runtime libraries only: the shell must still build with CGO=0,
         # without GTK headers or a C wrapper. Keep WebKit's sandbox enabled.
-        run: sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth
+        run: sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth dunst xdotool
 
       - name: Install the gofastr binary
         # cmd/gofastr e2e tests (migrate diff/generate, app spec) skip
