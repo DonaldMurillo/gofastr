@@ -1415,7 +1415,9 @@ runtime's actions do. Agent-authored node IR can't place these buttons:
 Registration asks for a discoverable credential with user verification
 and requests no attestation, so the server learns nothing about the
 device and verifies none. The plugin accepts ES256, EdDSA and RS256
-keys (RSA keys of at least 2048 bits).
+keys (RSA keys of 2048 to 8192 bits with an odd modulus: verification
+cost grows with the square of the key size, so a larger key is refused
+at registration and at sign-in).
 
 Both ceremonies check the client data's type, origin and challenge,
 and refuse a cross-origin call. They check that the authenticator data
