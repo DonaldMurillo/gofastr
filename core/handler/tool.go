@@ -52,10 +52,12 @@ func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map
 // fields first, then the rest as a strict JSON body.
 func bindToolParams(params map[string]any, dst any) error {
 	rest := maps.Clone(params)
+	// A pointer-typed input (Handler[*T, O]) reads T's tags; settableField
+	// allocates the pointer when a tagged param arrives.
 	rv := reflect.ValueOf(dst).Elem()
-	if rv.Kind() == reflect.Struct {
+	if st := derefType(rv.Type()); st.Kind() == reflect.Struct {
 		for _, source := range []string{"query", "path"} {
-			for _, tf := range taggedFields(rv.Type(), source) {
+			for _, tf := range taggedFields(st, source) {
 				tag := tf.tag
 				raw, ok := rest[tag]
 				if !ok {

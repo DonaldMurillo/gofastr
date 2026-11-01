@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -88,5 +90,39 @@ func TestToolAdapterBindsEmbeddedTags(t *testing.T) {
 	got := out.(listInput)
 	if got.Page != 2 || got.Owner == nil || got.OrgID != "acme" || got.Q != "y" {
 		t.Fatalf("bound %+v owner=%+v", got, got.Owner)
+	}
+}
+
+type innerMeta struct {
+	Data any `json:"data"`
+}
+
+type metaEmbedReq struct {
+	innerMeta
+	Name string `json:"name"`
+}
+
+// jsonexact.Settle skipped every field it could not set, and an embedded
+// struct of an unexported type is one, so a number under an `any` the
+// embed promotes stayed a json.Number where a plain field settles to
+// float64. Both Bind and the tool adapter decode with UseNumber + Settle.
+func TestBindSettlesNumbersInUnexportedEmbed(t *testing.T) {
+	r := httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"x","data":3}`))
+	r.Header.Set("Content-Type", "application/json")
+	var in metaEmbedReq
+	if err := Bind(r, &in); err != nil {
+		t.Fatal(err)
+	}
+	if d, ok := in.Data.(float64); !ok || d != 3 {
+		t.Errorf("Bind: promoted any field = %#v (%T), want float64(3)", in.Data, in.Data)
+	}
+
+	h := Handler[metaEmbedReq, metaEmbedReq](func(_ context.Context, in metaEmbedReq) (metaEmbedReq, error) { return in, nil })
+	out, err := ToolAdapter(h)(context.Background(), map[string]any{"data": json.Number("3")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, ok := out.(metaEmbedReq).Data.(float64); !ok || d != 3 {
+		t.Errorf("ToolAdapter: promoted any field = %#v, want float64(3)", out.(metaEmbedReq).Data)
 	}
 }

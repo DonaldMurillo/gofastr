@@ -90,7 +90,16 @@ func walk(v reflect.Value, leaf func(json.Number) (any, error)) error {
 		}
 	case reflect.Struct:
 		for i := range v.NumField() {
-			if f := v.Field(i); f.CanSet() {
+			// An embedded struct of an unexported type is not settable,
+			// but encoding/json fills its exported fields, and those are
+			// settable through it: descend, and let each leaf say.
+			f := v.Field(i)
+			sf := v.Type().Field(i)
+			ft := sf.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if f.CanSet() || (sf.Anonymous && ft.Kind() == reflect.Struct) {
 				if err := walk(f, leaf); err != nil {
 					return err
 				}

@@ -21,6 +21,15 @@ middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 `Respond` encodes `O` before it writes the status, so a value JSON cannot
 encode (a NaN, a channel) answers the generic 500, never an empty 200.
+A nil output answers 204 No Content, and so does a nil pointer, map or
+slice: a `Handler[I, *Out]` returning `(nil, nil)` is a 204, not a 200
+`null`. A panic in the handler is a generic 500; a panic after the
+response started (inside a `ResponseType`'s `WriteBody`, once the 200 and
+part of the body went out) is logged and aborts the connection with
+`http.ErrAbortHandler`, so the client sees a broken response, never an
+error document spliced onto a success. `WriteError` sends an `*Error`'s
+`Code` when it is in 400-599; a nil `*Error`, or a `Code` outside that
+range (a forgotten zero, a 1xx, a 2xx), is sent as 500.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
 A present higher-priority value replaces an earlier value, including a JSON
@@ -30,6 +39,11 @@ if declared on the outer struct, the way `encoding/json` promotes body
 keys, so a shared `Pagination` struct can be embedded in many inputs. A
 nil embedded pointer is allocated only when one of its values arrives.
 `ToolAdapter` (the MCP tool form) binds the same promoted tags.
+A pointer input (`Handler[*T, O]`, or `UnmarshalStrict(data, &p)` with
+`p` a `*T`) gets every struct rule: `T`'s tags bind, its strict keys
+hold, and the pointer is allocated when a value arrives, as
+`encoding/json` allocates it. `Bind` caps the body at 1 MiB; a larger
+one is a 413 whose `Err` is the cap's `*http.MaxBytesError`.
 
 Every decode of client-controlled JSON outside `Bind` goes through the
 same strict rule: `DecodeStrict(r, &dst)` for a reader,

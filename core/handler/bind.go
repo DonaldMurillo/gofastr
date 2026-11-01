@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
@@ -39,8 +40,13 @@ func Bind(r *http.Request, dst any) error {
 		return errors.New("bind: destination must be a non-nil pointer")
 	}
 
+	// A pointer-typed input (Handler[*T, O] binds into a **T) gets the
+	// struct rules too: the tags are read off the struct the pointer
+	// levels end at, and settableField allocates the levels only when a
+	// tagged value arrives, as encoding/json allocates them for a body.
 	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
+	st := derefType(rv.Type())
+	if st.Kind() != reflect.Struct {
 		// Non-struct pointer (e.g. *string); only the JSON body applies,
 		// under the same Content-Type gate as the struct branch. text/plain
 		// is a CORS-simple content type, so a cross-site form can post it
@@ -55,17 +61,17 @@ func Bind(r *http.Request, dst any) error {
 	}
 
 	// 1. Bind header fields first (lowest priority)
-	if err := bindHeaders(r, rv); err != nil {
+	if err := bindHeaders(r, rv, st); err != nil {
 		return err
 	}
 
 	// 2. Bind query fields
-	if err := bindQuery(r, rv); err != nil {
+	if err := bindQuery(r, rv, st); err != nil {
 		return err
 	}
 
 	// 3. Bind path fields
-	if err := bindPath(r, rv); err != nil {
+	if err := bindPath(r, rv, st); err != nil {
 		return err
 	}
 
@@ -122,7 +128,15 @@ func bindBody(r *http.Request, dst any) error {
 	limited := http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		// A body past the cap is a 413, not malformed JSON. Either way the
+		// read error stays reachable through errors.As, as DecodeStrict
+		// keeps it.
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return WrapError(http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge), err)
+		}
+		e := Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
+		e.Err = err
+		return e
 	}
 	if len(body) == 0 {
 		return nil
@@ -160,8 +174,9 @@ func bindBody(r *http.Request, dst any) error {
 }
 
 // validateBodyKeys enforces strict top-level key handling for the JSON
-// body decoded into dst. It is a no-op when dst is not a struct pointer
-// or when the body isn't a top-level object. Both shapes flow through
+// body decoded into dst. It is a no-op when dst is not a pointer to a
+// struct (through any number of pointer levels: **T for a Handler[*T, O]
+// input) or when the body isn't a top-level object. Both shapes flow through
 // the decoder unchanged. For struct destinations it requires every
 // top-level key to exact-match a json tag on the struct (rejecting
 // case-folded variants) and rejects duplicate keys.
@@ -170,11 +185,11 @@ func validateBodyKeys(body []byte, dst any) error {
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return nil
 	}
-	rv = rv.Elem()
-	if rv.Kind() != reflect.Struct {
+	st := derefType(rv.Type().Elem())
+	if st.Kind() != reflect.Struct {
 		return nil
 	}
-	allowed := jsonTagSet(rv.Type())
+	allowed := jsonTagSet(st)
 
 	dec := json.NewDecoder(bytes.NewReader(body))
 	first, err := dec.Token()
@@ -331,13 +346,24 @@ func collectTagged(t reflect.Type, key string, prefix []int, active map[reflect.
 	}
 }
 
+// derefType follows t's pointer levels to the type they end at, so *T
+// and **T name T. A pointer type that names itself (type P *P) ends at
+// the pointer.
+func derefType(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer && t.Elem() != t {
+		t = t.Elem()
+	}
+	return t
+}
+
 // settableField returns the field at index under rv, allocating a nil
-// embedded pointer on the way, or an invalid Value when the field (or a
-// nil unexported embedded pointer before it) cannot be set.
+// pointer level (the input's own, or an embedded one) on the way, or an
+// invalid Value when the field (or a nil unexported embedded pointer
+// before it) cannot be set.
 func settableField(rv reflect.Value, index []int) reflect.Value {
 	v := rv
 	for _, i := range index {
-		if v.Kind() == reflect.Pointer {
+		for v.Kind() == reflect.Pointer {
 			if v.IsNil() {
 				if !v.CanSet() {
 					return reflect.Value{}
@@ -355,10 +381,10 @@ func settableField(rv reflect.Value, index []int) reflect.Value {
 }
 
 // bindQuery binds query parameters to struct fields tagged with `query:"name"`.
-func bindQuery(r *http.Request, rv reflect.Value) error {
+func bindQuery(r *http.Request, rv reflect.Value, st reflect.Type) error {
 	q := r.URL.Query()
 
-	for _, tf := range taggedFields(rv.Type(), "query") {
+	for _, tf := range taggedFields(st, "query") {
 		values, ok := q[tf.tag]
 		if !ok || len(values) == 0 {
 			continue
@@ -389,13 +415,13 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 // input struct often serves both POST /users and PUT /users/{id}. So a
 // matched request reads through router.Params, which holds only the
 // declared names, rather than router.Param, which panics on the others.
-func bindPath(r *http.Request, rv reflect.Value) error {
+func bindPath(r *http.Request, rv reflect.Value, st reflect.Type) error {
 	var declared map[string]string
 	if r.Pattern != "" {
 		declared = router.Params(r)
 	}
 
-	for _, tf := range taggedFields(rv.Type(), "path") {
+	for _, tf := range taggedFields(st, "path") {
 		var value string
 		if declared != nil {
 			value = declared[tf.tag]
@@ -420,8 +446,8 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 }
 
 // bindHeaders binds header values to struct fields tagged with `header:"X-Request-ID"`.
-func bindHeaders(r *http.Request, rv reflect.Value) error {
-	for _, tf := range taggedFields(rv.Type(), "header") {
+func bindHeaders(r *http.Request, rv reflect.Value, st reflect.Type) error {
+	for _, tf := range taggedFields(st, "header") {
 		value := r.Header.Get(tf.tag)
 		if value == "" {
 			continue
