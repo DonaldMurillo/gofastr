@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A password reset removes every OAuth link.** On a verified account
+  the links survived, so an IdP identity linked from a stolen session
+  signed the attacker back in after the owner's reset. The reset now
+  unlinks every provider and deletes its stored tokens (an account claim
+  deletes them too), then mails a notice naming the unlinked providers
+  (`PasswordResetConfig.NoticeTemplate`). ([auth](framework/docs/content/auth.md))
 - **BREAKING: `access.Can`, `CanResource` and `CanResourceExact` check
   token scopes.** A scoped API token passed them on its owner's roles, so
   an `orders:update` token an admin minted could run an `orders:approve`

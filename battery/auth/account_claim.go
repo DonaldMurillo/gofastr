@@ -67,15 +67,9 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 	}
 
 	// A missing extension is configuration, refused before any step runs.
-	var lister AccountLister
-	var unlinker AccountUnlinker
-	if _, isLinker := store.(OAuthLinker); isLinker {
-		var lok, uok bool
-		lister, lok = store.(AccountLister)
-		unlinker, uok = store.(AccountUnlinker)
-		if !lok || !uok {
-			return errors.New("user store links OAuth identities but cannot list and unlink them")
-		}
+	lister, unlinker, err := oauthUnlinkTools(store)
+	if err != nil {
+		return err
 	}
 	clearer, _ := store.(PasswordClearer)
 	setter, _ := store.(PasswordSetter)
@@ -93,20 +87,11 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 		failed = append(failed, fmt.Errorf("revoke sessions: %w", err))
 	}
 
-	unlinked := 0
-	if lister != nil {
-		accts, err := lister.ListAccounts(ctx, userID)
-		if err != nil {
-			failed = append(failed, fmt.Errorf("list OAuth links: %w", err))
-		}
-		for _, a := range accts {
-			if err := unlinker.UnlinkOAuth(ctx, userID, a.Provider); err != nil {
-				failed = append(failed, fmt.Errorf("unlink %s: %w", a.Provider, err))
-				continue
-			}
-			unlinked++
-		}
+	removed, err := m.unlinkAllOAuth(ctx, userID, lister, unlinker)
+	if err != nil {
+		failed = append(failed, err)
 	}
+	unlinked := len(removed)
 
 	if clearPassword {
 		if err := clearOrPlaceholder(ctx, clearer, setter, userID); err != nil {
@@ -148,6 +133,57 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 		},
 	})
 	return nil
+}
+
+// oauthUnlinkTools returns the store's lister and unlinker when it links
+// OAuth identities, and nils when it links none. A store that links but
+// cannot list or unlink is a configuration error: a reset or a claim that
+// cannot remove a planted IdP identity must not report success.
+func oauthUnlinkTools(store UserStore) (AccountLister, AccountUnlinker, error) {
+	if _, isLinker := store.(OAuthLinker); !isLinker {
+		return nil, nil, nil
+	}
+	lister, lok := store.(AccountLister)
+	unlinker, uok := store.(AccountUnlinker)
+	if !lok || !uok {
+		return nil, nil, errors.New("user store links OAuth identities but cannot list and unlink them")
+	}
+	return lister, unlinker, nil
+}
+
+// unlinkAllOAuth removes every OAuth identity linked to userID and the
+// provider tokens stored for it, and returns the providers it unlinked. A
+// failed unlink does not stop the rest; the failures come back joined.
+// lister nil means the store links no identities.
+func (m *AuthManager) unlinkAllOAuth(ctx context.Context, userID string, lister AccountLister, unlinker AccountUnlinker) ([]string, error) {
+	if lister == nil {
+		return nil, nil
+	}
+	accts, err := lister.ListAccounts(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list OAuth links: %w", err)
+	}
+	var tokens OAuthTokenStore
+	if op, err := PluginAs[*OAuth2Plugin](m, "oauth2"); err == nil {
+		tokens = op.TokenStore()
+	}
+	var removed []string
+	var failed []error
+	for _, a := range accts {
+		if err := unlinker.UnlinkOAuth(ctx, userID, a.Provider); err != nil {
+			failed = append(failed, fmt.Errorf("unlink %s: %w", a.Provider, err))
+			continue
+		}
+		removed = append(removed, a.Provider)
+		// The stored refresh token outlives the link otherwise, and is
+		// password-equivalent at the provider.
+		if tokens != nil {
+			if err := tokens.Delete(ctx, userID, a.Provider); err != nil {
+				failed = append(failed, fmt.Errorf("delete %s provider tokens: %w", a.Provider, err))
+			}
+		}
+	}
+	return removed, errors.Join(failed...)
 }
 
 // clearOrPlaceholder removes userID's password through clearer when the

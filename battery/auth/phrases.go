@@ -18,6 +18,13 @@ var (
 	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
 )
 
+// The words of the email a completed password reset sends.
+var (
+	resetNoticeDone     = i18n.Define("auth.reset_notice_done", "Your password was reset, and every device signed in to your account was signed out.")
+	resetNoticeUnlinked = i18n.Define("auth.reset_notice_unlinked", "These sign-in providers were unlinked from your account. Link them again in your account settings if you use them: {{providers}}.")
+	resetNoticeWarning  = i18n.Define("auth.reset_notice_warning", "If you did not reset your password, contact support now.")
+)
+
 // The refusals this package writes, under their catalog keys.
 var (
 	reasonSessionRequired                = i18n.Define("auth.session_required", "interactive session required, not an API token")
