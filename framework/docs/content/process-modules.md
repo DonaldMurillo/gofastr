@@ -213,6 +213,61 @@ except newline and tab, plus DEL — the same contract the codegen
 extension path applies to child stderr, so a sandbox wrapper's or child's
 output cannot drive the operator's terminal from inside an error string.
 
+### Hosting an untrusted module
+
+The app builds the sandbox runner itself. The first `TrustUntrusted`
+descriptor passed to `RegisterProcessModule` probes the backend with the
+P1–P7 suite, once for the life of the App, and hands the result to the
+supervisor. When the backend is missing or fails a probe,
+`RegisterProcessModule` panics with `UntrustedNoSandboxError`, and the
+message carries the conformance report. A trusted-only app never probes.
+
+- **`WithSandboxBackend(b)`** picks the backend. Without it the app uses
+  the host's built-in one (`bwrap` on Linux, `sandbox-exec` on macOS). A
+  custom `SandboxBackend` must pass the same probes. `WithSandboxBackend(nil)`
+  makes every untrusted registration fail closed.
+- **`app.ProcessModuleSandbox()`** returns the runner, or the error that
+  refused it, probing on the first call. A host that must still boot on a
+  machine without a conforming sandbox calls it first and registers the
+  untrusted module only when it returns nil. The error is a
+  `*SandboxConformanceError` whose `Report` holds the per-probe results;
+  it unwraps to `ErrSandboxUnavailable`.
+
+```go
+app := framework.NewApp(framework.WithDB(db))
+if _, err := app.ProcessModuleSandbox(); err != nil {
+    log.Printf("untrusted modules cannot run here: %v", err)
+} else {
+    app.RegisterProcessModule(desc, approved) // desc.TrustTier == TrustUntrusted
+}
+```
+
+**The probe child is your app's own binary.** Each probe re-runs the
+running executable with `GOFASTR_SANDBOX_PROBE=<id>` in its environment.
+The framework's package `init` sees that variable, runs the probe body,
+prints one result line and exits before your `main` starts. There is no
+hook to call from `main`, so there is none to forget, and no helper
+binary to ship beside the app. Two things follow:
+
+- Package `init` functions that run before the framework's run in the
+  probe child too, inside the sandbox under test with a scrubbed
+  environment. An `init` that needs the network or a secret fails there,
+  as it would in a confined module.
+- `GOFASTR_SANDBOX_PROBE` is reserved. A process started with it set runs
+  one probe and exits.
+
+`ProbeResult.Reported` says whether the probe child printed its result
+line. A report with an unreported probe tells you about the wiring, not
+the backend.
+
+[`examples/processmodule-demo/host`](../../../examples/processmodule-demo/host)
+hosts the demo module as an untrusted module, and its `-check-sandbox`
+flag prints this host's report as JSON. In v1 neither built-in backend
+passes every probe (bwrap does not map a distinct uid or apply resource
+caps; macOS has no distinct principal), so on a stock machine the example
+refuses the module and prints which probes failed. `-trust=trusted` runs
+the same module with crash isolation only.
+
 ## Migrations (per-module schema + role)
 
 The host runs all DDL under a restricted **per-module Postgres schema +
@@ -501,6 +556,10 @@ bookkeeping.
 - **Expecting an untrusted module to run on stock macOS / Windows / some
   Linux.** Sandbox backends need a probe-passing conforming wrapper; until
   the operator provisions one, fail-closed refusal is correct, not a bug.
+- **Registering an untrusted module the host may not be able to confine,
+  with nothing to catch the refusal.** `RegisterProcessModule` panics on a
+  host without a conforming sandbox. Call `app.ProcessModuleSandbox()`
+  first when the app has to boot there anyway.
 - **Assuming group names make SQLite DDL safe.** SQLite has no roles/
   `GRANT`/schemas; an untrusted module's migrations are rejected on SQLite
   loud (fail-closed). Groups are bookkeeping, not a boundary.

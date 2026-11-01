@@ -5,7 +5,14 @@
 // framework/docs/content/process-modules.md → "Building a module") AND the
 // child the §10 go/no-go gate suite drives end to end
 // (framework/processmodule_gate_test.go). It depends only on the gofastr
-// module's [moduleproto] package + the standard library.
+// module's [moduleproto] package, its own surface package (the tool
+// definition its host pins) and the standard library.
+//
+// examples/processmodule-demo/host is the host app that runs it as an
+// UNTRUSTED module under the host's sandbox:
+//
+//	go build -o dist/examples/processmodule-demo ./examples/processmodule-demo
+//	go run ./examples/processmodule-demo/host -module dist/examples/processmodule-demo
 //
 // On start it opens a [moduleproto.Codec] over stdin/stdout, constructs a
 // [moduleproto.Peer] in the child role, registers handlers for every host →
@@ -17,8 +24,10 @@
 //   - module.ready     → ready:true (after an optional DEMO_READY_DELAY_MS so
 //     the enabled-but-not-Ready → 503 window is exercisable).
 //   - module.health    → ok:true, zero in-flight.
-//   - module.http      → three routes:
+//   - module.http      → four routes:
 //   - "hello" (GET /hello) → a ui.node.v1 body: a small valid tree.
+//   - "refresh" (POST /refresh) → the same tree; the hello screen's
+//     button names this route as its action_ref.
 //   - "tree"  (GET /tree)  → the SAME tree as a json body, so the host can
 //     run the closed ui.node.v1 validator over the exact bytes the child
 //     would have rendered (the proxy's render path is deferred; this route
@@ -55,6 +64,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/examples/processmodule-demo/surface"
 )
 
 func main() {
@@ -187,7 +197,9 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		}
 
 		switch p.RouteID {
-		case "hello":
+		case "hello", "refresh":
+			// refresh is the hello screen's own button (its action_ref):
+			// it answers with the screen again.
 			return moduleproto.HTTPResponseResult{
 				Status:  200,
 				Headers: map[string]string{"Cache-Control": "no-cache"},
@@ -247,7 +259,7 @@ func registerHandlers(peer *moduleproto.Peer) error {
 	// the descriptor digests is enforced by the host at handshake; the
 	// DEMO_EXTRA_TOOL knob adds an unapproved tool so that quarantine fires.
 	if err := peer.Handle(moduleproto.MethodToolList, func(context.Context, json.RawMessage) (any, error) {
-		tools := []moduleproto.Tool{pingTool()}
+		tools := []moduleproto.Tool{surface.PingTool()}
 		if cfg.extraTool {
 			tools = append(tools, moduleproto.Tool{
 				ID:          "rogue",
@@ -332,16 +344,4 @@ func screenTree() json.RawMessage {
 		`{"component":"paragraph","props":{"text":"This screen came from a validated ui.node.v1 tree returned by an out-of-process child over moduleproto."}},` +
 		`{"component":"button","props":{"label":"Refresh","variant":"primary"},"action_ref":"refresh"}` +
 		`]}`)
-}
-
-// pingTool is the one MCP tool the demo exposes. Its canonical digest is what
-// the host byte-compares against the descriptor at handshake
-// (framework.ModuleToolDigest).
-func pingTool() moduleproto.Tool {
-	return moduleproto.Tool{
-		ID:          "ping",
-		Name:        "module.demo.ping",
-		Description: "Reverse-queries the granted host entity and reports the row count.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`),
-	}
 }

@@ -181,6 +181,15 @@ type ProbeResult struct {
 	// in the [ConformanceReport] for operator diagnostics and the CI
 	// skip/fail message.
 	Detail string
+
+	// Reported is true when the probe child printed a result line (PASS,
+	// BREACH or UNREACHABLE), i.e. the binary re-executed as the probe
+	// child really ran the probe body. False means the child never spoke
+	// the protocol: it timed out, was killed, could not start, or ran
+	// something else entirely (a host binary whose probe dispatch did not
+	// fire would boot the app instead). A report with an unreported probe
+	// says nothing about the backend, only about the probe wiring.
+	Reported bool
 }
 
 // ConformanceReport is the per-backend record of all seven probes. It is
@@ -571,11 +580,11 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 		if stderr != "" {
 			detail = "denial observed; stderr tail: " + tailForDetail(stderr)
 		}
-		return ProbeResult{ID: p, Status: ProbeStatusPass, Detail: detail}
+		return ProbeResult{ID: p, Status: ProbeStatusPass, Detail: detail, Reported: true}
 	case strings.HasPrefix(first, probeOutBreach):
-		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach)))}
+		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))), Reported: true}
 	case strings.HasPrefix(first, probeOutUnreachable):
-		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable)))}
+		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))), Reported: true}
 	default:
 		// No sentinel line at all: the child exited without finishing its
 		// protocol (killed by the sandbox mid-attempt, or crashed). The
@@ -859,15 +868,13 @@ func killProcessTree(cmd *exec.Cmd) error {
 	return cmd.Process.Kill()
 }
 
-// probeChildMaybeRun is the TestMain dispatcher for the probe-child
-// re-exec. When the probeEnvName env var is set, this is a probe child:
-// run the probe body for the requested ProbeID, print the result line to
-// stdout, and os.Exit, never returning to the test runner. Returns true
-// iff the child ran (so TestMain can skip m.Run).
-//
-// It lives here (not beside processModuleChildMain) because the probe
-// child is part of the sandbox deliverable, but it is invoked from the
-// package's single TestMain to reuse the existing re-exec dispatch shape.
+// probeChildMaybeRun is the probe-child dispatcher. When the probeEnvName
+// env var is set, this process is a probe child: run the probe body for
+// the requested ProbeID, print the result line to stdout, and os.Exit.
+// Returns false (and does nothing) when the variable is unset. It is
+// called from this package's init (processmodule_probe_child.go), so it
+// fires in every binary that links the framework, the host app and the
+// test binary alike, before any main or TestMain runs.
 func probeChildMaybeRun() bool {
 	v := os.Getenv(probeEnvName)
 	if v == "" {

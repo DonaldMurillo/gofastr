@@ -77,10 +77,16 @@ type SandboxRunner struct {
 // enforcement capability is a property of the host, not per-spawn).
 func NewSandboxRunner(backend SandboxBackend, opts SandboxOpts) (*SandboxRunner, error) {
 	if backend == nil {
-		return nil, fmt.Errorf("%w: nil backend", ErrSandboxUnavailable)
+		return nil, &SandboxConformanceError{
+			Report: RunConformance(context.Background(), nil, nil),
+			reason: "nil backend",
+		}
 	}
 	if !backend.Available() {
-		return nil, fmt.Errorf("%w: backend %s unavailable: %s", ErrSandboxUnavailable, backend.Name(), backend.MissingReason())
+		return nil, &SandboxConformanceError{
+			Report: RunConformance(context.Background(), backend, nil),
+			reason: fmt.Sprintf("backend %s unavailable: %s", backend.Name(), backend.MissingReason()),
+		}
 	}
 	// Probe at construction (§6 fail-closed gate). Two-minute budget is
 	// generous: the suite spawns seven short-lived children; even a
@@ -89,11 +95,34 @@ func NewSandboxRunner(backend SandboxBackend, opts SandboxOpts) (*SandboxRunner,
 	defer cancel()
 	report := RunConformance(ctx, backend, nil)
 	if !report.Conforms() {
-		return nil, fmt.Errorf("%w: backend %s does not conform (every probe P1-P7 must pass):\n%s",
-			ErrSandboxUnavailable, backend.Name(), report.Summary())
+		return nil, &SandboxConformanceError{
+			Report: report,
+			reason: fmt.Sprintf("backend %s does not conform (every probe P1-P7 must pass):\n%s", backend.Name(), report.Summary()),
+		}
 	}
 	return &SandboxRunner{backend: backend, opts: opts, report: report}, nil
 }
+
+// SandboxConformanceError is the error [NewSandboxRunner] (and so
+// [App.ProcessModuleSandbox]) returns when untrusted modules cannot run
+// on this host: no backend, a backend that is unavailable here, or one
+// that failed a P1–P7 probe. Report is the conformance report behind the
+// refusal, for an operator surface that wants the per-probe results
+// rather than the rendered text. It unwraps to [ErrSandboxUnavailable].
+type SandboxConformanceError struct {
+	// Report is the probe outcome. For a missing or unavailable backend
+	// every probe is Unreachable and Available is false.
+	Report ConformanceReport
+
+	reason string
+}
+
+func (e *SandboxConformanceError) Error() string {
+	return ErrSandboxUnavailable.Error() + ": " + e.reason
+}
+
+// Unwrap lets errors.Is(err, ErrSandboxUnavailable) hold.
+func (e *SandboxConformanceError) Unwrap() error { return ErrSandboxUnavailable }
 
 // Start implements [Runner.Start]. It is the untrusted-tier spawn:
 // baseline hygiene (shared [prepareChildForSpawn]) + backend.Wrap (the

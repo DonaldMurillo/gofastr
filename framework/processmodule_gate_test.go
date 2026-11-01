@@ -89,7 +89,7 @@ func buildDemoBinary(t testing.TB) (string, string) {
 	return demoBinPath, sha
 }
 
-// demoPingTool mirrors examples/processmodule-demo/main.go's pingTool EXACTLY.
+// demoPingTool mirrors examples/processmodule-demo/surface.PingTool EXACTLY.
 // The handshake byte-compares ModuleToolDigest(this) against the descriptor's
 // ToolDigest.SHA256, so the two definitions must not drift. If you change the
 // demo's tool, change this too.

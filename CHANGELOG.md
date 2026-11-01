@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Untrusted process modules can be hosted by an app** ([#608](https://github.com/DonaldMurillo/gofastr/issues/608)).
+  `RegisterProcessModule` now builds the sandbox runner itself for a
+  `TrustUntrusted` descriptor, probing the backend once per App; before,
+  no app could pass one and every untrusted registration failed.
+  `WithSandboxBackend` overrides the host's built-in backend,
+  `App.ProcessModuleSandbox()` lets a host check before it registers, and
+  `SandboxConformanceError` carries the report. The probe child is the
+  app's own binary, answered by the framework's package `init`: there is
+  no hook to add to `main`, and `GOFASTR_SANDBOX_PROBE` is now reserved.
+  `ProbeResult.Reported` says whether a probe child ran the probe body.
+  `examples/processmodule-demo/host` hosts the demo module untrusted. See
+  [Process modules](framework/docs/content/process-modules.md#hosting-an-untrusted-module).
 - **`embedskip` analyzer.** `gofastr verify` and `make analyze` report a
   struct field walk (`NumField()` or the `Fields()` iterator) that maps
   fields to keys by their tags and never handles an embedded struct, so

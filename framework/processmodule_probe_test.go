@@ -300,6 +300,14 @@ func TestSandboxConformance(t *testing.T) {
 	defer cancel()
 	report := RunConformance(ctx, b, t)
 	t.Logf("conformance report for %s:\n%s", b.Name(), report.Summary())
+	// Whatever the verdict, every probe child must have run its probe
+	// body: an unreported probe means the re-exec dispatch broke, and the
+	// report then says nothing about the backend.
+	for _, res := range report.Results {
+		if !res.Reported {
+			t.Errorf("probe %s: child never reported (status=%s detail=%q)", res.ID, res.Status, res.Detail)
+		}
+	}
 
 	if !report.Conforms() {
 		var failed []string

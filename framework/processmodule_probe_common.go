@@ -182,7 +182,7 @@ func probeNetControlsVerdict(controls []*probeNetControl, res ProbeResult) Probe
 		}
 		<-c.done
 		if n := c.accepted.Load(); n > 0 {
-			return ProbeResult{ID: res.ID, Status: ProbeStatusFail,
+			return ProbeResult{ID: res.ID, Status: ProbeStatusFail, Reported: res.Reported,
 				Detail: fmt.Sprintf("control listener %s accepted %d connection(s) from the child", c.ln.Addr(), n)}
 		}
 	}
