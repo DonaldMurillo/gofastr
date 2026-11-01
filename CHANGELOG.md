@@ -104,6 +104,11 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **One A2A caller can no longer take every push-delivery slot.** The 16
+  in-flight deliveries and the 16-event backlog were shared by every
+  owner, so a caller whose receiver hung held them all and every other
+  owner's notifications were dropped. One owner now holds at most 4 of
+  each.
 - **A page whose cache entry was dropped keeps its own signals on Back
   and Forward.** When an RPC write invalidated the page's entry, leaving
   it captured only its `route.*` signals, so a replay showed the page's

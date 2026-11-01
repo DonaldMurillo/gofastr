@@ -364,10 +364,11 @@ one at a time, in event order, since an appended artifact chunk carries
 no sequence number. An event that reaches a config's queue after a newer
 one is dropped rather than sent late, so a terminal state is always the
 last notification a receiver gets. At most 16 configs have a delivery in flight per
-server, and up to 16 further events wait behind them process-wide;
-anything past those bounds is dropped with a Warn log line, so a hung
-receiver cannot pile up goroutines and payloads and delays only its own
-config. Reliable delivery with backoff is
+server, and up to 16 further events wait behind them process-wide. One
+owner holds at most 4 of each, so a caller whose receiver hangs cannot
+crowd out other callers' notifications. Anything past those bounds is
+dropped with a Warn log line, so a hung receiver cannot pile up
+goroutines and payloads and delays only its own config. Reliable delivery with backoff is
 [queue](queue.md)'s job; task progress must never stall on a receiver
 that is down. The SSRF posture: push URLs targeting internal hosts
 (loopback, RFC1918, CGNAT, link-local) are refused at registration
