@@ -58,11 +58,11 @@
   // msg is one message with {{n}} filled: the app's override when the
   // spec carries a string for k, else the default.
   const msg = (msgs, k, n) => {
-    const own = msgs && Object.prototype.hasOwnProperty.call(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
+    const own = has(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
     const s = own || DEFAULTS[k]();
     return s.split('{{n}}').join(n === undefined ? '' : NS.formatNumber(n));
   };
-  const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
+  const text = (v) => (v == null || typeof v === 'object' ? '' : String(v));
   // seps is the decimal and group marks of the page's language
   // (<html lang>), the one NS.formatNumber writes numbers in.
   const seps = () => {
@@ -86,6 +86,10 @@
     const n = at < 0 ? i : i + '.' + s.slice(at + 1);
     return n ? Number(n) : NaN;
   };
+  // typed: a control the reader types digits into, which reads and
+  // shows a number with the page's marks. A range, select, radio or
+  // hidden input holds the browser's dot-decimal value both ways.
+  const typed = (c) => /^(text|search|textarea)$/.test(c.type);
   const pad = (n) => String(n).padStart(2, '0');
 
   // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
@@ -128,9 +132,11 @@
   // declaration. It returns {value}, {empty} (a control with nothing in
   // it: clears the field on an edit, takes the Default on a create),
   // {absent} (no enabled control for the field: an edit leaves it
-  // alone), or {error}.
+  // alone), or {error}. A bound the spec omits is undefined, and no
+  // comparison with undefined is true, so it checks nothing.
   function coerce(f, data, msgs, form) {
-    if (!live(form, f.name).length) return { absent: true };
+    const ctl = live(form, f.name)[0];
+    if (!ctl) return { absent: true };
     if (f.t === 'bool') {
       // A checked box submits its value (whatever it is: "true", "on",
       // "yes"); the hidden "false" twin is the unchecked half.
@@ -140,14 +146,15 @@
     if (raw === null || raw === '') return f.req ? { error: msg(msgs, 'required') } : { empty: true };
     if (typeof raw !== 'string') return { error: msg(msgs, 'required') };
     if (f.t === 'int' || f.t === 'float') {
-      // A type=number control hands over the browser's canonical
-      // spelling already (never blank here: the browser empties a value
-      // it cannot read); a text control holds what the reader typed.
-      const v = live(form, f.name)[0].type === 'number' ? Number(raw) : num(raw);
+      // A text control holds what the reader typed; every other
+      // control (number, range, select, radio, hidden) hands over the
+      // browser's canonical spelling (a number input empties a value it
+      // cannot read).
+      const v = typed(ctl) ? num(raw) : Number(raw);
       if (!Number.isFinite(v)) return { error: msg(msgs, 'number') };
       if (f.t === 'int' && !Number.isSafeInteger(v)) return { error: msg(msgs, 'integer') };
-      if (f.min !== undefined && v < f.min) return { error: msg(msgs, 'min', f.min) };
-      if (f.max !== undefined && v > f.max) return { error: msg(msgs, 'max', f.max) };
+      if (v < f.min) return { error: msg(msgs, 'min', f.min) };
+      if (v > f.max) return { error: msg(msgs, 'max', f.max) };
       return { value: v };
     }
     if (f.t === 'enum' && !(f.values || []).includes(raw)) return { error: msg(msgs, 'choice') };
@@ -158,8 +165,8 @@
     // Lengths count code points, as core/schema counts runes: an emoji
     // is one character on both sides.
     const len = [...raw].length;
-    if (f.min !== undefined && len < f.min) return { error: msg(msgs, 'minlen', f.min) };
-    if (f.max !== undefined && len > f.max) return { error: msg(msgs, 'maxlen', f.max) };
+    if (len < f.min) return { error: msg(msgs, 'minlen', f.min) };
+    if (len > f.max) return { error: msg(msgs, 'maxlen', f.max) };
     if (f.pattern) {
       // Fails closed: a pattern this browser cannot compile refuses the
       // value rather than letting anything through. Define refuses the
@@ -273,7 +280,7 @@
         else if (c.type === 'radio') c.checked = c.value === text(value);
         // A number shows with the page's decimal mark in a text
         // control, so saving the edit untouched reads it back the same.
-        else if (typeof value === 'number' && c.type !== 'number' && c.type !== 'hidden') c.value = String(value).split('.').join(seps().decimal);
+        else if (typeof value === 'number' && typed(c)) c.value = String(value).split('.').join(seps().decimal);
         else if (c.type !== 'hidden' || list.length === 1) c.value = text(value);
       }
     }

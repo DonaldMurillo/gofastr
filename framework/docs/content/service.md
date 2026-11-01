@@ -88,7 +88,7 @@ An app with subcommands of its own checks for them before calling
 |------|--------------|
 | `install [--port N]` | Copies the running binary to the managed path, writes the service definition, starts it, and waits up to 15 s for the daemon to answer. Reinstalling stops the old copy and waits for it to exit first; if it will not stop, `install` fails and replaces nothing. |
 | `uninstall [--purge]` | Stops and unregisters, waits for the daemon to exit, then deletes the installed binary. Data stays unless `--purge`. If the daemon is still running after the wait, nothing is deleted. |
-| `start` / `stop` / `restart` | Through the service manager. `stop` is a clean exit, which no backend restarts, and returns once the process has exited (up to 20 s), so a `start` right after it is not dropped. The wait watches the daemon's pid together with its start time, which the daemon reads itself and sends in its reply, so a newer process the OS gave the same pid, even right after the stop, does not count as the daemon. |
+| `start` / `stop` / `restart` | Through the service manager. `stop` is a clean exit, which no backend restarts, and returns once the process has exited (up to 20 s), so a `start` right after it is not dropped. The wait watches the daemon's pid together with its start time, which the daemon reads itself and sends in its reply, so a newer process the OS gave the same pid, even right after the stop, does not count as the daemon. A daemon still building its app answers nothing yet: `stop` and `uninstall` give it up to 15 s to answer, then stop it anyway and wait for its control socket to close. On macOS that `stop` boots the job out of launchd (a signal before the daemon is ready would count as a crash and restart it); `start` loads it again. |
 | `status` | Installed or not, running or not, pid, address, version, data directory. Asked of the daemon, never parsed from manager output. |
 | `logs [-n N] [-f]` | The service log. journald on Linux; `logs/service.log` in the state directory on macOS and Windows. Control bytes are stripped before printing. |
 | `open [--dev] [--print]` | Signs the browser in (see below). `--dev` targets the dev run. |
@@ -154,7 +154,8 @@ every request, the framework's own routes included:
    (`handler.IsCrossSiteRequest`).
 3. **Session.** A cookie signed with a key derived from the secret.
    Without one the answer is 401 and the body names the command to
-   run: `hello service open`.
+   run: `hello service open`. Paths under `Config.OpenPrefixes` skip
+   this check alone (see below).
 
 The gate is installed with [`App.WrapServer`](security.md#the-default-stack),
 so it stands in front of everything the listener serves: every route,
@@ -192,6 +193,64 @@ On a machine with no browser, reached over `ssh -L`, set
 is still single use and expires in 60 seconds, but it passes through
 the terminal and the browser's history, which is why it is off by
 default and logged as a warning at every start.
+
+### Callers with no browser: `OpenPrefixes`
+
+A CLI, a script, or a container calling the app's API has no browser
+to sign in with, so every call gets 401. List the paths those callers
+use in `Config.OpenPrefixes` and protect them with the app's own auth
+(an API key check, a bearer token, `battery/auth`):
+
+```go
+svc := service.New(service.Config{
+	ID:           "dev.gofastr.hello",
+	Port:         47811,
+	OpenPrefixes: []string{"/api"},
+})
+```
+
+A path under an open prefix skips only the session check. The Host
+check still applies, and so does the cross-site refusal for a forged
+write: a form-shaped request another site's page could send without a
+CORS preflight. A browser client on another origin that sends JSON is
+preflighted, so `middleware.CORS` and the app's auth decide it. The
+answer carries `Cache-Control: no-store`. A request that carries a
+session is still signed in as the local user, so the app's own pages
+keep calling `/api` as before; one without a session reaches the app
+with no user. Everything else stays behind the sign-in.
+
+The match is on whole segments of the clean, unescaped path: `/apix`,
+`/api//x`, `/api/../admin` and `/api%2Fx` all stay gated. `New`
+refuses `/` (there is no switch that turns the sign-in off for the
+whole app) and anything under `/__gofastr/`. Each start logs the open
+prefixes as a warning.
+
+### Callers outside loopback: `BindAddress`
+
+A caller in Docker or WSL2 reaches the host's address, not its
+`127.0.0.1`, so a loopback listener is out of its reach. Set
+`Config.BindAddress` to `0.0.0.0` (every interface) or one interface's
+IP:
+
+```go
+svc := service.New(service.Config{
+	ID:           "dev.gofastr.hello",
+	Port:         47811,
+	BindAddress:  "0.0.0.0",
+	AllowHosts:   []string{"host.docker.internal:47811"},
+	OpenPrefixes: []string{"/api"},
+})
+```
+
+The Host check stays on, so DNS rebinding stays blocked. Host must name
+`127.0.0.1`, `localhost`, a specific `BindAddress`, or an `AllowHosts`
+entry (a loopback address such as `::1` is pinned too). A wildcard bind
+adds no Host value, because the name a caller
+uses is not knowable, so list it in `AllowHosts`. The browser session
+still comes only from `service open` on this machine, which opens
+`127.0.0.1` for a `0.0.0.0` bind and `[::1]` for a `::` bind. Pair `BindAddress` with `OpenPrefixes`
+for the routes the outside callers use. Each start logs a non-loopback
+bind as a warning.
 
 ## The control channel
 
@@ -300,6 +359,9 @@ owns. Restore the file, or delete it to start a new identity.
 The battery owns signal handling (it sets
 `AppConfig.DisableSignalHandling`). SIGINT, SIGTERM, a control-channel
 `stop`, and a cancelled `Run` context all drain the App and exit 0.
+A drain that runs past its deadline or an `OnStop` hook that fails is
+logged at Error and the exit stays 0: launchd restarts a daemon that
+exits non-zero, which would undo the stop.
 The whole stop (MCP sessions, the drain and the control channel)
 shares one 10 s deadline, inside systemd's `TimeoutStopSec=20`,
 launchd's exit timeout and the 20 s that `service stop` waits.
@@ -360,8 +422,10 @@ start` reports a port collision as a failed start.
   the sign-in page under `~/.config/<ID>/login/` does not open in
   them. Use another browser, or set `Config.InsecureTokenInURL` and
   paste the URL `open --print` prints.
-- **No LAN mode.** The daemon binds `127.0.0.1` only. `AllowHosts`
-  admits a reverse proxy's Host name; it does not change the bind.
+- **Plain HTTP beyond loopback.** `BindAddress` serves plain HTTP. A
+  session cookie or an API key sent to it over a network travels in
+  the clear; put a TLS reverse proxy in front for anything past one
+  machine.
 
 ## Common mistakes
 

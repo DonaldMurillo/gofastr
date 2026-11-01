@@ -121,7 +121,26 @@ type roomPeer struct {
 	// principal with; req is nil only for peers constructed outside Serve.
 	req     *http.Request
 	recheck func(*http.Request) bool
+	// sigOut numbers the signals this socket sends over the lane, per
+	// target id; sigIn holds the last number this socket received from
+	// each remote sender. A gap on receipt is a signal the lane lost
+	// (see remoteSignalLocked). Both are guarded by Signaler.mu.
+	sigOut map[string]signalSeq
+	sigIn  map[string]uint64
 }
+
+// signalSeq is one sender-to-target signal counter. It restarts when the
+// target's seat changes (Order), because the target's new socket starts
+// counting from zero.
+type signalSeq struct {
+	order int64
+	n     uint64
+}
+
+// maxSignalPairs bounds a socket's sigOut and sigIn maps: past it a new
+// pair goes unnumbered (sigOut) or unchecked (sigIn), which is the
+// lossy-lane behaviour from before signals were numbered.
+const maxSignalPairs = 1024
 
 // roomSource adapts the Signaler to stream.SnapshotSource for one
 // room. SnapshotFor and the channel's FilterEvent calls read the room
@@ -593,12 +612,17 @@ func (s *Signaler) handleSignal(roomName string, p *roomPeer, in inboundMsg) {
 		s.mu.Unlock()
 		return
 	}
-	if !s.remoteHasPeerLocked(roomName, sig.To) {
+	toOrder, ok := s.remotePeerOrderLocked(roomName, sig.To)
+	if !ok {
 		s.mu.Unlock()
 		return // unknown target: dropped, not an error
 	}
+	msg := fanoutMsg{Kind: evSignal, Room: roomName, Signal: sig, ToOrder: toOrder}
+	msg.Seq = p.nextSignalSeqLocked(sig.To, toOrder)
 	send, nodeID := s.fanoutSend, s.nodeID
 	s.mu.Unlock()
+	// One read loop per socket calls this, so the numbers a socket mints
+	// are enqueued in order even though the send runs after the unlock.
 	if send != nil {
 		// A signal the lane loses (the backend refused or timed out, or
 		// the queue dropped it on overflow) leaves both peers waiting on
@@ -607,7 +631,7 @@ func (s *Signaler) handleSignal(roomName string, p *roomPeer, in inboundMsg) {
 		// renegotiates. The close runs on its own goroutine: the report
 		// can arrive on a sender holding s.mu, and Close waits for the
 		// peer's close frame.
-		publishFanout(send, nodeID, fanoutMsg{Kind: evSignal, Room: roomName, Signal: sig}, func(error) {
+		publishFanout(send, nodeID, msg, func(error) {
 			s.logger.Warn("rtc: peer closed", "reason", "signal_lost")
 			go p.conn.Close()
 		})
@@ -752,21 +776,72 @@ func (s *Signaler) mergedPeersLocked(roomName string, now time.Time) []PeerInfo 
 // remoteHasPeerLocked reports whether a live remote replica currently
 // holds the peer. Caller holds s.mu.
 func (s *Signaler) remoteHasPeerLocked(roomName, peerID string) bool {
+	_, ok := s.remotePeerOrderLocked(roomName, peerID)
+	return ok
+}
+
+// remotePeerOrderLocked reports whether a live remote replica holds the
+// peer and, if so, the Order of its latest seat (the one remoteViewLocked
+// lets stand for the id). Caller holds s.mu.
+func (s *Signaler) remotePeerOrderLocked(roomName, peerID string) (int64, bool) {
 	replicas, ok := s.remote[roomName]
 	if !ok {
-		return false
+		return 0, false
 	}
 	now := time.Now()
+	var order int64
+	found := false
 	for _, node := range slices.Sorted(maps.Keys(replicas)) {
 		entry := replicas[node]
 		if now.After(entry.expires) {
 			continue
 		}
-		if slices.ContainsFunc(entry.members, func(m PeerInfo) bool { return m.ID == peerID }) {
-			return true
+		for _, m := range entry.members {
+			if m.ID == peerID && (!found || m.Order > order) {
+				order, found = m.Order, true
+			}
 		}
 	}
-	return false
+	return order, found
+}
+
+// nextSignalSeqLocked mints the number of this socket's next lane signal
+// to the target seat (to, order). Numbers start at 1 per seat, so the
+// target's socket can tell a missing signal from its first one. Zero
+// means unnumbered: the pair map is full. Caller holds Signaler.mu.
+func (p *roomPeer) nextSignalSeqLocked(to string, order int64) uint64 {
+	if p.sigOut == nil {
+		p.sigOut = make(map[string]signalSeq)
+	}
+	c, ok := p.sigOut[to]
+	if !ok && len(p.sigOut) >= maxSignalPairs {
+		return 0
+	}
+	if c.order != order {
+		c = signalSeq{order: order}
+	}
+	c.n++
+	p.sigOut[to] = c
+	return c.n
+}
+
+// signalGapLocked records a numbered lane signal from sender and reports
+// whether one before it never arrived. A number at or below the last one
+// seen means the sender's socket restarted its count (it reconnected),
+// not a loss. Caller holds Signaler.mu.
+func (p *roomPeer) signalGapLocked(from string, seq uint64) bool {
+	if seq == 0 {
+		return false
+	}
+	if p.sigIn == nil {
+		p.sigIn = make(map[string]uint64)
+	}
+	last, ok := p.sigIn[from]
+	if !ok && len(p.sigIn) >= maxSignalPairs {
+		return false
+	}
+	p.sigIn[from] = seq
+	return seq > last+1
 }
 
 // frameLimiter is a per-socket token bucket: rate tokens per second,

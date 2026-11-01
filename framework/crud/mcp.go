@@ -212,7 +212,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			eqKey := spell.Key(mcpFieldKey(field), filter.OpEq)
 			if v, ok := params[eqKey]; ok {
 				if !filter.OpSuitsType(filter.OpEq, field.Type) {
-					return nil, fmt.Errorf("param %q: a json field takes no filter", eqKey)
+					return nil, toolArgError("param %q: a json field takes no filter", eqKey)
 				}
 				vs, err := toolFilterValues(eqKey, false, v)
 				if err != nil {
@@ -286,7 +286,7 @@ func toolFilterValues(key string, in bool, v any) ([]string, error) {
 	one := func(e any) (string, error) {
 		switch e.(type) {
 		case []any, map[string]any:
-			return "", fmt.Errorf("param %q takes one value, not a list or an object", key)
+			return "", toolArgError("param %q takes one value, not a list or an object", key)
 		}
 		return toolParamString(e), nil
 	}
@@ -299,7 +299,7 @@ func toolFilterValues(key string, in bool, v any) ([]string, error) {
 		return []string{s}, nil
 	}
 	if len(arr) == 0 {
-		return nil, fmt.Errorf("param %q: an empty list matches no rows; send at least one value", key)
+		return nil, toolArgError("param %q: an empty list matches no rows; send at least one value", key)
 	}
 	out := make([]string, 0, len(arr))
 	for i, e := range arr {
@@ -308,7 +308,7 @@ func toolFilterValues(key string, in bool, v any) ([]string, error) {
 			return nil, err
 		}
 		if strings.Contains(s, ",") {
-			return nil, fmt.Errorf("param %q: element %d holds a comma, which the list route reads as a separator", key, i)
+			return nil, toolArgError("param %q: element %d holds a comma, which the list route reads as a separator", key, i)
 		}
 		out = append(out, s)
 	}
@@ -525,14 +525,22 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	return out, nil
 }
 
+// toolArgError is a refusal of the tool call's own arguments. It is an
+// invalid-params *RPCError, for the reason runToolRequest wraps a
+// route's 4xx: a plain error is redacted to "internal tool error" and
+// logged at Error as a server fault, when the fix is the agent's call.
+func toolArgError(format string, args ...any) error {
+	return &mcp.RPCError{Code: mcp.ErrInvalidParams, Message: fmt.Sprintf(format, args...)}
+}
+
 func requireToolString(params map[string]any, key string) (string, error) {
 	value, ok := params[key]
 	if !ok {
-		return "", fmt.Errorf("missing required param %q", key)
+		return "", toolArgError("missing required param %q", key)
 	}
 	s := fmt.Sprint(value)
 	if s == "" {
-		return "", fmt.Errorf("param %q must not be empty", key)
+		return "", toolArgError("param %q must not be empty", key)
 	}
 	return s, nil
 }

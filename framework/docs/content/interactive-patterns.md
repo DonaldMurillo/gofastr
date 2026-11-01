@@ -779,8 +779,11 @@ never opens" cause.
 visual half of "who is viewing this". Set `AvatarConfig.Status` to
 `ui.AvatarOnline`, `AvatarAway`, `AvatarBusy`, or `AvatarOffline`; the
 dot colors come from the status tokens, so a themed app recolors them
-for free. `StatusLabel` overrides the dot's accessible name (default:
-the status word).
+for free. `StatusLabel` overrides the dot's accessible name. The
+default is the status word ("Online", "Away", "Busy", "Offline", the
+`ui.avatar.status*` phrases) in the language of `AvatarConfig.Ctx`;
+`AvatarGroup` and `Dropdown` hand their own `Ctx` to an avatar that
+sets none.
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/ui"

@@ -46,9 +46,11 @@ type CronJob struct {
 // LeaderElection gates a Scheduler so only one replica fires jobs each tick,
 // making cron safe to run across multiple replicas. Install one via
 // [Scheduler.WithLeaderElection]; when set, the tick loop acquires the lease
-// before firing and releases it after the jobs finish, so a non-leader replica
-// skips the tick. The built-in [PostgresAdvisoryLease] uses a Postgres
-// advisory lock; a custom implementation can back it with Redis, etcd, etc.
+// before firing and releases it after that tick's jobs finish, so a
+// non-leader replica skips the tick. A lease that also implements
+// [TickLeaderElection] is released as soon as its claim is made instead.
+// The built-in [PostgresAdvisoryLease] uses a Postgres advisory lock; a
+// custom implementation can back it with Redis, etcd, etc.
 //
 // Acquire alone is mutual exclusion while the lease is held: a replica whose
 // timer fires for the same minute after the leader released it can fire
@@ -72,6 +74,11 @@ type LeaderElection interface {
 // soon as the tick's jobs finish: a replica whose timer fires for the same
 // minute a moment later finds the lease free and runs the jobs again.
 // AcquireTick closes that gap by recording which minute was consumed.
+//
+// Because the claim is the guarantee, the scheduler releases a tick lease
+// as soon as AcquireTick holds, before the tick's jobs start: a long job
+// does not hold the lease, and the next minute fires on schedule (on any
+// replica, this one included) while it runs.
 //
 // When the installed lease implements it, the scheduler calls AcquireTick
 // instead of Acquire, passing the tick minute (the firing time truncated to
@@ -181,11 +188,18 @@ func (s *Scheduler) WithLeaderElection(le LeaderElection) {
 }
 
 // runTick is one tick: acquire leadership (if configured), fire the matching
-// jobs, then release the lease once they finish. It reports whether this
-// replica fired. A lease that implements [TickLeaderElection] also claims
-// the tick minute, so the tick fires at most once across replicas even
-// after the leader released the lease. Extracted from the run loop so the
-// leader-gating is testable without the wall clock.
+// jobs, and release the lease. It reports whether this replica fired.
+//
+// A lease that implements [TickLeaderElection] claims the tick minute, and
+// the claim alone keeps the minute at most once across replicas, so the
+// lease is released as soon as AcquireTick holds, before the jobs start.
+// A plain lease is mutual exclusion only while held, so it is held until
+// THIS tick's jobs finish, never a job from an earlier tick. Waiting on the
+// scheduler-wide inflight group instead held the lease through any long or
+// hung job, and with a session-scoped lock (Postgres) the leader's own
+// next tick could not take it either: every tick of every job skipped,
+// cluster-wide, until that one job ended. Extracted from the run loop so
+// the leader-gating is testable without the wall clock.
 func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	s.mu.RLock()
 	leader := s.leader
@@ -195,7 +209,8 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 		return true
 	}
 	acquire := leader.Acquire
-	if tl, ok := leader.(TickLeaderElection); ok {
+	tl, claims := leader.(TickLeaderElection)
+	if claims {
 		tick := now.UTC().Truncate(time.Minute)
 		acquire = func(ctx context.Context) (bool, func(), error) { return tl.AcquireTick(ctx, tick) }
 	}
@@ -207,20 +222,29 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	if !held {
 		return false
 	}
-	// Hold the lease until the tick's jobs finish so a peer replica can't
-	// also fire this tick, but in a background goroutine, NOT inline: the
-	// run loop must stay selectable on s.stop / ctx.Done() so a job that
+	if claims {
+		// Released off the run loop: release is driver code (a DB round
+		// trip for Postgres) and the loop must stay selectable on s.stop /
+		// ctx.Done() so StopContext's deadline holds.
+		go s.releaseSafely(release)
+		s.RunOnce(ctx, now)
+		return true
+	}
+	// Hold the plain lease until this tick's jobs finish so a peer replica
+	// can't also fire this tick, but in a background goroutine, NOT inline:
+	// the run loop must stay selectable on s.stop / ctx.Done() so a job that
 	// ignores its context cannot pin the loop and defeat StopContext's
-	// deadline-bounded join (which itself waits on inflight). Registered
-	// BEFORE RunOnce so a panic inside it (e.g. a panicking gate) still
-	// schedules the release instead of leaking the lease + pinned conn.
+	// deadline-bounded join. Registered BEFORE runOnce so a panic inside it
+	// (e.g. a panicking gate) still schedules the release instead of leaking
+	// the lease.
+	var tickJobs sync.WaitGroup
 	defer func() {
 		go func() {
-			s.inflight.Wait()
+			tickJobs.Wait()
 			s.releaseSafely(release)
 		}()
 	}()
-	s.RunOnce(ctx, now)
+	s.runOnce(ctx, now, &tickJobs)
 	return true
 }
 
@@ -319,6 +343,13 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 // (Register during tick) are safe because the mutex is held only for the
 // read, new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
+	s.runOnce(ctx, now, nil)
+}
+
+// runOnce is RunOnce that also counts each job it starts into tickJobs
+// when it is non-nil, so a plain lease can be held for this tick's jobs
+// alone.
+func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.WaitGroup) {
 	// Snapshot the firing jobs AND the gate under the read lock, then
 	// evaluate the gate OUTSIDE it. Gates are registered callbacks
 	// (SetGate) free to do I/O, and a blocking gate holding s.mu
@@ -345,8 +376,14 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 			continue
 		}
 		s.inflight.Add(1)
+		if tickJobs != nil {
+			tickJobs.Add(1)
+		}
 		go func(j CronJob) {
 			defer s.inflight.Done()
+			if tickJobs != nil {
+				defer tickJobs.Done()
+			}
 			defer func() {
 				if r := recover(); r != nil {
 					s.reportError(j.Name, fmt.Errorf("panic: %v\n%s", r, debug.Stack()))

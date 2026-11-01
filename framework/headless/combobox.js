@@ -157,6 +157,28 @@
     ));
   }
 
+  // Escape on an open popup listbox belongs to the listbox alone. The
+  // modal, intercept overlay and disclosure around a combobox each
+  // close on a document-level Escape too, and listeners on one node
+  // run in the order they were added, which depends on which module
+  // loaded first. So this half runs in the capture phase, ahead of
+  // every bubbling listener, and stops the key there: one Escape
+  // closes the list and keeps the half-filled form. Once the list is
+  // closed, Escape travels on as usual. An inline listbox (a command
+  // palette's results) is the dialog's own content, so its Escape
+  // goes on to close the dialog.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || e.isComposing) return;
+    const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
+    if (!input || input.hasAttribute('data-hui-combobox-inline') || input.getAttribute('aria-expanded') !== 'true') return;
+    const lbId = input.getAttribute('aria-controls');
+    const lb = lbId && document.getElementById(lbId);
+    if (!lb) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeListbox(input, lb);
+  }, true);
+
   document.addEventListener('keydown', function (e) {
     const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
     if (!input) return;
@@ -211,7 +233,7 @@
         return;
       }
       case 'Escape': {
-        if (isOpen) { e.preventDefault(); closeListbox(input, lb); return; }
+        // An open list was closed by the capture listener above.
         if (input.value) {
           e.preventDefault();
           input.value = '';

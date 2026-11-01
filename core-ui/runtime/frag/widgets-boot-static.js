@@ -63,42 +63,39 @@
     // A followed 3xx is another URL's list: no catalog.
     .then((r) => (r.ok && !r.redirected ? r.json() : null))
     .then(async (list) => {
-      if (!Array.isArray(list)) { _wcr(); return; }
-      // The widget runtime ships as a split module. Make sure it's
-      // loaded before iterating mounts, covers the case where no
-      // [data-cui-widget] marker is present in initial HTML (the
-      // marker scanner wouldn't have fired) but the catalog says there
-      // are widgets to mount.
-      if (list.length > 0) {
-        try { await window.__gofastr.loadModule('widgets'); } catch (_) {}
-      }
-      const tryMount = () => {
-        if (!window.__gofastr || !window.__gofastr.mountWidget) {
-          setTimeout(tryMount, 0);
-          return;
+      // No catalog, an empty one, or a widgets module that failed to
+      // load: settle readiness and stop. The catalog is stored before
+      // the load, since it is data the module does not own: a click
+      // after a failed load reaches openWidget, which retries the load
+      // and finds its widget. Nothing waits on a module that is not
+      // coming.
+      try {
+        if (Array.isArray(list) && list.length) {
+          // The widget runtime ships as a split module. Make sure it's
+          // loaded before iterating mounts, covers the case where no
+          // [data-cui-widget] marker is present in initial HTML (the
+          // marker scanner wouldn't have fired) but the catalog says there
+          // are widgets to mount.
+          // loadModule resolves on registration, and widgets.js
+          // registers after it assigns mountWidget.
+          const cat = window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
+          for (const item of list) cat[item.cfg.name] = item;
+          await window.__gofastr.loadModule('widgets');
+          for (const item of list) {
+            if (item.hidden) continue; // open later via openWidget(name)
+            // Non-hidden widgets auto-mount at boot. Chrome HTML is
+            // fetched lazily from cfg.chromePath, the static exporter
+            // dumps the same bytes, so the fetch resolves against the
+            // static tree.
+            window.__gofastr._mountByName(item.cfg.name);
+          }
+          // Open any widget whose deep link matches the current URL.
+          window.__gofastr._syncDeepLinks();
         }
-        // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand. Also resolve _widgetCatalogReadyResolve
-        // so the eager click delegator can proceed.
-        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
-        for (const item of list) {
-          window.__gofastr._widgetCatalog[item.cfg.name] = item;
-          if (item.hidden) continue; // open later via openWidget(name)
-          // Non-hidden widgets auto-mount at boot. Chrome HTML is
-          // fetched lazily from cfg.chromePath, the static exporter
-          // dumps the same bytes, so the fetch resolves against the
-          // static tree.
-          window.__gofastr._mountByName(item.cfg.name);
-        }
-        // Open any widget whose deep link matches the current URL.
-        window.__gofastr._syncDeepLinks();
-
-        // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise, resolve so queued clicks unblock now
-        // that the catalog is populated.
-        _wcr();
-      };
-      tryMount();
+      } catch (_) {}
+      // The eager click delegator (installed at boot, see below)
+      // awaits this Promise.
+      _wcr();
     })
     .catch(() => { _wcr(); });
 

@@ -49,7 +49,8 @@ duplicate and matches tags case-insensitively, so the same body can
 mean two things to two readers; refusing it is the only resolution that
 privileges neither. Cap the size first (`http.MaxBytesReader`). The
 contracts rule GOFASTR1407 reports any raw `json.NewDecoder`/`Unmarshal`
-of request or frame bytes, so a site that does not use these helpers
+of request or frame bytes, and the repo's own `jsonexact.Unmarshal`/`Decode`
+(exact numbers, the same duplicate and case rules), so a site that does not use these helpers
 needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
 A body these helpers refuse answers 400 with `reason` `invalid_json`
@@ -239,10 +240,23 @@ mount the handler behind your auth middleware; the agent card in
 
 An OpenAPI 3.1 builder plus serving handlers. A `Spec` accumulates
 paths, schemas, and security schemes and `Build()` emits the doc;
-`Handler` serves it (auth-gated by default) and `DocsHandler` serves a
-landing page whose `public` flag gates both the page and its nested
-spec route (the framework passes its `PublicOpenAPI` setting, so a
-public spec gets a public browse page). A `Spec` may carry a
+`SetDescription` fills `info.description`, which a per-request
+`RequestView` copy keeps (the docs page shows it as plain text, one
+paragraph per blank-line-separated block);
+`Handler` serves it (auth-gated by default) and `DocsHandler` serves an
+API reference page whose `public` flag gates both the page and its
+nested spec route (the framework passes its `PublicOpenAPI` setting, so
+a public spec gets a public browse page). The page lists every
+operation the caller can see (method, path, summary), grouped by tag,
+and links the spec. It is plain HTML with no script, stylesheet or
+inline style, so it renders under the default Content-Security-Policy
+in the browser's own light or dark styles, and its labels are
+`openapi.docs.*` phrases. `DocsHandlerWith(spec, DocsConfig{...})`
+chooses the paths: `BasePath` is the mount, `SpecPath` the spec under
+it (default `/openapi.json`), and `PagePath` a second page path, so
+`{BasePath: "/swagger", SpecPath: "/v1/swagger.json", PagePath:
+"/index.html"}` serves the Swagger-style layout. Anything else under
+the mount is 404. A `Spec` may carry a
 `RequestView` — a per-request spec builder the auth-gated `Handler`
 consults, so the document can drop what THIS caller may not read; the
 framework's entity spec uses it to hide entities with no read grant,

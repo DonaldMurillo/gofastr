@@ -184,12 +184,39 @@ func TestNativeNotifications(t *testing.T) {
 	if live := trayLiveClosures.Load(); live != baseline {
 		t.Fatalf("notification fixture retained native closures: %d, baseline %d", live, baseline)
 	}
-	// The retained owner is intentional. Verify a second lifetime fails before
-	// entering GTK; clearing it would permit initialization on a different thread.
-	if err := New().Run(context.Background(), desktop.WindowConfig{}, nil); err == nil || err.Error() != "desktop/linux: another GTK shell already owns this process" {
+	// Ownership is released with the lifetime, so a second shell can run on the
+	// same toolkit thread. Show must work again in that lifetime (#605).
+	if owner := toolkitOwner.Load(); owner != nil {
+		t.Fatalf("toolkit ownership retained after the lifetime ended: %p", owner)
+	}
+	// The exercise closed its daemons; the second lifetime gets its own.
+	secondBroker, secondDaemon, err := startNotificationTestDaemon()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondBroker.close()
+	again := New().(*linuxShell)
+	err = runNotificationGTK(ctx, again, "GoFastr notification second lifetime", func() {
+		go func() {
+			defer again.Quit()
+			result <- again.Show(ctx, desktop.Notification{Title: "Second lifetime", Body: "plain body"})
+		}()
+	})
+	if err != nil {
 		t.Fatalf("second shell lifetime: %v", err)
 	}
-	t.Log("native libnotify payload, refusal, daemon loss/restart, cleanup and retained GTK owner verified")
+	if err := <-result; err != nil {
+		t.Fatalf("second lifetime Show: %v", err)
+	}
+	select {
+	case got := <-secondDaemon.messages:
+		if got.app != "GoFastr notification second lifetime" || got.title != "Second lifetime" {
+			t.Fatalf("second lifetime notification: %#v", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("second lifetime notification never reached the daemon")
+	}
+	t.Log("native libnotify payload, refusal, daemon loss/restart, cleanup and a second GTK lifetime verified")
 }
 
 func exerciseNativeNotifications(ctx context.Context, s *linuxShell, broker *trayBroker, daemon *notificationTestDaemon) error {
@@ -301,14 +328,21 @@ func exerciseNativeNotifications(ctx context.Context, s *linuxShell, broker *tra
 }
 
 // Exercise Show on a real GTK loop without creating a WebKit view. This fixture
-// owns the same process-wide GTK thread as Run, and supplies only the shell
-// state Show/Main/Quit need. It does not claim WebKit startup coverage.
+// takes the same toolkit ownership and toolkit thread as Run, and supplies only
+// the shell state Show/Main/Quit need. It does not claim WebKit startup coverage.
 func runNotificationGTK(ctx context.Context, s *linuxShell, title string, ready func()) error {
 	if !toolkitOwner.CompareAndSwap(nil, s) {
-		return errors.New("notification fixture requires its own GTK process")
+		return errToolkitBusy
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	defer toolkitOwner.CompareAndSwap(s, nil)
+	var err error
+	if terr := onToolkitThread(func() { err = runNotificationLoop(ctx, s, title, ready) }); terr != nil {
+		return terr
+	}
+	return err
+}
+
+func runNotificationLoop(ctx context.Context, s *linuxShell, title string, ready func()) error {
 	if err := gtk.Load(); err != nil {
 		return err
 	}

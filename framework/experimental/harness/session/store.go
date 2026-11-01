@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS events (
     originator TEXT,
     ts         TEXT NOT NULL,
     payload    TEXT NOT NULL,
+    sub_agent  TEXT,
     PRIMARY KEY (session, id)
 );
 

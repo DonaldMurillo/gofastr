@@ -86,8 +86,7 @@ func TestScopedClauseDedupKeepsTermBoundaries(t *testing.T) {
 	two := []schema.Field{{Name: "status", Type: schema.String}}
 	a, _ := parseScopedFilters("status_in=x|y,status[in]=y", two, "r")
 	b, _ := parseScopedFilters("status_in=x,status[in]=y|y", two, "r")
-	var n IncludeNode
-	if n.noteScopedClause(a) || n.noteScopedClause(b) {
+	if scopedClauseKey(a) == scopedClauseKey(b) {
 		t.Fatal("two different scoped clauses were deduplicated as one")
 	}
 }

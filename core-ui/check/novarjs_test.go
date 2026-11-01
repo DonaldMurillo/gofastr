@@ -287,3 +287,29 @@ func TestNoVarJS_SeesInsideTemplateInterpolations(t *testing.T) {
 		})
 	}
 }
+
+// The directive counts only as a comment line of its own, the grammar
+// check-csp's ignore directive uses: a file that quotes it in a string
+// or in prose is still linted.
+func TestNoVarDirectiveMustBeAnchored(t *testing.T) {
+	for name, body := range map[string]string{
+		"string.js": "const hint = 'add //check-novar:ignore-file to opt out';\nvar x = 1;\n",
+		"prose.js":  "// files may carry //check-novar:ignore-file in an emergency\nvar x = 1;\n",
+		"trail.js":  "var x = 1; //check-novar:ignore-file\n",
+	} {
+		dir := t.TempDir()
+		writeJS(t, dir, name, body)
+		res, err := LintNoVarJS(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Violations) == 0 {
+			t.Errorf("%s: a quoted directive opted the file out", name)
+		}
+	}
+	dir := t.TempDir()
+	writeJS(t, dir, "spaced.js", "  // check-novar:ignore-file\r\nvar x = 1;\n")
+	if res, _ := LintNoVarJS(dir); len(res.Violations) != 0 {
+		t.Errorf("an indented, spaced CRLF directive was not honoured: %v", res.Violations)
+	}
+}

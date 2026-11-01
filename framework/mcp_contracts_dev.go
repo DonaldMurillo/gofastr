@@ -133,7 +133,7 @@ func runContractsPass(capability string, applyBaseline bool) (*contracts.Report,
 	if capability != "" {
 		parsed, err := contracts.ParseCapability(capability)
 		if err != nil {
-			return nil, fmt.Errorf("unknown capability %q; call contracts_capabilities for the list", capability)
+			return nil, contractRefusal("unknown capability %q; call contracts_capabilities for the list", capability)
 		}
 		opts.Capabilities = []contracts.Capability{parsed}
 	}
@@ -236,7 +236,7 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 	name, _ := params["rule"].(string)
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf("contracts_fix: a rule is required")
+		return nil, contractRefusal("contracts_fix: a rule is required")
 	}
 	rule, ok := contracts.LookupRule(name)
 	if !ok {
@@ -244,12 +244,12 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 		// copied out of a report should not have to list the catalog to
 		// find the one character it got wrong.
 		if near := contracts.SuggestRules(name); len(near) > 0 {
-			return nil, fmt.Errorf("contracts_fix: unknown rule %q; did you mean %s", name, strings.Join(near, ", "))
+			return nil, contractRefusal("contracts_fix: unknown rule %q; did you mean %s", name, strings.Join(near, ", "))
 		}
-		return nil, fmt.Errorf("contracts_fix: unknown rule %q; call contracts_list for the catalog", name)
+		return nil, contractRefusal("contracts_fix: unknown rule %q; call contracts_list for the catalog", name)
 	}
 	if !rule.Autofix {
-		return nil, fmt.Errorf("contracts_fix: %s (%s) has no autofix: it has to be fixed by hand; call contracts_explain for how", rule.ID, rule.Slug)
+		return nil, contractRefusal("contracts_fix: %s (%s) has no autofix: it has to be fixed by hand; call contracts_explain for how", rule.ID, rule.Slug)
 	}
 	rep, err := runContractsPass("", false)
 	if err != nil {
@@ -259,18 +259,23 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 	if err != nil {
 		// Apply stops at the first file that refuses, but the files
 		// before it are already rewritten, and the agent's next read of
-		// the tree will not match its last one unless the error says so.
+		// the tree will not match its last one unless the result says
+		// so. A tool error result carries it to the agent: a returned
+		// error would be redacted to "internal tool error". The text is
+		// the caller's own tree (dev loop, loopback only), the same
+		// posture contracts_verify takes with analyzer errors.
+		msg := "contracts_fix: " + err.Error()
 		if len(applied) > 0 {
 			written := map[string]bool{}
 			for _, d := range applied {
 				written[d.File] = true
 			}
 			n := len(applied)
-			return nil, fmt.Errorf("contracts_fix: %w: %d fix%s already written to %s; the tree has changed, re-run contracts_verify",
-				err, n, map[bool]string{true: " was", false: "es were"}[n == 1],
+			msg = fmt.Sprintf("%s: %d fix%s already written to %s; the tree has changed, re-run contracts_verify",
+				msg, n, map[bool]string{true: " was", false: "es were"}[n == 1],
 				strings.Join(contracts.SortedFiles(written), ", "))
 		}
-		return nil, fmt.Errorf("contracts_fix: %w", err)
+		return mcp.ToolResult{IsError: true, Content: []mcp.Content{mcp.TextContent(msg)}}, nil
 	}
 	files := map[string]int{}
 	for _, d := range applied {

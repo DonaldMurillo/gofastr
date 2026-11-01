@@ -105,8 +105,9 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 	case schema.Timestamp:
 		for _, layout := range timestampLayouts {
 			if ts, err := time.Parse(layout, raw); err == nil {
-				// The bind is the UTC spelling, so the year that must
-				// exist is the UTC one.
+				// Go reads year 0000; Postgres refuses it as out of
+				// range, a 500 there and a 200 on SQLite. The bound
+				// value is the UTC instant, so that is the one checked.
 				if ts.UTC().Year() < 1 {
 					return nil, valueTypeError(field, t)
 				}
@@ -115,7 +116,8 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 		}
 		return nil, valueTypeError(field, t)
 	case schema.Date:
-		if d, err := time.Parse(time.DateOnly, raw); err != nil || d.Year() < 1 {
+		d, err := time.Parse(time.DateOnly, raw)
+		if err != nil || d.Year() < 1 {
 			return nil, valueTypeError(field, t)
 		}
 		return raw, nil

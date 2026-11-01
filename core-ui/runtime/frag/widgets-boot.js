@@ -34,48 +34,45 @@
     // A followed 3xx is another URL's list: no catalog.
     .then((r) => (r.ok && !r.redirected ? r.json() : null))
     .then(async (list) => {
-      if (!Array.isArray(list)) { _wcr(); return; }
-      // The widget runtime now ships as a split module. Make sure it's
-      // loaded before iterating mounts, covers the case where no
-      // [data-cui-widget] marker is present in initial HTML (the
-      // marker scanner wouldn't have fired) but server-side
-      // registration says there are widgets to mount.
-      if (list.length > 0) {
-        try { await window.__gofastr.loadModule('widgets'); } catch (_) {}
-      }
-      const tryMount = () => {
-        if (!window.__gofastr || !window.__gofastr.mountWidget) {
-          setTimeout(tryMount, 0);
-          return;
+      // No catalog, an empty one, or a widgets module that failed to
+      // load: settle readiness and stop. The catalog is stored before
+      // the load, since it is data the module does not own: a click
+      // after a failed load reaches openWidget, which retries the load
+      // and finds its widget. Nothing waits on a module that is not
+      // coming.
+      try {
+        if (Array.isArray(list) && list.length) {
+          // The widget runtime now ships as a split module. Make sure it's
+          // loaded before iterating mounts, covers the case where no
+          // [data-cui-widget] marker is present in initial HTML (the
+          // marker scanner wouldn't have fired) but server-side
+          // registration says there are widgets to mount.
+          // loadModule resolves on registration, and widgets.js
+          // registers after it assigns mountWidget.
+          const cat = window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
+          for (const item of list) cat[item.cfg.name] = item;
+          await window.__gofastr.loadModule('widgets');
+          for (const item of list) {
+            if (item.hidden) continue; // open later via openWidget(name)
+            // Non-hidden widgets auto-mount at boot. Chrome HTML is
+            // fetched lazily from cfg.chromePath so the registry stays
+            // small; if the page already SSR-inlined this widget (root
+            // element exists in DOM), mountWidget short-circuits to a
+            // hydrate-only path. Either way, the result is a wired
+            // widget root.
+            window.__gofastr._mountByName(item.cfg.name);
+          }
+          // Open any widget whose deep link matches the current URL. On
+          // a full page load the host has usually SSR-inlined that
+          // chrome (framework/uihost injectWidgetSSR) and _mountByName
+          // hydrates it here; this pass is what covers SPA navigations
+          // and popstate, where no fresh HTML arrives.
+          window.__gofastr._syncDeepLinks();
         }
-        // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand. Also settle _wready (via _wcr) so the
-        // eager click delegator can proceed.
-        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
-        for (const item of list) {
-          window.__gofastr._widgetCatalog[item.cfg.name] = item;
-          if (item.hidden) continue; // open later via openWidget(name)
-          // Non-hidden widgets auto-mount at boot. Chrome HTML is
-          // fetched lazily from cfg.chromePath so the registry stays
-          // small; if the page already SSR-inlined this widget (root
-          // element exists in DOM), mountWidget short-circuits to a
-          // hydrate-only path. Either way, the result is a wired
-          // widget root.
-          window.__gofastr._mountByName(item.cfg.name);
-        }
-        // Open any widget whose deep link matches the current URL. On
-        // a full page load the host has usually SSR-inlined that
-        // chrome (framework/uihost injectWidgetSSR) and _mountByName
-        // hydrates it here; this pass is what covers SPA navigations
-        // and popstate, where no fresh HTML arrives.
-        window.__gofastr._syncDeepLinks();
-
-        // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise, resolve so queued clicks unblock now
-        // that the catalog is populated.
-        _wcr();
-      };
-      tryMount();
+      } catch (_) {}
+      // The eager click delegator (installed at boot, see below)
+      // awaits this Promise.
+      _wcr();
     })
     .catch(() => { _wcr(); });
 

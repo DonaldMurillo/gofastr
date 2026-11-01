@@ -17,8 +17,9 @@ var (
 	ErrClosed = errors.New("moduleproto: peer closed")
 
 	// ErrInflightCap is returned by [Peer.Call] when the peer is already
-	// servicing the maximum number of in-flight originated requests. It is a
-	// call-local error, not a protocol fault.
+	// servicing the maximum number of in-flight originated requests, and by
+	// [Peer.Notify] when that many notification writes are still pending. It
+	// is a call-local error, not a protocol fault.
 	ErrInflightCap = errors.New("moduleproto: inflight cap reached")
 
 	// ErrInvalidFrame wraps any frame-level validation failure surfaced from

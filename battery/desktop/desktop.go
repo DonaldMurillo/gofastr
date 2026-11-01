@@ -24,6 +24,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
@@ -169,6 +170,22 @@ type Config struct {
 	// Update, when set, enables the auto-updater (see UpdateConfig).
 	Update *UpdateConfig
 
+	// OpenPrefixes lists path prefixes ("/api") the boot gate lets
+	// through without the window's session cookie, for a local client
+	// with no window (a CLI, a script, an editor plugin) that the app
+	// authenticates itself: an API key, a bearer token, battery/auth.
+	// The Host pin stays (Host must name the app's own loopback
+	// address, so DNS rebinding stays blocked), a forged cross-site
+	// write is refused (a preflighted JSON call is left to CORS), and a request with no session reaches the app with no
+	// user: the local identity is only put on the window's requests.
+	// The listener stays on 127.0.0.1. Each entry is an absolute path
+	// of plain segments; New panics on "/", on anything under
+	// /__gofastr/ (the bridge, the runtime, the handshake), and on a
+	// malformed entry. The match is on whole segments of the clean,
+	// unescaped path, so /apix and /api/../admin stay gated. Logged as
+	// a warning when Run starts.
+	OpenPrefixes []string
+
 	// KeepIsolation stops Run from forcing GOFASTR_ISOLATION=off.
 	//
 	// Run sets GOFASTR_ISOLATION=off in the PROCESS environment before
@@ -201,9 +218,12 @@ type Battery struct {
 	// Capability registry and grants.
 	reg    *registry
 	grants GrantStore
-	// promptMu serializes permission prompts so two concurrent first
-	// calls do not show two dialogs.
-	promptMu sync.Mutex
+	// promptSem serializes permission prompts so two concurrent first
+	// calls do not show two dialogs. It is a one-slot channel, not a
+	// mutex, so a call whose request ends while it waits behind an alert
+	// can give up its place (see promptSlot).
+	promptOnce sync.Once
+	promptSem  chan struct{}
 
 	// Menu (validated copy) and the local identity.
 	menu *Menu
@@ -295,6 +315,14 @@ type Battery struct {
 func New(cfg Config) *Battery {
 	if err := validateAppID(cfg.ID); err != nil {
 		panic(err.Error())
+	}
+	// An own copy, validated: a caller that edits its slice after New
+	// must not change what the gate opens.
+	cfg.OpenPrefixes = append([]string(nil), cfg.OpenPrefixes...)
+	for _, p := range cfg.OpenPrefixes {
+		if err := gatepath.Validate("desktop: Config.OpenPrefixes", p); err != nil {
+			panic(err.Error())
+		}
 	}
 	if builtDeepLinkScheme != "" {
 		if cfg.DeepLink == nil {
@@ -998,6 +1026,9 @@ func (b *Battery) Run(app *framework.App) error {
 	// so a fixed name would let a second instance replace this session.
 	b.sessionCookieKey = sessionCookieName + "_" + b.sessionValue
 	b.armGate()
+	if len(b.cfg.OpenPrefixes) > 0 {
+		b.logger.Warn("desktop: these paths answer without the window's session; the app's own auth must protect them (Config.OpenPrefixes)", "prefixes", b.cfg.OpenPrefixes)
+	}
 
 	// Deviation 7: worktree isolation off for this Start. Process-wide
 	// effect; see Config.KeepIsolation.

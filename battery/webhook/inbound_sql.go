@@ -112,7 +112,7 @@ func (s *SQLInboundStore) ensureTable() error {
 			return err
 		}
 	}
-	return addOwnerColumn(s.db, s.dialect, s.table)
+	return addColumn(s.db, s.dialect, s.table, "owner TEXT NOT NULL DEFAULT ''")
 }
 
 // registerData declares the envelope table to App.ExportData and

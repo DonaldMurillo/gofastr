@@ -420,7 +420,12 @@ The parts the navigation members draw beyond the shared vocabulary:
   host form never submits the query, `Options` are the first rows of
   the island listbox, and `NoScriptAction` is refused (its form would
   nest). `Control` hands the input to a host `Field`, whose label and
-  description name it. `ComboboxRows` renders an island answer's rows.
+  description name it. Escape on an open listbox closes the list and
+  stops there, so the dialog, overlay or disclosure around the
+  combobox stays open; `Inline` (`data-hui-combobox-inline`) marks a
+  listbox that is the surface's own content, the command palette's
+  result list, whose Escape goes on to close the dialog in one press.
+  `ComboboxRows` renders an island answer's rows.
 - **JSONTree**: under each value's shared parts, one part per JSON
   scalar kind so a class map can colour a string without colouring a
   number: `json-colon`, `json-type`, `json-count`, `json-str`,

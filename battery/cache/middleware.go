@@ -21,6 +21,39 @@ type cachedResponse struct {
 	Vary       []string            `json:"vary,omitempty"`
 }
 
+// credentialHeaders are the request headers the framework treats as a
+// caller's credential. A request carrying any of them is never served
+// from or written to the cache by default. The list matches
+// credentialFingerprint in framework/app.go; TestCacheCredentialCanon
+// holds the two together.
+//
+// X-Gofastr-Embed is an embed grant: framework/embed's middleware resolves
+// it into a user before the handler runs, and it carries no cookie and no
+// Authorization by construction, so a check on those two alone stored a
+// grant-authenticated response under the shared method/host/path/query key
+// and served it to another grant subject as a HIT. X-API-Key had the same
+// hole for API-key callers.
+var credentialHeaders = []string{"Authorization", "X-API-Key", "X-Gofastr-Embed", "Cookie"}
+
+// carriesCredential reports whether r carries a non-empty value of any
+// credential header. Every field line counts: Header.Get reads only the
+// first, and an empty first line would hide a credential on the second.
+func carriesCredential(r *http.Request) bool {
+	for _, name := range credentialHeaders {
+		for _, v := range r.Header.Values(name) {
+			if v != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// DefaultMaxCacheableBytes caps how large a response CacheMiddleware will
+// buffer for caching (8 MiB). Larger responses stream straight to the client
+// and are not cached, so a single huge response can't pin unbounded memory.
+const DefaultMaxCacheableBytes = 8 << 20
+
 // CacheMiddleware returns an HTTP middleware that caches GET responses
 // using the provided Cache implementation. The X-Cache response header
 // is set to "HIT" or "MISS" accordingly.
@@ -37,8 +70,9 @@ type cachedResponse struct {
 //     (206) body must not be allowed to collide with the full variant.
 //   - The cache key includes the request authority (Host) so distinct
 //     virtual hosts sharing one Cache do not serve each other's content.
-//   - Requests with Authorization or Cookie headers are not served from
-//     or written to the cache by default (RFC 9111 §3.5 / §3 default).
+//   - Requests with a credential header (Authorization, Cookie,
+//     X-API-Key or X-Gofastr-Embed) are not served from or written to
+//     the cache by default (RFC 9111 §3.5 / §3 default).
 //   - Requests with Cache-Control: no-cache or no-store bypass the
 //     stored variant and force a fresh origin fetch (no-store also
 //     skips writing the response back into the cache).
@@ -55,11 +89,6 @@ type cachedResponse struct {
 //     includes the values of every listed request header so different
 //     variants do not collide. A Vary: * response is treated as
 //     uncacheable and is never stored (RFC 9111 §4.1).
-//
-// DefaultMaxCacheableBytes caps how large a response CacheMiddleware will
-// buffer for caching (8 MiB). Larger responses stream straight to the client
-// and are not cached, so a single huge response can't pin unbounded memory.
-const DefaultMaxCacheableBytes = 8 << 20
 
 func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Handler {
 	return CacheMiddlewareWithLimit(cache, ttl, DefaultMaxCacheableBytes)
@@ -96,18 +125,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 
 			// Requests that carry credentials are not cached by default.
 			// This avoids replaying one user's response to another.
-			//
-			// X-Gofastr-Embed is in the list because an embed grant is an app
-			// credential exactly like the other two: framework/embed's
-			// middleware resolves it into a user before the handler runs. It
-			// carries no cookie and no Authorization by construction, the whole
-			// point of the design, so a grant-authenticated response looked
-			// anonymous to this check and was stored under the shared
-			// method/host/path/query key, then served to a different grant
-			// subject as a HIT without the handler ever running.
-			hasCreds := r.Header.Get("Authorization") != "" ||
-				r.Header.Get("Cookie") != "" ||
-				r.Header.Get("X-Gofastr-Embed") != ""
+			hasCreds := carriesCredential(r)
 
 			// Range requests are partial-content requests. The cache key does
 			// not encode the Range, so serving from or writing to the cache

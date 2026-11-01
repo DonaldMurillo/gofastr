@@ -232,8 +232,27 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 	l.Aux().Handle("POST", "/mcp/app", appMCP)
 	l.Aux().Handle("GET", "/mcp/app", appMCP)
 
+	// The agent watcher's turns must end before run returns: main calls
+	// os.Exit, and the adapter runs in its own process group, so a turn
+	// still running at exit would outlive kiln. This defer runs after
+	// cancel below (defers unwind last-in first-out), and the watcher
+	// bounds its own wait (agentShutdownWait). It also runs before the
+	// journal and database close, so a turn's closing note still lands.
+	var watcherDone chan struct{}
+	defer func() {
+		if watcherDone != nil {
+			<-watcherDone
+		}
+	}()
 	ctx, cancel := signalContext()
 	defer cancel()
+	startWatcher := func() {
+		watcherDone = make(chan struct{})
+		go func() {
+			defer close(watcherDone)
+			runAgentWatcher(ctx, logger, l, tools, store, opts.addr)
+		}()
+	}
 
 	// Start HTTP server unless --no-http was explicitly requested.
 	if !(stdioMode && opts.noHTTP) {
@@ -254,12 +273,12 @@ func run(args []string, mcpStdio, acpStdio bool) int {
 		} else {
 			logger.Printf("skill install: %v (continuing)", err)
 		}
-		go runAgentWatcher(ctx, logger, l, tools, store, opts.addr)
+		startWatcher()
 		logger.Printf("agent:     %s", adapter.Display)
 	} else if !stdioMode {
 		// Even without a startup adapter, run the watcher so a runtime
 		// switch via /kiln/agent immediately starts dispatching turns.
-		go runAgentWatcher(ctx, logger, l, tools, store, opts.addr)
+		startWatcher()
 		switch opts.agentCmd {
 		case "":
 			logger.Printf("agent:     (none: pass --agent auto to pick an installed CLI,")

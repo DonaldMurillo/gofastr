@@ -31,6 +31,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -103,10 +104,15 @@ type TUI struct {
 	searchQuery  string
 	searchHits   []int
 
-	// pendingPermission, when non-nil, indicates the engine is
-	// waiting on a permit/deny decision. The next submit() consumes
-	// the input as a permission answer rather than as new turn input.
-	pendingPermission *control.PermissionRequested
+	// pendingPermissions holds the prompts the engine is waiting on,
+	// oldest first. While it is non-empty, submit() answers the head
+	// under its own call id instead of sending new turn input. One
+	// response can ask for several tools at once, so a single slot
+	// sent the user's answer to whichever prompt arrived last. A prompt
+	// leaves the queue when it is answered here, when its call's
+	// ToolResult arrives (answered elsewhere, timed out, cancelled), or
+	// when the turn ends.
+	pendingPermissions []control.PermissionRequested
 
 	// inputHistory holds every non-empty submitted line in order.
 	// historyIdx is the cursor when scrolling backward through it;
@@ -334,6 +340,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.appendMultiline("  ⎿ ", truncate(sanitizeAgentText(v.Partial), 400))
 		t.assistantOpen = false
 	case control.ToolResult:
+		t.dropPermission(v.CallID)
 		summary := strings.TrimSpace(sanitizeAgentText(summarizeContent(v.Content)))
 		if summary == "" {
 			summary = "(no output)"
@@ -350,6 +357,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.appendCappedMultiline(prefix, summary, cap)
 		t.assistantOpen = false
 	case control.TurnEnded:
+		t.pendingPermissions = nil
 		t.collapseThinkingBurst()
 		// Visual separator between turns. The em-dash makes the
 		// boundary obvious without taking a whole row of color.
@@ -364,6 +372,10 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.scrollback = append(t.scrollback, "[error] "+sanitizeAgentText(v.Message))
 		t.assistantOpen = false
 		t.thinkingOpen = false
+	case control.Cancelled, control.SessionEnded:
+		// No prompt outlives its turn: the engine denies an
+		// unanswered call when the turn ends.
+		t.pendingPermissions = nil
 	case control.CostIncremented:
 		// Accumulator, every increment adds to the session total.
 		t.costUSD += v.USD
@@ -398,9 +410,9 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		// is 13 runes, so the indent is exactly 13 spaces.
 		t.scrollback = append(t.scrollback,
 			"             y = allow once, a = allow session, t = allow tool, enter/n = deny")
-		// Stash a copy so submit() can route to AnswerPermission.
-		copy := v
-		t.pendingPermission = &copy
+		// Queue it so submit() can route to AnswerPermission.
+		t.dropPermission(v.CallID)
+		t.pendingPermissions = append(t.pendingPermissions, v)
 		t.assistantOpen = false
 	}
 	// Hard cap scrollback to last 1000 lines.
@@ -560,16 +572,25 @@ func (t *TUI) submit() bool {
 	t.input = nil
 	t.scrollOffset = 0 // typing returns the view to the tail
 	t.assistantOpen = false
-	pending := t.pendingPermission
+	var pending *control.PermissionRequested
+	if len(t.pendingPermissions) > 0 {
+		head := t.pendingPermissions[0]
+		pending = &head
+	}
 	t.mu.Unlock()
 
-	// Route to AnswerPermission when a permit prompt is pending.
+	// Route to AnswerPermission when a permit prompt is pending: the
+	// oldest one, under its own call id.
 	if pending != nil {
 		decision, scope, label := decodePermissionAnswer(line)
 		t.mu.Lock()
 		t.ensureBlankBefore()
 		t.scrollback = append(t.scrollback, "→ "+label)
-		t.pendingPermission = nil
+		t.dropPermission(pending.CallID)
+		if len(t.pendingPermissions) > 0 {
+			t.scrollback = append(t.scrollback,
+				fmt.Sprintf("[permission] next: %s", sanitizeAgentText(t.pendingPermissions[0].Tool)))
+		}
 		t.mu.Unlock()
 		if t.Client != nil {
 			_ = t.Client.Send(context.Background(), control.AnswerPermission{
@@ -717,6 +738,14 @@ func (t *TUI) handleTab() {
 	}
 	t.input = []rune(chosen)
 	t.popupIdx = 0
+}
+
+// dropPermission removes the queued prompt for id, if any. Caller holds
+// t.mu.
+func (t *TUI) dropPermission(id ids.CallID) {
+	t.pendingPermissions = slices.DeleteFunc(t.pendingPermissions, func(p control.PermissionRequested) bool {
+		return p.CallID == id
+	})
 }
 
 // decodePermissionAnswer maps the user's typed answer to a Decision +
@@ -1203,7 +1232,7 @@ func (t *TUI) drawInput(boxed bool) {
 		indicator = fmt.Sprintf("[scrolled -%d, End to follow]  ", t.scrollOffset)
 	}
 	prompt := "> "
-	if t.pendingPermission != nil {
+	if len(t.pendingPermissions) > 0 {
 		prompt = "permit? [y/a/t/N] "
 	}
 	if !boxed {

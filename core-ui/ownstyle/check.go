@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
@@ -510,7 +511,8 @@ func (c *checker) checkSelector(r *Rule) {
 		t := prel[i]
 		switch {
 		case t.Type == TokenDelim && t.Text == "." && i+1 < len(prel) && prel[i+1].Type == TokenIdent:
-			if isKitClass(prel[i+1].Text) {
+			// The name as the browser reads it: .\66 ui-card is .fui-card.
+			if isKitClass(cssUnescape(prel[i+1].Text)) {
 				c.report(Diagnostic{
 					Rule:     RuleKitClassSelector,
 					Severity: SeverityError,
@@ -521,22 +523,18 @@ func (c *checker) checkSelector(r *Rule) {
 				})
 			}
 		case t.Type == TokenOpenSquare:
-			// The first ident inside the brackets is the attribute name.
-			for j := i + 1; j < len(prel) && prel[j].Type != TokenCloseSquare; j++ {
-				if prel[j].Type == TokenIdent {
-					//gofastr:allow(layerprefix) the owned-style checker names the kit attribute prefix to bar an app sheet from it
-					if n := prel[j].Text; strings.HasPrefix(n, "data-cui-") || strings.HasPrefix(n, "data-fui-") || strings.HasPrefix(n, "data-hui-") {
-						c.report(Diagnostic{
-							Rule:     RuleKitClassSelector,
-							Severity: SeverityError,
-							Line:     t.Line,
-							Col:      t.Col,
-							Message: fmt.Sprintf("[%s] is a runtime attribute, not a styling hook; scope owners reach their own markup only",
-								prel[j].Text),
-						})
-					}
-					break
-				}
+			j := i + 1
+			for j < len(prel) && prel[j].Type != TokenCloseSquare {
+				j++
+			}
+			if msg := kitAttrSelector(significantTokens(prel[i+1 : j])); msg != "" {
+				c.report(Diagnostic{
+					Rule:     RuleKitClassSelector,
+					Severity: SeverityError,
+					Line:     t.Line,
+					Col:      t.Col,
+					Message:  msg,
+				})
 			}
 		}
 	}
@@ -969,4 +967,140 @@ func isScopeCompound(comp []Token) bool {
 func isKitClass(name string) bool {
 	//gofastr:allow(layerprefix) the owned-style checker names kit classes to bar an app sheet from them
 	return strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-") || strings.HasPrefix(name, "fui-")
+}
+
+// kitPrefixes are the kit's class prefixes, isKitClass's list.
+//
+//gofastr:allow(layerprefix) the owned-style checker names the kit prefixes to bar an app sheet from them
+var kitPrefixes = []string{"cui-", "hui-", "fui-"}
+
+// kitAttrSelector judges the tokens inside one [ ] and returns the
+// GOFASTR1810 message when the selector reaches kit markup, else "".
+// Attribute names fold to ASCII lower case, as HTML's do. Two shapes
+// reach the kit: a runtime attribute ([data-cui-*], [data-fui-*],
+// [data-hui-*]) and a class attribute match whose value names a kit
+// class or prefix: [class~="fui-card"], [class^="fui-"], [class|="hui"],
+// [class*="ui-"]. A class match on an app name ([class*="card"]) stays
+// quiet: it may also hit a kit class, but so may any type selector.
+func kitAttrSelector(sig []Token) string {
+	// Skip a namespace prefix: [*|class], [svg|class].
+	if len(sig) >= 3 && sig[1].Type == TokenDelim && sig[1].Text == "|" &&
+		(sig[0].Type == TokenIdent || (sig[0].Type == TokenDelim && sig[0].Text == "*")) && sig[2].Type == TokenIdent {
+		sig = sig[2:]
+	}
+	if len(sig) == 0 || sig[0].Type != TokenIdent {
+		return ""
+	}
+	name := asciicase.Lower(cssUnescape(sig[0].Text))
+	//gofastr:allow(layerprefix) the owned-style checker names the kit attribute prefix to bar an app sheet from it
+	if strings.HasPrefix(name, "data-cui-") || strings.HasPrefix(name, "data-fui-") || strings.HasPrefix(name, "data-hui-") {
+		return fmt.Sprintf("[%s] is a runtime attribute, not a styling hook; scope owners reach their own markup only", sig[0].Text)
+	}
+	if name != "class" {
+		return ""
+	}
+	op, rest := "", sig[1:]
+	switch {
+	case len(rest) >= 2 && rest[0].Type == TokenDelim && strings.Contains("~|^$*", rest[0].Text) &&
+		rest[1].Type == TokenDelim && rest[1].Text == "=":
+		op, rest = rest[0].Text+"=", rest[2:]
+	case len(rest) >= 1 && rest[0].Type == TokenDelim && rest[0].Text == "=":
+		op, rest = "=", rest[1:]
+	}
+	if op == "" || len(rest) == 0 {
+		return ""
+	}
+	var value string
+	switch rest[0].Type {
+	case TokenIdent:
+		value = cssUnescape(rest[0].Text)
+	case TokenString:
+		value = cssUnescape(stripStringEscapedNewlines(rest[0].Text[1 : len(rest[0].Text)-1]))
+	default:
+		return ""
+	}
+	if len(rest) > 1 && rest[1].Type == TokenIdent && asciicase.Lower(rest[1].Text) == "i" {
+		value = asciicase.Lower(value)
+	}
+	if !classValueReachesKit(op, value) {
+		return ""
+	}
+	return fmt.Sprintf("[class%s%s] matches a kit class (.cui-*, .hui-*, .fui-*); style the content you pass into the slot instead",
+		op, rest[0].Text)
+}
+
+// classValueReachesKit reports whether [class<op>value] can match an
+// element by one of its kit classes.
+func classValueReachesKit(op, value string) bool {
+	fields := strings.Fields(value)
+	if slices.ContainsFunc(fields, isKitClass) {
+		return true
+	}
+	if len(fields) == 0 {
+		return false
+	}
+	last := fields[len(fields)-1]
+	switch op {
+	case "|=":
+		// [class|="fui"] matches "fui" and every "fui-…".
+		return slices.Contains(kitPrefixes, value+"-")
+	case "^=":
+		// The value's last word may be the start of a kit class.
+		return slices.ContainsFunc(kitPrefixes, func(p string) bool { return strings.HasPrefix(p, last) })
+	case "*=":
+		// A substring anywhere: a fragment of a prefix ("fui", "ui-") also
+		// lands inside every kit class under it.
+		return len(last) >= 2 && slices.ContainsFunc(kitPrefixes, func(p string) bool { return strings.Contains(p, last) })
+	}
+	return false
+}
+
+// stripStringEscapedNewlines drops the backslash-newline pairs a CSS
+// string uses to continue a line; they stand for nothing.
+func stripStringEscapedNewlines(s string) string {
+	for _, nl := range []string{"\\\r\n", "\\\n", "\\\r", "\\\f"} {
+		s = strings.ReplaceAll(s, nl, "")
+	}
+	return s
+}
+
+// cssUnescape decodes the escapes in a raw ident or string body the way
+// the CSS syntax spec consumes them: a backslash and one to six hex
+// digits (plus one whitespace after them) is that code point, U+FFFD for
+// zero, a surrogate or anything past U+10FFFF; a backslash and any other
+// character is that character. Tokens keep their raw text, so a check on
+// a name decodes it first: .\66 ui-card names the class fui-card.
+func cssUnescape(raw string) string {
+	if !strings.Contains(raw, `\`) {
+		return raw
+	}
+	var b strings.Builder
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' || i+1 == len(raw) {
+			b.WriteByte(raw[i])
+			continue
+		}
+		n := 0
+		for n < 6 && i+1+n < len(raw) && strings.IndexByte("0123456789abcdefABCDEF", raw[i+1+n]) >= 0 {
+			n++
+		}
+		if n == 0 {
+			r, size := utf8.DecodeRuneInString(raw[i+1:])
+			b.WriteRune(r)
+			i += size
+			continue
+		}
+		cp, _ := strconv.ParseUint(raw[i+1:i+1+n], 16, 32)
+		if cp == 0 || cp > utf8.MaxRune || (cp >= 0xD800 && cp <= 0xDFFF) {
+			cp = utf8.RuneError
+		}
+		b.WriteRune(rune(cp))
+		i += n
+		if rest := raw[i+1:]; strings.HasPrefix(rest, "\r\n") {
+			i += 2
+		} else if rest != "" && strings.IndexByte(" \t\n\r\f", rest[0]) >= 0 {
+			i++
+		}
+	}
+	return b.String()
 }

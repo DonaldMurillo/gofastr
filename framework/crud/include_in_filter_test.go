@@ -340,3 +340,64 @@ CREATE TABLE nest_replies (
 		}
 	}
 }
+
+// A third mention repeating the second's filter set found that set on
+// the first node's record and appended it to the first node, ANDing
+// status=draft with status=archived there, so the draft comments
+// vanished (bug hunt r7 R7-075). An unfiltered mention after a filtered
+// one merged into the filtered node the same way and lost the rest. Each
+// filter set, the empty one included, maps to the node that holds it.
+func TestIncludeRepeatKeepsItsOwnNode(t *testing.T) {
+	ddl := `
+CREATE TABLE rep_posts (
+	id    TEXT PRIMARY KEY,
+	title TEXT
+);
+CREATE TABLE rep_comments (
+	id      TEXT PRIMARY KEY,
+	post_id TEXT NOT NULL,
+	status  TEXT
+);
+`
+	postCfg := makeEntityConfig("rep_posts", "rep_posts", "",
+		[]schema.Field{{Name: "title", Type: schema.String}},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{entity.HasMany("comments", "rep_comments", "post_id")}
+		},
+	)
+	commentCfg := makeEntityConfig("rep_comments", "rep_comments", "",
+		[]schema.Field{
+			{Name: "post_id", Type: schema.String, Required: true},
+			{Name: "status", Type: schema.String},
+		},
+	)
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	commentEnt := entity.Define(commentCfg.Table, commentCfg)
+	commentEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	reg.add(t, commentEnt)
+	ch.Registry = reg
+	seedRows(t, db, "rep_posts", []map[string]any{{"id": "p1", "title": "post"}})
+	seedRows(t, db, "rep_comments", []map[string]any{
+		{"id": "dr1", "post_id": "p1", "status": "draft"},
+		{"id": "ar1", "post_id": "p1", "status": "archived"},
+		{"id": "li1", "post_id": "p1", "status": "live"},
+	})
+	for include, want := range map[string][]string{
+		"comments(status=draft),comments(status=archived),comments(status=archived)": {"dr1", "ar1"},
+		"comments(status=draft),comments":                                            {"dr1", "ar1", "li1"},
+	} {
+		req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/rep_posts?include=" + include, UserID: "u1"})
+		rr := httptest.NewRecorder()
+		ch.List()(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", include, rr.Code, rr.Body.String())
+		}
+		for _, id := range want {
+			if got := strings.Count(rr.Body.String(), `"`+id+`"`); got != 1 {
+				t.Errorf("%s: comment %s appears %d times, want 1. Body: %s", include, id, got, rr.Body.String())
+			}
+		}
+	}
+}

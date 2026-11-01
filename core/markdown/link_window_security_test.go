@@ -23,14 +23,16 @@ func TestNestedLinksShareIndex(t *testing.T) {
 	}
 }
 
-// TestLinkWindowStopsAtItsEnd: inside emphasis, a ']' or ')' past the
-// emphasis content belongs to the outer text, so the shared index must
-// not hand it to the window.
+// TestLinkWindowStopsAtItsEnd: inside link text, a ')' past the text
+// belongs to the outer link, so the shared index must not hand it to the
+// window. A link binds tighter than emphasis (CommonMark), so a '*' in a
+// link's text or URL closes no emphasis opened before the link.
 func TestLinkWindowStopsAtItsEnd(t *testing.T) {
 	for in, want := range map[string]string{
-		"*[a*](u)":    "<p><em>[a</em>](u)</p>",
-		"*[a](b*)":    "<p><em>[a](b</em>)</p>",
-		"*[*a*](b)*":  "<p><em>[</em>a<em>](b)</em></p>",
+		"[[a](b](c)":  `<p><a href="c">[a](b</a></p>`,
+		"*[a*](u)":    `<p>*<a href="u">a*</a></p>`,
+		"*[a](b*)":    `<p>*<a href="b*">a</a></p>`,
+		"*[*a*](b)*":  `<p><em><a href="b"><em>a</em></a></em></p>`,
 		"[[a](b)](c)": `<p><a href="c"><a href="b">a</a></a></p>`,
 	} {
 		if got := strings.TrimSpace(string(RenderHTML(in))); got != want {

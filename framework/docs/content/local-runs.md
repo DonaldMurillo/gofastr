@@ -9,7 +9,8 @@ lists the runs in the browser and serves them to agents over MCP.
 
 ## What a run writes
 
-`App.Start` writes the record once the port is held, the same moment
+`App.Start` writes the record (for a run that registers; see [Which
+runs register](#which-runs-register)) once the port is held, the same moment
 `OnReady` hooks fire, and removes it as `Start` returns, which happens
 as soon as `Shutdown` begins. Only `App.Start` writes one: an app that
 serves `App.Router()` from its own `http.Server` has no record.
@@ -94,11 +95,31 @@ elsewhere the app's own auth applies.
 sets the fields the App cannot know itself. Call it before `Start`.
 `battery/service` calls it for you.
 
+## Which runs register
+
+The registry is for tools on the same machine, so only a local run
+writes a record by default:
+
+- a run under `gofastr dev`, or one a host marked with
+  `SetLocalRunInfo` (`battery/service` does), wherever it binds;
+- any other app whose listener is on a loopback address
+  (`127.0.0.1`, `::1`, `localhost:<port>`).
+
+A server bound to every interface (`:8080`, `0.0.0.0`) or to a LAN
+address is a deployment, such as a container or a VM. It writes
+nothing, because no local tool reads its record and its home directory
+is often missing or read-only. `GOFASTR_RUNS=on` (also `1`, `true`,
+`yes`) registers any run. `GOFASTR_RUNS_DIR` only says where the
+registry is.
+
 ## Opting out
 
 `GOFASTR_RUNS=off` (also `0`, `false`, `no`) keeps a process out of the
-registry; listing still works. A failure to write is logged as a
-warning naming that opt-out, and the app serves anyway.
+registry; listing still works. A failure to write is logged and the app
+serves anyway: at debug level for a run that registered on its own, as
+a warning naming the opt-out when `GOFASTR_RUNS=on` asked for it. In Go
+the variable's name is `localrun.EnvRuns` (`localrun.EnvOff` is the
+same constant under its older name).
 
 Test binaries never register unless `GOFASTR_RUNS_DIR` is set, so a
 test that starts an App does not write into the real registry. Neither

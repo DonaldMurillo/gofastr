@@ -479,6 +479,14 @@ the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
 path. See "Redaction implication" below for the surfaces this covers.
 
+The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
+its form values cleaned (entity-declarations.md, "Blank form values"),
+so a form post's `""`, `"2"` and `"true"` fit an `*int64` or `bool`
+field. A value that still does not fit `T` fails the write with a 400
+whose message says a value does not match its field's type. The
+`encoding/json` detail, which names your struct, stays in the Go error
+and never reaches the response.
+
 A JSON number in a `map[string]any` or `any` field of `T` arrives as an
 `int64` when it is an integer and a `float64` otherwise, and merges back
 into the body the same way, so an id above 2^53 survives the hook

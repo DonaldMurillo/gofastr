@@ -133,7 +133,7 @@ operators care about:
 | `gofastr_log_post_stop_drops_total`          | Entries dropped because sinks were closed (post-Shutdown writes).  |
 | `gofastr_log_sink_write_failures_total`      | Entries dropped because a sink's Write returned an error.          |
 | `gofastr_log_webhook_dropped_total`          | Entries dropped from webhook queues under backpressure.            |
-| `gofastr_log_webhook_gave_up_total`          | Webhook batches given up after exhausting MaxRetries.              |
+| `gofastr_log_webhook_gave_up_total`          | Webhook batches given up: MaxRetries exhausted, or a 3xx/4xx.      |
 
 Read them programmatically:
 
@@ -239,8 +239,10 @@ POSTs a JSON envelope `{"entries":[<entry>, <entry>, ...]}` to `url`.
 - Bounded queue (default 1000 entries). When full, drop-oldest: the
   webhook sink will **never** block the request path.
 - Retry with exponential backoff on 5xx / transport errors, up to
-  `MaxRetries` (default 3). 4xx is treated as a hard failure (the
-  receiver said "no", retrying won't help).
+  `MaxRetries` (default 3). A 3xx or 4xx is a hard failure: the batch
+  is posted once and dropped (the receiver said "no", and redirects
+  are refused, so retrying won't help). It counts toward
+  `gofastr_log_webhook_gave_up_total`.
 - `Headers` lets you inject auth (`Authorization: Bearer …`) or routing
   hints. `Content-Type` is forced to `application/json`.
 - `Close` flushes pending entries before returning (App.Stop awaits it).

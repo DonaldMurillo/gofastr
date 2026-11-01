@@ -89,6 +89,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	if err != nil {
 		return err
 	}
+	g.open = append([]string(nil), b.cfg.OpenPrefixes...)
 	// The signed-in browser is the OS user the service runs as: the
 	// gate puts that local identity on every request it lets through
 	// (unless battery/auth owns identity; see Init).
@@ -123,7 +124,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		// gate refuses everything.
 		if _, p, err := net.SplitHostPort(addr); err == nil {
 			if port, err := strconv.Atoi(p); err == nil {
-				g.pin(port, b.cfg.AllowHosts)
+				g.pin(port, b.extraHosts(port))
 			}
 		}
 		select {
@@ -142,7 +143,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	// browser sign-in gate.
 	app.SetLocalRunInfo(framework.LocalRunInfo{Service: b.cfg.ID, MCPCommand: rt.MCPCommand(), Dev: mode.dev})
 
-	listen := "127.0.0.1:" + strconv.Itoa(mode.port)
+	listen := net.JoinHostPort(b.bindHost(), strconv.Itoa(mode.port))
 	startErr := make(chan error, 1)
 	go func() { startErr <- app.Start(listen) }()
 
@@ -158,19 +159,25 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		b.drain(app, log)
 		return fmt.Errorf("service: %s did not report ready within %s", b.cfg.Name, readyTimeout)
 	}
-	if host, _, err := net.SplitHostPort(addr); err != nil || host != "127.0.0.1" {
+	if host, _, err := net.SplitHostPort(addr); err != nil || !b.boundHostOK(host) {
 		b.drain(app, log)
-		return fmt.Errorf("service: the app bound %q; the service host requires 127.0.0.1", addr)
+		return fmt.Errorf("service: the app bound %q; the service host asked for %s (Config.BindAddress)", addr, b.bindHost())
 	}
 
 	stop := make(chan struct{}, 1)
 	started := time.Now().UTC()
-	cs := &controlServer{ln: ctl, log: log, handle: b.controlHandler(g, addr, mode.dev, started, stop),
+	cs := &controlServer{ln: ctl, log: log, handle: b.controlHandler(g, browserAddr(addr), mode.dev, started, stop),
 		mcp: mcpSession(app.MCP, g.user)}
 	go cs.serve()
 
 	if len(b.cfg.AllowHosts) > 0 {
 		log.Warn("service: extra Host values accepted (Config.AllowHosts)", "hosts", b.cfg.AllowHosts)
+	}
+	if b.cfg.BindAddress != "" && !isLoopbackIP(b.cfg.BindAddress) {
+		log.Warn("service: listening beyond this machine's loopback; other machines and containers can reach the app (Config.BindAddress)", "addr", addr)
+	}
+	if len(g.open) > 0 {
+		log.Warn("service: these paths answer without the browser sign-in; the app's own auth must protect them (Config.OpenPrefixes)", "prefixes", g.open)
 	}
 	if b.cfg.InsecureTokenInURL {
 		log.Warn("service: sign-in tokens may be printed as URLs (Config.InsecureTokenInURL); they pass through argv and browser history")
@@ -211,9 +218,13 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	// after the drain, not before: a stop waiting on it then sees
 	// "gone" only once the App has let go of the port and the database.
 	cs.endMCP(time.Now().Add(mcpStopWait))
-	if err := b.drainUntil(app, log, deadline); err != nil && runErr == nil {
-		runErr = err
-	}
+	// A drain that overruns or an OnStop error is logged and does not
+	// change the exit code of a requested stop: under
+	// launchd's KeepAlive SuccessfulExit=false (and systemd's
+	// Restart=on-failure) an exit 1 would restart the daemon that
+	// `service stop` just stopped. Only a server that ended on its own
+	// exits non-zero.
+	b.drainUntil(app, log, deadline)
 	cs.closeUntil(deadline)
 	t := time.NewTimer(time.Until(deadline))
 	defer t.Stop()
@@ -225,19 +236,18 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 }
 
 // drain shuts the App down with a bounded context.
-func (b *Battery) drain(app *framework.App, log *slog.Logger) error {
-	return b.drainUntil(app, log, time.Now().Add(stopTimeout))
+func (b *Battery) drain(app *framework.App, log *slog.Logger) {
+	b.drainUntil(app, log, time.Now().Add(stopTimeout))
 }
 
-// drainUntil is drain with a deadline the caller shares.
-func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time.Time) error {
+// drainUntil is drain with a deadline the caller shares. An incomplete
+// drain is logged, not returned: see the stop path in serveLocked.
+func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time.Time) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	if err := app.Shutdown(ctx); err != nil {
 		log.Error("service: graceful shutdown incomplete", "error", err)
-		return fmt.Errorf("service: shutdown: %w", err)
 	}
-	return nil
 }
 
 // controlHandler answers the control channel's ops.

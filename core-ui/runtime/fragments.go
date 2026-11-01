@@ -241,8 +241,10 @@ var moduleAttrs = map[string][]string{
 		// startDrag lives in src/desktop.js; the drag itself is native
 		// (performWindowDragWithEvent: through the script message
 		// channel), which is why the listener is here and not in the
-		// widget/dismiss modules.
+		// widget/dismiss modules. data-cui-window-no-drag marks a
+		// subtree inside the handle that keeps its clicks.
 		"data-cui-window-drag",
+		"data-cui-window-no-drag",
 	},
 	"activelink": {
 		// data-cui-activelink hands a link's first-paint mark to the

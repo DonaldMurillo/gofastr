@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -24,6 +25,10 @@ import (
 
 // RangeSliderConfig configures a RangeSlider.
 type RangeSliderConfig struct {
+	// Ctx carries the per-request context the component's own words
+	// (the thumbs' names) are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Name is the form-field base name (required). Two inputs ship:
 	// Name+"-min" and Name+"-max".
 	Name string
@@ -97,7 +102,7 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
 		Parts:      parts,
-		Strings:    StringsFor(nil),
+		Strings:    StringsFor(cfg.Ctx),
 	}, rangeSliderClasses))
 }
 

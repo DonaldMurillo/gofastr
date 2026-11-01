@@ -186,3 +186,26 @@ func TestLikeClauseFoldsCase(t *testing.T) {
 		t.Fatalf("where like = %q %v", c.SQL, c.Args)
 	}
 }
+
+// Go parses year 0000; Postgres refuses it ("date/time field value out
+// of range"), so a filter of 0000-01-01 answered 500 there and 200 on
+// SQLite (bug hunt r7 R7-076). It is refused as a value of the wrong
+// type, and so is a timestamp whose UTC instant falls in year 0.
+func TestYearZeroFilterRefused(t *testing.T) {
+	for _, c := range []struct {
+		t   schema.FieldType
+		raw string
+	}{
+		{schema.Date, "0000-01-01"},
+		{schema.Timestamp, "0000-06-01T00:00:00Z"},
+		{schema.Timestamp, "0000-06-01"},
+		{schema.Timestamp, "0001-01-01T00:30:00+01:00"},
+	} {
+		if v, err := CoerceValue("at", c.t, c.raw); err == nil {
+			t.Errorf("CoerceValue(%s, %q) = %#v, want refused", fieldTypeName(c.t), c.raw, v)
+		}
+	}
+	if _, err := CoerceValue("at", schema.Date, "0001-01-01"); err != nil {
+		t.Errorf("year 1 date refused: %v", err)
+	}
+}

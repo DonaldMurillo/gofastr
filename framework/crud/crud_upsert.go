@@ -109,11 +109,6 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				}
 			}
 		}
-		if ch.Hooks != nil {
-			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
-				return &beforeHookError{err: err}
-			}
-		}
 		// Blank form values go first, as on create and update: a "" for a
 		// number is a blank control, not a value to coerce. They are read
 		// as a create's until the arm is known below. A key column keeps
@@ -124,7 +119,20 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		s.Fields = slices.DeleteFunc(slices.Clone(s.Fields), func(f schema.Field) bool {
 			return slices.Contains(keys, f.Name)
 		})
-		blanked := dropEmptyFormValues(s, body, false)
+		var blanked []string
+		if ch.Hooks != nil {
+			// As on create: a typed hook decodes the cleaned body. A
+			// blank the hook then sets is a value, not a blank.
+			blanked = ch.coerceBeforeHooks(s, body, false)
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
+				return &beforeHookError{err: err}
+			}
+			blanked = slices.DeleteFunc(blanked, func(name string) bool {
+				_, set := body[name]
+				return set
+			})
+		}
+		blanked = append(blanked, dropEmptyFormValues(s, body, false)...)
 		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}

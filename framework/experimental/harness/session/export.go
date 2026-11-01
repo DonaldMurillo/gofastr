@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/internal/jsonredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -34,7 +35,8 @@ const (
 
 // ExportBundle writes a zip archive containing:
 //
-//   - bundle.json:     manifest (session ID, profile, version, redact level)
+//   - bundle.json:     manifest (session ID, profile, version, redact level,
+//     skipped_events: events whose stored payload would not encode)
 //   - events.jsonl:    one canonical event envelope per line
 //   - redactions.txt:  only at RedactMaintainer; counts per pattern
 //   - meta.json:       extra metadata (profile, model, turn count)
@@ -77,19 +79,6 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		_ = f.Close()
 	}()
 
-	// Manifest.
-	manifest := map[string]any{
-		"schema_version": 1,
-		"session_id":     string(e.Session),
-		"profile":        e.Profile,
-		"model":          e.Model,
-		"redact_level":   levelString(e.Level),
-		"exported_at":    time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := writeJSON(zw, "bundle.json", manifest); err != nil {
-		return "", err
-	}
-
 	// Events, page by page: a store caps one EventsSince call (SQLite
 	// at 10,000 rows), so a single call exported a long session minus
 	// its tail. Read until a page comes back empty, not merely short:
@@ -100,6 +89,7 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		return "", err
 	}
 	var since uint64
+	skipped := 0
 	for {
 		events, err := e.Store.EventsSince(ctx, e.Session, since, exportPage)
 		if err != nil {
@@ -112,6 +102,9 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 			out := applyExportRedaction(env, e.Level, report)
 			body, err := json.Marshal(out)
 			if err != nil {
+				// A payload stored unparseable cannot go into the
+				// JSONL. Skip it, and say how many in the manifest.
+				skipped++
 				continue
 			}
 			if _, err := jsonl.Write(append(body, '\n')); err != nil {
@@ -125,6 +118,21 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("session export: EventsSince returned id %d after %d", last, since)
 		}
 		since = last
+	}
+
+	// Manifest, written after the events so it can count the ones
+	// that could not be exported.
+	manifest := map[string]any{
+		"schema_version": 1,
+		"session_id":     string(e.Session),
+		"profile":        e.Profile,
+		"model":          e.Model,
+		"redact_level":   levelString(e.Level),
+		"exported_at":    time.Now().UTC().Format(time.RFC3339),
+		"skipped_events": skipped,
+	}
+	if err := writeJSON(zw, "bundle.json", manifest); err != nil {
+		return "", err
 	}
 
 	// Maintainer report.
@@ -178,11 +186,21 @@ func applyExportRedaction(env control.EventEnvelope, level RedactLevel, report *
 		return env
 	}
 	if level == RedactMaintainer {
-		new, hits := deepRedact(string(env.Payload))
-		for k, v := range hits {
-			report.Counts[k] += v
+		// Redact the decoded strings, not the serialized JSON: a match
+		// that starts inside a \u003c escape leaves an invalid escape
+		// behind and the event no longer parses.
+		redact := func(text string) string {
+			out, hits := deepRedact(text)
+			for k, v := range hits {
+				report.Counts[k] += v
+			}
+			return out
 		}
-		env.Payload = []byte(new)
+		if out, ok := jsonredact.Strings(env.Payload, redact); ok {
+			env.Payload = out
+		} else {
+			env.Payload = []byte(redact(string(env.Payload)))
+		}
 	}
 	return env
 }

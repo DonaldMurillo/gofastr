@@ -300,8 +300,11 @@ func validateTimestamp(value any) error {
 	if !ok {
 		return violate(ReasonNotString, nil)
 	}
-	_, err := time.Parse(time.RFC3339, s)
-	if err != nil {
+	ts, err := time.Parse(time.RFC3339, s)
+	// Go reads year 0000; Postgres refuses it as out of range, so the
+	// write failed there as a 500. crud stores the UTC instant, so that
+	// is the year checked.
+	if err != nil || ts.UTC().Year() < 1 {
 		return violate(ReasonNotTimestamp, nil)
 	}
 	return nil
@@ -314,8 +317,9 @@ func validateDate(value any) error {
 	if !ok {
 		return violate(ReasonNotString, nil)
 	}
-	_, err := time.Parse("2006-01-02", s)
-	if err != nil {
+	d, err := time.Parse("2006-01-02", s)
+	// Year 0000 parses in Go and is out of range on Postgres.
+	if err != nil || d.Year() < 1 {
 		return violate(ReasonNotDate, nil)
 	}
 	return nil

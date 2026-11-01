@@ -310,6 +310,14 @@ entities:
         type: string
         no_query: true
 
+  # A name that is not snake_case and no table: the server mounts
+  # /api/blog_post, and the generated CLI and SDK must call that route.
+  - name: BlogPost
+    crud: true
+    fields:
+      - name: title
+        type: string
+
   # Per-verb roles on an owned entity.
   - name: notes
     crud: true

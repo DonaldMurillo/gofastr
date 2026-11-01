@@ -31,25 +31,43 @@
     }
   }, { threshold: 0.1 });
 
-  const setupOne = (el) => {
+  // painted: the element has already been on screen. The module loads
+  // after first paint, so at the initial scan an element inside the
+  // viewport was painted visible; hiding it to fade it back in is a
+  // blink, so it is left as it is. Content scanned later (a navigation
+  // swap, an inserted island) is hidden before it paints and keeps the
+  // entrance.
+  const onScreen = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+  };
+  // The observed set is in memory, not an attribute: a cached screen
+  // replays a copy of the markup, and a copy carrying an "observed"
+  // attribute would never be observed again and stay hidden.
+  const observed = new WeakSet();
+  const setupOne = (el, painted) => {
     if (el.classList.contains(REVEALED_CLASS)) return; // already revealed
-    if (el.dataset._cuiRevealObserved) return;         // idempotent
-    el.dataset._cuiRevealObserved = '1';
+    if (observed.has(el)) return;                      // idempotent
+    observed.add(el);
+    if (painted && onScreen(el)) {
+      el.classList.add(REVEALED_CLASS);
+      return;
+    }
 
     el.classList.add(HIDDEN_CLASS);
     observer.observe(el);
   };
 
-  const scan = (root) => {
+  const scan = (root, painted) => {
     if (root.matches && root.matches('[' + REVEAL_ATTR + ']')) {
-      setupOne(root);
+      setupOne(root, painted);
     }
     const els = root.querySelectorAll('[' + REVEAL_ATTR + ']');
-    for (const el of els) setupOne(el);
+    for (const el of els) setupOne(el, painted);
   };
 
-  // Initial scan
-  scan(document);
+  // Initial scan: the document has painted by now.
+  scan(document, true);
 
   // SPA re-wire
   window.addEventListener('gofastr:navigate', () => {
@@ -59,5 +77,5 @@
   // Register module
   window.__gofastr = window.__gofastr || {};
   (window.__gofastr.loadedModules = window.__gofastr.loadedModules || {}).reveal = true;
-  (window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {}).reveal = scan;
+  (window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {}).reveal = (root) => scan(root, false);
 })();

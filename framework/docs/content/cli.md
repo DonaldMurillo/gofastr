@@ -27,9 +27,10 @@ each command to the doc that covers it.
   `.env` never relaxes a deployment. `init .` refuses to run when git
   already tracks `.env` (untrack it with `git rm --cached .env` first),
   since the new secret would land in the next commit. `init .` names the
-  project after its directory (module `local/<dir>` unless `--module` is
-  given), and refuses, writing nothing, when the directory already holds
-  a file it would replace (`main.go`, `screens.go`, `.env`,
+  project after its directory. Its module is the one an existing
+  `go.mod` declares (a `--module` that disagrees is refused), else
+  `--module`, else `local/<dir>`. It refuses, writing nothing, when the
+  directory already holds a file it would replace (`main.go`, `screens.go`, `.env`,
   `gofastr.settings.yml`, the onboarding files, and with the sample
   entity `screens_auth.go` and `entities/entities.go`); `--force`
   overwrites them, each through a temporary file renamed over the old
@@ -94,6 +95,18 @@ refuses a directory that already holds the scaffold, and with `--force`
 writes a new `.env` signing key; it is not a way to acknowledge a
 successful scaffold. For a project whose scaffold completed, continue
 with `go mod tidy` from that project directory.
+
+### When the CLI and the project disagree
+
+Every command that works on a project (all but `init`, `version`,
+`docs` and `upgrade`; never `--help` or a mistyped command) compares the
+GoFastr version the project's `go.mod` requires with the CLI's own
+release. When they differ it prints a warning on stderr with the
+`go install .../cmd/gofastr@<version>` line that fixes it, then runs the
+command anyway: generated code and checks come from the CLI's release,
+not the project's. A development build of the CLI, a `replace`
+directive for GoFastr, and the GoFastr module itself skip the check.
+`GOFASTR_NO_VERSION_CHECK=1` silences it.
 
 ## App specs
 

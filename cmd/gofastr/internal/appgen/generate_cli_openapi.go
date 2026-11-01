@@ -534,6 +534,9 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 	sort.Strings(pathKeys)
 
 	seen := map[string]string{} // command -> "METHOD path" that claimed it
+	// goSeen is the same guard on the Go name: list_1 and list1 are two
+	// commands but both emit func runOpList1, so the CLI would not compile.
+	goSeen := map[string]string{} // GoName -> `operationId "x" (METHOD path)`
 	for _, p := range pathKeys {
 		item, ok := paths[p].(map[string]any)
 		if !ok {
@@ -570,7 +573,11 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 			if oaReservedCommands[op.Command] {
 				return spec, fmt.Errorf("%s: operationId %q maps to reserved command %q; rename the operation", where, op.ID, op.Command)
 			}
+			if prev, dup := goSeen[op.GoName]; dup {
+				return spec, fmt.Errorf("%s: operationId %q and %s both derive the Go name %s, and the generated CLI would declare runOp%s twice; rename one operation", where, op.ID, prev, op.GoName, op.GoName)
+			}
 			seen[op.Command] = where
+			goSeen[op.GoName] = fmt.Sprintf("operationId %q (%s)", op.ID, where)
 			spec.Ops = append(spec.Ops, op)
 		}
 	}

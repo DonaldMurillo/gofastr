@@ -111,6 +111,14 @@
       // And re-run scanners of modules that ARE loaded so they wire
       // any newly-inserted elements (toast TTL, drop zones).
       const G = window.__gofastr;
+      // Component sheets for every insertion path, not only the swaps
+      // that scan for themselves: compiled actions (updateHTML,
+      // fetchPage) and module-written markup left theirs unloaded.
+      if (G?.scanAndLoadCSS) {
+        G.scanAndLoadCSS(node);
+        G.loadComponentCSS(node.dataset.cuiComp);
+        G.loadComponentCSS(node.dataset.cuiScope);
+      }
       if (G && G._moduleScanners) {
         for (const name in G._moduleScanners) {
           if (G.loadedModules && G.loadedModules[name]) {
@@ -294,7 +302,11 @@
   if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
     document.addEventListener('click', async (e) => {
-      if (e.target.closest('[data-cui-widget]')) return;
+      // A MOUNTED widget root (its own listener wired: __fuiW, set and
+      // cleared by the widgets module) owns its RPC clicks. SSR-inlined
+      // chrome the catalog has not mounted yet has no listener, so the
+      // bridge serves it rather than swallow the click.
+      if (e.target.closest('[data-cui-widget]')?.__fuiW) return;
       // Signal mutations win, as they did when one delegator owned both:
       // the old handler set the signal and RETURNED without consulting
       // data-cui-rpc. Two listeners would otherwise both fire on an
@@ -669,6 +681,11 @@
     // from the URL: a <link> to the bundle, or the <style> a page
     // whose head fits the first round trip carries it in.
     document.head.querySelectorAll('[data-cui-bundle]').forEach((l) => {
+      // A bundle link that failed (head sheets have settled by the time
+      // this runs) covers nothing: leave its names to the scanner. A
+      // failed sheet is an empty one (the browser still gives it a
+      // CSSStyleSheet), and a bundle is never empty.
+      if (l.tagName === 'LINK') try { if (!l.sheet || !l.sheet.cssRules.length) return; } catch (_) {}
       const names = (l.getAttribute('data-cui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
@@ -721,12 +738,18 @@
   // view fetching one record, a relation <select> fetching its options, opts
   // in by carrying data-action-mount="<actionName>" on a node inside a
   // [data-component]. Re-runs on SPA nav so a swapped-in page repopulates.
+  // Each element this pass fires is marked (_cuiM): markup inserted
+  // outside a navigation (an overlay, an island swap, widget chrome) is
+  // the actionloader module's, which fires only unmarked elements, so the
+  // swap a navigation's pass already fired is not fired again when the
+  // mutation observer hands the same nodes over a microtask later.
   const _runMountActions = (root) => {
     const G = window.__gofastr;
     if (!G || !G.trigger) return;
     const scope = root || document;
     for (const el of scope.querySelectorAll('[data-action-mount]')) {
       const action = el.getAttribute('data-action-mount');
+      el._cuiM = 1;
       if (!action) continue;
       const name = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
       if (!name) continue;

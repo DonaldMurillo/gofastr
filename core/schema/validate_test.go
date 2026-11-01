@@ -712,3 +712,24 @@ func TestJSONSchema_NoRequired(t *testing.T) {
 		t.Fatal("expected no 'required' key when no fields are required")
 	}
 }
+
+// Year 0000 parses in Go and is out of range on Postgres, so a write of
+// it failed there as a 500 (bug hunt r7 R7-076). A timestamp is checked
+// at its UTC instant, the value crud stores.
+func TestValidateYearZeroRefused(t *testing.T) {
+	for _, c := range []struct {
+		f Field
+		v string
+	}{
+		{Field{Name: "birthday", Type: Date}, "0000-01-01"},
+		{Field{Name: "created", Type: Timestamp}, "0000-06-01T00:00:00Z"},
+		{Field{Name: "created", Type: Timestamp}, "0001-01-01T00:30:00+01:00"},
+	} {
+		if err := Validate(c.f, c.v); err == nil {
+			t.Errorf("Validate(%s, %q) accepted year 0", c.f.Name, c.v)
+		}
+	}
+	if err := Validate(Field{Name: "created", Type: Timestamp}, "0001-01-01T00:00:00Z"); err != nil {
+		t.Errorf("year 1 timestamp refused: %v", err)
+	}
+}

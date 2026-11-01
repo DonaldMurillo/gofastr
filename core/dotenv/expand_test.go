@@ -45,50 +45,16 @@ func TestExpand_FallsBackToEnv(t *testing.T) {
 	mustEq(t, got, "from-env")
 }
 
-func TestExpand_NestedExpansion(t *testing.T) {
+// A looked-up value goes in as stored: it is not expanded a second
+// time, so a self-reference or a cycle has nothing to loop on.
+func TestExpand_StoredValueNotReexpanded(t *testing.T) {
 	local := map[string]string{
 		"BIN":  "/usr/bin",
 		"PATH": "${BIN}:/local",
+		"A":    "${A}",
 	}
-	got := dotenv.Expand("${PATH}", local, nil)
-	mustEq(t, got, "/usr/bin:/local")
-}
-
-// HARDENING
-
-func TestExpand_SelfReferenceTerminates(t *testing.T) {
-	// A=${A} must not loop forever; the cycle yields empty for A and
-	// the surrounding string keeps going.
-	got := dotenv.Expand("[${A}]", map[string]string{"A": "${A}"}, nil)
-	mustEq(t, got, "[]")
-}
-
-func TestExpand_MutualCycleTerminates(t *testing.T) {
-	local := map[string]string{
-		"A": "${B}",
-		"B": "${A}",
-	}
-	got := dotenv.Expand("[${A}]", local, nil)
-	mustEq(t, got, "[]")
-}
-
-func TestExpand_DeepChainBounded(t *testing.T) {
-	// Build a chain longer than the depth cap; the cap should kick
-	// in before stack-blowing, leaving the deeper refs verbatim.
-	local := map[string]string{}
-	for i := range 50 {
-		local["K"+strings.Repeat("X", i)] = "${K" + strings.Repeat("X", i+1) + "}"
-	}
-	// Add a terminator so a depth-bounded result is meaningful.
-	local["K"+strings.Repeat("X", 50)] = "terminus"
-	got := dotenv.Expand("${K}", local, nil)
-	// We do NOT assert the exact result, only that the call returns
-	// without panic / stack overflow. The depth cap leaves the
-	// deepest unresolved name verbatim.
-	if got == "" || strings.Contains(got, "terminus") {
-		// Either is acceptable depending on depth cap; we just want
-		// to confirm termination.
-	}
+	mustEq(t, dotenv.Expand("${PATH}", local, nil), "${BIN}:/local")
+	mustEq(t, dotenv.Expand("[${A}]", local, nil), "[${A}]")
 }
 
 func TestExpand_MalformedUnclosedLeftVerbatim(t *testing.T) {
@@ -131,4 +97,70 @@ GREET="\${BASE} stays literal"
 	got, err := dotenv.Parse(strings.NewReader(in))
 	mustOK(t, err)
 	mustEq(t, got["GREET"], "${BASE} stays literal")
+}
+
+// A referenced value is already resolved: it goes in as stored, so a
+// single-quoted literal or an escaped \$ stays literal when another line
+// pulls it in.
+func TestParse_RefKeepsStoredValue(t *testing.T) {
+	in := `BASE=hello
+PW='a${BASE}c'
+DSN="postgres://u:${PW}@h/db"
+GREET="\${BASE}"
+MSG="${GREET}!"
+`
+	got, err := dotenv.Parse(strings.NewReader(in))
+	mustOK(t, err)
+	mustEq(t, got["DSN"], "postgres://u:a${BASE}c@h/db")
+	mustEq(t, got["MSG"], "${BASE}!")
+}
+
+// An escaped backslash is a literal backslash; the ${...} after it still
+// expands.
+func TestParse_BackslashThenRefExpands(t *testing.T) {
+	in := `DIR=tools
+P="C:\\${DIR}"
+`
+	got, err := dotenv.Parse(strings.NewReader(in))
+	mustOK(t, err)
+	mustEq(t, got["P"], `C:\tools`)
+}
+
+// An environment value goes in verbatim, the way a shell substitutes it.
+func TestExpand_EnvValueVerbatim(t *testing.T) {
+	env := func(k string) (string, bool) { return "$y${z}", k == "X" }
+	got := dotenv.Expand("[${X}]", map[string]string{"z": "boom"}, env)
+	mustEq(t, got, "[$y${z}]")
+}
+
+// Each double-quoted escape reads as one character; any other character
+// after a backslash keeps the backslash.
+func TestParse_DoubleQuotedEscapes(t *testing.T) {
+	for in, want := range map[string]string{
+		`V="a\tb"`:       "a\tb",
+		`V="a\rb"`:       "a\rb",
+		`V="a\nb"`:       "a\nb",
+		`V="a\\b"`:       `a\b`,
+		`V="say \"hi\""`: `say "hi"`,
+		`V="a\qb"`:       `a\qb`,
+		`V="${open \t"`:  "${open \t",
+	} {
+		got, err := dotenv.Parse(strings.NewReader(in + "\n"))
+		mustOK(t, err)
+		mustEq(t, got["V"], want)
+	}
+}
+
+// A double-quoted value ending in an unpaired backslash is refused.
+func TestParse_TrailingBackslashRefused(t *testing.T) {
+	if _, err := dotenv.Parse(strings.NewReader(`V="a\"` + "\n")); err == nil {
+		t.Fatal(`V="a\" parsed; want an error`)
+	}
+}
+
+// A tab after export is a separator too.
+func TestParse_ExportTabPrefix(t *testing.T) {
+	got, err := dotenv.Parse(strings.NewReader("export\tV=1\n"))
+	mustOK(t, err)
+	mustEq(t, got["V"], "1")
 }

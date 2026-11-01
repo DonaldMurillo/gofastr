@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 )
 
 // The boot handshake. The desktop host serves the app on loopback; any
@@ -115,6 +117,18 @@ func (b *Battery) gateMiddleware() func(next http.Handler) http.Handler {
 				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
 			}
+			// An open path (Config.OpenPrefixes) skips the session, never
+			// the Host pin above or the cross-site refusal here.
+			if b.openPath(r) {
+				// Only a forged write is refused: a cross-origin JSON call is
+				// preflighted, so CORS and the app's own auth decide it.
+				if handler.IsForgedCrossSiteWrite(r) {
+					i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !b.requestHasSession(r) {
 				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
@@ -154,6 +168,11 @@ func (b *Battery) requestHasSession(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// openPath reports whether r is under Config.OpenPrefixes.
+func (b *Battery) openPath(r *http.Request) bool {
+	return gatepath.Open(r, b.cfg.OpenPrefixes)
 }
 
 // setHostPin pins the gate to the listener-reported address. Called by

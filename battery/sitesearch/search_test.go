@@ -63,6 +63,26 @@ func TestExtractNoindex(t *testing.T) {
 	}
 }
 
+// "none" is noindex plus nofollow, and only a whole directive counts:
+// the substring test kept a "none" page in the index.
+func TestExtractRobotsNoneDrops(t *testing.T) {
+	for content, indexed := range map[string]bool{
+		"none":            false,
+		"NONE":            false,
+		"nofollow, none":  false,
+		"noindex":         false,
+		"all":             true,
+		"nofollow":        true,
+		"max-snippet:-1":  true,
+		"index, nofollow": true,
+	} {
+		doc := `<html><head><meta name="robots" content="` + content + `"></head><body><main><h1>X</h1></main></body></html>`
+		if _, ok, _ := Extract("/x", strings.NewReader(doc)); ok != indexed {
+			t.Errorf("robots %q: indexed = %v, want %v", content, ok, indexed)
+		}
+	}
+}
+
 // A robots tag inside content the page keeps out of the index (sample
 // markup in a docs page, a demo) does not drop the page.
 func TestExtractIgnoredNoindexKeepsPage(t *testing.T) {

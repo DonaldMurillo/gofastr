@@ -43,3 +43,20 @@ func TestSplitStatementsKeepsQuotedSemis(t *testing.T) {
 		}
 	}
 }
+
+// A multi-action rule body sits in parentheses; its semicolons belong to
+// the one CREATE RULE statement.
+func TestSplitStatementsKeepsRuleBody(t *testing.T) {
+	body := "CREATE RULE r AS ON INSERT TO t DO INSTEAD (INSERT INTO a VALUES (1); INSERT INTO b VALUES (2)); SELECT 2"
+	want := []string{"CREATE RULE r AS ON INSERT TO t DO INSTEAD (INSERT INTO a VALUES (1); INSERT INTO b VALUES (2))", "SELECT 2"}
+	if got := splitStatements(body); !slices.Equal(got, want) {
+		t.Errorf("splitStatements(%q) = %q, want %q", body, got, want)
+	}
+	// A stray closer never drives the depth negative and swallows the
+	// boundaries after it.
+	body = "SELECT 1); SELECT 2"
+	want = []string{"SELECT 1)", "SELECT 2"}
+	if got := splitStatements(body); !slices.Equal(got, want) {
+		t.Errorf("splitStatements(%q) = %q, want %q", body, got, want)
+	}
+}

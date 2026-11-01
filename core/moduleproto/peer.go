@@ -111,7 +111,13 @@ type Peer struct {
 	// takes the codec, before the counterparty can read it, so every
 	// counted response is a call the counterparty still has open.
 	respPending int
-	handlers    map[string]Handler
+	// notifyPending counts Notify writes that have not returned. A Notify
+	// whose ctx ends returns while its write stays parked on a
+	// counterparty that stopped reading; without a bound, each one (the
+	// supervisor sends a module.cancel per cancelled proxy call) parked
+	// another goroutine. Capped at maxInflight, like Call's slots.
+	notifyPending int
+	handlers      map[string]Handler
 	// cancels maps an inbound-request id to every handler currently serving
 	// it. A counterparty is free to reuse ids; nothing on the wire forbids
 	// it, so this cannot be a 1:1 map: keyed by id alone, a second request
@@ -126,6 +132,15 @@ type Peer struct {
 	closeOnce sync.Once
 	closeCh   chan struct{} // closed once on Close(); unblocks in-flight Calls
 	done      chan struct{} // closed when read loop exits
+
+	// serveCtx is the parent of every inbound handler's context, and
+	// stopServing cancels it. Close, a terminal fault and the read loop's
+	// exit each call stopServing, which is idempotent. Close used to cancel
+	// handlers itself after flipping closed, but setFatal flips closed too,
+	// so a Close after a protocol fault returned before its cancel loop and
+	// a handler waiting on ctx.Done() lived on with whatever it held.
+	serveCtx    context.Context
+	stopServing context.CancelFunc
 
 	fatalMu sync.Mutex
 	fatal   error         // first terminal protocol fault, if any
@@ -199,6 +214,7 @@ func NewPeer(codec *Codec, role Role, opts ...PeerOption) *Peer {
 		done:             make(chan struct{}),
 		fatalCh:          make(chan struct{}),
 	}
+	p.serveCtx, p.stopServing = context.WithCancel(context.Background())
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -262,6 +278,9 @@ func (p *Peer) setFatal(err error) {
 		// when FatalDone fires, which ends the transport, lets a blocked
 		// read loop exit, and closes p.done.
 		p.closed.Store(true)
+		// The peer serves nothing more (dispatch drops every frame after a
+		// fault), so the handlers it is serving have no one to answer.
+		p.stopServing()
 	}
 }
 
@@ -307,8 +326,8 @@ func (p *Peer) Call(ctx context.Context, method string, params any) (json.RawMes
 // synchronously, exactly once, after the id is allocated and the pending
 // entry registered but BEFORE the request frame is written; it must not
 // block (arm a goroutine if the observer needs to wait on anything). It is
-// not invoked when no id was allocated (peer closed, empty method,
-// inflight cap).
+// not invoked when no id was allocated (peer closed, empty method, ctx
+// already done, inflight cap).
 //
 // This is the seam origination-side cancellation needs: module.cancel names
 // the INBOUND frame id on the serving peer, so a supervisor that wants to
@@ -326,6 +345,11 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 	}
 	if method == "" {
 		return nil, fmt.Errorf("moduleproto: empty method")
+	}
+	// A ctx that already ended allocates no id: onID would arm a cancel
+	// watcher, one more module.cancel write, for a frame never sent.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	// Inflight cap. Call-local error, not a protocol fault.
@@ -457,12 +481,21 @@ func answerResult(f *Frame) (json.RawMessage, error) {
 // receive side, but the origination side is the supervisor's policy (only the
 // host sends module.cancel). Notify itself places no role restriction; the
 // policy lives above the codec.
+//
+// When ctx ends first Notify returns ctx.Err() while the write carries on in
+// the background. Those pending writes are capped at the inflight limit
+// ([WithMaxInflight]): past it Notify returns [ErrInflightCap] without
+// writing, so a counterparty that stopped reading cannot accumulate one
+// parked goroutine per notification.
 func (p *Peer) Notify(ctx context.Context, method string, params any) error {
 	if p.closed.Load() {
 		return ErrClosed
 	}
 	if method == "" {
 		return fmt.Errorf("moduleproto: empty method")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	paramsRaw, err := marshalParams(params)
 	if err != nil {
@@ -473,11 +506,22 @@ func (p *Peer) Notify(ctx context.Context, method string, params any) error {
 		Method:  method,
 		Params:  paramsRaw,
 	}
-	// Notify honors ctx only for the case where the peer is shutting down;
-	// the write itself is synchronous and bounded by max_frame_bytes.
+	p.mu.Lock()
+	if p.notifyPending >= p.maxInflight {
+		p.mu.Unlock()
+		return ErrInflightCap
+	}
+	p.notifyPending++
+	p.mu.Unlock()
+	// The write has no deadline, so it runs in its own goroutine and
+	// keeps its notifyPending slot until it returns.
 	done := make(chan error, 1)
 	go func() {
-		done <- p.codec.WriteFrame(frame)
+		err := p.codec.WriteFrame(frame)
+		p.mu.Lock()
+		p.notifyPending--
+		p.mu.Unlock()
+		done <- err
 	}()
 	select {
 	case <-ctx.Done():
@@ -504,22 +548,14 @@ func (p *Peer) Notify(ctx context.Context, method string, params any) error {
 // process; (3) waits. That sequence is the design's Close = stdin.Close →
 // Kill → Wait (§4.6 lift list) and lives above this package.
 func (p *Peer) Close() error {
-	if !p.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	// Cancel any in-flight inbound handlers so they don't linger.
-	p.mu.Lock()
-	for id, slots := range p.cancels {
-		for _, slot := range slots {
-			slot.cancel()
-		}
-		delete(p.cancels, id)
-	}
-	p.mu.Unlock()
+	p.closed.Store(true)
+	// Cancel every in-flight inbound handler so none lingers. This runs on
+	// every Close, a Close after a fault included.
+	p.stopServing()
 	// Close closeCh so in-flight outbound Calls/Notifies unblock with
 	// ErrClosed promptly; they no longer need to wait for the read loop to
 	// observe the transport teardown.
-	close(p.closeCh)
+	p.closeOnce.Do(func() { close(p.closeCh) })
 	return nil
 }
 
@@ -551,6 +587,9 @@ func (p *Peer) retireCancel(id uint64, slot *cancelSlot) {
 
 func (p *Peer) readLoop() {
 	defer close(p.done)
+	// The transport ended (the counterparty exited or Close tore it down):
+	// no request served from here can be answered, so cancel them.
+	defer p.stopServing()
 	for {
 		f, err := p.codec.ReadFrame()
 		if err != nil {
@@ -728,8 +767,9 @@ func (p *Peer) buildResponse(f *Frame) *Frame {
 		return NewErrorResponse(id, CodeMethodNotFound, "method not found: "+f.Method, nil)
 	}
 	// Derive a cancellable context for this inbound request so module.cancel
-	// can abort it and so Peer.Close cancels all in-flight handlers.
-	ctx, cancel := context.WithCancel(context.Background())
+	// can abort it and so Close, a fault or the read loop's exit cancels
+	// all in-flight handlers (through serveCtx).
+	ctx, cancel := context.WithCancel(p.serveCtx)
 	defer cancel()
 	slot := &cancelSlot{cancel: cancel}
 	p.mu.Lock()
@@ -793,9 +833,10 @@ func (p *Peer) serveNotification(f *Frame) {
 		// the fatal hook only for diagnostics; NOT fatal.
 		return
 	}
-	// Notifications get a context that is cancelled on Peer.Close. There is
-	// no inbound id to register under, so we use a throwaway ctx.
-	ctx, cancel := context.WithCancel(context.Background())
+	// Notifications get a context that is cancelled with serveCtx (Close,
+	// a fault, the read loop's exit). There is no inbound id to register
+	// under, so module.cancel cannot reach it.
+	ctx, cancel := context.WithCancel(p.serveCtx)
 	defer cancel()
 	// Best-effort; errors are unobservable on the wire. A panicking
 	// handler is recovered here so it only drops the notification.

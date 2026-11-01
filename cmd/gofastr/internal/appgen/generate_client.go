@@ -523,10 +523,7 @@ func inputTakesValue(f framework.FieldDeclaration) bool {
 func renderClientEntity(decl framework.EntityDeclaration, decls []framework.EntityDeclaration) string {
 	dropCreate, dropUpdate := writeShapeDrops(decl)
 	struct_ := appspec.ToCamelCase(decl.Name)
-	table := decl.Table
-	if table == "" {
-		table = decl.Name
-	}
+	table := declTable(decl)
 	// route is the table reduced to one inert path segment for the
 	// request-path literals below. url.PathEscape is identity for every
 	// legitimate table byte and defuses path-shaping bytes (?, #, spaces,

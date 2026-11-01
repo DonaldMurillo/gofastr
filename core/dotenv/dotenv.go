@@ -20,8 +20,8 @@
 //     the value. Write a quoted value if you need to embed `#`.
 //   - On a malformed line the parser returns an error with line number.
 //
-// See Expand for the variable-expansion semantics and the hardening
-// (cycle detection, depth cap, undefined-as-empty, \$ escape).
+// See Expand for the variable-expansion semantics (values substitute
+// verbatim, undefined-as-empty, \$ escape).
 package dotenv
 
 import (
@@ -145,11 +145,10 @@ func parseValue(v string, seen map[string]string, budget int) (string, error) {
 		if len(v) < 2 || v[len(v)-1] != '"' {
 			return "", fmt.Errorf("unterminated double-quoted value")
 		}
-		inner, err := unescapeDouble(v[1 : len(v)-1])
+		out, ok, err := expandDouble(v[1:len(v)-1], seen, max(budget, 0))
 		if err != nil {
 			return "", err
 		}
-		out, ok := expandLimited(inner, seen, nil, max(budget, 0))
 		if !ok {
 			return "", errExpansionBudget
 		}
@@ -163,51 +162,4 @@ func parseValue(v string, seen map[string]string, budget int) (string, error) {
 	default:
 		return v, nil
 	}
-}
-
-// unescapeDouble interprets the standard double-quoted escapes:
-//
-//	\n  → newline
-//	\t  → tab
-//	\r  → carriage return
-//	\"  → literal "
-//	\\  → literal \
-//
-// `\$` is INTENTIONALLY left as-is; the expander downstream knows to
-// treat `\$` as a literal `$` that does NOT start a `${...}` lookup.
-// Doing the strip here would let `\${VAR}` get expanded a moment
-// later, exactly the opposite of what the author meant.
-//
-// Anything else after `\` is left verbatim (the `\` is kept).
-func unescapeDouble(s string) (string, error) {
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c != '\\' {
-			b.WriteByte(c)
-			continue
-		}
-		if i == len(s)-1 {
-			return "", fmt.Errorf("trailing backslash in double-quoted value")
-		}
-		nxt := s[i+1]
-		switch nxt {
-		case 'n':
-			b.WriteByte('\n')
-		case 't':
-			b.WriteByte('\t')
-		case 'r':
-			b.WriteByte('\r')
-		case '"', '\\':
-			b.WriteByte(nxt)
-		default:
-			// Includes '$', preserved verbatim (with leading \) so
-			// the expander can recognise it as an escape.
-			b.WriteByte('\\')
-			b.WriteByte(nxt)
-		}
-		i++ // consumed the escape char
-	}
-	return b.String(), nil
 }

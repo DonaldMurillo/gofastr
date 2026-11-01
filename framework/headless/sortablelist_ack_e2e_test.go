@@ -56,7 +56,7 @@ func twoMoves(t *testing.T, b *behaviorServer) func() string {
 		t.Fatal(err)
 	}
 	time.Sleep(1500 * time.Millisecond)
-	return func() string { return evalString(t, ctx, sortOrder("ol")) }
+	return func() string { return evalString(t, ctx, sortKeysOf("ol")) }
 }
 
 // Both commits fail, the newer first: its rollback started from b,a,c,

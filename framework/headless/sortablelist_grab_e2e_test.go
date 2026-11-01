@@ -13,8 +13,8 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-// sortOrder reads a list's keys in order, a grabbed row starred.
-func sortOrder(id string) string {
+// sortKeysOf reads a list's keys in order, a grabbed row starred.
+func sortKeysOf(id string) string {
 	return `[...document.querySelectorAll('#` + id + ` [data-hui-sort-key]')].map(r => r.getAttribute('data-hui-sort-key') + (r.classList.contains('is-grabbed') ? '*' : '')).join(',')`
 }
 
@@ -73,14 +73,14 @@ func TestE2E_SortableGrabEndsWhenFocusLeaves(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if got := evalString(t, ctx, sortOrder("sl")); got != "b,c,a*" {
+	if got := evalString(t, ctx, sortKeysOf("sl")); got != "b,c,a*" {
 		t.Fatalf("two moves of a grabbed row read %q, want b,c,a* (still grabbed)", got)
 	}
 	if err := chromedp.Run(ctx, chromedp.Click(`#elsewhere`, chromedp.ByID)); err != nil {
 		t.Fatal(err)
 	}
-	if !pollTrue(ctx, sortOrder("sl")+` === 'a,b,c'`) {
-		t.Fatalf("after focus left a grabbed row the list reads %q, want a,b,c (the grab cancelled)", evalString(t, ctx, sortOrder("sl")))
+	if !pollTrue(ctx, sortKeysOf("sl")+` === 'a,b,c'`) {
+		t.Fatalf("after focus left a grabbed row the list reads %q, want a,b,c (the grab cancelled)", evalString(t, ctx, sortKeysOf("sl")))
 	}
 }
 
@@ -129,7 +129,7 @@ func TestE2E_SortableLateFailureDoesNotRevertALaterSave(t *testing.T) {
 	if s != "b,c,a" {
 		t.Fatalf("the second commit saved %q, want b,c,a", s)
 	}
-	if shown := evalString(t, ctx, sortOrder("ol")); shown != s {
+	if shown := evalString(t, ctx, sortKeysOf("ol")); shown != s {
 		t.Fatalf("the server saved order %q but the list shows %q after the earlier commit's late failure rolled back", s, shown)
 	}
 }

@@ -62,3 +62,49 @@ func scriptFetch(r *http.Request) bool {
 	}
 	return false
 }
+
+// carryQuery appends the request's query to a declarative redirect
+// target, so /old-pricing?plan=pro lands on /pricing?plan=pro the way
+// the trailing-slash redirect keeps its query. A key the target sets
+// itself wins and the request's other pairs follow it in request
+// order; a fragment in the target stays last.
+func carryQuery(target, rawQuery string) string {
+	if rawQuery == "" {
+		return target
+	}
+	rest, frag, hasFrag := strings.Cut(target, "#")
+	path, own, _ := strings.Cut(rest, "?")
+	ownKeys := map[string]bool{}
+	pairs := make([]string, 0, 4)
+	for pair := range strings.SplitSeq(own, "&") {
+		if pair == "" {
+			continue
+		}
+		ownKeys[queryKey(pair)] = true
+		pairs = append(pairs, pair)
+	}
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		if pair == "" || ownKeys[queryKey(pair)] {
+			continue
+		}
+		pairs = append(pairs, pair)
+	}
+	out := path
+	if len(pairs) > 0 {
+		out += "?" + strings.Join(pairs, "&")
+	}
+	if hasFrag {
+		out += "#" + frag
+	}
+	return out
+}
+
+// queryKey is a query pair's decoded key, or its raw text when it does
+// not decode.
+func queryKey(pair string) string {
+	k, _, _ := strings.Cut(pair, "=")
+	if dk, err := url.QueryUnescape(k); err == nil {
+		return dk
+	}
+	return k
+}

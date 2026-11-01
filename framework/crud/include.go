@@ -126,47 +126,35 @@ type IncludeNode struct {
 	// the Through table.
 	PivotHookScopes []hook.WhereClause
 	Children        []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
-	// scopedClauses remembers the scoped-filter sets already merged into
-	// this node (or into sibling nodes spawned for it) so a repeated
-	// mention of the same relation with the SAME set is a no-op instead
-	// of a second load of the same rows.
-	scopedClauses map[string]bool
-	childMap      map[string]*IncludeNode
+	// scopedNodes, on the first node parsed for a relation, maps each
+	// scoped-filter set mentioned for it (the empty set included) to the
+	// node that loads it: this node or a sibling spawned for a distinct
+	// set. A repeat of a set continues on that node, so its children
+	// attach there and no second load of the same rows runs.
+	scopedNodes map[string]*IncludeNode
+	childMap    map[string]*IncludeNode
 }
 
-// noteScopedClause records a mention's scoped-filter set and reports
-// whether it was already seen for this relation. parsed must come from
-// parseScopedFilters; the key is its canonical field/op/value spelling so
-// whitespace variations of the same clause still dedup.
-func (n *IncludeNode) noteScopedClause(parsed []filter.ParsedFilter) bool {
-	if n == nil {
-		return false
-	}
+// scopedClauseKey is the canonical spelling of a scoped-filter set:
+// field/op/value per filter, so whitespace variations of one clause
+// still match. parsed must come from parseScopedFilters. Field and op are
+// identifiers; the value is quoted, so no value can forge a separator.
+func scopedClauseKey(parsed []filter.ParsedFilter) string {
 	var b strings.Builder
-	for i, f := range parsed {
-		if i > 0 {
-			b.WriteByte(0x01)
-		}
+	for _, f := range parsed {
 		b.WriteString(f.Field)
-		b.WriteByte(0x00)
+		b.WriteByte(' ')
 		b.WriteString(string(f.Op))
-		b.WriteByte(0x00)
-		b.WriteString(f.Value)
+		b.WriteByte(' ')
+		b.WriteString(strconv.Quote(f.Value))
 		// The term an IN value came from: a_in=1|2,a[in]=2 and
 		// a_in=1,a[in]=2|2 spell one value run but are different
 		// predicates (two lists ANDed, split at different places).
-		b.WriteByte(0x00)
-		b.WriteString(f.Key())
+		b.WriteByte(' ')
+		b.WriteString(strconv.Quote(f.Key()))
+		b.WriteByte(';')
 	}
-	key := b.String()
-	if n.scopedClauses == nil {
-		n.scopedClauses = map[string]bool{}
-	}
-	if n.scopedClauses[key] {
-		return true
-	}
-	n.scopedClauses[key] = true
-	return false
+	return b.String()
 }
 
 // parseIncludeTree splits comma-separated dotted include paths and resolves
@@ -251,10 +239,11 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			node, exists := siblingMap[seg]
 			if !exists {
 				node = &IncludeNode{
-					Name:     seg,
-					Relation: rel,
-					Target:   target,
-					childMap: map[string]*IncludeNode{},
+					Name:        seg,
+					Relation:    rel,
+					Target:      target,
+					childMap:    map[string]*IncludeNode{},
+					scopedNodes: map[string]*IncludeNode{},
 				}
 				if rel.Type == entity.RelManyToMany {
 					pivot, err := entity.PivotEntity(registry, currentEntity, rel.Through)
@@ -266,39 +255,42 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 				siblingMap[seg] = node
 				*siblings = append(*siblings, node)
 			}
-			next := node
+			var parsed []filter.ParsedFilter
 			if filterClause != "" {
 				// Scoped filters are validated against the TARGET entity's
 				// fields, the allow-list that keeps `include=rel(col=v)`
 				// from naming an arbitrary column. Target is always resolved
 				// now, so this list is never empty.
-				parsed, err := parseScopedFilters(filterClause, entity.ValueFields(registry, target), path)
+				parsed, err = parseScopedFilters(filterClause, entity.ValueFields(registry, target), path)
 				if err != nil {
 					return nil, err
 				}
-				seen := node.noteScopedClause(parsed)
-				if exists && !seen {
-					// A repeated mention carrying a DISTINCT filter set.
-					// AND-appending it to the existing node (the old
-					// behavior) composes the two sets into a predicate no
-					// row can satisfy when they disagree, so the relation
-					// silently came back empty. Give the mention its own
-					// node instead: the loaders attach rows per relation
-					// name, so the two loads union. An identical repeat
-					// keeps appending to the same node, ANDing the
-					// predicate with itself, which is a no-op.
+			}
+			// Each filter set mentioned for this relation, the empty one
+			// included, has its own node. ANDing a second set into the
+			// first node composed a predicate no row satisfies when the
+			// sets disagree, and merging an unfiltered mention into a
+			// filtered node dropped every row the filter excludes; either
+			// way the relation silently came back short. Distinct sets
+			// load as sibling nodes, and the loaders union them per
+			// relation name. A repeat of a set continues on the node that
+			// holds it, wherever that node sits among the siblings.
+			key := scopedClauseKey(parsed)
+			next, seen := node.scopedNodes[key]
+			if !seen {
+				next = node
+				if exists {
 					next = &IncludeNode{
 						Name:     seg,
 						Relation: rel,
 						Target:   target,
 						Pivot:    node.Pivot,
-						Filters:  parsed,
 						childMap: map[string]*IncludeNode{},
 					}
 					*siblings = append(*siblings, next)
-				} else {
-					node.Filters = append(node.Filters, parsed...)
 				}
+				next.Filters = parsed
+				node.scopedNodes[key] = next
 			}
 			siblings = &next.Children
 			siblingMap = next.childMap

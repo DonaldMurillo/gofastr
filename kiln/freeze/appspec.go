@@ -746,10 +746,9 @@ func writeYAMLEntry(sb *strings.Builder, key string, value any, indent int) {
 	pad := strings.Repeat(" ", indent)
 	switch v := value.(type) {
 	case map[string]any:
-		if len(v) == 0 {
-			sb.WriteString(pad + key + ": {}\n")
-			return
-		}
+		// An empty map is a bare `key:` with nothing indented under it,
+		// which core/yaml reads back as an empty map. It refuses the flow
+		// form `{}`, so writing that made the frozen app spec unparseable.
 		sb.WriteString(pad + key + ":\n")
 		writeYAMLMap(sb, v, indent+2, orderFor(key))
 	case []any:

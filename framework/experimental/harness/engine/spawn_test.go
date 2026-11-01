@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/permission"
 )
 
 // recordingProvider captures each outbound Request so tests can
@@ -310,4 +311,65 @@ func TestSpawnStripsMetaToolsFromSubAgent(t *testing.T) {
 			t.Errorf("sub-agent missing useful tool %q after meta-tool stripping: %v", kept, sentNames)
 		}
 	}
+}
+
+// A sub-agent's ask-mode tool call must reach the clients on the parent
+// bus as PermissionRequested, and their answer must reach the call: the
+// sub-agent's own bus has no client, so a prompt published there would
+// wait out its timeout and deny.
+func TestSpawnPermissionPromptReachesParent(t *testing.T) {
+	session := ids.NewSessionID()
+	parentBus := NewBus(session)
+	defer parentBus.Close()
+	reg := tool.NewRegistry()
+	ran := make(chan struct{}, 1)
+	_ = reg.Register(context.Background(), staticSource{
+		name: "test", tools: []tool.Tool{signalTool{fakeTool: fakeTool{name: "Danger", mutating: true, out: "ok"}, ran: ran}},
+	})
+	answers := make(chan PermissionAnswer, 1)
+	mw := PermissionMiddleware(parentBus, permission.New(nil), stubRouter{ch: answers}, session, 5*time.Second)
+	d := NewDispatcher(parentBus, reg, mw)
+	prov := &fakeProvider{scripts: [][]provider.StreamEvent{
+		{
+			{Kind: provider.KindToolUseStart, ToolUse: &control.ToolUse{ID: "call_sub", Name: "Danger"}},
+			{Kind: provider.KindToolUseDelta, InputDelta: `{}`},
+			{Kind: provider.KindToolUseStop},
+			{Kind: provider.KindStop, FinishReason: "tool_use"},
+		},
+		{{Kind: provider.KindStop, FinishReason: "stop"}},
+	}}
+	e := NewEngine(session, parentBus, prov, "m", d)
+	sub := parentBus.Subscribe(t.Context())
+
+	done := make(chan error, 1)
+	go func() { _, err := e.Spawn(context.Background(), "", "do x"); done <- err }()
+	deadline := time.After(3 * time.Second)
+	for asked := false; !asked; {
+		select {
+		case env := <-sub:
+			asked = env.Kind == "PermissionRequested"
+		case <-deadline:
+			t.Fatal("no PermissionRequested on the parent bus")
+		}
+	}
+	answers <- PermissionAnswer{Allow: true, Scope: control.ScopeOnce}
+	select {
+	case <-ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the answered call never ran")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// signalTool is fakeTool that reports each run on ran.
+type signalTool struct {
+	fakeTool
+	ran chan struct{}
+}
+
+func (s signalTool) Run(ctx context.Context, c tool.ToolCall, sink tool.EventSink) (*tool.ToolResult, error) {
+	s.ran <- struct{}{}
+	return s.fakeTool.Run(ctx, c, sink)
 }

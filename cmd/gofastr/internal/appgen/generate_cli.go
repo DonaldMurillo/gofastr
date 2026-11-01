@@ -593,10 +593,7 @@ func parseVerbSelection(s string) ([]string, map[string][]string, error) {
 // entity name, table, or the kebab command form, folding ASCII only.
 func cliEntityMatches(decl framework.EntityDeclaration, name string) bool {
 	n := asciicase.Lower(strings.TrimSpace(name))
-	table := decl.Table
-	if table == "" {
-		table = decl.Name
-	}
+	table := declTable(decl)
 	return n == asciicase.Lower(decl.Name) ||
 		n == asciicase.Lower(table) ||
 		n == asciicase.Lower(strings.ReplaceAll(table, "_", "-"))
@@ -741,10 +738,7 @@ var cliReservedCommands = map[string]bool{
 // CLI-specific validation (reserved commands, flag collisions) lives in
 // buildCLIEntity.
 func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntity {
-	table := decl.Table
-	if table == "" {
-		table = decl.Name
-	}
+	table := declTable(decl)
 	ent := cliEntity{
 		Struct:     appspec.ToCamelCase(decl.Name),
 		Command:    strings.ReplaceAll(strings.ToLower(table), "_", "-"),

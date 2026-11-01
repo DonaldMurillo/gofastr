@@ -629,6 +629,20 @@ notes:
     breaking: false
     nodetect: "derived ids come from titles at render time; links and selectors that name them live in templates, tests and other sites"
     guidance: "Two same-titled regions emitted one id, so aria-labelledby and #features hit the first. Update a #features link or an e2e selector that targets a derived id inside an island or a deferred outlet to the prefixed id, or give the component an explicit ID, which always wins."
+  - change: "BREAKING for direct callers of the harness event bus - engine.Bus.Replay is removed; SubscribeSince replays from the bus's window and the session log itself"
+    breaking: true
+    hits: edit
+    guidance: "Replay copied envelopes a transport had fetched from session.Store onto one channel, and every transport now resumes through SubscribeSince(ctx, since), which reads the in-memory window, then the log set with SetLog, then goes live, with a StreamGap event in place of any id range neither holds. Call bus.SetLog(store) once and replace a fetch-then-Replay with SubscribeSince; Backlog(ctx, since, limit) returns the same replay as a slice."
+    find:
+      uses:
+        - gofastr/framework/experimental/harness/engine.Bus.Replay
+  - change: "BREAKING - desktopui.Theme() is removed; it returned the macOS theme on every OS"
+    breaking: true
+    hits: edit
+    guidance: "Call desktopui.ThemeFor(runtime.GOOS) for the running OS, or desktopui.ThemeFor(\"darwin\") to keep the old result. The primary color stays #0071E3 on every OS."
+    find:
+      uses:
+        - gofastr/battery/desktop/ui.Theme
   - change: "ui.AspectRatioComponent (empty or unknown Ratio), ui.Sticky (unknown Edge or Offset), ui.Box (unknown Pad) and ui.Center (MinHeight other than viewport or screen) panic, as Sticky's ZIndexTier already did"
     breaking: false
     guidance: "Each such value rendered a class with no rule: an AspectRatio with no ratio collapsed its media to 0px. Use the exported constants; the panic names the value."

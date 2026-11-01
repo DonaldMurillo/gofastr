@@ -603,3 +603,45 @@ func TestActionSettlementOfADetachedMemberRevokesNothing(t *testing.T) {
 		t.Fatalf("slow hit %d times, want 1", n)
 	}
 }
+
+// A refusal that lands after another member committed must not restore
+// the member it displaced: the group would end with two committed. g1
+// starts committed; g2 (slow, refused) displaces it; g3 commits inside
+// g2's round trip; g2's refusal then lands. g3 stays the one member.
+func TestActionRefusalKeepsALaterCommit(t *testing.T) {
+	s := startActionSrv(t, `<button type="button" id="g1" data-state="committed">
+  <span id="g1i" hidden>Starter</span><span id="g1d">Starter ✓</span>
+</button>
+<button type="button" id="g2" data-state="idle">
+  <span id="g2i">Pro</span><span id="g2d" hidden>Pro ✓</span>
+</button>
+<button type="button" id="g3" data-state="idle">
+  <span id="g3i">Team</span><span id="g3d" hidden>Team ✓</span>
+</button>`)
+	ctx := actionPage(t, s)
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__arm('g1', { endpoint: '/ok', group: 'plan', idle: document.getElementById('g1i'), done: document.getElementById('g1d') });
+            window.__arm('g2', { endpoint: '/slowfail', group: 'plan', idle: document.getElementById('g2i'), done: document.getElementById('g2d') });
+            window.__arm('g3', { endpoint: '/ok', group: 'plan', idle: document.getElementById('g3i'), done: document.getElementById('g3d') });`, nil),
+		chromedp.Click(`#g2`, chromedp.ByID),
+		chromedp.Click(`#g3`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	const states = `['g1','g2','g3'].map(function (id) { return document.getElementById(id).getAttribute('data-state'); }).join('/')`
+	if !pollTrue(ctx, `(() => { const s = `+states+`; return s.indexOf('pending') === -1 && s.indexOf('error') === -1 && s.split('/')[1] === 'idle'; })()`) {
+		var got string
+		chromedp.Run(ctx, chromedp.Evaluate(states, &got))
+		t.Fatalf("the refused member never settled back to idle: %s", got)
+	}
+	var got string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(states, &got)); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if got != "idle/idle/committed" {
+		t.Fatalf("states g1/g2/g3 = %s, want idle/idle/committed: the refusal restored the member it displaced over a later commit", got)
+	}
+	if s.slowfail.Load() != 1 || s.ok.Load() != 1 {
+		t.Fatalf("endpoints hit slowfail=%d ok=%d, want 1/1", s.slowfail.Load(), s.ok.Load())
+	}
+}

@@ -247,9 +247,10 @@
 
   // The commit seam's module twin: same shape as core's _swapCommit
   // (the transition module wraps it when the document declares one).
-  const swapCommit = (epoch, from, to, apply, pickSrc) => {
+  // markup: the incoming page, whose vocabulary gates the pick.
+  const swapCommit = (epoch, from, to, apply, pickSrc, markup) => {
     const T = NS._navHooks.transition;
-    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (T) return T.commit(epoch, from, to, apply, pickSrc, markup);
     if (NS._navLive(epoch)) apply();
   };
 
@@ -710,7 +711,8 @@
     _navPointer = pointer;
     // Dedup in-flight nav, but only while the pending one is the live
     // navigation: on A→B→A the pending A is stale, and returning left B
-    // live under the URL /a.
+    // live under the URL /a. A replay (cache or prefetch) drops its
+    // entry, so a forced fetch never joins the copy it must replace.
     if (_pend.get(path) === NS._navEpoch) return;
     const myEpoch = bumpEpoch();
     _pend.set(path, myEpoch);
@@ -755,62 +757,65 @@
     load.applied.add(slot);
     if (resolved) for (const [t] of resolved) load.applied.add(t);
   };
-    const busyDepth = sharedDepth(routeLayouts(path));
-    if (busyDepth > 0) {
-      const keys = domChainKeys();
-      for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
-        const addr = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area') || '';
-        for (let i = 0; i < busyDepth; i++) {
-          if (addr.startsWith(keys[i] + '#') || addr.startsWith(keys[i] + '~')) {
-            el.setAttribute('aria-busy', 'true');
-            el._cuiBusy = myEpoch;
-            marks.push(el);
-            break;
-          }
-        }
-      }
-      const busySlot = findSlot(keys[busyDepth - 1]);
-      if (busySlot) {
-        busySlot.setAttribute('aria-busy', 'true'); busySlot._cuiBusy = myEpoch; marks.push(busySlot);
-        // P13-B: refresh the LEAVING page's cache entry keyed at THIS
-        // navigation's swap layer, before anything touches the DOM.
-        // An entry captured shallower replays by replacing every layer
-        // below its key — a Back whose boundary is deeper would
-        // destroy the kept layers' DOM (the /items list pane and its
-        // typed filter). The parts record rides it too: which
-        // addresses the leaving page deferred and what landed.
-        // (A page whose own answer was NOT OK keeps _liveDomPath
-        // stale, so this condition misses and it is never captured.)
-        // The seed carries forward from the page's own entry: the
-        // live DOM has merged its island away, and the snapshot's
-        // fallback is the route keys alone.
-        if (prevPath && prevPath !== path && _liveDomPath === prevPath) {
-          const prevEntry = getCachedScreen(prevPath);
-          const lsnap = captureEnvelopeSnapshot(busySlot);
-          const ps0 = P && P.leaveSnap(prevEntry);
-          cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
-            lsnap.fills, seedOf(prevEntry) || lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
-        }
-        // The loading module starts loading at evaluation; the first
-        // navigation may beat its script. The marks paint now (the
-        // dim does not wait for it); only the SCHEDULER needs the
-        // module, so the wait sits here, behind the supersede rule.
-        if (_loadingReady && !H.loading) {
-          await _loadingReady;
-          if (!NS._navLive(myEpoch)) return;
-        }
-        // P9: the marked regions' loading content schedules through
-        // the loading module.
-        load = H.loading?.schedule({ marks, path, epoch: myEpoch, parts }) || null;
-      }
-    }
     // Bind the transition module's recorded direction and pick-edge to
     // THIS navigation's epoch — before any await, same as the plain
     // navigator's entry; the module's commit reads it back by epoch.
     // A page that never loads the transition module records nothing
     // and every navigation commits as 'forward'.
     H.transition?.take(myEpoch);
+    // The region marks sit inside the try: a navigation superseded
+    // during the loading-module wait below returns through the finally,
+    // which clears its marks (they outlived it when the wait sat outside).
     try {
+      const busyDepth = sharedDepth(routeLayouts(path));
+      if (busyDepth > 0) {
+        const keys = domChainKeys();
+        for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
+          const addr = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area') || '';
+          for (let i = 0; i < busyDepth; i++) {
+            if (addr.startsWith(keys[i] + '#') || addr.startsWith(keys[i] + '~')) {
+              el.setAttribute('aria-busy', 'true');
+              el._cuiBusy = myEpoch;
+              marks.push(el);
+              break;
+            }
+          }
+        }
+        const busySlot = findSlot(keys[busyDepth - 1]);
+        if (busySlot) {
+          busySlot.setAttribute('aria-busy', 'true'); busySlot._cuiBusy = myEpoch; marks.push(busySlot);
+          // P13-B: refresh the LEAVING page's cache entry keyed at THIS
+          // navigation's swap layer, before anything touches the DOM.
+          // An entry captured shallower replays by replacing every layer
+          // below its key — a Back whose boundary is deeper would
+          // destroy the kept layers' DOM (the /items list pane and its
+          // typed filter). The parts record rides it too: which
+          // addresses the leaving page deferred and what landed.
+          // (A page whose own answer was NOT OK keeps _liveDomPath
+          // stale, so this condition misses and it is never captured.)
+          // The seed carries forward from the page's own entry: the
+          // live DOM has merged its island away, and the snapshot's
+          // fallback is the route keys alone.
+          if (prevPath && prevPath !== path && _liveDomPath === prevPath) {
+            const prevEntry = getCachedScreen(prevPath);
+            const lsnap = captureEnvelopeSnapshot(busySlot);
+            const ps0 = P && P.leaveSnap(prevEntry);
+            cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
+              lsnap.fills, seedOf(prevEntry) || lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
+          }
+          // The loading module starts loading at evaluation; the first
+          // navigation may beat its script. The marks paint now (the
+          // dim does not wait for it); only the SCHEDULER needs the
+          // module, so the wait sits here, behind the supersede rule.
+          if (_loadingReady && !H.loading) {
+            await _loadingReady;
+            if (!NS._navLive(myEpoch)) return;
+          }
+          // P9: the marked regions' loading content schedules through
+          // the loading module.
+          load = H.loading?.schedule({ marks, path, epoch: myEpoch, parts }) || null;
+        }
+      }
       const layouts = routeLayouts(path);
       const cached = (bypassCache || forceFull) ? null : getCachedScreen(path);
       if (cached) {
@@ -836,6 +841,7 @@
             _pend.delete(path);
             return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
           }
+          _pend.delete(path);
           if (!(await cssWait(myEpoch, cached.html, cx.fills, cx.parts && [...cx.parts.values()], load))) return;
           document.title = cached.title;
           announceRoute(cached.title);
@@ -854,10 +860,11 @@
               P.flush(parts);
             }
             _done(path, prevPath, true, slot, ps);
-          }, cached);
+          }, cached, cached.html);
           return;
         }
         if (slot) {
+          _pend.delete(path);
           if (!(await cssWait(myEpoch, cached.html, null, null, load))) return;
           document.title = cached.title;
           announceRoute(cached.title);
@@ -869,7 +876,7 @@
             applySeedEl(cached.seed);
             if (load) load.sweep();
             _done(path, prevPath, true, root, ps);
-          }, cached);
+          }, cached, cached.html);
           return;
         }
       }
@@ -894,6 +901,7 @@
               pfSeed = snap.seed;
             }
             const pfResolved = pfFills ? resolveFillTargets(pfFills) : null;
+            _pend.delete(path);
             if (!(await cssWait(myEpoch, body, pfFills, null, load))) return;
             document.title = pf.title;
             announceRoute(pf.title);
@@ -1063,7 +1071,7 @@
             snap.fills, snap.seed,
             parts ? parts.addrs : null, parts ? parts.parts : null);
           _done(path, prevPath, false, envSlot, ps, notOk);
-        }, resp);
+        }, resp, html);
         return;
       }
 
@@ -1136,7 +1144,7 @@
         if (P) P.land(parts, notOk);
         if (!notOk) cacheScreen(path, body, title, swapKey);
         _done(path, prevPath, false, root, ps, notOk);
-      }, resp);
+      }, resp, body);
     } catch (err) {
       if (!NS._navLive(myEpoch)) return;
       // Hard rule 4, no location.href fallback. Surface a toast and
@@ -1198,7 +1206,12 @@
 
   const recordScroll = (path) => {
     if (!path) return;
-    const rec = { a: _anchorAt(0), e: {} };
+    // y: the window position at record time, the same value core's
+    // pixel store files under the leaving history entry (both capture
+    // at the leave). The record is per PATH; restoreScroll uses it only
+    // for the entry whose pixels match, so a later visit to the same
+    // path never moves an earlier entry.
+    const rec = { y: scrollY | 0, a: _anchorAt(0), e: {} };
     for (const el of document.querySelectorAll('*')) {
       if (el.scrollTop || el.scrollLeft) {
         const r = el.getBoundingClientRect();
@@ -1221,7 +1234,10 @@
   // element panes re-take their recorded offsets; the window falls
   // back to core's pixels when the anchor is gone).
   const restoreScroll = (path, ps) => {
-    const rec = _anchors[path] || {};
+    // A record another entry of this path left (/list@2000 → /item →
+    // /list@500, Back twice) is not this entry's: its pixels decide.
+    let rec = _anchors[path];
+    if (rec?.y !== ps[1]) rec = {};
     if (rec.a) {
       const wEl = _anchorEl(rec.a);
       if (wEl) {

@@ -165,13 +165,21 @@ hardened and each control is pinned by a test in `core/webbotauth`:
   (≤ 5 min) so a flood of unresolvable agent URLs cannot force a
   fetch per request. Concurrent lookups for one URL coalesce into a
   single fetch.
+- **Fetch slots are capped**: 8 directory fetches at once, at most 2
+  per registrable domain, so one slow origin named through many
+  query-varied `jwks_uri` URLs cannot hold them all. A fetch that finds
+  no slot within 2 s is not attempted: the result is unverified and
+  `Retryable`, and require mode answers 503 with `Retry-After`, the
+  same as a busy DNS budget.
 - **Rotation**: TTL honours the directory's `Cache-Control` / `Expires`
   (clamped to 1 min–24 h, default 1 h). A successful refetch replaces
   the cached set wholesale, so a removed key stops verifying after at
   most one TTL. A *failed* refetch never evicts: an operator's
   directory outage must not revoke their keys at every verifier at
   once (the draft is explicit), so stale keys keep serving until the
-  directory answers again.
+  directory answers again. After a failed refetch the next one waits
+  out the negative TTL (5 min), so an outage costs one fetch per
+  directory every 5 min instead of one per request.
 
 ## Testing
 

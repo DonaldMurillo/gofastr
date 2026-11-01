@@ -49,7 +49,8 @@ type DropdownConfig struct {
 	// filters applied, the rows chosen.
 	Count int
 	// Ctx carries the per-request context Count is written in
-	// (i18n.Number). When nil, English applies.
+	// (i18n.Number), handed to an Avatar that sets none. When nil,
+	// English applies.
 	Ctx context.Context
 	// Avatar draws the trigger as that avatar alone: round, borderless,
 	// 2rem, with a focus ring (an account panel in an app bar). Label
@@ -93,7 +94,11 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 			panic("ui: Dropdown Avatar draws the trigger; drop Icon and Count")
 		}
 		summaryClass += " fui-dropmenu__trigger--avatar"
-		trigger = append(trigger, Avatar(*cfg.Avatar),
+		av := *cfg.Avatar
+		if av.Ctx == nil {
+			av.Ctx = cfg.Ctx
+		}
+		trigger = append(trigger, Avatar(av),
 			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)))
 	} else {
 		trigger = append(trigger, dropdownTextTrigger(cfg)...)

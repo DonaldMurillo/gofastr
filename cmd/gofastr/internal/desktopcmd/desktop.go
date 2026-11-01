@@ -213,7 +213,7 @@ func runDesktopRun(args []string) {
 	// ended the dependency query.
 	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
 	go func() {
-		prev := devcmd.FirstSnapshot(before, watch.Scan(), since)
+		poll := watch.Poller(before, since)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -221,9 +221,7 @@ func runDesktopRun(args []string) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				curr := watch.Scan()
-				if devcmd.Changed(prev, curr) {
-					prev = curr
+				if poll.Changed() {
 					select {
 					case reload <- struct{}{}:
 					default:
@@ -308,7 +306,13 @@ type desktopBuildFlags struct {
 	// binary hosting a WKWebView).
 	notarize      bool
 	notaryProfile string
-	entitlements  string
+	// launchArgs is --launch-args: arguments a double-clicked
+	// executable starts with (desktop.LaunchArgs), for a binary whose
+	// desktop mode is a subcommand. ldflags is --ldflags, appended to
+	// the build's own linker flags (-X main.version=...).
+	launchArgs   string
+	ldflags      string
+	entitlements string
 }
 
 func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
@@ -317,7 +321,7 @@ func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
 		"--format": &f.format, "--id": &f.id, "--name": &f.name, "--icon": &f.icon,
 		"--sign": &f.sign, "--scheme": &f.scheme, "--notary-profile": &f.notaryProfile,
 		"--entitlements": &f.entitlements, "--pkg": &f.pkg, "--version": &f.version,
-		"-o": &f.out, "--output": &f.out,
+		"-o": &f.out, "--output": &f.out, "--launch-args": &f.launchArgs, "--ldflags": &f.ldflags,
 	}, map[string]*bool{"--no-sign": &f.noSign, "--notarize": &f.notarize})
 	f.formatSet = seen["--format"]
 	return f, err
@@ -438,6 +442,11 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		cli.OsExit(1)
 		return
 	}
+	if _, err := extraLinkerFlags(f); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 	if f.noSign && f.sign != "" {
 		cli.Fail("--no-sign and --sign are mutually exclusive")
 		cli.OsExit(1)
@@ -450,7 +459,7 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 	}
 	if targetOS == "windows" {
 		if f.sign != "" || f.noSign || f.notarize {
-			cli.Fail("Windows desktop builds support --id, --name, --pkg, --version, --icon, --scheme, and -o. Signing and notarization are macOS-only.")
+			cli.Fail("Windows desktop builds support --id, --name, --pkg, --version, --icon, --scheme, --launch-args, --ldflags, and -o. Signing and notarization are macOS-only.")
 			cli.OsExit(1)
 			return
 		}
@@ -508,7 +517,13 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 
 	exe := filepath.Join(macOS, name)
 	cli.Info("Building %s (darwin/arm64, CGO_ENABLED=0)...", f.pkg)
-	buildCmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", exe, f.pkg)
+	extra, err := extraLinkerFlags(f)
+	if err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	buildCmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w"+extra, "-o", exe, f.pkg)
 	buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=darwin", "GOARCH=arm64")
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr

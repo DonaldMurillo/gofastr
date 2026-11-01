@@ -145,6 +145,15 @@ Composite cursors (`EntityConfig.Pagination.CursorFields`) have no single-value
 DSL form, so `after()` on such an entity returns an error rather than
 silently paging from the start; use the HTTP cursor API for those.
 
+`after()` compares the one cursor column and nothing else, so that
+column must be unique: the entity's sole primary key, or a
+`CursorField` declared `Unique: true`. On any other `CursorField` (a
+`created_at` two rows can share) the rows tied with the value it
+resumes after would never be served, so `after()` returns an error
+(`dsl.after_not_unique`) naming the field. Mark the field `Unique`,
+cursor on the key, or page through the HTTP cursor API, which appends
+the key as a tiebreak.
+
 ## Filter text: `dsl.ParsePredicate` and `dsl.ParseSort`
 
 Beside the chained agent syntax sits a second, smaller parser for filter

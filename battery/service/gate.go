@@ -16,12 +16,15 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // The loopback gate. Any local process and any page the user's browser
 // opens can reach 127.0.0.1:<port>, so every request must pass three
-// independent checks, none of which switches off:
+// independent checks. The first two never switch off; the third is
+// skipped only for a path under Config.OpenPrefixes, which the app's
+// own auth protects:
 //
 //  1. Host names the daemon's own loopback address (or a configured
 //     AllowHosts entry). Pinning Host is what stops DNS rebinding; an
@@ -59,6 +62,9 @@ type gate struct {
 	// user is the local identity put on every signed-in request; nil
 	// when battery/auth owns identity. Set before the listener opens.
 	user *localuser.User
+	// open is Config.OpenPrefixes: paths that pass without a session.
+	// Set before the listener opens and never written after.
+	open []string
 
 	mu      sync.Mutex
 	hosts   []string
@@ -238,7 +244,11 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			i18n.HTTPError(w, r, http.StatusForbidden, reasonNotOwnLoopback)
 			return
 		}
-		if u := g.canonicalURL(r); u != "" {
+		// An open path is for a client with no browser: it skips the
+		// localhost-to-127.0.0.1 hop (that exists for the cookie) and
+		// the session, never the Host pin or the cross-site refusal.
+		open := gatepath.Open(r, g.open)
+		if u := g.canonicalURL(r); u != "" && !open {
 			w.Header().Set("Cache-Control", "no-store")
 			http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 			return
@@ -247,11 +257,22 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			login.ServeHTTP(w, r)
 			return
 		}
-		if !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
+		// An open path refuses only a FORGED cross-site write (a form-shaped
+		// body another site's page could send without a preflight): a
+		// browser client on another origin sending JSON is preflighted, so
+		// CORS decides it, and the app's own auth does the rest. Gated
+		// paths keep the strict check.
+		if open && handler.IsForgedCrossSiteWrite(r) || !open && !safeMethod(r.Method) && handler.IsCrossSiteRequest(r) {
 			i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
 			return
 		}
-		if !g.hasSession(r) {
+		signed := g.hasSession(r)
+		if open && !signed {
+			w.Header().Set("Cache-Control", "no-store")
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !signed {
 			w.Header().Set("Cache-Control", "no-store")
 			i18n.HTTPError(w, r, http.StatusUnauthorized, reasonNotSignedIn, map[string]any{"command": g.openCmd})
 			return

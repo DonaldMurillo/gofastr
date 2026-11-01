@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -121,6 +122,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i18n.HTTPError(w, r, http.StatusForbidden, reasonTokenUnbound)
 		return
 	}
+	// A reconnecting client names the last event id it saw. A malformed
+	// one is refused: reading it as zero would replay the whole window.
+	var since uint64
+	rawSince := r.URL.Query().Get("lastEventId")
+	resume := rawSince != ""
+	if resume {
+		if since, err = strconv.ParseUint(rawSince, 10, 64); err != nil {
+			i18n.HTTPError(w, r, http.StatusBadRequest, reasonBadLastEventID)
+			return
+		}
+	}
 
 	// The whole RFC 6455 opening handshake, before the seat and the
 	// hijack: a POST, or a request with no Connection token, version 13
@@ -175,6 +187,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		revocations: h.Revocations,
 		seats:       h.seatTable(),
 		seat:        seat,
+		resume:      resume,
+		since:       since,
 	}
 	// Use a fresh background context for the goroutine, the
 	// handler returns immediately after Hijack, which would cancel
@@ -240,6 +254,11 @@ type Conn struct {
 	seats *control.SeatTable
 	seat  *control.Seat
 
+	// resume and since come from the lastEventId query param: the
+	// socket first replays what came after since, then goes live.
+	resume bool
+	since  uint64
+
 	// claims is the verified token scope for this connection. Every
 	// inbound command frame is checked against it, not just the
 	// handshake: see handleText.
@@ -296,7 +315,11 @@ func (c *Conn) run(parentCtx context.Context) {
 	// whenever a loaded runner delayed the pump goroutine).
 	var events <-chan control.EventEnvelope
 	if eng := c.mux.EngineFor(c.session); eng != nil {
-		events = eng.Bus.Subscribe(ctx)
+		if c.resume {
+			events = eng.Bus.SubscribeSince(ctx, c.since)
+		} else {
+			events = eng.Bus.Subscribe(ctx)
+		}
 	}
 	// Engine→client pump.
 	go c.eventPump(ctx, events)

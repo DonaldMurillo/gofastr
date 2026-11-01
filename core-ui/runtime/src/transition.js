@@ -55,10 +55,16 @@
   let _rec = null;
   let _lastId = (history.state && history.state.__fui) || 0;
   let _pushed = false;
-  const _vtKinds = () => new Set(
-    (document.documentElement.getAttribute('data-cui-vt-kinds') || '').split(/\s+/).filter(Boolean));
-  const _withPick = (pick) => {
-    _navPick = (pick && _vtKinds().has(pick)) ? pick : '';
+  // The vocabulary that gates an answer's pick is the INCOMING page's:
+  // its payload root carries data-cui-vt-kinds, and <html> still holds
+  // the outgoing page's copy until the commit's update callback runs
+  // (the gofastr:navigate listener below). Markup that names none (or
+  // none passed: exec reads it as the string "undefined") falls back to
+  // the document's.
+  const _vtKinds = (m) => new Set((/data-cui-vt-kinds="([^"]*)"/.exec(m) ||
+    [0, document.documentElement.getAttribute('data-cui-vt-kinds') || ''])[1].split(/\s+/).filter(Boolean));
+  const _withPick = (pick, m) => {
+    _navPick = (pick && _vtKinds(m).has(pick)) ? pick : '';
   };
   const _recordVT = () => {
     _entryVT = _navPick;
@@ -87,11 +93,12 @@
   // name ('' when none). pickSrc is the pick's source — the page
   // answer (X-Gofastr-Transition) or a replayed entry (its recorded
   // pick); pickDecided means the popstate's edge rule already settled
-  // it and the answer must not override it. Records the pick on the
+  // it and the answer must not override it; markup is the incoming
+  // page, whose vocabulary gates the pick. Records the pick on the
   // entry it lands with.
-  const _pickFor = (pickSrc, pickDecided) => {
+  const _pickFor = (pickSrc, pickDecided, markup) => {
     if (!pickDecided) {
-      _withPick(pickSrc ? (pickSrc.headers ? pickSrc.headers.get('X-Gofastr-Transition') : (pickSrc.vt || '')) : '');
+      _withPick(pickSrc ? (pickSrc.headers ? pickSrc.headers.get('X-Gofastr-Transition') : (pickSrc.vt || '')) : '', markup);
     }
     _recordVT();
     return _navPick;
@@ -118,8 +125,11 @@
       if (_pending) { types = _pending.types; decided = true; _pending = null; }
       else if (_pushed) { types = ['forward']; }
       else {
+        // A recorded pick was gated by its own page's vocabulary when it
+        // was recorded; the document here is the page being left, so it
+        // is not re-gated.
         types = [id < _lastId ? 'back' : 'forward']; decided = true;
-        _withPick(types[0] === 'back' ? _entryVT : ((history.state && history.state.vt) || ''));
+        _navPick = types[0] === 'back' ? _entryVT : ((history.state && history.state.vt) || '');
         _recordVT();
       }
       _pushed = false;
@@ -145,7 +155,7 @@
     // skipTransition still RUNS a pending update callback, so the
     // older navigation's DOM change is never lost — only its
     // animation drops.
-    commit(epoch, from, to, apply, pickSrc) {
+    commit(epoch, from, to, apply, pickSrc, markup) {
       const run = () => {
         if (!NS._navLive(epoch)) return;
         const r = apply();
@@ -160,7 +170,7 @@
       // default.
       const r0 = _rec && _rec.epoch === epoch ? _rec : null;
       const t = (r0 ? r0.types : ['forward']).slice();
-      const pick = _pickFor(pickSrc, !!(r0 && r0.decided));
+      const pick = _pickFor(pickSrc, !!(r0 && r0.decided), markup);
       if (pick) t.push(pick);
       if (!document.dispatchEvent(new CustomEvent('gofastr:transition', {
         cancelable: true,

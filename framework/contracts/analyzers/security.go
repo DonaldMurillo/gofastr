@@ -886,11 +886,25 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 					out = append(out, rawJSONDiag(p, rel, call, k))
 				}
 			}
+			// jsonexact keeps numbers exact and nothing more: it is a
+			// json.Decoder underneath, with the same last-duplicate-wins
+			// and case-folded keys, so it is the same sink.
+			for _, name := range []string{"Unmarshal", "Decode"} {
+				if call, ok := qualifiedCall(n, aliases, jsonexactPath, name); ok && len(call.Args) > 0 {
+					if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields, aliases); k != 0 {
+						out = append(out, rawJSONDiag(p, rel, call, k))
+					}
+				}
+			}
 			return true
 		})
 	}
 	return out
 }
+
+// jsonexactPath is the lossless-number decoder the floatnum analyzer
+// recommends; GOFASTR1407 treats its byte decoders like json.Unmarshal.
+const jsonexactPath = "github.com/DonaldMurillo/gofastr/internal/jsonexact"
 
 func rawJSONDiag(p *contracts.Pass, rel string, call *ast.CallExpr, k taintKind) contracts.Diagnostic {
 	const fix = "decode via handler.Bind or a strict top-level key walk (battery/auth decodeJSONLimitedStrict is the model)"

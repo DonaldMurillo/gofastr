@@ -136,6 +136,20 @@ func TestOpenAPICLI_DuplicateCommandFails(t *testing.T) {
 	}
 }
 
+// list_1 and list1 are two commands (list-1, list1) but one Go name,
+// List1: both would emit func runOpList1 and the CLI would not compile.
+func TestOpenAPICLI_DuplicateGoNameFails(t *testing.T) {
+	doc := `{"openapi":"3.0.3","paths":{
+	  "/a":{"get":{"operationId":"list_1"}},
+	  "/b":{"get":{"operationId":"list1"}}}}`
+	var m map[string]any
+	_ = json.Unmarshal([]byte(doc), &m)
+	_, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c")
+	if err == nil || !strings.Contains(err.Error(), `"list_1"`) || !strings.Contains(err.Error(), `"list1"`) {
+		t.Fatalf("operationIds folding to one Go name must fail naming both, got %v", err)
+	}
+}
+
 func TestOpenAPICLI_ReservedFlagFails(t *testing.T) {
 	doc := `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"listA",
 	  "parameters":[{"name":"token","in":"query","schema":{"type":"string"}}]}}}}`

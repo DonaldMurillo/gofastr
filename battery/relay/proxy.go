@@ -248,14 +248,43 @@ func (r *Relay) newProxy(rt *routeRuntime) *reverseProxy {
 			out.Host = rt.upstream.Host
 
 			stripInbound(out.Header)
+			// ReverseProxy puts Connection/Upgrade back after its hop-by-hop
+			// strip so websockets can pass; the relay refuses protocol
+			// switches (see refuseSwitch), so the vendor never gets asked.
+			out.Header.Del("Connection")
+			out.Header.Del("Upgrade")
 			// Forwarded metadata is derived from the connection, never
 			// relayed from the client.
 			out.Header.Set("X-Forwarded-For", r.clientIP(in))
 			out.Header.Set("X-Forwarded-Proto", forwardedProto(in))
 		},
-		ErrorHandler:   r.proxyError,
-		ModifyResponse: func(resp *http.Response) error { r.modifyResponse(rt, resp); return nil },
+		ErrorHandler: r.proxyError,
+		ModifyResponse: func(resp *http.Response) error {
+			if resp.StatusCode == http.StatusSwitchingProtocols {
+				return r.refuseSwitch(rt, resp)
+			}
+			r.modifyResponse(rt, resp)
+			return nil
+		},
 	}
+}
+
+// errSwitchRefused is the ModifyResponse error for an upstream 101.
+var errSwitchRefused = errors.New("relay: upstream protocol switch refused")
+
+// refuseSwitch turns down an upstream 101 Switching Protocols. The relay
+// is a bounded request/response proxy (body caps, the request deadline,
+// no-store); a switched protocol would hand the vendor an open socket
+// past all of them, so it is refused rather than spliced. Returning an
+// error makes ReverseProxy close the upstream body, which owns the
+// switched connection, before the error handler answers 502. Without it
+// ReverseProxy met cappedBody (not an io.ReadWriteCloser), answered 502
+// and left that connection open.
+func (r *Relay) refuseSwitch(rt *routeRuntime, resp *http.Response) error {
+	r.logger.Warn("relay: refused upstream protocol switch",
+		"upgrade", url.PathEscape(resp.Header.Get("Upgrade")),
+		"upstream", rt.upstream.Host)
+	return errSwitchRefused
 }
 
 // stripInbound removes credentials and spoofable forwarding metadata
@@ -288,6 +317,10 @@ func (r *Relay) proxyError(w http.ResponseWriter, req *http.Request, err error) 
 	var maxErr *http.MaxBytesError
 	if errors.As(err, &maxErr) {
 		i18n.HTTPError(w, req, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+		return
+	}
+	if errors.Is(err, errSwitchRefused) {
+		i18n.HTTPError(w, req, http.StatusBadGateway, reasonSwitchRefused)
 		return
 	}
 	if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {

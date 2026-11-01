@@ -639,7 +639,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 
 		// Merge ?q= search conditions with hook-appended Where clauses so
-		// both feed the count, data, cursor, and stream sinks.
+		// both feed the count, data, cursor, and stream sinks. The hook's
+		// own clauses are kept apart for the cursor anchor lookup, which
+		// applies scopes but never the client's search.
+		hookWheres := listPayload.Where
 		listPayload.Where = append(searchWheres, listPayload.Where...)
 
 		// Cursor pagination is opt-in: presence of the ?cursor key (even
@@ -662,7 +665,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
-			ch.serveCursorList(ctx, w, r, cols, includes, filters, nested, listPayload.Where)
+			ch.serveCursorList(ctx, w, r, cols, includes, filters, nested, listPayload.Where, hookWheres)
 			return
 		}
 

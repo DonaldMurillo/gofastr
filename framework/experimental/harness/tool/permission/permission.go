@@ -287,7 +287,7 @@ const bashShellMetachars = ";&|`$<>()\n\r"
 //
 //	find -exec / -execdir / -ok / -okdir → runs a command per match
 //	find -delete                         → removes files
-//	find -fprintf / -fls / -fprint       → writes an arbitrary path
+//	find -fprint / -fprint0 / -fprintf / -fls → writes an arbitrary path
 //	rg --pre / --hostname-bin            → runs a command per file
 //	git --output=                        → writes an arbitrary path
 //
@@ -301,8 +301,19 @@ var execArgFlags = map[string]bool{
 	"-o": true,
 }
 
+// execArgPrefixes refuse a whole family by its prefix: GNU find's file
+// actions are -fprint, -fprint0, -fprintf and -fls, and an exact-token
+// list missed -fprint0. A prefix also covers any later sibling.
+var execArgPrefixes = []string{"-fprint", "-fls", "-exec", "-ok"}
+
+// shellQuoting is removed from a token before matching: the shell joins
+// '-delete', -de"le"te and \-delete into -delete, so the quoted
+// spellings must not slip past the list.
+var shellQuoting = strings.NewReplacer(`'`, "", `"`, "", `\`, "")
+
 // hasExecArg reports whether any whitespace-separated argument of cmd is
-// one of execArgFlags, including the `--flag=value` spelling.
+// one of execArgFlags or starts with one of execArgPrefixes, including
+// the `--flag=value` spelling and quoted spellings of either.
 //
 // Splitting on whitespace is coarse, a quoted argument containing a
 // space is seen as several, but that only ever produces MORE tokens to
@@ -310,11 +321,17 @@ var execArgFlags = map[string]bool{
 // direction for an auto-allow with no human in the loop.
 func hasExecArg(cmd string) bool {
 	for tok := range strings.FieldsSeq(cmd) {
+		tok = shellQuoting.Replace(tok)
 		if name, _, ok := strings.Cut(tok, "="); ok {
 			tok = name
 		}
 		if execArgFlags[tok] {
 			return true
+		}
+		for _, p := range execArgPrefixes {
+			if strings.HasPrefix(tok, p) {
+				return true
+			}
 		}
 	}
 	return false

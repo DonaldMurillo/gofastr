@@ -1093,3 +1093,68 @@ func TestInterceptUnmarkedLinkLeavesPane(t *testing.T) {
 		t.Fatalf("an unmarked link must navigate the page; at %s with %d layers", snap.URL, len(snap.Layers))
 	}
 }
+
+// The refusal toast fills its count the way the page's language writes
+// numbers: an ar-EG page reads ٤, not the ASCII 4 a raw fill gives.
+func TestInterceptLimitToastFormatsCount(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-a`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	want := []string{"rec-a", "rel-r1", "deep-d1", "deepest-x1"}
+	for i := range want {
+		stackStep(t, ctx, i)
+		if !interceptWait(ctx, `!!document.getElementById('`+want[i]+`')`) {
+			t.Fatalf("layer %d never mounted", i+1)
+		}
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.documentElement.lang = 'ar-EG'`, nil),
+		chromedp.Click("#x-to-beyond", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("click beyond: %v", err)
+	}
+	if !interceptWait(ctx, `/panels is the limit/.test(document.body.textContent)`) {
+		t.Fatal("the refused fifth open showed no toast")
+	}
+	var text string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(document.body.textContent.match(/([0-9\u0660-\u0669]+) panels is the limit/) || ['', ''])[1]`, &text)); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if text != "٤" {
+		t.Fatalf("toast count reads %q on an ar-EG page, want ٤", text)
+	}
+}
+
+// A page link followed after the pane wrote entries of its own (a pager
+// move, cur >= 1) consumes every entry the layers wrote before the page
+// takes over: Back from the page returns to the list under the stack,
+// never to the pane's earlier query URL loaded as a page.
+func TestInterceptPageLinkDropsPaneEntries(t *testing.T) {
+	_, ctx := interceptOpenRecord(t)
+	interceptPage(t, ctx, "2")
+	interceptPage(t, ctx, "3")
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => {
+  const a = document.createElement('a');
+  a.id = 'p3-page'; a.href = '/rec/a'; a.setAttribute('data-cui-intercept-page', ''); a.textContent = 'page';
+  document.getElementById('rec-a-page-3').appendChild(a);
+})()`, nil),
+		chromedp.Click("#p3-page", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("click page link: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname + location.search === '/rec/a' && !document.getElementById('cui-intercept') && /plain \/rec\/a/.test((document.querySelector('main p')||{}).textContent || '')`) {
+		t.Fatalf("the page link never loaded the record as the page: %+v", readStack(ctx))
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.back()`, nil)); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname + location.search === '/list' && !document.getElementById('cui-intercept')`) {
+		t.Fatalf("Back from the page did not return to the list under the stack: %+v", readStack(ctx))
+	}
+}

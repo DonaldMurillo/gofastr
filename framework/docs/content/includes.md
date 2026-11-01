@@ -49,6 +49,12 @@ filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_ne"|"_like"|"_in")? "=" value
 - Dots descend into nested relations on the previously-named target.
 - Parentheses scope filters to the include's target entity.
 - `field_in=a|b|c` becomes `field IN (a, b, c)` (pipe-separated).
+- Naming one relation more than once with different filters returns
+  the union, each row once: `comments(status=draft),comments(status=archived)`
+  loads both, and `comments(status=draft),comments` loads every comment.
+  A repeat of the same filters continues on the same load, so
+  `comments(status=draft).author,comments(status=draft).likes` attaches
+  both children to the draft comments.
 
 ## Supported relations
 

@@ -96,3 +96,31 @@ func TestEnvLocale(t *testing.T) {
 		}
 	})
 }
+
+// posixTag cut at "@", so sr_RS.UTF-8@latin read as Cyrillic sr-rs and a
+// desktop app showed Cyrillic menus to a Latin-script reader.
+func TestEnvLocaleScriptModifier(t *testing.T) {
+	cat := NewMapCatalog()
+	cat.Set("sr", "k", Message{Text: "v"})
+	cat.Set("sr-latn", "k", Message{Text: "v"})
+	cat.Set("uz-cyrl", "k", Message{Text: "v"})
+	tr := NewTranslator(cat, "en")
+	for _, c := range []struct{ lang, want string }{
+		{"sr_RS.UTF-8@latin", "sr-latn"},
+		{"sr_RS@latin", "sr-latn"},
+		{"uz_UZ.UTF-8@cyrillic", "uz-cyrl"},
+		{"sr_RS.UTF-8", "sr"},
+		{"sr_RS@euro", "sr"},
+	} {
+		t.Setenv("LANGUAGE", "")
+		t.Setenv("LC_ALL", "")
+		t.Setenv("LC_MESSAGES", "")
+		t.Setenv("LANG", c.lang)
+		if got := EnvLocale(tr).Tag; got != c.want {
+			t.Errorf("LANG=%s: EnvLocale = %q; want %q", c.lang, got, c.want)
+		}
+	}
+	if got := posixTag("sr_RS.UTF-8@latin"); got != "sr-latn-rs" {
+		t.Errorf("posixTag = %q; want sr-latn-rs", got)
+	}
+}

@@ -15,7 +15,8 @@
 //     runs: a launchd agent in the gui/<uid> domain on macOS, a
 //     `systemctl --user` unit on Linux, a logon-triggered Task Scheduler
 //     task on Windows. It builds the App through the host's builder,
-//     binds 127.0.0.1:<Config.Port>, and opens the control channel.
+//     binds 127.0.0.1:<Config.Port> (or Config.BindAddress), and opens
+//     the control channel.
 //   - The foreground dev run. `<app>` with no arguments, or
 //     `<app> service run`, is the daemon without registration: its own
 //     state directory and port, so it never collides with an installed

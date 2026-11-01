@@ -685,6 +685,38 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 	return public, gated
 }
 
+// appSpecSeedAdminRoles are the roles the bootstrap admin is created with:
+// the admin role (default "admin") and "user".
+func appSpecSeedAdminRoles(bp appspec.AppSpec) []string {
+	role := bp.App.Admin.Role
+	if role == "" {
+		role = "admin"
+	}
+	return []string{role, "user"}
+}
+
+// appSpecE2ERoleSplit splits the static gated routes into those the seeded
+// admin can open and those whose screen requires a role it does not hold.
+// authPolicy's RolePolicy matches roles exactly, so the second set answers
+// the admin 403, and the e2e expects that instead of a 200.
+func appSpecE2ERoleSplit(bp appspec.AppSpec, gated []string) (open, locked []string) {
+	held := appSpecSeedAdminRoles(bp)
+	lockedRoute := map[string]bool{}
+	for _, s := range bp.Screens {
+		if s.Access.Auth && s.Access.Role != "" && !slices.Contains(held, s.Access.Role) {
+			lockedRoute[appSpecScreenRoutePath(s.Route)] = true
+		}
+	}
+	for _, r := range gated {
+		if lockedRoute[r] {
+			locked = append(locked, r)
+		} else {
+			open = append(open, r)
+		}
+	}
+	return open, locked
+}
+
 // appSpecCRUDTarget is the entity the generated e2e exercises with a full
 // create→read→update→delete lifecycle.
 type appSpecCRUDTarget struct {
@@ -1330,11 +1362,22 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 		b.WriteString("\t\treturn nil\n")
 		b.WriteString("\t}}\n")
 		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+%q, url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", appSpecAuthBase(bp)+"/login", adminEmail))
-		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
-		b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
-		b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 200\", p, code)\n")
-		b.WriteString("\t\t} else if len(body) < 120 { t.Errorf(\"authed screen %s body suspiciously short (%d bytes)\", p, len(body)) }\n")
-		b.WriteString("\t}\n")
+		open, locked := appSpecE2ERoleSplit(bp, gated)
+		if len(open) > 0 {
+			b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(open)))
+			b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
+			b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 200\", p, code)\n")
+			b.WriteString("\t\t} else if len(body) < 120 { t.Errorf(\"authed screen %s body suspiciously short (%d bytes)\", p, len(body)) }\n")
+			b.WriteString("\t}\n")
+		}
+		if len(locked) > 0 {
+			b.WriteString("\t// These screens require a role the seeded admin does not hold.\n")
+			b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(locked)))
+			b.WriteString("\t\tif code, _ := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusForbidden {\n")
+			b.WriteString("\t\t\tt.Errorf(\"authed screen %s = %d, want 403: the seeded admin lacks its role\", p, code)\n")
+			b.WriteString("\t\t}\n")
+			b.WriteString("\t}\n")
+		}
 	}
 
 	if crud {
@@ -3727,11 +3770,18 @@ func appSpecSignOutExpr(bp appspec.AppSpec) string {
 }
 
 // appSpecEntityAPIPath is where App.Entity mounts decl's CRUD routes:
-// apiBase plus the table, which is the declared Table or the name in
-// snake_case. Define spells the default, so the path is the framework's
-// and not a copy of its rule.
+// apiBase plus declTable.
 func appSpecEntityAPIPath(apiBase string, decl framework.EntityDeclaration) string {
-	return apiBase + "/" + entity.Define(decl.Name, entity.EntityConfig{Table: decl.Table}).GetTable()
+	return apiBase + "/" + declTable(decl)
+}
+
+// declTable is the table App.Entity mounts decl under: the declared Table,
+// or the name in snake_case. Define spells the default, so every generated
+// caller (SSR forms, CLI, SDKs, typed client) routes on the framework's rule
+// and not a copy of it: a raw fallback to the name sent BlogPost's calls to
+// /BlogPost while the server mounted /blog_post.
+func declTable(decl framework.EntityDeclaration) string {
+	return entity.Define(decl.Name, entity.EntityConfig{Table: decl.Table}).GetTable()
 }
 
 // appSpecFormInputType maps an entity field type to an <input type=…>.
@@ -4701,7 +4751,8 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			sb.WriteString("\t\t\tif seedPw == \"\" {\n\t\t\t\treturn fmt.Errorf(\"ADMIN_SEED_PASSWORD is not set: admin %q cannot be seeded on a fresh database\", " + fmt.Sprintf("%q", bp.App.Admin.SeedEmail) + ")\n\t\t\t}\n")
 			sb.WriteString("\t\t\th, err := auth.HashPassword(seedPw)\n")
 			sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"hash bootstrap admin password: %w\", err)\n\t\t\t}\n")
-			sb.WriteString(fmt.Sprintf("\t\t\tu, err = authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"})\n", bp.App.Admin.SeedEmail, adminRole))
+			seedRoles := appSpecSeedAdminRoles(bp)
+			sb.WriteString(fmt.Sprintf("\t\t\tu, err = authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, %q})\n", bp.App.Admin.SeedEmail, seedRoles[0], seedRoles[1]))
 			sb.WriteString("\t\t\tif err != nil && err != auth.ErrEmailTaken {\n")
 			sb.WriteString("\t\t\t\treturn fmt.Errorf(\"create bootstrap admin: %w\", err)\n")
 			sb.WriteString("\t\t\t}\n")

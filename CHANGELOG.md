@@ -119,6 +119,42 @@ few lines, and link the PR or the docs page for the rest.
   battery-plane table in
   [data export](framework/docs/content/data-export.md) lists every store
   and how it is erased.
+- **Linux desktop: several shell lifetimes, window effects and drag
+  regions (#605).** A process can run the GTK shell again after `Run`
+  returns. Every lifetime runs on one toolkit thread, because WebKit
+  aborts on a second one. `Transparent` windows work under a
+  compositing manager, materials get a theme tint and blur under KWin
+  on X11, and `data-cui-window-drag` moves the window. CI now drives
+  the real GTK file choosers, including the overwrite confirmation.
+  See [desktop](framework/docs/content/desktop.md#host-support).
+- **Gaps from building on v0.95.0 (#635).**
+  `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` skip
+  the browser sign-in on the paths they name, for a client with no
+  browser; the app's own auth (an API key, a bearer token) protects
+  them;
+  `service.Config.BindAddress` serves beyond loopback
+  ([service](framework/docs/content/service.md#callers-with-no-browser-openprefixes)).
+  `webhook.Subscriber.Auth` sends a bearer, API key or basic credential
+  (over `https://` only, unless `Options.AllowPlaintextAuth`), and each
+  delivery records `ResponseStatus` and `ResponseBody`
+  ([webhooks](framework/docs/content/webhooks.md#authenticating-to-the-receiver)).
+  `openapi.DocsHandlerWith` chooses the spec and page paths and lists
+  the operations; `Spec.SetDescription` sets `info.description`.
+  `CORSConfig.AllowAnyHeader`/`AllowAnyMethod`, `handler.RefuseCrossSite`,
+  `desktop.LaunchArgs` with `gofastr desktop build --launch-args` and
+  `--ldflags`, and the `gofastr_nodesktop` build tag for a static server
+  image. The CLI warns when `go.mod` requires another GoFastr release
+  (`GOFASTR_NO_VERSION_CHECK=1` silences it).
+
+### Changed
+- **Local run registry registers local runs only (#635).** A server
+  bound to every interface or a LAN address, with no `gofastr dev` and
+  no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
+  registering it; `GOFASTR_RUNS_DIR` only says where the registry is.
+- **API docs page (#635).** `/api/docs/` lists the operations, ships no
+  inline CSS, and answers 404 under its mount except at the page and
+  spec paths. The webhook SQL tables gain `auth`, `response_status`
+  and `response_body`, added when the store opens.
 
 
 ### Fixed
@@ -269,6 +305,111 @@ few lines, and link the PR or the docs page for the rest.
   headless Section, Table and Fieldset ids keep Unicode letters and
   digits, so a Japanese or Cyrillic heading keeps its anchor and two
   different ones no longer share `section--title`.
+- **BREAKING: `desktopui.Theme()` is removed (#607).** It returned the
+  macOS theme on every OS. Call `desktopui.ThemeFor(runtime.GOOS)`, or
+  `ThemeFor("darwin")` for the old result. The primary color stays
+  `#0071E3`: macOS's `#007AFF` fails WCAG AA for 13px button labels on
+  white, and `TestPrimaryStaysAAUnderWhite` holds that line.
+- **A queued desktop permission call gives up with its request.** While
+  one permission alert was on screen, a second first-time call waited
+  behind it even after its page aborted the fetch, then read the grant
+  store on a dead context. It now returns `cancelled` as soon as its
+  request ends.
+- **Linux notifications name the current shell.** libnotify keeps the
+  app name from its first `notify_init`, so a second shell lifetime
+  with another title showed the first one's name. `Show` now sets the
+  name every time.
+- **A deep link can no longer carry a path separator or control byte
+  past the navigate grammar.** The grammar decoded each segment but
+  refused only `.` and `..`, so `gofastr-notes://files/..%2f..%2fsecret`
+  reached a `GET /files/{name}` route with `PathValue("name")` set to
+  `../../secret`, and `%00` arrived as a NUL byte. A segment that
+  decodes to `/`, `\` or a control character is now refused, and the
+  link is dropped with a Warn.
+- **A deep link that arrives while the window comes up is no longer
+  lost, and links keep their arrival order.** The battery checked for
+  the window and wrote its pre-window queue under different locks, so a
+  link could land in the queue after its one flush had run. On Windows
+  and macOS each URL also got its own goroutine, so a later URL could
+  reach the battery first. The check, the queue write and the flush now
+  share one lock, and both shells hand URLs to the battery from one
+  goroutine, at most 16 waiting.
+- **On Windows, a second launch's deep link reaches the running app
+  when a Settings window or widget is in front.** Every window the app
+  opens shares one window class, and the second instance forwards to
+  the first match in Z-order, but only the main window accepted the
+  URL. The second instance reported "running app refused the URL" and
+  the link was lost. Any of the app's windows now accepts it, and the
+  main window comes forward and navigates.
+- **`gofastr desktop feed` no longer signs archives the updater
+  refuses.** The feed writer extracts the archive with the updater's
+  own extractor before signing. A stray top-level file (`README.txt`,
+  `.DS_Store`), a missing directory entry for the bundle root or a
+  symlink now fails at release time, not on every client after it
+  ships.
+- **A retried update install no longer deletes the only copy of the
+  app.** When moving the new bundle into place failed and moving the
+  old one back failed too, `<Name>.app.old` was all that remained, and
+  the next install removed it before swapping. An install now refuses
+  when the running bundle is missing, and the log says to rename
+  `<Name>.app.old` back.
+- **Updater log lines no longer carry filesystem paths.** Failed
+  renames, removals, moves and staging-directory creation logged OS
+  errors with absolute paths under the user's home directory, and
+  codesign output named the staging path. They now log the operation
+  and the OS error (`rename: permission denied`), and command output
+  names files relative to the bundle, as the desktop docs already said.
+- **A typed Before hook takes a form post.** `OnBeforeCreate[T]` and
+  `OnBeforeUpdate[T]` decoded the body before the blank and number
+  cleanup, so a blank optional int, a `"2"` or a checkbox's `"true"`
+  failed with a 400 naming the Go struct. The cleanup now runs before
+  the hooks too, an Int column takes decimal text as the integer, and a
+  body that still does not fit `T` gets a plain phrase instead of the
+  `encoding/json` detail.
+- **Shutdown closes connections accepted while it ends streams.** A
+  connection that arrived during the WebSocket close wait (up to 2s)
+  sat idle and held `Server.Shutdown` for five seconds. The close now
+  runs as a shutdown hook, after the listener stops accepting.
+- **Core UI runtime bug bash (lazy loading, CSS/HTML/JS chunking).**
+  - Asset serving: `/__gofastr/runtime/<name>.js` and `/__gofastr/compute/*`
+    cache `immutable` only when `?v=` names the served bytes (otherwise
+    `no-cache` with an `ETag`), so a rolling deploy cannot pin one
+    build's code under another build's URL. A refused behaviour graph
+    answers 500 on every request instead of serving an empty
+    `manifest.js` after the first, and a `framework.App` refuses to boot
+    on one. Static exports write registered compute workers and WASM.
+    `RegisterBehavior` after the registry froze panics, as
+    `RegisterStyle` does.
+  - Component CSS: an unregistered `data-cui-comp` marker no longer
+    turns the page's bundle into a 404; lazily loaded sheets land before
+    `app.css` (now `id="cui-app-css"`) so host overrides keep winning; a
+    failed sheet or bundle is retried; markup from any insertion path
+    loads its sheets; an embed frame paints its content styled.
+  - Navigation: a repeat click on a loading link, a link to the current
+    page and a click a listener already prevented no longer reload or
+    navigate; an untitled screen's partial carries the app name as its
+    title; Back across a `#hash` jump and to an earlier visit of the
+    same path restores the right scroll; prefetches under a
+    percent-encoded layer key are used; a forced refresh is never
+    answered by a stale cache replay.
+  - RPC and widgets: field errors from typed handlers
+    (`handler.ValidationError`) reach the form; a per-row widget opened
+    from another row remounts with that row's context; a confirm dialog
+    inside a modal widget gets Tab and Escape; a submit cancels a
+    pending debounced input request; RPC clicks inside server-inlined
+    widget chrome work before the catalog mounts it; signals named like
+    `toString` seed; a computed signal keeps an untrusted input
+    untrusted; a re-inserted poll region polls again.
+  - The JS minifier no longer hangs on `x = {} / 2` followed by a newline,
+    and keeps ASI newlines, regex flags, empty statements, CR/U+2028
+    line ends and class fields named `const` intact.
+  - `data-action-mount` fires for markup inserted outside a navigation
+    (an intercepted route's overlay, an island swap, widget chrome), once
+    per element, and the component's compiled action script loads for it.
+    Static exports stop preloading `rpc.js`, which their runtime never
+    loads.
+  - `reveal` leaves content already on screen at load visible instead
+    of blinking it; the theme toggles work with site storage blocked.
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
   stripped CMYK JPEG still decodes. Image-field renditions and
   placeholders follow the upload's EXIF orientation. A long upload name
@@ -347,7 +488,9 @@ few lines, and link the PR or the docs page for the rest.
 - **The mobile sidebar drawer is announced as "Navigation"**
   (`ui.sidebar.drawer`).
 - **Desktop.** Linux apps start after a crash left the cookie database's
-  rollback journal behind. A double-clicked Install no longer runs two
+  rollback journal behind, and a persistent profile relaunches after
+  WebKit caches a body of 16 KiB or more: the cache hard-links it inside
+  the profile, and startup refused every hard link. A double-clicked Install no longer runs two
   updates at once. Closing a secondary macOS window frees its web view,
   and a call on a closed window reports it closed. On Windows, a
   forwarded deep link keeps a maximized window maximized, and window
@@ -4193,6 +4336,186 @@ few lines, and link the PR or the docs page for the rest.
 - **The API docs' mobile drawer lists entities registered after `Mount`.**
   `interactive.SectionMenuDrawerFunc` builds a drawer's items per render.
 - **examples/site's status pill keeps its wording through hydration.**
+
+- **A directory app spec keeps every file's hooks and merges `app:` key
+  by key.** Hooks in a second file were dropped, and a later file's
+  `app:` replaced the earlier one whole, so a theme-only file turned
+  auth off. A key that two files both set is now an error naming both
+  files.
+- **The generated CLI, SDKs and typed client call the path the app
+  mounts.** An entity named `BlogPost` or `Blog-Post` was called at
+  `/api/BlogPost` and answered 404; every client now uses the table name
+  (`/api/blog_post`). The generated CLI command for a CamelCase entity
+  is now `blog-post`, not `blogpost`.
+- **Cron leader election releases the minute's lease after the claim.**
+  The lease was held until every job in flight on the leader finished,
+  so one long job skipped every tick of every job on every replica.
+- **Following a link with a pane drawer open on a phone leaves the next
+  page scrollable.** The drawer's scroll lock outlived the navigation.
+- **Process modules.** `Peer.Close` after a protocol fault cancels the
+  inbound handlers still running. Notifications to a child that stopped
+  reading are capped at `Limits.Inflight`; past the cap `Notify` returns
+  `ErrInflightCap` instead of parking another goroutine. A module that exits inside the drain deadline takes its
+  descendants with it.
+- **Single-key shortcuts stay out of editors.** `/` (GlobalSearch) and
+  `?` (the shortcut sheet) fired inside a `contenteditable` region. A
+  shortcut bound to `k` no longer fires on Shift+K.
+- **Traditional Chinese readers get the Traditional catalog.** zh-TW and
+  zh-HK fell back to Simplified Chinese or English. `EnvLocale` keeps a
+  POSIX `@latin`/`@cyrillic` modifier.
+- **Contracts and lint gates.** A `"*/*"` string no longer blinds the
+  comment stripper to the code after it. GOFASTR1810 catches a kit class
+  reached through `[class~=…]`, `[class^="fui-"]` or a CSS escape. The
+  inline-script and inline-style gates catch a tag built by
+  concatenation. The `runtimeprose` and `layerprefix` allow markers are
+  comment-anchored like every other marker, and
+  `//check-novar:ignore-file` must start a comment. GOFASTR1802 and
+  GOFASTR1803 read an app's `.js` files, and 1802 fires on any
+  `location… =` assignment. check-csp and GOFASTR1805 treat an inline
+  `<script type="importmap">` as a script, since CSP applies to it. GOFASTR1407 counts
+  `jsonexact.Unmarshal` and `Decode` as raw-JSON sinks. `LintNumberFill`
+  reads `say()` fill params, and the intercept layer-limit toast formats
+  its count in the page's language.
+- **Cursor paging.** A key-only cursor's anchor lookup applies only the
+  access scopes, so a row that left the `?q=` or `?where=` search no
+  longer answers `cursor_anchor_gone`. The DSL's `after()` refuses a
+  `CursorField` that is neither the only key nor unique
+  (`dsl.after_not_unique`): it skipped rows tied on the sort value.
+- **Erasure.** The in-memory queue erases a job held back by a disabled
+  module's gate; it ran later. An in-memory `Scheduler` feeding a
+  `DBQueue` can no longer re-insert the erased user's job after the SQL
+  delete. `GrantStore.Grant` and `Revoke` each run in one transaction.
+- **Includes and filters.** Repeating a scoped include whose filter set
+  already had its own node keeps both nodes. A Timestamp or Date filter
+  of year 0000 is refused instead of failing on Postgres.
+- **Dotenv expands each value once.** A single-quoted literal or a `\$`
+  escape stopped being literal when another line referenced it.
+- **Markdown leaves intraword underscores alone.** `XDG_DATA_HOME`
+  rendered `XDG<em>DATA</em>HOME`, and an underscore in a URL could
+  break the link.
+- **YAML.** A trailing comma in a flow list no longer adds an empty item
+  (in an app-spec enum it became an allowed value). A compact nested
+  sequence (`- - a`) parses as a nested list.
+- **The migration statement splitter keeps a multi-action `CREATE RULE …
+  DO INSTEAD (a; b)` whole.**
+- **Headless and kit components.** Escape on an open combobox closes
+  only the combobox, not the modal or intercept overlay around it
+  (`data-hui-combobox-inline` marks a combobox that lives inside its
+  owner, as CommandPalette's does). A keyboard-grabbed sortable item
+  that loses focus is dropped back, and a cancelled drag no longer POSTs
+  the reorder. Lightbox zoom and pan reset on Prev and Next. Six kit
+  components and the Avatar status dot speak the page's language
+  (`AvatarConfig.Ctx`). `preset.BottomSheet`'s doc drops the ~50vh claim;
+  it caps at 75vh.
+- **Runtime.** A refused optimistic commit restores the displaced member
+  only when nothing committed since. A component action script that
+  failed to load retries on the next use. Reveal sections show after
+  Back restores a page from the cache. A failed widgets.js load at boot
+  stops the catalog timer and keeps the catalog, so a later open
+  finds its widget. `data-cui-window-drag` starts a window drag
+  only on a primary-button press outside a control, and
+  `data-cui-window-no-drag` marks a region inside it that never drags. A
+  keyed view transition plays into a layout chain the current page does
+  not declare. A deferred part that fails after commit retries once,
+  then sets `data-cui-loadstate="error"`. A `data-cui-intercept-page`
+  link no longer leaves the closed pane's URLs in history.
+- **Declarative redirects keep the query string**, on full loads and
+  client navigation. The error partial no longer carries the failed
+  route's title in `X-Gofastr-Title`. Per-caller markdown (content
+  negotiation, `/llm.md`) is sent `no-store` with `Vary: Cookie`. Strict
+  boot checks pages whose route has a constraint (`/notes/:id:int`).
+  Site search skips pages whose robots meta says `none`.
+- **App spec and CLI.** `theme init --out=<path>` writes the package
+  of the Go files already in the directory, else the directory's name. `gofastr init .` over an existing `go.mod` uses
+  its module path and refuses a `--module` that disagrees. Re-init
+  advises `gofastr init <dir> --reinit --force`, which now overwrites an
+  AGENTS.md whose markers are missing; it named an `agents init` flag
+  that does not exist. Two screens whose routes differ only in param name
+  (`/posts/{id}`, `/posts/:slug`) are refused; the second was
+  unreachable. `gofastr pack` keeps negative numbers and a card's children.
+- **Generated apps.** The generated e2e test expects 403 from a screen
+  that needs a role the seeded admin lacks. `--from-openapi` refuses two
+  operationIds that fold to one Go name instead of emitting a CLI that
+  does not compile. client.d.ts declares `NoBlob`, and an entity
+  named `no_blob` is refused.
+- **Kiln.** `kiln freeze` reads the journal read-only, so it can no
+  longer truncate an entry `kiln serve` just wrote, and writes an empty
+  object in a form core/yaml accepts. `agent.Loop.Run` stops dispatching
+  a turn's tool calls once its context is cancelled. SIGTERM to `kiln
+  serve` waits for the agent's process group to be killed.
+- **Harness.** Context files (`AGENTS.md` and the like) are read inside
+  the repo with `os.OpenRoot`, regular files only, capped at 256 KiB: a
+  symlink to `~/.ssh/id_ed25519` went to the provider. The secret redactor and export's redaction keep the
+  event valid JSON; events were dropped from export silently. Grep honours
+  cancellation and skips FIFOs and devices. Quiet mode refuses `find`'s
+  `-fprint0`, `-exec` and `-delete` in any spelling or quoting. The TUI tracks each pending
+  permission prompt on its own. Stream resume (`lastEventId`,
+  `Last-Event-ID`) replays the events since the given id over SSE, the WebSocket and MCP
+  (`resources/read` of `harness/v1://session/{id}/events?since=N`). The stdio MCP server handles requests concurrently, so
+  `harness.cancel_turn` reaches a `wait=turn` call. Sub-agent tool calls
+  are persisted on the parent's log, tagged with the sub-agent. The
+  session log's bus subscription waits for the store instead of
+  dropping, so a burst past 256 queued events no longer leaves holes in
+  the log that resume and export read. The MCP server's `initialize`
+  no longer advertises `resources.subscribe`, which it never handled.
+- **Service.** On macOS a stop whose drain overruns, or a battery
+  `OnStop` error, no longer exits 1, so launchd does not restart the
+  daemon `service stop` reported stopped. `service uninstall` and macOS
+  `service stop` wait up to 15 s for a daemon that is still starting,
+  then go ahead; on macOS that stop boots the job out of launchd, which
+  would otherwise restart it.
+- **Web Bot Auth.** Directory fetches hold one slot per registrable
+  domain, so hanging `jwks_uri` hosts cannot pin every slot, and a full
+  fetcher answers `ErrResolverBusy`. A failed refresh keeps serving the
+  stale entry for a back-off instead of refetching on every request.
+- **StripMetadata keeps every frame of an animated PNG** that carries a
+  tEXt or eXIf chunk.
+- **MCP tool refusals reach the agent.** `contracts_fix`,
+  `contracts_explain`, `contracts_list` and the CRUD list/get argument
+  refusals answered "internal tool error" and logged at Error; they now
+  answer invalid params with the reason.
+- **A webhook POST that `Stop` cancels is refunded**, not counted as a
+  failed attempt, so a delivery on its last attempt is no longer
+  dead-lettered.
+- **A panicking `Fanout.Publish` no longer kills the process.** The
+  publish queue lost its panic guard in the last round; the payload is
+  dropped and reported as a failed publish.
+- **The cache middleware treats `X-API-Key` as a credential**, so a GET
+  it authenticates is never cached under the shared key. It checks every
+  value of each credential header, not only the first.
+- **The relay refuses upstream protocol switches.** It strips the
+  inbound `Connection` and `Upgrade` headers, and a vendor 101 closes
+  the upstream socket and answers 502; the socket was left open.
+- **rtc notices a signal the receiving replica dropped.** Each sender
+  numbers its signals per target, and a gap closes the target's socket
+  with `signal_lost`, as the publish side already did.
+- **Log battery.** The webhook sink no longer retries 3xx and 4xx
+  responses. Attrs added after `WithGroup` nest under the group, and
+  nested groups nest, the way `slog`'s JSON handler writes them.
+- **A cancelled SMTP send stops.** Cancelling after the connection was
+  up left the send waiting on the relay, and it could still deliver and
+  return success.
+- **entityui.** List cards draw a `Display.Card` field that is not a
+  shown column, and draw the card's subtitle, which the custom header
+  hid. CSV export writes a negative number in a numeric column
+  as a number; a non-number there is still quoted. Decimal and Float
+  values show the column's scale (the `s` of `NUMERIC(p,s)`), four
+  places by default, as entityui.md says; they showed two. The Activity
+  tab starts after a reused key's earlier purge or hard delete, so it no
+  longer shows the purged record's history.
+- **Local-entity forms keep machine values dot-decimal.** On a
+  comma-decimal page, range, select, radio and hidden values were parsed
+  with the page's decimal mark and written back with it; only text,
+  search and textarea controls use it now.
+- **`gofastr dev` and `gofastr desktop`.** On Windows, shutdown waits
+  for the app to exit before removing its binary directory, so nothing
+  is left in %TEMP%. A save that adds the first import of a root `gen/`
+  or `vendor/` package restarts the app once, not twice.
+- **The Windows and macOS file dialogs validate like Linux**
+  (`desktop.CheckFileDialog`), and Windows returns its conversion and setter
+  errors. Every shell now refuses an extension containing `;` and a
+  default name containing `\`. On Windows a `*` extension matches
+  everything, and so does a filter with no extensions.
 
 ### Security
 - **A `BeforeGet` read scope binds record writes.** A row

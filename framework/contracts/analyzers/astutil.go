@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/framework/contracts/internal/codetext"
 )
 
 // importAliases maps each of a file's import aliases to its path.
@@ -260,43 +261,13 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 	return false
 }
 
-// stripComments removes // line and /* */ block comments so a rule
-// counting call sites is not fooled by prose. It does not honour string
-// literals containing "//", which is acceptable because every consumer
-// here is counting occurrences, not parsing.
-func stripComments(src string) string {
-	var b strings.Builder
-	b.Grow(len(src))
-	inBlock := false
-	for line := range strings.SplitSeq(src, "\n") {
-		out := line
-		if inBlock {
-			if i := strings.Index(out, "*/"); i >= 0 {
-				out, inBlock = out[i+2:], false
-			} else {
-				b.WriteByte('\n')
-				continue
-			}
-		}
-		for {
-			bs := strings.Index(out, "/*")
-			ls := strings.Index(out, "//")
-			if ls >= 0 && (bs < 0 || ls < bs) {
-				out = out[:ls]
-				break
-			}
-			if bs < 0 {
-				break
-			}
-			if e := strings.Index(out[bs+2:], "*/"); e >= 0 {
-				out = out[:bs] + out[bs+2+e+2:]
-				continue
-			}
-			out, inBlock = out[:bs], true
-			break
-		}
-		b.WriteString(out)
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
+// stripComments removes // line and /* */ block comments from Go source so
+// a rule counting call sites is not fooled by prose. String, raw-string
+// and rune literals are code: a "*/*" Accept value or a "locales/*.json"
+// glob no longer opens a comment that blanks the rest of the file. Line
+// numbers still match the original.
+func stripComments(src string) string { return codetext.Strip(src, false) }
+
+// stripScriptComments is stripComments for JavaScript, where a backslash
+// escapes inside a template literal.
+func stripScriptComments(src string) string { return codetext.Strip(src, true) }

@@ -334,10 +334,9 @@ func assistantContentFromSummary(s StreamSummary) []control.ContentBlock {
 // the initial user turn. Returns the final assistant text after the
 // sub-loop terminates (or empty string on error).
 //
-// Sub-agent events flow on the SAME bus so all attached clients can
-// observe what the sub-agent does in real time. The parent and child
-// turn numbers share the same monotonic counter; this is acceptable
-// because a sub-agent is conceptually one large tool call.
+// Sub-agent events flow on a private sub bus (NewSubBus): attached
+// clients see only the Agent tool call and its result, while the
+// session log records every sub-agent event tagged with its id.
 func (e *Engine) Spawn(ctx context.Context, systemHint, userPrompt string) (string, error) {
 	// Sub-engine gets a PRIVATE event bus so its intermediate events
 	// (thinking, tool calls, text deltas) don't bleed into the
@@ -345,7 +344,14 @@ func (e *Engine) Spawn(ctx context.Context, systemHint, userPrompt string) (stri
 	// via its ToolResult. This matches CC's Task tool behavior:
 	// user sees the Agent card + its single-line result, NOT the
 	// sub-agent's whole stream-of-consciousness.
-	subBus := NewBus(e.Session)
+	//
+	// Private to clients, not to the audit trail: the sub bus takes
+	// its ids from the parent and forwards every event, tagged with
+	// the sub-agent's id (its originator), to the parent's SubscribeAll
+	// subscribers, which is how the session log records it. A Bash or
+	// Write a sub-agent ran used to reach no log at all.
+	originator := ids.NewClientID()
+	subBus := NewSubBus(e.Bus, string(originator))
 	// New dispatcher pointed at the private bus so tool calls
 	// dispatched by the sub-agent also stay private.
 	subDisp := NewDispatcher(subBus, e.Dispatcher.Registry(), e.Dispatcher.mws...)
@@ -375,7 +381,6 @@ func (e *Engine) Spawn(ctx context.Context, systemHint, userPrompt string) (stri
 			Content: []control.ContentBlock{{Type: "text", Text: systemHint}},
 		})
 	}
-	originator := ids.NewClientID()
 	// Increment spawn depth so the Agent tool, when reached from
 	// inside this sub-loop, can refuse further recursion past
 	// tool.MaxSpawnDepth. Also tag the ctx so RunTurn knows to apply

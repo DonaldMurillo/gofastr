@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // PROPERTY
@@ -200,5 +201,60 @@ func TestGrantIsKeyedOnItsCapability(t *testing.T) {
 		t.Fatalf("%d alerts: the user allowed %q and a DIFFERENT capability (%q) inherited that consent with no "+
 			"prompt. The alert names the capability; the store keys only on the permission string",
 			got, coreCap.Name, sideCap.Name)
+	}
+}
+
+// blockingPromptShell holds the first alert on screen until released.
+type blockingPromptShell struct {
+	*fakeShell
+	entered chan struct{}
+	release chan Decision
+}
+
+func (s *blockingPromptShell) Prompt(ctx context.Context, req PermissionRequest) (Decision, error) {
+	s.fakeShell.mu.Lock()
+	s.fakeShell.promptRequests = append(s.fakeShell.promptRequests, req)
+	s.fakeShell.mu.Unlock()
+	s.entered <- struct{}{}
+	return <-s.release, nil
+}
+
+// TestQueuedPromptGivesUpWithItsRequest: one alert is on screen, a second
+// first-time call waits behind it, and its page aborts. The waiter must
+// return cancelled at once, not sit behind an alert that can stay up for
+// minutes and then prompt or read the store on a dead context.
+func TestQueuedPromptGivesUpWithItsRequest(t *testing.T) {
+	b, fake := newTestBattery(t)
+	shell := &blockingPromptShell{fakeShell: fake, entered: make(chan struct{}, 2), release: make(chan Decision, 1)}
+	b.shell = shell
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+
+	first := make(chan bool, 1)
+	go func() { proceed, _ := b.authorizeCall(context.Background(), c, m); first <- proceed }()
+	<-shell.entered
+
+	ctx, cancel := context.WithCancel(context.Background())
+	queued := make(chan string, 1)
+	go func() { _, code := b.authorizeCall(ctx, c, m); queued <- code }()
+	cancel()
+	select {
+	case code := <-queued:
+		if code != CodeCancelled {
+			t.Fatalf("aborted queued call: code %q, want %q", code, CodeCancelled)
+		}
+	case <-time.After(2 * time.Second):
+		shell.release <- DecisionDeny
+		t.Fatal("a queued call kept waiting behind the open alert after its request ended")
+	}
+
+	shell.release <- DecisionAllow
+	if !<-first {
+		t.Fatal("the answered call did not proceed")
+	}
+	if proceed, _ := b.authorizeCall(context.Background(), c, m); !proceed {
+		t.Fatal("the persisted allow was not honoured")
+	}
+	if got := len(fake.prompts()); got != 1 {
+		t.Fatalf("%d alerts, want 1: the aborted waiter must not prompt", got)
 	}
 }

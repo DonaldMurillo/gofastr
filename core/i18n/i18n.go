@@ -742,23 +742,46 @@ func parseAcceptLanguage(header string) (tags, refused []string) {
 }
 
 // tagFallbacks returns progressively shorter forms of a BCP 47 tag, one
-// subtag off the right at a time: "zh-hant-hk" → ["zh-hant-hk",
-// "zh-hant", "zh"], so a script catalog ("zh-hant") is tried before the
-// bare language. Empty input yields nil.
+// subtag off the right at a time, with the language-script form CLDR
+// reads the tag as placed before the bare language: "zh-cn" →
+// ["zh-cn", "zh-hans", "zh"]. Dropping subtags alone sent zh-TW to the
+// Simplified "zh" catalog. A script that is not the language's usual
+// one ends the chain, the way CLDR makes root the parent of zh-Hant and
+// sr-Latn: "zh-tw" → ["zh-tw", "zh-hant"] and "zh-hant-hk" →
+// ["zh-hant-hk", "zh-hant"], never the Simplified "zh". Empty input
+// yields nil.
 func tagFallbacks(tag string) []string {
 	tag = normalize(tag)
 	if tag == "" {
 		return nil
 	}
 	out := []string{tag}
-	for {
-		i := strings.LastIndexByte(tag, '-')
+	for t := tag; ; {
+		i := strings.LastIndexByte(t, '-')
 		if i <= 0 {
-			return out
+			break
 		}
-		tag = tag[:i]
-		out = append(out, tag)
+		t = t[:i]
+		out = append(out, t)
 	}
+	form, keepBase := scriptFallback(tag, out[len(out)-1])
+	if form == "" {
+		return out
+	}
+	if len(out) == 1 {
+		// The bare language itself: its own catalog first, then the
+		// script form ("zh" → zh, zh-hans).
+		return []string{tag, form}
+	}
+	base := out[len(out)-1]
+	out = out[:len(out)-1]
+	if !slices.Contains(out, form) {
+		out = append(out, form)
+	}
+	if keepBase {
+		out = append(out, base)
+	}
+	return out
 }
 
 // normalize lower-cases a tag and trims surrounding whitespace.

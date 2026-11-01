@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -182,5 +183,26 @@ func TestFirstSnapshotKeepsPreBuildTimes(t *testing.T) {
 	kept["gen/api.go"] = saved
 	if !Changed(FirstSnapshot(before, kept, since), kept) {
 		t.Fatal("a gen/ file saved during the build is not a change")
+	}
+}
+
+// On Windows the app is killed at once, and the shutdown that follows
+// removes the binary dir; a running .exe cannot be deleted, so
+// stopProcess must not return until the process has exited. The
+// Windows branch runs here through noSIGTERM.
+func TestKillAtOnceWaitsForExit(t *testing.T) {
+	prev := noSIGTERM
+	noSIGTERM = true
+	t.Cleanup(func() { noSIGTERM = prev })
+	for range 5 {
+		c := exec.Command("sleep", "30")
+		waited := startReaped(t, c)
+		p := c.Process
+		var mu sync.Mutex
+		KillServer(&mu, &c)
+		if err := p.Signal(syscall.Signal(0)); !errors.Is(err, os.ErrProcessDone) {
+			t.Fatalf("KillServer returned before the app exited (signal 0: %v)", err)
+		}
+		<-waited
 	}
 }

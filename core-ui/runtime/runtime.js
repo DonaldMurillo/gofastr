@@ -284,7 +284,8 @@
       return false;
     },
     /* The screen title a response names. uihost percent-encodes the
-       header and omits it for an untitled screen; document.title is
+       header (an untitled screen's carries the app name, its full
+       document's title); a host that omits it keeps document.title, which is
        never encoded, so only the header is decoded (a "50% Off" title
        threw out of navigation). */
     _title(r) {
@@ -506,7 +507,18 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
-      document.head.appendChild(link);
+      // A failed fetch (a deploy's 503, a blip) must not pin the name:
+      // drop the link, and the claim after a cooldown, so a later scan
+      // asks again without a poll or push region re-requesting a sheet
+      // that keeps failing on every swap.
+      link.onerror = () => { link.remove(); setTimeout(() => this._pendingLinks.delete(name), 3e3); };
+      this._insertSheet(link);
+    },
+    // Component sheets go before app.css (#cui-app-css), the order the
+    // server's head keeps, so the host's own rules win cascade ties.
+    _insertSheet(link) {
+      const app = document.getElementById('cui-app-css');
+      app ? app.before(link) : document.head.appendChild(link);
     },
     // Loads the sheet each kit root (data-cui-comp) and owned-style
     // root (data-cui-scope) under root names. Descendants only: a
@@ -947,7 +959,10 @@
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
+    // Tagged: this prevent is the runtime's own, not a page listener's,
+    // so a link that also sets a signal still navigates (nav.js).
     e.preventDefault();
+    e._cuiSig = 1;
     const G = window.__gofastr;
 
     const set = node.getAttribute('data-cui-signal-set');
@@ -982,7 +997,9 @@
     for (const k in seed) {
       if (!Object.prototype.hasOwnProperty.call(seed, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (store[k]) {
+      // Own keys only: store[k] reads the inherited built-in for a
+      // signal named "toString" and wrote the seed onto it.
+      if (own(store, k)) {
         store[k].value = seed[k];
       } else {
         store[k] = { value: seed[k], listeners: [] };
@@ -1550,14 +1567,15 @@
   // the pre-layout behaviour, behind the supersede rule's check.
   // css: the incoming markup. Its component sheets load while the old
   // page is still on screen (kernel _cssReady), before the title, the
-  // route announcement or the swap move to the new page.
+  // route announcement or the swap move to the new page; the
+  // transition module reads the incoming vocabulary off it.
   const _swapCommit = async (epoch, from, to, apply, pickSrc, css, title) => {
     await window.__gofastr._cssReady(css);
     if (!_navLive(epoch)) return;
     document.title = title;
     announceRoute(title);
     const T = window.__gofastr._navHooks.transition;
-    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (T) return T.commit(epoch, from, to, apply, pickSrc, css);
     apply();
   };
 
@@ -1603,7 +1621,8 @@
     // Dedup in-flight nav (10 clicks → 1 fetch), but only while the
     // pending one is the live navigation: on A→B→A the pending A holds
     // a stale epoch, and returning here left B live, committing under
-    // the URL /a.
+    // the URL /a. A replay (cache or prefetch) drops its entry, so a
+    // forced fetch never joins the copy the force exists to replace.
     if (_pendingNav.get(path) === window.__gofastr._navEpoch) return;
     const myEpoch = ++window.__gofastr._navEpoch;
     _pendingNav.set(path, myEpoch);
@@ -1651,6 +1670,7 @@
           ? findSlot(layer)
           : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
         if (slot) {
+          _pendingNav.delete(path);
           await _swapCommit(myEpoch, prevPath, path, () => {
             finishNav(path, prevPath, true, swapAtSlot(slot, html), ps);
           }, cached, html, cached.title);
@@ -1669,6 +1689,7 @@
           // is layout-less too, as for the screen cache above.
           const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
           if (slot) {
+            _pendingNav.delete(path);
             await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
               finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
@@ -1891,21 +1912,23 @@
     // then notifies once — a computed over two page signals observes
     // one page's state on every evaluation, never a mid-merge mix.
     const changed = [];
+    // own(), never a truthy store[k]: a key like valueOf names an
+    // Object.prototype member, not a signal.
     for (const k in page) {
-      if (!Object.prototype.hasOwnProperty.call(page, k)) continue;
+      if (!own(page, k)) continue;
       if (isReservedSignalKey(k)) continue;
       const v = page[k];
-      if (Object.prototype.hasOwnProperty.call(store, k) && store[k].value === v) continue;
-      if (store[k]) store[k].value = v;
+      if (own(store, k) && store[k].value === v) continue;
+      if (own(store, k)) store[k].value = v;
       else store[k] = { value: v, listeners: [] };
       changed.push([k, v]);
     }
     for (const [k, v] of changed) G.setSignal(k, v);
     const glob = data.g || {};
     for (const k in glob) {
-      if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
+      if (!own(glob, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (!store[k]) store[k] = { value: glob[k], listeners: [] };
+      if (!own(store, k)) store[k] = { value: glob[k], listeners: [] };
     }
   };
   // The intercept module's pane swap applies its answer's seed too.
@@ -1921,6 +1944,10 @@
   // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
   // unknown routes fall through to default browser navigation.
   document.addEventListener('click', (e) => {
+    // A page listener that ran first (on the anchor or an ancestor)
+    // and prevented the click owns it, as it would without the router.
+    // The signal delegate's own prevent (_cuiSig) is not one of those.
+    if (e.defaultPrevented && !e._cuiSig) return;
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
     const href = anchor.getAttribute('href');
@@ -1961,10 +1988,6 @@
     if (anchor.getAttribute('data-cui-nav') === 'off') return;
 
     const fullPath = resolvePath(href);
-    if (fullPath === currentPath) {
-      // Already there, let the browser handle the click (focus, scroll, etc.).
-      return;
-    }
     // A document-lifetime script's scope edge is a document boundary.
     // Stand down BEFORE preventDefault so the browser performs a real
     // navigation with ordinary link semantics (history, focus, target),
@@ -1976,6 +1999,13 @@
     // pushState must carry the fragment.
     let navHash = '';
     try { navHash = new URL(href, location.href).hash; } catch (_) { /* malformed href */ }
+    if (fullPath === currentPath) {
+      // Already there (or on the way: a repeat click while the page
+      // loads). A fragment is the browser's own in-page jump; anything
+      // else no-ops, the browser would reload the whole document.
+      if (!navHash) e.preventDefault();
+      return;
+    }
     // Suppress the browser default up front: with or without a
     // cancellation below, an intercepted click never becomes a hard
     // page load.
@@ -2070,7 +2100,15 @@
       try { history.replaceState({ __fui: _entryId }, '', location.href); } catch (_) {}
     }
     const path = location.pathname + location.search;
-    if (path !== currentPath && currentPath !== '') {
+    if (path === currentPath) {
+      // Same page, another entry (Back across an in-page #anchor jump):
+      // manual restoration left the viewport where it was, so put back
+      // the position the entry recorded. A fresh fragment entry (the
+      // browser's own jump fires popstate too) has none: the browser
+      // scrolls it.
+      const p = _scrollStore[_entryId];
+      if (p) _settleScroll(() => window.scrollTo(p[0], p[1]));
+    } else if (currentPath !== '') {
       if (_onlyStatefulDiff(currentPath, path)) {
         currentPath = path;
       } else if (crossesDocBoundary(path)) {
@@ -2217,48 +2255,45 @@
     // A followed 3xx is another URL's list: no catalog.
     .then((r) => (r.ok && !r.redirected ? r.json() : null))
     .then(async (list) => {
-      if (!Array.isArray(list)) { _wcr(); return; }
-      // The widget runtime now ships as a split module. Make sure it's
-      // loaded before iterating mounts, covers the case where no
-      // [data-cui-widget] marker is present in initial HTML (the
-      // marker scanner wouldn't have fired) but server-side
-      // registration says there are widgets to mount.
-      if (list.length > 0) {
-        try { await window.__gofastr.loadModule('widgets'); } catch (_) {}
-      }
-      const tryMount = () => {
-        if (!window.__gofastr || !window.__gofastr.mountWidget) {
-          setTimeout(tryMount, 0);
-          return;
+      // No catalog, an empty one, or a widgets module that failed to
+      // load: settle readiness and stop. The catalog is stored before
+      // the load, since it is data the module does not own: a click
+      // after a failed load reaches openWidget, which retries the load
+      // and finds its widget. Nothing waits on a module that is not
+      // coming.
+      try {
+        if (Array.isArray(list) && list.length) {
+          // The widget runtime now ships as a split module. Make sure it's
+          // loaded before iterating mounts, covers the case where no
+          // [data-cui-widget] marker is present in initial HTML (the
+          // marker scanner wouldn't have fired) but server-side
+          // registration says there are widgets to mount.
+          // loadModule resolves on registration, and widgets.js
+          // registers after it assigns mountWidget.
+          const cat = window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
+          for (const item of list) cat[item.cfg.name] = item;
+          await window.__gofastr.loadModule('widgets');
+          for (const item of list) {
+            if (item.hidden) continue; // open later via openWidget(name)
+            // Non-hidden widgets auto-mount at boot. Chrome HTML is
+            // fetched lazily from cfg.chromePath so the registry stays
+            // small; if the page already SSR-inlined this widget (root
+            // element exists in DOM), mountWidget short-circuits to a
+            // hydrate-only path. Either way, the result is a wired
+            // widget root.
+            window.__gofastr._mountByName(item.cfg.name);
+          }
+          // Open any widget whose deep link matches the current URL. On
+          // a full page load the host has usually SSR-inlined that
+          // chrome (framework/uihost injectWidgetSSR) and _mountByName
+          // hydrates it here; this pass is what covers SPA navigations
+          // and popstate, where no fresh HTML arrives.
+          window.__gofastr._syncDeepLinks();
         }
-        // Stash every widget's payload so openWidget can retrieve a
-        // hidden one on demand. Also settle _wready (via _wcr) so the
-        // eager click delegator can proceed.
-        window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
-        for (const item of list) {
-          window.__gofastr._widgetCatalog[item.cfg.name] = item;
-          if (item.hidden) continue; // open later via openWidget(name)
-          // Non-hidden widgets auto-mount at boot. Chrome HTML is
-          // fetched lazily from cfg.chromePath so the registry stays
-          // small; if the page already SSR-inlined this widget (root
-          // element exists in DOM), mountWidget short-circuits to a
-          // hydrate-only path. Either way, the result is a wired
-          // widget root.
-          window.__gofastr._mountByName(item.cfg.name);
-        }
-        // Open any widget whose deep link matches the current URL. On
-        // a full page load the host has usually SSR-inlined that
-        // chrome (framework/uihost injectWidgetSSR) and _mountByName
-        // hydrates it here; this pass is what covers SPA navigations
-        // and popstate, where no fresh HTML arrives.
-        window.__gofastr._syncDeepLinks();
-
-        // Eager click delegator (installed at boot, see below) is
-        // awaiting this Promise, resolve so queued clicks unblock now
-        // that the catalog is populated.
-        _wcr();
-      };
-      tryMount();
+      } catch (_) {}
+      // The eager click delegator (installed at boot, see below)
+      // awaits this Promise.
+      _wcr();
     })
     .catch(() => { _wcr(); });
 
@@ -2496,6 +2531,14 @@
       // And re-run scanners of modules that ARE loaded so they wire
       // any newly-inserted elements (toast TTL, drop zones).
       const G = window.__gofastr;
+      // Component sheets for every insertion path, not only the swaps
+      // that scan for themselves: compiled actions (updateHTML,
+      // fetchPage) and module-written markup left theirs unloaded.
+      if (G?.scanAndLoadCSS) {
+        G.scanAndLoadCSS(node);
+        G.loadComponentCSS(node.dataset.cuiComp);
+        G.loadComponentCSS(node.dataset.cuiScope);
+      }
       if (G && G._moduleScanners) {
         for (const name in G._moduleScanners) {
           if (G.loadedModules && G.loadedModules[name]) {
@@ -2679,7 +2722,11 @@
   if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
     document.addEventListener('click', async (e) => {
-      if (e.target.closest('[data-cui-widget]')) return;
+      // A MOUNTED widget root (its own listener wired: __fuiW, set and
+      // cleared by the widgets module) owns its RPC clicks. SSR-inlined
+      // chrome the catalog has not mounted yet has no listener, so the
+      // bridge serves it rather than swallow the click.
+      if (e.target.closest('[data-cui-widget]')?.__fuiW) return;
       // Signal mutations win, as they did when one delegator owned both:
       // the old handler set the signal and RETURNED without consulting
       // data-cui-rpc. Two listeners would otherwise both fire on an
@@ -3054,6 +3101,11 @@
     // from the URL: a <link> to the bundle, or the <style> a page
     // whose head fits the first round trip carries it in.
     document.head.querySelectorAll('[data-cui-bundle]').forEach((l) => {
+      // A bundle link that failed (head sheets have settled by the time
+      // this runs) covers nothing: leave its names to the scanner. A
+      // failed sheet is an empty one (the browser still gives it a
+      // CSSStyleSheet), and a bundle is never empty.
+      if (l.tagName === 'LINK') try { if (!l.sheet || !l.sheet.cssRules.length) return; } catch (_) {}
       const names = (l.getAttribute('data-cui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
@@ -3106,12 +3158,18 @@
   // view fetching one record, a relation <select> fetching its options, opts
   // in by carrying data-action-mount="<actionName>" on a node inside a
   // [data-component]. Re-runs on SPA nav so a swapped-in page repopulates.
+  // Each element this pass fires is marked (_cuiM): markup inserted
+  // outside a navigation (an overlay, an island swap, widget chrome) is
+  // the actionloader module's, which fires only unmarked elements, so the
+  // swap a navigation's pass already fired is not fired again when the
+  // mutation observer hands the same nodes over a microtask later.
   const _runMountActions = (root) => {
     const G = window.__gofastr;
     if (!G || !G.trigger) return;
     const scope = root || document;
     for (const el of scope.querySelectorAll('[data-action-mount]')) {
       const action = el.getAttribute('data-action-mount');
+      el._cuiM = 1;
       if (!action) continue;
       const name = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
       if (!name) continue;
