@@ -1189,8 +1189,9 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64, next 
 	sl.supersedeSpawnLocked()
 	child := sl.child
 	peer := sl.peer
-	if sl.reverseClosed != nil && (drainState == StateDrainingDisable || !grantsCover(next, sl.liveGrants)) {
-		sl.reverseClosed.Store(true)
+	closed, held := sl.reverseClosed, sl.liveGrants
+	if closed != nil && (drainState == StateDrainingDisable || !grantsCover(next, held)) {
+		closed.Store(true)
 	}
 	sl.mu.Unlock()
 	if child == nil {
@@ -1198,8 +1199,13 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64, next 
 		sl.finishDrain(drainState, gen)
 		return
 	}
+	// reconcile is blocked in this drain, so a revoke or disable stored
+	// while it runs would reach the child only after it exits: watch for
+	// one and close the gate the moment it lands.
+	stopWatch := sl.watchDrainRevoke(closed, held)
 	// Notify the child; it may finish in-flight work and exit cleanly.
 	sl.sup.drainChild(sl.name, child, peer, sl.sup.cfg.DrainPerModule, drainReason(drainState), true)
+	stopWatch()
 	sl.mu.Lock()
 	sl.child = nil
 	sl.peer = nil
@@ -1207,6 +1213,44 @@ func (sl *moduleSlot) transitionDrain(drainState ProcessState, gen uint64, next 
 	sl.lastExit = drainState.String()
 	sl.mu.Unlock()
 	sl.finishDrain(drainState, gen)
+}
+
+// watchDrainRevoke re-reads the module's desired state every poll interval
+// while a drain that left the serve gate open runs, and closes the gate
+// once the row is disabled or its grants stop covering held. The returned
+// stop ends the watch and waits for it. A read error leaves the gate as it
+// is: the drain is already bounded by DrainPerModule, and the lease logic
+// on the next reconcile decides a failing store.
+func (sl *moduleSlot) watchDrainRevoke(closed *atomic.Bool, held []access.Permission) (stop func()) {
+	if closed == nil || closed.Load() {
+		return func() {}
+	}
+	interval := sl.sup.cfg.PollInterval
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			d, err := sl.getDesiredSafely(ctx)
+			cancel()
+			if err == nil && (!d.Enabled || !grantsCover(d.EffectiveGrants, held)) {
+				closed.Store(true)
+				sl.sup.logf("processmodule: %s revoked or disabled mid-drain: reverse calls closed", sl.name)
+				return
+			}
+		}
+	}()
+	return func() { close(done); <-finished }
 }
 
 // grantsCover reports whether every grant in held is still granted by
