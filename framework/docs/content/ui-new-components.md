@@ -345,6 +345,12 @@ Three more knobs round out the contract surface:
   at boot with `context.Background()` gives every phone user the
   anonymous footer. The drawer's name, variant and header brand come
   from `build(context.Background())` at mount time.
+- The mounted drawer is a `role="dialog"` named "Navigation" in the
+  request's locale (the `ui.sidebar.drawer` phrase,
+  `i18nui.SidebarDrawerLabel`): `aria-labelledby` points at a hidden
+  span with the id `<DrawerName>-label` in the drawer header, rendered
+  whether or not the header shows a brand, so a screen reader never
+  announces a bare "dialog".
 - `Count` ends a link's row in a small muted figure (`render.Text("12")`);
   the collapsed rail hides it. In a kept shell, hand in an inline route
   area (`app.AreaSpec{Inline: true}`, `l.RouteArea`) so the figure

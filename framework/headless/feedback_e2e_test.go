@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
 
@@ -245,5 +246,47 @@ func TestE2E_ServerToastWithATTLLeaves(t *testing.T) {
 	}
 	if !pollTrue(ctx, `document.querySelector('[data-hui-toast]') === null`) {
 		t.Fatal("a server-rendered toast with a lifetime never left")
+	}
+}
+
+// A toast's clock stays stopped while focus is on its action, even
+// when the pointer leaves the row, and focus leaving re-arms exactly
+// one timer: a second arm used to orphan the first, which then
+// dismissed the row while the reader was still on it.
+func TestE2E_ToastHoldsWhileFocused(t *testing.T) {
+	b := startBehaviorServer(t, toastStackWithTemplate()+`<button id="out">out</button>`)
+	ctx := behaviorPage(t, b)
+	// A background headless tab has no page focus, so a scripted
+	// .focus() moves activeElement without firing focusin. Emulating
+	// focus makes it fire, the way it does in a focused window.
+	if err := chromedp.Run(ctx, emulation.SetFocusEmulationEnabled(true)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
+		t.Fatal("the stack marker never loaded headless-feedback")
+	}
+	var id string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`window.__gofastr.toast({variant:'success', title:'Deleted', ttl:600, action:{label:'Undo', attrs:{'data-cui-rpc':'/undo'}}})`, &id)); err != nil {
+		t.Fatal(err)
+	}
+	timer := `window.__gofastr._toastTimers.get(` + "`" + id + "`" + `).timer`
+	steps := []struct{ js, want, why string }{
+		{`document.querySelector('[data-hui-toast-action]').focus()`, `=== 0`, "focus on the action did not stop the clock"},
+		{`(function(){var r=document.querySelector('[data-hui-toast-id]');r.dispatchEvent(new MouseEvent('mouseenter'));r.dispatchEvent(new MouseEvent('mouseleave'));})()`, `=== 0`, "the pointer leaving restarted the clock while focus was on the action"},
+		{`document.getElementById('out').focus(); window.__t1 = ` + timer, `!== 0`, "focus leaving the row did not re-arm the clock"},
+		{`document.querySelector('[data-hui-toast-id]').dispatchEvent(new MouseEvent('mouseleave'))`, `=== window.__t1`, "a second leave armed another timer over the first"},
+	}
+	for _, s := range steps {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(s.js, nil)); err != nil {
+			t.Fatal(err)
+		}
+		var ok bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(timer+` `+s.want, &ok)); err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Fatal(s.why)
+		}
 	}
 }

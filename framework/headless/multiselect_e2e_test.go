@@ -183,3 +183,38 @@ func TestE2E_MultiSelectChipRemovesItsOwnOption(t *testing.T) {
 		t.Fatalf("the second form's C++ chip did not uncheck its own option: checked = %s, want 1110", got)
 	}
 }
+
+// Removing a chip rebuilds the strip, which destroys the pressed
+// button; focus lands on the chip that took its place, then the one
+// before it, then the field's trigger, never on the body.
+func TestE2E_MultiSelectChipRemoveKeepsFocus(t *testing.T) {
+	b := startBehaviorServer(t, string(MultiSelect(MultiSelectProps{
+		ID: "ms", Name: "langs", Label: "Pick languages",
+		Options: []MultiSelectOption{
+			{Value: "go", Label: "Go", Selected: true},
+			{Value: "rust", Label: "Rust", Selected: true},
+		},
+	}, nil)))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, multiSelectLoaded) {
+		t.Fatal("the multiselect marker never loaded headless-multiselect")
+	}
+	if !pollTrue(ctx, `document.querySelectorAll('#ms [data-hui-multiselect-remove]').length === 2`) {
+		t.Fatal("the two checked options never drew their chips")
+	}
+	press := `(function(){var b=document.querySelector('#ms [data-hui-multiselect-remove]');b.focus();b.click();` +
+		`var a=document.activeElement;return a.getAttribute('data-hui-multiselect-remove')||a.tagName;})()`
+	var first, second string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(press, &first),
+		chromedp.Evaluate(press, &second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if first != "ms-opt-1" {
+		t.Errorf("after removing the first chip focus is on %q, want the next chip's remove (ms-opt-1)", first)
+	}
+	if second != "SUMMARY" {
+		t.Errorf("after removing the last chip focus is on %q, want the field's trigger (SUMMARY)", second)
+	}
+}

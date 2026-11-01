@@ -836,8 +836,16 @@ func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 // button that rides the widget runtime's data-cui-action="close"
 // contract — the same dismiss path the backdrop and Escape take, and
 // dismiss returns focus to the trigger that opened the drawer.
+//
+// The header also carries the drawer's accessible name: the drawer is
+// a role="dialog", and a dialog with no name is announced as a bare
+// "dialog". The name is a hidden span the root's aria-labelledby
+// points at (a hidden element still names what references it), so it
+// renders with or without a brand and says the word the hamburger's
+// "Open navigation" promised.
 type sidebarDrawerHeader struct {
 	title, closeLabel string
+	labelID           string
 	resolve           func(context.Context) SidebarConfig
 }
 
@@ -846,8 +854,10 @@ func (h sidebarDrawerHeader) Render() render.HTML {
 }
 
 func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
+	name := html.Span(html.TextConfig{ID: h.labelID, ExtraAttrs: html.Attrs{"hidden": ""}},
+		render.Text(i18nui.SidebarDrawerLabel.Text(ctx)))
 	if h.title == "" {
-		return ""
+		return name
 	}
 	label := h.closeLabel
 	if h.resolve != nil {
@@ -859,7 +869,7 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
 	// pulls this sheet too — the header slot sits in the widget
 	// chrome, beside (not inside) the body's marked region.
-	return sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
+	return name + sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
 		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
 		Button(ButtonConfig{Ctx: ctx, Label: label, Icon: "close", IconOnly: true,
 			Variant: ButtonGhost, Class: "fui-sidebar__drawer-close",
@@ -872,6 +882,10 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 // once per app at startup. The same SidebarConfig is passed to
 // `Sidebar(cfg)` when rendering screens so the two views stay in
 // sync.
+//
+// The drawer is a role="dialog" named "Navigation" (the
+// i18nui.SidebarDrawerLabel phrase, in the request's locale) through
+// aria-labelledby on a hidden span with the id "<DrawerName>-label".
 //
 // The drawer renders cfg as given on every request (only the role
 // filter sees the request). When the sidebar's content depends on the
@@ -910,9 +924,11 @@ func mountSidebar(r WidgetMounter, cfg SidebarConfig, build func(context.Context
 	if title == "" {
 		title = cfg.Title
 	}
+	labelID := cfg.DrawerName + "-label"
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
-		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, resolve: build}).
+		LabelledBy(labelID).
+		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, labelID: labelID, resolve: build}).
 		Slot("body", sidebarDrawerSlot{cfg: cfg, resolve: build})
 	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`

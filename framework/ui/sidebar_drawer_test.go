@@ -192,3 +192,26 @@ func TestDrawerFooterResolvesPerRequest(t *testing.T) {
 		t.Errorf("MountSidebarFunc must mount one default-named drawer, got %d", len(r.mounted))
 	}
 }
+
+// The drawer is a role="dialog": with no accessible name a screen
+// reader announces a bare "dialog" when the hamburger opens it. It is
+// named by an element in its own chrome, titled or not.
+func TestSidebarDrawerHasAccessibleName(t *testing.T) {
+	for _, cfg := range []SidebarConfig{
+		{DrawerTitle: "Acme", Items: []SidebarItem{{Label: "Home", Href: "/"}}},
+		{Items: []SidebarItem{{Label: "Home", Href: "/"}}},
+	} {
+		def := MountSidebar(&mountRecorder{}, cfg)
+		chrome := string(widget.RenderChrome(&def))
+		if !strings.Contains(chrome, `role="dialog"`) {
+			t.Fatalf("drawer chrome is not a dialog:\n%s", chrome)
+		}
+		const ref = `aria-labelledby="ui-sidebar-drawer-label"`
+		if !strings.Contains(chrome, ref) {
+			t.Errorf("drawer dialog has no aria-labelledby (title %q):\n%s", cfg.DrawerTitle, chrome)
+		}
+		if !strings.Contains(chrome, `<span hidden="" id="ui-sidebar-drawer-label">Navigation</span>`) {
+			t.Errorf("drawer chrome lacks the element its name points at (title %q):\n%s", cfg.DrawerTitle, chrome)
+		}
+	}
+}

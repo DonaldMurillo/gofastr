@@ -81,14 +81,20 @@
     if (!root || !v) return false;
     const list = root.querySelector('[data-hui-tag-input-list]');
     if (!list) return false;
+    // The cap applies first, in characters (code points, the server's
+    // runes: a UTF-16 slice can cut an emoji in half), so the
+    // duplicate check compares what would be stored.
+    const cap = parseInt(root.getAttribute('data-hui-tag-input-maxlength') || '0', 10);
+    let val = v;
+    if (cap > 0) {
+      const chars = Array.from(val);
+      if (chars.length > cap) val = chars.slice(0, cap).join('');
+    }
     // A chip already holding the value is a duplicate: the draft
     // clears and nothing else happens.
     for (const h of hiddensOf(root)) {
-      if (h.value === v) { input.value = ''; return false; }
+      if (h.value === val) { input.value = ''; return false; }
     }
-    const cap = parseInt(root.getAttribute('data-hui-tag-input-maxlength') || '0', 10);
-    let val = v;
-    if (cap > 0 && val.length > cap) val = val.slice(0, cap);
     list.appendChild(makeChip(root, val));
     input.value = '';
     const status = statusOf(root);

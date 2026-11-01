@@ -60,20 +60,28 @@
       if (ttl > 0) {
         const rec = { item, remaining: ttl, startedAt: Date.now(), timer: 0 };
         NS._toastTimers.set(id, rec);
+        // The clock runs only while the row is neither hovered nor
+        // holding focus: the pointer leaving while a keyboard user is
+        // still on the action must not restart it, and a row has one
+        // timer at most (a second arm orphaned the first, which then
+        // dismissed the row early).
+        let over = 0;
         const arm = () => {
+          if (rec.timer || over || item.contains(document.activeElement)) return;
           rec.startedAt = Date.now();
-          rec.timer = setTimeout(() => { NS._dismissToast(item, id); }, rec.remaining);
+          rec.timer = setTimeout(() => NS._dismissToast(item, id), rec.remaining);
         };
         const pause = () => {
           if (!rec.timer) return;
           clearTimeout(rec.timer);
           rec.timer = 0;
-          rec.remaining -= Date.now() - rec.startedAt;
-          if (rec.remaining < 100) rec.remaining = 100;
+          rec.remaining = Math.max(100, rec.remaining - Date.now() + rec.startedAt);
         };
-        item.addEventListener('mouseenter', pause);
+        item.addEventListener('mouseenter', () => pause(over = 1));
         item.addEventListener('focusin', pause);
-        item.addEventListener('mouseleave', arm);
+        item.addEventListener('mouseleave', () => arm(over = 0));
+        // Focus moving between the row's own controls arms here and
+        // pauses again on the focusin that follows.
         item.addEventListener('focusout', arm);
         arm();
       }
@@ -99,10 +107,10 @@
     // The leaving mark is the module's own (written here, rendered by
     // no component): the kit's stack sheet animates the row out on it.
     item.setAttribute('data-hui-toast-leaving', '');
-    const rec = NS._toastTimers.get(id);
-    if (rec) { clearTimeout(rec.timer); NS._toastTimers.delete(id); }
+    clearTimeout(NS._toastTimers.get(id)?.timer);
+    NS._toastTimers.delete(id);
     const ms = parseFloat(getComputedStyle(item).animationDuration) * 1000 || 200;
-    setTimeout(() => { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
+    setTimeout(() => item.remove(), ms);
   };
 
   // ─── toast rows ─────────────────────────────────────────────────

@@ -296,3 +296,29 @@ func TestE2E_TagInputRemovalSaysTheValue(t *testing.T) {
 		t.Fatalf("the removal said %q, want %q", got, "3×5 removed")
 	}
 }
+
+// The cap applies before the duplicate check: with a cap of 3 and a
+// chip "abc", typing "abcdef" is the same tag again and adds nothing,
+// where it used to add a second "abc" the form submitted twice.
+func TestE2E_TagInputCapsBeforeDedup(t *testing.T) {
+	body := TagInput(TagInputProps{Name: "tags", Label: "Tags", MaxLength: 3, Values: []string{"abc"}}, nil)
+	b := startBehaviorServer(t, string(body))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(CollectionsBehaviorName)) {
+		t.Fatal("the tag field marker never loaded headless-collections")
+	}
+	var vals []string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(function(){
+			var f = document.querySelector('[data-hui-tag-input-field]');
+			f.value = 'abcdef';
+			f.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true}));
+		})()`, nil),
+		chromedp.Evaluate(`[...document.querySelectorAll('[data-hui-tag-input] input[type=hidden]')].map(function(h){return h.value})`, &vals),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(vals) != 1 || vals[0] != "abc" {
+		t.Fatalf("an over-long duplicate changed the tags: %q, want [abc]", vals)
+	}
+}

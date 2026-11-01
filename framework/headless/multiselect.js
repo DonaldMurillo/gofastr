@@ -82,8 +82,15 @@
     if (!cbID || !root) return;
     const cb = [...root.querySelectorAll('input[type="checkbox"]')].find((c) => c.id === cbID);
     if (!cb) return;
+    const chips = () => [...root.querySelectorAll('[data-hui-multiselect-remove]')];
+    const at = chips().indexOf(btn);
     cb.checked = false;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
+    // The re-render above destroyed the pressed button, and focus
+    // would drop to the body: it goes to the chip that took its place,
+    // else the one before it, else the field's trigger.
+    const left = chips();
+    (left[Math.min(at, left.length - 1)] || root.querySelector('summary'))?.focus();
   });
 
   // Click-outside close: any click whose target is outside an open

@@ -344,3 +344,41 @@ func TestE2E_RailMarksLastPassedAfterJump(t *testing.T) {
 		t.Fatal("after a jump past every section the rail kept its old mark, want the last section passed")
 	}
 }
+
+// An island swap that replaces the observed region's sections, the
+// nav staying put, re-arms the observer on the new sections: the old
+// one watched detached nodes, which read as zero boxes, so every pick
+// marked the last anchor whatever was in view.
+func TestE2E_RailFollowsASwappedRegion(t *testing.T) {
+	nav := Rail(RailProps{
+		Label: "On this page", ObserveSelector: "#region",
+		Items: []RailItem{
+			{Anchor: "one", Text: "One"},
+			{Anchor: "two", Text: "Two"},
+			{Anchor: "three", Text: "Three"},
+		},
+	}, nil)
+	b := startBehaviorServer(t, railPage(t, nav))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-rail'])`) {
+		t.Fatal("the rail marker never loaded headless-rail")
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first section's anchor")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(function(){
+			var r = document.getElementById('region');
+			r.innerHTML = ['one','two','three'].map(function(id){
+				return '<section id="' + id + '" style="min-height:120vh">Swapped ' + id + '</section>';
+			}).join('');
+		})()`, nil),
+		chromedp.Sleep(200*1e6),
+		chromedp.Evaluate(`document.getElementById('two').scrollIntoView()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "two")) {
+		t.Fatal("after the region was swapped, scrolling to section two did not mark its anchor")
+	}
+}

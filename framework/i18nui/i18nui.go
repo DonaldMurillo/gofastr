@@ -252,6 +252,7 @@ var (
 	ListDetailBack      = i18n.Define("ui.listDetail.back", "Back")
 	SidebarOpenDrawer   = i18n.Define("ui.sidebar.openDrawer", "Open navigation")
 	SidebarCloseDrawer  = i18n.Define("ui.sidebar.closeDrawer", "Close navigation")
+	SidebarDrawerLabel  = i18n.Define("ui.sidebar.drawer", "Navigation")
 	NetworkRetryTitle   = i18n.Define("ui.networkRetry.title", "Connection lost")
 	NetworkRetryText    = i18n.Define("ui.networkRetry.text", "We're having trouble reaching the server. Your changes are paused until the connection comes back.")
 	NetworkRetryNowText = i18n.Define("ui.networkRetry.retry", "Retry now")

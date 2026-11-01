@@ -41,14 +41,39 @@
   // crosses no band edge the observer reports, so each armed nav also
   // leaves its pick here and a settled scroll runs them.
   const repick = new Map();
+  // Every nav asked to arm, with the selector pair it was asked with
+  // (headless-toc passes its own), and for an armed one a check that
+  // its region, targets and links are all still in the document. An
+  // island swap can replace the observed region, or the nav's links,
+  // while the nav itself stays: the observer then watches detached
+  // nodes, which read as zero boxes, and the last link stays marked.
+  // The next arrival re-resolves such a nav, and arms one whose region
+  // was not there yet.
+  const specs = new Map();
+  const fresh = new Map();
+  function drop(nav) {
+    const o = observers.get(nav);
+    if (o) o.disconnect();
+    observers.delete(nav); // re-inserted later, it arms again
+    remeasure.delete(nav);
+    repick.delete(nav);
+    fresh.delete(nav);
+  }
   function prune() {
-    for (const nav of remeasure.keys()) {
+    for (const nav of specs.keys()) {
       if (nav.isConnected) continue;
-      const o = observers.get(nav);
-      if (o) o.disconnect();
-      observers.delete(nav); // re-inserted later, it arms again
-      remeasure.delete(nav);
-      repick.delete(nav);
+      drop(nav);
+      specs.delete(nav);
+    }
+  }
+  function recheck() {
+    for (const [nav, spec] of specs) {
+      if (observers.has(nav)) {
+        const ok = fresh.get(nav);
+        if (!ok || ok()) continue;
+        drop(nav);
+      }
+      watch(nav, spec[0], spec[1]);
     }
   }
   let resizePending = false;
@@ -120,6 +145,7 @@
     prune();
     if (!nav || observers.has(nav)) return;
     if (!observeSel) return; // a static rail: links only
+    specs.set(nav, [observeSel, targetSel]);
     let root = null;
     try { root = document.querySelector(observeSel); } catch (_) { return; }
     if (!root) return;
@@ -129,6 +155,7 @@
     if (anchors.length === 0) return;
     const anchorByID = {};
     const targets = [];
+    const linked = [];
     for (const a of anchors) {
       const id = a.getAttribute('href').slice(1);
       if (!id || id === '__proto__' || id === 'constructor' || id === 'prototype') continue;
@@ -136,6 +163,7 @@
       try { t = root.querySelector('#' + cssEscape(id)); } catch (_) { t = null; }
       if (!t) continue;
       anchorByID[id] = a;
+      linked.push(a);
       targets.push(t);
     }
     if (targets.length === 0) return;
@@ -203,6 +231,8 @@
       observers.set(nav, observer);
     };
     arm();
+    fresh.set(nav, () => root.isConnected &&
+      targets.every((t) => t.isConnected) && linked.every((a) => a.isConnected));
 
     // A resize that moves the covered edge re-arms the observer on the
     // new band.
@@ -235,6 +265,7 @@
 
   function scan(root) {
     prune();
+    recheck();
     const scope = root && root.querySelectorAll ? root : document;
     for (const nav of within(scope, '[data-hui-rail]')) {
       watch(
