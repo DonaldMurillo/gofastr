@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -172,9 +173,39 @@ func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	// Content-addressed URL (?v=<hash>) → safe to cache forever.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if serveContentAddressed(w, r, runtime.ModuleHash(name)) {
+		return
+	}
 	fmt.Fprint(w, src)
+}
+
+// serveContentAddressed sets the cache policy for a content-addressed
+// asset and answers a conditional request; it reports true when the
+// response is complete (a 304, or a HEAD). The URL is immutable only
+// when its ?v= names the bytes this process serves: during a rolling
+// deploy a page from a newer replica asks for x.js?v=<new> and can land
+// on an older one, and an immutable answer there pins the old bytes
+// under the new URL in browsers, CDNs and the PWA precache for a year.
+// Any other ?v= (stale, missing, mistyped) is no-cache with the ETag,
+// so the next request revalidates and picks up the right bytes.
+func serveContentAddressed(w http.ResponseWriter, r *http.Request, hash string) bool {
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	etag := ""
+	if hash != "" {
+		etag = `"` + hash + `"`
+		h.Set("ETag", etag)
+	}
+	if hash != "" && r.URL.Query().Get("v") == hash {
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "no-cache")
+	}
+	if etag != "" && corestatic.IfNoneMatch(r, etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
+	return r.Method == http.MethodHead
 }
 
 const computeWorkerCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
@@ -216,7 +247,9 @@ func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
 		// Permit WebAssembly compilation without enabling JavaScript eval.
 		w.Header().Set("Content-Security-Policy", computeWorkerCSP)
 	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if serveContentAddressed(w, r, asset.Hash()) {
+		return
+	}
 	_, _ = asset.WriteTo(w)
 }
 

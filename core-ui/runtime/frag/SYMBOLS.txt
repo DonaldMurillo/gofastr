@@ -182,6 +182,7 @@ kernel	4	sg
 kernel	4	t
 kernel	4	ua
 kernel	6	a
+kernel	6	app
 kernel	6	arr
 kernel	6	cat
 kernel	6	container
@@ -356,6 +357,7 @@ nav	6	layouts
 nav	6	notOk
 nav	6	oldest
 nav	6	origin
+nav	6	p
 nav	6	p
 nav	6	partial
 nav	6	pp

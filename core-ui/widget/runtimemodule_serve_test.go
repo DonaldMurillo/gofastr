@@ -69,3 +69,50 @@ func TestServeRuntimeModuleServesRegisteredBehavior(t *testing.T) {
 		t.Fatalf("unknown module status = %d, want 404", resp404.StatusCode)
 	}
 }
+
+// The module route is immutable only for the ?v= that names the served
+// bytes. During a rolling deploy a page rendered by a newer replica asks
+// for x.js?v=<new> and can land on an older one: an immutable answer
+// there pins the old bytes under the new URL in browsers, CDNs and the
+// PWA precache for a year. A stale or missing ?v= is no-cache with the
+// ETag, so the next request revalidates.
+func TestServeRuntimeModuleStaleVersionIsNotImmutable(t *testing.T) {
+	r := router.New()
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	hash := runtime.ModuleHash("poll")
+	if hash == "" {
+		t.Fatal("no hash for the embedded poll module")
+	}
+	for _, q := range []string{"?v=" + hash, "?v=0123456789abcdef", ""} {
+		resp, err := http.Get(srv.URL + "/__gofastr/runtime/poll.js" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		want := "no-cache"
+		if q == "?v="+hash {
+			want = "public, max-age=31536000, immutable"
+		}
+		if cc := resp.Header.Get("Cache-Control"); cc != want {
+			t.Errorf("%q: Cache-Control = %q, want %q", q, cc, want)
+		}
+		if et := resp.Header.Get("ETag"); et != `"`+hash+`"` {
+			t.Errorf("%q: ETag = %q, want the content hash", q, et)
+		}
+		if ns := resp.Header.Get("X-Content-Type-Options"); ns != "nosniff" {
+			t.Errorf("%q: X-Content-Type-Options = %q, want nosniff", q, ns)
+		}
+	}
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/__gofastr/runtime/poll.js", nil)
+	req.Header.Set("If-None-Match", `"`+hash+`"`)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotModified {
+		t.Errorf("conditional request status = %d, want 304", resp.StatusCode)
+	}
+}
