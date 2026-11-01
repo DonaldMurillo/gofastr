@@ -312,9 +312,9 @@ type desktopBuildFlags struct {
 	// executable starts with (desktop.LaunchArgs), for a binary whose
 	// desktop mode is a subcommand. ldflags is --ldflags, appended to
 	// the build's own linker flags (-X main.version=...).
-	launchArgs string
-	ldflags    string
-	entitlements  string
+	launchArgs   string
+	ldflags      string
+	entitlements string
 }
 
 func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {

@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/agentscmd"
@@ -319,9 +320,33 @@ func warnVersionMismatch(cmd string, args []string) {
 	if err != nil {
 		return
 	}
+	if dir := projectDirFlag(cmd, args); dir != "" {
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(wd, dir)
+		}
+		wd = dir
+	}
 	if w := project.VersionMismatch(wd); w != "" {
 		fmt.Fprintf(os.Stderr, "%s %s\n", cli.Yellow("warning:"), w)
 	}
+}
+
+// projectDirFlag is the project directory a command was pointed at
+// with --dir (`gofastr dev --dir=../app`), or "" when it works in the
+// current directory.
+func projectDirFlag(cmd string, args []string) string {
+	if cmd != "dev" {
+		return ""
+	}
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, "--dir="); ok {
+			return v
+		}
+		if a == "--dir" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func desktopCommandOwnsVersionFlag(args []string, index int) bool {

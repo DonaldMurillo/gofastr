@@ -102,8 +102,10 @@ few lines, and link the PR or the docs page for the rest.
   [data export](framework/docs/content/data-export.md) lists every store
   and how it is erased.
 - **Gaps from building on v0.95.0 (#635).**
-  `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` let a
-  client with no browser reach paths the app authenticates itself;
+  `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` skip
+  the browser sign-in on the paths they name, for a client with no
+  browser; the app's own auth (an API key, a bearer token) protects
+  them;
   `service.Config.BindAddress` serves beyond loopback
   ([service](framework/docs/content/service.md#callers-with-no-browser-openprefixes)).
   `webhook.Subscriber.Auth` sends a bearer, API key or basic credential,

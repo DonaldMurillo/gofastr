@@ -40,8 +40,7 @@ func serveSpec(w http.ResponseWriter, r *http.Request, spec *Spec) {
 	s := spec
 	if spec.RequestView != nil {
 		if v := spec.RequestView(r); v != nil {
-			v.inheritInfo(spec)
-			s = v
+			s = v.withInheritedInfo(spec)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

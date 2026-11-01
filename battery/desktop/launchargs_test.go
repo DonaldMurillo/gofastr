@@ -43,8 +43,10 @@ func TestLaunchArgsWithoutBuild(t *testing.T) {
 	if got := LaunchArgs(nil); got != nil {
 		t.Fatalf("LaunchArgs(nil) with nothing baked = %q; want nil", got)
 	}
-	builtLaunchArgs = "!!not base64"
-	if got := LaunchArgs([]string{"x"}); !slices.Equal(got, []string{"x"}) {
-		t.Fatalf("a malformed stamp must leave args alone, got %q", got)
+	for _, stamp := range []string{"!!not base64", base64.RawURLEncoding.EncodeToString([]byte("{not json"))} {
+		builtLaunchArgs = stamp
+		if got := LaunchArgs(nil); got != nil {
+			t.Fatalf("stamp %q: a malformed stamp must bake in nothing, got %q", stamp, got)
+		}
 	}
 }

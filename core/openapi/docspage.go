@@ -72,7 +72,8 @@ const docsCSP = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-
 func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
 	// "/docs/" and "/docs" name the same mount; with the slash kept,
 	// StripPrefix would leave "" for "/docs/" and miss "/docs/openapi.json".
-	if len(cfg.BasePath) > 1 && strings.HasPrefix(cfg.BasePath, "/") {
+	// "/" becomes "", a mount at the site root.
+	if strings.HasPrefix(cfg.BasePath, "/") {
 		cfg.BasePath = strings.TrimRight(cfg.BasePath, "/")
 	}
 	if cfg.SpecPath == "" {
@@ -113,8 +114,7 @@ func DocsHandlerWith(spec *Spec, cfg DocsConfig) http.Handler {
 			}
 			if spec.RequestView != nil {
 				if v := spec.RequestView(r); v != nil {
-					v.inheritInfo(spec)
-					view = v
+					view = v.withInheritedInfo(spec)
 				}
 			}
 		}

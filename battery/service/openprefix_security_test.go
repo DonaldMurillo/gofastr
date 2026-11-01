@@ -96,6 +96,15 @@ func TestOpenPrefixLetsPreflightedCrossOriginWritesThrough(t *testing.T) {
 	if code, _ := serveWho(g, r); code != http.StatusOK {
 		t.Fatalf("cross-site JSON POST to an open path = %d; want 200", code)
 	}
+	// The browser sends the preflight first: OPTIONS, no body, no
+	// content type. It must reach the app's CORS, or the POST never goes.
+	pre := request(http.MethodOptions, gateHost, "/api/things", "")
+	pre.Header.Set("Sec-Fetch-Site", "cross-site")
+	pre.Header.Set("Origin", "https://spa.example")
+	pre.Header.Set("Access-Control-Request-Method", "POST")
+	if code, _ := serveWho(g, pre); code != http.StatusOK {
+		t.Fatalf("cross-site CORS preflight to an open path = %d; want it to reach the app", code)
+	}
 	c := signIn(t, g)
 	r = request(http.MethodPost, gateHost, "/admin", "")
 	r.Header.Set("Content-Type", "application/json")
@@ -172,6 +181,13 @@ func TestBindAddressHosts(t *testing.T) {
 	}
 	if got := browserAddr("0.0.0.0:47811"); got != "127.0.0.1:47811" {
 		t.Fatalf("browserAddr(0.0.0.0) = %q; want 127.0.0.1:47811", got)
+	}
+	if got := browserAddr("[::]:47811"); got != "[::1]:47811" {
+		t.Fatalf("browserAddr(::) = %q; want [::1]:47811 (an IPv6-only host has no 127.0.0.1)", got)
+	}
+	v6wild := &Battery{cfg: Config{BindAddress: "::"}}
+	if got := v6wild.extraHosts(47811); len(got) != 1 || got[0] != "[::1]:47811" {
+		t.Fatalf("a :: bind pins %v; want [::1]:47811, where browserAddr sends the browser", got)
 	}
 	if got := browserAddr("192.168.1.20:47811"); got != "192.168.1.20:47811" {
 		t.Fatalf("browserAddr(specific) = %q; want it unchanged", got)

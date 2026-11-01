@@ -174,3 +174,31 @@ func TestDocsHandlerWithRefusalsAreI18n(t *testing.T) {
 		t.Fatalf("spec = %d", rec.Code)
 	}
 }
+
+// A mount at the site root serves the page at / and the spec at
+// /openapi.json.
+func TestDocsHandlerWithRootBasePath(t *testing.T) {
+	h := DocsHandlerWith(docsSpec(), DocsConfig{BasePath: "/", Public: true})
+	for _, p := range []string{"/", "/openapi.json"} {
+		if rec := serveDocs(h, p, false); rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d; want 200", p, rec.Code)
+		}
+	}
+	if body := serveDocs(h, "/", false).Body.String(); !strings.Contains(body, `href="/openapi.json"`) {
+		t.Fatalf("root-mounted page does not link /openapi.json: %s", body)
+	}
+}
+
+// A RequestView may hand back a spec it shares between requests (one
+// per role, say); serving must not write into it.
+func TestRequestViewSpecIsNotMutated(t *testing.T) {
+	s := NewSpec("Orders", "2.1.0")
+	s.SetDescription("Order intake.")
+	shared := NewSpec("Orders", "2.1.0")
+	s.RequestView = func(*http.Request) *Spec { return shared }
+	serveDocs(DocsHandlerWith(s, DocsConfig{BasePath: "/docs"}), "/docs/", true)
+	serveDocs(Handler(s), "/", true)
+	if _, ok := shared.info["description"]; ok {
+		t.Fatal("serving wrote the base spec's description into the shared RequestView spec")
+	}
+}

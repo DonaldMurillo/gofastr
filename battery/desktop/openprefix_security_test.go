@@ -100,6 +100,12 @@ func TestDesktopOpenPrefixRefusesCrossSiteWrite(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("cross-site JSON POST to an open path = %d; want 200", code)
 	}
+	// Its preflight (OPTIONS, no content type) must reach the app's CORS.
+	code, _ = openDo(t, http.MethodOptions, srv.URL+"/api/things", "", "", map[string]string{
+		"Sec-Fetch-Site": "cross-site", "Origin": "https://spa.example", "Access-Control-Request-Method": "POST"})
+	if code != http.StatusOK {
+		t.Fatalf("cross-site CORS preflight to an open path = %d; want it to reach the app", code)
+	}
 }
 
 // The window's own fetches to /api keep the local identity.

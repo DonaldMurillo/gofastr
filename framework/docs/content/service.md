@@ -248,7 +248,7 @@ entry (a loopback address such as `::1` is pinned too). A wildcard bind
 adds no Host value, because the name a caller
 uses is not knowable, so list it in `AllowHosts`. The browser session
 still comes only from `service open` on this machine, which opens
-`127.0.0.1` for a wildcard bind. Pair `BindAddress` with `OpenPrefixes`
+`127.0.0.1` for a `0.0.0.0` bind and `[::1]` for a `::` bind. Pair `BindAddress` with `OpenPrefixes`
 for the routes the outside callers use. Each start logs a non-loopback
 bind as a warning.
 

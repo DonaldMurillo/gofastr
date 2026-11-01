@@ -42,7 +42,9 @@ func TestVersionMismatchWarns(t *testing.T) {
 func TestVersionMismatchQuiet(t *testing.T) {
 	t.Setenv(EnvNoVersionCheck, "")
 	same := writeGoMod(t, "module example.com/app\n\nrequire github.com/DonaldMurillo/gofastr v0.95.0\n")
-	replaced := writeGoMod(t, "module example.com/app\n\nrequire github.com/DonaldMurillo/gofastr v0.95.0\n\nreplace github.com/DonaldMurillo/gofastr => ../gofastr\n")
+	// The replaced module asks for another version, so only the replace
+	// rule can keep this quiet.
+	replaced := writeGoMod(t, "module example.com/app\n\nrequire github.com/DonaldMurillo/gofastr v0.90.0\n\nreplace github.com/DonaldMurillo/gofastr => ../gofastr\n")
 	other := writeGoMod(t, "module example.com/app\n\nrequire example.com/x v1.0.0\n")
 	self := writeGoMod(t, "module github.com/DonaldMurillo/gofastr\n")
 

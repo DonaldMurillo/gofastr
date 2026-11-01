@@ -53,18 +53,24 @@ func (s *Spec) SetDescription(description string) {
 	s.info["description"] = description
 }
 
-// inheritInfo copies every info field base set that s did not, so a
-// per-request view (RequestView) keeps the description and anything
-// else the host set on the spec it serves.
-func (s *Spec) inheritInfo(base *Spec) {
+// withInheritedInfo returns s with every info field base set that s did
+// not, so a per-request view (RequestView) keeps the description and
+// anything else the host set on the spec it serves. It returns a shallow
+// copy with its own info map: a RequestView may hand back a spec it
+// shares between requests, and writing into that map would race.
+func (s *Spec) withInheritedInfo(base *Spec) *Spec {
 	if s == base || s.info == nil {
-		return
+		return s
 	}
+	c := *s
+	c.info = make(map[string]any, len(s.info)+len(base.info))
 	for k, v := range base.info {
-		if _, ok := s.info[k]; !ok {
-			s.info[k] = v
-		}
+		c.info[k] = v
 	}
+	for k, v := range s.info {
+		c.info[k] = v
+	}
+	return &c
 }
 
 // AddServer registers a server URL with an optional description. URLs

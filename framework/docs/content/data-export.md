@@ -319,8 +319,10 @@ Two jobs look close to export and import and are deliberately left to
 the app:
 
 - **Copying rows in from another database.** `ImportData` reads only
-  archives `ExportData` wrote, and `core/migrate` runs schema
-  migrations only. Moving rows from a legacy database is a one-time job
+  archives in the GoFastr archive format (the layout `ExportData`
+  writes), and `core/migrate` never connects to a second database: its
+  SQL files can backfill rows inside the app's own database, not copy
+  them in from another one. Moving rows from a legacy database is a one-time job
   whose column mapping only the app knows. Write it as a small program:
   open both databases with `database/sql`, read from the old one, and
   insert into the new one inside one transaction on the target

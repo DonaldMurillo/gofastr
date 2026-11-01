@@ -24,6 +24,7 @@ func TestRefuseCrossSite(t *testing.T) {
 		{"curl POST (no browser headers)", "POST", "application/x-www-form-urlencoded", nil, false},
 		{"cross-site JSON POST (preflighted)", "POST", "application/json", map[string]string{"Sec-Fetch-Site": "cross-site"}, false},
 		{"cross-site GET", "GET", "", map[string]string{"Sec-Fetch-Site": "cross-site"}, false},
+		{"cross-site CORS preflight", "OPTIONS", "", map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://spa.example", "Access-Control-Request-Method": "POST"}, false},
 	}
 	for _, tc := range cases {
 		r := httptest.NewRequest(tc.method, "http://app.example/form", strings.NewReader("a=1"))

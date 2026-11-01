@@ -29,6 +29,23 @@ func TestVersionCheckApplies(t *testing.T) {
 	}
 }
 
+func TestProjectDirFlag(t *testing.T) {
+	for _, tc := range []struct {
+		cmd  string
+		args []string
+		want string
+	}{
+		{"dev", []string{"--dir=../app"}, "../app"},
+		{"dev", []string{"--addr", ":9000", "--dir", "/srv/app"}, "/srv/app"},
+		{"dev", nil, ""},
+		{"build", []string{"--dir=../app"}, ""},
+	} {
+		if got := projectDirFlag(tc.cmd, tc.args); got != tc.want {
+			t.Errorf("projectDirFlag(%q, %q) = %q; want %q", tc.cmd, tc.args, got, tc.want)
+		}
+	}
+}
+
 // Every command dispatch's switch names is either checked or left out
 // on purpose, so a new command cannot slip past the decision. The
 // commands are read from main.go's dispatch function itself.

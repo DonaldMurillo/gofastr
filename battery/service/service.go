@@ -310,15 +310,20 @@ func (b *Battery) boundHostOK(host string) bool {
 }
 
 // browserAddr is the address `open`, `status` and `start` hand the
-// user for a listener bound at addr. A wildcard bind (0.0.0.0, ::)
-// is reached on this machine at 127.0.0.1, the host the gate pins and
-// the session cookie lives on; a specific address is used as bound.
+// user for a listener bound at addr. A wildcard bind is reached on this
+// machine at its loopback, 127.0.0.1 for 0.0.0.0 and ::1 for ::, the
+// host the gate pins and the session cookie lives on; a specific
+// address is used as bound.
 func browserAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return addr
 	}
 	if ip, err := netip.ParseAddr(host); err == nil && ip.IsUnspecified() {
+		// "::" may be IPv6-only; its loopback is ::1.
+		if ip.Is6() {
+			return net.JoinHostPort("::1", port)
+		}
 		return net.JoinHostPort("127.0.0.1", port)
 	}
 	return addr
@@ -337,8 +342,14 @@ func isLoopbackIP(s string) bool {
 // address a caller uses is not knowable here, so it goes in AllowHosts.
 func (b *Battery) extraHosts(port int) []string {
 	hosts := append([]string(nil), b.cfg.AllowHosts...)
-	if ip, err := netip.ParseAddr(b.cfg.BindAddress); err == nil && !ip.IsUnspecified() {
-		hosts = append(hosts, net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+	if ip, err := netip.ParseAddr(b.cfg.BindAddress); err == nil {
+		switch {
+		case !ip.IsUnspecified():
+			hosts = append(hosts, net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+		case ip.Is6():
+			// browserAddr sends the browser to [::1] for a "::" bind.
+			hosts = append(hosts, net.JoinHostPort("::1", strconv.Itoa(port)))
+		}
 	}
 	return hosts
 }

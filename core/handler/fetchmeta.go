@@ -87,12 +87,14 @@ func IsCrossSiteRequestStrict(r *http.Request) bool {
 
 // IsForgedCrossSiteWrite reports whether r is a write another site's page
 // could have sent with the user's cookies and no CORS preflight: any
-// method but GET and HEAD, a forgeable content type
+// method but GET, HEAD and OPTIONS (a CORS preflight is an OPTIONS
+// request with no body and no content type, and must reach CORS), a
+// forgeable content type
 // (IsForgeableRequest), and a cross-site origin (IsCrossSiteRequest).
 // It is the check entity endpoints and CRUD routes run before their
 // handler; RefuseCrossSite applies it to any handler.
 func IsForgedCrossSiteWrite(r *http.Request) bool {
-	return r.Method != http.MethodGet && r.Method != http.MethodHead &&
+	return r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions &&
 		IsForgeableRequest(r) && IsCrossSiteRequest(r)
 }
 

@@ -349,8 +349,8 @@ var mux = http.NewServeMux()
 mux.Handle("POST /profile", handler.RefuseCrossSite(saveProfile))
 ```
 
-It answers 403 to any method but GET and HEAD that has a content type a
-plain HTML form can send (`IsForgeableRequest`) and comes from another
+It answers 403 to any method but GET, HEAD and OPTIONS (a CORS
+preflight passes) that has a content type a plain HTML form can send (`IsForgeableRequest`) and comes from another
 site (`IsCrossSiteRequest`); `handler.IsForgedCrossSiteWrite` is the
 same test as a predicate. Your own pages, non-browser clients and
 preflighted requests (`application/json`) pass. Leave unwrapped a route

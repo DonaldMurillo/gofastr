@@ -171,6 +171,13 @@ func TestSubscribeRefusesMalformedAuth(t *testing.T) {
 		"signature header":    {Kind: AuthAPIKey, Token: "x", Header: SignatureHeader},
 		"basic no user":       {Kind: AuthBasic, Password: "p"},
 		"basic colon user":    {Kind: AuthBasic, Username: "a:b", Password: "p"},
+		"basic with token":    {Kind: AuthBasic, Username: "a", Password: "p", Token: "x"},
+		"basic with header":   {Kind: AuthBasic, Username: "a", Password: "p", Header: "X-Key"},
+		"no kind, header":     {Header: "X-Key"},
+		"no kind, username":   {Username: "a"},
+		"no kind, password":   {Password: "p"},
+		"crlf in username":    {Kind: AuthBasic, Username: "a\r\nX-Evil", Password: "p"},
+		"crlf in password":    {Kind: AuthBasic, Username: "a", Password: "p\r\nX-Evil: 1"},
 	}
 	for name, a := range bad {
 		_, err := mgr.Subscribe(context.Background(), Subscriber{URL: "http://127.0.0.1:1/", Secret: "s", Auth: a})
