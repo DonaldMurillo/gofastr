@@ -194,8 +194,18 @@ func sqlDefault(f schema.Field) string {
 // validated and quoted anyway: the same rule ApplySeeds applies to seed
 // tables. IF EXISTS because a rebuild may not have created the table
 // yet.
+//
+// A failure wraps ErrTableRestored: the drop is one autocommit
+// statement, so a DROP SQLite refuses (foreign keys on and a row in
+// another table pointing at this one) rolls back whole and leaves the
+// table, rows included, as it was. The caller then has nothing to
+// re-derive; re-deriving would drop every table and lose the CRUD rows
+// the journal never recorded.
 func DropTable(d *sql.DB, table string) error {
-	return dropTable(context.Background(), d, table)
+	if err := dropTable(context.Background(), d, table); err != nil {
+		return errors.Join(err, ErrTableRestored)
+	}
+	return nil
 }
 
 // execer is what dropTable runs on: the pool, or the one connection

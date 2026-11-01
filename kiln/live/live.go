@@ -1,6 +1,7 @@
 package live
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -129,6 +130,10 @@ func (l *Live) Apply(e journal.Entry) error {
 	// as they stand, so the side effect sees what the edit changed.
 	// delete_field shifts the field slice in place, hence the clone.
 	cut := l.columnCut(e)
+	// An add_seed is journaled with the ids its rows will get, so a
+	// replay inserts the same ones; everything below sees the stamped
+	// entry.
+	e = l.stampSeed(e)
 	if err := journal.Apply(l.sess, e); err != nil {
 		// A refused entry may have changed the session before it failed
 		// (journal.Apply is not transactional), and nothing durable
@@ -152,10 +157,11 @@ func (l *Live) Apply(e journal.Entry) error {
 	// refused to apply.
 	if err := l.applySideEffects(e, dropTable, cut); err != nil {
 		l.restoreFromJournal()
-		// A refused seed rolled back its own transaction, and a refused
-		// table rebuild put its table back, so the DB still matches the
-		// journal. Rederiving drops every table, and with them the CRUD
-		// rows the journal never recorded.
+		// A refused seed rolled back its own transaction, a refused
+		// table rebuild put its table back, and a refused drop (a
+		// foreign key still pointing at the table) never took it, so the
+		// DB still matches the journal. Rederiving drops every table,
+		// and with them the CRUD rows the journal never recorded.
 		// The edit fails either way; a re-derive failure joins it so the
 		// caller sees the database no longer matches the journal.
 		var dbErr error
@@ -179,6 +185,34 @@ func (l *Live) Apply(e journal.Entry) error {
 		Summary: summarizeEntry(e),
 	})
 	return nil
+}
+
+// stampSeed returns an add_seed entry whose rows carry the ids (and
+// declared auto timestamps) ApplySeeds would otherwise generate afresh
+// on every replay: kilnrender.StampSeed. Without it a restart gave each
+// seeded row a new id, and a later seed naming the old one (a book's
+// author_id) failed its foreign key and was skipped. An entry that is
+// not an add_seed, or one that does not decode or stamp, comes back as
+// it was: journal.Apply and ApplySeeds report that failure.
+func (l *Live) stampSeed(e journal.Entry) journal.Entry {
+	if e.Kind != journal.KindWorldEdit || e.Op != journal.OpAddSeed {
+		return e
+	}
+	var p journal.AddSeedPayload
+	if err := e.Decode(&p); err != nil || p.Seed == nil {
+		return e
+	}
+	stamped, err := kilnrender.StampSeed(l.sess.World.Entities, p.Seed)
+	if err != nil || stamped == p.Seed {
+		return e
+	}
+	p.Seed = stamped
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return e
+	}
+	e.Payload = raw
+	return e
 }
 
 // restoreFromJournal replays the durable journal into a fresh session and

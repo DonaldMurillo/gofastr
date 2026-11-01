@@ -170,7 +170,9 @@ gofastr semantic clear
 `index` or `watch` on the same directory fails with "another process has
 this index open for writing" until the first exits. `query` and `stats`
 open the directory read-only and run beside a `watch` in another terminal,
-seeing every write it has logged.
+seeing every write it has logged. `clear` empties the snapshot directory
+under the same writer lock and keeps the lock file, so it refuses while an
+`index` or `watch` runs, and a writer that starts mid-clear waits for it.
 
 The CLI indexes with the deterministic **stub** embedder unless you say
 otherwise, which is fine for wiring a pipeline and useless for real retrieval,

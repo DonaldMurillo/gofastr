@@ -426,6 +426,55 @@ func withAutoFields(row map[string]any, auto []schema.Field) map[string]any {
 	return out
 }
 
+// StampSeed returns s with the generated values the journal must keep
+// written into its rows: a UUID for each auto-UUID field (the implicit
+// id included) and a timestamp for each declared auto-timestamp field,
+// wherever a row leaves one out or sets it null. kiln/live journals the
+// stamped seed, so replay inserts the ids the live database handed out
+// and a seed that references one (a book naming its author's id) still
+// lands after a restart; ApplySeeds alone generated fresh ids on every
+// replay.
+//
+// The implicit created_at/updated_at are not written: they are not
+// fields of the entity, and the app spec generator refuses a seed key
+// that names no declared column, so a stamped one would fail the freeze.
+// ApplySeeds stamps them at insert, and nothing references them. An
+// empty row stays empty (insertSeed skips it), a seed whose entity is
+// not in ents comes back as it was (ApplySeeds refuses it), and s itself
+// is not changed.
+func StampSeed(ents map[string]*world.Entity, s *world.Seed) (*world.Seed, error) {
+	if s == nil {
+		return nil, nil
+	}
+	ent := ents[s.Entity]
+	if ent == nil {
+		return s, nil
+	}
+	auto, _, err := seedFields(ent)
+	if err != nil {
+		return nil, err
+	}
+	var keep []schema.Field
+	for _, f := range auto {
+		if f.Name == "id" || slices.ContainsFunc(ent.Fields, func(d world.Field) bool { return d.Name == f.Name }) {
+			keep = append(keep, f)
+		}
+	}
+	if len(keep) == 0 {
+		return s, nil
+	}
+	out := *s
+	out.Rows = make([]map[string]any, len(s.Rows))
+	for i, row := range s.Rows {
+		if len(row) == 0 {
+			out.Rows[i] = row
+			continue
+		}
+		out.Rows[i] = withAutoFields(row, keep)
+	}
+	return &out, nil
+}
+
 // seedNow is the clock withAutoFields stamps timestamps from; a test
 // pins it to check the stored layout.
 var seedNow = time.Now
