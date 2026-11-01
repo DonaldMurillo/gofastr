@@ -336,3 +336,27 @@ func TestPlaintextAuthRefused(t *testing.T) {
 		t.Fatalf("delivery = %+v; want a failed attempt naming the refusal", ds)
 	}
 }
+
+// A receiver that echoes the request's credential in its body must not
+// put it in the stored, unsealed ResponseBody.
+func TestDeliveryRedactsEchoedCredential(t *testing.T) {
+	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("bad key " + r.Header.Get("X-API-Key") + " / " + r.Header.Get("Authorization")))
+	}))
+	defer echo.Close()
+	for name, a := range map[string]Auth{
+		"api key": {Kind: AuthAPIKey, Token: "key-very-secret"},
+		"bearer":  {Kind: AuthBearer, Token: "tok-very-secret"},
+		"basic":   {Kind: AuthBasic, Username: "svc", Password: "pw-very-secret"},
+	} {
+		d := deliverOnce(t, Subscriber{URL: echo.URL, Auth: a}, Options{})
+		basic := base64.StdEncoding.EncodeToString([]byte("svc:pw-very-secret"))
+		if strings.Contains(d.ResponseBody, "very-secret") || strings.Contains(d.ResponseBody, basic) {
+			t.Errorf("%s: ResponseBody kept the echoed credential: %q", name, d.ResponseBody)
+		}
+		if !strings.Contains(d.ResponseBody, redactedCredential) {
+			t.Errorf("%s: ResponseBody = %q; want the echo replaced by %s", name, d.ResponseBody, redactedCredential)
+		}
+	}
+}

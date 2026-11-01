@@ -869,7 +869,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		return
 	}
 	d.ResponseStatus = resp.StatusCode
-	d.ResponseBody = m.readResponse(resp.Body)
+	d.ResponseBody = sub.Auth.redact(m.readResponse(resp.Body))
 	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

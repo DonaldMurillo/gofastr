@@ -226,8 +226,11 @@ diagnosed without a packet capture:
   replaced and control bytes are percent-encoded, so printing it cannot
   drive a terminal.
 
-`LastError` stays short (`http 401`). The body is stored with the
-delivery, so a receiver that echoes the payload or a secret back puts
+`LastError` stays short (`http 401`). A subscriber's own credential is
+replaced with `[redacted]` wherever the receiver echoes it back (an
+error page that prints the `Authorization` or API key header), since
+the body column is not sealed like the auth column. The body is stored
+with the delivery, so a receiver that echoes the payload or a secret back puts
 it in the store; keep the limit at what an error message needs. The
 `SQLStore` keeps both in `response_status` and `response_body`, which
 the data exporter includes and `App.EraseUserData` deletes with the

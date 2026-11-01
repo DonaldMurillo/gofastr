@@ -78,6 +78,31 @@ func (a Auth) apply(req *http.Request) {
 	}
 }
 
+// redactedCredential replaces a credential a receiver echoed back.
+const redactedCredential = "[redacted]"
+
+// redact removes a's credential from text a receiver sent back, before
+// it is stored in Delivery.ResponseBody: the body column is not sealed
+// like the auth column, and an error page that echoes the request's
+// Authorization or API key header would otherwise put the credential in
+// every database snapshot. It covers the raw token, the Basic password
+// and the base64 Basic value as sent.
+func (a Auth) redact(text string) string {
+	if a.Kind == AuthNone || text == "" {
+		return text
+	}
+	secrets := []string{a.Token, a.Password}
+	if a.Kind == AuthBasic {
+		secrets = append(secrets, base64.StdEncoding.EncodeToString([]byte(a.Username+":"+a.Password)))
+	}
+	for _, s := range secrets {
+		if len(s) >= 4 { // a 1-3 byte secret would blank ordinary words
+			text = strings.ReplaceAll(text, s, redactedCredential)
+		}
+	}
+	return text
+}
+
 // reservedAuthHeaders are headers a credential may not take over: the
 // ones the delivery itself sets or the transport owns.
 var reservedAuthHeaders = map[string]bool{
