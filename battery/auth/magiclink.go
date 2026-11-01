@@ -604,8 +604,11 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeMagicLinkSent is send's one success answer, for a link mailed and
-// for an address whose budget is spent alike.
+// for an address whose budget is spent alike. The body names no one, but
+// the handler looked the account up, so it is kept out of every cache
+// all the same (the nostore rule).
 func writeMagicLinkSent(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -777,6 +780,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	// Cap the body before any form parse: FormValue/ParseForm would
 	// otherwise read up to the stdlib's 10 MiB floor into memory.
 	// parseAuthForm reads a multipart confirmation form too.
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	if !parseAuthFormOrRefuse(w, r) {
 		return
 	}
