@@ -16,7 +16,7 @@ import (
 // color must also pass the token grammar, because this package assigns
 // color values directly and the emitter trusts the producer.
 func TestThemeValidates(t *testing.T) {
-	th := desktopui.Theme()
+	th := desktopui.ThemeFor("darwin")
 	if err := th.Validate(); err != nil {
 		t.Fatalf("desktop theme does not validate: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestThemeValidates(t *testing.T) {
 
 // Every color token, light and dark, passes the bounded color grammar.
 func TestThemeColorsPassGrammar(t *testing.T) {
-	th := desktopui.Theme()
+	th := desktopui.ThemeFor("darwin")
 	validate := func(path, v string) {
 		t.Helper()
 		if err := style.ValidateColorValue(v); err != nil {
@@ -62,7 +62,7 @@ func TestColorGrammarRefusesSystemKeywords(t *testing.T) {
 // fonts (the SF stack from the plan), the HIG type scale in px, and the
 // system-blue accent pair.
 func TestThemeEmitsSourcedTokens(t *testing.T) {
-	css := desktopui.Theme().CSSCustomProperties()
+	css := desktopui.ThemeFor("darwin").CSSCustomProperties()
 	wants := []string{
 		"--font-body: -apple-system, system-ui, ui-sans-serif, sans-serif;",
 		"--font-heading: -apple-system, system-ui, ui-sans-serif, sans-serif;",
@@ -94,7 +94,7 @@ func TestThemeEmitsSourcedTokens(t *testing.T) {
 // The dark palette is matched to macOS dark surfaces and re-declares
 // the accent pair so a scheme flip restyles the whole page.
 func TestThemeDarkPalette(t *testing.T) {
-	th := desktopui.Theme()
+	th := desktopui.ThemeFor("darwin")
 	if len(th.DarkColors) == 0 {
 		t.Fatal("desktop theme declares no dark palette")
 	}
@@ -114,10 +114,32 @@ func TestThemeDarkPalette(t *testing.T) {
 	}
 }
 
+// The primary stays #0071E3, not the system blue #007AFF (#607). A filled
+// button's label is 13px regular, which WCAG counts as normal text, so a
+// large-text exception would not cover it: white on #007AFF is 4.0:1 and
+// the theme would fail its own AA floor. The system blue lives on Accent
+// (focus rings, selection, links), where no white text sits on it. This
+// test pins both halves: the shipped pair validates on every platform,
+// and swapping in the system blue is refused.
+func TestPrimaryStaysAAUnderWhite(t *testing.T) {
+	for _, goos := range []string{"darwin", "windows", "linux"} {
+		th := desktopui.ThemeFor(goos)
+		if err := th.Validate(); err != nil {
+			t.Fatalf("%s: shipped theme fails Validate: %v", goos, err)
+		}
+		th.Colors.Primary = style.Color{Name: "primary", Value: "#007AFF"}
+		th.DarkColors["primary"] = "#007AFF"
+		err := th.Validate()
+		if err == nil || !strings.Contains(err.Error(), "primary") {
+			t.Errorf("%s: white on #007AFF passed Validate (err=%v); the 4.5:1 floor no longer guards primary", goos, err)
+		}
+	}
+}
+
 // NewStyleSheet binds the theme so component rules resolve {tokens.*}
 // references to the desktop tokens, the same contract every framework
 func TestStyleSheetResolvesThemeTokens(t *testing.T) {
-	ss := style.NewStyleSheet(desktopui.Theme())
+	ss := style.NewStyleSheet(desktopui.ThemeFor("darwin"))
 	css := ss.Rule(".probe").Set("font-family", "{fonts.body}", "border-radius", "{radii.md}").End().CSS()
 	for _, w := range []string{
 		"font-family: var(--font-body)",
@@ -133,7 +155,7 @@ func TestStyleSheetResolvesThemeTokens(t *testing.T) {
 // WCAG 2.5.8 target floor (24), not the 44-point touch floor that made
 // every button and field about 40 points tall.
 func TestThemeTouchTargetIsPointerSized(t *testing.T) {
-	if got := desktopui.Theme().Layout.TouchTarget.Value; got != 24 {
+	if got := desktopui.ThemeFor("darwin").Layout.TouchTarget.Value; got != 24 {
 		t.Errorf("TouchTarget = %d, want 24", got)
 	}
 }

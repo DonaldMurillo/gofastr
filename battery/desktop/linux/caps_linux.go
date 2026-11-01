@@ -486,7 +486,7 @@ func (s *linuxShell) Show(ctx context.Context, n desktop.Notification) error {
 	}
 	op := newCapsOperation(s, false, false)
 	if err := s.launchCaps(ctx, op, func() error {
-		if gtk.Sym.NotifyInit == 0 || gtk.Sym.NotifyGetServerCaps == 0 || gtk.Sym.NotifyNotificationNew == 0 || gtk.Sym.NotifyNotificationShow == 0 {
+		if gtk.Sym.NotifyInit == 0 || gtk.Sym.NotifySetAppName == 0 || gtk.Sym.NotifyGetServerCaps == 0 || gtk.Sym.NotifyNotificationNew == 0 || gtk.Sym.NotifyNotificationShow == 0 {
 			return desktop.ErrUnsupported
 		}
 		appName := s.cfg.Title
@@ -495,10 +495,14 @@ func (s *linuxShell) Show(ctx context.Context, n desktop.Notification) error {
 		}
 		app := capsCString(appName)
 		initialized := capsCall(gtk.Sym.NotifyInit, uintptr(unsafe.Pointer(&app[0])))
-		runtime.KeepAlive(app)
 		if initialized == 0 {
+			runtime.KeepAlive(app)
 			return fmt.Errorf("desktop/linux: initialize notifications")
 		}
+		// notify_init keeps the first caller's name for the life of the
+		// process. A later shell lifetime with another title must set its own.
+		capsCall(gtk.Sym.NotifySetAppName, uintptr(unsafe.Pointer(&app[0])))
+		runtime.KeepAlive(app)
 		body := n.Body
 		if n.Subtitle != "" {
 			body = n.Subtitle + "\n" + body

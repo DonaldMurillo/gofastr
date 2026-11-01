@@ -749,3 +749,10 @@ notes:
       uses:
         - gofastr/battery/auth.RefreshOAuthToken
         - gofastr/battery/auth.ValidOAuthToken
+  - change: "BREAKING - desktopui.Theme() is removed; it returned the macOS theme on every OS"
+    breaking: true
+    hits: edit
+    guidance: "Call desktopui.ThemeFor(runtime.GOOS) for the running OS, or desktopui.ThemeFor(\"darwin\") to keep the old result. The primary color stays #0071E3 on every OS."
+    find:
+      uses:
+        - gofastr/battery/desktop/ui.Theme

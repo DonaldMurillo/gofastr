@@ -25,7 +25,7 @@ func (bridgeScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("GoFastr Linux bridge"))
 }
 
-// Run separately from TestNativeGTKWebKit: GTK has one UI lifetime per process.
+// Kept in its own test so a failure names the battery bridge, not the shell.
 // This covers the real battery boot cookie, authenticated JS bridge and native
 // capability calls, beyond the shell's standalone WebKit transport test.
 func TestNativeGoFastrBridge(t *testing.T) {

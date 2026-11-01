@@ -203,3 +203,59 @@ func TestLoadPrivateKeyFormats(t *testing.T) {
 		}
 	}
 }
+
+// WriteFeed must refuse every archive the client's ExtractZip refuses:
+// a signed feed whose archive no client installs is a release that
+// silently never ships.
+func TestWriteFeedRefusesArchivesTheUpdaterRefuses(t *testing.T) {
+	type entries = map[string]struct {
+		content []byte
+		mode    fs.FileMode
+	}
+	plist := testInfoPlist("dev.gofastr.notes", "1.2.0")
+	withBundle := func(extra entries) entries {
+		e := entries{
+			"Notes.app/":                     {nil, 0o755 | fs.ModeDir},
+			"Notes.app/Contents/":            {nil, 0o755 | fs.ModeDir},
+			"Notes.app/Contents/MacOS/":      {nil, 0o755 | fs.ModeDir},
+			"Notes.app/Contents/MacOS/Notes": {[]byte("#!binary\n"), 0o755},
+			"Notes.app/Contents/Info.plist":  {plist, 0o644},
+		}
+		for k, v := range extra {
+			e[k] = v
+		}
+		return e
+	}
+	cases := map[string]entries{
+		"top-level README.txt": withBundle(entries{"README.txt": {[]byte("read me"), 0o644}}),
+		"top-level .DS_Store":  withBundle(entries{".DS_Store": {[]byte("\x00\x00\x00\x01Bud1"), 0o644}}),
+		"no directory entries": {
+			"Notes.app/Contents/MacOS/Notes": {[]byte("#!binary\n"), 0o755},
+			"Notes.app/Contents/Info.plist":  {plist, 0o644},
+		},
+		"a symlink in the bundle": withBundle(entries{"Notes.app/Contents/link": {[]byte("../../etc"), 0o777 | fs.ModeSymlink}}),
+	}
+	dir := t.TempDir()
+	keyPath, _, _, _ := writeKeyFile(t, dir)
+	for name, e := range cases {
+		t.Run(name, func(t *testing.T) {
+			data := buildZip(t, e)
+			// The premise: the client refuses this archive.
+			if _, err := ExtractZip(data, t.TempDir(), "Notes.app"); !errors.Is(err, ErrBadArchive) {
+				t.Fatalf("ExtractZip = %v, want ErrBadArchive (the case no longer tests a client refusal)", err)
+			}
+			p := filepath.Join(t.TempDir(), "Notes.zip")
+			if err := os.WriteFile(p, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out := filepath.Join(t.TempDir(), "feed")
+			err := WriteFeed(out, keyPath, "1.2.0", "", "darwin-arm64", p, "https://example.com/Notes.zip")
+			if !errors.Is(err, ErrBadArchive) {
+				t.Fatalf("WriteFeed = %v, want ErrBadArchive", err)
+			}
+			if _, err := os.Stat(filepath.Join(out, "manifest.json")); !os.IsNotExist(err) {
+				t.Fatalf("a manifest was written for a refused archive: %v", err)
+			}
+		})
+	}
+}
