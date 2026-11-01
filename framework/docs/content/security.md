@@ -221,6 +221,18 @@ middleware.CORS(middleware.CORSConfig{
 CORS is **not** in the default chain. Add it explicitly if your API
 serves browser clients on another origin.
 
+A browser client that sends headers you do not list one by one
+(`X-Request-Tag`, tracing headers) fails its preflight. Set
+`AllowAnyHeader: true` to answer an allowed origin's preflight with the
+headers it asked for (`Access-Control-Request-Headers`), and
+`AllowAnyMethod: true` to do the same for the method. Only well-formed
+names are echoed, at most 64 of them. While either option is on, every
+answer to an allowed origin adds `Vary: Access-Control-Request-Headers`
+or `Vary: Access-Control-Request-Method`. A rejected origin still gets no `Access-Control-Allow-*`
+header and a 403 preflight. An `OPTIONS` request with no `Origin` or no
+`Access-Control-Request-Method` is not a preflight and reaches your
+router.
+
 ## CSRF
 
 ```go
@@ -318,6 +330,32 @@ vouch for it is the sandboxed-iframe shape, not a legitimate caller,
 and is refused. The auth battery's cross-site guards, setup tokens,
 the admin console, and kiln all route through these helpers; writing
 a fourth copy of the check is what `GOFASTR1411` fires on.
+
+### Routes you mount yourself
+
+Entity endpoints and CRUD routes refuse a forged cross-site write
+before their handler runs. A route you mount with
+`app.Router().HandleFunc` gets no such check, and the CSRF middleware
+needs a token in every form. Wrap a plain server-rendered form route in
+`handler.RefuseCrossSite`:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core/handler"
+import "net/http"
+var saveProfile http.HandlerFunc
+var mux = http.NewServeMux()
+-->
+```go
+mux.Handle("POST /profile", handler.RefuseCrossSite(saveProfile))
+```
+
+It answers 403 to any method but GET, HEAD and OPTIONS (a CORS
+preflight passes) that has a content type a plain HTML form can send (`IsForgeableRequest`) and comes from another
+site (`IsCrossSiteRequest`); `handler.IsForgedCrossSiteWrite` is the
+same test as a predicate. Your own pages, non-browser clients and
+preflighted requests (`application/json`) pass. Leave unwrapped a route
+that must take a cross-site POST, such as an OAuth `form_post`
+callback.
 
 ## Secret rotation
 

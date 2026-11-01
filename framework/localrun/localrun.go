@@ -36,9 +36,14 @@ import (
 const (
 	// EnvDir overrides the registry directory.
 	EnvDir = "GOFASTR_RUNS_DIR"
-	// EnvOff set to "off" (or 0/false/no) stops this process from
-	// registering. Listing is unaffected.
-	EnvOff = "GOFASTR_RUNS"
+	// EnvRuns set to "off" (or 0/false/no) stops this process from
+	// registering; "on" (or 1/true/yes) makes it register wherever it
+	// binds. Unset, the App decides (see App.Start). Listing is
+	// unaffected.
+	EnvRuns = "GOFASTR_RUNS"
+	// EnvOff is EnvRuns under its older name, from when the variable
+	// could only turn registration off.
+	EnvOff = EnvRuns
 
 	// recordVersion is the Record layout this package writes.
 	recordVersion = 1
@@ -129,12 +134,24 @@ func init() {
 // no EnvDir (tests that start an App must not litter the real registry;
 // a test that exercises it sets EnvDir to a temp dir).
 func Disabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvOff))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuns))) {
 	case "off", "0", "false", "no":
 		return true
 	}
 	underTest := testing.Testing() || os.Getenv(envUnderTest) != ""
 	return underTest && os.Getenv(EnvDir) == ""
+}
+
+// Forced reports whether the environment asks this process to
+// register regardless of where it binds: EnvRuns says "on" (or
+// 1/true/yes). EnvDir only says where the registry is. Disabled still
+// wins.
+func Forced() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuns))) {
+	case "on", "1", "true", "yes":
+		return true
+	}
+	return false
 }
 
 // Register writes rec and returns the func that removes it. It fills

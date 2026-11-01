@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/agentscmd"
@@ -221,6 +222,7 @@ func dispatch(args []string) {
 
 	cmd := args[0]
 	cmdArgs := args[1:]
+	warnVersionMismatch(cmd, cmdArgs)
 
 	switch cmd {
 	case "init":
@@ -279,6 +281,73 @@ func dispatch(args []string) {
 		printHelp()
 		cli.OsExit(1)
 	}
+}
+
+// versionCheckedCommands are the commands that work on the project in
+// the working directory, so the project version check runs before them.
+// init, version, docs and upgrade are left out (they run outside a
+// project or manage the version themselves), and so is an unknown
+// command, which only prints usage.
+var versionCheckedCommands = map[string]bool{
+	"theme": true, "generate": true, "gen": true, "g": true, "pack": true, "validate": true,
+	"build": true, "dev": true, "export": true, "new": true, "migrate": true, "m": true,
+	"test": true, "t": true, "semantic": true, "harness": true, "agents": true, "audit": true,
+	"verify": true, "unmount": true, "remount": true, "desktop": true,
+}
+
+// versionCheckApplies reports whether warnVersionMismatch speaks for
+// this command line: a project command, not a help request.
+func versionCheckApplies(cmd string, args []string) bool {
+	if !versionCheckedCommands[cmd] {
+		return false
+	}
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			return false
+		}
+	}
+	return true
+}
+
+// warnVersionMismatch prints, on stderr, a warning when the project in
+// the working directory requires a different GoFastr release than this
+// CLI (project.VersionMismatch). It never stops the command.
+func warnVersionMismatch(cmd string, args []string) {
+	if !versionCheckApplies(cmd, args) {
+		return
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	if dir := projectDirFlag(cmd, args); dir != "" {
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(wd, dir)
+		}
+		wd = dir
+	}
+	if w := project.VersionMismatch(wd); w != "" {
+		fmt.Fprintf(os.Stderr, "%s %s\n", cli.Yellow("warning:"), w)
+	}
+}
+
+// projectDirFlag is the project directory a command was pointed at
+// with --dir (`gofastr dev --dir=../app`), or "" when it works in the
+// current directory.
+func projectDirFlag(cmd string, args []string) string {
+	if cmd != "dev" {
+		return ""
+	}
+	// The last --dir wins, as in dev's own flag parser.
+	dir := ""
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, "--dir="); ok {
+			dir = v
+		} else if a == "--dir" && i+1 < len(args) {
+			dir = args[i+1]
+		}
+	}
+	return dir
 }
 
 func desktopCommandOwnsVersionFlag(args []string, index int) bool {

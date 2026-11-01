@@ -93,3 +93,65 @@ func serveForRecord(t *testing.T, app *App, addr string) (string, func()) {
 	}
 	return "", nil
 }
+
+// A server bound to every interface with nothing marking it local is a
+// deployment: it writes no record unless the environment forces one
+// (#635: a container user with no home directory logged a warning on
+// every start).
+func TestLocalRunSkipsWildcardDeployment(t *testing.T) {
+	t.Setenv(localrun.EnvDir, "")
+	t.Setenv(localrun.EnvRuns, "")
+	t.Setenv("GOFASTR_DEV", "0") // a developer's shell must not make every run local
+	t.Setenv("GOFASTR_ENV", "development")
+	app := NewApp(WithoutDefaultMiddleware())
+	if app.isLocalRun("0.0.0.0") || app.isLocalRun("::") || app.isLocalRun("192.168.1.20") {
+		t.Fatal("a wildcard or LAN bind with no host mark must not count as a local run")
+	}
+	if !app.isLocalRun("127.0.0.1") || !app.isLocalRun("::1") {
+		t.Fatal("a loopback bind is a local run")
+	}
+	// Each host mark makes a wildcard bind local on its own.
+	for name, info := range map[string]LocalRunInfo{
+		"service":     {Service: "dev.example.probe"},
+		"dev":         {Dev: true},
+		"mcp command": {MCPCommand: []string{"/bin/probe", "service", "mcp"}},
+	} {
+		marked := NewApp(WithoutDefaultMiddleware())
+		marked.SetLocalRunInfo(info)
+		if !marked.isLocalRun("0.0.0.0") {
+			t.Errorf("%s: a host-marked run must register wherever it binds", name)
+		}
+	}
+	t.Setenv("GOFASTR_DEV", "1")
+	if !NewApp(WithoutDefaultMiddleware()).isLocalRun("0.0.0.0") {
+		t.Fatal("a gofastr dev run must register wherever it binds")
+	}
+}
+
+// The same decision through Start: a wildcard bind with nothing marking
+// it local writes no record, though the registry directory is set (it
+// says where, not whether).
+func TestLocalRunWildcardStartWritesNothing(t *testing.T) {
+	t.Setenv(localrun.EnvDir, t.TempDir())
+	t.Setenv(localrun.EnvRuns, "")
+	t.Setenv("GOFASTR_DEV", "0")
+	app := NewApp(WithoutDefaultMiddleware())
+	_, stop := serveForRecord(t, app, ":0")
+	defer stop()
+	if recs, _ := localrun.List(); len(recs) != 0 {
+		t.Fatalf("a wildcard deployment registered: %+v", recs)
+	}
+}
+
+// GOFASTR_RUNS=on registers a wildcard bind too.
+func TestLocalRunForcedOn(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(localrun.EnvDir, dir)
+	t.Setenv(localrun.EnvOff, "on")
+	app := NewApp(WithoutDefaultMiddleware())
+	_, stop := serveForRecord(t, app, ":0")
+	defer stop()
+	if recs, _ := localrun.List(); len(recs) != 1 {
+		t.Fatalf("forced run did not register: %+v", recs)
+	}
+}

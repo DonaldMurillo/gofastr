@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -58,6 +59,14 @@ type Subscriber struct {
 	Active  bool
 	Paused  bool // explicit opt-out; honored by Subscribe so callers can register paused
 	Created time.Time
+	// Auth is the credential each delivery sends to the receiver
+	// (bearer, API key, basic); the zero value sends none. Sealed at
+	// rest with Secret's codec. See Auth. Subscribe replaces the whole
+	// subscriber, so re-subscribing an ID with a zero Auth clears the
+	// stored credential: read the subscriber first to change one field.
+	// A Store of your own must persist Auth, or deliveries go out
+	// without it.
+	Auth Auth
 }
 
 // DeliveryStatus is the lifecycle state of a single delivery attempt.
@@ -134,6 +143,15 @@ type Delivery struct {
 	// App.EraseUserData deletes an erased user's deliveries from a
 	// SQLStore, sent or not.
 	Owner string
+
+	// ResponseStatus is the HTTP status of the last attempt that got a
+	// response, or 0 when none did (a dial error, a timeout).
+	ResponseStatus int
+	// ResponseBody is the first Options.ResponseBodyLimit bytes of that
+	// response's body, as text: invalid UTF-8 replaced, and control
+	// bytes percent-encoded so the stored text cannot drive a terminal
+	// or forge a log line when an operator prints it.
+	ResponseBody string
 
 	// claimedUntil is the lease the claim that produced this value wrote
 	// (zero when no shipped store claimed it). The shipped stores fence a
@@ -270,8 +288,24 @@ type Options struct {
 	PollInterval         time.Duration
 	MaxResponseBodyBytes int64
 	AllowPrivateNetworks bool
-	SignatureTolerance   time.Duration
-	LeasePeriod          time.Duration
+
+	// AllowPlaintextAuth lets a subscriber with Auth use an http:// URL.
+	// By default Subscribe refuses that pairing, and a delivery that
+	// meets it fails without sending: the bearer token, API key or
+	// Basic password would cross the network in clear text. Set it for
+	// a receiver on loopback or a trusted LAN segment, or in tests.
+	AllowPlaintextAuth bool
+	SignatureTolerance time.Duration
+	LeasePeriod        time.Duration
+
+	// ResponseBodyLimit is how many bytes of each receiver response are
+	// kept on the delivery (Delivery.ResponseBody) for diagnosing a
+	// refusal. Zero means 1024. A negative value keeps none. It never
+	// exceeds MaxResponseBodyBytes when that is positive. The body is
+	// stored with the delivery, so a receiver that echoes the payload
+	// or a secret back puts it in the store: size this to what an
+	// error message needs.
+	ResponseBodyLimit int64
 
 	// Retention, when positive, turns on the manager's terminal-row
 	// sweep: every tick reaps successful deliveries — and processed
@@ -304,6 +338,9 @@ type Options struct {
 type Manager struct {
 	store Store
 	opts  Options
+	// credClient is opts.HTTPClient with redirects refused, for a
+	// delivery that carries Subscriber.Auth. Built by New.
+	credClient *http.Client
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -363,6 +400,9 @@ func New(s Store, opts Options) *Manager {
 	if opts.Logger == nil {
 		opts.Logger = log.Printf
 	}
+	if opts.ResponseBodyLimit == 0 {
+		opts.ResponseBodyLimit = defaultResponseBodyLimit
+	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{
 			Timeout: 10 * time.Second,
@@ -381,11 +421,18 @@ func New(s Store, opts Options) *Manager {
 		// opts out.
 		opts.HTTPClient = ssrfGuardClient(opts.HTTPClient)
 	}
+	// A delivery that carries a credential goes through a copy of the
+	// client that never follows a redirect: Go drops Authorization on a
+	// cross-host redirect but not X-API-Key or any custom header, and a
+	// caller-supplied client may follow redirects.
+	noRedirect := *opts.HTTPClient
+	noRedirect.CheckRedirect = refuseRedirect
 	return &Manager{
-		store:  s,
-		opts:   opts,
-		stopCh: make(chan struct{}),
-		nowFn:  time.Now,
+		credClient: &noRedirect,
+		store:      s,
+		opts:       opts,
+		stopCh:     make(chan struct{}),
+		nowFn:      time.Now,
 	}
 }
 
@@ -414,6 +461,12 @@ func (m *Manager) logf(format string, args ...any) {
 func (m *Manager) Subscribe(ctx context.Context, s Subscriber) (Subscriber, error) {
 	if s.Secret == "" {
 		return Subscriber{}, errors.New("webhook: subscriber Secret required")
+	}
+	if err := s.Auth.validate(); err != nil {
+		return Subscriber{}, err
+	}
+	if m.plaintextAuth(s) {
+		return Subscriber{}, errPlaintextAuth
 	}
 	if err := validateSubscriberURL(s.URL, m.opts.AllowPrivateNetworks); err != nil {
 		return Subscriber{}, err
@@ -782,8 +835,25 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	req.Header.Set("X-GoFastr-Delivery-ID", d.ID)
 	req.Header.Set("X-GoFastr-Timestamp", fmt.Sprintf("%d", ts))
 	req.Header.Set(SignatureHeader, SignWithTimestamp(sub.Secret, ts, d.Payload))
+	client := m.opts.HTTPClient
+	if m.plaintextAuth(*sub) {
+		// A subscriber stored past Subscribe (or before this check
+		// existed): fail the attempt rather than send the credential in
+		// clear text. It stays failed until the URL or the option changes.
+		m.failuresTotal.Add(1)
+		d.Status = StatusFailed
+		d.LastError = errPlaintextAuth.Error()
+		d.ResponseStatus, d.ResponseBody = 0, ""
+		m.schedule(&d)
+		m.saveDelivery(d)
+		return
+	}
+	if sub.Auth.Kind != AuthNone {
+		sub.Auth.apply(req)
+		client = m.credentialClient()
+	}
 
-	resp, err := m.opts.HTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil && ctx.Err() != nil {
 		// Stop cancelled the POST: a shutdown, not a failed attempt.
 		m.refundShutdown(ctx, d)
@@ -793,16 +863,13 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		m.failuresTotal.Add(1)
 		d.Status = StatusFailed
 		d.LastError = err.Error()
+		d.ResponseStatus, d.ResponseBody = 0, ""
 		m.schedule(&d)
 		m.saveDelivery(d)
 		return
 	}
-	cap := m.opts.MaxResponseBodyBytes
-	if cap > 0 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, cap))
-	} else if cap < 0 {
-		_, _ = io.Copy(io.Discard, resp.Body)
-	}
+	d.ResponseStatus = resp.StatusCode
+	d.ResponseBody = sub.Auth.redact(m.readResponse(resp.Body))
 	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -817,6 +884,68 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	d.LastError = fmt.Sprintf("http %d", resp.StatusCode)
 	m.schedule(&d)
 	m.saveDelivery(d)
+}
+
+// errPlaintextAuth refuses a credential on an http:// URL (see
+// Options.AllowPlaintextAuth). It names no credential value.
+var errPlaintextAuth = errors.New("webhook: Subscriber.Auth needs an https:// URL; set Options.AllowPlaintextAuth for a trusted plain-HTTP receiver")
+
+// plaintextAuth reports whether sub would send its credential over
+// plain HTTP without Options.AllowPlaintextAuth.
+func (m *Manager) plaintextAuth(sub Subscriber) bool {
+	if sub.Auth.Kind == AuthNone || m.opts.AllowPlaintextAuth {
+		return false
+	}
+	u, err := url.Parse(sub.URL)
+	return err != nil || !strings.EqualFold(u.Scheme, "https")
+}
+
+// defaultResponseBodyLimit is Options.ResponseBodyLimit's zero value.
+const defaultResponseBodyLimit = 1024
+
+// refuseRedirect is the CheckRedirect of a credential-bearing delivery:
+// the 3xx itself is the answer, recorded as a failed attempt.
+func refuseRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+// credentialClient is the client a delivery carrying Subscriber.Auth
+// uses: never one that follows a redirect.
+//
+// New builds it. A Manager made some other way gets one derived from
+// its HTTPClient, and a bounded default client when that is nil too,
+// never a nil dereference on the worker.
+func (m *Manager) credentialClient() *http.Client {
+	if m.credClient != nil {
+		return m.credClient
+	}
+	if m.opts.HTTPClient == nil {
+		return &http.Client{Timeout: 10 * time.Second, CheckRedirect: refuseRedirect}
+	}
+	c := *m.opts.HTTPClient
+	c.CheckRedirect = refuseRedirect
+	return &c
+}
+
+// readResponse keeps the first ResponseBodyLimit bytes of a receiver's
+// body as safe text and drains the rest within MaxResponseBodyBytes,
+// so the connection can be reused.
+func (m *Manager) readResponse(body io.Reader) string {
+	total := m.opts.MaxResponseBodyBytes
+	if total > 0 {
+		body = io.LimitReader(body, total)
+	}
+	keep := m.opts.ResponseBodyLimit
+	if total > 0 && keep > total {
+		keep = total
+	}
+	var kept string
+	if keep > 0 {
+		buf, _ := io.ReadAll(io.LimitReader(body, keep))
+		kept = textsafe.ScrubControlBytes(strings.ToValidUTF8(string(buf), "\uFFFD"))
+	}
+	if total != 0 {
+		_, _ = io.Copy(io.Discard, body)
+	}
+	return kept
 }
 
 // refundShutdown hands back an attempt the worker's shutdown cut short:
