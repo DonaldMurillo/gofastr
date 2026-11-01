@@ -409,6 +409,7 @@ signals	6	s
 signals	6	sep
 signals	6	sep
 signals	8	mode
+widgets-boot	10	cat
 widgets-boot	10	cfg
 widgets-boot	10	cfg
 widgets-boot	10	eq
@@ -423,6 +424,7 @@ widgets-boot	6	overrides
 widgets-boot	6	raw
 widgets-boot	6	toastBtn
 widgets-boot	8	G
+widgets-boot-static	10	cat
 widgets-boot-static	10	cfg
 widgets-boot-static	10	eq
 widgets-boot-static	2	_installEagerWidgetDelegators
