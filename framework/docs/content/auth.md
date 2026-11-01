@@ -546,9 +546,17 @@ app.Use(auth.TokenMiddleware(users, accounts, tokens))
 app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api/invoices
 ```
 
-A version segment (`v1`, `v2`, `v1.2`) is skipped, so `/api/v1/posts` and
-`/api/v2/posts` both need `posts`. Whether a segment is a version or a
-table comes from the route that matched, not from how the path is spelled:
+A CRUD mount names its resource on every route it registers
+(`crud.ResourceRouter`, built on `router.ResourceGroup`), and the
+middleware takes that name first. Every subroute (`/{id}`, `/_batch`,
+`/_events`, `/llm.md`, EntityUI's `/_bulk`, `/_export.csv` and `/_pick`)
+answers to its mount's table: `POST /api/v1/_batch` on a table named `v1`
+needs `v1:write`, never `_batch:write`.
+
+For any other route, a version segment (`v1`, `v2`, `v1.2`) is skipped, so
+`/api/v1/posts` and `/api/v2/posts` both need `posts`. Whether a segment is
+a version or a table comes from the route that matched, not from how the
+path is spelled:
 with a table named `v1` mounted at `/api`, `GET /api/v1/orders` is record
 `orders` of table `v1` (route `/api/v1/{id}`) and needs `v1:read`, never
 `orders:read`. Mounted outside a router (no matched route on the request),

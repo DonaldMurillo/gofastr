@@ -69,7 +69,11 @@ first request that reaches it (a 500 through the recovery middleware)
 instead of returning `""`. A request built by hand with `SetPathValue`
 and no pattern is not checked. `handler.Bind` does not panic: a
 `path:"..."` field the route does not declare stays zero, so one input
-struct can serve both `POST /users` and `PUT /users/{id}`. The
+struct can serve both `POST /users` and `PUT /users/{id}`.
+`ResourceGroup(name)` returns a sub-router whose routes name the REST
+resource they serve; `RouteResource(ctx)` reads the name in middleware,
+before the handler runs. CRUD mounts use it so `auth.RequireAPIScopes`
+scopes `/_batch` and the other subroutes to their table. The
 framework owns the root `*Router` and hands it to batteries and authors
 to mount routes. Direct. Start at `core/router/router.go`: `Router`.
 

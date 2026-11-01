@@ -100,9 +100,10 @@ func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	// sub-router carries the group's middleware, and a route beside it
 	// would skip that guard.
 	m := a.crudMounts[e]
-	m.r.Post(m.rel+"/_bulk", a.entityUIOwned(e, a.entityUI.BulkHandler(e.GetName())))
-	m.r.Get(m.rel+"/_export.csv", a.entityUIOwned(e, a.entityUI.ExportHandler(e.GetName())))
-	m.r.Post(m.rel+"/_pick", a.entityUIOwned(e, a.entityUI.PickerHandler(e.GetName())))
+	r := crud.ResourceRouter(m.r, m.rel)
+	r.Post(m.rel+"/_bulk", a.entityUIOwned(e, a.entityUI.BulkHandler(e.GetName())))
+	r.Get(m.rel+"/_export.csv", a.entityUIOwned(e, a.entityUI.ExportHandler(e.GetName())))
+	r.Post(m.rel+"/_pick", a.entityUIOwned(e, a.entityUI.PickerHandler(e.GetName())))
 }
 
 // entityUIOwns reports whether e is the entity its name resolves to. The

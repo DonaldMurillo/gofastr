@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
 // TokenMiddlewareOption tunes TokenMiddleware.
@@ -262,7 +263,8 @@ func emitTokenEvent(sink AuditSink, ctx context.Context, r *http.Request, kind, 
 // derived from the route: the first path segment after apiPrefix is the
 // resource (the entity table), and the HTTP method maps to the verb,
 // GET/HEAD need "<resource>:read", everything else "<resource>:write".
-// Subroutes (/{id}, /_batch, /_events, /llm.md) inherit the resource.
+// Subroutes (/{id}, /_batch, /_events, /llm.md) inherit the resource: a
+// CRUD mount names it on each route it registers (router.RouteResource).
 // A version segment before the table is skipped; which segment is the
 // version and which the table is read from the matched route pattern
 // (see apiScopeResources), so mount it with Use on the app's router.
@@ -311,6 +313,12 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 // apiScopeResources returns the scope resources a request under prefix
 // must hold. rest is the path after prefix+"/".
 //
+// A route registered under a router.ResourceGroup (every CRUD mount and
+// the EntityUI routes beside it) names its resource, and that name wins:
+// the mount knows its table, while the path cannot tell a table named
+// "v1" with a "/_batch" subroute from a versioned mount of "_batch".
+// The rules below derive the resource for any other route.
+//
 // Version-like segments (v1, v2, v1.2) are skipped so /api/v1/posts and
 // /api/v2/posts both need "posts": version is an API-surface concern, not
 // an authorization one. Per-version authorization uses RequireScope.
@@ -330,6 +338,9 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 // the first that is not version-like or is last. That is fail-closed: a
 // token needs both v1 and orders.
 func apiScopeResources(r *http.Request, prefix, rest string) []string {
+	if res, ok := router.RouteResource(r.Context()); ok {
+		return []string{res}
+	}
 	if pat := patternPath(r.Pattern); pat != "" {
 		if res, ok := patternResource(pat, r.URL.EscapedPath(), prefix); ok {
 			if res == "" {

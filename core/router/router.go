@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -112,6 +113,12 @@ type Router struct {
 	// the mux matches it (PreRoute). An atomic pointer, so the request
 	// path pays one load and no lock.
 	preRoute atomic.Pointer[func(*http.Request) (*http.Request, string)]
+
+	// resource names the REST resource every route registered on this
+	// router serves (ResourceGroup); "" for none. Set before any route is
+	// registered and never written again, so the request path reads it
+	// without a lock.
+	resource string
 }
 
 // RegisteredRoute is the (method, pattern) pair returned by
@@ -478,6 +485,11 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}))
 		}
 	}
+	// The route's resource, stamped before the chain so a middleware
+	// that authorizes by resource reads it from the route, not the path.
+	if c.router.resource != "" {
+		req = req.WithContext(context.WithValue(req.Context(), routeResourceKey{}, c.router.resource))
+	}
 	curVer := c.router.root.chainVersion.Load()
 	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
 		(*h).ServeHTTP(w, req)
@@ -581,6 +593,7 @@ func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 		middlewares: own,
 		parent:      r,
 		root:        r.root,
+		resource:    r.resource,
 	}
 	if len(own) > 0 {
 		r.root.chainVersion.Add(1)
