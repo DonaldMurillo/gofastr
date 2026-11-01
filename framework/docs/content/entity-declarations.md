@@ -630,6 +630,29 @@ integer, or as a 64-bit float past about 15 significant digits, so
 all 19 digits on Postgres, or store it as an `int` count of the smallest
 unit.
 
+A create or update refuses a `decimal` its column cannot store as sent,
+with a 400 naming the field, on both dialects:
+
+| Value | Refused when | Code |
+| --- | --- | --- |
+| `"1e-1001"`, `"1e1001"` | the exponent is past ±1000 (`schema.MaxDecimalExponent`) | `decimal_exponent` |
+| `"1e16"`, `"12345678901234567"` | it needs more digits before the point than the column has (15 for `DECIMAL(19,4)`) | `decimal_integer_digits` |
+| `"1.23456"`, `"0.00001"` | it needs more digits after the point than the column's scale (4 for `DECIMAL(19,4)`) | `decimal_fraction_digits` |
+
+Postgres refused the first two at write time (22P02, 22003) as a 500,
+and rounded the third to `1.2346`, while SQLite stored each one as
+written. Refusing past the scale, instead of rounding in Go, means both
+dialects keep the number the client sent. Trailing zeros are not
+counted: `"1.23450000"` is `1.2345` and fits. A `RawType` of
+`DECIMAL(p,s)` or `NUMERIC(p,s)` (`NUMERIC(p)` is scale 0) is the
+column, so its own precision and scale are the limit: `RawType:
+"NUMERIC(10,2)"` takes `"12345678.12"` and refuses `"1.123"`. Any other
+`RawType`, a bare `NUMERIC` included, bounds only the exponent.
+`schema.DecimalColumn(f)` returns the precision and scale the check
+uses. A `Default` is held to the same limit at registration. A value an
+older build stored past the column on SQLite still reads back; the next
+update that sends it again is refused.
+
 A `decimal` field's `Min` and `Max` are compared in exact decimal
 arithmetic, reading the float bound as its shortest spelling: `0.1` is
 0.1 and `1e30` is 10^30, not their binary expansions. A whole-number

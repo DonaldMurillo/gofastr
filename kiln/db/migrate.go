@@ -161,7 +161,7 @@ func sqlType(f schema.Field) string {
 	case schema.Bool:
 		return "BOOLEAN"
 	case schema.Decimal:
-		return "DECIMAL(19,4)"
+		return schema.DecimalColumnType
 	case schema.Enum, schema.UUID, schema.Relation, schema.Image, schema.File, schema.JSON:
 		return "TEXT"
 	case schema.Timestamp:
