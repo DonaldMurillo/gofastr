@@ -68,20 +68,23 @@
   const seps = () => {
     let f;
     try { f = new Intl.NumberFormat(document.documentElement.lang || undefined); } catch (_) { f = new Intl.NumberFormat(); }
-    const o = { decimal: '.', group: ',' };
-    for (const x of f.formatToParts(12345.6)) if (has(o, x.type)) o[x.type] = x.value;
+    const o = { decimal: '.', group: ',', g: [] };
+    for (const x of f.formatToParts(1234567890.5)) if (x.type === 'integer') o.g.push(x.value.length); else if (has(o, x.type)) o[x.type] = x.value;
     return o;
   };
   // num reads a number typed in a text control the reader's way:
-  // "1.234,5" on a Spanish page and "1,234.5" on an English one are both
-  // 1234.5. A group mark counts only before exactly three digits, so
-  // "2.5" still reads 2.5 where "." groups; a space-like mark (French)
-  // also takes a plain space.
+  // "1.234,5" on a Spanish page, "1,234.5" on an English one and
+  // "12,34,567.8" on an Indian English one. Group marks count only where
+  // they match the locale's grouping (the last group and the ones before
+  // it), so "2.5" still reads 2.5 where "." groups; a space-like mark
+  // (French) also takes a plain space.
   const num = (raw) => {
-    const o = seps();
-    const g = o.group.replace(/\W/g, '\\$&') + (/\s/.test(o.group) ? '| ' : '');
-    const s = raw.trim().replace(new RegExp('(\\d)(?:' + g + ')(?=\\d{3}(?!\\d))', 'g'), '$1').split(o.decimal).join('.');
-    return s ? Number(s) : NaN;
+    const o = seps(), s = raw.trim(), at = s.lastIndexOf(o.decimal), p = o.g.at(-1), q = o.g.at(-2) || p;
+    let i = at < 0 ? s : s.slice(0, at);
+    const g = i.split(/\s/.test(o.group) ? /\s/ : o.group);
+    if (g.length > 1 && g.every((x, k) => new RegExp(k ? '^\\d{' + (k < g.length - 1 ? q : p) + '}$' : '^-?\\d{1,' + q + '}$').test(x))) i = g.join('');
+    const n = at < 0 ? i : i + '.' + s.slice(at + 1);
+    return n ? Number(n) : NaN;
   };
   const pad = (n) => String(n).padStart(2, '0');
 

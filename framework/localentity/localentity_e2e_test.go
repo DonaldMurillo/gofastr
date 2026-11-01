@@ -487,6 +487,8 @@ func TestNumberReadsPageLocale(t *testing.T) {
 		{"es", "1.234,5", 1234.5},
 		{"es", "2.5", 2.5},
 		{"en", "1,234.5", 1234.5},
+		{"en-IN", "12,34,567.8", 1234567.8},
+		{"fr", "1 234,5", 1234.5},
 	} {
 		saves++
 		var id string
