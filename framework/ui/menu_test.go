@@ -254,7 +254,7 @@ var goldenMenus = []struct {
 	{
 		name: "disabled-anchor",
 		cfg:  ui.MenuConfig{Label: "Go", Items: []ui.MenuItem{{Label: "Locked", Href: "/x", Disabled: true}}},
-		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="hui-menu-a636a70b" data-cui-comp="ui-menu"><summary aria-controls="hui-menu-a636a70b-panel" aria-haspopup="menu" class="fui-menu__trigger" data-cui-internal="">Go<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="hui-menu-a636a70b-panel" role="menu"><a aria-disabled="true" class="fui-menu__item fui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1"><span class="fui-menu__label">Locked</span></a></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="hui-menu-a636a70b" data-cui-comp="ui-menu"><summary aria-controls="hui-menu-a636a70b-panel" aria-haspopup="menu" class="fui-menu__trigger" data-cui-internal="">Go<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="hui-menu-a636a70b-panel" role="menu"><a aria-disabled="true" class="fui-menu__item fui-menu__item--disabled" role="menuitem" tabindex="-1"><span class="fui-menu__label">Locked</span></a></div></details>`,
 	},
 	{
 		name: "rpc-confirm-method",

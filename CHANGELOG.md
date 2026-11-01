@@ -104,6 +104,10 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A disabled menu link row renders no `href`.** `aria-disabled` and
+  `pointer-events` stopped a mouse, but a keyboard Enter or an
+  assistive-tech activation still followed the link, as `headless.Button`
+  already prevented.
 - **`?q=` refuses text Postgres cannot bind.** A search term holding
   invalid UTF-8 or a NUL byte answers 400 naming `q` on both dialects
   (Postgres answered 500, SQLite an empty 200). BREAKING for direct

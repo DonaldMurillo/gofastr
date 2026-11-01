@@ -61,7 +61,9 @@ type MenuItem struct {
 	Danger bool
 
 	// Disabled removes the row from keyboard navigation and pointer
-	// interaction while keeping it in the panel.
+	// interaction while keeping it in the panel. A disabled link row
+	// renders with no href, so no input (keyboard, assistive tech, a
+	// crawler) can follow it.
 	Disabled bool
 
 	// Separator renders a horizontal divider instead of a row.
@@ -436,6 +438,13 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 	}
 
 	if it.Href != "" {
+		if it.Disabled {
+			// A disabled link row carries no href, as a disabled Button
+			// does: aria-disabled and pointer-events stop a mouse, but a
+			// keyboard Enter or an assistive-tech activation followed a
+			// live href. An <a> with no href is a placeholder, not a link.
+			return b.El("a", PartMenuItem, Merge(own, rowMark), kids...)
+		}
 		// safeURL drops javascript:, data:, and friends; a rejected
 		// href degrades to "#" like every link this framework renders.
 		href := urlsafe.CleanAnchor(it.Href)
