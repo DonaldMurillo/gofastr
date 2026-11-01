@@ -295,3 +295,53 @@ func TestWrittenIDsAttributeEntities(t *testing.T) {
 		}
 	}
 }
+
+// A kind namespace never meets a plain one: island "_l-a" encodes its
+// underscore, outlet "a" of kind l does not. A kind outside g-z or an
+// empty namespace panics.
+func TestIDNamespaceKindIsApart(t *testing.T) {
+	ctx := WithIDScope(context.Background())
+	outlet := UniqueID(WithIDNamespaceKind(ctx, 'l', "a"), "x")
+	island := UniqueID(WithIDNamespace(ctx, "_l-a"), "x")
+	if outlet != "_l-a--x" || island == outlet {
+		t.Errorf("outlet id %q, island id %q: want _l-a--x and another", outlet, island)
+	}
+	for name, f := range map[string]func(){
+		"kind a":   func() { WithIDNamespaceKind(ctx, 'a', "x") },
+		"kind {":   func() { WithIDNamespaceKind(ctx, '{', "x") },
+		"empty ns": func() { WithIDNamespaceKind(ctx, 'l', "") },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: no panic", name)
+				}
+			}()
+			f()
+		}()
+	}
+}
+
+func TestHasIDScope(t *testing.T) {
+	var none context.Context // scopeOf reads a nil context as no scope
+	if HasIDScope(context.Background()) || HasIDScope(none) {
+		t.Error("a context with no scope reports one")
+	}
+	if !HasIDScope(WithIDScope(context.Background())) {
+		t.Error("WithIDScope's context reports none")
+	}
+}
+
+// With no scope a batch reserves nothing; after the first Settle,
+// ReserveRendered reserves in the parent scope at once.
+func TestReserveRenderedEdges(t *testing.T) {
+	NewRegionBatch(context.Background(), 1).ReserveRendered(0, `<i id="x">`)
+	ctx := WithIDScope(context.Background())
+	b := NewRegionBatch(ctx, 1)
+	h := HTML(`<b id="` + UniqueID(b.Context(0), "y") + `"></b>`)
+	b.Settle(0)(h)
+	b.ReserveRendered(0, `<i id="late">`)
+	if got := UniqueID(ctx, "late"); got != "late-2" {
+		t.Errorf("UniqueID after a late ReserveRendered = %q, want late-2", got)
+	}
+}
