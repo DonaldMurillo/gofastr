@@ -322,11 +322,27 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		return
 	}
 
-	// custom.go is the dev-owned seam: created when absent, NEVER
-	// overwritten, not even under --force.
+	// custom.go is the dev-owned seam: created when absent, never
+	// overwritten. One written for the other generation mode imports a
+	// client this run does not build against, so the run refuses; --force
+	// moves it to custom.go.bak (never over an earlier backup) and writes
+	// a fresh one.
+	backupCustom := false
+	if stale := staleCustomClient(opts.OutDir, opts.OutDir, spec); stale != "" {
+		customPath := filepath.Join(opts.OutDir, cliCustomFile)
+		if !opts.force {
+			failWith(fmt.Errorf("%s imports %s, the client of the other `gofastr generate cli` mode, so it does not build beside the CLI this run generates from %s. Re-run with --force: it moves the file to %s and writes a fresh custom.go. Then copy your customCommands entries and configureClient body from the backup and delete it", customPath, stale, cliSourceName(spec), cliCustomBackup))
+			return
+		}
+		if fileExistsUnder(opts.OutDir, cliCustomBackup) {
+			failWith(fmt.Errorf("%s was written for the other `gofastr generate cli` mode, and --force would move it to %s, which already exists. Move or delete %s, then re-run", customPath, filepath.Join(opts.OutDir, cliCustomBackup), cliCustomBackup))
+			return
+		}
+		backupCustom = true
+	}
 	kept := files[:0]
 	for _, f := range files {
-		if f.Name == cliCustomFile && fileExistsUnder(opts.OutDir, f.Name) {
+		if f.Name == cliCustomFile && !backupCustom && fileExistsUnder(opts.OutDir, f.Name) {
 			continue
 		}
 		kept = append(kept, f)
@@ -362,6 +378,9 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 			printGeneratedFilesJSON(files)
 			return
 		}
+		if backupCustom {
+			cli.Info("Would move %s to %s", filepath.Join(opts.OutDir, cliCustomFile), cliCustomBackup)
+		}
 		cli.Info("Would generate %d file(s) in %s:", len(files), opts.OutDir)
 		for _, f := range files {
 			fmt.Printf("    %s\n", filepath.Join(opts.OutDir, f.Name))
@@ -393,6 +412,15 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 	if err != nil {
 		failWith(fmt.Errorf("CLI code generation failed: %w", err))
 		return
+	}
+	if backupCustom {
+		if err := backupCLICustom(opts.OutDir); err != nil {
+			failWith(err)
+			return
+		}
+		if !opts.json {
+			cli.Warn("%s was written for the other `gofastr generate cli` mode; moved it to %s and wrote a fresh one. Copy your commands across, then delete the backup", filepath.Join(opts.OutDir, cliCustomFile), cliCustomBackup)
+		}
 	}
 	writeOpts := codegen.WriteOptions{
 		OutputRoot:   opts.OutDir,

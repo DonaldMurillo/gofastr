@@ -281,6 +281,15 @@ and never overwritten.** It is the extension seam:
   reachable via the client's raw `Do(ctx, method, path, body, out)`
   escape hatch.
 
+`custom.go` imports the client of the mode that wrote it: the entity SDK
+(`entities/client`) or, under `--from-openapi`, the CLI's own
+`internal/client`. A run in the other mode finds that import and refuses,
+since the file would not build beside the new `*.gen.go` files. Re-run
+with `--force` and the generator moves the file to `custom.go.bak` and
+writes a fresh `custom.go`; copy your `customCommands` entries and
+`configureClient` body across, then delete the backup. `--force` never
+replaces an existing `custom.go.bak`.
+
 The rest of the tree is laid out the same way: each `<entity>.gen.go`
 holds the command table, the per-entity filter and mutation-field tables,
 and one-line wrappers (`runPostsList`-style) binding them; `verbs.gen.go`

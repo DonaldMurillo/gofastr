@@ -2,9 +2,13 @@ package appgen
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
@@ -14,6 +18,63 @@ import (
 // cliCustomFile is the CLI's one owned file: created when absent, never
 // rewritten.
 const cliCustomFile = "custom.go"
+
+// cliCustomBackup is where --force moves a custom.go written for the other
+// generation mode.
+const cliCustomBackup = cliCustomFile + ".bak"
+
+// otherCLIClientImport is the client package the other generation mode
+// imports: the entity SDK (<base>/entities/client) for an --from-openapi
+// run, the CLI's own internal/client for an entity run.
+func otherCLIClientImport(outDir string, spec cliSpec) string {
+	// Spelled the way runGenerateCLIFromOpenAPI builds it, uncleaned.
+	self := "/" + filepath.ToSlash(outDir) + "/internal/client"
+	if spec.SelfClient {
+		return strings.TrimSuffix(spec.ClientImport, self) + "/entities/client"
+	}
+	return strings.TrimSuffix(spec.ClientImport, "/entities/client") + self
+}
+
+// staleCustomClient returns the other mode's client package when the
+// custom.go under outDir imports it: the file was written for the other
+// generation mode and no longer builds beside this run's files. It returns
+// "" when custom.go is absent, does not parse, or imports no such package.
+func staleCustomClient(outDir, relOut string, spec cliSpec) string {
+	data, err := readFileUnder(outDir, cliCustomFile)
+	if err != nil {
+		return ""
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), cliCustomFile, data, parser.ImportsOnly)
+	if err != nil {
+		return ""
+	}
+	other := otherCLIClientImport(relOut, spec)
+	for _, imp := range f.Imports {
+		if p, err := strconv.Unquote(imp.Path.Value); err == nil && p == other {
+			return p
+		}
+	}
+	return ""
+}
+
+// backupCLICustom renames custom.go to custom.go.bak under outDir. The
+// rename goes through an *os.Root so neither name resolves out of the
+// directory, and it refuses to replace a backup that appeared since the
+// run checked.
+func backupCLICustom(outDir string) error {
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if _, err := root.Lstat(cliCustomBackup); err == nil {
+		return fmt.Errorf("%s already exists; move or delete it, then re-run", path.Join(outDir, cliCustomBackup))
+	}
+	if err := root.Rename(cliCustomFile, cliCustomBackup); err != nil {
+		return fmt.Errorf("move %s to %s: %w", cliCustomFile, cliCustomBackup, err)
+	}
+	return nil
+}
 
 // cliGeneratedLine heads every derived CLI file, the line go tooling reads
 // to treat a file as generated.

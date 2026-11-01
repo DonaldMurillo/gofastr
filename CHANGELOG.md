@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **`gofastr generate cli` refuses a `custom.go` from the other mode.**
+  The generator never rewrites `custom.go`, so moving between the entity
+  and `--from-openapi` modes kept a file importing the other mode's client,
+  and the CLI stopped building. The run now names the import and stops;
+  `--force` moves the file to `custom.go.bak` and writes a fresh one. See
+  [App CLI](framework/docs/content/app-cli.md).
 - **BREAKING: `client.d.ts` types nullable fields `T | null`.** The
   server returns SQL `NULL` as `null` for any optional column, but the
   generated types said `T`, so strict TypeScript compiled code that read
