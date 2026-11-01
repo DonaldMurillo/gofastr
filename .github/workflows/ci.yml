@@ -603,11 +603,14 @@ jobs:
 
       - name: Conformance report from a host app binary
         run: |
-          go build -o "$RUNNER_TEMP/host" ./examples/processmodule-demo/host
+          # $TMPDIR, not $RUNNER_TEMP: on macOS the runner temp dir is under
+          # $HOME, which the sandbox-exec profile denies reads of.
+          host="$(mktemp -d)/host"
+          go build -o "$host" ./examples/processmodule-demo/host
           {
             echo "### Sandbox conformance on ${{ matrix.suite }}"
             echo '```json'
-            "$RUNNER_TEMP/host" -check-sandbox
+            "$host" -check-sandbox
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -619,6 +622,12 @@ jobs:
 
       - name: Untrusted module through a host app (examples/processmodule-demo)
         run: go test -count=1 -v ./examples/processmodule-demo/...
+
+      - name: Sandbox denials (macOS, on failure)
+        # What sandbox-exec refused, by operation and path: the probe
+        # report only sees the child fail; the kernel log names the rule.
+        if: failure() && runner.os == 'macOS'
+        run: log show --last 15m --style compact --predicate 'sender == "Sandbox" OR subsystem == "com.apple.sandbox.reporting"' | grep -i deny | tail -60 || true
 
   browser-e2e:
     # One matrix shard per chromedp suite. These suites were serialized in
