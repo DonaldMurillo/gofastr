@@ -375,7 +375,10 @@ A stateful control with no `ID` builds its ids from its `Name`.
 second control with the same `Name` on the page (a filter form and an
 edit form both naming a field `tags`) builds its ids from `tags-2`,
 so no label's `for=` reaches the first one. One instance renders the
-same ids it always did. A `TagInput` with an `ID` gives its draft
+same ids it always did. A `Rating` with an `ID` builds its choices'
+ids from it (`<ID>-1` to `<ID>-<Max>`, reserved with the `ID`), so two
+ratings sharing a `Name` but given their own ids never repeat a radio
+id. A `TagInput` with an `ID` gives its draft
 field `<ID>-field` (the root keeps `ID`, so the label names the
 field, not the group), and its `Help` is the field's
 `aria-describedby`. A named `Counter`'s input is an attr binding

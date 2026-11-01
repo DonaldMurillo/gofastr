@@ -11,6 +11,33 @@ import (
 
 var instanceIDAttr = regexp.MustCompile(` id="([^"]+)"`)
 
+// Rating built its choices' ids from Name even when ID was set, the
+// one form control that did: two ratings sharing a field name (a
+// filter form and an edit form) each given its own ID still repeated
+// "stars-1".."stars-N", and every label's for= toggled the first
+// group's radio. With an ID the choices are <ID>-1..<ID>-N, the way
+// the other controls build from instanceID; with no ID they stay
+// <Name>-N.
+func TestRatingChoiceIDsDeriveFromID(t *testing.T) {
+	ctx := render.WithIDScope(context.Background())
+	h := string(Rating(RatingProps{Name: "stars", ID: "filter-stars", Label: "Stars", Max: 3, Ctx: ctx}, nil)) +
+		string(Rating(RatingProps{Name: "stars", ID: "edit-stars", Label: "Stars", Max: 3, Ctx: ctx}, nil))
+	assertUniqueIDs(t, "two IDed ratings sharing a Name", h)
+	for _, id := range []string{"filter-stars-1", "filter-stars-3", "edit-stars-1", "edit-stars-3"} {
+		if !strings.Contains(h, ` id="`+id+`"`) || !strings.Contains(h, ` for="`+id+`"`) {
+			t.Errorf("choice id %q (and its label's for=) missing:\n%s", id, h)
+		}
+	}
+	if strings.Contains(h, `id="stars-1"`) {
+		t.Errorf("an IDed rating still builds its choice ids from Name:\n%s", h)
+	}
+	// No ID: the Name, as before.
+	plain := string(Rating(RatingProps{Name: "stars", Label: "Stars", Max: 2}, nil))
+	if !strings.Contains(plain, ` id="stars-2"`) {
+		t.Errorf("an un-IDed rating no longer builds from Name:\n%s", plain)
+	}
+}
+
 // assertUniqueIDs fails on an id rendered twice.
 func assertUniqueIDs(t *testing.T, what, h string) {
 	t.Helper()
