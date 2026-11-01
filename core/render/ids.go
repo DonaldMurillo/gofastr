@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 )
 
 // A component that derives an element id from its content (a section
@@ -534,11 +535,71 @@ func readAttrs(s string, k int) (int, []string) {
 			}
 		}
 		if has && asciiEqualFold(name, "id") && val != "" && !containsToken(val) {
-			ids = append(ids, html.UnescapeString(val))
+			ids = append(ids, unescapeAttr(val))
 		}
 	}
 	return len(s), ids
 }
+
+// unescapeAttr decodes the character references in s, an attribute
+// value, by the attribute rules html.UnescapeString does not follow: a
+// named reference with no semicolon stays literal when a letter, a digit
+// or "=" follows it (id="a&notit;" is a&notit;, where text reads a¬it;).
+// A numeric reference decodes as it does in text.
+func unescapeAttr(s string) string {
+	if !strings.Contains(s, "&") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] != '&' {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		k := i + 1
+		if k < len(s) && s[k] == '#' {
+			k++
+			hex := k < len(s) && (s[k] == 'x' || s[k] == 'X')
+			if hex {
+				k++
+			}
+			for k < len(s) && (isDigit(s[k]) || hex && isHexLetter(s[k])) {
+				k++
+			}
+			if k < len(s) && s[k] == ';' {
+				k++
+			}
+			b.WriteString(html.UnescapeString(s[i:k]))
+			i = k
+			continue
+		}
+		for k < len(s) && (isDigit(s[k]) || (s[k]|0x20) >= 'a' && (s[k]|0x20) <= 'z') {
+			k++
+		}
+		ref, whole := s[i:k], 1
+		if k < len(s) && s[k] == ';' {
+			// &name; decodes when name is an entity. A shorter legacy
+			// prefix (&not in &notit;) leaves at least two runes and the
+			// semicolon behind it; an entity is at most two runes.
+			ref, whole = s[i:k+1], 2
+		} else if k < len(s) && s[k] == '=' {
+			whole = 0
+		}
+		// With no semicolon only a whole legacy name decodes: a prefix
+		// match leaves the rest of the name behind it.
+		if u := html.UnescapeString(ref); k > i+1 && u != ref && utf8.RuneCountInString(u) <= whole {
+			b.WriteString(u)
+		} else {
+			b.WriteString(ref)
+		}
+		i += len(ref)
+	}
+	return b.String()
+}
+
+func isDigit(c byte) bool     { return c >= '0' && c <= '9' }
+func isHexLetter(c byte) bool { return c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
 
 // skipRawText returns the index of the end tag closing a raw-text
 // element named name, searched from i, or len(s).

@@ -260,3 +260,31 @@ func TestWrittenIDsReadElementsOnly(t *testing.T) {
 		t.Errorf("writtenIDs = %q, want \"f g h\"", got)
 	}
 }
+
+// An attribute decodes character references by the attribute rules: a
+// legacy entity with no semicolon stays literal before a letter, a
+// digit or "=". Text rules turned id="a&notit;" into a¬it; and left the
+// real id unreserved.
+func TestWrittenIDsAttributeEntities(t *testing.T) {
+	cases := map[string]string{
+		`<i id="a&notit;">`:     "a&notit;",
+		`<i id="a&not=1">`:      "a&not=1",
+		`<i id="a&amp1">`:       "a&amp1",
+		`<i id="a&not;b">`:      "a¬b",
+		`<i id="a&not b">`:      "a¬ b",
+		`<i id="a&notin;b">`:    "a∉b",
+		`<i id="a&#65;&#x42;">`: "aAB",
+		`<i id="a&amp;&lt">`:    "a&<",
+		`<i id="a&bogus;">`:     "a&bogus;",
+		`<i id="&semi;x">`:      ";x",
+		`<i id=a&notit;>`:       "a&notit;",
+		`<i id="a&#65x">`:       "aAx",
+		`<i id="&AMP">`:         "&",
+		`<i id="&ampx;">`:       "&ampx;",
+	}
+	for in, want := range cases {
+		if got := writtenIDs(in); len(got) != 1 || got[0] != want {
+			t.Errorf("writtenIDs(%s) = %q, want %q", in, got, want)
+		}
+	}
+}
