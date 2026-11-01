@@ -520,9 +520,12 @@ type RatingProps struct {
 // module exists for it. A second state owner would add nothing the
 // radios do not already guarantee.
 //
-// The choices render in REVERSE order (Max..1): the sheet's sibling
-// selector cascades the highlight backward from the checked or
-// hovered choice to every earlier one, with no script at all.
+// The choices render in forward order (1..Max), so the DOM order is
+// the reading order: native arrows move the way the stars read (and
+// follow the page's direction in RTL), as WCAG 2.4.3 asks. A sheet
+// fills the stars up to the checked or hovered one with :has()
+// (a choice that has a later checked radio or hovered choice after
+// it), with no script at all.
 func Rating(p RatingProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Rating requires Name — a control with no name submits nothing")
@@ -569,7 +572,7 @@ func Rating(p RatingProps, s Classes) render.HTML {
 	}
 	base := instanceID(p.Ctx, p.ID, p.Name, family...)
 	items := make([]render.HTML, 0, max*2)
-	for i := max; i >= 1; i-- {
+	for i := 1; i <= max; i++ {
 		idV := base + "-" + strconv.Itoa(i)
 		radio := html.Attrs{
 			"type":       "radio",

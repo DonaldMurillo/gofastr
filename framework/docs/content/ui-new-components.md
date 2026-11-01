@@ -85,7 +85,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
 - **searchresults**: `framework/ui.SearchResults`, a full search results page (GET form, match count, results with section links, pagination) that works without script
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
-- **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
+- **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs; the radios are in reading order (1 to Max in the DOM), so arrows move the way the stars read, and the checked and hover fill is `:has()` in the kit sheet
 - **rating-display**: `framework/ui.Rating` (`ui.RatingDisplayConfig`), a read-only score drawn as glyphs sized to themselves, one `role="img"` with a localized "4 out of 5" name. Shares Shape / Size and the `--ui-rating-color` knob with RatingInput. Use it for a testimonial or a product average, where a disabled RatingInput would announce a form control and space its stars on 44px tap targets.
 - **slider**: `framework/ui.Slider`, `<input type=range>` with optional live value mirror
 - **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp; `ValueLow` / `ValueHigh` are `*int`, nil the unset end (low on `Min`, high on `Max`), so a set pair of `new(0)`, `new(0)` renders as 0 to 0 rather than the whole range

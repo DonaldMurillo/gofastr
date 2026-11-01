@@ -197,7 +197,7 @@ func TestNarrowNoDotsCarouselKeepsArrows(t *testing.T) {
 func TestRatingInputColorFromAncestor(t *testing.T) {
 	css := ratingStyle.Entry().CSSFor(theme.Default())
 	probe := `(() => {
-		const [r, g, b] = getComputedStyle(document.querySelector('.fui-rating__input:checked ~ .fui-rating__choice')).color.match(/\d+/g).map(Number);
+		const [r, g, b] = getComputedStyle(document.querySelector('.fui-rating__input:checked + .fui-rating__choice')).color.match(/\d+/g).map(Number);
 		return {r, g, b};
 	})()`
 	knob := `<div style="--ui-rating-color: rgb(1, 2, 3)">`

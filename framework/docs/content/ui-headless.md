@@ -381,7 +381,12 @@ are `*int`: nil is unset (the low thumb sits on `Min`, the high on
 clamped into the range and ordered low, high. A `Rating` with an
 `ID` builds its choices' ids from it (`<ID>-1` to `<ID>-<Max>`,
 reserved with the `ID`), so two ratings sharing a `Name` but given
-their own ids never repeat a radio id. A `TagInput` with an `ID` gives its draft
+their own ids never repeat a radio id. A `Rating`'s choices render
+in reading order, 1 to `Max`, so the browser's radio arrows move the
+way the stars read (ArrowRight to the next star, flipped in RTL); a
+sheet fills the stars up to the checked or hovered one with `:has()`
+(`framework/ui`'s `RatingInput` does), and a browser without `:has()`
+still rates, missing only the earlier stars' fill. A `TagInput` with an `ID` gives its draft
 field `<ID>-field` (the root keeps `ID`, so the label names the
 field, not the group), and its `Help` is the field's
 `aria-describedby`. A named `Counter`'s input is an attr binding

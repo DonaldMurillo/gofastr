@@ -2,6 +2,7 @@ package headless
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -255,10 +256,14 @@ func TestRatingRadioContract(t *testing.T) {
 	has(t, got, `role="radiogroup"`, "the group does not say it is one")
 	has(t, got, `aria-label="3 out of 5"`, "a choice does not name itself")
 	has(t, got, `aria-label="3 out of 5" checked=""`, "the chosen choice is not checked")
-	// Reverse order: the highest choice is first in the markup, the
-	// sheet's sibling cascade depends on it.
-	if i := strings.Index(string(got), `value="5"`); i == -1 || strings.Index(string(got), `value="1"`) < i {
-		t.Error("the choices do not render in reverse order — the stylesheet's cascade is built on it")
+	// Forward order: 1..Max is the reading order, so native arrows move
+	// the way the stars read (WCAG 2.4.3). The reverse order a sibling
+	// cascade once needed made ArrowRight move to the lower star.
+	at := func(v int) int { return strings.Index(string(got), `value="`+strconv.Itoa(v)+`"`) }
+	for v := 1; v < 5; v++ {
+		if at(v) == -1 || at(v+1) < at(v) {
+			t.Fatalf("choice %d does not come before choice %d in the markup — the DOM order must be the reading order", v, v+1)
+		}
 	}
 }
 
