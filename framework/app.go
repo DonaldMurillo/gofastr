@@ -2800,8 +2800,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 // so an endpoint on an entity whose CRUD answered 401 served anyone.
 func endpointRoute(ep entity.Endpoint) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
-			handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
+		if handler.IsForgedCrossSiteWrite(r) {
 			handler.WriteError(w, r, handler.Fail(http.StatusForbidden, handler.ReasonCrossSiteRefused))
 			return
 		}

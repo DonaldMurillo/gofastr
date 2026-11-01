@@ -998,7 +998,12 @@ fetches the page only.
 
 The runtime restores scroll position per history entry: Back and
 Forward land where the user left, kept panes keep their scroll, and a
-reload keeps its position. A history move whose only URL change is
+reload keeps its position. That includes Back across an in-page
+`#anchor` jump, which moves within one page. On a page with outlets the
+restore is anchor-first (the element at the top of the viewport keeps
+its offset when content above it changed height), but only for the
+history entry that recorded the anchor: an earlier visit to the same
+path lands on its own position. A history move whose only URL change is
 in-page state (a pane or widget deep-link parameter) closes or reopens
 that state without refetching the screen. Search and pagination
 parameters are screen identity and refetch as before.

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/axecov"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
@@ -269,6 +270,11 @@ func (ds *UIHost) ValidateBoot() {
 	// registry, and the id-collision and embed refusals see the late ones.
 	ds.AutoCompileActions()
 	ds.enforceNoServerActionsOnEmbeds()
+	// Every package's init has run by now, so the behaviour registry is
+	// complete: build its block here and a refused requirement graph (a
+	// cycle, an unknown module, a shadowed name) stops the boot instead
+	// of waiting for the first page request to answer 500.
+	runtime.BehaviorsJSON()
 	if !ds.strict || ds.strictConfig.level(strictCheckInternalLinks) == StrictOff {
 		return
 	}

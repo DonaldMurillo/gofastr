@@ -30,6 +30,11 @@ func buildLinuxDesktop(f desktopBuildFlags, name string) error {
 	if err != nil {
 		return err
 	}
+	extra, err := extraLinkerFlags(f)
+	if err != nil {
+		return err
+	}
+	ldflags += extra
 	if f.format == "tar.gz" {
 		return buildLinuxDesktopArchive(f, name, arch)
 	}

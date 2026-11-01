@@ -101,9 +101,77 @@ few lines, and link the PR or the docs page for the rest.
   battery-plane table in
   [data export](framework/docs/content/data-export.md) lists every store
   and how it is erased.
+- **Gaps from building on v0.95.0 (#635).**
+  `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` skip
+  the browser sign-in on the paths they name, for a client with no
+  browser; the app's own auth (an API key, a bearer token) protects
+  them;
+  `service.Config.BindAddress` serves beyond loopback
+  ([service](framework/docs/content/service.md#callers-with-no-browser-openprefixes)).
+  `webhook.Subscriber.Auth` sends a bearer, API key or basic credential
+  (over `https://` only, unless `Options.AllowPlaintextAuth`), and each
+  delivery records `ResponseStatus` and `ResponseBody`
+  ([webhooks](framework/docs/content/webhooks.md#authenticating-to-the-receiver)).
+  `openapi.DocsHandlerWith` chooses the spec and page paths and lists
+  the operations; `Spec.SetDescription` sets `info.description`.
+  `CORSConfig.AllowAnyHeader`/`AllowAnyMethod`, `handler.RefuseCrossSite`,
+  `desktop.LaunchArgs` with `gofastr desktop build --launch-args` and
+  `--ldflags`, and the `gofastr_nodesktop` build tag for a static server
+  image. The CLI warns when `go.mod` requires another GoFastr release
+  (`GOFASTR_NO_VERSION_CHECK=1` silences it).
+
+### Changed
+- **Local run registry registers local runs only (#635).** A server
+  bound to every interface or a LAN address, with no `gofastr dev` and
+  no `battery/service`, writes no record. Set `GOFASTR_RUNS=on` to keep
+  registering it; `GOFASTR_RUNS_DIR` only says where the registry is.
+- **API docs page (#635).** `/api/docs/` lists the operations, ships no
+  inline CSS, and answers 404 under its mount except at the page and
+  spec paths. The webhook SQL tables gain `auth`, `response_status`
+  and `response_body`, added when the store opens.
 
 
 ### Fixed
+- **Core UI runtime bug bash (lazy loading, CSS/HTML/JS chunking).**
+  - Asset serving: `/__gofastr/runtime/<name>.js` and `/__gofastr/compute/*`
+    cache `immutable` only when `?v=` names the served bytes (otherwise
+    `no-cache` with an `ETag`), so a rolling deploy cannot pin one
+    build's code under another build's URL. A refused behaviour graph
+    answers 500 on every request instead of serving an empty
+    `manifest.js` after the first, and a `framework.App` refuses to boot
+    on one. Static exports write registered compute workers and WASM.
+    `RegisterBehavior` after the registry froze panics, as
+    `RegisterStyle` does.
+  - Component CSS: an unregistered `data-cui-comp` marker no longer
+    turns the page's bundle into a 404; lazily loaded sheets land before
+    `app.css` (now `id="cui-app-css"`) so host overrides keep winning; a
+    failed sheet or bundle is retried; markup from any insertion path
+    loads its sheets; an embed frame paints its content styled.
+  - Navigation: a repeat click on a loading link, a link to the current
+    page and a click a listener already prevented no longer reload or
+    navigate; an untitled screen's partial carries the app name as its
+    title; Back across a `#hash` jump and to an earlier visit of the
+    same path restores the right scroll; prefetches under a
+    percent-encoded layer key are used; a forced refresh is never
+    answered by a stale cache replay.
+  - RPC and widgets: field errors from typed handlers
+    (`handler.ValidationError`) reach the form; a per-row widget opened
+    from another row remounts with that row's context; a confirm dialog
+    inside a modal widget gets Tab and Escape; a submit cancels a
+    pending debounced input request; RPC clicks inside server-inlined
+    widget chrome work before the catalog mounts it; signals named like
+    `toString` seed; a computed signal keeps an untrusted input
+    untrusted; a re-inserted poll region polls again.
+  - The JS minifier no longer hangs on `x = {} / 2` followed by a newline,
+    and keeps ASI newlines, regex flags, empty statements, CR/U+2028
+    line ends and class fields named `const` intact.
+  - `data-action-mount` fires for markup inserted outside a navigation
+    (an intercepted route's overlay, an island swap, widget chrome), once
+    per element, and the component's compiled action script loads for it.
+    Static exports stop preloading `rpc.js`, which their runtime never
+    loads.
+  - `reveal` leaves content already on screen at load visible instead
+    of blinking it; the theme toggles work with site storage blocked.
 - **Images.** `StripMetadata` keeps the Adobe colour marker, so a
   stripped CMYK JPEG still decodes. Image-field renditions and
   placeholders follow the upload's EXIF orientation. A long upload name

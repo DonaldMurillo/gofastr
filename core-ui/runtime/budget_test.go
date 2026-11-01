@@ -649,8 +649,19 @@ const (
 	// percent-decodes each segment into the server's routing form before
 	// those tests, so /orders/%31 is the :id:int route on both sides (52).
 	// The interaction bridge leaving a declared key held with Alt, Ctrl,
-	// Meta or Shift to the browser adds 10.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10
+	// Meta or Shift to the browser adds 10. The 2026-11-01 core-ui bug
+	// bash adds 151: the component-sheet loader inserting before
+	// #cui-app-css, releasing a failed sheet for retry, skipping a
+	// failed bundle's names at boot, and boot's mutation observer
+	// scanning inserted markup for sheets (127); the boot seed's own()
+	// and the RPC bridge yielding only to a mounted widget (4); the
+	// navigator's click edges (a prevented click, a same-path click,
+	// the forced-fetch join), Back across a hash jump and the seed's
+	// own() (20). Boot's mount pass marking each element it fires, so
+	// the actionloader module fires inserted markup's mounts without
+	// repeating a navigation's, adds 8 (the firing itself is the
+	// module's).
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1122,15 +1133,20 @@ const (
 	// The interaction bridge skipping a modified key measures 18266 at
 	// level 1. The bridge is core's own retention path, so it does not
 	// carve. Two bytes of clearance, cliff fixture re-run.
-	// 2026-11-01: the close-modals-on-navigate loop moved from core's
-	// boot fragment into the widgets module, the only one that mounts
-	// modals, so it can spare a modal opened during the committing
-	// navigation (TestOpenDuringNavigationSurvivesCommit). Core measures
-	// 15683/18178, SMALLER on both, and the padded fixture reaches
-	// 18267, short of 18268 (the bracket had gone vacuous). As on
-	// 2026-10-29 the line moves DOWN to 18266: the bracket [real 18178,
-	// fixture 18267], verified by running TestCoreBudgetRejectsCliffOverflow.
-	coreCongestionWindowGZ = 18266
+	// The 2026-11-01 core-ui bug bash measures 18479 at level 1: the
+	// kernel's component-sheet loader (cascade order before app.css, a
+	// failed sheet released for retry), boot's failed-bundle skip and its
+	// mutation observer's sheet scan, the boot seed's own() keys and the
+	// RPC bridge's mounted-widget check, and the navigator's click edges,
+	// forced-fetch join and Back across a hash jump. Each runs in the
+	// kernel's CSS loader, boot or the navigator before any demand module
+	// could, so none carves. Two bytes of clearance, cliff fixture re-run.
+	// Boot's mount pass marking the elements it fired measures 18488 at
+	// level 1; inserted markup's mounts were carved into the actionloader
+	// module (+59 in core before the carve), leaving only the mark the
+	// navigation pass must set. Two bytes of clearance, cliff fixture
+	// re-run.
+	coreCongestionWindowGZ = 18490
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1221,6 +1237,28 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// Measured 15744 → 15754 (2026-11-01):
 		// TestBehaviorInteractionKeydownScopeGatesRetention/modified_key_passes_*.
 		"interaction bridge skips a modified key (browser shortcut)": 10,
+		// Measured 15754 → 15881 (2026-11-01): TestLazyComponentSheetLandsBeforeAppCSS,
+		// TestFailedComponentSheetIsRetried, TestFailedBundleLeavesItsNamesToTheScanner,
+		// TestInsertedMarkupLoadsItsSheets. In isolation: insert before
+		// app.css 51, retry 23, failed-bundle skip 28, observer scan 28.
+		"component sheets: cascade order, retry, failed bundle, inserted markup": 127, // (l1: 164)
+		// Measured 15881 → 15885: TestBootSeedCreatesPrototypeNamedSignals,
+		// TestSSRWidgetRPCWorksBeforeMount.
+		"boot seed own() keys; RPC bridge yields only to a mounted widget": 4, // (l1: -1)
+		// Measured 15885 → 15905: TestPreventedLinkClickDoesNotNavigate,
+		// TestLinkToCurrentPageStaysSoft, TestRepeatClickOnInFlightLinkStaysSoft,
+		// TestForcedNavigateNotDedupedByCacheReplay,
+		// TestBackAfterHashJumpRestoresScroll, TestNavSeedPrototypeNamedKey.
+		// The signal delegate tagging its own prevent (_cuiSig) so a link
+		// that sets a signal still navigates (TestSignalLinkStillNavigates)
+		// and the failed-sheet cooldown were measured after the merge with
+		// main's round 7, whose core shrank 39: 15872 → 15900 (+15 and +13),
+		// under this line without moving it (level 1: 18486, under 18490).
+		"nav click edges, forced-fetch join, Back across a hash jump, seed own()": 20, // (l1: 50)
+		// Measured 15905 → 15913: TestActionMountFiresForInsertedComponent.
+		// Firing inserted markup's mounts in boot measured +59; the firing
+		// moved to the actionloader module and only this mark stayed.
+		"boot's mount pass marks the elements it fired (_cuiM)": 8, // (l1: 9)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1415,7 +1453,15 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// incoming markup to the transition module, which gates the pick
 		// on that page's vocabulary (2026-11-01 bug hunt R7-093,
 		// TestTransitionPickUsesIncomingVocab).
-		"envelope": 8037,
+		// 8062 measured (8060 + 2), on top of the 8037 above, after a
+		// scroll anchor applies only to the history entry that recorded
+		// it, a forced fetch never joins a cache replay, and a navigation
+		// superseded while the loading module arrives still clears its
+		// busy marks (2026-11-01,
+		// TestEnvelopeBackRestoresEarlierVisitScroll,
+		// TestForcedNavigateNotDedupedByCacheReplay,
+		// envelope_superseded_wait_e2e_test.go).
+		"envelope": 8062,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1453,7 +1499,15 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// deep-link module, lands after a navigation neither mounts nor
 		// applies its deep link on the next page (2026-11-01 bug hunt S31,
 		// TestStaleChromeSkipsNextPage).
-		// 3424 measured (3422 + 2): "the reader left" is now a
+		// 3324 measured (3322 + 2) after an open from a trigger with
+		// another data-cui-ctx remounts (newest open wins), a mounted root
+		// carries the flag the boot RPC bridge yields to, its sheet lands
+		// before app.css, and its outside-click listener rides the mount's
+		// abort signal (2026-11-01, TestWidgetOpenWithOtherCtxRemounts,
+		// TestSSRWidgetRPCWorksBeforeMount,
+		// TestWidgetDismissedAtMountLeavesNoOutsideHandler).
+		// 3466 measured (3464 + 2, on top of the 3324 line above): "the
+		// reader left" is now a
 		// navigation begun AFTER the open committing (the epoch the last
 		// gofastr:navigate committed under), not any commit swapping the
 		// chrome cache, so an open issued while a navigation was already
@@ -1467,7 +1521,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestOpenDuringNavigationSurvivesCommit). No smaller spelling:
 		// the minifier keeps identifiers, already shortened here, and the
 		// module's own-property _widgets reads share one helper (own).
-		"widgets": 3424,
+		"widgets": 3466,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1641,7 +1695,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestControlRPCSendsEveryChange): two clicks on a span during the
 		// cold module load both POSTed. The guard reads dispatch state only
 		// this module holds.
-		"rpc": 3698,
+		// 3709 measured (3707 + 2) after its error parse reads
+		// core/handler's nested {error: {message, fields}} envelope and
+		// any other dispatch of a node cancels its pending debounced
+		// input request (2026-11-01, TestRPCErrorToastReadsTypedHandlerEnvelope,
+		// TestSubmitCancelsPendingInputRPC, TestDetachedFormSkipsPendingInputRPC).
+		"rpc": 3709,
 	}
 	const coreOverride = 0
 

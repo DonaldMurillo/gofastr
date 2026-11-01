@@ -96,6 +96,18 @@ writes a new `.env` signing key; it is not a way to acknowledge a
 successful scaffold. For a project whose scaffold completed, continue
 with `go mod tidy` from that project directory.
 
+### When the CLI and the project disagree
+
+Every command that works on a project (all but `init`, `version`,
+`docs` and `upgrade`; never `--help` or a mistyped command) compares the
+GoFastr version the project's `go.mod` requires with the CLI's own
+release. When they differ it prints a warning on stderr with the
+`go install .../cmd/gofastr@<version>` line that fixes it, then runs the
+command anyway: generated code and checks come from the CLI's release,
+not the project's. A development build of the CLI, a `replace`
+directive for GoFastr, and the GoFastr module itself skip the check.
+`GOFASTR_NO_VERSION_CHECK=1` silences it.
+
 ## App specs
 
 - `gofastr validate <yml>`: validate an app spec without generating

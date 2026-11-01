@@ -20,6 +20,7 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         [--sign=<identity>|--no-sign] [-o=<dir>]
         [--notarize] [--notary-profile=<name>] [--entitlements=<plist>]
         [--scheme=<scheme>] [--format=executable|tar.gz (Linux only)]
+        [--launch-args=<args>] [--ldflags=<flags>]
         On Linux, writes <o>/<Name> as a CGO-free ELF executable for
         the current architecture (or GOARCH=amd64/arm64). Install GTK 3
         and WebKitGTK 4.1 on the target machine. --format=tar.gz opts
@@ -61,6 +62,11 @@ experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
         deep-link scheme; the app registers it for the current user when
         it starts and forwards links to an existing app window. Signing
         and notarization are macOS-only.
+        --launch-args=desktop bakes in the arguments a double-clicked
+        executable starts with, for a binary whose desktop mode is a
+        subcommand; main reads them through desktop.LaunchArgs(os.Args[1:]).
+        Up to 16 whitespace-separated words. --ldflags appends linker
+        flags to the build's own (--ldflags="-X main.version=1.2.3").
   install --bundle=<extracted-directory> (Linux only)
         Validates and copies a tar bundle for the current user, installs
         a menu entry and ~/.local/bin/<id> launcher, and advertises its

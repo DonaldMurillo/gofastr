@@ -2,6 +2,7 @@ package hosttest
 
 import (
 	"bytes"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -47,17 +48,43 @@ func TestCyclePanicSurfacesAs500ThroughARealHost(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logbuf, nil))
 	h := middleware.RecoveryFn(func() *slog.Logger { return logger })(ds)
 
-	req := httptest.NewRequest("GET", "/__gofastr/manifest.js", nil)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	// Every request refuses, not only the first: the manifest is
+	// memoized, and a memo that counted the panicking build as done
+	// served an empty manifest.js (and pages linking it with no hash)
+	// from the second request on, with nothing in the log.
+	for i, path := range []string{"/__gofastr/manifest.js", "/__gofastr/manifest.js", "/"} {
+		logbuf.Reset()
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500: the cycle panic must surface through the recovery chain, not kill the connection", w.Code)
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("request %d (%s): status = %d, want 500: the cycle panic must surface through the recovery chain on every request; body %q", i, path, w.Code, w.Body.String())
+		}
+		if body := w.Body.String(); !strings.Contains(body, "Internal Server Error") {
+			t.Fatalf("request %d: body = %q, want the recovery screen", i, body)
+		}
+		if !strings.Contains(logbuf.String(), "aa -> bb -> cc -> aa") {
+			t.Fatalf("request %d: the recovery log line does not carry the cycle path; log: %s", i, logbuf.String())
+		}
 	}
-	if body := w.Body.String(); !strings.Contains(body, "Internal Server Error") {
-		t.Fatalf("body = %q, want the recovery screen", body)
-	}
-	if !strings.Contains(logbuf.String(), "aa -> bb -> cc -> aa") {
-		t.Fatalf("the recovery log line does not carry the cycle path; log: %s", logbuf.String())
-	}
+}
+
+// A framework app validates the behaviour graph at boot (ValidateBoot,
+// which App.Start calls before the listener binds), so a cycle refuses
+// to serve at all rather than answering its first visitor with a 500.
+func TestCycleRefusedAtValidateBoot(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("aa", `(function(){})();`, registry.Markers("[data-aa]"), registry.Requires("bb"))
+	registry.RegisterBehavior("bb", `(function(){})();`, registry.Markers("[data-bb]"), registry.Requires("aa"))
+	a := app.NewApp("CycleBoot")
+	a.Register("/", &cycleScreen{}, nil)
+	ds := uihost.New(a)
+	defer func() {
+		r := recover()
+		if r == nil || !strings.Contains(fmt.Sprint(r), "aa -> bb -> aa") {
+			t.Fatalf("ValidateBoot recovered %v, want the cycle refusal naming aa -> bb -> aa", r)
+		}
+	}()
+	ds.ValidateBoot()
 }

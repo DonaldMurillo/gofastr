@@ -84,3 +84,35 @@ func IsCrossSiteRequestStrict(r *http.Request) bool {
 	}
 	return r.Header.Get("Origin") == "null" && r.Header.Get("Sec-Fetch-Site") == ""
 }
+
+// IsForgedCrossSiteWrite reports whether r is a write another site's page
+// could have sent with the user's cookies and no CORS preflight: any
+// method but GET, HEAD and OPTIONS (a CORS preflight is an OPTIONS
+// request with no body and no content type, and must reach CORS), a
+// forgeable content type
+// (IsForgeableRequest), and a cross-site origin (IsCrossSiteRequest).
+// It is the check entity endpoints and CRUD routes run before their
+// handler; RefuseCrossSite applies it to any handler.
+func IsForgedCrossSiteWrite(r *http.Request) bool {
+	return r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions &&
+		IsForgeableRequest(r) && IsCrossSiteRequest(r)
+}
+
+// RefuseCrossSite wraps h so a forged cross-site write
+// (IsForgedCrossSiteWrite) gets 403 with ReasonCrossSiteRefused before h
+// runs. It needs no token, so it suits a plain server-rendered form route
+// mounted with Router().HandleFunc, which the CSRF middleware's
+// per-form token does not reach. Requests from the app's own pages,
+// non-browser clients (no Origin, no Sec-Fetch-Site) and preflighted
+// requests (application/json and other non-simple types) pass. A route
+// that must accept a cross-site POST, such as an OAuth form_post
+// callback, is simply not wrapped.
+func RefuseCrossSite(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if IsForgedCrossSiteWrite(r) {
+			WriteError(w, r, Fail(http.StatusForbidden, ReasonCrossSiteRefused))
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}

@@ -513,7 +513,13 @@ The open trigger now carries the context:
 The runtime forwards it as `?ctx=` on the chrome fetch
 (`/core-ui/widget/layout-remove/chrome?ctx=inv-42`) and keys the client-side
 chrome cache by `(name, ctx)`: the two triggers above get two distinct
-chromes, re-opening the same one is served from cache. The cache holds at
+chromes, re-opening the same one is served from cache. A widget has one
+root, so a trigger whose context differs from the open chrome's (row 2's
+while row 1's dialog or popover is open) dismisses it and mounts its own;
+the same trigger again keeps the open chrome, and an open with no trigger
+(a deep link, `openWidget(name)`) keeps whatever context is mounted. When
+two opens are in flight, the newest wins whichever chrome lands first.
+The cache holds at
 most 32 contexts per document (least-recently-used eviction; an evicted
 entry simply refetches) and is cleared on every SPA navigation (#329).
 That covers each framework-blessed session flow — sign-in/sign-out forms

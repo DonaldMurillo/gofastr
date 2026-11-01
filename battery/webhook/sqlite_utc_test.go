@@ -187,7 +187,7 @@ func TestSQLiteStoreRewritesZonedDueTimes(t *testing.T) {
 	db, s := openSQLStore(t)
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, s.deliveryInsert(), "old", "s", "e", []byte("p"), 0,
-		string(StatusPending), "", utcBase.In(zoneE), utcBase.In(zoneE), utcBase.In(zoneE), ""); err != nil {
+		string(StatusPending), "", utcBase.In(zoneE), utcBase.In(zoneE), utcBase.In(zoneE), "", 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	s2, err := NewSQLStore(db, WithSQLAllowPlaintext())

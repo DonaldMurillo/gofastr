@@ -30,7 +30,7 @@ its own.
 | `battery/desktop/macos` | The real shell on darwin/arm64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
 | `battery/desktop/windows` | The Windows/amd64 shell: Win32, WebView2, native capabilities, custom titlebar support, and DWM Mica/Mica Alt/Acrylic. |
 | `battery/desktop/linux` | GTK 3 / WebKitGTK 4.1 shell on linux/amd64 and linux/arm64; unsupported elsewhere. |
-| `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. |
+| `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. The `gofastr_nodesktop` build tag leaves every platform package out (see [A server build that never opens a window](#a-server-build-that-never-opens-a-window)). |
 | `battery/desktop/desktoptest` | The fake shell and the app-shell test harness. |
 | `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `win32`, `update`: one package per OS seam. |
 
@@ -253,6 +253,33 @@ a credential nothing else has:
 The `Host` pin closes DNS rebinding from a browser tab; the cookie
 closes every other local process. Neither value is ever logged. An app
 that never calls `Run` never arms the gate.
+
+### Local callers with no window: `OpenPrefixes`
+
+A CLI or script on the same machine has no window and no cookie, so
+every call gets 403. List the paths it uses in `Config.OpenPrefixes`
+and protect them with the app's own auth (an API key, a bearer token,
+`battery/auth`):
+
+```go
+d := desktop.New(desktop.Config{ID: "dev.gofastr.notes", OpenPrefixes: []string{"/api"}})
+```
+
+A path under an open prefix skips only the cookie check. The `Host`
+pin stays, a forged cross-site write (a form-shaped request with no
+CORS preflight) gets 403, a preflighted cross-origin JSON call is left
+to CORS and the app's auth, and a request without the
+cookie reaches the app with no user: the local identity goes only on
+the window's requests, so the window's own `fetch("/api/...")` is still
+the local user. The window keeps its JS bridge, because it never leaves
+the app's origin. The listener stays on `127.0.0.1`; a caller in a
+container needs `battery/service` and its `BindAddress`.
+
+The match is on whole segments of the clean, unescaped path, so
+`/apix`, `/api//x`, `/api/../admin` and `/api%2Fx` stay gated. `New`
+panics on `/`, on anything under `/__gofastr/` (the bridge, the runtime,
+the handshake) and on a malformed entry. `Run` logs the open prefixes
+as a warning.
 
 ## Where a window may navigate
 
@@ -2177,6 +2204,79 @@ plist value is XML-escaped. On macOS `--version` must be semver
 (`major.minor.patch` with an optional `-pre-release`, no build metadata,
 no leading zeros, at most 64 characters), the form the updater compares;
 `desktop.ValidateAppVersion` is the same check.
+
+### A binary whose desktop mode is a subcommand
+
+`build` links the package's `main` and launches it with no arguments
+when the user double-clicks it. When the binary's no-argument mode is a
+web server and its window lives behind a subcommand (`myapp desktop`), a
+double-click starts that server with no window, and on Windows with no
+console either. Bake the subcommand in with `--launch-args`, and read it
+in `main` through `desktop.LaunchArgs`:
+
+```sh
+gofastr desktop build --id=dev.example.app --name=MyApp \
+  --launch-args=desktop --ldflags="-X main.version=1.2.3"
+```
+
+<!-- gofastr:compile
+import (
+	"os"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
+)
+
+func runDesktop([]string) {}
+func runServer([]string)  {}
+-->
+```go
+func main() {
+	args := desktop.LaunchArgs(os.Args[1:])
+	if len(args) > 0 && args[0] == "desktop" {
+		runDesktop(args[1:])
+		return
+	}
+	runServer(args)
+}
+```
+
+`LaunchArgs` puts the baked arguments in front when the binary got none,
+only the `-psn_...` serial number older macOS passes, or only deep links
+on the scheme `--scheme` embedded (a cold-launch link arrives as the
+argument). Any other arguments, and every argument of a build made
+without `--launch-args`, come back unchanged, so `myapp serve` from a
+terminal still serves. `--launch-args` takes up to 16
+whitespace-separated words; one argument holding a space is not
+expressible. `--ldflags` appends linker flags to the build's own.
+
+### Building with plain `go build`
+
+A release script can skip `gofastr desktop build`. Link with the same
+flags it uses (`-trimpath -ldflags "-s -w"`, plus `-H windowsgui` on
+Windows so no console opens; add `-X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=<scheme>`
+for a deep-link scheme). On Windows, put `WebView2Loader.dll` beside the
+`.exe`: take `runtimes/win-x64/native/WebView2Loader.dll` from the
+Microsoft.Web.WebView2 NuGet package, version 1.0.4258.31, the one
+`build` pins, after checking the package's SHA-256 is
+`56f7f4b8bf9aee4b8efefbbdd4f67d5f74ebd1b100ed0806da71bf76af481aa9`.
+Without the DLL the window cannot open. A plain
+`go build` has no version resource or icon; those come from `build`.
+
+### A server build that never opens a window
+
+Linking `battery/desktop/native` links the Linux GTK shell, which loads
+GTK through the glibc loader, so a `CGO_ENABLED=0` Linux binary comes out
+dynamically linked and does not start on Alpine or `scratch`. Build the
+server image with the `gofastr_nodesktop` tag:
+
+```sh
+CGO_ENABLED=0 GOOS=linux go build -tags gofastr_nodesktop -o app ./cmd/app
+```
+
+The tag leaves every platform shell out, on every OS. `native.Shell()`
+then answers the unsupported shell, so `Run` returns its unsupported-platform
+error instead of opening a window. Everything else in
+`battery/desktop` stays.
 
 ## Linux runtime and native tests
 
