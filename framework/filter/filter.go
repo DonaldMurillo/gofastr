@@ -609,7 +609,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		return nil, malformedErr
 	}
 	if repeated != "" {
-		return nil, i18n.NewError(reasonRepeatedFilter, map[string]any{"key": strconv.Quote(repeated), "count": repeatedCount})
+		return nil, RepeatedFilterError(repeated, repeatedCount)
 	}
 	if mistypedErr != nil {
 		return nil, mistypedErr
@@ -621,6 +621,16 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 
 	return filters, nil
+}
+
+// RepeatedFilterError is the refusal of a scalar filter key sent count
+// times (filter.repeated_filter). Only an IN key reads every occurrence;
+// a scalar operator has one value, and keeping the first while dropping
+// the rest runs a different query from the one a proxy reading the last
+// occurrence saw. The nested ?rel.field= parser in framework/crud returns
+// the same refusal, so a relation filter follows the same rule.
+func RepeatedFilterError(key string, count int) error {
+	return i18n.NewError(reasonRepeatedFilter, map[string]any{"key": strconv.Quote(key), "count": count})
 }
 
 // notQueryableError builds the 400-shaped error for a NoQuery field a caller

@@ -73,6 +73,27 @@ func TestTabsSliceSelectsTheRequestSeed(t *testing.T) {
 	}
 }
 
+// A seed past the last tab paints tab 0 (headless: out of range takes
+// 0) while the page seed still carries the request's 5; the
+// headless-tabs module writes 0 back into the signal on wire
+// (framework/headless TestE2E_TabsOutOfRangeSeedSettlesToPaintedTab), so
+// the paint is the value the runtime ends up holding.
+func TestTabsSliceOutOfRangeSeedPaintsTabZero(t *testing.T) {
+	for _, seed := range []int{5, 3, -1} {
+		ctx := store.WithValues(context.Background())
+		sliceSeedTab.Seed(ctx, seed)
+		out := string(ui.Tabs(ui.TabsConfig{Slice: sliceSeedTab, Ctx: ctx, Tabs: []ui.TabItem{
+			{Label: "One", Content: "1"}, {Label: "Two", Content: "2"}, {Label: "Three", Content: "3"},
+		}}))
+		if !strings.Contains(out, `data-active="0"`) || strings.Count(out, `aria-selected="true"`) != 1 {
+			t.Fatalf("seed %d: the strip does not paint tab 0 alone\n%s", seed, out)
+		}
+		if !regexp.MustCompile(`aria-selected="true"[^>]*data-cui-tab-index="0"`).MatchString(out) {
+			t.Fatalf("seed %d: the selected tab is not index 0\n%s", seed, out)
+		}
+	}
+}
+
 func TestSignalToggleSliceStampsTheRequestSeed(t *testing.T) {
 	ctx := store.WithValues(context.Background())
 	sliceSeedToggle.Seed(ctx, true)

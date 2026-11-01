@@ -240,13 +240,22 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 		return "", "", err
 	}
 	if err := handler.CheckObjectKeys(b, handler.FoldJSONKey); err != nil {
-		return "", "", &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return "", "", cursorTokenError(err)
 	}
 	var token cursorToken
 	if err := json.Unmarshal(b, &token); err != nil {
-		return "", "", err
+		return "", "", cursorTokenError(err)
 	}
 	return stripControls(token.Field), token.Value, nil
+}
+
+// cursorTokenError frames a token's JSON decode failure as
+// pagination.cursor_token. The detail is handler.JSONErrorDetail's
+// phrase (the JSON path and type, or the key refusal), never the
+// decoder's text, which names the token's Go struct ("Go struct field
+// cursorToken.f of type string") and does not translate.
+func cursorTokenError(err error) error {
+	return &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 }
 
 // multiCursorToken is the wire shape for cursors that keyset on multiple
@@ -293,11 +302,11 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	// lives one level down inside the f array, which the any-depth walk
 	// sees and a top-level-only check would not.
 	if err := handler.CheckObjectKeys(b, handler.FoldJSONKey); err != nil {
-		return nil, &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
+		return nil, cursorTokenError(err)
 	}
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {
-		return nil, err
+		return nil, cursorTokenError(err)
 	}
 	if len(tok.Fields) > maxCursorFields {
 		return nil, i18n.NewError(reasonCursorTooManyFields, map[string]any{"count": len(tok.Fields), "max": maxCursorFields})

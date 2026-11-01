@@ -213,6 +213,14 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			}
 			nf.Values = vals
 		} else {
+			// A scalar operator has one value. Keeping values[0] and
+			// dropping the rest ran ?author.age_lt=100&author.age_lt=5 as
+			// age < 100 while a proxy reading the last occurrence saw < 5.
+			// Refused with the top-level parser's filter.repeated_filter,
+			// the bracket form (author.age[lt]) included.
+			if len(values) > 1 {
+				return nil, filter.RepeatedFilterError(key, len(values))
+			}
 			nf.Value = values[0]
 		}
 		if err := checkNestedValues(sent, nf); err != nil {

@@ -143,6 +143,14 @@ you may not read"). A cascade write through a parent route that would create,
 update or ManyToMany-link its rows is refused the same way. In-process Go
 (`app.CrudHandler`, typed repos, `EagerLoad`) is unaffected.
 
+A `belongs_to` foreign key in a write body is not refused: `POST /posts
+{"author_id": …}` onto a `CRUD: false` `users` writes, as it does from a
+token holding no `users:read` scope. The key is a column of the caller's
+own row and the write returns that row, never the target's fields. The
+key is still checked against the target's own scopes (owner, tenant,
+soft delete, `ReadScope`, its Before hooks): a row the caller may not
+read answers the same 404 as a row that does not exist.
+
 `CRUD: false` turns off the **generated** surface, and only that. Anything in
 the entity's `Endpoints` list is registered either way, so an entity with
 `CRUD: false` and a declared endpoint still answers HTTP on that endpoint's
@@ -1246,7 +1254,10 @@ one `IN (...)` only while `f.SameINList(next)` holds.
 
 **A filter key is sent once.** A key other than `_in` repeated in one
 query string (`?price_lt=100&price_lt=5`) is a **400** naming the key,
-`LenientFilters` included. Before, the first value ran and the rest were
+`LenientFilters` included (`filter.repeated_filter`). A nested relation
+filter follows the same rule: `?author.age_lt=100&author.age_lt=5`, or
+the bracket form `?author.age[lt]=…` twice, is the same 400 naming the
+dotted key. Before, the first value ran and the rest were
 dropped without a word, so the result was wider than asked and a proxy
 that reads the last value saw a different query from the one the
 database ran. Only `_in` reads every occurrence (below). A field whose
