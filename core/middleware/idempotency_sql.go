@@ -43,9 +43,12 @@ import (
 // keeps the key as is.
 //
 // principal is the IdempotencyConfig.Principal value the response was
-// cached for. App.EraseUserData deletes the rows whose principal is the
-// erased user id, and App.ExportData dumps the table under its
-// configured name.
+// cached for, stored as is. App.EraseUserData deletes the rows whose
+// principal is the erased user id, and App.ExportData dumps the table
+// under its configured name. On postgres a principal holding NUL cannot
+// be stored as is, so Begin refuses it with an error and the middleware
+// answers 503 (or runs the handler unkeyed under FailOpen); encoding it
+// would let it land on another user's literal id.
 type SQLIdempotencyStore struct {
 	db            *sql.DB
 	table         string
@@ -173,7 +176,11 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 // generic store failure and bypass idempotency.
 func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string) (*IdempotentResponse, bool, error) {
 	now := time.Now()
-	dbKey, principal := s.columnKey(key), s.columnPrincipal(key)
+	principal, err := s.columnPrincipal(key)
+	if err != nil {
+		return nil, false, err
+	}
+	dbKey := s.columnKey(key)
 	// Rate-limited reap. Skipping the per-call DELETE keeps Begin cheap
 	// at high load; expired rows still get removed at least once per
 	// minute per store instance.
@@ -332,17 +339,22 @@ func (s *SQLIdempotencyStore) columnKey(key string) string {
 	return key
 }
 
+// errPrincipalNUL refuses a principal Postgres TEXT cannot store.
+var errPrincipalNUL = errors.New("idempotency: principal holds a NUL byte, which a postgres TEXT column cannot store")
+
 // columnPrincipal is the value bound to the principal column: the
-// principal read out of the store key. On postgres a principal holding
-// NUL is pgKey-encoded so the insert does not fail; one without NUL is
-// stored as is, so App.EraseUserData, which matches the raw user id,
-// still reaches it (a DOMAIN\user id keeps its one backslash).
-func (s *SQLIdempotencyStore) columnPrincipal(key string) string {
+// principal read out of the store key, stored as is, so
+// App.EraseUserData, which matches the raw user id, reaches it (a
+// DOMAIN\user id keeps its one backslash). On postgres a principal
+// holding NUL is refused: escaping it would let "a<NUL>b" share a value
+// with another user's literal `a\0b`, and erasing one would delete the
+// other's rows.
+func (s *SQLIdempotencyStore) columnPrincipal(key string) (string, error) {
 	p := idemPrincipal(key)
 	if s.dialect == "postgres" && strings.IndexByte(p, 0) >= 0 {
-		return pgKey(p)
+		return "", errPrincipalNUL
 	}
-	return p
+	return p, nil
 }
 
 // pgKey makes a string storable in a Postgres TEXT column, which

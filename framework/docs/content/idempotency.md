@@ -180,7 +180,13 @@ on boot to a table an older build created) and registers the table with
 `App.ExportData` and `App.EraseUserData`. Erasure deletes the cached
 responses whose principal is the erased user id, so it reaches them when
 `Principal` returns the user id. A tenant-keyed principal is left to the
-tenant's own lifecycle and to the TTL.
+tenant's own lifecycle and to the TTL. The column holds the principal
+exactly as `Principal` returned it. Postgres `TEXT` cannot store a NUL
+byte, so on Postgres a principal holding one is refused: the keyed write
+gets the store-failure answer (`503`, or the handler runs unkeyed under
+`FailOpen`) and nothing is written. The store does not escape it, since
+an escaped `a<NUL>b` would read the same as another user's literal
+`a\0b`, and erasing that user would delete the first one's rows.
 
 `IdempotencyStore` is a two-method interface:
 
@@ -224,7 +230,8 @@ Two stores are bundled:
   `BYTEA` on Postgres). The middleware's store key joins its parts with
   NUL bytes, which Postgres `TEXT` refuses, so on Postgres the key column
   holds it with `\` written as `\\` and NUL as `\0`; SQLite keeps the
-  key as is. Options:
+  key as is. The `principal` column is never encoded (a NUL-bearing
+  principal is refused on Postgres, see above). Options:
   - `WithSQLIdempotencyTable(name)`: override the default table name.
   - `WithSQLIdempotencyTTL(d)`: override the 24h cached-response TTL.
   - `WithSQLIdempotencyInFlightTTL(d)`: override the 30s in-flight

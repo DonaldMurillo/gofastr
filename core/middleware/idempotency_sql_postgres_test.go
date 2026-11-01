@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,8 @@ import (
 // failed at construction; and the middleware's store key joins its
 // parts with NUL bytes, which Postgres TEXT refuses, so every keyed
 // write would have answered 503. The store now declares BYTEA there and
-// binds the key through pgKey.
+// binds the key through pgKey. The principal column is stored raw, and
+// a principal holding NUL is refused there.
 
 // pgIdemTable returns a Postgres connection scoped to a fresh schema
 // (pgtest: TEST_POSTGRES_DSN, skipped locally when unset) and a table
@@ -87,10 +89,64 @@ func TestSQLIdempotencyPostgres_StoreKeyRoundTrip(t *testing.T) {
 	if _, ok, err := s.Begin(ctx, "a\x00b", "fp-3"); err != nil || ok {
 		t.Fatalf("Begin after release: ok=%v err=%v, want a fresh claim", ok, err)
 	}
+}
 
-	// A principal holding NUL still stores.
-	if _, _, err := s.Begin(ctx, idemStoreKey("bad\x00id", "", "", "k"), "fp"); err != nil {
-		t.Fatalf("Begin with a NUL-bearing principal: %v", err)
+// TestSQLIdempotencyPostgres_NULPrincipalRefused: the principal column
+// used to hold a NUL-bearing principal pgKey-escaped, so "bad<NUL>id"
+// was stored as `bad\0id`, the literal id of another user, and erasing
+// that user deleted the first one's cached responses too. Begin now
+// refuses it before any write; a literal `bad\0id` principal is stored
+// untouched.
+func TestSQLIdempotencyPostgres_NULPrincipalRefused(t *testing.T) {
+	db, table := pgIdemTable(t)
+	s, err := NewSQLIdempotencyStore(db, WithSQLIdempotencyTable(table))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	ctx := context.Background()
+	if _, ok, err := s.Begin(ctx, idemStoreKey("bad\x00id", "", "", "k"), "fp"); !errors.Is(err, errPrincipalNUL) || ok {
+		t.Fatalf("Begin with a NUL-bearing principal: ok=%v err=%v, want errPrincipalNUL", ok, err)
+	}
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("a refused Begin wrote %d row(s)", n)
+	}
+
+	if _, ok, err := s.Begin(ctx, idemStoreKey(`bad\0id`, "", "", "k"), "fp"); err != nil || ok {
+		t.Fatalf("Begin with the literal principal: ok=%v err=%v", ok, err)
+	}
+	var principal string
+	if err := db.QueryRow("SELECT principal FROM " + table).Scan(&principal); err != nil {
+		t.Fatalf("read principal: %v", err)
+	}
+	if principal != `bad\0id` {
+		t.Fatalf("principal column = %q, want the literal principal untouched", principal)
+	}
+}
+
+// TestSQLIdempotencyPostgres_NULPrincipalFailsClosed: through the
+// middleware, the refusal is a store error, so the keyed write answers
+// 503 and the handler never runs (FailOpen is off by default).
+func TestSQLIdempotencyPostgres_NULPrincipalFailsClosed(t *testing.T) {
+	db, table := pgIdemTable(t)
+	s, err := NewSQLIdempotencyStore(db, WithSQLIdempotencyTable(table))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	calls := 0
+	h := Idempotency(IdempotencyConfig{Store: s, Principal: func(*http.Request) string { return "bad\x00id" }})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{"n":1}`))
+	req.Header.Set(IdempotencyKeyHeader, "pg-nul")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || calls != 0 {
+		t.Fatalf("NUL principal keyed write: status %d, handler ran %d time(s); want 503 and 0", rec.Code, calls)
 	}
 }
 
@@ -141,8 +197,27 @@ func TestPgKeyInjective(t *testing.T) {
 	if k := idemStoreKey("p", "", "", "k"); lite.columnKey(k) != k {
 		t.Fatalf("sqlite columnKey changed the key: %q", lite.columnKey(k))
 	}
+}
+
+// TestColumnPrincipalNUL needs no database: on postgres a principal
+// with NUL is refused and every other one is stored raw; SQLite keeps
+// any principal raw. A Begin on the refusal touches nothing: the store
+// below has no DB, so a reap or claim would panic.
+func TestColumnPrincipalNUL(t *testing.T) {
 	pg := &SQLIdempotencyStore{dialect: "postgres"}
-	if got := pg.columnPrincipal(idemStoreKey(`CORP\alice`, "", "", "k")); got != `CORP\alice` {
-		t.Fatalf("postgres principal column = %q, want the raw principal", got)
+	for _, p := range []string{`CORP\alice`, `bad\0id`, "", "alice"} {
+		if got, err := pg.columnPrincipal(idemStoreKey(p, "", "", "k")); err != nil || got != p {
+			t.Fatalf("postgres principal %q: column %q err %v, want it raw", p, got, err)
+		}
+	}
+	if _, err := pg.columnPrincipal(idemStoreKey("bad\x00id", "", "", "k")); !errors.Is(err, errPrincipalNUL) {
+		t.Fatalf("postgres NUL principal: err %v, want errPrincipalNUL", err)
+	}
+	lite := &SQLIdempotencyStore{dialect: "sqlite"}
+	if got, err := lite.columnPrincipal(idemStoreKey("bad\x00id", "", "", "k")); err != nil || got != "bad\x00id" {
+		t.Fatalf("sqlite NUL principal: column %q err %v, want it raw", got, err)
+	}
+	if _, _, err := pg.Begin(context.Background(), idemStoreKey("bad\x00id", "", "", "k"), "fp"); !errors.Is(err, errPrincipalNUL) {
+		t.Fatalf("Begin with a NUL principal: err %v, want errPrincipalNUL before any query", err)
 	}
 }

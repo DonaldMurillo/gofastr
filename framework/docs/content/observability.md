@@ -168,8 +168,15 @@ Responses with status `>= 500` set the span status to `codes.Error`. A
 panicking handler's span ends with `codes.Error` and the status the client
 got (`500`, or the one already sent), and the SDK records the panic as the
 span's `exception` event.
-Incoming W3C `traceparent` / `tracestate` headers are extracted so
-upstream spans chain correctly.
+
+Incoming trace context is extracted with the global propagator you set
+with `otel.SetTextMapPropagator` (B3, Jaeger, a composite), the same one
+that writes the response headers, so upstream spans in that format chain
+correctly. When that propagator finds no upstream span on a request, the
+W3C `traceparent` / `tracestate` headers are read as well, and W3C
+`baggage` too when the propagator brought no baggage of its own. With no
+propagator set (the otel no-op default), W3C `traceparent` / `tracestate`
+and `baggage` are read.
 
 ### Reading the current span in a handler
 
