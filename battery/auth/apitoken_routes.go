@@ -117,12 +117,26 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 			return "", false
 		}
 		if on {
-			sess, err := p.mgr.requestSession(r, false)
-			if err != nil {
+			// Any of the principal's own session cookies that passed the
+			// factor will do, as RequireTwoFA judges it: judging only the
+			// first refused a browser whose stale pre-enrollment cookie
+			// (a parent-domain scope) came before its verified one.
+			mine, verified := false, false
+			for _, sess := range p.mgr.requestSessions(r) {
+				if sess.UserID != u.GetID() {
+					continue
+				}
+				mine = true
+				if !sess.PendingTwoFactor && sess.TwoFactorVerified {
+					verified = true
+					break
+				}
+			}
+			if !mine {
 				writeAuthError(w, r, http.StatusUnauthorized, reasonTokensNeedSession)
 				return "", false
 			}
-			if sess.PendingTwoFactor || !sess.TwoFactorVerified {
+			if !verified {
 				writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 				return "", false
 			}

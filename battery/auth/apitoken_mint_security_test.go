@@ -132,6 +132,15 @@ func TestTokenMintNeedsSteppedUpSessionOn2FAAccount(t *testing.T) {
 	if w := g.do(g.sessH, http.MethodPost, "/auth/tokens", mintAll, "", owner); w.Code != http.StatusOK {
 		t.Errorf("stepped-up session refused: %d %s", w.Code, w.Body.String())
 	}
+	// A stale pre-enrollment cookie sent first does not hide the verified
+	// one behind it, the way RequireTwoFA judges the pair.
+	req := httptest.NewRequest(http.MethodGet, "/auth/tokens", nil)
+	req.Header.Set("Cookie", "session_id="+early+"; session_id="+owner)
+	w := httptest.NewRecorder()
+	g.sessH.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("[pre-enrollment, verified] cookies: %d, want 200", w.Code)
+	}
 }
 
 // ttl_seconds was multiplied into a Duration before the negative check ran:
