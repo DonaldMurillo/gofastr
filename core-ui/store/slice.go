@@ -216,8 +216,14 @@ type values struct {
 
 // WithValues installs a fresh request-scoped value bag on ctx. The UI
 // host calls this before rendering a page so producers can Seed values
-// the seed resolver later reads.
+// the seed resolver later reads. When ctx carries no element id scope it
+// starts one (render.WithIDScope): an island or region renders its
+// derived ids as placeholders it settles afterwards, and only a scope on
+// the context the seeds are resolved from can settle them in the seeds.
 func WithValues(ctx context.Context) context.Context {
+	if !render.HasIDScope(ctx) {
+		ctx = render.WithIDScope(ctx)
+	}
 	return context.WithValue(ctx, valuesKey{}, &values{m: map[string]any{}})
 }
 
