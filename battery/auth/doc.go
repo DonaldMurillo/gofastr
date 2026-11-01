@@ -14,7 +14,8 @@
 //	    UserStore:  myUserStore,            // implements auth.UserStore
 //	    // SessionStore left nil → in-memory default (single-instance only).
 //	})
-//	mgr.Use(auth.NewCorePlugin())           // /auth/login, /auth/register, /auth/me, /auth/logout
+//	mgr.Use(auth.NewCorePlugin().           // /auth/login, /auth/register, /auth/me, /auth/logout
+//	    WithTwoFactorURL("/login/2fa"))     // required next to the 2FA plugin
 //	mgr.Use(auth.NewMagicLinkPlugin(auth.MagicLinkConfig{
 //	    BaseURL:      "https://app.example.com",
 //	    EmailSender:  mySender,             // implements auth.MagicLinkEmailSender

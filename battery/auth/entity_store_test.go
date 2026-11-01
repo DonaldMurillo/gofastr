@@ -355,7 +355,7 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 		SessionStore:        NewEntitySessionStore(db, "sessions"),
 	})
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(twofa)
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

@@ -103,7 +103,7 @@ func buildAuditManager(t *testing.T, sink AuditSink) (*AuthManager, *userStoreWi
 	})
 	pwSender := &stubEmailSender{}
 	mlSender := &mockEmailSender{}
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
 	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
 		BaseURL:     "http://localhost",
@@ -461,7 +461,7 @@ func TestAudit_NilSinkNoPanic(t *testing.T) {
 		JWTSecret: "test-secret", SessionTTL: time.Hour,
 		SessionCookie: "session_id", UserStore: store, DevMode: true,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

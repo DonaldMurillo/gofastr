@@ -139,7 +139,7 @@ func TestMagicLinkSendPerAddressLimit(t *testing.T) {
 func TestForgotPasswordPerAddressLimit(t *testing.T) {
 	store := newUserStoreWithPassword()
 	mgr := New(AuthConfig{UserStore: store, DevMode: true})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	sender := &stubEmailSender{}
 	reset := NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "http://localhost", EmailSender: sender})
 	mgr.Use(reset)

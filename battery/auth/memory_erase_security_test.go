@@ -23,7 +23,7 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 	resetTokens := NewMemoryMagicLinkTokenStore()
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: store, AllowInMemoryStores: true})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(twofa)
 	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "http://localhost", TokenStore: resetTokens, EmailSender: &stubEmailSender{}}))
 	if err := mgr.Init(nil); err != nil {

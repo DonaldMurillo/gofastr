@@ -96,7 +96,7 @@ func newRegenRig(t *testing.T, inner TwoFAStore) *regenRig {
 		SessionTTL:          time.Hour,
 		UserStore:           users,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: store}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

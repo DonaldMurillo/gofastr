@@ -101,7 +101,7 @@ func setupTwoFAEnrollment(t *testing.T) (*TwoFAPlugin, *router.Router, string) {
 		SessionCookie:       "session_id",
 		UserStore:           userStore,
 	})
-	core := NewCorePlugin()
+	core := NewCorePlugin().WithTwoFactorURL("/login/2fa")
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr.Use(core)
 	mgr.Use(twofa)
@@ -238,7 +238,7 @@ func setupDefaultResetRouter2(t *testing.T) *router.Router {
 		UserStore:     store,
 		DevMode:       true,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
 		BaseURL:  "http://localhost",
 		TokenTTL: time.Hour,

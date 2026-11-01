@@ -92,7 +92,7 @@ func setupP17WithMagicLink(t *testing.T) (*AuthManager, *TwoFAPlugin, *MagicLink
 		SessionCookie:       "session_id",
 		UserStore:           userStore,
 	})
-	core := NewCorePlugin()
+	core := NewCorePlugin().WithTwoFactorURL("/login/2fa")
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	// TwoFactorURL: a 2FA plugin is registered, so Init requires it.
 	magic := NewMagicLinkPlugin(MagicLinkConfig{TwoFactorURL: "/login/2fa"})

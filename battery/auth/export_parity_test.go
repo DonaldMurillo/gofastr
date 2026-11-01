@@ -119,7 +119,7 @@ func exportConfiguredStores(t *testing.T, userTable string) {
 		JWTSecret: "export-wiring", SessionCookie: "session_id", SessionTTL: time.Hour,
 		UserStore: users, SessionStore: sessions,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twofa}))
 	mgr.Use(NewPasskeyPlugin(PasskeyConfig{
 		RPID: "example.com", Origins: []string{"https://example.com"},

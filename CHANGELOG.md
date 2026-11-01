@@ -151,6 +151,10 @@ few lines, and link the PR or the docs page for the rest.
     counts only when the same claim set's `email` is the kept address,
     so a remapped `EmailClaim` no longer auto-links on another
     address's flag.
+  - **BREAKING: a password form login of a 2FA account reaches the
+    challenge.** It redirected to its `next` page, which refuses the
+    pending session. Next to a 2FA plugin, `Init` now requires
+    `NewCorePlugin().WithTwoFactorURL(path)`.
   - **BREAKING: OAuth sign-in of a 2FA account reaches the challenge.**
     It redirected to `/`, which refuses the pending session. Next to a
     2FA plugin, `Init` now requires `OAuth2Config.TwoFactorURL`, as

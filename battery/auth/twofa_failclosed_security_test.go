@@ -59,7 +59,7 @@ func setupFailClosed(t *testing.T, store SessionStore, extra ...AuthPlugin) *rou
 		UserStore:           userStore,
 		SessionStore:        store,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	for _, p := range extra {
 		mgr.Use(p)
 	}
@@ -261,7 +261,7 @@ func newMintManager(t *testing.T, store SessionStore, checker AuthPlugin) *AuthM
 		UserStore:           newMemoryUserStore(),
 		SessionStore:        store,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	if checker != nil {
 		mgr.Use(checker)
 	}

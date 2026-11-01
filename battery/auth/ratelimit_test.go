@@ -106,7 +106,7 @@ func newRLAuthManager(t *testing.T, rlCfg RateLimiterConfig) *AuthManager {
 		UserStore:           newMemoryUserStore(),
 		LoginRateLimit:      &rlCfg,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	// TwoFactorURL: the 2FA plugin below makes Init require it.
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
 		BaseURL:      "http://localhost",
@@ -180,7 +180,7 @@ func TestRateLimit_PerAccount_BlocksIPRotationAttack(t *testing.T) {
 			BlockDuration: time.Minute,
 		},
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRateLimit_PerAccount_DifferentEmailsNotBlocked(t *testing.T) {
 			BlockDuration: time.Minute,
 		},
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestRateLimit_DevModeRelaxesPerIPLogin(t *testing.T) {
 			Window:      time.Minute,
 		},
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

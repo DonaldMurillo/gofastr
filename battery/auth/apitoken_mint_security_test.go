@@ -48,7 +48,7 @@ func newTokenMintRig(t *testing.T) *tokenMintRig {
 		UserStore:           store,
 		AllowInMemoryStores: true,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{RateLimit: &RateLimiterConfig{MaxAttempts: 1000, Window: time.Minute, BlockDuration: time.Minute}}))
 	mgr.Use(NewTokensPlugin(ts))
 	if err := mgr.Init(nil); err != nil {

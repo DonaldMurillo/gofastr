@@ -239,7 +239,7 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 		UserStore:     store,
 		DevMode:       true, // HTTP-friendly cookies
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewEmailVerificationPlugin(EmailVerificationConfig{
 		BaseURL:     "http://test",
 		EmailSender: emails, // captures URL

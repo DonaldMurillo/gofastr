@@ -725,3 +725,10 @@ notes:
         - gofastr/battery/auth.NewOIDCProvider
         - gofastr/battery/auth.NewGoogleProvider
         - gofastr/battery/auth.NewGitHubProvider
+  - change: "BREAKING - CorePlugin.Init refuses to start when a 2FA plugin is registered and no NewCorePlugin().WithTwoFactorURL(path) was set; an HTML form login of a 2FA account now redirects there instead of to its next page, which refused the pending session"
+    breaking: true
+    hits: review
+    guidance: "Write mgr.Use(auth.NewCorePlugin().WithTwoFactorURL(\"/login/2fa\")), naming the page that posts the code to /2fa/challenge, the same page the passkey, magic-link and OAuth plugins' TwoFactorURL names. JSON logins are unaffected. Apps without a 2FA plugin change nothing."
+    find:
+      uses:
+        - gofastr/battery/auth.NewCorePlugin

@@ -42,7 +42,7 @@ func newChallengeFixture(t *testing.T, cfg TwoFAConfig) *challengeFixture {
 		UserStore:           store,
 		AllowInMemoryStores: true,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(cfg))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

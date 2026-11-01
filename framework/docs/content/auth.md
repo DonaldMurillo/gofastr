@@ -26,7 +26,7 @@ mgr := auth.New(auth.AuthConfig{
         BlockDuration: 30 * time.Minute,
     },
 })
-mgr.Use(auth.NewCorePlugin())                               // /auth/{login,register,me,logout}
+mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa")) // /auth/{login,register,me,logout}; the URL is required next to the 2FA plugin
 mgr.Use(auth.NewMagicLinkPlugin(auth.MagicLinkConfig{
     BaseURL:      "https://app.example.com",
     EmailSender:  mySender,
@@ -172,7 +172,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 
 | Plugin | Routes | Notes |
 |---|---|---|
-| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
+| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. Next to a 2FA plugin, `Init` requires `NewCorePlugin().WithTwoFactorURL(path)`: an HTML form login of a 2FA account redirects there instead of to its `next` page, which would refuse the pending session (a JSON login answers `two_factor_required`). `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. Next to a 2FA plugin, `Init` requires `TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `OnSuccessURL` (see [Following a magic link does not sign you in; confirming does](#following-a-magic-link-does-not-sign-you-in-confirming-does)). `TokenLength` is deprecated and does nothing: the stores mint 32 random bytes. |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. Next to a 2FA plugin, `Init` requires `OAuth2Config.TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `/`. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |

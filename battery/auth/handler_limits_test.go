@@ -132,7 +132,7 @@ func newTestAuthManagerWithSession(t *testing.T) *AuthManager {
 		SessionCookie:       "session_id",
 		UserStore:           userStore,
 	})
-	mgr.Use(NewCorePlugin())
+	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

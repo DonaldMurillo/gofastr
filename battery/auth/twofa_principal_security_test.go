@@ -59,7 +59,7 @@ func newTwoFASplitRig(t *testing.T) *twofaSplitRig {
 		AllowInMemoryStores: true,
 	})
 	rig.twofa = NewTwoFAPlugin(TwoFAConfig{RateLimit: &RateLimiterConfig{MaxAttempts: 1000, Window: time.Minute, BlockDuration: time.Minute}})
-	rig.mgr.Use(NewCorePlugin())
+	rig.mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	rig.mgr.Use(rig.twofa)
 	rig.mgr.Use(NewAccountsPlugin())
 	if err := rig.mgr.Init(nil); err != nil {
