@@ -71,7 +71,10 @@ func Counter(cfg CounterConfig) render.HTML {
 	initial := 0
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		initial = cfg.Slice.Default()
+		// The request's value, not the declaration: the page seeds the
+		// signal with what a producer Seeded on Ctx, and the first paint
+		// must show the number the first + steps from.
+		initial = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
 		panic("ui: Counter requires SignalName or Slice")
