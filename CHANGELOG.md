@@ -104,6 +104,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A desktop window on Windows can no longer open a second, unguarded
+  window.** WebView2 answered `window.open` and `target="_blank"` with a
+  new web view that had no navigation policy, so a page could open a
+  foreign site in a window that looked like the app's. The Windows shell
+  now marks every new-window request handled, so nothing opens, as on
+  macOS and Linux.
 - **A static export's `llm.md` carries the page's SEO front matter.** The
   live `/llm.md` opens with the screen's description, canonical and
   other head metadata; the exported file was the bare doc. Both now go
