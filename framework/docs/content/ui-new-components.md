@@ -80,8 +80,8 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **segmented**: `framework/ui.SegmentedControl`, radio-group styled as a sliding pill bar; an empty `Selected` checks the first segment, and a `Selected` no option lists checks none (the pill hides), so the group submits nothing rather than a value nobody chose
 - **counter**: `framework/ui.Counter`, signal-driven numeric counter with +/− buttons
 - **signaltoggle**: `framework/ui.SignalToggle`, `role="switch"` button bound to a boolean signal
-- **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups
-- **passwordinput**: `framework/ui.PasswordInput`, password field with a show/hide reveal button rendered through `headless.Password` — the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
+- **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups; a toggle button whose accessible name is `IdleLabel` in both states (`aria-pressed` carries the state, only the visible label flips), so keep the idle label's words in `CommittedLabel`
+- **passwordinput**: `framework/ui.PasswordInput`, password field with a reveal button rendered through `headless.Password` — a toggle button: its name ("Show password") and word ("Show") never change, `aria-pressed` says whether the password shows and the kit paints the pressed state; the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
 - **searchresults**: `framework/ui.SearchResults`, a full search results page (GET form, match count, results with section links, pagination) that works without script
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons

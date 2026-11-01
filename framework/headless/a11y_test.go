@@ -569,6 +569,31 @@ func TestToggleActionPressedMatchesItsShippedState(t *testing.T) {
 		`data-hui-action-done="" hidden=""`, "the success label ships unhidden")
 }
 
+// A toggle button has one name (the APG toggle-button pattern): the
+// idle label names it in both states and aria-pressed carries the
+// state. A name that followed the visible label read "Watching,
+// pressed", the state said twice. The one-shot action is no toggle and
+// keeps its label-as-name; a caller's own aria-label stays the name.
+func TestToggleButtonsKeepOneName(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		got := ToggleAction(ToggleActionProps{Endpoint: "/watch", IdleLabel: "Watch",
+			CommittedLabel: "Watching", Committed: committed}, nil)
+		has(t, got, `<button aria-label="Watch" aria-pressed=`, "a toggle's name is not its idle label in both states")
+	}
+	own := ToggleAction(ToggleActionProps{Endpoint: "/star", IdleLabel: "Star", CommittedLabel: "Starred",
+		ExtraAttrs: map[string]string{"aria-label": "Star this repository"}}, nil)
+	has(t, own, `aria-label="Star this repository"`, "a caller's own stable name was overwritten")
+	hasNot(t, OptimisticAction(OptimisticActionProps{
+		Endpoint: "/follow", IdleLabel: "Follow", SuccessLabel: "Following"}, nil),
+		"aria-label", "a one-shot action pinned a name its flip should change")
+	// The reveal button: one name, one word, and nothing for a script
+	// to swap them to.
+	pw := Password(PasswordProps{Name: "pw"}, nil)
+	has(t, pw, `aria-label="Show password" aria-pressed="false"`, "the reveal button lost its one name")
+	has(t, pw, `type="button">Show</button>`, "the reveal button lost its one word")
+	hasNot(t, pw, "data-hui-hide-", "the reveal button still ships a second name to swap to")
+}
+
 // The framework's runtime shakes the button on failure and announces
 // nothing at all. Ours writes the failure into this span — so the span
 // must be a status role (polite by implication, never stated twice),

@@ -459,10 +459,11 @@ What it does, one line per behaviour:
   not a row. A CSS
   counter cannot do it: a table is a size container, and the style
   containment that brings walls the counter in.
-- **reveal** retypes the password input, swaps the button's text and
-  accessible name from the `data-hui-show-*` and `data-hui-hide-*`
-  attributes, and keeps focus and the caret where the reader left
-  them.
+- **reveal** retypes the password input, flips the button's
+  `aria-pressed`, and keeps focus and the caret where the reader left
+  them. The button is a toggle button: its name ("Show password") and
+  its word ("Show") never change, so a screen reader hears "Show
+  password, pressed" rather than the state said twice.
 - **color** keeps the swatch and the hex text one value in both
   directions, and marks the shell `data-invalid` when the text holds a
   non-empty value that is neither `#rgb` nor `#rrggbb`.

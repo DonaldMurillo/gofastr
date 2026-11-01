@@ -45,7 +45,7 @@ import (
 //	        data-hui-action-untoggle="/unfollow"
 //	        data-hui-action-group="follows"
 //	        data-hui-action-failed="…"
-//	        data-state="idle" aria-pressed="false"
+//	        data-state="idle" aria-pressed="false" aria-label="Follow"
 //	        class="fui-button fui-button--primary fui-toggle-action">
 //	    <span data-hui-action-idle>Follow</span>
 //	    <span data-hui-action-done hidden>Following ✓</span>
@@ -53,7 +53,10 @@ import (
 //
 // The headless module binds the data-hui-action* hooks through the
 // kernel's action primitive (the retired toggleaction.js is deleted)
-// and mirrors the committed state onto aria-pressed.
+// and mirrors the committed state onto aria-pressed. It is a toggle
+// button: the accessible name is IdleLabel in both states and only the
+// visible label flips, so a screen reader hears "Follow, pressed", not
+// "Following, pressed".
 
 // ToggleActionConfig configures a ToggleAction button.
 type ToggleActionConfig struct {
@@ -68,7 +71,10 @@ type ToggleActionConfig struct {
 	IdleLabel string
 
 	// CommittedLabel is shown while committed (the runtime flips to it
-	// optimistically on click). Required.
+	// optimistically on click). Required. The accessible name stays
+	// IdleLabel (aria-pressed says it is committed), so keep IdleLabel's
+	// words in it ("Follow" / "Following ✓") for voice users who read
+	// the button aloud (WCAG 2.5.3).
 	CommittedLabel string
 
 	// IdleIcon optionally renders alongside IdleLabel.

@@ -77,16 +77,14 @@ type Strings struct {
 
 	// ─── Password ───────────────────────────────────────────────────
 
-	// ShowPassword and HidePassword name the reveal button in each of
-	// its two states. Imperative, not rendered visually; they also
-	// travel as data so the runtime can swap them.
+	// ShowPassword names the reveal button. It is a toggle button: the
+	// name never changes and aria-pressed says whether the password is
+	// shown, so there is no second name for the pressed state.
 	ShowPassword string
-	HidePassword string
-	// RevealShow is the reveal button's visible text, and RevealHide
-	// is what the runtime swaps it to. One word each; RevealHide is
-	// never rendered by the server.
+	// RevealShow is the reveal button's visible word, inside
+	// ShowPassword's words so the name contains what is seen. It does
+	// not change either.
 	RevealShow string
-	RevealHide string
 
 	// ─── Pagination ─────────────────────────────────────────────────
 
@@ -413,9 +411,7 @@ var defaultStrings = Strings{
 	PickColor: "Pick {{name}}",
 
 	ShowPassword: "Show password", // not-a-secret: the reveal button's accessible name
-	HidePassword: "Hide password", // not-a-secret: the reveal button's accessible name
 	RevealShow:   "Show",
-	RevealHide:   "Hide",
 
 	Previous: "Previous",
 	Next:     "Next",

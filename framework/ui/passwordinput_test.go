@@ -40,8 +40,9 @@ func TestPasswordInputEmitsTypePassword(t *testing.T) {
 
 // The reveal button is the headless module's contract: data-hui-reveal
 // on the button, data-hui-affix on the shell, data-hui-affix-input on
-// the input, and the four label/text attributes the module swaps
-// between. The retired passwordinput.js module bound none of these.
+// the input. It is a toggle button: one name and one word, with
+// aria-pressed the state, and no second name for the module to swap
+// to. The retired passwordinput.js module bound none of these.
 func TestPasswordInputEmitsTheHeadlessRevealHooks(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{Name: "pw", ID: "pw"}))
 	for _, want := range []string{
@@ -50,16 +51,15 @@ func TestPasswordInputEmitsTheHeadlessRevealHooks(t *testing.T) {
 		`data-hui-affix`,
 		`data-hui-affix-input`,
 		`aria-label="Show password"`,
-		`data-hui-show-label="Show password"`,
-		`data-hui-hide-label="Hide password"`,
-		`data-hui-show-text="Show"`,
-		`data-hui-hide-text="Hide"`,
 		`aria-pressed="false"`,
 		`>Show<`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("reveal contract missing %q:\n%s", want, h)
 		}
+	}
+	if strings.Contains(h, "data-hui-hide-") || strings.Contains(h, "Hide") {
+		t.Errorf("the reveal button ships a second name or word to swap to:\n%s", h)
 	}
 }
 

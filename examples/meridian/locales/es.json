@@ -1010,8 +1010,6 @@
       "tertiary": "Terciario"
     },
     "passwordInput": {
-      "hide": "Ocultar contraseña",
-      "revealHide": "Ocultar",
       "revealShow": "Mostrar",
       "show": "Mostrar contraseña"
     },

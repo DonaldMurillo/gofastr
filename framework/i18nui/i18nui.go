@@ -89,7 +89,6 @@ var (
 
 	// PasswordInput
 	PasswordInputShow = i18n.Define("ui.passwordInput.show", "Show password")
-	PasswordInputHide = i18n.Define("ui.passwordInput.hide", "Hide password")
 
 	// Lightbox
 	LightboxLabel    = i18n.Define("ui.lightbox.label", "Image viewer")
@@ -303,7 +302,6 @@ var (
 	ActionFailed            = i18n.Define("ui.action.failed", "Could not save. Try again.")
 	ColorPick               = i18n.Define("ui.color.pick", "Pick {{name}}")
 	PasswordRevealShow      = i18n.Define("ui.passwordInput.revealShow", "Show")
-	PasswordRevealHide      = i18n.Define("ui.passwordInput.revealHide", "Hide")
 	ToneInfo                = i18n.Define("ui.tone.info", "Information")
 	ToneSuccess             = i18n.Define("ui.tone.success", "Success")
 	ToneWarning             = i18n.Define("ui.tone.warning", "Warning")

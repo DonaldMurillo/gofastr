@@ -181,9 +181,12 @@ func TestE2E_ModuleLoadsOnAMarkerOnly(t *testing.T) {
 	}
 }
 
-// The reveal button retypes the input, swaps both its visible text and
-// its accessible name, keeps focus and the caret, and swaps back.
-func TestE2E_RevealRetypesAndRelabels(t *testing.T) {
+// The reveal button is a toggle button (the APG pattern): it retypes
+// the input, flips aria-pressed, keeps focus and the caret, and swaps
+// back, while its name and its visible word stay put. It used to swap
+// both to "Hide password" / "Hide", so a screen reader heard "Hide
+// password, pressed" — the state said twice.
+func TestE2E_RevealTogglesWithAStableName(t *testing.T) {
 	b := startBehaviorServer(t,
 		string(Password(PasswordProps{Name: "token", ID: "token"}, nil)))
 	ctx := behaviorPage(t, b)
@@ -229,8 +232,8 @@ func TestE2E_RevealRetypesAndRelabels(t *testing.T) {
 	if state.Type != "text" || state.Pressed != "true" {
 		t.Fatalf("after the first click: type=%q aria-pressed=%q, want text and true", state.Type, state.Pressed)
 	}
-	if state.Label != "Hide password" || state.Text != "Hide" {
-		t.Fatalf("after the first click: aria-label=%q text=%q, want the hide label and text", state.Label, state.Text)
+	if state.Label != "Show password" || state.Text != "Show" {
+		t.Fatalf("after the first click: aria-label=%q text=%q, want the name and word unchanged (aria-pressed is the state)", state.Label, state.Text)
 	}
 	if !state.Focused || state.At != state.Len || state.Len != 7 {
 		t.Fatalf("after the first click: focused=%v caret=%d len=%d, want focus at the end of 7 characters", state.Focused, state.At, state.Len)
@@ -244,7 +247,7 @@ func TestE2E_RevealRetypesAndRelabels(t *testing.T) {
 		t.Fatalf("after the second click: type=%q aria-pressed=%q, want password and false", state.Type, state.Pressed)
 	}
 	if state.Label != "Show password" || state.Text != "Show" {
-		t.Fatalf("after the second click: aria-label=%q text=%q, want the show label and text", state.Label, state.Text)
+		t.Fatalf("after the second click: aria-label=%q text=%q, want the name and word unchanged", state.Label, state.Text)
 	}
 }
 
