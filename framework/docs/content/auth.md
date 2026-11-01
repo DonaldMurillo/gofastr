@@ -779,6 +779,11 @@ mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 exported for hosts that want to assemble their own config, but the
 `*EntityConfig()` helpers are the safe default.
 
+`EntitySessionStore.EnsureSchema` creates a unique index on `token` and
+an index on `user_id` (and `expires_at`) whoever created the table. When
+AutoMigrate made it from `SessionEntityConfig()` first, the store's own
+`CREATE TABLE` did nothing and every cookie lookup scanned the table.
+
 **A soft-deleted account is signed out.** With `Scope.SoftDelete` on the
 users entity, a delete only stamps `deleted_at`. `EntityUserStore` finds
 that column when `AuthManager.Init` runs `EnsureSchema` (AutoMigrate has

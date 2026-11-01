@@ -832,10 +832,25 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "two_factor_verified", "pending_two_factor"); err != nil {
 		return err
 	}
-	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (expires_at)",
-		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, indexName("idx_", s.table, "_expires"), query.QuoteFolded(s.table)))
-	_, err = s.db.ExecContext(ctx, idx)
-	return err
+	// The indexes are created whoever made the table. The documented
+	// wiring declares app.Entity("sessions", SessionEntityConfig()), so
+	// AutoMigrate creates the table first and the CREATE TABLE above does
+	// nothing: token then had no index, and every cookie lookup (a random
+	// cookie included) scanned the whole table, as did DeleteByUser.
+	sqlite := s.dialect.of(s.db) == migrate.DialectSQLite
+	on := func(suffix string) string {
+		return query.IndexOn(sqlite, indexName("idx_", s.table, suffix), query.QuoteFolded(s.table))
+	}
+	for _, idx := range []string{
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (expires_at)", on("_expires")),
+		fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (token)", on("_token")),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (user_id)", on("_user")),
+	} {
+		if _, err := s.db.ExecContext(ctx, idx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // qTable wraps a statement template with the validated table name.
@@ -987,7 +1002,7 @@ func (s *EntitySessionStore) Cleanup(ctx context.Context) (int, error) {
 // SessionEntityFields returns the standard field definitions for a session entity.
 func SessionEntityFields() []schema.Field {
 	return []schema.Field{
-		{Name: "token", Type: schema.String, Required: true},
+		{Name: "token", Type: schema.String, Required: true, Unique: true},
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "created_at", Type: schema.Timestamp},
 		{Name: "expires_at", Type: schema.Timestamp, Required: true},
