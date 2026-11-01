@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -452,6 +453,9 @@ func (m *mockRedis) MoveIfEqual(_ context.Context, key, field, expect, list, val
 // eraseScript, in Go under the single mutex: the atomicity EVAL gives on a
 // real server. redis_live_test.go runs the Lua itself against one.
 func (m *mockRedis) Eval(_ context.Context, script string, keys []string, args ...any) (any, error) {
+	if script == moveScript {
+		return m.evalMove(keys, args)
+	}
 	if script != eraseScript || len(keys) != 5 || len(args) != 2 {
 		return nil, fmt.Errorf("mockRedis: unknown script call")
 	}
@@ -495,6 +499,54 @@ func (m *mockRedis) Eval(_ context.Context, script string, keys []string, args .
 			kept = append(kept, raw)
 		}
 		m.lists[key] = kept
+	}
+	return n, nil
+}
+
+// noScripts, embedded beside *mockRedis, hides mockRedis's Eval: two
+// methods of one name at the same depth cancel out, so the wrapper is no
+// [ScriptRunner] and the queue takes the paths of a client without scripts
+// (TestNoScriptsHidesEval holds it to that).
+type noScripts struct{}
+
+func (noScripts) Eval(context.Context, string, []string, ...any) (any, error) {
+	panic("noScripts.Eval is never selected")
+}
+
+// evalMove is moveScript in Go under the single mutex.
+func (m *mockRedis) evalMove(keys []string, args []any) (any, error) {
+	if len(keys) != 2 || len(args) < 1 || (len(args)-1)%4 != 0 {
+		return nil, fmt.Errorf("mockRedis: bad move script call")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kinds := fmt.Sprint(args[0])
+	src, dst := keys[0], keys[1]
+	var n int64
+	for i := 1; i < len(args); i += 4 {
+		from, expect, to, value := fmt.Sprint(args[i]), fmt.Sprint(args[i+1]), fmt.Sprint(args[i+2]), fmt.Sprint(args[i+3])
+		ok := false
+		if kinds[0] == 'h' {
+			if v, held := m.hashes[src][from]; held && v == expect {
+				delete(m.hashes[src], from)
+				ok = true
+			}
+		} else if j := slices.Index(m.lists[src], expect); j >= 0 {
+			m.lists[src] = slices.Delete(slices.Clone(m.lists[src]), j, j+1)
+			ok = true
+		}
+		if !ok {
+			continue
+		}
+		if kinds[1] == 'h' {
+			if m.hashes[dst] == nil {
+				m.hashes[dst] = make(map[string]string)
+			}
+			m.hashes[dst][to] = value
+		} else {
+			m.lists[dst] = append([]string{value}, m.lists[dst]...)
+		}
+		n++
 	}
 	return n, nil
 }

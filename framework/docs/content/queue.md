@@ -854,6 +854,18 @@ another user's claim by then. So an adapter without `Eval` keeps running
 the queue, but erasing a user's data from it fails with an error naming
 `queue.ScriptRunner` and removes nothing.
 
+With `Eval`, the queue's own moves between its keys run as scripts too,
+each writing only while the source still holds the entry: `Dequeue`'s
+claim from its pop record into the processing hash, its dead-lettering
+and requeues, `Nack` and `Reclaim` without `CompareAndMover`, `Replay`,
+and the promotion of due delayed jobs. A worker that read a job just
+before an erasure removed it would otherwise write the job back. With the
+script it finds the source empty and drops the job: `Dequeue` moves on to
+the next one, and `Nack` or `Replay` does nothing. The claim needs
+`PopRecorder` as well, since the pop record is what it checks; without
+one, a job `Dequeue` has popped exists only in the worker's memory until
+the claim writes it.
+
 The script reads every entry of the main, delayed and dead lists and the
 pop and processing hashes, and the server serves no other client while it
 runs, so it takes longer the more jobs the queue holds. It matches a job

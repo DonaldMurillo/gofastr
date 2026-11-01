@@ -165,6 +165,14 @@ type PopRecorder interface {
 // the queue a hash-tagged name ("{jobs}"), as for [CompareAndMover]. An
 // integer reply MUST come back as an integer type (go-redis returns int64).
 //
+// With it, every move of a job from one of the queue's keys to another
+// also runs as a script (moveScript) that writes only while the source
+// still holds the entry: Dequeue's claim from its pop record into the
+// processing hash, its dead-lettering and requeues, Nack and Reclaim
+// without [CompareAndMover], Replay, and the promotion of due delayed
+// jobs. A worker that read a job before an erasure removed it would
+// otherwise write it back; with the script it drops the job instead.
+//
 // A client that does not implement it still runs the queue, but erasing a
 // user's data from it fails with an error instead of sweeping key by key.
 type ScriptRunner interface {
@@ -293,13 +301,117 @@ func (q *RedisQueue) eraseUser(ctx context.Context, userID string, dryRun bool) 
 	if err != nil {
 		return 0, fmt.Errorf("redis queue: erase: %w", err)
 	}
+	n, err = intReply(reply)
+	if err != nil {
+		return 0, fmt.Errorf("redis queue: erase: %w", err)
+	}
+	return n, nil
+}
+
+// intReply reads a script's integer reply.
+func intReply(reply any) (int, error) {
 	switch v := reply.(type) {
 	case int64:
 		return int(v), nil
 	case int:
 		return v, nil
 	}
-	return 0, fmt.Errorf("redis queue: erase: the script replied %T, want an integer", reply)
+	return 0, fmt.Errorf("the script replied %T, want an integer", reply)
+}
+
+// moveEntry is one entry of a scripted move: the source field (empty for a
+// list) and the bytes the source must still hold, and the destination
+// field (empty for a list) and the value written there.
+type moveEntry struct {
+	from, expect, to, value string
+}
+
+// scriptMove runs moveScript: each entry moves from src to dst only while
+// src still holds its expected bytes, and the script returns how many
+// moved. Every move of a job from one key to another runs through it when
+// the client is a [ScriptRunner], because the erasure script may run
+// between a worker's read and its write: a job the worker carries in
+// memory after the erasure removed it from Redis would otherwise be
+// written back.
+func (q *RedisQueue) scriptMove(ctx context.Context, runner ScriptRunner, src string, srcHash bool, dst string, dstHash bool, entries ...moveEntry) (int, error) {
+	kinds := []byte("ll")
+	if srcHash {
+		kinds[0] = 'h'
+	}
+	if dstHash {
+		kinds[1] = 'h'
+	}
+	args := make([]any, 0, 1+4*len(entries))
+	args = append(args, string(kinds))
+	for _, e := range entries {
+		args = append(args, e.from, e.expect, e.to, e.value)
+	}
+	reply, err := runner.Eval(ctx, moveScript, []string{src, dst}, args...)
+	if err != nil {
+		return 0, err
+	}
+	return intReply(reply)
+}
+
+// moveScript moves entries from KEYS[1] to KEYS[2]. ARGV[1] names their
+// kinds, source then destination, 'h' for a hash and 'l' for a list; then
+// come four arguments per entry: the source field, the bytes the source
+// must hold (the field's value, or a list element), the destination field
+// and the value to write. An entry whose source no longer holds its bytes
+// is skipped. A list source gives up one matching element (LREM 1). It
+// returns how many entries moved.
+const moveScript = `
+local sh, dh = string.sub(ARGV[1], 1, 1) == 'h', string.sub(ARGV[1], 2, 2) == 'h'
+local n = 0
+for i = 2, #ARGV, 4 do
+  local ok
+  if sh then
+    ok = redis.call('HGET', KEYS[1], ARGV[i]) == ARGV[i + 1]
+    if ok then redis.call('HDEL', KEYS[1], ARGV[i]) end
+  else
+    ok = redis.call('LREM', KEYS[1], 1, ARGV[i + 1]) == 1
+  end
+  if ok then
+    if dh then
+      redis.call('HSET', KEYS[2], ARGV[i + 2], ARGV[i + 3])
+    else
+      redis.call('LPUSH', KEYS[2], ARGV[i + 3])
+    end
+    n = n + 1
+  end
+end
+return n
+`
+
+// homePopped gives a popped entry, data recorded under rec, its next home:
+// value into the hash dst under field, or onto the list dst when field is
+// empty. With a [ScriptRunner] and a record it is one script that writes
+// only while the record still holds data, and retires the record in the
+// same step. moved false says the record was gone: an erasure removed the
+// job, or Reclaim put it back on the main list after the worker held it
+// past the visibility timeout. Either way the caller drops it. Without a
+// script it is the write and then settle. A recovery write runs on a
+// detached, bounded context, like recoveryPush.
+func (q *RedisQueue) homePopped(ctx context.Context, rec, data, dst, field, value string, recovery bool) (moved bool, err error) {
+	if recovery {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
+		defer cancel()
+	}
+	if runner, ok := q.client.(ScriptRunner); ok && rec != "" {
+		n, err := q.scriptMove(ctx, runner, q.poppedQueue, true, dst, field != "", moveEntry{rec, data, field, value})
+		return n == 1, err
+	}
+	if field != "" {
+		err = q.client.HSet(ctx, dst, field, value)
+	} else {
+		err = q.client.LPush(ctx, dst, value)
+	}
+	if err != nil {
+		return false, err
+	}
+	q.settle(ctx, rec)
+	return true, nil
 }
 
 // eraseScript removes the jobs of user ARGV[1] from the pop and processing
@@ -497,10 +609,24 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	// the same list order as pushing them one at a time.
 	//
 	// A skipped job's pop record goes only once the job is back on the main
-	// list: until then the record is its one durable trace.
+	// list: until then the record is its one durable trace. With a script
+	// the push and the record's retirement are one step per job, and a job
+	// whose record an erasure removed is dropped (see homePopped).
 	var skipped, skippedRecs []string
 	requeueSkipped := func() error {
 		if len(skipped) == 0 {
+			return nil
+		}
+		if runner, ok := q.client.(ScriptRunner); ok && skippedRecs[0] != "" {
+			entries := make([]moveEntry, len(skipped))
+			for i, s := range skipped {
+				entries[i] = moveEntry{skippedRecs[i], s, "", s}
+			}
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
+			defer cancel()
+			if _, err := q.scriptMove(rctx, runner, q.poppedQueue, true, q.queueName, false, entries...); err != nil {
+				return fmt.Errorf("restore skipped jobs: %w", err)
+			}
 			return nil
 		}
 		values := make([]any, len(skipped))
@@ -557,15 +683,11 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// is unavailable, restore the malformed entry to the main list so
 			// it remains durable and observable on the next attempt.
 			resultErr := fmt.Errorf("unmarshal job: %w", err)
-			if qerr := recoveryPush(q.deadLetterQueue, data); qerr != nil {
+			if _, qerr := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", data, true); qerr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("quarantine malformed job: %w", qerr))
-				if restoreErr := recoveryPush(q.queueName, data); restoreErr != nil {
+				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore malformed job: %w", restoreErr))
-				} else {
-					q.settle(ctx, rec)
 				}
-			} else {
-				q.settle(ctx, rec)
 			}
 			rerr := requeueSkipped()
 			if rerr != nil {
@@ -598,12 +720,10 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// the restored job from redelivering forever once the
 			// backend heals).
 			dlqData, _ := json.Marshal(job)
-			if err := recoveryPush(q.deadLetterQueue, dlqData); err != nil {
+			if _, err := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", string(dlqData), true); err != nil {
 				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
-				if restoreErr := recoveryPush(q.queueName, dlqData); restoreErr != nil {
+				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(dlqData), true); restoreErr != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
-				} else {
-					q.settle(ctx, rec)
 				}
 				rerr := requeueSkipped()
 				if rerr != nil {
@@ -611,7 +731,6 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 				}
 				return Job{}, resultErr
 			}
-			q.settle(ctx, rec)
 			continue
 		}
 		// A fresh claim token identifies THIS claim, so a stale worker whose
@@ -629,16 +748,15 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			"job":       string(bumped),
 			"expiresAt": q.now().Add(visTimeout).UnixNano(),
 		})
-		if err := q.client.HSet(ctx, q.processingQueue, job.ID, jobData); err != nil {
+		claimedIt, err := q.homePopped(ctx, rec, data, q.processingQueue, job.ID, string(jobData), false)
+		if err != nil {
 			// Restore the bumped payload to the main list so it is re-delivered
 			// on a later Dequeue. If the restore itself fails the job is
 			// unrecoverable, but the common single-failure case (pop ok,
 			// processing write blip) no longer loses it.
 			resultErr := fmt.Errorf("dequeue: track in processing: %w", err)
-			if restoreErr := recoveryPush(q.queueName, string(bumped)); restoreErr != nil {
+			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(bumped), true); restoreErr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
-			} else {
-				q.settle(ctx, rec)
 			}
 			rerr := requeueSkipped()
 			if rerr != nil {
@@ -646,7 +764,11 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			}
 			return Job{}, resultErr
 		}
-		q.settle(ctx, rec)
+		if !claimedIt {
+			// The pop record was gone: an erasure removed the job while this
+			// worker held it, or Reclaim put it back. Drop it.
+			continue
+		}
 
 		// Re-enqueue skipped jobs. The claimed job is already recorded in
 		// the processing hash, so it survives; a skipped job that failed to
@@ -732,6 +854,15 @@ func (q *RedisQueue) promoteDue(ctx context.Context) error {
 			var job Job
 			if json.Unmarshal([]byte(raw), &job) == nil && job.ScheduledAt.After(now) {
 				kept++
+				continue
+			}
+			if runner, ok := q.client.(ScriptRunner); ok {
+				// One step, only while the delayed list still holds the
+				// entry. Moved or not, it has left the delayed list: another
+				// worker promoted it, or an erasure removed it after the read.
+				if _, err := q.scriptMove(ctx, runner, q.delayedQueue, false, q.queueName, false, moveEntry{"", raw, "", raw}); err != nil {
+					return fmt.Errorf("dequeue: promote delayed job: %w", err)
+				}
 				continue
 			}
 			if err := q.client.LPush(ctx, q.queueName, raw); err != nil {
@@ -859,6 +990,13 @@ func (q *RedisQueue) moveField(ctx context.Context, hash, field, expect, list, v
 			return false, false, fmt.Errorf("move to %s: %w", list, err)
 		}
 		return moved, !moved, nil
+	}
+	if runner, ok := q.client.(ScriptRunner); ok {
+		n, err := q.scriptMove(ctx, runner, hash, true, list, false, moveEntry{field, expect, "", value})
+		if err != nil {
+			return false, false, fmt.Errorf("move to %s: %w", list, err)
+		}
+		return n == 1, n != 1, nil
 	}
 	if err := q.client.LPush(ctx, list, value); err != nil {
 		return false, false, fmt.Errorf("push to %s: %w", list, err)
@@ -1106,6 +1244,15 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 			return fmt.Errorf("replay: marshal job: %w", err)
 		}
 
+		// With a script the move is one step, and only while the dead list
+		// still holds the entry: an erasure that removed it after the read
+		// above leaves nothing to replay.
+		if runner, ok := q.client.(ScriptRunner); ok {
+			if _, err := q.scriptMove(ctx, runner, q.deadLetterQueue, false, q.queueName, false, moveEntry{"", raw, "", string(requeued)}); err != nil {
+				return fmt.Errorf("replay: move job: %w", err)
+			}
+			return nil
+		}
 		// Enqueue first so a failure here leaves the original on the dead list
 		// (no loss); only then remove the original dead-list entry.
 		if err := q.client.LPush(ctx, q.queueName, requeued); err != nil {

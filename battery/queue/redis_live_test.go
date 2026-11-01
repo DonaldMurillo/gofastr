@@ -202,6 +202,23 @@ func (c *liveRedis) Eval(_ context.Context, script string, keys []string, args .
 	return c.do(append(all, args...)...)
 }
 
+// livePopScript is the PopRecorder script queue.go's doc gives.
+const livePopScript = `
+local v = redis.call('RPOP', KEYS[1])
+if not v then return false end
+redis.call('HSET', KEYS[2], ARGV[1], v)
+return v
+`
+
+func (c *liveRedis) RPopHSet(ctx context.Context, list, hash, field string) (string, error) {
+	v, err := c.Eval(ctx, livePopScript, []string{list, hash}, field)
+	if err == nil && v == nil {
+		return "", ErrRedisEmpty
+	}
+	s, _ := v.(string)
+	return s, err
+}
+
 // The erase script, run by a real Redis: it removes the user's jobs from
 // all five keys (a duplicate on a list counts each copy), keeps other
 // users' jobs and entries that do not decode or name the user some other

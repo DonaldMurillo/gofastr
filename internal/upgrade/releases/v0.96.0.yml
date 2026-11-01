@@ -607,7 +607,7 @@ notes:
   - change: "BREAKING for apps that erase user data with a RedisQueue - the queue's store eraser runs as one Lua script and needs a client that implements queue.ScriptRunner (Eval); with a client that does not, App.EraseUserData reports the queue_redis store as failed and removes nothing from it"
     breaking: true
     hits: review
-    guidance: "A key-by-key sweep could not prove a job gone: a worker's Dequeue or Nack moved it into each key just after the sweep read it, and a field read and deleted in two round trips could be another user's claim by then. Add Eval to your RedisClient adapter; with go-redis it is return c.rdb.Eval(ctx, script, keys, args...).Result(). On Redis Cluster give the queue a hash-tagged name ({jobs}) so its five keys share a slot."
+    guidance: "A key-by-key sweep could not prove a job gone: a worker's Dequeue or Nack moved it into each key just after the sweep read it, and a field read and deleted in two round trips could be another user's claim by then. Add Eval to your RedisClient adapter; with go-redis it is return c.rdb.Eval(ctx, script, keys, args...).Result(). With Eval the queue also runs Dequeue's claim and requeues, Replay, delayed-job promotion, and Nack and Reclaim without CompareAndMover as scripts, so a worker cannot write back a job the erasure removed. On Redis Cluster give the queue a hash-tagged name ({jobs}) so its five keys share a slot; those scripts fail with CROSSSLOT without one."
     find:
       uses:
         - gofastr/battery/queue.NewRedisQueue

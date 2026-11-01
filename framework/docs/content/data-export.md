@@ -527,7 +527,10 @@ A job a worker is running when the sweep passes is not stopped. If it fails
 and is retried after the sweep, it is back in the queue until the next
 erasure. The Redis erasure is one Lua script, which the server runs with
 no other command in between, so no worker step lands between its reads and
-its deletes. It needs an adapter that implements
+its deletes. A worker that read a job just before the script ran (a job
+`Dequeue` popped but has not claimed, a `Nack`, a `Replay`) does not write
+it back: the queue's moves between keys are scripts too, and each finds
+its source empty and drops the job. It needs an adapter that implements
 [`queue.ScriptRunner`](queue.md#optional-scriptrunner); with one that does
 not, the store fails and nothing is removed from it. While it runs the
 server serves no other client, for a time that grows with the queue's

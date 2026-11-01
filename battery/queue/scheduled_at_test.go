@@ -162,7 +162,10 @@ func TestRedisPromotesPastFirstPage(t *testing.T) {
 
 // lostPromoteRedis reports every LRem on the delayed list as having removed
 // nothing, the view of a worker that lost the race to promote an entry.
-type lostPromoteRedis struct{ *mockRedis }
+type lostPromoteRedis struct {
+	*mockRedis
+	noScripts
+}
 
 func (f lostPromoteRedis) LRem(ctx context.Context, key string, count int64, value any) (int64, error) {
 	if key == "test:delayed" {
@@ -176,7 +179,7 @@ func (f lostPromoteRedis) LRem(ctx context.Context, key string, count int64, val
 func TestRedisLostPromoteRaceSkips(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	q := NewRedisQueue(lostPromoteRedis{newMockRedis()}, "test")
+	q := NewRedisQueue(lostPromoteRedis{mockRedis: newMockRedis()}, "test")
 	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Minute)}); err != nil {
@@ -189,7 +192,10 @@ func TestRedisLostPromoteRaceSkips(t *testing.T) {
 }
 
 // mainPushFailRedis fails LPush onto the main list only.
-type mainPushFailRedis struct{ *mockRedis }
+type mainPushFailRedis struct {
+	*mockRedis
+	noScripts
+}
 
 func (f mainPushFailRedis) LPush(ctx context.Context, key string, values ...any) error {
 	if key == "test" {
@@ -204,7 +210,7 @@ func TestRedisFailedPromoteRestores(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	r := newMockRedis()
-	q := NewRedisQueue(mainPushFailRedis{r}, "test")
+	q := NewRedisQueue(mainPushFailRedis{mockRedis: r}, "test")
 	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Minute)}); err != nil {
@@ -221,7 +227,10 @@ func TestRedisFailedPromoteRestores(t *testing.T) {
 
 // mainPushDiesRedis panics at the push onto the main list: the process
 // dies there, with no chance to restore anything.
-type mainPushDiesRedis struct{ *mockRedis }
+type mainPushDiesRedis struct {
+	*mockRedis
+	noScripts
+}
 
 func (f mainPushDiesRedis) LPush(ctx context.Context, key string, values ...any) error {
 	if key == "test" {
@@ -236,7 +245,7 @@ func TestRedisPromoteCrashKeepsJob(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	r := newMockRedis()
-	q := NewRedisQueue(mainPushDiesRedis{r}, "test")
+	q := NewRedisQueue(mainPushDiesRedis{mockRedis: r}, "test")
 	t.Cleanup(func() { _ = q.Close() })
 	q.now = func() time.Time { return clock }
 	if err := q.Enqueue(ctx, Job{Type: "t", ScheduledAt: clock.Add(time.Minute)}); err != nil {
