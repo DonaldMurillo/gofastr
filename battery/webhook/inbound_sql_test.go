@@ -306,7 +306,7 @@ func TestSQLInbound_IngestHandlerIntegration(t *testing.T) {
 		t.Fatalf("handler: %v", err)
 	}
 	req := newIngestRequest(http.MethodPost, string(body), map[string]string{
-		SignatureHeader:  SignWithTimestamp(secret, time.Now().Unix(), body),
+		SignatureHeader:  SignWithTimestamp(secret, time.Now().Unix(), "", "", body),
 		"X-GitHub-Event": "push",
 	})
 	rr := httptest.NewRecorder()

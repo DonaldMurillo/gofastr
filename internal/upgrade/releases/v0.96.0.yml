@@ -648,3 +648,13 @@ notes:
         - gofastr/framework/access.CanResourceExact
         - gofastr/framework.Can
         - gofastr/framework.CanResource
+  - change: "BREAKING - webhook signatures sign <ts>\\n<event>\\n<delivery id>\\n<body>; webhook.SignWithTimestamp and webhook.VerifyTimestamped take the event name and delivery id before the body"
+    breaking: true
+    hits: edit
+    guidance: "A captured delivery could be re-sent under another event or delivery id and still verify. Pass r.Header.Get(webhook.EventHeader) and r.Header.Get(webhook.DeliveryIDHeader) to VerifyTimestamped. webhook.TimestampedVerifier reads them itself. Receivers outside Go (your subscribers' code) must sign the same newline-joined material, or every delivery fails verification after the upgrade; the webhooks doc has receiver code."
+    find:
+      shapes:
+        - symbol: gofastr/battery/webhook.SignWithTimestamp
+          type: '^func\(secret string, unixTimestamp int64, body \[\]byte\) string$'
+        - symbol: gofastr/battery/webhook.VerifyTimestamped
+          type: '^func\(secret string, header string, body \[\]byte, tolerance time\.Duration\) bool$'

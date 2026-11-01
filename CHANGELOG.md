@@ -104,6 +104,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **BREAKING: webhook signatures cover the event name and delivery id.**
+  `v1` signed `<ts>.<body>`, so a delivery captured inside the tolerance
+  window could be re-sent with another `X-GoFastr-Event` or
+  `X-GoFastr-Delivery-ID` and still verify. It now signs
+  `<ts>\n<event>\n<delivery id>\n<body>`. `SignWithTimestamp` and
+  `VerifyTimestamped` take the event and id; `TimestampedVerifier` reads
+  them from the request. Every receiver must update its verifier.
+  ([webhooks](framework/docs/content/webhooks.md))
 - **A password reset removes every OAuth link.** On a verified account
   the links survived, so an IdP identity linked from a stolen session
   signed the attacker back in after the owner's reset. The reset now

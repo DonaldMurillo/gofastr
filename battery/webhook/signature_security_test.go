@@ -17,7 +17,7 @@ func TestVerify_RejectsDuplicateFields(t *testing.T) {
 	secret := "top-secret"
 	body := []byte(`{"event":"payment.succeeded"}`)
 	now := time.Now().Unix()
-	valid := SignWithTimestamp(secret, now, body)
+	valid := SignWithTimestamp(secret, now, "", "", body)
 
 	cases := map[string]string{
 		"duplicate-t":  "t=1," + valid,
@@ -25,7 +25,7 @@ func TestVerify_RejectsDuplicateFields(t *testing.T) {
 	}
 	for name, header := range cases {
 		t.Run(name, func(t *testing.T) {
-			if VerifyTimestamped(secret, header, body, time.Hour) {
+			if VerifyTimestamped(secret, header, "", "", body, time.Hour) {
 				t.Fatalf("VerifyTimestamped accepted ambiguous header %q", header)
 			}
 		})
@@ -34,7 +34,7 @@ func TestVerify_RejectsDuplicateFields(t *testing.T) {
 	// Sanity: an unknown forward-compat field must still verify.
 	t.Run("tolerates-unknown-field", func(t *testing.T) {
 		header := valid + ",kid=key-2"
-		if !VerifyTimestamped(secret, header, body, time.Hour) {
+		if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
 			t.Fatalf("VerifyTimestamped rejected header with benign extra field %q", header)
 		}
 	})
@@ -46,8 +46,8 @@ func TestSignature_ValidSignatureAccepted(t *testing.T) {
 	secret := "test-secret"
 	body := []byte(`{"event":"test"}`)
 
-	sig := SignWithTimestamp(secret, time.Now().Unix(), body)
-	if !VerifyTimestamped(secret, sig, body, 5*time.Minute) {
+	sig := SignWithTimestamp(secret, time.Now().Unix(), "", "", body)
+	if !VerifyTimestamped(secret, sig, "", "", body, 5*time.Minute) {
 		t.Errorf("VerifyTimestamped rejected valid signature")
 	}
 }
@@ -56,9 +56,9 @@ func TestSignature_ValidSignatureAccepted(t *testing.T) {
 // wrong secret is rejected. Attack: forging webhook signatures.
 func TestSignature_WrongSecretRejected(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
-	sig := SignWithTimestamp("correct-secret", time.Now().Unix(), body)
+	sig := SignWithTimestamp("correct-secret", time.Now().Unix(), "", "", body)
 
-	if VerifyTimestamped("wrong-secret", sig, body, 5*time.Minute) {
+	if VerifyTimestamped("wrong-secret", sig, "", "", body, 5*time.Minute) {
 		t.Errorf("SECURITY: [signature] VerifyTimestamped accepted signature with wrong secret. Attack: webhook signature forgery.")
 	}
 }
@@ -70,9 +70,9 @@ func TestSignature_ExpiredTimestampRejected(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
 
 	// Sign with a timestamp 10 minutes ago
-	oldSig := SignWithTimestamp(secret, time.Now().Add(-10*time.Minute).Unix(), body)
+	oldSig := SignWithTimestamp(secret, time.Now().Add(-10*time.Minute).Unix(), "", "", body)
 
-	if VerifyTimestamped(secret, oldSig, body, 5*time.Minute) {
+	if VerifyTimestamped(secret, oldSig, "", "", body, 5*time.Minute) {
 		t.Errorf("SECURITY: [signature] VerifyTimestamped accepted expired timestamp (10min old, tolerance=5min). Attack: webhook replay.")
 	}
 }
@@ -83,10 +83,10 @@ func TestSignature_TamperedBodyRejected(t *testing.T) {
 	secret := "test-secret"
 	body := []byte(`{"event":"test"}`)
 
-	sig := SignWithTimestamp(secret, time.Now().Unix(), body)
+	sig := SignWithTimestamp(secret, time.Now().Unix(), "", "", body)
 	tamperedBody := []byte(`{"event":"admin","role":"superuser"}`)
 
-	if VerifyTimestamped(secret, sig, tamperedBody, 5*time.Minute) {
+	if VerifyTimestamped(secret, sig, "", "", tamperedBody, 5*time.Minute) {
 		t.Errorf("SECURITY: [signature] VerifyTimestamped accepted signature for tampered body. Attack: payload modification bypasses signature.")
 	}
 }
@@ -98,7 +98,7 @@ func TestSignature_InvalidHeaderFormatRejected(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
 
 	for _, header := range []string{"", "invalid", "t1.not-a-number.sig", "12345"} {
-		if VerifyTimestamped(secret, header, body, 5*time.Minute) {
+		if VerifyTimestamped(secret, header, "", "", body, 5*time.Minute) {
 			t.Errorf("SECURITY: [signature] VerifyTimestamped accepted malformed header %q. Attack: signature bypass via malformed header.", header)
 		}
 	}
@@ -112,9 +112,9 @@ func TestSignature_FutureTimestampRejected(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
 
 	// Sign with a timestamp 10 minutes in the future
-	futureSig := SignWithTimestamp(secret, time.Now().Add(10*time.Minute).Unix(), body)
+	futureSig := SignWithTimestamp(secret, time.Now().Add(10*time.Minute).Unix(), "", "", body)
 
-	if VerifyTimestamped(secret, futureSig, body, 5*time.Minute) {
+	if VerifyTimestamped(secret, futureSig, "", "", body, 5*time.Minute) {
 		t.Errorf("SECURITY: [signature] VerifyTimestamped accepted future timestamp (10min ahead, tolerance=5min). Attack: pre-generated future signature.")
 	}
 }
@@ -127,7 +127,7 @@ func TestSignature_TimingSafeComparison(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
 
 	// Compute a valid signature
-	validSig := SignWithTimestamp(secret, time.Now().Unix(), body)
+	validSig := SignWithTimestamp(secret, time.Now().Unix(), "", "", body)
 
 	// Craft a completely wrong signature (same length)
 	h := hmac.New(sha256.New, []byte("wrong-secret"))

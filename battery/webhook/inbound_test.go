@@ -67,7 +67,7 @@ func newIngestRequest(method, body string, headers map[string]string) *http.Requ
 
 func signedHeaders(body []byte, secret string) map[string]string {
 	return map[string]string{
-		SignatureHeader: SignWithTimestamp(secret, time.Now().Unix(), body),
+		SignatureHeader: SignWithTimestamp(secret, time.Now().Unix(), "", "", body),
 	}
 }
 
@@ -127,7 +127,7 @@ func TestIngest_HappyPath(t *testing.T) {
 	}
 
 	req := newIngestRequest(http.MethodPost, string(body), map[string]string{
-		SignatureHeader:         SignWithTimestamp(secret, time.Now().Unix(), body),
+		SignatureHeader:         SignWithTimestamp(secret, time.Now().Unix(), "", "", body),
 		"X-GitHub-Event":        "push",
 		"X-GitHub-Delivery":     "abc-123",
 		"X-Secret-Leak-Attempt": "should-not-persist",
@@ -320,7 +320,7 @@ func TestIngest_KeepHeadersAllowlist(t *testing.T) {
 		KeepHeaders: []string{"X-GitHub-Event"},
 	})
 	req := newIngestRequest(http.MethodPost, string(body), map[string]string{
-		SignatureHeader:   SignWithTimestamp(secret, time.Now().Unix(), body),
+		SignatureHeader:   SignWithTimestamp(secret, time.Now().Unix(), "", "", body),
 		"X-GitHub-Event":  "push",
 		"X-Random-Header": "nope",
 	})
@@ -545,7 +545,7 @@ func TestTimestampedVerifier_AcceptsFresh(t *testing.T) {
 	body := []byte(`{"a":1}`)
 	v := TimestampedVerifier("sek", 5*time.Minute)
 	req := newIngestRequest(http.MethodPost, string(body), map[string]string{
-		SignatureHeader: SignWithTimestamp("sek", time.Now().Unix(), body),
+		SignatureHeader: SignWithTimestamp("sek", time.Now().Unix(), "", "", body),
 	})
 	if err := v(req, body); err != nil {
 		t.Errorf("fresh signature rejected: %v", err)
@@ -557,7 +557,7 @@ func TestTimestampedVerifier_RejectsStale(t *testing.T) {
 	v := TimestampedVerifier("sek", 5*time.Minute)
 	stale := time.Now().Add(-2 * time.Hour).Unix()
 	req := newIngestRequest(http.MethodPost, string(body), map[string]string{
-		SignatureHeader: SignWithTimestamp("sek", stale, body),
+		SignatureHeader: SignWithTimestamp("sek", stale, "", "", body),
 	})
 	if err := v(req, body); err == nil {
 		t.Errorf("stale signature accepted")

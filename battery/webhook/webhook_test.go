@@ -41,6 +41,7 @@ func TestManager_SuccessfulDeliverySignsBody(t *testing.T) {
 	var (
 		gotSig   string
 		gotEvent string
+		gotID    string
 		gotBody  []byte
 		gotMu    sync.Mutex
 	)
@@ -48,6 +49,7 @@ func TestManager_SuccessfulDeliverySignsBody(t *testing.T) {
 		gotMu.Lock()
 		gotSig = r.Header.Get(SignatureHeader)
 		gotEvent = r.Header.Get("X-GoFastr-Event")
+		gotID = r.Header.Get(DeliveryIDHeader)
 		gotBody, _ = io.ReadAll(r.Body)
 		gotMu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
@@ -80,7 +82,7 @@ func TestManager_SuccessfulDeliverySignsBody(t *testing.T) {
 
 	gotMu.Lock()
 	defer gotMu.Unlock()
-	if !VerifyTimestamped("shh", gotSig, gotBody, 5*time.Minute) {
+	if !VerifyTimestamped("shh", gotSig, gotEvent, gotID, gotBody, 5*time.Minute) {
 		t.Fatalf("delivered body did not verify against subscriber secret: sig=%q", gotSig)
 	}
 	if gotEvent != "orders.created" {

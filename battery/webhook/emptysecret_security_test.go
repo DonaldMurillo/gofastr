@@ -49,8 +49,8 @@ func TestHMACVerifierEmptySecretRefuses(t *testing.T) {
 func TestVerifyTimestampedBlankSecretRefuses(t *testing.T) {
 	body := []byte("x")
 	for _, secret := range blankSecrets {
-		sig := SignWithTimestamp(secret, time.Now().Unix(), body)
-		if VerifyTimestamped(secret, sig, body, time.Hour) {
+		sig := SignWithTimestamp(secret, time.Now().Unix(), "", "", body)
+		if VerifyTimestamped(secret, sig, "", "", body, time.Hour) {
 			t.Errorf("secret %q verified a signature anyone can compute", secret)
 		}
 	}
