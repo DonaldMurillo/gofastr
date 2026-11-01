@@ -178,16 +178,11 @@ func runDesktopRun(args []string) {
 		return true
 	}
 
-	// The watch takes its first snapshot before the first build, so a
-	// save made during the build or the graph read still rebuilds (the
-	// same order as gofastr dev).
-	var (
-		watch *devcmd.Watch
-		first map[string]time.Time
-	)
+	// Scanned before the first build: FirstSnapshot keeps these times,
+	// so a save made during the build or the graph read rebuilds.
+	var before map[string]time.Time
 	if f.watch {
-		watch = devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
-		first = watch.Scan()
+		before = devcmd.ScanModTimes(f.dir)
 	}
 
 	if !launch() {
@@ -210,9 +205,11 @@ func runDesktopRun(args []string) {
 	reload := make(chan struct{}, 1)
 	stop := make(chan struct{})
 	// A signal after the build but before here leaves shutdown closed:
-	// the loop below sees it on its first turn.
+	// the loop below sees it on its first turn, and watchCtx has already
+	// ended the dependency query.
+	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
 	go func() {
-		prev := first
+		prev := devcmd.FirstSnapshot(before, watch.Scan())
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {

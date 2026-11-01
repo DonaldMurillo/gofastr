@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -147,14 +148,9 @@ func RunDev(args []string) {
 		}
 	}
 
-	// The watch takes its first snapshot before the first build, not
-	// after the server answers: a save made while the build runs, or
-	// while the go list behind NewWatch reads the graph, is then a
-	// change, where a snapshot taken later would already hold it and
-	// never rebuild. The watch keeps every directory the build imports
-	// from, gen/ included.
-	watch := NewWatch(watchCtx, dir, pkg, nil)
-	first := watch.Scan()
+	// Scanned before the first build: FirstSnapshot keeps these times,
+	// so a save made during the build or the graph read rebuilds.
+	before := ScanModTimes(dir)
 
 	// Build and start the server initially
 	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold, shutdown) && !closed(shutdown) {
@@ -166,9 +162,12 @@ func RunDev(args []string) {
 		return
 	}
 
-	// File watcher goroutine: polls for .go file changes.
+	// File watcher goroutine: polls for .go file changes. The watch
+	// keeps every directory the build imports from, gen/ included; its
+	// graph is read after the first build, which fetched the modules.
+	watch := NewWatch(watchCtx, dir, pkg, nil)
 	go func() {
-		prev := first
+		prev := FirstSnapshot(before, watch.Scan())
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -483,6 +482,10 @@ func RunBuildWithHeartbeat(buildCmd *exec.Cmd, what string, interrupt <-chan str
 	if interrupt != nil {
 		ownBuildGroup(buildCmd)
 	}
+	// A signal before the build: nothing to start.
+	if closed(interrupt) {
+		return ErrBuildInterrupted
+	}
 	// Started here, not inside the waiting goroutine, so the interrupt
 	// arm below reads a Process that Start has already set.
 	if err := buildCmd.Start(); err != nil {
@@ -717,6 +720,20 @@ func (w *Watch) Scan() map[string]time.Time {
 // directory the build target imports from.
 func ScanModTimes(dir string) map[string]time.Time {
 	return (&Watch{dir: dir}).Scan()
+}
+
+// FirstSnapshot is a watch's first snapshot. before is the scan taken
+// before the first build (ScanModTimes, no package graph yet) and after
+// the watch's scan once the build ran and the graph loaded. A file in
+// both keeps its time from before, and a file only in before stays, so
+// a save or a removal made during the build or the graph read differs
+// from the next scan and rebuilds. A file only in after counts as
+// present: the build's own output (a GOTMPDIR work dir inside the
+// tree) and a directory the graph keeps (gen/) are not changes.
+func FirstSnapshot(before, after map[string]time.Time) map[string]time.Time {
+	first := maps.Clone(after)
+	maps.Copy(first, before)
+	return first
 }
 
 // Changed compares two mod-time maps and returns true if any file was added, removed, or modified.

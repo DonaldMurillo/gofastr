@@ -140,3 +140,41 @@ func TestWatcherSkipsHiddenAndOutput(t *testing.T) {
 		t.Fatalf("watched %v, want %v", got, want)
 	}
 }
+
+// A signal that lands before a build used to start it anyway, and the
+// caller then started the app after shutdown. A build asked for after
+// the signal never starts.
+func TestBuildAfterSignalIsInterrupted(t *testing.T) {
+	skipOnWindows(t)
+	interrupt := make(chan struct{})
+	close(interrupt)
+	for range 20 {
+		build := exec.Command("true")
+		err := RunBuildWithHeartbeat(build, "test", interrupt)
+		if !errors.Is(err, ErrBuildInterrupted) {
+			t.Fatalf("want ErrBuildInterrupted, got %v", err)
+		}
+		if build.Process != nil {
+			t.Fatal("a build asked for after the signal started")
+		}
+	}
+}
+
+// The first snapshot came after the build and the graph read, so a
+// save made in that time was already in it and never rebuilt. Taken
+// before the build alone, it saw the build's own files (a GOTMPDIR
+// work dir in the tree) as a change and rebuilt in a loop.
+func TestFirstSnapshotKeepsPreBuildTimes(t *testing.T) {
+	old := time.Unix(1_000, 0)
+	saved := time.Unix(2_000, 0)
+	before := map[string]time.Time{"screens.go": old, "gone.go": old}
+	after := map[string]time.Time{"screens.go": saved, "build/x.cgo1.go": saved}
+	first := FirstSnapshot(before, after)
+	if !Changed(first, after) {
+		t.Fatal("a save or removal during the build is not a change")
+	}
+	builtOnly := map[string]time.Time{"screens.go": old, "gone.go": old, "build/x.cgo1.go": saved}
+	if Changed(FirstSnapshot(before, builtOnly), builtOnly) {
+		t.Fatal("a file the build created is a change")
+	}
+}
