@@ -52,6 +52,34 @@ contracts rule GOFASTR1407 reports any raw `json.NewDecoder`/`Unmarshal`
 of request or frame bytes, so a site that does not use these helpers
 needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
+A body these helpers refuse answers 400 with `reason` `invalid_json`
+(or the key refusal's own code: `json_duplicate_key`,
+`json_folded_keys`, `json_unknown_field`, `json_multiple_values`). The
+message says what was wrong in JSON's terms and never quotes
+`encoding/json`, whose text names the server's Go types and structs:
+
+| Body | Message |
+| --- | --- |
+| `{"ids":[1]}` into `[]string` | `invalid JSON: ids[0]: expected a string, got a number` |
+| `{"items":[{"qty":1.5}]}` into an `int` | `invalid JSON: items[0].qty: expected a whole number in range` |
+| `[1]` into a struct or map | `invalid JSON: expected an object, got an array` |
+| `{"ids": [1,}` | `invalid JSON: syntax error at byte 12` |
+| `{"ids":[` | `invalid JSON: the body ends before the JSON value is complete` |
+| empty | `invalid JSON: the body is empty` |
+| `{"meta":{"a":1,"a":2}}` | `invalid JSON: duplicate key "a" in meta` |
+
+A path is the client's own keys, with array indices in brackets
+(`a.b[0].c`); a key that is not a plain name is quoted (`tags["a b"]`).
+A type is one of JSON's six: string, number, boolean, object, array,
+null. Anything else (a field's own `UnmarshalJSON` refusing, a read that
+failed) reads `the value could not be decoded` or `the body could not be
+read`. Each part is a phrase, so a catalog translates the whole message.
+`JSONErrorDetail(err)` (`BodyReadDetail(err)` for a failed read,
+`JSONTrailingData()` for more bytes after the one value) gives you the
+same phrase for a decode you run yourself: pass it as the
+`{{detail}}` of your own frame, or call `.Error()` for English (a
+JSON-RPC message).
+
 ### router
 
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD

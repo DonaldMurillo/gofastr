@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // ResourceContents is the payload a resource yields on resources/read. Set
@@ -189,7 +191,7 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 	}
 	var params resourcesReadParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+handler.JSONErrorDetail(err).Error())
 	}
 	if params.URI == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing resource uri")

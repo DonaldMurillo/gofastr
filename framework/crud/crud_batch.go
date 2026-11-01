@@ -42,7 +42,7 @@ func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 		if strings.Contains(err.Error(), "request body too large") {
 			return errBodyTooLarge
 		}
-		return fmt.Errorf("invalid JSON: %w", err)
+		return bodyReadError(err)
 	}
 	if err := checkEnvelopeKeys(raw, allowed); err != nil {
 		return err
@@ -64,7 +64,7 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	tok, err := dec.Token()
 	if err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
+		return bodyDecodeError(err)
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
 		return fmt.Errorf("invalid JSON: request body must be a JSON object")
@@ -73,7 +73,7 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 	for dec.More() {
 		kt, err := dec.Token()
 		if err != nil {
-			return fmt.Errorf("invalid JSON: %w", err)
+			return bodyDecodeError(err)
 		}
 		key, ok := kt.(string)
 		if !ok {
@@ -89,7 +89,7 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 		}
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
-			return fmt.Errorf("invalid JSON: %w", err)
+			return bodyDecodeError(err)
 		}
 	}
 	return nil
