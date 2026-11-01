@@ -559,6 +559,15 @@ func phaseTwoWindows(t desktoptest.TB, h *desktoptest.NativeHarness) {
 		t.Fatalf("windows.self: main page %q, second page %q (want main and %q)", selfMain.ID, selfW2, opened.ID)
 	}
 
+	var closedRaw desktop.Window
+	for _, w := range h.Battery.Windows() {
+		if w.ID() == opened.ID {
+			closedRaw = w
+		}
+	}
+	if closedRaw == nil {
+		t.Fatalf("window %s is not in Battery.Windows", opened.ID)
+	}
 	wantCallOK(t, h.Call("windows", "close", map[string]any{"id": opened.ID}), "windows.close")
 	h.Wait("the second window to close", func() bool { return h.Window(opened.ID) == nil })
 
@@ -568,6 +577,18 @@ func phaseTwoWindows(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	// after it still works.
 	if _, err := nw.EvalQuiet(`return 1`); err == nil {
 		t.Fatal("eval on a closed window succeeded; want a closed-window error")
+	}
+	// The window's setters report it closed too, instead of a success
+	// that changed nothing.
+	for name, call := range map[string]func() error{
+		"Focus":           closedRaw.Focus,
+		"SetTitle":        func() error { return closedRaw.SetTitle("gone") },
+		"SetFrame":        func() error { return closedRaw.SetFrame(desktop.Frame{X: 10, Y: 10, Width: 400, Height: 300}) },
+		"SetSidebarWidth": func() error { return closedRaw.SetSidebarWidth(120) },
+	} {
+		if err := call(); err == nil {
+			t.Fatalf("%s on a closed window succeeded; want a closed-window error", name)
+		}
 	}
 	var again struct {
 		ID string `json:"id"`
@@ -581,7 +602,32 @@ func phaseTwoWindows(t desktoptest.TB, h *desktoptest.NativeHarness) {
 		raw, err := rw.EvalQuiet(`return 2`)
 		return err == nil && string(raw) == "2"
 	})
-	wantCallOK(t, h.Call("windows", "close", map[string]any{"id": again.ID}), "windows.close again")
+
+	// A close that lands while MakeKey waits for the main thread: the
+	// call passed its open check, the window is gone when its main-thread
+	// block runs, and it must report closed, not success. The main thread
+	// is held while MakeKey queues behind it, then closes the window.
+	d, ok := h.Shell.(desktop.NativeDriver)
+	mainer, ok2 := h.Shell.(interface{ Main(func()) error })
+	if !ok || !ok2 {
+		t.Fatalf("the shell %T has no NativeDriver or Main", h.Shell)
+	}
+	keyErr := make(chan error, 1)
+	var closeErr error
+	if err := mainer.Main(func() {
+		go func() { keyErr <- d.MakeKey(again.ID) }()
+		time.Sleep(300 * time.Millisecond)
+		closeErr = d.CloseWindowNative(again.ID)
+	}); err != nil {
+		t.Fatalf("holding the main thread: %v", err)
+	}
+	if closeErr != nil {
+		t.Fatalf("closing the reopened window: %v", closeErr)
+	}
+	var de *desktop.Error
+	if err := <-keyErr; !errors.As(err, &de) || de.Code != desktop.CodeUnsupported {
+		t.Fatalf("MakeKey on a window closed while it waited = %v; want the closed-window error", err)
+	}
 	h.Wait("the reopened window to close", func() bool { return h.Window(again.ID) == nil })
 }
 

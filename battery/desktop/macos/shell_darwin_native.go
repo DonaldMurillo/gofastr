@@ -390,14 +390,20 @@ func (s *darwinShell) MakeKey(id string) error {
 	if win == 0 {
 		return errWindowClosed()
 	}
+	closed := false
 	if err := s.onMain(func() {
 		// Re-read on the main thread: a close since the check above
-		// released the window.
-		if win, _ = w.ids(); win != 0 {
-			objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
+		// released the window, and the call reports it closed.
+		if win, _ = w.ids(); win == 0 {
+			closed = true
+			return
 		}
+		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
 	}); err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }

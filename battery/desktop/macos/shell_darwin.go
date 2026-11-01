@@ -1102,13 +1102,20 @@ func (w *darwinWindow) SetTitle(title string) error {
 	w.mu.Lock()
 	w.title = title
 	w.mu.Unlock()
+	closed := false
 	err := w.shell.onMain(func() {
-		if win, _ := w.ids(); win != 0 {
-			objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
+		win, _ := w.ids()
+		if win == 0 {
+			closed = true
+			return
 		}
+		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }
@@ -1116,9 +1123,11 @@ func (w *darwinWindow) SetTitle(title string) error {
 // Focus brings this window to front and activates the app.
 func (w *darwinWindow) Focus() error {
 	s := w.shell
+	closed := false
 	err := s.onMain(func() {
 		win, _ := w.ids()
 		if win == 0 {
+			closed = true
 			return
 		}
 		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
@@ -1126,6 +1135,9 @@ func (w *darwinWindow) Focus() error {
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }
@@ -1160,9 +1172,11 @@ func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
+	closed := false
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
 		if win == 0 {
+			closed = true
 			return
 		}
 		objc.SendRect(win, objc.Sel("setFrame:display:"), frameToRect(f, readScreens()), 1)
@@ -1170,6 +1184,9 @@ func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
+	}
+	if closed {
+		return errWindowClosed()
 	}
 	return nil
 }
