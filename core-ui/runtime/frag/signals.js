@@ -200,7 +200,10 @@
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
+    // Tagged: this prevent is the runtime's own, not a page listener's,
+    // so a link that also sets a signal still navigates (nav.js).
     e.preventDefault();
+    e._cuiSig = 1;
     const G = window.__gofastr;
 
     const set = node.getAttribute('data-cui-signal-set');

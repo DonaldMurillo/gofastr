@@ -1249,6 +1249,11 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestLinkToCurrentPageStaysSoft, TestRepeatClickOnInFlightLinkStaysSoft,
 		// TestForcedNavigateNotDedupedByCacheReplay,
 		// TestBackAfterHashJumpRestoresScroll, TestNavSeedPrototypeNamedKey.
+		// The signal delegate tagging its own prevent (_cuiSig) so a link
+		// that sets a signal still navigates (TestSignalLinkStillNavigates)
+		// and the failed-sheet cooldown were measured after the merge with
+		// main's round 7, whose core shrank 39: 15872 → 15900 (+15 and +13),
+		// under this line without moving it (level 1: 18486, under 18490).
 		"nav click edges, forced-fetch join, Back across a hash jump, seed own()": 20, // (l1: 50)
 		// Measured 15905 → 15913: TestActionMountFiresForInsertedComponent.
 		// Firing inserted markup's mounts in boot measured +59; the firing

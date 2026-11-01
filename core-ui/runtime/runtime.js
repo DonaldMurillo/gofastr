@@ -508,8 +508,10 @@
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
       // A failed fetch (a deploy's 503, a blip) must not pin the name:
-      // drop the link and the claim so the next scan asks again.
-      link.onerror = () => { link.remove(); this._pendingLinks.delete(name); };
+      // drop the link, and the claim after a cooldown, so a later scan
+      // asks again without a poll or push region re-requesting a sheet
+      // that keeps failing on every swap.
+      link.onerror = () => { link.remove(); setTimeout(() => this._pendingLinks.delete(name), 3e3); };
       this._insertSheet(link);
     },
     // Component sheets go before app.css (#cui-app-css), the order the
@@ -957,7 +959,10 @@
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
+    // Tagged: this prevent is the runtime's own, not a page listener's,
+    // so a link that also sets a signal still navigates (nav.js).
     e.preventDefault();
+    e._cuiSig = 1;
     const G = window.__gofastr;
 
     const set = node.getAttribute('data-cui-signal-set');
@@ -1941,7 +1946,8 @@
   document.addEventListener('click', (e) => {
     // A page listener that ran first (on the anchor or an ancestor)
     // and prevented the click owns it, as it would without the router.
-    if (e.defaultPrevented) return;
+    // The signal delegate's own prevent (_cuiSig) is not one of those.
+    if (e.defaultPrevented && !e._cuiSig) return;
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
     const href = anchor.getAttribute('href');

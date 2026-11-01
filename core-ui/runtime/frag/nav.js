@@ -937,7 +937,8 @@
   document.addEventListener('click', (e) => {
     // A page listener that ran first (on the anchor or an ancestor)
     // and prevented the click owns it, as it would without the router.
-    if (e.defaultPrevented) return;
+    // The signal delegate's own prevent (_cuiSig) is not one of those.
+    if (e.defaultPrevented && !e._cuiSig) return;
     const anchor = e.target.closest('a[href]');
     if (!anchor) return;
     const href = anchor.getAttribute('href');

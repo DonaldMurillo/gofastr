@@ -142,6 +142,9 @@ type minifier struct {
 	// tail of `=>`.
 	casePending   bool
 	lastColonCase bool
+	// lastIdentStmt: the last identifier began a statement, so a `:`
+	// right after it ends a label and the `{` that follows is a block.
+	lastIdentStmt bool
 	lastArrow     bool
 }
 
@@ -398,7 +401,9 @@ func (m *minifier) endsExpr() bool {
 // preserves ASI.
 func isASIHazardPrefix(c byte) bool {
 	switch c {
-	case '(', '[', '+', '-', '/', '`', '!', '~', '{', '\'', '"', '#':
+	// '*' opens a generator method after an initializer-less class
+	// field (`a\n*g(){}`); a newline before a continuing `*` costs a byte.
+	case '(', '[', '+', '-', '/', '`', '!', '~', '{', '\'', '"', '#', '*':
 		return true
 	}
 	return false
@@ -519,6 +524,7 @@ func (m *minifier) emitIdent() {
 	m.ctrlPending = ctrl
 	m.lastArrow = false
 	m.lastColonCase = false
+	m.lastIdentStmt = stmt && !prop
 	m.lastProp = prop
 	m.lastKind = tkIdent
 	m.lastByte = ident[len(ident)-1]
@@ -727,7 +733,13 @@ func (m *minifier) emitNumber() {
 
 func (m *minifier) flushNumber(start int) {
 	num := m.src[start:m.pos]
-	m.emitSep(num[0])
+	first := num[0]
+	if first == '.' {
+		// `.5` starts a number, which ASI separates like a digit: `e\n.5`
+		// minified to `e.5` is a SyntaxError.
+		first = '0'
+	}
+	m.emitSep(first)
 	m.out.WriteString(num)
 	m.setLast(tkNumber, num[len(num)-1])
 }
@@ -969,7 +981,9 @@ func (m *minifier) emitPunctChar(c byte) {
 	case ';':
 		m.casePending = false
 	case ':':
-		colonCase = m.casePending
+		// A case label, or a statement label (`foo: {}`): either way
+		// the `{` after it is a block, not an object literal.
+		colonCase = m.casePending || (m.lastKind == tkIdent && m.lastIdentStmt && !m.inClassBody())
 		m.casePending = false
 	}
 	if c != '*' { // `function*` keeps its parameter list pending

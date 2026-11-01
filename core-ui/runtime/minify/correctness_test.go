@@ -52,6 +52,10 @@ var correctnessCases = []struct {
 	{"double quote line start", "var a = 1\n\"abc\".length", "var a=1\n\"abc\".length"},
 	{"private field line start", "class A { a = 1\n #b = 2\n get b(){ return this.#b } }\nnew A().b", "class A{a=1\n#b=2\nget b(){return this.#b}}new A().b"},
 
+	{"generator after class field", "class A { a\n*g(){ yield 1 } }\n[...new A().g()][0]", "class A{a\n*g(){yield 1}}[...new A().g()][0]"},
+	{"leading-dot number line start", "var e = 1; e\n.5", "var e=1;e\n.5"},
+	{"labelled block then regex", "foo: {}\n/ x/.test('x')", "foo:{}/ x/.test('x')"},
+
 	// --- 4. token fusion ---
 	{"regex then instanceof", "/a/ instanceof RegExp", "/a/ instanceof RegExp"},
 	{"regex then in", "var o = {'/a/':1}; /a/ in o", "var o={'/a/':1};/a/ in o"},

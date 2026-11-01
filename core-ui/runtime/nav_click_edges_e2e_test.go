@@ -118,6 +118,31 @@ func TestPreventedLinkClickDoesNotNavigate(t *testing.T) {
 	})
 }
 
+// TestSignalLinkStillNavigates: the runtime's own signal delegate
+// prevents the click it serves (signals is composed before nav, so it
+// runs first), and that prevent is not a page listener's. A link that
+// also sets a signal (interactive.SetLocal on an <a href>) sets it and
+// navigates, as it did before the router honoured page prevents.
+func TestSignalLinkStillNavigates(t *testing.T) {
+	clickEdgeVariants(t, func(t *testing.T, r *dcRig) {
+		ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+		var sig string
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(r.srv.URL+"/"),
+			chromedp.WaitVisible(`#goA`, chromedp.ByID),
+			chromedp.Evaluate(`document.getElementById('goA').setAttribute('data-cui-signal-set', 'menu:closed')`, nil),
+			chromedp.Click(`#goA`, chromedp.ByID),
+			chromedp.Poll(`location.pathname === '/a'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+			chromedp.Evaluate(`String(window.__gofastr.signal('menu'))`, &sig),
+		); err != nil {
+			t.Fatalf("a link carrying a signal mutation did not navigate: %v", err)
+		}
+		if sig != "closed" {
+			t.Errorf("signal menu = %q, want closed", sig)
+		}
+	})
+}
+
 // TestBackAfterHashJumpRestoresScroll: manual scrollRestoration means
 // the browser no longer restores the position a Back across an in-page
 // #anchor jump returns to; the router's popstate saw the same path and

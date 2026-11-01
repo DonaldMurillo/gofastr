@@ -2119,8 +2119,10 @@ linked and the inlined `app.css` alike, and on the embed shell's link),
 so a component whose sheet arrives after first paint keeps the order
 the server head gives every other one and the host's override still
 wins a tie. A sheet whose fetch fails (a 503 mid-deploy, a dropped
-connection) gives its name back: the link is removed and the next scan
-of that marker requests it again. The boot seeding from
+connection) gives its name back: the link is removed and, after a 3 s
+cooldown (so a poll or push region swapping the same markup cannot
+re-request a sheet that keeps failing on every swap), the next scan of
+that marker requests it again. The boot seeding from
 `data-cui-bundle` skips a bundle link that failed (its sheet is empty),
 so its components fall to the scanner instead of staying unstyled.
 Boot's mutation observer runs the same scan over every inserted subtree

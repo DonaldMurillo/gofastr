@@ -500,8 +500,10 @@
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
       // A failed fetch (a deploy's 503, a blip) must not pin the name:
-      // drop the link and the claim so the next scan asks again.
-      link.onerror = () => { link.remove(); this._pendingLinks.delete(name); };
+      // drop the link, and the claim after a cooldown, so a later scan
+      // asks again without a poll or push region re-requesting a sheet
+      // that keeps failing on every swap.
+      link.onerror = () => { link.remove(); setTimeout(() => this._pendingLinks.delete(name), 3e3); };
       this._insertSheet(link);
     },
     // Component sheets go before app.css (#cui-app-css), the order the

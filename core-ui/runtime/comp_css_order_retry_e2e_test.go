@@ -102,8 +102,20 @@ func TestFailedComponentSheetIsRetried(t *testing.T) {
 	for hits.Load() < 1 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	// Let the failed link settle, then the marker appears again.
-	time.Sleep(300 * time.Millisecond)
+	// Inserted again and again right after the failure (a poll or push
+	// region swapping): the failed sheet is not re-requested on every
+	// swap.
+	for range 5 {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(insertLazy, nil)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("the failed sheet was requested %d times inside its cooldown, want 1", n)
+	}
+	// After the cooldown, the marker appearing again asks again.
+	time.Sleep(3 * time.Second)
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(insertLazy, nil),
 		chromedp.Poll(`getComputedStyle(document.querySelector('[data-cui-comp=lazy] .x')).fontWeight === '700'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
