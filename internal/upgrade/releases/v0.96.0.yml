@@ -713,3 +713,39 @@ notes:
     breaking: false
     guidance: "Set button density through the theme's button tokens instead."
     nodetect: "a CSS custom property set in a stylesheet"
+  - change: "BREAKING - headless.RangeSliderProps and ui.RangeSliderConfig ValueLow / ValueHigh are *int (were int): nil is the unset end (low on Min, high on Max), and any set value is honoured, so a 0..0 pair renders as posted instead of widening to Min..Max"
+    breaking: true
+    hits: edit
+    guidance: "Both zero used to mean unset, so a real 0..0 range could not round-trip. Take the address of a set value: ValueLow: new(20), ValueHigh: new(80) (or &lo, &hi from posted values). Drop a pair you set only to mean the whole range: nil already means Min..Max. A posted value still clamps into Min..Max and a crossed pair still renders ordered."
+    find:
+      shapes:
+        - symbol: gofastr/framework/headless.RangeSliderProps.ValueLow
+          type: '^int$'
+        - symbol: gofastr/framework/headless.RangeSliderProps.ValueHigh
+          type: '^int$'
+        - symbol: gofastr/framework/ui.RangeSliderConfig.ValueLow
+          type: '^int$'
+        - symbol: gofastr/framework/ui.RangeSliderConfig.ValueHigh
+          type: '^int$'
+  - change: "BREAKING - the password reveal button is a toggle button with one name: headless.Strings.HidePassword and RevealHide, i18nui.PasswordInputHide and PasswordRevealHide, and the data-hui-show-label / -hide-label / -show-text / -hide-text hooks are removed"
+    breaking: true
+    hits: edit
+    guidance: "The reveal button's name (Strings.ShowPassword) and visible word (Strings.RevealShow) no longer change; aria-pressed says whether the password shows, and ui.PasswordInput paints the pressed state. Delete any HidePassword / RevealHide you set on a Strings, and the ui.passwordInput.hide and ui.passwordInput.revealHide entries from your catalogs. A stylesheet or script keyed on the removed hooks keys on [data-hui-reveal][aria-pressed=true] instead."
+    find:
+      uses:
+        - gofastr/framework/headless.Strings.HidePassword
+        - gofastr/framework/headless.Strings.RevealHide
+        - gofastr/framework/i18nui.PasswordInputHide
+        - gofastr/framework/i18nui.PasswordRevealHide
+      strings:
+        match: 'data-hui-(show|hide)-(label|text)|ui\.passwordInput\.(hide|revealHide)'
+  - change: "A ToggleAction's accessible name is its IdleLabel in both states (rendered as aria-label unless the caller set one); aria-pressed carries the state and only the visible label flips"
+    breaking: false
+    guidance: "Keep the idle label's words inside CommittedLabel (Follow / Following) so a voice user who reads the button aloud still matches its name. A test that read the committed button's name as the CommittedLabel reads the IdleLabel now."
+    nodetect: "the change is in rendered markup; the source that configures a ToggleAction is unchanged"
+  - change: "headless.Rating renders its choices in reading order (1..Max); ui.RatingInput fills stars with :has() instead of a reverse-order ~ cascade"
+    breaking: false
+    guidance: "Arrow keys now move the way the stars read. A stylesheet that filled headless.Rating stars with input:checked ~ label relied on the reverse order: fill a choice with label:has(~ input:checked) and the checked one with input:checked + label."
+    find:
+      strings:
+        match: ':checked[[:space:]]*~'

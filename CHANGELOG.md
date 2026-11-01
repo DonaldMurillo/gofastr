@@ -122,6 +122,20 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Headless accessibility decisions.** `headless.RangeSliderProps` /
+  `ui.RangeSliderConfig` `ValueLow`/`ValueHigh` are `*int` (BREAKING): nil
+  is the unset end and a set `0..0` pair round-trips. `headless.Rating`
+  renders its stars in reading order, so arrow keys move the way the stars
+  read (flipped in RTL); `ui.RatingInput` fills them with `:has()`. The
+  password reveal is a toggle button with one name and word ("Show
+  password", "Show") and `aria-pressed` as its state (BREAKING:
+  `Strings.HidePassword`/`RevealHide`, `i18nui.PasswordInputHide`/
+  `PasswordRevealHide` and the `data-hui-show/hide-*` hooks are removed);
+  `ui.PasswordInput` shades the pressed button, and its typed text uses
+  `--color-text` (a revealed password was black on the dark surface). A
+  `ToggleAction`'s accessible name is its `IdleLabel` in both states. An
+  unlabelled sidebar drawer trigger is named by the new
+  `Strings.SidebarOpenDrawer` ("Open navigation").
 - **Decimal writes are checked against their column.** A `decimal`
   field refuses, with a 400 naming the field, an exponent past ±1000
   (`decimal_exponent`), more integer digits than the column holds
