@@ -425,6 +425,30 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
 		})
 	}
+	// A verified account keeps no IdP identity either: one linked from a
+	// stolen session signs the attacker back in after the owner's reset.
+	// The notice below names what was removed, so the owner can link a
+	// provider of their own again. Unlinked before the session revoke, the
+	// same order as the passkeys: an IdP sign-in that lands mid-unlink
+	// mints a session the revoke then catches.
+	var unlinked []string
+	lister, unlinker, err := oauthUnlinkTools(p.mgr.UserStore())
+	if err == nil {
+		unlinked, err = p.mgr.unlinkAllOAuth(r.Context(), userID, lister, unlinker)
+	}
+	for _, provider := range unlinked {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "oauth.unlinked",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"provider": provider, "reason": "password_reset"},
+		})
+	}
+	if err != nil {
+		slog.Warn("password-reset OAuth unlink failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		incomplete = true
+	}
 	// A failed purge left the attacker's live cookie working behind a
 	// reset that answered success.
 	if err := p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r)); err != nil {
@@ -449,28 +473,6 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 			Remote: remoteHost(r),
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
 		})
-	}
-	// A verified account keeps no IdP identity either: one linked from a
-	// stolen session signs the attacker back in after the owner's reset.
-	// The notice below names what was removed, so the owner can link a
-	// provider of their own again.
-	var unlinked []string
-	lister, unlinker, err := oauthUnlinkTools(p.mgr.UserStore())
-	if err == nil {
-		unlinked, err = p.mgr.unlinkAllOAuth(r.Context(), userID, lister, unlinker)
-	}
-	for _, provider := range unlinked {
-		p.mgr.emitSecurity(r.Context(), SecurityEvent{
-			Kind:   "oauth.unlinked",
-			UserID: userID,
-			Remote: remoteHost(r),
-			Meta:   map[string]string{"provider": provider, "reason": "password_reset"},
-		})
-	}
-	if err != nil {
-		slog.Warn("password-reset OAuth unlink failed",
-			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		incomplete = true
 	}
 	if incomplete {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
