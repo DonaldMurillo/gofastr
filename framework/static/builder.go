@@ -24,6 +24,8 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
@@ -2123,6 +2125,8 @@ func writeHeadersFile(outDir, policy string) error {
 // foldPath maps every rune of p to the smallest rune in its Unicode
 // simple case-fold orbit, the relation strings.EqualFold uses, so two
 // paths a case-insensitive filesystem treats as one fold to one key.
+// p is decomposed first (NFD): APFS also treats a precomposed "café"
+// and "cafe" with a combining accent as one name.
 func foldPath(p string) string {
 	return strings.Map(func(r rune) rune {
 		least := r
@@ -2130,5 +2134,5 @@ func foldPath(p string) string {
 			least = min(least, f)
 		}
 		return least
-	}, p)
+	}, norm.NFD.String(p))
 }

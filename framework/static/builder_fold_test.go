@@ -102,3 +102,21 @@ func TestRebuildKeepsCaseRenamedPage(t *testing.T) {
 		t.Errorf("the rebuilt page is gone: %v", err)
 	}
 }
+
+// nfcProducts exports "café" precomposed and with a combining accent.
+type nfcProducts struct{ productScreen }
+
+func (*nfcProducts) StaticPaths(context.Context) []map[string]string {
+	return []map[string]string{{"slug": "café"}, {"slug": "café"}}
+}
+
+// APFS treats the two spellings of "café" as one name, so the second
+// page replaced the first: the export refuses them.
+func TestExportRefusesNormalizedTwin(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/products/:slug", &nfcProducts{}, nil)
+	_, err := (&Builder{Host: uihost.New(a), OutDir: t.TempDir()}).Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "both export to") {
+		t.Fatalf("Build error = %v, want a refusal of the two spellings", err)
+	}
+}

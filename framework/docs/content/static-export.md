@@ -224,7 +224,9 @@ pages that land on one file, such as that key beside a route
 `/orders/a/b`: the error names both paths, where the later page would
 otherwise replace the earlier one without a word. Two files that differ
 only in case (`/orders/A` beside `/orders/a`) count as one, since a
-case-insensitive filesystem (macOS, Windows) stores them as one. A
+case-insensitive filesystem (macOS, Windows) stores them as one, and so
+do two that differ only in Unicode normalization (`café` precomposed or
+with a combining accent), which APFS stores as one. A
 redirect's page is checked the same way, against the pages and the
 other redirects.
 
